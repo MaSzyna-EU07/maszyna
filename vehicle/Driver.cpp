@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Event.h"
 #include "world/MemCell.h"
 #include "simulation/simulation.h"
+#include "simulation/blackboxrecorder.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationtest.h"
 #include "world/Track.h"
@@ -796,7 +797,7 @@ void TController::TableCheck(double fDistance)
                     break;
                 }
                 // a switch is a track, the update of a signal never ends the loop above
-                CheckSignalPassedAtDanger( sSpeedTable[ i ], passedbefore );
+                CheckSignalPassed( sSpeedTable[ i ], passedbefore );
                 if (sSpeedTable[i].iFlags & spTrack) // jeśli odcinek
                 {
                     if( sSpeedTable[ i ].fDist + sSpeedTable[ i ].trTrack->Length() < -fLength ) // a skład wyjechał całą długością poza
@@ -823,7 +824,7 @@ void TController::TableCheck(double fDistance)
         auto const lastpassedbefore { TestFlag( sSpeedTable[ iLast ].iFlags, spElapsed ) };
         sSpeedTable[iLast].Update(); // aktualizacja ostatniego
         // a signal at stop often is the last, the scan doesn't go past it
-        CheckSignalPassedAtDanger( sSpeedTable[ iLast ], lastpassedbefore );
+        CheckSignalPassed( sSpeedTable[ iLast ], lastpassedbefore );
         // WriteLog("TableCheck: Upate last track. Dist=" + AnsiString(sSpeedTable[iLast].fDist));
         if( sSpeedTable[ iLast ].fDist < fDistance ) {
             TableTraceRoute( fDistance, pVehicles[ end::rear ] ); // doskanowanie dalszego odcinka
@@ -846,15 +847,49 @@ bool is_signal_at_stop( TSpeedPos const &Point )
         && Point.evEvent != nullptr;
 }
 
+// the position is a signal, a main or a shunting one: the aspect comes from its memory cell. putvalues events
+// set speed limits by the track, and the flags they get don't make them signals
+bool is_signal( TSpeedPos const &Point )
+{
+    return TestFlag( Point.iFlags, spEvent )
+        && ( TestFlag( Point.iFlags, spSemaphor ) || TestFlag( Point.iFlags, spShuntSemaphor ) )
+        && Point.evEvent != nullptr
+        && typeid( *Point.evEvent ) == typeid( getvalues_event );
+}
+
+std::uint8_t passing_flags_of( TSpeedPos const &Point, double const Speedatsignal, bool const Trainmovement )
+{
+    std::uint8_t flags { 0 };
+    auto const shunting { TestFlag( Point.iFlags, spShuntSemaphor ) };
+    if( shunting ) {
+        flags |= blackbox::passing_flags::shunt;
+    }
+    // the speeds of the aspects are whole km/h, -1 for no limit; a shunting signal binds only the shunting
+    if( std::abs( Speedatsignal ) < 0.5 && ( false == shunting || false == Trainmovement ) ) {
+        flags |= ( TestFlag( Point.iFlags, spStopOnSBL ) ? blackbox::passing_flags::automatic_block : blackbox::passing_flags::at_stop );
+    }
+    return flags;
+}
+
 } // namespace
 
-void TController::CheckSignalPassedAtDanger( TSpeedPos const &Point, bool const Passedbefore ) const
+void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbefore ) const
 {
-    if( false == Passedbefore
-     && TestFlag( Point.iFlags, spElapsed )
-     && is_signal_at_stop( Point )
-     && ( mvOccupied->CategoryFlag & 1 ) != 0 ) { // railway only
+    if( Passedbefore
+     || false == TestFlag( Point.iFlags, spElapsed )
+     || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
+        return;
+    }
+    if( is_signal_at_stop( Point ) ) {
         simulation::test().signal_passed_at_danger( OwnerName(), Point.evEvent->m_name );
+    }
+    if( is_signal( Point ) ) {
+        auto const speedatsignal { Point.evEvent->input_value( 1 ) };
+        simulation::Blackbox.signal_passed(
+            pVehicles[ end::front ], *Point.evEvent,
+            speedatsignal, Point.evEvent->input_value( 2 ),
+            mvOccupied->Vel, -Point.fDist,
+            passing_flags_of( Point, speedatsignal, ( OrderCurrentGet() & ( Shunt | Loose_shunt ) ) == 0 ) );
     }
 }
 
@@ -1175,6 +1210,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 // przy jakim dystansie (stanie licznika) ma przesunąć na następny postój
                 fLastStopExpDist = mvOccupied->DistCounter + 0.250 + 0.001 * fLength;
                 TrainParams.UpdateMTable( simulation::Time, asNextStop );
+                record_station( Point, blackbox::station_kinds::passed );
                 UpdateDelayFlag();
                 TrainParams.StationIndexInc(); // przejście do następnej
                 asNextStop = TrainParams.NextStop(); // pobranie kolejnego miejsca zatrzymania
@@ -1216,6 +1252,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
             // for human-driven vehicles discard the stop point if they leave it far enough behind
             if( false == AIControllFlag
              && Point.fDist < -1 * std::max(fLength + 100, 250.0) - Point.fMoved ) {
+                record_station( Point, blackbox::station_kinds::missed );
                 Point.iFlags = 0; // nie liczy się już zupełnie (nie wyśle SetVelocity)
                 Point.fVelNext = -1; // można jechać za W4
                 if( Point.fDist <= 0.0 && eSignNext == Point.evEvent ) {
@@ -1262,6 +1299,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 }
                 if (TrainParams.UpdateMTable( simulation::Time, asNextStop) ) {
                     // to się wykona tylko raz po zatrzymaniu na W4
+                    record_station( Point, blackbox::station_kinds::stopped );
                     if( TrainParams.StationIndex < TrainParams.StationCount ) {
                         // jeśli są dalsze stacje, bez trąbienia przed odjazdem
                         // also ignore any horn cue that may be potentially set below 1 km/h and before the actual full stop
@@ -1328,6 +1366,7 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         // z dalszą akcją czekamy do godziny odjazdu
                         // cargo trains and passenger trains at maintenance stop don't need to wait
                         IsAtPassengerStop = false;
+                        record_station( Point, blackbox::station_kinds::ready );
                         // przy jakim dystansie (stanie licznika) ma przesunąć na następny postój
                         fLastStopExpDist = mvOccupied->DistCounter + 0.050 + 0.001 * fLength;
                         TrainParams.StationIndexInc(); // przejście do następnej
@@ -2656,6 +2695,98 @@ TBrakeSystem TController::consist_brake_system() const {
         }
     }
     return isepcapable ? TBrakeSystem::ElectroPneumatic : TBrakeSystem::Pneumatic;
+}
+
+std::pair<int, double> TController::next_speed_limit() const {
+
+    auto const speedlimit { static_cast<int>( VelDesired ) };
+    auto nextspeedlimit { speedlimit };
+    auto nextspeedlimitdistance { std::numeric_limits<double>::max() };
+    if( speedlimit == 0 ) {
+        // if we aren't allowed to move then any next speed limit is irrelevant
+        return { nextspeedlimit, nextspeedlimitdistance };
+    }
+    // nie przekraczać rozkladowej
+    auto const schedulespeedlimit { (
+        ( OrderCurrentGet() & ( Obey_train | Bank ) ) != 0 && TrainParams.TTVmax > 0.0 ? static_cast<int>( TrainParams.TTVmax ) :
+        ( OrderCurrentGet() & ( Obey_train | Bank ) ) == 0 ? static_cast<int>( fShuntVelocity ) :
+            -1 ) };
+    // first take note of any speed change which should occur after passing potential current speed limit
+    if( VelLimitLastDist.second > 0 ) {
+        nextspeedlimit = min_speed( schedulespeedlimit, static_cast<int>( VelLimitLastDist.first ) );
+        nextspeedlimitdistance = VelLimitLastDist.second;
+    }
+    // then take into account speed change ahead, compare it with speed after potentially clearing last limit
+    // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
+    auto const noactivespeedlimit { VelLimitLastDist.second < 0 };
+    if( auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( VelNext ) ) }; speedatproximitydistance == nextspeedlimit ) {
+        if( noactivespeedlimit ) {
+            nextspeedlimit = speedatproximitydistance;
+            nextspeedlimitdistance = ActualProximityDist;
+        }
+    }
+    else if( speedatproximitydistance < nextspeedlimit ) {
+        // if the speed limit ahead is more strict than our current limit, it's important enough to report
+        if( speedatproximitydistance < VelDesired ) {
+            nextspeedlimit = speedatproximitydistance;
+            nextspeedlimitdistance = ActualProximityDist;
+        }
+        // otherwise report it only if it's located after our current (lower) limit ends
+        else if( ActualProximityDist > nextspeedlimitdistance ) {
+            nextspeedlimit = speedatproximitydistance;
+            nextspeedlimitdistance = ActualProximityDist;
+        }
+    }
+    else if( noactivespeedlimit ) { // implicit proximity > last, report only if last limit isn't present
+        nextspeedlimit = speedatproximitydistance;
+        nextspeedlimitdistance = ActualProximityDist;
+    }
+    // HACK: if our current speed limit extends beyond our scan range don't display potentially misleading information about its length
+    if( nextspeedlimitdistance >= EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE ) {
+        nextspeedlimit = speedlimit;
+    }
+    // HACK: hide next speed limit if the 'limit' is a vehicle in front of us
+    else if( ActualProximityDist == std::abs( TrackObstacle() ) ) {
+        nextspeedlimit = speedlimit;
+    }
+    return { nextspeedlimit, nextspeedlimitdistance };
+}
+
+blackbox::ai_reference TController::ai_reference() const {
+
+    blackbox::ai_reference ai;
+    ai.target_kmh = static_cast<float>( VelDesired );
+    if( auto const [ limit, distance ] { next_speed_limit() }; limit != static_cast<int>( VelDesired ) ) {
+        ai.next_limit_kmh = static_cast<float>( limit );
+        ai.next_limit_distance = static_cast<float>( distance );
+    }
+    ai.acceleration = static_cast<float>( AccDesired );
+    ai.braking_distance = static_cast<float>( fBrakeDist );
+    ai.timetable_vmax_kmh = ( TrainParams.TTVmax > 0.0 ? static_cast<float>( TrainParams.TTVmax ) : -1.0f );
+    ai.track_vmax_kmh = static_cast<float>( mvOccupied->RunningTrack.Velmax );
+    return ai;
+}
+
+void TController::record_station( TSpeedPos const &Point, std::uint8_t const Kind ) const {
+
+    if( Point.evEvent == nullptr ) { return; }
+    blackbox::station_event entry;
+    entry.kind = Kind;
+    auto const row { TrainParams.StationIndex };
+    entry.row = static_cast<std::uint16_t>( std::max( 0, row ) );
+    entry.station = asNextStop;
+    entry.position = Point.evEvent->input_location();
+    // the stop point may be moved back from the indicator, to where the head of the train is to stop
+    entry.distance = static_cast<float>( Point.fDist + Point.fMoved );
+    entry.stop_at = static_cast<float>( Point.fMoved );
+    entry.train_length = static_cast<float>( fLength );
+    entry.platform = static_cast<float>( Point.evEvent->input_value( 2 ) );
+    if( row >= 0 && row <= TrainParams.StationCount ) {
+        auto const &line { TrainParams.TimeTable[ row ] };
+        entry.arrival = ( line.Ah >= 0 ? static_cast<float>( line.Ah * 60 ) + line.Am : -1.0f );
+        entry.departure = ( line.Dh >= 0 ? static_cast<float>( line.Dh * 60 ) + line.Dm : -1.0f );
+    }
+    simulation::Blackbox.station( pVehicles[ end::front ], std::move( entry ) );
 }
 
 int TController::OrderDirectionChange(int newdir, TMoverParameters *Vehicle)
@@ -4833,6 +4964,8 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         if( NewValue1 > 0 && NewValue2 > 0 ) {
             fWarningDuration = NewValue1; // czas trąbienia
             cue_action( driver_hint::hornon, NewValue2 ); // horn combination flag
+            simulation::Blackbox.horn_requested(
+                pVehicles[ end::front ], NewValue1, NewValue2, NewLocation != nullptr ? *NewLocation : pVehicles[ end::front ]->GetPosition() );
         }
         return true;
     }
@@ -5663,6 +5796,10 @@ void TController::TakeControl( bool const Aidriver, bool const Forcevehiclecheck
 { // przejęcie kontroli przez AI albo oddanie
     if (AIControllFlag == Aidriver && !Forcevehiclecheck)
         return; // już jest jak ma być
+    if( AIControllFlag != Aidriver ) {
+        // the autopilot switched on or off
+        simulation::Blackbox.driver_changed( pVehicle, Aidriver );
+    }
     if (Aidriver) //żeby nie wykonywać dwa razy
     { // teraz AI prowadzi
         AIControllFlag = AIdriver;
