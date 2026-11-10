@@ -36,6 +36,7 @@ editor_ui::editor_ui()
 	add_external_panel(&m_nodebankpanel);
 	add_external_panel(&m_layerspanel);
 	add_external_panel(&m_includespanel);
+	add_external_panel(&m_memcellspanel);
 
 	// the menu is a part of the layout of the editor, not a pop-up as in the driver mode
 	m_menu_always = true;
@@ -589,6 +590,9 @@ void editor_ui::register_settings()
 
 void editor_ui::render_()
 {
+	// the keyboard navigation of ImGui is off, so Esc would not close an open list or menu by itself
+	if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+		ImGui::ClosePopupsExceptModals();
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
 	// the fields of work of the editor under the menu, in a row twice as high; the tools of the one chosen in the toolbar under it
@@ -631,7 +635,7 @@ void editor_ui::render_()
 			}
 			if (m_node != nullptr)
 			{
-				auto const name{m_node->name().empty() ? std::string{"(none)"} : m_node->name()};
+				auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};
 				auto const label{std::string{STR_C("Selected:")} + " " + name};
 				ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x - ImGui::GetStyle().ItemSpacing.x * 2.0f));
 				ImGui::TextUnformatted(label.c_str());
@@ -643,6 +647,7 @@ void editor_ui::render_()
 	// strips of the unpinned docks, inside the toolbar and the status bar; the pins over the tab bars drawn by now
 	autohide_strips();
 	autohide_pins();
+	render_refusal();
 }
 
 // updates state of UI elements
@@ -681,7 +686,7 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		{
 			m_nodebankpanel.set_combo(STR_C("Set##insert"), m_insertset, nullptr);
 			auto const count{m_nodebankpanel.set_entries(m_insertset).size()};
-			ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? ", the node bank selection is used" : "");
+			ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? STR_C(", the node bank selection is used") : "");
 		}
 		else
 		{
@@ -736,13 +741,13 @@ void editor_ui::render_tool_options()
 			name = STR_C("Copy to bank");
 			break;
 		case nodebank_panel::TRACK:
-			name = STR_C("Tracks");
+			name = m_tracktitle.empty() ? STR_C("Tracks") : m_tracktitle.c_str();
 			break;
 		default:
 			break;
 		}
 		if (active == workspace::roads)
-			name = "Roads";
+			name = STR_C("Roads");
 		else if (active == workspace::terrain)
 			name = STR_C("Terrain");
 		ImGui::SeparatorText(name);
@@ -759,7 +764,7 @@ void editor_ui::render_tool_options()
 		}
 		else
 			render_mode_options(current);
-		if (ImGui::CollapsingHeader(STR_C("Gizmo"), ImGuiTreeNodeFlags_DefaultOpen))
+		if (ImGui::CollapsingHeader(STR_C("Gizmo")))
 		{
 			if (m_gizmooptions)
 				m_gizmooptions();
@@ -846,7 +851,7 @@ void editor_ui::scene_row(std::size_t const Entry)
 		ImGui::TextDisabled("%s", entry.name.c_str());
 		return;
 	}
-	auto const label{(node->name().empty() ? std::string{"(none)"} : node->name()) + "##" + entry.uuid};
+	auto const label{(node->name().empty() ? std::string{STR_C("(no name)")} : node->name()) + "##" + entry.uuid};
 	if (ImGui::Selectable(label.c_str(), node == m_node, ImGuiSelectableFlags_AllowDoubleClick) && m_sceneselect)
 		m_sceneselect(node, ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
 	if (ImGui::IsItemHovered())
@@ -982,8 +987,25 @@ void editor_ui::render_menu_contents()
 
 	ui_layer::render_menu_contents();
 
+	if (ImGui::BeginMenu(STR_C("Debug")))
+	{
+		ImGui::MenuItem(STR_C("Memory cells"), nullptr, &m_memcellspanel.is_open);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Looks up the memory cells of the scenery, shows what's in them and sets it by hand"));
+		ImGui::EndMenu();
+	}
+
 	if (m_menuoptions)
 		m_menuoptions();
+}
+
+// the tools of the editor mode, in the tools menu after the common ones (logging, screenshot)
+void editor_ui::render_tools_menu()
+{
+	if (!m_toolsmenu)
+		return;
+	ImGui::Separator();
+	m_toolsmenu();
 }
 
 // the windows of the editor and their layout, in the windows menu after the common ones (log, hierarchy, history, settings)
@@ -1023,6 +1045,51 @@ void editor_ui::set_status(std::string const &Status, bool const Error)
 {
 	m_layerspanel.status = Status;
 	m_layerspanel.status_error = Error;
+	if (ImGui::GetCurrentContext() != nullptr)
+		m_statustime = ImGui::GetTime();
+	if (Error && false == Status.empty())
+	{
+		m_refusal = Status;
+		m_refusaltime = ImGui::GetTime();
+		m_refusalnotice = false;
+	}
+}
+
+void editor_ui::set_notice(std::string const &Notice)
+{
+	if (Notice.empty() || ImGui::GetCurrentContext() == nullptr)
+		return;
+	auto &status{m_layerspanel.status};
+	// the status of the operation it follows, told a moment ago, stays above it
+	if (ImGui::GetTime() - m_statustime < 1.0 && false == status.empty())
+		status += "\n" + Notice;
+	else
+	{
+		status = Notice;
+		m_layerspanel.status_error = false;
+	}
+	m_statustime = ImGui::GetTime();
+	m_refusal = Notice;
+	m_refusaltime = ImGui::GetTime();
+	m_refusalnotice = true;
+}
+
+void editor_ui::render_refusal()
+{
+	auto const age{ImGui::GetTime() - m_refusaltime};
+	auto const shown{m_refusalnotice ? 7.0 : 4.0};
+	if (m_refusal.empty() || age > shown)
+		return;
+	auto const &io{ImGui::GetIO()};
+	auto const alpha{static_cast<float>(std::clamp(shown - age, 0.0, 1.0))};
+	auto const wrap{std::round(ImGui::GetFontSize() * 30.0f)};
+	auto const size{ImGui::CalcTextSize(m_refusal.c_str(), nullptr, false, wrap)};
+	ImVec2 at{io.MousePos.x + 20.0f, io.MousePos.y - 24.0f - size.y};
+	at.x = std::clamp(at.x, 10.0f, std::max(10.0f, io.DisplaySize.x - size.x - 10.0f));
+	at.y = std::clamp(at.y, 10.0f, std::max(10.0f, io.DisplaySize.y - size.y - 10.0f));
+	auto *draw{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
+	draw->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), m_refusalnotice ? IM_COL32(45, 32, 0, static_cast<int>(215 * alpha)) : IM_COL32(40, 0, 0, static_cast<int>(210 * alpha)), 4.0f);
+	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), at, m_refusalnotice ? IM_COL32(255, 205, 110, static_cast<int>(255 * alpha)) : IM_COL32(255, 150, 130, static_cast<int>(255 * alpha)), m_refusal.c_str(), nullptr, wrap);
 }
 
 void editor_ui::render_rotation_controls()

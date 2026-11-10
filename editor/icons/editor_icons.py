@@ -321,6 +321,53 @@ def turntable(d):
         line(d, [(32 + math.cos(r) * 24, 32 + math.sin(r) * 24), (32 + math.cos(r) * 31, 32 + math.sin(r) * 31)], W - 4)
 
 
+def parallel(d):
+    # a track and a second one beside it, with the spacing between them
+    for x in (8, 22):
+        line(d, [(x, 60), (x, 4)], W - 6)
+    for x in (42, 56):
+        dashed(d, (x, 60), (x, 4), 8, 6, W - 6)
+    line(d, [(26, 32), (38, 32)], W - 8)
+    arrowhead(d, 40, 32, 0, 10)
+
+
+def station(d):
+    # two tracks of a station with a crossover between them, and the insulated joints of its track circuits
+    line(d, [(4, 22), (60, 22)], W - 6)
+    line(d, [(4, 46), (60, 46)], W - 6)
+    line(d, [(14, 46), (32, 22)], W - 6)
+    line(d, [(46, 12), (46, 32)], W - 10)
+    line(d, [(46, 36), (46, 56)], W - 10)
+
+
+def kilometrage(d):
+    # a hectometre post by the track with its digits, and the way the km rise along the track
+    rect(d, 16, 4, 36, 40, outline=True, width=W - 6, radius=3)
+    line(d, [(22, 15), (30, 15)], W - 8)
+    line(d, [(22, 28), (30, 28)], W - 8)
+    line(d, [(26, 40), (26, 48)], W - 6)
+    line(d, [(4, 56), (48, 56)], W - 6)
+    arrowhead(d, 54, 56, 0, 12)
+
+
+def more(d):
+    for x in (12, 32, 52):
+        circle(d, x, 32, 6)
+
+
+def catenary(d):
+    # a lattice pole with a swinging cantilever, the wire under its end
+    line(d, [(10, 60), (12, 6)], W - 8)
+    line(d, [(22, 60), (20, 6)], W - 8)
+    for y0 in (8, 26, 44):
+        line(d, [(11, y0), (21, y0 + 16)], W - 12)
+        line(d, [(21, y0), (11, y0 + 16)], W - 12)
+    line(d, [(22, 12), (56, 12)], W - 8)
+    line(d, [(22, 40), (54, 14)], W - 6)
+    line(d, [(46, 20), (46, 36)], W - 10)
+    line(d, [(30, 38), (62, 38)], W - 6)
+
+
 # the fields of work of the editor, in the row over the toolbar
 
 
@@ -363,11 +410,60 @@ def work_terrain(d):
         line(d, [at(u, v) for v in steps], W - 6)
 
 
+def hole(d):
+    # a hill with the portal of a tunnel cut in it (the opening is in cutouts())
+    poly(d, [(2, 58), (2, 40), (14, 22), (28, 12), (42, 16), (54, 30), (62, 42), (62, 58)])
+
+
+def grass(d):
+    # blades growing from the ground, leaning either way
+    line(d, [(4, 58), (60, 58)], W - 8)
+    for x, lean, height in ((10, -6, 30), (20, 4, 44), (31, -3, 52), (42, 7, 40), (53, -5, 30)):
+        pts = [(x + lean * t * t, 56 - height * t) for t in (i / 10 for i in range(11))]
+        line(d, pts, W - 8)
+
+
+def work_catenary(d):
+    # a pole with its cantilever and the span of the catenary going off from it: the messenger sagging, the droppers, the contact wire
+    def sag(x):
+        return 12 + 14 * (1 - ((x - 42) / 20.0) ** 2)
+    line(d, [(8, 60), (8, 6)], W - 2)
+    line(d, [(8, 12), (24, 12)], W - 8)
+    line(d, [(8, 30), (24, 12)], W - 8)
+    line(d, [(x, sag(x)) for x in range(22, 63, 2)], W - 8)
+    for x in (30, 42, 54):
+        line(d, [(x, sag(x)), (x, 36)], W - 12)
+    line(d, [(22, 38), (62, 38)], W - 6)
+    line(d, [(2, 60), (34, 60)], W - 8)
+
+
+def gantry(d):
+    # two lattice masts and the beam over the tracks, a drop with the wire under it
+    for x in (8, 56):
+        line(d, [(x, 60), (x, 8)], W - 2)
+    rect(d, 8, 8, 56, 18, outline=True, width=W - 8)
+    for x0 in (14, 26, 38):
+        line(d, [(x0, 18), (x0 + 12, 8)], W - 12)
+    line(d, [(32, 18), (32, 34)], W - 8)
+    line(d, [(18, 40), (46, 40)], W - 6)
+
+
+def wires(d):
+    # one span: the messenger sagging between its points, the droppers and the contact wire under it
+    def sag(x):
+        return 10 + 20 * (1 - ((x - 32) / 28.0) ** 2)
+    line(d, [(x, sag(x)) for x in range(4, 61, 2)], W - 6)
+    for x in (14, 23, 32, 41, 50):
+        line(d, [(x, sag(x)), (x, 46)], W - 12)
+    line(d, [(4, 48), (60, 48)], W - 4)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
-         vehicle, profile, speed, joints, infra, gauge, turntable, work_surroundings,
-         work_tracks, work_roads, work_terrain]
+         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
+         work_tracks, work_roads, work_terrain, hole, grass, catenary,
+         work_catenary, gantry, wires]
 
 
 def cutouts(name, d):
@@ -388,6 +484,9 @@ def cutouts(name, d):
         # the door and the gap between the crowns of the tree
         rect(d, 46, 46, 52, 60)
         line(d, [(9, 31), (27, 31)], 8)
+    elif name == "hole":
+        # the opening of the portal, an arch on the ground
+        poly(d, [(20, 60), (20, 42)] + [(32 + 12 * math.cos(math.radians(180 - a)), 42 - 12 * math.sin(math.radians(180 - a))) for a in range(0, 181, 10)] + [(44, 60)])
     elif name == "work_roads":
         # the windows, and the gaps around the wheels
         poly(d, [(25, 22), (31, 22), (31, 30), (19, 30)])

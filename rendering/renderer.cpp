@@ -15,15 +15,29 @@ std::unique_ptr<gfx_renderer> GfxRenderer;
 
 bool gfx_renderer_factory::register_backend(const std::string &backend, gfx_renderer_factory::create_method func)
 {
-    backends[backend] = func;
+    gfx_backend_desc desc;
+    desc.name = backend;
+    desc.create = func;
+    return register_backend(backend, desc);
+}
+
+bool gfx_renderer_factory::register_backend(const std::string &backend, gfx_backend_desc const &desc)
+{
+    backends[backend] = desc;
     return true;
+}
+
+gfx_backend_desc const *gfx_renderer_factory::backend(const std::string &name) const
+{
+    auto it = backends.find(name);
+    return (it != backends.end() ? &it->second : nullptr);
 }
 
 std::unique_ptr<gfx_renderer> gfx_renderer_factory::create(const std::string &backend)
 {
     auto it = backends.find(backend);
-    if (it != backends.end())
-        return it->second();
+    if ((it != backends.end()) && (it->second.create != nullptr))
+        return it->second.create();
 
     ErrorLog("renderer \"" + backend + "\" not found!");
     return nullptr;
@@ -39,7 +53,7 @@ gfx_renderer_factory *gfx_renderer_factory::get_instance()
 
 gfx_renderer_factory *gfx_renderer_factory::instance;
 
-material_handle gfx_renderer::Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement )
+material_handle gfx_renderer::Terrain_Material( material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement, int const HoleSamples, std::uint8_t const *Holes )
 {
     // without blending the chunk gets the material which covers the most of it
     if( Layers.empty() ) {

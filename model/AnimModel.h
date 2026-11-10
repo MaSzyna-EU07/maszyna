@@ -107,8 +107,7 @@ class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
 // opakowanie modelu, określające stan egzemplarza
 class TAnimModel : public scene::basic_node {
 
-    friend opengl_renderer;
-    friend opengl33_renderer;
+    friend opengl46_renderer;
     friend itemproperties_panel;
 
 public:
@@ -203,6 +202,7 @@ public:
     glm::vec3 m_rotationscaleangles { 0.0f, 0.0f, 0.0f };
     glm::vec3 m_rotationscalescale { 1.0f, 1.0f, 1.0f };
     bool m_rotationscalevalid { false };
+    bool m_texturesprefetched { false }; // the renderer had the data of its textures read ahead (gfx.textures.streaming)
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego
@@ -229,6 +229,10 @@ public:
     // no lights, no submodel animations, no replacable skins, no seasonal variants.
     // computed once at end of Load() so the renderer can simply test the flag.
     bool m_instanceable { false };
+    // true if the walk of the submodel tree gives the same submodel-local transforms whatever modelview it starts from
+    // (no billboards turned to the camera): an instance drawn on its own can then be culled on the gpu like the instanced
+    // ones, its tree walked from the origin of the instance, which the culling places in view
+    bool m_cameraindependent { false };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
     // helper: assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model

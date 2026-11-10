@@ -1,0 +1,36 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the drops which gathered others take their water, move to the middle of it and
+// slow down as much as the still water slows them; the header of the glass tells the glasses it's simulated. a thread per drop,
+// a row of groups per glass
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (place >= uint(WATER_DROPS)))
+		return;
+	if (place == 0u)
+		water_header[slot] = vec4(1.0, water_step.y, 0.0, 0.0);
+	uint index = slot * uint(WATER_DROPS) + place;
+	int gathered = water_gather[index * 4u];
+	if (gathered == 0)
+		return;
+	vec2 moment = vec2(float(water_gather[index * 4u + 1u]), float(water_gather[index * 4u + 2u])) * 1e-6;
+	water_gather[index * 4u] = 0;
+	water_gather[index * 4u + 1u] = 0;
+	water_gather[index * 4u + 2u] = 0;
+	water_drop_s drop = water_drops[index];
+	if (drop.place.z <= 0.0)
+		return;
+	float volume = drop.place.z + float(gathered) * 1e-4;
+	drop.place.xy += moment / volume;
+	drop.motion.xy *= drop.place.z / volume;
+	drop.place.z = volume;
+	water_drops[index] = drop;
+}

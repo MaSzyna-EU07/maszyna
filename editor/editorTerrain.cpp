@@ -10,6 +10,15 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorTerrain.hpp"
 
+#include <atomic>
+
+namespace
+{
+std::atomic<std::uint64_t> serials{0};
+}
+
+editor_terrain::editor_terrain(heightmap::chunk_ptr Data) : m_data(std::move(Data)), m_serial(++serials) {}
+
 heightmap::chunk_data &editor_terrain::edit(bool const Shape, bool const Paint)
 {
 	// a worker may still be making a mesh of the current data, so a copy is changed instead
@@ -24,7 +33,7 @@ heightmap::chunk_data &editor_terrain::edit(bool const Shape, bool const Paint)
 	return const_cast<heightmap::chunk_data &>(*m_data);
 }
 
-void editor_terrain::replace(heightmap::chunk_ptr Data, bool const Shape, bool const Paint)
+void editor_terrain::replace(heightmap::chunk_ptr Data, bool const Shape, bool const Paint, bool const Grass)
 {
 	m_data = std::move(Data);
 	m_modified = true;
@@ -32,6 +41,8 @@ void editor_terrain::replace(heightmap::chunk_ptr Data, bool const Shape, bool c
 		++m_shapeversion;
 	if (Paint)
 		++m_paintversion;
+	if (Grass)
+		++m_grassversion;
 }
 
 glm::dvec3 editor_terrain::centre() const

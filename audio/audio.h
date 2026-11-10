@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "utilities/memorystats.h"
+
 #if defined(__APPLE__) && !__has_include(<AL/al.h>)
 #include <OpenAL/al.h>
 #include <OpenAL/alc.h>
@@ -60,6 +62,9 @@ public:
     // creates AL buffers for files decoded in the background so far, or for all of them if requested
     void
         update( bool const Wait = false );
+    // the AL buffers made and the bytes of their sound data, which the AL keeps in the process, for the debug panel
+    memory_count
+        memory() const;
 
 private:
 // types

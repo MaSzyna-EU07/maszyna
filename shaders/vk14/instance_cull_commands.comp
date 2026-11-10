@@ -1,0 +1,69 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// fills in the instances of the indirect draw commands of the entries, after instance_cull.comp wrote the modelview
+// matrices of the instances drawn. one invocation per command. the commands are kept three times over: the first copy
+// draws the instances of stage 1, the second all of them, the third those of stage 2 (two phases), each from its first
+// slot in the output on. stage 0 (after stage 1): the instance count of the first copy is how far stage 1 advanced the
+// cursor of its entry, the base instance the first slot of the entry. stage 1 (after stage 2): the other two copies take
+// the command of the first one, the second with the instances of both stages, the third with the ones past the first copy
+
+#define LAYOUT_COMPUTE 1
+#include "common.glsl"
+
+layout(local_size_x = INSTANCE_COMMAND_GROUP_SIZE) in;
+
+layout(std430, set = COMPUTE_SET, binding = 0) readonly buffer instance_counter_ssbo
+{
+	uint counters[];
+};
+
+// gl::instance_draw_command, eight uints each: count, instance count, first, base vertex (base instance of an array
+// draw), base instance, entry, indexed, unused
+layout(std430, set = COMPUTE_SET, binding = 1) buffer instance_command_ssbo
+{
+	uint commands[];
+};
+
+// the parameters of the kernel (push constants)
+layout(push_constant) uniform kernel_constants
+{
+	// x: commands (of one copy), y: entries, z: stage
+	uvec4 counts;
+};
+
+void set_instances(uint field, uint count, uint base)
+{
+	commands[field + 1u] = count;
+	if (commands[field + 6u] != 0u)
+		commands[field + 4u] = base;
+	else
+		commands[field + 3u] = base;
+}
+
+void main()
+{
+	uint command = gl_GlobalInvocationID.x;
+	if (command >= counts.x)
+		return;
+
+	uint field = command * 8u;
+	uint entry = commands[field + 5u];
+	uint first = counters[INSTANCE_COUNTER_HEADER + 2u * counts.y + entry];
+	uint count = counters[INSTANCE_COUNTER_HEADER + counts.y + entry] - first;
+	if (counts.z == 0u)
+	{
+		set_instances(field, count, first);
+		return;
+	}
+
+	uint drawnfirst = commands[field + 1u];
+	uint all = (counts.x + command) * 8u;
+	uint second = (2u * counts.x + command) * 8u;
+	for (uint value = 0u; value < 8u; ++value)
+	{
+		commands[all + value] = commands[field + value];
+		commands[second + value] = commands[field + value];
+	}
+	set_instances(all, count, first);
+	set_instances(second, count - drawnfirst, first + drawnfirst);
+}

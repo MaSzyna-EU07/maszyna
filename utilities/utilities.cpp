@@ -73,6 +73,24 @@ std::filesystem::path user_config_path(const std::string &filename)
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
 
+std::filesystem::path user_cache_path(const std::string &filename)
+{
+	namespace fs = std::filesystem;
+#if defined(_WIN32)
+	if (const char *local = std::getenv("LOCALAPPDATA"))
+		return fs::path(local) / "MaSzyna" / "cache" / filename;
+#elif defined(__APPLE__)
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
+#else
+	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
+		return fs::path(cache) / "MaSzyna" / filename;
+	if (const char *home = std::getenv("HOME"))
+		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+#endif
+	return {};
+}
+
 // zwraca różnicę czasu
 // jeśli pierwsza jest aktualna, a druga rozkładowa, to ujemna oznacza opóżnienie
 // na dłuższą metę trzeba uwzględnić datę, jakby opóżnienia miały przekraczać 12h (towarowych)
@@ -125,18 +143,33 @@ bool ClearFlag(int &Flag, int const Value)
 	}
 }
 
+namespace
+{
+thread_local std::mt19937 *t_random_engine{nullptr}; // NOSONAR: randomness of the simulation, not of anything security-relevant
+
+std::mt19937 &random_engine() // NOSONAR: randomness of the simulation, not of anything security-relevant
+{
+	return t_random_engine != nullptr ? *t_random_engine : Global.random_engine;
+}
+} // namespace
+
+void set_thread_random_engine(std::mt19937 *Engine) // NOSONAR: randomness of the simulation, not of anything security-relevant
+{
+	t_random_engine = Engine;
+}
+
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)
 	std::uniform_real_distribution dist(min, max);
-	return dist(Global.random_engine);
+	return dist(random_engine());
 }
 
 int Random(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
 	std::uniform_int_distribution dist(min, max);
-	return dist(Global.random_engine);
+	return dist(random_engine());
 }
 
 std::uint64_t true_random_seed()

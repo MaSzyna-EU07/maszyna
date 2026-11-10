@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 // printf-style formatting into a string, for the messages and the data lines of the editor
@@ -23,4 +24,11 @@ std::string format(char const *Format, Args... Arguments)
 	std::snprintf(text.data(), text.size(), Format, Arguments...);
 	text.resize(static_cast<std::size_t>(length));
 	return text;
+}
+
+inline bool numeric(std::string const &Text, double &Value)
+{
+	char *end{nullptr};
+	Value = std::strtod(Text.c_str(), &end);
+	return false == Text.empty() && *end == '\0';
 }

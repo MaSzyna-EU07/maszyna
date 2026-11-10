@@ -119,7 +119,7 @@ public:
         Material( material_handle const Material ) const override {
             return ( Material > 0 && static_cast<std::size_t>( Material ) <= m_materials.size() ? m_materials[ Material - 1 ].get() : IMaterial::null_material() ); }
     // shader methods
-    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gl::program> override { throw std::runtime_error("not impl"); }
+    auto Fetch_Shader( std::string const &name ) -> std::shared_ptr<gfx::shader_program> override { throw std::runtime_error("not impl"); }
     // texture methods
     // no textures are loaded; whoever asks gets the null texture
     texture_handle

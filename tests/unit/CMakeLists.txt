@@ -21,6 +21,16 @@ add_executable(${UNIT_TESTS_NAME}
 	invariants.cpp
 	figures.cpp
 	engine_stubs.cpp
+	editor_stubs.cpp
+	# the geometry of the lines the track editor designs, standing on its own
+	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
+	# and the heights of the tracks laid
+	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
+	# and the switches laid into the curves
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	# which textures the shadow maps draw without the alpha test
+	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

@@ -345,6 +345,10 @@ private:
 
 
 
+// changes whenever a node is shown or hidden, or a model instance stops being drawn along with other instances of its
+// model. copies of these states (instance records of the renderer) are made anew once it changes
+inline unsigned int node_state_version { 1 };
+
 // base interface for nodes which can be actvated in scenario editor
 class basic_node {
 
@@ -409,6 +413,7 @@ public:
 	bool m_dirty { false };
     bool m_layerhidden { false }; // the node was visible until the editor hid its scenery layer, or the include which defines it
     bool m_preview { false }; // the node was made by the editor to show an include it placed or changed, and is replaced when the include changes
+    bool m_catenary { false }; // a part the catenary assembled (world/catenary_scene.cpp): it's changed by the catenary tool, not edited as a node
     scene::layer_handle m_layer { null_handle }; // scenery layer this node belongs to, if any
     // include of an *.inc template which defines the node; 0 if the node is defined directly by a scenery layer file.
     // such nodes can't be rewritten one by one on scenery save. set only for scenery opened for editing
@@ -460,6 +465,9 @@ basic_node::location() {
 inline
 void
 basic_node::visible( bool const Visible ) {
+    if( Visible != m_visible ) {
+        ++node_state_version;
+    }
     m_visible = Visible;
 }
 

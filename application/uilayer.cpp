@@ -126,6 +126,14 @@ bool ui_layer::char_callback(unsigned int c)
 bool ui_layer::scroll_callback(double xoffset, double yoffset)
 {
 	ImGui_ImplGlfw_ScrollCallback(m_window, xoffset, yoffset);
+	// a line a second in the log of where a scroll went, for a wheel or a touchpad that seems to do nothing
+	static double logged{-10.0};
+	if (auto const now{glfwGetTime()}; now - logged > 1.0)
+	{
+		logged = now;
+		auto const *hovered{ImGui::GetCurrentContext() != nullptr ? ImGui::GetCurrentContext()->HoveredWindow : nullptr};
+		WriteLog("scroll " + std::to_string(xoffset) + " " + std::to_string(yoffset) + ", taken by the ui: " + (m_imguiio->WantCaptureMouse ? "yes" : "no") + ", over: " + (hovered != nullptr ? hovered->Name : "the view"));
+	}
 	return m_imguiio->WantCaptureMouse;
 }
 
@@ -392,7 +400,11 @@ bool ui_layer::init(GLFWwindow *Window)
 
 	imgui_style();
 
-    ImGui_ImplGlfw_InitForOpenGL(m_window, false);
+    // a window without an opengl context belongs to the vulkan renderer
+    if (glfwGetWindowAttrib(m_window, GLFW_CLIENT_API) == GLFW_NO_API)
+        ImGui_ImplGlfw_InitForVulkan(m_window, false);
+    else
+        ImGui_ImplGlfw_InitForOpenGL(m_window, false);
 
     if (!GfxRenderer->GetImguiRenderer() || !GfxRenderer->GetImguiRenderer()->Init())
 	  {
@@ -430,7 +442,11 @@ void ui_layer::shutdown()
 {
 	ImGui::EndFrame();
 
-	GfxRenderer->GetImguiRenderer()->Shutdown();
+	// the vulkan renderer is gone by now (its backend of imgui went with it)
+	if (auto *renderer{GfxRenderer->GetImguiRenderer()})
+	{
+		renderer->Shutdown();
+	}
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 }
@@ -709,6 +725,7 @@ void ui_layer::render_menu_contents()
 
 		if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
 			Application.queue_screenshot();
+		render_tools_menu();
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Windows")))

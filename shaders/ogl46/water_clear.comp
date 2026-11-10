@@ -1,0 +1,18 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the counts of the cells of the grids emptied before the drops are put in them
+// (water_grid.comp). a thread per cell, a row of groups per glass
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint cell = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (cell >= uint(WATER_GRID * WATER_GRID)))
+		return;
+	water_cells[water_grid_base(slot) + cell] = 0u;
+}

@@ -28,6 +28,9 @@ template <typename T> constexpr T sq(T v)
 // returns the per-user config path for `filename` (platform-specific dir),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
+// the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
+// %LOCALAPPDATA%\MaSzyna\cache, ~/Library/Caches/MaSzyna, $XDG_CACHE_HOME/MaSzyna or ~/.cache/MaSzyna; empty as user_config_path
+std::filesystem::path user_cache_path(const std::string &filename);
 
 // TODO: Shouldn't this be in globals?
 namespace paths
@@ -62,6 +65,9 @@ inline long Round(double const f)
 
 double Random(double a, double b);
 int Random(int min, int max);
+// the engine Random() draws from in the calling thread, in place of Global.random_engine, or none for that one again. the threads
+// of worker_pool have engines of their own: the one of the simulation can't be shared between threads
+void set_thread_random_engine(std::mt19937 *Engine); // NOSONAR: randomness of the simulation, not of anything security-relevant
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.

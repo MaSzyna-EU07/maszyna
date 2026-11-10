@@ -25,6 +25,9 @@ public:
 	float getAngle() const;
     // return current hour angle
     double getHourAngle() const;
+    // local mean sidereal time, degrees, and the latitude of the observer, degrees north: what turns the stars
+    double getSiderealTime() const { return m_observer.lmst; }
+    double getLatitude() const { return m_observer.latitude; }
     // returns current intensity of the sun
 	float getIntensity();
     // sets current time, overriding one acquired from the system clock

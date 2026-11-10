@@ -1,0 +1,55 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): every drop put in the cells of the grid it reaches into, as far as the glasses
+// draw it (a sliding one is drawn out behind itself) and as far as the drops it may flow together with are. a thread per drop,
+// a row of groups per glass
+
+// none of the pass set: everything the kernel reads is pushed with its dispatch (set COMPUTE_SET, water_sim.glsl), so it runs
+// before the passes of the frame set theirs up
+#define LAYOUT_UI 1
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (place >= uint(WATER_DROPS)))
+		return;
+	water_drop_s drop = water_drops[slot * uint(WATER_DROPS) + place];
+	if (drop.place.z <= 0.0)
+		return;
+	water_frame_s frame = water_frame(slot, drop.place.xy);
+	float lu = length(frame.tu);
+	float lv = length(frame.tv);
+	if ((lu < 1e-6) || (lv < 1e-6))
+		return;
+	float reach;
+	if (drop.motion.w < 1.0)
+	{
+		reach = 0.6 * water_flake(drop.place.z);
+	}
+	else
+	{
+		bool sliding = length(frame.tu * drop.motion.x + frame.tv * drop.motion.y) > 0.002;
+		reach = water_radius(drop.place.z) * (sliding ? 3.6 : 2.2);
+	}
+	vec2 extent = vec2(reach / lu, reach / lv);
+	ivec2 lower = clamp(ivec2(floor((drop.place.xy - extent) * float(WATER_GRID))), ivec2(0), ivec2(WATER_GRID - 1));
+	ivec2 upper = clamp(ivec2(floor((drop.place.xy + extent) * float(WATER_GRID))), ivec2(0), ivec2(WATER_GRID - 1));
+	// a drop can't be larger than this many cells, it would only flood the lists
+	upper = min(upper, lower + ivec2(6));
+	uint base = water_grid_base(slot);
+	for (int y = lower.y; y <= upper.y; ++y)
+	{
+		for (int x = lower.x; x <= upper.x; ++x)
+		{
+			uint cell = uint(y * WATER_GRID + x);
+			uint count = atomicAdd(water_cells[base + cell], 1u);
+			if (count < uint(WATER_CELL_DROPS))
+				water_cells[base + uint(WATER_GRID * WATER_GRID) + cell * uint(WATER_CELL_DROPS) + count] = place;
+		}
+	}
+}

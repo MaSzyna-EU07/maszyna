@@ -70,7 +70,7 @@ jobs:
       pull-requests: read # verify PR head sha via the API
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
-      SONAR_EXCLUSIONS: betterRenderer/**,ref/**,imgui/**,stb/**,build/**,bw-output/**
+      SONAR_EXCLUSIONS: ref/**,imgui/**,stb/**,build/**,bw-output/**
       SONAR_SCANNER_JAVA_OPTS: -Xmx5g
     steps:
       - name: Post pending status

@@ -29,6 +29,19 @@ void gl::cubemap::alloc(GLint format, int width, int height, GLenum components, 
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
+void gl::cubemap::alloc_levels(GLenum format, int size, int levels) const
+{
+	glBindTexture(GL_TEXTURE_CUBE_MAP, *this);
+	glTexStorage2D(GL_TEXTURE_CUBE_MAP, levels, format, size, size);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAX_LEVEL, levels - 1);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+}
+
 void gl::cubemap::bind(int unit) const
 {
     glActiveTexture(unit);

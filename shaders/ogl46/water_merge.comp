@@ -1,0 +1,63 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the drops which touch flow together, the way surface tension pulls them. every
+// drop finds the largest of the drops it touches which are larger than itself (by the cell of the grid its middle is in, which
+// lists every drop reaching into it); the water goes over to that one in water_gather.comp. flakes of snow don't flow, but the
+// ones a blade pushes pile up. a thread per drop, a row of groups per glass
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+void main()
+{
+	uint slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_slots[slot].z < 0.5) || (place >= uint(WATER_DROPS)))
+		return;
+	uint index = slot * uint(WATER_DROPS) + place;
+	water_drop_s drop = water_drops[index];
+	water_target[index] = place;
+	if (drop.place.z <= 0.0)
+		return;
+	bool flake = drop.motion.w < 1.0;
+	bool carried = ((water_state[index] >> 1u) & 7u) != 0u;
+	if (flake && (false == carried))
+		return;
+	water_frame_s frame = water_frame(slot, drop.place.xy);
+	float size = flake ? 0.4 * water_flake(drop.place.z) : water_radius(drop.place.z);
+	uint cell = water_cell(drop.place.xy);
+	uint base = water_grid_base(slot);
+	uint count = min(water_cells[base + cell], uint(WATER_CELL_DROPS));
+	uint best = place;
+	float most = drop.place.z;
+	for (uint k = 0u; k < count; ++k)
+	{
+		uint other = water_cells[base + uint(WATER_GRID * WATER_GRID) + cell * uint(WATER_CELL_DROPS) + k];
+		if (other == place)
+			continue;
+		uint otherindex = slot * uint(WATER_DROPS) + other;
+		water_drop_s neighbour = water_drops[otherindex];
+		float volume = neighbour.place.z;
+		if ((volume < most) || ((volume == most) && (other > best)) || (volume <= 0.0))
+			continue;
+		if ((volume == drop.place.z) && (other > place))
+			continue;
+		bool otherflake = neighbour.motion.w < 1.0;
+		if (otherflake != flake)
+			continue;
+		// the snow a blade pushes piles up into lumps a few centimetres across, not more
+		if (otherflake && ((((water_state[otherindex] >> 1u) & 7u) == 0u) || (volume + drop.place.z > 20.0)))
+			continue;
+		vec2 step = neighbour.place.xy - drop.place.xy;
+		float apart = length(frame.tu * step.x + frame.tv * step.y);
+		float reach = size + (otherflake ? 0.4 * water_flake(volume) : water_radius(volume));
+		if (apart < 0.92 * reach)
+		{
+			best = other;
+			most = volume;
+		}
+	}
+	water_target[index] = best;
+}

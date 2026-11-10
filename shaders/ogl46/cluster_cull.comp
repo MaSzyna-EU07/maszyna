@@ -1,0 +1,157 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// assigns the lights to the light clusters, see gl/cluster_grid.h
+// one invocation per cluster: tests every light of light_ssbo (the sun, slot 0, is handled apart from the clusters)
+// against the bounding box of the cluster in view space, and writes the indices of the lights which reach it.
+// run every frame after the lights were updated, for the grid of the pass about to be drawn
+
+#include "common.glsl"
+
+layout(local_size_x = CLUSTER_CULL_GROUP_SIZE) in;
+
+// a light is taken to end where its brightest possible contribution drops under this, a fraction of
+// what the display can tell apart. there is no other limit: the 1 km filter on the cpu side is about the distance of a light
+// from the camera, not about how far it reaches, and the shading lights a surface at any distance
+const float MIN_CONTRIBUTION = 1.0 / 1024.0;
+// reach of a light whose contribution does not fall off with the distance; its square still fits in a float
+const float UNLIMITED_RANGE = 1.0e18;
+// the boxes and the light data are floats: planes of the headlight projection let this much (in meters) of a box through
+const float PLANE_MARGIN = 0.05;
+
+// brightest value the light adds to a surface it hits, as the shading computes it
+float light_peak(light_s light)
+{
+	float peak = max(light.color.r, max(light.color.g, light.color.b)) * light.intensity;
+	if (light.type == LIGHT_HEADLIGHTS)
+		// weights are the state of the individual lamps and the beam texture, which is not brighter than 1, picks from them
+		return peak * max(light.headlight_weights.r, max(light.headlight_weights.g, light.headlight_weights.b));
+	return peak * (1.0 + light.ambient);
+}
+
+// distance from the light at which its contribution falls under MIN_CONTRIBUTION, 0 for a light which has none
+float light_range(light_s light)
+{
+	float peak = light_peak(light);
+	if (!(peak > MIN_CONTRIBUTION))
+		return 0.0;
+	// attenuation which the contribution can drop to without being lost: 1 / k
+	float k = peak / MIN_CONTRIBUTION;
+
+	if (light.type == LIGHT_HEADLIGHTS)
+	{
+		// 1 + linear * d + quadratic * d^2 <= k, the positive root written the way which has no cancellation for a small quadratic
+		float a = light.quadratic;
+		float b = light.linear;
+		float c = 1.0 - k;
+		float denominator = b + sqrt(b * b - 4.0 * a * c);
+		return (denominator > 1e-12) ? min(-2.0 * c / denominator, UNLIMITED_RANGE) : UNLIMITED_RANGE;
+	}
+	// point and spot lights fall off with the square of the distance; the shading ends them at 1 / sqrt(quadratic) where it is set
+	float range = sqrt(k);
+	return (light.quadratic > 0.0) ? min(range, inversesqrt(light.quadratic)) : range;
+}
+
+bool sphere_touches_box(vec3 center, float radius, vec3 lower, vec3 upper)
+{
+	vec3 offset = center - clamp(center, lower, upper);
+	return dot(offset, offset) <= radius * radius;
+}
+
+// whether any part of the box, given by its center and half extents, is on the positive side of the plane
+bool box_reaches_plane(vec4 plane, vec3 center, vec3 extent)
+{
+	return dot(plane.xyz, center) + plane.w + dot(abs(plane.xyz), extent) + PLANE_MARGIN * length(plane.xyz) >= 0.0;
+}
+
+// planes bounding the beam of a headlight: the projection takes a view space position to the texture coordinates
+// of the beam, and the beam is where those fall in 0..1 and the position is in front of the projector. clip z of that
+// projection is a constant (reverse z, no far plane), so only the four sides and the near plane are real planes
+bool box_in_headlight_beam(mat4 projection, vec3 center, vec3 extent)
+{
+	vec4 row_x = vec4(projection[0][0], projection[1][0], projection[2][0], projection[3][0]);
+	vec4 row_y = vec4(projection[0][1], projection[1][1], projection[2][1], projection[3][1]);
+	vec4 row_z = vec4(projection[0][2], projection[1][2], projection[2][2], projection[3][2]);
+	vec4 row_w = vec4(projection[0][3], projection[1][3], projection[2][3], projection[3][3]);
+
+	return box_reaches_plane(row_x, center, extent)
+		&& box_reaches_plane(row_w - row_x, center, extent)
+		&& box_reaches_plane(row_y, center, extent)
+		&& box_reaches_plane(row_w - row_y, center, extent)
+		&& box_reaches_plane(row_z, center, extent)
+		&& box_reaches_plane(row_w - row_z, center, extent);
+}
+
+// whether the sphere touches the infinite cone with the apex at the origin, the unit axis and the cosine of the half angle
+bool sphere_touches_cone(vec3 center, float radius, vec3 axis, float cosine)
+{
+	float sine = max(sqrt(max(1.0 - cosine * cosine, 0.0)), 1e-4);
+	float along = dot(center, axis);
+	float across = sqrt(max(dot(center, center) - along * along, 0.0));
+	// distance to the boundary ray if the closest point of the cone is on it, and to the apex otherwise
+	float distance_to_cone = (along * cosine + across * sine > 0.0) ? across * cosine - along * sine : length(center);
+	return distance_to_cone <= radius;
+}
+
+bool light_reaches_box(light_s light, float range, vec3 lower, vec3 upper)
+{
+	vec3 center = 0.5 * (lower + upper);
+	vec3 extent = 0.5 * (upper - lower);
+
+	if (light.type == LIGHT_DIR)
+		return true;
+
+	if (!sphere_touches_box(light.pos, range, lower, upper))
+		return false;
+
+	if (light.type == LIGHT_HEADLIGHTS)
+		return box_in_headlight_beam(light.headlight_projection, center, extent);
+
+	if ((light.type == LIGHT_SPOT) && (light.out_cutoff > 0.0))
+		// the cone is tested against the sphere around the box, which lets some of the corners through. a cone wider than
+		// a half of the space is taken as the whole sphere
+		return sphere_touches_cone(center - light.pos, length(extent), normalize(light.dir), light.out_cutoff);
+
+	return true;
+}
+
+void main()
+{
+	uint index = gl_GlobalInvocationID.x;
+	if (index >= uint(CLUSTER_COUNT))
+		return;
+
+	vec3 lower = cluster_aabbs[index].lower.xyz;
+	vec3 upper = cluster_aabbs[index].upper.xyz;
+
+	// the lights are in the order of their importance, so when a cluster is full the least important are the ones left out
+	uint found[MAX_LIGHTS_PER_CLUSTER];
+	uint found_count = 0U;
+	uint dropped = 0U;
+
+	uint lights_end = min(lights_total, uint(lights.length()));
+	for (uint i = 1U; i < lights_end; ++i)
+	{
+		float range = light_range(lights[i]);
+		if (range <= 0.0 && lights[i].type != LIGHT_DIR)
+			continue;
+		if (!light_reaches_box(lights[i], range, lower, upper))
+			continue;
+
+		if (found_count < uint(MAX_LIGHTS_PER_CLUSTER))
+			found[found_count++] = i;
+		else
+			++dropped;
+	}
+
+	uint offset = 0U;
+	if (found_count > 0U)
+	{
+		offset = atomicAdd(cluster_index_count, found_count);
+		for (uint k = 0U; k < found_count; ++k)
+			cluster_light_indices[offset + k] = found[k];
+	}
+	if (dropped > 0U)
+		atomicAdd(cluster_overflow_count, dropped);
+
+	cluster_ranges[index] = cluster_range_s(offset, found_count);
+}

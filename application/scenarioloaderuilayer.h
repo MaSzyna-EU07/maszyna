@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 class scenarioloader_ui : public ui_layer {
 	int m_gradient_overlay_width;
 	int m_gradient_overlay_height;
-	GLuint m_gradient_overlay_tex;
+	std::uint64_t m_gradient_overlay_tex; // imgui_renderer image
 	deferred_image m_loading_wheel_frames[60];
     std::vector<std::string> m_trivia;
 public:

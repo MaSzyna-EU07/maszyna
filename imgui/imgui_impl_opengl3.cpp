@@ -533,7 +533,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 
     // Backup GL state
     GLboolean last_enable_srgb = GL_FALSE;
-    if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+    if (!Global.gfx_shadergamma)
     {
         last_enable_srgb = glIsEnabled(GL_FRAMEBUFFER_SRGB);
         glEnable(GL_FRAMEBUFFER_SRGB);
@@ -702,7 +702,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 
     glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
     glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
-    if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+    if (!Global.gfx_shadergamma)
     {
         if (last_enable_srgb) glEnable(GL_FRAMEBUFFER_SRGB); else glDisable(GL_FRAMEBUFFER_SRGB);
     }
