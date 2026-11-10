@@ -20,6 +20,50 @@ bool map_has_vertex_budget(ImDrawList const *draw_list, int const required = 12)
 	return draw_list->VtxBuffer.Size + required < map_vertex_limit;
 }
 
+glm::dvec2 map_signal_direction(map::semaphore const &semaphore)
+{
+	TTrack *nearest_track = nullptr;
+	double nearest_distance2 = std::numeric_limits<double>::max();
+	for (TTrack *track : simulation::Paths.sequence())
+	{
+		if (!track || !track->Segment || (track->iCategoryFlag & 15) != 1)
+			continue;
+
+		glm::dvec3 const nearest_point = track->Segment->get_nearest_point(semaphore.location);
+		glm::dvec2 const offset(semaphore.location.x - nearest_point.x, semaphore.location.z - nearest_point.z);
+		double const distance2 = glm::dot(offset, offset);
+		if (distance2 < nearest_distance2)
+		{
+			nearest_distance2 = distance2;
+			nearest_track = track;
+		}
+	}
+
+	if (!nearest_track || !nearest_track->Segment)
+		return glm::dvec2(1.0, 0.0);
+
+	double const path_length = nearest_track->Segment->GetLength();
+	if (!(path_length > 0.0) || !std::isfinite(path_length))
+		return glm::dvec2(1.0, 0.0);
+
+	double const segment_distance = nearest_track->Segment->find_nearest_point(semaphore.location) * path_length;
+	glm::dvec3 const track_direction = nearest_track->Segment->GetDirection(segment_distance);
+	glm::dvec2 direction(track_direction.x, track_direction.z);
+	if (glm::length2(direction) <= 1e-8)
+		return glm::dvec2(1.0, 0.0);
+
+	direction = glm::normalize(direction);
+	if (!semaphore.models.empty())
+	{
+		float const yaw = glm::radians(semaphore.models.front()->Angles().y);
+		glm::dvec2 const signal_facing(-std::sin(yaw), -std::cos(yaw));
+		if (glm::dot(direction, signal_facing) < 0.0)
+			direction = -direction;
+	}
+
+	return direction;
+}
+
 bool clip_map_line(ImVec2 &a, ImVec2 &b, ImVec2 origin, glm::vec2 surface_size)
 {
 	float const left = origin.x;
@@ -376,6 +420,98 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 	{
 		if (!map_has_vertex_budget(draw_list, 16))
 			break;
+
+		if (auto sem = std::dynamic_pointer_cast<map::semaphore>(object))
+		{
+			ImVec2 const center = to_screen(sem->location);
+			glm::dvec2 const world_direction = map_signal_direction(*sem);
+			glm::vec4 const transformed_direction =
+				transform * glm::vec4(static_cast<float>(world_direction.x), 0.0f,
+				                     static_cast<float>(world_direction.y), 0.0f);
+			glm::vec2 dir(
+				transformed_direction.x * surface_size.x * 0.5f,
+				-transformed_direction.z * surface_size.y * 0.5f);
+			if (glm::length2(dir) <= 1e-8f || !std::isfinite(glm::length2(dir)))
+				dir = glm::vec2(1.0f, 0.0f);
+			else
+				dir = glm::normalize(dir);
+			glm::vec2 const normal(-dir.y, dir.x);
+			float const lamp_spacing = 7.0f;
+			std::vector<ImVec2> lamp_positions;
+			std::vector<ImU32> lamp_colors;
+			bool found_lamp = false;
+			for (auto *model : sem->models)
+			{
+				for (int i = 0; i < iMaxNumLights; ++i)
+				{
+					auto state = model->LightGet(i);
+					if (!state)
+						continue;
+					if (std::get<0>(*state) < 0.0f)
+						continue;
+
+					glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
+					glm::vec3 const effective_color = base_color * std::get<1>(*state);
+					lamp_colors.push_back(IM_COL32(
+						static_cast<int>(std::clamp(effective_color.x * 255.0f, 0.0f, 255.0f)),
+						static_cast<int>(std::clamp(effective_color.y * 255.0f, 0.0f, 255.0f)),
+						static_cast<int>(std::clamp(effective_color.z * 255.0f, 0.0f, 255.0f)),
+						255));
+					lamp_positions.push_back(center);
+					found_lamp = true;
+				}
+			}
+
+			if (!found_lamp)
+			{
+				draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
+				draw_list->AddText(ImVec2(center.x + 8.0f, center.y - 10.0f), IM_COL32(245, 245, 245, 255), sem->name.c_str());
+				continue;
+			}
+
+			for (std::size_t idx = 0; idx < lamp_positions.size(); ++idx)
+			{
+				float const offset = (static_cast<float>(lamp_positions.size()) - 1.0f) * 0.5f - static_cast<float>(idx);
+				glm::vec2 const delta = dir * offset * lamp_spacing + normal * 8.0f;
+				lamp_positions[idx] = ImVec2(center.x + delta.x, center.y + delta.y);
+			}
+
+			ImVec2 const head_center(center.x + normal.x * 8.0f, center.y + normal.y * 8.0f);
+			float const head_half_length =
+				std::max(5.0f, (static_cast<float>(lamp_positions.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
+			float constexpr head_half_width = 5.0f;
+			ImVec2 const head_front_left(
+				head_center.x + dir.x * head_half_length + normal.x * head_half_width,
+				head_center.y + dir.y * head_half_length + normal.y * head_half_width);
+			ImVec2 const head_front_right(
+				head_center.x + dir.x * head_half_length - normal.x * head_half_width,
+				head_center.y + dir.y * head_half_length - normal.y * head_half_width);
+			ImVec2 const head_rear_right(
+				head_center.x - dir.x * head_half_length - normal.x * head_half_width,
+				head_center.y - dir.y * head_half_length - normal.y * head_half_width);
+			ImVec2 const head_rear_left(
+				head_center.x - dir.x * head_half_length + normal.x * head_half_width,
+				head_center.y - dir.y * head_half_length + normal.y * head_half_width);
+			draw_list->AddLine(
+				center,
+				head_center,
+				IM_COL32(200, 200, 200, 255),
+				2.0f);
+			draw_list->AddQuadFilled(
+				head_front_left, head_front_right, head_rear_right, head_rear_left,
+				IM_COL32(35, 40, 45, 220));
+			for (std::size_t idx = 0; idx < lamp_positions.size(); ++idx)
+			{
+				draw_list->AddCircleFilled(lamp_positions[idx], 3.6f, lamp_colors[idx]);
+				draw_list->AddCircle(lamp_positions[idx], 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
+			}
+			draw_list->AddText(
+				ImVec2(head_center.x + 10.0f, head_center.y - 12.0f),
+				IM_COL32(230, 240, 255, 255),
+				sem->name.c_str());
+			continue;
+		}
+
 		ImU32 color = IM_COL32(255, 220, 70, 255);
 		if (std::dynamic_pointer_cast<map::launcher>(object))
 			color = IM_COL32(255, 150, 50, 255);
@@ -652,7 +788,7 @@ void ui::map_panel::render_contents()
 	if (base_pixels_per_meter > 0.0f && std::isfinite(base_pixels_per_meter))
 	{
 		float const min_zoom = (110.0f / 4000.0f) / base_pixels_per_meter;
-		float const max_zoom = (110.0f / 25.0f) / base_pixels_per_meter;
+		float const max_zoom = (110.0f / 12.5f) / base_pixels_per_meter;
 		float const previous_zoom = zoom;
 		zoom = std::clamp(zoom, min_zoom, max_zoom);
 		if (zoom_in)
@@ -813,7 +949,11 @@ void ui::map_panel::render_contents()
 		}
 		else
 		{
-			map::sorted_object_list objects = map::Objects.find_in_range(glm::vec3(world_pos.x, NAN, world_pos.z), 0.03f / zoom);
+			float const map_pick_radius = std::max(
+				0.03f / zoom,
+				24.0f / (std::min(surface_size.x, surface_size.y) * zoom));
+			map::sorted_object_list objects =
+				map::Objects.find_in_range(glm::vec3(world_pos.x, NAN, world_pos.z), map_pick_radius);
 
 			if (ImGui::IsMouseClicked(1))
 			{
