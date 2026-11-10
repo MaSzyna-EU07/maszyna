@@ -2836,6 +2836,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static std::string signal_plate(std::string const &Name, std::string const &Look);
 	// true for a plate signal_plate() gives, of any name and look
 	static bool signal_plate_drawn(std::string const &Plate);
+	static bool signal_plate_blank(std::string const &Name, std::string const &Plate);
+	static std::string signal_plate_text(std::string const &Name);
 	// the look a drawn plate is drawn in
 	static std::string signal_plate_look(std::string const &Plate);
 	void signal_select(scene::instance_handle const Instance);

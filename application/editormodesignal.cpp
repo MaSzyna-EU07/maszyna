@@ -2490,10 +2490,31 @@ bool editor_mode::signal_plate_drawn(std::string const &Plate)
 	return Plate.starts_with(kDrawnPlate);
 }
 
+bool editor_mode::signal_plate_blank(std::string const &Name, std::string const &Plate)
+{
+	// what the editor gave before the plates were drawn: no plate, or the texture named like the signal, bpd_tm3 by tm3 too
+	auto const plate{ToLower(Plate)};
+	return Plate.empty() || Plate == "none" || Plate == "0_nothing" || plate == ToLower(Name) || plate == ToLower(signal_plate_text(Name));
+}
+
+std::string editor_mode::signal_plate_text(std::string const &Name)
+{
+	// the station signalling names its signals in small letters after the stem, bpd_tm3: the plate says Tm3, as its schematic does
+	auto text{Name.substr(Name.rfind('_') + 1)};
+	if (std::any_of(text.begin(), text.end(), [](char const Letter) { return std::isupper(static_cast<unsigned char>(Letter)) != 0; }))
+		return text;
+	std::transform(text.begin(), text.end(), text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	if (text.size() > 2 && text[0] == 'T' && (text[1] == 'M' || text[1] == 'O'))
+		text[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[1])));
+	return text;
+}
+
 std::string editor_mode::signal_plate_look(std::string const &Plate)
 {
 	auto const begin{Plate.find("look=")};
-	if (false == signal_plate_drawn(Plate) || begin == std::string::npos)
+	if (false == signal_plate_drawn(Plate))
+		return kPlateLooks[std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)]; // a plate not drawn yet takes the one set
+	if (begin == std::string::npos)
 		return kPlateLooks[1]; // what the script draws when it's not told
 	auto const end{Plate.find('&', begin)};
 	return Plate.substr(begin + 5, end == std::string::npos ? std::string::npos : end - begin - 5);
@@ -2632,10 +2653,9 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			auto const named{ToLower(values[0])};
 			values[0] = rename.name + (temporary ? "~" : "");
 			// a plate picked by hand stays; the drawn one, none, or the texture named like the signal take the new name, in the look
-			// the plate had
-			if (item->plate && values.size() > 5 && false == rename.plate.empty())
-				if (auto const &had{values[5]}; signal_plate_drawn(had) || had.empty() || had == "none" || had == "0_nothing" || ToLower(had) == named)
-					values[5] = signal_plate(rename.plate, signal_plate_look(had));
+			// the plate had. A plate of no text asked for is one of a signal left for removal
+			if (item->plate && values.size() > 5 && false == rename.plate.empty() && (signal_plate_drawn(values[5]) || signal_plate_blank(named, values[5])))
+				values[5] = rename.plate == "0_nothing" ? rename.plate : signal_plate(rename.plate, signal_plate_look(values[5]));
 			if (item->linked && values.size() > 6 && false == rename.linked.empty())
 				values[6] = rename.linked;
 			auto const read_after{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
@@ -2707,7 +2727,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			if (id == 7 && variant->linked)
 				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
 			if (value.empty() && id == 6 && variant->plate)
-				value = signal_plate(values[0].substr(values[0].rfind('_') + 1), kPlateLooks[std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)]);
+				value = signal_plate(signal_plate_text(values[0]), kPlateLooks[std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)]);
 			if (value.empty())
 				value = info.parameter(id).value.empty() ? std::string{"none"} : info.parameter(id).value;
 			// as raised over where the template stands by default as it was over where the one it had does
