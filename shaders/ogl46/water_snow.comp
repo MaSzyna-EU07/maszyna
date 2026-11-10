@@ -116,6 +116,18 @@ ivec2 snow_blade_way(ivec2 texel, int blade)
 	return ivec2(round(way));
 }
 
+// whether no blade goes over the texel now: the snow piled there may slip onto its neighbours (in a sweep of a working blade
+// the snow it pushes would slip behind it, a stripe of snow left on the wiped glass for every step)
+bool snow_unswept(ivec2 texel)
+{
+	for (int blade = 0; blade < 4; ++blade)
+	{
+		if ((water_blades_now[blade] >= 0.0) && (water_blades_now[blade] != water_blades_before[blade]) && (snow_blade(texel, blade) > 0.001))
+			return false;
+	}
+	return true;
+}
+
 // the frame of the glass at a texel, unfiltered
 water_frame_s snow_frame(ivec2 texel)
 {
@@ -168,6 +180,7 @@ vec4 snow_move(ivec2 texel, vec4 state, float seconds)
 	float snow = state.x * (1.0 - snowout.x - snowout.y);
 	float water = state.y * (1.0 - waterout.x - waterout.y);
 	float packed = state.z * snow;
+	bool unswept = snow_unswept(texel);
 	float slip = min(SNOW_SLIP * seconds, 0.2);
 	const ivec2 sides[4] = ivec2[4](ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1));
 	for (int k = 0; k < 4; ++k)
@@ -176,13 +189,14 @@ vec4 snow_move(ivec2 texel, vec4 state, float seconds)
 		ivec2 other = texel + side;
 		bool glass = snow_on_glass(other);
 		vec4 neighbour = glass ? water_snow_texel(snow_slot, snow_from, other) : vec4(0.0);
-		// slipping onto the neighbour (off the glass: falling off) and from it
-		float away = slip * max(state.x - neighbour.x - SNOW_REPOSE, 0.0);
+		// slipping onto the neighbour (off the glass: falling off) and from it, where no blade goes over either now
+		bool slips = unswept && snow_unswept(other);
+		float away = slips ? slip * max(state.x - neighbour.x - SNOW_REPOSE, 0.0) : 0.0;
 		snow -= away;
 		packed -= away * state.z;
 		if (false == glass)
 			continue;
-		float coming = slip * max(neighbour.x - state.x - SNOW_REPOSE, 0.0);
+		float coming = slips ? slip * max(neighbour.x - state.x - SNOW_REPOSE, 0.0) : 0.0;
 		// what the motion of the neighbour brings: it goes this way along the axis of the side
 		vec4 itsmotion = snow_motion(other, neighbour);
 		vec2 itssnow = snow_out(itsmotion.xy, seconds);
