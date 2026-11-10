@@ -26,7 +26,7 @@ bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
 	       point.y >= minimum.y && point.y <= maximum.y;
 }
 
-glm::dvec2 map_signal_direction(map::semaphore const &semaphore)
+glm::dvec2 map_signal_direction(glm::dvec3 const &position, float const facing_angle)
 {
 	TTrack *nearest_track = nullptr;
 	double nearest_distance2 = std::numeric_limits<double>::max();
@@ -35,8 +35,8 @@ glm::dvec2 map_signal_direction(map::semaphore const &semaphore)
 		if (!track || !track->Segment || (track->iCategoryFlag & 15) != 1)
 			continue;
 
-		glm::dvec3 const nearest_point = track->Segment->get_nearest_point(semaphore.location);
-		glm::dvec2 const offset(semaphore.location.x - nearest_point.x, semaphore.location.z - nearest_point.z);
+		glm::dvec3 const nearest_point = track->Segment->get_nearest_point(position);
+		glm::dvec2 const offset(position.x - nearest_point.x, position.z - nearest_point.z);
 		double const distance2 = glm::dot(offset, offset);
 		if (distance2 < nearest_distance2)
 		{
@@ -52,20 +52,17 @@ glm::dvec2 map_signal_direction(map::semaphore const &semaphore)
 	if (!(path_length > 0.0) || !std::isfinite(path_length))
 		return glm::dvec2(1.0, 0.0);
 
-	double const segment_distance = nearest_track->Segment->find_nearest_point(semaphore.location) * path_length;
+	double const segment_distance = nearest_track->Segment->find_nearest_point(position) * path_length;
 	glm::dvec3 const track_direction = nearest_track->Segment->GetDirection(segment_distance);
 	glm::dvec2 direction(track_direction.x, track_direction.z);
 	if (glm::length2(direction) <= 1e-8)
 		return glm::dvec2(1.0, 0.0);
 
 	direction = glm::normalize(direction);
-	if (!semaphore.models.empty())
-	{
-		float const yaw = glm::radians(semaphore.models.front()->Angles().y);
-		glm::dvec2 const signal_facing(-std::sin(yaw), -std::cos(yaw));
-		if (glm::dot(direction, signal_facing) < 0.0)
-			direction = -direction;
-	}
+	float const yaw = glm::radians(facing_angle);
+	glm::dvec2 const signal_facing(-std::sin(yaw), -std::cos(yaw));
+	if (glm::dot(direction, signal_facing) < 0.0)
+		direction = -direction;
 
 	return direction;
 }
@@ -434,124 +431,124 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 
 		if (auto sem = std::dynamic_pointer_cast<map::semaphore>(object))
 		{
-			ImVec2 const center = to_screen(sem->location);
-			glm::dvec2 const world_direction = map_signal_direction(*sem);
-			glm::vec4 const transformed_direction =
-				transform * glm::vec4(static_cast<float>(world_direction.x), 0.0f,
-				                     static_cast<float>(world_direction.y), 0.0f);
-			glm::vec2 dir(
-				transformed_direction.x * surface_size.x * 0.5f,
-				-transformed_direction.z * surface_size.y * 0.5f);
-			if (glm::length2(dir) <= 1e-8f || !std::isfinite(glm::length2(dir)))
-				dir = glm::vec2(1.0f, 0.0f);
-			else
-				dir = glm::normalize(dir);
-			glm::vec2 const normal(-dir.y, dir.x);
-			float const lamp_spacing = 7.0f;
-			std::vector<ImVec2> lamp_positions;
-			std::vector<ImU32> lamp_colors;
-			bool found_lamp = false;
-			for (auto *model : sem->models)
-			{
-				for (int i = 0; i < iMaxNumLights; ++i)
+			auto draw_signal_head = [this, &sem, draw_list, &to_screen, &transform, &surface_size,
+			                         mouse_over_map, mouse_position](TAnimModel *model, glm::vec3 const &location) {
+				ImVec2 const center = to_screen(location);
+				glm::dvec2 const world_direction = map_signal_direction(
+					glm::dvec3(location), model ? model->Angles().y : 0.0f);
+				glm::vec4 const transformed_direction =
+					transform * glm::vec4(static_cast<float>(world_direction.x), 0.0f,
+					                     static_cast<float>(world_direction.y), 0.0f);
+				glm::vec2 dir(
+					transformed_direction.x * surface_size.x * 0.5f,
+					-transformed_direction.z * surface_size.y * 0.5f);
+				if (glm::length2(dir) <= 1e-8f || !std::isfinite(glm::length2(dir)))
+					dir = glm::vec2(1.0f, 0.0f);
+				else
+					dir = glm::normalize(dir);
+				glm::vec2 const normal(-dir.y, dir.x);
+				float constexpr lamp_spacing = 7.0f;
+				std::vector<ImU32> lamp_colors;
+				if (model)
 				{
-					auto state = model->LightGet(i);
-					if (!state)
-						continue;
-					if (std::get<0>(*state) < 0.0f)
-						continue;
+					for (int i = 0; i < iMaxNumLights; ++i)
+					{
+						auto state = model->LightGet(i);
+						if (!state || std::get<0>(*state) < 0.0f)
+							continue;
 
-					glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-					glm::vec3 const effective_color = base_color * std::get<1>(*state);
-					lamp_colors.push_back(IM_COL32(
-						static_cast<int>(std::clamp(effective_color.x * 255.0f, 0.0f, 255.0f)),
-						static_cast<int>(std::clamp(effective_color.y * 255.0f, 0.0f, 255.0f)),
-						static_cast<int>(std::clamp(effective_color.z * 255.0f, 0.0f, 255.0f)),
-						255));
-					lamp_positions.push_back(center);
-					found_lamp = true;
+						glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
+						glm::vec3 const effective_color = base_color * std::get<1>(*state);
+						lamp_colors.push_back(IM_COL32(
+							static_cast<int>(std::clamp(effective_color.x * 255.0f, 0.0f, 255.0f)),
+							static_cast<int>(std::clamp(effective_color.y * 255.0f, 0.0f, 255.0f)),
+							static_cast<int>(std::clamp(effective_color.z * 255.0f, 0.0f, 255.0f)),
+							255));
+					}
 				}
-			}
+				if (lamp_colors.empty())
+				{
+					ImVec2 const label_position(center.x + 8.0f, center.y - 10.0f);
+					ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
+					ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
+					ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
+					bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
+					bool const icon_hovered = mouse_over_map &&
+						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
+					if (label_hovered || icon_hovered)
+					{
+						m_hovered_map_object = sem;
+						if (label_hovered)
+							draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
+					}
+					draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
+					draw_list->AddText(label_position, IM_COL32(245, 245, 245, 255), sem->name.c_str());
+					if (icon_hovered)
+						draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
+					return;
+				}
 
-			if (!found_lamp)
-			{
-				ImVec2 const label_position(center.x + 8.0f, center.y - 10.0f);
+				for (std::size_t idx = 0; idx < lamp_colors.size(); ++idx)
+				{
+					float const offset = static_cast<float>(lamp_colors.size() - idx - 1);
+					ImVec2 const lamp_position(
+						center.x + dir.x * offset * lamp_spacing,
+						center.y + dir.y * offset * lamp_spacing);
+					draw_list->AddCircleFilled(lamp_position, 3.6f, lamp_colors[idx]);
+					draw_list->AddCircle(lamp_position, 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
+				}
+
+				float const head_offset = (static_cast<float>(lamp_colors.size()) - 1.0f) * lamp_spacing * 0.5f;
+				ImVec2 const head_center(center.x + dir.x * head_offset, center.y + dir.y * head_offset);
+				float const head_half_length =
+					std::max(5.0f, (static_cast<float>(lamp_colors.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
+				float constexpr head_half_width = 5.0f;
+				ImVec2 const label_position(head_center.x + 10.0f, head_center.y - 12.0f);
 				ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
 				ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
 				ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
 				bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
+				glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
 				bool const icon_hovered = mouse_over_map &&
-					glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
+					std::abs(glm::dot(mouse_from_head, dir)) <= head_half_length &&
+					std::abs(glm::dot(mouse_from_head, normal)) <= head_half_width;
 				if (label_hovered || icon_hovered)
 				{
 					m_hovered_map_object = sem;
 					if (label_hovered)
 						draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
 				}
-				draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
-				draw_list->AddText(label_position, IM_COL32(245, 245, 245, 255), sem->name.c_str());
+
+				ImVec2 const head_front_left(
+					head_center.x + dir.x * head_half_length + normal.x * head_half_width,
+					head_center.y + dir.y * head_half_length + normal.y * head_half_width);
+				ImVec2 const head_front_right(
+					head_center.x + dir.x * head_half_length - normal.x * head_half_width,
+					head_center.y + dir.y * head_half_length - normal.y * head_half_width);
+				ImVec2 const head_rear_right(
+					head_center.x - dir.x * head_half_length - normal.x * head_half_width,
+					head_center.y - dir.y * head_half_length - normal.y * head_half_width);
+				ImVec2 const head_rear_left(
+					head_center.x - dir.x * head_half_length + normal.x * head_half_width,
+					head_center.y - dir.y * head_half_length + normal.y * head_half_width);
+				draw_list->AddLine(center, head_center, IM_COL32(200, 200, 200, 255), 2.0f);
+				draw_list->AddQuadFilled(
+					head_front_left, head_front_right, head_rear_right, head_rear_left,
+					IM_COL32(35, 40, 45, 220));
 				if (icon_hovered)
-					draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
-				continue;
-			}
+					draw_list->AddQuad(
+						head_front_left, head_front_right, head_rear_right, head_rear_left,
+						IM_COL32(120, 200, 255, 255), 2.0f);
+				draw_list->AddText(label_position, IM_COL32(230, 240, 255, 255), sem->name.c_str());
+			};
 
-			for (std::size_t idx = 0; idx < lamp_positions.size(); ++idx)
+			if (sem->models.empty())
+				draw_signal_head(nullptr, sem->location);
+			else
 			{
-				float const offset = static_cast<float>(lamp_positions.size() - idx - 1);
-				glm::vec2 const delta = dir * offset * lamp_spacing;
-				lamp_positions[idx] = ImVec2(center.x + delta.x, center.y + delta.y);
+				for (TAnimModel *model : sem->models)
+					draw_signal_head(model, glm::vec3(model->location()));
 			}
-
-			float const head_offset = (static_cast<float>(lamp_positions.size()) - 1.0f) * lamp_spacing * 0.5f;
-			ImVec2 const head_center(center.x + dir.x * head_offset, center.y + dir.y * head_offset);
-			ImVec2 const label_position(head_center.x + 10.0f, head_center.y - 12.0f);
-			ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
-			ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
-			ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
-			bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
-			float const icon_radius = std::max(10.0f, head_offset + 8.0f);
-			bool const icon_hovered = mouse_over_map &&
-				glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= icon_radius * icon_radius;
-			if (label_hovered || icon_hovered)
-			{
-				m_hovered_map_object = sem;
-				if (label_hovered)
-					draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
-			}
-			float const head_half_length =
-				std::max(5.0f, (static_cast<float>(lamp_positions.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
-			float constexpr head_half_width = 5.0f;
-			ImVec2 const head_front_left(
-				head_center.x + dir.x * head_half_length + normal.x * head_half_width,
-				head_center.y + dir.y * head_half_length + normal.y * head_half_width);
-			ImVec2 const head_front_right(
-				head_center.x + dir.x * head_half_length - normal.x * head_half_width,
-				head_center.y + dir.y * head_half_length - normal.y * head_half_width);
-			ImVec2 const head_rear_right(
-				head_center.x - dir.x * head_half_length - normal.x * head_half_width,
-				head_center.y - dir.y * head_half_length - normal.y * head_half_width);
-			ImVec2 const head_rear_left(
-				head_center.x - dir.x * head_half_length + normal.x * head_half_width,
-				head_center.y - dir.y * head_half_length + normal.y * head_half_width);
-			draw_list->AddLine(
-				center,
-				head_center,
-				IM_COL32(200, 200, 200, 255),
-				2.0f);
-			draw_list->AddQuadFilled(
-				head_front_left, head_front_right, head_rear_right, head_rear_left,
-				IM_COL32(35, 40, 45, 220));
-			for (std::size_t idx = 0; idx < lamp_positions.size(); ++idx)
-			{
-				draw_list->AddCircleFilled(lamp_positions[idx], 3.6f, lamp_colors[idx]);
-				draw_list->AddCircle(lamp_positions[idx], 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
-			}
-			if (icon_hovered)
-				draw_list->AddCircle(center, icon_radius, IM_COL32(120, 200, 255, 255), 0, 2.0f);
-			draw_list->AddText(
-				label_position,
-				IM_COL32(230, 240, 255, 255),
-				sem->name.c_str());
 			continue;
 		}
 
@@ -806,12 +803,13 @@ void ui::map_panel::render_contents()
 	TDynamicObject const *followed_vehicle = nullptr;
 	glm::dvec3 follow_position{};
 	glm::dvec3 follow_direction{};
+	float map_rotation = m_manual_rotation;
 	if (mode == MODE_VEHICLE && simulation::Train)
 	{
 		followed_vehicle = simulation::Train->Dynamic();
-		float rotation = get_vehicle_rotation();
+		map_rotation = get_vehicle_rotation() + m_manual_rotation;
 
-		transform = glm::rotate(transform, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+		transform = glm::rotate(transform, map_rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
 		follow_position = followed_vehicle->GetPosition();
 		follow_direction = followed_vehicle->VectorFront() * (followed_vehicle->DirectionGet() > 0 ? 1.0 : -1.0);
@@ -827,9 +825,9 @@ void ui::map_panel::render_contents()
 		else
 			initial_rotation = glm::pi<float>();
 
-		float rotation = initial_rotation - Global.pCamera.Angle.y;
+		map_rotation = initial_rotation - Global.pCamera.Angle.y + m_manual_rotation;
 
-		transform = glm::rotate(transform, rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+		transform = glm::rotate(transform, map_rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
 		glm::dvec3 position = Global.pCamera.Pos;
 		translate = glm::vec2(position.x, position.z) * -zoom;
@@ -992,20 +990,32 @@ void ui::map_panel::render_contents()
 			m_camera_click_deadline = ImGui::GetTime() + io.MouseDoubleClickTime;
 			m_camera_click_pending = true;
 		}
-		if (mode == MODE_MANUAL && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
+		if (mode != MODE_MANUAL && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+		{
+			glm::vec4 const world_center = glm::inverse(transform) * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			translate = -glm::vec2(world_center.x, world_center.z) * zoom;
+			m_manual_rotation = map_rotation;
+			mode = MODE_MANUAL;
+			m_camera_click_pending = false;
+		}
+		if (ImGui::IsMouseDragging(ImGuiMouseButton_Right))
 		{
 			ImVec2 const delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
 			ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
 			m_manual_rotation += delta.x * 0.01f;
 		}
-		if (mode == 0 && ImGui::IsMouseDragging(0))
+		if (mode == MODE_MANUAL && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
 		{
-			ImVec2 delta_im = ImGui::GetMouseDragDelta();
+			ImVec2 const delta_im = ImGui::GetMouseDragDelta();
 			ImGui::ResetMouseDragDelta();
 
-			glm::vec2 delta(delta_im.x, delta_im.y);
-
-			translate -= delta / surface_size * 2.0f;
+			glm::vec4 const screen_delta(
+				delta_im.x * 2.0f / surface_size.x,
+				0.0f,
+				-delta_im.y * 2.0f / surface_size.y,
+				0.0f);
+			glm::vec4 const map_delta = glm::inverse(transform) * screen_delta;
+			translate += glm::vec2(map_delta.x, map_delta.z) * zoom;
 		}
 		else
 		{
