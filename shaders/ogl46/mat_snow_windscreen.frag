@@ -462,6 +462,8 @@ const float snow_map_opaque     = 1.8;   // mm of fresh snow which lets 1/e of t
 const float snow_map_relief     = 0.6;   // how much the slopes of the snow tilt its surface
 const float snow_map_grain      = 0.35;  // the fine grain of the layer (its relief)
 const float snow_map_wet_bend   = 0.6;   // how strongly a wet glass bends the picture behind it
+const float snow_map_thin       = 0.45;  // opacity of a single thin flake (ice crystals let most of the light through: the picture
+                                         // behind shows through it, blurred, rather than a dark speck at night)
 
 int   snMapSlot = -1;
 uint  snMapIndex = 0u;
@@ -542,7 +544,7 @@ void snowMapFlakes(vec2 aspect, float pixelUV, inout vec3 accRGB, inout float ac
                 tile = vec2(0.0, 0.5);                 // fluffy
             else
                 tile = vec2(0.0, 0.0);                 // crumbs
-            float alpha = spot ? smoothstep(0.03, 0.1, q.y) : smoothstep(0.05, 0.25, q.x);
+            float alpha = spot ? smoothstep(0.03, 0.1, q.y) : smoothstep(0.05, 0.25, q.x) * mix(snow_map_thin, 1.0, smoothstep(0.3, 2.5, q.x));
             snowMapSprite(local, tile, alpha, tone, flip, c, s, lod, accRGB, accA, accN, accTr);
         }
     }
@@ -559,8 +561,9 @@ void snowMapped(vec2 aspect, float pixelUV, inout vec3 accRGB, inout float accA,
     vec4 qd = snMapAt(f_coord - vec2(0.0, e));
     float around = (q.x + qr.x + ql.x + qu.x + qd.x) * 0.2;
 
-    // the flakes of thin snow and the water spots
+    // the flakes of thin snow and the water spots; the picture behind a flake is blurred (it scatters the light going through)
     snowMapFlakes(aspect, pixelUV, accRGB, accA, accN, accTr);
+    snHaze = max(snHaze, smoothstep(0.0, 0.3, accA));
 
     // the water: the film bends the picture behind
     snWet = smoothstep(0.05, 0.3, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
