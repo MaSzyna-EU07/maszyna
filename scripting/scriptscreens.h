@@ -10,15 +10,36 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "scripting/scriptscreenrules.h"
+#include "scripting/scriptscreenkernels.h"
 
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
 struct ITexture;
 struct dictionary_source;
+
+namespace script_screens
+{
+
+// runs the post-processing of a screen's image (image:led_post, image:resize) on the gpu, into the screen's texture.
+// given by the renderer that can (gfx_renderer::Screen_post_processor); used on the main thread
+class post_processor
+{
+  public:
+	post_processor() = default;
+	virtual ~post_processor() = default;
+	post_processor(post_processor const &) = delete;
+	post_processor &operator=(post_processor const &) = delete;
+	// Pixels: the image drawn, Width x Height, RGBA from the top row down. the texture gets the result bottom row first,
+	// as update_from_memory takes it, with its mipmaps. false when it can't; the screen then does the steps on the cpu
+	virtual bool apply(ITexture &Target, std::span<std::uint8_t const> Pixels, int Width, int Height, std::span<post_step const> Steps) = 0;
+};
+
+} // namespace script_screens
 
 // screens drawn by scripts, the counterpart of the python screens (scripting/PyInt.h): Lua scripts run by LuaJIT
 // (luascreen:, luadestinationsign:) and WebAssembly modules run by WAMR (wasmscreen:, wasmdestinationsign:). a script
@@ -91,6 +112,9 @@ class script_screen_queue
 	// main thread, once per rendered frame: uploads the finished images, runs the commands the screens sent and
 	// counts the frame
 	void update();
+	// main thread: the post-processing of the images goes to the gpu through the processor; with none (the default) it
+	// runs on the worker, on the cpu
+	void set_post_processor(script_screens::post_processor *Processor);
 
   private:
 	struct implementation;

@@ -593,4 +593,157 @@ TEST_CASE("lua screens: a script includes another and reads a font of the python
 	queue.exit();
 }
 
+namespace {
+
+// 2x1, red and green, shown through led_post without the glow and a resize to 4x3
+constexpr std::string_view posted_script{R"(
+return {
+	render = function(state)
+		local image = eu07.image(2, 1, { 255, 0, 0 })
+		image:set(1, 0, { 0, 255, 0 })
+		return image:led_post(false):resize(4, 3)
+	end
+}
+)"};
+
+// reads an image after led_post: its size, a pixel of the frame and one of a diode
+constexpr std::string_view read_posted_script{R"(
+return {
+	render = function(state)
+		local posted = eu07.image(2, 1, { 255, 255, 255 }):led_post(false)
+		local width, height = posted:width(), posted:height()
+		local frame = posted:get(0, 0)
+		local diode = posted:get(1, 1)
+		return eu07.image(1, 1, { width * 10 + height, frame, diode })
+	end
+}
+)"};
+
+// a gpu that keeps what it was given, or one that can't do it
+struct recording_processor : script_screens::post_processor {
+	bool apply(ITexture & /*Target*/, std::span<std::uint8_t const> const Pixels, int const Width, int const Height,
+	           std::span<script_screens::post_step const> const Steps) override {
+		++calls;
+		pixels.assign(Pixels.begin(), Pixels.end());
+		width = Width;
+		height = Height;
+		steps.assign(Steps.begin(), Steps.end());
+		return works;
+	}
+
+	bool works{true};
+	int calls{0};
+	std::vector<std::uint8_t> pixels;
+	int width{0};
+	int height{0};
+	std::vector<script_screens::post_step> steps;
+};
+
+// what posted_script shows, done on the cpu, bottom row first
+std::vector<std::uint8_t> posted_on_cpu() {
+	script_screens::post_step led;
+	led.type = script_screens::post_step::kind::led;
+	led.bloom = false;
+	script_screens::post_step resize;
+	resize.type = script_screens::post_step::kind::resize;
+	resize.width = 4;
+	resize.height = 3;
+	std::array const steps{led, resize};
+	script_screens::post_image image{{255, 0, 0, 255, 0, 255, 0, 255}, 2, 1};
+	REQUIRE(script_screens::apply_post(image, steps));
+	std::vector<std::uint8_t> result;
+	for (auto row = image.height - 1; row >= 0; --row) {
+		auto const first{image.pixels.begin() + static_cast<std::ptrdiff_t>(script_screens::image_size(image.width, row))};
+		result.insert(result.end(), first, first + image.width * 4);
+	}
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("lua screens: led_post and resize of the image shown go to the gpu, with the image as drawn") {
+	script_folder const folder{"lua_post_gpu"};
+	auto const script{folder.write("posted.lua", posted_script)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+	recording_processor gpu;
+	queue.set_post_processor(&gpu);
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "posted", &texture, script_screen_kind::external))};
+	refresh(queue, screen, speed(0.0), 1);
+	REQUIRE(run_until(queue, [&gpu] { return gpu.calls > 0; }));
+	CHECK(texture.uploads == 0);
+	CHECK(gpu.width == 2);
+	CHECK(gpu.height == 1);
+	CHECK(gpu.pixels == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 255, 0, 255});
+	REQUIRE(gpu.steps.size() == 2);
+	CHECK(gpu.steps[0].type == script_screens::post_step::kind::led);
+	CHECK_FALSE(gpu.steps[0].bloom);
+	CHECK(gpu.steps[1].type == script_screens::post_step::kind::resize);
+	CHECK(gpu.steps[1].width == 4);
+	CHECK(gpu.steps[1].height == 3);
+	queue.exit();
+}
+
+TEST_CASE("lua screens: without a gpu, led_post and resize run on the cpu") {
+	script_folder const folder{"lua_post_cpu"};
+	auto const script{folder.write("posted.lua", posted_script)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "posted", &texture, script_screen_kind::external))};
+	refresh(queue, screen, speed(0.0), 1);
+	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
+	CHECK(texture.width == 4);
+	CHECK(texture.height == 3);
+	CHECK(texture.pixels == posted_on_cpu());
+	queue.exit();
+}
+
+TEST_CASE("lua screens: when the gpu can't do the post-processing, the cpu does it from then on") {
+	script_folder const folder{"lua_post_fallback"};
+	auto const script{folder.write("posted.lua", posted_script)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+	recording_processor gpu;
+	gpu.works = false;
+	queue.set_post_processor(&gpu);
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "posted", &texture, script_screen_kind::external))};
+	refresh(queue, screen, speed(0.0), 1);
+	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
+	CHECK(gpu.calls == 1);
+	CHECK(texture.width == 4);
+	CHECK(texture.pixels == posted_on_cpu());
+
+	refresh(queue, screen, speed(0.0), 1);
+	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 1; }));
+	CHECK(gpu.calls == 1);
+	CHECK(texture.pixels == posted_on_cpu());
+	queue.exit();
+}
+
+TEST_CASE("lua screens: an image read after led_post has its post-processing done first") {
+	script_folder const folder{"lua_post_read"};
+	auto const script{folder.write("read.lua", read_posted_script)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+	recording_processor gpu;
+	queue.set_post_processor(&gpu);
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "read", &texture, script_screen_kind::external))};
+	refresh(queue, screen, speed(0.0), 1);
+	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
+	CHECK(gpu.calls == 0);
+	REQUIRE(texture.pixels.size() == 4);
+	CHECK(texture.pixels[0] == 64); // 6 x 4
+	CHECK(texture.pixels[1] == 0);
+	CHECK(texture.pixels[2] == 255);
+	queue.exit();
+}
+
 #endif

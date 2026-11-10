@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cmath>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 namespace script_screens
@@ -236,6 +237,44 @@ bool resize_lanczos(std::span<std::uint8_t const> const Source, int const Width,
 			pixel[3] = 255;
 		}
 	}
+	return true;
+}
+
+int width_after(post_step const &Step, int const Width)
+{
+	return Step.type == post_step::kind::led ? Width * 2 + 2 : Step.width;
+}
+
+int height_after(post_step const &Step, int const Height)
+{
+	return Step.type == post_step::kind::led ? Height * 2 + 2 : Step.height;
+}
+
+bool apply_post(post_image &Image, std::span<post_step const> const Steps)
+{
+	if (Steps.empty())
+	{
+		return true;
+	}
+	auto result{Image};
+	for (auto const &step : Steps)
+	{
+		auto const width{width_after(step, result.width)};
+		auto const height{height_after(step, result.height)};
+		if (width <= 0 || height <= 0)
+		{
+			return false;
+		}
+		std::vector<std::uint8_t> pixels(image_size(width, height));
+		auto const done{step.type == post_step::kind::led ? led_post(result.pixels, result.width, result.height, pixels, step.bloom)
+		                                                  : resize_lanczos(result.pixels, result.width, result.height, pixels, width, height)};
+		if (false == done)
+		{
+			return false;
+		}
+		result = post_image{std::move(pixels), width, height};
+	}
+	Image = std::move(result);
 	return true;
 }
 

@@ -300,6 +300,7 @@ struct global_settings {
 	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
 	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
 	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
+	bool screens_gpupost{true}; // the post-processing of the script screens (image:led_post, image:resize) on the gpu, when the renderer can
 
     bool gfx_skiprendering = false;
     int gfx_framebuffer_width = -1;

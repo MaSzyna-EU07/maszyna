@@ -912,6 +912,12 @@ bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view
         return true;
     }
 
+    if (token == "screens.gpupost")
+    {
+        ParseOne(Parser, screens_gpupost, 1);
+        return true;
+    }
+
     return false;
 }
 
@@ -1885,6 +1891,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "wasm.enabled", wasm_enabled );
     export_as_text( Output, "screens.cabframes", screens_cabframes );
     export_as_text( Output, "screens.externalframes", screens_externalframes );
+    export_as_text( Output, "screens.gpupost", screens_gpupost );
     export_as_text( Output, "async.trainThreads", trainThreads );
     for( auto const &server : network_servers ) {
         Output

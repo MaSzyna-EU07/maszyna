@@ -344,6 +344,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl33precipitation.cpp"
             "rendering/opengl33particles.cpp"
             "rendering/opengl33terrain.cpp"
+            "rendering/opengl33screenpost.cpp"
             "rendering/opengl33renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()

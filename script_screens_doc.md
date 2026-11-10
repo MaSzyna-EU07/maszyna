@@ -23,6 +23,7 @@ the reason goes to the log.
 | `wasm.enabled`           | 1       | 0: no WebAssembly screens; the vehicles show what they did before              |
 | `screens.cabframes`      | 4       | a screen in the cab is refreshed every so many frames (1-1000)                 |
 | `screens.externalframes` | 30      | a screen outside the cab (destination sign) is refreshed every so many frames  |
+| `screens.gpupost`        | 1       | 0: `led_post` and `resize` of the Lua screens always run on the cpu, as they did before |
 
 `wasm.cabframes` and `wasm.externalframes`, the first names of the last two, are read as well.
 
@@ -118,13 +119,23 @@ glyph (`led_util` picks a random one).
 | `image:draw_text_right(...)`, `image:draw_text_centered(...)` | the same, ending at `x` or centred on it (`draw_strl`, `draw_strc`) |
 | `image:draw_sprite(sprite, x, y, color)`                   | the lit pixels of the sprite (`draw_spr`)                       |
 | `image:draw_image(image, x, y)`                            | another image, clipped                                          |
-| `image:led_post([bloom])`                                  | `led_util.render_post()`: a new image, each pixel a 2x2 diode with a darker grid, glowing (`bloom`, on by default), in a 1 pixel black frame |
-| `image:resize(width, height)`                              | a new image, scaled as Pillow's `resize(..., Image.LANCZOS)`, with the same pixels |
+| `image:led_post([bloom])`                                  | `led_util.render_post()`: a new image, each pixel a 2x2 diode with a darker grid, glowing (`bloom`, on by default), in a 1 pixel black frame. see below for when it runs |
+| `image:resize(width, height)`                              | a new image, scaled as Pillow's `resize(..., Image.LANCZOS)`, with the same pixels. see below for when it runs |
 | `image:copy()`                                             | a new image, the same                                           |
 | `font:height()`, `font:text_width(text [, spacing])`       | the height, the width of a text (`get_str_len`)                 |
 | `sprite:width()`, `sprite:height()`                        | the size                                                        |
 
 The drawing, `led_post` and `resize` run natively in the game, so a script only says what goes where.
+
+`led_post` and `resize` only note what is to be done; the image's size is known right away. They run when the image is
+used:
+
+- on the image `render` returns, on the gpu, into the screen's texture. Only the screens that ask for them pay for
+  them, and the texture gets the small image as drawn rather than the large one. The gpu gives the pixels of the cpu,
+  give or take one step of brightness here and there, from rounding in single precision.
+- on the cpu, as soon as the script reads the image (`get`), draws on it, or draws it on another image.
+- on the cpu, in the screens' worker, when the renderer can't do it on the gpu (the NVRHI renderer, OpenGL ES, a
+  shader that failed to load) or `screens.gpupost` is 0. A shader that fails is logged once, and the cpu takes over.
 
 ## WebAssembly modules
 

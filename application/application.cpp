@@ -430,6 +430,10 @@ int eu07_application::init(int Argc, char *Argv[])
 	if (Global.luascreens_enabled || Global.wasm_enabled)
 	{
 		m_screenqueue.init();
+		if (Global.screens_gpupost)
+		{
+			m_screenqueue.set_post_processor(GfxRenderer->Screen_post_processor());
+		}
 	}
 	if ((result = init_modes()) != 0)
 	{
@@ -727,6 +731,8 @@ void eu07_application::exit()
 		mode.reset();
 
 	step("the renderer");
+	// the screens' post-processing goes with the renderer
+	m_screenqueue.set_post_processor(nullptr);
 	GfxRenderer->Shutdown();
 	m_network.reset();
 

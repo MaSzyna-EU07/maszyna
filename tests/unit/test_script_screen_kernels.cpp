@@ -119,3 +119,36 @@ TEST_CASE("script screen kernels: images that don't fit their buffers are refuse
 	CHECK_FALSE(script_screens::resize_lanczos(input, 5, 3, output, 12, 8));
 	CHECK_FALSE(script_screens::resize_lanczos(input, 6, 3, output, 2, 2));
 }
+
+TEST_CASE("script screen kernels: the post-processing steps of an image run one after another") {
+	script_screens::post_step led;
+	led.type = script_screens::post_step::kind::led;
+	led.bloom = true;
+	script_screens::post_step resize;
+	resize.type = script_screens::post_step::kind::resize;
+	resize.width = 17;
+	resize.height = 11;
+	std::array const steps{led, resize};
+
+	CHECK(script_screens::width_after(led, 5) == 12);
+	CHECK(script_screens::height_after(led, 3) == 8);
+	CHECK(script_screens::width_after(resize, 12) == 17);
+	CHECK(script_screens::height_after(resize, 8) == 11);
+
+	script_screens::post_image image{rgba(source), 5, 3};
+	REQUIRE(script_screens::apply_post(image, steps));
+	CHECK(image.width == 17);
+	CHECK(image.height == 11);
+	CHECK(image.pixels == rgba(enlarged));
+
+	// nothing to do, nothing done
+	script_screens::post_image unchanged{rgba(source), 5, 3};
+	REQUIRE(script_screens::apply_post(unchanged, {}));
+	CHECK(unchanged.pixels == rgba(source));
+
+	// a size the kernels refuse leaves the image as it was
+	script_screens::post_image tooshort{std::vector<std::uint8_t>(10), 5, 3};
+	CHECK_FALSE(script_screens::apply_post(tooshort, steps));
+	CHECK(tooshort.width == 5);
+	CHECK(tooshort.pixels.size() == 10);
+}

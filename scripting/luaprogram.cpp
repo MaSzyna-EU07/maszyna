@@ -145,9 +145,63 @@ template <typename Type_> Type_ &check_object(lua_State *L, int const Index, cha
 	return *object;
 }
 
+// an image of a script: what was drawn on it, and the post-processing (image:led_post, image:resize) asked for and not
+// run yet. the steps of the image render returns run in the queue, on the gpu when the renderer can; the steps of an
+// image the script goes on to read or draw on (or with) run here, on the cpu, when it does
+struct lua_image
+{
+	canvas drawn;
+	std::vector<post_step> steps;
+
+	int width() const
+	{
+		auto result{drawn.width()};
+		for (auto const &step : steps)
+		{
+			result = width_after(step, result);
+		}
+		return result;
+	}
+	int height() const
+	{
+		auto result{drawn.height()};
+		for (auto const &step : steps)
+		{
+			result = height_after(step, result);
+		}
+		return result;
+	}
+	// the image with its post-processing done
+	canvas &done()
+	{
+		if (false == steps.empty())
+		{
+			post_image image{drawn.pixels(), drawn.width(), drawn.height()};
+			// the sizes were checked when the steps were asked for
+			apply_post(image, steps);
+			drawn = canvas{image.width, image.height, std::move(image.pixels)};
+			steps.clear();
+		}
+		return drawn;
+	}
+	// the image, a step further
+	lua_image then(post_step const &Step) const
+	{
+		lua_image result{drawn, steps};
+		result.steps.push_back(Step);
+		return result;
+	}
+};
+
+lua_image &check_lua_image(lua_State *L, int const Index)
+{
+	return check_object<lua_image>(L, Index, image_metatable);
+}
+
+// the image, to read or draw on: its post-processing is done first
 canvas &check_image(lua_State *L, int const Index)
 {
-	return check_object<canvas>(L, Index, image_metatable);
+	return check_lua_image(L, Index).done();
 }
 
 int check_int(lua_State *L, int const Index)
@@ -226,7 +280,7 @@ int api_image(lua_State *L)
 	luaL_argcheck(L, valid_image_side(width), 1, "between 1 and 4096");
 	luaL_argcheck(L, valid_image_side(height), 2, "between 1 and 4096");
 	auto const color{lua_isnoneornil(L, 3) ? rgb{0, 0, 0} : check_color(L, 3)};
-	push_object(L, canvas{width, height, color}, image_metatable);
+	push_object(L, lua_image{canvas{width, height, color}, {}}, image_metatable);
 	return 1;
 }
 
@@ -388,13 +442,13 @@ int api_include(lua_State *L)
 
 int image_width(lua_State *L)
 {
-	lua_pushinteger(L, check_image(L, 1).width());
+	lua_pushinteger(L, check_lua_image(L, 1).width());
 	return 1;
 }
 
 int image_height(lua_State *L)
 {
-	lua_pushinteger(L, check_image(L, 1).height());
+	lua_pushinteger(L, check_lua_image(L, 1).height());
 	return 1;
 }
 
@@ -498,36 +552,39 @@ int image_draw_image(lua_State *L)
 	return 0;
 }
 
-// image:led_post([bloom]): led_util's render_post, a new image (2w + 2) x (2h + 2)
+// image:led_post([bloom]): led_util's render_post, a new image (2w + 2) x (2h + 2). done when the image is shown or used
 int image_led_post(lua_State *L)
 {
-	auto const &image{check_image(L, 1)};
+	auto const &image{check_lua_image(L, 1)};
 	auto const bloom{lua_isnoneornil(L, 2) || lua_toboolean(L, 2) != 0};
 	luaL_argcheck(L, valid_image_side(image.width() * 2 + 2) && valid_image_side(image.height() * 2 + 2), 1, "too large");
-	std::vector<std::uint8_t> pixels(image_size(image.width() * 2 + 2, image.height() * 2 + 2));
-	led_post(image.pixels(), image.width(), image.height(), pixels, bloom);
-	push_object(L, canvas{image.width() * 2 + 2, image.height() * 2 + 2, std::move(pixels)}, image_metatable);
+	post_step step;
+	step.type = post_step::kind::led;
+	step.bloom = bloom;
+	push_object(L, image.then(step), image_metatable);
 	return 1;
 }
 
-// image:resize(width, height): scaled as Pillow's resize(..., LANCZOS), a new image
+// image:resize(width, height): scaled as Pillow's resize(..., LANCZOS), a new image. done when the image is shown or used
 int image_resize(lua_State *L)
 {
-	auto const &image{check_image(L, 1)};
+	auto const &image{check_lua_image(L, 1)};
 	auto const width{check_int(L, 2)};
 	auto const height{check_int(L, 3)};
 	luaL_argcheck(L, valid_image_side(width), 2, "between 1 and 4096");
 	luaL_argcheck(L, valid_image_side(height), 3, "between 1 and 4096");
-	std::vector<std::uint8_t> pixels(image_size(width, height));
-	resize_lanczos(image.pixels(), image.width(), image.height(), pixels, width, height);
-	push_object(L, canvas{width, height, std::move(pixels)}, image_metatable);
+	post_step step;
+	step.type = post_step::kind::resize;
+	step.width = width;
+	step.height = height;
+	push_object(L, image.then(step), image_metatable);
 	return 1;
 }
 
 int image_copy(lua_State *L)
 {
-	auto const &image{check_image(L, 1)};
-	push_object(L, canvas{image}, image_metatable);
+	auto const &image{check_lua_image(L, 1)};
+	push_object(L, lua_image{image}, image_metatable);
 	return 1;
 }
 
@@ -695,7 +752,7 @@ void lua_program::register_api()
 	lua_pushlightuserdata(L, this);
 	lua_rawset(L, LUA_REGISTRYINDEX);
 
-	make_metatable(L, image_metatable, image_methods, collect<canvas>);
+	make_metatable(L, image_metatable, image_methods, collect<lua_image>);
 	make_metatable(L, font_metatable, font_methods, collect<bitmap_font>);
 	make_metatable(L, sprite_metatable, sprite_methods, collect<glyph>);
 
@@ -806,11 +863,12 @@ bool lua_program::render(render_call &Call)
 	}
 	// nil: the screen didn't change, keep the image there is
 	auto succeeded{true};
-	if (auto const *image{test_object<canvas>(m_state, -1, image_metatable)}; image != nullptr)
+	if (auto const *image{test_object<lua_image>(m_state, -1, image_metatable)}; image != nullptr)
 	{
-		Call.pixels = image->pixels();
-		Call.width = image->width();
-		Call.height = image->height();
+		Call.pixels = image->drawn.pixels();
+		Call.width = image->drawn.width();
+		Call.height = image->drawn.height();
+		Call.post = image->steps;
 	}
 	else if (false == lua_isnil(m_state, -1))
 	{

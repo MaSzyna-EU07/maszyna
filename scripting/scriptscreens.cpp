@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <limits>
 #include <mutex>
+#include <span>
 #include <stop_token>
 #include <string_view>
 #include <thread>
@@ -129,6 +130,32 @@ std::string_view language_name(script_language const Language)
 	return Language == script_language::lua ? "Lua" : "WASM";
 }
 
+// the rows of the image the other way round. the script draws from the top row down; the texture takes the bottom row
+// first, as the python screens give it (abstractscreenrenderer flips the image before handing it over)
+std::vector<std::uint8_t> flipped(std::span<std::uint8_t const> const Pixels, int const Width, int const Height)
+{
+	auto const row{static_cast<std::size_t>(Width) * 4};
+	auto const height{static_cast<std::size_t>(Height)};
+	std::vector<std::uint8_t> result(Pixels.size());
+	for (std::size_t y = 0; y < height; ++y)
+	{
+		std::memcpy(result.data() + (height - 1 - y) * row, Pixels.data() + y * row, row);
+	}
+	return result;
+}
+
+// the post-processing of the image done on the cpu. false when the kernels refused a size
+bool post_on_cpu(std::vector<std::uint8_t> &Pixels, int &Width, int &Height, std::vector<script_screens::post_step> &Steps)
+{
+	script_screens::post_image image{std::move(Pixels), Width, Height};
+	auto const done{script_screens::apply_post(image, Steps)};
+	Pixels = std::move(image.pixels);
+	Width = image.width;
+	Height = image.height;
+	Steps.clear();
+	return done;
+}
+
 } // namespace
 
 class script_screen
@@ -159,11 +186,13 @@ class script_screen
 	// the worker's, and the queue's once the worker stopped
 	std::unique_ptr<script_screens::program> program;
 
-	// the image, handed from the worker to the main thread, bottom row first as the texture takes it
+	// the image, handed from the worker to the main thread: bottom row first as the texture takes it, or, while it has
+	// post-processing to run on the gpu, from the top row down as the script drew it
 	std::mutex image_mutex;
 	std::vector<std::uint8_t> image;
 	int image_width{0};
 	int image_height{0};
+	std::vector<script_screens::post_step> post;
 	bool image_pending{false}; // drawn and not yet uploaded
 	std::size_t uploaded_texture{no_texture}; // the gl texture the image went to, to upload it again when it's made anew
 
@@ -188,13 +217,20 @@ struct script_screen_queue::implementation
 		return Language == script_language::lua ? lua.get() : wasm.get();
 	}
 	static void present(script_screen &Screen, script_screens::render_call &Call);
-	static void upload(script_screen &Screen);
+	void upload(script_screen &Screen);
+	// the post-processing of the image the gpu couldn't do, done on the cpu. false when it failed too
+	static bool finish_on_cpu(script_screen &Screen);
 	static void execute(script_screens::pending_command const &Command);
 
 	std::unique_ptr<script_screens::runtime> lua;
 	std::unique_ptr<script_screens::runtime> wasm;
 	bool initialized{false};
 	std::atomic<std::uint64_t> frame{0};
+
+	// the main thread's: the gpu post-processing, none when the renderer has none, or it failed
+	script_screens::post_processor *post_processor{nullptr};
+	// read by the worker: the post-processing is left to the main thread, for the gpu
+	std::atomic<bool> post_on_gpu{false};
 
 	std::mutex screens_mutex;
 	std::unordered_map<std::string, std::weak_ptr<script_screen>> screens;
@@ -273,6 +309,12 @@ void script_screen_queue::implementation::process(task const &Task)
 			screen.failed = true;
 			return;
 		}
+		if (false == call.post.empty() && false == post_on_gpu && false == post_on_cpu(call.pixels, call.width, call.height, call.post))
+		{
+			ErrorLog(std::format("{} screen \"{}\": the post-processing of the image failed", language_name(screen.language), screen.script));
+			screen.failed = true;
+			return;
+		}
 		present(screen, call);
 	}
 	if (false == call.commands.empty())
@@ -282,21 +324,35 @@ void script_screen_queue::implementation::process(task const &Task)
 	}
 }
 
-// keeps the image the screen drew. the script draws from the top row down; the texture takes the bottom row first, as
-// the python screens give it (abstractscreenrenderer flips the image before handing it over)
+// keeps the image the screen drew, turned bottom row first for the texture; with post-processing left for the gpu, as
+// it was drawn
 void script_screen_queue::implementation::present(script_screen &Screen, script_screens::render_call &Call)
 {
-	auto const row{static_cast<std::size_t>(Call.width) * 4};
-	auto const height{static_cast<std::size_t>(Call.height)};
 	std::scoped_lock lock{Screen.image_mutex};
-	Screen.image.resize(Call.pixels.size());
-	for (std::size_t y = 0; y < height; ++y)
+	if (Call.post.empty())
 	{
-		std::memcpy(Screen.image.data() + (height - 1 - y) * row, Call.pixels.data() + y * row, row);
+		Screen.image = flipped(Call.pixels, Call.width, Call.height);
 	}
+	else
+	{
+		Screen.image = std::move(Call.pixels);
+	}
+	Screen.post = std::move(Call.post);
 	Screen.image_width = Call.width;
 	Screen.image_height = Call.height;
 	Screen.image_pending = true;
+}
+
+bool script_screen_queue::implementation::finish_on_cpu(script_screen &Screen)
+{
+	if (false == post_on_cpu(Screen.image, Screen.image_width, Screen.image_height, Screen.post))
+	{
+		ErrorLog(std::format("{} screen \"{}\": the post-processing of the image failed", language_name(Screen.language), Screen.script));
+		Screen.image.clear();
+		return false;
+	}
+	Screen.image = flipped(Screen.image, Screen.image_width, Screen.image_height);
+	return true;
 }
 
 void script_screen_queue::implementation::upload(script_screen &Screen)
@@ -315,7 +371,26 @@ void script_screen_queue::implementation::upload(script_screen &Screen)
 	{
 		return;
 	}
-	Screen.texture->update_from_memory(Screen.image_width, Screen.image_height, Screen.image.data());
+	auto const on_gpu{false == Screen.post.empty() && post_processor != nullptr &&
+	                  post_processor->apply(*Screen.texture, Screen.image, Screen.image_width, Screen.image_height, Screen.post)};
+	if (false == on_gpu)
+	{
+		if (false == Screen.post.empty())
+		{
+			// the gpu can't do it: the cpu does, here this time, and on the worker from now on
+			if (post_processor != nullptr)
+			{
+				WriteLog("Script screens: the post-processing of the images goes to the cpu");
+			}
+			post_processor = nullptr;
+			post_on_gpu = false;
+			if (false == finish_on_cpu(Screen))
+			{
+				return;
+			}
+		}
+		Screen.texture->update_from_memory(Screen.image_width, Screen.image_height, Screen.image.data());
+	}
 	Screen.uploaded_texture = Screen.texture->get_id();
 	Screen.image_pending = false;
 }
@@ -481,7 +556,7 @@ void script_screen_queue::update()
 		{
 			if (auto const live{screen.lock()}; live != nullptr)
 			{
-				implementation::upload(*live);
+				m_impl->upload(*live);
 			}
 		}
 	}
@@ -494,6 +569,12 @@ void script_screen_queue::update()
 	{
 		implementation::execute(command);
 	}
+}
+
+void script_screen_queue::set_post_processor(script_screens::post_processor *Processor)
+{
+	m_impl->post_processor = Processor;
+	m_impl->post_on_gpu = Processor != nullptr;
 }
 
 #ifndef WITH_LUA

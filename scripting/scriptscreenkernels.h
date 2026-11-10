@@ -9,8 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 // image filters the script screens call through the host (led_post, resize_lanczos), run natively rather than
 // in the interpreter. they give the very pixels of the Python screens: led_util.render_post() and Pillow's
@@ -32,5 +34,33 @@ bool led_post(std::span<std::uint8_t const> Source, int Width, int Height, std::
 // Pillow's resize with the Lanczos filter, horizontally then vertically, each pass rounded to 8 bits. returns false
 // for sizes that don't fit the spans
 bool resize_lanczos(std::span<std::uint8_t const> Source, int Width, int Height, std::span<std::uint8_t> Target, int TargetWidth, int TargetHeight);
+
+// one step of the post-processing a script asks for on its image (image:led_post, image:resize). the steps of the image
+// render returns run on the gpu when the renderer can (script_screens::post_processor), otherwise on the cpu
+struct post_step
+{
+	enum class kind
+	{
+		led, // led_post
+		resize // resize_lanczos
+	};
+	kind type{kind::led};
+	bool bloom{true}; // led: with the glow
+	int width{0}; // resize: the size it gives
+	int height{0};
+};
+
+struct post_image
+{
+	std::vector<std::uint8_t> pixels; // RGBA, from the top row down
+	int width{0};
+	int height{0};
+};
+
+// the size of an image Width wide, or Height high, after the step
+int width_after(post_step const &Step, int Width);
+int height_after(post_step const &Step, int Height);
+// runs the steps on the cpu, one after another. false for sizes the kernels refuse; the image is then as it was
+bool apply_post(post_image &Image, std::span<post_step const> Steps);
 
 } // namespace script_screens

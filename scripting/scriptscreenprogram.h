@@ -47,6 +47,8 @@ struct render_call
 	std::vector<std::uint8_t> pixels;
 	int width{0};
 	int height{0};
+	// the post-processing still to run on the image (image:led_post, image:resize of the Lua screens)
+	std::vector<post_step> post;
 };
 
 // a running script: a Lua state, a WebAssembly instance. made, called and destroyed on the worker thread, or by the
