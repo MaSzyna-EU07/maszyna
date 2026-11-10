@@ -3050,11 +3050,13 @@ void editor_mode::apply_include()
     if (false == m_include.info.signal_kind.empty()
      && std::any_of(m_include.info.parameters.begin(), m_include.info.parameters.end(), [](auto const &Parameter) { return Parameter.id == 6 && Parameter.role == "texture"; }))
     {
-        // a drawn plate of a signal follows its name, a plate picked from the textures stays
+        // a drawn plate of a signal follows its name, a plate picked from the textures stays. While the name is cleared the
+        // plate keeps the last one, so it follows again once a name is typed
         std::string file;
         std::vector<std::string> previous;
         if (editor_includes::parse_directive(before, file, previous) && previous.size() >= 6 && m_include.values.size() >= 6
-         && previous[0] != m_include.values[0] && m_include.values[5] == previous[5] && previous[5] == signal_plate(previous[0]))
+         && previous[0] != m_include.values[0] && m_include.values[5] == previous[5] && signal_plate_drawn(previous[5])
+         && false == m_include.values[0].empty() && m_include.values[0] != "none")
             m_include.values[5] = signal_plate(m_include.values[0]);
     }
     auto const directive = editor_includes::compose_directive(m_include.target, m_include.values);

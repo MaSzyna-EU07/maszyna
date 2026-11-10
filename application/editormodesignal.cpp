@@ -44,6 +44,7 @@ float const kSignalPick{12.0f};
 float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
+char const *const kDrawnPlate{"make:signal_plate?name="}; // the plate drawn by python/local/signal_plate.py
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
@@ -729,8 +730,17 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 
 std::string editor_mode::signal_plate(std::string const &Name)
 {
+	// a name the plate can't carry: '|' splits the skin, '&' and '?' the query of the script, and a very long one makes a path
+	// longer than a file system takes when the skin is looked for on the disk
+	if (Name.empty() || Name.size() > 64 || Name.find_first_of("|&?") != std::string::npos)
+		return "0_nothing";
 	// the template puts it after a folder, "tabl/(p6)": material_data::assign() takes the folder off a texture made by a script
-	return "make:signal_plate?name=" + Name;
+	return kDrawnPlate + Name;
+}
+
+bool editor_mode::signal_plate_drawn(std::string const &Plate)
+{
+	return Plate.starts_with(kDrawnPlate);
 }
 
 void editor_mode::signal_select(scene::instance_handle const Instance)
@@ -886,7 +896,8 @@ void editor_mode::render_signal_ui()
 		ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
 	if (armed != nullptr && armed->plate)
 	{
-		auto const automatic{format(STR_C("auto: drawn \"%s\""), tool.name)};
+		auto const plate{signal_plate(tool.name)};
+		auto const automatic{signal_plate_drawn(plate) ? format(STR_C("auto: drawn \"%s\""), tool.name) : format(STR_C("auto: %s"), plate.c_str())};
 		ImGui::InputTextWithHint(STR_C("Plate"), automatic.c_str(), tool.plate, sizeof(tool.plate));
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: a plate with the name of the signal, drawn by python/local/signal_plate.py"));

@@ -4729,6 +4729,9 @@ msgstr "Nazwa następnego sygnalizatora; po każdym postawionym rośnie o jeden.
 msgid "auto: drawn \"%s\""
 msgstr "auto: rysowana „%s”"
 
+msgid "auto: %s"
+msgstr "auto: %s"
+
 msgid "Plate"
 msgstr "Tablica"
 
