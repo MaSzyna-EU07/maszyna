@@ -1,0 +1,350 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the snow on the windscreens (water_sim.glsl, water.glsl): a step of the snow of the glasses of the snow, a thread per texel of
+// the map of a glass, a row of groups per glass. the step reads one map of the snow and writes the other (water_snow.w says which
+// one it reads), so a texel sees its neighbours as they were before the step
+//
+// what a texel holds: the snow, mm (as it lies, fluffy or packed), the water, mm (the melted snow, a film on the glass and soaked
+// into the snow), how packed the snow is (0 fresh flakes .. 1 snow pressed by a blade) and a random number, the shape of its
+// flakes (mat_snow_windscreen.frag). in a step, in this order:
+// - the snow and the water move: wet heavy snow (slush) slides down the glass, dry powder is blown along it by the air at speed,
+//   the water runs down as a film and is pushed by the air; and snow piled higher than its neighbours by more than it holds slips
+//   onto them (a ridge left by a blade spreads into a wedge). what goes over the edge of the glass falls off
+// - the blades: a blade going over a texel in the step takes its snow (a little stays, and a wet trace of the water), and pushes
+//   it on in front of itself: the texel just ahead of the line of texels the blade went over gets their snow, packed (each texel
+//   to one texel at most: the snow pushed along is never counted twice). at the end
+//   of its sweep the blade leaves it there, a ridge; pushed past the edge of the glass, it's gone
+// - the flakes land: as many as come to the glass facing the snow coming at it against the cab (and a few in the eddies of the
+//   air where it doesn't face it), each bringing its snow to the texel; the faster the vehicle the more of the dry ones bounce off
+// - the snow melts: the glass is warmer than the air (the cab is heated), the less so the faster the vehicle goes; above zero the
+//   snow melts at the glass into its water, the water dries slowly
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+// how dense the snow is: fresh flakes and snow pressed by a blade (the water in a mm of it, mm)
+const float SNOW_FRESH = 0.1;
+const float SNOW_PACKED = 0.4;
+// the snow of a flake, mm3 of water (0.3 .. 2.5 as the flakes of the water passes, water_spawn.comp)
+const float SNOW_FLAKE_LEAST = 0.3;
+const float SNOW_FLAKE_MOST = 2.5;
+// the speed of the snow coming at the glass in the eddies of the air, m/s: a glass not facing the snow gets a little of it
+const float SNOW_EDDIES = 0.25;
+// the most snow a texel holds, mm, and the step of the snow to a neighbour it holds without slipping onto it, mm
+const float SNOW_MOST = 40.0;
+const float SNOW_REPOSE = 3.0;
+// the share of the snow over the step slipping onto the neighbour in a second
+const float SNOW_SLIP = 6.0;
+// the share of the snow a blade leaves (at most SNOW_WIPE_LEFT mm: the snow it pushes along goes with it), of the water, and
+// of the water of the snow it takes which it leaves as a wet trace (at most SNOW_WIPE_WET mm)
+const float SNOW_WIPE_MISS = 0.03;
+const float SNOW_WIPE_LEFT = 0.03;
+const float SNOW_WIPE_WATER = 0.1;
+const float SNOW_WIPE_TRACE = 0.08;
+const float SNOW_WIPE_WET = 0.015;
+// the longest line of texels a blade goes over in a step, texels
+const int SNOW_WIPE_LINE = 12;
+// the water the snow melts into at the glass a second for each degree the glass is above zero, mm
+const float SNOW_MELT = 0.003;
+// the water drying a second, mm, and the share of a thin film going in a second (it dries and runs off as droplets)
+const float SNOW_DRY = 0.0004;
+const float SNOW_FILM_DRY = 0.15;
+// how fast slush slides down a vertical glass, how fast dry powder goes with the air (a share of the speed of the air along the
+// glass), how fast the film of water runs down a vertical glass and goes with the air, m/s
+const float SNOW_SLIDE = 0.03;
+const float SNOW_BLOW = 0.004;
+const float SNOW_RUN = 0.02;
+const float SNOW_RUN_AIR = 0.002;
+
+// the neighbours of a texel
+const ivec2 SNOW_AROUND[8] = ivec2[8](ivec2(-1, -1), ivec2(0, -1), ivec2(1, -1), ivec2(-1, 0), ivec2(1, 0), ivec2(-1, 1), ivec2(0, 1), ivec2(1, 1));
+
+uint snow_slot;
+uint snow_from;
+uint snow_axes_base;
+
+bool snow_on_glass(ivec2 texel)
+{
+	if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, ivec2(WATER_MAP))))
+		return false;
+	return water_axes[(snow_axes_base + uint(texel.y * WATER_MAP + texel.x)) * 2u].w > 0.75;
+}
+
+vec4 snow_get(ivec2 texel)
+{
+	return snow_on_glass(texel) ? water_snow_texel(snow_slot, snow_from, texel) : vec4(0.0);
+}
+
+float snow_blade(ivec2 texel, int blade)
+{
+	texel = clamp(texel, ivec2(0), ivec2(WATER_MAP - 1));
+	return water_blades[snow_axes_base + uint(texel.y * WATER_MAP + texel.x)][blade];
+}
+
+// whether the blade went over the texel in the step (it reaches it, and the place of the texel along its sweep is between where
+// the blade was and where it is, the place it was at belonging to the step before)
+bool snow_crossed(ivec2 texel, int blade)
+{
+	float before = water_blades_before[blade];
+	float now = water_blades_now[blade];
+	if ((before < 0.0) || (now < 0.0) || (now == before) || (false == snow_on_glass(texel)))
+		return false;
+	float place = snow_blade(texel, blade);
+	if (place <= 0.001)
+		return false;
+	return (now > before) ? ((place > before) && (place <= now)) : ((place < before) && (place >= now));
+}
+
+// the way the blade goes over the texel, a step of a texel (zero when it can't be told)
+ivec2 snow_blade_way(ivec2 texel, int blade)
+{
+	float here = snow_blade(texel, blade);
+	float right = snow_blade(texel + ivec2(1, 0), blade);
+	float left = snow_blade(texel - ivec2(1, 0), blade);
+	float up = snow_blade(texel + ivec2(0, 1), blade);
+	float down = snow_blade(texel - ivec2(0, 1), blade);
+	// one-sided where a neighbour is out of the sweep
+	right = (right > 0.001) ? right : here;
+	left = (left > 0.001) ? left : here;
+	up = (up > 0.001) ? up : here;
+	down = (down > 0.001) ? down : here;
+	vec2 gradient = vec2(right - left, up - down);
+	if (dot(gradient, gradient) < 1e-12)
+		return ivec2(0);
+	vec2 way = normalize(gradient) * ((water_blades_now[blade] > water_blades_before[blade]) ? 1.0 : -1.0);
+	return ivec2(round(way));
+}
+
+// whether no blade goes over the texel now: the snow piled there may slip onto its neighbours (in a sweep of a working blade
+// the snow it pushes would slip behind it, a stripe of snow left on the wiped glass for every step)
+bool snow_unswept(ivec2 texel)
+{
+	for (int blade = 0; blade < 4; ++blade)
+	{
+		if ((water_blades_now[blade] >= 0.0) && (water_blades_now[blade] != water_blades_before[blade]) && (snow_blade(texel, blade) > 0.001))
+			return false;
+	}
+	return true;
+}
+
+// the frame of the glass at a texel, unfiltered
+water_frame_s snow_frame(ivec2 texel)
+{
+	uint index = snow_axes_base + uint(texel.y * WATER_MAP + texel.x);
+	vec4 a = water_axes[index * 2u];
+	vec4 b = water_axes[index * 2u + 1u];
+	water_frame_s frame = water_frame_s(a.xyz, b.xyz, vec3(0.0, 0.0, 1.0), a.w);
+	vec3 n = cross(a.xyz, b.xyz);
+	if (dot(n, n) > 1e-24)
+		frame.normal = normalize(n) * ((b.w < 0.0) ? -1.0 : 1.0);
+	return frame;
+}
+
+// how the snow (xy) and the water (zw) of a texel move, texels a second
+vec4 snow_motion(ivec2 texel, vec4 state)
+{
+	if ((state.x <= 0.001) && (state.y <= 0.001))
+		return vec4(0.0);
+	water_frame_s frame = snow_frame(texel);
+	vec3 n = frame.normal;
+	vec3 down = -water_up.xyz;
+	vec3 slope = down - n * dot(down, n);
+	vec3 air = water_air.xyz - n * dot(water_air.xyz, n);
+	float wind = length(air);
+	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
+	float wet = state.y / (state.y + state.x * density + 1e-4);
+	// slush: wet and heavy enough to go; dry powder: loose and thin enough to be blown
+	float slide = SNOW_SLIDE * smoothstep(0.25, 0.7, wet) * smoothstep(2.0, 8.0, state.x);
+	float blow = SNOW_BLOW * smoothstep(10.0, 25.0, wind) * (1.0 - state.z) * (1.0 - smoothstep(0.1, 0.3, wet)) * (1.0 - smoothstep(1.0, 4.0, state.x));
+	vec3 snow = slope * slide + air * blow;
+	// the film of water runs where there's enough of it, not the water soaked into the snow
+	float film = (1.0 - smoothstep(0.5, 3.0, state.x));
+	vec3 water = (slope * SNOW_RUN * smoothstep(0.03, 0.15, state.y) + air * SNOW_RUN_AIR * smoothstep(0.03, 0.1, state.y)) * film;
+	return vec4(water_to_uv(frame, snow), water_to_uv(frame, water)) * float(WATER_MAP);
+}
+
+// the shares of a texel going to its neighbours along x and along y in the step, for a motion in texels a second
+vec2 snow_out(vec2 motion, float seconds)
+{
+	return min(abs(motion) * seconds, vec2(0.45));
+}
+
+// the snow and the water of the texel after they moved in the step: what leaves it, what comes from its neighbours; the
+// packing and the shape go with the snow
+vec4 snow_move(ivec2 texel, vec4 state, float seconds)
+{
+	vec4 motion = snow_motion(texel, state);
+	vec2 snowout = snow_out(motion.xy, seconds);
+	vec2 waterout = snow_out(motion.zw, seconds);
+	float snow = state.x * (1.0 - snowout.x - snowout.y);
+	float water = state.y * (1.0 - waterout.x - waterout.y);
+	float packed = state.z * snow;
+	bool unswept = snow_unswept(texel);
+	float slip = min(SNOW_SLIP * seconds, 0.2);
+	const ivec2 sides[4] = ivec2[4](ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1));
+	for (int k = 0; k < 4; ++k)
+	{
+		ivec2 side = sides[k];
+		ivec2 other = texel + side;
+		bool glass = snow_on_glass(other);
+		vec4 neighbour = glass ? water_snow_texel(snow_slot, snow_from, other) : vec4(0.0);
+		// slipping onto the neighbour (off the glass: falling off) and from it, where no blade goes over either now
+		bool slips = unswept && snow_unswept(other);
+		float away = slips ? slip * max(state.x - neighbour.x - SNOW_REPOSE, 0.0) : 0.0;
+		snow -= away;
+		packed -= away * state.z;
+		if (false == glass)
+			continue;
+		float coming = slips ? slip * max(neighbour.x - state.x - SNOW_REPOSE, 0.0) : 0.0;
+		// what the motion of the neighbour brings: it goes this way along the axis of the side
+		vec4 itsmotion = snow_motion(other, neighbour);
+		vec2 itssnow = snow_out(itsmotion.xy, seconds);
+		vec2 itswater = snow_out(itsmotion.zw, seconds);
+		if (side.x != 0)
+		{
+			coming += (itsmotion.x * float(side.x) < 0.0) ? neighbour.x * itssnow.x : 0.0;
+			water += (itsmotion.z * float(side.x) < 0.0) ? neighbour.y * itswater.x : 0.0;
+		}
+		else
+		{
+			coming += (itsmotion.y * float(side.y) < 0.0) ? neighbour.x * itssnow.y : 0.0;
+			water += (itsmotion.w * float(side.y) < 0.0) ? neighbour.y * itswater.y : 0.0;
+		}
+		snow += coming;
+		packed += coming * neighbour.z;
+	}
+	snow = max(snow, 0.0);
+	return vec4(snow, max(water, 0.0), (snow > 1e-4) ? clamp(packed / snow, 0.0, 1.0) : 0.0, state.w);
+}
+
+// the snow and the water of the line of texels the blade went over in the step, ending at a texel (the blade goes on from it to
+// the texel ahead), and the packing of the snow (summed for its snow)
+vec3 snow_line(ivec2 last, int blade, ivec2 way)
+{
+	vec3 line = vec3(0.0);
+	for (int k = 0; k < SNOW_WIPE_LINE; ++k)
+	{
+		ivec2 texel = last - way * k;
+		if (false == snow_crossed(texel, blade))
+			break;
+		vec4 state = water_snow_texel(snow_slot, snow_from, texel);
+		line += vec3(state.x, state.y, state.x * state.z);
+	}
+	return line;
+}
+
+void main()
+{
+	snow_slot = gl_WorkGroupID.y;
+	uint place = gl_GlobalInvocationID.x;
+	if ((water_snow_slots[snow_slot] < 0.5) || (place >= uint(WATER_MAP * WATER_MAP)))
+		return;
+	snow_from = (water_snow.w > 0.5) ? 1u : 0u;
+	uint to = 1u - snow_from;
+	snow_axes_base = snow_slot * uint(WATER_MAP * WATER_MAP);
+	if (place == 0u)
+		water_header[snow_slot].zw = vec2(1.0, float(to));
+	ivec2 texel = ivec2(int(place % uint(WATER_MAP)), int(place / uint(WATER_MAP)));
+	uint index = water_snow_base(snow_slot, to) + 2u * place;
+	if (false == snow_on_glass(texel))
+	{
+		water_cells[index] = 0u;
+		water_cells[index + 1u] = 0u;
+		return;
+	}
+	float seconds = water_step.x;
+	vec4 before = water_snow_texel(snow_slot, snow_from, texel);
+	vec4 state = snow_move(texel, before, seconds);
+
+	// the blades: taken where they went over, pushed on in front of them
+	bool crossed = false;
+	vec3 pushed = vec3(0.0);
+	for (int blade = 0; blade < 4; ++blade)
+	{
+		if (snow_crossed(texel, blade))
+		{
+			crossed = true;
+			continue;
+		}
+		// every texel the blade went over goes to one texel ahead at most, so the snow it pushes isn't counted twice (it would
+		// grow at every step): in the sweep the texel takes the line of texels behind itself along the way of the blade, off the
+		// sweep (the blade pushes the snow out at its edge) the line of one of its neighbours pointing at it
+		if (snow_blade(texel, blade) > 0.001)
+		{
+			ivec2 way = snow_blade_way(texel, blade);
+			if ((way != ivec2(0)) && snow_crossed(texel - way, blade))
+				pushed += snow_line(texel - way, blade, way);
+			continue;
+		}
+		for (int k = 0; k < 8; ++k)
+		{
+			ivec2 from = texel + SNOW_AROUND[k];
+			if (false == snow_crossed(from, blade))
+				continue;
+			ivec2 way = snow_blade_way(from, blade);
+			if ((way != ivec2(0)) && (from + way == texel))
+			{
+				pushed += snow_line(from, blade, way);
+				break;
+			}
+		}
+	}
+	if (crossed)
+	{
+		float left = min(state.x * SNOW_WIPE_MISS, SNOW_WIPE_LEFT);
+		float taken = state.x - left;
+		state.x = left;
+		state.y = state.y * SNOW_WIPE_WATER + min(taken * mix(SNOW_FRESH, SNOW_PACKED, state.z) * SNOW_WIPE_TRACE, SNOW_WIPE_WET);
+	}
+	if (pushed.x + pushed.y > 0.0)
+	{
+		float snow = state.x + pushed.x;
+		// pressed by the blade
+		state.z = (snow > 1e-4) ? clamp((state.z * state.x + max(pushed.z, pushed.x * 0.85)) / snow, 0.0, 1.0) : state.z;
+		state.x = snow;
+		state.y += pushed.y * 0.5;
+	}
+
+	// the flakes landing
+	water_frame_s frame = snow_frame(texel);
+	float area = length(cross(frame.tu, frame.tv)) / float(WATER_MAP * WATER_MAP); // m2
+	vec3 coming = water_air.xyz - water_up.xyz * water_air.w; // the snow against the cab, m/s
+	float facing = max(-dot(coming, frame.normal), 0.0) + SNOW_EDDIES;
+	float speed = water_snow.z;
+	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
+	float wet = state.y / (state.y + state.x * density + 1e-4);
+	// the dry flakes bounce off a fast glass, the ones landing on wet snow or water stay
+	float sticking = 1.0 - 0.6 * smoothstep(15.0, 35.0, speed) * (1.0 - smoothstep(0.1, 0.4, wet));
+	float landings = water_snow.x / max(water_air.w, 0.1) * facing * area * seconds * sticking;
+	vec4 random = water_random(place, snow_slot, water_counts.x, 0x5e0du);
+	float count = min(floor(landings) + ((random.x < fract(landings)) ? 1.0 : 0.0), 4.0);
+	if (count > 0.0)
+	{
+		float water = count * mix(SNOW_FLAKE_LEAST, SNOW_FLAKE_MOST, random.y * random.y); // mm3
+		float added = water / SNOW_FRESH / max(area * 1e6, 1e-3); // mm of fresh snow over the texel
+		float snow = state.x + added;
+		state.z = state.z * state.x / snow;
+		// a flake on the bare glass has a shape of its own
+		state.w = (state.x < 0.3) ? random.z : state.w;
+		state.x = snow;
+	}
+
+	// the melting at the warm glass and the drying
+	float glass = water_up.w + water_snow.y / (1.0 + speed / 12.0);
+	float melted = min(SNOW_MELT * max(glass, 0.0) * seconds, state.x * density);
+	state.x -= melted / max(density, 1e-3);
+	float film = state.y * (1.0 - smoothstep(0.5, 3.0, state.x)); // the water not soaked into the snow
+	state.y = max(state.y + melted - (SNOW_DRY + SNOW_FILM_DRY * film) * seconds, 0.0);
+
+	state.x = clamp(state.x, 0.0, SNOW_MOST);
+	state.y = min(state.y, 4.0);
+	if (state.x < 0.002)
+	{
+		state.x = 0.0;
+		state.z = 0.0;
+	}
+	water_cells[index] = packHalf2x16(state.xy);
+	water_cells[index + 1u] = packHalf2x16(state.zw);
+}

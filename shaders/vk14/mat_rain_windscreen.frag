@@ -83,20 +83,26 @@ layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 3) uniform sampler
 // --- Haze of the wet glass (blur) ------------------------------------------------
 // The haze follows the rain and is wiped away by the wipers, as before (fully blurred from a quarter of the haze on).
 const float blur_amount   = 1.0;            // strength of the haze: 0 = off, 1 = full
-// after the wiper the haze grows with the rain fallen on the glass since (intensity x seconds) from nothing up to its full
-// strength, which is the intensity of the rain (cloud cover 1.5 -> 0.5). where no wiper reaches it is as always
-const float haze_fill  = 12.0;              // rain to mist the glass up fully: seconds of the heaviest rain (2x as long at 1.5)
+// after the wiper the haze grows with the rain fallen on the glass since (intensity x seconds, more at speed) from nothing up to
+// its full strength, in any rain (a lighter rain takes longer). where no wiper reaches it is full
+const float haze_fill  = 12.0;              // rain fallen since the blade to mist the glass up fully: seconds of the heaviest
+                                            // rain standing still (2x as long at 1.5; the speed counted in by the game)
 const float haze_curve = 1.0;               // > 1: slow at first, then more and more
-const float haze_speed    = 1.0;            // at speed the haze grows: x (1 + haze_speed) at full speed (see wind_drag_gain)
 const float WS_BEND_ENC   = 60.0;           // the drop request in the velocity target; must match rain_windscreen_haze.glsl
 const float WS_DROP_BIAS  = 192.0;
 const float WS_ENC        = 64.0;           // the haze request in the velocity target; must match rain_windscreen_haze.glsl
+
+// --- How the water gathers on the glass ------------------------------------------------------------------
+// the game counts the rain the glass meets (rain_state, gl::scene_ubs; more at speed) and how wet the glass is (0 dry .. 1 as full
+// of drops as it gets): the glass fills up to the full in any rain, a lighter one only takes longer, and dries when the rain stops.
+// the times are in the game (fill_rate, fill_speed, dry_halflife in the setup of the scene block). where a blade went over the glass
+// the drops come back with the rain fallen since
 
 // --- Drops (atlas tiles) ------------------------------------------------------
 // (how long they live: rain_cells.glsl; the cells of the drops and of the rivulets are worked out once a frame by rain_cells.comp)
 
 // --- Micro droplets -------------------------------------------------------------
-const float micro_density   = 0.45;         // share of micro cells holding a droplet at full rain, 0 = off
+const float micro_density   = 0.45;         // share of micro cells holding a droplet on a full glass, 0 = off
 const float micro_scale     = 3.0;          // micro grid = raindrop_grid_size * micro_scale
 const float micro_size_min  = 0.12;         // droplet radius in micro cells
 const float micro_size_max  = 0.40;
@@ -268,6 +274,14 @@ vec4 wsOver(vec4 over, vec4 under)
 // ===========================================================================
 float GetMixFactor(in vec2 co, out float side);
 
+// the rain fallen when each blade last went over the place of its sweep given by the wiper mask (-1: not known), see
+// gl::scene_ubs::wiper_rain_pass
+vec4 wsWipePass(vec4 mask)
+{
+    ivec4 b = min(ivec4(max(mask, vec4(0.0)) * float(WIPER_PASS_BUCKETS)), ivec4(WIPER_PASS_BUCKETS - 1));
+    return vec4(wiper_rain_pass[b.x].x, wiper_rain_pass[b.y].y, wiper_rain_pass[b.z].z, wiper_rain_pass[b.w].w);
+}
+
 uvec2 cellKey(vec2 c);
 
 vec2 tileOffset(float choice)
@@ -366,7 +380,7 @@ Riv getRiv(vec2 sCell, float sCW, float sCH, float gridSize)
 {
     Riv r;
     uvec4 d  = rain_cells[rain_riv_index(wsLayerIndex, ivec2(sCell))];
-    r.on     = ((float(d.x & 65535u) + 0.5) * (1.0 / 65536.0) < rain_params.x * streak_density * wsLayerDensity);
+    r.on     = ((float(d.x & 65535u) + 0.5) * (1.0 / 65536.0) < streak_density * wsLayerDensity * rain_state.y);   // as wet as the glass is
     r.life   = float((d.x >> 16) & 255u) * (1.0 / 255.0);
     float wr = rain_byte(d.y, 16u);
     r.width  = streak_head * wsLayerHead / gridSize
@@ -559,23 +573,16 @@ float wsKept(vec2 cg, float rad, float sCW, float sCH, float gridSize)
     return kept;
 }
 
-// seconds since a wiper blade last went over Co (texture UV), from the timers of its strokes as GetMixFactor takes them;
-// -1 where no wiper reaches
-float wsWipeAge(vec2 co)
+// the rain fallen (rain_state.x) since a blade last went over this place (texture UV); -1 where no blade goes or not known
+float wsWipeRain(vec2 co)
 {
-    vec4  movePhase = wiper_pos;
-    bvec4 is_out    = lessThanEqual(movePhase, vec4(1.));
-    movePhase = mix(vec4(2.) - movePhase, movePhase, is_out);
     vec4  mask    = textureLod(wipermask, co, 0.0);
-    vec4  maskVal = mix(1. - mask, mask, is_out);
-    vec4  passed  = step(maskVal, movePhase);
-    vec4  sideV   = mix(passed, vec4(1.) - passed, is_out);
-    vec4  ages    = vec4(time) - mix(wiper_timer_out, wiper_timer_return, sideV);
-    float age = -1.0;
+    vec4  at      = wsWipePass(mask);
+    float fallen  = -1.0;
     for (int i = 0; i < 4; ++i)
-        if ((mask[i] > 0.001) && ((age < 0.0) || (ages[i] < age)))
-            age = max(ages[i], 0.0);
-    return age;
+        if ((mask[i] > 0.001) && (at[i] >= 0.0))
+            fallen = (fallen < 0.0) ? max(rain_state.x - at[i], 0.0) : min(fallen, max(rain_state.x - at[i], 0.0));
+    return fallen;
 }
 
 // the tangent frame of the glass (the directions of u and v on it, view space) from the screen-space change of the place and the uv
@@ -633,10 +640,6 @@ void main()
     float wsNight  = smoothstep(0.0, drop_dark_lum, sceneLum);     // 0 dark night .. 1 daylight
     dynBright *= wsNight;
 
-    // wiper state of this pixel (blur, micro droplets)
-    float hazeSide;
-    float wipeVis = GetMixFactor(f_coord, hazeSide);
-
     Hit hit;
     hit.score = 0.0; hit.cov = 0.0; hit.colA = 0.0; hit.n = vec3(0.0, 0.0, 1.0);
     hit.offUV = vec2(0.0); hit.radUV = 1.0; hit.isDrop = 1.0;
@@ -683,6 +686,10 @@ void main()
     wsPushT  = vec2(dot(wsPush, Tgl), dot(wsPush, Bgl));
     wsPushT = (dot(wsPushT, wsPushT) > 1e-10) ? normalize(wsPushT) : vec2(0.0, -1.0);
     }
+
+    // the wiper state of this pixel (blur, micro droplets)
+    float hazeSide;
+    float wipeVis = GetMixFactor(f_coord, hazeSide);
     // the change of the glass UV (v up) per screen pixel, for the rivulets
     vec2  wsRd1 = vec2(duv1.x, flipS * duv1.y);
     vec2  wsRd2 = vec2(duv2.x, flipS * duv2.y);
@@ -695,7 +702,7 @@ void main()
     vec2  sCell = floor(sUVg / vec2(sCW, sCH));
     bool  sweepOn = streak_sweep > 0.0 && streak_density > 0.0 && (wind_streaks > 0.0 || wsWindShare < 1.0) && (WS_PROFILE != 2);
 
-    if ((rain_params.x > 0.001) && (WS_PROFILE != 5))
+    if ((rain_state.y > 0.001) && (WS_PROFILE != 5))
     {
         // ===================================================================
         // 1. drops from the atlas: this cell and its 8 neighbours
@@ -713,6 +720,9 @@ void main()
             reach &= reach - 1u;
             vec2  nc = cell + vec2(float(bit % 3 - 1), float(bit / 3 - 1));
             uvec4 d  = rain_cells[rain_drop_index(ivec2(nc))];
+            // as many drops as the glass is wet (the cells were sorted out with a little more)
+            if (rain_byte(d.y, 24u) > min(rain_state.y * drop_density, 0.95))
+                continue;
             float vis = float(d.w >> 24) * (1.0 / 255.0);
             float spreadF = mix(0.8, 1.0, float((d.y >> 19) & 31u) * (1.0 / 31.0));
             // a drop the blades miss: the same drop before and after the stroke, left where it is
@@ -786,7 +796,7 @@ void main()
             float mph   = fract(mtt);
             uint  mep   = uint(mod(floor(mtt), 65521.0));
             uint  m1    = Hash(uvec3(mk, mep * 4u + 1u));
-            if (RandF(m1) < min(rain_params.x * micro_density, 0.95))
+            if (RandF(m1) < min(micro_density * rain_state.y, 0.95))
             {
                 uint m2 = Hash(uvec3(mk, mep * 4u + 2u + uint(hazeSide) * 2u));
                 if (wipeVis >= RandF(m2))
@@ -996,10 +1006,11 @@ void main()
     // What is seen through the wet glass: the image of the last frame, blurred by the haze, bent by the drops
     // -----------------------------------------------------------------------
     // the haze after the wiper: grows with the rain fallen since, up to the intensity of the rain (as it always was where no wiper reaches)
-    float wipeAge  = wsWipeAge(f_coord);
-    float hazeBack = (wipeAge < 0.0) ? 1.0
-                   : min(wipeVis, pow(clamp(wipeAge * rain_params.x / haze_fill, 0.0, 1.0), haze_curve));
-    float hazeWeight = min(rain_params.x * hazeBack * (1.0 + haze_speed * wsSpeed), 1.0) * (1.0 - max(alphaOut, coverA));
+    float wipeRain = wsWipeRain(f_coord);
+    float hazeBack = (wipeRain < 0.0) ? rain_state.y
+                   : min(rain_state.y, pow(clamp(wipeRain / haze_fill, 0.0, 1.0), haze_curve));
+    // up to the full haze in any rain, as the glass gets wet (a lighter rain only mists it up more slowly), less as it dries
+    float hazeWeight = hazeBack * (1.0 - max(alphaOut, coverA));
     float glassClear = 1.0 - smoothstep(0.5, 0.95, glassA);
     bool  image      = ssr_params.x >= 1.0;
     float background = 0.0;                      // distance to the scene behind, along the view (0: far / not known)
@@ -1099,7 +1110,13 @@ float GetMixFactor(in vec2 co, out float side) {
     side_v = mix(side_v, vec4(1.) - side_v, is_out);
 
     // "regeneration", raindrops gradually returning after wiper pass:
-    vec4 regenPhase = clamp((vec4(time) - mix(wiper_timer_out, wiper_timer_return, side_v) - vec4(.2)) / vec4(rain_params.y), vec4(0.), vec4(1.));
+    // the share of the drops back: the glass fills with the rain fallen since the blade (rain_state), up to as wet as the glass is
+    // where no blade goes (the drops of a cell are there only up to that share, so the share of those back is the fill over it)
+    vec4 at         = wsWipePass(mask);
+    vec4 fallen     = vec4(rain_state.x) - at;
+    vec4 known      = step(vec4(0.), at);
+    vec4 filled     = mix(vec4(1.), vec4(1.) - exp(-max(fallen, vec4(0.)) * rain_state.z), known);
+    vec4 regenPhase = clamp(filled / max(rain_state.y, 1e-4), vec4(0.), vec4(1.));
 
     side_v = mix(vec4(0.), vec4(1.) - side_v, areaMask);
 

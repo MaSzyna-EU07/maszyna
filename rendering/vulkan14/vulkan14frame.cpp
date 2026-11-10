@@ -1047,7 +1047,8 @@ void vulkan14_renderer::render_scene()
 	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
 	scene.water.update(Timer::GetDeltaTime());
 	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
-	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), glm::saturate(Global.Overcast - 1.f));
+	// (the drops a cell may hold: as many as the glass is wet, a little more, since it's the wetness of the frame before)
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1505,6 +1506,9 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 			scene_ubs.wiper_timer_return = glm::vec4{-1000.};
 			scene_ubs.wiper_bugs_out = glm::vec4{-1.};
 			scene_ubs.wiper_bugs_return = glm::vec4{-1.};
+			for (auto &pass : scene_ubs.wiper_rain_pass)
+				pass = glm::vec4{-1.f};
+			m_wiperlastpos.fill(-1.0);
 			m_wiperbugs = 0.0;
 		}
 		// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
@@ -1512,6 +1516,23 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		if (owner != nullptr)
 			m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
 		scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
+		// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
+		// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly), and
+		// dries when it stops (by half in dry_halflife standing still, faster at speed)
+		{
+			constexpr double fill_rate{0.3};      // per second of the heaviest rain: 95% full in 10 s (20 s at cloud cover 1.5)
+			constexpr double fill_speed{1.5};     // at 100 km/h and more the glass meets x (1 + fill_speed) as much rain
+			constexpr double dry_halflife{180.0}; // seconds standing still
+			auto const dt{Timer::GetDeltaTime()};
+			auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
+			auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
+			m_wiperrain += dt * meet;
+			if (percipitation_intensity > 0.f)
+				m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
+			else
+				m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
+			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
+		}
 		if (owner != nullptr)
 		{
 			auto const cabactive{owner->MoverParameters->CabActive != 0 ? owner->MoverParameters->CabActive : 1};
@@ -1520,6 +1541,10 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 				if (i < owner->dWiperPos.size())
 				{
 					int index = cabactive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+					// the places of its sweep the blade went over since the last frame get the rain fallen now
+					auto const position{owner->dWiperPos[index]};
+					gl::wiper_pass_mark(scene_ubs, i, (m_wiperlastpos[i] < 0.0) ? position : m_wiperlastpos[i], position, static_cast<float>(m_wiperrain));
+					m_wiperlastpos[i] = position;
 					scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
 					if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
 					{
@@ -1543,6 +1568,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 					scene_ubs.wiper_timer_return[i] = -1000.;
 					scene_ubs.wiper_bugs_out[i] = -1.;
 					scene_ubs.wiper_bugs_return[i] = -1.;
+					gl::wiper_pass_mark(scene_ubs, i, 0.0, 1.0, -1.f);
+					m_wiperlastpos[i] = -1.0;
 				}
 			}
 		}

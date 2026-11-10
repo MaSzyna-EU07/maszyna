@@ -536,6 +536,12 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	TDynamicObject const *m_wipervehicle{nullptr};
 	// the insects that vehicle met so far: seconds of driving at 100 km/h (scene_ubs.rain_wind.w)
 	double m_wiperbugs{0.0};
+	// the place of each blade (dWiperPos) the last frame, -1 not known: the places it went over since get the rain fallen
+	// (gl::wiper_pass_mark)
+	std::array<double, 4> m_wiperlastpos{-1.0, -1.0, -1.0, -1.0};
+	// the rain the glass met so far and how wet it is (scene_ubs::rain_state)
+	double m_wiperrain{0.0};
+	double m_glasswet{0.0};
 	gl::light_data light_data{};
 	std::uint32_t m_lightcount{1}; // lights written to light_data
 	// the copies of the light buffer in the ring of the frame since the lights were last written, by the header and the sun

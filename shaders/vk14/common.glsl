@@ -142,6 +142,12 @@
 #define CAB_PROBE_SH_GROUP_SIZE 64
 #endif
 
+// the places along the sweep of a blade whose rain is kept (gl::WIPER_PASS_BUCKETS): the renderer defines it, an older one doesn't
+#ifndef WIPER_PASS_BUCKETS
+#define WIPER_PASS_BUCKETS 64
+#endif
+
+
 #include "settings.glsl"
 
 #if !defined(LAYOUT_UI) && !defined(LAYOUT_COMPUTE)
@@ -337,6 +343,10 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	// the place of the camera of the pass in the world (whole 64 m, the rest), see gl::scene_ubs
 	vec4 camera_hi;
 	vec4 camera_lo;
+	// the rain the glass meets: x fallen so far, y how wet the glass is, z how fast it fills (mat_rain_windscreen), see gl::scene_ubs
+	vec4 rain_state;
+	// the rain fallen when a blade last went over a place of its sweep (the wiper mask / 64), see gl::scene_ubs
+	vec4 wiper_rain_pass[WIPER_PASS_BUCKETS];
 };
 
 #ifndef LAYOUT_COMPUTE
