@@ -282,10 +282,10 @@ bool scene_walk::Queue_Model(TAnimModel *Instance, bool const Inrange)
 
 	auto &records{m_modelrecords[Instance]};
 	auto &bucket{records.bucket};
-	if ((bucket.recordsversion != m_instancerecordsversion) || (bucket.records.size() != 1))
+	if ((bucket.recordsversion != m_instancerecordsversion) || (bucket.records.size() != 1) || (records.area.center != Instance->location()))
 	{
 		// the key, the instance and the record anew: the editor may have given the instance another model or skins, or
-		// another instance may have taken the place of a deleted one
+		// another instance may have taken the place of a deleted one, or the game moved it (world/deer.cpp)
 		auto &key{records.key};
 		key = {};
 		key.pModel = Instance->Model();
