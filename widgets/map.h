@@ -103,7 +103,6 @@ class map_panel : public ui_panel
 	float zoom = 1.0f / 1000.0f;
 	float m_manual_rotation { 0.0f };
 	enum { MODE_MANUAL = 0, MODE_CAMERA, MODE_VEHICLE } mode = MODE_MANUAL;
-	bool m_show_speed_limits = true;
 	bool m_camera_click_pending { false };
 	double m_camera_click_deadline { 0.0 };
 	glm::dvec3 m_camera_click_position{};

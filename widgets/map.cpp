@@ -9,6 +9,7 @@
 #include "application/application.h"
 #include "editor/editorTerrainStreamer.hpp"
 #include "world/Sweep.h"
+#include <format>
 
 namespace
 {
@@ -111,17 +112,6 @@ double nice_distance_step(double target)
 	double const magnitude = std::pow(10.0, std::floor(std::log10(target)));
 	double const normalized = target / magnitude;
 	return (normalized <= 1.0 ? 1.0 : normalized <= 2.0 ? 2.0 : normalized <= 5.0 ? 5.0 : 10.0) * magnitude;
-}
-
-ImU32 speed_limit_color(double speed)
-{
-	if (speed <= 40.0)
-		return IM_COL32(245, 85, 75, 235);
-	if (speed <= 80.0)
-		return IM_COL32(245, 165, 65, 235);
-	if (speed <= 120.0)
-		return IM_COL32(235, 220, 75, 235);
-	return IM_COL32(100, 220, 125, 235);
 }
 
 }
@@ -356,25 +346,6 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 	for (auto const &handle : m_section_handles)
 		draw_geometry(handle, IM_COL32(190, 195, 200, 255));
 
-	if (m_show_speed_limits)
-	{
-		for (TTrack *track : simulation::Paths.sequence())
-		{
-			if (!track || track->iCategoryFlag != 1 || track->VelocityGet() < 0.0)
-				continue;
-
-			ImU32 const color = speed_limit_color(track->VelocityGet());
-			if (track->eType == tt_Switch && track->SwitchExtension)
-			{
-				int const state = track->GetSwitchState();
-				if (state >= 0 && state < 2)
-					draw_geometry(track->SwitchExtension->map_geometry[state], color, 3.0f);
-			}
-			else
-				draw_geometry(track->extra_map_geometry, color, 3.0f);
-		}
-	}
-
 	for (TTrack *track : simulation::Paths.sequence())
 	{
 		if (!track || track->iCategoryFlag != 1)
@@ -454,15 +425,19 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 					for (int i = 0; i < iMaxNumLights; ++i)
 					{
 						auto state = model->LightGet(i);
-						if (!state || std::get<0>(*state) < 0.0f)
+						if (!state)
 							continue;
 
 						glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-						glm::vec3 const effective_color = base_color * std::get<1>(*state);
+						float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
+						glm::vec3 const effective_color = base_color * opacity;
+						auto const color_component = [](float component) {
+							return static_cast<int>(std::clamp(component * 255.0f, 0.0f, 255.0f));
+						};
 						lamp_colors.push_back(IM_COL32(
-							static_cast<int>(std::clamp(effective_color.x * 255.0f, 0.0f, 255.0f)),
-							static_cast<int>(std::clamp(effective_color.y * 255.0f, 0.0f, 255.0f)),
-							static_cast<int>(std::clamp(effective_color.z * 255.0f, 0.0f, 255.0f)),
+							color_component(effective_color.x),
+							color_component(effective_color.y),
+							color_component(effective_color.z),
 							255));
 					}
 				}
@@ -476,26 +451,15 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 					bool const icon_hovered = mouse_over_map &&
 						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
 					if (label_hovered || icon_hovered)
-					{
 						m_hovered_map_object = sem;
-						if (label_hovered)
-							draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
-					}
 					draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
-					draw_list->AddText(label_position, IM_COL32(245, 245, 245, 255), sem->name.c_str());
-					if (icon_hovered)
-						draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
+					draw_list->AddText(
+						label_position,
+						label_hovered || icon_hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(245, 245, 245, 255),
+						sem->name.c_str());
+					if (label_hovered || icon_hovered)
+						draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
 					return;
-				}
-
-				for (std::size_t idx = 0; idx < lamp_colors.size(); ++idx)
-				{
-					float const offset = static_cast<float>(lamp_colors.size() - idx - 1);
-					ImVec2 const lamp_position(
-						center.x + dir.x * offset * lamp_spacing,
-						center.y + dir.y * offset * lamp_spacing);
-					draw_list->AddCircleFilled(lamp_position, 3.6f, lamp_colors[idx]);
-					draw_list->AddCircle(lamp_position, 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
 				}
 
 				float const head_offset = (static_cast<float>(lamp_colors.size()) - 1.0f) * lamp_spacing * 0.5f;
@@ -512,12 +476,9 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				bool const icon_hovered = mouse_over_map &&
 					std::abs(glm::dot(mouse_from_head, dir)) <= head_half_length &&
 					std::abs(glm::dot(mouse_from_head, normal)) <= head_half_width;
-				if (label_hovered || icon_hovered)
-				{
+				bool const signal_hovered = label_hovered || icon_hovered;
+				if (signal_hovered)
 					m_hovered_map_object = sem;
-					if (label_hovered)
-						draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
-				}
 
 				ImVec2 const head_front_left(
 					head_center.x + dir.x * head_half_length + normal.x * head_half_width,
@@ -535,11 +496,25 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				draw_list->AddQuadFilled(
 					head_front_left, head_front_right, head_rear_right, head_rear_left,
 					IM_COL32(35, 40, 45, 220));
-				if (icon_hovered)
+				if (signal_hovered)
 					draw_list->AddQuad(
 						head_front_left, head_front_right, head_rear_right, head_rear_left,
-						IM_COL32(120, 200, 255, 255), 2.0f);
-				draw_list->AddText(label_position, IM_COL32(230, 240, 255, 255), sem->name.c_str());
+						IM_COL32(120, 200, 255, 255), 3.0f);
+				for (std::size_t idx = 0; idx < lamp_colors.size(); ++idx)
+				{
+					float const offset = static_cast<float>(lamp_colors.size() - idx - 1);
+					ImVec2 const lamp_position(
+						center.x + dir.x * offset * lamp_spacing,
+						center.y + dir.y * offset * lamp_spacing);
+					draw_list->AddCircleFilled(lamp_position, 3.6f, lamp_colors[idx]);
+					draw_list->AddCircle(lamp_position, 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
+					if (signal_hovered)
+						draw_list->AddCircle(lamp_position, 5.6f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
+				}
+				draw_list->AddText(
+					label_position,
+					signal_hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(230, 240, 255, 255),
+					sem->name.c_str());
 			};
 
 			if (sem->models.empty())
@@ -724,9 +699,10 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 		if (!vehicle->MyTrack || (vehicle->MyTrack->iCategoryFlag & 15) != 1 || vehicle->Prev() || !vehicle->Mechanik)
 			continue;
 
-		std::string label = vehicle->Mechanik->TrainName();
-		if (label.empty() || label == "none")
-			label = ToUpper(vehicle->name());
+		std::string train_name = vehicle->Mechanik->TrainName();
+		if (train_name.empty() || train_name == "none")
+			train_name = ToUpper(vehicle->name());
+		std::string const label = std::format("{} | {:.0f} km/h", train_name, std::abs(vehicle->GetVelocity()));
 
 		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(vehicle->GetPosition()), 1.0f);
 		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
@@ -766,24 +742,6 @@ void ui::map_panel::render_contents()
 	ImGui::BeginDisabled(simulation::Train == nullptr);
     ImGui::RadioButton(STR_C("Follow vehicle"), (int *)&mode, 2);
 	ImGui::EndDisabled();
-	ImGui::SameLine();
-	ImGui::Checkbox(STR_C("Speed limits"), &m_show_speed_limits);
-	if (simulation::Train)
-	{
-		ImGui::SameLine();
-		ImGui::Text("%.0f km/h", std::abs(simulation::Train->Dynamic()->GetVelocity()));
-	}
-	if (m_show_speed_limits)
-	{
-		ImGui::TextColored(ImVec4(0.96f, 0.33f, 0.29f, 1.0f), "<=40");
-		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(0.96f, 0.65f, 0.25f, 1.0f), "<=80");
-		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(0.92f, 0.86f, 0.29f, 1.0f), "<=120");
-		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(0.39f, 0.86f, 0.49f, 1.0f), ">120 km/h");
-	}
-
 	ImVec2 surface_size_im = ImGui::GetContentRegionAvail();
 	glm::vec2 surface_size(surface_size_im.x, surface_size_im.y);
 
@@ -801,8 +759,9 @@ void ui::map_panel::render_contents()
 		transform = glm::rotate(transform, m_manual_rotation, glm::vec3(0.0f, 1.0f, 0.0f));
 
 	TDynamicObject const *followed_vehicle = nullptr;
-	glm::dvec3 follow_position{};
-	glm::dvec3 follow_direction{};
+	glm::vec3 follow_position{};
+	glm::vec3 follow_direction{};
+	glm::vec2 follow_screen_offset{};
 	float map_rotation = m_manual_rotation;
 	if (mode == MODE_VEHICLE && simulation::Train)
 	{
@@ -816,6 +775,7 @@ void ui::map_panel::render_contents()
 		double const direction_length = glm::length(follow_direction);
 		if (direction_length > 0.0)
 			follow_direction /= direction_length;
+		follow_direction = glm::rotateY(follow_direction, -m_manual_rotation);
 	}
 	if (mode == MODE_CAMERA)
 	{
@@ -871,12 +831,14 @@ void ui::map_panel::render_contents()
 			double const desired_lookahead = std::abs(followed_vehicle->GetVelocity()) * 10.0;
 			lookahead = std::min(desired_lookahead, max_lookahead);
 		}
-		follow_position += follow_direction * lookahead;
 		translate = glm::vec2(follow_position.x, follow_position.z) * -zoom;
+		glm::vec4 const screen_direction = transform * glm::vec4(glm::vec3(follow_direction), 0.0f);
+		follow_screen_offset = glm::vec2(screen_direction.x, screen_direction.z) * static_cast<float>(-lookahead * zoom);
 	}
 
 	transform = glm::translate(transform, glm::vec3(translate.x, 0.0f, translate.y));
 	transform = glm::scale(transform, glm::vec3(zoom));
+	transform = glm::translate(glm::mat4(1.0f), glm::vec3(follow_screen_offset.x, 0.0f, follow_screen_offset.y)) * transform;
 
 	collect_map_geometry(transform);
 
@@ -904,8 +866,7 @@ void ui::map_panel::render_contents()
 		}
 		glm::dvec3 forward(-std::sin(yaw), 0.0, -std::cos(yaw));
 		double const forward_length = glm::length(forward);
-		glm::vec4 const camera_ndc = transform * glm::vec4(glm::vec3(camera.Pos), 1.0f);
-		if (forward_length > 0.0 && glm::abs(camera_ndc.x) <= 1.0f && glm::abs(camera_ndc.z) <= 1.0f)
+		if (forward_length > 0.0)
 		{
 			forward /= forward_length;
 			glm::dvec3 const side(-forward.z, 0.0, forward.x);
@@ -1078,39 +1039,6 @@ void ui::map_panel::render_contents()
 			}
 		}
 
-		if (m_show_speed_limits)
-		{
-			TTrack *nearest_track = nullptr;
-			float nearest_screen_distance = 8.0f;
-			for (TTrack *track : simulation::Paths.sequence())
-			{
-				if (!track || track->iCategoryFlag != 1 || !track->Segment)
-					continue;
-
-				glm::vec3 const position = track->Segment->get_nearest_point(world_pos);
-				glm::vec4 const track_ndc = transform * glm::vec4(position, 1.0f);
-				float const dx = (track_ndc.x - ndc_pos.x) * 0.5f * surface_size.x;
-				float const dy = (track_ndc.z - ndc_pos.y) * -0.5f * surface_size.y;
-				float const screen_distance = std::sqrt(dx * dx + dy * dy);
-				if (screen_distance < nearest_screen_distance)
-				{
-					nearest_screen_distance = screen_distance;
-					nearest_track = track;
-				}
-			}
-
-			if (nearest_track)
-			{
-				ImGui::BeginTooltip();
-				ImGui::Text("%s", nearest_track->name().c_str());
-				double const speed = nearest_track->VelocityGet();
-				if (speed < 0.0)
-					ImGui::TextUnformatted(STR_C("No posted speed limit"));
-				else
-					ImGui::Text("%.0f km/h", speed);
-				ImGui::EndTooltip();
-			}
-		}
 	}
 
 	render_labels(transform, window_origin, surface_size);
