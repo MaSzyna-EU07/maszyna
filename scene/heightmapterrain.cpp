@@ -18,6 +18,9 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <sstream>
+#include <cstdio>
+#include <cstdlib>
 
 #include <yaml-cpp/yaml.h>
 #include "zstd.h"
@@ -182,6 +185,35 @@ template <typename Slice_> bool load_slice(std::ifstream &File, Slice_ const &Sl
 int floor_div(int const Value, int const Divisor)
 {
 	return (Value >= 0 ? Value / Divisor : -((-Value + Divisor - 1) / Divisor));
+}
+
+// smooth noise of -1..1 in waves of about Scale metres, the same at the same place every time; Channel gives another one
+double natural_noise(double const X, double const Z, double const Scale, int const Channel)
+{
+	auto const hash = [](std::int64_t const Ix, std::int64_t const Iz) {
+		auto h{static_cast<std::uint64_t>(Ix) * 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(Iz) * 0xC2B2AE3D27D4EB4Full};
+		h ^= h >> 31;
+		h *= 0xBF58476D1CE4E5B9ull;
+		h ^= h >> 29;
+		return static_cast<double>(h & 0xffffff) / static_cast<double>(0xffffff) * 2.0 - 1.0;
+	};
+	auto const octave = [&](double const U, double const V) {
+		auto const iu{std::floor(U)};
+		auto const iv{std::floor(V)};
+		auto const fu{U - iu};
+		auto const fv{V - iv};
+		auto const su{fu * fu * (3.0 - 2.0 * fu)};
+		auto const sv{fv * fv * (3.0 - 2.0 * fv)};
+		auto const x{static_cast<std::int64_t>(iu)};
+		auto const z{static_cast<std::int64_t>(iv)};
+		auto const a{hash(x, z) + (hash(x + 1, z) - hash(x, z)) * su};
+		auto const b{hash(x, z + 1) + (hash(x + 1, z + 1) - hash(x, z + 1)) * su};
+		return a + (b - a) * sv;
+	};
+	auto const scale{std::max(0.5, Scale)};
+	auto const u{X / scale + Channel * 101.7};
+	auto const v{Z / scale - Channel * 57.3};
+	return std::clamp(0.7 * octave(u, v) + 0.3 * octave(u * 2.7 + 17.3, v * 2.7 - 9.1), -1.0, 1.0);
 }
 
 // the larger of two values, the corner between them rounded off over K
@@ -666,14 +698,30 @@ std::optional<modifier_shape::effect> modifier_shape::evaluate(double const X, d
 	if (false == found)
 		return std::nullopt;
 	// the formation under the axis, slopes from its edges down or up to the ground, the bends rounded off
-	auto const slope{std::max(0.1, m_modifier.slope)};
+	auto slope{std::max(0.1, m_modifier.slope)};
 	auto const rounding{std::max(0.0, m_modifier.rounding)};
 	auto const ground{Ground};
-	auto const beyond{soft_max(0.0, distance - halfwidth, rounding)};
+	auto beyond{soft_max(0.0, distance - halfwidth, rounding)};
 	// the bends of the slopes round off only away from the formation: under it the ground is the formation itself, a cut or a
 	// fill as shallow as the bend isn't let to sink or rise it
-	auto const bend{rounding / slope * std::clamp(beyond / std::max(rounding, 1e-6), 0.0, 1.0)};
-	auto const target{ground > formation ? -soft_max(-ground, -(formation + beyond / slope), bend) : soft_max(ground, formation - beyond / slope, bend)};
+	auto bend{rounding / slope * std::clamp(beyond / std::max(rounding, 1e-6), 0.0, 1.0)};
+	auto const &natural{m_modifier.natural};
+	// away from the edge of the formation only: the track bed keeps its width and its edges
+	auto const fade{natural.any() ? std::clamp(beyond / 3.0, 0.0, 1.0) : 0.0};
+	if (fade > 0.0)
+	{
+		auto const smooth{fade * fade * (3.0 - 2.0 * fade)};
+		beyond = std::max(0.0, beyond - natural.wander * natural_noise(X, Z, natural.scale, 1) * smooth);
+		slope *= 1.0 + std::max(0.0, natural.gentler) * (0.5 + 0.5 * natural_noise(X, Z, natural.scale * 0.7, 2)) * smooth;
+		bend += std::max(0.0, natural.soften) * std::min(std::abs(ground - formation), 6.0) * smooth;
+	}
+	auto target{ground > formation ? -soft_max(-ground, -(formation + beyond / slope), bend) : soft_max(ground, formation - beyond / slope, bend)};
+	if (fade > 0.0 && natural.roughness > 0.0)
+	{
+		// bumps on the face of the slope, none where it meets the ground
+		auto const face{std::clamp(std::abs(target - ground) / 0.5, 0.0, 1.0)};
+		target += natural.roughness * natural_noise(X, Z, 3.0, 3) * face * fade;
+	}
 	return effect{target, distance - halfwidth, distance};
 }
 
@@ -747,6 +795,67 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 				if (water.outline.size() >= 3)
 					result.water.push_back(std::move(water));
 			}
+		if (auto const node{document["patches"]}; node && node.IsSequence())
+			for (auto const &entry : node)
+			{
+				surface_patch patch;
+				if (auto const name{entry["name"]})
+					patch.name = name.as<std::string>();
+				if (auto const material{entry["material"]})
+					patch.material = material.as<std::string>();
+				if (auto const size{entry["size"]})
+					patch.size = std::max(0.f, size.as<float>());
+				if (auto const rotation{entry["rotation"]})
+					patch.rotation = rotation.as<float>();
+				if (auto const lift{entry["lift"]})
+					patch.lift = lift.as<float>();
+				if (auto const outline{entry["outline"]}; outline && outline.IsSequence())
+					for (auto const &point : outline)
+						if (point.IsSequence() && point.size() >= 2)
+							patch.outline.emplace_back(point[0].as<double>(), point[1].as<double>());
+				if (auto const grid{entry["grid"]}; grid && grid.IsSequence() && grid.size() >= 5)
+				{
+					patch.origin = {grid[0].as<double>(), grid[1].as<double>()};
+					patch.spacing = std::max(0.1, grid[2].as<double>());
+					patch.columns = std::max(0, grid[3].as<int>());
+					patch.rows = std::max(0, grid[4].as<int>());
+				}
+				if (auto const heights{entry["heights"]}; heights && heights.IsSequence())
+				{
+					patch.heights.reserve(heights.size());
+					for (auto const &height : heights)
+						patch.heights.push_back(height.as<float>());
+				}
+				if (auto const follow{entry["follow"]})
+					patch.follow = follow.as<bool>();
+				if (auto const paint{entry["paint"]})
+				{
+					patch.paint = paint.as<bool>();
+					patch.follow = patch.follow || patch.paint;
+				}
+				if (auto const node{entry["feather"]})
+					patch.feather = std::max(0.f, node.as<float>());
+				if (auto const node{entry["noise"]})
+					patch.noise = std::max(0.f, node.as<float>());
+				if (auto const node{entry["noise_scale"]})
+					patch.noise_scale = std::max(0.5f, node.as<float>());
+				if (auto const node{entry["shape"]})
+					patch.shape = node.as<std::string>();
+				if (auto const node{entry["grass"]})
+					patch.grass = std::max(-2, node.as<int>());
+				if (patch.follow && !entry["grid"] && !entry["spacing"])
+					patch.spacing = 2.0;
+				if (auto const spacing{entry["spacing"]})
+					patch.spacing = std::max(0.1, spacing.as<double>());
+				if (patch.outline.size() >= 3 && (patch.follow || (patch.columns >= 2 && patch.rows >= 2 && patch.heights.size() == static_cast<std::size_t>(patch.columns) * patch.rows)))
+					result.patches.push_back(std::move(patch));
+			}
+		if (auto const node{document["patches_file"]})
+		{
+			result.patches_file = node.as<std::string>();
+			auto const folder{std::filesystem::path(Path).parent_path()};
+			load_patches((folder / result.patches_file).string(), result.patches);
+		}
 		if (auto const node{document["modifiers"]}; node && node.IsSequence())
 			for (auto const &entry : node)
 			{
@@ -759,6 +868,20 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 					item.reach = reach.as<double>();
 				if (auto const rounding{entry["rounding"]})
 					item.rounding = rounding.as<double>();
+				// natural: {wander: , scale: , gentler: , soften: , roughness: }
+				if (auto const natural{entry["natural"]}; natural && natural.IsMap())
+				{
+					auto const take = [&](char const *Key, double &Value) {
+						if (auto const node{natural[Key]})
+							Value = std::max(0.0, node.as<double>());
+					};
+					take("wander", item.natural.wander);
+					take("scale", item.natural.scale);
+					take("gentler", item.natural.gentler);
+					take("soften", item.natural.soften);
+					take("roughness", item.natural.roughness);
+					item.natural.scale = std::max(0.5, item.natural.scale);
+				}
 				if (auto const open{entry["open_start"]})
 					item.open_start = open.as<bool>();
 				if (auto const open{entry["open_end"]})
@@ -853,6 +976,69 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 		}
 		out << YAML::EndSeq;
 	}
+	auto const sidecar{Manifest.patches_file.empty() && Manifest.patches.size() > patches_inline ? std::string{"patches.txt"} : Manifest.patches_file};
+	if (false == sidecar.empty())
+	{
+		out << YAML::Key << "patches_file" << YAML::Value << sidecar;
+		auto const folder{std::filesystem::path(Path).parent_path()};
+		if (false == save_patches((folder / sidecar).string(), Manifest.patches))
+		{
+			if (Error != nullptr)
+				*Error = "can't write " + sidecar;
+			return false;
+		}
+	}
+	// with the file, only the patches with heights of their own stay here
+	auto const inline_patch = [&](surface_patch const &Patch) { return sidecar.empty() || false == Patch.follow; };
+	if (std::any_of(Manifest.patches.begin(), Manifest.patches.end(), inline_patch))
+	{
+		out << YAML::Key << "patches" << YAML::Value << YAML::BeginSeq;
+		for (auto const &patch : Manifest.patches)
+		{
+			if (false == inline_patch(patch))
+				continue;
+			out << YAML::BeginMap;
+			out << YAML::Key << "name" << YAML::Value << patch.name;
+			if (false == patch.material.empty())
+				out << YAML::Key << "material" << YAML::Value << patch.material;
+			if (patch.size > 0.f)
+				out << YAML::Key << "size" << YAML::Value << patch.size;
+			if (patch.rotation != 0.f)
+				out << YAML::Key << "rotation" << YAML::Value << patch.rotation;
+			if (patch.lift != 0.f)
+				out << YAML::Key << "lift" << YAML::Value << patch.lift;
+			out << YAML::Key << "outline" << YAML::Value << YAML::BeginSeq;
+			for (auto const &point : patch.outline)
+				out << YAML::Flow << YAML::BeginSeq << point.x << point.y << YAML::EndSeq;
+			out << YAML::EndSeq;
+			if (false == patch.shape.empty())
+				out << YAML::Key << "shape" << YAML::Value << patch.shape;
+			if (patch.grass != -2)
+				out << YAML::Key << "grass" << YAML::Value << patch.grass;
+			if (patch.paint)
+			{
+				out << YAML::Key << "paint" << YAML::Value << true;
+				out << YAML::Key << "feather" << YAML::Value << patch.feather;
+				out << YAML::Key << "noise" << YAML::Value << patch.noise;
+				out << YAML::Key << "noise_scale" << YAML::Value << patch.noise_scale;
+			}
+			else if (patch.follow)
+			{
+				out << YAML::Key << "follow" << YAML::Value << true;
+				out << YAML::Key << "spacing" << YAML::Value << patch.spacing;
+			}
+			else
+			{
+				out << YAML::Key << "grid" << YAML::Value << YAML::Flow << YAML::BeginSeq << patch.origin.x << patch.origin.y << patch.spacing << patch.columns << patch.rows << YAML::EndSeq;
+				out << YAML::Key << "heights" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+				for (auto const height : patch.heights)
+					out << std::round(height * 1000.f) / 1000.f;
+				out << YAML::EndSeq;
+			}
+			out << YAML::EndMap;
+		}
+		out << YAML::EndSeq;
+	}
 	if (false == Manifest.modifiers.empty())
 	{
 		out << YAML::Key << "modifiers" << YAML::Value << YAML::BeginSeq;
@@ -863,6 +1049,16 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 			out << YAML::Key << "slope" << YAML::Value << item.slope;
 			out << YAML::Key << "reach" << YAML::Value << item.reach;
 			out << YAML::Key << "rounding" << YAML::Value << item.rounding;
+			if (item.natural.any())
+			{
+				out << YAML::Key << "natural" << YAML::Value << YAML::Flow << YAML::BeginMap;
+				out << YAML::Key << "wander" << YAML::Value << item.natural.wander;
+				out << YAML::Key << "scale" << YAML::Value << item.natural.scale;
+				out << YAML::Key << "gentler" << YAML::Value << item.natural.gentler;
+				out << YAML::Key << "soften" << YAML::Value << item.natural.soften;
+				out << YAML::Key << "roughness" << YAML::Value << item.natural.roughness;
+				out << YAML::EndMap;
+			}
 			if (item.open_start)
 				out << YAML::Key << "open_start" << YAML::Value << true;
 			if (item.open_end)
@@ -1292,6 +1488,119 @@ bool write_pack(std::string const &Path, pack_key const &Key, std::vector<chunk_
 			return false;
 		}
 	}
+	return true;
+}
+
+void surface_patch::bounds(glm::dvec2 &Low, glm::dvec2 &High) const
+{
+	Low = glm::dvec2{std::numeric_limits<double>::max()};
+	High = glm::dvec2{-std::numeric_limits<double>::max()};
+	for (auto const &point : outline)
+	{
+		Low = glm::min(Low, point);
+		High = glm::max(High, point);
+	}
+}
+
+// the patches file: a line a patch, its fields apart by tabs: name, material, repeat, rotation, lift, spacing, kind (paint or
+// surface), transition, noise, the waves of the noise, then the outline as x z pairs apart by spaces. Lines starting with # are
+// left out. The patches of it follow the terrain. The files written before the kind came have the outline right after the spacing
+bool load_patches(std::string const &Path, std::vector<surface_patch> &Patches)
+{
+	std::ifstream file{Path};
+	if (false == file.is_open())
+		return false;
+	std::string line;
+	while (std::getline(file, line))
+	{
+		if (line.empty() || line[0] == '#')
+			continue;
+		if (line.back() == '\r')
+			line.pop_back();
+		std::vector<std::string> fields;
+		std::size_t start{0};
+		for (;;)
+		{
+			auto const tab{line.find('\t', start)};
+			fields.push_back(line.substr(start, tab == std::string::npos ? std::string::npos : tab - start));
+			if (tab == std::string::npos)
+				break;
+			start = tab + 1;
+		}
+		if (fields.size() < 7)
+			continue;
+		auto const kinded{fields.size() >= 11 && (fields[6] == "paint" || fields[6] == "surface")};
+		surface_patch patch;
+		patch.follow = true;
+		patch.name = fields[0];
+		patch.material = fields[1];
+		patch.size = std::max(0.f, static_cast<float>(std::atof(fields[2].c_str())));
+		patch.rotation = static_cast<float>(std::atof(fields[3].c_str()));
+		patch.lift = static_cast<float>(std::atof(fields[4].c_str()));
+		patch.spacing = std::max(0.1, std::atof(fields[5].c_str()));
+		if (kinded)
+		{
+			patch.paint = fields[6] == "paint";
+			patch.feather = std::max(0.f, static_cast<float>(std::atof(fields[7].c_str())));
+			patch.noise = std::max(0.f, static_cast<float>(std::atof(fields[8].c_str())));
+			patch.noise_scale = std::max(0.5f, static_cast<float>(std::atof(fields[9].c_str())));
+		}
+		std::istringstream points{fields[kinded ? 10 : 6]};
+		if (kinded && fields.size() >= 12)
+			patch.shape = fields[11];
+		if (kinded && fields.size() >= 13)
+			patch.grass = std::max(-2, std::atoi(fields[12].c_str()));
+		double x{0.0};
+		double z{0.0};
+		while (points >> x >> z)
+			patch.outline.emplace_back(x, z);
+		if (patch.outline.size() >= 3)
+			Patches.push_back(std::move(patch));
+	}
+	return true;
+}
+
+bool save_patches(std::string const &Path, std::vector<surface_patch> const &Patches)
+{
+	std::ofstream file{Path, std::ios::trunc};
+	if (false == file.is_open())
+		return false;
+	file << "# surfaces cut out of the terrain: name, material, repeat, rotation, lift, spacing, kind (paint/surface), transition, noise, waves of the noise, outline x z ... (tabs between the fields)\n";
+	char number[64];
+	for (auto const &patch : Patches)
+	{
+		if (false == patch.follow)
+			continue; // the ones with heights of their own stay in the manifest
+		file << patch.name << '\t' << patch.material << '\t' << patch.size << '\t' << patch.rotation << '\t' << patch.lift << '\t' << patch.spacing << '\t' << (patch.paint ? "paint" : "surface") << '\t'
+		     << patch.feather << '\t' << patch.noise << '\t' << patch.noise_scale << '\t';
+		for (std::size_t i = 0; i < patch.outline.size(); ++i)
+		{
+			std::snprintf(number, sizeof(number), "%s%.2f %.2f", i > 0 ? " " : "", patch.outline[i].x, patch.outline[i].y);
+			file << number;
+		}
+		if (false == patch.shape.empty() || patch.grass != -2)
+			file << '\t' << patch.shape;
+		if (patch.grass != -2)
+			file << '\t' << patch.grass;
+		file << '\n';
+	}
+	return static_cast<bool>(file);
+}
+
+bool surface_patch::height(double const X, double const Z, double &Height) const
+{
+	if (columns < 2 || rows < 2 || heights.size() != static_cast<std::size_t>(columns) * rows)
+		return false;
+	auto const u{(X - origin.x) / spacing};
+	auto const v{(Z - origin.y) / spacing};
+	if (u < -1e-6 || v < -1e-6 || u > columns - 1 + 1e-6 || v > rows - 1 + 1e-6)
+		return false;
+	auto const ix{std::clamp(static_cast<int>(std::floor(u)), 0, columns - 2)};
+	auto const iz{std::clamp(static_cast<int>(std::floor(v)), 0, rows - 2)};
+	auto const fx{std::clamp(u - ix, 0.0, 1.0)};
+	auto const fz{std::clamp(v - iz, 0.0, 1.0)};
+	auto const at = [&](int const Column, int const Row) { return static_cast<double>(heights[static_cast<std::size_t>(Row) * columns + Column]); };
+	Height = (at(ix, iz) * (1.0 - fx) + at(ix + 1, iz) * fx) * (1.0 - fz) + (at(ix, iz + 1) * (1.0 - fx) + at(ix + 1, iz + 1) * fx) * fz + lift;
 	return true;
 }
 

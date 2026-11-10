@@ -130,6 +130,8 @@ class terrain_streamer
 	// Feather: metres across the outline the material blends in over, half of them inside; 0: a sharp edge, as sharp as
 	// the paint samples of the chunks go. the chunks are loaded where needed
 	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength = 1.0);
+	// the same with the edge shifted by up to Noise metres, in waves of about NoiseScale metres, so it isn't drawn with a ruler
+	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength, double Noise, double NoiseScale);
 	// holes, for the portals of tunnels and the like: cut in the ground (Cut true) within Radius of (X,Z), or closed again
 	bool cut(double X, double Z, double Radius, bool Cut);
 	// the same within Outline (x, z); the chunks are loaded where needed
@@ -159,6 +161,9 @@ class terrain_streamer
 	void water(std::vector<heightmap::water_body> Water);
 	// material of the bodies of water which don't name their own
 	void water_material(std::string const &Material);
+	// pieces of the ground cut out of the terrain with a material of their own (the fields), drawn with the water
+	std::vector<heightmap::surface_patch> const &patches() const { return m_manifest.patches; }
+	void patches(std::vector<heightmap::surface_patch> Patches);
 	// modifiers: added or replaced by name
 	void modifier(heightmap::modifier Modifier);
 	// many at once, as the formation of all the tracks: each chunk they reach is led anew once
@@ -180,6 +185,7 @@ class terrain_streamer
 		bool manifest{false}; // the palette, the water (and its material) and the modifiers below were changed
 		std::vector<heightmap::layer_def> layers;
 		std::vector<heightmap::water_body> water;
+		std::vector<heightmap::surface_patch> patches;
 		std::string water_material;
 		std::vector<heightmap::modifier> modifiers;
 		std::vector<heightmap::grass_def> grass;
@@ -334,6 +340,13 @@ class terrain_streamer
 	glm::dvec3 m_velocity{0.0};
 	double m_cameratime{0.0};
 	bool m_hascamera{false};
+	// the pieces cut out of the terrain are made around where the camera was, within patch_reach, again when it moves patch_move away
+	static constexpr double patch_reach{1500.0};
+	static constexpr double patch_move{200.0};
+	glm::dvec2 m_patchcentre{1e12};
+	bool m_patchpending{false}; // some waited for chunks not loaded
+	bool m_patchloaded{false}; // a chunk came since they were made
+	double m_patchtried{0.0};
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
 	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view
