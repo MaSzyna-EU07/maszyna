@@ -20,6 +20,12 @@ bool map_has_vertex_budget(ImDrawList const *draw_list, int const required = 12)
 	return draw_list->VtxBuffer.Size + required < map_vertex_limit;
 }
 
+bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
+{
+	return point.x >= minimum.x && point.x <= maximum.x &&
+	       point.y >= minimum.y && point.y <= maximum.y;
+}
+
 glm::dvec2 map_signal_direction(map::semaphore const &semaphore)
 {
 	TTrack *nearest_track = nullptr;
@@ -230,6 +236,11 @@ void ui::map_panel::render_grid(ImDrawList *draw_list, ImVec2 origin, glm::vec2 
 
 void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform)
 {
+	m_hovered_map_object.reset();
+	ImVec2 const mouse_position = ImGui::GetMousePos();
+	bool const mouse_over_map =
+		map_point_in_rect(mouse_position, origin, ImVec2(origin.x + surface_size.x, origin.y + surface_size.y));
+
 	const auto to_screen = [&](glm::vec3 const &position) {
 		glm::vec4 ndc = transform * glm::vec4(position, 1.0f);
 		return ImVec2(origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
@@ -464,19 +475,49 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 
 			if (!found_lamp)
 			{
+				ImVec2 const label_position(center.x + 8.0f, center.y - 10.0f);
+				ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
+				ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
+				ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
+				bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
+				bool const icon_hovered = mouse_over_map &&
+					glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
+				if (label_hovered || icon_hovered)
+				{
+					m_hovered_map_object = sem;
+					if (label_hovered)
+						draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
+				}
 				draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
-				draw_list->AddText(ImVec2(center.x + 8.0f, center.y - 10.0f), IM_COL32(245, 245, 245, 255), sem->name.c_str());
+				draw_list->AddText(label_position, IM_COL32(245, 245, 245, 255), sem->name.c_str());
+				if (icon_hovered)
+					draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
 				continue;
 			}
 
 			for (std::size_t idx = 0; idx < lamp_positions.size(); ++idx)
 			{
-				float const offset = (static_cast<float>(lamp_positions.size()) - 1.0f) * 0.5f - static_cast<float>(idx);
-				glm::vec2 const delta = dir * offset * lamp_spacing + normal * 8.0f;
+				float const offset = static_cast<float>(lamp_positions.size() - idx - 1);
+				glm::vec2 const delta = dir * offset * lamp_spacing;
 				lamp_positions[idx] = ImVec2(center.x + delta.x, center.y + delta.y);
 			}
 
-			ImVec2 const head_center(center.x + normal.x * 8.0f, center.y + normal.y * 8.0f);
+			float const head_offset = (static_cast<float>(lamp_positions.size()) - 1.0f) * lamp_spacing * 0.5f;
+			ImVec2 const head_center(center.x + dir.x * head_offset, center.y + dir.y * head_offset);
+			ImVec2 const label_position(head_center.x + 10.0f, head_center.y - 12.0f);
+			ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
+			ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
+			ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
+			bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
+			float const icon_radius = std::max(10.0f, head_offset + 8.0f);
+			bool const icon_hovered = mouse_over_map &&
+				glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= icon_radius * icon_radius;
+			if (label_hovered || icon_hovered)
+			{
+				m_hovered_map_object = sem;
+				if (label_hovered)
+					draw_list->AddRectFilled(label_min, label_max, IM_COL32(75, 95, 115, 235), 2.0f);
+			}
 			float const head_half_length =
 				std::max(5.0f, (static_cast<float>(lamp_positions.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
 			float constexpr head_half_width = 5.0f;
@@ -505,12 +546,20 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				draw_list->AddCircleFilled(lamp_positions[idx], 3.6f, lamp_colors[idx]);
 				draw_list->AddCircle(lamp_positions[idx], 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
 			}
+			if (icon_hovered)
+				draw_list->AddCircle(center, icon_radius, IM_COL32(120, 200, 255, 255), 0, 2.0f);
 			draw_list->AddText(
-				ImVec2(head_center.x + 10.0f, head_center.y - 12.0f),
+				label_position,
 				IM_COL32(230, 240, 255, 255),
 				sem->name.c_str());
 			continue;
 		}
+
+		ImVec2 const object_position = to_screen(object->location);
+		bool const object_hovered = mouse_over_map &&
+			glm::length2(glm::vec2(mouse_position.x - object_position.x, mouse_position.y - object_position.y)) <= 100.0f;
+		if (object_hovered)
+			m_hovered_map_object = object;
 
 		ImU32 color = IM_COL32(255, 220, 70, 255);
 		if (std::dynamic_pointer_cast<map::launcher>(object))
@@ -519,7 +568,9 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 			color = IM_COL32(80, 190, 255, 255);
 		else if (std::dynamic_pointer_cast<map::obstacle>(object))
 			color = IM_COL32(255, 80, 80, 255);
-		draw_list->AddCircleFilled(to_screen(object->location), 3.0f, color);
+		draw_list->AddCircleFilled(object_position, object_hovered ? 5.0f : 3.0f, color);
+		if (object_hovered)
+			draw_list->AddCircle(object_position, 9.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
 	}
 
 }
@@ -749,6 +800,9 @@ void ui::map_panel::render_contents()
 
 	transform *= aspect_transform;
 
+	if (mode == MODE_MANUAL)
+		transform = glm::rotate(transform, m_manual_rotation, glm::vec3(0.0f, 1.0f, 0.0f));
+
 	TDynamicObject const *followed_vehicle = nullptr;
 	glm::dvec3 follow_position{};
 	glm::dvec3 follow_direction{};
@@ -916,8 +970,8 @@ void ui::map_panel::render_contents()
 		    std::isfinite(base_pixels_per_meter))
 		{
 			float const previous_zoom = zoom;
-			float const min_zoom = (110.0f / 2000.0f) / base_pixels_per_meter;
-			float const max_zoom = (110.0f / 50.0f) / base_pixels_per_meter;
+			float const min_zoom = (110.0f / 4000.0f) / base_pixels_per_meter;
+			float const max_zoom = (110.0f / 10.0f) / base_pixels_per_meter;
 			zoom = std::clamp(
 				zoom * std::pow(1.05f, io.MouseWheel),
 				min_zoom,
@@ -938,6 +992,12 @@ void ui::map_panel::render_contents()
 			m_camera_click_deadline = ImGui::GetTime() + io.MouseDoubleClickTime;
 			m_camera_click_pending = true;
 		}
+		if (mode == MODE_MANUAL && ImGui::IsMouseDragging(ImGuiMouseButton_Right))
+		{
+			ImVec2 const delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
+			ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
+			m_manual_rotation += delta.x * 0.01f;
+		}
 		if (mode == 0 && ImGui::IsMouseDragging(0))
 		{
 			ImVec2 delta_im = ImGui::GetMouseDragDelta();
@@ -955,9 +1015,38 @@ void ui::map_panel::render_contents()
 			map::sorted_object_list objects =
 				map::Objects.find_in_range(glm::vec3(world_pos.x, NAN, world_pos.z), map_pick_radius);
 
-			if (ImGui::IsMouseClicked(1))
+			if (ImGui::IsMouseReleased(0) &&
+			    io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
 			{
-				if (objects.size() > 1)
+				std::shared_ptr<map::map_object> clicked_object;
+				if (m_hovered_map_object &&
+				    (std::dynamic_pointer_cast<map::semaphore>(m_hovered_map_object) ||
+				     std::dynamic_pointer_cast<map::track_switch>(m_hovered_map_object)))
+					clicked_object = m_hovered_map_object;
+				else if (auto clickable_object = std::find_if(
+					         objects.begin(), objects.end(), [](auto const &entry) {
+						         return std::dynamic_pointer_cast<map::semaphore>(entry.second) ||
+						                std::dynamic_pointer_cast<map::track_switch>(entry.second);
+					         });
+				         clickable_object != objects.end())
+					clicked_object = clickable_object->second;
+
+				if (clicked_object)
+				{
+					handle_map_object_click(*this, clicked_object);
+					m_camera_click_pending = false;
+				}
+			}
+
+			if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+			    io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] <
+			        io.MouseDragThreshold * io.MouseDragThreshold)
+			{
+				if (m_hovered_map_object &&
+				    (std::dynamic_pointer_cast<map::semaphore>(m_hovered_map_object) ||
+				     std::dynamic_pointer_cast<map::track_switch>(m_hovered_map_object)))
+					handle_map_object_click(*this, m_hovered_map_object);
+				else if (objects.size() > 1)
 					register_popup(std::make_unique<ui::disambiguation_popup>(*this, std::move(objects)));
 				else if (objects.size() == 1)
 					handle_map_object_click(*this, objects.begin()->second);
@@ -968,6 +1057,10 @@ void ui::map_panel::render_contents()
 					        && glm::distance(glm::vec2(world_pos.x, world_pos.z), glm::vec2(nearest.x, nearest.z)) < 60.0f)
 						register_popup(std::make_unique<obstacle_insert_window>(*this, std::move(nearest)));
 				}
+			}
+			else if (m_hovered_map_object)
+			{
+				handle_map_object_hover(m_hovered_map_object);
 			}
 			else if (!objects.empty())
 			{
