@@ -5608,12 +5608,15 @@ void opengl46_renderer::Update(double const Deltatime)
 	}
 
 	m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.mainloop_total.average() );
+	// the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+	m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+	// the frames the work alone would allow, so a frame rate held down by fpslimit doesn't cut the draw ranges
+	auto const workframerate{1000.f / Timer::subsystem.mainloop_total.average()};
 
 	// adjust draw ranges etc, based on recent performance
 
 	if (Global.targetfps != 0.0f) {
-		float fps_diff = Global.targetfps - m_framerate;
+		float fps_diff = Global.targetfps - workframerate;
 		if (fps_diff > 0.0f)
 			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
 		else
@@ -5621,7 +5624,7 @@ void opengl46_renderer::Update(double const Deltatime)
 	}
 	// legacy framerate parameters
 	else if (Global.fFpsAverage != 0.f) {
-		auto const fps_diff = m_framerate - Global.fFpsAverage;
+		auto const fps_diff = workframerate - Global.fFpsAverage;
 		if (fps_diff < -Global.fFpsDeviation) {
 			Global.fDistanceFactor = std::min(std::max(1.0f, Global.fDistanceFactor - 0.05f), Global.gfx_distance_factor_max);
 		}
