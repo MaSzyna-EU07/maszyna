@@ -397,11 +397,29 @@ def work_terrain(d):
         line(d, [at(u, v) for v in steps], W - 6)
 
 
+def station_signals(d):
+    # a signal and the sparkles of the automatic: the signals of a whole station placed at once
+    line(d, [(22, 34), (22, 60)], W - 2)
+    line(d, [(12, 60), (32, 60)], W - 2)
+    rect(d, 12, 4, 32, 38, radius=9)
+    poly(d, [(48, 6), (51, 15), (60, 18), (51, 21), (48, 30), (45, 21), (36, 18), (45, 15)])
+    poly(d, [(50, 39), (52, 44), (57, 46), (52, 48), (50, 53), (48, 48), (43, 46), (48, 44)])
+
+
+def line_block(d):
+    # two block signals along the track of a line and the joint of the block section between them
+    line(d, [(4, 54), (60, 54)], W - 6)
+    for x in (16, 46):
+        line(d, [(x, 24), (x, 54)], W - 6)
+        circle(d, x, 16, 9)
+    line(d, [(31, 44), (31, 62)], W - 10)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
          vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
-         work_tracks, work_roads, work_terrain]
+         work_tracks, work_roads, work_terrain, station_signals, line_block]
 
 
 def cutouts(name, d):
@@ -414,6 +432,12 @@ def cutouts(name, d):
     elif name == "signal":
         circle(d, 32, 14, 5)
         circle(d, 32, 28, 5)
+    elif name == "station_signals":
+        circle(d, 22, 14, 5)
+        circle(d, 22, 28, 5)
+    elif name == "line_block":
+        circle(d, 16, 16, 4)
+        circle(d, 46, 16, 4)
     elif name == "vehicle":
         rect(d, 10, 27, 20, 35)
         rect(d, 26, 27, 36, 35)

@@ -654,7 +654,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
-	if (m_track_tab == track_tab::srk && m_srk.drawing())
+	if (m_track_tab == track_tab::line_block && m_srk.drawing())
 	{
 		bool valid{false};
 		intent.track = m_hover.track;
@@ -664,8 +664,44 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
-	if (m_track_tab == track_tab::srk)
+	if (m_track_tab == track_tab::station && m_srk.editing_joints())
 	{
+		bool valid{false};
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.track != nullptr ? m_hover.point : ground;
+		intent.action = m_srk.joint_hover(intent.position, valid);
+		intent.what = kind::srk_joint;
+		return intent;
+	}
+	// a tool of the station: a track selected opens its station
+	if (srk_tab() && m_hover.track != nullptr)
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+	}
+	if (m_track_tab == track_tab::signals)
+	{
+		// the path to read the selected signal picked
+		if (m_signal.picking_read)
+		{
+			if (signal_standing_of(m_signal.selected) == nullptr)
+				m_signal.picking_read = false;
+			else
+			{
+				intent.track = m_hover.track;
+				intent.path = m_hover.path;
+				intent.index = shift ? 1 : 0;
+				if (m_hover.track == nullptr)
+					return make(kind::signal_read, "Click a track to read the signal, Esc: done");
+				intent.position = m_hover.point;
+				intent.action = signal_read_label(*m_hover.track, m_hover.path, shift);
+				intent.what = kind::signal_read;
+				return intent;
+			}
+		}
 		if (auto const hit{signal_hit()}; hit >= 0)
 		{
 			auto const &standing{m_signal.standing[hit]};
@@ -680,6 +716,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			signal_spot spot;
 			if (m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
 			{
+				signal_snap(spot, *armed);
 				intent.track = m_hover.track;
 				intent.path = m_hover.path;
 				intent.position = spot.position;
@@ -693,7 +730,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.track = m_hover.track;
 			intent.path = m_hover.path;
 			intent.position = m_hover.point;
-			return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+			return make(kind::select, "Click: select");
 		}
 		return intent;
 	}
@@ -1102,6 +1139,7 @@ void editor_mode::track_press(track_intent const &Intent)
 			m_km.pick(*Intent.track, Intent.position);
 		return;
 	case kind::srk_boundary: m_srk.boundary_click(); return;
+	case kind::srk_joint: m_srk.joint_click(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);
@@ -1117,6 +1155,10 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::turntable_fit: turntable_press(Intent); return;
 	case kind::signal_place:
 	case kind::signal_move: signal_press(Intent); return;
+	case kind::signal_read:
+		if (Intent.track != nullptr)
+			signal_read_pick(*Intent.track, Intent.path, Intent.index == 1);
+		return;
 	case kind::switch_slide:
 		if (Intent.track != nullptr)
 		{

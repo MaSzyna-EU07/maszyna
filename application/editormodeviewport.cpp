@@ -177,7 +177,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::straights, false);
 		add(track_tab::turnout, false);
 		add(track_tab::parallel, false);
-		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::srk || m_track_tab == track_tab::kilometrage || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
+		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::signals || srk_tab() || m_track_tab == track_tab::kilometrage || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
 		                    m_track_tab == track_tab::joints || m_gauge.is_open()};
 		auto const more{EditorSettings.track_tools_more()};
 		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"), more, [more]() {
@@ -187,7 +187,10 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		if (false == more && false == advanced)
 			break;
 		add(track_tab::turntable, true);
-		add(track_tab::srk, false);
+		add(track_tab::signals, false);
+		add(track_tab::station, false);
+		add(track_tab::station_signals, false);
+		add(track_tab::line_block, false);
 		add(track_tab::kilometrage, false);
 		add(track_tab::lineside, false);
 		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {

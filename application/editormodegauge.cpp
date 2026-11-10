@@ -580,6 +580,41 @@ std::vector<gauge_tool::gauge_hit> const &gauge_tool::gauge_hits() const
 	return m_gauge.map.scanned ? m_gauge.map.hits : m_gauge.line.hits;
 }
 
+gauge_tool::gauge_hit gauge_tool::gauge_models(std::vector<TAnimModel *> const &Models)
+{
+	gauge_load();
+	auto const choice{gauge_choice()};
+	gauge_hit deepest;
+	// a line along each path which may reach the models
+	std::vector<gauge_line> lines;
+	for (auto *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved)
+			continue;
+		auto const close{std::any_of(Models.begin(), Models.end(), [&](TAnimModel const *Model) {
+			return Model != nullptr && geometry::plan_distance(Model->location(), track->location()) <= static_cast<double>(Model->radius() + track->radius()) + 6.0;
+		})};
+		if (false == close || false == editor_track::is_supported(*track) || outline_of(choice, *track) == nullptr)
+			continue;
+		for (int path = 0; path < static_cast<int>(track->m_paths.size()); ++path)
+		{
+			editor_track::route route;
+			route.spans.push_back({track, path, true});
+			if (auto line{track_line(choice, *track, route)})
+				lines.push_back(std::move(*line));
+		}
+	}
+	if (lines.empty())
+		return deepest;
+	corridor const space{lines};
+	std::vector<gauge_hit> hits;
+	for (auto *model : Models)
+		if (model != nullptr)
+			scan_model(space, *model, hits);
+	sort_hits(hits);
+	return hits.empty() ? deepest : hits.front();
+}
+
 void gauge_tool::update()
 {
 	if (m_gauge.scan)

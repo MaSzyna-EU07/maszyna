@@ -3654,6 +3654,12 @@ msgstr "Sygnał zastępczy"
 msgid "Repeater"
 msgstr "Powtarzacz"
 
+msgid "Level crossing disc"
+msgstr "Tarcza ostrzegawcza przejazdowa"
+
+msgid "On this side the signal would stand on the other path of the switch: place it on the outer side"
+msgstr "Z tej strony sygnalizator stałby na drugim torze rozjazdu: postaw go po stronie zewnętrznej"
+
 msgid " on the right of the trains"
 msgstr " po prawej w kierunku jazdy"
 
@@ -10988,8 +10994,8 @@ msgstr "Daje każdemu zaznaczonemu sygnalizatorowi szablon tego samego rodzaju i
 msgid "The lights go by the routes of the trains: 40 km/h through the switches 1:9, 60 through 1:12 and 1:14, 100 through 1:18.5, by their radii, for these a lower orange light, with an orange strip for 60, a green one for 100, Ie-1; an upper orange one where the next signal can show stop; the white one of the substitute signal. A signal telling of the next one standing nearer than the braking distance slows the trains with it at stop, Ie-4 § 8 ust. 5"
 msgstr "Światła wynikają z przebiegów pociągów: 40 km/h przez rozjazdy 1:9, 60 przez 1:12 i 1:14, 100 przez 1:18,5, liczone z ich promieni; dla nich dolne światło pomarańczowe, z pomarańczowym pasem dla 60 i zielonym dla 100, Ie-1; górne pomarańczowe, gdy następny semafor może pokazać stój; białe dla sygnału zastępczego. Semafor zapowiadający następny, który stoi bliżej niż droga hamowania, zmniejsza prędkość pociągów, gdy tamten pokazuje stój, Ie-4 § 8 ust. 5"
 
-msgid "No template has what %s need, they got the one chosen in Signals: see Signal heads"
-msgstr "Żaden szablon nie ma tego, czego potrzebują %s, dostały ten wybrany w Sygnalizatorach: zobacz Komory semaforów"
+msgid "No template has what %s need, they got the one chosen in Templates: see Signal heads"
+msgstr "Żaden szablon nie ma tego, czego potrzebują %s, dostały ten wybrany w Szablonach: zobacz Komory semaforów"
 
 msgid "No main signal within %.0f m ahead of it to tell of"
 msgstr "Na %.0f m przed nią nie ma semafora do zapowiadania"
@@ -11228,8 +11234,8 @@ msgstr "ze scenerii"
 msgid "Block signals stand along the line, none of them switched by a block section of the editor: the line keeps the block of the scenery as it stands"
 msgstr "Na szlaku stoją semafory SBL, ale żadnego nie przełącza odstęp edytora: szlak zostaje z blokadą scenerii, tak jak stoi"
 
-msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in Signals below, else the semi-automatic one"
-msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego niżej w Sygnalizatorach), inaczej półsamoczynna"
+msgid "The block of the line, both tracks of a double-track one alike. Automatic (SBL): block signals with block sections, no warning disc, of 3 or 4 aspects, the templates of the block signals standing swapped for those of the aspects. Semi-automatic: a warning disc ToA the braking distance before the entry signal. By itself: the automatic one where block signals stand along the line, of their aspects, or it's double-track, of the aspects of the block signal chosen in Templates below, else the semi-automatic one"
+msgstr "Blokada szlaku, na obu torach dwutorowego taka sama. Samoczynna (SBL): semafory SBL z odstępami, bez tarczy ostrzegawczej, trzy- albo czterostawna; szablony stojących semaforów SBL zostają podmienione na te o właściwej liczbie stawności. Półsamoczynna: tarcza ostrzegawcza ToA w drodze hamowania przed semaforem wjazdowym. Auto: samoczynna, gdy na szlaku stoją semafory SBL (stawność jak u nich) albo szlak jest dwutorowy (stawność jak u semafora SBL wybranego niżej w Szablonach), inaczej półsamoczynna"
 
 msgid "Draw the block boundaries"
 msgstr "Rysuj granice odstępów"
@@ -13543,3 +13549,328 @@ msgstr "Jej szablon nie ma opisu tego, co zapowiada, więc nie jest sprawdzana: 
 
 msgid "not described"
 msgstr "bez opisu"
+
+msgid "Vehicles stand on %s: its events aren't changed with them on it"
+msgstr "Na %s stoją pojazdy: jego eventy nie są zmieniane, póki tam stoją"
+
+msgid "%s can't take the event: %s"
+msgstr "%s nie może przyjąć eventu: %s"
+
+msgid "Signal %s isn't read by any path now: the trains don't see it, Ctrl+Z takes it back"
+msgstr "Sygnalizatora %s nie odczytuje teraz żaden tor: pociągi go nie widzą, Ctrl+Z cofa"
+
+msgid "Signal %s read by %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odczytywany przez %s, Ctrl+Z cofa"
+
+msgid "Click: %s no more read by %s of %s"
+msgstr "Klik: %s już nie odczytywany przez %s toru %s"
+
+msgid "Click: %s read by %s of %s too"
+msgstr "Klik: %s odczytywany także przez %s toru %s"
+
+msgid "Click: %s read by %s of %s only. Shift+click: one read more or less, Esc: done"
+msgstr "Klik: %s odczytywany tylko przez %s toru %s. Shift+klik: jeden odczyt więcej lub mniej, Esc: koniec"
+
+msgid "Read by %s on:"
+msgstr "Odczyt %s na:"
+
+msgid "Bound to its event when the scenery is saved and opened again"
+msgstr "Zwiąże się ze swoim eventem po zapisaniu i ponownym otwarciu scenerii"
+
+msgid "Other way"
+msgstr "W drugą stronę"
+
+msgid "The trains of the other direction read it on this path: event1 and event2 swapped"
+msgstr "Na tym torze odczytują go pociągi z przeciwnego kierunku: event1 i event2 zamienione"
+
+msgid "This path doesn't read it any more"
+msgstr "Ten tor przestaje go odczytywać"
+
+msgid "Picking a path... (Esc)"
+msgstr "Wskazywanie toru... (Esc)"
+
+msgid "Pick the path"
+msgstr "Wskaż tor"
+
+msgid "Click a track in the view: it reads the signal instead, Shift+click: one read more or less. The list is the one of the trains the signal faces"
+msgstr "Kliknij tor w widoku: to on będzie odczytywał sygnalizator, Shift+klik: jeden odczyt więcej lub mniej. Event jest ten pociągów, do których sygnalizator jest zwrócony"
+
+msgid "By the path it stands by"
+msgstr "Według toru, przy którym stoi"
+
+msgid "No track by the signal to read it"
+msgstr "Przy sygnalizatorze nie ma toru, który mógłby go odczytywać"
+
+msgid "The read where the editor puts it: the event of the trains it faces on the track it stands by, past the frog of a switch on the track behind it"
+msgstr "Odczyt tam, gdzie stawia go edytor: event pociągów, do których jest zwrócony, na torze, przy którym stoi, a za krzyżownicą rozjazdu na torze za rozjazdem"
+
+msgid "Click a track to read the signal, Esc: done"
+msgstr "Kliknij tor, który ma odczytywać sygnalizator, Esc: koniec"
+
+msgid "Signal %s is read so already"
+msgstr "Sygnalizator %s już jest tak odczytywany"
+
+msgid "It enters the gauge of %s by %.0f cm: there is no room for it here, put it elsewhere or on the other side"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm: tu się nie zmieści, postaw go gdzie indziej albo po drugiej stronie"
+
+msgid "Moved %.0f cm sideways to keep out of the gauge."
+msgstr "Odsunięty o %.0f cm w bok, poza skrajnię."
+
+msgid "In the gauge of %s by %.0f cm"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm"
+
+msgid "Move it out of the gauge"
+msgstr "Odsuń ze skrajni"
+
+msgid "Signal %s moved out of the gauge, read by %s %s of %s, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odsunięty ze skrajni, pociąg odczytuje go przez %s %s toru %s, Ctrl+Z cofa"
+
+msgid "Signal %s moved out of the gauge, Ctrl+Z takes it back"
+msgstr "Sygnalizator %s odsunięty ze skrajni, Ctrl+Z cofa"
+
+msgid "No track by the signal to take it from"
+msgstr "Przy sygnalizatorze nie ma toru, od którego można go odsunąć"
+
+msgid "Moves the signal sideways, away from the axis of the track whose gauge it enters, as far as it goes in. The gauge is the one chosen in the Gauge window"
+msgstr "Przesuwa sygnalizator w bok, od osi toru, w którego skrajnię wchodzi, o tyle, ile w nią wchodzi. Skrajnia jest ta wybrana w oknie Skrajnia"
+
+msgid "It enters the gauge of %s by %.0f cm: raise the gantry"
+msgstr "Wchodzi w skrajnię toru %s o %.0f cm: podnieś bramkę"
+
+msgid "A dwarf signal has no mast for an indicator under its lights"
+msgstr "Karzeł nie ma masztu na wskaźnik pod komorami"
+
+msgid "The indicator couldn't be placed: "
+msgstr "Nie udało się postawić wskaźnika: "
+
+msgid "Indicator %s put on signal %s, Ctrl+Z takes it back"
+msgstr "Wskaźnik %s dołożony do sygnalizatora %s, Ctrl+Z cofa"
+
+msgid "Both the signal and the indicator define %s: the scenery keeps one of each, the indicator may not work"
+msgstr "Zarówno sygnalizator, jak i wskaźnik definiują %s: sceneria zostawi po jednym, wskaźnik może nie działać"
+
+msgid "The indicator can't be removed: %s"
+msgstr "Nie można usunąć wskaźnika: %s"
+
+msgid "Indicator removed, Ctrl+Z brings it back"
+msgstr "Wskaźnik usunięty, Ctrl+Z przywraca"
+
+msgid "Indicators on it:"
+msgstr "Wskaźniki na nim:"
+
+msgid "Add an indicator..."
+msgstr "Dołóż wskaźnik..."
+
+msgid "An indicator of the scenery templates described as one, named after the signal: a lit one under its lights in its place by Ie-117 (from the top W21, W24, W20, W19, W26, the others below them), a plate at its foot. It moves with the signal"
+msgstr "Wskaźnik spośród szablonów scenerii opisanych jako wskaźnik, nazwany jak sygnalizator: świetlny pod komorami, na swoim miejscu według Ie-117 (od góry W21, W24, W20, W19, W26, pozostałe pod nimi), tablica przy stopie masztu. Przesuwa się razem z sygnalizatorem"
+
+msgid "A signal on a gantry takes no indicator from the list"
+msgstr "Sygnalizator na bramownicy nie bierze wskaźnika z listy"
+
+msgid "Signal %s has the indicator %s already"
+msgstr "Sygnalizator %s ma już wskaźnik %s"
+
+msgid "Station"
+msgstr "Stacja"
+
+msgid "Station signals"
+msgstr "Sygnalizatory stacji"
+
+msgid "Line block"
+msgstr "Blokada liniowa"
+
+
+msgid "Signals placed by hand from the templates in the panel: LMB by a track places the one chosen, a signal dragged slides along its track, LMB on one selects it"
+msgstr "Sygnalizatory stawiane ręcznie z szablonów w panelu: LPM przy torze stawia wybrany, przeciągnięty sygnalizator przesuwa się wzdłuż swojego toru, LPM na nim go zaznacza"
+
+msgid "A station of the scenery: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
+msgstr "Stacja scenerii: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
+
+
+msgid "The block of the lines out of a station: its block signals, warning discs and block sections"
+msgstr "Blokada linii wychodzących ze stacji: semafory SBL, tarcze ostrzegawcze i odstępy blokowe"
+
+
+msgid "The station: LMB on a switch lays it out as a schematic. Its name and code, the numbers of its switches and tracks, its track circuits"
+msgstr "Stacja: LPM na rozjeździe rozkłada ją w schemat. Jej nazwa i skrót, numery rozjazdów i torów, obwody torowe"
+
+msgid "The block of the lines out of a station, its block signals and warning discs: LMB on a switch opens the station"
+msgstr "Blokada linii wychodzących ze stacji, jej semafory SBL i tarcze ostrzegawcze: LPM na rozjeździe otwiera stację"
+
+
+msgid "not set"
+msgstr "nie ustawiono"
+
+msgid "Change in the Station tool"
+msgstr "Zmień w narzędziu Stacja"
+
+msgid "The name, the code, the line, the km and the braking distance of the station are set in the Station tool"
+msgstr "Nazwę, skrót, linię, kilometr i drogę hamowania stacji ustawia się w narzędziu Stacja"
+
+msgid "Places the signals of the station, as on the lines of PKP PLK, and names them after its code: an entry signal 300 m out on each line, A, B... from the start of the km, Z, Y... from the end, the circuit from 15 m beyond it to the station bpd_ita; an exit signal 15 m before the joint at the end of each station track a train is sent out of, F1, G2 towards the start, R1, P2 towards the end; a shunting signal Tm1, Tm2... at the end of a shorter track. A signal standing by the place of one gets its name, none is doubled. Each kind with the template chosen for it below. One step of undo"
+msgstr "Stawia semafory stacji jak na liniach PKP PLK i nazywa je od jej skrótu: wjazdowy 300 m przed stacją na każdej linii, A, B... od początku km, Z, Y... od końca, a odcinek od 15 m za nim do stacji to bpd_ita; wyjazdowy 15 m przed stykiem na końcu każdego toru, z którego wyprawia się pociągi, F1, G2 w stronę początku, R1, P2 w stronę końca; tarcza manewrowa Tm1, Tm2... na końcu krótszego toru. Semafor, który już stoi w miejscu któregoś z nich, dostaje tylko jego nazwę, nic się nie dubluje. Każdy rodzaj szablonem wybranym dla niego niżej. Jeden krok cofania"
+
+msgid "Templates"
+msgstr "Szablony"
+
+msgid "The template the signals of this kind are placed with; the Signals tool places it too"
+msgstr "Szablon, którym stawia się sygnalizatory tego rodzaju; narzędzie Sygnalizatory też go stawia"
+
+msgid "The signals tool (I)"
+msgstr "Narzędzie Sygnalizatory (I)"
+
+msgid "Turns Signals on. Click a kind of signal in its list; it shows the signals this scenery has"
+msgstr "Włącza narzędzie Sygnalizatory. Kliknij rodzaj sygnalizatora na jego liście; są na niej sygnalizatory dostępne w tej scenerii"
+
+msgid "LMB on a track of a line"
+msgstr "LPM na torze linii"
+
+msgid "a block boundary there, or on one: away"
+msgstr "stawia tam granicę odstępu, na istniejącej: usuwa ją"
+
+msgid "The signals of a whole station placed at once, named after its code, and what its signalling lacks: the lights of its signals, the SHP resonators, the lengths of its tracks. LMB on a switch opens the station"
+msgstr "Sygnalizatory całej stacji stawiane naraz i nazywane od jej skrótu oraz czego brakuje jej SRK: komory sygnalizatorów, rezonatory SHP, długości torów. LPM na rozjeździe otwiera stację"
+
+msgid "The signals of a whole station placed at once, named after its code, and what its signalling lacks: LMB on a switch opens the station"
+msgstr "Sygnalizatory całej stacji stawiane naraz i nazywane od jej skrótu oraz czego brakuje jej SRK: LPM na rozjeździe otwiera stację"
+
+msgid "Signalling check"
+msgstr "Kontrola SRK"
+
+msgid "no switch within %.0f m"
+msgstr "żadnego rozjazdu na %.0f m przed nim"
+
+msgid "%.1f m inside the fouling zone of %s"
+msgstr "%.1f m w ukresie rozjazdu %s"
+
+msgid "%.1f m to the start of %s"
+msgstr "%.1f m do początku rozjazdu %s"
+
+msgid "%.1f m to the fouling point of %s"
+msgstr "%.1f m do ukresu rozjazdu %s"
+
+msgid "From the track axis"
+msgstr "Od osi toru"
+
+msgid "The distance of the mast from the axis of the track it stands by, in the plan"
+msgstr "Odległość masztu od osi toru, przy którym stoi, w rzucie"
+
+msgid "To the switch ahead"
+msgstr "Do rozjazdu przed nim"
+
+msgid "Along the track the trains it faces run: to the start of the first switch they run onto, or to the fouling point of one they run onto from behind, where the axes of its tracks are 3.50 m apart, more in a curve under 250 m by the widening of the gauge and on a cant by the leaning of the cars, a W17 marker there or not. Dragged or placed the signal goes to 50, 100, 150 m... from it when that near, Alt keeps it where it is"
+msgstr "Wzdłuż toru, po którym jadą pociągi, do których jest zwrócony: do początku pierwszego rozjazdu, na który wjeżdżają od ostrza, albo do ukresu rozjazdu, na który wjeżdżają od strony krzyżownicy, tam gdzie osie jego torów są 3,50 m od siebie, w łuku poniżej 250 m więcej o poszerzenie skrajni, a na przechyłce o wychylenie wagonów, czy stoi tam W17, czy nie. Przeciągany albo stawiany sygnalizator przeskakuje na 50, 100, 150 m... od niego, gdy jest blisko, Alt zostawia go tam, gdzie jest"
+
+msgid "%.2f m from the axis"
+msgstr "%.2f m od osi"
+
+msgid "Signals / objects along the track"
+msgstr "Sygnalizatory / obiekty wzdłuż toru"
+
+msgid "the axes %.2f m apart there"
+msgstr "osie %.2f m od siebie"
+
+msgid "Nominally 3.50 m (Standardy techniczne PLK, tom II, 6.5). Where a track lies there in a curve under 250 m,\nthe widening of the gauge from its radius on the side of the other track is added by itself, of both tracks summed (6.6),\nand the leaning of the cars of a track on its cant towards the other one, taken 3.25 m up (Ie-1, bD)"
+msgstr "Nominalnie 3,50 m (Standardy techniczne PLK, tom II, 6.5). Gdy tor leży tam w łuku o promieniu poniżej 250 m,\nposzerzenie skrajni od promienia po stronie drugiego toru dolicza się samo, przy obu torach w łuku suma obu (6.6),\ni wychylenie wagonów toru na przechyłce w stronę drugiego toru, liczone 3,25 m nad główką szyny (Ie-1, bD)"
+
+msgid "e.g. %s"
+msgstr "np. %s"
+
+msgid "Type the code of the station first: its switches, track circuits and signals are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy rozjazdów, izolacji i semaforów"
+
+msgid "Set the track circuits of the station first, in the Station tool: the signals stand at their joints"
+msgstr "Najpierw ustaw izolacje stacji w narzędziu Stacja: semafory stają przy stykach"
+
+msgid "Type the code of the station first, in the Station tool: the signals are named after it"
+msgstr "Najpierw wpisz skrót stacji w narzędziu Stacja: od niego biorą się nazwy semaforów"
+
+msgid "A joint stands on a plain track, not in a switch: its circuit is the switch's own"
+msgstr "Styk stoi na zwykłym torze, nie w rozjeździe: rozjazd ma swój własny odcinek"
+
+msgid "Click: a new joint here, the track circuit parted"
+msgstr "Klik: nowy styk tutaj, odcinek izolowany podzielony"
+
+msgid "Click: let the joint go, it stays where it stands"
+msgstr "Klik: puść styk, zostaje tam, gdzie stoi"
+
+msgid "Click: take this joint away, the track circuits either side joined"
+msgstr "Klik: usuń ten styk, odcinki po obu stronach połączone"
+
+msgid "Click: take this joint instead"
+msgstr "Klik: weź zamiast tego ten styk"
+
+msgid "Click: take this joint, then click a track to move it there, or it again to take it away"
+msgstr "Klik: weź ten styk, potem kliknij tor, by go tam przesunąć, albo jego samego, by go usunąć"
+
+msgid "LMB on a track of the station: a joint of the track circuits there"
+msgstr "LPM na torze stacji: styk izolowany w tym miejscu"
+
+msgid "Out on the line, beyond the station: its circuits go by its block, drawn in the Line block tool"
+msgstr "Na szlaku, za stacją: tamtejsze odcinki wynikają z blokady, rysowanej w narzędziu Blokada liniowa"
+
+msgid "Type the code of the station first: its track circuits are named after it"
+msgstr "Najpierw wpisz skrót stacji: od niego biorą się nazwy odcinków izolowanych"
+
+msgid "A joint taken: LMB on a track puts it there, LMB on it again takes it away, elsewhere lets it go"
+msgstr "Styk wzięty: LPM na torze stawia go tam, LPM na nim samym usuwa go, gdzie indziej – puszcza"
+
+msgid "As planned"
+msgstr "Jak w projekcie"
+
+msgid "By hand: %zu put, %zu taken away"
+msgstr "Ręcznie: %zu postawionych, %zu usuniętych"
+
+msgid "Click: the joint moved here, %.1f m from where it stood"
+msgstr "Klik: styk przesunięty tutaj, %.1f m od miejsca, gdzie stał"
+
+msgid "Edit the joints by hand"
+msgstr "Edytuj styki ręcznie"
+
+msgid "LMB on a track: a new joint there; on a joint: take it, to move it or take it away"
+msgstr "LPM na torze: nowy styk w tym miejscu; na styku: weź go, by go przesunąć albo usunąć"
+
+msgid "LMB on a plain track of the station: a new joint of the track circuits there. LMB on a joint: it is taken; then LMB on a track moves it there, LMB on it again takes it away. The circuits are set again at once, and Set the track circuits keeps the joints so changed. One step of undo each"
+msgstr "LPM na zwykłym torze stacji: nowy styk izolowany w tym miejscu. LPM na styku: styk zostaje wzięty; potem LPM na torze przesuwa go tam, LPM na nim samym go usuwa. Odcinki są od razu ustawiane na nowo, a Ustaw izolacje zachowuje tak zmienione styki. Każda zmiana to jeden krok cofania"
+
+msgid "The joints put and taken away by hand forgotten, the circuits set again as planned. One step of undo"
+msgstr "Zapomina styki postawione i usunięte ręcznie, odcinki ustawione znów jak w projekcie. Jeden krok cofania"
+
+msgid "a joint of the track circuits there"
+msgstr "styk izolowany w tym miejscu"
+
+msgid "LMB on a joint"
+msgstr "LPM na styku"
+
+msgid "takes it: then on a track moves it, on it again away"
+msgstr "bierze go: potem na torze przesuwa, na nim samym usuwa"
+
+msgid "The indicator can't be moved: %s"
+msgstr "Wskaźnika nie da się przesunąć: %s"
+
+msgid "%s now under %s, Ctrl+Z takes it back"
+msgstr "%s jest teraz pod: %s, Ctrl+Z cofa"
+
+msgid "Only the indicators under the lights change places, a plate at the foot keeps its own"
+msgstr "Miejscami zamieniają się tylko wskaźniki pod latarnią, tablica przy stopie masztu zostaje na swoim"
+
+msgid "Raised (m)"
+msgstr "Podniesienie (m)"
+
+msgid "The distance of the mast from the axis of the track it stands by, in the plan: type another one and the signal moves across, as far along the track as it stands. Not nearer than the gauge lets it: the gauge chosen in the Gauge window pushes it out again. One step of undo"
+msgstr "Odległość masztu od osi toru, przy którym stoi, w rzucie: wpisz inną, a semafor przesunie się w poprzek, w tym samym miejscu wzdłuż toru. Nie bliżej, niż pozwala skrajnia: skrajnia wybrana w oknie Skrajnia odsunie go z powrotem. Jeden krok cofania"
+
+msgid "The head hangs this high over the rail heads of its track. One step of undo"
+msgstr "Głowica wisi tak wysoko nad główkami szyn swojego toru. Jeden krok cofania"
+
+msgid "0: the signal stands as high as its include gives for the rail heads of its track, by Ie-117 the top of its foundation 0.10 m under them, of a dwarf 0.20 m; where the ground falls away, down an embankment, lower, its foundation on the ground. Raise it where it stands higher, on a platform. One step of undo"
+msgstr "0: semafor stoi tak wysoko względem główek szyn swojego toru, jak podaje jego include; według Ie-117 wierzch fundamentu 0,10 m pod główkami, karzełka 0,20 m. Gdzie grunt opada, np. na skarpie nasypu, niżej, fundamentem na gruncie. Podnieś go, gdzie stoi wyżej, np. na peronie. Jeden krok cofania"
+
+msgid "Up: it changes places with the indicator above it. One step of undo"
+msgstr "W górę: zamienia się miejscem ze wskaźnikiem nad nim. Jeden krok cofania"
+
+msgid "Down: it changes places with the indicator below it. One step of undo"
+msgstr "W dół: zamienia się miejscem ze wskaźnikiem pod nim. Jeden krok cofania"
+
+msgid "This joint parts the station from the line out of it: it stays where the station ends"
+msgstr "Ten styk oddziela stację od szlaku: zostaje tam, gdzie kończy się stacja"
