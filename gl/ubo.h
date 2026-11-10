@@ -763,10 +763,15 @@ namespace gl
     const size_t WATER_CELLS_OFFSET = WATER_EXTRA_OFFSET + 16 * WATER_SLOT_DROPS;
     const size_t WATER_CELLS_SIZE = 4 * static_cast<size_t>(WATER_SLOTS) * WATER_GRID * WATER_GRID * (1 + WATER_CELL_DROPS);
     const size_t WATER_TRAIL_OFFSET = WATER_CELLS_OFFSET + WATER_CELLS_SIZE;
-    const size_t WATER_STORAGE_SIZE = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
+    // the snow on the glasses (water_snow.comp, mat_snow_windscreen.frag): two maps of every glass, WATER_MAP x WATER_MAP texels of
+    // two uint each (four halves: the snow, mm; the water, mm; how packed the snow is, 0 .. 1; random 0 .. 1, the shape of its
+    // flakes), a step reads one and writes the other (the header of the glass says which one is the latest)
+    const size_t WATER_SNOW_OFFSET = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
+    const size_t WATER_SNOW_SIZE = 8 * static_cast<size_t>(WATER_MAP) * WATER_MAP;
+    const size_t WATER_STORAGE_SIZE = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
     // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
-    // cells and its paths, its header and its counts, (offset, size) in bytes
-    inline std::array<std::pair<size_t, size_t>, 11> water_slot_parts(size_t const Slot)
+    // cells and its paths, its header and its counts, its two maps of the snow, (offset, size) in bytes
+    inline std::array<std::pair<size_t, size_t>, 13> water_slot_parts(size_t const Slot)
     {
         auto const drops{static_cast<size_t>(WATER_DROPS)};
         auto const texels{static_cast<size_t>(WATER_MAP) * WATER_MAP};
@@ -782,7 +787,9 @@ namespace gl
                  {WATER_CELLS_OFFSET + cells * Slot, cells},
                  {WATER_TRAIL_OFFSET + trail * Slot, trail},
                  {WATER_HEADER_OFFSET + 16 * Slot, 16},
-                 {WATER_COUNTS_OFFSET + 16 * Slot, 16}}};
+                 {WATER_COUNTS_OFFSET + 16 * Slot, 16},
+                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * Slot, WATER_SNOW_SIZE},
+                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * (WATER_SLOTS + Slot), WATER_SNOW_SIZE}}};
     }
 
     // layout std140: the step of the simulation of the water on the windscreens (GLSL water_ubo), every vector in the space of the
@@ -811,8 +818,14 @@ namespace gl
         // landings tried at the densest place are all taken), z 1 when it's simulated, w the size of its drops (the param
         // rain_scale of its material)
         glm::vec4 slots[WATER_SLOTS];
+        // the snow (water_snow.comp): x the flakes coming to a square metre of the ground in a second, y how much warmer than the
+        // air the glass is (the cab heats it), degrees, z the speed of the vehicle, m/s, w the map of the snow the step reads (0, 1)
+        glm::vec4 snow;
+        // every glass: 1 when its snow is simulated
+        glm::vec4 snow_slots;
     };
-    static_assert(sizeof(water_ubs) == 112 + 16 * WATER_SLOTS, "bad size of water_ubs");
+    static_assert(WATER_SLOTS == 4, "snow_slots holds a glass in a component");
+    static_assert(sizeof(water_ubs) == 144 + 16 * WATER_SLOTS, "bad size of water_ubs");
 
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job

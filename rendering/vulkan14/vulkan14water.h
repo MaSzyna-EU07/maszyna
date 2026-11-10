@@ -78,6 +78,7 @@ class windscreen_water : public gfx::windscreen_water
 		gather,
 		settle,
 		bake,
+		snow,
 		count
 	};
 	// the block of the step in the ring of the frame; empty when the ring is full
