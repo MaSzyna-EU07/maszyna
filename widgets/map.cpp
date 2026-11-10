@@ -504,13 +504,34 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
 			continue;
 
-		ImVec2 const vehicle_pos(
-		    map_screen_origin.x + (ndc_pos.x + 1.0f) * 0.5f * surface_size.x,
-		    map_screen_origin.y + (1.0f - ndc_pos.z) * 0.5f * surface_size.y);
 		bool const is_train_front = vehicle->Prev() == nullptr;
-		float const marker_radius = is_train_front ? 4.0f : 3.0f;
-		draw_list->AddCircleFilled(vehicle_pos, marker_radius, IM_COL32(100, 255, 130, 255));
-		draw_list->AddCircle(vehicle_pos, marker_radius, IM_COL32(20, 35, 25, 255), 0, 1.0f);
+		glm::dvec3 front = vehicle->VectorFront();
+		front.y = 0.0;
+		double const front_length = glm::length(front);
+		if (!(front_length > 0.0) || !std::isfinite(front_length))
+			continue;
+		front /= front_length;
+		glm::dvec3 const side(-front.z, 0.0, front.x);
+		double const half_length = vehicle->GetLength() * 0.5;
+		double const half_width = vehicle->GetWidth() * 0.5;
+		if (!(half_length > 0.0) || !(half_width > 0.0)
+		    || !std::isfinite(half_length) || !std::isfinite(half_width))
+			continue;
+
+		auto const to_screen = [transform, map_screen_origin, surface_size](glm::dvec3 const &position) {
+			glm::vec4 const point = transform * glm::vec4(glm::vec3(position), 1.0f);
+			return ImVec2(
+			    map_screen_origin.x + (point.x + 1.0f) * 0.5f * surface_size.x,
+			    map_screen_origin.y + (1.0f - point.z) * 0.5f * surface_size.y);
+		};
+		glm::dvec3 const center = vehicle->GetPosition();
+		ImVec2 const front_left = to_screen(center + front * half_length + side * half_width);
+		ImVec2 const rear_left = to_screen(center - front * half_length + side * half_width);
+		ImVec2 const rear_right = to_screen(center - front * half_length - side * half_width);
+		ImVec2 const front_right = to_screen(center + front * half_length - side * half_width);
+		ImU32 const fill = is_train_front ? IM_COL32(130, 255, 150, 255) : IM_COL32(100, 220, 125, 255);
+		draw_list->AddQuadFilled(front_left, rear_left, rear_right, front_right, fill);
+		draw_list->AddQuad(front_left, rear_left, rear_right, front_right, IM_COL32(20, 35, 25, 255), 1.0f);
 	}
 
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 1.0f, 0.7f, 1.0f));
