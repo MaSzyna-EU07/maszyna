@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "scene/scene.h"
 #include "world/MemCell.h"
+#include "world/TrackSleepers.h"
 #include "rendering/lightarray.h"
 #include "vr/vr_interface.h"
 #include "gl/ubo.h"
@@ -78,6 +79,8 @@ class opengl33_renderer : public gfx_renderer {
 		UserData( gfx::geometry_handle const &Geometry ) const override;
 	int
 		Primitive( gfx::geometry_handle const &Geometry ) const override;
+	bool
+		Draws_Timbers() const override { return true; }
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
@@ -324,6 +327,16 @@ class opengl33_renderer : public gfx_renderer {
 	// no-op if the track has no sleepermodel, Global.SleeperDistance is 0, or the camera is beyond
 	// Global.SleeperDistance from the track origin.
 	void Render_Sleepers( TTrack *Track );
+	// renders the sleepers and switch timbers of the tracks in range (TTrack::m_sleepers3d), laying them first where they're out of date.
+	// the parts of the model are drawn in instanced batches for the whole run of tracks, the runs of beams out of sight left out
+	void Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
+	// the cut faces of the rails of a track and the treads on them, batched with those of the other tracks where the light is the same
+	void Render_cuts( TTrack *Track, material_handle &Batchmaterial );
+	// the geometry of the neighbouring tracks gathered for one draw drawn, the batch of the material given emptied
+	void flush_path_batch( material_handle &Batchmaterial );
+	// a batch of the material started, the one gathered before drawn; returns: true if the material starts a new batch, false if it
+	// continues the current one
+	bool begin_path_batch( material_handle &Batchmaterial, material_handle const Material );
 	bool Render_cab(TDynamicObject const *Dynamic, float const Lightlevel, bool const Alpha = false);
     bool Render_interior( bool const Alpha = false );
     bool Render_lowpoly( TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false );
@@ -479,6 +492,35 @@ class opengl33_renderer : public gfx_renderer {
 	// than a single regular draw. The vertex shader reads per-instance modelview
 	// from instance_ubo[gl_InstanceID]. Reset to 0 by Render_Instanced() on exit.
 	std::size_t m_current_instance_count { 0 };
+	// camera-space transforms of the sleepers and timbers drawn by Render_Timbers, by the model and its part or its level of
+	// detail; kept from frame to frame to reuse their allocations
+	struct timber_bucket {
+		track_sleepers::beam_model const *model { nullptr };
+		int part { -1 }; // of a model put together from parts; -1: the whole model
+		float band { 0.f }; // the squared distance the level of detail of the whole model is seen from
+		std::vector<glm::mat4> instances;
+	};
+	std::vector<timber_bucket> m_timberbuckets;
+	// where the sleepers and timbers of a pass are seen from, and how far
+	struct timber_view {
+		glm::dvec3 camera { 0.0 };
+		double reach { 0.0 };
+		bool shadows { false };
+		glm::mat4 modelview { 1.f }; // of the origin of the tracks
+	};
+	// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame
+	std::vector<glm::mat4> &timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band );
+	// the beams of a track in range and in sight gathered into the buckets
+	void gather_timbers( TTrack &Track, timber_view const &View );
+	// the beams of a run of them along a track gathered into the buckets, at the level of detail they're seen at from the nearest
+	void gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview );
+	// the beams of a bucket drawn in as few instanced batches as they fit in
+	void draw_timbers( timber_bucket const &Bucket );
+	// only the given part of a timber model seen, and all its parts as they were
+	void show_timber_part( track_sleepers::beam_model const &Model, int const Part );
+	void restore_timber_parts( track_sleepers::beam_model const &Model );
+	// the visibility of the submodels of the top level of a timber model, kept while a part of it is drawn alone
+	std::vector<int> m_timbervisibility;
 	// persistent scratch buffer for Render_Instanced(): holds the per-instance
 	// camera-space root modelview matrices for the batch currently being built.
 	// Kept as a member rather than a function-local so its heap allocation is

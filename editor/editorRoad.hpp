@@ -171,8 +171,6 @@ class editor_road
 	// Radius: of the axis of that road; Layout: what the road is like. the lanes it has along its axis are the ones the roundabout gets.
 	// Island: what the middle is covered with, "none" to leave the ground showing
 	static std::vector<road_node::state> roundabout(glm::dvec3 const &Centre, double const Radius, road_node::state const &Layout, std::string const &Island);
-	// names of materials and images present in the texture folder, to pick from
-	static std::vector<std::string> const &materials();
 
   private:
 	// takes down what depends on the listed pieces and junctions, lets the caller change them, then builds it all again

@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
@@ -83,6 +84,8 @@ void focus_callback(GLFWwindow *window, int focus)
 
 void cursor_enter_callback(GLFWwindow *window, int entered)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_enter_callback(entered);
 }
 
@@ -99,6 +102,8 @@ void window_resize_callback(GLFWwindow *, int w, int h)
 
 void cursor_pos_callback(GLFWwindow *window, double x, double y)
 {
+	if (scripted_input::driving())
+		return;
 	ui_layer::cursor_pos_callback(x, y);
 	Global.cursor_pos = glm::ivec2(x, y);
 	Application.on_cursor_pos(x, y);
@@ -106,22 +111,30 @@ void cursor_pos_callback(GLFWwindow *window, double x, double y)
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_mouse_button(button, action, mods);
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_scroll(xoffset, yoffset);
 }
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+	if (scripted_input::driving())
+		return;
 
 	Application.on_key(key, scancode, action, mods);
 }
 
 void char_callback(GLFWwindow *window, unsigned int c)
 {
+	if (scripted_input::driving())
+		return;
 	Application.on_char(c);
 }
 
@@ -715,6 +728,9 @@ void eu07_application::exit()
 	auto const step = [closing](char const *What) {
 		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
+	step("the sleepers laid in the background");
+	// the sleepers laid in the background read the scenery, which goes below
+	track_sleepers::stop_background();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
@@ -988,7 +1004,8 @@ GLFWwindow *eu07_application::window(int const Windowindex, bool visible, int wi
 	if (keep_ownership)
 		m_windows.emplace_back(childwindow);
 
-	glfwFocusWindow(m_windows.front()); // restore focus to main window
+	if (glfwGetWindowAttrib(m_windows.front(), GLFW_VISIBLE))
+		glfwFocusWindow(m_windows.front()); // restore focus to main window
 
 	return childwindow;
 }
@@ -1417,8 +1434,10 @@ int eu07_application::init_glfw()
 		Global.bFullScreen = true;
 	}
 
-	// test mode keeps its window hidden: glfw, the ui and the input still need one, but nothing is shown in it
-	auto *mainwindow = window(-1, false == Global.test.enabled, Global.window_size.x, Global.window_size.y, Global.bFullScreen ? monitor : nullptr, true, false);
+	// test mode keeps its window hidden: glfw, the ui and the input still need one, but nothing is shown in it.
+	// so does a selftest of the editor run while the computer is in use for something else: never shown nor focused
+	bool const shown{false == Global.test.enabled && selftest_script("EU07_EDITOR_SELFTEST_HIDDEN") == nullptr};
+	auto *mainwindow = window(-1, shown, Global.window_size.x, Global.window_size.y, Global.bFullScreen && shown ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)
 	{

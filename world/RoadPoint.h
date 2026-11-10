@@ -164,7 +164,7 @@ class roadpoint_node : public scene::basic_node
 		double standing{0.0}; // how long it's been standing still on the road
 	};
 	// methods
-	float radius_() override;
+	float radius_() const override;
 	void serialize_(std::ostream &Output) const override;
 	void deserialize_(std::istream &Input) override;
 	void export_as_text_(std::ostream &Output) const override;

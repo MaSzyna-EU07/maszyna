@@ -376,6 +376,9 @@ public:
 	    location();
     float const &
         radius();
+    // the radius as worked out already, or worked out anew and not kept
+    float
+        radius() const;
     void
         visible( bool const Visible );
     bool
@@ -418,7 +421,7 @@ public:
 private:
 // methods
     // radius() subclass details, calculates node's bounding radius
-    virtual float radius_();
+    virtual float radius_() const;
     // serialize() subclass details, sends content of the subclass to provided stream
     virtual void serialize_( std::ostream &Output ) const = 0;
     // deserialize() subclass details, restores content of the subclass from provided stream

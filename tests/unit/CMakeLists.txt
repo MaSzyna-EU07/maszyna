@@ -21,6 +21,17 @@ add_executable(${UNIT_TESTS_NAME}
 	invariants.cpp
 	figures.cpp
 	engine_stubs.cpp
+	editor_stubs.cpp
+	# the geometry of the lines the track editor designs, standing on its own
+	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
+	# and the heights of the tracks laid
+	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
+	# and the switches laid into the curves
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	# and the fouling points of the switches, widened in the curves as the gauge is
+	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

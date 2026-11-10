@@ -96,6 +96,7 @@ struct basic_layer
 	bool created{false}; // layer was created in the editor, its file doesn't exist yet
 	bool editormade{false}; // the file was made by the editor during this session, there's no original content to keep a backup of
 	layer_handle anchor{null_handle}; // for created layer: sibling its include directive goes after
+	std::string header; // for created layer: the comment line its file starts with, in place of the general one
 	bool removed{false}; // layer is to be dropped from the scenery
 	layer_handle merged{null_handle}; // layer which took over the content of this one
 	bool dead{false}; // removal or merge of the layer was saved, it's no longer a part of the scenery
@@ -294,8 +295,9 @@ class node_layers
 	void mark(layer_handle Layer, std::string const &Mark, std::vector<std::string> Lines);
 
 	// layer management. changes are applied to the scenery files by save()
-	// creates empty layer, included from specified one. returns: handle to the new layer, or null_handle with the explanation in Reason
-	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason);
+	// creates empty layer, included from specified one, made active unless told otherwise. its file starts with the comment
+	// line given, else with the general one. returns: handle to the new layer, or null_handle with the explanation in Reason
+	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate = true, std::string Header = {});
 	bool can_remove(layer_handle Layer, std::string &Reason) const;
 	// marks specified layer and the layers it includes as dropped from the scenery. their files are left on the disk
 	bool remove(layer_handle Layer);
@@ -335,7 +337,7 @@ class node_layers
 	// returns: empty text if the directive can't be read
 	std::string directive(instance_handle Instance) const;
 	// replaces the directive of specified include, the scenery file receives it on save. NOTE: the nodes aren't touched
-	bool modify(instance_handle Instance, std::string const &Directive);
+	bool modify(instance_handle Instance, std::string const &Directive, std::string const &File = {});
 	// takes the models specified include was loaded with out of the scene, once the editor shows its own in their place
 	void rebuilt(instance_handle Instance);
 	// true if specified node was replaced by the editor with a node showing the current state of its include
@@ -348,8 +350,8 @@ class node_layers
 
 	// writes changes made in the editor to the scenery files: changed, created and deleted model instances and
 	// memory cells, and layer changes. the files are left intact unless the whole operation can be performed.
-	// Rootstatements: additional statements to place at the end of the scenario file
-	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {});
+	// Rootstatements: additional statements to place at the end of the scenario file; Statements: the same for other layers
+	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Statements = {});
 	std::string check_sources() const;
 
   private:
@@ -362,6 +364,7 @@ class node_layers
 		std::string mark;
 		source_span span; // whole line, its end included
 		std::string text;
+		bool moved{false}; // read from the letter its mark had before; the save writes it again with the mark it has now
 	};
 	// methods
 	std::string path(layer_handle const Layer) const;
