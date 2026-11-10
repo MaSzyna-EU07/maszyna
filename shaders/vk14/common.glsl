@@ -100,6 +100,7 @@
 #define MAX_PARAMS 3U
 #define MAX_HEADLIGHT_SHADOWS 4U
 #define MAX_CAB_PROBE_LAMPS 16U
+#define WIPER_PASS_BUCKETS 64
 #define CLUSTER_GRID_X 16
 #define CLUSTER_GRID_Y 9
 #define CLUSTER_GRID_Z 24
@@ -339,9 +340,8 @@ layout(std140, set = PASS_SET, binding = SCENE_UBO) uniform scene_ubo
 	vec4 camera_lo;
 	// the rain the glass meets: x fallen so far, y how wet the glass is, z how fast it fills (mat_rain_windscreen), see gl::scene_ubs
 	vec4 rain_state;
-	// the rain fallen when the blades were at the ends of their sweep, see gl::scene_ubs
-	vec4 wiper_rain_out;
-	vec4 wiper_rain_return;
+	// the rain fallen when a blade last went over a place of its sweep (the wiper mask / 64), see gl::scene_ubs
+	vec4 wiper_rain_pass[WIPER_PASS_BUCKETS];
 };
 
 #ifndef LAYOUT_COMPUTE
