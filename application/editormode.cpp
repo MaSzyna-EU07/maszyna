@@ -752,6 +752,8 @@ void editor_mode::start_focus(scene::basic_node *node, double duration)
 
 void editor_mode::fly_to(glm::dvec3 const &Target, glm::dvec3 const &Look, double const Distance, double const Duration)
 {
+    // the camera flown off somewhere leaves the track it rode along
+    m_ride.leave();
     m_focus_start_pos = Camera.Pos;
     m_focus_start_angle = Camera.Angle;
     m_focus_target_pos = Target - Look * Distance;
@@ -6145,13 +6147,12 @@ void editor_mode::render_shortcuts_window()
 	      {"F", "Fly to the selected"},
 	      {"O", "Top view, orthographic"}}},
 	    {"Ride along the track",
-	     {{"Y", "Ride along the track under the cursor; Y or Esc leaves"},
-	      {"W / S", "Drive; Shift faster, Ctrl much faster"},
-	      {"A / D", "Next track on the left / right"},
+	     {{"Y", "Ride along the track under the cursor, the tools working on; Y again leaves"},
+	      {"RMB held, W / S", "Drive; Shift faster, Ctrl+W / Ctrl+Down much faster"},
+	      {"RMB held, A / D", "Next track on the left / right"},
 	      {"Z", "The way at the next switch (it isn't thrown)"},
-	      {"E / Q, wheel", "Higher / lower"},
-	      {"LMB on a track", "Ride along that track"},
-	      {"Ctrl+M", "Minimap, stations by their W4"}}},
+	      {"RMB held, E / Q; wheel", "Higher / lower"},
+		      {"Ctrl+M", "Minimap, stations by their W4"}}},
 	    {"Gizmo",
 	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
@@ -6719,7 +6720,7 @@ void editor_mode::update_camera(double const Deltatime)
     if (m_ride.active())
     {
         m_focus_active = false;
-        m_ride.advance(Camera, Deltatime);
+        m_ride.advance(Camera, Deltatime, m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
     }
 
     // focus animation runs after Camera.Update() so it overrides any residual velocity/rotation;
@@ -7051,7 +7052,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (false == ImGui::GetIO().WantTextInput)
     {
         std::string status;
-        auto const taken{m_ride.key(Key, Action, Mods, camera_look(), status)};
+        auto const taken{m_ride.key(Key, Action, Mods, camera_look(), m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS, status)};
         if (false == status.empty())
             ui()->set_status(status, m_ride.active());
         if (taken)
@@ -7392,20 +7393,6 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // UI first
     if (m_userinterface->on_mouse_button(Button, Action))
     {
-        m_input.mouse.button(Button, Action);
-        return;
-    }
-
-    // riding along the track a click on another track takes the camera over there, the tools wait till the ride ends
-    if (Button == GLFW_MOUSE_BUTTON_LEFT && (m_ride.active() || m_ride_click) && (is_press(Action) || m_ride_click))
-    {
-        // the release goes where the press went
-        m_ride_click = is_press(Action);
-        if (is_press(Action))
-        {
-            if (auto const under{track_under_cursor(nullptr, 30.0f)}; under.track != nullptr)
-                m_ride.enter(under.track, under.path, under.point, camera_look(), false);
-        }
         m_input.mouse.button(Button, Action);
         return;
     }

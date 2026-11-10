@@ -66,11 +66,12 @@ class track_ride final : public editor_tool
 	bool enter(TTrack *Track, int const Path, glm::dvec3 const &Near, glm::dvec3 const &Look, bool const Orient);
 	void leave();
 	TTrack const *track() const { return m_place.track; }
-	// a key while riding; true when it was taken. Status is a message to show
-	bool key(int const Key, int const Action, int const Mods, glm::dvec3 const &Look, std::string &Status);
+	// a key while riding; true when it was taken. Status is a message to show. The keys driving the ride are taken only with
+	// Driving, the right button held as it is to fly the camera; without it they're the editor's
+	bool key(int const Key, int const Action, int const Mods, glm::dvec3 const &Look, bool const Driving, std::string &Status);
 	void wheel(double const Notches);
-	// the keys held moved the place by the time passed, the camera is put above the rails there
-	void advance(TCamera &Camera, double const Deltatime);
+	// the keys held moved the place by the time passed, the camera is put above the rails there; none is held without Driving
+	void advance(TCamera &Camera, double const Deltatime, bool const Driving);
 	// to the track nearest the place on the side (-1 left, 1 right) of the way the camera looks; false with none within reach
 	bool jump_side(int const Side, glm::dvec3 const &Look);
 	// the bar of the ride over the view

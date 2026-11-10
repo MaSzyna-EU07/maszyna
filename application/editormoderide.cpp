@@ -339,7 +339,7 @@ void track_ride::cycle_choice()
 	m_choice = (m_choice + 1) % 2;
 }
 
-bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3 const &Look, std::string &Status)
+bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3 const &Look, bool const Driving, std::string &Status)
 {
 	m_shift = (Mods & GLFW_MOD_SHIFT) != 0;
 	m_ctrl = (Mods & GLFW_MOD_CONTROL) != 0;
@@ -356,7 +356,7 @@ bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3
 	// before the ride
 	auto const shortcut{(Mods & GLFW_MOD_ALT) != 0 || (m_ctrl && Key != GLFW_KEY_W && Key != GLFW_KEY_UP && Key != GLFW_KEY_DOWN)};
 	auto const hold = [&](bool &Flag) {
-		Flag = held && false == shortcut;
+		Flag = held && Driving && false == shortcut;
 		return Flag;
 	};
 	switch (Key)
@@ -373,7 +373,7 @@ bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3
 	case GLFW_KEY_LEFT:
 	case GLFW_KEY_D:
 	case GLFW_KEY_RIGHT:
-		if (shortcut)
+		if (shortcut || false == Driving)
 			return false;
 		if (press && false == jump_side(Key == GLFW_KEY_A || Key == GLFW_KEY_LEFT ? -1 : 1, Look))
 			Status = STR("No track alongside");
@@ -384,11 +384,6 @@ bool track_ride::key(int const Key, int const Action, int const Mods, glm::dvec3
 		if (press)
 			cycle_choice();
 		return held;
-	case GLFW_KEY_ESCAPE:
-		// Esc closes an open menu or popup first, as it does in the rest of the editor
-		if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
-			return false;
-		[[fallthrough]];
 	case GLFW_KEY_Y:
 		if (shortcut)
 			return false;
@@ -404,7 +399,7 @@ void track_ride::wheel(double const Notches)
 	m_height = std::clamp(m_height * std::pow(0.85, -Notches), 0.5, 500.0);
 }
 
-void track_ride::advance(TCamera &Camera, double const Deltatime)
+void track_ride::advance(TCamera &Camera, double const Deltatime, bool const Driving)
 {
 	if (false == active())
 		return;
@@ -414,8 +409,9 @@ void track_ride::advance(TCamera &Camera, double const Deltatime)
 		return;
 	}
 	auto const dt{std::clamp(Deltatime, 0.0, 0.1)};
-	// the window takes the keys, their releases among them: none is held for the ride then
-	if (ImGui::GetIO().WantCaptureKeyboard)
+	// the window takes the keys, their releases among them, and the right button let go leaves them to the editor: none is held
+	// for the ride then
+	if (ImGui::GetIO().WantCaptureKeyboard || false == Driving)
 		m_forward = m_back = m_up = m_down = false;
 	// the path may have got shorter, an undo or a change of the track under the ride
 	m_place.s = std::clamp(m_place.s, 0.0, track_ride_walk::segment(m_place)->GetLength());
@@ -565,7 +561,7 @@ void track_ride::draw_hud() const
 	// the keys only standing, out of the way while driving
 	std::string keys;
 	if (std::abs(m_speed) < 0.5)
-		keys = STR("W/S drive   A/D next track   Q/E height   Esc leave");
+		keys = STR("RMB held: W/S drive, A/D next track, Q/E height   Y leave");
 
 	// over the bottom of the view, above the bar of the keys of the tools; the rows keep their places as the others come and go
 	auto const centre{0.5f * (editor_ui::view_min().x + editor_ui::view_max().x)};

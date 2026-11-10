@@ -13556,8 +13556,8 @@ msgstr "w prawo"
 msgid "Switch in %.0f m: %s   (Z changes)"
 msgstr "Rozjazd za %.0f m: %s   (Z zmienia)"
 
-msgid "W/S drive   A/D next track   Q/E height   Esc leave"
-msgstr "W/S jazda   A/D sąsiedni tor   Q/E wysokość   Esc wyjście"
+msgid "RMB held: W/S drive, A/D next track, Q/E height   Y leave"
+msgstr "z PPM: W/S jazda, A/D sąsiedni tor, Q/E wysokość   Y wyjście"
 
 msgid "No track alongside"
 msgstr "Brak toru obok"
@@ -13568,11 +13568,11 @@ msgstr "Brak toru w pobliżu"
 msgid "Ride along the track"
 msgstr "Jazda po torze"
 
-msgid "Ride along the track under the cursor; Y or Esc leaves"
-msgstr "Jazda po torze pod kursorem; Y lub Esc kończy"
+msgid "Ride along the track under the cursor, the tools working on; Y again leaves"
+msgstr "Jazda po torze pod kursorem, narzędzia działają dalej; ponowne Y kończy"
 
-msgid "Drive; Shift faster, Ctrl much faster"
-msgstr "Jazda; Shift szybciej, Ctrl dużo szybciej"
+msgid "Drive; Shift faster, Ctrl+W / Ctrl+Down much faster"
+msgstr "Jazda; Shift szybciej, Ctrl+W / Ctrl+strzałka w dół dużo szybciej"
 
 msgid "Next track on the left / right"
 msgstr "Sąsiedni tor w lewo / w prawo"
@@ -13580,14 +13580,11 @@ msgstr "Sąsiedni tor w lewo / w prawo"
 msgid "The way at the next switch (it isn't thrown)"
 msgstr "Kierunek na najbliższym rozjeździe (zwrotnica się nie przestawia)"
 
-msgid "E / Q, wheel"
-msgstr "E / Q, kółko"
+msgid "RMB held, E / Q; wheel"
+msgstr "PPM wciśnięty, E / Q; kółko"
 
 msgid "Higher / lower"
 msgstr "Wyżej / niżej"
-
-msgid "Ride along that track"
-msgstr "Jazda po tym torze"
 
 msgid "Minimap, stations by their W4"
 msgstr "Minimapa, stacje po W4"
@@ -13615,3 +13612,9 @@ msgstr "Przybliż, aby zobaczyć wszystkie tory"
 
 msgid "Ride along it"
 msgstr "Jedź po nim"
+
+msgid "RMB held, W / S"
+msgstr "PPM wciśnięty, W / S"
+
+msgid "RMB held, A / D"
+msgstr "PPM wciśnięty, A / D"

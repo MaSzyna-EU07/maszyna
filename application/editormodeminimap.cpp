@@ -263,9 +263,8 @@ void minimap_tool::render_search()
 	}
 	if (entered)
 	{
+		// the field lets the keys go, they drive the ride from there; a click on the station goes on to its next stop
 		go_to(m_stations[shown.front()]);
-		// the field keeps the keys: Enter again goes to the next stop, it doesn't reach the tools of the editor
-		ImGui::SetKeyboardFocusHere(-1);
 	}
 	if (ImGui::BeginChild("##stations", ImVec2(0.0f, (rows + 0.3f) * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders))
 	{
@@ -399,6 +398,12 @@ void minimap_tool::render_map(float const Height)
 			auto const at{to_screen({stop.point.x, stop.point.z})};
 			if (at.x < origin.x - 50.0f || at.x > corner.x + 50.0f || at.y < origin.y - 20.0f || at.y > corner.y + 20.0f)
 				continue;
+			// the stops stop short of the limit of the list too, a few hundred vertices kept for the camera and the scale
+			if (drawlist->VtxBuffer.Size > 64500)
+			{
+				full = true;
+				break;
+			}
 			drawlist->AddCircleFilled(at, marked ? 5.0f : 3.5f, marked ? IM_COL32(255, 80, 60, 255) : IM_COL32(255, 220, 60, 255));
 			if (false == named && (marked || m_scale < 25.0))
 			{
