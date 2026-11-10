@@ -1682,6 +1682,7 @@ bool editor_mode::update()
     }
     m_gauge.update();
     m_gauge.render_windows();
+    m_minimap.render_windows();
 
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
@@ -4132,6 +4133,10 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
+    if (ImGui::MenuItem(STR_C("Minimap and stations (W4)"), "Ctrl+M", m_minimap.is_open()))
+        m_minimap.toggle();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The tracks seen from above with the camera on them; a station found by the name of its W4 and gone to"));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())
@@ -6146,7 +6151,8 @@ void editor_mode::render_shortcuts_window()
 	      {"A / D", "Over to the track alongside on the left / right"},
 	      {"Z", "The way at the next switch from its blades: straight on or the turnout; the switch isn't thrown"},
 	      {"E / Q, wheel", "Higher / lower over the rails"},
-	      {"LMB on a track", "Ride along that track"}}},
+	      {"LMB on a track", "Ride along that track"},
+	      {"Ctrl+M", "Minimap and the stations by the names of their W4"}}},
 	    {"Gizmo",
 	     {{"Q / W / E", "Translate / rotate / scale; in the tracks they bring the hidden gizmo out"},
 	      {"R", "Local space"},
@@ -7097,6 +7103,14 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (handled)
             return;
+    }
+
+    // the minimap with the stations
+    if (Global.ctrlState && false == Global.shiftState && Key == GLFW_KEY_M)
+    {
+        if (is_press(Action))
+            m_minimap.toggle();
+        return;
     }
 
     // all docks unpinned and hidden at the edges, for the most of the view, or pinned back

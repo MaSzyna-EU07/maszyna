@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "application/editormodegauge.h"
 #include "application/editormoderide.h"
+#include "application/editormodeminimap.h"
 #include "application/editormodejoints.h"
 #include "application/editormodelineside.h"
 #include "application/editormodeparallel.h"
@@ -3192,7 +3193,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	srk_tool m_srk{*this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride};
+	minimap_tool m_minimap{*this, *this, m_ride};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
 
 	void infra_rebase();
 	void render_infra_search();

@@ -238,6 +238,7 @@ set(SOURCES
 "application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
 "application/editormoderide.cpp"
+"application/editormodeminimap.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
 "application/editormodesrk.cpp"

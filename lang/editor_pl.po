@@ -13603,3 +13603,33 @@ msgstr "Wyżej / niżej nad szynami"
 
 msgid "Ride along that track"
 msgstr "Jazda po tym torze"
+
+msgid "Minimap and stations (W4)"
+msgstr "Minimapa i stacje (W4)"
+
+msgid "The tracks seen from above with the camera on them; a station found by the name of its W4 and gone to"
+msgstr "Tory z góry z kamerą na nich; stację można znaleźć po nazwie z jej W4 i tam przejść"
+
+msgid "Minimap and the stations by the names of their W4"
+msgstr "Minimapa i stacje po nazwach z ich W4"
+
+msgid "Minimap"
+msgstr "Minimapa"
+
+msgid "Station (by the name of its W4)"
+msgstr "Stacja (po nazwie z W4)"
+
+msgid "The scenery marks no stops with W4 (PassengerStopPoint)"
+msgstr "Sceneria nie ma przystanków oznaczonych W4 (PassengerStopPoint)"
+
+msgid "No station of that name"
+msgstr "Nie ma stacji o takiej nazwie"
+
+msgid "Each click goes to the next W4 of the station"
+msgstr "Każde kliknięcie przenosi do następnego W4 tej stacji"
+
+msgid "Follow the camera"
+msgstr "Za kamerą"
+
+msgid "Click: the camera there (riding: onto the track there). Drag: move the map, wheel: zoom"
+msgstr "Klik: kamera tam (w czasie jazdy: na tor w tym miejscu). Przeciąganie: przesuwa mapę, kółko: przybliża"
