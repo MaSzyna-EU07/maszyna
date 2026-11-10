@@ -8,7 +8,7 @@
 #          toned when not given
 
 import random
-from PIL import ImageDraw, ImageFont, ImageFilter, Image
+from PIL import ImageChops, ImageDraw, ImageFont, ImageFilter, Image
 
 class signal_plate(abstractscreenrenderer):
 	SIZE = 128
@@ -23,6 +23,7 @@ class signal_plate(abstractscreenrenderer):
 
 	def __init__(self, lookup_path):
 		self.fonts = {}
+		self.dusts = {}
 
 	def font(self, size):
 		if size not in self.fonts:
@@ -37,19 +38,26 @@ class signal_plate(abstractscreenrenderer):
 				self.fonts[size] = ImageFont.load_default()
 		return self.fonts[size]
 
+	def dust(self, look):
+		# darker towards the bottom and the sides; the same for every plate of a look, so made once
+		key = id(look)
+		if key not in self.dusts:
+			size = self.SIZE
+			image = Image.new("L", (size, size))
+			image.putdata([int(look["dust"] * (y / size) ** 2 + look["dust"] * 0.5 * (abs(2 * x - size) / size) ** 4) for y in range(size) for x in range(size)])
+			self.dusts[key] = image
+		return self.dusts[key]
+
 	def field(self, look, seed):
 		size = self.SIZE
-		image = Image.new("RGB", (size, size), look["field"])
 		if look["grain"] == 0 and look["dust"] == 0:
-			return image
-		pixels = image.load()
-		grain = random.Random(seed) # the same plate each time for the same name
-		for y in range(size):
-			dust = look["dust"] * (y / size) ** 2
-			for x in range(size):
-				shade = grain.randint(-look["grain"], look["grain"]) - int(dust + look["dust"] * 0.5 * (abs(2 * x - size) / size) ** 4)
-				pixels[x, y] = tuple(max(0, min(255, channel + shade)) for channel in look["field"])
-		return image
+			return Image.new("RGB", (size, size), look["field"])
+		# the shade of each pixel around 128: the grain, the same each time for the same name, less the dust
+		spread = 2 * look["grain"] + 1
+		grain = Image.frombytes("L", (size, size), random.Random(seed).randbytes(size * size))
+		grain = grain.point(lambda value: 128 - look["grain"] + value * spread // 256)
+		shade = ImageChops.subtract(grain, self.dust(look))
+		return Image.merge("RGB", [ImageChops.add(Image.new("L", (size, size), channel), shade, 1.0, -128) for channel in look["field"]])
 
 	def _render(self, state):
 		size = self.SIZE
