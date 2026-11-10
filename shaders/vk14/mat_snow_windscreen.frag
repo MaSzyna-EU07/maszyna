@@ -70,11 +70,14 @@ layout(location = 1) out vec4 out_motion;
 #pragma param(reflection, 1, 2, 1, zero)
 #pragma param(glossiness, 1, 3, 1, glossiness)
 #pragma param(raindrop_grid_size, 2, 0, 1, one)
+// snow_slot: 1 + the slot of the glass in the simulation of the snow (the renderer sets it), 0: none
+#pragma param(snow_slot, 2, 2, 1, zero)
 
 #include "light_common.glsl"
 #include "apply_fog.glsl"
 #include "tonemapping.glsl"
 #include "random.glsl"
+#include "water.glsl"
 
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 0) uniform sampler2D diffuse;
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 1) uniform sampler2D raindropsatlas;
@@ -447,6 +450,158 @@ void snowFilm(float gridSize, inout vec3 accRGB, inout float accA, inout vec3 ac
     accA   = accA + a * under;
 }
 
+// --- The snow of the simulation (water_snow.comp): the map of the glass ---------------------------------------------------
+// When the renderer simulates the snow of the glass (the param snow_slot holds 1 + its slot), the snow, the water, how packed the
+// snow is and the shape of its flakes come from the map of the glass (water.glsl), which keeps them from frame to frame: the flakes
+// land and stay where they landed, pile up into a layer, the blades push it into ridges at the ends of their sweeps and leave a wet
+// trace, it melts at the warm glass and slush slides down. Here it's only drawn:
+//  - a texel of the map with a little snow is a flake (atlas tiles 0..2: fluffy when dry, a wet lump when wet or packed, crumbs),
+//    the more snow the bigger; with mostly water left it's the water spot (tile 3)
+//  - where the snow is thicker it's a layer: its edge torn by the grain of the snow, as opaque as it's thick (Beer-Lambert), grey
+//    and translucent when wet (slush), smoother and denser when packed; its relief from the slopes of the snow of the map
+//  - the water: wet glass bends the picture behind (the post-processing), the thin snow hazes it
+// Without the simulation (an older renderer, no compute) the procedural snow below draws the glass as before.
+const float snow_map_flake      = 1.15;  // size of a flake relative to a texel of the map (the snow of a texel)
+const float snow_map_layer      = 1.0;   // mm of snow above which the flakes run together into a layer
+const float snow_map_opaque     = 1.8;   // mm of fresh snow which lets 1/e of the light through (packed: half of it)
+const float snow_map_relief     = 0.6;   // how much the slopes of the snow tilt its surface
+const float snow_map_grain      = 0.35;  // the fine grain of the layer (its relief)
+const float snow_map_wet_bend   = 0.6;   // how strongly a wet glass bends the picture behind it
+
+int   snMapSlot = -1;
+uint  snMapIndex = 0u;
+float snWet = 0.0;          // set by snowMapped: the film of water (0 .. 1)
+vec2  snWetN = vec2(0.0);   // set by snowMapped: the slope of the water, for the bend of the picture
+
+// the snow of the map at a place of the glass
+vec4 snMapAt(vec2 uv)
+{
+    return water_snow_at(uint(snMapSlot), snMapIndex, uv);
+}
+
+// a flake of the map drawn over the accumulators: Local the place in its sprite (0 .. 1), Tile the corner of its tile in the atlas
+void snowMapSprite(vec2 local, vec2 tile, float alpha, float tone, float flip, float c, float s, float lod,
+                   inout vec3 accRGB, inout float accA, inout vec3 accN, inout float accTr)
+{
+    vec4 t = textureLod(raindropsatlas, tile + local * 0.5, lod);
+    vec4 n = textureLod(normalmap,      tile + local * 0.5, lod);
+    float a = clamp(t.a * alpha * snow_opacity, 0.0, 1.0);
+    if (a <= 0.0)
+        return;
+    vec2 nxy = (n.rg * 2.0 - 1.0) * snow_bump;
+    nxy.x *= flip;
+    vec2 nuv = vec2(c * nxy.x - s * nxy.y, s * nxy.x + c * nxy.y);
+    vec3 nT  = vec3(nuv, sqrt(max(1.0 - dot(nuv, nuv), 0.02)));
+    float tr = (1.0 - t.a * 0.55);
+    accRGB = t.rgb * tone * a + accRGB * (1.0 - a);
+    accN   = nT * a + accN * (1.0 - a);
+    accTr  = tr * a + accTr * (1.0 - a);
+    accA   = a + accA * (1.0 - a);
+}
+
+// the flakes of the texels around the pixel
+void snowMapFlakes(vec2 aspect, float pixelUV, inout vec3 accRGB, inout float accA, inout vec3 accN, inout float accTr)
+{
+    vec2 p = f_coord * float(WATER_MAP);
+    ivec2 here = ivec2(floor(p));
+    for (int oy = -1; oy <= 1; ++oy)
+    {
+        for (int ox = -1; ox <= 1; ++ox)
+        {
+            ivec2 texel = here + ivec2(ox, oy);
+            vec4 q = water_snow_texel(uint(snMapSlot), snMapIndex, texel);
+            float density = mix(0.1, 0.4, q.z);
+            float wet = q.y / (q.y + q.x * density + 1e-4);
+            bool spot = (q.x < 0.05) && (q.y > 0.015);   // a flake melted into its water
+            if ((q.x < 0.05) && (false == spot))
+                continue;
+            uint seed = Hash(uvec3(uvec2(texel), uint(q.w * 65535.0) + 7u * uint(snMapSlot)));
+            vec2 center = vec2(texel) + vec2(0.15 + 0.7 * RandF(seed), 0.15 + 0.7 * RandF(seed));
+            float ang = RandF(seed) * 6.2831853;
+            float flip = (RandF(seed) < 0.5) ? -1.0 : 1.0;
+            float kind = RandF(seed);
+            float tone = mix(0.94, 1.04, RandF(seed));
+            float aniso = mix(0.62, 1.0, RandF(seed));
+            // the more snow the texel holds the bigger the flake (a lump of a few flakes)
+            float size = snow_map_flake * mix(0.6, 1.0, RandF(seed)) * (spot ? mix(0.5, 1.1, smoothstep(0.015, 0.2, q.y))
+                                                                              : mix(0.7, 1.6, smoothstep(0.05, 2.0, q.x)));
+            vec2 d = (p - center) * aspect;
+            float c = cos(ang);
+            float s = sin(ang);
+            vec2 r = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+            r.x *= flip / aniso;
+            vec2 local = r / size + 0.5;
+            if (any(lessThan(local, vec2(0.0))) || any(greaterThan(local, vec2(1.0))))
+                continue;
+            float sizeUV = size / float(WATER_MAP);
+            float lod = clamp(log2(max(pixelUV / sizeUV * 0.5 * float(textureSize(raindropsatlas, 0).x), 1.0)), 0.0, 4.0);
+            vec2 tile;
+            if (spot)
+                tile = vec2(0.5, 0.0);
+            else if ((wet > 0.3) || (q.z > 0.5) || (kind < 0.30))
+                tile = vec2(0.5, 0.5);                 // a wet lump
+            else if (kind < 0.75)
+                tile = vec2(0.0, 0.5);                 // fluffy
+            else
+                tile = vec2(0.0, 0.0);                 // crumbs
+            float alpha = spot ? smoothstep(0.015, 0.08, q.y) : smoothstep(0.05, 0.25, q.x);
+            snowMapSprite(local, tile, alpha, tone, flip, c, s, lod, accRGB, accA, accN, accTr);
+        }
+    }
+}
+
+// the snow of the map at the pixel: the flakes, the layer of the snow under them, the water, the haze
+void snowMapped(vec2 aspect, float pixelUV, inout vec3 accRGB, inout float accA, inout float smear, inout vec3 accN, inout float accTr)
+{
+    vec4 q = snMapAt(f_coord);
+    float e = 1.0 / float(WATER_MAP);
+    vec4 qr = snMapAt(f_coord + vec2(e, 0.0));
+    vec4 ql = snMapAt(f_coord - vec2(e, 0.0));
+    vec4 qu = snMapAt(f_coord + vec2(0.0, e));
+    vec4 qd = snMapAt(f_coord - vec2(0.0, e));
+    float around = (q.x + qr.x + ql.x + qu.x + qd.x) * 0.2;
+
+    // the flakes of thin snow and the water spots
+    snowMapFlakes(aspect, pixelUV, accRGB, accA, accN, accTr);
+
+    // the water: the film bends the picture behind
+    snWet = smoothstep(0.02, 0.25, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
+    snWetN = vec2(qr.y - ql.y, qu.y - qd.y) * 2.0 + (vec2(snNoise(f_coord * 900.0), snNoise(f_coord * 900.0 + 31.0)) - 0.5) * 0.6 * snWet;
+    smear = max(smear, snWet * snow_melt_blur * 0.6);
+    // thin snow hazes the picture around it
+    snHaze = max(snHaze, smoothstep(0.03, 0.6, around));
+
+    // the layer, where the snow has run together
+    vec2  gp    = f_coord * float(WATER_MAP) * aspect;
+    float grain = snFbm(gp * 0.9 + 3.0) * 0.55 + snFbm(gp * 2.7 + 11.0) * 0.30 + snFbm(gp * 7.1 + 5.0) * 0.15;
+    float edge  = (q.x - snow_map_layer) / max(snow_map_layer, 1e-3) + (grain - 0.5) * 1.6;
+    float cover = smoothstep(0.0, 0.35, edge);
+    if (cover <= 0.002)
+        return;
+    float density = mix(0.1, 0.4, q.z);
+    float wet     = q.y / (q.y + q.x * density + 1e-4);
+    float opaque  = snow_map_opaque * mix(1.0, 0.5, q.z);
+    float thick   = 1.0 - exp(-q.x / opaque);
+    // the relief: the slopes of the snow of the map (ridges, the edges of the swept arcs) and the grain of the fresh snow
+    vec2  slope = vec2(qr.x - ql.x, qu.x - qd.x) * 0.5 * snow_map_relief;
+    float f1    = snFbm(gp * 3.3);
+    float ef    = 0.05;
+    vec2  gf    = vec2(snFbm(gp * 3.3 + vec2(ef, 0.0)) - f1, snFbm(gp * 3.3 + vec2(0.0, ef)) - f1) / ef;
+    vec3  nT    = normalize(vec3(-(slope + gf * snow_map_grain * (1.0 - 0.6 * q.z)) * snow_bump, 1.0));
+
+    vec3  fresh  = vec3(0.93, 0.95, 0.98);
+    vec3  packed = vec3(0.84, 0.87, 0.91);
+    vec3  slush  = vec3(0.60, 0.66, 0.73);
+    vec3  col    = mix(mix(fresh, packed, q.z), slush, smoothstep(0.2, 0.7, wet));
+    col *= (0.80 + 0.30 * f1 * (1.0 - 0.5 * q.z)) * (0.92 + 0.12 * grain);
+    float a      = clamp(cover * mix(0.35, 0.97, thick) * mix(1.0, 0.75, smoothstep(0.3, 0.8, wet)) * snow_pack * snow_opacity, 0.0, 0.97);
+    float under  = 1.0 - accA;
+    accRGB = accRGB + col * a * under;
+    accN   = accN + nT * a * under;
+    accTr  = accTr + mix(0.60, 0.25, thick) * a * under;
+    accA   = accA + a * under;
+}
+
 void main()
 {
     // Derivatives first, in uniform control flow (no discard before them).
@@ -475,7 +630,20 @@ void main()
     float smear   = 0.0;
     vec3  snowN   = vec3(0.0);
     float snowTr  = 0.0;
-    if (rain_params.x > 0.0)
+    // the snow of the simulation where the glass has a map of it, else made up as before
+    snMapSlot = int(param[2].z + 0.5) - 1;
+    bool mapped = (snMapSlot >= 0) && (snMapSlot < WATER_SLOTS) && water_snow_map(uint(snMapSlot), snMapIndex);
+    if (mapped)
+    {
+        // the texels of the map as they lie on the glass (the uv may be stretched)
+        ivec2 texel = clamp(ivec2(floor(f_coord * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
+        uint axis = (uint(snMapSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
+        vec2 span = vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz));
+        if (min(span.x, span.y) > 1e-6)
+            aspect = span / max(span.x, span.y);
+        snowMapped(aspect, pixelUV, snowRGB, snowA, smear, snowN, snowTr);
+    }
+    else if (rain_params.x > 0.0)
     {
         float mass = 0.0;
         if (snow_small > 0.0)
@@ -536,7 +704,13 @@ void main()
     {
         float thin = smoothstep(0.04, 0.20, snowA) * (1.0 - smoothstep(0.55, 0.90, snowA));
         vec4  req  = vec4(0.0);
-        if ((snow_distort > 0.0) && (thin > 0.30) && (glassA < 0.5))
+        if ((snWet > 0.25) && (snowA < 0.35) && (glassA < 0.5))
+        {
+            // the water on the glass: its film and its spots bend the picture behind
+            vec2 bend = clamp(-snWetN * snow_map_wet_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.25, 0.6, snWet);
+            req = vec4(WS_DROP_BIAS + WS_BEND_ENC * bend.x, WS_DROP_BIAS + WS_BEND_ENC * bend.y, 0.0, 1.0);
+        }
+        else if ((snow_distort > 0.0) && (thin > 0.30) && (glassA < 0.5))
         {
             vec2 slope = snowN.xy / max(snowA, 1e-3);
             vec2 bend  = clamp(-slope * snow_distort, vec2(-1.0), vec2(1.0)) * smoothstep(0.30, 0.60, thin) * (SNOW_REFR_MAXPX / WS_REFR_MAXPX);

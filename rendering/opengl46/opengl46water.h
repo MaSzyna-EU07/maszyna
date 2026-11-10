@@ -50,6 +50,7 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 		gather,
 		settle,
 		bake,
+		snow,
 		count
 	};
 	std::array<std::unique_ptr<gl::program>, pass::count> m_programs;
