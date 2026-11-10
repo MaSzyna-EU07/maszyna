@@ -1481,11 +1481,13 @@ class editor_mode : public application_mode, private editor_track::observer
 	bool signal_delete(scene::instance_handle const Instance);
 	void signal_detach_events(std::string const &Read, std::vector<std::pair<TTrack *, editor_track::state>> &States);
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
-	// the plate a signal of this name gets when none is picked: one drawn by python/local/signal_plate.py, or none for a name
-	// it can't carry
-	static std::string signal_plate(std::string const &Name);
-	// true for a plate signal_plate() gives, of any name
+	// the plate a signal of this name gets when none is picked: one drawn by python/local/signal_plate.py in the given look
+	// (plain, toned, aged), or none for a name it can't carry
+	static std::string signal_plate(std::string const &Name, std::string const &Look);
+	// true for a plate signal_plate() gives, of any name and look
 	static bool signal_plate_drawn(std::string const &Plate);
+	// the look a drawn plate is drawn in
+	static std::string signal_plate_look(std::string const &Plate);
 	void signal_select(scene::instance_handle const Instance);
 	std::string signal_next_name(std::string const &Name) const;
 	void render_signal_ui();

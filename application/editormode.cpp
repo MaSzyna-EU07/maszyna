@@ -3052,14 +3052,17 @@ void editor_mode::apply_include()
     {
         // the drawn plate of a signal follows its name; a plate picked from the textures stays, and so does a drawn one given
         // another name by hand. While the name is cleared or one the plate can't carry, the plate keeps the last name, and
-        // follows again once a usable name is typed
-        auto const carried = [](std::string const &Name) { return Name != "none" && signal_plate_drawn(signal_plate(Name)); };
+        // follows again once a usable name is typed. The look of the plate goes with it
         std::string file;
         std::vector<std::string> previous;
-        if (editor_includes::parse_directive(before, file, previous) && previous.size() >= 6 && m_include.values.size() >= 6
-         && previous[0] != m_include.values[0] && m_include.values[5] == previous[5] && carried(m_include.values[0])
-         && (previous[5] == signal_plate(previous[0]) || (false == carried(previous[0]) && signal_plate_drawn(previous[5]))))
-            m_include.values[5] = signal_plate(m_include.values[0]);
+        if (editor_includes::parse_directive(before, file, previous) && previous.size() >= 6 && m_include.values.size() >= 6)
+        {
+            auto const look{signal_plate_look(previous[5])};
+            auto const carried = [&](std::string const &Name) { return Name != "none" && signal_plate_drawn(signal_plate(Name, look)); };
+            if (previous[0] != m_include.values[0] && m_include.values[5] == previous[5] && carried(m_include.values[0])
+             && (previous[5] == signal_plate(previous[0], look) || (false == carried(previous[0]) && signal_plate_drawn(previous[5]))))
+                m_include.values[5] = signal_plate(m_include.values[0], look);
+        }
     }
     auto const directive = editor_includes::compose_directive(m_include.target, m_include.values);
     if (directive == before)

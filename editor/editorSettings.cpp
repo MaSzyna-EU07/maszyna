@@ -96,6 +96,8 @@ bool editorSettings::load()
 			parse(value, m_platform_edge);
 		else if (key == "signal_offset")
 			parse(value, m_signal_offset);
+		else if (key == "signal_plate_look")
+			parse(value, m_signal_plate_look);
 		else if (key == "nodebank_previews")
 			m_nodebank_previews = (value == "1");
 		else if (key == "nodebank_card")
@@ -142,6 +144,7 @@ bool editorSettings::save()
 	stream << "ortho_in_scene " << (m_orthophoto.in_scene ? 1 : 0) << "\n";
 	stream << "platform_edge " << m_platform_edge << "\n";
 	stream << "signal_offset " << m_signal_offset << "\n";
+	stream << "signal_plate_look " << m_signal_plate_look << "\n";
 	stream << "nodebank_previews " << (m_nodebank_previews ? 1 : 0) << "\n";
 	stream << "nodebank_card " << m_nodebank_card << "\n";
 	stream << "colours " << m_palette << "\n";

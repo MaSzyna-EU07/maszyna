@@ -44,7 +44,11 @@ float const kSignalPick{12.0f};
 float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
-char const *const kDrawnPlate{"make:signal_plate?name="}; // the plate drawn by python/local/signal_plate.py
+char const *const kDrawnPlate{"make:signal_plate?"}; // the plate drawn by python/local/signal_plate.py
+// looks of the drawn plates, in the order of the setting of the editor
+char const *const kPlateLooks[] = {"plain", "toned", "aged"};
+char const *const kPlateLookLabels[] = {"plain", "toned", "aged"};
+int const kPlateLookCount{3};
 
 char const *const kKinds[] = {"main", "block", "warning", "shunt", "stop", "substitute", "repeater"};
 char const *const kKindLabels[] = {"Semaphore", "Automatic block", "Warning signal", "Shunting signal", "Stop signal", "Substitute signal", "Repeater"};
@@ -602,7 +606,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &T
 	item.described = true;
 	item.values["name"] = name;
 	if (Template.plate)
-		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name);
+		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name, kPlateLooks[std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)]);
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
@@ -728,19 +732,28 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
 }
 
-std::string editor_mode::signal_plate(std::string const &Name)
+std::string editor_mode::signal_plate(std::string const &Name, std::string const &Look)
 {
 	// a name the plate can't carry: '|' splits the skin, '&' and '?' the query of the script, and a very long one makes a path
 	// longer than a file system takes when the skin is looked for on the disk
 	if (Name.empty() || Name.size() > 64 || Name.find_first_of("|&?") != std::string::npos)
 		return "0_nothing";
 	// the template puts it after a folder, "tabl/(p6)": material_data::assign() takes the folder off a texture made by a script
-	return kDrawnPlate + Name;
+	return kDrawnPlate + std::string{"look="} + Look + "&name=" + Name;
 }
 
 bool editor_mode::signal_plate_drawn(std::string const &Plate)
 {
 	return Plate.starts_with(kDrawnPlate);
+}
+
+std::string editor_mode::signal_plate_look(std::string const &Plate)
+{
+	auto const begin{Plate.find("look=")};
+	if (false == signal_plate_drawn(Plate) || begin == std::string::npos)
+		return kPlateLooks[1]; // what the script draws when it's not told
+	auto const end{Plate.find('&', begin)};
+	return Plate.substr(begin + 5, end == std::string::npos ? std::string::npos : end - begin - 5);
 }
 
 void editor_mode::signal_select(scene::instance_handle const Instance)
@@ -896,7 +909,8 @@ void editor_mode::render_signal_ui()
 		ImGui::SetTooltip("%s", STR_C("Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"));
 	if (armed != nullptr && armed->plate)
 	{
-		auto const plate{signal_plate(tool.name)};
+		auto const look{std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)};
+		auto const plate{signal_plate(tool.name, kPlateLooks[look])};
 		auto const automatic{signal_plate_drawn(plate) ? format(STR_C("auto: drawn \"%s\""), tool.name) : format(STR_C("auto: %s"), plate.c_str())};
 		ImGui::InputTextWithHint(STR_C("Plate"), automatic.c_str(), tool.plate, sizeof(tool.plate));
 		if (ImGui::IsItemHovered())
@@ -924,6 +938,18 @@ void editor_mode::render_signal_ui()
 					break;
 			}
 		}
+		if (typed.empty() && ImGui::BeginCombo(STR_C("Plate look"), STR_C(kPlateLookLabels[look])))
+		{
+			for (int i = 0; i < kPlateLookCount; ++i)
+				if (ImGui::Selectable(STR_C(kPlateLookLabels[i]), i == look))
+				{
+					EditorSettings.signal_plate_look(i);
+					EditorSettings.save();
+				}
+			ImGui::EndCombo();
+		}
+		if (typed.empty() && ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"));
 	}
 	if (armed != nullptr && armed->linked && ImGui::TreeNode(STR_C("Linked signal")))
 	{

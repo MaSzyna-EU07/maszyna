@@ -4741,6 +4741,21 @@ msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: tablica z na
 msgid "no such texture"
 msgstr "nie ma takiej tekstury"
 
+msgid "Plate look"
+msgstr "Wygląd tablicy"
+
+msgid "plain"
+msgstr "normalna"
+
+msgid "toned"
+msgstr "stonowana"
+
+msgid "aged"
+msgstr "postarzana"
+
+msgid "How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"
+msgstr "Jak wyglądają rysowane tablice: normalna jest czysta i jasna, stonowana szarawa i lekko zakurzona, postarzana ciemniejsza i zakurzona. Wygląd zostaje zapisany przy tablicy, zmiana nazwy go nie zmienia"
+
 msgid "Linked signal"
 msgstr "Powiązany sygnalizator"
 
