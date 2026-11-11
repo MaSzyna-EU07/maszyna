@@ -533,9 +533,6 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 						center.x + dir.x * offset * lamp_spacing,
 						center.y + dir.y * offset * lamp_spacing);
 					draw_list->AddCircleFilled(lamp_position, 3.6f, lamp_colors[idx]);
-					draw_list->AddCircle(lamp_position, 3.6f, IM_COL32(10, 12, 14, 220), 0, 1.0f);
-					if (signal_hovered)
-						draw_list->AddCircle(lamp_position, 5.6f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
 				}
 				draw_list->AddText(
 					label_position,
