@@ -77,11 +77,8 @@ constexpr double Waystep{0.45};
 constexpr double Wayrange{1.2};
 // where there's no such ground at the place, the next deer is looked for this much farther, metres
 constexpr double Retrydistance{200.0};
-// the track at the place: plain (no switch) from the train to this much past the place, and turning at most Straightturn degrees
-// over Straightspan metres before and after it, metres
+// the track at the place: plain (no switch) from the train to this much past the place, metres
 constexpr double Clearpast{100.0};
-constexpr double Straightspan{50.0};
-constexpr double Straightturn{3.0};
 // no deer this near a platform: an instance of a model of peronowe/ (or another folder named so), metres
 constexpr double Platformrange{150.0};
 // nor where the ground beside the track, this far from its axis, rises this much over the sleepers (a platform of the terrain)
@@ -319,24 +316,15 @@ bool path_ahead(TTrack *Track, double Offset, double Direction, double Distance,
 	return false;
 }
 
-// the way ahead of the train to Distance and Clearpast past it plain track, the track there about straight: Place the place
+// the way ahead of the train to Distance and Clearpast past it plain track (straight or curved, no switch): Place the place
 bool plain_way(TTrack *Track, double const Offset, double const Direction, double const Distance, path_place &Place)
 {
 	if ((Track == nullptr) || (Track->eType != tt_Normal))
 	{
 		return false;
 	}
-	path_place before;
 	path_place past;
-	if ((false == path_ahead(Track, Offset, Direction, Distance + Clearpast, past)) ||
-		(false == path_ahead(Track, Offset, Direction, Distance - Straightspan, before)) ||
-		(false == path_ahead(Track, Offset, Direction, Distance, Place)) ||
-		(false == path_ahead(Track, Offset, Direction, Distance + Straightspan, past)))
-	{
-		return false;
-	}
-	auto const limit{std::cos(Straightturn * std::numbers::pi / 180.0)};
-	return (glm::dot(before.forward, Place.forward) >= limit) && (glm::dot(Place.forward, past.forward) >= limit);
+	return path_ahead(Track, Offset, Direction, Distance + Clearpast, past) && path_ahead(Track, Offset, Direction, Distance, Place);
 }
 
 // a model of a platform: in a folder named peron... (peronowe/)
