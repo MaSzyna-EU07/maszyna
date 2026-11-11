@@ -1960,10 +1960,16 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 	}
 }
 
-std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Max)
+std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera)
 {
 	if (false == m_enabled)
 		return 0;
+	// the tile of the camera as it is now: it isn't followed while the layer is off
+	m_camera_tile = camera_tile(Camera);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_focus = m_camera_tile;
+	}
 	auto const a{camera_tile(glm::dvec3{Min.x, 0.0, Min.y})};
 	auto const b{camera_tile(glm::dvec3{Max.x, 0.0, Max.y})};
 	tile_key const first{std::min(a.first, b.first), std::min(a.second, b.second)};

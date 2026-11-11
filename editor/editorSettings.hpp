@@ -124,7 +124,7 @@ public:
 	{
 		double speed{1.0};
 		double fast{30.0};
-		bool zoomed{true};
+		bool zoomed{false}; // off as the editor was before: "As it was" means it
 	};
 	camera_settings &camera() { return m_camera; }
 

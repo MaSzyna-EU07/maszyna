@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <fstream>
 #include <regex>
+#include <optional>
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
@@ -8168,9 +8169,16 @@ void editor_mode::orthophoto_hurry()
         return;
     auto const inverse = glm::inverse(editor_mode::projection_matrix(io.DisplaySize.x / io.DisplaySize.y) * GfxRenderer->Camera_View_Matrix());
     auto const camera{GfxRenderer->Camera_Position()};
-    double level{camera.y - 2.0};
+    // the level of the ground under the camera: the terrain, else the scenery; with neither the rays go as far as the reach
+    std::optional<double> level;
     if (double ground{0.0}; m_streamer.active() && m_streamer.height_at(camera.x, camera.z, ground))
         level = ground;
+    else if (std::vector<char> found; Global.EditorOrtho == false)
+    {
+        auto const heights{ground_heights({camera}, true, &found)};
+        if (false == found.empty() && found.front() != 0 && heights.front() < camera.y)
+            level = heights.front();
+    }
     double constexpr reach{2500.0};
     glm::dvec2 low{camera.x, camera.z};
     glm::dvec2 high{camera.x, camera.z};
@@ -8182,14 +8190,22 @@ void editor_mode::orthophoto_hurry()
                 auto const clip = inverse * glm::vec4(ndc, Depth, 1.0f);
                 return glm::dvec3{glm::vec3{clip} / clip.w};
             };
+            if (Global.EditorOrtho)
+            {
+                // the view straight down: the corners of the screen are where it reaches on the ground
+                auto const corner{point(0.0f)};
+                low = glm::min(low, glm::dvec2{corner.x, corner.z});
+                high = glm::max(high, glm::dvec2{corner.x, corner.z});
+                continue;
+            }
             auto direction = point(0.5f) - point(0.0f);
             if (glm::length(direction) < 1e-9)
                 continue;
             direction = glm::normalize(direction);
             glm::dvec2 flat{direction.x, direction.z};
             auto distance{reach};
-            if (direction.y < -1e-6)
-                distance = std::min(reach, (camera.y - level) / -direction.y * glm::length(flat));
+            if (level && direction.y < -1e-6)
+                distance = std::min(reach, (camera.y - *level) / -direction.y * glm::length(flat));
             if (glm::length(flat) < 1e-6)
                 continue;
             flat = glm::normalize(flat) * distance;
@@ -8197,7 +8213,7 @@ void editor_mode::orthophoto_hurry()
             low = glm::min(low, hit);
             high = glm::max(high, hit);
         }
-    auto const count{m_orthophoto.hurry(low, high)};
+    auto const count{m_orthophoto.hurry(low, high, camera)};
     ui()->set_status(count > 0 ? format(STR_C("Orthophoto: %zu tiles of the view downloaded first (Ctrl+~)"), count)
                                : std::string{STR("Orthophoto: the view is all shown already (Ctrl+~)")});
 }

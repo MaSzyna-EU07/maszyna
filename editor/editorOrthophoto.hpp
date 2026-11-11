@@ -105,7 +105,7 @@ class editor_orthophoto
 
 	// the tiles over a rectangle of the world (x, z; what the camera sees), within the reach around the camera, asked for before anything
 	// else, the ones which failed tried again at once. returns: how many were put at the front of the queue
-	std::size_t hurry(glm::dvec2 const &Min, glm::dvec2 const &Max);
+	std::size_t hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera);
 	bool enabled() const { return m_enabled; }
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
