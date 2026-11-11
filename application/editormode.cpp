@@ -8193,7 +8193,7 @@ void editor_mode::orthophoto_hurry()
             if (Global.EditorOrtho)
             {
                 // the view straight down: the corners of the screen are where it reaches on the ground
-                auto const corner{point(0.0f)};
+                auto const corner{camera + point(0.0f)}; // the view matrix is camera-relative
                 low = glm::min(low, glm::dvec2{corner.x, corner.z});
                 high = glm::max(high, glm::dvec2{corner.x, corner.z});
                 continue;
