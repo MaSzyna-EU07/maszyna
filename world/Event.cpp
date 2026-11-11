@@ -749,6 +749,11 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         m_input.command_type = TCommandType::cm_SecuritySystemMagnet;
         m_passive = true;
     }
+    else if( token == "SignalAreaEnd" ) {
+        // scanned, so the train sees where the interlocking area of the signal it passed ends
+        m_input.command_type = TCommandType::cm_SignalAreaEnd;
+        m_passive = true;
+    }
     else {
         m_input.command_type = TCommandType::cm_Unknown;
     }

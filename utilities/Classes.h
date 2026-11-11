@@ -92,6 +92,7 @@ enum class TCommandType
 //    cm_Shunt, // unused?
     cm_EmergencyBrake,
     cm_SecuritySystemMagnet,
+    cm_SignalAreaEnd, // end of the interlocking area of the signal passed last
     cm_Command // komenda pobierana z komórki
 };
 
