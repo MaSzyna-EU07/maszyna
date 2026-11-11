@@ -1205,6 +1205,12 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
         } // koniec obsługi przelotu na W4
         else {
             // zatrzymanie na W4
+            // the margins of a passenger stop, whether the train is already making for it or not: the present ones
+            // depend on this very flag, and a check against them would turn it on and off every other scan
+            auto const [ stopminproximity, stopmaxproximity ] {
+                is_train() ?
+                    train_proximity_margins( true ) :
+                    std::pair{ fMinProximityDist, fMaxProximityDist } };
             if ( false == Point.bMoved ) {
                 // potentially shift the stop point in accordance with its defined parameters
                 /*
@@ -1223,9 +1229,12 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     }
                     else {
                         //środek
-                        L = Par1 - fMinProximityDist - fLength * 0.5;
+                        L = Par1 - stopminproximity - fLength * 0.5;
                     }
-					L = std::max(0.0, std::min(L, std::abs(Par2) - fMinProximityDist - fLength));
+                    // the train comes to a stand anywhere up to the margin of a passenger stop short of this point, not
+                    // that of the signals it may be making for when it first sees the W4, so the tail is to keep that far
+                    // inside the platform
+					L = std::max(0.0, std::min(L, std::abs(Par2) - stopminproximity - fLength));
 					Point.UpdateDistance(L);
 					Point.bMoved = true;
 					Point.fMoved = L;
@@ -1246,12 +1255,6 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 return true;
             }
 
-            // the margins of a passenger stop, whether the train is already making for it or not: the present ones
-            // depend on this very flag, and a check against them would turn it on and off every other scan
-            auto const [ stopminproximity, stopmaxproximity ] {
-                is_train() ?
-                    train_proximity_margins( true ) :
-                    std::pair{ fMinProximityDist, fMaxProximityDist } };
             IsAtPassengerStop = Point.fDist <= passengerstopmaxdistance
 			                    // Ra 2F1I: odległość plus długość pociągu musi być mniejsza od długości
 			                    // peronu, chyba że pociąg jest dłuższy, to wtedy minimalna.
