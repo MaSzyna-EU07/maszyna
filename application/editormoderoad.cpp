@@ -219,6 +219,13 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 
 void editor_mode::update_road_tool()
 {
+	{
+		// an Alt+drag of the heights is dropped once the window, the tool or the work area isn't its own any more, or its
+		// release went elsewhere
+		auto &lift{m_roadtool};
+		if (lift.lifting && (false == lift.window || lift.tool != 0 || ui()->mode() == nodebank_panel::TRACK || false == ImGui::IsMouseDown(ImGuiMouseButton_Left)))
+			lift.lifting = false;
+	}
 	auto &tool{m_roadtool};
 	if (tool.selected != nullptr && tool.selected->m_editorremoved)
 		tool.selected = nullptr;
@@ -903,6 +910,8 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 void editor_mode::road_cancel()
 {
 	auto &tool{m_roadtool};
+	// Esc in the middle of Alt+drag: the heights stay as they were
+	tool.lifting = false;
 	tool.chain = false;
 	tool.branchroad = nullptr;
 	tool.branchjunction = nullptr;
@@ -1111,28 +1120,31 @@ bool editor_mode::road_joint_on_screen(glm::dvec3 &Joint) const
 {
 	screen_projection const projection;
 	auto const mouse{ImGui::GetIO().MousePos};
-	float best{12.0f * 12.0f};
-	bool found{false};
 	glm::dvec3 const camera{Global.pCamera.Pos};
-	double nearest{std::numeric_limits<double>::max()};
-	for (auto const &joint : editor_road::joints())
-	{
+	// no farther than what is under the cursor and a bit beyond it (a point in a cutting, under an embankment), so nothing far
+	// behind the ground or a model shown there is picked through it
+	auto reach{kReach};
+	if (GfxRenderer->Mouse_Hit())
+		reach = std::min(reach, glm::length(GfxRenderer->Mouse_Position()) * 1.1 + 15.0);
+	// the nearest on the screen, by whole pixels; of those as near, the one nearer to the camera
+	auto best_pixels{std::numeric_limits<int>::max()};
+	auto best_range{std::numeric_limits<double>::max()};
+	bool found{false};
+	editor_road::each_joint([&](glm::dvec3 const &Point) {
+		auto const range{glm::distance(Point, camera)};
 		ImVec2 screen;
-		if (false == projection.project(joint, screen))
-			continue;
+		if (range > reach || false == projection.project(Point, screen))
+			return;
 		auto const dx{screen.x - mouse.x};
 		auto const dy{screen.y - mouse.y};
-		auto const distance{dx * dx + dy * dy};
-		auto const range{glm::distance(joint, camera)};
-		// of the points about as near the cursor, the one nearer to the camera
-		if (distance < best - 9.0f || (distance <= best + 9.0f && range < nearest))
-		{
-			best = std::min(best, distance);
-			nearest = range;
-			Joint = joint;
-			found = true;
-		}
-	}
+		auto const pixels{static_cast<int>(std::sqrt(dx * dx + dy * dy))};
+		if (pixels > 12 || pixels > best_pixels || (pixels == best_pixels && range >= best_range))
+			return;
+		best_pixels = pixels;
+		best_range = range;
+		Joint = Point;
+		found = true;
+	});
 	return found;
 }
 
@@ -1217,8 +1229,11 @@ void editor_mode::road_click()
 		}
 		tool.marker = nullptr;
 		glm::dvec3 joint;
-		// by the cursor on the screen first: a point under the terrain can't be got near by the ground clicked
-		if (road_joint_on_screen(joint) || editor_road::nearest_joint(ground, kPointRadius, joint))
+		// the point by the ground clicked first, then the piece or the junction under the cursor; the point nearest on the screen
+		// only when there's none of them (a point under the terrain, in a cutting, can't be got near by the ground clicked)
+		auto *under{editor_road::nearest(ground, 1.5)};
+		auto *junction_under{under == nullptr ? editor_road::nearest_junction(ground) : nullptr};
+		if (editor_road::nearest_joint(ground, kPointRadius, joint) || (under == nullptr && junction_under == nullptr && road_joint_on_screen(joint)))
 		{
 			// a point where pieces meet or end. with Shift it's added to the selected ones, or taken out of them
 			auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
@@ -1234,12 +1249,10 @@ void editor_mode::road_click()
 			return;
 		}
 		tool.points.clear();
-		auto *road{editor_road::nearest(ground, 1.5)};
-		auto *junction{road == nullptr ? editor_road::nearest_junction(ground) : nullptr};
-		if (road == nullptr && junction == nullptr)
+		if (under == nullptr && junction_under == nullptr)
 			tool.status = "No road here";
-		road_select(road);
-		junction_select(junction);
+		road_select(under);
+		junction_select(junction_under);
 		return;
 	}
 

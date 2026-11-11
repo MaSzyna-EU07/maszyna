@@ -128,8 +128,8 @@ class editor_road
 	static junction_node *nearest_junction(glm::dvec3 const &Point);
 	// the point where pieces meet or end which is nearest to specified one, within specified distance from it. returns: false if there's none
 	static bool nearest_joint(glm::dvec3 const &Point, double const Radius, glm::dvec3 &Joint);
-	// every point where pieces meet or end, each once
-	static std::vector<glm::dvec3> joints();
+	// Visit called for the ends of every piece, a point where several meet as many times (no search for the repeated ones)
+	static void each_joint(std::function<void(glm::dvec3 const &)> const &Visit);
 	// ends of the pieces which meet at specified point
 	static std::vector<piece_end> ends_at(glm::dvec3 const &Point);
 	// junctions with an arm at specified point, each with the number of that arm

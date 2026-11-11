@@ -5351,7 +5351,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
 
     // shortcuts: undo/redo. not in the middle of a drag, it would go on from the state which was undone
-    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active))
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active || m_roadtool.lifting))
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
