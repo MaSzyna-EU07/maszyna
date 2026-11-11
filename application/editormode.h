@@ -2606,6 +2606,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void switch_drives_committed(std::vector<TTrack *> const &Tracks);
 	// the drives of the switches deleted go with them, in the step of the undo history the deletion made last
 	void drives_deleted(std::vector<TTrack *> const &Switches);
+	// the file of a drive not described for the editor throwing one of the switches, empty when there's none; also one the editor
+	// kept beside a drive described for it
+	std::string undescribed_drive(std::vector<TTrack *> const &Switches);
 	// the drives of all the switches of the scenery set at the tips of their blades, the ones the earlier versions of the editor set at the
 	// joint before them too: once, as the scenery is opened, with no step of the undo history; how many moved
 	std::size_t drives_to_blade_tips();

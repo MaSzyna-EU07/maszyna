@@ -14022,6 +14022,9 @@ msgstr[2] "%zu napędów nie ma zwrotnic o swoich nazwach: są na liście w narz
 msgid "The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"
 msgstr "Napęd %s nie ma opisu dla edytora: może też ustawiać prędkość albo nieść podsypkę zwrotnicy, więc zostaje bez zmian"
 
+msgid "The slip has the drive %s, not described for the editor, which may also set the speed or carry its ballast: it isn't laid anew"
+msgstr "Rozjazd krzyżowy ma napęd %s bez opisu dla edytora, który może też ustawiać prędkość albo nieść jego podsypkę: nie zostanie ułożony od nowa"
+
 msgid "Switch %s keeps its drive %s, which isn't described for the editor"
 msgstr "Zwrotnica %s zostaje przy swoim napędzie %s, który nie ma opisu dla edytora"
 

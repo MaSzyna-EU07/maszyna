@@ -496,6 +496,24 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	return true;
 }
 
+std::string editor_mode::undescribed_drive(std::vector<TTrack *> const &Switches)
+{
+	// the drives described for the editor read first: before they are, every drive would pass for one not described
+	scan_switch_drives(true);
+	std::vector<std::string> names;
+	for (auto const *track : Switches)
+		if (track != nullptr)
+			names.push_back(drive_file(track->name()));
+	auto const variants{drive_variants()};
+	for (auto const &standing : standing_templates([&](std::string const &File) { return false == variants.contains(File) && false == drive_switches(File, variants).empty(); }))
+	{
+		auto const &suffixes{drive_switches(standing.file, variants)};
+		if (std::any_of(suffixes.begin(), suffixes.end(), [&](std::string const &Suffix) { return std::find(names.begin(), names.end(), drive_file(standing.values[0] + Suffix)) != names.end(); }))
+			return file_name(standing.file);
+	}
+	return {};
+}
+
 void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
 {
 	if (m_history.empty())
