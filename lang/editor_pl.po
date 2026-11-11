@@ -13979,3 +13979,131 @@ msgstr "PPM wciśnięty, W / S"
 
 msgid "RMB held, A / D"
 msgstr "PPM wciśnięty, A / D"
+
+# the wizard of a new scenery: the range of the aerial photos, given on the map and changed in the editor
+
+msgid "A fictional scenery needs no place on the map"
+msgstr "Sceneria fikcyjna nie potrzebuje miejsca na mapie"
+
+msgid "Click the corners of the area, one after another around it"
+msgstr "Klikaj narożniki obszaru, jeden po drugim, dookoła niego"
+
+msgid "Click the next corner, or Done when the area is whole"
+msgstr "Kliknij kolejny narożnik albo Gotowe, gdy obszar jest cały"
+
+msgid "A click moves the centre of the scenery"
+msgstr "Kliknięcie przesuwa środek scenerii"
+
+msgid "Click the centre of the scenery. The wheel zooms the map, dragging moves it"
+msgstr "Kliknij środek scenerii. Kółko myszy przybliża mapę, przeciąganie ją przesuwa"
+
+msgid "Give the file a name (step 1)"
+msgstr "Nadaj plikowi nazwę (krok 1)"
+
+msgid "A scenery of this name exists already: give another name (step 1)"
+msgstr "Sceneria o tej nazwie już istnieje: podaj inną nazwę (krok 1)"
+
+msgid "Click the centre of the scenery on the map (step 2)"
+msgstr "Kliknij na mapie środek scenerii (krok 2)"
+
+msgid "The centre is outside Poland: the aerial photos cover Poland only (step 2)"
+msgstr "Środek leży poza Polską: zdjęcia lotnicze obejmują tylko Polskę (krok 2)"
+
+msgid "Finish drawing the area: Done (step 3)"
+msgstr "Dokończ rysowanie obszaru przyciskiem Gotowe (krok 3)"
+
+msgid "Draw the area of the aerial photos on the map (step 3)"
+msgstr "Narysuj na mapie obszar zdjęć lotniczych (krok 3)"
+
+msgid "The edges of the area cross each other: draw it again (step 3)"
+msgstr "Krawędzie obszaru przecinają się: narysuj go od nowa (krok 3)"
+
+msgid "1. Name"
+msgstr "1. Nazwa"
+
+msgid "2. Where the scenery lies"
+msgstr "2. Gdzie leży sceneria"
+
+msgid "Click its centre on the map, or type the place and press Enter"
+msgstr "Kliknij jej środek na mapie albo wpisz miejsce i naciśnij Enter"
+
+msgid "e.g. 52.2297, 21.0122"
+msgstr "np. 52.2297, 21.0122"
+
+msgid "X %.0f, Y %.0f in PUWG 1992; the point 0 0 0 of the scenery"
+msgstr "X %.0f, Y %.0f w PUWG 1992; punkt 0 0 0 scenerii"
+
+msgid "Zoom the map in with the wheel, to put the centre exactly"
+msgstr "Przybliż mapę kółkiem myszy, żeby dokładnie wskazać środek"
+
+msgid "3. Range of the aerial photos"
+msgstr "3. Zasięg zdjęć lotniczych"
+
+msgid "The editor downloads the aerial photos and the shape of the ground only inside this area, blue on the map. Outside it there are no photos."
+msgstr "Edytor pobiera zdjęcia lotnicze i ukształtowanie terenu tylko w tym obszarze, zaznaczonym na mapie na niebiesko. Poza nim zdjęć nie będzie."
+
+msgid "A square around the centre"
+msgstr "Kwadrat wokół środka"
+
+msgid "%d km##side"
+msgstr "%d km##side"
+
+msgid "%d x %d km, the centre of the scenery in its middle"
+msgstr "%d × %d km, środek scenerii pośrodku"
+
+msgid "My own area, drawn on the map"
+msgstr "Własny obszar, narysowany na mapie"
+
+msgid "For a line: a long band along it, which downloads much less than a square around it"
+msgstr "Dla linii: wąski pas wzdłuż niej, do pobrania dużo mniej niż kwadrat wokół"
+
+msgid "%zu corners"
+msgstr "Narożniki: %zu"
+
+msgid "Undo the corner"
+msgstr "Cofnij narożnik"
+
+msgid "About %.1f sq km, %zu photos of 256 x 256 m"
+msgstr "Około %.1f km², %zu zdjęć po 256 × 256 m"
+
+msgid "The edges of the area cross each other: draw it again, clicking the corners in turn around it"
+msgstr "Krawędzie obszaru przecinają się: narysuj go od nowa, klikając narożniki po kolei dookoła"
+
+msgid "The centre of the scenery is outside the area: there will be no photos under it"
+msgstr "Środek scenerii leży poza obszarem: pod nim nie będzie zdjęć"
+
+msgid "A large area: the download takes long and needs a lot of disk space. It goes on in the background, the editor can be used meanwhile."
+msgstr "Duży obszar: pobieranie potrwa długo i zajmie dużo miejsca na dysku. Idzie w tle, w tym czasie można pracować w edytorze."
+
+msgid "It can be changed later in the editor: Map > Orthophoto settings... > Download area"
+msgstr "Zasięg można później zmienić w edytorze: Mapa > Ustawienia ortofotomapy... > Obszar pobierania"
+
+msgid "The camera is outside the range of the aerial photos: there are none here"
+msgstr "Kamera jest poza zasięgiem zdjęć lotniczych: tutaj ich nie ma"
+
+msgid "Draw the range again"
+msgstr "Narysuj zasięg od nowa"
+
+msgid "Show the range"
+msgstr "Pokaż zasięg"
+
+msgid "The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"
+msgstr "Zasięg to obszar pobierania w Mapa > Ustawienia ortofotomapy...; narysowany od nowa może objąć to miejsce"
+
+msgid "None: the photos are downloaded around the camera, wherever it goes"
+msgstr "Brak: zdjęcia są pobierane wokół kamery, gdziekolwiek się znajdzie"
+
+msgid "The aerial photos and the shape of the ground are downloaded only inside it; outside it there are none"
+msgstr "Zdjęcia lotnicze i ukształtowanie terenu są pobierane tylko w jego obrębie; poza nim ich nie ma"
+
+msgid "No range: the photos around the camera, wherever it goes. The photos downloaded already stay on the disk"
+msgstr "Bez zasięgu: zdjęcia wokół kamery, gdziekolwiek się znajdzie. Pobrane zdjęcia zostają na dysku"
+
+msgid "Square around the camera:"
+msgstr "Kwadrat wokół kamery:"
+
+msgid "%d km##areasquare"
+msgstr "%d km##areasquare"
+
+msgid "The range of the photos a square of %d x %d km, the camera in its middle"
+msgstr "Zasięg zdjęć: kwadrat %d × %d km z kamerą pośrodku"

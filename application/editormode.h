@@ -617,6 +617,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_nmt_buried();
 	// what to do first, in the middle of the view of a scenery with no tracks nor terrain
 	void render_empty_scenery_hint();
+	// the camera outside the download area: no photos there, told at the bottom of the view with the way to the area
+	void render_outside_area_hint();
 	// the 3d camera under the ground, as after the view from above or the terrain model made under it, lifted over it
 	void camera_above_ground();
 	bool nmt_busy() const;

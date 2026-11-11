@@ -1904,17 +1904,38 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 		return;
 	}
 	auto const &area{m_orthophoto.area()};
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", area.empty() ? STR_C("None: the photos are downloaded around the camera, wherever it goes")
+	                                       : STR_C("The aerial photos and the shape of the ground are downloaded only inside it; outside it there are none"));
+	ImGui::PopTextWrapPos();
 	if (ImGui::Button(area.empty() ? STR_C("Draw on the map") : STR_C("Draw again")))
 		area_start();
-	if (area.empty())
+	if (false == area.empty())
 	{
 		ImGui::SameLine();
-		ImGui::TextDisabled("%s", STR_C("none: the tiles around the camera, wherever it is"));
-		return;
+		if (ImGui::Button(STR_C("Remove")))
+			m_orthophoto.area({});
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("No range: the photos around the camera, wherever it goes. The photos downloaded already stay on the disk"));
 	}
-	ImGui::SameLine();
-	if (ImGui::Button(STR_C("Remove")))
-		m_orthophoto.area({});
+	// a square around the camera, in place of the one drawn: what the wizard of a new scenery gives
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(STR_C("Square around the camera:"));
+	for (auto const side : {1, 2, 5, 10})
+	{
+		ImGui::SameLine();
+		if (ImGui::SmallButton(format(STR_C("%d km##areasquare"), side).c_str()))
+		{
+			auto const centre{m_orthophoto.to_puwg({Camera.Pos.x, Camera.Pos.z})};
+			auto const half{side * 500.0};
+			m_orthophoto.area({{centre.x - half, centre.y - half}, {centre.x + half, centre.y - half}, {centre.x + half, centre.y + half}, {centre.x - half, centre.y + half}});
+			WriteLog(format("Editor: the download area a square of %d km around the camera, %d tiles of the orthophoto", side, m_orthophoto.stats().area_tiles));
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(STR_C("The range of the photos a square of %d x %d km, the camera in its middle"), side, side);
+	}
+	if (area.empty())
+		return;
 	ImGui::Text(STR_C("Area: %d of %d tiles in the cache, %d failed"), Stats.area_cached, Stats.area_tiles, Stats.area_failed);
 	ImGui::SameLine();
 	if (ImGui::SmallButton(m_area_paused ? STR_C("Resume") : STR_C("Pause")))
@@ -2081,6 +2102,39 @@ void editor_mode::render_empty_scenery_hint()
 	auto const middle{(low.y + high.y) * 0.5f};
 	line(STR_C("This scenery is still empty"), font * 1.6f, middle - font * 2.2f, IM_COL32(255, 255, 255, 255));
 	line(STR_C("Click Laying on the toolbar or press L, then click the points of the track"), font, middle, IM_COL32(210, 215, 225, 255));
+}
+
+void editor_mode::render_outside_area_hint()
+{
+	auto const &area{m_orthophoto.area()};
+	if (area.empty() || false == m_orthophoto.enabled() || m_area_drawing.active || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+		return;
+	if (geometry::point_in_polygon(area, m_orthophoto.to_puwg({Camera.Pos.x, Camera.Pos.z})))
+		return;
+	auto const low{editor_ui::view_min()};
+	auto const high{editor_ui::view_max()};
+	ImGui::SetNextWindowPos(ImVec2((low.x + high.x) * 0.5f, high.y - std::round(ImGui::GetFontSize() * 1.2f)), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
+	ImGui::SetNextWindowBgAlpha(0.88f);
+	if (ImGui::Begin("##outsidearea", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking))
+	{
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.35f, 1.0f), "%s", STR_C("The camera is outside the range of the aerial photos: there are none here"));
+		ImGui::SameLine();
+		if (ImGui::SmallButton(orthophoto_settings_open() ? STR_C("Draw the range again") : STR_C("Show the range")))
+		{
+			if (orthophoto_settings_open())
+				area_start();
+			else
+			{
+				ui()->show_layers();
+				m_orthophoto_window = true;
+			}
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"));
+	}
+	ImGui::End();
 }
 
 void editor_mode::camera_above_ground()
