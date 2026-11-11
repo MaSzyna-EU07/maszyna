@@ -13,12 +13,14 @@ http://mozilla.org/MPL/2.0/.
 #include <cctype>
 #include <cmath>
 #include <format>
+#include <iterator>
 #include <numbers>
 #include <string>
 #include <string_view>
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 #include "model/AnimModel.h"
+#include "model/Model3d.h"
 #include "scene/scene.h"
 #include "scene/scenenode.h"
 #include "scene/scenelayers.h"
@@ -45,9 +47,10 @@ struct vat_clip
 constexpr vat_clip Grazing{"animals/jelen_je", 20.0, 240.0, 1};
 // startled: from the moments k * Window of the grazing (clip k) to the alarm, in Startletime; two more frames hold the end
 constexpr vat_clip Startle{"animals/jelen_zryw", 30.0, 15.0, 16};
-// the flight from the alarm: looks at the train (clip 0 to the left, 1 to the right), bounds away and stops in the grazing pose of the
-// moment Grazeafter, in Flighttime; two more frames hold the end
-constexpr vat_clip Flight{"animals/jelen_skok", 30.0, 168.0, 2};
+// the flight from the alarm: looks at the train (clip k: the head turned by Looks[k] degrees, to the left when more than 0), bounds
+// away and stops in the grazing pose of the moment Grazeafter, in Flighttime; two more frames hold the end
+constexpr vat_clip Flight{"animals/jelen_skok", 30.0, 168.0, 6};
+constexpr std::array<double, 6> Looks{50.0, 80.0, 110.0, -50.0, -80.0, -110.0};
 constexpr double Window{0.75};
 constexpr double Startletime{0.4};
 constexpr double Flighttime{5.5};
@@ -74,6 +77,16 @@ constexpr double Waystep{0.45};
 constexpr double Wayrange{1.2};
 // where there's no such ground at the place, the next deer is looked for this much farther, metres
 constexpr double Retrydistance{200.0};
+// the track at the place: plain (no switch) from the train to this much past the place, and turning at most Straightturn degrees
+// over Straightspan metres before and after it, metres
+constexpr double Clearpast{100.0};
+constexpr double Straightspan{50.0};
+constexpr double Straightturn{3.0};
+// no deer this near a platform: an instance of a model of peronowe/ (or another folder named so), metres
+constexpr double Platformrange{150.0};
+// nor where the ground beside the track, this far from its axis, rises this much over the sleepers (a platform of the terrain)
+constexpr std::array<double, 2> Platformside{2.5, 4.0};
+constexpr double Platformrise{0.45};
 // the train past the deer: it came this close, and is this much farther away now, metres
 constexpr double Passedclose{300.0};
 constexpr double Passedmargin{200.0};
@@ -257,7 +270,7 @@ struct path_place
 };
 
 // the place Distance from Track at Offset along it, going the way of Direction (1 towards its end, -1 towards its start), through the
-// connected paths. false where the paths end earlier (or reach a crossing of roads)
+// connected paths. false where the paths end earlier, or reach a crossing of roads or a switch
 bool path_ahead(TTrack *Track, double Offset, double Direction, double Distance, path_place &Place)
 {
 	auto *track{Track};
@@ -271,8 +284,9 @@ bool path_ahead(TTrack *Track, double Offset, double Direction, double Distance,
 		{
 			left -= room;
 			track = track->Connected(Direction > 0.0 ? 1 : -1, Direction);
-			if ((track == nullptr) || (track->eType == tt_Cross))
+			if ((track == nullptr) || (track->eType != tt_Normal))
 			{
+				// the end, a crossing of roads, or a switch: the way may go elsewhere by the time the train gets there
 				return false;
 			}
 			Offset = (Direction > 0.0 ? 0.0 : track->Length());
@@ -303,6 +317,87 @@ bool path_ahead(TTrack *Track, double Offset, double Direction, double Distance,
 		return true;
 	}
 	return false;
+}
+
+// the way ahead of the train to Distance and Clearpast past it plain track, the track there about straight: Place the place
+bool plain_way(TTrack *Track, double const Offset, double const Direction, double const Distance, path_place &Place)
+{
+	if ((Track == nullptr) || (Track->eType != tt_Normal))
+	{
+		return false;
+	}
+	path_place before;
+	path_place past;
+	if ((false == path_ahead(Track, Offset, Direction, Distance + Clearpast, past)) ||
+		(false == path_ahead(Track, Offset, Direction, Distance - Straightspan, before)) ||
+		(false == path_ahead(Track, Offset, Direction, Distance, Place)) ||
+		(false == path_ahead(Track, Offset, Direction, Distance + Straightspan, past)))
+	{
+		return false;
+	}
+	auto const limit{std::cos(Straightturn * std::numbers::pi / 180.0)};
+	return (glm::dot(before.forward, Place.forward) >= limit) && (glm::dot(Place.forward, past.forward) >= limit);
+}
+
+// a model of a platform: in a folder named peron... (peronowe/)
+bool platform_model(TAnimModel const &Instance)
+{
+	auto const *model{Instance.Model()};
+	if (model == nullptr)
+	{
+		return false;
+	}
+	auto name{model->NameGet()};
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+	std::replace(name.begin(), name.end(), '\\', '/');
+	auto const slash{name.rfind('/')};
+	return (slash != std::string::npos) && (name.substr(0, slash).find("peron") != std::string::npos);
+}
+
+// a platform about the place: a model of one near it, or the ground beside the track raised to its height
+bool near_platform(path_place const &Place)
+{
+	for (auto *section : simulation::Region->sections(Place.position, static_cast<float>(Platformrange)))
+	{
+		for (auto const &cell : section->m_cells)
+		{
+			if (glm::length(cell.m_area.center - Place.position) > cell.m_area.radius + Platformrange)
+			{
+				continue;
+			}
+			auto const nearby{[&Place](TAnimModel const *Instance) {
+				return (Instance != nullptr) && (glm::length(Instance->location() - Place.position) < Platformrange) && platform_model(*Instance);
+			}};
+			if (std::ranges::any_of(cell.m_instancesopaque, nearby) || std::ranges::any_of(cell.m_instancetranslucent, nearby))
+			{
+				return true;
+			}
+		}
+	}
+	glm::dvec3 const across{Place.forward.z, 0.0, -Place.forward.x};
+	for (auto const side : {-1.0, 1.0})
+	{
+		for (auto const distance : Platformside)
+		{
+			auto const here{ground_at(Place.position + across * (side * distance), Place.position.y + Groundceiling)};
+			if (here.found && (here.height > Place.position.y + Platformrise))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// the clip of the flight which looks the nearest to Towards (from the deer to the train) for a deer looking along Heading
+int look_clip(glm::dvec3 const &Heading, glm::dvec3 const &Towards)
+{
+	// the left of a heading h is (h.z, 0, -h.x)
+	auto const left{Towards.x * Heading.z - Towards.z * Heading.x};
+	auto const ahead{Towards.x * Heading.x + Towards.z * Heading.z};
+	auto const angle{std::atan2(left, ahead) * 180.0 / std::numbers::pi};
+	auto const nearest{std::ranges::min_element(Looks, {}, [angle](double const Look) { return std::abs(Look - angle); })};
+	return static_cast<int>(std::distance(Looks.begin(), nearest));
 }
 
 // the yaw of an instance whose model looks along -z, to look along Heading, degrees (-180, 180]
@@ -439,7 +534,7 @@ void simulation::deer_herd::update(double const Deltatime)
 		m_travelled = 0.0;
 		if ((Random(0.0, 1.0) < Global.deer_chance) && (false == spawn(*vehicle)))
 		{
-			// no flat ground there: soon again
+			// no flat ground, a switch or a platform there: soon again
 			m_travelled = std::max(0.0, Global.deer_interval - Retrydistance);
 		}
 	}
@@ -510,7 +605,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	auto const &axle{front ? Vehicle.Axle0 : Vehicle.Axle1};
 	auto const direction{front ? axle.GetDirection() : -axle.GetDirection()};
 	path_place place;
-	if (false == path_ahead(axle.GetTrack(), axle.GetTranslation(), direction, Global.deer_distance, place))
+	if ((false == plain_way(axle.GetTrack(), axle.GetTranslation(), direction, Global.deer_distance, place)) || near_platform(place))
 	{
 		return false;
 	}
@@ -557,9 +652,8 @@ void simulation::deer_herd::alarm(deer &Animal, glm::dvec3 const &Train, double 
 	window %= windows;
 	Animal.clip = window;
 	Animal.time = Now + std::max(0.0, wait);
-	// it looks at the train: to its left or to its right (the left of a heading h is (h.z, 0, -h.x))
-	auto const towards{Train - Animal.model->location()};
-	Animal.look = ((towards.x * Animal.heading.z - towards.z * Animal.heading.x) > 0.0 ? 0 : 1);
+	// it looks at the train
+	Animal.look = look_clip(Animal.heading, Train - Animal.model->location());
 	Animal.state = deer_state::alarmed;
 }
 
