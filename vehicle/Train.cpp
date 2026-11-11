@@ -11162,7 +11162,12 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	}
 
 	if (DynamicObject->mdKabina)
+	{
 		DynamicObject->mdKabina->Init(); // obrócenie modelu oraz optymalizacja, również zapisanie binarnego
+		// the vehicle has a cab, a player is in it: the odometer store keeps the vehicle also when its type has no
+		// driver's brake valve (eu07/maszyna#72)
+		DynamicObject->MoverParameters->Odometer.shown = true;
+	}
 
 	set_cab_controls(NewCabNo < 0 ? 2 : NewCabNo);
 
@@ -12788,6 +12793,9 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 			mvControlled->Odometer.seed(*seed);
 		gauge.offset(0.f);
 		gauge.AssignDouble(&mvControlled->Odometer.km);
+		// the vehicle the counter counts for is one the odometer store keeps, also in the sessions the counter seeds
+		// nothing (its state is a saved one by then) and when it's the motor car of the unit the cab is in
+		mvControlled->Odometer.shown = true;
 	}
 	else if (Label == "shuntmodepower:")
 	{

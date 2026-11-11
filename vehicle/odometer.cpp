@@ -158,8 +158,12 @@ void store::record(std::string const &Vehicle, reading const &Odometer) {
 	m_modified = true;
 }
 
+bool kept(bool const Drivercab, reading const &Odometer) {
+	return Drivercab || Odometer.shown || Odometer.source == origin::counter;
+}
+
 void record(store &States, std::string const &Vehicle, bool const Drivercab, reading const &Odometer) {
-	if (false == Drivercab)
+	if (false == kept(Drivercab, Odometer))
 		return;
 	States.record(Vehicle, Odometer);
 }

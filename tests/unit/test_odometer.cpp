@@ -435,6 +435,85 @@ TEST_CASE("odometer: only the vehicles with a driver's cab are recorded") {
 	}
 }
 
+TEST_CASE("odometer: a vehicle driven without a driver's brake valve is recorded once a cab shows its odometer") {
+	// the draisines (DL2, DR2) have a cab and no BrakeHandle, so their type doesn't tell of the cab; the cab of the
+	// DL2 has a counter with an offset of 85
+	auto const definition{test::definition::fiz("dr2_v1/dr2")};
+	test::vehicle draisine{definition};
+	REQUIRE_FALSE(draisine->HasDriverCab());
+	scratch_directory directory{"odometer_cab_without_brake_valve"};
+	auto const file{directory.path / "eu07_odometers.txt"};
+	std::string const name{"DL2-001"};
+	// the state a vehicle of the name starts a session with, nothing kept by the python screens
+	auto const start = [&](odometer::store const &States) { return odometer::starting_state(States, name, directory.path, directory.path); };
+	odometer::store store;
+	draisine->Odometer = start(store);
+	REQUIRE(draisine->Odometer.source == odometer::origin::guessed);
+
+	SUBCASE("run by the AI, no cab loaded and no counter bound, it isn't recorded") {
+		draisine->Odometer.run(1500.0);
+		CHECK_FALSE(odometer::kept(draisine->HasDriverCab(), draisine->Odometer));
+		odometer::record(store, name, draisine->HasDriverCab(), draisine->Odometer);
+		CHECK_FALSE(store.find(name).has_value());
+		CHECK_FALSE(store.modified());
+	}
+	SUBCASE("its state seeded by the cab's counter is saved, read back, and counted on in the next session") {
+		// the cab loads: the counter seeds the state (TTrain, distcounter:)
+		draisine->Odometer.seed(odometer::counter_seed(85.f, 1.f).value());
+		REQUIRE(draisine->Odometer.source == odometer::origin::counter);
+		draisine->Odometer.run(2500.0);
+		CHECK(odometer::kept(draisine->HasDriverCab(), draisine->Odometer));
+		odometer::record(store, name, draisine->HasDriverCab(), draisine->Odometer);
+		CHECK(store.find(name).value() == doctest::Approx(87.5));
+		CHECK_FALSE(store.guessed(name));
+		REQUIRE(odometer::save(store, file));
+
+		// the next session: the vehicle starts from the saved state, not from the offset of the counter
+		odometer::store next;
+		{
+			std::ifstream input{file, std::ios::binary};
+			CHECK(next.read(input) == 1);
+		}
+		test::vehicle again{definition};
+		again->Odometer = start(next);
+		CHECK(again->Odometer.km == doctest::Approx(87.5));
+		CHECK(again->Odometer.source == odometer::origin::saved);
+		// the cab loads again: the counter has nothing to seed, a saved state isn't the counter's any more. the
+		// counter bound to the vehicle is what tells of its cab now
+		again->Odometer.seed(odometer::counter_seed(85.f, 1.f).value());
+		CHECK(again->Odometer.km == doctest::Approx(87.5));
+		CHECK(again->Odometer.source == odometer::origin::saved);
+		again->Odometer.shown = true;
+		again->Odometer.run(1000.0);
+		CHECK(odometer::kept(again->HasDriverCab(), again->Odometer));
+		odometer::record(next, name, again->HasDriverCab(), again->Odometer);
+		CHECK(next.find(name).value() == doctest::Approx(88.5));
+		CHECK(next.modified());
+		REQUIRE(odometer::save(next, file));
+
+		// a session the AI runs it in, with no cab loaded: the saved state stays as it is
+		test::vehicle ai{definition};
+		ai->Odometer = start(next);
+		CHECK(ai->Odometer.km == doctest::Approx(88.5));
+		ai->Odometer.run(4000.0);
+		odometer::record(next, name, ai->HasDriverCab(), ai->Odometer);
+		CHECK(next.find(name).value() == doctest::Approx(88.5));
+		CHECK_FALSE(next.modified());
+	}
+	SUBCASE("its cab loaded for a player, with no counter in it, it's recorded with its made up state") {
+		draisine->Odometer.shown = true;
+		draisine->Odometer.run(1500.0);
+		odometer::record(store, name, draisine->HasDriverCab(), draisine->Odometer);
+		CHECK(store.find(name).value() == doctest::Approx(draisine->Odometer.km));
+		CHECK(store.guessed(name));
+	}
+	SUBCASE("a state the session starts with doesn't carry the cab of an earlier one") {
+		draisine->Odometer.shown = true;
+		draisine->Odometer = start(store);
+		CHECK_FALSE(draisine->Odometer.shown);
+	}
+}
+
 TEST_CASE("odometer: the files of both kinds of python screens are read, by the name each used") {
 	scratch_directory directory{"odometer_legacy_screens"};
 	auto const vehicles{directory.path / "dynamic" / "elf_v1"};

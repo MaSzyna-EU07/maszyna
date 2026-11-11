@@ -27,6 +27,9 @@ struct reading {
 	double start{0.0}; // the state at the start of the session, km
 	origin source{origin::guessed};
 	double guess{0.0}; // the made up state a guessed one counts from, km
+	// a cab shows the state in this session: a cab of the vehicle was loaded for a player (its python screens can
+	// show it), or a cab's counter was bound to it. such a vehicle has a cab, whatever its type tells
+	bool shown{false};
 
 	// sets the state the vehicle starts the session with
 	void begin(double Km, origin Source);

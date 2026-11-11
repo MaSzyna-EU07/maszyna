@@ -64,11 +64,20 @@ private:
 	bool m_modified{false};
 };
 
-// records the state of a vehicle in the store when it's one the store keeps: a vehicle with a driver's cab
-// (TMoverParameters::HasDriverCab()), which can show its odometer on the cab's counter or a python screen. that
-// includes the locomotives and units the AI runs before a player's cab loads them, their made up states stay
-// replaceable by the cab's counter. the wagons, which make most of the AI's trains, aren't recorded; the states the
-// store already holds for any of them stay as they are
+// the vehicle is one the store keeps: one with a driver's cab, which can show its odometer on the cab's counter or a
+// python screen. that's
+// - a vehicle whose type has a cab (Drivercab, TMoverParameters::HasDriverCab(): it has the driver's brake valve). that
+//   includes the locomotives and units the AI runs before a player's cab loads them, their made up states stay
+//   replaceable by the cab's counter
+// - a vehicle whose cab showed the odometer in this session (reading::shown): the cab was loaded for a player, or a
+//   cab's counter was bound to it. the type alone misses the vehicles driven without a driver's brake valve (the DL2
+//   draisine, with a counter in its cab) and the motor cars the counter of a unit's cab counts for. such a vehicle is
+//   recorded in the sessions a player's cab shows it; in the others its saved state stays as it is
+// - a vehicle whose state a cab's counter seeded (origin::counter), which is the same thing, told by the state
+// the wagons, which make most of the AI's trains, aren't
+bool kept(bool Drivercab, reading const &Odometer);
+// records the state of a vehicle in the store when it's one the store keeps (kept()). the others aren't recorded; the
+// states the store already holds for any of them stay as they are
 void record(store &States, std::string const &Vehicle, bool Drivercab, reading const &Odometer);
 
 // state kept in the file of the python screens before, when it holds a number. the screens opened the file in the
