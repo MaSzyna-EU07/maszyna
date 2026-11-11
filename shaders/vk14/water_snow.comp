@@ -33,7 +33,7 @@ const float SNOW_PACKED = 0.4;
 const float SNOW_FLAKE_LEAST = 0.3;
 const float SNOW_FLAKE_MOST = 2.5;
 // the speed of the snow coming at the glass in the eddies of the air, m/s: a glass not facing the snow gets a little of it
-const float SNOW_EDDIES = 0.25;
+const float SNOW_EDDIES = 0.6;
 // the most snow a texel holds, mm, and the step of the snow to a neighbour it holds without slipping onto it, mm
 const float SNOW_MOST = 40.0;
 const float SNOW_REPOSE = 3.0;
