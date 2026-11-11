@@ -248,6 +248,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double m_ortho_pitch{0.0};
 	bool m_ortho_pan{false};
 	glm::dvec2 m_ortho_pan_cursor{0.0};
+	double m_pan_metres{0.0}; // of the ground to a pixel, held by the panning in the perspective view
 	void ortho_pan_to(double const Horizontal, double const Vertical);
 	void ortho_pan_stop();
 	// camera fly-mode (right mouse button held); used to flush motion when it's released
@@ -3382,6 +3383,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool follow{true}; // built roads are led over the ground between the clicked points
 		float crossingspeed{30.f}; // speed limit on the junctions being made
 		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
+		// Alt+LMB on a point dragged up or down: the heights of the selected points changed by the drag, applied when let go
+		bool lifting{false};
+		float lift_mouse{0.0f}; // where on the screen the drag began, pixels down
+		double lift_scale{0.0}; // metres for a pixel at the point picked
+		std::vector<double> lift_from; // the heights of the selected points when the drag began
 		bool ring{false}; // the build tool makes roundabouts
 		float ringradius{15.f}; // of the middle of the road going around
 		std::string island{"none"}; // what the middle of a roundabout is covered with
@@ -3419,6 +3425,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_road_overlay() const;
 	void update_road_tool();
 	void road_click();
+	// the point where pieces meet or end nearest to the cursor on the screen, within a few pixels; it's found under the
+	// terrain too, where the click on the ground doesn't get near it
+	bool road_joint_on_screen(glm::dvec3 &Joint) const;
+	// Alt+LMB: the drag of the heights of the selected points begun on a point, and finished
+	bool road_lift_start();
+	void road_lift_finish();
+	double road_lift_offset() const;
 	void road_select(road_node *Road);
 	void junction_select(junction_node *Junction);
 	void road_apply();

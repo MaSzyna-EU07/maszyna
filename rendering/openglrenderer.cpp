@@ -4360,7 +4360,8 @@ opengl_renderer::Update_Mouse_Position() {
     GLfloat pointdepth;
     ::glReadPixels( mousepos.x, mousepos.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pointdepth );
 
-    if( pointdepth < 1.0 ) {
+    m_mousehit = pointdepth < 1.0;
+    if( m_mousehit ) {
         m_worldmousecoordinates =
             glm::unProject(
                 glm::vec3{ mousepos, pointdepth },

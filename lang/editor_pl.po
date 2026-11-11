@@ -8361,8 +8361,11 @@ msgstr "LPM: postaw %s na drodze"
 msgid "LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo"
 msgstr "LPM: zaznacz odcinek, skrzyżowanie, punkt albo znacznik   Del: usuń   Ctrl+Z: cofnij"
 
-msgid "LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo"
-msgstr "LPM: zaznacz punkt   Shift+LPM: dodaj punkt albo go odznacz   Del: usuń punkty   Ctrl+Z: cofnij"
+msgid "Drag up or down: the height of the selected points   Ctrl: finer   let go: set"
+msgstr "Przeciągnij w górę albo w dół: wysokość zaznaczonych punktów   Ctrl: dokładniej   puść: ustaw"
+
+msgid "LMB: select a point (under the terrain too)   Shift+LMB: add a point or take it out   Alt+LMB drag: the height   Del: delete the points   Ctrl+Z: undo"
+msgstr "LPM: zaznacz punkt (także pod terenem)   Shift+LPM: dodaj punkt albo go odznacz   Alt+LPM przeciągnij: wysokość   Del: usuń punkty   Ctrl+Z: cofnij"
 
 msgid "LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo"
 msgstr "LPM: zaznacz odcinek, skrzyżowanie albo punkt (biała kropka)   K: podziel przy kursorze   Del: usuń   Ctrl+Z: cofnij"
