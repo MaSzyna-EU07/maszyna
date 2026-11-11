@@ -46,8 +46,12 @@ const float SNOW_WIPE_LEFT = 0.03;
 const float SNOW_WIPE_WATER = 0.1;
 const float SNOW_WIPE_TRACE = 0.08;
 const float SNOW_WIPE_WET = 0.015;
-// the water the snow melts into at the glass a second for each degree the glass is above zero, mm
-const float SNOW_MELT = 0.003;
+// the water the snow melts into at the glass a second for each degree the glass is above zero, mm (the heat the glass passes on,
+// ~70 W/m2 a degree, melts 0.0002 mm of water a second)
+const float SNOW_MELT = 0.0002;
+// the share of the snowfall the flakes of water_snow.x make (the renderer counts a quarter of them, as for the particles of the
+// drop passes): the snow of the map gets all of it
+const float SNOW_FALL_SHARE = 4.0;
 // how much warmer than the air the glass is, the share of the warmth given (water_snow.y, the cab heats it)
 const float SNOW_WARMTH = 1.0;
 // the share of a flake landing near zero already water (wet snow)
@@ -254,7 +258,7 @@ void main()
 	// water stay
 	float dry = (1.0 - smoothstep(0.1, 0.4, wet)) * (1.0 - smoothstep(-3.0, 0.0, water_up.w));
 	float sticking = 1.0 - 0.4 * smoothstep(5.0, 25.0, speed) * dry;
-	float landings = water_snow.x / max(water_air.w, 0.1) * facing * area * seconds * sticking;
+	float landings = water_snow.x * SNOW_FALL_SHARE / max(water_air.w, 0.1) * facing * area * seconds * sticking;
 	vec4 random = water_random(place, snow_slot, water_counts.x, 0x5e0du);
 	float count = min(floor(landings) + ((random.x < fract(landings)) ? 1.0 : 0.0), 4.0);
 	if (count > 0.0)
