@@ -33,6 +33,14 @@ int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of r
 
 namespace {
 
+// the top view of the editor shows everything this close to the camera, the corners of the screen included
+float
+editor_ortho_reach()
+{
+    auto const aspect{ Global.window_size.x / std::max( 1.f, static_cast<float>( Global.window_size.y ) ) };
+    return Global.EditorOrthoExtent * std::sqrt( 1.f + aspect * aspect ) + 500.f;
+}
+
 float
 editor_track_view_range(float const Range, bool const Apply)
 {
@@ -40,16 +48,21 @@ editor_track_view_range(float const Range, bool const Apply)
         return Range;
     float extra = 50000.0f;
     if( Global.EditorOrtho )
-        extra = Global.EditorOrthoExtent * 3.0f;
+        extra = editor_ortho_reach();
     return Range > extra ? Range : extra;
 }
 
+// far off the camera the tracks of the editor are drawn alone, the terrain, the models and the rest only as far as the
+// scenery reaches in the game; the top view measures it off its centre on the ground, its camera being high above it
 bool
-editor_far_tracks_only(bool const Apply, scene::basic_cell const *Cell, glm::dvec3 const &Camera, double const SceneryLimit)
+editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit)
 {
     if( false == Apply )
         return false;
-    double nearest = glm::length( Cell->m_area.center - Camera ) - static_cast<double>( Cell->m_area.radius );
+    auto offset{ Area.center - Camera };
+    if( Global.EditorOrtho )
+        offset.y = 0.0;
+    double nearest = glm::length( offset ) - static_cast<double>( Area.radius );
     if( nearest < 0.0 )
         nearest = 0.0;
     return nearest > SceneryLimit;
@@ -954,6 +967,8 @@ bool
 opengl_renderer::Render_reflections() {
 
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
     auto const timestamp { Timer::GetRenderTime() };
     if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )
@@ -2020,6 +2035,11 @@ opengl_renderer::Render( section_sequence::iterator First, section_sequence::ite
             break; }
     }
 
+    // the ground of the sections far off, the terrain of the editor among it, isn't drawn with the tracks reaching there
+    auto const scenery_limit{ static_cast<double>( Global.BaseDrawRange ) * Global.fDistanceFactor + 250.0 };
+    bool const far_paths{ EditorModeFlag && Global.editor_tracks && ( m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery ) };
+    glm::dvec3 const camera{ m_renderpass.camera.position() };
+
     while( First != Last ) {
 
         auto *section = *First;
@@ -2032,7 +2052,7 @@ opengl_renderer::Render( section_sequence::iterator First, section_sequence::ite
             case rendermode::shadows:
             case rendermode::cabshadows:
             case rendermode::pickscenery: {
-                if( false == section->m_shapes.empty() ) {
+                if( false == section->m_shapes.empty() && false == editor_far_tracks_only( far_paths, section->m_area, camera, scenery_limit ) ) {
                     // since all shapes of the section share center point we can optimize out a few calls here
                     ::glPushMatrix();
                     auto const originoffset { section->m_area.center - m_renderpass.camera.position() };
@@ -2113,7 +2133,7 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
         auto *cell = First->second;
         // przeliczenia animacji torów w sektorze
         cell->RaAnimate( m_framestamp );
-        bool const tracks_only{ editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) };
+        bool const tracks_only{ editor_far_tracks_only( far_paths, cell->m_area, camera, scenery_limit ) };
 
         switch( m_renderpass.draw_mode ) {
             case rendermode::color: {
@@ -2260,7 +2280,7 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
             case rendermode::color:
             case rendermode::shadows:
             case rendermode::cabshadows: {
-                if( editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) )
+                if( editor_far_tracks_only( far_paths, cell->m_area, camera, scenery_limit ) )
                     break;
                 // TBD, TODO: refactor in to a method to reuse in branch below?
                 // opaque parts of instanced models
@@ -2304,7 +2324,7 @@ opengl_renderer::Render( cell_sequence::iterator First, cell_sequence::iterator 
                 break;
             }
             case rendermode::pickscenery: {
-                if( editor_far_tracks_only( far_paths, cell, camera, scenery_limit ) )
+                if( editor_far_tracks_only( far_paths, cell->m_area, camera, scenery_limit ) )
                     break;
                 // opaque parts of instanced models
                 // same procedure like with regular render, but each node receives custom colour used for picking
@@ -3212,6 +3232,10 @@ opengl_renderer::Render( TTrack *Track ) {
                 Bind_Material( Track->m_material2 );
                 m_geometry.draw( std::begin( Track->Geometry2 ), std::end( Track->Geometry2 ) );
             }
+            for( auto const &tread : Track->GeometryTreads ) {
+                Bind_Material( tread.material );
+                m_geometry.draw( std::begin( tread.geometry ), std::end( tread.geometry ) );
+            }
             if( ( Track->eType == tt_Switch )
              && ( Track->SwitchExtension->m_material3 != 0 ) ) {
                 Bind_Material( Track->SwitchExtension->m_material3 );
@@ -3221,6 +3245,31 @@ opengl_renderer::Render( TTrack *Track ) {
         }
         default: {
             break;
+        }
+    }
+}
+
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials
+void
+opengl_renderer::Render_cuts( TTrack const *Track ) {
+
+    std::vector<std::pair<material_handle, TTrack::geometryhandle_sequence const *>> parts { { Track->m_materialcut1, &Track->GeometryCut1 }, { Track->m_materialcut2, &Track->GeometryCut2 } };
+    for( auto const &tread : Track->GeometryTreads ) {
+        parts.emplace_back( tread.material, &tread.geometry );
+        parts.emplace_back( tread.matte, &tread.cuts );
+    }
+    for( auto const &[ material, geometry ] : parts ) {
+        if( ( material == null_handle )
+         || ( geometry->empty() ) ) {
+            continue;
+        }
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light( Track->eEnvironment );
+        }
+        Bind_Material( material );
+        m_geometry.draw( std::begin( *geometry ), std::end( *geometry ) );
+        if( Track->eEnvironment != e_flat ) {
+            setup_environment_light();
         }
     }
 }
@@ -3399,6 +3448,19 @@ opengl_renderer::Render( scene::basic_cell::path_sequence::const_iterator First,
             }
         }
     }
+    // cut faces of rails
+    if( ( m_renderpass.draw_mode == rendermode::color )
+     || ( m_renderpass.draw_mode == rendermode::reflections ) ) {
+        for( auto first { First }; first != Last; ++first ) {
+
+            auto const track { *first };
+
+            if( false == track->m_visible ) {
+                continue;
+            }
+            Render_cuts( track );
+        }
+    }
     // post-render reset
     switch( m_renderpass.draw_mode ) {
         case rendermode::shadows:
@@ -3543,6 +3605,11 @@ void
 opengl_renderer::Render_Alpha( cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last ) {
 
     // NOTE: this method is launched only during color pass therefore we don't bother with mode test here
+    // the cells far off with the tracks alone drawn there have nothing translucent drawn either
+    auto const scenery_limit{ static_cast<double>( Global.BaseDrawRange ) * Global.fDistanceFactor + 250.0 };
+    bool const far_paths{ EditorModeFlag && Global.editor_tracks };
+    glm::dvec3 const camera{ m_renderpass.camera.position() };
+    auto const distant = [&]( scene::basic_cell const *Cell ) { return editor_far_tracks_only( far_paths, Cell->m_area, camera, scenery_limit ); };
     // first pass draws elements which we know are located in section banks, to reduce vbo switching
     {
         auto first { First };
@@ -3550,7 +3617,7 @@ opengl_renderer::Render_Alpha( cell_sequence::reverse_iterator First, cell_seque
 
             auto const *cell = first->second;
 
-            if( false == cell->m_shapestranslucent.empty() ) {
+            if( false == cell->m_shapestranslucent.empty() && false == distant( cell ) ) {
                 // since all shapes of the cell share center point we can optimize out a few calls here
                 ::glPushMatrix();
                 auto const originoffset{ cell->m_area.center - m_renderpass.camera.position() };
@@ -3571,6 +3638,10 @@ opengl_renderer::Render_Alpha( cell_sequence::reverse_iterator First, cell_seque
         while( first != Last ) {
 
             auto const *cell = first->second;
+            if( distant( cell ) ) {
+                ++first;
+                continue;
+            }
 
             // translucent parts of instanced models
             for( auto *instance : cell->m_instancetranslucent ) { Render_Alpha( instance ); }
@@ -3600,7 +3671,8 @@ opengl_renderer::Render_Alpha( cell_sequence::reverse_iterator First, cell_seque
             auto const *cell = first->second;
 
             if( ( false == cell->m_traction.empty()
-             || ( false == cell->m_lines.empty() ) ) ) {
+             || ( false == cell->m_lines.empty() ) )
+             && false == distant( cell ) ) {
                 // since all shapes of the cell share center point we can optimize out a few calls here
                 ::glPushMatrix();
                 auto const originoffset { cell->m_area.center - m_renderpass.camera.position() };

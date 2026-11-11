@@ -1121,7 +1121,7 @@ void roadpoint_node::hide()
 }
 
 // radius() subclass details, calculates node's bounding radius
-float roadpoint_node::radius_()
+float roadpoint_node::radius_() const
 {
 	return m_state.kind == kind_type::crossing ? m_state.clearance + 5.f : m_state.kind == kind_type::crosswalk ? static_cast<float>(m_halfwidth) + m_state.length : m_state.radius;
 }
