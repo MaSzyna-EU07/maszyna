@@ -85,6 +85,7 @@ enum class TCommandType
     cm_SectionVelocity, //ograniczenie prędkości na odcinku
     cm_ShuntVelocity, // prędkość manewrowa na semaforze
     cm_SetProximityVelocity, // informacja wstępna o ograniczeniu
+    cm_PointVelocity, // ograniczenie dla czoła w punkcie podaną odległość za komórką, odczytane przy jej minięciu
     cm_ChangeDirection,
     cm_PassengerStopPoint,
     cm_OutsideStation,

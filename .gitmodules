@@ -32,3 +32,7 @@
 [submodule "betterRenderer/thirdparty/bvh"]
 	path = betterRenderer/thirdparty/bvh
 	url = https://github.com/madmann91/bvh.git
+[submodule "ref/wamr"]
+	path = ref/wamr
+	url = https://github.com/bytecodealliance/wasm-micro-runtime
+	shallow = true
