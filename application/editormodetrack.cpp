@@ -1980,8 +1980,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints.push_back({"K", "split the path under the cursor, a break of the grade at the height of the ground"});
 		hints.push_back({"O", "top view"});
 		hints.push_back({"Esc", "back to Select"});
-		if (Global.EditorOrtho)
-			hints.push_back({"Hold the wheel", "pans the view"});
+		hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
 		hints.push_back({"Ctrl+Y", "redo"});
 		hints.push_back({"L T G N U I X B P V J", "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, objects, profile, speed, joints"});

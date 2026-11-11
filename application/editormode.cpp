@@ -5723,7 +5723,7 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"RMB + W S A D", "Keep holding the right button and press W S A D to fly around; E takes you up, Q down"},
 	      {"O", "Switches between the view from above, like a map, and the normal 3D view"},
 	      {"wheel", "Zooms in and out at the mouse pointer"},
-	      {"MMB + move", "In the view from above: press the wheel down and drag to move the map"},
+	      {"MMB + move", "Press the wheel down and drag to move the view, from above and in 3D"},
 	      {"F", "Flies to what you have selected"}},
 	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Press O: from above to 3D, or back"}},
 	     trial::top},

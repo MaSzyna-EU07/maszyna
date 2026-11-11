@@ -5355,8 +5355,8 @@ msgstr "Przełącza między widokiem z góry, jak na mapie, a zwykłym widokiem 
 msgid "Zooms in and out at the mouse pointer"
 msgstr "Przybliża i oddala w miejscu, na które wskazuje mysz"
 
-msgid "In the view from above: press the wheel down and drag to move the map"
-msgstr "W widoku z góry: wciśnij kółko i przeciągnij, żeby przesunąć mapę"
+msgid "Press the wheel down and drag to move the view, from above and in 3D"
+msgstr "Wciśnij kółko i przeciągnij, żeby przesunąć widok, z góry i w 3D"
 
 msgid "Flies to what you have selected"
 msgstr "Przelatuje do tego, co masz zaznaczone"
@@ -8363,6 +8363,12 @@ msgstr "LPM: postaw %s na drodze"
 
 msgid "LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo"
 msgstr "LPM: zaznacz odcinek, skrzyżowanie, punkt albo znacznik   Del: usuń   Ctrl+Z: cofnij"
+
+msgid "Drag up or down, let go to set the heights. Ctrl while dragging: by centimetres"
+msgstr "Przeciągnij w górę albo w dół, puść, żeby ustawić wysokości. Ctrl przy przeciąganiu: co centymetr"
+
+msgid "%+.2f m, to %.2f m"
+msgstr "%+.2f m, na %.2f m"
 
 msgid "Drag up or down: the height of the selected points   Ctrl: finer   let go: set"
 msgstr "Przeciągnij w górę albo w dół: wysokość zaznaczonych punktów   Ctrl: dokładniej   puść: ustaw"

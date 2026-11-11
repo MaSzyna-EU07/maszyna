@@ -26,7 +26,6 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <limits>
 #include <map>
 #include <set>
@@ -1159,7 +1158,7 @@ bool editor_mode::road_lift_start()
 	for (auto const &point : tool.points)
 		tool.lift_from.push_back(point.y);
 	tool.lifting = true;
-	tool.status = "Drag up or down, let go to set the heights. Ctrl while dragging: by centimetres";
+	tool.status = STR_C("Drag up or down, let go to set the heights. Ctrl while dragging: by centimetres");
 	return true;
 }
 
@@ -2890,7 +2889,7 @@ void editor_mode::draw_road_overlay() const
 			}
 			auto const mouse{ImGui::GetIO().MousePos};
 			char label[64];
-			std::snprintf(label, sizeof(label), "%+.2f m, to %.2f m", offset, tool.points.empty() ? 0.0 : tool.points.front().y + offset);
+			std::snprintf(label, sizeof(label), STR_C("%+.2f m, to %.2f m"), offset, tool.points.empty() ? 0.0 : tool.points.front().y + offset);
 			drawlist->AddRectFilled(ImVec2(mouse.x + 14.0f, mouse.y - 4.0f), ImVec2(mouse.x + 22.0f + ImGui::CalcTextSize(label).x, mouse.y + 18.0f), IM_COL32(0, 0, 0, 170), 3.0f);
 			drawlist->AddText(ImVec2(mouse.x + 18.0f, mouse.y - 2.0f), lifted, label);
 		}
