@@ -201,6 +201,13 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   sleepercheck                         the 3d sleepers of all the tracks checked for beams over each other and rails without enough under them
 //   beams <track> <z from> <z to>        the beams the track lays with their middles between the two z
 //   sharedzones <track>                  where the timbers shared with other tracks reach along the paths of the track and past its ends
+//   ride <track> [path] [s]              the camera riding along the track from the distance on the path, looking towards the growing distance
+//   ridewalk <metres> [choice]           the ride moved ahead (negative: back) as far, the switches from their blades left by the path of the
+//                                        choice (0 straighter, 1 the other); logs the place and whether any switch was thrown on the way
+//   ridejump <-1|1>                      the ride over to the track alongside on the left or the right of the way ahead
+//   rideahead, rideprobe, rideleave      logs the switch ahead from its blades / logs the place of the ride / ends the ride
+//   minimap <0|1|2>, stations            the minimap shown or hidden (2: the whole scenery in it) / logs the stations the W4 name with their stops
+//   station <text>, minimapclick <x> <z> the camera to the next stop of the station whose name holds the text / as a click on the map there
 //   quit
 void editor_mode::selftest_step()
 {

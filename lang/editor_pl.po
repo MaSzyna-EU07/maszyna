@@ -13874,3 +13874,78 @@ msgstr "W dół: zamienia się miejscem ze wskaźnikiem pod nim. Jeden krok cofa
 
 msgid "This joint parts the station from the line out of it: it stays where the station ends"
 msgstr "Ten styk oddziela stację od szlaku: zostaje tam, gdzie kończy się stacja"
+
+msgid "height"
+msgstr "wysokość"
+
+msgid "to the left"
+msgstr "w lewo"
+
+msgid "to the right"
+msgstr "w prawo"
+
+msgid "Switch in %.0f m: %s   (Z changes)"
+msgstr "Rozjazd za %.0f m: %s   (Z zmienia)"
+
+msgid "RMB held: W/S drive, A/D next track, Q/E height   Y leave"
+msgstr "z PPM: W/S jazda, A/D sąsiedni tor, Q/E wysokość   Y wyjście"
+
+msgid "No track alongside"
+msgstr "Brak toru obok"
+
+msgid "No track nearby"
+msgstr "Brak toru w pobliżu"
+
+msgid "Ride along the track"
+msgstr "Jazda po torze"
+
+msgid "Ride along the track under the cursor, the tools working on; Y again leaves"
+msgstr "Jazda po torze pod kursorem, narzędzia działają dalej; ponowne Y kończy"
+
+msgid "Drive; Shift faster, Ctrl+W / Ctrl+Down much faster"
+msgstr "Jazda; Shift szybciej, Ctrl+W / Ctrl+strzałka w dół dużo szybciej"
+
+msgid "Next track on the left / right"
+msgstr "Sąsiedni tor w lewo / w prawo"
+
+msgid "The way at the next switch (it isn't thrown)"
+msgstr "Kierunek na najbliższym rozjeździe (zwrotnica się nie przestawia)"
+
+msgid "RMB held, E / Q; wheel"
+msgstr "PPM wciśnięty, E / Q; kółko"
+
+msgid "Higher / lower"
+msgstr "Wyżej / niżej"
+
+msgid "Minimap, stations by their W4"
+msgstr "Minimapa, stacje po W4"
+
+msgid "Minimap"
+msgstr "Minimapa"
+
+msgid "Find a station"
+msgstr "Szukaj stacji"
+
+msgid "No W4 in the scenery"
+msgstr "Sceneria nie ma wskaźników W4"
+
+msgid "Nothing found"
+msgstr "Nie znaleziono"
+
+msgid "Click again for the next W4"
+msgstr "Kliknij ponownie: następny W4"
+
+msgid "Follow the camera"
+msgstr "Za kamerą"
+
+msgid "Zoom in to see all the tracks"
+msgstr "Przybliż, aby zobaczyć wszystkie tory"
+
+msgid "Ride along it"
+msgstr "Jedź po nim"
+
+msgid "RMB held, W / S"
+msgstr "PPM wciśnięty, W / S"
+
+msgid "RMB held, A / D"
+msgstr "PPM wciśnięty, A / D"

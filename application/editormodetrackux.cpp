@@ -1434,6 +1434,8 @@ void editor_mode::render_track_context()
 		track_set_toggle(*track);
 	if (ImGui::MenuItem(STR_C("Look at it")))
 		focus_track(*track, context.target.path, point);
+	if (ImGui::MenuItem(STR_C("Ride along it"), "Y"))
+		m_ride.enter(track, context.target.path, point, camera_look(), true);
 	if (ImGui::MenuItem(STR_C("Copy the name"), nullptr, false, false == track->name().empty()))
 		ImGui::SetClipboardText(track->name().c_str());
 	ImGui::Separator();

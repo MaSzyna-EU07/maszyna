@@ -1683,6 +1683,7 @@ void editor_mode::profile_frame_view()
 		Global.EditorOrthoExtent = std::clamp(static_cast<float>(extent), 5.0f, 50000.0f);
 		auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / screen.y};
 		auto const offset{RotateY(glm::dvec3{shift.x * scale, 0.0, shift.y * scale}, yaw)};
+		m_ride.leave();
 		Camera.Pos.x = centre.x - offset.x;
 		Camera.Pos.z = centre.z - offset.z;
 		Camera.Velocity = {};
