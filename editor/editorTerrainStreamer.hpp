@@ -136,6 +136,9 @@ class terrain_streamer
 	bool cut(double X, double Z, double Radius, bool Cut);
 	// the same within Outline (x, z); the chunks are loaded where needed
 	bool cut(std::vector<glm::dvec2> const &Outline, bool Cut);
+	// the hole of a field of its own surface cut (Cut true) or closed: marked as the field's, so closing it leaves the holes
+	// cut otherwise (the Holes tool) there as they are; a hole of a field cut before the mark is closed whole
+	bool cut_field(std::vector<glm::dvec2> const &Outline, bool Cut);
 	// grass: grows the kind of the grass palette Kind within Radius of (X,Z), Strength (0..1) of the way at the centre;
 	// Erase: takes every kind of grass away there instead
 	bool grass(double X, double Z, double Radius, double Strength, std::uint16_t Kind, bool Erase);
@@ -287,7 +290,11 @@ class terrain_streamer
 	bool paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Layer, bool Load, std::function<double(double X, double Z)> const &Amount);
 	// cuts (Cut true) or closes the holes at the hole samples within the rectangle where Inside says so. Load: chunks not in
 	// memory are loaded
-	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside);
+	// Mark: the value of a hole sample, 255 of the holes cut by hand, kFieldHole of the fields; with Mark other than 255 only
+	// the samples of that mark are closed, and a hole already there isn't marked over
+	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside,
+	              std::uint8_t Mark = 255);
+	static std::uint8_t constexpr kFieldHole{254};
 	// grows the kind Kind of the grass palette (or takes all grass away, Erase) over the grass samples within the rectangle,
 	// Amount (0..1) of the way at each
 	bool grass_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Kind, bool Erase, bool Load, std::function<double(double X, double Z)> const &Amount);
@@ -344,7 +351,9 @@ class terrain_streamer
 	double m_cameratime{0.0};
 	bool m_hascamera{false};
 	// the pieces cut out of the terrain are made around where the camera was, within patch_reach, again when it moves patch_move away
-	static constexpr double patch_reach{1500.0};
+	static constexpr double patch_reach{1500.0}; // at least; as far as the chunks are drawn
+	// a chunk under the piece is in the files but not loaded yet
+	bool waits_for_ground(heightmap::surface_patch const &Patch) const;
 	static constexpr double patch_move{200.0};
 	glm::dvec2 m_patchcentre{1e12};
 	bool m_patchpending{false}; // some waited for chunks not loaded

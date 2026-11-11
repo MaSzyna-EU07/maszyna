@@ -614,6 +614,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	terrain_waves m_waves;
 	heightmap::modifier::natural_shape m_natural{0.8, 15.0, 0.15, 0.3, 0.08};
 	int m_patch_selected{-1}; // field chosen in the list
+	heightmap::surface_patch m_patch_edit; // its copy the widgets edit, kept while one of them is held
+	int m_patch_edited{-1}; // which field m_patch_edit is of
+	std::string m_patch_reoutline; // the field whose outline was put back to be drawn again: cutting out changes it
 	void render_fields_ui();
 	void cut_out_field();
 	void render_waves_options();

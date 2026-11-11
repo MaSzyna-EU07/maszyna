@@ -911,6 +911,22 @@ void terrain_streamer::collect(std::vector<editor_terrain *> &Out) const
 		Out.push_back(entry.second.get());
 }
 
+bool terrain_streamer::waits_for_ground(heightmap::surface_patch const &Patch) const
+{
+	glm::dvec2 low, high;
+	Patch.bounds(low, high);
+	auto const first{heightmap::chunk_at(low.x, low.y)};
+	auto const last{heightmap::chunk_at(high.x, high.y)};
+	for (auto z{std::min(first.second, last.second)}; z <= std::max(first.second, last.second); ++z)
+		for (auto x{std::min(first.first, last.first)}; x <= std::max(first.first, last.first); ++x)
+		{
+			chunk_key const key{x, z};
+			if (m_chunks.find(key) == m_chunks.end() && exists(key))
+				return true;
+		}
+	return false;
+}
+
 editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
 {
 	auto const lookup{m_chunks.find(heightmap::chunk_at(X, Z))};
@@ -1594,7 +1610,19 @@ bool terrain_streamer::cut(std::vector<glm::dvec2> const &Outline, bool Cut)
 	return cut_area(low, high, Cut, true, [&](double const Px, double const Pz) { return inside_outline(Outline, Px, Pz); });
 }
 
-bool terrain_streamer::cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Cut, bool const Load, std::function<bool(double X, double Z)> const &Inside)
+bool terrain_streamer::cut_field(std::vector<glm::dvec2> const &Outline, bool const Cut)
+{
+	if (Outline.size() < 3)
+		return false;
+	auto const [low, high]{outline_bounds(Outline)};
+	auto const inside = [&](double const Px, double const Pz) { return inside_outline(Outline, Px, Pz); };
+	if (cut_area(low, high, Cut, true, inside, kFieldHole) || Cut)
+		return true;
+	return cut_area(low, high, false, true, inside); // cut before the holes of the fields were marked: all of it
+}
+
+bool terrain_streamer::cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Cut, bool const Load, std::function<bool(double X, double Z)> const &Inside,
+                                std::uint8_t const Mark)
 {
 	bool changed{false};
 	for (auto *chunk : chunks_in(Min, Max, Load))
@@ -1608,13 +1636,16 @@ bool terrain_streamer::cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bo
 		auto const low{data->corner()};
 		auto const xs{index_range(low.x, step, data->holes + 1, Min.x, Max.x)};
 		auto const zs{index_range(low.y, step, data->holes + 1, Min.y, Max.y)};
-		std::uint8_t const value{Cut ? std::uint8_t{255} : std::uint8_t{0}};
+		std::uint8_t const value{Cut ? Mark : std::uint8_t{0}};
+		auto const marked{Mark != 255};
 		bool touched{false};
 		for (int iz = zs.first; iz <= zs.second; ++iz)
 			for (int ix = xs.first; ix <= xs.second; ++ix)
 			{
 				auto &sample{data->hole_mask[static_cast<std::size_t>(iz) * (data->holes + 1) + ix]};
-				if (sample == value || false == Inside(low.x + ix * step, low.y + iz * step))
+				// a marked cut leaves the holes there are as they are, a marked close closes its own only
+				auto const kept{marked && (Cut ? sample != 0 : sample != Mark)};
+				if (sample == value || kept || false == Inside(low.x + ix * step, low.y + iz * step))
 					continue;
 				sample = value;
 				touched = true;
@@ -2348,21 +2379,31 @@ std::vector<glm::dvec3> patch_triangles(heightmap::surface_patch const &Patch, H
 		for (int k = 0; k <= samples; ++k)
 			mark(glm::mix(a, b, static_cast<double>(k) / samples));
 	}
-	auto const vertex = [&](double const X, double const Z) {
-		double height{0.0};
-		if (false == Height(X, Z, height))
-			Missing = true;
-		return glm::dvec3{X, height, Z};
-	};
-	// a polygon in the plan, as triangles facing up
+	// a polygon in the plan, as triangles facing up; a triangle with a corner over no ground is left out, the rest is made
 	auto const emit = [&](std::vector<glm::dvec2> const &Polygon) {
 		if (Polygon.size() < 3)
 			return;
 		auto const indices{heightmap::triangulate(Polygon)};
 		// the polygon is turned counterclockwise in the plan, the triangles go the other way round to face up
 		for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			glm::dvec3 corners[3];
+			bool grounded{true};
+			int k{0};
 			for (auto const index : {indices[i + 2], indices[i + 1], indices[i]})
-				result.push_back(vertex(Polygon[index].x, Polygon[index].y));
+			{
+				double height{0.0};
+				auto const &point{Polygon[index]};
+				if (false == Height(point.x, point.y, height))
+				{
+					grounded = false;
+					Missing = true;
+				}
+				corners[k++] = glm::dvec3{point.x, height, point.y};
+			}
+			if (grounded)
+				result.insert(result.end(), std::begin(corners), std::end(corners));
+		}
 	};
 	// Sutherland-Hodgman: the outline clipped to a triangle of a cell (A, B, C counterclockwise)
 	auto const clip = [&](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C) {
@@ -2417,8 +2458,8 @@ std::vector<glm::dvec3> patch_triangles(heightmap::surface_patch const &Patch, H
 			}
 			if (false == inside(x0 + 0.5 * step, z0 + 0.5 * step))
 				continue;
-			for (auto const &corner : {a, d, b, b, d, c})
-				result.push_back(vertex(corner.x, corner.y));
+			emit({a, b, d});
+			emit({b, c, d});
 		}
 	return result;
 }
@@ -2537,6 +2578,9 @@ void terrain_streamer::build_water()
 	// ground not loaded yet waits for it
 	m_patchcentre = glm::dvec2{m_camera.x, m_camera.z};
 	m_patchpending = false;
+	// as far as the chunks are drawn, their holes with them: never a hole without the surface over it
+	auto const reach_of_patches{std::max(patch_reach, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)) +
+	                                                      heightmap::chunk_size)};
 	for (auto const &patch : m_manifest.patches)
 	{
 		if (patch.paint)
@@ -2545,7 +2589,7 @@ void terrain_streamer::build_water()
 		glm::dvec2 boxhigh;
 		patch.bounds(boxlow, boxhigh);
 		auto const nearest{glm::clamp(m_patchcentre, boxlow, boxhigh)};
-		if (m_hascamera && glm::distance(nearest, m_patchcentre) > patch_reach)
+		if (m_hascamera && glm::distance(nearest, m_patchcentre) > reach_of_patches)
 			continue;
 		auto const surface = [&](double const X, double const Z, double &Height) {
 			if (false == patch.follow)
@@ -2563,11 +2607,9 @@ void terrain_streamer::build_water()
 		};
 		bool missing{false};
 		auto const triangles{patch_triangles(patch, surface, missing)};
-		if (missing)
-		{
+		// made of what has the ground loaded; waited for only where the ground is still to come, not where the terrain has none
+		if (missing && patch.follow && waits_for_ground(patch))
 			m_patchpending = true;
-			continue;
-		}
 		if (triangles.empty())
 			continue;
 		glm::dvec2 low{std::numeric_limits<double>::max()};

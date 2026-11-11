@@ -14639,3 +14639,9 @@ msgstr "Pola"
 
 msgid "LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; Shift+LMB takes the last one back"
 msgstr "LPM dodaje punkt obrysu pola: powierzchni wyciętej z terenu z własnym materiałem, z pofalowanym gruntem, jeśli chcesz; Shift+LPM cofa ostatni"
+
+msgid "%s outlined again, Ctrl+Z puts it back"
+msgstr "%s obrysowane na nowo, Ctrl+Z cofa"
+
+msgid "Puts the outline of the field back as the outline being drawn; cut out again, it changes this field"
+msgstr "Wstawia obrys pola z powrotem jako rysowany obrys; wycięcie go zmienia to pole"

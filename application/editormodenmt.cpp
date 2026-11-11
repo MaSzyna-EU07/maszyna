@@ -934,6 +934,14 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 		for (auto const &name : gone)
 			m_streamer.remove_modifier(name);
 	}
+	// the natural shape of the slopes made for a formation stays with it when it's laid again
+	for (auto &modifier : laid)
+		for (auto const &old : m_streamer.modifiers())
+			if (old.name == modifier.name)
+			{
+				modifier.natural = old.natural;
+				break;
+			}
 	auto const count{laid.size()};
 	m_streamer.modifiers(std::move(laid));
 	forget_ground();
