@@ -931,6 +931,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool refit{false};     // chunks made since the photos were last laid onto the ground
 		double waiting{-1.0};  // since when the next chunk waits for its model; -1: it doesn't
 		std::string held{"-"}; // what held it last, as logged; empty: nothing
+		double took{0.0};      // s the chunks of the square around the camera took, all and the longest
+		double took_most{0.0};
 		std::set<heightmap::chunk_key> empty;
 	} m_area_terrain;
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is

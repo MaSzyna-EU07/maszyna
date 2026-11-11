@@ -751,6 +751,10 @@ std::optional<double> editor_mode::nmt_chunk_offset(heightmap::chunk_key const &
 	// the one rule for every chunk made from the model where there's no terrain, under the track laid, around the camera in the area or
 	// by the buttons: beside terrain made from the model it goes on at its height over the model, so no step is left at the seam;
 	// otherwise, beside terrain made by hand or none, at the offset of the scenery. no chunk is left out for what lies beside it
+	// the terrain drawn to the tracks place by place (under the tracks) keeps to their heights near it: the height of the chunk beside
+	// would carry one offset on along a run of chunks, metres off the tracks
+	if (auto const &state{m_nmt_state}; state.under && false == state.anchors.empty())
+		return std::nullopt;
 	bool foreign{false};
 	auto const offset{nmt_seam_offset(Key, foreign)};
 	return foreign ? std::nullopt : offset;
@@ -1092,6 +1096,10 @@ void editor_mode::nmt_area_terrain()
 	// after the work with the model the user asked for
 	if (state.stage != nmt_state::automatic::idle || state.fitting || false == state.pending.empty())
 		return held("other work with the model");
+	// a stroke of the terrain brush keeps its step of the history open to its end: closed around a chunk, its undo would lose the
+	// part brushed before
+	if (terrain_brush() && mouseHold)
+		return held("a stroke of the terrain brush");
 	held("");
 	// light: the time after a chunk set by how long it took. not held by slow frames: a large scenery has them all the time, and
 	// nothing was made there
@@ -1109,6 +1117,8 @@ void editor_mode::nmt_area_terrain()
 		area.listed = true;
 		area.waiting = -1.0;
 		area.square_made = 0;
+		area.took = 0.0;
+		area.took_most = 0.0;
 		for (int dz = -reach; dz <= reach; ++dz)
 			for (int dx = -reach; dx <= reach; ++dx)
 			{
@@ -1171,6 +1181,8 @@ void editor_mode::nmt_area_terrain()
 		auto const took{std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()};
 		// a chunk at most every 0.1 s, and the editor left at least three times as long for itself as the chunk took
 		area.resume = now + std::max(0.1, 3.0 * took);
+		area.took += took;
+		area.took_most = std::max(area.took_most, took);
 		// one outside the region of the scenery isn't added either
 		if (chunk == nmt_chunk::made && m_streamer.exists(key))
 		{
@@ -1189,7 +1201,8 @@ void editor_mode::nmt_area_terrain()
 		m_orthophoto.refit();
 		for (auto &layer : m_wms)
 			layer->refit();
-		WriteLog(format("Editor: NMT - the download area: %zu chunks made around the camera, %zu in all", area.square_made, area.made),
+		WriteLog(format("Editor: NMT - the download area: %zu chunks made around the camera in %.0f ms, the longest %.1f ms, %zu in all", area.square_made, area.took * 1000.0,
+		                area.took_most * 1000.0, area.made),
 		         logtype::generic);
 	}
 }
@@ -1273,7 +1286,8 @@ void editor_mode::nmt_update()
 			++it;
 			continue;
 		}
-		if (offset.has_value() && chunk == nmt_chunk::made)
+		// the height the track laid goes on at, over the model: from the terrain grown under it only, not from the buttons' chunks
+		if (state.grown && offset.has_value() && chunk == nmt_chunk::made)
 			state.ahead = offset;
 		if (chunk == nmt_chunk::made)
 			changed.push_back(*it);
@@ -1345,8 +1359,9 @@ void editor_mode::nmt_grow()
 	// the model under it meanwhile, for the height of the first point laid where there's no terrain yet, as over the base map
 	m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
 	auto const laying{m_extend.active || false == m_lay.points.empty()};
-	// also in a scenery with no terrain yet, and far from the terrain there is: the chunks are made where the track goes
-	if (false == laying)
+	// also in a scenery with no terrain yet, and far from the terrain there is: the chunks are made where the track goes. a scenery
+	// with no name yet can't have its terrain: nothing asked for, or it would be asked again and dropped every half a second
+	if (false == laying || (false == m_streamer.active() && m_orthophoto_scenery.empty()))
 		return;
 	glm::dvec2 const cursor{at.x, at.z};
 	double constexpr grow_reach{400.0}; // m around the cursor
