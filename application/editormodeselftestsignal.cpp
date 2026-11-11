@@ -48,6 +48,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <string_view>
 #include "application/editormodeselftest.h"
 
 editor_mode::selftest_result editor_mode::selftest_signal(std::string const &command, std::istringstream &words)
@@ -173,6 +174,10 @@ editor_mode::selftest_result editor_mode::selftest_signal(std::string const &com
 				std::snprintf(tool.name, sizeof(tool.name), "%s", values["name"].c_str());
 			if (values.count("plate"))
 				std::snprintf(tool.plate, sizeof(tool.plate), "%s", values["plate"].c_str());
+			// index=<digits>, m=1: of the drawn plate
+			tool.plate_index.fill('\0');
+			std::ranges::copy(std::string_view{values["index"]}.substr(0, tool.plate_index.size() - 1), tool.plate_index.begin());
+			tool.plate_m = values["m"] == "1";
 			auto const side{values["side"] == "left" ? -1 : 1};
 			auto const facing{values["facing"] == "along" ? 1 : values["facing"] == "against" ? -1 : 0};
 			// offset=<m>: from the axis, for this signal only

@@ -61,6 +61,9 @@ public:
 	void platform_edge(double Distance) { m_platform_edge = Distance; }
 	double signal_offset() const { return m_signal_offset; }
 	void signal_offset(double Distance) { m_signal_offset = Distance; }
+	// look of the plates drawn for the signals: 0 plain, 1 toned, 2 aged
+	int signal_plate_look() const { return m_signal_plate_look; }
+	void signal_plate_look(int Look) { m_signal_plate_look = Look; }
 
 	// node bank: cards with the previews of the models or a list, and the size of the cards in pixels
 	bool nodebank_previews() const { return m_nodebank_previews; }
@@ -122,6 +125,7 @@ private:
 	std::vector<wms_layer> m_wms_layers;
 	double m_platform_edge{1.725};
 	double m_signal_offset{2.25};
+	int m_signal_plate_look{1};
 	bool m_nodebank_previews{true};
 	int m_nodebank_card{96};
 	int m_palette{0};

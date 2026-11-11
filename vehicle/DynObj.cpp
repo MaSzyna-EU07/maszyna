@@ -242,6 +242,13 @@ void TAnim::Parovoz(){
 void
 material_data::assign( std::string const &Replacableskin ) {
 
+    // a template puts its parameter after a folder ("tabl/(p6)"): a texture made by a script given there keeps its scheme
+    if( auto const scheme { Replacableskin.find( "/make:" ) };
+        scheme != std::string::npos
+     && false == contains( Replacableskin, '|' ) ) {
+        assign( Replacableskin.substr( scheme + 1 ) );
+        return;
+    }
     // check for the pipe method first
     if( contains( Replacableskin,  '|' ) ) {
         cParser nameparser( Replacableskin );
@@ -3293,7 +3300,8 @@ bool TDynamicObject::Update(double dt, double dt1)
 
 			auto eimic = std::min(MoverParameters->eimic, MoverParameters->eimicSpeedCtrl);
 			MoverParameters->eimic_real = eimic;
-			if (MoverParameters->EIMCtrlType == 2 && MoverParameters->MainCtrlPos == 0)
+			// Elf: full braking at once in the lowest position, and in the emergency brake position below it
+			if (MoverParameters->EIMCtrlType == 2 && MoverParameters->MainCtrlPos <= MoverParameters->EIMCtrlEmergencyPositions())
 				eimic = -1.0;
 			MoverParameters->SendCtrlToNext("EIMIC", std::max(0., eimic), MoverParameters->CabActive);
 			auto LBR = std::max(-eimic, 0.);

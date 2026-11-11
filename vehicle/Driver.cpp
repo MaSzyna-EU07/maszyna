@@ -3255,9 +3255,11 @@ bool TController::IncBrakeEIM()
             break;
         }
         case 2: {
-            OK = mvOccupied->MainCtrlPos > 1;
+            // the braking position, above the emergency brake one where the controller has it
+            auto const brakepos{1 + mvOccupied->EIMCtrlEmergencyPositions()};
+            OK = mvOccupied->MainCtrlPos > brakepos;
             if( OK )
-                mvOccupied->MainCtrlPos = 1;
+                mvOccupied->MainCtrlPos = brakepos;
             break;
         }
         case 3: {
@@ -3423,9 +3425,10 @@ bool TController::DecBrakeEIM()
             break;
         }
         case 2: {
-            OK = mvOccupied->MainCtrlPos < 3;
+            auto const neutralpos{mvOccupied->MainCtrlNoPowerPos()};
+            OK = mvOccupied->MainCtrlPos < neutralpos;
             if( OK )
-                mvOccupied->MainCtrlPos = 3;
+                mvOccupied->MainCtrlPos = neutralpos;
             break;
         }
         case 3: {
@@ -3786,12 +3789,14 @@ bool TController::IncSpeedEIM() {
             }
 */
             break;
-        case 2:
-            OK = mvControlling->MainCtrlPos < 4;
+        case 2: {
+            auto const powerpos{4 + mvControlling->EIMCtrlEmergencyPositions()};
+            OK = mvControlling->MainCtrlPos < powerpos;
             if( OK ) {
-                mvControlling->MainCtrlPos = 4;
+                mvControlling->MainCtrlPos = powerpos;
             }
             break;
+        }
     }
     return OK;
 }
@@ -3819,9 +3824,10 @@ bool TController::DecSpeedEIM( int const Amount )
                 mvControlling->SpeedCtrlPowerDec();
             }
             else {
-                OK = mvControlling->MainCtrlPos > 2;
+                auto const holdpos{2 + mvControlling->EIMCtrlEmergencyPositions()};
+                OK = mvControlling->MainCtrlPos > holdpos;
                 if( OK ) {
-                    mvControlling->MainCtrlPos = 2;
+                    mvControlling->MainCtrlPos = holdpos;
                 }
             }
             break;
@@ -4294,8 +4300,9 @@ void TController::CheckTimeControllers()
 		}
 		else if (mvOccupied->EIMCtrlType == 2) //elf
 		{
-			if (mvOccupied->eimic > 0) mvOccupied->MainCtrlPos = 3;
-			if (mvOccupied->eimic < 0) mvOccupied->MainCtrlPos = 2;
+			auto const emergencypositions{mvOccupied->EIMCtrlEmergencyPositions()};
+			if (mvOccupied->eimic > 0) mvOccupied->MainCtrlPos = 3 + emergencypositions;
+			if (mvOccupied->eimic < 0) mvOccupied->MainCtrlPos = 2 + emergencypositions;
 		}
 	}
 	//4. Check Speed Control System

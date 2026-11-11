@@ -2267,6 +2267,7 @@ class TMoverParameters
 	int SpeedCtrlAutoTurnOffFlag = 0; /*czy tempomat sam się wyłącza*/
 	bool EIMCtrlAdditionalZeros = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlEmergency = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
+	bool EIMCtrlMainEmergency = false; /*czy zadajnik typu 2 (Elf) ma pozycje hamowania naglego ponizej swojej pozycji 0*/
 	double eimv_pr = 0; /*realizowany procent dostepnej sily rozruchu/hamowania*/
 	double eimv[21];
 	static std::vector<std::string> const eimv_labels;
@@ -2441,6 +2442,15 @@ class TMoverParameters
 	int MainCtrlNoPowerPos() const; // highest setting of master controller which won't cause engine to generate extra power
 	int MainCtrlActualPowerPos() const; // current actual setting of master controller, relative to the highest setting not generating extra power
 	int MainCtrlPowerPos() const; // current setting of master controller, relative to the highest setting not generating extra power
+	// positions the master controller of the EIMCtrlType 2 (Elf) has below its own position 0, the emergency brake (0 or 1)
+	int EIMCtrlEmergencyPositions() const;
+	// whether the master controller is in its emergency brake position (EIMCtrlType 2 with EIMCtrlMainEmergency)
+	bool IsMainCtrlEmergencyPos() const;
+	// the master controller position sent to the coupled vehicles ("MainCtrl"), the same with and without
+	// EIMCtrlMainEmergency: the Elf's positions without the emergency brake one, which goes as the full braking
+	int MainCtrlPosForCoupled() const;
+	// the master controller position of this vehicle for one received from a coupled vehicle ("MainCtrl")
+	int MainCtrlPosFromCoupled(int Position) const;
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);

@@ -33,6 +33,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include "utilities/translation.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cfloat>
 #include <filesystem>
@@ -64,6 +65,47 @@ float const kSignalPick{12.0f};
 float const kDragStart{6.0f};
 double const kDragTravel{1.0};
 double const kRefreshPeriod{2.0};
+char const *const kDrawnPlate{"make:signal_plate?"}; // the plate drawn by python/local/signal_plate.py
+// looks of the drawn plates, in the order of the setting of the editor
+std::array<char const *, 3> const kPlateLooks{"plain", "toned", "aged"};
+std::array<char const *, 3> const kPlateLookLabels{"plain", "toned", "aged"};
+int const kPlateLookCount{static_cast<int>(kPlateLooks.size())};
+
+// what a drawn plate is drawn with but its name: the look set in the editor, and the speed index and the m typed for it
+std::string set_plate_style(std::string const &Index = {}, bool const Shunting = false)
+{
+	std::string style{std::string{"look="} + kPlateLooks[std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)]};
+	if (false == Index.empty())
+		style += "&index=" + Index;
+	if (Shunting)
+		style += "&m=1";
+	return style;
+}
+
+// the pick of the look of the drawn plates, kept with the settings of the editor
+void plate_look_combo(int const Look)
+{
+	if (false == ImGui::BeginCombo("##signalplatelook", STR_C(kPlateLookLabels[Look])))
+		return;
+	for (int i = 0; i < kPlateLookCount; ++i)
+		if (ImGui::Selectable(STR_C(kPlateLookLabels[i]), i == Look))
+		{
+			EditorSettings.signal_plate_look(i);
+			EditorSettings.save();
+		}
+	ImGui::EndCombo();
+}
+
+// the text of the plate with its index and m, as the hint of the plate field names it: A 1/2 m
+std::string plate_shown(std::string const &Name, std::string const &Index, bool const Shunting)
+{
+	auto text{Name};
+	if (Index.size() == 1)
+		text += " " + Index;
+	else if (Index.size() > 1)
+		text += " " + Index.substr(0, 1) + "/" + Index.substr(1, 1);
+	return Shunting ? text + " m" : text;
+}
 double const kSignalReach{10.0};
 double const kTrackNearer{0.5}; // m another track has to be nearer by to take a signal moved from its own
 double const kOnTrack{1.2}; // m from the axis of a track a signal dropped stands on it rather than by it
@@ -333,15 +375,6 @@ std::vector<std::string> const &plate_textures()
 	}
 	std::sort(plates.begin(), plates.end());
 	return plates;
-}
-
-std::string plate_for(std::string const &Plate, std::string const &Name)
-{
-	if (false == Plate.empty())
-		return Plate;
-	auto const &plates{plate_textures()};
-	auto const name{ToLower(Name)};
-	return std::binary_search(plates.begin(), plates.end(), name) ? name : std::string{"0_nothing"};
 }
 
 void draw_signal_icon(ImDrawList *Draw, ImVec2 const Origin, ImVec2 const Size, std::string_view const Mount, std::string const &Lamps, ImU32 const Frame, int const Arms = 0)
@@ -1902,7 +1935,7 @@ bool editor_mode::signal_place(signal_spot const &Spot, signal_template const &C
 	item.described = true;
 	item.values["name"] = name;
 	if (Template.plate)
-		item.values["#6"] = plate_for(tool.plate, name);
+		item.values["#6"] = tool.plate[0] != '\0' ? std::string{tool.plate} : signal_plate(name, set_plate_style(tool.plate_index.data(), tool.plate_m));
 	if (Template.linked)
 		item.values["#7"] = tool.linked[0] != '\0' ? std::string{tool.linked} : std::string{"none"};
 	std::string error;
@@ -2479,6 +2512,56 @@ void editor_mode::signal_renamed(std::string const &Before, std::string const &A
 	Snapshot.node_name = Snapshot.tracks.front().first->name();
 }
 
+std::string editor_mode::signal_plate(std::string const &Name, std::string const &Style)
+{
+	// a name the plate can't carry: '|' splits the skin, '&' and '?' the query of the script, and a very long one makes a path
+	// longer than a file system takes when the skin is looked for on the disk
+	if (Name.empty() || Name.size() > 64 || Name.find_first_of("|&?") != std::string::npos)
+		return "0_nothing";
+	// the template puts it after a folder, "tabl/(p6)": material_data::assign() takes the folder off a texture made by a script
+	return kDrawnPlate + Style + "&name=" + Name;
+}
+
+bool editor_mode::signal_plate_drawn(std::string_view const Plate)
+{
+	return Plate.starts_with(kDrawnPlate);
+}
+
+bool editor_mode::signal_plate_blank(std::string const &Name, std::string const &Plate)
+{
+	// what the editor gave before the plates were drawn: no plate, or the texture named like the signal. A texture named like
+	// the end of its name, pzs_a by a, is one the scenery chose
+	return Plate.empty() || Plate == "none" || Plate == "0_nothing" || ToLower(Plate) == ToLower(Name);
+}
+
+std::string editor_mode::signal_plate_text(std::string const &Name)
+{
+	// the station signalling names its signals in small letters after the stem, bpd_tm3: the plate says Tm3, as its schematic does
+	auto text{Name.substr(Name.rfind('_') + 1)};
+	if (std::ranges::any_of(text, [](char const Letter) { return std::isupper(static_cast<unsigned char>(Letter)) != 0; }))
+		return text;
+	std::ranges::transform(text, text.begin(), [](char const Letter) { return static_cast<char>(std::toupper(static_cast<unsigned char>(Letter))); });
+	if (text.size() > 2 && text[0] == 'T' && (text[1] == 'M' || text[1] == 'O'))
+		text[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(text[1])));
+	return text;
+}
+
+std::string editor_mode::signal_plate_style(std::string const &Plate)
+{
+	// a plate not drawn yet takes the look set, a drawn one keeps all it has but the name, in its order
+	if (false == signal_plate_drawn(Plate))
+		return set_plate_style();
+	std::string style;
+	for (std::size_t from{std::char_traits<char>::length(kDrawnPlate)}; from <= Plate.size();)
+	{
+		auto const end{std::min(Plate.find('&', from), Plate.size())};
+		if (auto const part{Plate.substr(from, end - from)}; false == part.empty() && false == part.starts_with("name="))
+			style += (style.empty() ? "" : "&") + part;
+		from = end + 1;
+	}
+	return style.empty() ? std::string{"look="} + kPlateLooks[1] : style; // toned is what the script draws when it's not told
+}
+
 bool editor_mode::standing_signals(std::vector<standing_signal> &Signals, bool const Wait)
 {
 	Signals.clear();
@@ -2573,7 +2656,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			variant = item;
 		placing.location.y += signal_default_change(*item, *variant, spot.axis, spot.position);
 		if (variant->plate)
-			placing.values["#6"] = plate_for(std::string{}, order.plate);
+			placing.values["#6"] = signal_plate(order.plate, set_plate_style());
 		if (variant->linked)
 			placing.values["#7"] = order.linked.empty() ? std::string{"none"} : order.linked;
 		items.push_back(std::move(placing));
@@ -2609,9 +2692,14 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			if (temporary && ToLower(values[0]) == ToLower(rename.name))
 				continue;
 			auto const read_before{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
+			auto const named{ToLower(values[0])};
 			values[0] = rename.name + (temporary ? "~" : "");
-			if (item->plate && values.size() > 5 && false == rename.plate.empty())
-				values[5] = plate_for(std::string{}, rename.plate);
+			// a plate picked by hand stays; the drawn one, none, or the texture named like the signal take the new name, in the look
+			// the plate had. A plate of no text asked for is one of a signal left for removal
+			// the station signalling looked the texture up by the end of the name, bpd_tm3 by tm3
+			if (item->plate && values.size() > 5 && false == rename.plate.empty()
+			 && (signal_plate_drawn(values[5]) || signal_plate_blank(named, values[5]) || ToLower(values[5]) == ToLower(signal_plate_text(named))))
+				values[5] = rename.plate == "0_nothing" ? rename.plate : signal_plate(rename.plate, signal_plate_style(values[5]));
 			if (item->linked && values.size() > 6 && false == rename.linked.empty())
 				values[6] = rename.linked;
 			auto const read_after{item->read.empty() ? std::string{} : editor_includes::substitute(item->read, values)};
@@ -2683,7 +2771,7 @@ std::size_t editor_mode::signal_batch(signal_changes const &Changes, std::vector
 			if (id == 7 && variant->linked)
 				value = item->linked && values.size() > 6 ? values[6] : std::string{"none"};
 			if (value.empty() && id == 6 && variant->plate)
-				value = plate_for(std::string{}, values[0].substr(values[0].rfind('_') + 1));
+				value = signal_plate(signal_plate_text(values[0]), set_plate_style());
 			if (value.empty())
 				value = info.parameter(id).value.empty() ? std::string{"none"} : info.parameter(id).value;
 			// as raised over where the template stands by default as it was over where the one it had does
@@ -3283,18 +3371,37 @@ void editor_mode::render_signal_ui()
 		{
 			if (armed != nullptr && armed->plate)
 			{
-				auto const automatic{format(STR_C("auto: %s"), plate_for({}, tool.name).c_str())};
+				auto const look{std::clamp(EditorSettings.signal_plate_look(), 0, kPlateLookCount - 1)};
+				auto const plate{signal_plate(tool.name, set_plate_style(tool.plate_index.data(), tool.plate_m))};
+				auto const automatic{signal_plate_drawn(plate) ? format(STR_C("auto: drawn \"%s\""), plate_shown(tool.name, tool.plate_index.data(), tool.plate_m).c_str()) : format(STR_C("auto: %s"), plate.c_str())};
 				field_row("Plate");
 				ImGui::InputTextWithHint("##signalplate", automatic.c_str(), tool.plate, sizeof(tool.plate));
 				auto const typing{ImGui::IsItemActive()};
 				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"));
+					ImGui::SetTooltip("%s", STR_C("Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: a plate with the name of the signal, drawn by python/local/signal_plate.py"));
 				auto const &plates{plate_textures()};
 				auto const typed{ToLower(tool.plate)};
 				auto const exists{typed.empty() || std::binary_search(plates.begin(), plates.end(), typed)};
 				if (false == exists)
 					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR_C("no such texture"));
 				missing = typing || (false == exists && false == typed.empty());
+				if (typed.empty())
+				{
+					field_row("Plate look");
+					plate_look_combo(look);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", STR_C("How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"));
+					field_row("Speed index");
+					// digits only, kept out of the field as they are typed: the decimal one lets in signs and dots too
+					auto const digits = [](ImGuiInputTextCallbackData *Data) { return Data->EventChar >= '0' && Data->EventChar <= '9' ? 0 : 1; };
+					ImGui::InputText("##signalplateindex", tool.plate_index.data(), tool.plate_index.size(), ImGuiInputTextFlags_CallbackCharFilter, digits);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", STR_C("The speed index after the name on the drawn plate: one digit, e.g. 4, or two drawn as a fraction, 12 for 1/2. Kept with the plate through a rename"));
+					field_row("Shunting (m)");
+					ImGui::Checkbox("##signalplatem", &tool.plate_m);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("%s", STR_C("The signal gives shunting signals too (Ms2): the drawn plate gets an \"m\" on a strip under the name, as Ie-1 marks it"));
+				}
 			}
 			if (armed != nullptr && armed->linked)
 			{

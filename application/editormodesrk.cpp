@@ -3136,7 +3136,7 @@ void srk_tool::set_signals()
 	for (std::size_t i = 0; i < plan.size(); ++i)
 	{
 		auto const &planned{plan[i]};
-		auto const plate{ToLower(planned.name)};
+		auto const plate{signal_shown(planned.name, {})}; // the text of its drawn plate
 		if (match[i] >= 0)
 		{
 			if (ToLower(standing[match[i]].name) != full(planned))
@@ -3151,12 +3151,12 @@ void srk_tool::set_signals()
 		order.kind = planned.kind == station::signal::role::shunting ? "shunt" : "main";
 		order.name = full(planned);
 		order.plate = plate;
-		placed.push_back(std::move(order));
+		placed.emplace_back(std::move(order));
 	}
 	// the others keep their names, unless one of these takes it
 	for (std::size_t k = 0; k < standing.size(); ++k)
 		if (0 == used[k] && std::any_of(plan.begin(), plan.end(), [&](station::signal const &Signal) { return full(Signal) == ToLower(standing[k].name); }))
-			renamed.push_back({standing[k].instance, ToLower(standing[k].name) + "_old", signal_shown(standing[k].name, stem) + "_old"});
+			renamed.push_back({standing[k].instance, ToLower(standing[k].name) + "_old", std::string{"0_nothing"}}); // a plate of no text: one left for removal
 	if (placed.empty() && renamed.empty() && before.empty() && created.empty())
 	{
 		m_status = STR_C("The signals are set already");
@@ -3758,7 +3758,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 		auto const plan = [&](double const Distance, std::string const &Name, int const Match, bool const Wrong) {
 			planned_signal signal;
 			signal.name = Name;
-			signal.plate = Match >= 0 ? std::string{} : Name;
+			signal.plate = Match >= 0 ? std::string{} : signal_shown(Name, stem);
 			signal.line = index;
 			signal.distance = Distance;
 			signal.match = Match;
@@ -3868,7 +3868,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 				planned_signal signal;
 				signal.kind = station::signal::role::warning;
 				signal.name = stem + "to" + ToLower(entry.name);
-				signal.plate = "to" + ToLower(entry.name);
+				signal.plate = signal_shown("to" + entry.name, {});
 				signal.line = index;
 				signal.distance = distance;
 				signal.wrong = mixed;
@@ -3967,7 +3967,7 @@ void srk_tool::set_lines(block_edit const *Edit)
 			for (char letter = 'a'; taken.count(ToLower(signal.name)) > 0 && letter <= 'z'; ++letter)
 				signal.name = base + letter;
 			taken.insert(ToLower(signal.name));
-			signal.plate = signal.name;
+			signal.plate = signal_shown(signal.name, stem);
 		}
 	// the block sections of each track of a double-track line, between the signals in the order the trains pass them
 	struct section

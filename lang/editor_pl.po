@@ -3744,17 +3744,47 @@ msgstr "Brak szablonów sygnalizatorów: żaden szablon katalogu scenerii nie ma
 msgid "Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"
 msgstr "Nazwa następnego sygnalizatora; po każdym postawionym rośnie o jeden. Od niej biorą nazwy jego eventy i komórka pamięci"
 
+msgid "auto: drawn \"%s\""
+msgstr "auto: rysowana „%s”"
+
 msgid "auto: %s"
 msgstr "domyślnie: %s"
 
 msgid "Plate"
 msgstr "Tablica"
 
-msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"
-msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: ta nazwana tak jak sygnalizator, jeśli istnieje"
+msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: a plate with the name of the signal, drawn by python/local/signal_plate.py"
+msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: tablica z nazwą sygnalizatora, rysowana przez python/local/signal_plate.py"
 
 msgid "no such texture"
 msgstr "nie ma takiej tekstury"
+
+msgid "Plate look"
+msgstr "Wygląd tablicy"
+
+msgid "Speed index"
+msgstr "Indeks prędkości"
+
+msgid "Shunting (m)"
+msgstr "Manewrowy (m)"
+
+msgid "The speed index after the name on the drawn plate: one digit, e.g. 4, or two drawn as a fraction, 12 for 1/2. Kept with the plate through a rename"
+msgstr "Indeks prędkości za nazwą na rysowanej tablicy: jedna cyfra, np. 4, albo dwie rysowane jako ułamek, 12 to 1/2. Zostaje z tablicą przy zmianie nazwy"
+
+msgid "The signal gives shunting signals too (Ms2): the drawn plate gets an \"m\" on a strip under the name, as Ie-1 marks it"
+msgstr "Sygnalizator podaje też sygnały manewrowe (Ms2): rysowana tablica dostaje „m” na pasku pod nazwą, tak jak oznacza to Ie-1"
+
+msgid "plain"
+msgstr "normalna"
+
+msgid "toned"
+msgstr "stonowana"
+
+msgid "aged"
+msgstr "postarzana"
+
+msgid "How the drawn plates look: plain is clean and bright, toned greyish and a little dusty, aged darker and dusty. The look is kept with the plate, a rename doesn't change it"
+msgstr "Jak wyglądają rysowane tablice: normalna jest czysta i jasna, stonowana szarawa i lekko zakurzona, postarzana ciemniejsza i zakurzona. Wygląd zostaje zapisany przy tablicy, zmiana nazwy go nie zmienia"
 
 msgid "Linked signal"
 msgstr "Powiązany sygnalizator"

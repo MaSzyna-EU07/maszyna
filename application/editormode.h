@@ -63,6 +63,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class TAnimModel;
@@ -2698,6 +2699,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char filter[64]{};
 		char name[64]{"A"};
 		char plate[64]{};
+		std::array<char, 3> plate_index{}; // the speed index of the drawn plate, "4" or "12" for 1/2
+		bool plate_m{false}; // the drawn plate gets the "m" of a signal giving shunting signals too
 		char linked[64]{"none"};
 		float height{0.0f};
 		bool placing{false};
@@ -2837,6 +2840,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool signal_read_pick(TTrack &Track, int const Path, bool const Add);
 	std::string signal_read_label(TTrack const &Track, int const Path, bool const Add) const;
 	void signal_renamed(std::string const &Before, std::string const &After, EditorSnapshot &Snapshot);
+	// the plate a signal of this name gets when none is picked: one drawn by python/local/signal_plate.py with the given style
+	// ("look=toned", with "&index=12" and "&m=1" when it has them), or none for a name it can't carry
+	static std::string signal_plate(std::string const &Name, std::string const &Style);
+	// true for a plate signal_plate() gives, of any name and look
+	static bool signal_plate_drawn(std::string_view Plate);
+	static bool signal_plate_blank(std::string const &Name, std::string const &Plate);
+	static std::string signal_plate_text(std::string const &Name);
+	// what a drawn plate is drawn with but its name, kept through a rename; for one not drawn the look set in the editor
+	static std::string signal_plate_style(std::string const &Plate);
 	void signal_select(scene::instance_handle const Instance);
 	std::string signal_next_name(std::string const &Name) const;
 	void render_signal_ui();
