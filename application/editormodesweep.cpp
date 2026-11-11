@@ -127,6 +127,16 @@ bool same_piece(segment_data const &A, segment_data const &B)
 	return std::abs(A.rolls[0] - B.rolls[0]) < 1e-3f && std::abs(A.rolls[1] - B.rolls[1]) < 1e-3f;
 }
 
+bool same_pieces(std::vector<segment_data> const &A, std::vector<segment_data> const &B)
+{
+	if (A.size() != B.size())
+		return false;
+	for (std::size_t i = 0; i < A.size(); ++i)
+		if (false == same_piece(A[i], B[i]))
+			return false;
+	return true;
+}
+
 } // namespace
 
 void editor_mode::sweep_scan_models()
@@ -459,8 +469,7 @@ void editor_mode::restore_sweeps(EditorSnapshot &Snapshot)
 		entry.first->define(entry.second);
 		entry.first->mark_dirty();
 		// a line lengthened or laid along another track: its pieces counted anew, so the links keep to them
-		auto const repieced{current.pieces.size() != entry.second.pieces.size() ||
-		                    (false == current.pieces.empty() && false == same_piece(current.pieces.front(), entry.second.pieces.front()))};
+		auto const repieced{false == same_pieces(current.pieces, entry.second.pieces)};
 		entry.second = std::move(current);
 		if (repieced)
 			sweep_relink(*entry.first);
@@ -1161,62 +1170,124 @@ double distance_of(sweep_node const &Line, glm::dvec3 const &Point)
 	return Line.distance_at(station);
 }
 
-// whether the point lies beyond the end of the line
-bool past_end(sweep_node const &Line, glm::dvec3 const &Point, bool const Atend)
+// an end of the line, and the way out of it there
+std::pair<glm::dvec3, glm::dvec3> edge_of(sweep_node::state const &State, bool const Atend)
 {
-	auto const at{Line.frame_at(Atend ? Line.length() : 0.0)};
-	auto const along{glm::dot(glm::dvec3{Point.x - at.position.x, 0.0, Point.z - at.position.z}, flat(at.forward))};
-	return Atend ? along > 0.01 : along < -0.01;
+	bezier const curve{Atend ? State.pieces.back() : State.pieces.front()};
+	if (Atend)
+		return {curve.point(1.0), flat(curve.first(1.0))};
+	return {curve.point(0.0), -flat(curve.first(0.0))};
 }
 
-// the line lengthened at an end by the path joined there nearest to the target
-bool lengthen(sweep_node &Line, sweep_node::state &State, bool const Atend, glm::dvec3 const &Target)
+// whether the point lies beyond the end of the line
+bool past_end(sweep_node::state const &State, glm::dvec3 const &Point, bool const Atend)
 {
-	if (State.pieces.empty() || Line.length() > 2.0 * kSweepRouteReach)
-		return false;
+	auto const [at, out]{edge_of(State, Atend)};
+	return glm::dot(glm::dvec3{Point.x - at.x, 0.0, Point.z - at.z}, out) > 0.01;
+}
+
+// the line lengthened at an end by the path joined there nearest to the target; how long that path is, 0 where there's none
+double lengthen(sweep_node::state &State, bool const Atend, glm::dvec3 const &Target)
+{
+	if (State.pieces.empty())
+		return 0.0;
+	double length{0.0};
+	for (auto const &piece : State.pieces)
+		length += bezier{piece}.plan_length(8);
+	if (length > 2.0 * kSweepRouteReach)
+		return 0.0;
 	auto const next{Atend ? path_beyond(State.pieces.back(), State.pieces, Target) : path_beyond(reversed(State.pieces.front()), State.pieces, Target)};
 	if (false == next.has_value())
-		return false;
+		return 0.0;
 	if (Atend)
 		State.pieces.push_back(*next);
 	else
 		State.pieces.insert(State.pieces.begin(), reversed(*next));
-	Line.define(State);
-	return true;
+	return std::max(0.01, bezier{*next}.plan_length());
 }
 
 // the line lengthened through the tracks joined at an end until the point lies beside it
-void reach_to(sweep_node &Line, sweep_node::state &State, glm::dvec3 const &Point, bool const Atend)
+bool reach_to(sweep_node &Line, sweep_node::state &State, glm::dvec3 const &Point, bool const Atend)
 {
-	for (int i = 0; i < 80 && past_end(Line, Point, Atend); ++i)
-		if (false == lengthen(Line, State, Atend, Point))
+	auto grown{false};
+	for (int i = 0; i < 200 && past_end(State, Point, Atend); ++i)
+	{
+		if (lengthen(State, Atend, Point) <= 0.0)
 			break;
+		grown = true;
+	}
+	if (grown)
+		Line.define(State);
+	return grown;
 }
 
 // the copies set over [First, Last] m along the line of the state, as it is before the change; the line goes on through the tracks
-// joined at its ends as far as they need, at a switch the way to the target, without one the straightest
-void span_over(sweep_node::state &State, double const First, double const Last, glm::dvec3 const *Target = nullptr)
+// joined at its ends as far as they need, at a switch the way to the target, without one the straightest. The paths are gathered by
+// their lengths and the line made anew once a round, not at each of them. Built: the line of the state made already, if there's one
+void span_over(sweep_node::state &State, double const First, double const Last, glm::dvec3 const *Target = nullptr, sweep_node const *Built = nullptr)
 {
 	if (State.pieces.empty())
 		return;
 	scene::node_data data;
+	sweep_node own{data};
+	if (Built == nullptr)
+		own.define(State);
+	auto const *line{Built != nullptr ? Built : &own};
+	auto const origin{State.pieces.front().points[segment_data::point::start]};
+	auto const grow = [&](bool const Atend, double const Need) {
+		if (Need <= 0.01)
+			return false;
+		auto const [at, out]{edge_of(State, Atend)};
+		auto const target{Target != nullptr ? *Target : at + out * Need};
+		double added{0.0};
+		for (int i = 0; i < 200 && added < Need + 0.01; ++i)
+		{
+			auto const length{lengthen(State, Atend, target)};
+			if (length <= 0.0)
+				break;
+			added += length;
+		}
+		return added > 0.0;
+	};
+	for (int round = 0; round < 8; ++round)
+	{
+		auto const shift{distance_of(*line, origin)};
+		auto const front{grow(false, line->distance_at(0.0) - (First + shift))};
+		auto const back{grow(true, (Last + shift) - line->distance_at(line->length()))};
+		if (false == front && false == back)
+			break;
+		own.define(State);
+		line = &own;
+	}
+	auto const shift{distance_of(*line, origin)};
+	State.from = line->station_at(First + shift);
+	State.to = line->station_at(Last + shift);
+}
+
+// the paths at the ends of the line the copies don't reach left out, so the line keeps to the model
+void trim_line(sweep_node::state &State)
+{
+	if (State.pieces.size() < 2 || State.to < 0.0)
+		return;
+	scene::node_data data;
 	sweep_node line{data};
 	line.define(State);
-	auto const origin{State.pieces.front().points[segment_data::point::start]};
-	for (int i = 0; i < 80; ++i)
-	{
-		auto const shift{distance_of(line, origin)};
-		auto const low{line.distance_at(0.0)};
-		auto const high{line.distance_at(line.length())};
-		if (First + shift < low - 0.01 && lengthen(line, State, false, Target != nullptr ? *Target : line.frame_at(line.station_at(First + shift)).position))
-			continue;
-		if (Last + shift > high + 0.01 && lengthen(line, State, true, Target != nullptr ? *Target : line.frame_at(line.station_at(Last + shift)).position))
-			continue;
-		break;
-	}
-	auto const shift{distance_of(line, origin)};
-	State.from = line.station_at(First + shift);
-	State.to = line.station_at(Last + shift);
+	double lateral;
+	std::size_t first{0};
+	std::size_t last{State.pieces.size()};
+	while (first + 1 < last && line.project(State.pieces[first].points[segment_data::point::end], lateral) < State.from - 1.0)
+		++first;
+	while (last - 1 > first && line.project(State.pieces[last - 1].points[segment_data::point::start], lateral) > State.to + 1.0)
+		--last;
+	if (first == 0 && last == State.pieces.size())
+		return;
+	auto const startpoint{line.frame_at(State.from).position};
+	auto const length{line.distance_at(State.to) - line.distance_at(State.from)};
+	State.pieces = std::vector<segment_data>(State.pieces.begin() + static_cast<std::ptrdiff_t>(first), State.pieces.begin() + static_cast<std::ptrdiff_t>(last));
+	line.define(State);
+	auto const from{distance_of(line, startpoint)};
+	State.from = line.station_at(from);
+	State.to = line.station_at(from + length);
 }
 
 int copies_of(sweep_node const &Sweep, double const Own)
@@ -1297,7 +1368,9 @@ bool editor_mode::bend_source_of_selection(bend_source &Source) const
 void editor_mode::bend_find_tracks(glm::dvec3 const &Point, void const *Key)
 {
 	auto &tool{m_bend};
-	if (Key == tool.tracks_for && glm::distance(Point, tool.tracks_at) < 1.0)
+	// a track deleted since is left out of the list, so the list is gathered anew
+	if (Key == tool.tracks_for && glm::distance(Point, tool.tracks_at) < 1.0 &&
+	    std::none_of(tool.tracks.begin(), tool.tracks.end(), [](std::pair<TTrack *, double> const &Entry) { return Entry.first->m_editorremoved; }))
 		return;
 	tool.tracks_for = Key;
 	tool.tracks_at = Point;
@@ -1632,10 +1705,13 @@ void editor_mode::bend_edit(sweep_node::state const &State)
 	trim_history();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
-	auto const repieced{State.pieces.size() != sweep->definition().pieces.size() || (false == State.pieces.empty() && false == same_piece(State.pieces.front(), sweep->definition().pieces.front()))};
+	// the paths the copies no longer reach left out of the line
+	auto state{State};
+	trim_line(state);
+	auto const repieced{false == same_pieces(state.pieces, sweep->definition().pieces)};
 	// what the bending told is past once the model is changed
 	m_bend.status.clear();
-	sweep->define(State);
+	sweep->define(state);
 	sweep->mark_dirty();
 	if (repieced)
 		sweep_relink(*sweep);
@@ -1691,7 +1767,7 @@ void editor_mode::bend_stretch(sweep_node const &Sweep, double const Fixed, doub
 void editor_mode::bend_retrack(sweep_node const &Sweep, TTrack const &Track, sweep_node::state &State) const
 {
 	State = Sweep.definition();
-	if (Track.m_paths.empty())
+	if (Track.m_paths.empty() || Track.m_editorremoved)
 		return;
 	auto const startpoint{Sweep.frame_at(Sweep.start()).position};
 	auto const endpoint{Sweep.frame_at(Sweep.end()).position};
@@ -1802,13 +1878,12 @@ double editor_mode::bend_end_to(bool const Atend, glm::dvec3 const &Point, sweep
 {
 	auto const &tool{m_bend};
 	State = tool.drag_state;
-	if (State.pieces.empty())
+	if (State.pieces.empty() || tool.drag_line == nullptr)
 		return 0.0;
-	// the line lengthened toward the point, at a switch the way it's dragged to
+	// the line lengthened toward the point, at a switch the way it's dragged to; the one made at the start of the drag while it doesn't grow
 	scene::node_data data;
-	sweep_node line{data};
-	line.define(State);
-	reach_to(line, State, Point, Atend);
+	sweep_node grown{data};
+	auto const &line{reach_to(grown, State, Point, Atend) ? grown : *tool.drag_line};
 	auto const shift{distance_of(line, tool.drag_state.pieces.front().points[segment_data::point::start])};
 	auto first{tool.drag_first + shift};
 	auto last{tool.drag_last + shift};
@@ -1873,7 +1948,7 @@ std::string editor_mode::bend_selftest(std::string const &Command, std::istrings
 		double shift{0.0};
 		Words >> shift;
 		bend_drag_begin(3);
-		span_over(state, tool.drag_first + shift, tool.drag_last + shift);
+		span_over(state, tool.drag_first + shift, tool.drag_last + shift, nullptr, tool.drag_line.get());
 		tool.dragging = 0;
 		tool.drag_line.reset();
 	}
@@ -2016,11 +2091,16 @@ void editor_mode::render_bend()
 			if (ImGui::BeginCombo("##bendretrack", current >= 0 ? label(tool.tracks[current]).c_str() : "-"))
 			{
 				for (int i = 0; i < static_cast<int>(tool.tracks.size()); ++i)
+				{
+					// tracks of one name told apart
+					ImGui::PushID(i);
 					if (ImGui::Selectable(label(tool.tracks[i]).c_str(), i == current) && i != current)
 					{
 						bend_retrack(*sweep, *tool.tracks[i].first, state);
 						changed = true;
 					}
+					ImGui::PopID();
+				}
 				ImGui::EndCombo();
 			}
 			item_tooltip("The model follows this track; another one picked, it stays where it stands and bends along that one");
@@ -2162,8 +2242,12 @@ void editor_mode::render_bend()
 					if (ImGui::BeginCombo("##bendtrack", label(tool.tracks[tool.track]).c_str()))
 					{
 						for (int i = 0; i < static_cast<int>(tool.tracks.size()); ++i)
+						{
+							ImGui::PushID(i);
 							if (ImGui::Selectable(label(tool.tracks[i]).c_str(), i == tool.track))
 								tool.track = i;
+							ImGui::PopID();
+						}
 						ImGui::EndCombo();
 					}
 					item_tooltip("The nearest track is picked; the blue cross shows where the model will stand. It can be changed after the bending too");
@@ -2406,6 +2490,10 @@ void editor_mode::bend_drag_update()
 		tool.dragging = 0;
 		tool.drag_label.clear();
 		tool.drag_line.reset();
+		auto trimmed{sweep->definition()};
+		trim_line(trimmed);
+		if (false == (trimmed == sweep->definition()))
+			sweep->define(trimmed);
 		if (sweep->definition() == tool.drag_state)
 			return;
 		EditorSnapshot snap;
@@ -2432,7 +2520,7 @@ void editor_mode::bend_drag_update()
 	auto state{tool.drag_state};
 	// the whole model moved along: beyond the ends of its line it goes on along the tracks joined there
 	auto const slide = [&](double const Shift) {
-		span_over(state, tool.drag_first + Shift, tool.drag_last + Shift);
+		span_over(state, tool.drag_first + Shift, tool.drag_last + Shift, nullptr, tool.drag_line.get());
 	};
 	if (tool.dragging == 4 || tool.dragging == 5)
 	{
