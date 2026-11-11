@@ -2992,13 +2992,17 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool marker_valid{false};
 		glm::dvec3 marker{0.0};
 		std::string status;
-		int dragging{0};
+		int dragging{0}; // 1: the cross along and aside, 2: up, 3: only along, 4: the start of the model, 5: its end
 		sweep_node::state drag_state;
+		std::shared_ptr<sweep_node> drag_line; // the line as it was when the drag began
+		double drag_first{0.0}; // m along it, where the model began and ended then
+		double drag_last{0.0};
 		glm::dvec3 drag_anchor{0.0};
 		double drag_station{0.0};
 		std::string drag_label;
 		sweep_node *hover{nullptr};
 		bool over_marker{false};
+		int over_end{0}; // the handle under the cursor: 1 at the start of the model, 2 at its end
 		std::string label;
 		std::string details;
 	};
@@ -3016,6 +3020,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void bend_reanchor(sweep_node::state &State, int const Side, int const Height, glm::dvec3 const &Point) const;
 	double bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point) const;
 	void bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const;
+	// the model laid along another track: it stays where it stands, with its length
+	void bend_retrack(sweep_node const &Sweep, TTrack const &Track, sweep_node::state &State) const;
+	// the handles at the ends of the model, at the height and the side of its reference point
+	std::array<glm::dvec3, 2> bend_ends(sweep_node const &Sweep) const;
+	// a drag of the model begun: 1 the cross along and aside, 2 up, 3 only along, 4 the start, 5 the end
+	void bend_drag_begin(int const Kind);
+	// the end of the model taken to the point, the line lengthened through the tracks joined there; the length it has then
+	double bend_end_to(bool const Atend, glm::dvec3 const &Point, sweep_node::state &State) const;
+	std::string bend_selftest(std::string const &Command, std::istringstream &Words);
+	void sweep_relink(sweep_node const &Sweep);
 	void bend_pick(glm::dvec3 const &Point);
 	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
 	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);

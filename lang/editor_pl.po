@@ -2794,8 +2794,8 @@ msgstr "Model leży przed początkiem toru"
 msgid "%s bent along %.1f m of the track, Ctrl+Z takes it back"
 msgstr "%s wygięty na %.1f m toru, Ctrl+Z cofa"
 
-msgid "%.2f m along the reference line, %d copies (the model is %.2f m)"
-msgstr "%.2f m wzdłuż linii odniesienia, kopii: %d (model ma %.2f m)"
+msgid "%.2f m long, %d copies (the model is %.2f m)"
+msgstr "%.2f m długości, kopii: %d (model ma %.2f m)"
 
 msgid "along the track (m)"
 msgstr "wzdłuż toru (m)"
@@ -2803,11 +2803,17 @@ msgstr "wzdłuż toru (m)"
 msgid "length (m)"
 msgstr "długość (m)"
 
-msgid "As long as the model"
-msgstr "Długość jak model"
+msgid "The model follows this track; another one picked, it stays where it stands and bends along that one"
+msgstr "Model biegnie wzdłuż tego toru; po wybraniu innego zostaje na miejscu i wygina się wzdłuż tamtego"
 
-msgid "Along the whole track"
-msgstr "Na całym torze"
+msgid "Longer than its track, the model goes on along the tracks joined to it"
+msgstr "Dłuższy niż jego tor model biegnie dalej po torach do niego dołączonych"
+
+msgid "The edge of a platform by the track"
+msgstr "Krawędź peronu przy torze"
+
+msgid "The nearest track is picked; the blue cross shows where the model will stand. It can be changed after the bending too"
+msgstr "Wybrany jest najbliższy tor; niebieski celownik pokazuje, gdzie stanie model. Tor można zmienić także po wygięciu"
 
 msgid "Bent"
 msgstr "Wygięty"
@@ -2845,11 +2851,20 @@ msgstr "Zapisz i otwórz"
 msgid "In the view: drag the blue cross sideways to set the offset, with Shift up and down, with Ctrl along the track"
 msgstr "W widoku: przeciągnij niebieski celownik w bok, żeby ustawić odsunięcie, z Shift w górę i w dół, z Ctrl wzdłuż toru"
 
-msgid "In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"
-msgstr "W widoku: przeciągnij niebieski celownik wzdłuż toru i w bok; Shift: wysokość; Ctrl: tylko wzdłuż"
+msgid "In the view: drag the blue cross to move the model, the orange squares at its ends to make it longer or shorter; Shift: height, Ctrl: only along"
+msgstr "W widoku: niebieski celownik przesuwa model, pomarańczowe kwadraty na jego końcach go wydłużają lub skracają; Shift: wysokość, Ctrl: tylko wzdłuż"
 
 msgid "Drag: along the track and aside"
 msgstr "Przeciągnij: wzdłuż toru i w bok"
+
+msgid "Drag: the end of the model, on along the tracks joined there"
+msgstr "Przeciągnij: koniec modelu, dalej po torach dołączonych w tym miejscu"
+
+msgid "At a switch it takes the way you drag it to"
+msgstr "Na rozjeździe idzie w stronę, w którą ciągniesz"
+
+msgid "%.1f m long"
+msgstr "%.1f m długości"
 
 msgid "Shift: height   Ctrl: only along the track"
 msgstr "Shift: wysokość   Ctrl: tylko wzdłuż toru"
