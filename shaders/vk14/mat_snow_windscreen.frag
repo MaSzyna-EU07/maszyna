@@ -12,10 +12,11 @@
 // the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
 //
 // The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen:
-//  - the lumps, in five grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
+//  - the lumps, in ten grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
 //    size, the snow it takes); it comes when the snow around reaches that and stays as it is until the snow goes. The grids come
-//    one after the other as the snow piles up (dots and crumbs, puffs, clumps, then two of packed snow), each on the ones before,
-//    so the snow accumulates rather than changes, and closes the glass by 3 mm. In a heap they come sooner
+//    one after the other as the snow piles up, each on the ones before: dots, icy clumps and crumbs, more and bigger; under them
+//    two of packed snow coming last, filling the gaps, so the snow accumulates rather than changes and closes the glass by
+//    about 3 mm. In a heap they come sooner
 //  - dots and small puffs of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -261,8 +262,11 @@ struct lump_grid
     int count;
 };
 
-void snLumps(vec2 span, float pixelUV, lump_grid grid, inout sprite_acc acc)
+void snLumps(vec2 span, float pixelUV, float here_snow, lump_grid grid, inout sprite_acc acc)
 {
+    // none of the grid near a pixel with much less snow than its lumps take (the most of the work saved on the thin snow)
+    if (here_snow < grid.snow.x * 0.3)
+        return;
     vec2 perUV = span / snow_lump_cell;
     vec2 p = f_coord * perUV + grid.shift;
     ivec2 here = ivec2(floor(p));
@@ -327,13 +331,20 @@ void main()
         ivec2 texel = clamp(ivec2(floor(f_coord * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
         uint axis = (uint(snSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
         vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
-        // the grids of the lumps, coming one after the other as the snow piles up, each on the ones before: dots and crumbs,
-        // puffs and crumbs, clumps, two of packed snow (they close the glass by 3 mm)
-        snLumps(span, pixelUV, lump_grid(vec2(0.0), 31u, vec2(0.02, 0.35), vec2(0.6, 1.1), 0, 4), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(0.8, 1.4), 4, 4), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.25, 0.75), 113u, vec2(0.4, 1.2), vec2(1.1, 1.7), 10, 2), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.75, 0.25), 151u, vec2(0.8, 2.0), vec2(1.9, 2.3), 12, 2), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.5, 0.0), 199u, vec2(1.2, 2.5), vec2(1.9, 2.3), 12, 2), layer);
+        // the grids of the lumps, coming one after the other as the snow piles up, each on the ones before: under them all two
+        // of packed snow, coming last (they close the glass by about 3 mm, the gaps between the icy clumps filling), then dots,
+        // icy clumps and crumbs of more and more and bigger lumps
+        float here_snow = water_snow_at(uint(snSlot), snMap, f_coord).x;
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.1, 0.6), 211u, vec2(2.2, 3.2), vec2(2.0, 2.4), 12, 2), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.6, 0.1), 223u, vec2(2.6, 3.4), vec2(2.0, 2.4), 12, 2), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.0), 31u, vec2(0.02, 0.3), vec2(0.7, 1.2), 0, 4), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.5), 77u, vec2(0.1, 0.6), vec2(0.9, 1.5), 4, 4), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.25, 0.75), 113u, vec2(0.3, 1.0), vec2(1.0, 1.7), 4, 4), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.75, 0.25), 151u, vec2(0.6, 1.5), vec2(1.1, 1.8), 4, 4), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.5, 0.0), 199u, vec2(1.0, 2.0), vec2(1.6, 2.2), 4, 2), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.0, 0.5), 233u, vec2(1.4, 2.6), vec2(1.8, 2.4), 4, 2), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.25), 241u, vec2(1.8, 3.0), vec2(1.8, 2.4), 4, 2), layer);
+        snLumps(span, pixelUV, here_snow, lump_grid(vec2(0.75), 251u, vec2(2.2, 3.2), vec2(1.8, 2.4), 4, 2), layer);
         snFlakes(span, pixelUV, flakes);
         vec4 q = water_snow_at(uint(snSlot), snMap, f_coord);
         wet = smoothstep(0.05, 0.3, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
