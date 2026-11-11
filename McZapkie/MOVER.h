@@ -2124,6 +2124,9 @@ class TMoverParameters
 	bool UnlockPipe = false; /*unlockig brake pipe button pressed*/
 	int BrakeDelayFlag = 0; /*nastawa opoznienia ham. osob/towar/posp/exp 0/1/2/4*/
 	int BrakeDelays = 0; /*nastawy mozliwe do uzyskania*/
+	// the AI wagon inspector cut the brake out (b_dmg) and puts it back when the train no longer needs it
+	// cut out (brake_setting::apply). Anyone else cutting it out or putting it back takes it over
+	bool BrakeCutOutByInspector = false;
 	int BrakeOpModeFlag = 0; /*nastawa trybu pracy PS/PN/EP/MED 1/2/4/8*/
 	int BrakeOpModes = 0; /*nastawy mozliwe do uzyskania*/
 	bool DynamicBrakeFlag = false; /*czy wlaczony hamulec elektrodymiczny*/

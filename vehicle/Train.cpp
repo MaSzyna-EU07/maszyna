@@ -2136,6 +2136,8 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 		}
 
 		vehicle->MoverParameters->Hamulec->SetBrakeStatus(vehicle->MoverParameters->Hamulec->GetBrakeStatus() ^ b_dmg);
+		// the brake is the player's now, the wagon inspector won't put it back on its own
+		vehicle->MoverParameters->BrakeCutOutByInspector = false;
 	}
 }
 

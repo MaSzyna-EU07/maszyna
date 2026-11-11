@@ -483,6 +483,7 @@ set(CORE_SOURCES
 "simulation/simulationtestrules.cpp"
 "vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
+"vehicle/brakesetting.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
