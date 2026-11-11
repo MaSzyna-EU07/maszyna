@@ -45,6 +45,15 @@ jobs:
           python-version: "3.14"
           architecture: "x64"
 
+      # the cab screens are drawn with Pillow; CMake copies this Python's Lib, site-packages included, next to the
+      # executable as python64\Lib, so Pillow has to be installed here to come with the build (as on Linux)
+      - name: Install Pillow for the screens
+        shell: pwsh
+        run: |
+          $pythonExe = "${{ steps.python.outputs.python-path }}"
+          & $pythonExe -m pip install --no-cache-dir Pillow
+          & $pythonExe -c "from PIL import Image; print('Pillow:', Image.__version__)"
+
       - name: Show environment
         shell: pwsh
         run: |
@@ -66,6 +75,27 @@ jobs:
         shell: cmd
         run: |
           call setup.bat
+
+      # the unit tests run at the end of the build and load lua51.dll (the Lua screens), but ref/luajit has only its import
+      # library. LuaJIT of the same 2.0 line is built here and put on PATH for them; it doesn't go into the uploaded build
+      - name: Build lua51.dll for the unit tests
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          git init -q "%RUNNER_TEMP%\LuaJIT" || exit /b 1
+          cd /d "%RUNNER_TEMP%\LuaJIT"
+          rem the v2.0 branch of LuaJIT, pinned
+          git fetch -q --depth 1 https://github.com/LuaJIT/LuaJIT.git b83bcba6ea300d4eb16e8257ddf80bcdef1f938b || exit /b 1
+          git checkout -q FETCH_HEAD || exit /b 1
+          cd src
+          rem msvcbuild.bat runs the tools it builds (minilua, buildvm) from the current folder
+          set NoDefaultCurrentDirectoryInExePath=
+          call .\msvcbuild.bat || exit /b 1
+          if not exist lua51.dll exit /b 1
+          mkdir "%RUNNER_TEMP%\lua51"
+          copy /y lua51.dll "%RUNNER_TEMP%\lua51\" || exit /b 1
+          echo %RUNNER_TEMP%\lua51>> "%GITHUB_PATH%"
 
       - name: Configure
         shell: pwsh
@@ -111,6 +141,18 @@ jobs:
           Copy-Item `
             -Path "lang/*" `
             -Destination "$output/lang" `
+            -Recurse `
+            -Force
+
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$output/python/local" | Out-Null
+
+          Copy-Item `
+            -Path "staticFiles/python/local/*" `
+            -Destination "$output/python/local" `
             -Recurse `
             -Force
 
@@ -251,9 +293,11 @@ jobs:
           
       - name: Copy shaders and translations
         run: |
-          mkdir -p build/bin/shaders build/bin/lang
+          mkdir -p build/bin/shaders build/bin/lang build/bin/python/local
           cp -R shaders/. build/bin/shaders/
           cp -R lang/. build/bin/lang/
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          cp -R staticFiles/python/local/. build/bin/python/local/
 
       - name: Upload Linux build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

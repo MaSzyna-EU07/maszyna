@@ -177,3 +177,32 @@ TEST_CASE("diesel: the 214M railbus's speed control, up to the speed of a button
 	CHECK_FALSE(railbus.SpeedCtrlUnit.IsActive);
 	scenario.check();
 }
+
+TEST_CASE("diesel: the SM42's shunt mode, switched on and off with one move of the switch") {
+	// eu07/maszyna#497: the shunt mode of the diesel-electrics (ShuntMode=1) shares its switch with the motor
+	// overload relay threshold of the electric locomotives (CurrentSwitch()). the SM42 has no such relay, so
+	// the switch sets the shunt mode at the first move, at the controller's zero position only
+	scenario scenario{"diesel/sm42 shunt mode", motion() + traction(), test::track{}};
+	scenario.add("sm42_v1/6d1", 1);
+	REQUIRE(scenario.start_up());
+	auto &sm42{scenario.cab()};
+	REQUIRE(sm42.ShuntModeAllow);
+	CHECK_FALSE(sm42.ShuntMode);
+	scenario.act("shunt mode on");
+	CHECK(sm42.CurrentSwitch(true));
+	CHECK(sm42.ShuntMode);
+	scenario.get_going();
+	scenario.act("shunting power");
+	sm42.AnPos = 0.5;
+	CHECK(sm42.IncMainCtrl(1));
+	scenario.wait(60.0);
+	CHECK(sm42.Vel > 1.0);
+	// not with the controller out of its zero position
+	CHECK_FALSE(sm42.CurrentSwitch(false));
+	CHECK(sm42.ShuntMode);
+	scenario.notch_back(0);
+	scenario.act("shunt mode off");
+	CHECK(sm42.CurrentSwitch(false));
+	CHECK_FALSE(sm42.ShuntMode);
+	scenario.check();
+}

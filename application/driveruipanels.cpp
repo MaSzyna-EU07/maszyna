@@ -161,6 +161,24 @@ drivingaid_panel::update() {
 }
 
 void
+drivingaid_panel::render_contents() {
+    ImGui::Checkbox(STR_C("expand"), &is_expanded);
+
+    ImGui::SameLine();
+
+    auto const *driver = (simulation::Train && simulation::Train->Dynamic()) ? simulation::Train->Dynamic()->Mechanik : nullptr;
+    if (driver && (false == Global.RealisticControlMode || DebugModeFlag)) {
+        bool autopilot = driver->AIControllFlag;
+        if (ImGui::Checkbox(STR_C("autopilot"), &autopilot)) {
+            command_relay commandrelay;
+            commandrelay.post(autopilot ? user_command::aidriverenable : user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+        }
+    }
+
+    ui_panel::render_contents();
+}
+
+void
 scenario_panel::update() {
 
     if( false == is_open ) { return; }
@@ -764,7 +782,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 	              mover.HeatingAllow ? 'h' :
 	                                   '.',
         mover.Hamulec->Releaser() ? '^' : '.',
-        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
+        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio && mover.RadioFuse ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
         std::string( isdieselenginepowered ? STR(" oil pressure: ") + to_string( mover.OilPump.pressure, 2 )  : "" ).c_str(),
         // power transfers
         // 3000v
