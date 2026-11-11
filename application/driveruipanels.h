@@ -89,6 +89,8 @@ private:
     void update_section_powergrid( std::vector<text_line> &Output ) const;
     void update_section_camera( std::vector<text_line> &Output ) const;
     void update_section_renderer( std::vector<text_line> &Output ) const;
+    // the coupler nearest to the camera, and the state of its coupling
+    void update_section_coupler( std::vector<text_line> &Output );
 #ifdef WITH_UART
     void update_section_uart( std::vector<text_line> &Output ) const;
 #endif
@@ -100,6 +102,8 @@ private:
     bool render_section( std::vector<text_line> const &Lines ) const;
     bool render_section_scenario();
     bool render_section_eventqueue();
+    // the coupler section, with the parameters of the physical model to try out in the debug mode
+    bool render_section_coupler();
     bool render_section_settings() const;
 	bool render_section_developer() const;
 	    // members
@@ -116,6 +120,14 @@ private:
     std::vector<text_line> m_powergridlines;
     std::vector<text_line> m_rendererlines;
     std::vector<text_line> m_uartlines;
+    std::vector<text_line> m_couplerlines;
+    // the coupler nearest to the camera
+    struct coupler_pick {
+        TDynamicObject const *vehicle { nullptr };
+        int end { 0 };
+    };
+    coupler_pick m_coupler;
+    bool m_couplerbothends { true }; // changes to the parameters apply to the end of the other vehicle of the pair too
 
 	double last_time = std::numeric_limits<double>::quiet_NaN();
 

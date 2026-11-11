@@ -38,6 +38,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
+#include <format>
+
 void
 drivingaid_panel::update() {
 
@@ -544,6 +546,7 @@ void debug_panel::update()
 	m_powergridlines.clear();
 	m_cameralines.clear();
 	m_rendererlines.clear();
+	m_couplerlines.clear();
 #ifdef WITH_UART
     m_uartlines.clear();
 #endif
@@ -557,6 +560,7 @@ void debug_panel::update()
 	update_section_powergrid( m_powergridlines );
 	update_section_camera( m_cameralines );
 	update_section_renderer( m_rendererlines );
+	update_section_coupler( m_couplerlines );
 #ifdef WITH_UART
     update_section_uart(m_uartlines);
 #endif
@@ -590,6 +594,7 @@ debug_panel::render() {
             command_relay commandrelay;
             commandrelay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }
+        render_section_coupler();
         render_section( "Vehicle Engine", m_enginelines );
         render_section( "Vehicle AI", m_ailines );
         render_section( "Vehicle Scan Table", m_scantablelines );
@@ -1506,6 +1511,159 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 	        textline = "Running threads: " + std::to_string(Global.threads.size() + 1);
 	        Output.emplace_back(textline, Global.UITextColor);
 
+}
+
+namespace {
+
+// how far from the camera a coupler shows in the coupler section [m]
+constexpr float coupler_pick_radius { 10.f };
+
+std::string_view coupler_type_name( TCouplerType const Type ) {
+    switch( Type ) {
+        case TCouplerType::Articulated: { return "articulated"; }
+        case TCouplerType::Bare: { return "bare"; }
+        case TCouplerType::Chain: { return "chain"; }
+        case TCouplerType::Screw: { return "screw"; }
+        case TCouplerType::Automatic: { return "automatic"; }
+        default: { return "none"; }
+    }
+}
+
+std::string_view coupler_stop_name( int const Stop ) {
+    if( Stop > 0 ) { return "draw gear solid"; }
+    if( Stop < 0 ) { return "buffers solid"; }
+    return "none";
+}
+
+// a value shown in the Scale of its unit (1000 for kN, 0.001 for mm), dragged within Min and Max of that unit
+bool edit_value( char const *Label, double &Value, double const Scale, double const Min, double const Max, char const *Format ) {
+    auto shown { Value / Scale };
+    if( false == ImGui::DragScalar( Label, ImGuiDataType_Double, &shown, static_cast<float>( ( Max - Min ) / 1000.0 ), &Min, &Max, Format ) ) {
+        return false;
+    }
+    Value = std::clamp( shown, Min, Max ) * Scale;
+    return true;
+}
+
+bool edit_spring( char const *Name, coupler_physics::spring_curve &Curve, double &Unloading ) {
+    ImGui::PushID( Name );
+    ImGui::TextUnformatted( Name );
+    auto changed { edit_value( "Stiffness [kN/m]", Curve.stiffness, 1000.0, 100.0, 50000.0, "%.0f" ) };
+    changed = edit_value( "Travel [mm]", Curve.travel, 0.001, 5.0, 300.0, "%.0f" ) || changed;
+    changed = edit_value( "Progression", Curve.progression, 1.0, 0.0, 0.9, "%.2f" ) || changed;
+    changed = edit_value( "Unloading ratio", Unloading, 1.0, 0.05, 1.0, "%.2f" ) || changed;
+    ImGui::Text( "End force: %.0f kN", Curve.end_force() / 1000.0 );
+    ImGui::PopID();
+    return changed;
+}
+
+bool edit_link( coupler_physics::end_parameters &Parameters ) {
+    auto &link { Parameters.link };
+    ImGui::PushID( "link" );
+    ImGui::TextUnformatted( "Link" );
+    auto changed { ImGui::Checkbox( "Breakable", &link.breakable ) };
+    changed = edit_value( "Ultimate force [kN]", link.ultimate, 1000.0, 10.0, 5000.0, "%.0f" ) || changed;
+    changed = edit_value( "Yield force [kN]", link.yield, 1000.0, 10.0, 5000.0, "%.0f" ) || changed;
+    link.yield = std::min( link.yield, link.ultimate );
+    // the permanent stretch at which the link breaks, which is what the hardening gives
+    auto stretch { ( link.ultimate - link.yield ) / link.hardening };
+    if( edit_value( "Stretch to break [mm]", stretch, 0.001, 1.0, 200.0, "%.1f" ) ) {
+        link.hardening = std::max( ( link.ultimate - link.yield ) / stretch, 1.0 );
+        changed = true;
+    }
+    changed = edit_value( "Link stiffness [kN/m]", Parameters.link_stiffness, 1000.0, 1000.0, 2000000.0, "%.0f" ) || changed;
+    changed = edit_value( "Buffers crush force [kN]", Parameters.crush_force, 1000.0, 100.0, 10000.0, "%.0f" ) || changed;
+    ImGui::PopID();
+    return changed;
+}
+
+bool edit_coupler_parameters( coupler_physics::end_parameters &Parameters ) {
+    auto changed { edit_value( "Slack [mm]", Parameters.slack, 0.001, -100.0, 300.0, "%.1f" ) };
+    changed = edit_value( "Damping [kN s/m]", Parameters.damping, 1000.0, 0.0, 1000.0, "%.1f" ) || changed;
+    changed = edit_spring( "Buffers", Parameters.buffers, Parameters.buffers_unloading ) || changed;
+    changed = edit_spring( "Draw gear", Parameters.draw_gear, Parameters.draw_gear_unloading ) || changed;
+    changed = edit_link( Parameters ) || changed;
+    return changed;
+}
+
+} // namespace
+
+void
+debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
+
+    m_coupler = {};
+    if( m_input.camera == nullptr ) { return; }
+    auto const &camera { m_input.camera->Pos };
+    auto const *vehicle { std::get<TDynamicObject *>( simulation::Region->find_vehicle( camera, coupler_pick_radius, false, true ) ) };
+    if( vehicle == nullptr || vehicle->MoverParameters == nullptr ) {
+        Output.emplace_back( std::format( "No coupler within {:.0f} m of the camera", coupler_pick_radius ), Global.UITextColor );
+        return;
+    }
+    auto const nearerfront { glm::distance( vehicle->CouplerPosition( end::front ), camera ) <= glm::distance( vehicle->CouplerPosition( end::rear ), camera ) };
+    m_coupler = { vehicle, nearerfront ? end::front : end::rear };
+
+    auto const &mover { *vehicle->MoverParameters };
+    auto const &coupler { mover.Couplers[ m_coupler.end ] };
+    auto const &neighbour { mover.Neighbours[ m_coupler.end ] };
+    auto const &state { coupler.physics_state };
+
+    Output.emplace_back(
+        std::format( "{}, {} end, {} coupler{}", vehicle->name(), nearerfront ? "front" : "rear", coupler_type_name( coupler.type() ), coupler.has_adapter() ? " (adapter)" : "" ),
+        Global.UITextColor );
+    Output.emplace_back(
+        std::format( "Model: {}, crash damage {}", Global.coupler_physics ? "physical" : "legacy", Global.crash_damage ? "on" : "off" ),
+        Global.UITextColor );
+    if( neighbour.vehicle != nullptr ) {
+        Output.emplace_back(
+            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag, neighbour.distance * 1000.0 ),
+            Global.UITextColor );
+    }
+    else {
+        Output.emplace_back( "Neighbour: none", Global.UITextColor );
+    }
+    Output.emplace_back( std::format( "Force: {:.1f} kN", coupler.CForce / 1000.0 ), Global.UITextColor );
+    Output.emplace_back(
+        std::format( "Draw gear: {:.1f} mm, {:.1f} kN  Buffers: {:.1f} mm, {:.1f} kN", state.draw_gear.deflection * 1000.0, state.draw_gear.force / 1000.0, state.buffers.deflection * 1000.0, state.buffers.force / 1000.0 ),
+        Global.UITextColor );
+    Output.emplace_back(
+        std::format( "Stretch: {:.1f} mm, stop: {}, overloaded for {:.1f} s", state.elongation * 1000.0, coupler_stop_name( state.stop ), coupler.stretch_duration ),
+        Global.UITextColor );
+    if( TestFlag( mover.DamageFlag, dtrain_coupling ) ) {
+        Output.emplace_back( "Coupler broken", glm::vec4( 1.f, 0.25f, 0.25f, 1.f ) );
+    }
+}
+
+bool
+debug_panel::render_section_coupler() {
+
+    if( false == render_section( "Coupler", m_couplerlines ) ) { return false; }
+    // the parameters to try out, in the debug mode, on the simulation itself
+    if( false == DebugModeFlag || m_coupler.vehicle == nullptr || Application.is_client() ) { return true; }
+
+    ImGui::Separator();
+    ImGui::Checkbox( "Physical coupler model", &Global.coupler_physics );
+    ImGui::Checkbox( "Crash damage", &Global.crash_damage );
+    ImGui::Checkbox( "Apply to the other end of the pair too", &m_couplerbothends );
+
+    auto &mover { *m_coupler.vehicle->MoverParameters };
+    auto &coupler { mover.Couplers[ m_coupler.end ] };
+    auto const &neighbour { mover.Neighbours[ m_coupler.end ] };
+    auto *othercoupler { neighbour.vehicle != nullptr ? &neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] : nullptr };
+
+    if( auto parameters { coupler.physics }; edit_coupler_parameters( parameters ) ) {
+        coupler.physics = parameters;
+        if( m_couplerbothends && othercoupler != nullptr ) {
+            othercoupler->physics = parameters;
+        }
+    }
+    if( ImGui::Button( "Reset the stretch of the coupling" ) ) {
+        // both vehicles keep the state of the pair alike
+        coupler.physics_state.elongation = 0.0;
+        if( othercoupler != nullptr ) {
+            othercoupler->physics_state.elongation = 0.0;
+        }
+    }
+    return true;
 }
 
 bool
