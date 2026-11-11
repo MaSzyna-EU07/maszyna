@@ -14045,11 +14045,7 @@ msgstr "Edytor pobiera zdjęcia lotnicze i ukształtowanie terenu tylko w tym ob
 msgid "A square around the centre"
 msgstr "Kwadrat wokół środka"
 
-msgid "%d km##side"
-msgstr "%d km##side"
 
-msgid "%d x %d km, the centre of the scenery in its middle"
-msgstr "%d × %d km, środek scenerii pośrodku"
 
 msgid "My own area, drawn on the map"
 msgstr "Własny obszar, narysowany na mapie"
@@ -14078,14 +14074,10 @@ msgstr "Duży obszar: pobieranie potrwa długo i zajmie dużo miejsca na dysku. 
 msgid "It can be changed later in the editor: Map > Orthophoto settings... > Download area"
 msgstr "Zasięg można później zmienić w edytorze: Mapa > Ustawienia ortofotomapy... > Obszar pobierania"
 
-msgid "The camera is outside the range of the aerial photos: there are none here"
-msgstr "Kamera jest poza zasięgiem zdjęć lotniczych: tutaj ich nie ma"
 
 msgid "Draw the range again"
 msgstr "Narysuj zasięg od nowa"
 
-msgid "Show the range"
-msgstr "Pokaż zasięg"
 
 msgid "The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"
 msgstr "Zasięg to obszar pobierania w Mapa > Ustawienia ortofotomapy...; narysowany od nowa może objąć to miejsce"
@@ -14102,8 +14094,42 @@ msgstr "Bez zasięgu: zdjęcia wokół kamery, gdziekolwiek się znajdzie. Pobra
 msgid "Square around the camera:"
 msgstr "Kwadrat wokół kamery:"
 
-msgid "%d km##areasquare"
-msgstr "%d km##areasquare"
 
 msgid "The range of the photos a square of %d x %d km, the camera in its middle"
 msgstr "Zasięg zdjęć: kwadrat %d × %d km z kamerą pośrodku"
+
+msgid "%d x %d km##side"
+msgstr "%d × %d km##side"
+
+msgid "%d km from edge to edge, the centre of the scenery in its middle, %.1f km from each edge"
+msgstr "%d km od krawędzi do krawędzi, środek scenerii pośrodku, %.1f km od każdej krawędzi"
+
+msgid "Click the centre on the map first (step 2)"
+msgstr "Najpierw kliknij środek na mapie (krok 2)"
+
+msgid "Enter: done, Backspace: undo the corner, Esc: cancel"
+msgstr "Enter: gotowe, Backspace: cofnij narożnik, Esc: anuluj"
+
+msgid "%d x %d km##areasquare"
+msgstr "%d × %d km##areasquare"
+
+msgid "The range of the photos a square of %d x %d km around the camera?"
+msgstr "Zasięg zdjęć: kwadrat %d × %d km wokół kamery?"
+
+msgid "It replaces the area there is now, which can't be taken back"
+msgstr "Zastąpi obecny obszar, tego nie da się cofnąć"
+
+msgid "%.0f sq km: the download takes long and needs a lot of disk space"
+msgstr "%.0f km²: pobieranie potrwa długo i zajmie dużo miejsca na dysku"
+
+msgid "Replace"
+msgstr "Zastąp"
+
+msgid "The camera is outside the range: no aerial photos and no terrain model here"
+msgstr "Kamera jest poza zasięgiem: tutaj nie ma zdjęć lotniczych ani terenu z NMT"
+
+msgid "Range settings..."
+msgstr "Ustawienia zasięgu..."
+
+msgid "Hidden until the camera is back inside the range and out again"
+msgstr "Ukryte, dopóki kamera nie wróci do zasięgu i znów z niego nie wyjdzie"

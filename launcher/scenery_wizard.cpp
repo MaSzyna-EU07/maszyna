@@ -38,7 +38,7 @@ bool valid_name(std::string const &Name)
 // the sides of the square around the centre offered, km
 std::array<int, 4> constexpr sides{1, 2, 5, 10};
 // km², above it the download is told to take long
-double constexpr large_range{100.0};
+double constexpr large_range{50.0};
 // m a pixel: zoomed out more than this the centre clicked may be off by hundreds of metres
 double constexpr coarse_scale{60.0};
 
@@ -108,6 +108,16 @@ void ui::scenerywizard_panel::render_contents()
 			pick(m_map.point());
 	}
 	ImGui::EndChild();
+	// the keys of the drawing as in the editor, unless a field is being typed in
+	if (m_drawing && false == ImGui::GetIO().WantTextInput)
+	{
+		if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))
+			stop_drawing(true);
+		else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+			stop_drawing(false);
+		else if (ImGui::IsKeyPressed(ImGuiKey_Backspace) && false == m_drawn.empty())
+			m_drawn.pop_back();
+	}
 	ImGui::SameLine();
 	ImGui::BeginChild("##wizardform", ImVec2(0.f, map.y), true);
 	render_form();
@@ -117,12 +127,36 @@ void ui::scenerywizard_panel::render_contents()
 void ui::scenerywizard_panel::pick(glm::dvec2 const &Point)
 {
 	auto const first{false == m_map.picked() || m_map.scale() > coarse_scale};
+	m_status.clear();
 	m_map.pick(Point);
 	auto const degrees{editor_geo::to_degrees(Point)};
 	std::snprintf(m_place, sizeof(m_place), "%.6f, %.6f", degrees.x, degrees.y);
 	// picked on the map of the whole country: the map goes to the place, to see the range around it and to put the centre exactly
 	if (first)
 		show_range();
+}
+
+void ui::scenerywizard_panel::start_drawing()
+{
+	m_before = m_drawn;
+	m_drawn.clear();
+	m_drawing = true;
+}
+
+void ui::scenerywizard_panel::stop_drawing(bool const Keep)
+{
+	if (false == m_drawing || (Keep && m_drawn.size() < 3))
+		return;
+	m_drawing = false;
+	if (Keep)
+	{
+		show_range();
+		return;
+	}
+	// given up: the area there was before, or the square when there was none
+	m_drawn = m_before;
+	if (m_drawn.size() < 3)
+		m_shape = range_shape::square;
 }
 
 void ui::scenerywizard_panel::show_range()
@@ -184,8 +218,9 @@ void ui::scenerywizard_panel::render_form()
 	ImGui::SameLine();
 	if (ImGui::RadioButton(STR_C("Fictional"), false == m_realistic))
 	{
+		// an area being drawn is given up, as with Cancel
+		stop_drawing(false);
 		m_realistic = false;
-		m_drawing = false;
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("No place on the map, no orthophoto: an empty plane seen from above"));
@@ -243,7 +278,11 @@ void ui::scenerywizard_panel::render_place()
 		{
 			m_status.clear();
 			m_map.pick(typed);
-			show_range();
+			// the square goes with the centre and is shown whole; an area of the user's stays, the map goes to the centre
+			if (m_shape == range_shape::square)
+				show_range();
+			else
+				m_map.show(typed, 8.0);
 		}
 		else
 			m_status = STR("Not a place in Poland: two numbers, degrees or the X and Y of PUWG 1992");
@@ -264,6 +303,11 @@ void ui::scenerywizard_panel::render_range()
 {
 	ImGui::SeparatorText(STR_C("3. Range of the aerial photos"));
 	wrapped_disabled(STR("The editor downloads the aerial photos and the shape of the ground only inside this area, blue on the map. Outside it there are no photos."));
+	// the area is given around the centre: without it the clicks on the map would go to the corners of an area, not to the centre
+	auto const placed{m_map.picked()};
+	if (false == placed)
+		wrapped(warning_colour, STR("Click the centre on the map first (step 2)"));
+	ImGui::BeginDisabled(false == placed);
 	ImGui::BeginDisabled(m_drawing);
 	if (ImGui::RadioButton(STR_C("A square around the centre"), m_shape == range_shape::square))
 	{
@@ -279,14 +323,14 @@ void ui::scenerywizard_panel::render_range()
 		{
 			if (side != sides.front())
 				ImGui::SameLine();
-			if (ImGui::RadioButton(format(STR_C("%d km##side"), side).c_str(), m_side == side))
+			if (ImGui::RadioButton(format(STR_C("%d x %d km##side"), side, side).c_str(), m_side == side))
 			{
 				m_side = side;
 				if (m_map.picked())
 					show_range();
 			}
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(STR_C("%d x %d km, the centre of the scenery in its middle"), side, side);
+				ImGui::SetTooltip(STR_C("%d km from edge to edge, the centre of the scenery in its middle, %.1f km from each edge"), side, side * 0.5);
 		}
 		ImGui::Unindent();
 	}
@@ -295,11 +339,7 @@ void ui::scenerywizard_panel::render_range()
 		m_shape = range_shape::drawn;
 		// nothing drawn yet: the clicks on the map go to it straight away
 		if (m_drawn.size() < 3)
-		{
-			m_before = m_drawn;
-			m_drawn.clear();
-			m_drawing = true;
-		}
+			start_drawing();
 	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("For a line: a long band along it, which downloads much less than a square around it"));
@@ -311,10 +351,7 @@ void ui::scenerywizard_panel::render_range()
 			ImGui::Text(STR_C("%zu corners"), m_drawn.size());
 			ImGui::BeginDisabled(m_drawn.size() < 3);
 			if (ImGui::Button(STR_C("Done")))
-			{
-				m_drawing = false;
-				show_range();
-			}
+				stop_drawing(true);
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::BeginDisabled(m_drawn.empty());
@@ -323,21 +360,14 @@ void ui::scenerywizard_panel::render_range()
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			if (ImGui::Button(STR_C("Cancel")))
-			{
-				m_drawn = m_before;
-				m_drawing = false;
-				if (m_drawn.size() < 3)
-					m_shape = range_shape::square;
-			}
+				stop_drawing(false);
+			ImGui::TextDisabled("%s", STR_C("Enter: done, Backspace: undo the corner, Esc: cancel"));
 		}
 		else if (ImGui::Button(STR_C("Draw again")))
-		{
-			m_before = m_drawn;
-			m_drawn.clear();
-			m_drawing = true;
-		}
+			start_drawing();
 		ImGui::Unindent();
 	}
+	ImGui::EndDisabled();
 
 	auto const area{range()};
 	if (area.empty())

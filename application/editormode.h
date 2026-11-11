@@ -584,6 +584,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec3 area_point(glm::dvec2 const &Point) const;
 	void draw_download_area() const;
 	void render_download_area_ui(editor_orthophoto::statistics const &Stats);
+	// the download area a square of the side, km, around the camera
+	void area_square(int const Side);
 	// the chunk of the terrain (x, z) touches the area, or there's none
 	bool in_download_area(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 	// over the 3d view while the terrain panel isn't seen
@@ -907,6 +909,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	} m_area_drawing;
 	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
+	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
+	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management

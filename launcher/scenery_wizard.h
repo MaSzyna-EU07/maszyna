@@ -45,6 +45,10 @@ class scenerywizard_panel : public ui_panel
 	// why the scenery can't be created yet, as the user reads it; empty when it can
 	std::string missing(bool const Named, bool const Exists) const;
 	void show_range();
+	// the corners of an area of the user's clicked on the map from now on; ended kept (with three corners at least) or given up,
+	// the area there was before back then
+	void start_drawing();
+	void stop_drawing(bool const Keep);
 	bool create_scenery();
 
 	editor_map m_map;
