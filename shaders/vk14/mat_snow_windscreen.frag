@@ -8,12 +8,13 @@
 //
 // What lies on the glass comes from the simulation (water_snow.comp, water.glsl): the map of the glass keeps the snow, the water,
 // how packed the snow is and the shape of its flakes from frame to frame. The flakes land and stay where they landed, pile up,
-// the blades push the snow into ridges at the ends of their sweeps and leave a wet trace, it melts at the warm glass, slush slides
-// down. The renderer gives the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
+// the blades wipe it as they wipe the rain (a wet trace stays), it melts at the warm glass, slush slides down. The renderer gives
+// the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
 //
 // The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen, two layers of them:
 //  - the flakes: a sprite on every texel of the map holding snow, the more snow the bigger. Dry: crystals, flakes of a few of
-//    them, crumbs; wet: lumps; where only the water of a melted flake is left, a drop (it bends the picture behind, as rain does)
+//    them, crumbs; wet (near zero, melting): lumps of slush, grey and translucent with a frosted core; where only the water of a
+//    melted flake is left, a drop. The lumps and the drops bend the picture behind, as the drops of the rain
 //  - the layer, under the flakes: a bigger sprite every three texels where the snow is thicker, clumps of flakes, then packed
 //    snow, overlapping into a whole cover where the snow is thick; grey slush where it's wet
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
@@ -145,7 +146,8 @@ void snSprite(vec2 local, int tile, float alpha, vec3 tone, vec2 rot, float flip
     acc.n   = nT * a + acc.n * (1.0 - a);
     acc.tr  = (1.0 - t.a * 0.55) * a + acc.tr * (1.0 - a);
     acc.a   = a + acc.a * (1.0 - a);
-    if (tile == TILE_DROP)
+    // the drops and the wet lumps bend the picture behind them (water, slush), as the drops of the rain
+    if ((tile == TILE_DROP) || (tile == 8) || (tile == 9) || (tile == 14))
     {
         snBend  = snBend * (1.0 - a) + nuv * a;
         snBendA = snBendA * (1.0 - a) + a;
@@ -221,7 +223,7 @@ void snFlakes(vec2 aspect, float pixelUV, inout sprite_acc acc)
             }
             else
             {
-                if (snWetness(q) > 0.35)
+                if (snWetness(q) > 0.25)
                     tile = 8 + int(kind * 2.0);                    // wet lumps
                 else if (kind < 0.25)
                     tile = int(kind * 8.0);                        // star crystals (0, 1)
@@ -269,7 +271,7 @@ void snLayer(vec2 aspect, float pixelUV, inout sprite_acc acc)
             if (false == snLocal(p, centre, size, aspect, rot, flip, aniso, local))
                 continue;
             int tile;
-            if (snWetness(q) > 0.45)
+            if (snWetness(q) > 0.35)
                 tile = 14;                                 // slush
             else if (q.x < 3.0)
                 tile = 10 + int(kind * 2.0);               // clumps
@@ -277,7 +279,7 @@ void snLayer(vec2 aspect, float pixelUV, inout sprite_acc acc)
                 tile = 12 + int(kind * 2.0);               // packed snow
             float thick = 1.0 - exp(-q.x / (snow_opaque * mix(1.0, 0.5, q.z)));
             float alpha = mix(0.6, 1.0, thick);
-            // the ridges of the blades: packed and thick, a stronger relief
+            // packed thick snow: a stronger relief
             float bump = mix(1.0, 1.6, q.z * smoothstep(3.0, 12.0, q.x));
             snSprite(local, min(tile, 14), alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / cells), bump, acc);
         }
@@ -372,7 +374,7 @@ void main()
     {
         vec4 req = vec4(0.0);
         float clear = 1.0 - smoothstep(0.5, 0.95, glassA);
-        if ((snBendA > 0.25) && (layer.a < 0.3) && (glassA < 0.5))
+        if ((snBendA > 0.25) && (glassA < 0.5))
         {
             vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.25, 0.6, snBendA);
             req = vec4(WS_DROP_BIAS + WS_BEND_ENC * bend.x, WS_DROP_BIAS + WS_BEND_ENC * bend.y, 0.0, 1.0);
