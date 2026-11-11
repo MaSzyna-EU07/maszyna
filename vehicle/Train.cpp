@@ -17,10 +17,12 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
+#include "simulation/blackboxrecorder.h"
 #include "world/Event.h"
 #include "simulation/simulationtime.h"
 #include "vehicle/Camera.h"
@@ -38,6 +40,7 @@ http://mozilla.org/MPL/2.0/.
 #include <thread>
 #include <cmath>
 #include <algorithm>
+#include <format>
 /*
 namespace input {
 
@@ -814,7 +817,8 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("tractionforce", std::abs(mvOccupied->Ft));
 	dict->insert("slipping_wheels", mvOccupied->SlippingWheels);
 	dict->insert("sanding", mvOccupied->SandDose);
-	dict->insert("odometer", mvOccupied->DistCounter);
+	dict->insert("odometer", mvOccupied->DistCounter); // distance run in the session, km
+	dict->insert("odometer_total", mvOccupied->Odometer.km); // the vehicle's odometer, kept between the sessions
 	// electric current data
 	dict->insert("traction_voltage", std::abs(mvPantographUnit->PantographVoltage));
 	dict->insert("voltage", std::abs(mvControlled->EngineVoltage));
@@ -2132,6 +2136,8 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 		}
 
 		vehicle->MoverParameters->Hamulec->SetBrakeStatus(vehicle->MoverParameters->Hamulec->GetBrakeStatus() ^ b_dmg);
+		// the brake is the player's now, the wagon inspector won't put it back on its own
+		vehicle->MoverParameters->BrakeCutOutByInspector = false;
 	}
 }
 
@@ -8805,6 +8811,7 @@ bool TTrain::Update(double const Deltatime)
 	command_data commanddata;
 	while (simulation::Commands.pop(commanddata, static_cast<std::size_t>(command_target::vehicle) | id()))
 	{
+		simulation::Blackbox.command(DynamicObject, commanddata.command, commanddata.action, commanddata.param1, commanddata.param2);
 
 		auto lookup = m_commandhandlers.find(commanddata.command);
 		if (lookup != m_commandhandlers.end())
@@ -10039,7 +10046,10 @@ bool TTrain::Update(double const Deltatime)
 	// screens
 
 	if (!FreeFlyModeFlag && simulation::Train == this) // don't bother if we're outside
+	{
 		update_screens(Deltatime);
+		update_script_screens();
+	}
 
 	// update direction relay
 	if (prevBatState != mvOccupied->Power24vIsAvailable)
@@ -10568,6 +10578,99 @@ void TTrain::update_screens(double dt)
 	}
 }
 
+void TTrain::update_script_screens()
+{
+	auto &queue{Application.screens()};
+	for (auto &entry : m_scriptscreens)
+	{
+		if (false == queue.due(*entry.screen))
+		{
+			continue;
+		}
+		auto input{GetTrainState(entry.parameters)};
+		input->insert("touches", *entry.touch_list);
+		entry.touch_list->clear();
+		queue.submit(entry.screen, std::move(input), id());
+	}
+}
+
+bool TTrain::find_screen_surface(std::string const &Target, std::string_view const Kind, TSubModel *&Submodel, ITexture *&Texture) const
+{
+	Submodel = DynamicObject->mdKabina     ? DynamicObject->mdKabina->GetFromName(Target) :
+	           DynamicObject->mdLowPolyInt ? DynamicObject->mdLowPolyInt->GetFromName(Target) :
+	                                         nullptr;
+	if (Submodel == nullptr)
+	{
+		WriteLog(std::format("{}: submodel {} not found - Ignoring screen", Kind, Target));
+		return false;
+	}
+	auto const material{Submodel->GetMaterial()};
+	if (material <= 0)
+	{
+		// sub model nie posiada tekstury lub tekstura wymienna - nie obslugiwana
+		WriteLog(std::format("{}: invalid texture id {} - Ignoring screen", Kind, material));
+		return false;
+	}
+
+	Texture = &GfxRenderer->Texture(GfxRenderer->Material(material)->GetTexture(0));
+	return true;
+}
+
+void TTrain::load_script_screen(cParser &Parser, script_language const Language)
+{
+	script_screen_entry entry;
+	// the block is read whole even when the script screens are off
+	entry.config.deserialize(Parser);
+	if (entry.config.script.empty())
+	{
+		return;
+	}
+	if (substr_path(entry.config.script).empty())
+	{
+		entry.config.script = DynamicObject->asBaseDir + entry.config.script;
+	}
+
+	TSubModel *submodel{nullptr};
+	ITexture *texture{nullptr};
+	auto &queue{Application.screens()};
+	if (false == queue.runs(Language))
+	{
+		// the screens of the language are off
+		return;
+	}
+	if (entry.config.target != "none" &&
+	    false == find_screen_surface(entry.config.target, Language == script_language::lua ? "Lua Screen" : "WASM Screen", submodel, texture))
+	{
+		return;
+	}
+
+	entry.screen = queue.acquire({.kind = script_screen_kind::cab,
+	                              .language = Language,
+	                              .script = entry.config.script,
+	                              .key = std::format("cab:{}:{}:{}", DynamicObject->name(), entry.config.target, entry.config.script),
+	                              .texture = texture,
+	                              .frames = entry.config.frames});
+	if (entry.screen == nullptr)
+	{
+		return;
+	}
+	if (texture != nullptr)
+	{
+		// make the surface static so it doesn't get destroyed by garbage collector if the user spends long time outside cab
+		texture->create(true);
+	}
+	if (false == entry.config.parameters.empty())
+	{
+		entry.parameters = dictionary_source(entry.config.parameters);
+	}
+	entry.touch_list = std::make_shared<std::vector<glm::vec2>>();
+	if (submodel != nullptr)
+	{
+		submodel->screen_touch_list = entry.touch_list;
+	}
+	m_scriptscreens.emplace_back(std::move(entry));
+}
+
 void TTrain::add_distance(double const Distance)
 {
 
@@ -10743,6 +10846,7 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	m_controlmapper.clear();
 	// clear python screens
 	m_screens.clear();
+	m_scriptscreens.clear();
 	// reset sound positions
 	auto const nullvector{glm::vec3()};
 	std::vector<std::reference_wrapper<std::optional<sound_source>>> sounds = {
@@ -10934,23 +11038,10 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 				TSubModel *submodel = nullptr;
 				if (screen.target != "none")
 				{
-					submodel = DynamicObject->mdKabina     ? DynamicObject->mdKabina->GetFromName(screen.target) :
-					           DynamicObject->mdLowPolyInt ? DynamicObject->mdLowPolyInt->GetFromName(screen.target) :
-					                                         nullptr;
-					if (submodel == nullptr)
+					if (false == find_screen_surface(screen.target, "Python Screen", submodel, tex))
 					{
-						WriteLog("Python Screen: submodel " + screen.target + " not found - Ignoring screen");
 						continue;
 					}
-					auto const material{submodel->GetMaterial()};
-					if (material <= 0)
-					{
-						// sub model nie posiada tekstury lub tekstura wymienna - nie obslugiwana
-						WriteLog("Python Screen: invalid texture id " + std::to_string(material) + " - Ignoring screen");
-						continue;
-					}
-
-					tex = &GfxRenderer->Texture(GfxRenderer->Material(material)->GetTexture(0));
 				}
 				else
 				{
@@ -10976,6 +11067,14 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 
 				if (Global.python_displaywindows)
 					m_screens.back().viewer = std::make_unique<python_screen_viewer>(rt, m_screens.back().touch_list, m_screens.back().script);
+			}
+			else if (token == "luascreen:")
+			{
+				load_script_screen(parser, script_language::lua);
+			}
+			else if (token == "wasmscreen:")
+			{
+				load_script_screen(parser, script_language::wasm);
 			}
 			else if (token == "pyscreenupdatetime:")
 			{
@@ -11069,7 +11168,12 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	}
 
 	if (DynamicObject->mdKabina)
+	{
 		DynamicObject->mdKabina->Init(); // obrócenie modelu oraz optymalizacja, również zapisanie binarnego
+		// the vehicle has a cab, a player is in it: the odometer store keeps the vehicle also when its type has no
+		// driver's brake valve (eu07/maszyna#72)
+		DynamicObject->MoverParameters->Odometer.shown = true;
+	}
 
 	set_cab_controls(NewCabNo < 0 ? 2 : NewCabNo);
 
@@ -12693,7 +12797,15 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		// Ra 2014-07: licznik kilometrów
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignDouble(&mvControlled->DistCounter);
+		// the counter shows the odometer of the vehicle, kept between the sessions (eu07/maszyna#72). its offset
+		// was the state it started each session with, now it is that only for a vehicle with no known state
+		if (auto const seed{odometer::counter_seed(gauge.offset(), gauge.scale())}; seed.has_value())
+			mvControlled->Odometer.seed(*seed);
+		gauge.offset(0.f);
+		gauge.AssignDouble(&mvControlled->Odometer.km);
+		// the vehicle the counter counts for is one the odometer store keeps, also in the sessions the counter seeds
+		// nothing (its state is a saved one by then) and when it's the motor car of the unit the cab is in
+		mvControlled->Odometer.shown = true;
 	}
 	else if (Label == "shuntmodepower:")
 	{

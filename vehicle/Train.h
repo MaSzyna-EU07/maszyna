@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/PyInt.h"
 #include "input/command.h"
 #include "scripting/pythonscreenviewer.h"
+#include "scripting/scriptscreens.h"
 #include "utilities/dictionary.h"
 
 #undef snprintf // pyint.h->python
@@ -145,6 +146,14 @@ class TTrain {
 
 	using screenentry_sequence = std::vector<screen_entry>;
 
+    // a screen of the cab drawn by a script (luascreen:, wasmscreen: in the .mmd)
+    struct script_screen_entry {
+        script_screens::screen_config config;
+        dictionary_source parameters; // the config's parameters, pre-processed
+        std::shared_ptr<script_screen> screen;
+        std::shared_ptr<std::vector<glm::vec2>> touch_list;
+    };
+
 // methods
     bool CabChange(int iDirection);
     bool ShowNextCurrent{false}; // pokaz przd w podlaczonej lokomotywie (ET41)
@@ -233,6 +242,10 @@ class TTrain {
     end cab_to_end() const {
         return cab_to_end( iCabn ); }
 	void update_screens(double dt);
+	void update_script_screens();
+	// finds the submodel and the texture a cab screen is drawn on. returns false when the screen is to be ignored
+	bool find_screen_surface(std::string const &Target, std::string_view Kind, TSubModel *&Submodel, ITexture *&Texture) const;
+	void load_script_screen(cParser &Parser, script_language Language);
 
     // command handlers
     // NOTE: we're currently using universal handlers and static handler map but it may be beneficial to have these implemented on individual class instance basis
@@ -937,6 +950,7 @@ private:
     bool m_mastercontrollerinuse { false };
     float m_mastercontrollerreturndelay { 0.f };
 	screenentry_sequence m_screens;
+	std::vector<script_screen_entry> m_scriptscreens;
 	uint16_t vid { 0 }; // train network recipient id
     float m_distancecounter { -1.f }; // distance traveled since meter was activated or -1 if inactive
     double m_brakehandlecp{ 0.0 };

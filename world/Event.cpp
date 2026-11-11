@@ -733,6 +733,10 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         m_input.command_type = TCommandType::cm_SectionVelocity;
         m_passive = true;
     }
+    else if( token == "PointVelocity" ) {
+        m_input.command_type = TCommandType::cm_PointVelocity;
+        m_passive = true;
+    }
     else if( token == "ShuntVelocity" ) {
         m_input.command_type = TCommandType::cm_ShuntVelocity;
         m_passive = true;
@@ -743,6 +747,11 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     }
     else if( token == "CabSignal" ) {
         m_input.command_type = TCommandType::cm_SecuritySystemMagnet;
+        m_passive = true;
+    }
+    else if( token == "SignalAreaEnd" ) {
+        // scanned, so the train sees where the interlocking area of the signal it passed ends
+        m_input.command_type = TCommandType::cm_SignalAreaEnd;
         m_passive = true;
     }
     else {

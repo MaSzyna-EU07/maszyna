@@ -20,6 +20,22 @@ world_environment Environment;
 
 } // simulation
 
+namespace {
+
+// turbidity of the sky under the given cloud cover
+float
+turbidity_of( float const Overcast ) {
+
+    if( Overcast <= 0.20 ) { return 4.f; }
+    if( Overcast <= 0.40 ) { return 5.f; }
+    if( Overcast <= 0.60 ) { return 6.f; }
+    if( Overcast <= 0.70 ) { return 7.f; }
+    if( Overcast <= 0.80 ) { return 8.f; }
+    return 9.f;
+}
+
+} // namespace
+
 void
 world_environment::on_daylight_change() {
 
@@ -68,16 +84,7 @@ world_environment::compute_weather() const {
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 4 :
-	                    Global.Overcast <= 0.20 ? 4 :
-	                    Global.Overcast <= 0.30 ? 5 :
-	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 6 :
-	                    Global.Overcast <= 0.60 ? 6 :
-	                    Global.Overcast <= 0.70 ? 7 :
-	                    Global.Overcast <= 0.80 ? 8 :
-	                    Global.Overcast <= 0.90 ? 9 :
-	                                              9;
+    Global.fTurbidity = turbidity_of( Global.Overcast );
 }
 
 void
