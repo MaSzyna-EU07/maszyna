@@ -67,7 +67,7 @@ class deer_herd
 	};
 	// the train at Train, its horn sounding, at the time Now: the deer takes fright, runs, or goes (true) once the train is past it
 	bool tend(deer &Animal, glm::dvec3 const &Train, bool const Horn, double const Now) const;
-	// puts a deer on the path ahead of the train, where it's plain and straight track with flat ground beside it and no platform near;
+	// puts a deer on the path ahead of the train, where it's plain track (no switch) with flat ground beside it and no platform near;
 	// false where there's none
 	bool spawn(TDynamicObject const &Vehicle);
 	// the deer took fright: when it starts, where it looks
