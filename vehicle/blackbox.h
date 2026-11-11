@@ -98,7 +98,29 @@ inline constexpr std::uint32_t radio{0x1000};
 inline constexpr std::uint32_t heating{0x2000}; // of the train
 inline constexpr std::uint32_t spring_brake{0x4000}; // applied
 inline constexpr std::uint32_t shunt_mode{0x8000};
+inline constexpr std::uint32_t departure_signal{0x0001'0000}; // sounding
+inline constexpr std::uint32_t door_permit_left{0x0002'0000}; // the doors may be opened
+inline constexpr std::uint32_t door_permit_right{0x0004'0000};
+inline constexpr std::uint32_t door_step{0x0008'0000}; // the steps come out with the doors
+inline constexpr std::uint32_t door_lock{0x0010'0000}; // the doors lock above a speed
+inline constexpr std::uint32_t doors_locked{0x0020'0000}; // locked now
+inline constexpr std::uint32_t brake_releaser{0x0040'0000}; // releasing the brakes of the vehicle
+inline constexpr std::uint32_t fuel_pump{0x0080'0000};
+inline constexpr std::uint32_t oil_pump{0x0100'0000};
+inline constexpr std::uint32_t motor_blowers{0x0200'0000}; // the fans of the traction motors
+inline constexpr std::uint32_t engine_hot{0x0400'0000}; // the diesel engine is over its temperature
+inline constexpr std::uint32_t speed_control{0x0800'0000}; // the cruise control holds a speed
 } // namespace cab_devices
+
+// what drives the vehicle whose motors the cab drives, for a reader to show what matters for it
+namespace engines {
+inline constexpr std::uint8_t none{0}; // no engine of its own: a draisine, a car
+inline constexpr std::uint8_t electric{1}; // series motors
+inline constexpr std::uint8_t electric_induction{2}; // induction motors
+inline constexpr std::uint8_t diesel{3}; // with a mechanical or a hydraulic transmission
+inline constexpr std::uint8_t diesel_electric{4};
+inline constexpr std::uint8_t steam{5};
+} // namespace engines
 
 // the security system of the user's train: the alerter (CA) and the cab signalling (SHP)
 namespace security_flags {
@@ -215,6 +237,24 @@ struct cab_sample {
 	std::int16_t light_hint_tail{-1}; // at the tail
 	std::uint16_t equipped_head{0}; // the lamps the vehicle at the head has at that end: what of a pattern it can show
 	std::uint16_t equipped_tail{0}; // at the tail
+	std::uint8_t engine{engines::none}; // engines
+	std::uint8_t brake_delay{0}; // the setting of the brakes: 1 G, 2 P, 4 R, 8 Mg, as bits
+	std::uint8_t radio_channel{0}; // 0 none
+	float equalizing_reservoir{0.0f}; // of the driver's brake valve [bar]
+	float feed_pipe{0.0f}; // the main reservoir pipe along the train [bar]
+	float oil_pressure{0.0f}; // of the diesel engine [MPa]
+	float water_temperature{0.0f}; // of the diesel engine's cooling [°C]
+	float oil_temperature{0.0f}; // [°C]
+	float engine_temperature{0.0f}; // [°C]
+	float speed_control_kmh{0.0f}; // the speed the cruise control is set to
+	float engine_power{0.0f}; // [kW]
+	std::int8_t hand_brake{0}; // the position of the hand brake, 0 released
+	std::uint8_t brake_mode{0}; // the mode of the brakes: 1 PS, 2 PN, 4 EP, 8 MED, as bits
+	std::uint8_t horn{0}; // the horn's tones sounding: 1 low, 2 high, 4 a third
+	float integrated_controller{0.0f}; // the one handle of driving and braking of a unit, -1..1
+	float clutch{0.0f}; // the clutch of a diesel's gearbox, 0 open .. 1 closed
+	float converter_fill{0.0f}; // the filling of a diesel's hydraulic torque converter, 0..1
+	float consist_brake_cylinder{0.0f}; // the highest brake cylinder pressure of the vehicles of the train [bar]
 };
 
 // a station of the timetable of the user's train; the times in minutes of the day, -1 none
@@ -312,7 +352,7 @@ struct signal_passing {
 // sizes of the parts of fixed size, as the readers expect them
 inline constexpr std::size_t header_size{12};
 inline constexpr std::size_t record_header_size{5};
-inline constexpr std::size_t cab_sample_size{136};
+inline constexpr std::size_t cab_sample_size{190};
 inline constexpr std::size_t vehicle_state_size{25};
 
 // writes the records to a stream. nothing is written until header() is

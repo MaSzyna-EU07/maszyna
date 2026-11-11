@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cctype>
 #include <cmath>
 #include <ctime>
+#include <utility>
 #include <filesystem>
 #include <format>
 #include <limits>
@@ -74,7 +75,32 @@ std::uint32_t devices_of(TMoverParameters const &Occupied, TMoverParameters cons
 	       on(Controlling.FuseFlag, device::overload_relay) | on(Controlling.SandDose, device::sanding) | on(Occupied.WarningSignal != 0, device::horn) |
 	       on(false == Occupied.Doors.instances[side::left].is_closed, device::doors_left) |
 	       on(false == Occupied.Doors.instances[side::right].is_closed, device::doors_right) | on(Occupied.Radio, device::radio) |
-	       on(Controlling.Heating, device::heating) | on(Occupied.SpringBrake.IsActive, device::spring_brake) | on(Controlling.ShuntMode, device::shunt_mode);
+	       on(Controlling.Heating, device::heating) | on(Occupied.SpringBrake.IsActive, device::spring_brake) | on(Controlling.ShuntMode, device::shunt_mode) |
+	       // the doors as the cab works them: the permits, the departure signal, the steps and the lock
+	       on(Occupied.DepartureSignal, device::departure_signal) | on(Occupied.Doors.instances[side::left].open_permit, device::door_permit_left) |
+	       on(Occupied.Doors.instances[side::right].open_permit, device::door_permit_right) | on(Occupied.Doors.step_enabled, device::door_step) |
+	       on(Occupied.Doors.lock_enabled, device::door_lock) | on(Occupied.Doors.is_locked, device::doors_locked) |
+	       on(Occupied.Hamulec != nullptr && Occupied.Hamulec->Releaser(), device::brake_releaser) | on(Controlling.FuelPump.is_active, device::fuel_pump) |
+	       on(Controlling.OilPump.is_active, device::oil_pump) |
+	       on(Controlling.MotorBlowers[end::front].is_active || Controlling.MotorBlowers[end::rear].is_active, device::motor_blowers) |
+	       on(Controlling.dizel_heat.engine_is_hot, device::engine_hot) | on(Controlling.SpeedCtrl && Controlling.SpeedCtrlUnit.IsActive, device::speed_control);
+}
+
+std::uint8_t engine_of(TMoverParameters const &Mover) {
+	switch (Mover.EngineType) {
+	case TEngineType::ElectricSeriesMotor:
+		return blackbox::engines::electric;
+	case TEngineType::ElectricInductionMotor:
+		return blackbox::engines::electric_induction;
+	case TEngineType::DieselEngine:
+		return blackbox::engines::diesel;
+	case TEngineType::DieselElectric:
+		return blackbox::engines::diesel_electric;
+	case TEngineType::SteamEngine:
+		return blackbox::engines::steam;
+	default:
+		return blackbox::engines::none;
+	}
 }
 
 // the lights at an end of the train: of its head or of its tail, at the end of that vehicle turned away from the rest
@@ -424,6 +450,31 @@ void blackbox_recorder::write_cab() {
 	                                            (security.is_beeping() ? flag::vigilance_beeping : 0) | (security.is_cabsignal_beeping() ? flag::cabsignal_beeping : 0) |
 	                                            (security.is_braking() ? flag::braking : 0));
 	sample.cab = static_cast<std::int8_t>(occupied->CabOccupied);
+	// what drives the train, the setting of the brakes, the radio, the engine's oil and temperatures
+	sample.engine = engine_of(*controlling);
+	sample.brake_delay = static_cast<std::uint8_t>(occupied->BrakeDelayFlag);
+	// the const one: no driver, no radio
+	sample.radio_channel = static_cast<std::uint8_t>(std::clamp(std::as_const(*train).RadioChannel(), 0, 255));
+	sample.equalizing_reservoir = occupied->Handle != nullptr ? static_cast<float>(occupied->Handle->GetCP()) : 0.0f;
+	sample.feed_pipe = static_cast<float>(occupied->ScndPipePress);
+	sample.oil_pressure = controlling->OilPump.pressure;
+	sample.water_temperature = controlling->dizel_heat.Twy;
+	sample.oil_temperature = controlling->dizel_heat.To;
+	sample.engine_temperature = controlling->dizel_heat.Ts;
+	sample.speed_control_kmh = controlling->SpeedCtrl ? static_cast<float>(controlling->SpeedCtrlUnit.DesiredVelocity) : 0.0f;
+	sample.engine_power = static_cast<float>(controlling->EnginePower);
+	sample.hand_brake = static_cast<std::int8_t>(std::clamp(occupied->ManualBrakePos, -128, 127));
+	sample.brake_mode = static_cast<std::uint8_t>(occupied->BrakeOpModeFlag);
+	sample.horn = static_cast<std::uint8_t>(occupied->WarningSignal);
+	sample.integrated_controller = static_cast<float>(controlling->eimic);
+	sample.clutch = static_cast<float>(controlling->dizel_engagestate);
+	sample.converter_fill = static_cast<float>(controlling->hydro_TC_Fill);
+	// the brakes of the whole train: the highest of its cylinders, from the head to the tail
+	auto brakes{occupied->BrakePress};
+	for (auto const *each{owner != nullptr ? owner->Vehicle(end::front) : nullptr}; each != nullptr; each = each->Next())
+		if (each->MoverParameters != nullptr)
+			brakes = std::max(brakes, each->MoverParameters->BrakePress);
+	sample.consist_brake_cylinder = static_cast<float>(brakes);
 	m_writer->cab(sample);
 }
 

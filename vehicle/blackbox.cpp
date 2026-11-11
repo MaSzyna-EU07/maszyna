@@ -187,6 +187,24 @@ void writer::cab(cab_sample const &Sample) {
 	out.u16(static_cast<std::uint16_t>(Sample.light_hint_tail));
 	out.u16(Sample.equipped_head);
 	out.u16(Sample.equipped_tail);
+	out.u8(Sample.engine);
+	out.u8(Sample.brake_delay);
+	out.u8(Sample.radio_channel);
+	out.f32(Sample.equalizing_reservoir);
+	out.f32(Sample.feed_pipe);
+	out.f32(Sample.oil_pressure);
+	out.f32(Sample.water_temperature);
+	out.f32(Sample.oil_temperature);
+	out.f32(Sample.engine_temperature);
+	out.f32(Sample.speed_control_kmh);
+	out.f32(Sample.engine_power);
+	out.i8(Sample.hand_brake);
+	out.u8(Sample.brake_mode);
+	out.u8(Sample.horn);
+	out.f32(Sample.integrated_controller);
+	out.f32(Sample.clutch);
+	out.f32(Sample.converter_fill);
+	out.f32(Sample.consist_brake_cylinder);
 	emit(record::cab);
 }
 

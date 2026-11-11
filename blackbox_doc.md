@@ -162,7 +162,7 @@ record.
 
 ### 0x20 cab
 
-The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 136 bytes.
+The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 190 bytes.
 
 | type    | field                                                                  |
 |---------|------------------------------------------------------------------------|
@@ -203,6 +203,24 @@ The vehicle the user is in, every 0.1 s, also while the user looks around outsid
 | `i16`   | the same at the tail                                                   |
 | `u16`   | the lamps the vehicle at the head has at its outer end, bits as the lights |
 | `u16`   | the same of the vehicle at the tail                                    |
+| `u8`    | what drives the vehicle whose motors the cab drives, below             |
+| `u8`    | the setting of the brakes: 1 G, 2 P, 4 R, 8 Mg, as bits                 |
+| `u8`    | the radio channel, 0 none                                              |
+| `f32`   | equalizing reservoir of the driver's brake valve [bar]                 |
+| `f32`   | main reservoir pipe along the train [bar]                              |
+| `f32`   | oil pressure of the diesel engine [MPa]                                |
+| `f32`   | cooling water temperature of the diesel engine [°C]                    |
+| `f32`   | its oil temperature [°C]                                               |
+| `f32`   | its temperature [°C]                                                   |
+| `f32`   | the speed the cruise control is set to [km/h], 0 none                  |
+| `f32`   | power of the engine [kW]                                               |
+| `i8`    | hand brake position, 0 released                                        |
+| `u8`    | the mode of the brakes: 1 PS, 2 PN, 4 EP, 8 MED, as bits                |
+| `u8`    | the horn's tones sounding: 1 low, 2 high, 4 a third, 0 silent          |
+| `f32`   | the integrated driving and braking handle of a unit, -1 full braking .. 1 full power |
+| `f32`   | the clutch of a diesel's gearbox, 0 open .. 1 closed                   |
+| `f32`   | the filling of a diesel's hydraulic torque converter, 0..1             |
+| `f32`   | the highest brake cylinder pressure of the vehicles of the train [bar] |
 
 The lights the train is to show follow from the movement and the two patterns after it: in a train run the head the pattern asked for,
 the usual one Pc 1 (both headlights and the upper one; Pc 2 is the left red marker with the right and the
@@ -211,7 +229,13 @@ Tb 1, one headlight at each end. A pattern is checked against the lamps the vehi
 checks it: one without the upper headlight shows Pc 1 with the two others, one with auxiliary lamps may
 show them instead of the headlights, and one with no lamps at all the rear-end signals; the tail shows
 Pc 5 with the red markers or the rear-end signals it has. A recording made before the movement ends at
-the acceleration across, and one made before the lamps at the light pattern of the tail.
+the acceleration across, one made before the lamps at the light pattern of the tail, and one made before
+the engine at the lamps of the tail. The temperatures and the oil pressure mean something for a diesel
+engine only.
+
+What drives the vehicle: 0 nothing of its own (a draisine, a car), 1 electric series motors, 2 electric
+induction motors, 3 a diesel engine with a mechanical or a hydraulic transmission, 4 a diesel-electric one,
+5 steam.
 
 The flags:
 
@@ -247,6 +271,21 @@ whose motors the cab drives (the motor car of a unit).
 | 0x2000 | train heating                        |
 | 0x4000 | spring brake applied                 |
 | 0x8000 | shunting mode                        |
+| 0x0001'0000 | departure signal sounding       |
+| 0x0002'0000 | left doors permitted to open    |
+| 0x0004'0000 | right doors permitted to open   |
+| 0x0008'0000 | the steps come out with the doors |
+| 0x0010'0000 | the door lock is switched on: the doors lock above a speed |
+| 0x0020'0000 | the doors are locked            |
+| 0x0040'0000 | the brake releaser works        |
+| 0x0080'0000 | fuel pump                       |
+| 0x0100'0000 | oil pump                        |
+| 0x0200'0000 | the fans of the traction motors |
+| 0x0400'0000 | the diesel engine is too hot    |
+| 0x0800'0000 | the cruise control holds a speed |
+
+The doors, their permits and steps, the departure signal and the releaser are of the vehicle the user is
+in; the pumps, the fans, the engine's heat and the cruise control of the one whose motors the cab drives.
 
 The lights: 0x001 left headlight, 0x002 left red marker, 0x004 upper headlight, 0x010 right
 headlight, 0x020 right red marker, 0x040 rear-end signals, 0x080 left and 0x100 right auxiliary

@@ -109,6 +109,24 @@ blackbox::cab_sample sample() {
 	s.light_hint_tail = 0x22;
 	s.equipped_head = 0x1B5;
 	s.equipped_tail = 0x22;
+	s.engine = blackbox::engines::diesel_electric;
+	s.brake_delay = 2;
+	s.radio_channel = 3;
+	s.equalizing_reservoir = 4.75f;
+	s.feed_pipe = 8.5f;
+	s.oil_pressure = 0.5f;
+	s.water_temperature = 78.5f;
+	s.oil_temperature = 70.25f;
+	s.engine_temperature = 81.0f;
+	s.speed_control_kmh = 90.0f;
+	s.engine_power = 1250.5f;
+	s.hand_brake = 5;
+	s.brake_mode = 4;
+	s.horn = 2;
+	s.integrated_controller = -0.5f;
+	s.clutch = 0.75f;
+	s.converter_fill = 0.25f;
+	s.consist_brake_cylinder = 3.5f;
 	return s;
 }
 
@@ -246,6 +264,27 @@ TEST_CASE("blackbox: a sample of the user's train has the documented size and or
 	// the lamps there are at the head and the tail
 	CHECK(cab.get<std::uint16_t>() == 0x1B5);
 	CHECK(cab.get<std::uint16_t>() == 0x22);
+	// the engine, the brakes' setting, the radio, the pressures, the oil and the temperatures, the cruise control, the power
+	CHECK(cab.get<std::uint8_t>() == blackbox::engines::diesel_electric);
+	CHECK(cab.get<std::uint8_t>() == 2);
+	CHECK(cab.get<std::uint8_t>() == 3);
+	CHECK(cab.get<float>() == 4.75f);
+	CHECK(cab.get<float>() == 8.5f);
+	CHECK(cab.get<float>() == 0.5f);
+	CHECK(cab.get<float>() == 78.5f);
+	CHECK(cab.get<float>() == 70.25f);
+	CHECK(cab.get<float>() == 81.0f);
+	CHECK(cab.get<float>() == 90.0f);
+	CHECK(cab.get<float>() == 1250.5f);
+	// the hand brake, the mode of the brakes, the horn, the integrated controller, the clutch, the torque converter
+	CHECK(cab.get<std::int8_t>() == 5);
+	CHECK(cab.get<std::uint8_t>() == 4);
+	CHECK(cab.get<std::uint8_t>() == 2);
+	CHECK(cab.get<float>() == -0.5f);
+	CHECK(cab.get<float>() == 0.75f);
+	CHECK(cab.get<float>() == 0.25f);
+	// the highest brake cylinder pressure of the train
+	CHECK(cab.get<float>() == 3.5f);
 	CHECK(cab.done());
 }
 
