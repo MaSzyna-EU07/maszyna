@@ -248,7 +248,12 @@ void main()
 	water_frame_s frame = snow_frame(texel);
 	float area = length(cross(frame.tu, frame.tv)) / float(WATER_MAP * WATER_MAP); // m2
 	vec3 coming = water_air.xyz - water_up.xyz * water_air.w; // the snow against the cab, m/s
-	float facing = max(-dot(coming, frame.normal), 0.0) + SNOW_EDDIES;
+	// the snow coming at the glass along its normal. the side of the glass the snow comes from isn't told: the outward side of
+	// the frames of the map (from the middle of the box around the cab model) and the air against the cab (from the matrix of
+	// the vehicle and its velocity) don't agree for every cab, and with them disagreeing a front glass at speed got the snow of
+	// the eddies only, plastered no faster than a standing one. the glass the driver looks through leads, so the snow comes at
+	// it from the outside
+	float facing = abs(dot(coming, frame.normal)) + SNOW_EDDIES;
 	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
 	float wet = state.y / (state.y + state.x * density + 1e-4);
 	// the dry flakes bounce off a moving glass (powder is blown away), the wet ones (near zero) and those landing on wet snow or
