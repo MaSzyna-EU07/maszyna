@@ -7914,6 +7914,7 @@ void editor_mode::render_change_history(){
         {
             auto remove_count = (int)m_history.size() - m_max_history_size;
             m_history.erase(m_history.begin(), m_history.begin() + remove_count);
+            ++m_history_changes;
             // adjust selected index
             if (m_selected_history_idx >= (int)m_history.size())
                 m_selected_history_idx = (int)m_history.size() - 1;
