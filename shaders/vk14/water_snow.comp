@@ -49,7 +49,7 @@ const float SNOW_WIPE_WET = 0.015;
 // the water the snow melts into at the glass a second for each degree the glass is above zero, mm
 const float SNOW_MELT = 0.003;
 // how much warmer than the air the glass is, the share of the warmth given (water_snow.y, the cab heats it)
-const float SNOW_WARMTH = 1.5;
+const float SNOW_WARMTH = 1.0;
 // the share of a flake landing near zero already water (wet snow)
 const float SNOW_WET_FLAKES = 0.5;
 // the water freezing a second on a glass below zero, mm
@@ -60,7 +60,7 @@ const float SNOW_FILM_DRY = 0.15;
 // how fast slush slides down a vertical glass, how fast dry powder goes with the air (a share of the speed of the air along the
 // glass), how fast the film of water runs down a vertical glass and goes with the air, m/s
 const float SNOW_SLIDE = 0.03;
-const float SNOW_BLOW = 0.004;
+const float SNOW_BLOW = 0.001;
 const float SNOW_RUN = 0.02;
 const float SNOW_RUN_AIR = 0.002;
 
@@ -140,7 +140,7 @@ vec4 snow_motion(ivec2 texel, vec4 state)
 	float wet = state.y / (state.y + state.x * density + 1e-4);
 	// slush: wet and heavy enough to go; dry powder: loose and thin enough to be blown
 	float slide = SNOW_SLIDE * smoothstep(0.25, 0.7, wet) * smoothstep(2.0, 8.0, state.x);
-	float blow = SNOW_BLOW * smoothstep(10.0, 25.0, wind) * (1.0 - state.z) * (1.0 - smoothstep(0.1, 0.3, wet)) * (1.0 - smoothstep(1.0, 4.0, state.x));
+	float blow = SNOW_BLOW * smoothstep(10.0, 25.0, wind) * (1.0 - state.z) * (1.0 - smoothstep(0.1, 0.3, wet)) * (1.0 - smoothstep(0.2, 0.6, state.x));
 	vec3 snow = slope * slide + air * blow;
 	// the film of water runs where there's enough of it, not the water soaked into the snow
 	float film = (1.0 - smoothstep(0.5, 3.0, state.x));
@@ -227,7 +227,7 @@ void main()
 
 	// how warm the glass is: warmer than the air (the cab heats it), the less so the faster the vehicle goes
 	float speed = water_snow.z;
-	float glass = water_up.w + water_snow.y * SNOW_WARMTH / (1.0 + speed / 25.0);
+	float glass = water_up.w + water_snow.y * SNOW_WARMTH / (1.0 + speed / 10.0);
 
 	// the blades: they take the snow where they went over; a wet trace only on a glass above zero (on a frozen one the blade
 	// leaves it dry, so the snow landing on the wiped glass is the same dry snow as around)
