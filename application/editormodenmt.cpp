@@ -1085,7 +1085,7 @@ void editor_mode::nmt_area_terrain()
 			WriteLog(std::string{"Editor: NMT - the terrain of the download area "} + (*Reason != '\0' ? std::string{"held: "} + Reason : std::string{"goes on"}), logtype::generic);
 		}
 	};
-	if (false == EditorSettings.terrain_model().area)
+	if (false == area.run_only.value_or(EditorSettings.terrain_model().area))
 		return held("turned off");
 	if (m_orthophoto.area().empty())
 		return held("no area");

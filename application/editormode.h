@@ -934,6 +934,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double took{0.0};      // s the chunks of the square around the camera took, all and the longest
 		double took_most{0.0};
 		std::set<heightmap::chunk_key> empty;
+		std::optional<bool> run_only; // the selftest turned it on or off for its run, the setting left as it is
 	} m_area_terrain;
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
 	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
