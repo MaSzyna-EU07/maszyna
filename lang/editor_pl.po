@@ -3195,12 +3195,6 @@ msgstr "Kamera w X %.1f  Y %.1f"
 msgid "Distance (tiles)"
 msgstr "Zasięg (kafle)"
 
-msgid "Fit to terrain"
-msgstr "Dopasuj do terenu"
-
-msgid "Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\nPlaces without any ground use the height below."
-msgstr "Kładzie zdjęcia na geometrii gruntu (kształty terenu, modele kafli terenu, teren edytora).\nMiejsca bez gruntu dostają wysokość podaną niżej."
-
 msgid "Refit"
 msgstr "Dopasuj ponownie"
 
@@ -3210,17 +3204,38 @@ msgstr "Dopasowuje zdjęcia od nowa, po zmianach terenu"
 msgid "Lift above ground (m)"
 msgstr "Uniesienie nad grunt (m)"
 
-msgid "Raises the fitted imagery above the ground. Keep it below the objects you want to see:\nin the scene everything lower than this ends up under the imagery."
-msgstr "Unosi dopasowane zdjęcia nad grunt. Trzymaj je poniżej obiektów, które chcesz widzieć:\nw scenie wszystko, co jest niżej, znajdzie się pod zdjęciami."
-
 msgid "Height (m)"
 msgstr "Wysokość (m)"
 
-msgid "Covered by objects and terrain"
-msgstr "Chowaj za obiektami i terenem"
+msgid "Show the photos"
+msgstr "Pokaż zdjęcia"
 
-msgid "Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\nIt is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\ntranslucent, it doesn't catch the mouse.\nNot available with the Better Renderer, which doesn't pick up geometry added in the editor."
-msgstr "Rysuje zdjęcia jako część sceny, więc tory, modele i teren przed nimi je zasłaniają.\nJest oświetlone jak scena. W pełni kryjące łapie mysz przy wstawianiu jak każda powierzchnia;\nprzezroczyste nie łapie myszy.\nNiedostępne z Better Renderer, który nie widzi geometrii dodanej w edytorze."
+msgid "Over the view"
+msgstr "Na wierzchu widoku"
+
+msgid "On the terrain, in the scene"
+msgstr "Na terenie, w scenie"
+
+msgid "A flat sheet in the scene"
+msgstr "Płaska plansza w scenie"
+
+msgid "The photos lie on the terrain as its surface: tracks and models standing on them cover them, the scene lights them, and fully opaque the mouse places objects on them as on the ground."
+msgstr "Zdjęcia leżą na terenie jak jego powierzchnia: tory i modele, które na nich stoją, zasłaniają je, scena je oświetla, a przy pełnym kryciu mysz stawia na nich obiekty jak na gruncie."
+
+msgid "One flat sheet at the height below, in the scene: for a scenery with no terrain yet. Where there is terrain, it cuts through the sheet."
+msgstr "Jedna płaska plansza na wysokości podanej niżej, w scenie: dla scenerii, która nie ma jeszcze terenu. Tam, gdzie teren jest, przecina planszę."
+
+msgid "Raises the photos above the ground.\nWhatever is lower than this, the rails and the sleepers too, ends up under them: keep it small."
+msgstr "Unosi zdjęcia nad grunt.\nWszystko, co jest niżej, także szyny i podkłady, znajdzie się pod nimi: trzymaj je małe."
+
+msgid "The Better Renderer doesn't show them in the scene: pick \"Over the view\""
+msgstr "Better Renderer nie pokazuje ich w scenie: wybierz „Na wierzchu widoku”"
+
+msgid "The photos are drawn over the whole view, over the tracks and models as well: lower the opacity to see what's under them. The quickest way to compare the scenery with the map."
+msgstr "Zdjęcia są rysowane na całym widoku, także na torach i modelach: zmniejsz krycie, żeby widzieć, co pod nimi. Najszybszy sposób, by porównać scenerię z mapą."
+
+msgid "Height where there's no ground (m)"
+msgstr "Wysokość tam, gdzie nie ma gruntu (m)"
 
 msgid "Opacity"
 msgstr "Krycie"
@@ -12266,6 +12281,18 @@ msgstr "Wstrzymaj"
 
 msgid "Terrain model: %d of %d squares in the cache, %d failed"
 msgstr "Model terenu: %d z %d kwadratów w pamięci podręcznej, nieudanych %d"
+
+msgid "The terrain of the scenery around the camera"
+msgstr "Teren scenerii wokół kamery"
+
+msgid "Makes the terrain from the terrain model within the area, around the camera wherever it goes,\na chunk at a time while the editor is idle. The terrain there is already isn't touched.\nThe chunks made wait in memory until the scenery is saved (Ctrl+S)."
+msgstr "Robi teren z NMT w obszarze, wokół kamery, gdziekolwiek pojedzie,\npo jednym kaflu, kiedy edytor nic nie robi. Teren, który już jest, zostaje nietknięty.\nZrobione kafle czekają w pamięci na zapis scenerii (Ctrl+S)."
+
+msgid "%zu chunk made"
+msgid_plural "%zu chunks made"
+msgstr[0] "%zu kafel zrobiony"
+msgstr[1] "%zu kafle zrobione"
+msgstr[2] "%zu kafli zrobionych"
 
 msgid "Tab while laying: an arc, then a straight"
 msgstr "Tab przy kładzeniu: łuk, potem prosta"
