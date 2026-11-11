@@ -2688,6 +2688,8 @@ class TMoverParameters
 	void FuelPumpCheck(double const Timestep);
 	void OilPumpCheck(double const Timestep);
 	void MotorBlowersCheck(double const Timestep);
+	// whether the circuit a traction motor blower runs off has power: the battery, the converter or the main circuit, by its start type
+	bool MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const;
 	void PantographsCheck(double const Timestep);
 	void LightsCheck(double const Timestep);
 	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary

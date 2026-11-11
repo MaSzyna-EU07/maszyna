@@ -2403,9 +2403,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		}
 		blower.is_active =
 		    // TODO: bind properly power source when ld is in place
-		    (blower.start_type == start_t::battery   ? Power24vIsAvailable :
-		     blower.start_type == start_t::converter ? Power110vIsAvailable :
-		                                               Mains) // power source
+		    MotorBlowerPowerIsAvailable(blower) // power source
 		    // breaker condition disabled until it's implemented in the class data
 		    //         && ( true == blower.breaker )
 		    && false == disable &&
@@ -2432,6 +2430,19 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		{
 			fan.revolutions *= static_cast<float>(std::max(0.0, 1.0 - Timestep));
 		}
+	}
+}
+
+bool TMoverParameters::MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const
+{
+	switch (Blower.start_type)
+	{
+	case start_t::battery:
+		return Power24vIsAvailable;
+	case start_t::converter:
+		return Power110vIsAvailable;
+	default:
+		return Mains;
 	}
 }
 
@@ -7503,7 +7514,16 @@ bool TMoverParameters::LineContactorsInterlockReleased() const
 		// the converter of this very vehicle, not the 110 V of the trainset: a section with its fans off doesn't start
 		return ConverterFlag;
 	case line_contactors_interlock::motor_blowers:
-		return std::ranges::all_of(MotorBlowers, [](auto const &Blower) { return Blower.is_active; });
+		return std::ranges::all_of(MotorBlowers, [this](auto const &Blower) {
+			if (Blower.min_start_velocity < 0)
+			{
+				return Blower.is_active;
+			}
+			// a blower which starts with the speed and the motor current (MotorBlowersStartVelocity) can't run before
+			// the contactors close, nor after a stop longer than it keeps running for: it's enough that it's
+			// switched on and has power, so it starts once the vehicle moves
+			return MotorBlowerPowerIsAvailable(Blower) && false == Blower.is_disabled && (Blower.start_type == start_t::manual ? Blower.is_enabled : true);
+		});
 	default:
 		return true;
 	}
