@@ -11,12 +11,19 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIncludeInfo.hpp"
 
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/translation.h"
+#include "editor/editorFormat.hpp"
 
 #include <yaml-cpp/yaml.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <random>
+#include <set>
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
@@ -67,36 +74,13 @@ bool is_utf8(std::string const &Text, bool &HasExtended)
 	return true;
 }
 
-// counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
-std::string utf8_to_win1250(std::string const &Text)
+// reads template File from the file at specified location. runs in the background as well, so it leaves the messages to
+// the callers
+bool read_file(std::filesystem::path const &Path, std::string const &File, template_text &Text)
 {
-	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
-	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
-	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
-	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
-	std::string output;
-	for (std::size_t idx = 0; idx < Text.size();)
-	{
-		auto const lead{static_cast<unsigned char>(Text[idx])};
-		if (lead < 0x80)
-		{
-			output += Text[idx++];
-			continue;
-		}
-		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
-		auto const lookup{charmap.find(Text.substr(idx, length))};
-		output += (lookup != charmap.end() ? lookup->second : '?');
-		idx += length;
-	}
-	return output;
-}
-
-bool read_template(std::string const &File, template_text &Text, std::string &Error)
-{
-	std::ifstream input{Global.asCurrentSceneryPath + File, std::ios_base::binary};
+	std::ifstream input{Path, std::ios_base::binary};
 	if (false == input.is_open())
 	{
-		Error = "can't open file \"" + File + "\"";
 		return false;
 	}
 	auto &content{Text.content};
@@ -129,9 +113,27 @@ bool read_template(std::string const &File, template_text &Text, std::string &Er
 		}
 		linebegin = next;
 	}
+	// a template without a description of its own may have one beside the game data, in editor/templates, where the
+	// scripts of tools/editor write it with --sidecar: a check of the game files doesn't take it away
+	if (Text.yaml.empty())
+	{
+		std::ifstream beside{"editor/templates/" + File, std::ios_base::binary};
+		if (beside.is_open())
+			Text.yaml.assign(std::istreambuf_iterator<char>(beside), std::istreambuf_iterator<char>());
+	}
 	if (false == is_utf8(Text.yaml, extended))
 	{
 		Text.yaml = win1250_to_utf8(Text.yaml);
+	}
+	return true;
+}
+
+bool read_template(std::string const &File, template_text &Text, std::string &Error)
+{
+	if (false == read_file(Global.asCurrentSceneryPath + File, File, Text))
+	{
+		Error = format(STR_C("can't open file \"%s\""), File.c_str());
+		return false;
 	}
 	return true;
 }
@@ -226,6 +228,88 @@ std::vector<std::string> tokenize(std::string const &Text)
 	return tokens;
 }
 
+// a name with its event, in the order written: a value that isn't one is left out
+void read_pairs(YAML::Node const &Map, std::vector<std::pair<std::string, std::string>> &Pairs)
+{
+	if (false == Map.IsDefined() || false == Map.IsMap())
+		return;
+	for (auto const &entry : Map)
+	{
+		auto const name{entry.first.as<std::string>("")};
+		auto const called{entry.second.IsScalar() ? entry.second.as<std::string>("") : std::string{}};
+		if (false == name.empty() && false == called.empty())
+			Pairs.emplace_back(name, called);
+	}
+}
+
+// the drive of a switch, as its description gives it
+void read_switch(YAML::Node const &Drive, include_info &Info)
+{
+	if (false == Drive.IsDefined() || false == Drive.IsMap())
+		return;
+	Info.switch_hand = Drive["hand"].as<std::string>("");
+	Info.switch_drive = Drive["drive"].as<std::string>("");
+	Info.switch_default = Drive["default"].as<bool>(false);
+	Info.switch_height = Drive["height"].as<double>(0.0);
+}
+
+// what a signal is, with the events of its aspects and of the speeds it repeats
+void read_signal(YAML::Node const &Signal, include_info &Info)
+{
+	if (false == Signal.IsDefined() || false == Signal.IsMap())
+		return;
+	Info.signal_kind = Signal["kind"].as<std::string>("");
+	Info.signal_mount = Signal["mount"].as<std::string>("");
+	Info.signal_lamps = Signal["lamps"].as<std::string>("");
+	Info.signal_lean = Signal["lean"].as<std::string>("");
+	Info.signal_read = Signal["read"].as<std::string>("");
+	Info.signal_arms = Signal["arms"].as<int>(0);
+	Info.signal_height = Signal["height"].as<double>(0.0);
+	if (Signal["depth"].IsDefined())
+		Info.signal_depth = Signal["depth"].as<double>(0.0);
+	read_pairs(Signal["aspects"], Info.signal_aspects);
+	read_pairs(Signal["repeats"], Info.signal_repeats);
+}
+
+// an indicator of a signal, with the events it is shown by
+void read_indicator(YAML::Node const &Indicator, include_info &Info)
+{
+	if (false == Indicator.IsDefined() || false == Indicator.IsMap())
+		return;
+	Info.indicator_sign = Indicator["sign"].as<std::string>("");
+	Info.indicator_place = Indicator["place"].as<std::string>("");
+	read_pairs(Indicator["events"], Info.indicator_events);
+}
+
+// the size of a turntable and the places it stops at
+void read_turntable(YAML::Node const &Table, include_info &Info)
+{
+	if (false == Table.IsDefined() || false == Table.IsMap())
+		return;
+	Info.turntable_length = Table["length"].as<double>(0.0);
+	Info.turntable_angles = Table["angles"].as<int>(0);
+	Info.turntable_positions = Table["positions"].as<int>(0);
+}
+
+// the parameters by their numbers, an entry with no number left out
+void read_parameters(YAML::Node const &Parameters, include_info &Info)
+{
+	if (false == Parameters.IsDefined() || false == Parameters.IsSequence())
+		return;
+	for (auto const &entry : Parameters)
+	{
+		auto const id{entry.IsMap() ? entry["id"].as<int>(0) : 0};
+		if (id <= 0)
+		{
+			continue;
+		}
+		auto &parameter{Info.parameter(id)};
+		parameter.role = entry["role"].as<std::string>("free");
+		parameter.label = entry["label"].as<std::string>("");
+		parameter.value = entry["default"].as<std::string>("");
+	}
+}
+
 // reads description held by specified template text
 bool parse(template_text const &Text, include_info &Info, std::string &Error)
 {
@@ -240,50 +324,21 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		}
 		if (false == document.IsMap())
 		{
-			Error = "the description isn't a list of named values";
+			Error = STR_C("the description isn't a list of named values");
 			return false;
 		}
 		Info.name = document["name"].as<std::string>("");
 		Info.category = document["category"].as<std::string>("");
 		Info.description = document["description"].as<std::string>("");
-		if (auto const drive{document["switch"]}; drive.IsDefined() && drive.IsMap())
-		{
-			Info.switch_hand = drive["hand"].as<std::string>("");
-			Info.switch_drive = drive["drive"].as<std::string>("");
-		}
-		if (auto const signal{document["signal"]}; signal.IsDefined() && signal.IsMap())
-		{
-			Info.signal_kind = signal["kind"].as<std::string>("");
-			Info.signal_mount = signal["mount"].as<std::string>("");
-			Info.signal_lamps = signal["lamps"].as<std::string>("");
-			Info.signal_lean = signal["lean"].as<std::string>("");
-			Info.signal_read = signal["read"].as<std::string>("");
-		}
-		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
-		{
-			Info.turntable_length = table["length"].as<double>(0.0);
-			Info.turntable_angles = table["angles"].as<int>(0);
-			Info.turntable_positions = table["positions"].as<int>(0);
-		}
-		if (auto const parameters{document["params"]}; parameters.IsDefined() && parameters.IsSequence())
-		{
-			for (auto const &entry : parameters)
-			{
-				auto const id{entry.IsMap() ? entry["id"].as<int>(0) : 0};
-				if (id <= 0)
-				{
-					continue;
-				}
-				auto &parameter{Info.parameter(id)};
-				parameter.role = entry["role"].as<std::string>("free");
-				parameter.label = entry["label"].as<std::string>("");
-				parameter.value = entry["default"].as<std::string>("");
-			}
-		}
+		read_switch(document["switch"], Info);
+		read_signal(document["signal"], Info);
+		read_indicator(document["indicator"], Info);
+		read_turntable(document["turntable"], Info);
+		read_parameters(document["params"], Info);
 	}
 	catch (YAML::Exception const &exception)
 	{
-		Error = std::string{"the description is malformed: "} + exception.what();
+		Error = format(STR_C("the description is malformed: %s"), exception.what());
 		return false;
 	}
 	return true;
@@ -323,7 +378,7 @@ include_parameter &include_info::parameter(int const Id)
 namespace editor_includes
 {
 
-std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text"};
+std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text", "link"};
 
 bool load(std::string const &File, include_info &Info, std::string &Error)
 {
@@ -345,7 +400,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 		auto document{YAML::Load(text.yaml)};
 		if (false == document.IsNull() && false == document.IsMap())
 		{
-			Error = "the existing description isn't a list of named values";
+			Error = STR_C("the existing description isn't a list of named values");
 			return false;
 		}
 		if (false == document["version"].IsDefined())
@@ -417,7 +472,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	}
 	catch (YAML::Exception const &exception)
 	{
-		Error = std::string{"the existing description is malformed, fix or remove it first: "} + exception.what();
+		Error = format(STR_C("the existing description is malformed, fix or remove it first: %s"), exception.what());
 		return false;
 	}
 	if (false == text.utf8)
@@ -448,7 +503,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	if (output.fail())
 	{
 		std::filesystem::remove(filepath + ".tmp", error);
-		Error = "can't write file \"" + File + "\"";
+		Error = format(STR_C("can't write file \"%s\""), File.c_str());
 		return false;
 	}
 	// the first save of a file leaves its original content next to it
@@ -459,7 +514,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	std::filesystem::rename(filepath + ".tmp", filepath, error);
 	if (error)
 	{
-		Error = "can't replace file \"" + File + "\": " + error.message();
+		Error = format(STR_C("can't replace file \"%s\": %s"), File.c_str(), error.message().c_str());
 		std::filesystem::remove(filepath + ".tmp", error);
 		return false;
 	}
@@ -471,6 +526,81 @@ int parameter_count(std::string const &File)
 	template_text text;
 	std::string error;
 	return read_template(File, text, error) ? count_parameters(text) : 0;
+}
+
+bool event_names(std::string const &File, std::vector<std::string> &Names)
+{
+	Names.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && std::find(Names.begin(), Names.end(), tokens[idx + 1]) == Names.end())
+		{
+			Names.push_back(tokens[idx + 1]);
+		}
+	}
+	return true;
+}
+
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
+{
+	Speeds.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	auto const speed = [](std::string const &Token, int &Speed) {
+		char *end{nullptr};
+		auto const value{std::strtod(Token.c_str(), &end)};
+		if (end == Token.c_str() || *end != '\0')
+		{
+			return false;
+		}
+		Speed = static_cast<int>(std::lround(value));
+		return true;
+	};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] != "setvelocity")
+		{
+			continue;
+		}
+		int own{0};
+		if (speed(tokens[idx + 1], own) && own != 0 && std::find(Speeds.begin(), Speeds.end(), own) == Speeds.end())
+		{
+			Speeds.push_back(own);
+		}
+	}
+	std::sort(Speeds.begin(), Speeds.end());
+	return true;
+}
+
+int block_aspects(std::string const &File)
+{
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return 0;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && tokens[idx + 1].size() > 3 && tokens[idx + 1].ends_with("_s3"))
+		{
+			return 4;
+		}
+	}
+	return 3;
 }
 
 void suggest(std::string const &File, include_info &Info)
@@ -545,14 +675,14 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 	std::string issue;
 	if (Info.name.empty())
 	{
-		issue = "the template needs a name";
+		issue = STR_C("the template needs a name");
 	}
 	for (auto id = 1; id <= Parameters && issue.empty(); ++id)
 	{
 		auto const lookup{std::find_if(std::begin(Info.parameters), std::end(Info.parameters), [=](include_parameter const &Parameter) { return Parameter.id == id; })};
 		if (lookup == std::end(Info.parameters) || (false == automatic(lookup->role) && lookup->value.empty()))
 		{
-			issue = "(p" + std::to_string(id) + ") needs a default value, or a role filled in by the editor (name, pos.*, rot.*)";
+			issue = format(STR_C("(p%d) needs a default value, or a role filled in by the editor (name, pos.*, rot.*)"), id);
 		}
 	}
 	if (false == issue.empty() && Issue != nullptr)
@@ -560,6 +690,12 @@ bool complete(include_info const &Info, int const Parameters, std::string *Issue
 		*Issue = issue;
 	}
 	return issue.empty();
+}
+
+std::string normalized(std::string File)
+{
+	std::replace(File.begin(), File.end(), '\\', '/');
+	return ToLower(File);
 }
 
 std::string number(double const Value)
@@ -740,20 +876,22 @@ editorIncludeBank EditorIncludes;
 namespace
 {
 
-include_entry examine(std::string const &File)
+// Text: the template read before, null if its file couldn't be opened
+include_entry examine(std::string const &File, template_text const *Text)
 {
 	include_entry entry;
 	entry.file = File;
 	entry.statement = std::make_shared<std::string>(editor_includes::directive_mark + File);
-	template_text text;
-	if (false == read_template(File, text, entry.issue))
+	if (Text == nullptr)
 	{
+		entry.issue = format(STR_C("can't open file \"%s\""), File.c_str());
 		return entry;
 	}
-	entry.described = false == text.lines.empty();
+	auto const &text{*Text};
+	entry.described = false == text.yaml.empty();
 	if (false == entry.described)
 	{
-		entry.issue = "the template has no description";
+		entry.issue = STR_C("the template has no description");
 		return entry;
 	}
 	include_info info;
@@ -767,24 +905,43 @@ include_entry examine(std::string const &File)
 	return entry;
 }
 
-} // namespace
-
-void editorIncludeBank::scan()
+include_entry examine(std::string const &File)
 {
-	// the node bank may hold one of the templates selected, the statements stay in place across the scans
-	std::unordered_map<std::string, std::shared_ptr<std::string>> statements;
-	for (auto &entry : m_entries)
-	{
-		statements.emplace(entry.file, entry.statement);
-	}
-	m_entries.clear();
-	m_scanned = true;
+	template_text text;
+	std::string error;
+	auto const read{read_template(File, text, error)};
+	return examine(File, read ? &text : nullptr);
+}
+
+// template file found in the background, for examine() to read its description on the main thread
+struct found_template
+{
+	std::string file;
+	bool read{false};
+	template_text text;
+};
+
+// reads every template in the scenery directory, until told to stop
+std::vector<found_template> find_templates(std::filesystem::path const &Root, std::atomic<bool> const &Stop)
+{
+	std::vector<found_template> found;
 	std::error_code error;
-	auto const root{std::filesystem::path(Global.asCurrentSceneryPath)};
-	// NOTE: on an error the iterator turns into the end one
-	for (std::filesystem::recursive_directory_iterator file{root, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
+	// a folder linked into one of its own subfolders would lead the walk in circles
+	std::set<std::filesystem::path> folders{std::filesystem::canonical(Root, error)};
+	// NOTE: on an error the iterator turns into the end one. Folders linked into the scenery folder are a part of it
+	auto const options{std::filesystem::directory_options::skip_permission_denied | std::filesystem::directory_options::follow_directory_symlink};
+	for (std::filesystem::recursive_directory_iterator file{Root, options, error}, end; file != end && false == Stop; file.increment(error))
 	{
-		if (false == file->is_regular_file(error))
+		std::error_code status;
+		if (file->is_directory(status))
+		{
+			if (auto const folder{std::filesystem::canonical(file->path(), status)}; false == static_cast<bool>(status) && false == folders.emplace(folder).second)
+			{
+				file.disable_recursion_pending();
+			}
+			continue;
+		}
+		if (false == file->is_regular_file(status))
 		{
 			continue;
 		}
@@ -792,7 +949,7 @@ void editorIncludeBank::scan()
 		std::string name;
 		try
 		{
-			name = ToLower(file->path().lexically_relative(root).generic_string());
+			name = ToLower(file->path().lexically_relative(Root).generic_string());
 		}
 		catch (std::exception const &)
 		{
@@ -803,14 +960,94 @@ void editorIncludeBank::scan()
 		{
 			continue;
 		}
-		m_entries.emplace_back(examine(name));
-		if (auto const lookup{statements.find(name)}; lookup != statements.end())
+		auto &entry{found.emplace_back()};
+		entry.file = name;
+		entry.read = read_file(file->path(), name, entry.text);
+		if (entry.text.yaml.empty())
+		{
+			// the rest of the file matters only to the described templates
+			entry.text = template_text{};
+		}
+	}
+	return found;
+}
+
+} // namespace
+
+struct editorIncludeBank::search
+{
+	std::atomic<bool> stop{false};
+	std::future<std::vector<found_template>> result;
+	std::chrono::steady_clock::time_point started{std::chrono::steady_clock::now()};
+
+	~search()
+	{
+		// the result waits for the search to end before it goes
+		stop = true;
+	}
+};
+
+editorIncludeBank::~editorIncludeBank() = default;
+
+void editorIncludeBank::start()
+{
+	if (m_scanned || m_search != nullptr)
+	{
+		return;
+	}
+	rescan();
+}
+
+void editorIncludeBank::rescan()
+{
+	if (m_search != nullptr)
+	{
+		return;
+	}
+	m_search = std::make_shared<search>();
+	m_search->result = std::async(std::launch::async, find_templates, std::filesystem::path(Global.asCurrentSceneryPath), std::cref(m_search->stop));
+}
+
+bool editorIncludeBank::poll()
+{
+	if (m_search == nullptr || m_search->result.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+	{
+		return false;
+	}
+	auto found{m_search->result.get()};
+	auto const seconds{std::chrono::duration<double>(std::chrono::steady_clock::now() - m_search->started).count()};
+	m_search.reset();
+	// the node bank may hold one of the templates selected, the statements stay in place across the scans
+	std::unordered_map<std::string, std::shared_ptr<std::string>> statements;
+	for (auto &entry : m_entries)
+	{
+		statements.emplace(entry.file, entry.statement);
+	}
+	m_entries.clear();
+	m_scanned = true;
+	for (auto const &file : found)
+	{
+		m_entries.emplace_back(examine(file.file, file.read ? &file.text : nullptr));
+		if (auto const lookup{statements.find(file.file)}; lookup != statements.end())
 		{
 			m_entries.back().statement = lookup->second;
 		}
 	}
 	std::sort(std::begin(m_entries), std::end(m_entries), [](include_entry const &Left, include_entry const &Right) { return Left.file < Right.file; });
 	index();
+	WriteLog(format("Editor: %zu templates found in the scenery directory in %.1f s, %zu of them described for the editor", m_entries.size(), seconds,
+	                static_cast<std::size_t>(std::count_if(std::begin(m_entries), std::end(m_entries), [](include_entry const &Entry) { return Entry.described; }))));
+	return true;
+}
+
+void editorIncludeBank::wait()
+{
+	start();
+	if (m_search != nullptr)
+	{
+		m_search->result.wait();
+		poll();
+	}
 }
 
 void editorIncludeBank::index()

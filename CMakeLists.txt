@@ -72,12 +72,14 @@ option(WITH_OPENGL_LEGACY "Compile with OpenGL legacy renderer" ON)
 option(WITH_PYTHON "Python 3.14 embedded scripting" ON)
 option(WITH_UART "Compile with libserialport" ON)
 option(WITH_LUA "Compile with lua scripting support" ON)
+option(WITH_WASM "WebAssembly script screens (wasmscreen:, wasmdestinationsign:), run by the WAMR interpreter in ref/wamr" ON)
 option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
+option(WITH_EDITOR_SELFTESTS "Run the scripts of the editor and launcher self-tests named by the EU07_EDITOR_SELFTEST and EU07_LAUNCHER_SELFTEST variables" OFF)
 option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
@@ -96,6 +98,20 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
+"world/TrackSleepers.cpp"
+"world/SleeperPaths.cpp"
+"world/SleeperFeatures.cpp"
+"world/SleeperLines.cpp"
+"world/SleeperLayout.cpp"
+"world/SleeperModels.cpp"
+"world/SleeperWorker.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailCarve.cpp"
+"world/RailLayer.cpp"
 "world/TrackUneven.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
@@ -151,6 +167,7 @@ set(SOURCES
 "scene/scene.cpp"
 "scene/scenenode.cpp"
 "simulation/simulation.cpp"
+"simulation/blackboxrecorder.cpp"
 "model/vertex.cpp"
 "audio/audio.cpp"
 "audio/audiorenderer.cpp"
@@ -169,28 +186,66 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
+"editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
+"editor/editorTrackTrace.cpp"
+"editor/editorFouling.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorTrackShape.cpp"
+"editor/editorGroundFollow.cpp"
+"editor/editorAlignmentStore.cpp"
+"editor/editorSwitchStore.cpp"
+"editor/editorSwitchCurve.cpp"
+"editor/editorKilometrage.cpp"
+"editor/editorStation.cpp"
+"editor/editorSwitchDesign.cpp"
+"editor/editorConnections.cpp"
+"application/editormodeconnection.cpp"
+"application/editormodeconnectioncurve.cpp"
+"application/editormodedigitize.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorHttp.cpp"
+"editor/editorNmt.cpp"
+"editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
+"application/editormoderoute.cpp"
+"application/editormodestraights.cpp"
+"application/editormodelay.cpp"
+"application/editormodeswitchplace.cpp"
+"application/editormodetrackgizmo.cpp"
+"application/editormoderecords.cpp"
+"application/editormodeswitchdrive.cpp"
+"application/editormodeswitchtool.cpp"
+"application/editormodeswitchtemplate.cpp"
+"application/editormodenmt.cpp"
+"application/editormodegradeline.cpp"
+"application/editormodeswitchslide.cpp"
+"application/editormodeswitchdesign.cpp"
+"application/editormodetrackbed.cpp"
 "application/editormodetrackux.cpp"
+"application/editormodetrackprops.cpp"
 "application/editormoderoad.cpp"
 "application/editormodeprofile.cpp"
 "application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
+"application/editormoderide.cpp"
+"application/editormodeminimap.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
+"application/editormodesrk.cpp"
+"application/editormodekm.cpp"
 "application/editormodejoints.cpp"
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
@@ -201,6 +256,17 @@ set(SOURCES
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
+"application/editormodeselftestscene.cpp"
+"application/editormodeselftestsleepers.cpp"
+"application/editormodeselftestsweep.cpp"
+"application/editormodeselftesttrack.cpp"
+"application/editormodeselftestswitch.cpp"
+"application/editormodeselftestjoin.cpp"
+"application/editormodeselftestsignal.cpp"
+"application/editormodeselftestterrain.cpp"
+"application/editormodeselftestrails.cpp"
+"application/editormodeselftestmonkey.cpp"
+"application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
@@ -320,6 +386,16 @@ if (WITH_LUA)
 	set(SOURCES ${SOURCES} "scripting/lua.cpp")
 endif()
 
+# the script screens (scripting/scriptscreens.cpp), with the Lua and the WebAssembly runtime when they're built
+set(SOURCES ${SOURCES} "scripting/scriptscreens.cpp")
+if (WITH_LUA)
+	set(SOURCES ${SOURCES} "scripting/luaprogram.cpp")
+endif()
+if (WITH_WASM)
+	set(DEFINITIONS ${DEFINITIONS} "WITH_WASM")
+	set(SOURCES ${SOURCES} "scripting/wasmprogram.cpp")
+endif()
+
 if (WITHDUMPGEN)
 	set(DEFINITIONS ${DEFINITIONS} "WITHDUMPGEN")
 endif()
@@ -332,6 +408,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl33precipitation.cpp"
             "rendering/opengl33particles.cpp"
             "rendering/opengl33terrain.cpp"
+            "rendering/opengl33screenpost.cpp"
             "rendering/opengl33renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
 endif()
@@ -458,16 +535,23 @@ set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
+"McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
+"scripting/scriptscreenrules.cpp"
+"scripting/scriptscreenkernels.cpp"
+"scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
+"vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
+"vehicle/brakesetting.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
+"vehicle/odometer.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
@@ -610,6 +694,12 @@ else()
 	target_compile_definitions(eu07_settings INTERFACE WITH_DISCORD_RPC=0)
 endif()
 
+if(WITH_EDITOR_SELFTESTS)
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=1)
+else()
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=0)
+endif()
+
 find_package(OpenAL REQUIRED)
 if (TARGET OpenAL::OpenAL)
 	target_link_libraries(eu07_settings INTERFACE OpenAL::OpenAL)
@@ -640,7 +730,8 @@ if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE ws2_32)
 endif()
 
-# http client of the editor's geoportal orthophoto layer: WinHTTP on Windows, libcurl elsewhere when available
+# http client of the editor, for the orthophoto, the terrain model and the topo map of geoportal.gov.pl: WinHTTP on Windows,
+# libcurl elsewhere when available
 if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE winhttp)
 else()
@@ -649,7 +740,7 @@ else()
 		target_link_libraries(eu07_settings INTERFACE CURL::libcurl)
 		target_compile_definitions(eu07_settings INTERFACE EU07_WITH_CURL)
 	else()
-		message(STATUS "libcurl not found: the editor's orthophoto layer will only show cached tiles")
+		message(STATUS "libcurl not found: the editor's orthophoto and terrain model will only show what's cached, its topo map nothing")
 	endif()
 endif()
 
@@ -666,15 +757,71 @@ if (WIN32)
 	)
 endif ()
 
-if(WIN32 AND WITH_PYTHON)
-	add_custom_command(
-		TARGET ${PROJECT_NAME} POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_LIBDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/Lib"
-		COMMAND ${CMAKE_COMMAND} -E copy_directory "${EU07_PY_DLLSDIR}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/python64/DLLs"
-	)
+# Linux: the game loads its shared libraries from its own folder first ($ORIGIN), and the build copies them there,
+# so the folder runs on a system that doesn't have them, or has other versions. the RPATH is a DT_RPATH rather
+# than a DT_RUNPATH, because only that one is also used for the libraries the copied ones load (libsndfile's codecs)
+if (UNIX AND NOT APPLE)
+	option(BUNDLE_RUNTIME_LIBS "Linux: copy the shared libraries the game needs next to it and load them from there" ON)
 endif()
+if (UNIX AND NOT APPLE AND BUNDLE_RUNTIME_LIBS)
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		BUILD_WITH_INSTALL_RPATH TRUE
+		INSTALL_RPATH "$ORIGIN")
+	target_link_options(${PROJECT_NAME} PRIVATE "LINKER:--disable-new-dtags")
+
+	# the RPATH no longer leads to libraries outside the system folders (Python from setup-python, an OpenAL Soft
+	# in /usr/local), so their folders are given to the script as well
+	set(EU07_BUNDLE_SEARCH_DIRS "")
+	foreach(library IN LISTS Python3_LIBRARIES OPENAL_LIBRARY LUAJIT_LIBRARIES libserialport_LIBRARY)
+		if (IS_ABSOLUTE "${library}")
+			get_filename_component(library_dir "${library}" DIRECTORY)
+			list(APPEND EU07_BUNDLE_SEARCH_DIRS "${library_dir}")
+		endif()
+	endforeach()
+	list(APPEND EU07_BUNDLE_SEARCH_DIRS ${Python3_LIBRARY_DIRS})
+	list(REMOVE_DUPLICATES EU07_BUNDLE_SEARCH_DIRS)
+	string(REPLACE ";" "|" EU07_BUNDLE_SEARCH_DIRS "${EU07_BUNDLE_SEARCH_DIRS}")
+
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND}
+			-DGAME=$<TARGET_FILE:${PROJECT_NAME}>
+			-DSEARCH_DIRS=${EU07_BUNDLE_SEARCH_DIRS}
+			-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/CMake_modules/bundle_runtime_libs.cmake"
+		COMMENT "Copying the shared libraries next to the game"
+		VERBATIM)
+endif()
+
+if(WIN32 AND WITH_PYTHON)
+	# the Python runtime next to the game, copied when it isn't there yet or the Python install changed, rather
+	# than after every link of the game: the library alone is thousands of files. the folder is the game's
+	# RUNTIME_OUTPUT_DIRECTORY, spelled out: $<TARGET_FILE_DIR:eu07> here would make this target depend on the game
+	get_property(EU07_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+	if (EU07_MULTI_CONFIG)
+		set(EU07_PY_TARGET_DIR "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+	else()
+		set(EU07_PY_TARGET_DIR "${CMAKE_BINARY_DIR}/bin")
+	endif()
+	set(EU07_PY_STAMP "${EU07_PY_TARGET_DIR}/python64/python_runtime.stamp")
+	add_custom_command(
+		OUTPUT "${EU07_PY_STAMP}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_DLL}" "${EU07_PY_TARGET_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${EU07_PY_ZLIB}" "${EU07_PY_TARGET_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${EU07_PY_LIBDIR}" "${EU07_PY_TARGET_DIR}/python64/Lib"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${EU07_PY_DLLSDIR}" "${EU07_PY_TARGET_DIR}/python64/DLLs"
+		COMMAND ${CMAKE_COMMAND} -E touch "${EU07_PY_STAMP}"
+		DEPENDS "${EU07_PY_DLL}" "${EU07_PY_ZLIB}"
+		COMMENT "Copying the Python runtime next to the game"
+		VERBATIM)
+	add_custom_target(eu07_python_runtime DEPENDS "${EU07_PY_STAMP}")
+	set_target_properties(eu07_python_runtime PROPERTIES FOLDER "libraries")
+	add_dependencies(${PROJECT_NAME} eu07_python_runtime)
+endif()
+
+if (WITH_WASM)
+	add_subdirectory("CMake_modules/wamr" "${CMAKE_CURRENT_BINARY_DIR}/wamr")
+	target_link_libraries(${PROJECT_NAME} eu07_wamr)
+endif ()
 
 if (WITH_BETTER_RENDERER)
     add_subdirectory("betterRenderer")

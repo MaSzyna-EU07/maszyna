@@ -108,6 +108,8 @@ public:
         Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    bool
+        Mouse_Hit() const override { return m_mousehit; }
     glm::mat4
         Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.camera.modelview() ) ); }
     glm::mat4
@@ -242,6 +244,9 @@ private:
         Render_text( TSubModel *Submodel );
     void
         Render( TTrack *Track );
+    // the cut faces of the rails of a track and the treads on them
+    void
+        Render_cuts( TTrack const *Track );
     void
         Render( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
     bool
@@ -377,6 +382,7 @@ private:
     std::vector<scene::basic_node *> m_picksceneryitems;
     scene::basic_node *m_picksceneryitem { nullptr };
     glm::vec3 m_worldmousecoordinates { 0.f };
+    bool m_mousehit { false }; // the depth under the cursor was of something drawn, not of the far plane
     std::vector<std::function<void( TSubModel const *, const glm::vec2 )>> m_control_pick_requests;
     std::vector<std::function<void( scene::basic_node * )>> m_node_pick_requests;
 #ifdef EU07_USE_DEBUG_CAMERA

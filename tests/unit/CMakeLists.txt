@@ -21,19 +21,46 @@ add_executable(${UNIT_TESTS_NAME}
 	invariants.cpp
 	figures.cpp
 	engine_stubs.cpp
+	editor_stubs.cpp
+	# the geometry of the lines the track editor designs, standing on its own
+	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
+	# and the heights of the tracks laid
+	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
+	# and the switches laid into the curves
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	# and the fouling points of the switches, widened in the curves as the gauge is
+	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
 target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
+# the script screen host, tested with the real runtimes (test_script_screen_host.cpp)
+target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/scriptscreens.cpp")
+if (WITH_LUA)
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/luaprogram.cpp" "${CMAKE_SOURCE_DIR}/stb/stb_image.c")
+endif()
+if (WITH_WASM)
+	target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/wasmprogram.cpp")
+	target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_wamr)
+endif()
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
 # the names the tests CAPTURE are often C strings, shown as text rather than pointers
 target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data" DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING)
+# the folders of the tests that write files (the scripts of test_script_screen_host.cpp) are made in the build folder,
+# and removed by the test that made them
+target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}")
 if (MSVC)
 	target_compile_options(${UNIT_TESTS_NAME} PRIVATE /bigobj)
 endif()
 set_target_properties(${UNIT_TESTS_NAME} PROPERTIES FOLDER "tests")
 
 add_test(NAME ${UNIT_TESTS_NAME} COMMAND ${UNIT_TESTS_NAME})
+if (WIN32)
+	# the libraries of the game (lua51.dll) are next to the game, see run_tests.cmake
+	set_tests_properties(${UNIT_TESTS_NAME} PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:eu07>")
+endif()
 
 # for running the tests at the end of building the game, see the main CMakeLists.txt
 set(UNIT_TEST_DATA ${UNIT_TEST_DATA} PARENT_SCOPE)

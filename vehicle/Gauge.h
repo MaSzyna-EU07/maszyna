@@ -59,6 +59,16 @@ public:
     // copies of the control animated along with it, from its definitions marked duplicate: yes
     std::vector<TGauge> const &mirrors() const {
         return m_mirrors; }
+    // the value shown is value * scale + offset. the copies of the control (mirrors()) show the same value, so they
+    // get the same offset
+    float offset() const {
+        return m_offset; }
+    void offset( float const Offset ) {
+        m_offset = Offset;
+        for( auto &mirror : m_mirrors ) {
+            mirror.m_offset = Offset; } }
+    float scale() const {
+        return m_scale; }
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
     TGaugeType type() const;

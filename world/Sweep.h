@@ -145,7 +145,7 @@ class sweep_node : public scene::basic_node
 
   private:
 	void rebuild_samples();
-	float radius_() override;
+	float radius_() const override;
 	void serialize_(std::ostream &Output) const override;
 	void deserialize_(std::istream &Input) override;
 	void export_as_text_(std::ostream &Output) const override;

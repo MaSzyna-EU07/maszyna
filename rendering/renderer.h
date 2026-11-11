@@ -21,6 +21,11 @@ namespace gl
 class program;
 }
 
+namespace script_screens
+{
+class post_processor;
+}
+
 namespace gfx
 {
 // material painted over the heightmap terrain, and the size (metres) its textures are repeated at; 0: the size given by the material, or 8 m
@@ -71,6 +76,8 @@ public:
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
 	// kind of geometry of specified chunk, -1 when the renderer doesn't tell
 	virtual auto Primitive( gfx::geometry_handle const &Geometry ) const -> int { return -1; }
+	// whether the 3D sleepers and switch timbers are drawn; where they aren't, the tracks keep their ballast as without them
+	virtual auto Draws_Timbers() const -> bool { return false; }
     // material methods
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
@@ -106,7 +113,9 @@ public:
     }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
-    virtual auto Mouse_Hit() const -> bool { return true; }
+    // whether the cursor was over something drawn when Mouse_Position() was read; a renderer which doesn't read it says no,
+    // so a caller never takes a stale or empty position for a hit
+    virtual auto Mouse_Hit() const -> bool { return false; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
@@ -130,6 +139,9 @@ public:
     // seen in perspective from the front, side and above and filling the image less Margin pixels at each edge.
     // Image receives rgb rows, top row first. returns false if the backend can't make previews or there's nothing to draw
     virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
+    // runs the post-processing of the script screens (image:led_post, image:resize) on the gpu. nullptr when the backend
+    // can't; the screens then do it on the cpu
+    virtual auto Screen_post_processor() -> script_screens::post_processor * { return nullptr; }
 };
 
 class gfx_renderer_factory

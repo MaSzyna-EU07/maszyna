@@ -17,6 +17,7 @@ bool launcher_mode::init()
 
 bool launcher_mode::update()
 {
+	m_script.step();
 	return true;
 }
 

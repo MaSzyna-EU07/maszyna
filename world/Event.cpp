@@ -733,6 +733,10 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         m_input.command_type = TCommandType::cm_SectionVelocity;
         m_passive = true;
     }
+    else if( token == "PointVelocity" ) {
+        m_input.command_type = TCommandType::cm_PointVelocity;
+        m_passive = true;
+    }
     else if( token == "ShuntVelocity" ) {
         m_input.command_type = TCommandType::cm_ShuntVelocity;
         m_passive = true;
@@ -743,6 +747,11 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     }
     else if( token == "CabSignal" ) {
         m_input.command_type = TCommandType::cm_SecuritySystemMagnet;
+        m_passive = true;
+    }
+    else if( token == "SignalAreaEnd" ) {
+        // scanned, so the train sees where the interlocking area of the signal it passed ends
+        m_input.command_type = TCommandType::cm_SignalAreaEnd;
         m_passive = true;
     }
     else {
@@ -1282,6 +1291,17 @@ std::vector<basic_event *> multi_event::children() const {
     return result;
 }
 
+std::vector<std::pair<basic_event *, bool>> multi_event::branches() const {
+    std::vector<std::pair<basic_event *, bool>> result;
+    for (auto const &childevent : m_children) {
+        if (std::get<basic_event *>(childevent) != nullptr) {
+            // the flag is set for the ones before "else"
+            result.emplace_back(std::get<basic_event *>(childevent), false == std::get<bool>(childevent));
+        }
+    }
+    return result;
+}
+
 std::vector<scene::basic_node *> basic_event::target_nodes() const {
     std::vector<scene::basic_node *> result;
     for (auto const &target : m_targets) {
@@ -1773,6 +1793,16 @@ animation_event::run_() {
 		}
 		return false;
 	});
+}
+
+void
+animation_event::finish() const {
+
+    for (auto const &container : m_animationcontainers) {
+        if (auto const target = container.lock()) {
+            target->Finish();
+        }
+    }
 }
 
 // export_as_text() subclass details
