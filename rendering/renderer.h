@@ -21,6 +21,11 @@ namespace gl
 class program;
 }
 
+namespace script_screens
+{
+class post_processor;
+}
+
 namespace gfx
 {
 // material painted over the heightmap terrain, and the size (metres) its textures are repeated at; 0: the size given by the material, or 8 m
@@ -132,6 +137,9 @@ public:
     // seen in perspective from the front, side and above and filling the image less Margin pixels at each edge.
     // Image receives rgb rows, top row first. returns false if the backend can't make previews or there's nothing to draw
     virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
+    // runs the post-processing of the script screens (image:led_post, image:resize) on the gpu. nullptr when the backend
+    // can't; the screens then do it on the cpu
+    virtual auto Screen_post_processor() -> script_screens::post_processor * { return nullptr; }
 };
 
 class gfx_renderer_factory

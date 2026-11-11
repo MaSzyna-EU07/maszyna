@@ -18,10 +18,15 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/lightsprogrammer.h"
 
 #include "simulation/simulation.h"
+#include "simulation/blackboxrecorder.h"
 #include "rendering/lightarray.h"
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
+
+#include <algorithm>
+#include <iterator>
+#include <unordered_set>
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
@@ -35,6 +40,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
+#include "application/application.h"
 #include "vehicle/Driver.h"
 
 // Ra: taki zapis funkcjonuje lepiej, ale może nie jest optymalny
@@ -303,6 +309,20 @@ material_data::assign( std::string const &Replacableskin ) {
     }
 }
 
+
+namespace {
+
+// a luadestinationsign: or wasmdestinationsign: block, its script in the vehicle folder when it has no path of its own
+void deserialize_script_sign( cParser &Parser, script_screens::screen_config &Sign, std::string const &Folder ) {
+
+    Sign.deserialize( Parser );
+    if( false == Sign.script.empty()
+     && substr_path( Sign.script ).empty() ) {
+        Sign.script = Folder + Sign.script;
+    }
+}
+
+} // namespace
 
 void TDynamicObject::destination_data::deserialize( cParser &Input ) {
 
@@ -3146,6 +3166,20 @@ void TDynamicObject::update_destinations() {
 	                                                                                        && ctOwner != nullptr)) ? // lcd signs are off for carriages without engine, potentially left on a siding
 	                                         DestinationSign.destination :
 	                                         DestinationSign.destination_off;
+
+    update_script_destination();
+}
+
+void TDynamicObject::update_script_destination() {
+
+    if( DestinationSign.script_sign == nullptr ) { return; }
+    // only while the sign shows the destination it draws
+    if( m_materialdata.replacable_skins[ 4 ] != DestinationSign.destination ) { return; }
+
+    auto &queue { Application.screens() };
+    if( false == queue.due( *DestinationSign.script_sign ) ) { return; }
+    // read anew on every refresh, so the sign follows the timetable
+    queue.submit( DestinationSign.script_sign, std::make_shared<dictionary_source>( DestinationSign.script_request ), 0 );
 }
 
 bool TDynamicObject::Update(double dt, double dt1)
@@ -7087,6 +7121,12 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                         DestinationSign.script = asBaseDir + DestinationSign.script;
                     }
                 }
+                else if( token == "luadestinationsign:" ) {
+                    deserialize_script_sign( parser, DestinationSign.lua, asBaseDir );
+                }
+                else if( token == "wasmdestinationsign:" ) {
+                    deserialize_script_sign( parser, DestinationSign.wasm, asBaseDir );
+                }
                 // NOTE: legacy key, now expected as optional "background:" parameter in pydestinationsign: { parameter block }
                 else if( token == "destinationsignbackground:" ) {
                     parser.getTokens();
@@ -7106,7 +7146,12 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 
     if( ReplacableSkin != "none" ) {
         // potentially set blank destination texture
-        DestinationSign.destination_off = DestinationFind( DestinationSign.background.empty() ? "nowhere" : DestinationSign.background );
+        auto language { script_language::lua };
+        auto const *scriptsign { script_destination( language ) };
+        auto const &background { ( scriptsign != nullptr && false == scriptsign->background.empty() ) ? scriptsign->background : DestinationSign.background };
+        DestinationSign.destination_off = DestinationFind( background.empty() ? "nowhere" : background );
+        // a blank sign a script draws, drawn once
+        DestinationSign.background_sign = draw_script_texture( background, DestinationSign.destination_off );
     }
 
     // assign default samples to sound emitters which weren't included in the config file
@@ -7927,6 +7972,7 @@ void TDynamicObject::DestinationClear() {
     if( false == DestinationSign.has_light ) { return; } // physical destination signs remain up until manually changed
     // update_destinations() shows the blank sign in place of the missing destination
     DestinationSign.destination = null_handle;
+    DestinationSign.script_sign.reset();
 }
 
 void TDynamicObject::DestinationSet(std::string const &to, std::string const &numer) {
@@ -7940,6 +7986,8 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
 
     if( std::abs( m_materialdata.multi_textures ) >= 4 ) { return; } // jak są 4 tekstury wymienne, to nie zmieniać rozkładem
     if( DestinationSign.sign == nullptr )                { return; } // no sign submodel, no problem
+    // a sign drawn for the previous destination
+    DestinationSign.script_sign.reset();
 
     // now see if we can find any version of the destination texture
     std::vector<std::string> const destinations = {
@@ -7955,21 +8003,27 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
         }
     }
     // if we didn't get static texture we might be able to make one
+    if( true == destination_set_script( numer ) ) { return; }
     if( DestinationSign.script.empty() ) { return; } // no script so no way to make the texture
     if( numer == "none" )                { return; } // blank or incomplete/malformed timetable, don't bother
+
+    DestinationSign.destination = GfxRenderer->Fetch_Material( destination_request( DestinationSign.script, DestinationSign.instancing, DestinationSign.parameters ) );
+}
+
+std::string TDynamicObject::destination_request( std::string const &Script, std::string const &Instancing, std::string const &Parameters ) const {
 
     auto const trainname { [this]() -> std::string {
         if( ctOwner != nullptr ) { return ctOwner->TrainName(); }
         if( Mechanik != nullptr ) { return Mechanik->TrainName(); }
         return "none"; } }; // shouldn't get here but, eh
-    auto const instance { [this]() -> std::string {
-        if( DestinationSign.instancing == "name" ) { return MoverParameters->Name; }
-        if( DestinationSign.instancing == "type" ) { return MoverParameters->TypeName; }
+    auto const instance { [this, &Instancing]() -> std::string {
+        if( Instancing == "name" ) { return MoverParameters->Name; }
+        if( Instancing == "type" ) { return MoverParameters->TypeName; }
         return "none"; } };
 
     std::string signrequest {
           "make:"
-        + DestinationSign.script
+        + Script
         + "?"
         // timetable include
         + "$timetable=" + (
@@ -7980,15 +8034,83 @@ void TDynamicObject::DestinationSet(std::string const &to, std::string const &nu
         // NOTE: underscore doesn't have any magic meaning for the time being, it's just less likely to conflict with regular dictionary keys
         + "&_id1=" + trainname() };
     // TBD, TODO: replace instancing with support for variables in extra parameters string?
-    if( false == DestinationSign.instancing.empty() ) {
+    if( false == Instancing.empty() ) {
         signrequest += "&_id2=" + instance();
     }
     // optionl extra parameters
-    if( false == DestinationSign.parameters.empty() ) {
-        signrequest += "&" + DestinationSign.parameters;
+    if( false == Parameters.empty() ) {
+        signrequest += "&" + Parameters;
     }
+    return signrequest;
+}
 
-    DestinationSign.destination = GfxRenderer->Fetch_Material( signrequest );
+script_screens::screen_config const *TDynamicObject::script_destination( script_language &Language ) const {
+
+    auto const &screens { Application.screens() };
+    if( false == DestinationSign.lua.script.empty() && screens.runs( script_language::lua ) ) {
+        Language = script_language::lua;
+        return &DestinationSign.lua;
+    }
+    if( false == DestinationSign.wasm.script.empty() && screens.runs( script_language::wasm ) ) {
+        Language = script_language::wasm;
+        return &DestinationSign.wasm;
+    }
+    return nullptr; // no script sign, maybe a python one
+}
+
+bool TDynamicObject::destination_set_script( std::string const &Numer ) {
+
+    if( Numer == "none" ) { return false; } // blank or incomplete/malformed timetable, don't bother
+    auto language { script_language::lua };
+    auto const *scriptsign { script_destination( language ) };
+    if( scriptsign == nullptr ) { return false; }
+
+    auto const signrequest { destination_request( scriptsign->script, scriptsign->instancing, scriptsign->parameters ) };
+    auto const signmaterial { GfxRenderer->Fetch_Material( signrequest ) };
+    if( signmaterial == null_handle ) { return false; }
+    auto &signtexture { GfxRenderer->Texture( GfxRenderer->Material( signmaterial )->GetTexture( 0 ) ) };
+
+    // vehicles showing the same request (one train, one instance) share the screen, as they share the texture
+    auto sign { Application.screens().acquire( {
+        .kind = script_screen_kind::external,
+        .language = language,
+        .script = scriptsign->script,
+        .key = signrequest,
+        .texture = &signtexture,
+        .frames = scriptsign->frames } ) };
+    if( sign == nullptr ) { return false; }
+
+    DestinationSign.destination = signmaterial;
+    DestinationSign.script_sign = std::move( sign );
+    DestinationSign.script_request = signrequest.substr( signrequest.find( '?' ) + 1 );
+    return true;
+}
+
+std::shared_ptr<script_screen> TDynamicObject::draw_script_texture( std::string const &Name, material_handle const Material ) {
+
+    if( false == Name.starts_with( "make:" ) || Material == null_handle ) { return nullptr; }
+    auto const query { Name.find( '?' ) };
+    auto const script { Name.substr( 5, query == std::string::npos ? std::string::npos : query - 5 ) };
+    auto const language { script_language_of( script ) };
+    if( false == language.has_value() ) { return nullptr; } // a python texture, made by the texture itself
+
+    auto &queue { Application.screens() };
+    auto &texture { GfxRenderer->Texture( GfxRenderer->Material( Material )->GetTexture( 0 ) ) };
+    auto screen { queue.acquire( {
+        .kind = script_screen_kind::external,
+        .language = *language,
+        .script = script,
+        .key = Name,
+        .texture = &texture,
+        .frames = 0 } ) };
+    if( screen == nullptr ) { return nullptr; }
+    queue.submit(
+        screen,
+        query == std::string::npos ?
+            std::make_shared<dictionary_source>() :
+            std::make_shared<dictionary_source>( Name.substr( query + 1 ) ),
+        0 );
+    return screen;
 }
 
 material_handle TDynamicObject::DestinationFind( std::string Destination ) {
@@ -8766,6 +8888,112 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
 }
 
 
+namespace {
+
+// a train on the same track this close to the end of the player's train is taken into the physical coupler model [m]
+constexpr double coupler_physics_reach { 200.0 };
+// and let go of once none of its vehicles is this close to the player's train [m]; farther than the reach, so that
+// the trains don't switch to and fro between the models
+constexpr double coupler_physics_release { 500.0 };
+
+// the vehicle and those coupled with it, one after the other
+std::vector<TDynamicObject *>
+coupled_train( TDynamicObject *Vehicle ) {
+
+    std::vector<TDynamicObject *> train { Vehicle };
+    for( int direction = end::front; direction <= end::rear; ++direction ) {
+        auto *vehicle { Vehicle };
+        auto side { direction };
+        // a train of more vehicles than are on the tracks would be one coupled into a ring
+        while( train.size() < 10000 ) {
+            auto const &mover { *vehicle->MoverParameters };
+            auto *next { mover.Neighbours[ side ].vehicle };
+            if( next == nullptr
+             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) == 0
+             || std::ranges::find( train, next ) != train.end() ) {
+                break;
+            }
+            train.emplace_back( next );
+            // onwards from the end of the next vehicle away from this one
+            side = 1 - mover.Neighbours[ side ].vehicle_end;
+            vehicle = next;
+        }
+    }
+    return train;
+}
+
+// the trains on the same track the player's train is closing in on: those found at its free ends, near enough
+std::vector<TDynamicObject *>
+trains_closing_in( std::vector<TDynamicObject *> const &Train ) {
+
+    std::vector<TDynamicObject *> trains;
+    for( auto *vehicle : Train ) {
+        for( int side = end::front; side <= end::rear; ++side ) {
+            auto const &mover { *vehicle->MoverParameters };
+            auto const &neighbour { mover.Neighbours[ side ] };
+            if( neighbour.vehicle == nullptr
+             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) != 0
+             || neighbour.distance > coupler_physics_reach
+             || std::ranges::find( Train, neighbour.vehicle ) != Train.end() ) {
+                continue;
+            }
+            std::ranges::copy( coupled_train( neighbour.vehicle ), std::back_inserter( trains ) );
+        }
+    }
+    return trains;
+}
+
+// whether any vehicle of the train is within the distance of any vehicle of the other one
+bool
+trains_within( std::vector<TDynamicObject *> const &Train, std::vector<TDynamicObject *> const &Other, double const Distance ) {
+
+    return std::ranges::any_of( Train, [&]( TDynamicObject const *Vehicle ) {
+        return std::ranges::any_of( Other, [&]( TDynamicObject const *Othervehicle ) {
+            return glm::distance( Vehicle->GetPosition(), Othervehicle->GetPosition() ) <= Distance; } ); } );
+}
+
+} // namespace
+
+// the physical coupler model covers the player's train and the trains it closes in on, on the same track; the others
+// keep the legacy model, as the AI drives them in it
+void
+vehicle_table::update_coupler_physics() const {
+
+    if( false == Global.coupler_physics
+     || true == Global.coupler_physics_all ) {
+        return;
+    }
+    auto *player { simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr };
+    std::vector<TDynamicObject *> train;
+    if( player != nullptr ) {
+        train = coupled_train( player );
+    }
+    std::unordered_set<TDynamicObject *> covered { train.begin(), train.end() };
+    for( auto *vehicle : trains_closing_in( train ) ) {
+        covered.insert( vehicle );
+    }
+
+    std::unordered_set<TDynamicObject *> checked;
+    for( auto *vehicle : m_items ) {
+        if( covered.contains( vehicle ) ) {
+            vehicle->MoverParameters->CouplerPhysics = true;
+            continue;
+        }
+        if( false == vehicle->MoverParameters->CouplerPhysics
+         || checked.contains( vehicle ) ) {
+            continue;
+        }
+        // a train taken in before stays in the model until it's far from the player's one, all of it alike
+        auto const other { coupled_train( vehicle ) };
+        checked.insert( other.begin(), other.end() );
+        if( false == trains_within( other, train, coupler_physics_release ) ) {
+            for( auto *othervehicle : other ) {
+                othervehicle->MoverParameters->CouplerPhysics = false;
+            }
+        }
+    }
+}
+
 // legacy method, calculates changes in simulation state over specified time
 void
 vehicle_table::update( double Deltatime, int Iterationcount ) {
@@ -8782,6 +9010,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         vehicle->MoverParameters->ComputeConstans();
         vehicle->update_neighbours();
     }
+    update_coupler_physics();
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
@@ -8965,6 +9194,7 @@ vehicle_table::erase_disabled() {
 			simulation::Trains.purge(vehicle->name());
             // remove potential entries in the light array
             simulation::Lights.remove( vehicle );
+            simulation::Blackbox.vehicle_removed( vehicle );
 /*
             // finally get rid of the vehicle and its record themselves
             // BUG: deleting the vehicle leaves dangling pointers in event->Activator and potentially elsewhere

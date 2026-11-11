@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationsounds.h"
+#include "simulation/blackboxrecorder.h"
 #include "vehicle/Train.h"
 #include "utilities/dictionary.h"
 #include "scene/sceneeditor.h"
@@ -438,6 +439,16 @@ int eu07_application::init(int Argc, char *Argv[])
 	{
 		m_taskqueue.init();
 	}
+	crashreport_add_info("luascreens_enabled", Global.luascreens_enabled ? "yes" : "no");
+	crashreport_add_info("wasm_enabled", Global.wasm_enabled ? "yes" : "no");
+	if (Global.luascreens_enabled || Global.wasm_enabled)
+	{
+		m_screenqueue.init();
+		if (Global.screens_gpupost)
+		{
+			m_screenqueue.set_post_processor(GfxRenderer->Screen_post_processor());
+		}
+	}
 	if ((result = init_modes()) != 0)
 	{
 		ErrorLog("Failed to initialize game modes");
@@ -648,6 +659,7 @@ int eu07_application::run()
 			EditorTerrain.update(Global.pCamera.Pos);
 
 		m_taskqueue.update();
+		m_screenqueue.update();
 		opengl_texture::reset_unit_cache();
 
 		if (!GfxRenderer->Render())
@@ -731,11 +743,15 @@ void eu07_application::exit()
 	step("the sleepers laid in the background");
 	// the sleepers laid in the background read the scenery, which goes below
 	track_sleepers::stop_background();
+	step("the black box");
+	simulation::Blackbox.close();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
 
 	step("the renderer");
+	// the screens' post-processing goes with the renderer
+	m_screenqueue.set_post_processor(nullptr);
 	GfxRenderer->Shutdown();
 	m_network.reset();
 
@@ -748,6 +764,7 @@ void eu07_application::exit()
 
 	// the python workers detach their GL context on the way out, so they have to be done before the windows they use are destroyed
 	m_taskqueue.exit();
+	m_screenqueue.exit();
 	step("the windows");
 	for (auto *window : m_windows)
 	{
