@@ -142,8 +142,8 @@ Python 3.10+, no extra packages. Options:
   watching what a case does.
 
 Exit code is 0 when every case passed. Logs of each run (`log.txt`, `errors.txt`,
-`stdout.txt`, the physicslogs of the vehicle and of other trains of the case) are moved to
-`tests/scenarios/out/<case>/`.
+`stdout.txt`, the physicslogs of the vehicle and of other trains of the case, the black box as
+`autotest_<case>.blackbox`) are moved to `tests/scenarios/out/<case>/`.
 
 ## How it works
 
@@ -157,14 +157,15 @@ For each case the runner:
 2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini
    --test-wall-timeout <timeout>`, plus `--test-timeout <duration>` when the case gives a
    `duration`; the extra ini turns on
-   `physicslog` and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
+   `physicslog` (and with it the black box of the run, `physicslog/autotest_<case>_<date>.blackbox`)
+   and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
    shared `log.txt` (`multiplelogs`),
 3. waits until the simulator quits by itself. It gives up early when the log reports
    `Bad vehicle` / `Bad trainset`, or when the scenario has loaded and no physicslog appeared.
    After the case's `timeout` of wall-clock time the simulator ends itself with the timeout code;
    one that doesn't is killed 30 s later,
 4. compares the result from the exit code with the case's `expect`, then runs the checks on
-   the physicslog.
+   the physicslog, the log and the black box.
 
 The lead vehicle is named `autotest_<case>`, so every case has its own physicslog and log
 files and cases can run in parallel. The `autotest_*` sceneries (and the simulator's `.sbt`
@@ -224,7 +225,10 @@ The `en57_2000_automatic_coupler_*` cases (issue #86) share `td_automatic_couple
 EN57-2000 unit without a driver runs at `vars.velocity` km/h into a standing one, from
 `35.6 - vars.offset` m behind it, with `crashdamage yes` in `ini`. At 50 km/h the automatic
 couplers mustn't catch and the log has to show the collision and the derailment; at 4 km/h they
-couple and neither shows up. Nothing reports a result, so both end on the 60 s test timeout.
+couple and neither shows up: the black box has to have the last car of the standing unit,
+`{{vehicle}}_rb`, and the first of the rolling one, `{{vehicle}}_hit_ra`, coupled (the simulator
+writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
+test timeout.
 
 Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
 the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are
@@ -254,7 +258,16 @@ the row instead, logged by builds from this branch on.
 - `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
   `Bad driving: ... collided` message of a collision.
 - `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.
+- `couples` `vehicle`, `other`: the black box of the run has the two vehicles coupled to each
+  other (the coupler itself, whatever else of the hoses and the cables) at some time after the
+  start, and still coupled at the end. The vehicles go by their node names, with `{{vehicle}}`
+  filled in as in the fragment, e.g. `{{vehicle}}_rb`. Fails when the two were coupled from the
+  start, came apart again, or the run left no black box. The black box is looked at once a
+  second, so the time given is that of the first look after the couplers caught.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
-text of `log.txt` instead of the rows.
+text of `log.txt` instead of the rows. Checks on the black box (`blackbox_doc.md` in the root of
+the repo; the simulator writes it along with the physicslogs) go in `BLACKBOX_CHECKS` and get
+what `read_blackbox()` read of it: the names of the vehicles and the coupling records. A check
+on another kind of record has to add it there.
