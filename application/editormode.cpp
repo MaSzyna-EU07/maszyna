@@ -5170,7 +5170,7 @@ void editor_mode::render_workspaces()
 	};
 	area const areas[] = {
 	    {STR_C("Surroundings"), work_area::surroundings, editor_icons::icon::work_surroundings, STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
-	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, objects along the track, checks of the line")},
+	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, kilometrage and posts along the track, checks of the line")},
 	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
 	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
 	};
@@ -5288,13 +5288,19 @@ void editor_mode::render_help_menu()
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
+		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
 	ImGui::EndMenu();
 }
 
 void editor_mode::first_step_done(first_step const Step)
 {
 	m_first_steps_done[static_cast<std::size_t>(Step)] = true;
+}
+
+void editor_mode::open_kilometrage()
+{
+	choose_work_area(work_area::tracks);
+	show_track_tab(track_tab::kilometrage);
 }
 
 namespace
@@ -5695,7 +5701,7 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 struct editor_mode::tutorial_lesson
 {
 	// what the button under a lesson does: opens the tool the lesson is about, or switches the view
-	enum class trial { reading, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
+	enum class trial { reading, top, lay, turnout, select, profile, terrain, plan, trainset, signals, station };
 	struct input
 	{
 		char const *keys;
@@ -5724,9 +5730,11 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"RMB + W S A D", "Keep holding the right button and press W S A D to fly around; E takes you up, Q down"},
 	      {"O", "Switches between the view from above, like a map, and the normal 3D view"},
 	      {"wheel", "Zooms in and out at the mouse pointer"},
-	      {"MMB + move", "In the view from above: press the wheel down and drag to move the map"},
+	      {"MMB + move", "Press the wheel down and drag to move the view, from above and in 3D"},
+	      {"Y", "Rides the camera along the track under the mouse pointer, as from a train; Y again gets off. The tools keep working on the way"},
+	      {"RMB + W S A D", "While riding: W and S drive, Shift faster; A and D jump to the next track on the left or right; Z picks the way at the next switch"},
 	      {"F", "Flies to what you have selected"}},
-	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Switch to the view from above"}},
+	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Press O: from above to 3D, or back"}, {first_step::ride, "Ride along a track with Y"}},
 	     trial::top},
 	    {"Laying track",
 	     "lay",
@@ -5803,10 +5811,22 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"LMB", "Click beside a track: the signal stands on that side"},
 	      {"LMB + move", "Press beside the track and drag along it: the signal faces the trains going the way you dragged"},
 	      {"LMB + move", "Drag a signal that already stands: it slides along its track"},
-	      {"B", "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains"}},
+	      {"X", "Turns Kilometrage on. Click a track where you know the km, by a post or a station: the posts every 100 m and the block signals are numbered after it"},
+	      {"B", "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains. The posts take their numbers from the km set with X, or from the km you type in their panel for the place you clicked"}},
 	     {{first_step::signal, "Put up a signal"}, {first_step::posts, "Put up the posts along a line"}},
 	     trial::signals,
 	     tutorial_signal_sketch},
+	    {"A whole line, step by step",
+	     nullptr,
+	     {{"1", "Lay the tracks of the line (L), and the switches (T) where the stations are"},
+	      {"2", "Kilometrage (X): click a track where you know the km, by a post or at a station. One point is enough: the posts, the stations and the block signals count from it"},
+	      {"3", "Station (under More): click a switch of the station, then give its name, its code and the number of the line"},
+	      {"4", "Station signals (under More): Set the signals puts up the entry, exit and shunting signals of the whole station at once"},
+	      {"5", "Line block (under More): the block signals on the line out of each station, once the stations are set"},
+	      {"6", "Posts (B): click the line, then Place the posts, every 100 m along all of it"},
+	      {"7", "Save with Ctrl+S, put a train on the track and drive: the last lesson"}},
+	     {},
+	     trial::station},
 	    {"Selecting and fixing",
 	     "edit",
 	     {{"Esc", "Turns selecting on"},
@@ -5900,6 +5920,8 @@ void editor_mode::note_first_steps()
 		first_step_done(first_step::gizmo);
 	if (m_track_gizmo_using || (m_point_drag.moved && m_track_point.valid() && false == editor_track::is_end(m_track_point.kind)))
 		first_step_done(first_step::vector);
+	if (m_ride.active())
+		first_step_done(first_step::ride);
 }
 
 char const *editor_mode::tutorial_of_tool()
@@ -5929,7 +5951,12 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::straights:
 		return undone({"Correcting a curve"});
 	case track_tab::signals:
+	case track_tab::kilometrage:
 		return undone({"Signals and posts"});
+	case track_tab::station:
+	case track_tab::station_signals:
+	case track_tab::line_block:
+		return undone({"A whole line, step by step"});
 	default:
 		return "";
 	}
@@ -6098,6 +6125,9 @@ void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
 	case trial::signals:
 		button = {STR_C("The signals tool (I)"), track_tab::signals, track_tab::signals};
 		break;
+	case trial::station:
+		button = {STR_C("The station tool"), track_tab::station, track_tab::station_signals};
+		break;
 	case trial::plan:
 		button = {STR_C("The plan tool (G)"), track_tab::straights, track_tab::route};
 		break;
@@ -6222,7 +6252,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"I / B", "Signals / objects along the track"},
+	      {"I / X / B", "Signals / kilometrage / posts along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
@@ -6673,9 +6703,10 @@ void editor_mode::toggle_ortho()
     // the view from above isn't one from the track, the ride ends
     m_ride.leave();
     Global.EditorOrtho = !Global.EditorOrtho;
+    // either way: a scenery made in the wizard opens seen from above already
+    first_step_done(first_step::top);
     if (Global.EditorOrtho)
     {
-        first_step_done(first_step::top);
         m_ortho_pitch = Camera.Angle.x;
         Camera.Angle.x = -M_PI_2;
         Camera.Angle.z = 0.0;
@@ -6696,8 +6727,10 @@ void editor_mode::ortho_pan_to(double const Horizontal, double const Vertical)
     auto const dx{Horizontal - m_ortho_pan_cursor.x};
     auto const dy{Vertical - m_ortho_pan_cursor.y};
     m_ortho_pan_cursor = {Horizontal, Vertical};
-    auto const scale{2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y)};
-    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale}, static_cast<double>(Camera.Angle.y))};
+    auto const scale{Global.EditorOrtho ? 2.0 * static_cast<double>(Global.EditorOrthoExtent) / static_cast<double>(io.DisplaySize.y) : m_pan_metres};
+    // looked at from the side, a pixel up the screen is more of the ground than one across
+    auto const along{Global.EditorOrtho ? 1.0 : 1.0 / std::max(0.25, std::abs(std::sin(static_cast<double>(Camera.Angle.x))))};
+    auto const world{RotateY(glm::dvec3{dx * scale, 0.0, dy * scale * along}, static_cast<double>(Camera.Angle.y))};
     m_ride.leave();
     Camera.Pos.x -= world.x;
     Camera.Pos.z -= world.z;
@@ -7255,7 +7288,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
 
     // shortcuts: undo/redo. not in the middle of a drag, it would go on from the state which was undone
-    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active))
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active || m_roadtool.lifting))
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
@@ -7516,6 +7549,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // with the road window open the left button works its tools, whichever edit mode is on but the track one
     if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
+        // Alt+LMB on a point: its height (and the other selected ones') dragged up or down
+        if (is_press(Action) && Global.altState && false == ImGui::GetIO().WantCaptureMouse && road_lift_start())
+        {
+            m_input.mouse.button(Button, Action);
+            return;
+        }
+        if (false == is_press(Action) && m_roadtool.lifting)
+        {
+            road_lift_finish();
+            m_input.mouse.button(Button, Action);
+            return;
+        }
         if (is_press(Action))
         {
             // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI
@@ -7740,7 +7785,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         // game-engine style look: hide & grab the cursor while flying, restore it on release
         Application.set_cursor(is_press(Action) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
     }
-    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE && Global.EditorOrtho)
+    else if (Button == GLFW_MOUSE_BUTTON_MIDDLE)
     {
         if (is_press(Action))
         {
@@ -7748,6 +7793,17 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             m_ortho_pan_cursor = m_input.mouse.position();
             m_focus_active = false;
             Camera.Velocity = {};
+            // in the perspective view the ground under the cursor goes along with it: metres of it to a pixel there, as far as it is
+            m_pan_metres = 0.0;
+            if (false == Global.EditorOrtho)
+            {
+                auto const &io{ImGui::GetIO()};
+                auto const distance{glm::length(GfxRenderer->Mouse_Position())};
+                if (GfxRenderer->Mouse_Hit() && io.DisplaySize.y > 0.0f && distance > 0.5 && distance < 20000.0)
+                    m_pan_metres = 2.0 * distance * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / static_cast<double>(io.DisplaySize.y);
+                else
+                    m_ortho_pan = false; // nothing under the cursor to hold
+            }
         }
         else if (is_release(Action))
             ortho_pan_stop();

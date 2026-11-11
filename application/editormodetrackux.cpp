@@ -943,7 +943,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		case track_tab::route: return make(kind::select, m_hover.track->eType != tt_Switch && editor_track::is_straight(*m_hover.track, m_straights.tolerance) ? "Click: the whole straight through this track" : "Click: the curve of this track with its straights");
 		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line of the whole line through this track; Shift: the route between the tracks");
-		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
+		case track_tab::lineside: return make(kind::select, "Click: the line the posts go along");
 		case track_tab::parallel: return make(kind::select, "Click: the straight the new track goes beside");
 		default: return make(kind::select, "Click: select");
 		}
@@ -2102,7 +2102,7 @@ void editor_mode::render_lineside_ui()
 	    {"Trainset", &m_vehicle.tab().open, &m_vehicle.tab().expand, [this]() { m_vehicle.render_options(); }},
 	}};
 	if (selected_track() == nullptr)
-		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: the line the objects go along"));
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: the line the posts go along"));
 	if (false == ImGui::BeginTabBar("##lineside"))
 		return;
 	for (int i = 0; i < static_cast<int>(tabs.size()); ++i)

@@ -102,9 +102,11 @@ alignment::trace_stretch turned_round(alignment::trace_stretch const &Fit)
 	return result;
 }
 
+// only a curve traced next to a free end goes on from its curve; the bends of straights begin with a straight there, out of the curve
+// of a plain track by a transition, not as a compound curve of its radius and the one of the bend
 bool goes_on_curved(editor_track::snap_target const &End, bool const Traced)
 {
-	return End.track != nullptr && (End.track->eType == tt_Normal || (End.track->eType == tt_Switch && Traced));
+	return End.track != nullptr && Traced && (End.track->eType == tt_Normal || End.track->eType == tt_Switch);
 }
 
 // the curve of the track of a free end the line laid goes on from at its start, or into at its end: its radius, the side it turns to
@@ -1312,7 +1314,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	// from a free end on a curve, or to one, the curve laid next to it turning its way goes on from its curvature: it begins right at the
 	// end, not on a straight, its transition going from that curvature. A line which doesn't turn its way begins from a straight there: out
 	// of the curve of a plain track by the transition lay_pieces lays, right at the end of the diverging track of a switch, as the switch
-	// goes on with a straight. At a switch the curve goes on only with a curve traced from it, the bends of straights begin with a straight
+	// goes on with a straight. The curve goes on only with a curve traced from it, the bends of straights begin with a straight
 	if (Adjoining)
 	{
 		if (tool.start.track != nullptr && glm::length(plan_of(tool.start.direction)) > 1e-6)

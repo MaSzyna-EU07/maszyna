@@ -3292,7 +3292,7 @@ void editor_mode::render_signal_templates(std::vector<std::string> const &Kinds)
 	ImGui::SeparatorText(STR_C("Templates"));
 	if (tool.templates.empty())
 	{
-		ImGui::TextWrapped("%s", EditorIncludes.searching() ? STR_C("Looking for the templates...") : STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));
+		ImGui::TextWrapped("%s", EditorIncludes.searching() ? STR_C("Looking for the templates...") : STR_C("No signals to place: none of the templates in the scenery folder is marked as a signal. The signals of the game come with it; a set of your own is marked by tools/editor/signal_headers.py (category: signal)."));
 		return;
 	}
 	if (false == begin_fields("##signalkinds", 0.4f))
@@ -3338,7 +3338,7 @@ void editor_mode::render_signal_ui()
 	}
 	if (tool.templates.empty())
 	{
-		ImGui::TextWrapped("%s", STR_C("No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."));
+		ImGui::TextWrapped("%s", STR_C("No signals to place: none of the templates in the scenery folder is marked as a signal. The signals of the game come with it; a set of your own is marked by tools/editor/signal_headers.py (category: signal)."));
 		return;
 	}
 	std::vector<std::string> labels;

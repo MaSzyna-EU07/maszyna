@@ -1476,6 +1476,12 @@ void srk_tool::render_station()
 				record_of_open().km = km == "-" ? std::string{} : km;
 			});
 			item_tooltip("The km of the middle of the station along the line, rising the way the switches are numbered: the block signals of the lines are numbered after the km");
+			// a km typed here is the station's alone: the one of the line serves the posts and the next stations too
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(1);
+			if (ImGui::SmallButton(STR_C("Set the km of the line (X)")))
+				m_guide.open_kilometrage();
+			item_tooltip("The km typed above is this station's alone. Set with the Kilometrage tool, the km of the line serves this station, the next ones and the hectometre posts, typed once");
 		}
 		auto changed{false};
 		field_row("Line speed");
