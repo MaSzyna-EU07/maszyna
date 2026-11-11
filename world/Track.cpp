@@ -50,6 +50,18 @@ TIsolated *TIsolated::pRoot = nullptr;
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 int TTrack::s_layoutstamp { 0 };
+std::atomic<std::uint64_t> TTrack::s_map_dynamics_revision { 0 };
+std::atomic<std::uint64_t> TTrack::s_map_geometry_revision { 0 };
+
+std::uint64_t TTrack::map_dynamics_revision()
+{
+	return s_map_dynamics_revision.load(std::memory_order_relaxed);
+}
+
+std::uint64_t TTrack::map_geometry_revision()
+{
+	return s_map_geometry_revision.load(std::memory_order_relaxed);
+}
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -172,10 +184,14 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 };
 
 // tworzenie nowego odcinka ruchu
-TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {}
+TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata )
+{
+	++s_map_geometry_revision;
+}
 
 TTrack::~TTrack()
 { // likwidacja odcinka
+	++s_map_geometry_revision;
 	if( eType == tt_Cross ) {
 		delete SwitchExtension->vPoints; // skrzyżowanie może mieć punkty
 	}
@@ -733,6 +749,7 @@ void TTrack::init_segments( bool const Initial ) {
 	double r1, r2, r3, r4;
     double segsize = 5.0; // długość odcinka segmentowania
 
+    ++s_map_geometry_revision;
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
@@ -1124,7 +1141,10 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
+    bool const was_unoccupied = Dynamics.empty();
     Dynamics.emplace_back( Dynamic );
+    if (was_unoccupied && iCategoryFlag == 1)
+        ++s_map_dynamics_revision;
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
         // jeśli ma pantografy
@@ -1147,6 +1167,7 @@ bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
 
 bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
 { // usunięcie pojazdu z listy przypisanych do toru
+    bool const was_occupied = !Dynamics.empty();
     bool result = false;
     if( *Dynamics.begin() == Dynamic ) {
         // most likely the object getting removed is at the front...
@@ -1170,6 +1191,8 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
+        if (result && was_occupied && Dynamics.empty() && iCategoryFlag == 1)
+            ++s_map_dynamics_revision;
     }
     if( Global.iMultiplayer ) {
         // jeśli multiplayer

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
 #include "scene/scenenode.h"
+#include <cstdint>
 
 const int iMaxNumLights = 8;
 float const DefaultDarkThresholdLevel { 0.325f };
@@ -126,6 +127,7 @@ public:
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
 	void LightSet( int const n, float const v );
+    std::uint64_t LightRevision() const { return m_light_revision; }
     void SkinSet( int const Index, material_handle const Material );
 	std::optional<std::tuple<float, float, std::optional<glm::vec3> > > LightGet( int const n );
     int TerrainCount();
@@ -219,6 +221,7 @@ public:
     std::array<glm::vec3, iMaxNumLights> m_lightcolors; // -1 in constructor
     std::array<float, iMaxNumLights> m_lighttimers {};
     std::array<float, iMaxNumLights> m_lightopacities; // {1} in constructor
+    std::uint64_t m_light_revision { 0 };
     float fOnTime { 1.f / 2 };// { 60.f / 45.f / 2 };
     float fOffTime { 1.f / 2 };// { 60.f / 45.f / 2 }; // były stałymi, teraz mogą być zmienne dla każdego egzemplarza
 //    float fTransitionTime { fOnTime * 0.9f }; // time

@@ -664,6 +664,26 @@ void TSegment::render_lines(std::vector<gfx::basic_vertex> &out, float quality) 
 	out.emplace_back(previous, glm::vec3(0.0f), glm::vec2(0.0f));
 }
 
+void TSegment::plan_bounds(glm::dvec2 &minimum, glm::dvec2 &maximum) const
+{
+	if (!bCurve && iSegCount == 1)
+	{
+		minimum = glm::min(glm::dvec2(Point1.x, Point1.z), glm::dvec2(Point2.x, Point2.z));
+		maximum = glm::max(glm::dvec2(Point1.x, Point1.z), glm::dvec2(Point2.x, Point2.z));
+		return;
+	}
+
+	std::array<glm::dvec3, 4> const control_points { Point1, CPointOut, CPointIn, Point2 };
+	minimum = glm::dvec2(std::numeric_limits<double>::max());
+	maximum = glm::dvec2(std::numeric_limits<double>::lowest());
+	for (glm::dvec3 const &control_point : control_points)
+	{
+		glm::dvec2 const point(control_point.x, control_point.z);
+		minimum = glm::min(minimum, point);
+		maximum = glm::max(maximum, point);
+	}
+}
+
 glm::vec3 TSegment::get_nearest_point(const glm::dvec3 &point, float quality) const
 {
 	float step = 1.0f / iSegCount / quality;

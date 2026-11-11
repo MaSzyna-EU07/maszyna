@@ -9,10 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <atomic>
+#include <cstdint>
 #include <deque>
 #include <array>
+#include <string>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
@@ -297,6 +299,8 @@ public:
     bool CheckDynamicObject(TDynamicObject *Dynamic);
     bool AddDynamicObject(TDynamicObject *Dynamic);
     bool RemoveDynamicObject(TDynamicObject *Dynamic);
+    static std::uint64_t map_dynamics_revision();
+    static std::uint64_t map_geometry_revision();
 
     // set origin point
     void
@@ -426,6 +430,8 @@ private:
     // the value of a switch where a track joined to it meets it
     track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point );
     static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above. Once per change: a run is walked again after each
+    static std::atomic<std::uint64_t> s_map_dynamics_revision;
+    static std::atomic<std::uint64_t> s_map_geometry_revision;
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
     /// <summary>

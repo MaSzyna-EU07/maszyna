@@ -181,6 +181,8 @@ public:
 
 	void
 	    render_lines(std::vector<gfx::basic_vertex> &out, float quality = 1.0f) const;
+	void
+	    plan_bounds(glm::dvec2 &minimum, glm::dvec2 &maximum) const;
 
 	glm::vec3
 	    get_nearest_point(const glm::dvec3 &point, float quality = 1.0f) const;
