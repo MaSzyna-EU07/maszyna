@@ -885,8 +885,9 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
     }
     if( is_signal( Point ) ) {
         // the aspect the train had of it: the table keeps it once the signal is behind, while the memory cell
-        // may already show stop for the train itself, past the signal on the track it guards
-        auto const speedatsignal { Point.fVelNext };
+        // may already show stop for the train itself, past the signal on the track it guards. the stop of an
+        // automatic block signal is kept as the speed allowed after it, with a flag of its own
+        auto const speedatsignal { TestFlag( Point.iFlags, spStopOnSBL ) ? 0.0 : Point.fVelNext };
         simulation::Blackbox.signal_passed(
             pVehicles[ end::front ], *Point.evEvent,
             speedatsignal, Point.evEvent->input_value( 2 ),
