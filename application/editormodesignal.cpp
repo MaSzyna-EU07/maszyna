@@ -228,8 +228,8 @@ void lamp_points(TSubModel *Submodel, glm::dmat4 const &Matrix, bool const Lamp,
 	for (auto *submodel = Submodel; submodel != nullptr; submodel = submodel->NextGet())
 	{
 		auto matrix{Matrix};
-		if ((submodel->iFlags & 0xC000) && submodel->GetMatrix() != nullptr)
-			matrix *= glm::dmat4(glm::make_mat4(submodel->GetMatrix()->readArray()));
+		if (submodel->iFlags & 0xC000)
+			matrix *= glm::dmat4(submodel->fMatrix);
 		auto const lamp{Lamp || Lamps.count(submodel) > 0};
 		if (lamp && submodel->eType == GL_TRIANGLES && submodel->m_geometry.handle != null_handle)
 		{
