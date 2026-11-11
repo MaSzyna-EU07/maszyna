@@ -12,10 +12,10 @@
 // the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
 //
 // The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen:
-//  - the lumps, in five grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
+//  - the lumps, in eight grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
 //    size, the snow it takes); it comes when the snow around reaches that and stays as it is until the snow goes. The grids come
-//    one after the other as the snow piles up (dots and crumbs, puffs, clumps, then two of packed snow), each on the ones before,
-//    so the snow accumulates rather than changes, and closes the glass by 3 mm. In a heap they come sooner
+//    one after the other as the snow piles up (dots, two of puffs, clumps, then four of small packed lumps), each on the ones before,
+//    so the snow accumulates rather than changes, and closes the glass by 2-3 mm. In a heap they come sooner
 //  - dots and small puffs of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -82,7 +82,7 @@ const float snow_opaque     = 1.8;   // mm of fresh snow letting 1/e of the ligh
 const float snow_thin       = 0.45;  // opacity of a single thin flake (ice crystals let most of the light through)
 const float snow_bump       = 1.0;   // strength of the relief from the normal map, 0 = flat
 const float snow_gloss      = 0.8;   // glints of the sun / headlights on the wet snow, 0 = matt
-const float snow_ice_bend   = 0.7;   // how strongly the icy snow bends the picture behind it, of the bend of a drop
+const float snow_ice_bend   = 1.0;   // how strongly the icy snow bends the picture behind it, of the bend of a drop
 const float snow_translucency = 0.8; // glow of thin snow when you look towards the sun / a lamp, 0 = off
 const float snow_haze       = 1.0;   // blur of the scene behind thin snow (frosted glass), 0 = off
 const float snow_drop_bend  = 1.0;   // how strongly the drops bend the picture behind them
@@ -328,12 +328,16 @@ void main()
         uint axis = (uint(snSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
         vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
         // the grids of the lumps, coming one after the other as the snow piles up, each on the ones before: dots and crumbs,
-        // puffs and crumbs, clumps, two of packed snow (they close the glass by 3 mm)
+        // two of small puffs and icy clumps (the fleece), clumps, four of small lumps of packed snow (they close the glass by
+        // 2-3 mm)
         snLumps(span, pixelUV, lump_grid(vec2(0.0), 31u, vec2(0.02, 0.35), vec2(0.6, 1.1), 0, 4), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(0.8, 1.4), 4, 4), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(0.8, 1.4), 2, 4), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.25), 97u, vec2(0.2, 0.9), vec2(0.8, 1.4), 2, 4), layer);
         snLumps(span, pixelUV, lump_grid(vec2(0.25, 0.75), 113u, vec2(0.4, 1.2), vec2(1.1, 1.7), 10, 2), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.75, 0.25), 151u, vec2(0.8, 2.0), vec2(1.9, 2.3), 12, 2), layer);
-        snLumps(span, pixelUV, lump_grid(vec2(0.5, 0.0), 199u, vec2(1.2, 2.5), vec2(1.9, 2.3), 12, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.75, 0.25), 151u, vec2(0.8, 2.0), vec2(1.2, 1.6), 12, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.5, 0.0), 199u, vec2(1.0, 2.2), vec2(1.2, 1.6), 12, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.0, 0.5), 233u, vec2(1.2, 2.5), vec2(1.2, 1.6), 12, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.75), 251u, vec2(1.4, 2.8), vec2(1.2, 1.6), 12, 2), layer);
         snFlakes(span, pixelUV, flakes);
         vec4 q = water_snow_at(uint(snSlot), snMap, f_coord);
         wet = smoothstep(0.05, 0.3, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
@@ -395,7 +399,7 @@ void main()
             // the post-processing puts the picture from the bent place in place of this pixel, snow and all (85% of it): through
             // snow it hides, the snow itself would be replaced by the picture from a place up to 96 px away, a gap of the snow
             // there showing here, so an opaque cover would never close. bent only as much as the snow lets the light through
-            float through = 1.0 - smoothstep(0.5, 0.95, snowA);
+            float through = 1.0 - smoothstep(0.6, 0.98, snowA);
             vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.1, 0.4, snBendA) * through;
             req = vec4(WS_DROP_BIAS + WS_BEND_ENC * bend.x, WS_DROP_BIAS + WS_BEND_ENC * bend.y, 0.0, 1.0);
         }
