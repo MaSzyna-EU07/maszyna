@@ -147,7 +147,8 @@ enum TSpeedPosFlag
     spSectionVel = 0x20000, // odcinek z ograniczeniem
     spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
     spPointVelocity = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
-    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last; 0x100000 is taken by the road speed held for the rear
+    spRoadVelHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
+    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -557,6 +558,10 @@ private:
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    double held_road_velocity_beyond( TSpeedPos const &Point ) const;
+    bool is_road_velocity_held( TSpeedPos const &Point ) const;
+    void TableDropPassedEvent( TSpeedPos &Point ) const;
     void TableUpdateSignalAreaEnd( TSpeedPos &Point );
     // keeps the PointVelocity limit of a speed table entry whose cell the head has just passed
     void latch_point_limit( TSpeedPos const &Point );

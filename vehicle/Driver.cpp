@@ -1460,6 +1460,75 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     return false; //
 }
 
+// a road speed sign (W27/W27a) passed by the head stays in the table until the rear is past it too. not for cars: their
+// passed events leave the table at the latest when the rear passes them (TableCheck), before the table update sees that
+bool
+TController::is_road_velocity_held( TSpeedPos const &Point ) const {
+
+    return TestFlag( Point.iFlags, spRoadVel )
+        && mvOccupied->CategoryFlag != 2
+        && Point.fDist >= -fLength;
+}
+
+// a passed event is handled once and then dropped from the table, except a road speed sign held for the rear
+void
+TController::TableDropPassedEvent( TSpeedPos &Point ) const {
+
+    if( is_road_velocity_held( Point ) ) {
+        Point.iFlags |= spRoadVelHeld;
+        return;
+    }
+    Point.Clear();
+}
+
+// the lowest road speed of the signs past the given one that the head has passed: held until the rear is past them too,
+// or passed in this very tick and not marked as held yet; -1 if there's none
+double
+TController::held_road_velocity_beyond( TSpeedPos const &Point ) const {
+
+    auto lowest { -1.0 };
+    for( auto const &held : sSpeedTable ) {
+        if( ( held.iFlags & ( spEnabled | spRoadVel ) ) != ( spEnabled | spRoadVel )
+         || held.fDist >= 0.0
+         || held.fDist <= Point.fDist ) {
+            continue;
+        }
+        lowest = min_speed( lowest, held.fVelNext );
+    }
+    return lowest;
+}
+
+// a road speed (W27/W27a) lower than the one in force holds once the head passes the sign, a higher one only once the
+// whole train is past it (a car takes it from the head). the first pass after the head handles the sign as before, the
+// entry is then only held for the rear: returns true for it, so the rest of the table update leaves it out
+bool
+TController::TableUpdateRoadVelocity( TSpeedPos &Point ) {
+
+    if( Point.fDist >= 0.0 ) { return false; }
+
+    if( mvOccupied->CategoryFlag == 2 ) {
+        VelRoad = Point.fVelNext;
+        return false;
+    }
+
+    auto const isrearpast { Point.fDist < -fLength };
+    if( isrearpast ) {
+        // the rear past it, but not past a sign after it the head has passed too: none of those may be exceeded, so a
+        // lower one (W27a 60 within a train's length after a 120) stays in force
+        VelRoad = min_speed( Point.fVelNext, held_road_velocity_beyond( Point ) );
+    }
+    else if( Point.fVelNext == min_speed( Point.fVelNext, VelRoad ) ) {
+        VelRoad = Point.fVelNext;
+    }
+    if( false == TestFlag( Point.iFlags, spRoadVelHeld ) ) {
+        return false;
+    }
+    if( isrearpast ) {
+        Point.Clear();
+    }
+    return true;
+}
+
 // a reduced speed shown by a signal holds to the end of the interlocking area the signal guards (Ie-1), and that end is
 // marked on the main track with a SignalAreaEnd event. on a track without the marker the speed holds as it did before:
 // until the next signal, or until no signal, switch or stop point is left in the scan
@@ -1875,12 +1944,13 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
         }
     }
     else if ( Point.iFlags & spRoadVel)
-    { // to W6
-        if ( Point.fDist < 0)
-            VelRoad = Point.fVelNext;
+    { // to W27/W27a
+        if( TableUpdateRoadVelocity( Point ) ) {
+            return true;
+        }
     }
     else if ( Point.iFlags & spSectionVel && Point.fDist < 0)
-    { // to W27
+    { // to W9
 		// teraz trzeba sprawdzić inne warunki
 		if (Point.fSectionVelocityDist == 0.0)
 		{
@@ -2002,7 +2072,7 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						}
 						// jeśli nie jest ograniczeniem prędkości to można usunąć
 						// (nie mogą być usuwane w skanowaniu)
-						Point.Clear();
+						TableDropPassedEvent( Point );
 					}
 				}
 				else if (Point.evEvent->is_command())
