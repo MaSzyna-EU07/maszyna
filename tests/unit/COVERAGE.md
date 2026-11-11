@@ -21,6 +21,8 @@ Coverage was measured on Windows with MSVC's SanitizerCoverage (`/fsanitize-cove
 
 The aim is branch coverage with the rest explained below, not 100%.
 
+The numbers above are from 2026-11-01. Since then the **Coverage** workflow (`.github/workflows/coverage.yml`) measures every push and pull request: a GCC build of the unit tests with gcov, lines, functions and branches per source file of the core library. The totals and the per-file table are in the summary of the workflow run, and the HTML report with the lines marked is in its `unit-test-coverage` artifact. Its counts are source lines and gcov's branches, so they differ somewhat from the blocks in the table. The report isn't sent to SonarQube Cloud: the project's quality gate would then require 80% coverage of the new code of every pull request.
+
 ## Code nothing in the game runs
 
 Nothing creates these objects or calls these functions anywhere in the game, which was checked against the whole source tree. A refactor can delete them, or leave them untested.

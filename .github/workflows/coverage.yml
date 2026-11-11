@@ -1,0 +1,131 @@
+# .github/workflows/coverage.yml
+# UNTRUSTED CONTEXT. This workflow runs fork-authored code.
+# It must never reference `secrets.*`. It only builds, runs the unit tests and
+# uploads a report; nothing here feeds the SonarQube Cloud analysis.
+#
+# Coverage of the game's core library (eu07_core) by the unit tests, measured with
+# gcov on a GCC build: the report goes to the summary of the run and to an artifact.
+# It is not sent to SonarQube Cloud on purpose: the project's quality gate ("Sonar
+# way") fails a pull request whose new code is covered in less than 80%, a condition
+# that isn't evaluated as long as sonar-project.properties excludes every file from
+# coverage. Wiring this report in would turn that condition on.
+
+name: Coverage
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [ opened, reopened, synchronize ]
+
+permissions: {}
+
+# A newer push to a pull request cancels the run for its older commit; a push to master
+# gets a group of its own (its commit), so the runs on master are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Unit test coverage (GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14'
+
+      # the same packages as the Build workflow: the game is configured as a whole,
+      # though only the unit tests and the core library they link are built
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential \
+            libgl1-mesa-dev libglew-dev libglfw3-dev \
+            libpng-dev libopenal-dev libluajit-5.1-dev \
+            libserialport-dev libsndfile1-dev \
+            xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
+          python3 -m pip install --no-cache-dir gcovr==8.3
+
+      - name: Build current OpenAL Soft
+        run: |
+          git clone --depth 1 --branch 1.24.2 https://github.com/kcat/openal-soft.git /tmp/openal-soft
+          cmake -S /tmp/openal-soft -B /tmp/openal-soft/build \
+            -DCMAKE_BUILD_TYPE=Release -DALSOFT_EXAMPLES=OFF -DALSOFT_UTILS=OFF
+          cmake --build /tmp/openal-soft/build -j"$(nproc)"
+          sudo cmake --install /tmp/openal-soft/build
+          sudo ldconfig
+
+      # see the Build workflow
+      - name: Patch GLM for GCC
+        run: |
+          sed -i 's/GLM_FUNC_QUALIFIER std::string format(const char\* message, \.\.\.)/inline std::string format(const char* message, ...)/' \
+            ref/glm/glm/gtx/string_cast.inl
+          grep -n "std::string format(const char\* message" ref/glm/glm/gtx/string_cast.inl
+
+      # unoptimised, so every line keeps its own code and the counts are those of the source
+      - name: Configure (CMake)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DWITH_BETTER_RENDERER=OFF \
+            -DWITH_ZMQ=OFF -DWITH_OPENVR=OFF -DUSE_LTO=OFF \
+            -DCMAKE_CXX_FLAGS="--coverage -O0 -Wno-attributes -fno-inline-functions-called-once" \
+            -DPython3_EXECUTABLE="$(which python3)"
+
+      # the tests alone: the game itself isn't linked, so they aren't run by its build
+      - name: Build the unit tests
+        run: cmake --build build --target eu07_unit_tests -j"$(nproc)"
+
+      - name: Run the unit tests
+        run: ./build/tests/unit/eu07_unit_tests
+
+      # the game's own sources only: no submodules, no vendored code, not the tests themselves
+      - name: Coverage report
+        run: |
+          mkdir -p coverage-report/html
+          gcovr --root . build \
+            --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' --exclude 'tests/' --exclude 'build/' \
+            --gcov-ignore-parse-errors=negative_hits.warn_once_per_file \
+            --gcov-ignore-errors=no_working_dir_found \
+            --print-summary \
+            --txt coverage-report/coverage.txt \
+            --html-details coverage-report/html/index.html \
+            --sonarqube coverage-report/coverage-sonarqube.xml \
+            --json-summary-pretty --json-summary coverage-report/coverage-summary.json \
+            | tee coverage-report/summary.txt
+          {
+            echo '## Unit test coverage of the core library'
+            echo
+            echo 'GCC, unoptimised build, `eu07_unit_tests`. Lines run by the tests, per source file of the game the tests compile.'
+            echo
+            echo '```'
+            grep -E '^(lines|functions|branches):' coverage-report/summary.txt
+            echo '```'
+            echo
+            echo '<details><summary>Per file</summary>'
+            echo
+            echo '```'
+            cat coverage-report/coverage.txt
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-test-coverage
+          path: coverage-report
+          retention-days: 14
+          if-no-files-found: error
