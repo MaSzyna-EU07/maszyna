@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
 #include "utilities/Globals.h"
@@ -816,7 +817,8 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("tractionforce", std::abs(mvOccupied->Ft));
 	dict->insert("slipping_wheels", mvOccupied->SlippingWheels);
 	dict->insert("sanding", mvOccupied->SandDose);
-	dict->insert("odometer", mvOccupied->DistCounter);
+	dict->insert("odometer", mvOccupied->DistCounter); // distance run in the session, km
+	dict->insert("odometer_total", mvOccupied->Odometer.km); // the vehicle's odometer, kept between the sessions
 	// electric current data
 	dict->insert("traction_voltage", std::abs(mvPantographUnit->PantographVoltage));
 	dict->insert("voltage", std::abs(mvControlled->EngineVoltage));
@@ -2134,6 +2136,8 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 		}
 
 		vehicle->MoverParameters->Hamulec->SetBrakeStatus(vehicle->MoverParameters->Hamulec->GetBrakeStatus() ^ b_dmg);
+		// the brake is the player's now, the wagon inspector won't put it back on its own
+		vehicle->MoverParameters->BrakeCutOutByInspector = false;
 	}
 }
 
@@ -11160,7 +11164,12 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	}
 
 	if (DynamicObject->mdKabina)
+	{
 		DynamicObject->mdKabina->Init(); // obrócenie modelu oraz optymalizacja, również zapisanie binarnego
+		// the vehicle has a cab, a player is in it: the odometer store keeps the vehicle also when its type has no
+		// driver's brake valve (eu07/maszyna#72)
+		DynamicObject->MoverParameters->Odometer.shown = true;
+	}
 
 	set_cab_controls(NewCabNo < 0 ? 2 : NewCabNo);
 
@@ -12780,7 +12789,15 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		// Ra 2014-07: licznik kilometrów
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignDouble(&mvControlled->DistCounter);
+		// the counter shows the odometer of the vehicle, kept between the sessions (eu07/maszyna#72). its offset
+		// was the state it started each session with, now it is that only for a vehicle with no known state
+		if (auto const seed{odometer::counter_seed(gauge.offset(), gauge.scale())}; seed.has_value())
+			mvControlled->Odometer.seed(*seed);
+		gauge.offset(0.f);
+		gauge.AssignDouble(&mvControlled->Odometer.km);
+		// the vehicle the counter counts for is one the odometer store keeps, also in the sessions the counter seeds
+		// nothing (its state is a saved one by then) and when it's the motor car of the unit the cab is in
+		mvControlled->Odometer.shown = true;
 	}
 	else if (Label == "shuntmodepower:")
 	{
