@@ -49,6 +49,8 @@ const float SNOW_MELT = 0.003;
 const float SNOW_WARMTH = 1.5;
 // the share of a flake landing near zero already water (wet snow)
 const float SNOW_WET_FLAKES = 0.5;
+// the water freezing a second on a glass below zero, mm
+const float SNOW_FREEZE = 0.02;
 // the water drying a second, mm, and the share of a thin film going in a second (it dries and runs off as droplets)
 const float SNOW_DRY = 0.0004;
 const float SNOW_FILM_DRY = 0.15;
@@ -220,7 +222,12 @@ void main()
 	vec4 before = water_snow_texel(snow_slot, snow_from, texel);
 	vec4 state = snow_move(texel, before, seconds);
 
-	// the blades: they take the snow where they went over
+	// how warm the glass is: warmer than the air (the cab heats it), the less so the faster the vehicle goes
+	float speed = water_snow.z;
+	float glass = water_up.w + water_snow.y * SNOW_WARMTH / (1.0 + speed / 25.0);
+
+	// the blades: they take the snow where they went over; a wet trace only on a glass above zero (on a frozen one the blade
+	// leaves it dry, so the snow landing on the wiped glass is the same dry snow as around)
 	bool crossed = false;
 	for (int blade = 0; blade < 4; ++blade)
 		crossed = crossed || snow_crossed(texel, blade);
@@ -229,7 +236,8 @@ void main()
 		float left = min(state.x * SNOW_WIPE_MISS, SNOW_WIPE_LEFT);
 		float taken = state.x - left;
 		state.x = left;
-		state.y = state.y * SNOW_WIPE_WATER + min(taken * mix(SNOW_FRESH, SNOW_PACKED, state.z) * SNOW_WIPE_TRACE, SNOW_WIPE_WET);
+		float trace = min(taken * mix(SNOW_FRESH, SNOW_PACKED, state.z) * SNOW_WIPE_TRACE, SNOW_WIPE_WET) * smoothstep(-1.0, 1.0, glass);
+		state.y = state.y * SNOW_WIPE_WATER + trace;
 	}
 
 	// the flakes landing
@@ -237,7 +245,6 @@ void main()
 	float area = length(cross(frame.tu, frame.tv)) / float(WATER_MAP * WATER_MAP); // m2
 	vec3 coming = water_air.xyz - water_up.xyz * water_air.w; // the snow against the cab, m/s
 	float facing = max(-dot(coming, frame.normal), 0.0) + SNOW_EDDIES;
-	float speed = water_snow.z;
 	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
 	float wet = state.y / (state.y + state.x * density + 1e-4);
 	// the dry flakes bounce off a moving glass (powder is blown away), the wet ones (near zero) and those landing on wet snow or
@@ -261,8 +268,15 @@ void main()
 		state.x = snow;
 	}
 
-	// the melting at the warm glass and the drying
-	float glass = water_up.w + water_snow.y * SNOW_WARMTH / (1.0 + speed / 25.0);
+	// the melting at the warm glass, the freezing at a frozen one (the water turns to ice, packed snow) and the drying
+	float frozen = min(state.y, SNOW_FREEZE * smoothstep(0.0, -2.0, glass) * seconds);
+	if (frozen > 0.0)
+	{
+		float ice = frozen / SNOW_PACKED;
+		state.z = (state.z * state.x + ice) / max(state.x + ice, 1e-4);
+		state.x += ice;
+		state.y -= frozen;
+	}
 	float melted = min(SNOW_MELT * max(glass, 0.0) * seconds, state.x * density);
 	state.x -= melted / max(density, 1e-3);
 	float film = state.y * (1.0 - smoothstep(0.5, 3.0, state.x)); // the water not soaked into the snow
