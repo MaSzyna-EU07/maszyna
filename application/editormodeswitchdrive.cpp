@@ -453,10 +453,10 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 		return false;
 	}
 	auto const &found{present->standing};
-	// a drive of Rainsted, or of a double switch, may set the speed over the switch or carry its ballast too: it's kept as it is
+	// a drive not described for the editor, as one of a double switch, may set the speed over the switch or carry its ballast too: it's kept as it is
 	if (present->family < 0)
 	{
-		tool.status = refused(format(STR_C("The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"), found.file.c_str()));
+		tool.status = refused(format(STR_C("The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"), file_name(found.file).c_str()));
 		return false;
 	}
 	auto const family{Family >= 0 ? Family : present->family};
@@ -508,9 +508,14 @@ void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
 	if (deleted.empty())
 		return;
 	auto const named = [&](std::string const &Name) { return std::find(deleted.begin(), deleted.end(), drive_file(Name)) != deleted.end(); };
+	// an older scenery may have two tracks of a name, the name finding the later; the earlier one, left by the deletion of the other,
+	// still has the drive and the ballast, so it's looked for too
 	auto const stands = [](std::string const &Name) {
-		auto const *track{track_named(Name)};
-		return track != nullptr && false == track->m_editorremoved;
+		if (auto const *track{track_named(Name)}; track != nullptr)
+			return false == track->m_editorremoved;
+		auto const name{drive_file(Name)};
+		auto const &tracks{simulation::Paths.sequence()};
+		return std::any_of(tracks.begin(), tracks.end(), [&](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved && drive_file(Track->name()) == name; });
 	};
 	auto const take_away = [&](scene::instance_handle const Instance) {
 		if (false == scene::Layers.removable(Instance))
@@ -535,8 +540,14 @@ void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
 	for (auto const &standing : standing_templates([](std::string const &) { return true; }))
 	{
 		auto const &name{standing.values[0]};
-		if (std::none_of(parts.begin(), parts.end(), [&](char const *Part) { return named(name + Part); }) ||
-		    std::any_of(parts.begin(), parts.end(), [&](char const *Part) { return stands(name + Part); }))
+		// named by a single switch, it's this switch's alone; a switch named <name>a beside it may be another single one
+		if (named(name))
+		{
+			if (stands(name))
+				continue;
+		}
+		else if (std::none_of(parts.begin(), parts.end(), [&](char const *Part) { return named(name + Part); }) ||
+		         std::any_of(parts.begin(), parts.end(), [&](char const *Part) { return stands(name + Part); }))
 			continue;
 		auto const [bed, fresh]{beds.try_emplace(standing.file)};
 		if (fresh)
