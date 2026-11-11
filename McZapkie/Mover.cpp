@@ -1717,6 +1717,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1783,6 +1784,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze

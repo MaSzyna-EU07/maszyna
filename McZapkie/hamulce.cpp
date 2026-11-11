@@ -1478,7 +1478,7 @@ double TESt4R::GetPF(double const PP, double const dt, double const Vel)
 
 	result = dv - dV1;
 
-	RapidStatus = BrakeDelayFlag == bdelay_R && ((Vel > 55 && RapidStatus == true) || Vel > 70);
+	RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && ((Vel > 55 && RapidStatus == true) || Vel > 70);
 
 	RapidTemp = RapidTemp + (0.9 * int(RapidStatus) - RapidTemp) * dt / 2;
 	temp = 1.9 - RapidTemp;
@@ -1812,7 +1812,7 @@ void TLSt::CylinderFlowLSt(double const BCP, double const BVP, double const CVP,
 {
 	double dV;
 	double temp;
-	RapidTemp = RapidTemp + (RM * int(Vel > 55 && BrakeDelayFlag == bdelay_R) - RapidTemp) * dt / 2;
+	RapidTemp = RapidTemp + (RM * int(Vel > 55 && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
 	temp = 1 - RapidTemp;
 	if (EDFlag > 0.2)
 		temp = 10000;
@@ -2078,7 +2078,7 @@ void TEStED::CylinderFlow(double const BCP, double const BVP, double const dt, d
 {
 	double dv;
 	double temp;
-	RapidTemp = RapidTemp + (RM * int(Vel > RV && BrakeDelayFlag == bdelay_R) - RapidTemp) * dt / 2;
+	RapidTemp = RapidTemp + (RM * int(Vel > RV && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
 	temp = std::max(1 - RapidTemp, 0.001);
 	//  if EDFlag then temp:=1000;
 	//  temp:=temp/(1-);

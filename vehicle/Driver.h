@@ -147,7 +147,9 @@ enum TSpeedPosFlag
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
     spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
-    spPointVelocity = 0x80000 // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    spPointVelocity = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    spRoadVelHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
+    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -448,6 +450,7 @@ private:
     double ActualProximityDist = 1.0; // odległość brana pod uwagę przy wyliczaniu prędkości i przyspieszenia
     std::pair<double, double> VelLimitLastDist { 0.0, 0.0 }; // distance to velocity change point
     double SwitchClearDist { 0.0 }; // distance to point after farthest detected switch
+    double SignalAreaEndDist { -1.0 }; // distance the train has to go to be past the nearest end of an interlocking area, -1 when none is in the scan
     int iDirection = 0; // kierunek jazdy względem sprzęgów pojazdu, w którym siedzi AI (1=przód,-1=tył)
     int iDirectionOrder = 0; //żadany kierunek jazdy (służy do zmiany kierunku)
     std::optional<int> iDirectionBackup; // consist direction to be restored after coupling/uncoupling and similar direction-changing operations
@@ -567,6 +570,11 @@ private:
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    double held_road_velocity_beyond( TSpeedPos const &Point ) const;
+    bool is_road_velocity_held( TSpeedPos const &Point ) const;
+    void TableDropPassedEvent( TSpeedPos &Point ) const;
+    void TableUpdateSignalAreaEnd( TSpeedPos &Point );
     // keeps the PointVelocity limit of a speed table entry whose cell the head has just passed
     void latch_point_limit( TSpeedPos const &Point );
     // moves the latched point limits by the movement of the consist, drops those passed and those read anew
@@ -674,6 +682,8 @@ private:
     bool doors_open() const;
     bool doors_permit_active() const;
     void AutoRewident(); // ustawia hamulce w składzie
+    void reinspect_brakes(); // AutoRewident() again once the train stands, when it left a brake to cut out on the run
+    bool BrakeReinspectionPending{ false }; // AutoRewident() left a brake to cut out (Cw-1 §19.9) for the next standstill
     void announce( announcement_t const Announcement );
 // members
     double fLength = 0.0; // długość składu (do wyciągania z ograniczeń)

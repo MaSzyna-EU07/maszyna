@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "hamulce.h"
 #include "couplerphysics.h"
 #include "scripting/ladderlogic.h"
+#include "vehicle/odometerreading.h"
 
 class cParser;
 /*
@@ -2055,6 +2056,7 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
 	double Vel = 0.0; // moduł prędkości w [km/h], używany przez AI
@@ -2152,6 +2154,9 @@ class TMoverParameters
 	bool UnlockPipe = false; /*unlockig brake pipe button pressed*/
 	int BrakeDelayFlag = 0; /*nastawa opoznienia ham. osob/towar/posp/exp 0/1/2/4*/
 	int BrakeDelays = 0; /*nastawy mozliwe do uzyskania*/
+	// the AI wagon inspector cut the brake out (b_dmg) and puts it back when the train no longer needs it
+	// cut out (brake_setting::apply). Anyone else cutting it out or putting it back takes it over
+	bool BrakeCutOutByInspector = false;
 	int BrakeOpModeFlag = 0; /*nastawa trybu pracy PS/PN/EP/MED 1/2/4/8*/
 	int BrakeOpModes = 0; /*nastawy mozliwe do uzyskania*/
 	bool DynamicBrakeFlag = false; /*czy wlaczony hamulec elektrodymiczny*/
@@ -2698,6 +2703,13 @@ class TMoverParameters
 	range_t MainSwitchRange() const
 	{
 		return JointEngineStart ? range_t::consist : range_t::local;
+	}
+	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
+	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
+	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
+	bool HasDriverCab() const
+	{
+		return BrakeHandle != TBrakeHandle::NoHandle;
 	}
 	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
 	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
