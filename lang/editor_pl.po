@@ -12233,15 +12233,11 @@ msgstr "Wierzchołek %zu: krzywa przejściowa między łukiem przylegającego to
 msgid "Download area"
 msgstr "Obszar pobierania"
 
-msgid "A polygon drawn on the map: what the settings ask for inside it, the orthophoto and the terrain model,
-goes to the disk cache in the background, and nothing outside it is downloaded, also around the camera"
-msgstr "Wielokąt narysowany na mapie: to, co wybrano w ustawieniach, ortofotomapa i model terenu, pobiera się w nim w tle
-do pamięci podręcznej na dysku, a poza nim nic się nie pobiera, także wokół kamery"
+msgid "A polygon drawn on the map: what the settings ask for inside it, the orthophoto and the terrain model,\ngoes to the disk cache in the background, and nothing outside it is downloaded, also around the camera"
+msgstr "Wielokąt narysowany na mapie: to, co wybrano w ustawieniach, ortofotomapa i model terenu, pobiera się w nim w tle\ndo pamięci podręcznej na dysku, a poza nim nic się nie pobiera, także wokół kamery"
 
-msgid "Click the points of the area on the map. Enter closes it, Backspace takes the last point back, Esc gives up;
-a point dragged moves, Shift+click removes it"
-msgstr "Klikaj na mapie punkty obszaru. Enter go zamyka, Backspace cofa ostatni punkt, Esc rezygnuje;
-przeciągnięty punkt się przesuwa, Shift+klik go usuwa"
+msgid "Click the points of the area on the map. Enter closes it, Backspace takes the last point back, Esc gives up;\na point dragged moves, Shift+click removes it"
+msgstr "Klikaj na mapie punkty obszaru. Enter go zamyka, Backspace cofa ostatni punkt, Esc rezygnuje;\nprzeciągnięty punkt się przesuwa, Shift+klik go usuwa"
 
 msgid "%zu points"
 msgstr "punktów: %zu"
