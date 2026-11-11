@@ -94,6 +94,8 @@ jobs:
       # betterRenderer/ is left out for its thirdparty/yaml-cpp, which every target of the game links and so builds here
       - name: Coverage report
         run: |
+          # a failure of gcovr fails the step, though its output goes through tee
+          set -o pipefail
           mkdir -p coverage-report/html
           gcovr --root . build \
             --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' --exclude 'betterRenderer/' \
