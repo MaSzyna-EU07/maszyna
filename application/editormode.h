@@ -240,6 +240,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_dragging = false;
 	glm::dvec3 oldPos; // world position of the last brush placement
 	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first placement ignores spacing
+	bool m_draw_cursor{false}; // the cursor drawn into the picture (View menu), on only while the editor is
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
