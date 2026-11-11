@@ -399,7 +399,11 @@ void main()
         float clear = 1.0 - smoothstep(0.5, 0.95, glassA);
         if ((snBendA > 0.1) && (glassA < 0.5))
         {
-            vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.1, 0.4, snBendA);
+            // the post-processing puts the picture from the bent place in place of this pixel, snow and all (85% of it): through
+            // snow it hides, the snow itself would be replaced by the picture from a place up to 96 px away, a gap of the snow
+            // there showing here, so an opaque cover would never close. bent only as much as the snow lets the light through
+            float through = 1.0 - smoothstep(0.5, 0.95, snowA);
+            vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.1, 0.4, snBendA) * through;
             req = vec4(WS_DROP_BIAS + WS_BEND_ENC * bend.x, WS_DROP_BIAS + WS_BEND_ENC * bend.y, 0.0, 1.0);
         }
         else
