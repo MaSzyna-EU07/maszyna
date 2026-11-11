@@ -2165,7 +2165,8 @@ class TMoverParameters
 	bool JointEngineStart{true};
 	// config, .fiz Cntrl.PantRequiresMain: the line breaker closes without traction voltage and holds without it, and the
 	// pantographs rise and stay up only while it's closed (EU05, EP05, ČD 181 family); off, the pantographs come first and the line
-	// breaker needs their voltage
+	// breaker needs their voltage. what the main circuit feeds still needs the voltage (MainCircuitPowered()), and without
+	// it the undervoltage relay opens the line contactors (NoVoltRelay)
 	bool PantographsRequireMains{false};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
@@ -2232,7 +2233,9 @@ class TMoverParameters
 	double PantPress = 0.0; /*Cisnienie w zbiornikach pantografow*/
 	bool PantPressSwitchActive{false}; // state of the pantograph pressure switch. gets primed at defined pressure level in pantograph air system
 	bool PantPressLockActive{false}; // pwr system state flag. fires when pressure switch activates by pantograph pressure dropping below defined level
-	bool NoVoltRelay{true}; // switches off if the power level drops below threshold
+	// switches off if the power level drops below threshold, which opens the line breaker; with PantographsRequireMains
+	// it opens the line contactors instead, and switches back on only with the master controller at zero or the first position
+	bool NoVoltRelay{true};
 	bool OvervoltageRelay{true}; // switches off if the power level goes above threshold
 	bool s_CAtestebrake = false; // hunter-091012: zmienna dla testu ca
 	std::array<std::pair<double, double>, 4> PowerCircuits; // 24v, 110v, 3x400v and 3000v power circuits, voltage from local sources and current draw pairs
@@ -2661,6 +2664,11 @@ class TMoverParameters
 	bool HeatingSwitch(bool const State, range_t const Notify = range_t::consist);
 	void HeatingSwitch_(bool const State);
 	double EnginePowerSourceVoltage() const; // returns voltage of defined main engine power source
+	// whether the main circuit feeds what runs on it (the converter, a compressor, the heating, the motor and resistor
+	// blowers, the traction motors): the line breaker closed, and where it closes ahead of the pantographs and holds
+	// without traction voltage (PantographsRequireMains) also the voltage there, at least the one the undervoltage
+	// trip takes. everywhere else it's the same as Mains
+	bool MainCircuitPowered() const;
 
 	/*-funkcje typowe dla lokomotywy elektrycznej*/
 	void LowVoltagePowerCheck(double const Deltatime);
