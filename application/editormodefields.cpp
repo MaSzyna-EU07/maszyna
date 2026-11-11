@@ -375,9 +375,11 @@ bool editor_mode::apply_waves(std::vector<glm::dvec2> const &Outline)
 	{
 		// a coarse look for the middle, every few metres
 		auto const step{std::max(1.0, std::max(high.x - low.x, high.y - low.y) / 60.0)};
-		for (double z = low.y; z <= high.y; z += step)
-			for (double x = low.x; x <= high.x; x += step)
-				if (double distance; inside_by({x, z}, distance))
+		auto const rows{static_cast<int>(std::floor((high.y - low.y) / step))};
+		auto const columns{static_cast<int>(std::floor((high.x - low.x) / step))};
+		for (int row = 0; row <= rows; ++row)
+			for (int column = 0; column <= columns; ++column)
+				if (double distance; inside_by({low.x + column * step, low.y + row * step}, distance))
 					deepest = std::max(deepest, distance);
 	}
 	auto const shape = [&](glm::dvec2 const &Point) -> double {
@@ -604,6 +606,7 @@ void editor_mode::repaint_patches(std::vector<heightmap::surface_patch> All, std
 	auto const key = [](double const X, double const Z) {
 		return (static_cast<std::int64_t>(std::floor(X / cell)) << 32) ^ (static_cast<std::int64_t>(std::floor(Z / cell)) & 0xffffffff);
 	};
+	auto const cell_of = [](double const Value) { return static_cast<std::int64_t>(std::floor(Value / cell)); };
 	std::unordered_map<std::int64_t, std::vector<std::size_t>> grid;
 	if (false == Changed.empty() || false == Cleared.empty())
 		for (std::size_t i = 0; i < All.size(); ++i)
@@ -612,15 +615,15 @@ void editor_mode::repaint_patches(std::vector<heightmap::surface_patch> All, std
 				continue;
 			glm::dvec2 low, high;
 			reach_of(All[i], low, high);
-			for (auto z{std::floor(low.y / cell)}; z <= std::floor(high.y / cell); z += 1.0)
-				for (auto x{std::floor(low.x / cell)}; x <= std::floor(high.x / cell); x += 1.0)
-					grid[key(x * cell, z * cell)].push_back(i);
+			for (auto z{cell_of(low.y)}; z <= cell_of(high.y); ++z)
+				for (auto x{cell_of(low.x)}; x <= cell_of(high.x); ++x)
+					grid[key(static_cast<double>(x) * cell, static_cast<double>(z) * cell)].push_back(i);
 		}
 	auto const touching = [&](glm::dvec2 const &Low, glm::dvec2 const &High, auto const &Take) {
-		for (auto z{std::floor(Low.y / cell)}; z <= std::floor(High.y / cell); z += 1.0)
-			for (auto x{std::floor(Low.x / cell)}; x <= std::floor(High.x / cell); x += 1.0)
+		for (auto z{cell_of(Low.y)}; z <= cell_of(High.y); ++z)
+			for (auto x{cell_of(Low.x)}; x <= cell_of(High.x); ++x)
 			{
-				auto const lookup{grid.find(key(x * cell, z * cell))};
+				auto const lookup{grid.find(key(static_cast<double>(x) * cell, static_cast<double>(z) * cell))};
 				if (lookup == grid.end())
 					continue;
 				for (auto const other : lookup->second)
