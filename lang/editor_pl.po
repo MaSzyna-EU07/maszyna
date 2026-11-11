@@ -12654,7 +12654,6 @@ msgstr "Przesuwa profil na miejsce trasy, gdzie jest kamera, bez zmiany powięks
 msgid "The switch drawn to the joint of the tracks"
 msgstr "Rozjazd dosunięty do styku torów"
 
-r
 # for those laying their first track: what's hidden in the ground, what to do in an empty scenery
 msgid "goes on from this end of the track"
 msgstr "przedłuża tor od tego końca"
