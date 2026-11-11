@@ -1724,6 +1724,7 @@ bool editor_mode::update()
     render_nmt_banner();
     render_nmt_buried();
     render_empty_scenery_hint();
+    render_outside_area_hint();
     render_switch_designer();
     render_environment_window();
     draw_selection_overlay();

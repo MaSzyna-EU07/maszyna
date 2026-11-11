@@ -190,9 +190,20 @@ void editor_map::show(glm::dvec2 const &Point, double const Scale)
 	m_dirty = true;
 }
 
+void editor_map::fit(glm::dvec2 const &Low, glm::dvec2 const &High)
+{
+	// before the first render the map's size isn't known: about the size of the map of the wizard
+	glm::dvec2 const size{m_size.x > 0.f ? m_size.x : 600.0, m_size.y > 0.f ? m_size.y : 500.0};
+	m_fitted = true;
+	m_centre = (Low + High) * 0.5;
+	m_scale = std::clamp(std::max((High.x - Low.x) / size.x, (High.y - Low.y) / size.y) * 1.4, 0.25, 2000.0);
+	m_dirty = true;
+}
+
 bool editor_map::render(glm::vec2 const &Size)
 {
 	upload();
+	m_size = Size;
 	auto const origin{ImGui::GetCursorScreenPos()};
 	if (false == m_fitted)
 	{
@@ -236,7 +247,11 @@ bool editor_map::render(glm::vec2 const &Size)
 	}
 	auto const clicked{ImGui::IsItemDeactivated() && false == m_dragging};
 	if (clicked)
-		pick(to_world(mouse));
+	{
+		m_clicked = to_world(mouse);
+		if (m_picking)
+			pick(m_clicked);
+	}
 
 	if (m_dirty && seconds() - m_changed > 0.25 && false == m_request.valid())
 		request(Size);
@@ -246,6 +261,26 @@ bool editor_map::render(glm::vec2 const &Size)
 	drawlist->AddRectFilled(origin, ImVec2(origin.x + Size.x, origin.y + Size.y), IM_COL32(200, 214, 222, 255));
 	if (m_texture != 0)
 		drawlist->AddImage(static_cast<ImTextureID>(m_texture), to_screen({m_image_low.x, m_image_high.y}), to_screen({m_image_high.x, m_image_low.y}), ImVec2(0, 0), ImVec2(1, 1));
+	if (false == m_outline.empty())
+	{
+		std::vector<ImVec2> points;
+		points.reserve(m_outline.size());
+		for (auto const &point : m_outline)
+			points.push_back(to_screen(point));
+		auto const edge{IM_COL32(0, 120, 215, 255)};
+		auto const closed{m_outline_closed && points.size() >= 3};
+		if (closed)
+			drawlist->AddConcavePolyFilled(points.data(), static_cast<int>(points.size()), IM_COL32(0, 120, 215, 50));
+		drawlist->AddPolyline(points.data(), static_cast<int>(points.size()), edge, closed ? ImDrawFlags_Closed : ImDrawFlags_None, 2.5f);
+		if (false == m_outline_closed)
+		{
+			for (auto const &point : points)
+				drawlist->AddCircleFilled(point, 4.5f, edge);
+			// the edge on to the cursor, where the next point goes
+			if (hovered && false == m_dragging)
+				drawlist->AddLine(points.back(), ImVec2(mouse.x, mouse.y), IM_COL32(0, 120, 215, 140), 1.5f);
+		}
+	}
 	if (m_picked)
 	{
 		auto const at{to_screen(m_point)};
@@ -270,6 +305,13 @@ bool editor_map::render(glm::vec2 const &Size)
 		auto const size{ImGui::CalcTextSize(info.c_str())};
 		drawlist->AddRectFilled(ImVec2(origin.x + 4.f, origin.y + 4.f), ImVec2(origin.x + 12.f + size.x, origin.y + 8.f + size.y), IM_COL32(0, 0, 0, 170), 4.f);
 		drawlist->AddText(ImVec2(origin.x + 8.f, origin.y + 6.f), IM_COL32(255, 255, 255, 240), info.c_str());
+	}
+	if (false == m_hint.empty())
+	{
+		auto const size{ImGui::CalcTextSize(m_hint.c_str())};
+		ImVec2 const at{std::round(origin.x + (Size.x - size.x) * 0.5f), origin.y + Size.y - size.y - 12.f};
+		drawlist->AddRectFilled(ImVec2(at.x - 8.f, at.y - 4.f), ImVec2(at.x + size.x + 8.f, at.y + size.y + 4.f), IM_COL32(0, 0, 0, 190), 4.f);
+		drawlist->AddText(at, IM_COL32(255, 255, 255, 250), m_hint.c_str());
 	}
 	drawlist->PopClipRect();
 	return clicked;
