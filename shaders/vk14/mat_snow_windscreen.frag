@@ -74,14 +74,15 @@ layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 3) uniform sampler
 const float snow_flake_cell = 0.007; // a dot, a small puff or a drop at most every this many metres of the glass (its size)
 const float snow_crystals   = 0.35;  // share of the cells with a little dry snow showing a dot or a small puff
 const float snow_drops      = 0.35;  // share of the texels with the water of a melted flake showing a drop (more with more water)
-const float snow_layer      = 0.5;   // mm of snow around which a cell surely has a lump (fewer, smaller below)
-const float snow_cover      = 0.7;   // mm of snow from which the lumps run together into a cover (full at three times it)
+const float snow_layer      = 0.3;   // mm of snow around which a cell surely has a lump (fewer, smaller below)
+const float snow_cover      = 0.35;  // mm of snow from which the lumps run together into a cover (full at three times it)
 const float snow_lump_cell  = 0.016; // a lump at most every this many metres of the glass (its size: up to two of them)
 const float snow_heap_cells = 4.0;   // the heaps the lumps come in, cells of the lumps (bigger: bigger heaps)
 const float snow_opaque     = 1.8;   // mm of fresh snow letting 1/e of the light through (packed: half of it)
 const float snow_thin       = 0.45;  // opacity of a single thin flake (ice crystals let most of the light through)
 const float snow_bump       = 1.0;   // strength of the relief from the normal map, 0 = flat
-const float snow_gloss      = 0.45;  // glints of the sun / headlights on the snow, 0 = matt
+const float snow_gloss      = 0.8;   // glints of the sun / headlights on the wet snow, 0 = matt
+const float snow_ice_bend   = 0.7;   // how strongly the icy snow bends the picture behind it, of the bend of a drop
 const float snow_translucency = 0.8; // glow of thin snow when you look towards the sun / a lamp, 0 = off
 const float snow_haze       = 1.0;   // blur of the scene behind thin snow (frosted glass), 0 = off
 const float snow_drop_bend  = 1.0;   // how strongly the drops bend the picture behind them
@@ -150,12 +151,11 @@ void snSprite(vec2 local, int tile, float alpha, vec3 tone, vec2 rot, float flip
     acc.n   = nT * a + acc.n * (1.0 - a);
     acc.tr  = (1.0 - t.a * 0.55) * a + acc.tr * (1.0 - a);
     acc.a   = a + acc.a * (1.0 - a);
-    // the drops and the wet lumps bend the picture behind them (water, slush), as the drops of the rain
-    if ((tile == TILE_DROP) || (tile == 8) || (tile == 9) || (tile == 14))
-    {
-        snBend  = snBend * (1.0 - a) + nuv * a;
-        snBendA = snBendA * (1.0 - a) + a;
-    }
+    // all the snow bends the picture behind it (wet icy snow, slush, drops), as the drops of the rain; the drops and the slush
+    // the most
+    float bends = ((tile == TILE_DROP) || (tile == 8) || (tile == 9) || (tile == 14)) ? 1.0 : snow_ice_bend;
+    snBend  = snBend * (1.0 - a) + nuv * bends * a;
+    snBendA = snBendA * (1.0 - a) + a;
 }
 
 // where in a sprite the pixel is: P the pixel and C the centre of the sprite, in the units of its grid (the size of the sprite
@@ -293,7 +293,7 @@ void snLayer(vec2 span, float pixelUV, vec2 shift, uint salt, inout sprite_acc a
             else
                 tile = 10 + int(kind * 2.0);                         // clumps
             float thick = 1.0 - exp(-q.x / (snow_opaque * mix(1.0, 0.5, q.z)));
-            float alpha = mix(0.75, 1.0, thick);
+            float alpha = mix(0.7, 0.9, thick);   // wet icy snow lets some light (and the bent picture) through
             snSprite(local, min(tile, 14), alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0, acc);
         }
     }
@@ -389,9 +389,9 @@ void main()
     {
         vec4 req = vec4(0.0);
         float clear = 1.0 - smoothstep(0.5, 0.95, glassA);
-        if ((snBendA > 0.25) && (glassA < 0.5))
+        if ((snBendA > 0.1) && (glassA < 0.5))
         {
-            vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.25, 0.6, snBendA);
+            vec2 bend = clamp(-snBend / max(snBendA, 1e-3) * snow_drop_bend, vec2(-1.0), vec2(1.0)) * smoothstep(0.1, 0.4, snBendA);
             req = vec4(WS_DROP_BIAS + WS_BEND_ENC * bend.x, WS_DROP_BIAS + WS_BEND_ENC * bend.y, 0.0, 1.0);
         }
         else
