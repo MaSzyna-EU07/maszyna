@@ -191,6 +191,7 @@ jobs:
   linux:
     name: Linux x64 / GCC
     runs-on: ubuntu-24.04
+    # see the note above the windows job
     concurrency:
       group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
       cancel-in-progress: true
