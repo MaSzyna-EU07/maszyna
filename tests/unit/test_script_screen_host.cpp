@@ -77,17 +77,20 @@ struct recording_texture : ITexture {
 	std::vector<std::uint8_t> pixels;
 };
 
-// a folder of its own for the scripts of a test, removed with the object
+// a folder of its own for the scripts of a test, removed with the object. it's made in the build folder of the tests
+// (EU07_UNIT_TESTS_SCRATCH, see CMakeLists.txt), not in the system's temporary folder, which anyone can write to. the
+// scripts are one level down in it, so a file a test puts next to their folder ("../name") is still inside the folder
+// of the test, and is removed with it
 class script_folder {
   public:
 	explicit script_folder(std::string const &Name)
-	    : m_folder{std::filesystem::temp_directory_path() / std::format("eu07_script_screen_test_{}", Name)} {
-		std::filesystem::remove_all(m_folder);
+	    : m_root{std::filesystem::path{EU07_UNIT_TESTS_SCRATCH} / std::format("eu07_script_screen_test_{}", Name)}, m_folder{m_root / "scripts"} {
+		std::filesystem::remove_all(m_root);
 		std::filesystem::create_directories(m_folder);
 	}
 	~script_folder() {
 		std::error_code error;
-		std::filesystem::remove_all(m_folder, error);
+		std::filesystem::remove_all(m_root, error);
 	}
 	script_folder(script_folder const &) = delete;
 	script_folder &operator=(script_folder const &) = delete;
@@ -105,7 +108,8 @@ class script_folder {
 	}
 
   private:
-	std::filesystem::path m_folder;
+	std::filesystem::path m_root; // the folder of the test
+	std::filesystem::path m_folder; // the folder of its scripts
 };
 
 // runs frames until the condition holds, or gives up after a few seconds
@@ -484,6 +488,7 @@ TEST_CASE("lua screens: the texture gets the bottom row first, as from the pytho
 
 TEST_CASE("lua screens: a script reaches no files outside its folder, nor the system, nor ffi") {
 	script_folder const folder{"lua_sandbox"};
+	// next to the folder of the scripts, where the script mustn't reach
 	folder.write("../outside.txt", std::string_view{"outside"});
 	folder.write("data/inside.txt", std::string_view{"inside"});
 	auto const script{folder.write("sandbox.lua", sandbox_script)};
@@ -497,7 +502,6 @@ TEST_CASE("lua screens: a script reaches no files outside its folder, nor the sy
 	REQUIRE(texture.pixels.size() == 4);
 	CHECK(texture.pixels[0] == 255);
 	queue.exit();
-	std::filesystem::remove(std::filesystem::temp_directory_path() / "outside.txt");
 }
 
 TEST_CASE("lua screens: precompiled code isn't loaded") {

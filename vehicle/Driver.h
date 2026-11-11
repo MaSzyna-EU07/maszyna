@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -146,7 +147,9 @@ enum TSpeedPosFlag
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
     spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
-    spPointVelocity = 0x80000 // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    spPointVelocity = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    spRoadVelHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
+    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -269,7 +272,18 @@ public:
         return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
     }
     TBrakeSystem consist_brake_system() const;
+    // the next change of the speed limit ahead, as the driving aid tells it: the speed and the distance to it.
+    // the speed is the present limit (VelDesired) when nothing worth telling changes within the scan range
+    std::pair<int, double> next_speed_limit() const;
+    // what the AI would do at this place and speed, worked out also while a human drives, for the black box
+    blackbox::ai_reference ai_reference() const;
+    // the light pattern the timetable or the scenery asks for at an end of the train, -1 the usual one
+    int light_hint( int const End ) const { return m_lighthints[ End ]; }
+    // the order the driver goes by now: a train run, shunting and the like
+    TOrders order_current() const { return OrderCurrentGet(); }
 private:
+    // tells the black box of the train at the station of its timetable it makes for, at the stop point given
+    void record_station( TSpeedPos const &Point, std::uint8_t Kind ) const;
     void Activation(); // umieszczenie obsady w odpowiednim członie
     void ControllingSet(); // znajduje człon do sterowania
     void SetDriverPsyche();
@@ -436,6 +450,7 @@ private:
     double ActualProximityDist = 1.0; // odległość brana pod uwagę przy wyliczaniu prędkości i przyspieszenia
     std::pair<double, double> VelLimitLastDist { 0.0, 0.0 }; // distance to velocity change point
     double SwitchClearDist { 0.0 }; // distance to point after farthest detected switch
+    double SignalAreaEndDist { -1.0 }; // distance the train has to go to be past the nearest end of an interlocking area, -1 when none is in the scan
     int iDirection = 0; // kierunek jazdy względem sprzęgów pojazdu, w którym siedzi AI (1=przód,-1=tył)
     int iDirectionOrder = 0; //żadany kierunek jazdy (służy do zmiany kierunku)
     std::optional<int> iDirectionBackup; // consist direction to be restored after coupling/uncoupling and similar direction-changing operations
@@ -550,11 +565,16 @@ private:
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
     // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
-    // reports the head of the train going past it, if it's a signal showing stop
-    void CheckSignalPassedAtDanger( TSpeedPos const &Point, bool Passedbefore ) const;
+    // reports the head of the train going past it, if it's a signal: to the black box, and to the test mode if it showed stop
+    void CheckSignalPassed( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    double held_road_velocity_beyond( TSpeedPos const &Point ) const;
+    bool is_road_velocity_held( TSpeedPos const &Point ) const;
+    void TableDropPassedEvent( TSpeedPos &Point ) const;
+    void TableUpdateSignalAreaEnd( TSpeedPos &Point );
     // keeps the PointVelocity limit of a speed table entry whose cell the head has just passed
     void latch_point_limit( TSpeedPos const &Point );
     // moves the latched point limits by the movement of the consist, drops those passed and those read anew

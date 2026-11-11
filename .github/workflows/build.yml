@@ -103,6 +103,7 @@ jobs:
             --exclude='*.o' \
             --exclude='*.a' \
             --exclude='*.so' \
+            --exclude='*.so.*' \
             -C "$GITHUB_WORKSPACE" .
 
       - name: Upload analysis input

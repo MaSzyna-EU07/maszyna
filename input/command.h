@@ -413,6 +413,7 @@ enum class user_command
 	linebreakertogglec,
 	linebreakeropenc,
 	linebreakerclosec,
+	repaircoupler, // the broken coupler of the vehicle (payload) at the end (param1)
 	none = -1
 };
 

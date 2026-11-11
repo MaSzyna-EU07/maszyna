@@ -37,6 +37,9 @@ endif()
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
 # the names the tests CAPTURE are often C strings, shown as text rather than pointers
 target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data" DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING)
+# the folders of the tests that write files (the scripts of test_script_screen_host.cpp) are made in the build folder,
+# and removed by the test that made them
+target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}")
 if (MSVC)
 	target_compile_options(${UNIT_TESTS_NAME} PRIVATE /bigobj)
 endif()

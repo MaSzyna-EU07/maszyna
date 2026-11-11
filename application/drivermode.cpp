@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
 #include "simulation/simulationtest.h"
+#include "simulation/blackboxrecorder.h"
 #include "scene/scene.h"
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
@@ -160,6 +161,30 @@ bool driver_mode::init()
 }
 
 // mode-specific update of simulation data. returns: false on error, true otherwise
+namespace {
+
+// the camera as the black box tells it: where it is and where it looks, as the heading of a vehicle
+blackbox::camera_state blackbox_camera(TCamera const &Camera, std::uint8_t const Mode, int const View) {
+	blackbox::camera_state state;
+	state.mode = Mode;
+	state.view = static_cast<std::uint8_t>(View);
+	state.position = Camera.Pos;
+	state.pitch = Camera.Angle.x;
+	if (Camera.m_owner != nullptr && false == DebugCameraFlag) {
+		// it looks at a point, then turns by its yaw from there
+		auto const where{Camera.LookAt - Camera.Pos};
+		state.heading = static_cast<float>(std::atan2(where.x, where.z)) + Camera.Angle.y;
+	}
+	else {
+		// the yaw alone: 0 looks towards -z
+		state.heading = static_cast<float>(std::atan2(-std::sin(Camera.Angle.y), -std::cos(Camera.Angle.y)));
+	}
+	state.heading = std::remainder(state.heading, 2.0f * glm::pi<float>());
+	return state;
+}
+
+} // namespace
+
 bool driver_mode::update()
 {
 
@@ -307,6 +332,17 @@ bool driver_mode::update()
 		simulation::Events.update();
 		simulation::Region->update_events();
 		simulation::Lights.update();
+		{
+			// where the user looks from, for the black box
+			auto const &camera{DebugCameraFlag ? DebugCamera : Camera};
+			auto const mode{DebugCameraFlag      ? blackbox::camera_modes::debug :
+			                false == FreeFlyModeFlag ? blackbox::camera_modes::cab :
+			                m_externalview       ? blackbox::camera_modes::external :
+			                                       blackbox::camera_modes::free};
+			simulation::Blackbox.camera(blackbox_camera(camera, mode, mode == blackbox::camera_modes::external ? m_externalviewmode : 0),
+			    DebugCameraFlag ? nullptr : camera.m_owner);
+		}
+		simulation::Blackbox.update(deltatime);
 
 		if (Global.test.enabled && simulation::is_ready)
 		{

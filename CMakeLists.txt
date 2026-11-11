@@ -153,6 +153,7 @@ set(SOURCES
 "scene/scene.cpp"
 "scene/scenenode.cpp"
 "simulation/simulation.cpp"
+"simulation/blackboxrecorder.cpp"
 "model/vertex.cpp"
 "audio/audio.cpp"
 "audio/audiorenderer.cpp"
@@ -471,6 +472,7 @@ set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
+"McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
@@ -479,6 +481,7 @@ set(CORE_SOURCES
 "scripting/scriptscreenkernels.cpp"
 "scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
+"vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
@@ -681,6 +684,41 @@ if (WIN32)
 			COMMAND_EXPAND_LISTS
 	)
 endif ()
+
+# Linux: the game loads its shared libraries from its own folder first ($ORIGIN), and the build copies them there,
+# so the folder runs on a system that doesn't have them, or has other versions. the RPATH is a DT_RPATH rather
+# than a DT_RUNPATH, because only that one is also used for the libraries the copied ones load (libsndfile's codecs)
+if (UNIX AND NOT APPLE)
+	option(BUNDLE_RUNTIME_LIBS "Linux: copy the shared libraries the game needs next to it and load them from there" ON)
+endif()
+if (UNIX AND NOT APPLE AND BUNDLE_RUNTIME_LIBS)
+	set_target_properties(${PROJECT_NAME} PROPERTIES
+		BUILD_WITH_INSTALL_RPATH TRUE
+		INSTALL_RPATH "$ORIGIN")
+	target_link_options(${PROJECT_NAME} PRIVATE "LINKER:--disable-new-dtags")
+
+	# the RPATH no longer leads to libraries outside the system folders (Python from setup-python, an OpenAL Soft
+	# in /usr/local), so their folders are given to the script as well
+	set(EU07_BUNDLE_SEARCH_DIRS "")
+	foreach(library IN LISTS Python3_LIBRARIES OPENAL_LIBRARY LUAJIT_LIBRARIES libserialport_LIBRARY)
+		if (IS_ABSOLUTE "${library}")
+			get_filename_component(library_dir "${library}" DIRECTORY)
+			list(APPEND EU07_BUNDLE_SEARCH_DIRS "${library_dir}")
+		endif()
+	endforeach()
+	list(APPEND EU07_BUNDLE_SEARCH_DIRS ${Python3_LIBRARY_DIRS})
+	list(REMOVE_DUPLICATES EU07_BUNDLE_SEARCH_DIRS)
+	string(REPLACE ";" "|" EU07_BUNDLE_SEARCH_DIRS "${EU07_BUNDLE_SEARCH_DIRS}")
+
+	add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+		COMMAND ${CMAKE_COMMAND}
+			-DGAME=$<TARGET_FILE:${PROJECT_NAME}>
+			-DSEARCH_DIRS=${EU07_BUNDLE_SEARCH_DIRS}
+			-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/CMake_modules/bundle_runtime_libs.cmake"
+		COMMENT "Copying the shared libraries next to the game"
+		VERBATIM)
+endif()
 
 if(WIN32 AND WITH_PYTHON)
 	# the Python runtime next to the game, copied when it isn't there yet or the Python install changed, rather
