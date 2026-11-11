@@ -190,7 +190,7 @@ void writer::cab(cab_sample const &Sample) {
 	out.u8(Sample.engine);
 	out.u8(Sample.brake_delay);
 	out.u8(Sample.radio_channel);
-	out.f32(Sample.equalizing_reservoir);
+	out.f32(Sample.driver_valve);
 	out.f32(Sample.feed_pipe);
 	out.f32(Sample.oil_pressure);
 	out.f32(Sample.water_temperature);

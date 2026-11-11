@@ -205,8 +205,8 @@ The vehicle the user is in, every 0.1 s, also while the user looks around outsid
 | `u16`   | the same of the vehicle at the tail                                    |
 | `u8`    | what drives the vehicle whose motors the cab drives, below             |
 | `u8`    | the setting of the brakes: 1 G, 2 P, 4 R, 8 Mg, as bits                 |
-| `u8`    | the radio channel, 0 none                                              |
-| `f32`   | equalizing reservoir of the driver's brake valve [bar]                 |
+| `u8`    | the radio channel                                                      |
+| `f32`   | what the driver's brake valve shows on its gauge [bar]: the equalizing (control) reservoir of most valves, the time reservoir of the FV4a, empty but after an overcharge |
 | `f32`   | main reservoir pipe along the train [bar]                              |
 | `f32`   | oil pressure of the diesel engine [MPa]                                |
 | `f32`   | cooling water temperature of the diesel engine [°C]                    |

@@ -453,9 +453,9 @@ void blackbox_recorder::write_cab() {
 	// what drives the train, the setting of the brakes, the radio, the engine's oil and temperatures
 	sample.engine = engine_of(*controlling);
 	sample.brake_delay = static_cast<std::uint8_t>(occupied->BrakeDelayFlag);
-	// the const one: no driver, no radio
+	// the const one: with no driver the first channel
 	sample.radio_channel = static_cast<std::uint8_t>(std::clamp(std::as_const(*train).RadioChannel(), 0, 255));
-	sample.equalizing_reservoir = occupied->Handle != nullptr ? static_cast<float>(occupied->Handle->GetCP()) : 0.0f;
+	sample.driver_valve = occupied->Handle != nullptr ? static_cast<float>(occupied->Handle->GetCP()) : 0.0f;
 	sample.feed_pipe = static_cast<float>(occupied->ScndPipePress);
 	sample.oil_pressure = controlling->OilPump.pressure;
 	sample.water_temperature = controlling->dizel_heat.Twy;

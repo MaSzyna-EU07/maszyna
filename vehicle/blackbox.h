@@ -239,8 +239,10 @@ struct cab_sample {
 	std::uint16_t equipped_tail{0}; // at the tail
 	std::uint8_t engine{engines::none}; // engines
 	std::uint8_t brake_delay{0}; // the setting of the brakes: 1 G, 2 P, 4 R, 8 Mg, as bits
-	std::uint8_t radio_channel{0}; // 0 none
-	float equalizing_reservoir{0.0f}; // of the driver's brake valve [bar]
+	std::uint8_t radio_channel{0};
+	// what the driver's brake valve shows on its gauge [bar]: the equalizing (control) reservoir of most valves,
+	// the time reservoir of the FV4a, which is empty but after an overcharge
+	float driver_valve{0.0f};
 	float feed_pipe{0.0f}; // the main reservoir pipe along the train [bar]
 	float oil_pressure{0.0f}; // of the diesel engine [MPa]
 	float water_temperature{0.0f}; // of the diesel engine's cooling [°C]

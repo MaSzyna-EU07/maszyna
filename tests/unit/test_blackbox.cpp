@@ -112,7 +112,7 @@ blackbox::cab_sample sample() {
 	s.engine = blackbox::engines::diesel_electric;
 	s.brake_delay = 2;
 	s.radio_channel = 3;
-	s.equalizing_reservoir = 4.75f;
+	s.driver_valve = 4.75f;
 	s.feed_pipe = 8.5f;
 	s.oil_pressure = 0.5f;
 	s.water_temperature = 78.5f;
