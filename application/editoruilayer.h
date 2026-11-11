@@ -32,6 +32,10 @@ class editor_ui : public ui_layer
 	// updates state of UI elements
 	void update() override;
 	void set_node(scene::basic_node *Node);
+	scene::basic_node *node() const
+	{
+		return m_node;
+	}
 	// include of a scenery template to show in the node properties in place of a node; nullptr if there's none
 	void set_include(include_selection *Include);
 	void add_node_template(const std::string &desc);
@@ -58,6 +62,8 @@ class editor_ui : public ui_layer
 	void set_track(bool const Track)
 	{
 		m_track = Track;
+		// the models of the node bank aren't laid with the track tools
+		m_nodebankpanel.suppressed = Track;
 	}
 	// draws menus of the editor mode in the menu bar, past the ones of the user interface
 	void set_menu_options(std::function<void()> Renderer)
@@ -73,6 +79,11 @@ class editor_ui : public ui_layer
 	void set_edit_menu(std::function<void()> Renderer)
 	{
 		m_editmenu = std::move(Renderer);
+	}
+	// draws the items of the editor mode in the tools menu, after the common ones
+	void set_tools_menu(std::function<void()> Renderer)
+	{
+		m_toolsmenu = std::move(Renderer);
 	}
 	// draws the fields of work of the editor mode in a row above the toolbar
 	void set_workspace_bar(std::function<void()> Renderer)
@@ -101,6 +112,13 @@ class editor_ui : public ui_layer
 	void set_file_actions(std::function<void()> Save, std::function<void()> Export);
 	void set_new_scenery(std::function<void()> New) { m_newscenery = std::move(New); }
 	void set_open_scenery(std::function<void()> Open) { m_openscenery = std::move(Open); }
+	// draws the base layers under the scenery at the bottom of the layers window (they live in the editor mode)
+	void set_base_layers(std::function<void()> Renderer) { m_layerspanel.base_layers = std::move(Renderer); }
+	void show_layers()
+	{
+		m_layerspanel.is_open = true;
+		m_layerspanel.focus = true;
+	}
 	// part of the main window between the docked windows, where the 3d view is seen; for the overlays placed in it
 	static glm::vec2 view_min()
 	{
@@ -156,9 +174,14 @@ class editor_ui : public ui_layer
 	static void register_settings();
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
+	// a warning after an operation done: added to its status, shown by the cursor for a while
+	void set_notice(std::string const &Notice);
+	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back
+	void drop_refusal() { m_refusal.clear(); }
 
   private:
 	// methods
+	void render_refusal();
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	// windows of the editor drawn by the user interface itself
 	void render_tool_options();
@@ -168,6 +191,7 @@ class editor_ui : public ui_layer
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
 	void render_windows_menu() override;
+	void render_tools_menu() override;
 	int palette() const override;
 	void render_dockspace() override;
 	void render_() override;
@@ -201,7 +225,13 @@ class editor_ui : public ui_layer
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
 	std::function<void()> m_editmenu;
+	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
+	std::string m_refusal;
+	double m_refusaltime{-100.0};
+	bool m_refusalnotice{false}; // a warning rather than a refusal
+	double m_statustime{-100.0};
+	int m_savequeued{0}; // the frame of a save asked for from a field being typed in
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};

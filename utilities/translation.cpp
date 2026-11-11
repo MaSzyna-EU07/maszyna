@@ -35,7 +35,7 @@ void locale::init()
 	if (editor.is_open())
 		while (parse_translation(editor));
 
-	WriteLog("translation: " + std::to_string(lang_mapping.size()) + " strings loaded");
+	WriteLog("translation: " + std::to_string(lang_mapping.size()) + " strings and " + std::to_string(plural_mapping.size()) + " plural strings loaded");
 }
 
 const std::string& locale::lookup_s(const std::string &msg, bool constant)
@@ -78,6 +78,35 @@ const char* locale::lookup_c(const char *msg, bool constant)
 	return msg;
 }
 
+const char* locale::lookup_n(const char *singular, const char *plural, long long n)
+{
+	auto cached = plural_cache.find(singular);
+	if (cached == plural_cache.end()) {
+		auto it = plural_mapping.find(std::string(singular));
+		cached = plural_cache.emplace(singular, it != plural_mapping.end() ? &it->second : nullptr).first;
+	}
+
+	if (cached->second == nullptr)
+		return n == 1 ? singular : plural;
+
+	auto const &forms = *cached->second;
+	auto const form = std::min(plural_form(n), forms.size() - 1);
+	return forms[form].empty() ? (n == 1 ? singular : plural) : forms[form].c_str();
+}
+
+std::size_t locale::plural_form(long long n) const
+{
+	n = std::llabs(n);
+	if (Global.asLang.compare(0, 2, "pl") == 0) {
+		if (n == 1)
+			return 0;
+		auto const units = n % 10;
+		auto const tens = n % 100;
+		return units >= 2 && units <= 4 && (tens < 10 || tens >= 20) ? 1 : 2;
+	}
+	return n == 1 ? 0 : 1;
+}
+
 bool locale::parse_translation(std::istream &stream)
 {
 	std::string line;
@@ -85,14 +114,33 @@ bool locale::parse_translation(std::istream &stream)
 	std::string msgid;
 	std::string msgstr;
 	std::string msgctxt;
+	std::vector<std::string> forms;
 	char last = 'x';
+
+	auto const commit = [&]() {
+		if (!msgid.empty() && !forms.empty())
+			plural_mapping.emplace(msgid, std::move(forms));
+		else if (!msgid.empty() && !msgstr.empty()) {
+			// TODO: context support is incomplete
+			if (!msgctxt.empty())
+				lang_mapping.emplace(msgctxt + "\x1d" + msgid, msgstr);
+			else
+				lang_mapping.emplace(msgid, msgstr);
+		}
+	};
 
 	while (std::getline(stream, line)) {
 		if (line.size() > 0 && line[0] == '#')
 			continue;
 
-		if (line.starts_with("msgid"))
+		if (line.starts_with("msgid_plural"))
+			last = 'p';
+		else if (line.starts_with("msgid"))
 			last = 'i';
+		else if (line.starts_with("msgstr[")) {
+			last = 'n';
+			forms.resize(std::max<std::size_t>(forms.size(), std::atoi(line.c_str() + 7) + 1));
+		}
 		else if (line.starts_with("msgstr"))
 			last = 's';
 		else if (line.starts_with("msgctxt"))
@@ -103,21 +151,21 @@ bool locale::parse_translation(std::istream &stream)
 				msgid += parse_c_literal(line);
 			else if (last == 's')
 				msgstr += parse_c_literal(line);
+			else if (last == 'n')
+				forms.back() += parse_c_literal(line);
 			else if (last == 'c')
 				msgctxt += parse_c_literal(line);
 		}
 		else {
-			if (!msgid.empty() && !msgstr.empty()) {
-				// TODO: context support is incomplete
-				if (!msgctxt.empty())
-					lang_mapping.emplace(msgctxt + "\x1d" + msgid, msgstr);
-				else
-					lang_mapping.emplace(msgid, msgstr);
-			}
+			commit();
 			return true;
 		}
 	}
 
+	if (!msgid.empty()) {
+		commit();
+		return true;
+	}
 	return false;
 }
 

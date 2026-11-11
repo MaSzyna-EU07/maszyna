@@ -28,6 +28,9 @@ template <typename T> constexpr T sq(T v)
 // returns the per-user config path for `filename` (platform-specific dir),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
+// the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
+// %LOCALAPPDATA%\MaSzyna\cache, ~/Library/Caches/MaSzyna, $XDG_CACHE_HOME/MaSzyna or ~/.cache/MaSzyna; empty as user_config_path
+std::filesystem::path user_cache_path(const std::string &filename);
 
 // TODO: Shouldn't this be in globals?
 namespace paths
@@ -166,6 +169,8 @@ void win1250_to_ascii(std::string &Input);
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
+// counterpart of win1250_to_utf8(): the polish letters, the other characters outside of ascii as question marks
+std::string utf8_to_win1250(std::string const &Text);
 // decodes utf-8 encoded text into unicode code points. returns false if the text isn't valid utf-8
 bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
 // decodes windows-1250 (ansi) encoded text into unicode code points

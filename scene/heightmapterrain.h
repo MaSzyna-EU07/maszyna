@@ -130,6 +130,10 @@ struct modifier
 	double slope{1.5}; // horizontal run of the slopes per metre of height
 	double reach{60.0}; // from the edge of the formation, where the slopes end even if they don't get to the ground
 	double rounding{1.5}; // over which the slopes bend into the formation and into the ground
+	// the formation and its slopes end square across the first or the last point, as against the abutment of a bridge or the
+	// portal of a tunnel; otherwise they go round it
+	bool open_start{false};
+	bool open_end{false};
 	std::vector<corridor_point> points;
 
 	// rectangle (x, z) the modifier can change the ground in
@@ -143,6 +147,15 @@ class modifier_shape
 	explicit modifier_shape(modifier const &Modifier);
 	// leads Height at specified point the way the modifier does; returns: true if the height changed
 	bool apply(double const X, double const Z, float &Height) const;
+	// what the modifier makes of Ground at the point, and how far the point lies off the formation: 0 or less on it; none out of
+	// its reach
+	struct effect
+	{
+		double height{0.0};
+		double outside{0.0};
+		double distance{0.0}; // from the axis
+	};
+	std::optional<effect> evaluate(double const X, double const Z, double const Ground) const;
 	bool reaches(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
 
   private:

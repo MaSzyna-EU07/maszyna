@@ -74,7 +74,7 @@ void node_layers::instance_begin(std::string const &, source_span const &) { // 
 // basic_node has no key function for the Itanium C++ ABI (tooltip() is declared plain but defined inline), so
 // GCC and Clang emit its vtable wherever scenenode.h is used, here too, and the vtable wants radius_().
 // the same as the game's, in scene/scenenode.cpp
-float basic_node::radius_() {
+float basic_node::radius_() const {
 	return 0.f;
 }
 

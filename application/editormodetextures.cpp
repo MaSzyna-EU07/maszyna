@@ -85,6 +85,11 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 	if (lookup == browser.thumbnails.end())
 	{
 		// reading a texture takes a moment, a few of them go in a frame
+		if (browser.loadsframe != ImGui::GetFrameCount())
+		{
+			browser.loadsframe = ImGui::GetFrameCount();
+			browser.loads = 0;
+		}
 		if (browser.loads >= 2)
 			return 0;
 		++browser.loads;
@@ -110,7 +115,6 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 void editor_mode::render_texture_browser()
 {
 	auto &browser{m_textures};
-	browser.loads = 0;
 	if (false == browser.listed)
 	{
 		browser.listed = true;
@@ -121,16 +125,28 @@ void editor_mode::render_texture_browser()
 		for (std::filesystem::directory_iterator entry{std::string{paths::textures} + browser.folder, error}, end; false == static_cast<bool>(error) && entry != end; entry.increment(error))
 		{
 			auto const path{entry->path()};
-			if (entry->is_directory(error))
+			std::string name;
+			std::string extension;
+			std::string stem;
+			try
 			{
-				browser.folders.push_back(path.filename().string());
+				name = path.filename().string();
+				extension = lowercase(path.extension().string());
+				stem = path.stem().string();
+			}
+			catch (std::exception const &)
+			{
 				continue;
 			}
-			auto const extension{lowercase(path.extension().string())};
+			std::error_code status;
+			if (entry->is_directory(status))
+			{
+				browser.folders.push_back(name);
+				continue;
+			}
 			auto const material{extension == ".mat"};
 			if (false == material && false == texture_file(extension))
 				continue;
-			auto const stem{path.stem().string()};
 			auto &item{items[stem]};
 			item.name = browser.folder + stem;
 			item.label = stem;
