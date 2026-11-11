@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/query.h"
 
 #include <string_view>
+#include <limits>
 
 #define EU07_USE_GEOMETRYINDEXING
 
@@ -103,7 +104,7 @@ public:
 				// bit 14: =1 wymagane przechowanie macierzy (animacje)
 				// bit 15: =1 wymagane przechowanie macierzy (transform niejedynkowy)
 	glm::mat4 fMatrix { 1.0f }; // pojedyncza precyzja wystarcza, nie każdy submodel ma własny transform
-	int iMatrix; // w pliku binarnym jest numer matrycy
+	size_t iMatrix { std::numeric_limits<size_t>::max() }; // w pliku binarnym jest numer matrycy
 	float transformscalestack { 1.0f }; // tolerancescale used in calculate_indices for whole matrix chain
     int iTexture { 0 }; // numer nazwy tekstury, -1 wymienna, 0 brak
     float fLight { -1.0f }; // próg jasności światła do zadziałania selfillum
