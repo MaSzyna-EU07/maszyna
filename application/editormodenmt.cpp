@@ -2150,7 +2150,8 @@ void editor_mode::render_outside_area_hint()
 		m_outside_area_closed = false;
 		return;
 	}
-	if (m_outside_area_closed || m_area_drawing.active || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+	// the camera riding a track has its own lines at the bottom of the view, where this one would cover them
+	if (m_outside_area_closed || m_area_drawing.active || m_ride.active() || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
 		return;
 	auto const low{editor_ui::view_min()};
 	auto const high{editor_ui::view_max()};
