@@ -27,9 +27,17 @@ jobs:
   # Windows / MSVC
   # ============================================================
 
+  # A newer push to the same branch or pull request cancels the build of the older commit. The
+  # groups are set on the build jobs rather than on the workflow, so a publish job that is already
+  # running is left to finish; with a build cancelled the publish job of that run is skipped. A push
+  # to master gets a group of its own, its commit, so the builds of master are never cancelled.
+
   windows:
     name: Windows x64 / MSVC
     runs-on: windows-2022
+    concurrency:
+      group: ${{ github.workflow }}-windows-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
@@ -183,6 +191,10 @@ jobs:
   linux:
     name: Linux x64 / GCC
     runs-on: ubuntu-24.04
+    # see the note above the windows job
+    concurrency:
+      group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
