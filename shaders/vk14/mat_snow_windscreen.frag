@@ -285,9 +285,13 @@ void snLayer(vec2 span, float pixelUV, vec2 shift, uint salt, bool covers, inout
             vec2 local;
             if (false == snLocal(p, centre, size, vec2(1.0), rot, flip, aniso, local))
                 continue;
+            // thin wet icy snow lets some light (and the bent picture) through, a thick layer none
+            float deep = smoothstep(snow_cover * 3.0, snow_deep, q.x);
             int tile;
+            // the cover: slush while it's thin and wet; thick snow is packed snow however wet it is (the slush tile is translucent
+            // by itself, a glass covered with it never closes; the wet one is greyer by its tone)
             if (cover > 0.5)
-                tile = (wet > 0.35) ? 14 : 12 + int(kind * 2.0);    // slush, packed snow
+                tile = ((wet > 0.35) && (deep < 0.5)) ? 14 : 12 + int(kind * 2.0);
             else if (wet > 0.2)
                 tile = 8 + int(kind * 2.0);                          // wet lumps
             else if (size < 0.8)
@@ -295,8 +299,6 @@ void snLayer(vec2 span, float pixelUV, vec2 shift, uint salt, bool covers, inout
             else
                 tile = 10 + int(kind * 2.0);                         // clumps
             float thick = 1.0 - exp(-q.x / (snow_opaque * mix(1.0, 0.5, q.z)));
-            // thin wet icy snow lets some light (and the bent picture) through, a thick layer none
-            float deep = smoothstep(snow_cover * 3.0, snow_deep, q.x);
             float alpha = mix(mix(0.7, 0.9, thick), 1.0, deep);
             snSprite(local, min(tile, 14), alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0 - deep, acc);
         }
