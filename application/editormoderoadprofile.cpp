@@ -802,16 +802,20 @@ void editor_mode::render_road_profile_window()
 		return 10000.0f;
 	};
 	auto const ystep{round_step(high - low, 6.0f)};
-	for (auto y{std::ceil(low / ystep) * ystep}; y <= high; y += ystep)
+	auto const first_line{static_cast<int>(std::ceil(low / ystep))};
+	auto const last_line{static_cast<int>(std::floor(high / ystep))};
+	for (int line = first_line; line <= last_line; ++line)
 	{
+		auto const y{static_cast<float>(line) * ystep};
 		auto const p{at(0.0f, y)};
 		draw->AddLine(ImVec2(origin.x, p.y), ImVec2(origin.x + size.x, p.y), IM_COL32(255, 255, 255, 22));
 		auto const label{format("%.*f m", ystep < 1.0f ? 1 : 0, y)};
 		draw->AddText(ImVec2(origin.x + 4.0f, p.y - ImGui::GetTextLineHeight()), IM_COL32(200, 200, 200, 140), label.c_str());
 	}
 	auto const xstep{round_step(length, 8.0f)};
-	for (auto x{xstep}; x < length; x += xstep)
+	for (int line = 1; static_cast<float>(line) * xstep < length; ++line)
 	{
+		auto const x{static_cast<float>(line) * xstep};
 		auto const p{at(x, low)};
 		draw->AddLine(ImVec2(p.x, origin.y), ImVec2(p.x, origin.y + size.y), IM_COL32(255, 255, 255, 18));
 		auto const label{format("%.0f", x)};
