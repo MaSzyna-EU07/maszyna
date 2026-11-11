@@ -301,6 +301,16 @@ enum class operation_t
 	/// <summary>Disable button release transition.</summary>
 	disable_off,
 };
+/// <summary>What else the line contactors of a vehicle need before they can close (LineContactorsInterlock in the Cntrl. section).</summary>
+enum class line_contactors_interlock
+{
+	/// <summary>Nothing more, the legacy behaviour.</summary>
+	none,
+	/// <summary>The converter of the vehicle itself running, where it drives the traction motor fans (ET42).</summary>
+	converter,
+	/// <summary>The traction motor blowers of the vehicle running.</summary>
+	motor_blowers
+};
 /// <summary>Auto-start method for ancillary devices (mutually exclusive).</summary>
 enum class start_t
 {
@@ -2229,6 +2239,8 @@ class TMoverParameters
 	start_t GroundRelayStart{start_t::manual}; // relay activation method
 	bool StLinFlag = false; /*!o styczniki liniowe*/
 	bool StLinSwitchOff{false}; // state of the button forcing motor connectors open
+	line_contactors_interlock LineContactorsInterlock{line_contactors_interlock::none}; // what else the line contactors need to close
+	double LouvresOpenPressure{5.0}; // main reservoir pressure [bar] at which the pneumatic louvres of the motor fans open (ET22)
 	bool ResistorsFlag = false; /*!o jazda rezystorowa*/
 	double RventRot = 0.0; /*!s obroty wentylatorow rozruchowych*/
 	double PantographVoltage{0.0}; // voltage supplied to pantographs
@@ -2613,6 +2625,19 @@ class TMoverParameters
 	{
 		return JointEngineStart ? range_t::consist : range_t::local;
 	}
+	// whether the pneumatic louvres of the motor fans are still closed, the main reservoir short of the pressure that opens them
+	bool LouvresClosed() const
+	{
+		return Compressor < LouvresOpenPressure;
+	}
+	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
+	bool LineContactorsInterlockReleased() const;
+	// whether the line contactors wait for the converter of the vehicle, switched off with its local switch (converterlocal_sw).
+	// the AI driver doesn't leave it so: the converters of the other vehicles running, it would wait for the contactors forever
+	bool LineContactorsHeldByLocalConverterSwitch() const
+	{
+		return LineContactorsInterlock == line_contactors_interlock::converter && false == ConverterAllowLocal;
+	}
 	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
 	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
 	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
@@ -2683,6 +2708,8 @@ class TMoverParameters
 	void FuelPumpCheck(double const Timestep);
 	void OilPumpCheck(double const Timestep);
 	void MotorBlowersCheck(double const Timestep);
+	// whether the circuit a traction motor blower runs off has power: the battery, the converter or the main circuit, by its start type
+	bool MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const;
 	void PantographsCheck(double const Timestep);
 	void LightsCheck(double const Timestep);
 	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary

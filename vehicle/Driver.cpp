@@ -6600,11 +6600,14 @@ TController::determine_consist_state() {
     IsAnyConverterPresent = false;
     IsAnyConverterEnabled = false;
     IsAnyConverterExplicitlyEnabled = false;
+    // whether the line contactors of a vehicle wait for its own converter (LineContactorsInterlock), off with its local switch
+    auto islocalconverterswitchoff { false };
 
     pVehicle->for_each(
         coupling::control,
-        [this]( TDynamicObject * Vehicle ) {
+        [this, &islocalconverterswitchoff]( TDynamicObject * Vehicle ) {
             auto const *vehicle { Vehicle->MoverParameters };
+            islocalconverterswitchoff |= vehicle->LineContactorsHeldByLocalConverterSwitch();
             IsAnyConverterOverloadRelayOpen |= vehicle->ConvOvldFlag;
             IsAnyMotorOverloadRelayOpen |= vehicle->FuseFlag;
             IsAnyGroundRelayOpen |= !vehicle->GroundRelay;
@@ -6675,7 +6678,9 @@ TController::determine_consist_state() {
            false == IsAnyConverterOverloadRelayOpen
         && false == IsAnyLineBreakerOpen
         && ( false == IsAnyConverterPresent || true == IsAnyConverterEnabled )
-        && ( false == IsAnyCompressorPresent || true == IsAnyCompressorEnabled );
+        && ( false == IsAnyCompressorPresent || true == IsAnyCompressorEnabled )
+        // the ai goes back to preparing the engine and switches that converter on, the human driver may run with it off
+        && ( false == AIControllFlag || false == islocalconverterswitchoff );
 }
 
 void

@@ -748,6 +748,7 @@ public: // reszta może by?publiczna
     TButton btLampkaNadmPrzetw;
     TButton btLampkaPrzetw;
     TButton btLampkaPrzetwOff;
+    TButton btLampkaPrzetwAOff; // the converter of this very unit off, where the trainset shares its 110 V (ET42 section fans)
     TButton btLampkaPrzekRozn; // TODO: implement
     TButton btLampkaPrzekRoznPom; // TODO: implement
     TButton btLampkaNadmSil;
@@ -854,6 +855,7 @@ public: // reszta może by?publiczna
     TButton btLampkaMalfunctionB;
     TButton btLampkaMotorBlowers;
     TButton btLampkaCoolingFans;
+    TButton btLampkaLouvresClosed; // ET22, the pneumatic louvres of the motor fans not open yet
     TButton btLampkaTempomat;
     TButton btLampkaDistanceCounter;
 
