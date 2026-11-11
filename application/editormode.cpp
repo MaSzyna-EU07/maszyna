@@ -3591,11 +3591,10 @@ bool editor_mode::cursor_on_ground(glm::dvec3 &World)
 {
     if (m_streamer.active() && terrain_cursor(World))
         return true;
-    // no terrain under the ray: the depth read back under the cursor, as before
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) <= 1e-3)
+    // no terrain under the ray: the depth read back under the cursor, as before, where it hit anything
+    if (false == GfxRenderer->Mouse_Hit())
         return false;
-    World = Camera.Pos + offset;
+    World = Camera.Pos + GfxRenderer->Mouse_Position();
     return true;
 }
 
