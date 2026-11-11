@@ -29,6 +29,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "McZapkie/MOVER.h"
 #include "world/Track.h"
+#include "editor/editorTerrainStreamer.hpp"
+#include "scene/heightmapterrain.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 
@@ -215,7 +217,49 @@ struct ground_probe
 	}
 };
 
-// the ground of the scenery (its shapes: the terrain) under a point
+// the point (X, Z) within the outline (x, z)
+bool inside(std::vector<glm::dvec2> const &Outline, double const X, double const Z)
+{
+	auto result{false};
+	auto const *previous{&Outline.back()};
+	for (auto const &current : Outline)
+	{
+		if (((current.y > Z) != (previous->y > Z)) && (X < (previous->x - current.x) * (Z - current.y) / (previous->y - current.y) + current.x))
+		{
+			result = !result;
+		}
+		previous = &current;
+	}
+	return result;
+}
+
+// the heightmap terrain under the point, and its bodies of water, as the ground. the chunk there is read from its file if it isn't
+// in memory yet: the deer are put far ahead of the camera, where the terrain isn't loaded for drawing
+void heightmap_ground(glm::dvec3 const &Point, double const Ceiling, ground_probe &Probe)
+{
+	if ((false == EditorTerrain.active()) || (EditorTerrain.chunk(heightmap::chunk_at(Point.x, Point.z), true) == nullptr))
+	{
+		return;
+	}
+	if (double y{0.0}; EditorTerrain.height_at(Point.x, Point.z, y) && (y <= Ceiling) && ((false == Probe.found) || (y > Probe.height)))
+	{
+		Probe.found = true;
+		Probe.height = y;
+		Probe.water = false;
+	}
+	for (auto const &water : EditorTerrain.manifest().water)
+	{
+		if ((water.outline.size() >= 3) && (water.level <= Ceiling) && ((false == Probe.found) || (water.level > Probe.height)) &&
+			inside(water.outline, Point.x, Point.z))
+		{
+			Probe.found = true;
+			Probe.height = water.level;
+			Probe.water = true;
+		}
+	}
+}
+
+// the ground of the scenery (its shapes and the heightmap terrain) under a point
 struct ground
 {
 	bool found{false}; // none: the ground of terrain models, or none loaded
@@ -256,6 +300,7 @@ ground ground_at(glm::dvec3 const &Point, double const Ceiling)
 			}
 		}
 	}
+	heightmap_ground(Point, Ceiling, probe);
 	result.found = probe.found;
 	result.height = probe.height;
 	result.water = probe.water;
