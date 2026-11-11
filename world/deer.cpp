@@ -343,8 +343,8 @@ bool platform_model(TAnimModel const &Instance)
 	return name.find("peron") != std::string::npos;
 }
 
-// a platform about the place: a model of one near it, or the ground beside the track raised to its height
-bool near_platform(path_place const &Place)
+// a platform about the place: a model of one near it, or the ground beside the track raised to its height. what was found, empty for none
+std::string near_platform(path_place const &Place)
 {
 	for (auto *section : simulation::Region->sections(Place.position, static_cast<float>(Platformsearch)))
 	{
@@ -359,9 +359,12 @@ bool near_platform(path_place const &Place)
 				return (Instance != nullptr) && (glm::length(Instance->location() - Place.position) < Platformrange + Instance->radius()) &&
 					   platform_model(*Instance);
 			}};
-			if (std::ranges::any_of(cell.m_instancesopaque, nearby) || std::ranges::any_of(cell.m_instancetranslucent, nearby))
+			for (auto const *instances : {&cell.m_instancesopaque, &cell.m_instancetranslucent})
 			{
-				return true;
+				if (auto const found{std::ranges::find_if(*instances, nearby)}; found != instances->end())
+				{
+					return std::format("platform model {}", (*found)->Model()->NameGet());
+				}
 			}
 		}
 	}
@@ -373,11 +376,11 @@ bool near_platform(path_place const &Place)
 			auto const here{ground_at(Place.position + across * (side * distance), Place.position.y + Groundceiling)};
 			if (here.found && (here.height > Place.position.y + Platformrise))
 			{
-				return true;
+				return std::format("platform of the terrain {:.2f} m high {:.1f} m aside", here.height - Place.position.y, side * distance);
 			}
 		}
 	}
-	return false;
+	return {};
 }
 
 // the clip of the flight which looks the nearest to Towards (from the deer to the train) for a deer looking along Heading
@@ -468,8 +471,8 @@ void change_deer(TAnimModel *&Model, glm::dvec3 const &Heading, vat_clip const &
 }
 
 // the way a deer would run away from Start along Heading: true where it's all over flat ground, Ground then the heights of the ground
-// at equal steps along it (the first one Start)
-bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<double, Groundsamples> &Ground)
+// at equal steps along it (the first one Start); Reason why not otherwise
+bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<double, Groundsamples> &Ground, std::string &Reason)
 {
 	Ground.front() = Start.y;
 	auto const length{flight_way(Flighttime)};
@@ -479,19 +482,31 @@ bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<dou
 	{
 		auto const point{Start + Heading * (length * static_cast<double>(sample) / static_cast<double>(Groundsamples - 1))};
 		auto const here{ground_at(point, Start.y + Groundceiling)};
-		if ((false == here.found) || here.water || (here.height < Start.y - Waybelow) || (here.height > Start.y + Wayabove))
+		if (false == here.found)
 		{
+			Reason = std::format("no ground at {:.1f} m", glm::length(point - Start));
+			return false;
+		}
+		if (here.water || (here.height < Start.y - Waybelow) || (here.height > Start.y + Wayabove))
+		{
+			Reason = std::format("{} at {:.1f} m, {:.2f} m from the sleepers", here.water ? "water" : "ground", glm::length(point - Start), here.height - Start.y);
 			return false;
 		}
 		if ((sample > 1) && (std::abs(here.height - Ground[sample - 1]) > Waystep))
 		{
+			Reason = std::format("a step of {:.2f} m at {:.1f} m", here.height - Ground[sample - 1], glm::length(point - Start));
 			return false;
 		}
 		Ground[sample] = here.height;
 		low = (sample == 1 ? here.height : std::min(low, here.height));
 		high = std::max(high, here.height);
 	}
-	return (high - low <= Wayrange);
+	if (high - low > Wayrange)
+	{
+		Reason = std::format("the ground rises and falls {:.2f} m", high - low);
+		return false;
+	}
+	return true;
 }
 
 } // namespace
@@ -596,8 +611,14 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	auto const &axle{front ? Vehicle.Axle0 : Vehicle.Axle1};
 	auto const direction{front ? axle.GetDirection() : -axle.GetDirection()};
 	path_place place;
-	if ((false == plain_way(axle.GetTrack(), axle.GetTranslation(), direction, Global.deer_distance, place)) || near_platform(place))
+	if (false == plain_way(axle.GetTrack(), axle.GetTranslation(), direction, Global.deer_distance, place))
 	{
+		WriteLog("Deer not put: a switch, a crossing of roads or the end of the track ahead");
+		return false;
+	}
+	if (auto const platform{near_platform(place)}; false == platform.empty())
+	{
+		WriteLog(std::format("Deer not put at {:.1f} {:.1f} {:.1f}: {}", place.position.x, place.position.y, place.position.z, platform));
 		return false;
 	}
 	// across the path, a little askew, to the side with flat ground to run away over (one picked at random first)
@@ -606,18 +627,22 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	auto const askew{Random(-25.0, 25.0) * std::numbers::pi / 180.0};
 	auto const first{Random(0.0, 1.0) < 0.5 ? -1.0 : 1.0};
 	auto found{false};
+	std::string reasons;
 	for (auto const side : {first, -first})
 	{
 		glm::dvec3 const across{place.forward.z * side, 0.0, -place.forward.x * side};
 		animal.heading = glm::normalize(across * std::cos(askew) + place.forward * std::sin(askew));
-		if (flat_way(animal.start, animal.heading, animal.ground))
+		std::string reason;
+		if (flat_way(animal.start, animal.heading, animal.ground, reason))
 		{
 			found = true;
 			break;
 		}
+		reasons += (reasons.empty() ? "" : "; ") + reason;
 	}
 	if (false == found)
 	{
+		WriteLog(std::format("Deer not put at {:.1f} {:.1f} {:.1f}: {}", place.position.x, place.position.y, place.position.z, reasons));
 		return false;
 	}
 	// grazing from a moment of its own
