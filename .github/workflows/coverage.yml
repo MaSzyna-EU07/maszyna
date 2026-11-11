@@ -90,12 +90,14 @@ jobs:
       - name: Run the unit tests
         run: ./build/tests/unit/eu07_unit_tests
 
-      # the game's own sources only: no submodules, no vendored code, not the tests themselves
+      # the game's own sources only: no submodules, no vendored code, not the tests themselves.
+      # betterRenderer/ is left out for its thirdparty/yaml-cpp, which every target of the game links and so builds here
       - name: Coverage report
         run: |
           mkdir -p coverage-report/html
           gcovr --root . build \
-            --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' --exclude 'tests/' --exclude 'build/' \
+            --exclude 'ref/' --exclude 'imgui/' --exclude 'stb/' --exclude 'betterRenderer/' \
+            --exclude 'tests/' --exclude 'build/' \
             --gcov-ignore-parse-errors=negative_hits.warn_once_per_file \
             --gcov-ignore-errors=no_working_dir_found \
             --print-summary \
