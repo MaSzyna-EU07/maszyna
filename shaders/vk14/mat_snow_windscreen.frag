@@ -15,7 +15,7 @@
 //  - the lumps: one in a cell of a few texels at most, as the drops of the rain, the more snow around the likelier and bigger,
 //    from a few mm to a few cm (most of them small), clear glass between them until the snow gets thick, then packed snow
 //    overlapping into a cover. Wet (near zero, melting): lumps of slush, grey, translucent with a frosted core, bending the
-//    picture behind; dry: clumps of flakes
+//    picture behind; dry: crumbs and clumps of the flakes broken on the glass
 //  - single crystals of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -71,8 +71,8 @@ layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 2) uniform sampler
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 3) uniform sampler2D normalmap;
 
 // --- tuning ------------------------------------------------------------------------------------------------------------------
-const float snow_flake      = 1.4;   // size of a single crystal or a drop, texels of the map
-const float snow_crystals   = 0.12;  // share of the texels with a little dry snow showing a single crystal
+const float snow_flake      = 1.1;   // size of a single crystal or a drop, texels of the map (~5 mm)
+const float snow_crystals   = 0.05;  // share of the texels with a little dry snow showing a single crystal
 const float snow_drops      = 0.35;  // share of the texels with the water of a melted flake showing a drop (more with more water)
 const float snow_layer      = 0.6;   // mm of snow around which a cell surely has a lump (fewer, smaller below)
 const float snow_layer_cell = 4.0;   // a lump at most every this many texels (~2 cm)
@@ -275,8 +275,8 @@ void snLayer(vec2 aspect, float pixelUV, inout sprite_acc acc)
                 tile = (wet > 0.35) ? 14 : 12 + int(kind * 2.0);    // slush, packed snow
             else if (wet > 0.2)
                 tile = 8 + int(kind * 2.0);                          // wet lumps
-            else if (size < 0.7)
-                tile = 4 + int(kind * 2.0);                          // flakes of a few crystals
+            else if (size < 0.8)
+                tile = 6 + int(kind * 2.0);                          // crumbs (a flake breaks up hitting the glass)
             else
                 tile = 10 + int(kind * 2.0);                         // clumps
             float thick = 1.0 - exp(-q.x / (snow_opaque * mix(1.0, 0.5, q.z)));

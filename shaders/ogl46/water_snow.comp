@@ -240,8 +240,10 @@ void main()
 	float speed = water_snow.z;
 	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
 	float wet = state.y / (state.y + state.x * density + 1e-4);
-	// the dry flakes bounce off a fast glass, the ones landing on wet snow or water stay
-	float sticking = 1.0 - 0.6 * smoothstep(15.0, 35.0, speed) * (1.0 - smoothstep(0.1, 0.4, wet));
+	// the dry flakes bounce off a moving glass (powder is blown away), the wet ones (near zero) and those landing on wet snow or
+	// water stay
+	float dry = (1.0 - smoothstep(0.1, 0.4, wet)) * (1.0 - smoothstep(-3.0, 0.0, water_up.w));
+	float sticking = 1.0 - 0.85 * smoothstep(5.0, 25.0, speed) * dry;
 	float landings = water_snow.x / max(water_air.w, 0.1) * facing * area * seconds * sticking;
 	vec4 random = water_random(place, snow_slot, water_counts.x, 0x5e0du);
 	float count = min(floor(landings) + ((random.x < fract(landings)) ? 1.0 : 0.0), 4.0);
