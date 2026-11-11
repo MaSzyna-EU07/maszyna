@@ -1372,6 +1372,8 @@ void editor_mode::bend_find_tracks(glm::dvec3 const &Point, void const *Key)
 	if (Key == tool.tracks_for && glm::distance(Point, tool.tracks_at) < 1.0 &&
 	    std::none_of(tool.tracks.begin(), tool.tracks.end(), [](std::pair<TTrack *, double> const &Entry) { return Entry.first->m_editorremoved; }))
 		return;
+	// the track picked stays picked when the list of the same model is gathered anew; another model starts at the nearest
+	auto const *picked{Key == tool.tracks_for && tool.track >= 0 && tool.track < static_cast<int>(tool.tracks.size()) ? tool.tracks[tool.track].first : nullptr};
 	tool.tracks_for = Key;
 	tool.tracks_at = Point;
 	tool.tracks.clear();
@@ -1396,6 +1398,9 @@ void editor_mode::bend_find_tracks(glm::dvec3 const &Point, void const *Key)
 	std::sort(tool.tracks.begin(), tool.tracks.end(), [](auto const &A, auto const &B) { return A.second < B.second; });
 	if (tool.tracks.size() > 12)
 		tool.tracks.resize(12);
+	for (int i = 0; i < static_cast<int>(tool.tracks.size()); ++i)
+		if (tool.tracks[i].first == picked)
+			tool.track = i;
 }
 
 bool editor_mode::bend_definition(bend_source const &Source, TTrack &Track, sweep_node::state &State, std::vector<TTrack *> &Tracks)
@@ -1696,7 +1701,12 @@ void editor_mode::restore_bend(EditorSnapshot &Snapshot, bool const Undo)
 void editor_mode::bend_edit(sweep_node::state const &State)
 {
 	auto *sweep{m_bend.edited};
-	if (sweep == nullptr || sweep->m_editorremoved || State == sweep->definition())
+	if (sweep == nullptr || sweep->m_editorremoved)
+		return;
+	// the paths the copies no longer reach left out of the line
+	auto state{State};
+	trim_line(state);
+	if (state == sweep->definition())
 		return;
 	EditorSnapshot snap;
 	snap.action = EditorSnapshot::Action::Other;
@@ -1705,9 +1715,6 @@ void editor_mode::bend_edit(sweep_node::state const &State)
 	trim_history();
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
-	// the paths the copies no longer reach left out of the line
-	auto state{State};
-	trim_line(state);
 	auto const repieced{false == same_pieces(state.pieces, sweep->definition().pieces)};
 	// what the bending told is past once the model is changed
 	m_bend.status.clear();
@@ -2490,12 +2497,13 @@ void editor_mode::bend_drag_update()
 		tool.dragging = 0;
 		tool.drag_label.clear();
 		tool.drag_line.reset();
+		if (sweep->definition() == tool.drag_state)
+			return;
+		// the paths the copies no longer reach left out of the line
 		auto trimmed{sweep->definition()};
 		trim_line(trimmed);
 		if (false == (trimmed == sweep->definition()))
 			sweep->define(trimmed);
-		if (sweep->definition() == tool.drag_state)
-			return;
 		EditorSnapshot snap;
 		snap.action = EditorSnapshot::Action::Other;
 		snap.node_name = sweep->name();
