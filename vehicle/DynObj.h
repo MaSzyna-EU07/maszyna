@@ -936,6 +936,9 @@ public:
     // legacy method, sends list of vehicles over network
     void
         DynamicList( bool const Onlycontrolled = false ) const;
+    // records the odometer states of the vehicles and saves them for the next sessions
+    void
+        save_odometers();
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
@@ -945,6 +948,8 @@ private:
     // the trains it closes in on
     void
         update_coupler_physics() const;
+
+    double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
 };
 
 

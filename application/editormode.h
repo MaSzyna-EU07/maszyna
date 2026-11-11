@@ -248,6 +248,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double m_ortho_pitch{0.0};
 	bool m_ortho_pan{false};
 	glm::dvec2 m_ortho_pan_cursor{0.0};
+	double m_pan_metres{0.0}; // of the ground to a pixel, held by the panning in the perspective view
 	void ortho_pan_to(double const Horizontal, double const Vertical);
 	void ortho_pan_stop();
 	// camera fly-mode (right mouse button held); used to flush motion when it's released
@@ -291,6 +292,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the buttons to the lesson before and after, and a dot for each lesson, green when it's done
 	void render_tutorial_pages();
 	void first_step_done(first_step const Step) override;
+	void open_kilometrage() override;
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
@@ -3022,13 +3024,17 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool marker_valid{false};
 		glm::dvec3 marker{0.0};
 		std::string status;
-		int dragging{0};
+		int dragging{0}; // 1: the cross along and aside, 2: up, 3: only along, 4: the start of the model, 5: its end
 		sweep_node::state drag_state;
+		std::shared_ptr<sweep_node> drag_line; // the line as it was when the drag began
+		double drag_first{0.0}; // m along it, where the model began and ended then
+		double drag_last{0.0};
 		glm::dvec3 drag_anchor{0.0};
 		double drag_station{0.0};
 		std::string drag_label;
 		sweep_node *hover{nullptr};
 		bool over_marker{false};
+		int over_end{0}; // the handle under the cursor: 1 at the start of the model, 2 at its end
 		std::string label;
 		std::string details;
 	};
@@ -3046,6 +3052,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void bend_reanchor(sweep_node::state &State, int const Side, int const Height, glm::dvec3 const &Point) const;
 	double bend_fixed(sweep_node const &Sweep, glm::dvec3 const &Point) const;
 	void bend_stretch(sweep_node const &Sweep, double const Fixed, double const Length, glm::dvec3 const &Point, sweep_node::state &State) const;
+	// the model laid along another track: it stays where it stands, with its length
+	void bend_retrack(sweep_node const &Sweep, TTrack const &Track, sweep_node::state &State) const;
+	// the handles at the ends of the model, at the height and the side of its reference point
+	std::array<glm::dvec3, 2> bend_ends(sweep_node const &Sweep) const;
+	// a drag of the model begun: 1 the cross along and aside, 2 up, 3 only along, 4 the start, 5 the end
+	void bend_drag_begin(int const Kind);
+	// the end of the model taken to the point, the line lengthened through the tracks joined there; the length it has then
+	double bend_end_to(bool const Atend, glm::dvec3 const &Point, sweep_node::state &State) const;
+	std::string bend_selftest(std::string const &Command, std::istringstream &Words);
+	void sweep_relink(sweep_node const &Sweep);
 	void bend_pick(glm::dvec3 const &Point);
 	glm::dvec3 bend_marker(sweep_node const &Sweep) const;
 	void restore_bend(EditorSnapshot &Snapshot, bool const Undo);
@@ -3356,7 +3372,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
-	srk_tool m_srk{*this, *this, *this, *this, *this};
+	srk_tool m_srk{*this, *this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
 	minimap_tool m_minimap{*this, *this, m_ride};
@@ -3414,6 +3430,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool follow{true}; // built roads are led over the ground between the clicked points
 		float crossingspeed{30.f}; // speed limit on the junctions being made
 		float heightstep{0.1f}; // how much the selected points are raised or lowered at a time
+		// Alt+LMB on a point dragged up or down: the heights of the selected points changed by the drag, applied when let go
+		bool lifting{false};
+		float lift_mouse{0.0f}; // where on the screen the drag began, pixels down
+		double lift_scale{0.0}; // metres for a pixel at the point picked
+		std::vector<double> lift_from; // the heights of the selected points when the drag began
 		bool ring{false}; // the build tool makes roundabouts
 		float ringradius{15.f}; // of the middle of the road going around
 		std::string island{"none"}; // what the middle of a roundabout is covered with
@@ -3451,6 +3472,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_road_overlay() const;
 	void update_road_tool();
 	void road_click();
+	// the point where pieces meet or end nearest to the cursor on the screen, within a few pixels; it's found under the
+	// terrain too, where the click on the ground doesn't get near it
+	bool road_joint_on_screen(glm::dvec3 &Joint) const;
+	// Alt+LMB: the drag of the heights of the selected points begun on a point, and finished
+	bool road_lift_start();
+	void road_lift_finish();
+	double road_lift_offset() const;
 	void road_select(road_node *Road);
 	void junction_select(junction_node *Junction);
 	void road_apply();

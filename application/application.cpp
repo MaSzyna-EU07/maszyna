@@ -756,6 +756,8 @@ void eu07_application::exit()
 	m_network.reset();
 
 	//    SafeDelete( simulation::Train );
+	step("the odometers");
+	simulation::Vehicles.save_odometers();
 	step("the scenery");
 	SafeDelete(simulation::Region);
 
