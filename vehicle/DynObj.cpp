@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/lightsprogrammer.h"
 
 #include "simulation/simulation.h"
+#include "simulation/blackboxrecorder.h"
 #include "rendering/lightarray.h"
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
@@ -9186,6 +9187,7 @@ vehicle_table::erase_disabled() {
 			simulation::Trains.purge(vehicle->name());
             // remove potential entries in the light array
             simulation::Lights.remove( vehicle );
+            simulation::Blackbox.vehicle_removed( vehicle );
 /*
             // finally get rid of the vehicle and its record themselves
             // BUG: deleting the vehicle leaves dangling pointers in event->Activator and potentially elsewhere

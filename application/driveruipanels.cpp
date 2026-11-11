@@ -92,53 +92,7 @@ drivingaid_panel::update() {
             }
             // next speed limit
             auto const speedlimit { static_cast<int>( owner->VelDesired ) };
-            auto nextspeedlimit { speedlimit };
-            auto nextspeedlimitdistance { std::numeric_limits<double>::max() };
-            if( speedlimit != 0 ) { // if we aren't allowed to move then any next speed limit is irrelevant
-                // nie przekraczać rozkladowej
-                auto const schedulespeedlimit { (
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
-                        -1 ) };
-                // first take note of any speed change which should occur after passing potential current speed limit
-                if( owner->VelLimitLastDist.second > 0 ) {
-                    nextspeedlimit = min_speed( schedulespeedlimit, static_cast<int>( owner->VelLimitLastDist.first ) );
-                    nextspeedlimitdistance = owner->VelLimitLastDist.second;
-                }
-                // then take into account speed change ahead, compare it with speed after potentially clearing last limit
-                // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
-                auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
-                if( auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) }; speedatproximitydistance == nextspeedlimit ) {
-                    if( noactivespeedlimit ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( speedatproximitydistance < nextspeedlimit ) {
-                    // if the speed limit ahead is more strict than our current limit, it's important enough to report
-                    if( speedatproximitydistance < owner->VelDesired ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                    // otherwise report it only if it's located after our current (lower) limit ends
-                    else if( owner->ActualProximityDist > nextspeedlimitdistance ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( noactivespeedlimit ) { // implicit proximity > last, report only if last limit isn't present
-                    nextspeedlimit = speedatproximitydistance;
-                    nextspeedlimitdistance = owner->ActualProximityDist;
-                }
-                // HACK: if our current speed limit extends beyond our scan range don't display potentially misleading information about its length
-                if( nextspeedlimitdistance >= EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE ) {
-                    nextspeedlimit = speedlimit;
-                }
-                // HACK: hide next speed limit if the 'limit' is a vehicle in front of us
-                else if( owner->ActualProximityDist == std::abs( owner->TrackObstacle() ) ) {
-                    nextspeedlimit = speedlimit;
-                }
-            }
+            auto const [ nextspeedlimit, nextspeedlimitdistance ] { owner->next_speed_limit() };
             std::string nextspeedlimittext;
             if( nextspeedlimit != speedlimit ) {
                 std::snprintf(
