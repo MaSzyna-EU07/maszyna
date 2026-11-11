@@ -2257,6 +2257,8 @@ void editor_mode::draw_empty_scenery_hint()
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::any_of(paths.begin(), paths.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
 		return;
+	// the line of the empty scenery in the middle of the view says the same: it gives way to this one
+	m_empty_hint_frame = ImGui::GetFrameCount();
 	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const low{editor_ui::view_min()};
 	auto const high{editor_ui::view_max()};
