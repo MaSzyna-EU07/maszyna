@@ -111,7 +111,9 @@ public:
     }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
-    virtual auto Mouse_Hit() const -> bool { return true; }
+    // whether the cursor was over something drawn when Mouse_Position() was read; a renderer which doesn't read it says no,
+    // so a caller never takes a stale or empty position for a hit
+    virtual auto Mouse_Hit() const -> bool { return false; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
