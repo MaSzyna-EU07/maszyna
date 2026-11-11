@@ -1441,12 +1441,16 @@ void TMoverParameters::damage_coupler(int const End)
 	}
 
 	thiscoupler.CouplingFlag = 0;
+	thiscoupler.broken = true;
 
 	if (thiscoupler.Connected != nullptr)
 	{
 		// break connection with other vehicle, if there's any: on the end it's coupled with, which is the front one too
 		// for vehicles facing each other
-		thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr].CouplingFlag = coupling::faux;
+		auto &othercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
+		othercoupler.CouplingFlag = coupling::faux;
+		// the coupling broke between the two, either end can be repaired
+		othercoupler.broken = true;
 		if (hosetorn && Global.coupler_physics)
 		{
 			// the brake pipe of the other part of the train vents through the torn hose as well
@@ -1455,6 +1459,44 @@ void TMoverParameters::damage_coupler(int const End)
 	}
 
 	WriteLog("Bad driving: " + Name + " broke a coupler");
+}
+
+namespace
+{
+
+// the coupler as good as new, the vehicle without the coupler damage (and the emergency braking of the torn brake
+// hose) once neither of its couplers is broken
+void repair(TMoverParameters &Vehicle, TCoupling &Coupler)
+{
+	Coupler.broken = false;
+	Coupler.stretch_duration = 0.f;
+	Coupler.physics_state.couple();
+	if (Vehicle.Couplers[end::front].broken || Vehicle.Couplers[end::rear].broken)
+	{
+		return;
+	}
+	ClearFlag(Vehicle.DamageFlag, dtrain_coupling);
+	// either vehicle of the pair may have been braking through the torn hose
+	Vehicle.AlarmChainFlag = false;
+}
+
+} // namespace
+
+bool TMoverParameters::repair_coupler(int const End)
+{
+	auto &thiscoupler{Couplers[End]};
+	if (false == thiscoupler.broken)
+	{
+		return false;
+	}
+	repair(*this, thiscoupler);
+	// the other half of the coupling, which may be the vehicle flagged with the damage
+	if (auto *other{thiscoupler.Connected}; other != nullptr && other->Couplers[thiscoupler.ConnectedNr].broken)
+	{
+		repair(*other, other->Couplers[thiscoupler.ConnectedNr]);
+	}
+	WriteLog(std::format("Coupler of {} repaired, at its {} end", Name, End == end::front ? "front" : "rear"));
+	return true;
 }
 
 void TMoverParameters::Derail(DerailReason const Reason)

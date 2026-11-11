@@ -458,3 +458,40 @@ TEST_CASE("couplers: a broken coupling of vehicles facing each other uncouples t
 	// the other coupling of the second vehicle stays
 	CHECK(second->Couplers[end::rear].CouplingFlag == coupling::coupler);
 }
+
+TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the vehicle it was coupled with") {
+	auto first{vehicle{definition::load("wagon"), 0.0, "first"}};
+	auto second{vehicle{definition::load("wagon"), 0.0, "second"}};
+	auto third{vehicle{definition::load("wagon"), 0.0, "third"}};
+	join(first, end::rear, second, end::front, coupling::coupler | coupling::brakehose);
+	join(second, end::rear, third, end::front, coupling::coupler | coupling::brakehose);
+
+	// both couplings of the second wagon break
+	second->damage_coupler(end::front);
+	second->damage_coupler(end::rear);
+	REQUIRE(second->Couplers[end::front].broken);
+	REQUIRE(first->Couplers[end::rear].broken);
+	REQUIRE(third->Couplers[end::front].broken);
+	REQUIRE(TestFlag(second->DamageFlag, dtrain_coupling));
+
+	// nothing to repair at the far end of the first wagon
+	CHECK_FALSE(first->repair_coupler(end::front));
+
+	// repaired from the first wagon: the coupling between the first two, the other one stays broken
+	CHECK(first->repair_coupler(end::rear));
+	CHECK_FALSE(first->Couplers[end::rear].broken);
+	CHECK_FALSE(second->Couplers[end::front].broken);
+	CHECK(second->Couplers[end::rear].broken);
+	CHECK(third->Couplers[end::front].broken);
+	// the second wagon keeps its damage, and its emergency braking, while a coupler of it is broken
+	CHECK(TestFlag(second->DamageFlag, dtrain_coupling));
+	CHECK(second->AlarmChainFlag);
+
+	CHECK(third->repair_coupler(end::front));
+	CHECK_FALSE(second->Couplers[end::rear].broken);
+	CHECK_FALSE(TestFlag(second->DamageFlag, dtrain_coupling));
+	CHECK_FALSE(second->AlarmChainFlag);
+	// repaired, not coupled: the vehicles are coupled again as usual
+	CHECK(second->Couplers[end::rear].CouplingFlag == coupling::faux);
+	CHECK(second->Attach(end::rear, end::front, &third.mover(), coupling::coupler, true, false));
+}

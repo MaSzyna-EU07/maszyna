@@ -1256,6 +1256,7 @@ struct TCoupling
 	double Dist = 0.0; /*strzalka ugiecia zderzaków*/
 	bool CheckCollision = false; /*czy sprawdzac sile czy pedy*/
 	float stretch_duration{0.f}; // seconds, elapsed time with excessive force applied to the coupler
+	bool broken{false}; // the coupler broke (damage_coupler()), until it's repaired (repair_coupler())
 	// optional adapter piece
 	double adapter_length{0.0}; // meters, value added on the given end to standard vehicle (half)length
 	double adapter_height{0.0}; // meters, distance from rail level
@@ -2389,6 +2390,10 @@ class TMoverParameters
 	int DettachStatus(int ConnectNo);
 	bool Dettach(int ConnectNo);
 	void damage_coupler(int const End);
+	// repairs the broken coupler of the end, and the one of the vehicle it was coupled with, so they can be coupled
+	// again; the vehicles clear their coupler damage once neither of their couplers is broken. returns: whether there
+	// was a broken coupler to repair
+	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/

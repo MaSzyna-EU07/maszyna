@@ -40,12 +40,32 @@ http://mozilla.org/MPL/2.0/.
 
 #include <format>
 
+namespace {
+
+// how close to a broken coupler the camera has to be for the driving aid to offer its repair [m]
+constexpr float coupler_repair_radius { 5.f };
+
+// the broken coupler nearest to the camera, within reach: the vehicle and its end, or no vehicle
+std::pair<TDynamicObject const *, int> broken_coupler_nearby( glm::dvec3 const &Camera ) {
+    auto const *vehicle { std::get<TDynamicObject *>( simulation::Region->find_vehicle( Camera, coupler_repair_radius, false, true ) ) };
+    if( vehicle == nullptr || vehicle->MoverParameters == nullptr ) { return { nullptr, end::front }; }
+    auto const front { glm::distance( vehicle->CouplerPosition( end::front ), Camera ) };
+    auto const rear { glm::distance( vehicle->CouplerPosition( end::rear ), Camera ) };
+    auto const nearest { front <= rear ? end::front : end::rear };
+    if( std::min( front, rear ) > coupler_repair_radius || false == vehicle->MoverParameters->Couplers[ nearest ].broken ) { return { nullptr, end::front }; }
+    return { vehicle, nearest };
+}
+
+} // namespace
+
 void
 drivingaid_panel::update() {
 
     if( false == is_open ) { return; }
 
 	text_lines.clear();
+
+    std::tie( m_brokenvehicle, m_brokenend ) = broken_coupler_nearby( Global.pCamera.Pos );
 
     auto const *train { simulation::Train };
     auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
@@ -221,6 +241,12 @@ drivingaid_panel::render_contents() {
             command_relay commandrelay;
             commandrelay.post(autopilot ? user_command::aidriverenable : user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
         }
+    }
+
+    // only the coupler the camera is next to, and the one of the vehicle it was coupled with
+    if( m_brokenvehicle != nullptr && ImGui::Button( STR_C( "Repair coupler" ) ) ) {
+        command_relay commandrelay;
+        commandrelay.post( user_command::repaircoupler, m_brokenend, 0.0, GLFW_PRESS, 0, glm::vec3( 0.0f ), &m_brokenvehicle->name() );
     }
 
     ui_panel::render_contents();
@@ -1628,8 +1654,8 @@ debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
     Output.emplace_back(
         std::format( "Stretch: {:.1f} mm, stop: {}, overloaded for {:.1f} s", state.elongation * 1000.0, coupler_stop_name( state.stop ), coupler.stretch_duration ),
         Global.UITextColor );
-    if( TestFlag( mover.DamageFlag, dtrain_coupling ) ) {
-        Output.emplace_back( "Coupler broken", glm::vec4( 1.f, 0.25f, 0.25f, 1.f ) );
+    if( coupler.broken ) {
+        Output.emplace_back( "Coupler broken (repair it in the driving aid, F1)", glm::vec4( 1.f, 0.25f, 0.25f, 1.f ) );
     }
 }
 

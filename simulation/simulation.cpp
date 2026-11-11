@@ -422,6 +422,12 @@ void state_manager::process_commands() {
 			}
 		}
 
+		if (commanddata.command == user_command::repaircoupler) {
+			if (auto *vehicle{simulation::Vehicles.find(commanddata.payload)}; vehicle != nullptr) {
+				vehicle->MoverParameters->repair_coupler(static_cast<int>(commanddata.param1) == end::rear ? end::rear : end::front);
+			}
+		}
+
 		if (commanddata.command == user_command::fillcompressor) {
 			TDynamicObject *vehicle = simulation::Vehicles.find(commanddata.payload);
 			vehicle->MoverParameters->CompressedVolume = 8.0f * vehicle->MoverParameters->VeselVolume;

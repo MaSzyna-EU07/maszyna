@@ -25,6 +25,9 @@ public:
 private:
 // members
     std::array<char, 256> m_buffer;
+    // the broken coupler next to the camera, which the panel offers to repair: the vehicle and its end
+    TDynamicObject const *m_brokenvehicle { nullptr };
+    int m_brokenend { 0 };
 };
 
 class timetable_panel : public ui_expandable_panel {
