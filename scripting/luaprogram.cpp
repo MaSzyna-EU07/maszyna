@@ -33,6 +33,8 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <new>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 namespace script_screens
 {
@@ -106,10 +108,13 @@ void count_hook(lua_State *L, lua_Debug * /*Debug*/)
 
 // objects of the api -------------------------------------------------------------------------------------------------
 
-template <typename Type_> Type_ *push_object(lua_State *L, Type_ &&Object, char const *Metatable)
+// puts the object in a new userdata with the metatable, left on the stack: an rvalue is moved in, an lvalue copied.
+// what's stored is the plain type (no reference, no const), the one collect<> and check_object<> are given
+template <typename Type_> std::remove_cvref_t<Type_> *push_object(lua_State *L, Type_ &&Object, char const *Metatable)
 {
-	auto *memory{lua_newuserdata(L, sizeof(Type_))};
-	auto *object{new (memory) Type_(std::move(Object))};
+	using object_type = std::remove_cvref_t<Type_>;
+	auto *memory{lua_newuserdata(L, sizeof(object_type))};
+	auto *object{new (memory) object_type(std::forward<Type_>(Object))};
 	luaL_getmetatable(L, Metatable);
 	lua_setmetatable(L, -2);
 	return object;

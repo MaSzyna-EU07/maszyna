@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -271,7 +272,18 @@ public:
         return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
     }
     TBrakeSystem consist_brake_system() const;
+    // the next change of the speed limit ahead, as the driving aid tells it: the speed and the distance to it.
+    // the speed is the present limit (VelDesired) when nothing worth telling changes within the scan range
+    std::pair<int, double> next_speed_limit() const;
+    // what the AI would do at this place and speed, worked out also while a human drives, for the black box
+    blackbox::ai_reference ai_reference() const;
+    // the light pattern the timetable or the scenery asks for at an end of the train, -1 the usual one
+    int light_hint( int const End ) const { return m_lighthints[ End ]; }
+    // the order the driver goes by now: a train run, shunting and the like
+    TOrders order_current() const { return OrderCurrentGet(); }
 private:
+    // tells the black box of the train at the station of its timetable it makes for, at the stop point given
+    void record_station( TSpeedPos const &Point, std::uint8_t Kind ) const;
     void Activation(); // umieszczenie obsady w odpowiednim członie
     void ControllingSet(); // znajduje człon do sterowania
     void SetDriverPsyche();
@@ -553,8 +565,8 @@ private:
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
     // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
-    // reports the head of the train going past it, if it's a signal showing stop
-    void CheckSignalPassedAtDanger( TSpeedPos const &Point, bool Passedbefore ) const;
+    // reports the head of the train going past it, if it's a signal: to the black box, and to the test mode if it showed stop
+    void CheckSignalPassed( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );

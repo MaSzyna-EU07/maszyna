@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationsounds.h"
+#include "simulation/blackboxrecorder.h"
 #include "vehicle/Train.h"
 #include "utilities/dictionary.h"
 #include "scene/sceneeditor.h"
@@ -726,6 +727,8 @@ void eu07_application::exit()
 	auto const step = [closing](char const *What) {
 		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
+	step("the black box");
+	simulation::Blackbox.close();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();

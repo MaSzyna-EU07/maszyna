@@ -941,6 +941,10 @@ private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
     bool
         erase_disabled();
+    // marks the vehicles the physical coupler model covers (couplerphysics yes in eu07.ini): the player's train and
+    // the trains it closes in on
+    void
+        update_coupler_physics() const;
 };
 
 
