@@ -11,10 +11,10 @@
 // the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
 //
 // The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen:
-//  - the lumps: one in a cell of a few texels at most, as the drops of the rain, the more snow around the likelier and bigger,
-//    from a few mm to a few cm (most of them small), clear glass between them until the snow gets thick, then packed snow
-//    overlapping into a cover. Wet (near zero, melting): lumps of slush, grey, translucent with a frosted core, bending the
-//    picture behind; dry: crumbs and clumps of the flakes broken on the glass
+//  - the lumps, in five grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
+//    size, the snow it takes); it comes when the snow around reaches that and stays as it is until the snow goes. The grids come
+//    one after the other as the snow piles up (dots and crumbs, puffs, clumps, then two of packed snow), each on the ones before,
+//    so the snow accumulates rather than changes, and closes the glass by 3 mm. In a heap they come sooner
 //  - dots and small puffs of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -69,9 +69,8 @@ layout(binding = 3) uniform sampler2D normalmap;
 const float snow_flake_cell = 0.007; // a dot, a small puff or a drop at most every this many metres of the glass (its size)
 const float snow_crystals   = 0.35;  // share of the cells with a little dry snow showing a dot or a small puff
 const float snow_drops      = 0.35;  // share of the texels with the water of a melted flake showing a drop (more with more water)
-const float snow_layer      = 0.3;   // mm of snow around which a cell surely has a lump (fewer, smaller below)
 const float snow_deep       = 2.5;   // mm of snow from which the cover is opaque (no picture behind it)
-const float snow_cover      = 0.25;  // mm of snow from which the lumps run together into a cover (full at three times it)
+const float snow_cover      = 0.25;  // the lumps get opaque from three times this many mm of snow
 const float snow_lump_cell  = 0.016; // a lump at most every this many metres of the glass (its size: up to two of them)
 const float snow_heap_cells = 4.0;   // the heaps the lumps come in, cells of the lumps (bigger: bigger heaps)
 const float snow_opaque     = 1.8;   // mm of fresh snow letting 1/e of the light through (packed: half of it)
@@ -201,7 +200,7 @@ void snFlakes(vec2 span, float pixelUV, inout sprite_acc acc)
             vec2 centre = vec2(cell) + 0.15 + 0.7 * vec2(RandF(seed), RandF(seed));
             vec4 q = water_snow_at(uint(snSlot), snMap, centre / perUV);
             bool drop = (q.x < 0.05) && (q.y > 0.03);
-            bool crystal = (q.x >= 0.05) && (snWetness(q) < 0.25);
+            bool crystal = (q.x >= 0.05);
             if ((false == drop) && (false == crystal))
                 continue;
             if (RandF(seed) > (drop ? snow_drops * smoothstep(0.03, 0.2, q.y) : snow_crystals))
@@ -242,60 +241,52 @@ float snHeap(ivec2 cell)
     return mix(mix(RandF(s00), RandF(s10), f.x), mix(RandF(s01), RandF(s11), f.x), f.y);
 }
 
-// the lumps: one in a cell of snow_lump_cell metres of the glass at most, as the drops of the rain, the more snow around and the
-// more the cell lies in a heap the likelier it's there and the bigger, sizes from a few mm to a few cm (most of them small), clear
-// glass between the heaps until the snow gets thick; then packed snow overlapping into a cover. wet: lumps of slush (grey,
-// translucent, bending the picture behind); dry: crumbs and clumps of the flakes broken on the glass
-void snLayer(vec2 span, float pixelUV, vec2 shift, uint salt, bool covers, inout sprite_acc acc)
+// the lumps, in grids of cells of snow_lump_cell metres of the glass, shifted against each other. every cell of a grid has its
+// lump fixed once (its tile, place, turn, size and the snow it takes to be there): the lump comes when the snow of the map around
+// it reaches that, grows a little with more snow, and stays as it is until the snow goes (a blade, the melting); it never turns
+// into another lump. the grids come one after the other as the snow piles up: dots and crumbs first, then puffs, clumps, and last
+// the big lumps of packed snow which close the glass. in a heap (the snow landing side by side runs together) they come sooner
+struct lump_grid
+{
+    vec2 shift;      // the grid shifted, cells
+    uint salt;
+    vec2 snow;       // the snow it takes for a lump of the grid to come, mm: from .. to (random per cell)
+    vec2 size;       // the size of its lumps, cells: from .. to (random per cell)
+    int tiles;       // its tiles: the first one and how many
+    int count;
+};
+
+void snLumps(vec2 span, float pixelUV, lump_grid grid, inout sprite_acc acc)
 {
     vec2 perUV = span / snow_lump_cell;
-    vec2 p = f_coord * perUV + shift;
+    vec2 p = f_coord * perUV + grid.shift;
     ivec2 here = ivec2(floor(p));
     for (int oy = -1; oy <= 1; ++oy)
     {
         for (int ox = -1; ox <= 1; ++ox)
         {
             ivec2 cell = here + ivec2(ox, oy);
-            uint seed = Hash(uvec3(uvec2(cell + 4096), salt + 7u * uint(snSlot)));
+            uint seed = Hash(uvec3(uvec2(cell + 4096), grid.salt + 7u * uint(snSlot)));
             vec2 centre = vec2(cell) + 0.1 + 0.8 * vec2(RandF(seed), RandF(seed));
-            vec4 q = water_snow_at(uint(snSlot), snMap, (centre - shift) / perUV);
-            float heap = snHeap(cell);
-            // thick: the lumps grow into a cover (the grids that make it), the lumps of the last grid lie on it
-            float cover = covers ? smoothstep(snow_cover, snow_cover * 3.0, q.x) : 0.0;
-            float present = smoothstep(snow_layer * 0.05, snow_layer, q.x) * mix(0.5, 1.8, heap);
-            if (RandF(seed) >= max(present, cover))
+            // the snow it takes, sooner in a heap
+            float needs = mix(grid.snow.x, grid.snow.y, RandF(seed)) * mix(1.4, 0.6, snHeap(cell));
+            vec4 q = water_snow_at(uint(snSlot), snMap, (centre - grid.shift) / perUV);
+            if (q.x <= needs)
                 continue;
             float ang = RandF(seed) * 6.2831853;
             vec2 rot = vec2(cos(ang), sin(ang));
             float flip = (RandF(seed) < 0.5) ? -1.0 : 1.0;
-            float kind = RandF(seed);
+            int tile = grid.tiles + min(int(RandF(seed) * float(grid.count)), grid.count - 1);
             float random = RandF(seed);
-            float aniso = mix(0.75, 1.0, RandF(seed));
-            float grow = RandF(seed);
-            float wet = snWetness(q);
-            // wet lumps are bigger (the slush of a few flakes runs together), so are those in a heap
-            float size = mix(0.6, 1.7, grow * grow) * mix(0.9, 1.4, smoothstep(snow_layer * 0.5, snow_cover, q.x)) * mix(0.8, 1.3, heap)
-                       * ((wet > 0.2) ? 1.2 : 1.0);
-            size = mix(min(size, 1.9), 2.4, cover);
+            float aniso = mix(0.8, 1.0, RandF(seed));
+            float size = mix(grid.size.x, grid.size.y, RandF(seed)) * mix(0.85, 1.15, smoothstep(needs, needs * 2.0 + 0.2, q.x));
             vec2 local;
             if (false == snLocal(p, centre, size, vec2(1.0), rot, flip, aniso, local))
                 continue;
-            // thin wet icy snow lets some light (and the bent picture) through, a thick layer none
+            // fading in over the first snow (no flicker on the edge), opaque when thick; the thick snow bends nothing
             float deep = smoothstep(snow_cover * 3.0, snow_deep, q.x);
-            int tile;
-            // the cover: slush while it's thin and wet; thick snow is packed snow however wet it is (the slush tile is translucent
-            // by itself, a glass covered with it never closes; the wet one is greyer by its tone)
-            if (cover > 0.5)
-                tile = ((wet > 0.35) && (deep < 0.5)) ? 14 : 12 + int(kind * 2.0);
-            else if (wet > 0.2)
-                tile = 8 + int(kind * 2.0);                          // wet lumps
-            else if (size < 0.8)
-                tile = 4 + int(kind * 4.0);                          // puffs, crumbs (a flake breaks up hitting the glass)
-            else
-                tile = 10 + int(kind * 2.0);                         // clumps
-            float thick = 1.0 - exp(-q.x / (snow_opaque * mix(1.0, 0.5, q.z)));
-            float alpha = mix(mix(0.7, 0.9, thick), 1.0, deep);
-            snSprite(local, min(tile, 14), alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0 - deep, acc);
+            float alpha = smoothstep(needs, needs + 0.04, q.x) * mix(0.8, 1.0, deep);
+            snSprite(local, tile, alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0 - deep, acc);
         }
     }
 }
@@ -331,11 +322,13 @@ void main()
         ivec2 texel = clamp(ivec2(floor(f_coord * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
         uint axis = (uint(snSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
         vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
-        // two grids of lumps, the second shifted by half a cell: they overlap, so the snow closes into a cover
-        snLayer(span, pixelUV, vec2(0.0), 31u, true, layer);
-        snLayer(span, pixelUV, vec2(0.5), 77u, true, layer);
-        // and the lumps lying on the cover: the snow piles up rather than changes
-        snLayer(span, pixelUV, vec2(0.25, 0.75), 113u, false, layer);
+        // the grids of the lumps, coming one after the other as the snow piles up, each on the ones before: dots and crumbs,
+        // puffs and crumbs, clumps, two of packed snow (they close the glass by 3 mm)
+        snLumps(span, pixelUV, lump_grid(vec2(0.0), 31u, vec2(0.02, 0.35), vec2(0.6, 1.1), 0, 4), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(0.8, 1.4), 4, 4), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.25, 0.75), 113u, vec2(0.4, 1.2), vec2(1.1, 1.7), 10, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.75, 0.25), 151u, vec2(0.8, 2.0), vec2(1.9, 2.3), 12, 2), layer);
+        snLumps(span, pixelUV, lump_grid(vec2(0.5, 0.0), 199u, vec2(1.2, 2.5), vec2(1.9, 2.3), 12, 2), layer);
         snFlakes(span, pixelUV, flakes);
         vec4 q = water_snow_at(uint(snSlot), snMap, f_coord);
         wet = smoothstep(0.05, 0.3, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
