@@ -61,13 +61,14 @@ class deer_herd
 		double frame{0.0}; // of the grazing at the time time
 		double time{0.0}; // of the simulation (Timer::GetTime()), seconds; see deer_state
 		int clip{0}; // of the startle: the moment of the grazing it starts from
-		int look{0}; // 0 looks at the train to its left, 1 to its right
+		int look{0}; // the clip of the flight which looks at the train
 		double closest{1e9}; // the train came this close, metres
 		std::array<double, Groundsamples> ground{}; // heights of the ground along the way it runs
 	};
 	// the train at Train, its horn sounding, at the time Now: the deer takes fright, runs, or goes (true) once the train is past it
 	bool tend(deer &Animal, glm::dvec3 const &Train, bool const Horn, double const Now) const;
-	// puts a deer on the path ahead of the train, where there's flat ground beside it; false where there's none
+	// puts a deer on the path ahead of the train, where it's plain and straight track with flat ground beside it and no platform near;
+	// false where there's none
 	bool spawn(TDynamicObject const &Vehicle);
 	// the deer took fright: when it starts, where it looks
 	void alarm(deer &Animal, glm::dvec3 const &Train, double const Now) const;
