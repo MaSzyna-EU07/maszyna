@@ -1531,6 +1531,8 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			ErrorLog("Bad dynamic: " + Name + " derailed due to wrong track type"); // błąd w scenerii
 		else if (Reason == COLLISION)
 			WriteLog("Bad driving: " + Name + " derailed"); // This reason also generates its own message in `TMoverParameters::CollisionDetect()`
+		else if (Reason == TRAILED_SWITCH)
+			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
 	}
 }
 
@@ -1643,6 +1645,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1709,6 +1712,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze

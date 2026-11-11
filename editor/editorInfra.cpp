@@ -104,13 +104,25 @@ char const *name(category const Category)
 	case category::catenary: return "Catenary";
 	case category::logic: return "Logic";
 	case category::other: return "Other";
+	case category::equipment: return "Track equipment";
+	case category::environment: return "Surroundings";
 	}
 	return "";
 }
 
+std::optional<category> category_named(std::string const &Category)
+{
+	static std::map<std::string, category> const named{{"signal", category::signal}, {"sign", category::sign}, {"pole", category::pole}, {"catenary", category::catenary}, {"equipment", category::equipment}, {"environment", category::environment},
+	                                                   {"switch drive", category::equipment}, {"turntable", category::equipment}, {"logic", category::logic}};
+	auto const found{named.find(lower(Category))};
+	if (found == named.end())
+		return std::nullopt;
+	return found->second;
+}
+
 std::vector<category> const &categories()
 {
-	static std::vector<category> const result{category::signal, category::sign, category::pole, category::catenary, category::logic, category::other};
+	static std::vector<category> const result{category::signal, category::sign, category::pole, category::catenary, category::equipment, category::logic, category::environment, category::other};
 	return result;
 }
 
@@ -261,9 +273,11 @@ std::vector<rule> default_rules()
 {
 	return {
 	    {category::signal, "semafor sem_ sem- tarcza tarcz_ tz_ tm_ tzw powtarz sygnaliz sygnal signal"},
-	    {category::sign, "wskaz wsk_ wsk- w4 w8 w11 w24 w27 kilometr hektometr slupek_km znak tablic sign"},
+	    {category::equipment, "equipment rezonator shp przejazd plyty zwrotni zwrl zwrp wzm -wz_ 2-5-13/ 6-9-9/ 1435mm/ podsypk most wiadukt przepust cbp- kozio przejscie szafa"},
+	    {category::environment, "environment tree grass krzak plants/ posers/ drzew trawa las_ lawka plot_ wiata bud/ nastawni budyn lamp pojazdy/ peronowe/ kladka dworzec magazyn /dom reklama blok kwietnik"},
+	    {category::sign, "wskaz wsk_ wsk- w4 w8 w11 w24 w27 ip/pkp/w pkp/w /we kilometr hektometr hekt slhm slupek_km znak tablic napis sign"},
 	    {category::catenary, "trakcj siec_ siec- catenary przewod lina_nosna"},
-	    {category::pole, "slup maszt wysieg bramk konstrukcj kotw odciag pole gantry"},
+	    {category::pole, "slup maszt wysieg bramk konstrukcj kotw odciag stb1 sts1 zwis tra/sb tr/-p- tr/-l- pole gantry"},
 	};
 }
 

@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/lightarray.h"
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
+#include "vehicle/odometer.h"
 #include "vehicle/Driver.h"
 
 #include <algorithm>
@@ -248,6 +249,13 @@ void TAnim::Parovoz(){
 void
 material_data::assign( std::string const &Replacableskin ) {
 
+    // a template puts its parameter after a folder ("tabl/(p6)"): a texture made by a script given there keeps its scheme
+    if( auto const scheme { Replacableskin.find( "/make:" ) };
+        scheme != std::string::npos
+     && false == contains( Replacableskin, '|' ) ) {
+        assign( Replacableskin.substr( scheme + 1 ) );
+        return;
+    }
     // check for the pipe method first
     if( contains( Replacableskin,  '|' ) ) {
         cParser nameparser( Replacableskin );
@@ -2036,6 +2044,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 */
     // utworzenie parametrów fizyki
     MoverParameters = new TMoverParameters(iDirection ? fVel : -fVel, Type_Name, asName, Cab);
+    // the vehicle carries on with the odometer state of its earlier sessions (eu07/maszyna#72)
+    MoverParameters->Odometer = odometer::starting_state( odometer::states(), asName, asBaseDir );
     // McZapkie: TypeName musi byc nazwą CHK/MMD pojazdu
     if (!MoverParameters->LoadFIZ(asBaseDir))
     { // jak wczytanie CHK się nie uda, to błąd
@@ -9028,6 +9038,26 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
+
+    // the odometers are saved now and then, a crash doesn't lose more than the last minute
+    m_odometersavetimer += totaltime;
+    if( m_odometersavetimer >= 60.0 ) {
+        save_odometers();
+    }
+}
+
+// records the odometer states of the vehicles and saves them for the next sessions (eu07/maszyna#72)
+void
+vehicle_table::save_odometers() {
+
+    m_odometersavetimer = 0.0;
+    auto &odometers { odometer::states() };
+    for( auto const *vehicle : m_items ) {
+        if( vehicle->MoverParameters != nullptr ) {
+            odometer::record( odometers, vehicle->name(), vehicle->MoverParameters->HasDriverCab(), vehicle->MoverParameters->Odometer );
+        }
+    }
+    odometer::save();
 }
 
 // legacy method, checks for presence and height of traction wire for specified vehicle
@@ -9174,6 +9204,11 @@ vehicle_table::erase_disabled() {
             ++vehicleiter;
         }
         else {
+            // the distance the vehicle ran goes in the odometer store now, it doesn't depend on the vehicle being
+            // kept on the list until the next save (eu07/maszyna#72)
+            if( vehicle->MoverParameters != nullptr ) {
+                odometer::record( odometer::states(), vehicle->name(), vehicle->MoverParameters->HasDriverCab(), vehicle->MoverParameters->Odometer );
+            }
             if( vehicle->MyTrack != nullptr
              && true == vehicle->MyTrack->RemoveDynamicObject(vehicle) ) {
                 vehicle->MyTrack = nullptr;

@@ -80,7 +80,7 @@ private:
 // methods
     glm::vec3 wire_color() const;
     // radius() subclass details, calculates node's bounding radius
-    float radius_() override;
+    float radius_() const override;
     // serialize() subclass details, sends content of the subclass to provided stream
     void serialize_( std::ostream &Output ) const override;
     // deserialize() subclass details, restores content of the subclass from provided stream
