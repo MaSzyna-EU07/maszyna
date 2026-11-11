@@ -82,6 +82,11 @@ TCommandType TMemCell::CommandCheck()
         eCommand = cm_SetProximityVelocity;
         bCommand = false; // ta komenda nie jest wysyłana
     }
+    else if( szText == "PointVelocity" ) // tarcze ostrzegawcze przejazdowe: v1 prędkość, v2 odległość
+    {
+        eCommand = cm_PointVelocity;
+        bCommand = false; // odczytywana skanowaniem, nie wysyłana
+    }
     else if( szText == "Emergency_brake" )
     {
         eCommand = cm_EmergencyBrake;
@@ -192,6 +197,8 @@ bool TMemCell::IsVelocity() const
     if (eCommand == cm_SetVelocity)
         return true;
     if (eCommand == cm_ShuntVelocity)
+        return true;
+    if (eCommand == cm_PointVelocity)
         return true;
     return eCommand == cm_SetProximityVelocity;
 };

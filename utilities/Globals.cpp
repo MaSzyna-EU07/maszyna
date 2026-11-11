@@ -72,6 +72,14 @@ void global_settings::FinalizeConfig()
     python_enabled = false;
 #endif
 
+#ifndef WITH_WASM
+    wasm_enabled = false;
+#endif
+
+#ifndef WITH_LUA
+    luascreens_enabled = false;
+#endif
+
 #ifdef _WIN32
     Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
@@ -530,6 +538,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "blackbox")
+    {
+        ParseOne(Parser, BlackBox);
+        return true;
+    }
+
     if (token == "fullphysics")
     {
         ParseOne(Parser, FullPhysics);
@@ -759,6 +773,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "ai.brakesetting.cw1")
+    {
+        ParseOne(Parser, AIBrakeSettingCw1, 1, false);
+        return true;
+    }
+
     if (token == "pause")
     {
         std::string value;
@@ -808,6 +828,16 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "crashdamage")
     {
         ParseOne(Parser, crash_damage, 1);
+        return true;
+    }
+
+    if (token == "couplerphysics")
+    {
+        // yes: the player's train and the trains it closes in on, all: every train
+        std::string scope;
+        ParseOne(Parser, scope, 1);
+        coupler_physics_all = scope == "all";
+        coupler_physics = coupler_physics_all || scope == "yes" || scope == "true" || scope == "1";
         return true;
     }
 
@@ -871,6 +901,42 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
     if (token == "gui.trainingdefault")
     {
         ParseOne(Parser, gui_trainingdefault, 1);
+        return true;
+    }
+
+    return false;
+}
+
+bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view const token)
+{
+    if (token == "luascreens.enabled")
+    {
+        ParseOne(Parser, luascreens_enabled, 1);
+        return true;
+    }
+
+    if (token == "wasm.enabled")
+    {
+        ParseOne(Parser, wasm_enabled, 1);
+        return true;
+    }
+
+    // wasm.cabframes and wasm.externalframes: the first names of the keys, from before the Lua screens
+    if (token == "screens.cabframes" || token == "wasm.cabframes")
+    {
+        ParseOneClamped(Parser, screens_cabframes, 1, 1000);
+        return true;
+    }
+
+    if (token == "screens.externalframes" || token == "wasm.externalframes")
+    {
+        ParseOneClamped(Parser, screens_externalframes, 1, 1000);
+        return true;
+    }
+
+    if (token == "screens.gpupost")
+    {
+        ParseOne(Parser, screens_gpupost, 1);
         return true;
     }
 
@@ -1373,6 +1439,9 @@ void global_settings::ConfigParse(cParser& Parser)
         if (ConfigParsePython(Parser, token))
             continue;
 
+        if (ConfigParseScriptScreens(Parser, token))
+            continue;
+
         if (ConfigParseNetwork(Parser, token))
             continue;
 
@@ -1625,6 +1694,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
     export_as_text( Output, "physicslog", WriteLogFlag );
+    export_as_text( Output, "blackbox", BlackBox );
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
@@ -1660,6 +1730,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
+    std::string couplerphysics { coupler_physics ? "yes" : "no" };
+    if( coupler_physics_all ) {
+        couplerphysics = "all";
+    }
+    export_as_text( Output, "couplerphysics", couplerphysics );
+    export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
     export_as_text( Output, "shadows", RenderShadows );
@@ -1840,6 +1916,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );
     export_as_text( Output, "python.mipmaps", python_mipmaps );
+    export_as_text( Output, "luascreens.enabled", luascreens_enabled );
+    export_as_text( Output, "wasm.enabled", wasm_enabled );
+    export_as_text( Output, "screens.cabframes", screens_cabframes );
+    export_as_text( Output, "screens.externalframes", screens_externalframes );
+    export_as_text( Output, "screens.gpupost", screens_gpupost );
     export_as_text( Output, "async.trainThreads", trainThreads );
     for( auto const &server : network_servers ) {
         Output

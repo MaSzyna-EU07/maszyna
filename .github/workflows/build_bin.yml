@@ -27,9 +27,17 @@ jobs:
   # Windows / MSVC
   # ============================================================
 
+  # A newer push to the same branch or pull request cancels the build of the older commit. The
+  # groups are set on the build jobs rather than on the workflow, so a publish job that is already
+  # running is left to finish; with a build cancelled the publish job of that run is skipped. A push
+  # to master gets a group of its own, its commit, so the builds of master are never cancelled.
+
   windows:
     name: Windows x64 / MSVC
     runs-on: windows-2022
+    concurrency:
+      group: ${{ github.workflow }}-windows-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
@@ -75,6 +83,27 @@ jobs:
         shell: cmd
         run: |
           call setup.bat
+
+      # the unit tests run at the end of the build and load lua51.dll (the Lua screens), but ref/luajit has only its import
+      # library. LuaJIT of the same 2.0 line is built here and put on PATH for them; it doesn't go into the uploaded build
+      - name: Build lua51.dll for the unit tests
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          git init -q "%RUNNER_TEMP%\LuaJIT" || exit /b 1
+          cd /d "%RUNNER_TEMP%\LuaJIT"
+          rem the v2.0 branch of LuaJIT, pinned
+          git fetch -q --depth 1 https://github.com/LuaJIT/LuaJIT.git b83bcba6ea300d4eb16e8257ddf80bcdef1f938b || exit /b 1
+          git checkout -q FETCH_HEAD || exit /b 1
+          cd src
+          rem msvcbuild.bat runs the tools it builds (minilua, buildvm) from the current folder
+          set NoDefaultCurrentDirectoryInExePath=
+          call .\msvcbuild.bat || exit /b 1
+          if not exist lua51.dll exit /b 1
+          mkdir "%RUNNER_TEMP%\lua51"
+          copy /y lua51.dll "%RUNNER_TEMP%\lua51\" || exit /b 1
+          echo %RUNNER_TEMP%\lua51>> "%GITHUB_PATH%"
 
       - name: Configure
         shell: pwsh
@@ -162,6 +191,10 @@ jobs:
   linux:
     name: Linux x64 / GCC
     runs-on: ubuntu-24.04
+    # see the note above the windows job
+    concurrency:
+      group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
@@ -176,8 +209,16 @@ jobs:
         with:
           python-version: "3.14"
 
+      # A mirror that stops answering used to hold this step for over an hour.
+      # Time out each download, retry it, and give up on the whole step early.
       - name: Install Linux dependencies
+        timeout-minutes: 15
         run: |
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "60";' \
+            'Acquire::https::Timeout "60";' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update
 
           sudo apt-get install -y \
@@ -248,7 +289,31 @@ jobs:
           cmake \
             --build build \
             --parallel "$(nproc)"
-            
+
+      # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
+      # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
+      - name: Check the bundled libraries
+        run: |
+          GAME="$(find build/bin -maxdepth 1 -type f -name 'eu07*' -perm -u+x | head -n 1)"
+          test -n "$GAME"
+          echo "Game: $GAME"
+          readelf -d "$GAME" | grep -E 'R(UN)?PATH'
+          readelf -d "$GAME" | grep -q 'Library rpath: \[\$ORIGIN\]'
+          cat build/bin/bundled_libs.txt
+          ldd "$GAME"
+          if ldd "$GAME" | grep -q 'not found'; then
+            echo "::error::the game needs a library that is neither bundled nor in the system"
+            exit 1
+          fi
+          while read -r name; do
+            [ -n "$name" ] || continue
+            loaded="$(ldd "$GAME" | awk -v n="$name" '$1 == n { print $3 }')"
+            if [ -z "$loaded" ] || [ "$(realpath "$loaded")" != "$(realpath "build/bin/$name")" ]; then
+              echo "::error::$name is bundled, but the game loads it from '$loaded'"
+              exit 1
+            fi
+          done < build/bin/bundled_libs.txt
+
       - name: Prepare Linux Python environment
         run: |
           PYTHON_ROOT="$(python -c 'import sys; print(sys.base_prefix)')"
