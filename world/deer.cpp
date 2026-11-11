@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/deer.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -60,8 +61,19 @@ constexpr double Flight2{3.95};
 constexpr double Flight3{4.85};
 // the frame an instance starts from at the moment of the change, a little after the frame proper: never the end of the one before
 constexpr double Startframe{0.02};
+// the ground under the way of the deer, at equal steps from its start to its end (deer_herd::Groundsamples)
+constexpr std::size_t Groundsamples{9};
 // the ground under the way of the deer is looked for up to this much above the place it starts from, metres
 constexpr double Groundceiling{3.0};
+// the way it runs: flat ground found all along it (no slope of an embankment or a cutting, no water). the ground beside the
+// track no farther than this below or above the sleepers, metres
+constexpr double Waybelow{1.2};
+constexpr double Wayabove{0.8};
+// rising or falling at most this much between the samples of the ground (3 m apart), and this much all along, metres
+constexpr double Waystep{0.45};
+constexpr double Wayrange{1.2};
+// where there's no such ground at the place, the next deer is looked for this much farther, metres
+constexpr double Retrydistance{200.0};
 // the train past the deer: it came this close, and is this much farther away now, metres
 constexpr double Passedclose{300.0};
 constexpr double Passedmargin{200.0};
@@ -111,6 +123,23 @@ bool triangle_height(glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const 
 	return true;
 }
 
+// a shape of water: its material named so (water, woda), or with the shader of water
+bool is_water(scene::shape_node const &Shape)
+{
+	if (GfxRenderer == nullptr)
+	{
+		return false;
+	}
+	auto const *material{GfxRenderer->Material(Shape.data().material)};
+	if (material == nullptr)
+	{
+		return false;
+	}
+	auto name{material->GetName()};
+	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+	return (name.find("water") != std::string::npos) || (name.find("woda") != std::string::npos) || (name.find("wody") != std::string::npos);
+}
+
 // what's looked for under a point: its place, the highest ground found so far
 struct ground_probe
 {
@@ -118,6 +147,8 @@ struct ground_probe
 	double ceiling{0.0};
 	bool found{false};
 	double height{0.0};
+	bool water{false}; // the highest surface found is water
+	bool shape_water{false}; // of the shape looked through
 
 	void triangle(glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C)
 	{
@@ -125,6 +156,7 @@ struct ground_probe
 		{
 			found = true;
 			height = y;
+			water = shape_water;
 		}
 	}
 
@@ -152,6 +184,7 @@ struct ground_probe
 		{
 			return;
 		}
+		shape_water = is_water(Shape);
 		if (false == data.vertices.empty())
 		{
 			for (std::size_t index = 0; index + 2 < data.vertices.size(); index += 3)
@@ -169,13 +202,21 @@ struct ground_probe
 	}
 };
 
-// the height of the ground of the scenery (its shapes: the terrain) under the point, not higher than Ceiling. false where there's
-// none: the ground of terrain models, or none loaded
-bool ground_height(glm::dvec3 const &Point, double const Ceiling, double &Height)
+// the ground of the scenery (its shapes: the terrain) under a point
+struct ground
 {
+	bool found{false}; // none: the ground of terrain models, or none loaded
+	double height{0.0};
+	bool water{false};
+};
+
+// the ground under the point, not higher than Ceiling
+ground ground_at(glm::dvec3 const &Point, double const Ceiling)
+{
+	ground result;
 	if (simulation::Region == nullptr)
 	{
-		return false;
+		return result;
 	}
 	ground_probe probe;
 	probe.point = Point;
@@ -196,10 +237,16 @@ bool ground_height(glm::dvec3 const &Point, double const Ceiling, double &Height
 			{
 				probe.shape(shape);
 			}
+			for (auto const &shape : cell.m_shapestranslucent)
+			{
+				probe.shape(shape);
+			}
 		}
 	}
-	Height = probe.height;
-	return probe.found;
+	result.found = probe.found;
+	result.height = probe.height;
+	result.water = probe.water;
+	return result;
 }
 
 // a place on a path: the point of its axis and the way along it, level, of length 1
@@ -334,6 +381,33 @@ void change_deer(TAnimModel *&Model, glm::dvec3 const &Heading, vat_clip const &
 	Model = model;
 }
 
+// the way a deer would run away from Start along Heading: true where it's all over flat ground, Ground then the heights of the ground
+// at equal steps along it (the first one Start)
+bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<double, Groundsamples> &Ground)
+{
+	Ground.front() = Start.y;
+	auto const length{flight_way(Flighttime)};
+	auto low{Start.y};
+	auto high{Start.y - 1e9};
+	for (std::size_t sample = 1; sample < Groundsamples; ++sample)
+	{
+		auto const point{Start + Heading * (length * static_cast<double>(sample) / static_cast<double>(Groundsamples - 1))};
+		auto const here{ground_at(point, Start.y + Groundceiling)};
+		if ((false == here.found) || here.water || (here.height < Start.y - Waybelow) || (here.height > Start.y + Wayabove))
+		{
+			return false;
+		}
+		if ((sample > 1) && (std::abs(here.height - Ground[sample - 1]) > Waystep))
+		{
+			return false;
+		}
+		Ground[sample] = here.height;
+		low = (sample == 1 ? here.height : std::min(low, here.height));
+		high = std::max(high, here.height);
+	}
+	return (high - low <= Wayrange);
+}
+
 } // namespace
 
 simulation::deer_herd simulation::Deer;
@@ -363,9 +437,10 @@ void simulation::deer_herd::update(double const Deltatime)
 	if ((Global.deer_interval > 0.0) && (m_travelled >= Global.deer_interval))
 	{
 		m_travelled = 0.0;
-		if (Random(0.0, 1.0) < Global.deer_chance)
+		if ((Random(0.0, 1.0) < Global.deer_chance) && (false == spawn(*vehicle)))
 		{
-			spawn(*vehicle);
+			// no flat ground there: soon again
+			m_travelled = std::max(0.0, Global.deer_interval - Retrydistance);
 		}
 	}
 	auto const train{vehicle->GetPosition()};
@@ -423,7 +498,7 @@ bool simulation::deer_herd::tend(deer &Animal, glm::dvec3 const &Train, bool con
 	return false;
 }
 
-void simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
+bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 {
 	// the end of the train the way it goes, or the cab occupied when it stands
 	auto const *mover{Vehicle.MoverParameters};
@@ -437,24 +512,38 @@ void simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	path_place place;
 	if (false == path_ahead(axle.GetTrack(), axle.GetTranslation(), direction, Global.deer_distance, place))
 	{
-		return;
+		return false;
 	}
-	// across the path, to one side or the other, a little askew
-	auto const side{Random(0.0, 1.0) < 0.5 ? -1.0 : 1.0};
-	auto const askew{Random(-25.0, 25.0) * std::numbers::pi / 180.0};
-	glm::dvec3 const across{place.forward.z * side, 0.0, -place.forward.x * side};
+	// across the path, a little askew, to the side with flat ground to run away over (one picked at random first)
 	deer animal;
-	animal.heading = glm::normalize(across * std::cos(askew) + place.forward * std::sin(askew));
 	animal.start = place.position;
+	auto const askew{Random(-25.0, 25.0) * std::numbers::pi / 180.0};
+	auto const first{Random(0.0, 1.0) < 0.5 ? -1.0 : 1.0};
+	auto found{false};
+	for (auto const side : {first, -first})
+	{
+		glm::dvec3 const across{place.forward.z * side, 0.0, -place.forward.x * side};
+		animal.heading = glm::normalize(across * std::cos(askew) + place.forward * std::sin(askew));
+		if (flat_way(animal.start, animal.heading, animal.ground))
+		{
+			found = true;
+			break;
+		}
+	}
+	if (false == found)
+	{
+		return false;
+	}
 	// grazing from a moment of its own
 	animal.frame = Random(0.0, Grazing.frames);
 	animal.time = Timer::GetTime();
 	animal.model = make_deer(Grazing, place.position, vat_turn(animal.heading, Grazing, 0, animal.frame, animal.time), false);
 	if (animal.model == nullptr)
 	{
-		return;
+		return false;
 	}
 	m_deer.emplace_back(animal);
+	return true;
 }
 
 void simulation::deer_herd::alarm(deer &Animal, glm::dvec3 const &Train, double const Now) const
@@ -476,17 +565,9 @@ void simulation::deer_herd::alarm(deer &Animal, glm::dvec3 const &Train, double 
 
 void simulation::deer_herd::flee(deer &Animal) const
 {
+	// the ground along its way was looked at when it was put there
 	Animal.state = deer_state::fleeing;
 	Animal.start = Animal.model->location();
-	// the ground along the way it'll run, where there's none found the height of the step before
-	Animal.ground.front() = Animal.start.y;
-	auto const length{flight_way(Flighttime)};
-	for (std::size_t sample = 1; sample < Groundsamples; ++sample)
-	{
-		auto const point{Animal.start + Animal.heading * (length * static_cast<double>(sample) / static_cast<double>(Groundsamples - 1))};
-		double height{0.0};
-		Animal.ground[sample] = (ground_height(point, Animal.start.y + Groundceiling, height) ? height : Animal.ground[sample - 1]);
-	}
 }
 
 bool simulation::deer_herd::run(deer &Animal, double const Now) const
