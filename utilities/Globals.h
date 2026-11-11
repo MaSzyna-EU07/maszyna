@@ -112,6 +112,7 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
+    bool BlackBox{ true }; // with the physics logs on, the black box of the session is written as well (blackbox_doc.md)
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -276,6 +277,12 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
+	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
+	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
+	// train with coupler_physics_all
+	bool coupler_physics = false;
+	bool coupler_physics_all = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
@@ -297,6 +304,11 @@ struct global_settings {
 	bool python_sharectx = true;
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
+	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
+	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
+	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
+	bool screens_gpupost{true}; // the post-processing of the script screens (image:led_post, image:resize) on the gpu, when the renderer can
 
     bool gfx_skiprendering = false;
     int gfx_framebuffer_width = -1;
@@ -391,6 +403,7 @@ struct global_settings {
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
 	bool ConfigParseUI(cParser& Parser, const std::string& token);
 	bool ConfigParsePython(cParser& Parser, const std::string& token);
+	bool ConfigParseScriptScreens(cParser& Parser, std::string_view token);
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
