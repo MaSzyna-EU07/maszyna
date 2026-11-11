@@ -55,7 +55,7 @@ jobs:
             libpng-dev libopenal-dev libluajit-5.1-dev \
             libserialport-dev libsndfile1-dev \
             xorg-dev libxkbcommon-dev libwayland-dev wayland-protocols
-          python3 -m pip install --no-cache-dir gcovr==8.3
+          python3 -m pip install --no-cache-dir --only-binary :all: gcovr==8.3
 
       - name: Build current OpenAL Soft
         run: |
