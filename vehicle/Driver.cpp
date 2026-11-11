@@ -3195,6 +3195,20 @@ void TController::SetDriverPsyche() {
     }
 }
 
+// closes the line breaker, or starts the engine, the relays reset first
+void TController::close_line_breaker()
+{
+    cue_action( driver_hint::mastercontrollersetzerospeed );
+    // consist-wide ground relay reset
+    cue_action( driver_hint::maincircuitgroundreset );
+    cue_action( driver_hint::tractionnmotoroverloadreset );
+    if( mvOccupied->EngineType == TEngineType::DieselEngine ) {
+        // specjalnie dla SN61 żeby nie zgasł
+        cue_action( driver_hint::mastercontrollersetidle );
+    }
+    cue_action( driver_hint::linebreakerclose );
+}
+
 bool TController::PrepareEngine()
 { // odpalanie silnika
     // HACK: don't immediately activate inert vehicle in case the simulation is about to replace us with human driver
@@ -3217,6 +3231,13 @@ bool TController::PrepareEngine()
         else {
             cue_action( driver_hint::waittemperaturetoolow );
         }
+    }
+
+    if( mvControlling->PantographsRequireMains
+     && IsAnyLineBreakerOpen ) {
+        // the pantographs rise only through the closed line breaker, which closes without their voltage
+        PrepareDirection();
+        close_line_breaker();
     }
 
     if( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector
@@ -3273,15 +3294,7 @@ bool TController::PrepareEngine()
         }
         if( IsAnyLineBreakerOpen ) {
             // activate main circuit or engine
-            cue_action( driver_hint::mastercontrollersetzerospeed );
-            // consist-wide ground relay reset
-            cue_action( driver_hint::maincircuitgroundreset );
-            cue_action( driver_hint::tractionnmotoroverloadreset );
-            if( mvOccupied->EngineType == TEngineType::DieselEngine ) {
-                // specjalnie dla SN61 żeby nie zgasł
-                cue_action( driver_hint::mastercontrollersetidle );
-            }
-            cue_action( driver_hint::linebreakerclose );
+            close_line_breaker();
         }
         else {
             // main circuit or engine is on, set up vehicle devices and controls

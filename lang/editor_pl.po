@@ -14234,3 +14234,9 @@ msgstr "W czasie jazdy: W i S to jazda naprzód i wstecz, z Shift szybciej; A i 
 
 msgid "Ride along a track with Y"
 msgstr "Przejedź się po torze klawiszem Y"
+
+msgid "Cursor drawn into the picture (streams)"
+msgstr "Kursor rysowany w obrazie (stream)"
+
+msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
+msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"

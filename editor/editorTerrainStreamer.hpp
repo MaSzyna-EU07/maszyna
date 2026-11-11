@@ -69,6 +69,8 @@ class terrain_streamer
 	editor_terrain *terrain_at(double X, double Z) const;
 	// height of the terrain at (X,Z); false where there's no chunk in memory
 	bool height_at(double X, double Z, double &Height) const;
+	// the first point of the ground along the ray from the origin, within the reach; false if it meets none
+	bool raycast(glm::dvec3 const &Origin, glm::dvec3 const &Direction, double Reach, glm::dvec3 &Hit) const;
 	// triangles of the full grid of the chunks in memory overlapping the rectangle (x, z)
 	void gather_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<std::array<glm::dvec3, 3>> &Out) const;
 	// true if the geometry belongs to the terrain (or its water)
