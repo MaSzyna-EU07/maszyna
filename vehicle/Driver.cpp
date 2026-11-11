@@ -2435,9 +2435,10 @@ void TController::AutoRewident()
     // brakes are cut out (Cw-1 §19.9) only in a train (a bank engine's run included), not in a consist being shunted
     auto const train{brake_setting::runs_as_train(OrderCurrentGet())};
     auto const settings{Global.AIBrakeSettingCw1 ? brake_setting::choose(consist, train) : brake_setting::choose_legacy(consist)};
-    // and only at a standstill, the train creeping to a stop or coupling included: a check on the run (the order changed
-    // mid-run) leaves them to the next one
+    // and only at a standstill, the train creeping to a stop included: a check on the run (the order changed mid-run, or
+    // the train was just formed by coupling, which the AI does above that speed) leaves them to reinspect_brakes()
     auto const standstill{brake_setting::at_standstill(mvOccupied->Vel)};
+    auto reinspect{false};
     // a light engine counts as a passenger train for the braking below
     auto const passengertrain{brake_setting::passenger(brake_setting::choose_train_setting(consist))};
     // 3. Nastawianie
@@ -2448,11 +2449,15 @@ void TController::AutoRewident()
             continue;
         }
         // the setting, a brake cut out in a train on G (Cw-1 §19.9) or put back when the train no longer needs it cut out
-        brake_setting::apply(*d->MoverParameters, *setting, standstill);
+        if (brake_setting::apply(*d->MoverParameters, *setting, standstill)) {
+            // a brake to cut out, with the train moving: left for the next standstill
+            reinspect = true;
+        }
         // potentially release manual brake
         d->MoverParameters->DecManualBrakeLevel( ManualBrakePosNo );
         d->MoverParameters->SpringBrake.Activate = false;
     }
+    BrakeReinspectionPending = reinspect;
     //ustawianie trybu pracy zadajnika hamulca, wystarczy raz po inicjalizacji AI
     if( true == AIControllFlag ) {
         // if a human is in charge leave the brake mode up to them, otherwise do as you like
@@ -2543,6 +2548,25 @@ void TController::AutoRewident()
 	    fAccThreshold = fNominalAccThreshold;
     }
 
+}
+
+// a brake the inspector had to cut out (Cw-1 §19.9) while the train was moving gets cut out once the train stands.
+// a train formed by coupling is looked at as the buffers meet, above the speed the inspector takes for a standstill,
+// and with no stop ahead nothing would look at it standing again (eu07/maszyna#350)
+void TController::reinspect_brakes()
+{
+    if (false == BrakeReinspectionPending) {
+        return;
+    }
+    if (false == brake_setting::runs_as_train(OrderCurrentGet())) {
+        // no longer a train: nothing is cut out in a consist being shunted
+        BrakeReinspectionPending = false;
+        return;
+    }
+    if (brake_setting::at_standstill(mvOccupied->Vel)) {
+        // standing, the inspector leaves nothing for later: this clears the flag
+        AutoRewident();
+    }
 }
 
 double TController::ESMVelocity(bool Main)
@@ -5320,6 +5344,8 @@ TController::Update( double const Timedelta ) {
     // mode specific actions
     handle_engine();
     handle_orders();
+    // a brake the wagon inspector left to cut out while the train was moving
+    reinspect_brakes();
     // situational velocity and acceleration adjustments
     pick_optimal_speed( awarenessrange );
     if( iEngineActive ) {

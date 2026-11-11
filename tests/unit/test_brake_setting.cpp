@@ -224,6 +224,24 @@ int inspect_light_train(test::vehicle &Vehicle) {
 	return setting;
 }
 
+// the inspector at work on a whole heavy train on G, the vehicles at its end, the way AutoRewident() goes through
+// the train. tells whether it left a cut-out for the next standstill, as AutoRewident() notes for reinspect_brakes()
+bool inspection_pending(std::vector<test::vehicle *> const &Vehicles, bool const Train, bool const Standstill) {
+	auto consist{train(locomotive(), 30, freight_wagon(15.0, 80.0))};
+	for (auto *vehicle : Vehicles) {
+		consist.emplace_back(brake_setting::describe(vehicle->mover(), false));
+	}
+	auto const settings{brake_setting::choose(consist, Train)};
+	auto setting{settings.end() - static_cast<std::ptrdiff_t>(Vehicles.size())};
+	auto pending{false};
+	for (auto *vehicle : Vehicles) {
+		if (brake_setting::apply(vehicle->mover(), *setting++, Standstill)) {
+			pending = true;
+		}
+	}
+	return pending;
+}
+
 } // namespace
 
 TEST_CASE("brake setting: the inspector cuts the brake out in a train on G and puts it back in a train on P") {
@@ -346,9 +364,74 @@ TEST_CASE("brake setting: the inspector doesn't cut a brake out on the run, it w
 	CHECK(false == car->BrakeCutOutByInspector);
 }
 
-TEST_CASE("brake setting: a train creeping to a stop or coupling counts as standing, one on the run doesn't") {
-	// the AI looks at the train at a W4 and when it switches from shunting to the train run below 1 km/h, and as it
-	// couples at the coupling speed: the inspector takes those for a standstill
+TEST_CASE("brake setting: a cut-out skipped on the run is reported, and done at the next inspection standing") {
+	// a train formed by coupling: the AI looks at it as the buffers meet, above 1 km/h. two cars without G and
+	// a freight wagon at the end of a heavy train on G
+	test::vehicle first{passenger_car_definition()};
+	test::vehicle second{passenger_car_definition()};
+	test::vehicle wagon{test::definition::load("wagon").set("Cntrl", "BrakeDelays", "GP")};
+	std::vector<test::vehicle *> const vehicles{&first, &second, &wagon};
+	for (auto *vehicle : vehicles) {
+		charge_and_apply(*vehicle);
+	}
+	auto const setting{first->BrakeDelayFlag};
+	// moving: nothing is cut out, and the inspector tells it has to come back
+	CHECK(inspection_pending(vehicles, as_train, brake_setting::at_standstill(3.0)));
+	for (auto *vehicle : vehicles) {
+		CHECK(false == brake_setting::is_cut_out(vehicle->mover()));
+		CHECK(false == vehicle->mover().BrakeCutOutByInspector);
+	}
+	CHECK(first->BrakeDelayFlag == setting);
+	CHECK(wagon->BrakeDelayFlag == G);
+	// still moving: still pending
+	CHECK(inspection_pending(vehicles, as_train, moving));
+	// the train stands (its brake pipe charging after the coupling): the cars get cut out, nothing is left
+	CHECK(false == inspection_pending(vehicles, as_train, brake_setting::at_standstill(0.0)));
+	CHECK(brake_setting::is_cut_out(first.mover()));
+	CHECK(first->BrakeCutOutByInspector);
+	CHECK(brake_setting::is_cut_out(second.mover()));
+	CHECK(second->BrakeCutOutByInspector);
+	CHECK(false == brake_setting::is_cut_out(wagon.mover()));
+	// and nothing is pending when the train moves off
+	CHECK(false == inspection_pending(vehicles, as_train, moving));
+	CHECK(brake_setting::is_cut_out(first.mover()));
+}
+
+TEST_CASE("brake setting: an inspection on the run with nothing to cut out leaves nothing pending") {
+	// a wagon with G in a heavy train on G
+	test::vehicle wagon{test::definition::load("wagon").set("Cntrl", "BrakeDelays", "GP")};
+	CHECK(false == inspection_pending({&wagon}, as_train, moving));
+	CHECK(wagon->BrakeDelayFlag == G);
+	// a car without G in a consist being shunted: it keeps its brake, on P
+	test::vehicle car{passenger_car_definition()};
+	CHECK(false == inspection_pending({&car}, shunting, moving));
+	CHECK(false == brake_setting::is_cut_out(car.mover()));
+	// a car whose brake is cut out already, for a reason of its own or by the inspector
+	test::vehicle damaged{passenger_car_definition()};
+	damaged->Hamulec->SetBrakeStatus(damaged->Hamulec->GetBrakeStatus() | b_dmg);
+	CHECK(false == inspection_pending({&damaged}, as_train, moving));
+	CHECK(false == damaged->BrakeCutOutByInspector);
+	test::vehicle done{passenger_car_definition()};
+	REQUIRE(false == inspection_pending({&done}, as_train, standstill));
+	REQUIRE(done->BrakeCutOutByInspector);
+	CHECK(false == inspection_pending({&done}, as_train, moving));
+	// a brake put back on the run (the train became a consist being shunted) leaves nothing either
+	CHECK(false == inspection_pending({&done}, shunting, moving));
+	CHECK(false == brake_setting::is_cut_out(done.mover()));
+	// a single vehicle's apply() tells the same
+	test::vehicle single{passenger_car_definition()};
+	CHECK(brake_setting::apply(single.mover(), brake_setting::cut_out, moving));
+	CHECK(false == brake_setting::apply(single.mover(), P, moving));
+	CHECK(false == brake_setting::apply(single.mover(), 0, moving));
+	CHECK(false == brake_setting::apply(single.mover(), brake_setting::cut_out, standstill));
+	CHECK(false == brake_setting::apply(single.mover(), brake_setting::cut_out, moving));
+}
+
+TEST_CASE("brake setting: a train creeping to a stop counts as standing, one on the run or coupling doesn't") {
+	// the AI looks at the train at a W4 and when it switches from shunting to the train run below 1 km/h: the
+	// inspector takes those for a standstill. it couples faster than that (it drives onto the standing cut at up
+	// to 4 km/h and looks at the new train at the first buffer contact), so the brakes to cut out then wait for
+	// the look the AI takes once the train stands (the test above)
 	CHECK(brake_setting::at_standstill(0.0));
 	CHECK(brake_setting::at_standstill(0.04));
 	CHECK(brake_setting::at_standstill(0.9));

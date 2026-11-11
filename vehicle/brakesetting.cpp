@@ -260,23 +260,28 @@ vehicle describe(TMoverParameters const &Vehicle, bool const Driven) {
 	return described;
 }
 
-void apply(TMoverParameters &Vehicle, int const Setting, bool const Standstill) {
+bool apply(TMoverParameters &Vehicle, int const Setting, bool const Standstill) {
 	auto &brake{*Vehicle.Hamulec};
 	if (Vehicle.BrakeCutOutByInspector && false == is_cut_out(Vehicle)) {
 		// someone put the brake back in the meantime, it's theirs now
 		Vehicle.BrakeCutOutByInspector = false;
 	}
 	if (Setting == cut_out) {
-		if (false == is_cut_out(Vehicle) && Standstill) {
-			// close the cut-out cock and empty the brake with the releaser, as the scenery's '0' does: the
-			// distributor, cut off the brake pipe, has no air left to brake with and lets the cylinders go
-			brake.ForceEmptiness();
-			brake.SetBrakeStatus(brake.GetBrakeStatus() | b_dmg);
-			Vehicle.BrakeCutOutByInspector = true;
+		if (is_cut_out(Vehicle)) {
+			// a brake cut out already, by the inspector or for a reason of its own, stays as it is
+			return false;
 		}
-		// a brake cut out already, by the inspector or for a reason of its own, stays as it is. on the run the
-		// vehicle is left alone, brake and setting, until the inspector looks at the train standing
-		return;
+		if (false == Standstill) {
+			// on the run the vehicle is left alone, brake and setting, until the inspector looks at the train
+			// standing: the caller is told to come back
+			return true;
+		}
+		// close the cut-out cock and empty the brake with the releaser, as the scenery's '0' does: the
+		// distributor, cut off the brake pipe, has no air left to brake with and lets the cylinders go
+		brake.ForceEmptiness();
+		brake.SetBrakeStatus(brake.GetBrakeStatus() | b_dmg);
+		Vehicle.BrakeCutOutByInspector = true;
+		return false;
 	}
 	if (Vehicle.BrakeCutOutByInspector) {
 		// open the cut-out cock: the distributor charges from the brake pipe again
@@ -286,6 +291,7 @@ void apply(TMoverParameters &Vehicle, int const Setting, bool const Standstill) 
 	if (Setting != 0) {
 		Vehicle.BrakeDelaySwitch(Setting);
 	}
+	return false;
 }
 
 } // namespace brake_setting

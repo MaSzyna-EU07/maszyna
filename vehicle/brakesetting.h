@@ -67,8 +67,10 @@ bool runs_as_train(int Orders);
 
 // the train stands for the inspector: slower than the AI takes for a deliberate movement (EU07_AI_MOVEMENT).
 // the AI looks at the train while it still creeps to a stop (at a W4, or switching from shunting to the train
-// run) and as it couples (at the coupling speed), so a stricter threshold would miss those checks; a train
-// really on the run (an order changed mid-run) stays above it
+// run), so a stricter threshold would miss those checks; a train really on the run (an order changed mid-run)
+// stays above it, and so does one being formed by coupling: the AI drives onto the standing cut faster than
+// that and looks at the new train at the first buffer contact. apply() tells of the cut-outs such a look
+// left for the next one, at a standstill
 bool at_standstill(double Velocity);
 
 // the inspector of the releases before eu07/maszyna#350, kept for ai.brakesetting.cw1 no. the settings
@@ -89,7 +91,9 @@ vehicle describe(TMoverParameters const &Vehicle, bool Driven);
 // (Standstill): on the run the vehicle is left as it is until the inspector looks at the train again
 // standing, rather than losing its brake while moving. Any other setting first puts back a brake the
 // inspector cut out (it charges from the brake pipe again), then sets the vehicle to it (0: leaves the
-// setting as it is). A brake cut out by anyone else stays cut out
-void apply(TMoverParameters &Vehicle, int Setting, bool Standstill);
+// setting as it is). A brake cut out by anyone else stays cut out.
+// Returns true when a cut-out was left for later because the train was moving: the inspector has to look
+// at the train again once it stands (TController::reinspect_brakes() does)
+bool apply(TMoverParameters &Vehicle, int Setting, bool Standstill);
 
 } // namespace brake_setting

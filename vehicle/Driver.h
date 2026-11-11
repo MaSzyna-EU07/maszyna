@@ -674,6 +674,8 @@ private:
     bool doors_open() const;
     bool doors_permit_active() const;
     void AutoRewident(); // ustawia hamulce w składzie
+    void reinspect_brakes(); // AutoRewident() again once the train stands, when it left a brake to cut out on the run
+    bool BrakeReinspectionPending{ false }; // AutoRewident() left a brake to cut out (Cw-1 §19.9) for the next standstill
     void announce( announcement_t const Announcement );
 // members
     double fLength = 0.0; // długość składu (do wyciągania z ograniczeń)
