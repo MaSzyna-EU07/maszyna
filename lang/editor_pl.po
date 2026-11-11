@@ -3906,8 +3906,8 @@ msgstr "Kafle"
 msgid "Models around the line: select, insert, brush, area fill, copy to the node bank"
 msgstr "Modele wokół linii: zaznaczanie, wstawianie, pędzel, wypełnianie obszaru, kopiowanie do banku"
 
-msgid "Tracks and switches, signals, objects along the track, checks of the line"
-msgstr "Tory i rozjazdy, sygnalizatory, obiekty wzdłuż toru, kontrole linii"
+msgid "Tracks and switches, signals, kilometrage and posts along the track, checks of the line"
+msgstr "Tory i rozjazdy, sygnalizatory, kilometraż i słupki przy torze, kontrole linii"
 
 msgid "Roads and junctions, level crossings, the points where the traffic comes and goes"
 msgstr "Drogi i skrzyżowania, przejazdy, punkty pojawiania się i znikania ruchu"
@@ -7492,7 +7492,7 @@ msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
 msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku w załomie, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, cała linia krok po kroku, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
+msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, cała linia krok po kroku, poprawki, uchwyty na torze, wzniesienia i spadki, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: posts every 100 m along the whole line at once"
 msgstr "B: słupki co 100 m wzdłuż całej linii naraz"
@@ -14002,7 +14002,7 @@ msgid "Station (under More): click a switch of the station, then give its name, 
 msgstr "Stacja (pod Więcej): kliknij rozjazd stacji, potem podaj jej nazwę, skrót i numer linii"
 
 msgid "Station signals (under More): Set the signals puts up the entry, exit and shunting signals of the whole station at once"
-msgstr "Sygnalizatory stacji (pod Więcej): przycisk Ustaw semafory stawia naraz semafory wjazdowe, wyjazdowe i manewrowe całej stacji"
+msgstr "Sygnalizatory stacji (pod Więcej): przycisk Ustaw semafory stawia naraz semafory wjazdowe i wyjazdowe oraz tarcze manewrowe całej stacji"
 
 msgid "Line block (under More): the block signals on the line out of each station, once the stations are set"
 msgstr "Blokada liniowa (pod Więcej): semafory blokady na szlaku z każdej stacji, gdy stacje są już ustawione"
@@ -14014,7 +14014,7 @@ msgid "Save with Ctrl+S, put a train on the track and drive: the last lesson"
 msgstr "Zapisz klawiszami Ctrl+S, postaw skład na torze i jedź: ostatnia lekcja"
 
 msgid "The station tool"
-msgstr "Narzędzie stacji"
+msgstr "Narzędzie Stacja"
 
 msgid "Set the km of the line (X)"
 msgstr "Ustaw km linii (X)"
@@ -14032,10 +14032,10 @@ msgid "One point of a known km is enough: the hectometre posts, the stations and
 msgstr "Wystarczy jeden punkt o znanym km: liczą się od niego słupki hektometrowe, stacje i semafory blokady linii"
 
 msgid "Rides the camera along the track under the mouse pointer, as from a train; Y again gets off. The tools keep working on the way"
-msgstr "Kamera jedzie po torze pod kursorem jak z pociągu; ponowne Y kończy jazdę. Narzędzia działają po drodze"
+msgstr "Kamera jedzie po torze pod kursorem, jakby z okna pociągu; ponowne Y kończy jazdę. Narzędzia działają po drodze"
 
 msgid "While riding: W and S drive, Shift faster; A and D jump to the next track on the left or right; Z picks the way at the next switch"
-msgstr "W czasie jazdy: W i S jadą, z Shift szybciej; A i D przeskakują na sąsiedni tor w lewo lub w prawo; Z wybiera drogę na najbliższym rozjeździe"
+msgstr "W czasie jazdy: W i S to jazda naprzód i wstecz, z Shift szybciej; A i D przeskakują na sąsiedni tor w lewo lub w prawo; Z wybiera drogę na najbliższym rozjeździe"
 
 msgid "Ride along a track with Y"
 msgstr "Przejedź się po torze klawiszem Y"

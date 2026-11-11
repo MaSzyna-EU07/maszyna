@@ -168,7 +168,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 				return;
 			// a tool chosen again gives way to the select one
 			auto const chosen{(m_track_tab == Tab || (Tab == track_tab::straights && track_plan_tab())) && false == (Tab == track_tab::lineside && vehicle)};
-			Buttons.push_back({found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
+			Buttons.push_back({found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() {
+				                   show_track_tab(chosen ? track_tab::path : Tab);
+				                   // Posts opens on the posts, whichever part of the tab was left open
+				                   if (Tab == track_tab::lineside && false == chosen)
+					                   m_hekto.tab().expand = true;
+			                   }, Group});
 			Buttons.back().accent = family_colour(found->family);
 		};
 		// the tools of laying track first, then the signals, the km and the posts a plain line needs; the others behind More, shown while one of them is in use

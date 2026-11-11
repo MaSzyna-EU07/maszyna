@@ -596,7 +596,11 @@ bool editor_mode::track_shortcut(int const Key)
 			continue;
 		// the key of the mode on leaves it
 		auto const on{m_track_tab == mode.tab || (mode.tab == track_tab::straights && track_plan_tab())};
-		show_track_tab(m_track_window_open && on ? track_tab::path : mode.tab);
+		auto const leaving{m_track_window_open && on && false == (mode.tab == track_tab::lineside && m_vehicle.tab().open)};
+		show_track_tab(leaving ? track_tab::path : mode.tab);
+		// B opens on the posts, as the button of Posts does, also from the trainset
+		if (mode.tab == track_tab::lineside && false == leaving)
+			m_hekto.tab().expand = true;
 		return true;
 	}
 	return false;
