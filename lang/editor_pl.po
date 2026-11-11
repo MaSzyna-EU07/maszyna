@@ -5364,8 +5364,8 @@ msgstr "Przelatuje do tego, co masz zaznaczone"
 msgid "Look around with the right mouse button held"
 msgstr "Rozejrzyj się z wciśniętym prawym przyciskiem myszy"
 
-msgid "Switch to the view from above"
-msgstr "Przełącz na widok z góry"
+msgid "Press O: from above to 3D, or back"
+msgstr "Naciśnij O: z widoku z góry do 3D albo z powrotem"
 
 msgid "Laying track"
 msgstr "Układanie toru"
@@ -7515,8 +7515,11 @@ msgstr "Wciśnij obok toru i przeciągnij wzdłuż niego: sygnalizator będzie w
 msgid "Drag a signal that already stands: it slides along its track"
 msgstr "Przeciągnij stojący już sygnalizator: przesuwa się wzdłuż swojego toru"
 
-msgid "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains"
-msgstr "Rzeczy przy torze: słupki co 100 m (hektometrowe) wzdłuż całej linii naraz, wskaźniki W17 przy rozjazdach (dokąd może stać wagon) i składy"
+msgid "Turns Kilometrage on. Click a track where you know the km, by a post or a station: the posts every 100 m and the block signals are numbered after it"
+msgstr "Włącza narzędzie Kilometraż. Kliknij tor tam, gdzie znasz km, przy słupku albo stacji: według niego numerowane są słupki co 100 m i semafory blokady"
+
+msgid "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains. The posts take their numbers from the km set with X, or from the km you type in their panel for the place you clicked"
+msgstr "Rzeczy przy torze: słupki co 100 m (hektometrowe) wzdłuż całej linii naraz, wskaźniki W17 przy rozjazdach (dokąd może stać wagon) i składy. Słupki biorą numery z km ustawionego klawiszem X albo z km wpisanego w ich panelu dla klikniętego miejsca"
 
 msgid "Put up a signal"
 msgstr "Postaw sygnalizator"
@@ -12080,8 +12083,8 @@ msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powsta
 msgid "lays the track clicked"
 msgstr "układa wyklikany tor"
 
-msgid "tools: lay, switch, plan, parallel, signalling, objects, profile, speed, joints"
-msgstr "narzędzia: układanie, rozjazd, plan, równoległy, SRK, obiekty, profil, prędkość, styki"
+msgid "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, objects, profile, speed, joints"
+msgstr "narzędzia: układanie, rozjazd, plan, równoległy, obrotnica, sygnalizatory, kilometraż, obiekty, profil, prędkość, styki"
 
 msgid "Esc again drops the point not laid, Enter lays it"
 msgid_plural "Esc again drops the %zu points not laid, Enter lays them"
@@ -13797,8 +13800,8 @@ msgstr "Wzdłuż toru, po którym jadą pociągi, do których jest zwrócony: do
 msgid "%.2f m from the axis"
 msgstr "%.2f m od osi"
 
-msgid "Signals / objects along the track"
-msgstr "Sygnalizatory / obiekty wzdłuż toru"
+msgid "Signals / kilometrage / objects along the track"
+msgstr "Sygnalizatory / kilometraż / obiekty wzdłuż toru"
 
 msgid "the axes %.2f m apart there"
 msgstr "osie %.2f m od siebie"

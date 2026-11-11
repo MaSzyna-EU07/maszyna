@@ -5725,7 +5725,7 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"wheel", "Zooms in and out at the mouse pointer"},
 	      {"MMB + move", "In the view from above: press the wheel down and drag to move the map"},
 	      {"F", "Flies to what you have selected"}},
-	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Switch to the view from above"}},
+	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Press O: from above to 3D, or back"}},
 	     trial::top},
 	    {"Laying track",
 	     "lay",
@@ -5802,7 +5802,8 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"LMB", "Click beside a track: the signal stands on that side"},
 	      {"LMB + move", "Press beside the track and drag along it: the signal faces the trains going the way you dragged"},
 	      {"LMB + move", "Drag a signal that already stands: it slides along its track"},
-	      {"B", "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains"}},
+	      {"X", "Turns Kilometrage on. Click a track where you know the km, by a post or a station: the posts every 100 m and the block signals are numbered after it"},
+	      {"B", "Things beside the track: posts every 100 m along a whole line at once, the W17 signs by the switches (how far a wagon may stand) and trains. The posts take their numbers from the km set with X, or from the km you type in their panel for the place you clicked"}},
 	     {{first_step::signal, "Put up a signal"}, {first_step::posts, "Put up the posts along a line"}},
 	     trial::signals,
 	     tutorial_signal_sketch},
@@ -5928,6 +5929,7 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::straights:
 		return undone({"Correcting a curve"});
 	case track_tab::signals:
+	case track_tab::kilometrage:
 		return undone({"Signals and posts"});
 	default:
 		return "";
@@ -6221,7 +6223,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"I / B", "Signals / objects along the track"},
+	      {"I / X / B", "Signals / kilometrage / objects along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
@@ -6672,9 +6674,10 @@ void editor_mode::toggle_ortho()
     // the view from above isn't one from the track, the ride ends
     m_ride.leave();
     Global.EditorOrtho = !Global.EditorOrtho;
+    // either way: a scenery made in the wizard opens seen from above already
+    first_step_done(first_step::top);
     if (Global.EditorOrtho)
     {
-        first_step_done(first_step::top);
         m_ortho_pitch = Camera.Angle.x;
         Camera.Angle.x = -M_PI_2;
         Camera.Angle.z = 0.0;
