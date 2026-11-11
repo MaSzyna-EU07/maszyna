@@ -911,6 +911,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
 	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
+	int m_empty_hint_frame{-10};       // the frame the panel of the empty scenery was last drawn in
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management

@@ -2119,7 +2119,8 @@ void editor_mode::render_nmt_buried()
 
 void editor_mode::render_empty_scenery_hint()
 {
-	if (m_lay.active || m_terrain_open || m_nmt_state.prompt || m_streamer.resident() > 0 || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+	// the panel of the empty scenery of the tracks shown, in this frame or the last: it says the same
+	if (m_lay.active || m_terrain_open || m_nmt_state.prompt || m_streamer.resident() > 0 || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) || ImGui::GetFrameCount() - m_empty_hint_frame <= 1)
 		return;
 	auto const &tracks{simulation::Paths.sequence()};
 	if (std::any_of(tracks.begin(), tracks.end(), [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved && rail(*Track); }))

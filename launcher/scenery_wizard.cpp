@@ -375,6 +375,9 @@ void ui::scenerywizard_panel::render_range()
 	auto const size{geometry::polygon_area(area) / 1.0e6};
 	auto const tiles{geometry::squares_in(area, editor_orthophoto::tile_size).size()};
 	ImGui::TextDisabled(STR_C("About %.1f sq km, %zu photos of 256 x 256 m"), size, tiles);
+	// while it's drawn the area isn't whole yet: what it holds is told once it's done
+	if (m_drawing)
+		return;
 	if (geometry::polygon_crosses_itself(area))
 		wrapped(error_colour, STR("The edges of the area cross each other: draw it again, clicking the corners in turn around it"));
 	if (m_map.picked() && false == geometry::point_in_polygon(area, m_map.point()))
