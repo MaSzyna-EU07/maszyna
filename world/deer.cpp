@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "McZapkie/MOVER.h"
 #include "world/Track.h"
 #include "utilities/Timer.h"
+#include "utilities/Logs.h"
 
 namespace
 {
@@ -79,8 +80,10 @@ constexpr double Wayrange{1.2};
 constexpr double Retrydistance{200.0};
 // the track at the place: plain (no switch) from the train to this much past the place, metres
 constexpr double Clearpast{100.0};
-// no deer this near a platform: an instance of a model of peronowe/ (or another folder named so), metres
-constexpr double Platformrange{150.0};
+// no deer this near a platform (the reach of its model added): an instance of a model with peron in its path (peronowe/...), metres
+constexpr double Platformrange{100.0};
+// the platforms are looked for among the instances placed this near, metres (the longest platform model, 400 m, by its middle)
+constexpr double Platformsearch{350.0};
 // nor where the ground beside the track, this far from its axis, rises this much over the sleepers (a platform of the terrain)
 constexpr std::array<double, 2> Platformside{2.5, 4.0};
 constexpr double Platformrise{0.45};
@@ -327,7 +330,7 @@ bool plain_way(TTrack *Track, double const Offset, double const Direction, doubl
 	return path_ahead(Track, Offset, Direction, Distance + Clearpast, past) && path_ahead(Track, Offset, Direction, Distance, Place);
 }
 
-// a model of a platform: in a folder named peron... (peronowe/)
+// a model of a platform or of what stands on one: peron in the name of its file or of its folder (peronowe/)
 bool platform_model(TAnimModel const &Instance)
 {
 	auto const *model{Instance.Model()};
@@ -337,24 +340,24 @@ bool platform_model(TAnimModel const &Instance)
 	}
 	auto name{model->NameGet()};
 	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-	std::replace(name.begin(), name.end(), '\\', '/');
-	auto const slash{name.rfind('/')};
-	return (slash != std::string::npos) && (name.substr(0, slash).find("peron") != std::string::npos);
+	return name.find("peron") != std::string::npos;
 }
 
 // a platform about the place: a model of one near it, or the ground beside the track raised to its height
 bool near_platform(path_place const &Place)
 {
-	for (auto *section : simulation::Region->sections(Place.position, static_cast<float>(Platformrange)))
+	for (auto *section : simulation::Region->sections(Place.position, static_cast<float>(Platformsearch)))
 	{
 		for (auto const &cell : section->m_cells)
 		{
-			if (glm::length(cell.m_area.center - Place.position) > cell.m_area.radius + Platformrange)
+			if (glm::length(cell.m_area.center - Place.position) > cell.m_area.radius + Platformsearch)
 			{
 				continue;
 			}
-			auto const nearby{[&Place](TAnimModel const *Instance) {
-				return (Instance != nullptr) && (glm::length(Instance->location() - Place.position) < Platformrange) && platform_model(*Instance);
+			// a long platform (a model of 400 m) is placed by its middle: the reach of the model counts as well
+			auto const nearby{[&Place](TAnimModel *Instance) {
+				return (Instance != nullptr) && (glm::length(Instance->location() - Place.position) < Platformrange + Instance->radius()) &&
+					   platform_model(*Instance);
 			}};
 			if (std::ranges::any_of(cell.m_instancesopaque, nearby) || std::ranges::any_of(cell.m_instancetranslucent, nearby))
 			{
@@ -625,6 +628,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	{
 		return false;
 	}
+	WriteLog(std::format("Deer put at {:.1f} {:.1f} {:.1f}", place.position.x, place.position.y, place.position.z));
 	m_deer.emplace_back(animal);
 	return true;
 }
