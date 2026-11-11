@@ -171,28 +171,27 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			Buttons.push_back({found->picture, STR_C(found->label), found->key, STR_C(found->tooltip), chosen, [this, Tab, chosen]() { show_track_tab(chosen ? track_tab::path : Tab); }, Group});
 			Buttons.back().accent = family_colour(found->family);
 		};
-		// the tools of laying track first, the others behind More, shown while one of them is in use
+		// the tools of laying track first, then the signals, the km and the posts a plain line needs; the others behind More, shown while one of them is in use
 		add(track_tab::path, false);
 		add(track_tab::lay, false);
 		add(track_tab::straights, false);
 		add(track_tab::turnout, false);
 		add(track_tab::parallel, false);
-		auto const advanced{m_track_tab == track_tab::turntable || m_track_tab == track_tab::signals || srk_tab() || m_track_tab == track_tab::kilometrage || m_track_tab == track_tab::lineside || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed ||
-		                    m_track_tab == track_tab::joints || m_gauge.is_open()};
+		add(track_tab::signals, true);
+		add(track_tab::kilometrage, false);
+		add(track_tab::lineside, false);
+		auto const advanced{m_track_tab == track_tab::turntable || srk_tab() || vehicle || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_gauge.is_open()};
 		auto const more{EditorSettings.track_tools_more()};
-		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"), more, [more]() {
+		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, stations and their signals, line block, trainset, profile, speed, joints, gauge"), more, [more]() {
 			                   EditorSettings.track_tools_more(false == more);
 			                   EditorSettings.save();
 		                   }, true});
 		if (false == more && false == advanced)
 			break;
 		add(track_tab::turntable, true);
-		add(track_tab::signals, false);
 		add(track_tab::station, false);
 		add(track_tab::station_signals, false);
 		add(track_tab::line_block, false);
-		add(track_tab::kilometrage, false);
-		add(track_tab::lineside, false);
 		Buttons.push_back({icon::vehicle, STR_C("Trainset"), nullptr, STR_C("A trainset on the selected track: written to the scenery on save, and to drive at once"), vehicle, [this, vehicle]() {
 			                   show_track_tab(vehicle ? track_tab::path : track_tab::lineside);
 			                   m_vehicle.tab().expand = false == vehicle;

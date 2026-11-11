@@ -492,7 +492,7 @@ std::array<editor_mode::track_mode, 15> const &editor_mode::track_modes()
 	    {"Station signals", nullptr, track_tab::station_signals, "The signals of a whole station placed at once, named after its code, and what its signalling lacks: LMB on a switch opens the station", editor_icons::icon::station_signals, 1},
 	    {"Line block", nullptr, track_tab::line_block, "The block of the lines out of a station: its block signals, warning discs and block sections", editor_icons::icon::line_block, 1},
 	    {"Kilometrage", "X", track_tab::kilometrage, "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too", editor_icons::icon::kilometrage, 1},
-	    {"Objects", "B", track_tab::lineside, "Along the track: hectometre posts, fouling point markers, trainsets", editor_icons::icon::objects, 1},
+	    {"Posts", "B", track_tab::lineside, "Along the track: the hectometre posts every 100 m, the W17 fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
 	    {"Joints", "J", track_tab::joints, "Ends of the paths which almost meet, steps, kinks, jumps of the cant and of the grade at the joints", editor_icons::icon::joints, 2},
@@ -637,7 +637,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::profile: return STR_C("Vertical profile");
 	case track_tab::speed: return STR_C("Speed check");
 	case track_tab::joints: return STR_C("Joints");
-	case track_tab::lineside: return STR_C("Objects along the track");
+	case track_tab::lineside: return STR_C("Posts along the track");
 	case track_tab::infra: return STR_C("Infrastructure");
 	case track_tab::parallel: return STR_C("Parallel track");
 	case track_tab::signals: return STR_C("Signals");
@@ -1864,7 +1864,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_track_window_open && m_track_tab == track_tab::speed)
 		hints = {{"LMB on a row", "show the path"}};
 	else if (m_track_window_open && m_track_tab == track_tab::lineside)
-		hints = {{"LMB on a track", "the line the objects go along"}};
+		hints = {{"LMB on a track", "the line the posts go along"}};
 	else if (m_track_window_open && m_track_tab == track_tab::parallel)
 		hints = {{"LMB on a track", "the new track goes beside it"}, {"Click on a side in the panel", "the side of the new track"}};
 	else if (m_track_window_open && m_track_tab == track_tab::signals && m_signal.moving)
@@ -1876,7 +1876,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		if (signal_armed() != nullptr)
 			hints = {{"LMB by a track", "places the signal on that side"}, {"Press+drag along", "the trains it faces run that way"}, {"Esc", "stops placing"}};
 		else
-			hints = {{"List in the panel", "the type of the signal"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
+			hints = {{"Pick in the panel", "a signal from the list, then LMB beside a track"}, {"Drag a signal", "moves it along the track"}, {"LMB on a signal", "selects it"}};
 		if (m_signal.selected != 0 && m_signal.selected == m_instance)
 			hints.push_back({"Del", "removes the selected signal with its event"});
 	}
@@ -1983,7 +1983,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints.push_back({"Hold the wheel", "pans the view"});
 		hints.push_back({"Ctrl+Z", "undo"});
 		hints.push_back({"Ctrl+Y", "redo"});
-		hints.push_back({"L T G N U I X B P V J", "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, objects, profile, speed, joints"});
+		hints.push_back({"L T G N U I X B P V J", "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, posts, profile, speed, joints"});
 	}
 	for (auto &hint : hints)
 	{

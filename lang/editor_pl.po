@@ -2100,17 +2100,17 @@ msgstr "Parzyste hektometry po prawej, nieparzyste po lewej"
 msgid "Objects"
 msgstr "Obiekty"
 
-msgid "Along the track: hectometre posts, fouling point markers, trainsets"
-msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, składy"
+msgid "Along the track: the hectometre posts every 100 m, the W17 fouling point markers, trainsets"
+msgstr "Przy torze: słupki hektometrowe co 100 m, wskaźniki ukresu W17, składy"
 
-msgid "Objects along the track"
-msgstr "Obiekty przy torze"
+msgid "Posts along the track"
+msgstr "Słupki przy torze"
 
 msgid "lays it"
 msgstr "układa"
 
-msgid "the line the objects go along"
-msgstr "linia, wzdłuż której idą obiekty"
+msgid "the line the posts go along"
+msgstr "linia, wzdłuż której idą słupki"
 
 msgid "Fouling points"
 msgstr "Ukresy W17"
@@ -2118,8 +2118,8 @@ msgstr "Ukresy W17"
 msgid "Vehicle"
 msgstr "Pojazd"
 
-msgid "LMB on a track: the line the objects go along"
-msgstr "LPM na torze: linia, wzdłuż której idą obiekty"
+msgid "LMB on a track: the line the posts go along"
+msgstr "LPM na torze: linia, wzdłuż której idą słupki"
 
 msgid "%zu duplicate hectometre posts removed, Ctrl+Z brings them back"
 msgstr "Usunięte zdublowane słupki hektometrowe: %zu, Ctrl+Z je przywraca"
@@ -2204,8 +2204,8 @@ msgstr "LPM: wybierz ten tor, potem typ rozjazdu"
 msgid "Click: choose this track, then press and drag on it for the switch"
 msgstr "LPM: wybierz ten tor, potem wciśnij LPM i przeciągnij na nim, by wstawić rozjazd"
 
-msgid "Click: the line the objects go along"
-msgstr "LPM: linia, wzdłuż której idą obiekty"
+msgid "Click: the line the posts go along"
+msgstr "LPM: linia, wzdłuż której idą słupki"
 
 msgid "Click: select"
 msgstr "LPM: zaznacz"
@@ -3738,8 +3738,8 @@ msgstr "Żaden tor nie ma %s wśród swoich eventów: pociąg go nie odczytuje"
 msgid "Name, plate and the linked signal: in the node properties. Del removes it with its event"
 msgstr "Nazwę, tablicę i powiązany sygnalizator zmienisz w Inspektorze, Del usuwa go razem z eventem"
 
-msgid "No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."
-msgstr "Brak szablonów sygnalizatorów: żaden szablon katalogu scenerii nie ma opisu z category: signal. tools/editor/signal_headers.py dopisuje opisy do szablonów sygnalizatorów."
+msgid "No signals to place: none of the templates in the scenery folder is marked as a signal. The signals of the game come with it; a set of your own is marked by tools/editor/signal_headers.py (category: signal)."
+msgstr "Brak sygnalizatorów do postawienia: żaden szablon w folderze scenerii nie jest oznaczony jako sygnalizator. Sygnalizatory gry są w nią wbudowane; własny zestaw oznacza tools/editor/signal_headers.py (category: signal)."
 
 msgid "Name of the next signal; it counts up after each one placed. Its events and memory cell are named after it"
 msgstr "Nazwa następnego sygnalizatora; po każdym postawionym rośnie o jeden. Od niej biorą nazwy jego eventy i komórka pamięci"
@@ -4827,8 +4827,8 @@ msgstr "łuk idzie za nim"
 msgid "Drag the radius grip"
 msgstr "Przeciągnij uchwyt promienia"
 
-msgid "the type of the signal"
-msgstr "typ sygnalizatora"
+msgid "a signal from the list, then LMB beside a track"
+msgstr "sygnalizator z listy, potem LPM obok toru"
 
 msgid "turns the bridge"
 msgstr "obraca pomost"
@@ -5916,8 +5916,8 @@ msgstr "Rozjazd krzyżowy pojedynczy (Rkp) albo podwójny (Rkpd) na skrzyżowani
 msgid "Crossover, double, scissors, ladder"
 msgstr "Przejście rozjazdowe, podwójne przejście rozjazdowe, nożyce, ulica zwrotnicowa"
 
-msgid "Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"
-msgstr "Obrotnica, SRK i sygnalizatory, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
+msgid "Turntable, stations and their signals, line block, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, stacje i ich sygnalizatory, blokada liniowa, skład, profil, prędkość, styki, skrajnia"
 
 msgid "No switch drive models"
 msgstr "Brak modeli napędów"
@@ -6674,9 +6674,6 @@ msgstr "Cały ciąg"
 
 msgid "The tracks joined to the selected ones added to the selection, by the rules of the spread, and the terrain drawn to all of them"
 msgstr "Tory połączone z zaznaczonymi dodane do zaznaczenia według zasad rozszerzania i teren dociągnięty do nich wszystkich"
-
-msgid "Restore the terrain"
-msgstr "Przywróć teren"
 
 msgid "The formations of the selected tracks taken out of the terrain: the ground goes back to how it was before them"
 msgstr "Formacje zaznaczonych torów usunięte z terenu: grunt wraca do stanu sprzed nich"
@@ -7494,8 +7491,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a ty siadasz w kabinie"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, poprawki, uchwyty na torze, wzniesienia i spadki, teren, starsze scenerie, zapis i jazda"
+msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku w załomie, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, cała linia krok po kroku, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: posts every 100 m along the whole line at once"
 msgstr "B: słupki co 100 m wzdłuż całej linii naraz"
@@ -12056,9 +12053,6 @@ msgstr "Gizmo ukryte: tor zmienia się przeciąganiem jego końców i nie przesu
 msgid "bring out the gizmo: move, turn, lengthen, bend by the control vectors"
 msgstr "pokazuje gizmo: przesuń, obróć, wydłuż, wygnij wektorami sterującymi"
 
-msgid "Drag an end"
-msgstr "Przeciągnij koniec"
-
 msgid "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"
 msgstr "styk: sąsiednie tory idą za nim; wolny koniec: wychodzi z niego nowy tor, z Ctrl się przesuwa"
 
@@ -12089,8 +12083,8 @@ msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powsta
 msgid "lays the track clicked"
 msgstr "układa wyklikany tor"
 
-msgid "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, objects, profile, speed, joints"
-msgstr "narzędzia: układanie, rozjazd, plan, równoległy, obrotnica, sygnalizatory, kilometraż, obiekty, profil, prędkość, styki"
+msgid "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, posts, profile, speed, joints"
+msgstr "narzędzia: układanie, rozjazd, plan, równoległy, obrotnica, sygnalizatory, kilometraż, słupki, profil, prędkość, styki"
 
 msgid "Esc again drops the point not laid, Enter lays it"
 msgid_plural "Esc again drops the %zu points not laid, Enter lays them"
@@ -13806,8 +13800,8 @@ msgstr "Wzdłuż toru, po którym jadą pociągi, do których jest zwrócony: do
 msgid "%.2f m from the axis"
 msgstr "%.2f m od osi"
 
-msgid "Signals / kilometrage / objects along the track"
-msgstr "Sygnalizatory / kilometraż / obiekty wzdłuż toru"
+msgid "Signals / kilometrage / posts along the track"
+msgstr "Sygnalizatory / kilometraż / słupki przy torze"
 
 msgid "the axes %.2f m apart there"
 msgstr "osie %.2f m od siebie"
@@ -13991,3 +13985,57 @@ msgstr "PPM wciśnięty, W / S"
 
 msgid "RMB held, A / D"
 msgstr "PPM wciśnięty, A / D"
+
+msgid "Pick in the panel"
+msgstr "Wybierz w panelu"
+
+msgid "A whole line, step by step"
+msgstr "Cała linia krok po kroku"
+
+msgid "Lay the tracks of the line (L), and the switches (T) where the stations are"
+msgstr "Ułóż tory linii (L), a rozjazdy (T) tam, gdzie są stacje"
+
+msgid "Kilometrage (X): click a track where you know the km, by a post or at a station. One point is enough: the posts, the stations and the block signals count from it"
+msgstr "Kilometraż (X): kliknij tor tam, gdzie znasz km, przy słupku albo na stacji. Wystarczy jeden punkt: liczą się od niego słupki, stacje i semafory blokady"
+
+msgid "Station (under More): click a switch of the station, then give its name, its code and the number of the line"
+msgstr "Stacja (pod Więcej): kliknij rozjazd stacji, potem podaj jej nazwę, skrót i numer linii"
+
+msgid "Station signals (under More): Set the signals puts up the entry, exit and shunting signals of the whole station at once"
+msgstr "Sygnalizatory stacji (pod Więcej): przycisk Ustaw semafory stawia naraz semafory wjazdowe, wyjazdowe i manewrowe całej stacji"
+
+msgid "Line block (under More): the block signals on the line out of each station, once the stations are set"
+msgstr "Blokada liniowa (pod Więcej): semafory blokady na szlaku z każdej stacji, gdy stacje są już ustawione"
+
+msgid "Posts (B): click the line, then Place the posts, every 100 m along all of it"
+msgstr "Słupki (B): kliknij linię, potem Postaw słupki, co 100 m wzdłuż całej linii"
+
+msgid "Save with Ctrl+S, put a train on the track and drive: the last lesson"
+msgstr "Zapisz klawiszami Ctrl+S, postaw skład na torze i jedź: ostatnia lekcja"
+
+msgid "The station tool"
+msgstr "Narzędzie stacji"
+
+msgid "Set the km of the line (X)"
+msgstr "Ustaw km linii (X)"
+
+msgid "The km typed above is this station's alone. Set with the Kilometrage tool, the km of the line serves this station, the next ones and the hectometre posts, typed once"
+msgstr "Km wpisany powyżej dotyczy tylko tej stacji. Ustawiony narzędziem Kilometraż km linii służy tej stacji, następnym i słupkom hektometrowym, wpisany raz"
+
+msgid "The line has no km set yet: the posts count from the km typed here"
+msgstr "Linia nie ma jeszcze ustawionego km: słupki liczą się od km wpisanego tutaj"
+
+msgid "Set with the Kilometrage tool, the km of the line serves the posts, the stations and the block signals, typed once"
+msgstr "Ustawiony narzędziem Kilometraż km linii służy słupkom, stacjom i semaforom blokady, wpisany raz"
+
+msgid "One point of a known km is enough: the hectometre posts, the stations and the block signals of the line count from it"
+msgstr "Wystarczy jeden punkt o znanym km: liczą się od niego słupki hektometrowe, stacje i semafory blokady linii"
+
+msgid "Rides the camera along the track under the mouse pointer, as from a train; Y again gets off. The tools keep working on the way"
+msgstr "Kamera jedzie po torze pod kursorem jak z pociągu; ponowne Y kończy jazdę. Narzędzia działają po drodze"
+
+msgid "While riding: W and S drive, Shift faster; A and D jump to the next track on the left or right; Z picks the way at the next switch"
+msgstr "W czasie jazdy: W i S jadą, z Shift szybciej; A i D przeskakują na sąsiedni tor w lewo lub w prawo; Z wybiera drogę na najbliższym rozjeździe"
+
+msgid "Ride along a track with Y"
+msgstr "Przejedź się po torze klawiszem Y"

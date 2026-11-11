@@ -41,8 +41,8 @@ class srk_tool final : public editor_tool
 		signals, // the signals of the station placed at once, and what they lack
 		lines // the block of the lines out of it
 	};
-	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals)
-	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}
+	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals, editor_guide &Guide)
+	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}, m_guide{Guide}
 	{
 	}
 	void update() override;
@@ -83,6 +83,7 @@ class srk_tool final : public editor_tool
 	editor_history &m_history;
 	editor_templates &m_templates;
 	editor_signals &m_signals;
+	editor_guide &m_guide;
 	// the block of a line out of the station
 	enum class block_kind
 	{

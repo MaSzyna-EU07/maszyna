@@ -5287,13 +5287,19 @@ void editor_mode::render_help_menu()
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
+		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
 	ImGui::EndMenu();
 }
 
 void editor_mode::first_step_done(first_step const Step)
 {
 	m_first_steps_done[static_cast<std::size_t>(Step)] = true;
+}
+
+void editor_mode::open_kilometrage()
+{
+	choose_work_area(work_area::tracks);
+	show_track_tab(track_tab::kilometrage);
 }
 
 namespace
@@ -5694,7 +5700,7 @@ void tutorial_terrain_sketch(ImDrawList &List, ImVec2 const Low, ImVec2 const Hi
 struct editor_mode::tutorial_lesson
 {
 	// what the button under a lesson does: opens the tool the lesson is about, or switches the view
-	enum class trial { reading, top, lay, turnout, select, profile, terrain, plan, trainset, signals };
+	enum class trial { reading, top, lay, turnout, select, profile, terrain, plan, trainset, signals, station };
 	struct input
 	{
 		char const *keys;
@@ -5724,8 +5730,10 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"O", "Switches between the view from above, like a map, and the normal 3D view"},
 	      {"wheel", "Zooms in and out at the mouse pointer"},
 	      {"MMB + move", "Press the wheel down and drag to move the view, from above and in 3D"},
+	      {"Y", "Rides the camera along the track under the mouse pointer, as from a train; Y again gets off. The tools keep working on the way"},
+	      {"RMB + W S A D", "While riding: W and S drive, Shift faster; A and D jump to the next track on the left or right; Z picks the way at the next switch"},
 	      {"F", "Flies to what you have selected"}},
-	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Press O: from above to 3D, or back"}},
+	     {{first_step::look, "Look around with the right mouse button held"}, {first_step::top, "Press O: from above to 3D, or back"}, {first_step::ride, "Ride along a track with Y"}},
 	     trial::top},
 	    {"Laying track",
 	     "lay",
@@ -5807,6 +5815,17 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	     {{first_step::signal, "Put up a signal"}, {first_step::posts, "Put up the posts along a line"}},
 	     trial::signals,
 	     tutorial_signal_sketch},
+	    {"A whole line, step by step",
+	     nullptr,
+	     {{"1", "Lay the tracks of the line (L), and the switches (T) where the stations are"},
+	      {"2", "Kilometrage (X): click a track where you know the km, by a post or at a station. One point is enough: the posts, the stations and the block signals count from it"},
+	      {"3", "Station (under More): click a switch of the station, then give its name, its code and the number of the line"},
+	      {"4", "Station signals (under More): Set the signals puts up the entry, exit and shunting signals of the whole station at once"},
+	      {"5", "Line block (under More): the block signals on the line out of each station, once the stations are set"},
+	      {"6", "Posts (B): click the line, then Place the posts, every 100 m along all of it"},
+	      {"7", "Save with Ctrl+S, put a train on the track and drive: the last lesson"}},
+	     {},
+	     trial::station},
 	    {"Selecting and fixing",
 	     "edit",
 	     {{"Esc", "Turns selecting on"},
@@ -5900,6 +5919,8 @@ void editor_mode::note_first_steps()
 		first_step_done(first_step::gizmo);
 	if (m_track_gizmo_using || (m_point_drag.moved && m_track_point.valid() && false == editor_track::is_end(m_track_point.kind)))
 		first_step_done(first_step::vector);
+	if (m_ride.active())
+		first_step_done(first_step::ride);
 }
 
 char const *editor_mode::tutorial_of_tool()
@@ -5931,6 +5952,10 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::signals:
 	case track_tab::kilometrage:
 		return undone({"Signals and posts"});
+	case track_tab::station:
+	case track_tab::station_signals:
+	case track_tab::line_block:
+		return undone({"A whole line, step by step"});
 	default:
 		return "";
 	}
@@ -6099,6 +6124,9 @@ void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
 	case trial::signals:
 		button = {STR_C("The signals tool (I)"), track_tab::signals, track_tab::signals};
 		break;
+	case trial::station:
+		button = {STR_C("The station tool"), track_tab::station, track_tab::station_signals};
+		break;
 	case trial::plan:
 		button = {STR_C("The plan tool (G)"), track_tab::straights, track_tab::route};
 		break;
@@ -6223,7 +6251,7 @@ void editor_mode::render_shortcuts_window()
 	      {"L / T / U", "Lay track / switch / turntable"},
 	      {"H", "Throw the selected switch over to its other path, in the editor only"},
 	      {"G (C)", "Plan: a straight, its ends and the middle; a curve, its vertex and radius"},
-	      {"I / X / B", "Signals / kilometrage / objects along the track"},
+	      {"I / X / B", "Signals / kilometrage / posts along the track"},
 	      {"P / V / J", "Profile / speed / joints"},
 	      {"Ctrl+F", "Find a track by its name"},
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},

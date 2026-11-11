@@ -292,6 +292,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the buttons to the lesson before and after, and a dot for each lesson, green when it's done
 	void render_tutorial_pages();
 	void first_step_done(first_step const Step) override;
+	void open_kilometrage() override;
 	bool m_first_steps_open{false};
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
@@ -3325,7 +3326,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
 	parallel_tool m_parallel{*this, *this, *this, *this};
-	srk_tool m_srk{*this, *this, *this, *this, *this};
+	srk_tool m_srk{*this, *this, *this, *this, *this, *this};
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
 	minimap_tool m_minimap{*this, *this, m_ride};

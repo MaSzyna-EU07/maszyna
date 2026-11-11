@@ -646,6 +646,14 @@ void hekto_tool::render_options()
 			tool.own_km = false;
 			tool.dirty = true;
 		}
+		if (tool.line_set.empty())
+		{
+			// no km of the line yet: the one typed below is of the posts alone
+			ImGui::TextWrapped("%s", STR_C("The line has no km set yet: the posts count from the km typed here"));
+			if (ImGui::SmallButton(STR_C("Set the km of the line (X)")))
+				m_guide.open_kilometrage();
+			item_tooltip("Set with the Kilometrage tool, the km of the line serves the posts, the stations and the block signals, typed once");
+		}
 		if (begin_fields("##hektokm", 0.45f))
 		{
 			field_row("Kilometre at the point (km)");
