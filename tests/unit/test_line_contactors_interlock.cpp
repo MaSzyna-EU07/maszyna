@@ -241,6 +241,21 @@ TEST_CASE("line contactors interlock: a blower starting with the speed, switched
 	CHECK(std::abs(mover.Im) > 0.5);
 }
 
+TEST_CASE("line contactors interlock: held by the local converter switch only where they wait for that converter") {
+	// what the AI driver looks at to switch the converter of a section back on (TController, the converteron hint)
+	auto interlocked{ready("Converter")};
+	CHECK_FALSE(interlocked->LineContactorsHeldByLocalConverterSwitch());
+	interlocked->ConverterAllowLocal = false;
+	CHECK(interlocked->LineContactorsHeldByLocalConverterSwitch());
+
+	for (auto const *other : {"", "MotorBlowers"}) {
+		CAPTURE(other);
+		auto locomotive{ready(other)};
+		locomotive->ConverterAllowLocal = false;
+		CHECK_FALSE(locomotive->LineContactorsHeldByLocalConverterSwitch());
+	}
+}
+
 TEST_CASE("line contactors interlock: the ET42 section with its fans switched off doesn't start") {
 	test::consist et42;
 	et42.add(definition::fiz("et42_v2/112e-a").set("Cntrl", "LineContactorsInterlock", "Converter"), 1);

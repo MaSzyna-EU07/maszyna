@@ -2623,6 +2623,12 @@ class TMoverParameters
 	}
 	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
 	bool LineContactorsInterlockReleased() const;
+	// whether the line contactors wait for the converter of the vehicle, switched off with its local switch (converterlocal_sw).
+	// the AI driver doesn't leave it so: the converters of the other vehicles running, it would wait for the contactors forever
+	bool LineContactorsHeldByLocalConverterSwitch() const
+	{
+		return LineContactorsInterlock == line_contactors_interlock::converter && false == ConverterAllowLocal;
+	}
 	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
 	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
 	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
