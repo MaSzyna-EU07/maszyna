@@ -885,6 +885,7 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     if(m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
     {
         m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+        ++m_history_changes;
     }
 
     EditorSnapshot snap;
@@ -1017,6 +1018,7 @@ void editor_mode::undo_last()
     first_step_done(first_step::undo);
     // the warning by the cursor told of the step taken back now: "Ctrl+Z takes it back" is done
     ui()->drop_refusal();
+    ++m_history_changes; // for those who watch the history: a step was taken back or done again
     // a change of the terrain made a moment ago is a step of its own before it's taken back
     m_history_busy = true;
     terrain_history_step();
@@ -1213,6 +1215,7 @@ void editor_mode::undo_one()
 
 void editor_mode::redo_last()
 {
+    ++m_history_changes; // for those who watch the history: a step was taken back or done again
     // a change of the terrain made since the undo goes to the history, and the redo steps are dropped with it
     m_history_busy = true;
     terrain_history_step();

@@ -209,6 +209,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// swaps the kilometrage with the one the snapshot keeps
 	void restore_kilometrage(EditorSnapshot &Snapshot);
 	bool m_history_busy{false}; // undo or redo under way
+	std::size_t m_history_changes{0}; // undos, redos and the steps dropped off the full history: with its size, a change of the history is seen by
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
@@ -3508,6 +3509,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<char> selected; // of the nodes
 		std::vector<glm::dvec3> synced; // the points of the road tool as they were last matched to the nodes
 		std::size_t history{0}; // length of the undo history the profile was read at
+		std::size_t history_changes{0}; // and m_history_changes then
 		int exaggeration{4}; // index of the stretch of the heights: fit, 1, 2, 5, 10, 20, 50
 		bool dragging{false}; // nodes dragged up or down in the graph
 		float drag_mouse{0.0f};

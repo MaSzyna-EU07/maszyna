@@ -367,9 +367,20 @@ road_class const kRoadClasses[]{
 // the heights and the grades given to the nodes written into the pieces: the ends of every part at the heights, its handles
 // rising with the grades; a straight gets its handles made so it can bend up and down. The arms of the junctions at the two
 // ends of the run go with them
-void write_profile(chain_profile &Profile, std::vector<double> const &Heights, std::vector<double> const &Grades,
+void write_profile(chain_profile &Profile, std::vector<double> const &Given, std::vector<double> const &Grades,
                    std::vector<std::pair<road_node *, road_node::state>> &Changes, std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
 {
+	// a run closed in a loop: its first and last node are one point, at one height
+	auto Heights{Given};
+	auto const closed{Profile.positions.size() > 2 && glm::distance(Profile.positions.front(), Profile.positions.back()) < 0.25};
+	if (closed)
+	{
+		// the one which was changed gives it
+		if (std::abs(Heights.back() - Profile.heights.back()) > 1e-9 && std::abs(Heights.front() - Profile.heights.front()) <= 1e-9)
+			Heights.front() = Heights.back();
+		else
+			Heights.back() = Heights.front();
+	}
 	for (auto const &ref : Profile.refs)
 	{
 		auto list{parts(Profile.states[ref.entry].axis)};
@@ -390,6 +401,20 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Heights, s
 		Changes.emplace_back(Profile.order[n].road, Profile.states[n]);
 	for (auto const end : {std::size_t{0}, Profile.positions.size() - 1})
 	{
+		// the other pieces ending there (a change of lanes, three or more meeting with no junction) go with the end of the run,
+		// as the Raise of the road tool takes them, so the road isn't pulled apart
+		for (auto const &other : editor_road::ends_at(Profile.positions[end]))
+		{
+			if (std::any_of(Profile.order.begin(), Profile.order.end(), [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
+				continue;
+			auto listed{std::find_if(Changes.begin(), Changes.end(), [&other](auto const &Change) { return Change.first == other.road; })};
+			if (listed == Changes.end())
+			{
+				Changes.emplace_back(other.road, other.road->definition());
+				listed = std::prev(Changes.end());
+			}
+			listed->second.axis.points[other.atend ? segment_data::point::end : segment_data::point::start].y = Heights[end];
+		}
 		for (auto const &arm : editor_road::arms_at(Profile.positions[end]))
 		{
 			auto entry{std::find_if(Junctions.begin(), Junctions.end(), [&arm](auto const &Listed) { return Listed.first == arm.first; })};
@@ -419,6 +444,9 @@ void editor_mode::road_profile_smooth()
 	auto grades{profile.grades};
 	auto const grade{std::clamp(static_cast<double>(tool.maxgrade), 0.1, 30.0) / 100.0};
 	smooth_between(profile, 0, heights.size() - 1, grade, std::max(50.0, static_cast<double>(tool.crest)), std::max(50.0, static_cast<double>(tool.sag)), heights, grades);
+	// the ends meet the neighbours as they did: their grades kept, or the road gets a kink there
+	grades.front() = profile.grades.front();
+	grades.back() = profile.grades.back();
 	double moved{0.0}, steepest{0.0};
 	for (std::size_t i = 0; i < heights.size(); ++i)
 	{
@@ -475,12 +503,13 @@ void editor_mode::road_profile_operation()
 	std::string done;
 	switch (view.op)
 	{
-	case 0: // level
+	case 0: // level, the selected nodes only
 		for (std::size_t i = first; i <= last; ++i)
-		{
-			heights[i] = view.level;
-			grades[i] = 0.0;
-		}
+			if (view.selected[i] != 0)
+			{
+				heights[i] = view.level;
+				grades[i] = 0.0;
+			}
 		done = format(STR_C("Level at %.2f m over %.0f m"), view.level, runs[last] - runs[first]);
 		break;
 	case 1: // one grade
@@ -564,14 +593,15 @@ void editor_mode::road_profile_operation()
 		for (std::size_t i = first; i <= last; ++i)
 		{
 			double ground{0.0};
-			if (m_streamer.height_at(profile.positions[i].x, profile.positions[i].z, ground))
+			if (view.selected[i] != 0 && m_streamer.height_at(profile.positions[i].x, profile.positions[i].z, ground))
 			{
 				heights[i] = ground + view.offset;
 				++found;
 			}
 		}
 		for (std::size_t i = first; i <= last; ++i)
-			grades[i] = neighbour_grade(profile, heights, i);
+			if (view.selected[i] != 0)
+				grades[i] = neighbour_grade(profile, heights, i);
 		done = format(STR_C("Nodes put %.2f m over the ground: %zu"), view.offset, found);
 		break;
 	}
@@ -590,6 +620,10 @@ void editor_mode::road_profile_operation()
 		}
 		auto const grade{std::clamp(static_cast<double>(tool.maxgrade), 0.1, 30.0) / 100.0};
 		smooth_between(profile, first, last, grade, std::max(50.0, static_cast<double>(tool.crest)), std::max(50.0, static_cast<double>(tool.sag)), heights, grades);
+		if (first == 0)
+			grades.front() = profile.grades.front();
+		if (last + 1 == grades.size())
+			grades.back() = profile.grades.back();
 		done = format(STR_C("Evened out over %.0f m: grade up to %.1f %%, crests R %.0f m, dips R %.0f m"), runs[last] - runs[first], tool.maxgrade, tool.crest, tool.sag);
 		break;
 	}
@@ -622,6 +656,7 @@ void editor_mode::road_profile_sample()
 	view.heights.clear();
 	view.ground.clear();
 	view.history = m_history.size();
+	view.history_changes = m_history_changes;
 	auto const profile{build_profile(view.road)};
 	if (profile.empty())
 	{
@@ -705,7 +740,7 @@ void editor_mode::render_road_profile_window()
 		road_profile_sample();
 	}
 	// undone or done again: read anew
-	if (view.road != nullptr && view.history != m_history.size())
+	if (view.road != nullptr && (view.history != m_history.size() || view.history_changes != m_history_changes))
 		road_profile_sample();
 	// points selected in the view: the nodes of the graph with them
 	if (tool.points != view.synced)
@@ -957,7 +992,7 @@ void editor_mode::render_road_profile_window()
 	}
 	// the hints, yellow as everywhere
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.82f, 0.24f, 1.0f));
-	ImGui::TextWrapped("%s", STR_C("LMB on a node: select it   Shift+LMB: add or take out   drag a node up or down: its height (Ctrl: finer)   drag over the graph: select a stretch   the selected nodes show in the view too; Alt+LMB on a point there drags its height"));
+	ImGui::TextWrapped("%s", STR_C("LMB on a node: select it   Shift+LMB: add or take out   drag a node up or down: its height (Ctrl: finer)   drag over the graph: select a stretch   the selected nodes show in the view too"));
 	ImGui::PopStyleColor();
 	ImGui::TextDisabled(STR_C("%.0f m long, nodes: %zu, heights %.1f - %.1f m; the road grey, the ground brown"), length, view.node_runs.size(), low, high);
 
