@@ -549,6 +549,25 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		WriteLog("SELFTEST drives " + name + ": chosen " + (m_switch.drive >= 0 ? m_switch.drives[m_switch.drive].name : std::string{"none"}) + ", side " + std::to_string(m_switch.drive_side) + ", standing" + files + ", steps " + std::to_string(m_history.size()));
 		return selftest_result::handled;
 	}
+	if (command == "straydrives")
+	{
+		auto const stray{stray_drives(true)};
+		std::string names;
+		for (auto const &drive : stray)
+			names += " " + drive.name + "(" + drive.file + ")";
+		WriteLog(format("SELFTEST straydrives: %zu", stray.size()) + names);
+		return selftest_result::handled;
+	}
+	if (command == "drivewhose")
+	{
+		// the drive the editor tells for the switch: its file and family, -1 for one not described
+		std::string name;
+		words >> name;
+		auto *track{simulation::Paths.find(name)};
+		auto const found{track != nullptr ? find_switch_drive(*track) : std::nullopt};
+		WriteLog("SELFTEST drivewhose " + name + ": " + (found.has_value() ? found->standing.file + " family " + std::to_string(found->family) : std::string{"none"}));
+		return selftest_result::handled;
+	}
 	if (command == "driveflip")
 	{
 		std::string name;

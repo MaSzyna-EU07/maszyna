@@ -2583,8 +2583,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	struct switch_drive
 	{
 		standing_template standing;
-		int family{-1};
-		int index{0};
+		int family{-1}; // -1: a drive not described for the editor, e.g. of Rainsted; it can be replaced, not turned over or moved
+		int index{-1};
 	};
 	std::optional<switch_drive> find_switch_drive(TTrack const &Switch, bool Wait = true);
 	// the drives standing in the scenery by the switch each is set to, read from the files once a frame for all the switches
@@ -2608,6 +2608,38 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// joint before them too: once, as the scenery is opened, with no step of the undo history; how many moved
 	std::size_t drives_to_blade_tips();
 	bool m_drives_checked{false};
+	// the file of each variant of the drives scanned: its family and its index in the family
+	std::map<std::string, std::pair<int, int>, std::less<>> drive_variants() const;
+	// the switches a template of a drive throws, by what follows its first parameter in their names: "" for a variant described for the
+	// editor, and for any other template whose switch events throw the track named by its first parameter, as the drives of Rainsted do;
+	// "a".."d" for one of a double switch, whose switches are named <name>a..<name>d. none for a template which isn't a drive. the ones not
+	// described for the editor have no family (-1)
+	std::vector<std::string> const &drive_switches(std::string const &File, std::map<std::string, std::pair<int, int>, std::less<>> const &Variants);
+	std::map<std::string, std::vector<std::string>, std::less<>> m_drive_templates; // read once for each file
+	// a drive set to a switch the scenery hasn't got: left by a switch deleted or renamed by hand or in an earlier editor, its events
+	// throw nothing
+	struct stray_drive
+	{
+		scene::instance_handle instance{0};
+		std::vector<std::string> switches; // the names of the switches it throws, as its include gives them
+		std::string name; // of the switches missing from them
+		std::string file;
+		glm::dvec3 location{0.0};
+	};
+	// all the drives standing in the scenery, read from the files once while no include comes or goes
+	struct drives_named
+	{
+		std::vector<stray_drive> drives;
+		int revision{-1}; // of the drives scanned
+		std::size_t instances{0};
+	};
+	std::optional<drives_named> m_drives_named;
+	// the include of a drive or a template changed: what's kept of the drives standing is read again
+	void drives_changed();
+	// the drives whose switch isn't in the scenery, checked against the tracks each time
+	std::vector<stray_drive> stray_drives(bool Wait = false);
+	void render_stray_drives();
+	void draw_stray_drives();
 	scene::layer_handle output_layer(std::string const &Part) override;
 	// places them in the active layer or the given one, as one step of the undo. returns: how many were placed
 	std::size_t place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle Layer = scene::layer_handle{}) override;

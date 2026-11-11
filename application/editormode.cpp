@@ -1411,6 +1411,15 @@ bool editor_mode::update()
                 ui()->set_status(text, false);
                 WriteLog("Editor: " + text, logtype::generic);
             }
+            // the drives left without their switches are told once, as the scenery is opened
+            if (auto const stray{stray_drives().size()}; stray > 0)
+            {
+                auto const text{format(STR_P("%zu switch drive has no switch of its name: it's listed in the switch tool and marked red in the view",
+                                             "%zu switch drives have no switch of their names: they're listed in the switch tool and marked red in the view", static_cast<long long>(stray)),
+                                       stray)};
+                ui()->set_notice(text);
+                WriteLog("Editor: " + text, logtype::generic);
+            }
         }
     }
     // after the tool has told its own status
@@ -1651,6 +1660,7 @@ bool editor_mode::update()
         draw_build_overlay();
         steps.step("laying drawn");
         draw_blade_tips();
+        draw_stray_drives();
         draw_track_intent();
         draw_tape();
         steps.step("track drawn");
@@ -3273,7 +3283,7 @@ void editor_mode::toggle_include(scene::instance_handle const Instance)
         return;
     }
     scene::Layers.removed(Instance, false == included.removed);
-    m_drives_standing.reset();
+    drives_changed();
     ui()->set_status(format(included.removed ? STR_C("Include of \"%s\" removed") : STR_C("Include of \"%s\" restored"), included.file->c_str()));
 }
 
@@ -3310,7 +3320,7 @@ void editor_mode::restore_includes(EditorSnapshot &Snapshot)
         }
         scene::Layers.removed(instance, false == scene::Layers.instance(instance).removed);
     }
-    m_drives_standing.reset();
+    drives_changed();
     for (auto &entry : Snapshot.directives)
     {
         auto current = scene::Layers.directive(entry.first);
@@ -3355,7 +3365,7 @@ void editor_mode::select_include(scene::instance_handle const Instance)
 
 void editor_mode::set_include_directive(scene::instance_handle const Instance, std::string const &Directive)
 {
-    m_drives_standing.reset();
+    drives_changed();
     std::string file;
     std::vector<std::string> values;
     if (scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&

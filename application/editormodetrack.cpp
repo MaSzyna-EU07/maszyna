@@ -1167,22 +1167,34 @@ void editor_mode::render_turnout_ui()
 		{
 			auto const family{drive->family};
 			auto const variant{drive->index};
+			// a drive not described for the editor is shown by its file
+			auto const described{family >= 0 && family < static_cast<int>(m_switch.drives.size())};
+			auto const &file{drive->standing.file};
+			auto const shown{described ? m_switch.drives[family].name : format("%s (%s)", file.substr(file.find_last_of('/') + 1).c_str(), STR_C("not described"))};
 			if (begin_fields("##standingdrive", 0.3f))
 			{
 				field_row("Drive##standing");
-				if (ImGui::BeginCombo("##standing", m_switch.drives[family].name.c_str()))
+				if (false == described)
+					ImGui::TextUnformatted(shown.c_str());
+				else if (ImGui::BeginCombo("##standing", shown.c_str()))
 				{
 					for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
 						if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
 							replace_switch_drive(Switch, i, false);
 					ImGui::EndCombo();
 				}
-				if (ImGui::IsItemHovered())
+				if (described && ImGui::IsItemHovered())
 					ImGui::SetTooltip("%s\n%s", STR_C("Puts another drive in place of the drive of this switch, on the same side"), format(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str()).c_str());
 				ImGui::EndTable();
 			}
 			int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
-			if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
+			if (false == described)
+			{
+				ImGui::PushTextWrapPos(0.0f);
+				ImGui::TextDisabled("%s", STR_C("A drive not described for the editor, as the one of a double switch, which may also set the speed or carry the ballast of the switch: the editor keeps it as it is, it stays where it is when the switch is moved and goes when the last switch it throws is deleted"));
+				ImGui::PopTextWrapPos();
+			}
+			else if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
 			                                     {1, STR_C("other side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"}}))
 				flip_switch_drive(Switch);
 		}
