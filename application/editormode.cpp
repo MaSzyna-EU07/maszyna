@@ -5360,7 +5360,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
 
     // shortcuts: undo/redo. not in the middle of a drag, it would go on from the state which was undone
-    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active))
+    if (Global.ctrlState && (Key == GLFW_KEY_Z || Key == GLFW_KEY_Y) && is_press(Action) && (m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active || m_roadtool.lifting))
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
@@ -5527,6 +5527,18 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
     // with the road window open the left button works its tools, whichever edit mode is on but the track one
     if (m_roadtool.window && Button == GLFW_MOUSE_BUTTON_LEFT && ui()->mode() != nodebank_panel::TRACK)
     {
+        // Alt+LMB on a point: its height (and the other selected ones') dragged up or down
+        if (is_press(Action) && Global.altState && false == ImGui::GetIO().WantCaptureMouse && road_lift_start())
+        {
+            m_input.mouse.button(Button, Action);
+            return;
+        }
+        if (false == is_press(Action) && m_roadtool.lifting)
+        {
+            road_lift_finish();
+            m_input.mouse.button(Button, Action);
+            return;
+        }
         if (is_press(Action))
         {
             // NOTE: the pick is resolved a few frames later, by then it's known whether the press was meant for the UI

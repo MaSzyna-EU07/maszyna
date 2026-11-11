@@ -1621,6 +1621,17 @@ bool editor_road::nearest_joint(glm::dvec3 const &Point, double const Radius, gl
 	return found;
 }
 
+void editor_road::each_joint(std::function<void(glm::dvec3 const &)> const &Visit)
+{
+	for (auto const *road : simulation::Roads.sequence())
+	{
+		if (road == nullptr || road->m_editorremoved)
+			continue;
+		Visit(axis_end(road->definition(), false));
+		Visit(axis_end(road->definition(), true));
+	}
+}
+
 std::vector<editor_road::piece_end> editor_road::ends_at(glm::dvec3 const &Point)
 {
 	std::vector<piece_end> result;

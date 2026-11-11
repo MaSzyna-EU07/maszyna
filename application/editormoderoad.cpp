@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -218,6 +219,13 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 
 void editor_mode::update_road_tool()
 {
+	{
+		// an Alt+drag of the heights is dropped once the window, the tool or the work area isn't its own any more, or its
+		// release went elsewhere
+		auto &lift{m_roadtool};
+		if (lift.lifting && (false == lift.window || lift.tool != 0 || ui()->mode() == nodebank_panel::TRACK || false == ImGui::IsMouseDown(ImGuiMouseButton_Left)))
+			lift.lifting = false;
+	}
 	auto &tool{m_roadtool};
 	if (tool.selected != nullptr && tool.selected->m_editorremoved)
 		tool.selected = nullptr;
@@ -902,6 +910,8 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 void editor_mode::road_cancel()
 {
 	auto &tool{m_roadtool};
+	// Esc in the middle of Alt+drag: the heights stay as they were
+	tool.lifting = false;
 	tool.chain = false;
 	tool.branchroad = nullptr;
 	tool.branchjunction = nullptr;
@@ -1106,6 +1116,90 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 	}
 }
 
+bool editor_mode::road_joint_on_screen(glm::dvec3 &Joint) const
+{
+	screen_projection const projection;
+	auto const mouse{ImGui::GetIO().MousePos};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	// no farther than what is under the cursor and a bit beyond it (a point in a cutting, under an embankment), so nothing far
+	// behind the ground or a model shown there is picked through it
+	auto reach{kReach};
+	if (GfxRenderer->Mouse_Hit())
+		reach = std::min(reach, glm::length(GfxRenderer->Mouse_Position()) * 1.1 + 15.0);
+	// the nearest on the screen, by whole pixels; of those as near, the one nearer to the camera
+	auto best_pixels{std::numeric_limits<int>::max()};
+	auto best_range{std::numeric_limits<double>::max()};
+	bool found{false};
+	editor_road::each_joint([&](glm::dvec3 const &Point) {
+		auto const range{glm::distance(Point, camera)};
+		ImVec2 screen;
+		if (range > reach || false == projection.project(Point, screen))
+			return;
+		auto const dx{screen.x - mouse.x};
+		auto const dy{screen.y - mouse.y};
+		auto const pixels{static_cast<int>(std::sqrt(dx * dx + dy * dy))};
+		if (pixels > 12 || pixels > best_pixels || (pixels == best_pixels && range >= best_range))
+			return;
+		best_pixels = pixels;
+		best_range = range;
+		Joint = Point;
+		found = true;
+	});
+	return found;
+}
+
+bool editor_mode::road_lift_start()
+{
+	auto &tool{m_roadtool};
+	glm::dvec3 joint;
+	if (tool.tool != 0 || false == road_joint_on_screen(joint))
+		return false;
+	auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
+	if (listed == tool.points.end())
+		tool.points.assign(1, joint);
+	tool.selected = nullptr;
+	tool.junction = nullptr;
+	tool.marker = nullptr;
+	auto const &io{ImGui::GetIO()};
+	auto const height{std::max(1.0f, io.DisplaySize.y)};
+	if (Global.EditorOrtho)
+		tool.lift_scale = 2.0 * static_cast<double>(Global.EditorOrthoExtent) / height;
+	else
+		tool.lift_scale = glm::distance(joint, glm::dvec3{Global.pCamera.Pos}) * 2.0 * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / height;
+	tool.lift_mouse = io.MousePos.y;
+	tool.lift_from.clear();
+	for (auto const &point : tool.points)
+		tool.lift_from.push_back(point.y);
+	tool.lifting = true;
+	tool.status = "Drag up or down, let go to set the heights. Ctrl while dragging: by centimetres";
+	return true;
+}
+
+double editor_mode::road_lift_offset() const
+{
+	auto const &tool{m_roadtool};
+	auto offset{(tool.lift_mouse - ImGui::GetIO().MousePos.y) * tool.lift_scale};
+	// with Ctrl it's slower, for the fine part
+	if (Global.ctrlState)
+		offset *= 0.1;
+	return std::round(offset * 100.0) / 100.0;
+}
+
+void editor_mode::road_lift_finish()
+{
+	auto &tool{m_roadtool};
+	if (false == tool.lifting)
+		return;
+	tool.lifting = false;
+	auto const offset{road_lift_offset()};
+	if (std::abs(offset) < 0.005 || tool.lift_from.size() != tool.points.size())
+		return;
+	std::vector<double> heights;
+	for (auto const height : tool.lift_from)
+		heights.push_back(height + offset);
+	road_point_heights(heights);
+}
+
 void editor_mode::road_click()
 {
 	auto &tool{m_roadtool};
@@ -1135,7 +1229,11 @@ void editor_mode::road_click()
 		}
 		tool.marker = nullptr;
 		glm::dvec3 joint;
-		if (editor_road::nearest_joint(ground, kPointRadius, joint))
+		// the point by the ground clicked first, then the piece or the junction under the cursor; the point nearest on the screen
+		// only when there's none of them (a point under the terrain, in a cutting, can't be got near by the ground clicked)
+		auto *under{editor_road::nearest(ground, 1.5)};
+		auto *junction_under{under == nullptr ? editor_road::nearest_junction(ground) : nullptr};
+		if (editor_road::nearest_joint(ground, kPointRadius, joint) || (under == nullptr && junction_under == nullptr && road_joint_on_screen(joint)))
 		{
 			// a point where pieces meet or end. with Shift it's added to the selected ones, or taken out of them
 			auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
@@ -1151,12 +1249,10 @@ void editor_mode::road_click()
 			return;
 		}
 		tool.points.clear();
-		auto *road{editor_road::nearest(ground, 1.5)};
-		auto *junction{road == nullptr ? editor_road::nearest_junction(ground) : nullptr};
-		if (road == nullptr && junction == nullptr)
+		if (under == nullptr && junction_under == nullptr)
 			tool.status = "No road here";
-		road_select(road);
-		junction_select(junction);
+		road_select(under);
+		junction_select(junction_under);
 		return;
 	}
 
@@ -2808,8 +2904,26 @@ void editor_mode::draw_road_overlay() const
 			drawpoint(point, kSelectedColor, 6.0f, true);
 			drawpoint(point, kSelectedColor, 11.0f, false);
 		}
-		hint = tool.marker != nullptr       ? "LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo" :
-		       false == tool.points.empty() ? "LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo" :
+		if (tool.lifting)
+		{
+			// where the points go: a line up or down to each, and the change by the cursor
+			auto const offset{road_lift_offset()};
+			ImU32 const lifted{IM_COL32(255, 210, 60, 255)};
+			for (auto const &point : tool.points)
+			{
+				glm::dvec3 const target{point.x, point.y + offset, point.z};
+				projection.line(drawlist, point, target, lifted, 2.0f);
+				drawpoint(target, lifted, 6.0f, true);
+			}
+			auto const mouse{ImGui::GetIO().MousePos};
+			char label[64];
+			std::snprintf(label, sizeof(label), "%+.2f m, to %.2f m", offset, tool.points.empty() ? 0.0 : tool.points.front().y + offset);
+			drawlist->AddRectFilled(ImVec2(mouse.x + 14.0f, mouse.y - 4.0f), ImVec2(mouse.x + 22.0f + ImGui::CalcTextSize(label).x, mouse.y + 18.0f), IM_COL32(0, 0, 0, 170), 3.0f);
+			drawlist->AddText(ImVec2(mouse.x + 18.0f, mouse.y - 2.0f), lifted, label);
+		}
+		hint = tool.lifting                 ? "Drag up or down: the height of the selected points   Ctrl: finer   let go: set" :
+		       tool.marker != nullptr       ? "LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo" :
+		       false == tool.points.empty() ? "LMB: select a point (under the terrain too)   Shift+LMB: add a point or take it out   Alt+LMB drag: the height   Del: delete the points   Ctrl+Z: undo" :
 		       tool.selected != nullptr     ? "LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo" :
 		       tool.junction != nullptr     ? "LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo" :
 		                                      "LMB: select a piece, a junction, a point (white dot) or a marker";
