@@ -819,6 +819,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "couplerphysics")
+    {
+        ParseOne(Parser, coupler_physics, 1);
+        return true;
+    }
+
     if (token == "controlcoupling.enginecheck")
     {
         ParseOne(Parser, control_coupling_engine_check, 1);
@@ -1707,6 +1713,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
+    export_as_text( Output, "couplerphysics", coupler_physics );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
     export_as_text( Output, "shadows", RenderShadows );

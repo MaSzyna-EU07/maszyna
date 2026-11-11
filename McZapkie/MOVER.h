@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <optional>
 #include "hamulce.h"
+#include "couplerphysics.h"
 #include "scripting/ladderlogic.h"
 
 class cParser;
@@ -1263,6 +1264,11 @@ struct TCoupling
 	power_coupling power_high;
 	power_coupling power_110v;
 	power_coupling power_24v;
+
+	// the physical model of the coupling (couplerphysics in eu07.ini), see couplerphysics.h: the parameters of this end,
+	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
+	coupler_physics::end_parameters physics;
+	coupler_physics::pair_state physics_state;
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
@@ -2529,6 +2535,14 @@ class TMoverParameters
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
+	// the force of the coupling at the end by the physical model (couplerphysics in eu07.ini), see couplerphysics.h
+	double coupler_force_physical(int const End, double const dt);
+	// with the physical model: whether the vehicles at the end hit the stop of their springs at the last update and
+	// still close in on it, so that they collide; a hit hard enough breaks the coupling or crushes the buffers
+	bool coupler_stop_hit(int const End, TMoverParameters &Other, int const OtherEnd);
+	// couples the automatic couplers of the end and of the other vehicle pressed against each other, unless the hit
+	// is too fast for them to catch
+	void automatic_coupling(int const End, TMoverParameters &Other, int const OtherEnd);
 	void CollisionDetect(int const End, double const dt);
 	// closing speed of a collision [km/h] above which the vehicles involved may derail, adjusted for their mass ratio
 	static constexpr double SafeCollisionVelocity{15.0};
