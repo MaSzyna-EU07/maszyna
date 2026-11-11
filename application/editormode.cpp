@@ -3615,7 +3615,11 @@ bool editor_mode::terrain_cursor(glm::dvec3 &World) const
     auto const direction = point(0.5f) - point(0.0f);
     if (glm::length(direction) < 1e-9)
         return false;
-    return m_streamer.raycast(GfxRenderer->Camera_Position() + point(0.0f), glm::normalize(direction), 5000.0, World);
+    // the top view sees from 10 km behind the plane of the camera (the near plane of its projection): the ray starts there,
+    // so the ground higher than the camera is met too
+    auto const back{Global.EditorOrtho ? 10000.0 : 0.0};
+    auto const along{glm::normalize(direction)};
+    return m_streamer.raycast(GfxRenderer->Camera_Position() + point(0.0f) - along * back, along, 5000.0 + back, World);
 }
 
 void editor_mode::fill_terrain_area()
