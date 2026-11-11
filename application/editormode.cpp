@@ -5740,7 +5740,7 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
             {
                 auto const &io{ImGui::GetIO()};
                 auto const distance{glm::length(GfxRenderer->Mouse_Position())};
-                if (io.DisplaySize.y > 0.0f && distance > 0.5 && distance < 20000.0)
+                if (GfxRenderer->Mouse_Hit() && io.DisplaySize.y > 0.0f && distance > 0.5 && distance < 20000.0)
                     m_pan_metres = 2.0 * distance * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / static_cast<double>(io.DisplaySize.y);
                 else
                     m_ortho_pan = false; // nothing under the cursor to hold
