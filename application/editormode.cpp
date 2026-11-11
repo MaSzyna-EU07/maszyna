@@ -36,6 +36,7 @@ extern char **environ;
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/blackboxrecorder.h"
 #include "utilities/Timer.h"
 #include "Console.h"
 #include "rendering/renderer.h"
@@ -5060,6 +5061,8 @@ void editor_mode::update_camera(double const Deltatime)
 void editor_mode::enter()
 {
     m_statebackup = {Global.pCamera, FreeFlyModeFlag, Global.ControlPicking};
+    // the editor may remove the tracks and the vehicles the recording refers to: it ends here
+    simulation::Blackbox.close();
 
     if (simulation::Region != nullptr)
     {
