@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "consist.h"
 #include "McZapkie/couplerphysics.h"
 #include "utilities/Globals.h"
 
@@ -308,6 +309,7 @@ TEST_CASE("coupler physics: the play of the coupling and the parameters of the m
 
 TEST_CASE("coupler physics: a coupling with play pulls only once the play is taken up") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	auto front{loose_wagon(0.05, 3.0, "front")};
 	auto rear{loose_wagon(0.05, 0.1, "rear")};
@@ -336,6 +338,7 @@ TEST_CASE("coupler physics: a coupling with play pulls only once the play is tak
 
 TEST_CASE("coupler physics: buffers hit at a walking pace give back less than they took") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	auto moving{vehicle{definition::load("wagon"), 5.0, "moving"}};
 	// barely moving, so that its brakes are released
@@ -371,6 +374,7 @@ TEST_CASE("coupler physics: buffers hit at a walking pace give back less than th
 
 TEST_CASE("coupler physics: coupled vehicles at rest stay at rest") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	auto first{vehicle{definition::load("wagon"), 0.0, "first"}};
 	auto second{vehicle{definition::load("wagon"), 0.0, "second"}};
 	join(first, end::rear, second, end::front);
@@ -384,6 +388,7 @@ TEST_CASE("coupler physics: coupled vehicles at rest stay at rest") {
 
 TEST_CASE("coupler physics: a jerk on a coupling with play breaks it, the brake hoses torn off") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	auto front{loose_wagon(0.05, 20.0, "front")};
 	auto rear{loose_wagon(0.05, 0.1, "rear")};
 	join(rear, end::front, front, end::rear, coupling::coupler | coupling::brakehose);
@@ -415,6 +420,7 @@ TEST_CASE("coupler physics: a jerk on a coupling with play breaks it, the brake 
 
 TEST_CASE("coupler physics: a gentle pull on a coupling with play doesn't hurt it") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	auto front{loose_wagon(0.05, 3.0, "front")};
 	auto rear{loose_wagon(0.05, 0.1, "rear")};
@@ -431,6 +437,7 @@ TEST_CASE("coupler physics: a gentle pull on a coupling with play doesn't hurt i
 
 TEST_CASE("coupler physics: automatic couplers still catch a wagon rolling into a standing one") {
 	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	auto automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", coupling::coupler | coupling::brakehose)};
 	auto moving{vehicle{automatic, 5.0, "moving"}};
@@ -494,4 +501,78 @@ TEST_CASE("couplers: a broken coupler is repaired alone, with the one of the veh
 	// repaired, not coupled: the vehicles are coupled again as usual
 	CHECK(second->Couplers[end::rear].CouplingFlag == coupling::faux);
 	CHECK(second->Attach(end::rear, end::front, &third.mover(), coupling::coupler, true, false));
+}
+
+TEST_CASE("coupler physics: with couplerphysics yes, only the pairs with a vehicle covered take the physical model") {
+	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, false};
+	auto moving{vehicle{definition::load("wagon"), 5.0, "moving"}};
+	auto standing{vehicle{definition::load("wagon"), 0.1, "standing"}};
+	test::pair pair{moving, end::front, standing, end::rear, 0.1};
+
+	SUBCASE("neither covered: the legacy model") {
+		pair.run(1.0);
+		CHECK_FALSE(moving->coupler_physics_at(end::front));
+		CHECK_FALSE(standing->coupler_physics_at(end::rear));
+		// the state of the physical model untouched
+		CHECK(moving->Couplers[end::front].physics_state.gap == 0.0);
+	}
+	SUBCASE("one covered: both compute the pair physically") {
+		// as the player's train closing in on the other one
+		moving->CouplerPhysics = true;
+		pair.run(1.0);
+		CHECK(moving->coupler_physics_at(end::front));
+		CHECK(standing->coupler_physics_at(end::rear));
+		CHECK(moving->Couplers[end::front].physics_state.gap != 0.0);
+		CHECK(standing->Couplers[end::rear].physics_state.gap == moving->Couplers[end::front].physics_state.gap);
+	}
+	SUBCASE("the setting off: the legacy model, covered or not") {
+		flag_setting const off{Global.coupler_physics, false};
+		moving->CouplerPhysics = true;
+		CHECK_FALSE(moving->coupler_physics_at(end::front));
+	}
+}
+
+TEST_CASE("coupler physics: a hit on a braked train runs through it as a wave, weaker with each coupling") {
+	flag_setting const physics{Global.coupler_physics, true};
+	flag_setting const everywhere{Global.coupler_physics_all, true};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	constexpr std::size_t wagons{8};
+	test::consist train;
+	for (std::size_t i = 0; i < wagons; ++i) {
+		train.add(definition::load("wagon"));
+	}
+	// a wagon rolling at 15 km/h into the rear of the standing train, its brakes applied
+	train.add(definition::load("wagon"), 0, coupling::faux, 15.0, 0.3);
+
+	std::vector<double> peak(wagons, 0.0);
+	std::vector<double> started(wagons, -1.0);
+	for (int step = 0; step < 300; ++step) {
+		train.step();
+		for (std::size_t i = 0; i < wagons; ++i) {
+			peak[i] = std::max(peak[i], train[i].speed());
+			if (started[i] < 0.0 && train[i].speed() > 0.5) {
+				started[i] = step * 0.01;
+			}
+		}
+	}
+	for (std::size_t i = 0; i < wagons; ++i) {
+		CAPTURE(i);
+		CAPTURE(peak[i]);
+		REQUIRE(started[i] >= 0.0);
+		CHECK_FALSE(TestFlag(train[i]->DamageFlag, dtrain_out));
+	}
+	// the wagon hit first takes less than the hit, the one at the far end the least
+	CHECK(peak[wagons - 1] < 12.0);
+	CHECK(peak[0] < 0.25 * 15.0);
+	for (std::size_t i = 0; i + 1 < wagons; ++i) {
+		CAPTURE(i);
+		CHECK(peak[i] < peak[i + 1] + 0.3);
+	}
+	// the wave takes time to run through the train, the far end starts last
+	CHECK(started[0] - started[wagons - 1] > 0.5);
+	// and the brakes have stopped it all again
+	for (std::size_t i = 0; i < wagons; ++i) {
+		CHECK(std::abs(train[i].speed()) < 0.5);
+	}
 }

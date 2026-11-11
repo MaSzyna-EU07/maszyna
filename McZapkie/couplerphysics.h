@@ -79,8 +79,15 @@ struct end_parameters {
 	double damping{0.0}; // viscous damping of the devices, while pressed [N s/m]
 	double link_stiffness{1.0}; // of the steel parts of the end, past the travel of the springs [N/m]
 	double crush_force{std::numeric_limits<double>::max()}; // a hit on the buffers past their travel with this force crushes them [N]
+	// coefficient of restitution of a hit on the springs gone solid: the steel of the housings and the underframe gives
+	// for good rather than springing back, so the vehicles share their momentum rather than pass it on
+	double solid_restitution{0.2};
 	link_strength link;
 };
+
+// the share of the energy of the relative motion a hit on the solid springs of the two ends takes, as the legacy
+// collision (ComputeCollision()) takes it: 1 - e^2
+double solid_hit_loss(end_parameters const &First, end_parameters const &Second);
 
 // the weaker of the links of the two ends, which gives first; the same whichever end asks
 link_strength weaker_link(end_parameters const &First, end_parameters const &Second);

@@ -1555,6 +1555,12 @@ std::string_view coupler_type_name( TCouplerType const Type ) {
     }
 }
 
+// the couplerphysics setting of eu07.ini
+std::string_view coupler_physics_setting() {
+    if( Global.coupler_physics_all ) { return "all"; }
+    return Global.coupler_physics ? "yes" : "no";
+}
+
 std::string_view coupler_stop_name( int const Stop ) {
     if( Stop > 0 ) { return "draw gear solid"; }
     if( Stop < 0 ) { return "buffers solid"; }
@@ -1599,6 +1605,7 @@ bool edit_link( coupler_physics::end_parameters &Parameters ) {
     }
     changed = edit_value( "Link stiffness [kN/m]", Parameters.link_stiffness, 1000.0, 1000.0, 2000000.0, "%.0f" ) || changed;
     changed = edit_value( "Buffers crush force [kN]", Parameters.crush_force, 1000.0, 100.0, 10000.0, "%.0f" ) || changed;
+    changed = edit_value( "Restitution of a solid hit", Parameters.solid_restitution, 1.0, 0.05, 0.95, "%.2f" ) || changed;
     ImGui::PopID();
     return changed;
 }
@@ -1637,7 +1644,12 @@ debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
         std::format( "{}, {} end, {} coupler{}", vehicle->name(), nearerfront ? "front" : "rear", coupler_type_name( coupler.type() ), coupler.has_adapter() ? " (adapter)" : "" ),
         Global.UITextColor );
     Output.emplace_back(
-        std::format( "Model: {}, crash damage {}", Global.coupler_physics ? "physical" : "legacy", Global.crash_damage ? "on" : "off" ),
+        std::format(
+            "Model: {} (couplerphysics {}, vehicle {}covered), crash damage {}",
+            mover.coupler_physics_at( m_coupler.end ) ? "physical" : "legacy",
+            coupler_physics_setting(),
+            mover.CouplerPhysics ? "" : "not ",
+            Global.crash_damage ? "on" : "off" ),
         Global.UITextColor );
     if( neighbour.vehicle != nullptr ) {
         Output.emplace_back(
@@ -1668,6 +1680,7 @@ debug_panel::render_section_coupler() {
 
     ImGui::Separator();
     ImGui::Checkbox( "Physical coupler model", &Global.coupler_physics );
+    ImGui::Checkbox( "Physical model for every train", &Global.coupler_physics_all );
     ImGui::Checkbox( "Crash damage", &Global.crash_damage );
     ImGui::Checkbox( "Apply to the other end of the pair too", &m_couplerbothends );
 

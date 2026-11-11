@@ -2014,6 +2014,9 @@ class TMoverParameters
 	glm::vec3 Front{};
 	std::string Name; /*nazwa wlasna*/
 	TCoupling Couplers[2]; // urzadzenia zderzno-sprzegowe, polaczenia miedzy wagonami
+	// the physical coupler model covers the vehicle: it's in the player's train or in one the player's train closes in on
+	// (vehicle_table::update_coupler_physics()); with couplerphysics all in eu07.ini every vehicle is covered
+	bool CouplerPhysics{false};
 	std::array<neighbour_data, 2> Neighbours; // potential collision sources
 	bool Power110vIsAvailable = false; // cached availability of 110v power
 	bool Power24vIsAvailable = false; // cached availability of 110v power
@@ -2540,6 +2543,9 @@ class TMoverParameters
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
+	// whether the coupling at the end is computed by the physical model: couplerphysics set in eu07.ini, and this
+	// vehicle or the one at the end covered by it (CouplerPhysics), or every vehicle with couplerphysics all
+	bool coupler_physics_at(int const End) const;
 	// the force of the coupling at the end by the physical model (couplerphysics in eu07.ini), see couplerphysics.h
 	double coupler_force_physical(int const End, double const dt);
 	// with the physical model: whether the vehicles at the end hit the stop of their springs at the last update and

@@ -1337,10 +1337,14 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
-	if (Global.coupler_physics && false == coupler_stop_hit(End, *othervehicle, otherend))
+	auto const physical{coupler_physics_at(End)};
+	if (physical && false == coupler_stop_hit(End, *othervehicle, otherend))
 	{
 		return;
 	}
+	// the share of the energy of the relative motion the hit takes: in the physical model the springs gone solid give
+	// for good, rather than spring back as the legacy model has it
+	auto const loss{physical ? coupler_physics::solid_hit_loss(thiscoupler.physics, othercoupler.physics) : (thiscoupler.beta + othercoupler.beta) / 2.0};
 
 	// the velocities along this vehicle's axis: the other vehicle's one is turned around when the vehicles face each
 	// other (touch with the same ends), as in CouplerForce()
@@ -1355,12 +1359,12 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	{
 	case 0:
 	{
-		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, loss, VirtualCoupling) / dt;
 		break; // yB: ej ej ej, a po
 	}
 	case 1:
 	{
-		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, loss, VirtualCoupling) / dt;
 		break;
 	}
 	default:
@@ -1372,7 +1376,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	if (Global.crash_damage)
 	{
 		// the physical model breaks the coupling and crushes the buffers by the force of the hit (coupler_stop_hit())
-		if (false == Global.coupler_physics && -thiscoupler.Dist >= thiscoupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (thiscoupler.FmaxC + 1.0), p_coupldmg))
+		if (false == physical && -thiscoupler.Dist >= thiscoupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (thiscoupler.FmaxC + 1.0), p_coupldmg))
 		{
 			// small chance to smash the coupler if it's hit with excessive force
 			damage_coupler(End);
@@ -1404,7 +1408,7 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	// adjust velocity and acceleration of affected vehicles. the physical model changes the velocities alone: the
 	// integration of the next step (ComputeMovement()) would carry a quarter of an acceleration spike over into the
 	// velocity once more, and the vehicles would bounce off the stop faster than they hit it
-	auto const accelerationspike{Global.coupler_physics ? 0.0 : 1.0};
+	auto const accelerationspike{physical ? 0.0 : 1.0};
 	if (false == TestFlag(DamageFlag, dtrain_out))
 	{
 		auto const accelerationchange{(velocity - V) / dt};
@@ -1451,7 +1455,7 @@ void TMoverParameters::damage_coupler(int const End)
 		othercoupler.CouplingFlag = coupling::faux;
 		// the coupling broke between the two, either end can be repaired
 		othercoupler.broken = true;
-		if (hosetorn && Global.coupler_physics)
+		if (hosetorn && coupler_physics_at(End))
 		{
 			// the brake pipe of the other part of the train vents through the torn hose as well
 			thiscoupler.Connected->AlarmChainFlag = true;
@@ -5515,7 +5519,7 @@ double TMoverParameters::Adhesive(double staticfriction) const
 // *************************************************************************************************
 double TMoverParameters::CouplerForce(int const End, double dt)
 {
-	if (Global.coupler_physics)
+	if (coupler_physics_at(End))
 	{
 		return coupler_force_physical(End, dt);
 	}
@@ -5647,6 +5651,21 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	}
 
 	return CF;
+}
+
+bool TMoverParameters::coupler_physics_at(int const End) const
+{
+	if (false == Global.coupler_physics)
+	{
+		return false;
+	}
+	if (Global.coupler_physics_all || CouplerPhysics)
+	{
+		return true;
+	}
+	// either vehicle of the pair covered takes the pair in, so both of them compute it the same way
+	auto const *other{Neighbours[End].vehicle};
+	return other != nullptr && other->MoverParameters->CouplerPhysics;
 }
 
 void TMoverParameters::automatic_coupling(int const End, TMoverParameters &Other, int const OtherEnd)
@@ -11194,6 +11213,7 @@ double default_slack(TCouplerType const Type)
 //   UnloadB, UnloadC [-] force of the unloading curve of the buffers and of the draw gear to that of the loading one
 //   FyieldC [kN] the force past which the link stretches for good; DbreakC [m] the elongation at which it breaks
 //   kL [kN/m] stiffness of the steel parts past the travel of the springs; FcrushB [kN] the buffers give under it
+//   RestitutionSolid [-] coefficient of restitution of a hit on the springs gone solid
 coupler_physics::end_parameters coupler_physics_parameters(TCoupling const &Coupler, std::string const &Line)
 {
 	coupler_physics::end_parameters parameters;
@@ -11217,6 +11237,7 @@ coupler_physics::end_parameters coupler_physics_parameters(TCoupling const &Coup
 	// the steel parts give a few millimetres under the rated force
 	parameters.link_stiffness = optional_kilo_value(Line, "kL", ultimate / 0.003);
 	parameters.crush_force = optional_kilo_value(Line, "FcrushB", 2.5 * std::max(Coupler.FmaxB, Coupler.FmaxC));
+	parameters.solid_restitution = std::clamp(optional_value(Line, "RestitutionSolid", parameters.solid_restitution), 0.05, 0.95);
 	return parameters;
 }
 

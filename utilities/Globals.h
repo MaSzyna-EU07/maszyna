@@ -276,8 +276,11 @@ struct global_settings {
 	bool render_cab = true;
 	bool crash_damage = true;
 	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
-	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it
+	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
+	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
+	// train with coupler_physics_all
 	bool coupler_physics = false;
+	bool coupler_physics_all = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;

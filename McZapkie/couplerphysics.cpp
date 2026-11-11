@@ -211,6 +211,12 @@ link_strength weaker_link(end_parameters const &First, end_parameters const &Sec
 	return link;
 }
 
+double solid_hit_loss(end_parameters const &First, end_parameters const &Second) {
+	// the collision needs some bounce left (ComputeCollision() asserts it)
+	auto const restitution{std::clamp(0.5 * (First.solid_restitution + Second.solid_restitution), 0.05, 0.95)};
+	return 1.0 - restitution * restitution;
+}
+
 void pair_state::couple() {
 	draw_gear.reset();
 	elongation = 0.0;

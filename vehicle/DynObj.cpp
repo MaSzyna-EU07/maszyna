@@ -22,6 +22,10 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
+
+#include <algorithm>
+#include <iterator>
+#include <unordered_set>
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
@@ -8876,6 +8880,112 @@ TDynamicObject::powertrain_sounds::render( TMoverParameters const &Vehicle, doub
 }
 
 
+namespace {
+
+// a train on the same track this close to the end of the player's train is taken into the physical coupler model [m]
+constexpr double coupler_physics_reach { 200.0 };
+// and let go of once none of its vehicles is this close to the player's train [m]; farther than the reach, so that
+// the trains don't switch to and fro between the models
+constexpr double coupler_physics_release { 500.0 };
+
+// the vehicle and those coupled with it, one after the other
+std::vector<TDynamicObject *>
+coupled_train( TDynamicObject *Vehicle ) {
+
+    std::vector<TDynamicObject *> train { Vehicle };
+    for( int direction = end::front; direction <= end::rear; ++direction ) {
+        auto *vehicle { Vehicle };
+        auto side { direction };
+        // a train of more vehicles than are on the tracks would be one coupled into a ring
+        while( train.size() < 10000 ) {
+            auto const &mover { *vehicle->MoverParameters };
+            auto *next { mover.Neighbours[ side ].vehicle };
+            if( next == nullptr
+             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) == 0
+             || std::ranges::find( train, next ) != train.end() ) {
+                break;
+            }
+            train.emplace_back( next );
+            // onwards from the end of the next vehicle away from this one
+            side = 1 - mover.Neighbours[ side ].vehicle_end;
+            vehicle = next;
+        }
+    }
+    return train;
+}
+
+// the trains on the same track the player's train is closing in on: those found at its free ends, near enough
+std::vector<TDynamicObject *>
+trains_closing_in( std::vector<TDynamicObject *> const &Train ) {
+
+    std::vector<TDynamicObject *> trains;
+    for( auto *vehicle : Train ) {
+        for( int side = end::front; side <= end::rear; ++side ) {
+            auto const &mover { *vehicle->MoverParameters };
+            auto const &neighbour { mover.Neighbours[ side ] };
+            if( neighbour.vehicle == nullptr
+             || ( mover.Couplers[ side ].CouplingFlag & coupling::coupler ) != 0
+             || neighbour.distance > coupler_physics_reach
+             || std::ranges::find( Train, neighbour.vehicle ) != Train.end() ) {
+                continue;
+            }
+            std::ranges::copy( coupled_train( neighbour.vehicle ), std::back_inserter( trains ) );
+        }
+    }
+    return trains;
+}
+
+// whether any vehicle of the train is within the distance of any vehicle of the other one
+bool
+trains_within( std::vector<TDynamicObject *> const &Train, std::vector<TDynamicObject *> const &Other, double const Distance ) {
+
+    return std::ranges::any_of( Train, [&]( TDynamicObject const *Vehicle ) {
+        return std::ranges::any_of( Other, [&]( TDynamicObject const *Othervehicle ) {
+            return glm::distance( Vehicle->GetPosition(), Othervehicle->GetPosition() ) <= Distance; } ); } );
+}
+
+} // namespace
+
+// the physical coupler model covers the player's train and the trains it closes in on, on the same track; the others
+// keep the legacy model, as the AI drives them in it
+void
+vehicle_table::update_coupler_physics() const {
+
+    if( false == Global.coupler_physics
+     || true == Global.coupler_physics_all ) {
+        return;
+    }
+    auto *player { simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr };
+    std::vector<TDynamicObject *> train;
+    if( player != nullptr ) {
+        train = coupled_train( player );
+    }
+    std::unordered_set<TDynamicObject *> covered { train.begin(), train.end() };
+    for( auto *vehicle : trains_closing_in( train ) ) {
+        covered.insert( vehicle );
+    }
+
+    std::unordered_set<TDynamicObject *> checked;
+    for( auto *vehicle : m_items ) {
+        if( covered.contains( vehicle ) ) {
+            vehicle->MoverParameters->CouplerPhysics = true;
+            continue;
+        }
+        if( false == vehicle->MoverParameters->CouplerPhysics
+         || checked.contains( vehicle ) ) {
+            continue;
+        }
+        // a train taken in before stays in the model until it's far from the player's one, all of it alike
+        auto const other { coupled_train( vehicle ) };
+        checked.insert( other.begin(), other.end() );
+        if( false == trains_within( other, train, coupler_physics_release ) ) {
+            for( auto *othervehicle : other ) {
+                othervehicle->MoverParameters->CouplerPhysics = false;
+            }
+        }
+    }
+}
+
 // legacy method, calculates changes in simulation state over specified time
 void
 vehicle_table::update( double Deltatime, int Iterationcount ) {
@@ -8892,6 +9002,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         vehicle->MoverParameters->ComputeConstans();
         vehicle->update_neighbours();
     }
+    update_coupler_physics();
     if( Iterationcount > 1 ) {
         // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
         for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {

@@ -821,7 +821,11 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "couplerphysics")
     {
-        ParseOne(Parser, coupler_physics, 1);
+        // yes: the player's train and the trains it closes in on, all: every train
+        std::string scope;
+        ParseOne(Parser, scope, 1);
+        coupler_physics_all = scope == "all";
+        coupler_physics = coupler_physics_all || scope == "yes" || scope == "true" || scope == "1";
         return true;
     }
 
@@ -1713,7 +1717,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
-    export_as_text( Output, "couplerphysics", coupler_physics );
+    std::string couplerphysics { coupler_physics ? "yes" : "no" };
+    if( coupler_physics_all ) {
+        couplerphysics = "all";
+    }
+    export_as_text( Output, "couplerphysics", couplerphysics );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
     export_as_text( Output, "shadows", RenderShadows );
