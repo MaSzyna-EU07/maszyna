@@ -31,7 +31,7 @@
   "checks": [
     {
       "type": "log_contains",
-      "pattern": "Uncoupling \\[ET21-367\\]: uncoupled"
+      "pattern": "Uncoupling \\[et21-367\\]: uncoupled"
     }
   ]
 }

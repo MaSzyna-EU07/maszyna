@@ -25,7 +25,7 @@
   "checks": [
     {
       "type": "log_contains",
-      "pattern": "Uncoupling \\[ET22-654\\]: uncoupled"
+      "pattern": "Uncoupling \\[et22-654\\]: uncoupled"
     }
   ]
 }
