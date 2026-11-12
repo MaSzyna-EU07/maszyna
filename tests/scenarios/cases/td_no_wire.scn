@@ -1,0 +1,18 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// a piece of track of its own, 200 m long and with no overhead wire above it, 400 m off the line of td.scn
+// (all of whose tracks are under the wire), and an electric locomotive with an AI driver standing on it.
+// the driver raises the pantographs, which find no wire, and waits in Prepare_engine for the voltage for good
+// (eu07/maszyna#421); it tells of it in the log once.
+node -1 0 autotest_no_wire track normal 200.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-400.0 0.2 0.0  0.0  //point 1
+0.0 0.0 0.0  //control vector 1
+0.0 0.0 0.0  //control vector 2
+-400.0 0.2 200.0  0.0  //point 2
+0
+endtrack
+
+// no timetable: the driver goes shunting; 0.01 km/h has it prepare the vehicle and wait for a signal (at 0 it sleeps)
+trainset none autotest_no_wire 100.0 0.01
+{{consist}}
+endtrainset

@@ -3240,15 +3240,15 @@ bool TController::PrepareEngine()
         close_line_breaker();
     }
 
+    auto const sufficientpantographpressure { (
+        is_emu() ?
+            2.5 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
+            3.5 )
+        + 0.1 }; // leeway margin
+
     if( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector
      && mvPantographUnit->EnginePowerSource.CollectorParameters.CollectorsNo > 0 ) {
         // if our pantograph unit isn't a pantograph-devoid fallback
-        auto const sufficientpantographpressure { (
-            is_emu() ?
-                2.5 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
-                3.5 )
-            + 0.1 }; // leeway margin
-
         if (mvPantographUnit->PantPress < sufficientpantographpressure) {
             // załączenie małej sprężarki
             if( false == mvPantographUnit->PantAutoValve ) {
@@ -3278,6 +3278,9 @@ bool TController::PrepareEngine()
     auto const ispoweravailable =
         mvControlling->EnginePowerSource.SourceType != TPowerSource::CurrentCollector
      || std::max(mvControlling->GetTrainsetHighVoltage(), mvControlling->PantographVoltage) > mvControlling->EnginePowerSource.CollectorParameters.MinV;
+    // standing with the pantographs up and no voltage, nothing the driver does starts the vehicle. it says so, and keeps
+    // trying: towed back under the wire, or with the power switched on, the vehicle gets prepared after all
+    report_power_stall( ispoweravailable, sufficientpantographpressure );
 
     bool isready = false;
 
@@ -3362,6 +3365,39 @@ bool TController::PrepareEngine()
     iEngineActive = isready;
 
     return iEngineActive;
+}
+
+// tells in the log, once, of standing with the pantographs up and no voltage at them, past the end of the overhead
+// wire or under a wire switched off (eu07/maszyna#421). Poweravailable is what PrepareEngine() found, Pantographpressure
+// the air the pantographs need to rise
+void
+TController::report_power_stall( bool const Poweravailable, double const Pantographpressure ) {
+
+    ai_power::state state;
+    state.collector = mvControlling->EnginePowerSource.SourceType == TPowerSource::CurrentCollector;
+    state.power = Poweravailable;
+    state.standing = mvOccupied->Vel < EU07_AI_NOMOVEMENT;
+    if( mvPantographUnit->PantPress >= Pantographpressure ) {
+        state.pantographs_up =
+            mvPantographUnit->Pantographs[ end::front ].is_active
+         || mvPantographUnit->Pantographs[ end::rear ].is_active;
+    }
+    // the pantographs of the vehicle carrying them hold the wire they found above them
+    if( auto const *carrier { pVehicle->FindPantographCarrier() };
+        carrier != nullptr && carrier->MoverParameters == mvPantographUnit ) {
+        auto const pantographcount { std::min<int>( carrier->iAnimType[ ANIM_PANTS ], carrier->MoverParameters->Pantographs.size() ) };
+        for( auto index { 0 }; index < pantographcount; ++index ) {
+            if( true == carrier->MoverParameters->Pantographs[ index ].is_active
+             && carrier->pants[ index ].fParamPants->hvPowerWire != nullptr ) {
+                state.wire = true;
+            }
+        }
+    }
+    // a user driving the vehicle sees the voltmeters for themselves
+    if( auto const stall { m_powerstall.update( AIControllFlag ? ai_power::check( state ) : ai_power::stall::waiting, ElapsedTime ) };
+        stall.has_value() ) {
+        ErrorLog( ai_power::message( *stall, pVehicle->asName, pVehicle->GetPosition() ) );
+    }
 }
 
 // wyłączanie silnika (test wyłączenia, a część wykonawcza tylko jeśli steruje komputer)
