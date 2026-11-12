@@ -54,13 +54,15 @@ void reach_of(heightmap::surface_patch const &Patch, glm::dvec2 &Low, glm::dvec2
 // well: the separate fields left that overlap the closed outline are cut again (a cut leaves the holes there are as they are)
 void recut_separate_over(terrain_streamer &Streamer, std::vector<heightmap::surface_patch> const &Patches, heightmap::surface_patch const &Closed)
 {
-	glm::dvec2 low, high;
+	glm::dvec2 low;
+	glm::dvec2 high;
 	Closed.bounds(low, high);
 	for (auto const &patch : Patches)
 	{
 		if (patch.paint || patch.outline.size() < 3)
 			continue;
-		glm::dvec2 otherlow, otherhigh;
+		glm::dvec2 otherlow;
+		glm::dvec2 otherhigh;
 		patch.bounds(otherlow, otherhigh);
 		if (otherlow.x > high.x || otherhigh.x < low.x || otherlow.y > high.y || otherhigh.y < low.y)
 			continue;

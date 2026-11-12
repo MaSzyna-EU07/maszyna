@@ -921,7 +921,7 @@ bool terrain_streamer::waits_for_ground(heightmap::surface_patch const &Patch) c
 		for (auto x{std::min(first.first, last.first)}; x <= std::max(first.first, last.first); ++x)
 		{
 			chunk_key const key{x, z};
-			if (m_chunks.count(key) > 0 || m_removed.count(key) > 0)
+			if (m_chunks.contains(key) || m_removed.contains(key))
 				continue;
 			// still coming while its pack isn't read yet (just after opening the scenery none is); not coming only when
 			// the pack is missing, or read and without that chunk
