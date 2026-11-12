@@ -433,7 +433,7 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 bool end_joined(chain_profile const &Profile, std::size_t const End)
 {
 	for (auto const &other : editor_road::ends_at(Profile.positions[End]))
-		if (std::none_of(Profile.order.begin(), Profile.order.end(), [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
+		if (std::ranges::none_of(Profile.order, [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
 			return true;
 	return false == editor_road::arms_at(Profile.positions[End]).empty();
 }
