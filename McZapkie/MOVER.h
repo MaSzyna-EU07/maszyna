@@ -174,6 +174,8 @@ enum DerailReason
 	WRONG_TRACK_TYPE = 4, // Ra: powód wykolejenia: nieodpowiednia trajektoria
 	/// <summary>Collision with another vehicle.</summary>
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
+	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
+	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -299,6 +301,16 @@ enum class operation_t
 	disable_on,
 	/// <summary>Disable button release transition.</summary>
 	disable_off,
+};
+/// <summary>What else the line contactors of a vehicle need before they can close (LineContactorsInterlock in the Cntrl. section).</summary>
+enum class line_contactors_interlock
+{
+	/// <summary>Nothing more, the legacy behaviour.</summary>
+	none,
+	/// <summary>The converter of the vehicle itself running, where it drives the traction motor fans (ET42).</summary>
+	converter,
+	/// <summary>The traction motor blowers of the vehicle running.</summary>
+	motor_blowers
 };
 /// <summary>Auto-start method for ancillary devices (mutually exclusive).</summary>
 enum class start_t
@@ -2193,6 +2205,11 @@ class TMoverParameters
 	// config, Engine:JointEngineStart. whether the cab's line breaker / engine start switch works the vehicles in multiple
 	// too; when it doesn't, the cab has separate switches for them (mainb_*, mainc_*)
 	bool JointEngineStart{true};
+	// config, .fiz Cntrl.PantRequiresMain: the line breaker closes without traction voltage and holds without it, and the
+	// pantographs rise and stay up only while it's closed (EU05, EP05, ČD 181 family); off, the pantographs come first and the line
+	// breaker needs their voltage. what the main circuit feeds still needs the voltage (MainCircuitPowered()), and without
+	// it the undervoltage relay opens the line contactors (NoVoltRelay)
+	bool PantographsRequireMains{false};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
@@ -2252,13 +2269,17 @@ class TMoverParameters
 	start_t GroundRelayStart{start_t::manual}; // relay activation method
 	bool StLinFlag = false; /*!o styczniki liniowe*/
 	bool StLinSwitchOff{false}; // state of the button forcing motor connectors open
+	line_contactors_interlock LineContactorsInterlock{line_contactors_interlock::none}; // what else the line contactors need to close
+	double LouvresOpenPressure{5.0}; // main reservoir pressure [bar] at which the pneumatic louvres of the motor fans open (ET22)
 	bool ResistorsFlag = false; /*!o jazda rezystorowa*/
 	double RventRot = 0.0; /*!s obroty wentylatorow rozruchowych*/
 	double PantographVoltage{0.0}; // voltage supplied to pantographs
 	double PantPress = 0.0; /*Cisnienie w zbiornikach pantografow*/
 	bool PantPressSwitchActive{false}; // state of the pantograph pressure switch. gets primed at defined pressure level in pantograph air system
 	bool PantPressLockActive{false}; // pwr system state flag. fires when pressure switch activates by pantograph pressure dropping below defined level
-	bool NoVoltRelay{true}; // switches off if the power level drops below threshold
+	// switches off if the power level drops below threshold, which opens the line breaker; with PantographsRequireMains
+	// it opens the line contactors instead, and switches back on only with the master controller at zero or the first position
+	bool NoVoltRelay{true};
 	bool OvervoltageRelay{true}; // switches off if the power level goes above threshold
 	bool s_CAtestebrake = false; // hunter-091012: zmienna dla testu ca
 	std::array<std::pair<double, double>, 4> PowerCircuits; // 24v, 110v, 3x400v and 3000v power circuits, voltage from local sources and current draw pairs
@@ -2704,6 +2725,19 @@ class TMoverParameters
 	{
 		return JointEngineStart ? range_t::consist : range_t::local;
 	}
+	// whether the pneumatic louvres of the motor fans are still closed, the main reservoir short of the pressure that opens them
+	bool LouvresClosed() const
+	{
+		return Compressor < LouvresOpenPressure;
+	}
+	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
+	bool LineContactorsInterlockReleased() const;
+	// whether the line contactors wait for the converter of the vehicle, switched off with its local switch (converterlocal_sw).
+	// the AI driver doesn't leave it so: the converters of the other vehicles running, it would wait for the contactors forever
+	bool LineContactorsHeldByLocalConverterSwitch() const
+	{
+		return LineContactorsInterlock == line_contactors_interlock::converter && false == ConverterAllowLocal;
+	}
 	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
 	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
 	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
@@ -2757,6 +2791,11 @@ class TMoverParameters
 	bool HeatingSwitch(bool const State, range_t const Notify = range_t::consist);
 	void HeatingSwitch_(bool const State);
 	double EnginePowerSourceVoltage() const; // returns voltage of defined main engine power source
+	// whether the main circuit feeds what runs on it (the converter, a compressor, the heating, the motor and resistor
+	// blowers, the traction motors): the line breaker closed, and where it closes ahead of the pantographs and holds
+	// without traction voltage (PantographsRequireMains) also the voltage there, at least the one the undervoltage
+	// trip takes. everywhere else it's the same as Mains
+	bool MainCircuitPowered() const;
 
 	/*-funkcje typowe dla lokomotywy elektrycznej*/
 	void LowVoltagePowerCheck(double const Deltatime);
@@ -2774,6 +2813,8 @@ class TMoverParameters
 	void FuelPumpCheck(double const Timestep);
 	void OilPumpCheck(double const Timestep);
 	void MotorBlowersCheck(double const Timestep);
+	// whether the circuit a traction motor blower runs off has power: the battery, the converter or the main circuit, by its start type
+	bool MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const;
 	void PantographsCheck(double const Timestep);
 	void LightsCheck(double const Timestep);
 	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary

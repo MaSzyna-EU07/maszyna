@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/uilayer.h"
+#include "editor/editorGeoMap.hpp"
 
 #include <cstdint>
 #include <future>
@@ -28,43 +29,39 @@ class scenerywizard_panel : public ui_panel
 	void render_contents() override;
 
   private:
-	struct map_result
+	// how the range of the aerial photos is given: a square around the centre, or an area of the user's clicked on the map
+	enum class range_shape
 	{
-		glm::dvec2 low{0.0};
-		glm::dvec2 high{0.0};
-		int width{0};
-		int height{0};
-		std::vector<std::uint8_t> pixels;
-		std::string error;
+		square,
+		drawn
 	};
 
-	void render_map(glm::vec2 const &Size);
 	void render_form();
-	void request_map(glm::vec2 const &Size);
-	void upload_map();
+	void render_place();
+	void render_range();
 	void pick(glm::dvec2 const &Point);
+	// the range as it's written to the scenery, PUWG (east, north); empty while there's none
+	std::vector<glm::dvec2> range() const;
+	// why the scenery can't be created yet, as the user reads it; empty when it can
+	std::string missing(bool const Named, bool const Exists) const;
+	void show_range();
+	// the corners of an area of the user's clicked on the map from now on; ended kept (with three corners at least) or given up,
+	// the area there was before back then
+	void start_drawing();
+	void stop_drawing(bool const Keep);
 	bool create_scenery();
 
-	glm::dvec2 m_centre{515000.0, 460000.0};
-	double m_scale{1000.0};
-	bool m_fitted{false};
-	double m_changed{0.0};
-	bool m_dirty{true};
-	glm::vec2 m_pressed{0.f};
-	bool m_dragging{false};
-
-	std::future<map_result> m_request;
-	unsigned int m_texture{0};
-	glm::dvec2 m_image_low{0.0};
-	glm::dvec2 m_image_high{0.0};
-	std::string m_map_error;
-
-	bool m_picked{false};
-	glm::dvec2 m_point{0.0};
+	editor_map m_map;
+	bool m_realistic{true};
 	char m_filename[64]{};
 	char m_title[128]{};
-	char m_latlon[64]{};
+	char m_place[64]{};
 	std::string m_status;
+	range_shape m_shape{range_shape::square};
+	int m_side{2}; // km, the side of the square
+	std::vector<glm::dvec2> m_drawn; // the area of the user's
+	bool m_drawing{false};           // its corners are being clicked
+	std::vector<glm::dvec2> m_before; // the area there was before the drawing began, back with Cancel
 };
 
 } // namespace ui

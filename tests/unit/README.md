@@ -77,6 +77,9 @@ TEST_CASE("brakes: service braking stops a heavier wagon too") {
 - `pair` (`vehicle.h`) puts two vehicles on that track facing each other with the given ends and
   runs them together, as the simulation runs the vehicles of a scene: the coupler and buffer
   forces, collisions and automatic coupling come from the physics (`test_couplers.cpp`).
+- A test which reads files makes them in a `test::scratch_folder` (`scratch.h`): a folder of its own
+  in the build folder of the tests, removed with the object. The files are written byte for byte, so
+  the line ends are the ones the test gives (`test_parser.cpp`, `test_ladder_logic.cpp`).
 - Check behaviour (speeds, pressures, states the player sees) rather than internal flags, and make
   the test check its own preconditions (`REQUIRE` that the braking skidded, before checking what a
   skid leads to).

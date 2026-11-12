@@ -624,8 +624,18 @@ void ui_layer::render_hierarchy(){
  
 void ui_layer::set_cursor(int const Mode)
 {
-	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
+	// the cursor drawn into the picture: the one of the system hidden, so only that one shows, also in a capture of the window
+	auto const hidden{Mode == GLFW_CURSOR_NORMAL && m_drawcursor};
+	glfwSetInputMode(m_window, GLFW_CURSOR, hidden ? GLFW_CURSOR_HIDDEN : Mode);
 	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
+	if (m_imguiio != nullptr)
+		m_imguiio->MouseDrawCursor = m_drawcursor && m_cursorvisible;
+}
+
+void ui_layer::draw_cursor(bool const Draw)
+{
+	m_drawcursor = Draw;
+	set_cursor(m_cursorvisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 }
 
 void ui_layer::set_progress(std::string const &Text)
@@ -709,6 +719,7 @@ void ui_layer::render_menu_contents()
 
 		if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
 			Application.queue_screenshot();
+		render_tools_menu();
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Windows")))
