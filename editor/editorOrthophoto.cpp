@@ -1501,6 +1501,8 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	bounds[1].position = glm::dvec3(corner.x, yhi, corner.y);
 	scene::shape_node shape;
 	shape.make_terrain(Tile.slot.material, std::move(bounds), origin);
+	// laid on the ground it's a copy of the ground's own triangles: the lift alone loses to the depth buffer further away
+	shape.decal(draped);
 	shape.geometry(Tile.geometry);
 	// extend the bounds of the containers so the tile isn't culled at its edges
 	double const reach = glm::length(glm::dvec3(tile_size * 0.5, (yhi - ylo) * 0.5, tile_size * 0.5));

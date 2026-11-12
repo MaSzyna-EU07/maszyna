@@ -746,6 +746,20 @@ std::optional<double> editor_mode::nmt_terrain_offset(std::vector<glm::dvec2> co
 	return median;
 }
 
+std::optional<double> editor_mode::nmt_chunk_offset(heightmap::chunk_key const &Key) const
+{
+	// the one rule for every chunk made from the model where there's no terrain, under the track laid, around the camera in the area or
+	// by the buttons: beside terrain made from the model it goes on at its height over the model, so no step is left at the seam;
+	// otherwise, beside terrain made by hand or none, at the offset of the scenery. no chunk is left out for what lies beside it
+	// the terrain drawn to the tracks place by place (under the tracks) keeps to their heights near it: the height of the chunk beside
+	// would carry one offset on along a run of chunks, metres off the tracks
+	if (auto const &state{m_nmt_state}; state.under && false == state.anchors.empty())
+		return std::nullopt;
+	bool foreign{false};
+	auto const offset{nmt_seam_offset(Key, foreign)};
+	return foreign ? std::nullopt : offset;
+}
+
 std::optional<double> editor_mode::nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const
 {
 	auto const low{heightmap::chunk_corner(Key)};
@@ -1058,17 +1072,158 @@ std::size_t editor_mode::nmt_shape_tracks(std::vector<TTrack *> const *Only)
 	return count;
 }
 
+void editor_mode::nmt_area_terrain()
+{
+	auto &area{m_area_terrain};
+	auto const &config{m_orthophoto.settings()};
+	auto const &state{m_nmt_state};
+	// what holds it, logged as it changes: nothing was made and nothing told why
+	auto const held = [&](char const *Reason) {
+		if (area.held != Reason)
+		{
+			area.held = Reason;
+			WriteLog(std::string{"Editor: NMT - the terrain of the download area "} + (*Reason != '\0' ? std::string{"held: "} + Reason : std::string{"goes on"}), logtype::generic);
+		}
+	};
+	if (false == area.run_only.value_or(EditorSettings.terrain_model().area))
+		return held("turned off");
+	if (m_orthophoto.area().empty())
+		return held("no area");
+	if (m_area_paused)
+		return held("the area paused");
+	if (config.north == 0.0 && config.east == 0.0)
+		return held("no origin of the scenery");
+	// after the work with the model the user asked for
+	if (state.stage != nmt_state::automatic::idle || state.fitting || false == state.pending.empty())
+		return held("other work with the model");
+	// a stroke of the terrain brush keeps its step of the history open to its end: closed around a chunk, its undo would lose the
+	// part brushed before
+	if (terrain_brush() && mouseHold)
+		return held("a stroke of the terrain brush");
+	held("");
+	// light: the time after a chunk set by how long it took. not held by slow frames: a large scenery has them all the time, and
+	// nothing was made there
+	auto const now{ImGui::GetTime()};
+	if (now < area.resume)
+		return;
+	// the chunks of the area in the square around the camera, the nearest first
+	int constexpr reach{4};
+	auto const centre{heightmap::chunk_at(Camera.Pos.x, Camera.Pos.z)};
+	if (false == area.listed || centre != area.centre)
+	{
+		area.keys.clear();
+		area.next = 0;
+		area.centre = centre;
+		area.listed = true;
+		area.waiting = -1.0;
+		area.square_made = 0;
+		area.took = 0.0;
+		area.took_most = 0.0;
+		for (int dz = -reach; dz <= reach; ++dz)
+			for (int dx = -reach; dx <= reach; ++dx)
+			{
+				heightmap::chunk_key const key{centre.first + dx, centre.second + dz};
+				if (auto const low{heightmap::chunk_corner(key)}; false == area.empty.contains(key) && in_download_area(low, low + glm::dvec2{heightmap::chunk_size}))
+					area.keys.push_back(key);
+			}
+		std::stable_sort(area.keys.begin(), area.keys.end(), [&](heightmap::chunk_key const &Left, heightmap::chunk_key const &Right) {
+			auto const distance = [&](heightmap::chunk_key const &Key) { return sq(Key.first - centre.first) + sq(Key.second - centre.second); };
+			return distance(Left) < distance(Right);
+		});
+		auto const missing{std::count_if(area.keys.begin(), area.keys.end(), [&](heightmap::chunk_key const &Key) { return false == m_streamer.active() || false == m_streamer.exists(Key); })};
+		// told only where there's terrain to make: the camera crosses a chunk every few seconds
+		if (missing > 0)
+			WriteLog(format("Editor: NMT - the download area around the camera (chunk %d,%d): %zu chunks in it, %zu with no terrain yet", centre.first, centre.second, area.keys.size(),
+			                static_cast<std::size_t>(missing)),
+			         logtype::generic);
+	}
+	// those there already cost a lookup only, a few of them a frame; the terrain made by hand is left as it is
+	for (int looked = 0; looked < 8 && area.next < area.keys.size(); ++looked)
+	{
+		auto const key{area.keys[area.next]};
+		if (m_streamer.active() && m_streamer.exists(key))
+		{
+			++area.next;
+			continue;
+		}
+		if (false == ensure_terrain())
+			return;
+		nmt_locate();
+		auto const low{heightmap::chunk_corner(key)};
+		auto const high{low + glm::dvec2{heightmap::chunk_size}};
+		// the model under it and a little around, for the heights along the terrain beside: read from the cache or downloaded
+		// meanwhile; one that doesn't come is left for the camera's next move
+		if (false == nmt_ready(low - glm::dvec2{2.0}, high + glm::dvec2{2.0}))
+		{
+			if (area.waiting < 0.0)
+				area.waiting = now;
+			else if (now - area.waiting > 5.0)
+			{
+				area.waiting = -1.0;
+				++area.next;
+			}
+			return;
+		}
+		area.waiting = -1.0;
+		++area.next;
+		auto const started{std::chrono::steady_clock::now()};
+		// the editor keeps a step of the history of the terrain open all the time: the chunk isn't a step of it, as the terrain grown
+		// under the track laid; the step there is closed before, and a new one opened after
+		auto const recording{m_streamer.recording()};
+		if (recording)
+		{
+			terrain_history_step();
+			m_streamer.end_change();
+		}
+		auto const chunk{add_chunk_from_nmt(key, nmt_chunk_offset(key))};
+		if (recording)
+			m_streamer.begin_change();
+		auto const took{std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()};
+		// a chunk at most every 0.1 s, and the editor left at least three times as long for itself as the chunk took
+		area.resume = now + std::max(0.1, 3.0 * took);
+		area.took += took;
+		area.took_most = std::max(area.took_most, took);
+		// one outside the region of the scenery isn't added either
+		if (chunk == nmt_chunk::made && m_streamer.exists(key))
+		{
+			++area.made;
+			++area.square_made;
+			area.refit = true;
+			forget_ground_in(low, high);
+		}
+		else
+			area.empty.insert(key);
+		return;
+	}
+	// the square done: the photos laid onto the new ground once, not after each chunk
+	if (area.next >= area.keys.size() && std::exchange(area.refit, false))
+	{
+		m_orthophoto.refit();
+		for (auto &layer : m_wms)
+			layer->refit();
+		WriteLog(format("Editor: NMT - the download area: %zu chunks made around the camera in %.0f ms, the longest %.1f ms, %zu in all", area.square_made, area.took * 1000.0,
+		                area.took_most * 1000.0, area.made),
+		         logtype::generic);
+	}
+}
+
 void editor_mode::nmt_update()
 {
 	auto &state{m_nmt_state};
-	// the squares of the model in the download area to the disk cache, where the scenery is placed and its terrain is there
-	if (auto const wanted{m_nmt.placed() && m_streamer.active() ? m_orthophoto.area() : std::vector<glm::dvec2>{}}; wanted != m_nmt_prefetched)
+	// the squares of the model in the download area to the disk cache, as the area promises the model with the photos: the area is in
+	// PUWG 1992 already, so it needs neither the model placed (its panel opened) nor the terrain of the scenery begun
+	if (auto const &wanted{m_orthophoto.area()}; wanted != m_nmt_prefetched)
 	{
 		m_nmt_prefetched = wanted;
 		m_nmt.prefetch(wanted);
+		// the terrain around the camera looked at again within the new area
+		m_area_terrain.listed = false;
+		m_area_terrain.empty.clear();
 	}
 	nmt_offer();
 	nmt_follow_tracks();
+	// the terrain of the download area, when nothing else is done with the model: it tells what holds it
+	nmt_area_terrain();
 	if (state.stage != nmt_state::automatic::idle)
 	{
 		nmt_auto_step();
@@ -1091,6 +1246,14 @@ void editor_mode::nmt_update()
 		return;
 	}
 	state.camera_check = true;
+	// the terrain of the scenery opened, or begun, for the chunks grown under the track laid as well: they don't need terrain there before
+	if (false == ensure_terrain())
+	{
+		state.pending.clear();
+		state.refill.clear();
+		state.status = STR("The heightmap terrain can't be opened");
+		return;
+	}
 	// a few chunks a frame, those whose model is in. the terrain made ahead of the track laid isn't a step of the history:
 	// Ctrl+Z takes back the track, not the ground under it
 	auto const unrecorded{state.grown && m_streamer.recording()};
@@ -1100,7 +1263,6 @@ void editor_mode::nmt_update()
 		m_streamer.end_change();
 	}
 	int made{0};
-	std::size_t apart{0};
 	std::vector<heightmap::chunk_key> changed;
 	for (auto it{state.pending.begin()}; it != state.pending.end() && made < 4;)
 	{
@@ -1110,34 +1272,22 @@ void editor_mode::nmt_update()
 			it = state.pending.erase(it);
 			continue;
 		}
-		// ahead of the track the terrain goes on from the one there is, at its height over the model
-		std::optional<double> offset;
-		if (state.grown && false == refilled)
+		// the model under it and a little around first: the height along the terrain beside is read from it
+		if (auto const low{heightmap::chunk_corner(*it)}; false == nmt_ready(low - glm::dvec2{2.0}, low + glm::dvec2{heightmap::chunk_size + 2.0}))
 		{
-			bool foreign{false};
-			offset = nmt_seam_offset(*it, foreign);
-			if (foreign)
-			{
-				state.given_up.insert(*it);
-				it = state.pending.erase(it);
-				++state.foreign;
-				++made;
-				continue;
-			}
-			if (false == offset.has_value())
-			{
-				++apart;
-				++it;
-				continue;
-			}
+			++it;
+			continue;
 		}
+		// a new chunk at the height nmt_chunk_offset() gives it; one of flat ground refilled keeps to the offset of the scenery
+		auto const offset{refilled ? std::nullopt : nmt_chunk_offset(*it)};
 		auto const chunk{add_chunk_from_nmt(*it, offset)};
 		if (chunk == nmt_chunk::waiting)
 		{
 			++it;
 			continue;
 		}
-		if (offset.has_value() && chunk == nmt_chunk::made)
+		// the height the track laid goes on at, over the model: from the terrain grown under it only, not from the buttons' chunks
+		if (state.grown && offset.has_value() && chunk == nmt_chunk::made)
 			state.ahead = offset;
 		if (chunk == nmt_chunk::made)
 			changed.push_back(*it);
@@ -1148,15 +1298,6 @@ void editor_mode::nmt_update()
 			++state.made;
 		else
 			++state.empty;
-	}
-	// the chunks ahead which no terrain made from the model touches any more are given up
-	if (made == 0 && apart > 0 && apart == state.pending.size())
-	{
-		state.foreign += apart;
-		state.given_up.insert(state.pending.begin(), state.pending.end());
-		state.pending.clear();
-		state.refill.clear();
-		made = 1;
 	}
 	// the last ones may have got here as chunks the streamer has read in meanwhile, nothing made: all waited for is there all the same,
 	// the formations of the tracks led into it
@@ -1199,12 +1340,17 @@ void editor_mode::nmt_grow()
 {
 	auto &state{m_nmt_state};
 	auto const now{ImGui::GetTime()};
-	if (false == state.grow || now - state.grow_time < 0.5 || false == m_nmt.placed())
+	if (false == state.grow || now - state.grow_time < 0.5)
 		return;
 	state.grow_time = now;
 	// around the cursor of the tool laying the tracks, the terrain under them once they're laid: from the first point placed, or as a
 	// track is dragged from a free end; not around the camera, nor with the tool merely chosen
 	if (false == m_lay.active && false == m_extend.active)
+		return;
+	// the model placed where the origin of the orthophoto puts the scenery: it was only once the terrain panel had been open, and
+	// nothing grew under the track laid before that
+	nmt_locate();
+	if (false == m_nmt.placed())
 		return;
 	auto const at{m_extend.active ? m_extend.mouse : m_lay.mouse};
 	// nothing asked for outside the download area
@@ -1213,7 +1359,9 @@ void editor_mode::nmt_grow()
 	// the model under it meanwhile, for the height of the first point laid where there's no terrain yet, as over the base map
 	m_nmt.request({at.x - 100.0, at.z - 100.0}, {at.x + 100.0, at.z + 100.0});
 	auto const laying{m_extend.active || false == m_lay.points.empty()};
-	if (false == laying || m_streamer.resident() == 0)
+	// also in a scenery with no terrain yet, and far from the terrain there is: the chunks are made where the track goes. a scenery
+	// with no name yet can't have its terrain: nothing asked for, or it would be asked again and dropped every half a second
+	if (false == laying || (false == m_streamer.active() && m_orthophoto_scenery.empty()))
 		return;
 	glm::dvec2 const cursor{at.x, at.z};
 	double constexpr grow_reach{400.0}; // m around the cursor
@@ -1836,11 +1984,11 @@ void editor_mode::draw_download_area() const
 		return;
 	screen_projection const projection;
 	auto *drawlist{ImGui::GetBackgroundDrawList()};
-	// the tiles of the area as they are: in the disk cache, failed; the ones waiting left clear
+	// the tiles of the area which failed: those in the cache or waiting left clear, the green over all the cached ones got in the way
 	if (false == drawing.active && orthophoto_settings_open())
 		for (auto const &square : m_orthophoto.area_squares())
 		{
-			if (square.state == 0)
+			if (square.state != 2)
 				continue;
 			std::array<ImVec2, 4> corners;
 			auto seen{true};
@@ -1848,7 +1996,7 @@ void editor_mode::draw_download_area() const
 			for (int i = 0; i < 4 && seen; ++i)
 				seen = projection.project(area_point(at[i]), corners[i]);
 			if (seen)
-				drawlist->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], square.state == 1 ? IM_COL32(90, 220, 120, 45) : IM_COL32(240, 80, 70, 80));
+				drawlist->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], IM_COL32(240, 80, 70, 80));
 		}
 	auto const edge{IM_COL32(80, 220, 255, 230)};
 	auto const closing{IM_COL32(80, 220, 255, drawing.active ? 110 : 230)};
@@ -1987,6 +2135,18 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 			if (ImGui::SmallButton((std::string{STR_C("Retry")} + "##terrainarea").c_str()))
 				m_nmt.prefetch(m_nmt_prefetched);
 		}
+	}
+	auto &model{EditorSettings.terrain_model()};
+	if (ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &model.area))
+		EditorSettings.save();
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("Makes the terrain from the terrain model within the area, around the camera wherever it goes,\n"
+		                              "a chunk at a time while the editor is idle. The terrain there is already isn't touched.\n"
+		                              "The chunks made wait in memory until the scenery is saved (Ctrl+S)."));
+	if (model.area && m_area_terrain.made > 0)
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s", format(STR_P("%zu chunk made", "%zu chunks made", m_area_terrain.made), m_area_terrain.made).c_str());
 	}
 }
 

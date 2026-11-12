@@ -255,6 +255,7 @@ void editor_nmt::prefetch(std::vector<glm::dvec2> const &Polygon)
 		std::lock_guard<std::mutex> lock{m_mutex};
 		m_prefetch = std::move(keys);
 		m_prefetch_next = 0;
+		m_prefetch_again.clear();
 		m_prefetch_cached.clear();
 		m_prefetch_failed.clear();
 		++m_prefetch_generation;
@@ -350,7 +351,7 @@ void editor_nmt::work()
 		std::uint32_t generation{0};
 		{
 			std::unique_lock<std::mutex> lock{m_mutex};
-			auto const prefetchable = [this]() { return false == m_prefetch_paused && m_prefetch_next < m_prefetch.size(); };
+			auto const prefetchable = [this]() { return false == m_prefetch_paused && (false == m_prefetch_again.empty() || m_prefetch_next < m_prefetch.size()); };
 			m_wake.wait(lock, [&]() { return m_stop || false == m_queue.empty() || prefetchable(); });
 			if (m_stop)
 				return;
@@ -361,8 +362,14 @@ void editor_nmt::work()
 			}
 			else
 			{
-				// a square of the download area, while none is asked for
-				square = m_prefetch[m_prefetch_next++];
+				// a square of the download area, while none is asked for; one broken off before first
+				if (false == m_prefetch_again.empty())
+				{
+					square = m_prefetch_again.front();
+					m_prefetch_again.pop_front();
+				}
+				else
+					square = m_prefetch[m_prefetch_next++];
 				prefetching = true;
 				generation = m_prefetch_generation;
 			}
@@ -372,9 +379,14 @@ void editor_nmt::work()
 			// put into the disk cache only, the file there not read
 			std::error_code fault;
 			std::string error;
-			auto const ok{fs::exists(file_of(square), fault) || false == fetch(square, error)->failed};
+			bool yielded{false};
+			auto const ok{fs::exists(file_of(square), fault) || false == fetch(square, error, &yielded)->failed};
 			std::lock_guard<std::mutex> lock{m_mutex};
-			if (generation == m_prefetch_generation)
+			if (generation != m_prefetch_generation)
+				continue;
+			if (yielded)
+				m_prefetch_again.push_back(square);
+			else
 				(ok ? m_prefetch_cached : m_prefetch_failed).insert(square);
 			continue;
 		}
@@ -390,7 +402,7 @@ void editor_nmt::work()
 	}
 }
 
-std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std::string &Error)
+std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std::string &Error, bool *Yielded)
 {
 	auto result{std::make_shared<square>()};
 	std::error_code fault;
@@ -429,9 +441,18 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 		return result;
 	}
 	editor_http::client client;
-	auto const stop = [this]() {
+	// the download of the area gives way to the squares asked for: the terrain under the track laid isn't kept waiting for it
+	auto const yield = [this, Yielded]() {
 		std::lock_guard<std::mutex> lock{m_mutex};
-		return m_stop;
+		return Yielded != nullptr && false == m_queue.empty();
+	};
+	auto const stop = [this, &yield]() {
+		{
+			std::lock_guard<std::mutex> lock{m_mutex};
+			if (m_stop)
+				return true;
+		}
+		return yield();
 	};
 	std::string coverage;
 	{
@@ -480,6 +501,13 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 		}
 		if (Error.empty())
 			Error = STRN("The service gave no terrain model");
+	}
+	if (Yielded != nullptr && yield())
+	{
+		// broken off, not failed: downloaded again later
+		*Yielded = true;
+		result->failed = true;
+		return result;
 	}
 	WriteLog("Editor: NMT square " + std::to_string(Key.first) + "," + std::to_string(Key.second) + " not fetched: " + Error, logtype::generic);
 	result->failed = true;

@@ -94,7 +94,9 @@ class editor_nmt
 
 	key key_of(double const East, double const North) const;
 	void work();
-	std::shared_ptr<square const> fetch(key const &Key, std::string &Error);
+	// Yielded given: a square of the download area, its download broken off as soon as a square is asked for (the terrain under the
+	// track laid), and true then
+	std::shared_ptr<square const> fetch(key const &Key, std::string &Error, bool *Yielded = nullptr);
 
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wake;
@@ -109,6 +111,7 @@ class editor_nmt
 	// the squares of the download area for the disk cache
 	std::vector<key> m_prefetch;
 	std::size_t m_prefetch_next{0};
+	std::deque<key> m_prefetch_again; // broken off for a square asked for, taken up before the next ones
 	std::set<key> m_prefetch_cached;
 	std::set<key> m_prefetch_failed;
 	std::uint32_t m_prefetch_generation{0};

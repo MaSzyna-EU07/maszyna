@@ -161,6 +161,8 @@ bool editorSettings::load()
 			m_terrain_model.shape = (value == "1");
 		else if (key == "nmt_follow")
 			m_terrain_model.follow = (value == "1");
+		else if (key == "nmt_area")
+			m_terrain_model.area = (value == "1");
 		else if (key == "top_ballast")
 			m_top_tracks = value == "1" ? 0 : 1;
 		else if (key == "top_tracks")
@@ -261,6 +263,7 @@ bool editorSettings::save()
 	stream << "nmt_around " << m_terrain_model.around << "\n";
 	stream << "nmt_shape " << (m_terrain_model.shape ? 1 : 0) << "\n";
 	stream << "nmt_follow " << (m_terrain_model.follow ? 1 : 0) << "\n";
+	stream << "nmt_area " << (m_terrain_model.area ? 1 : 0) << "\n";
 	stream << "top_tracks " << m_top_tracks << "\n";
 	stream << "top_rails " << std::hex << (m_top_rails & 0xffffffu) << std::dec << "\n";
 	stream << "laying_heights " << (m_heights == lay_heights::points ? "points" : m_heights == lay_heights::level ? "level" : "fitted") << "\n";

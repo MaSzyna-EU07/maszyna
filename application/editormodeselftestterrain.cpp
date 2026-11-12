@@ -175,6 +175,8 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 				EditorSettings.terrain_while_laying(state.grow);
 				EditorSettings.save();
 			}
+			else if (key == "area")
+				m_area_terrain.run_only = value != 0.0; // for the run only: the setting isn't touched, so no save keeps it
 		}
 		WriteLog(format("SELFTEST nmtsettings band %.0f around %d shape %d follow %d grow %d offset %+.2f fitted %d", state.band, m_terrain_add_count, state.shape ? 1 : 0, state.follow ? 1 : 0, state.grow ? 1 : 0, state.offset,
 		                state.fitted ? 1 : 0));
