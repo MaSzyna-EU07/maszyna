@@ -441,8 +441,6 @@ ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scal
          place, lanes, lay_track, switch, straight, curve, signal, objects,
          vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
          work_tracks, work_roads, work_terrain, station_signals, line_block]
-         vehicle, profile, speed, joints, infra, gauge, turntable, work_surroundings,
-         work_tracks, work_roads, work_terrain, camera, zoom_in, zoom_out]
 
 
 def cutouts(name, d):

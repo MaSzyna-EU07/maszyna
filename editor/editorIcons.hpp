@@ -62,9 +62,6 @@ enum class icon
 	// the tools of the signalling beside signal and station
 	station_signals,
 	line_block,
-	camera,
-	zoom_in,
-	zoom_out,
 	count
 };
 

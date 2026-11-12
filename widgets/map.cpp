@@ -7,8 +7,8 @@
 #include "vehicle/Driver.h"
 #include "model/AnimModel.h"
 #include "application/application.h"
-#include "editor/editorIcons.hpp"
 #include "editor/editorTerrainStreamer.hpp"
+#include "widgets/mapIcons.h"
 #include "world/Sweep.h"
 #include <format>
 
@@ -142,7 +142,7 @@ double nice_distance_step(double target)
 	return (normalized <= 1.0 ? 1.0 : normalized <= 2.0 ? 2.0 : normalized <= 5.0 ? 5.0 : 10.0) * magnitude;
 }
 
-bool map_toolbar_icon_button(char const *id, char const *tooltip, editor_icons::icon icon, bool selected = false)
+bool map_toolbar_icon_button(char const *id, char const *tooltip, map_icons::icon icon, bool selected = false)
 {
 	ImGui::PushID(id);
 	ImGui::PushStyleColor(
@@ -153,8 +153,7 @@ bool map_toolbar_icon_button(char const *id, char const *tooltip, editor_icons::
 	ImVec2 const minimum = ImGui::GetItemRectMin();
 	ImVec2 const maximum = ImGui::GetItemRectMax();
 	ImVec2 const center((minimum.x + maximum.x) * 0.5f, (minimum.y + maximum.y) * 0.5f);
-	editor_icons::draw(
-		ImGui::GetWindowDrawList(), icon, center, ImGui::GetColorU32(ImGuiCol_Text));
+	map_icons::draw(ImGui::GetWindowDrawList(), icon, center, ImGui::GetColorU32(ImGuiCol_Text));
 
 	if (ImGui::IsItemHovered())
 	{
@@ -1010,9 +1009,9 @@ void ui::map_panel::render_contents()
         return;
     }
 
-	bool const zoom_in = map_toolbar_icon_button("zoom-in", STR_C("Zoom in"), editor_icons::icon::zoom_in);
+	bool const zoom_in = map_toolbar_icon_button("zoom-in", STR_C("Zoom in"), map_icons::icon::zoom_in);
 	ImGui::SameLine();
-	bool const zoom_out = map_toolbar_icon_button("zoom-out", STR_C("Zoom out"), editor_icons::icon::zoom_out);
+	bool const zoom_out = map_toolbar_icon_button("zoom-out", STR_C("Zoom out"), map_icons::icon::zoom_out);
 	ImGui::SameLine();
 
 	if (!simulation::Train && mode == MODE_VEHICLE)
@@ -1021,18 +1020,18 @@ void ui::map_panel::render_contents()
 	glm::mat4 transform;
 	transform[0][0] = -1.0f;
 
-	if (map_toolbar_icon_button("pan", STR_C("Pan"), editor_icons::icon::translate, mode == MODE_MANUAL))
+	if (map_toolbar_icon_button("pan", STR_C("Pan"), map_icons::icon::pan, mode == MODE_MANUAL))
 		mode = MODE_MANUAL;
 	ImGui::SameLine();
-	if (map_toolbar_icon_button("camera", STR_C("Follow camera"), editor_icons::icon::camera, mode == MODE_CAMERA))
+	if (map_toolbar_icon_button("camera", STR_C("Follow camera"), map_icons::icon::camera, mode == MODE_CAMERA))
 		mode = MODE_CAMERA;
 	ImGui::SameLine();
 	ImGui::BeginDisabled(simulation::Train == nullptr);
-	if (map_toolbar_icon_button("vehicle", STR_C("Follow vehicle"), editor_icons::icon::vehicle, mode == MODE_VEHICLE))
+	if (map_toolbar_icon_button("vehicle", STR_C("Follow vehicle"), map_icons::icon::vehicle, mode == MODE_VEHICLE))
 		mode = MODE_VEHICLE;
 	ImGui::EndDisabled();
 	ImGui::SameLine();
-	if (map_toolbar_icon_button("reset-heading", STR_C("Reset map rotation"), editor_icons::icon::rotate))
+	if (map_toolbar_icon_button("reset-heading", STR_C("Reset map rotation"), map_icons::icon::rotate))
 		m_manual_rotation = 0.0f;
 	ImVec2 surface_size_im = ImGui::GetContentRegionAvail();
 	glm::vec2 surface_size(surface_size_im.x, surface_size_im.y);
