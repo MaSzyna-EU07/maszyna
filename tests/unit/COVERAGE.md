@@ -81,7 +81,15 @@ These are run by the game, by vehicles it has or by the cab, the AI or the scene
 
 The core library (`eu07_core`) and the test binary hold more than the physics: the parser of the game's text files, the helpers of `utilities.cpp`, the PLC of a vehicle, the parts of the vehicles and of the simulation moved out of the big classes to be tested, and the hosts of the script screens. The sections above don't cover them. Their numbers are lines run, from the report of the Coverage workflow.
 
-The tables show the run before the tests of the parser, the helpers and the PLC (`test_parser.cpp`, `test_utilities.cpp`, `test_ladder_logic.cpp`) were written. What those tests add is measured by the Coverage run of the pull request which brings them, and shown in the summary of that run.
+The per-file table further down is from the run before the tests of the parser, the helpers and the PLC (`test_parser.cpp`, `test_utilities.cpp`, `test_ladder_logic.cpp`) were written. With them, in the Coverage run of master `bac9954a` (2026-11-11, after #333; GCC 13.3, unoptimised, gcov):
+
+| File | Lines run, before | Lines run, with the tests | Functions run, with the tests |
+|---|---|---|---|
+| `scripting/ladderlogic.cpp` | 4.1% (9 of 217) | 98.2% (213 of 217) | 11 of 11 |
+| `utilities/parser.cpp` | 40.0% (170 of 425) | 97.6% (415 of 425) | 41 of 41 |
+| `utilities/utilities.cpp` | 28.2% (82 of 291) | 95.5% (299 of 313) | 51 of 51 |
+
+`utilities.cpp` grew by 22 lines on master between the two runs (`user_cache_path`, `utf8_to_win1250`). All 62 files of the game in that report together: lines 83.5% (15411 of 18464), functions 85.5% (1378 of 1612), branches 59.5% (15503 of 26046). The totals aren't comparable with the run below: the report holds 13 more files, from the merges in between.
 
 **The run measured:** pull request #325 on 2026-11-11 (its commit `33cedc45` merged into master `10c7527a`), GCC 13.3, unoptimised, gcov lines. All 49 files of the game in the report together: lines 84.4% (10305 of 12204), functions 85.0% (927 of 1090), branches 62.3% (10325 of 16578).
 
@@ -114,7 +122,7 @@ The tables show the run before the tests of the parser, the helpers and the PLC 
 Notes to the table:
 
 - The small headers with the logic of a single part are all run in full: `vehicle/doorwings.h`, `gaugeduplicates.h`, `gaugepositions.h`, `holdcoillever.h`, `lightsprogrammer.h`, `mainctrlact.h`, `mirrors.h`, `scripting/scriptscreendrawing.h`, `scriptscreenkernels.h`, `scriptscreenprogram.h`, `scriptscreens.h`, `utilities/dictionary.h` and `vehicle/blackbox.h`.
-- `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. They have tests (`test_brake_setting.cpp`, `test_odometer.cpp`) and no numbers yet.
+- `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. In the run of `bac9954a` their tests (`test_brake_setting.cpp`, `test_odometer.cpp`) run 94.1% (144 of 153) and 87.9% (189 of 215) of their lines, and all 14 and 26 of 28 of their functions.
 - The script hosts (`scriptscreens.cpp`, `luaprogram.cpp`, `wasmprogram.cpp`) aren't in the library. The test binary compiles them itself, with the real runtimes.
 - `scene/scenelayers.h`, `scene/scenenode.h` and `scene/scenenodegroups.h` are in the report with a few lines each: the parser reports the files it includes to the scenery, which the tests replace with stubs (`engine_stubs.cpp`).
 
