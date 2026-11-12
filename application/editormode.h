@@ -240,6 +240,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_dragging = false;
 	glm::dvec3 oldPos; // world position of the last brush placement
 	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first placement ignores spacing
+	bool m_draw_cursor{false}; // the cursor drawn into the picture (View menu), on only while the editor is
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
@@ -676,6 +677,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint ||
 		       m_terrain_tool == terrain_tool::restore;
 	}
+	// the point of the ground of the terrain under the cursor, found along the ray through the cursor, so it's found also over
+	// a hole and behind the grass. returns: false if the ray meets no terrain
+	bool terrain_cursor(glm::dvec3 &World) const;
+	// the point of the ground under the cursor in this frame, for the points put on the ground (outlines, areas, brushes): along the ray
+	// through the cursor to the terrain; the depth read back (a frame late, and stopped by the models over the ground) only where
+	// there's none. false: nothing under the cursor
+	bool cursor_on_ground(glm::dvec3 &World);
 	// converts the point spacing of the selected chunks to m_terrain_convert_spacing
 	void convert_selected_chunks();
 	// the chunks selected with the spacing tool taken out of the terrain, in one step of the history

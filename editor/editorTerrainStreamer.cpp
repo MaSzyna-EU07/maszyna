@@ -810,6 +810,55 @@ editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
 	return nullptr;
 }
 
+bool terrain_streamer::raycast(glm::dvec3 const &Origin, glm::dvec3 const &Direction, double const Reach, glm::dvec3 &Hit) const
+{
+	if (glm::length(Direction) < 1e-9)
+		return false;
+	auto const direction{glm::normalize(Direction)};
+	// 1 above the ground, -1 under it, 0 where there's no terrain
+	auto const side = [&](double const T) {
+		auto const point{Origin + direction * T};
+		double height;
+		if (false == height_at(point.x, point.z, height))
+			return 0;
+		return point.y > height ? 1 : -1;
+	};
+	auto const above = [&](double const T) { return side(T) >= 0; };
+	auto last{side(0.0)};
+	if (last < 0)
+		return false; // starts under the ground
+	double previous{0.0};
+	double t{0.0};
+	while (t < Reach)
+	{
+		// finer near the camera, where the brush is aimed most
+		t = std::min(Reach, t + std::max(0.25, t * 0.004));
+		auto const now{side(t)};
+		if (now >= 0)
+		{
+			previous = t;
+			last = now;
+			continue;
+		}
+		// under the ground coming from where there's no terrain: the side of a chunk seen through a gap, not the ground
+		// seen on the screen; the depth read back says where that is
+		if (last == 0)
+			return false;
+		auto low{previous}, high{t};
+		for (int i = 0; i < 24; ++i)
+		{
+			auto const middle{(low + high) * 0.5};
+			if (above(middle))
+				low = middle;
+			else
+				high = middle;
+		}
+		Hit = Origin + direction * high;
+		return true;
+	}
+	return false;
+}
+
 bool terrain_streamer::height_at(double X, double Z, double &Height) const
 {
 	auto const *chunk{terrain_at(X, Z)};

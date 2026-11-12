@@ -2203,9 +2203,9 @@ void editor_mode::draw_terrain_overlay()
         return;
     screen_projection const projection;
     auto *drawlist = ImGui::GetBackgroundDrawList();
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    bool const hovering = glm::length(offset) > 1e-3 && false == ImGui::GetIO().WantCaptureMouse;
-    glm::dvec3 const cursor = Camera.Pos + offset;
+    // the cursor where a click would put the point: the ground along the ray through the cursor in this frame
+    glm::dvec3 cursor{Camera.Pos};
+    bool const hovering = false == ImGui::GetIO().WantCaptureMouse && cursor_on_ground(cursor);
     auto const ground = [&](double const X, double const Z, double const Fallback) {
         double height;
         return m_streamer.height_at(X, Z, height) ? height : Fallback;
@@ -2220,8 +2220,12 @@ void editor_mode::draw_terrain_overlay()
         }
     };
 
-    if (terrain_brush() && hovering)
+    // the brush aimed at the ground itself along the ray through the cursor
+    glm::dvec3 brushcentre = cursor;
+    bool const onground = false == ImGui::GetIO().WantCaptureMouse && terrain_cursor(brushcentre);
+    if (terrain_brush() && onground)
     {
+        auto const cursor = brushcentre;
         std::vector<glm::dvec3> circle;
         for (int i = 0; i < 64; ++i)
         {
@@ -2827,10 +2831,9 @@ void editor_mode::add_chunks_around(int const Count)
 
 void editor_mode::handle_terrain_click(bool const Shift)
 {
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) < 1e-3)
-        return; // nothing under the cursor (yet)
-    glm::dvec3 const world = Camera.Pos + offset;
+    glm::dvec3 world;
+    if (false == cursor_on_ground(world))
+        return; // nothing under the cursor
     switch (m_terrain_tool)
     {
     case terrain_tool::chunks:
@@ -3537,12 +3540,11 @@ void editor_mode::export_scenery()
 
 void editor_mode::handle_terrain_brush(double Deltatime)
 {
-    // world point under the cursor (Mouse_Position is camera-relative, like the brush placement uses)
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) < 1e-3)
+    // the ground itself along the ray through the cursor in this frame
+    glm::dvec3 world;
+    if (false == terrain_cursor(world))
         return;
-    glm::dvec3 const world = Camera.Pos + offset;
-    // only when the cursor is over the terrain (avoids editing on a stale depth read)
+    // only when the cursor is over the terrain
     if (terrain_at(world.x, world.z) == nullptr)
         return;
 
@@ -3583,6 +3585,40 @@ void editor_mode::handle_terrain_brush(double Deltatime)
         ground_tiles.clear();
         forget_ground_shapes();
     }
+}
+
+bool editor_mode::cursor_on_ground(glm::dvec3 &World)
+{
+    if (m_streamer.active() && terrain_cursor(World))
+        return true;
+    // no terrain under the ray: the depth read back under the cursor, as before, where it hit anything
+    if (false == GfxRenderer->Mouse_Hit())
+        return false;
+    World = Camera.Pos + GfxRenderer->Mouse_Position();
+    return true;
+}
+
+bool editor_mode::terrain_cursor(glm::dvec3 &World) const
+{
+    // along the ray through the cursor as it is in this frame: the depth read back lags a frame behind
+    ImGuiIO const &io = ImGui::GetIO();
+    if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
+        return false;
+    auto const inverse = glm::inverse(editor_mode::projection_matrix(io.DisplaySize.x / io.DisplaySize.y) * GfxRenderer->Camera_View_Matrix());
+    glm::vec2 const ndc{io.MousePos.x / io.DisplaySize.x * 2.0f - 1.0f, 1.0f - io.MousePos.y / io.DisplaySize.y * 2.0f};
+    // two points of the ray, whatever the depth range of the projection
+    auto const point = [&](float const Depth) {
+        auto const clip = inverse * glm::vec4(ndc, Depth, 1.0f);
+        return glm::dvec3{glm::vec3{clip} / clip.w};
+    };
+    auto const direction = point(0.5f) - point(0.0f);
+    if (glm::length(direction) < 1e-9)
+        return false;
+    // the top view sees from 10 km behind the plane of the camera (the near plane of its projection): the ray starts there,
+    // so the ground higher than the camera is met too
+    auto const back{Global.EditorOrtho ? 10000.0 : 0.0};
+    auto const along{glm::normalize(direction)};
+    return m_streamer.raycast(GfxRenderer->Camera_Position() + point(0.0f) - along * back, along, 5000.0 + back, World);
 }
 
 void editor_mode::fill_terrain_area()
@@ -3641,10 +3677,10 @@ void editor_mode::convert_selected_chunks()
 
 bool editor_mode::pick_terrain_target()
 {
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) < 1e-3)
+    glm::dvec3 world;
+    if (false == cursor_on_ground(world))
         return false; // nothing under the cursor
-    m_terrain_target = static_cast<float>(Camera.Pos.y + offset.y);
+    m_terrain_target = static_cast<float>(world.y);
     m_terrain_status = format(STR_C("Target height: %.2f m"), m_terrain_target);
     return true;
 }
@@ -4186,6 +4222,14 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
+    if (ImGui::MenuItem(STR_C("Cursor drawn into the picture (streams)"), nullptr, m_draw_cursor))
+    {
+        m_draw_cursor = !m_draw_cursor;
+        ui_layer::draw_cursor(m_draw_cursor);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\n"
+                                      "or a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())
@@ -4468,14 +4512,13 @@ void editor_mode::render_object_menu()
 
 void editor_mode::add_area_fill_point()
 {
-    // like the other placement tools, the point comes from the depth buffer under the cursor
-    // (ground geometry only), relative to the camera
-    glm::dvec3 const offset = GfxRenderer->Mouse_Position();
-    if (glm::length(offset) < 1e-3)
-        return; // no ground under the cursor (yet)
+    // the ground along the ray through the cursor in this frame
+    glm::dvec3 world;
+    if (false == cursor_on_ground(world))
+        return; // no ground under the cursor
 
     // the outline gives the fill the height to look for the ground at, and the height of what it finds no ground for
-    m_fill_points.push_back(placement_on_ground(Camera.Pos + offset));
+    m_fill_points.push_back(placement_on_ground(world));
 }
 
 void editor_mode::undo_last_area_fill()
@@ -6902,6 +6945,8 @@ void editor_mode::enter()
     track_sleepers::lay_in_background(false);
     // the editor may remove the tracks and the vehicles the recording refers to: it ends here
     simulation::Blackbox.close();
+    // the cursor drawn into the picture is the editor's: back on when it comes back, if it was chosen
+    ui_layer::draw_cursor(m_draw_cursor);
 
     if (simulation::Region != nullptr)
     {
@@ -7001,6 +7046,8 @@ void editor_mode::exit()
 {
     m_ride.leave();
     track_sleepers::lay_in_background(true);
+    // the driver's view has no menu to switch the drawn cursor off: the system one there
+    ui_layer::draw_cursor(false);
     Global.editor_tracks = false;
     EditorModeFlag = false;
     Global.ControlPicking = m_statebackup.picking;
