@@ -14240,3 +14240,225 @@ msgstr "Kursor rysowany w obrazie (stream)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
+
+msgid "%+.2f m"
+msgstr "%+.2f m"
+
+msgid "%.0f m long, nodes: %zu, heights %.1f - %.1f m; the road grey, the ground brown"
+msgstr "długość %.0f m, węzłów: %zu, wysokości %.1f - %.1f m; droga szara, teren brązowy"
+
+msgid "%.0f m: road %.2f m, ground %.2f m, grade %.1f %%"
+msgstr "%.0f m: droga %.2f m, teren %.2f m, pochylenie %.1f %%"
+
+msgid "%zu, from %.0f m to %.0f m"
+msgstr "%zu, od %.0f m do %.0f m"
+
+msgid "A crest curve of R %.0f m, %.0f m long, between %.2f %% and %.2f %%"
+msgstr "Łuk wypukły R %.0f m, długość %.0f m, między %.2f %% a %.2f %%"
+
+msgid "A curve rounding off where the grade before the selected nodes meets the one after them:\nthe grades are read from the nodes just outside the selection, so select a stretch with some of the road left on both sides"
+msgstr "Łuk pionowy zaokrąglający miejsce, gdzie pochylenie przed zaznaczonymi węzłami spotyka się z pochyleniem za nimi:\npochylenia są brane z węzłów tuż poza zaznaczeniem, więc zaznacz odcinek tak, żeby z obu stron zostało trochę drogi"
+
+msgid "A dip curve of R %.0f m, %.0f m long, between %.2f %% and %.2f %%"
+msgstr "Łuk wklęsły R %.0f m, długość %.0f m, między %.2f %% a %.2f %%"
+
+msgid "Access road (D)"
+msgstr "Droga dojazdowa (D)"
+
+msgid "All the selected nodes at this height, with no grade at them"
+msgstr "Wszystkie zaznaczone węzły na tej wysokości, bez pochylenia"
+
+msgid "Apply to the selected nodes##roadprofile"
+msgstr "Zastosuj do zaznaczonych węzłów##roadprofile"
+
+msgid "By (m)##roadshift"
+msgstr "O (m)##roadshift"
+
+msgid "By the grade and the radii of the class of the road below; the first and the last selected node stay"
+msgstr "Według pochylenia i promieni klasy drogi poniżej; pierwszy i ostatni zaznaczony węzeł zostają na miejscu"
+
+msgid "Class of the road##roadprofile"
+msgstr "Klasa drogi##roadprofile"
+
+msgid "Collector road (Z)"
+msgstr "Droga zbiorcza (Z)"
+
+msgid "Crest radius (m)##road"
+msgstr "Promień łuku wypukłego (m)##road"
+
+msgid "Dip radius (m)##road"
+msgstr "Promień łuku wklęsłego (m)##road"
+
+msgid "Each selected node put this much over the ground under it; less than 0 puts it into a cutting"
+msgstr "Każdy zaznaczony węzeł tyle nad terenem pod nim; mniej niż 0 daje wykop"
+
+msgid "Even out"
+msgstr "Wygładź"
+
+msgid "Even out the whole road"
+msgstr "Wyrównaj całą drogę"
+
+msgid "Evened out over %.0f m: grade up to %.1f %%, crests R %.0f m, dips R %.0f m"
+msgstr "Wygładzone na %.0f m: pochylenie do %.1f %%, łuki wypukłe R %.0f m, wklęsłe R %.0f m"
+
+msgid "Expressway (S)"
+msgstr "Droga ekspresowa (S)"
+
+msgid "Field or forest track"
+msgstr "Droga polna lub leśna"
+
+msgid "From the first selected node on, up along the road where it's more than 0"
+msgstr "Od pierwszego zaznaczonego węzła; więcej niż 0 to w górę wzdłuż drogi"
+
+msgid "From the first selected node to the last##roadgrade"
+msgstr "Od pierwszego zaznaczonego węzła do ostatniego##roadgrade"
+
+msgid "Grade (%)##roadgrade"
+msgstr "Pochylenie (%)##roadgrade"
+
+msgid "Grade and radii##roadprofile"
+msgstr "Pochylenie i promienie##roadprofile"
+
+msgid "Height (m)##roadlevel"
+msgstr "Wysokość (m)##roadlevel"
+
+msgid "Heights stretched##roadprofile"
+msgstr "Przewyższenie##roadprofile"
+
+msgid "How much more the heights are drawn than the lengths: fit to the window shows every little change as a hill;\n1:10 is what the profiles of roads are usually drawn at"
+msgstr "Ile razy wysokości są rysowane większe niż długości: dopasowanie do okna robi z każdej drobnej zmiany górę;\nprofile dróg rysuje się zwykle w 1:10"
+
+msgid "LMB on a node: select it   Shift+LMB: add or take out   drag a node up or down: its height (Ctrl: finer)   drag over the graph: select a stretch   the selected nodes show in the view too"
+msgstr "LPM na węźle: zaznacz   Shift+LPM: dodaj albo odznacz   przeciągnij węzeł w górę lub w dół: wysokość (Ctrl: dokładniej)   przeciągnij po wykresie: zaznacz odcinek   zaznaczone węzły widać też w widoku"
+
+msgid "Less than 0 lowers them: a road into a cutting, then lead the terrain to it"
+msgstr "Mniej niż 0 obniża: droga w wykopie, potem dociągnij do niej teren"
+
+msgid "Level at %.2f m over %.0f m"
+msgstr "Poziomo na %.2f m na długości %.0f m"
+
+msgid "Level##roadop"
+msgstr "Poziomo##roadop"
+
+msgid "Local road (L)"
+msgstr "Droga lokalna (L)"
+
+msgid "Main road (G)"
+msgstr "Droga główna (G)"
+
+msgid "Main road of fast traffic (GP)"
+msgstr "Droga główna ruchu przyspieszonego (GP)"
+
+msgid "Motorway (A)"
+msgstr "Autostrada (A)"
+
+msgid "No room for the radius set: the curve is as long as the selection lets it be"
+msgstr "Brak miejsca na zadany promień: łuk jest tak długi, jak pozwala zaznaczenie"
+
+msgid "Node %d: %.0f m, height %.2f m"
+msgstr "Węzeł %d: %.0f m, wysokość %.2f m"
+
+msgid "Nodes moved by %+.2f m. Ctrl+Z takes it back"
+msgstr "Węzły przesunięte o %+.2f m. Ctrl+Z cofa"
+
+msgid "Nodes put %.2f m over the ground: %zu"
+msgstr "Węzły %.2f m nad terenem: %zu"
+
+msgid "One grade"
+msgstr "Stałe pochylenie"
+
+msgid "One grade of %.2f %% over %.0f m"
+msgstr "Stałe pochylenie %.2f %% na długości %.0f m"
+
+msgid "Over the ground"
+msgstr "Po terenie"
+
+msgid "Over the ground by (m)##roadground"
+msgstr "Nad terenem o (m)##roadground"
+
+msgid "Profile evened out over %.0f m, nodes: %zu; steepest %.1f %%, moved by up to %.2f m. Ctrl+Z takes it back"
+msgstr "Profil wyrównany na %.0f m, węzłów: %zu; najstromiej %.1f %%, przesunięte najwyżej o %.2f m. Ctrl+Z cofa"
+
+msgid "Radius (m)##roadcurve"
+msgstr "Promień (m)##roadcurve"
+
+msgid "Read again##roadprofile"
+msgstr "Odczytaj ponownie##roadprofile"
+
+msgid "Select a road (Roads, Select, LMB on a piece) and its profile shows here"
+msgstr "Zaznacz drogę (Drogi → Zaznaczanie → LPM na odcinku), a jej profil pojawi się tutaj"
+
+msgid "Select all##roadprofile"
+msgstr "Zaznacz wszystkie##roadprofile"
+
+msgid "Select none##roadprofile"
+msgstr "Odznacz##roadprofile"
+
+msgid "Select the nodes in the graph first"
+msgstr "Najpierw zaznacz węzły na wykresie"
+
+msgid "Select two nodes at least: the curve goes between the first and the last"
+msgstr "Zaznacz co najmniej dwa węzły: łuk idzie między pierwszym a ostatnim"
+
+msgid "Select two nodes at least: the grade runs from the first to the last"
+msgstr "Zaznacz co najmniej dwa węzły: pochylenie biegnie od pierwszego do ostatniego"
+
+msgid "Select two nodes at least: what's between them is evened out"
+msgstr "Zaznacz co najmniej dwa węzły: wygładzane jest to, co między nimi"
+
+msgid "Selected nodes moved by %+.2f m"
+msgstr "Zaznaczone węzły przesunięte o %+.2f m"
+
+msgid "Selected nodes##roadprofile"
+msgstr "Zaznaczone węzły##roadprofile"
+
+msgid "Sets the steepest grade and the smallest radii of the vertical curves about as the rules have them for that class"
+msgstr "Ustawia największe pochylenie i najmniejsze promienie łuków pionowych mniej więcej tak, jak przepisy dają dla tej klasy"
+
+msgid "Steepest grade (%)##road"
+msgstr "Największe pochylenie (%)##road"
+
+msgid "The grades before and after the selected nodes don't meet between them: select more of the road, or set a grade first"
+msgstr "Pochylenia przed i za zaznaczonymi węzłami nie spotykają się między nimi: zaznacz więcej drogi albo najpierw ustaw pochylenie"
+
+msgid "The grades on both sides are the same: a straight grade between them"
+msgstr "Pochylenia z obu stron są takie same: między nimi stałe pochylenie"
+
+msgid "The heights of the whole road: grades no steeper and curves no sharper than set, as near the heights it had as that lets;\nits two ends stay where they are, so it keeps meeting the junctions. Ctrl+Z takes it back"
+msgstr "Wysokości całej drogi: pochylenia nie większe i łuki nie ostrzejsze niż ustawione, możliwie blisko dotychczasowych wysokości;\noba końce zostają na miejscu, więc droga dalej trafia w skrzyżowania. Ctrl+Z cofa"
+
+msgid "The road forks: only the run from its end to the fork was evened out"
+msgstr "Droga się rozwidla: wyrównany tylko odcinek od jej końca do rozwidlenia"
+
+msgid "The road is too short to even out"
+msgstr "Droga jest za krótka, żeby wyrównać profil"
+
+msgid "The smallest radius of the vertical curve over a hilltop: the larger, the farther a driver sees over it"
+msgstr "Najmniejszy promień łuku pionowego na wzniesieniu: im większy, tym dalej kierowca widzi za szczyt"
+
+msgid "The whole road##roadprofile"
+msgstr "Cała droga##roadprofile"
+
+msgid "Up or down by"
+msgstr "W górę albo w dół o"
+
+msgid "Vertical curve"
+msgstr "Łuk pionowy"
+
+msgid "Vertical profile of the road###roadprofile"
+msgstr "Profil pionowy drogi###roadprofile"
+
+msgid "What to make of them##roadprofile"
+msgstr "Co z nimi zrobić##roadprofile"
+
+msgid "fit to the window"
+msgstr "dopasuj do okna"
+
+msgid "none: click the nodes in the graph or the points in the view"
+msgstr "brak: kliknij węzły na wykresie albo punkty w widoku"
+
+msgid "their average"
+msgstr "ich średnia"
+
+msgid "The vertical profile of the selected road in a window of its own: its nodes dragged, levelled, given a grade or a vertical curve"
+msgstr "Profil pionowy zaznaczonej drogi w osobnym oknie: przeciąganie węzłów, poziomowanie, pochylenie, łuk pionowy"
