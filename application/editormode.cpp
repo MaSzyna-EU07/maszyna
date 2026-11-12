@@ -885,6 +885,7 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     if(m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
     {
         m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+        ++m_history_changes;
     }
 
     EditorSnapshot snap;
@@ -1017,6 +1018,7 @@ void editor_mode::undo_last()
     first_step_done(first_step::undo);
     // the warning by the cursor told of the step taken back now: "Ctrl+Z takes it back" is done
     ui()->drop_refusal();
+    ++m_history_changes; // for those who watch the history: a step was taken back or done again
     // a change of the terrain made a moment ago is a step of its own before it's taken back
     m_history_busy = true;
     terrain_history_step();
@@ -1213,6 +1215,7 @@ void editor_mode::undo_one()
 
 void editor_mode::redo_last()
 {
+    ++m_history_changes; // for those who watch the history: a step was taken back or done again
     // a change of the terrain made since the undo goes to the history, and the redo steps are dropped with it
     m_history_busy = true;
     terrain_history_step();
@@ -1590,6 +1593,9 @@ bool editor_mode::update()
     area_update();
     draw_download_area();
     steps.step("imagery");
+
+    // the profile of a road, in a window of its own whichever part of the editor is open
+    render_road_profile_window();
 
     // --- ImGuizmo: in-viewport transform gizmo for the selected node ---
     render_gizmo();
@@ -7523,6 +7529,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             route_trace_end(true);
         break;
 
+    case GLFW_KEY_P:
+        // the vertical profile of the selected road, in its own window
+        if (is_press(Action) && false == anyModifier && false == ImGui::GetIO().WantTextInput && current_work_area() == work_area::roads)
+            road_profile_window_toggle();
+        break;
+
     case GLFW_KEY_K:
         if (is_press(Action) && road_split())
         {
@@ -7902,6 +7914,7 @@ void editor_mode::render_change_history(){
         {
             auto remove_count = (int)m_history.size() - m_max_history_size;
             m_history.erase(m_history.begin(), m_history.begin() + remove_count);
+            ++m_history_changes;
             // adjust selected index
             if (m_selected_history_idx >= (int)m_history.size())
                 m_selected_history_idx = (int)m_history.size() - 1;

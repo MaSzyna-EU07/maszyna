@@ -209,6 +209,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// swaps the kilometrage with the one the snapshot keeps
 	void restore_kilometrage(EditorSnapshot &Snapshot);
 	bool m_history_busy{false}; // undo or redo under way
+	std::size_t m_history_changes{0}; // undos, redos and the steps dropped off the full history: with its size, a change of the history is seen by
 	void handle_brush_mouse_hold(int Action, int Button);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
@@ -3443,6 +3444,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		float lift_mouse{0.0f}; // where on the screen the drag began, pixels down
 		double lift_scale{0.0}; // metres for a pixel at the point picked
 		std::vector<double> lift_from; // the heights of the selected points when the drag began
+		// the profile of a road evened out: the steepest grade, the smallest radii of the vertical curves over a hilltop and in a dip
+		float maxgrade{6.0f}; // %
+		float crest{1500.0f}; // m
+		float sag{800.0f}; // m
 		bool ring{false}; // the build tool makes roundabouts
 		float ringradius{15.f}; // of the middle of the road going around
 		std::string island{"none"}; // what the middle of a roundabout is covered with
@@ -3487,6 +3492,51 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool road_lift_start();
 	void road_lift_finish();
 	double road_lift_offset() const;
+	// the vertical profile of the selected road in a window of its own: the road and the ground along it, the nodes (the points
+	// where its bezier parts meet or end) picked in the graph or in the view and dragged up or down, and what's made of them:
+	// level, one grade, a vertical curve, over the ground, up or down by, evened out (editormoderoadprofile.cpp)
+	struct road_profile_view
+	{
+		bool open{false};
+		road_node *road{nullptr}; // the profile shown is of the road this piece belongs to
+		std::vector<float> runs; // m from the start of the road, seen from above
+		std::vector<float> heights; // of the road
+		std::vector<float> ground_runs; // where the ground was looked up
+		std::vector<float> ground; // under it, NaN where there's none
+		std::vector<float> node_runs;
+		std::vector<float> node_heights;
+		std::vector<glm::dvec3> node_positions;
+		std::vector<char> selected; // of the nodes
+		std::vector<glm::dvec3> synced; // the points of the road tool as they were last matched to the nodes
+		std::size_t history{0}; // length of the undo history the profile was read at
+		std::size_t history_changes{0}; // and m_history_changes then
+		int exaggeration{4}; // index of the stretch of the heights: fit, 1, 2, 5, 10, 20, 50
+		bool dragging{false}; // nodes dragged up or down in the graph
+		float drag_mouse{0.0f};
+		float drag_scale{0.0f}; // metres for a pixel of the graph
+		bool boxing{false}; // a stretch being boxed in the graph
+		ImVec2 box_from{0.0f, 0.0f};
+		int op{0}; // 0 level, 1 one grade, 2 a vertical curve, 3 over the ground, 4 up or down by, 5 evened out
+		float level{0.0f}; // m
+		float grade{2.0f}; // %
+		bool grade_ends{true}; // the grade from the first selected node to the last, not the one typed in
+		float radius{2000.0f}; // m, of the vertical curve
+		float offset{0.3f}; // m over the ground
+		float shift{-0.5f}; // m up or down
+		int road_class{2};
+	};
+	road_profile_view m_road_profile;
+	void road_profile_window_open();
+	void road_profile_window_toggle();
+	void road_profile_sample();
+	void road_profile_select_points();
+	// the heights and the grades of the nodes of the road written into its pieces, as one step of the history
+	bool road_profile_commit(road_node *Road, std::vector<double> const &Heights, std::vector<double> const &Grades);
+	// the whole road evened out by the grade and the radii set
+	void road_profile_smooth();
+	// what's chosen in the window done to the selected nodes
+	void road_profile_operation();
+	void render_road_profile_window();
 	void road_select(road_node *Road);
 	void junction_select(junction_node *Junction);
 	void road_apply();
