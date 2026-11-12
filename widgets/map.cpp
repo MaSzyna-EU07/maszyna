@@ -1223,15 +1223,12 @@ void ui::map_panel::render_contents()
 		{
 			float const previous_zoom = zoom;
 			float const min_zoom = (110.0f / 4000.0f) / base_pixels_per_meter;
-			float const max_zoom = (110.0f / 10.0f) / base_pixels_per_meter;
+			float const max_zoom = (110.0f / 12.5f) / base_pixels_per_meter;
 			zoom = std::clamp(
 				zoom * std::pow(1.05f, io.MouseWheel),
 				min_zoom,
 				max_zoom);
 			translate += (previous_zoom - zoom) * glm::vec2(world_pos.x, world_pos.z);
-
-			glm::vec2 surface_screen_center = glm::vec2(screen_origin.x, screen_origin.y) + surface_size / 2.0f;
-			Application.set_cursor_pos(surface_screen_center.x, surface_screen_center.y);
 		}
 
 		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr && ImGui::IsMouseClicked(2))
