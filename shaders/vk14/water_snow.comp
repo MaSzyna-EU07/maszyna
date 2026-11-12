@@ -50,8 +50,11 @@ const float SNOW_WIPE_WET = 0.015;
 // ~70 W/m2 a degree, melts 0.0002 mm of water a second)
 const float SNOW_MELT = 0.0002;
 // the share of the snowfall the flakes of water_snow.x make (the renderer counts a quarter of them, as for the particles of the
-// drop passes): the snow of the map gets all of it
-const float SNOW_FALL_SHARE = 4.0;
+// drop passes): the snow of the map gets a bit more of it (all of it built up too fast)
+const float SNOW_FALL_SHARE = 1.5;
+// the most of the speed of the snow against the glass counting for the snow landing, m/s: at speed most of the flakes go past or
+// bounce off, so a front glass builds up its snow a few times as fast as a standing one, not a hundred
+const float SNOW_FACING_MOST = 6.0;
 // how much warmer than the air the glass is, the share of the warmth given (water_snow.y, the cab heats it)
 const float SNOW_WARMTH = 1.0;
 // the share of a flake landing near zero already water (wet snow)
@@ -256,7 +259,7 @@ void main()
 	// the vehicle and its velocity) don't agree for every cab, and with them disagreeing a front glass at speed got the snow of
 	// the eddies only, plastered no faster than a standing one. the glass the driver looks through leads, so the snow comes at
 	// it from the outside
-	float facing = abs(dot(coming, frame.normal)) + SNOW_EDDIES;
+	float facing = min(abs(dot(coming, frame.normal)), SNOW_FACING_MOST) + SNOW_EDDIES;
 	float density = mix(SNOW_FRESH, SNOW_PACKED, state.z);
 	float wet = state.y / (state.y + state.x * density + 1e-4);
 	// the dry flakes bounce off a moving glass (powder is blown away), the wet ones (near zero) and those landing on wet snow or
