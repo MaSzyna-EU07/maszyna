@@ -26,11 +26,16 @@ definition shipped() {
 }
 
 void move_to(vehicle &Loco, int const Position) {
-	while (Loco->MainCtrlPos < Position && Loco->IncMainCtrl(1)) {
-		;
+	// one notch at a time, as far as the controller goes
+	while (Loco->MainCtrlPos < Position) {
+		if (false == Loco->IncMainCtrl(1)) {
+			break;
+		}
 	}
-	while (Loco->MainCtrlPos > Position && Loco->DecMainCtrl(1)) {
-		;
+	while (Loco->MainCtrlPos > Position) {
+		if (false == Loco->DecMainCtrl(1)) {
+			break;
+		}
 	}
 	REQUIRE(Loco->MainCtrlPos == Position);
 }
@@ -175,7 +180,7 @@ TEST_CASE("6Dg: the diesel-electric drive follows the stepped demand") {
 		REQUIRE(loco->eimic == doctest::Approx(0.05 * taps));
 		REQUIRE(loco->eimic_real == doctest::Approx(0.05 * taps));
 		test::drive(test::driving(loco), line, 10.0);
-		readings.push_back({loco->eimic_real, loco->enrot, std::abs(loco->Ft), loco->EnginePower, std::abs(loco.speed())});
+		readings.emplace_back(loco->eimic_real, loco->enrot, std::abs(loco->Ft), loco->EnginePower, std::abs(loco.speed()));
 	}
 	// at 0.25, 0.5, 0.75 and 1: the engine at 897, 1198, 1499 and (still running up to) 1800 rpm as the WWList table
 	// gives, about 28, 37, 48 and 59 kN, 87, 261, 445 and 663 kW, 14, 24, 28 and 30 km/h
