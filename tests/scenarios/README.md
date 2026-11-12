@@ -135,13 +135,23 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 19 cases
-  take about 30 s with `-j 4`, loading included.
+- `-j N` runs N cases at once. Each case prints its results when it is done. The 19 cases
+  that aren't `slow` take about 30 s with `-j 4` and 2 minutes one at a time, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
   watching what a case does.
+- `--slow` runs the cases marked `slow` too. Without it, and with no cases named, they are
+  skipped (and listed): each is a whole mission on a big scenery and takes many minutes. A
+  slow case named on the command line always runs. Run them one at a time (`-j 1`): each
+  simulator loads a whole scenery, and the ones with physicslog on collect every physicslog
+  written in the game dir meanwhile.
+- `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
+  numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
+  sometimes: run the case with a few seeds.
 
-Exit code is 0 when every case passed. Logs of each run (`log.txt`, `errors.txt`,
+Exit code is 0 when every case passed, or failed as its `xfail` mark says it does (`XFAIL` in
+the summary); a case marked `xfail` that passes (`XPASS`) fails the run, so that the mark gets
+removed. Logs of each run (`log.txt`, `errors.txt`,
 `stdout.txt`, the physicslogs of the vehicle and of other trains of the case, the black box as
 `autotest_<case>.blackbox`) are moved to `tests/scenarios/out/<case>/`.
 
@@ -171,7 +181,17 @@ The lead vehicle is named `autotest_<case>`, so every case has its own physicslo
 files and cases can run in parallel. The `autotest_*` sceneries (and the simulator's `.sbt`
 geometry cache of them) stay in the game's `scenery/` dir; the cache is dropped when the base
 scenery is newer, and after a run cut short (`wall_timeout`, `error`, a crash, or killed by run.py),
-which could have been writing it.
+which could have been writing it. A case with `file.binary.terrain no` in its `ini` has no cache
+written, and one left by an earlier run is removed.
+
+A case with `vehicle` runs a train of the base scenery under its own name: its physicslog is
+`physicslog/<vehicle>.dat` (one of that name already in the game dir is replaced), and with the
+physicslogs on, every train of the scenery writes one, over any of the same name; those written
+during the run are deleted after it. Don't run such a case along with another one in the same game dir.
+
+Apart from these the game dir loses its `log.txt` and `errors.txt`, those of the last game
+session: the simulator deletes them at every start, before it knows that the run's log goes
+to `logs/`.
 
 ## Writing a case
 
@@ -180,13 +200,18 @@ which could have been writing it.
 | key | meaning |
 | --- | --- |
 | `base_scenery` | scenery file in the game's `scenery/` dir |
-| `strip_trainsets` | drop the base scenery's trainsets (default `true`) |
+| `strip_trainsets` | drop the base scenery's trainsets (default `true`); `false` keeps them, for a case on one of the scenery's own missions (below) |
+| `vehicle` | the train under test is this vehicle of the base scenery (its node name), instead of the `autotest_<case>` one of the fragment: `test.vehicle`, the physicslog checked and `{{vehicle}}` are this one. With `strip_trainsets` `false` |
+| `replace` | literal replacements in the text of the base scenery, a list of `[old, new]`, e.g. to put another locomotive on a mission; an `old` the scenery doesn't have is an error |
+| `physicslog` | `false` turns the physicslogs (and the black box) off for the run: on a scenery with dozens of AI trains each of them would write 3-4 kB per second of simulation into the game dir. Such a case has the result of the test mode and the log checks only (default `true`) |
+| `slow` | `true` marks a case that takes many minutes: skipped unless named or run with `--slow` |
+| `xfail` | marks a case that fails because of a known, reported bug, with the reference and the reason as its text, e.g. `"eu07/maszyna#524: the AI never couples"`. Its failure is reported as `XFAIL` and doesn't fail the run; when it passes (`XPASS`) the run fails until the mark is removed |
 | `time` | replace the scenery start time, `HH:MM` |
 | `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |
 | `track_events` | lines added to tracks of the base scenery, by track name, e.g. `{ "tor1k": "event0 test_pass" }`; only tracks in the scenery file itself, not in its includes |
 | `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]`; the block always has `test.vehicle` with the case's lead vehicle, so only its train counts for the pass and the standstill |
 | `ini` | extra `eu07.ini` lines for the run, after the common ones of the runner's `-ini` file, e.g. `["crashdamage yes"]` |
-| `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
+| `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire). Optional when the case keeps the scenery's trainsets |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
@@ -229,6 +254,54 @@ couple and neither shows up: the black box has to have the last car of the stand
 `{{vehicle}}_rb`, and the first of the rolling one, `{{vehicle}}_hit_ra`, coupled (the simulator
 writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
 test timeout.
+
+### Cases on a mission of a scenery
+
+The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
+of a scenery of the game, among its own traffic: `strip_trainsets` `false`, `vehicle` the
+mission's own locomotive or unit, every train driven by AI as always in the test mode. They are
+`slow`, have `physicslog` `false` unless a check needs the black box, and `file.binary.terrain no`
+in `ini`, so that no geometry cache of the copied scenery (hundreds of MB for these) is written
+into the game dir. What they add to the scenery:
+
+- nothing, when standing too long is the bug: `test.standstill` is set above the longest wait
+  the mission has, and the run ends with `duration` (`baltyk_skm1_*`),
+- `mission_state_probe.scn`: these sceneries steer each station with a state cell per train
+  (text and two values, e.g. `deb_tme222158_stat` = `a 6 *`: the route of step 6 is set). The
+  probe is a loop of two events that looks at the cell `vars.cell` every 5 s and reports the
+  pass once it holds `vars.state` (a `memcompare`: `* 6 *`, `d * *`), with `vars.reason` as the
+  text. No fail event: a train that never gets there ends the test with the standstill or the
+  timeout. A periodic event launcher wouldn't do, the simulator polls those near the camera only,
+- events named `<track>:event0`, `:event1`, `:event2` or `:eventall1`...: the simulator binds an
+  event with such a name to the track by itself, so a fragment can hang events on tracks that
+  live in the scenery's includes, where `track_events` doesn't reach (`wrzosy_pxe336080_couple.scn`).
+  The name must not be one the scenery has already: a second event of the same name replaces the first.
+
+A train whose trainset has velocity 0 has a driver that sleeps in `Wait_for_orders` when nobody
+is in the cab: the player would drive it, so the fragment has to give the orders the player's
+hands stand for, with `PutValues` from an event the vehicle itself sets off (`event0` of the
+track it stands on). The first of them must not be the one to couple (`Shunt -2 -3`): a driver
+whose first order is `Connect` never releases the hand brake a cold locomotive starts with. The
+mission trains of velocity 0.1 wait for their signal and need nothing.
+
+The cases and what they showed on master of 2026-11-11:
+
+| case | report | result |
+| --- | --- | --- |
+| `wrzosy_pxe336080_couples` | #524 | passes: ordered to, the locomotive couples to the rake (`couples`, 262 s) and takes it out of the depot (696 s). The scenery itself gives no such order |
+| `baltyk_skm1_roj55324_shunting_signal` | #525 | passes, with four seeds: the unit on the siding is let into the platforms 4 minutes after the start, once the shunter beside it has done its first moves, and leaves at 10:42 |
+| `baltyk_skm1_roj55321_departure` | #525 | passes, with three seeds: the unit in the platform leaves at 10:34 |
+| `l053_poranek_tme222158_debica` | #421 | `xfail`: the train is never let into Debica, the station jams 4 minutes after the start: the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint the station waits for it at |
+| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: with an ET21, as in the report, the locomotive stops for good at Debica Towarowa: running round the wagons it stands on the headshunt 20 m past the end of the overhead wire, and its driver never gets out of `Prepare_engine` |
+| `l053_poludnie_roj32134_debica` | #506 | passes: both trains run and the unit ends at Debica after 6134 s; no train in its way |
+
+In the L053 sceneries the test mode logs a signal passed at danger for several shunting
+locomotives within minutes, so these cases have `test.fail_if_stop_overran no`.
+
+The simulation ran at 15 times real time on Baltyk and at 5-8 times on L053 (with another
+build going on on the machine) with the physicslogs off, and at 3-4 times on Wrzosy with them
+on (250 drivers, the road vehicles included: 740 MB of physicslogs in 900 s), after 30-150 s of
+loading.
 
 Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
 the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are

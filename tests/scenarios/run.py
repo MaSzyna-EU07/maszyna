@@ -77,7 +77,7 @@ width 1280
 height 720
 inactivepause no
 soundenabled no
-physicslog yes
+physicslog {physicslog}
 multiplelogs yes
 timespeed {timespeed}
 """
@@ -156,7 +156,12 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         text = set_track_friction(text, case["track_friction"])
     if "track_events" in case:
         text = add_track_events(text, case["track_events"])
-    fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1")
+    for old, new in case.get("replace", []):
+        if old not in text:
+            sys.exit(f"replace: the base scenery has no {old!r}")
+        text = text.replace(old, new)
+    # a case on a mission of the base scenery may have nothing to add but its test_config
+    fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1") if "fragment" in case else ""
     # vars first: {{vehicle}} inside a var's value gets filled in the second pass
     fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle"})
     fragment = fill_vars(fragment, {"vehicle": vehicle})
@@ -328,7 +333,7 @@ class RunResult:
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
-                  duration: float | None, timeout: float, watch: bool, say) -> RunResult:
+                  duration: float | None, timeout: float, watch: bool, say, expect_rows: bool = True) -> RunResult:
     """Runs the simulator on the scenery. In test mode it quits by itself and the exit code
     is the result; with watch it runs in a window and gets closed after `duration`."""
     physicslog.unlink(missing_ok=True)
@@ -351,7 +356,9 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
         while True:
             time.sleep(0.25)  # at timespeed 20 that is 5 s of simulation
             wall = time.monotonic() - started
-            result.rows = read_physicslog(physicslog)
+            # the whole file is read each time: in test mode, once there are rows, only for the progress line
+            if watch or not result.rows or wall - last_report >= 15:
+                result.rows = read_physicslog(physicslog)
             sim_t = result.rows[-1][COL_TIME] if result.rows else 0.0
             if wall - last_report >= 15:
                 v = result.rows[-1][COL_VELOCITY] if result.rows else 0.0
@@ -366,7 +373,10 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
             if wall > timeout + (0 if watch else KILL_GRACE):
                 result.failure = f"timed out after {wall:.0f}s before {duration}s of simulation"
                 break
-            if not result.rows:
+            # not for a case with physicslog off, which has no rows to wait for, nor for one on a mission of the
+            # base scenery: a big scenery loads for minutes, and a bad vehicle among its decorations isn't the
+            # case's (a missing test vehicle ends the test mode with `error` by itself)
+            if expect_rows and not result.rows:
                 result.logs = find_logs(game_dir, scenery, since)
                 fatal = [l.strip() for l in read_text(result.logs.get("errors")).splitlines()
                          if any(k in l for k in FATAL_LOG_LINES)]
@@ -579,11 +589,12 @@ LOG_CHECKS = {
 
 def check_couples(box, vehicle, other):
     """The two vehicles couple in the run and stay coupled to its end; coupled from the start doesn't count."""
-    numbers = {name: number for number, name in box.vehicles.items()}
-    unknown = [name for name in (vehicle, other) if name not in numbers]
+    # the simulator reads the names of a scenery in lower case, whatever the scenery (or the case) writes
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    unknown = [name for name in (vehicle, other) if name.lower() not in numbers]
     if unknown:
         return False, f"the black box has no vehicle {' nor '.join(unknown)}"
-    pair = {numbers[vehicle], numbers[other]}
+    pair = {numbers[vehicle.lower()], numbers[other.lower()]}
     # of the two vehicles of a coupling the one with the lower number tells it, each change of that coupler
     # under the same vehicle and side: the record which coupled the two, for as long as they stay coupled
     made, parted = {}, None
@@ -637,21 +648,51 @@ def describe_exit(code: int | None) -> str:
     return f"{code} ({name})" if name else f"{code} (0x{code & 0xFFFFFFFF:08X}, a crash?)"
 
 
-def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool, say) -> bool:
-    case = json.loads((CASES_DIR / f"{name}.json").read_text(encoding="utf-8"))
+def load_case(name: str) -> dict:
+    return json.loads((CASES_DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool, say, seed: str | None = None) -> str:
+    """Runs the case and returns PASS or FAIL; for a case marked `xfail` (a known, reported bug) XFAIL
+    when it fails as expected, and XPASS when it passes, which means the mark has to go."""
+    case = load_case(name)
+    ok = _run_case(name, case, exe, game_dir, timespeed, watch, say, seed)
+    if "xfail" not in case or watch:
+        return "PASS" if ok else "FAIL"
+    if ok:
+        say(f"  XPASS  the case passes although it is marked xfail ({case['xfail']}): remove the mark")
+        return "XPASS"
+    say(f"  XFAIL  fails as expected: {case['xfail']}")
+    return "XFAIL"
+
+
+def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float, watch: bool, say,
+              seed: str | None = None) -> bool:
     say(f"\n=== {name}: {case.get('description', '')}")
     out = OUT_DIR / name
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
 
-    # the lead vehicle is named after the case, so parallel runs never share a physicslog
-    vehicle = f"autotest_{name}"
+    # the lead vehicle is named after the case, so parallel runs never share a physicslog. a case on a
+    # mission of the base scenery (strip_trainsets false) names one of the scenery's own vehicles instead
+    own_vehicle = "vehicle" in case
+    vehicle = case.get("vehicle", f"autotest_{name}")
+    # a long run on a scenery with dozens of AI trains would write a physicslog for each of them into the
+    # game dir (3-4 kB per second of simulation and train); such a case turns them off and relies on the
+    # result of the test mode and on the log
+    with_physicslog = case.get("physicslog", True)
+    needs_physicslog = [c["type"] for c in case.get("checks", []) if c["type"] not in LOG_CHECKS]
+    if not with_physicslog and (watch or needs_physicslog):
+        sys.exit(f"{name}: with physicslog off a case can have log checks only ({', '.join(LOG_CHECKS)}), "
+                 "and can't run with --watch")
     scenery = build_scenery(case, game_dir, name, vehicle)
     ini = out / "autotest.ini"
-    # the case's own settings go last, over the common ones
-    ini.write_text(TEST_INI.format(timespeed=timespeed) + "".join(line + "\n" for line in case.get("ini", [])),
-                   encoding="ascii")
+    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
+    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
+    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
+                   + "".join(line + "\n" for line in settings), encoding="ascii")
     physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
+    started = time.time() - 1
 
     duration = float(case["duration"]) if "duration" in case else None
     # a case that only records `duration` seconds ends on the test timeout; one that says
@@ -662,7 +703,11 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
-                           duration, float(case.get("timeout", 600)), watch, say)
+                           duration, float(case.get("timeout", 600)), watch, say,
+                           expect_rows=with_physicslog and not own_vehicle)
+    # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
+    if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
+        scenery_cache(game_dir, name).unlink(missing_ok=True)
 
     # the logs are ours alone (named after the case scenery), move them out of the game dir
     for kind, path in result.logs.items():
@@ -672,6 +717,13 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     # other trains of the case with a driver, named <something>_<vehicle>, log too
     for other in physicslog.parent.glob(f"*_{vehicle}.dat"):
         shutil.move(other, out / other.name)
+    # on a mission of the base scenery every train with a driver logs under its own name, the road vehicles
+    # too (250 files and 740 MB after 900 s of Wrzosy): the ones written in this run are removed, nothing
+    # checks them (so such a case can't share the game dir with another run at the time)
+    if own_vehicle and with_physicslog:
+        for other in physicslog.parent.glob("*.dat"):
+            if other.stat().st_mtime >= started:
+                other.unlink()
     # the black box is named after the case scenery too
     if result.blackbox:
         result.blackbox = Path(shutil.move(result.blackbox, out / f"{vehicle}.blackbox"))
@@ -701,7 +753,7 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     if result.failure:
         say(f"  FAIL  {result.failure}")
         ok = False
-    if not result.rows and case.get("checks"):
+    if not result.rows and needs_physicslog:
         if not result.failure:
             say(f"  FAIL  no physicslog for '{vehicle}'")
         return False
@@ -751,6 +803,10 @@ def main() -> int:
                     help="with --watch: simulation time multiplier, the simulator offers 1, 5, 20 and 60 (default 1)")
     ap.add_argument("-j", "--jobs", type=int, default=1,
                     help="cases run at once, each in a simulator of its own (default 1)")
+    ap.add_argument("--seed", help="seed of the simulator's random numbers for this run (randomseed), a number or a "
+                                   "word; the default is the fixed one of the test mode. For bugs that show up only sometimes")
+    ap.add_argument("--slow", action="store_true",
+                    help="with no cases named: run the ones marked slow too (they are skipped otherwise)")
     args = ap.parse_args()
 
     if not args.game_dir:
@@ -763,6 +819,12 @@ def main() -> int:
     missing = [n for n in names if not (CASES_DIR / f"{n}.json").exists()]
     if missing:
         sys.exit("no such case: " + ", ".join(missing))
+    # a case marked slow (a whole mission on a big scenery, many minutes) runs when named, or with --slow
+    if not args.cases and not args.slow:
+        slow = [n for n in names if load_case(n).get("slow")]
+        if slow:
+            names = [n for n in names if n not in slow]
+            print(f"skipped {len(slow)} slow case(s), run them by name or with --slow: {', '.join(slow)}")
 
     started = time.monotonic()
     results = {}
@@ -770,7 +832,7 @@ def main() -> int:
         def say(line, progress=False):
             print(line, flush=True)
         for n in names:
-            results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch, say)
+            results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
     else:
         # each case prints its block when it is done, so parallel output does not interleave
         def job(n):
@@ -778,20 +840,21 @@ def main() -> int:
             def say(line, progress=False):
                 if not progress:
                     lines.append(line)
-            ok = run_case(n, exe, game_dir, args.timespeed, args.watch, say)
-            return n, ok, lines
+            status = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
+            return n, status, lines
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
             for n in names:
                 print(f"started {n}", flush=True)
             for fut in as_completed([pool.submit(job, n) for n in names]):
-                n, ok, lines = fut.result()
+                n, status, lines = fut.result()
                 print("\n".join(lines), flush=True)
-                results[n] = ok
+                results[n] = status
 
     print(f"\n=== summary ({time.monotonic() - started:.0f}s)")
     for n in names:
-        print(f"  {'PASS' if results[n] else 'FAIL'}  {n}")
-    return 0 if all(results.values()) else 1
+        print(f"  {results[n]:5}  {n}")
+    # a known failure keeps the suite green; one that stopped failing doesn't, so that its mark gets removed
+    return 0 if all(status in ("PASS", "XFAIL") for status in results.values()) else 1
 
 
 if __name__ == "__main__":
