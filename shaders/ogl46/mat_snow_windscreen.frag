@@ -110,10 +110,12 @@ struct sprite_acc
 };
 
 // the corner of a tile in the atlas; an older 2 x 2 atlas stands its four tiles in for the sixteen
+// the rows of the tiles counted from the top of the picture of the atlas (as snieg_atlas_maszyna.py makes it), the v of the
+// texture from its bottom: the first row is at the top of the texture (the tiles of the old 2 x 2 atlas the same way)
 vec2 snTile(int tile)
 {
     if (snBig)
-        return vec2(float(tile % 4), float(tile / 4)) * 0.25;
+        return vec2(float(tile % 4), float(3 - tile / 4)) * 0.25;
     int old = 0;                                  // a fluffy flake
     if ((tile == 6) || (tile == 7))
         old = 2;                                  // crumbs
@@ -121,7 +123,7 @@ vec2 snTile(int tile)
         old = 1;                                  // a wet lump
     else if (tile == TILE_DROP)
         old = 3;                                  // a melted spot
-    return vec2(float(old % 2), float(old / 2)) * 0.5;
+    return vec2(float(old % 2), float(1 - old / 2)) * 0.5;
 }
 
 float snTileSize()
