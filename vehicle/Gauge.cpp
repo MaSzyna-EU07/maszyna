@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Gauge.h"
 #include "vehicle/gaugepositions.h"
 #include "vehicle/gaugeduplicates.h"
+#include "vehicle/gaugewrap.h"
 #include "utilities/parser.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
@@ -384,6 +385,26 @@ TGauge::UpdateValue( float fNewDesired ) {
         return true;
     }
     return false; // no suitable sound was found
+}
+
+void
+TGauge::UpdateValueWrapped( float const fNewDesired, bool const Forward, int const Positions, std::optional<sound_source> &Fallbacksound ) {
+
+    auto const turn { (
+        m_animation == TGaugeAnimation::gt_Rotate && false == m_interpolatescale && m_scaletable.empty() ?
+            gauge_wrap::full_turn( m_scale, Positions ) :
+            std::nullopt ) };
+    if( turn ) {
+        // the knob stands the same one turn earlier (later), from there it turns on to the new position
+        // rather than all the way back, sounding the position it reaches
+        m_value = gauge_wrap::turned_round( m_value, *turn, Forward );
+        m_targetvalue = gauge_wrap::turned_round( m_targetvalue, *turn, Forward );
+        UpdateValue( fNewDesired, Fallbacksound );
+        return;
+    }
+    // a switch that doesn't turn all the way round jumps to the new position, which still sounds
+    UpdateValue( fNewDesired, Fallbacksound );
+    m_value = m_targetvalue;
 }
 
 void TGauge::PutValue(float fNewDesired)

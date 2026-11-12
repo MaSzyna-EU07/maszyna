@@ -46,6 +46,10 @@ public:
     void Load(cParser &Parser, TDynamicObject const *Owner, double const mul = 1.0);
     bool UpdateValue( float fNewDesired );
     bool UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksound );
+    // sets a multi-position switch of Positions positions, turned on past its last position to the first one (Forward)
+    // or back past the first one to the last, to the position at fNewDesired. A knob which turns all the way round
+    // turns on the same way, others jump there; either way the position reached sounds
+    void UpdateValueWrapped( float fNewDesired, bool Forward, int Positions, std::optional<sound_source> &Fallbacksound );
     void PutValue(float fNewDesired);
     float GetValue() const;
     float GetDesiredValue() const;
