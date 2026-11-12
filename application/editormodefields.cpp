@@ -49,6 +49,24 @@ void reach_of(heightmap::surface_patch const &Patch, glm::dvec2 &Low, glm::dvec2
 	Low -= glm::dvec2{margin};
 	High += glm::dvec2{margin};
 }
+
+// every hole of a separate field has the same mark, so closing one field's hole closes it under another field over it as
+// well: the separate fields left that overlap the closed outline are cut again (a cut leaves the holes there are as they are)
+void recut_separate_over(terrain_streamer &Streamer, std::vector<heightmap::surface_patch> const &Patches, heightmap::surface_patch const &Closed)
+{
+	glm::dvec2 low, high;
+	Closed.bounds(low, high);
+	for (auto const &patch : Patches)
+	{
+		if (patch.paint || patch.outline.size() < 3)
+			continue;
+		glm::dvec2 otherlow, otherhigh;
+		patch.bounds(otherlow, otherhigh);
+		if (otherlow.x > high.x || otherhigh.x < low.x || otherlow.y > high.y || otherhigh.y < low.y)
+			continue;
+		Streamer.cut_field(patch.outline, true);
+	}
+}
 } // namespace
 
 namespace
@@ -141,7 +159,10 @@ void editor_mode::render_fields_ui()
 		cut_out_field();
 	ImGui::EndDisabled();
 	if (ImGui::Button(STR_C("Clear the outline##fields"), ImVec2(-FLT_MIN, 0.0f)))
+	{
 		m_paint_outline.clear();
+		m_patch_reoutline.clear(); // the next cut is a new field
+	}
 	render_patches_list();
 
 	ImGui::SeparatorText(STR_C("Natural slopes"));
@@ -220,6 +241,7 @@ void editor_mode::cut_out_field()
 		if (false == patch.paint)
 		{
 			m_streamer.cut_field(old.outline, false);
+			recut_separate_over(m_streamer, patches, old); // the others; this one already has its new outline in the list
 			m_streamer.cut_field(patch.outline, true);
 			m_streamer.patches(std::move(patches));
 			forget_ground();
@@ -791,7 +813,11 @@ void editor_mode::render_patches_list()
             ImGui::PushID(static_cast<int>(i));
             auto const material = patches[i].material.empty() ? std::string(STR_C("default material")) : patches[i].material;
             if (ImGui::Selectable(format(STR_C("%s, %zu points, %s"), patches[i].name.c_str(), patches[i].outline.size(), material.c_str()).c_str(), static_cast<int>(i) == m_patch_selected))
+            {
+                if (static_cast<int>(i) != m_patch_selected)
+                    m_patch_reoutline.clear(); // another field chosen: the outline put back no longer stands for the one before
                 m_patch_selected = static_cast<int>(i);
+            }
             // a texture dropped on an entry becomes the material of that surface
             std::string name;
             if (material_drop(name))
@@ -908,6 +934,7 @@ void editor_mode::render_patches_list()
             return;
         }
         m_streamer.cut_field(gone.outline, false);
+        recut_separate_over(m_streamer, all, gone);
         m_streamer.patches(std::move(all));
         forget_ground();
         m_terrain_status = STR_C("Surface removed, the hole under it closed");

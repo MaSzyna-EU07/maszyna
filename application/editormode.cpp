@@ -2032,7 +2032,10 @@ void editor_mode::render_terrain_ui()
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Clear the outline##fill")))
+        {
             m_paint_outline.clear();
+            m_patch_reoutline.clear();
+        }
         // the same outline for the holes and the grass
         std::vector<glm::dvec2> outline;
         for (auto const &point : m_paint_outline)
