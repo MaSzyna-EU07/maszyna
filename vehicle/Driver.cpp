@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
+#include "vehicle/consistbraketable.h"
 #include "vehicle/handover.h"
 #include "world/mtable.h"
 #include "vehicle/DynObj.h"
@@ -8174,18 +8175,6 @@ uphill_coasting_speed( double const Distance, double const Gravity ) {
 // resultant acceleration [m/s2] to ask for now so that a steady application of the pneumatic brake takes the train
 // from Velocity down to Target [km/h] over Distance [m], with the brake force following the speed the way the
 // consist brake table says it does (cast iron blocks grip harder as the train slows)
-struct consist_brake_table {
-    double const *a0; // deceleration at handle position 1, by speed
-    double const *a1; // deceleration added by each quarter of a position, by speed
-    int size; // entries, up to the vehicle's top speed
-    double vmax; // the vehicle's top speed [km/h]
-
-    // deceleration [m/s2] of a full service application at Kmh
-    double full_braking( double const Kmh ) const {
-        auto const index { std::clamp( static_cast<int>( size * Kmh / std::max( 1.0, vmax ) ), 1, size ) };
-        return std::max( 0.01, a0[ index ] + 12.0 * a1[ index ] ); }
-};
-
 static double
 shaped_braking_demand(
     double const Velocity, double const Target, double const Distance, double const Gravity,
@@ -8262,7 +8251,10 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
                 distance,
                 brakingpointoffset ) ) };
     auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
+    consist_brake_table const braketable { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax };
+    // the shape needs the brake table, which is there for a train run only: shunting (and Connect) keeps
+    // the constant deceleration, as a zeroed table would ask for no braking at all
+    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) && braketable.known() ) {
         // follow the shape of the consist brake force over speed rather than assume a constant
         // deceleration, over the distance left once the brake has had time to fill (while the
         // train is still speeding up, the prediction above has taken that off already)
@@ -8279,8 +8271,7 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
                 brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
         }
         deceleration = shaped_braking_demand(
-            velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
-            { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
+            velocity, VelNext, room + 0.1 / 25.92, fAccGravity, braketable );
     }
     AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
     if( Vel <= VelNext ) {
