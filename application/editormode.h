@@ -867,6 +867,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::size_t erase_fill_area_models(std::string const &Id);
 	std::vector<glm::dvec3> m_fill_points; // outline vertices (world space) in click order
 	std::string m_fill_editing; // the listed area whose outline is in m_fill_points, empty for a new one
+	// the rotation of the area picked up and the one of the Functions panel then: the area keeps its own unless it's changed in the tool
+	float m_fill_editing_rotation{0.0f};
+	int m_fill_editing_panel_mode{-1};
+	float m_fill_editing_panel_value{0.0f};
 	std::string m_fill_hover; // the area under the cursor in the list, drawn brighter
 	// what "Undo last fill" takes back: the area filled, changed or removed last, and how it was before
 	struct fill_undo

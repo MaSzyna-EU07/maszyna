@@ -4735,6 +4735,11 @@ std::size_t editor_mode::place_fill_area(fill_store::area const &Area, std::size
 {
     // limits keeping a single click from freezing the editor for too long
     std::size_t constexpr max_objects = 20000;
+    // the models go to the layer of the area, whichever is active (on an undo, on a change): the area and its models are saved together;
+    // the active one if the area's is gone
+    auto layer{scene::Layers.resolve(Area.layer)};
+    if (false == scene::Layers.listed(layer))
+        layer = null_handle;
     // large model instances (e.g. terrain tiles) are treated as ground, smaller ones (houses, trees) are not
     float constexpr terrain_model_radius = 50.0f;
     // ground is searched up to this far above the height interpolated from the outline points,
@@ -4852,7 +4857,7 @@ std::size_t editor_mode::place_fill_area(fill_store::area const &Area, std::size
 
         auto const &src = Area.templates[std::min(Area.templates.size() - 1, static_cast<std::size_t>(pick * static_cast<double>(Area.templates.size())))];
         // named after the area, so its models are found again in a scenery loaded later
-        TAnimModel *cloned = simulation::State.create_model(src, fill_store::model_name(Area.id, number++), location);
+        TAnimModel *cloned = simulation::State.create_model(src, fill_store::model_name(Area.id, number++), location, layer);
         if (!cloned)
             continue;
         if (Area.random_rotation)
@@ -4894,6 +4899,10 @@ void editor_mode::finish_area_fill()
         undo.before = *before;
         area.id = before->id;
         area.label = before->label;
+        // its own rotation, unless the rotation of the Functions panel was changed since it was picked up
+        if (false == area.random_rotation && false == before->random_rotation && static_cast<int>(ui()->rot_mode()) == m_fill_editing_panel_mode &&
+            ui()->rot_val() == m_fill_editing_panel_value)
+            area.rotation = m_fill_editing_rotation;
         erase_fill_area_models(area.id);
     }
     else
@@ -4904,7 +4913,8 @@ void editor_mode::finish_area_fill()
     }
     undo.id = area.id;
     area.seed = static_cast<std::uint32_t>(LocalRandom(0.0, 4294967295.0));
-    area.layer = scene::Layers.active();
+    // a changed area stays in its layer, with its models; a new one goes to the active layer
+    area.layer = before != nullptr ? undo.before.layer : scene::Layers.active();
 
     std::size_t target{0};
     std::size_t unsupported{0};
@@ -4945,6 +4955,9 @@ void editor_mode::edit_fill_area(std::string const &Id)
     m_fill_scale_min = area->scale_min;
     m_fill_scale_max = area->scale_max;
     m_fill_random_rotation = area->random_rotation;
+    m_fill_editing_rotation = area->rotation;
+    m_fill_editing_panel_mode = static_cast<int>(ui()->rot_mode());
+    m_fill_editing_panel_value = ui()->rot_val();
     m_fill_models_as_ground = area->models_as_ground;
     // the set the models came from, while it still holds the same templates; otherwise the templates of the area themselves
     model_set_ref source;
