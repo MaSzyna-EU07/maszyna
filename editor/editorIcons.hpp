@@ -50,11 +50,18 @@ enum class icon
 	infra,
 	gauge,
 	turntable,
+	parallel,
+	station,
+	kilometrage,
+	more,
 	// the fields of work
 	work_surroundings,
 	work_tracks,
 	work_roads,
 	work_terrain,
+	// the tools of the signalling beside signal and station
+	station_signals,
+	line_block,
 	camera,
 	zoom_in,
 	zoom_out,

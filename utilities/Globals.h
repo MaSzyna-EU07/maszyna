@@ -82,6 +82,7 @@ struct global_settings {
     bool bLoadTraction{ true };
     bool bSmoothTraction{ true };
     bool CreateSwitchTrackbeds{ true };
+    bool Frogs{ false }; // whether the rails are cut where they cross other rails into frogs, wing rails and check rails; off, they're laid whole as before
     std::string szTexturesTGA{ ".tga" }; // lista tekstur od TGA
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS
     std::string szDefaultExt{ szTexturesDDS };
@@ -148,6 +149,7 @@ struct global_settings {
     bool bJoinEvents{ false }; // czy grupować eventy o tych samych nazwach
     int iHiddenEvents{ 1 }; // czy łączyć eventy z torami poprzez nazwę toru
     bool AITrainman{ true }; // virtual assistant performing consist coupling/decoupling and other maintenance tasks
+    bool AIBrakeSettingCw1{ true }; // ai.brakesetting.cw1: the AI wagon inspector sets the brakes (G/P/R/Mg) by the instruction Cw-1, no: as before eu07/maszyna#350
     // ui
     int PythonScreenUpdateRate{ 200 }; // delay between python-based screen updates, in milliseconds
     int iTextMode{ 0 }; // tryb pracy wyświetlacza tekstowego
@@ -192,11 +194,17 @@ struct global_settings {
     float FieldOfView{ 45.f }; // vertical field of view for the camera. TODO: move it to the renderer
     bool EditorOrtho{ false };
     float EditorOrthoExtent{ 150.f };
+    int EditorOrthoTracks{ 0 }; // the railway in the top view of the editor: 0 whole, 1 without the ballast, 2 the rails alone
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px
     float SplineFidelity{ 1.f }; // determines segment size during conversion of splines to geometry
     float SleeperDistance{ 250.f }; // max distance (in meters) at which per-track sleeper models are still drawn; 0 disables sleeper rendering entirely
+    std::string Sleepers3D; // model of the sleepers and switch timbers laid where the simulator makes the ballast; empty: none
+    std::string Sleepers3DPlain { "quark/podklad1" }; // model of the sleepers of a track running alone, those of Sleepers3D being the timbers of switches and crossings; empty: the timbers there too
+    std::string Sleepers3DPlainSkin { "quark/podklad_betonowy1" };
+    bool Sleepers3DBed { true }; // whether the ballast is laid under the tracks with 3D sleepers
+    float Sleepers3DPlainSeat { 0.24f }; // how high the rails sit on the plain sleeper above the origin of its model; below 0: on its top
     bool Smoke{ true }; // toggles smoke simulation and visualization
     float SmokeFidelity{ 1.f }; // determines amount of generated smoke particles
     bool ResourceSweep{ true }; // gfx resource garbage collection

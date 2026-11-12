@@ -438,7 +438,7 @@ double TMoverParameters::Current(double n, double U)
 				//          writepaslog("Delta          ", FloatToStr(Delta));
 				//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
 				//          writepaslog("U              ", FloatToStr(U));
-				if (Mains)
+				if (MainCircuitPowered())
 				{
 					if (U > 0)
 						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
@@ -1531,6 +1531,8 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			ErrorLog("Bad dynamic: " + Name + " derailed due to wrong track type"); // błąd w scenerii
 		else if (Reason == COLLISION)
 			WriteLog("Bad driving: " + Name + " derailed"); // This reason also generates its own message in `TMoverParameters::CollisionDetect()`
+		else if (Reason == TRAILED_SWITCH)
+			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
 	}
 }
 
@@ -1643,6 +1645,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1709,6 +1712,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1870,7 +1874,8 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 		break;
 	}
 	}
-	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1};
+	// a line breaker closed ahead of the pantographs gets ready on the low voltage circuits
+	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1 || (PantographsRequireMains && (Power24vIsAvailable || Power110vIsAvailable))};
 
 	if (true == maincircuitpowersupply)
 	{
@@ -1949,7 +1954,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 			case TPowerSource::Main:
 			{
 				// HACK: main circuit can be fed through couplers, so we explicitly check pantograph supply here
-				localvoltage = true == Mains ? PantographVoltage : 0.0;
+				localvoltage = MainCircuitPowered() ? PantographVoltage : 0.0;
 				break;
 			}
 			default:
@@ -2206,7 +2211,7 @@ void TMoverParameters::ConverterCheck(double const Timestep)
 	if (ConverterAllow && ConverterAllowLocal && false == ConvOvldFlag &&
 	    false == PantPressLockActive
 	    // HACK: allow carriages to operate converter without (missing) fuse prerequisite
-	    && (Power > 1.0 ? Mains : GetTrainsetHighVoltage() > 0.0))
+	    && (Power > 1.0 ? MainCircuitPowered() : GetTrainsetHighVoltage() > 0.0))
 	{
 		// delay timer can be optionally configured, and is set anew whenever converter goes off
 		if (ConverterStartDelayTimer <= 0.0)
@@ -2292,7 +2297,7 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 	}
 	case TPowerSource::Main:
 	{
-		voltage = true == Mains ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		voltage = MainCircuitPowered() ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
 		break;
 	}
 	default:
@@ -2401,9 +2406,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		}
 		blower.is_active =
 		    // TODO: bind properly power source when ld is in place
-		    (blower.start_type == start_t::battery   ? Power24vIsAvailable :
-		     blower.start_type == start_t::converter ? Power110vIsAvailable :
-		                                               Mains) // power source
+		    MotorBlowerPowerIsAvailable(blower) // power source
 		    // breaker condition disabled until it's implemented in the class data
 		    //         && ( true == blower.breaker )
 		    && false == disable &&
@@ -2430,6 +2433,19 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		{
 			fan.revolutions *= static_cast<float>(std::max(0.0, 1.0 - Timestep));
 		}
+	}
+}
+
+bool TMoverParameters::MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const
+{
+	switch (Blower.start_type)
+	{
+	case start_t::battery:
+		return Power24vIsAvailable;
+	case start_t::converter:
+		return Power110vIsAvailable;
+	default:
+		return MainCircuitPowered();
 	}
 }
 
@@ -2462,7 +2478,8 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 		valve.is_active = (valve.spring ? lowvoltagepower : true) // spring actuator needs power to maintain non-default state
 		                  && (manualcontrol && lowvoltagepower ? false == valve.is_disabled : true) // needs power to change state, without it just pass through
 		                  && (manualcontrol && lowvoltagepower ? false == PantAllDown : true) &&
-		                  (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
+		                  (Mains || false == PantographsRequireMains) // fed through the closed line breaker, where it comes first
+		                  && (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
 
 		auto const pantographexists{EnginePowerSource.SourceType == TPowerSource::CurrentCollector && EnginePowerSource.CollectorParameters.PhysicalLayout & 1 << pant_id};
 
@@ -3859,7 +3876,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	case ElectricInductionMotor:
 	{
 		// TODO: check whether we can simplify this check and skip the outer EngineType switch
-		powerisavailable = EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
+		// closed ahead of the pantographs, the line breaker runs on the low voltage circuits
+		powerisavailable = PantographsRequireMains ? Power24vIsAvailable || Power110vIsAvailable : EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
 		break;
 	}
 	default:
@@ -3869,7 +3887,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	}
 
 	return powerisavailable && (ScndCtrlPos == 0 || EngineType == ElectricInductionMotor) && MainsInitTimeCountdown <= 0.0 &&
-	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && true == NoVoltRelay && true == OvervoltageRelay && LastSwitchingTime > CtrlDelay &&
+	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && (true == NoVoltRelay || PantographsRequireMains) && true == OvervoltageRelay &&
+	       LastSwitchingTime > CtrlDelay &&
 	       (HasCamshaft                       ? IsMainCtrlActualNoPowerPos() :
 	        LineBreakerClosesOnlyAtNoPowerPos ? IsMainCtrlNoPowerPos() :
 	                                            true) &&
@@ -3972,6 +3991,25 @@ double TMoverParameters::EnginePowerSourceVoltage() const
 	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? std::max(GetTrainsetHighVoltage(), PantographVoltage) :
 	       EnginePowerSource.SourceType == TPowerSource::Accumulator      ? Power24vVoltage :
 	                                                                        0.0;
+}
+
+// whether the main circuit feeds what runs on it: the converter, a compressor, the heating, the motor and resistor
+// blowers, the traction motors
+bool TMoverParameters::MainCircuitPowered() const
+{
+	if (false == Mains)
+	{
+		return false;
+	}
+	if (false == PantographsRequireMains || EnginePowerSource.SourceType != TPowerSource::CurrentCollector)
+	{
+		// the closed line breaker says it all: the undervoltage trip opens it without traction voltage, and an engine
+		// which runs is its own supply
+		return true;
+	}
+	// closed ahead of the pantographs the line breaker holds without the voltage, which the undervoltage trip isn't
+	// there to vouch for
+	return EnginePowerSourceVoltage() >= EnginePowerSource.CollectorParameters.MinV;
 }
 
 // *************************************************************************************************
@@ -4567,7 +4605,7 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 
 	// the main circuit, also for a compressor driven by the engine, otherwise the low voltage
-	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? Mains : Power110vIsAvailable};
+	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? MainCircuitPowered() : Power110vIsAvailable};
 	CompressorPowerTime = compressorpower ? CompressorPowerTime + dt : 0.0;
 	auto const compressorready{compressorpower && CompressorPowerTime >= CompressorStartDelay};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
@@ -5904,7 +5942,7 @@ double TMoverParameters::TractionForce(double dt)
 
 	case TEngineType::ElectricSeriesMotor:
 	{
-		if (true == Mains)
+		if (MainCircuitPowered())
 		{
 			switch (RVentType)
 			{
@@ -6036,11 +6074,18 @@ double TMoverParameters::TractionForce(double dt)
 	{
 		// update the state of voltage relays
 		auto const voltage{std::max(GetTrainsetHighVoltage(), PantographVoltage)};
-		NoVoltRelay = EnginePowerSource.SourceType != TPowerSource::CurrentCollector || voltage >= EnginePowerSource.CollectorParameters.MinV;
+		// where the line breaker holds without voltage (closed ahead of the pantographs) the undervoltage relay opens the
+		// line contactors instead, see MotorConnectorsCheck(). it picks up again only with the master controller back
+		// where a start begins, as the line breaker it stands in for wouldn't close on a running position either: at
+		// zero, or at the first position, which is the first resistance step, where the line contactors close on any
+		// start, and where the AI waits for them rather than going back to zero
+		auto const novoltrelaypicksup{false == PantographsRequireMains || NoVoltRelay || MainCtrlPowerPos() <= 1};
+		NoVoltRelay = EnginePowerSource.SourceType != TPowerSource::CurrentCollector || (voltage >= EnginePowerSource.CollectorParameters.MinV && novoltrelaypicksup);
 		OvervoltageRelay =
 		    EnginePowerSource.SourceType != TPowerSource::CurrentCollector || voltage <= EnginePowerSource.CollectorParameters.MaxV || false == EnginePowerSource.CollectorParameters.OVP;
 		// wywalanie szybkiego z powodu niewłaściwego napięcia
-		EventFlag |= true == Mains && (false == NoVoltRelay || false == OvervoltageRelay) &&
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		EventFlag |= true == Mains && ((false == NoVoltRelay && false == PantographsRequireMains) || false == OvervoltageRelay) &&
 		             MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		break;
 	}
@@ -6049,7 +6094,8 @@ double TMoverParameters::TractionForce(double dt)
 	{
 		// TODO: check if we can use instead the code for electricseriesmotor
 		// nie wchodzić w funkcję bez potrzeby
-		if (Mains && (std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV ||
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		if (Mains && ((std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV && false == PantographsRequireMains) ||
 			    std::max(GetTrainsetHighVoltage(), PantographVoltage) > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
@@ -6570,7 +6616,7 @@ double TMoverParameters::TractionForce(double dt)
 
 		case TEngineType::ElectricInductionMotor:
 		{
-			if (true == Mains && !SecuritySystem.is_engine_blocked())
+			if (MainCircuitPowered() && !SecuritySystem.is_engine_blocked())
 			{
 				double ActiveInverters = 0.0;
 				for (auto const &inv : Inverters)
@@ -7488,9 +7534,36 @@ bool TMoverParameters::MotorConnectorsCheck()
 		return false;
 	}
 
-	auto const connectorsoff{false == Mains || true == FuseFlag || true == StLinSwitchOff || DirActive == 0};
+	// a line breaker closed ahead of the pantographs holds without voltage; what cuts the motors off there is its
+	// undervoltage relay, which elsewhere opens the line breaker
+	auto const undervoltage{PantographsRequireMains && false == NoVoltRelay};
 
-	return false == connectorsoff;
+	auto const connectorsoff{false == Mains || undervoltage || true == FuseFlag || true == StLinSwitchOff || DirActive == 0};
+
+	return false == connectorsoff && LineContactorsInterlockReleased();
+}
+
+bool TMoverParameters::LineContactorsInterlockReleased() const
+{
+	switch (LineContactorsInterlock)
+	{
+	case line_contactors_interlock::converter:
+		// the converter of this very vehicle, not the 110 V of the trainset: a section with its fans off doesn't start
+		return ConverterFlag;
+	case line_contactors_interlock::motor_blowers:
+		return std::ranges::all_of(MotorBlowers, [this](auto const &Blower) {
+			if (Blower.min_start_velocity < 0)
+			{
+				return Blower.is_active;
+			}
+			// a blower which starts with the speed and the motor current (MotorBlowersStartVelocity) can't run before
+			// the contactors close, nor after a stop longer than it keeps running for: it's enough that it's
+			// switched on and has power, so it starts once the vehicle moves
+			return MotorBlowerPowerIsAvailable(Blower) && false == Blower.is_disabled && (Blower.start_type == start_t::manual ? Blower.is_enabled : true);
+		});
+	default:
+		return true;
+	}
 }
 
 bool TMoverParameters::OperatePantographsValve(operation_t const State, range_t const Notify)
@@ -7863,7 +7936,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic = 0;
 	}
 
-	auto const eimicpowerenabled{(true == Mains || Power == 0.0) && (!SpringBrake.IsActive || !SpringBrakeCutsOffDrive) && !LockPipe && DirAbsolute != 0};
+	auto const eimicpowerenabled{(MainCircuitPowered() || Power == 0.0) && (!SpringBrake.IsActive || !SpringBrakeCutsOffDrive) && !LockPipe && DirAbsolute != 0};
 	auto const eimicdoorenabled{(SpringBrake.IsActive && ReleaseParkingBySpringBrakeWhenDoorIsOpen)};
 	double eimic_max = 0.0;
 	if (Doors.instances[side::left].open_permit == false && Doors.instances[side::right].open_permit == false)
@@ -11568,6 +11641,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = starts.find(extract_value("MainStart", line));
 		MainsStart = lookup != starts.end() ? lookup->second : start_t::manual;
 	}
+	extract_value(PantographsRequireMains, "PantRequiresMain", line, "");
 	// battery
 	{
 		auto lookup = starts.find(extract_value("BatteryStart", line));
@@ -11635,6 +11709,14 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
 		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type;
 	}
+	// what else the line contactors need to close
+	{
+		std::map<std::string, line_contactors_interlock, std::less<>> const interlocks{{"Converter", line_contactors_interlock::converter},
+		                                                                             {"MotorBlowers", line_contactors_interlock::motor_blowers}};
+		auto lookup = interlocks.find(extract_value("LineContactorsInterlock", line));
+		LineContactorsInterlock = lookup != interlocks.end() ? lookup->second : line_contactors_interlock::none;
+	}
+	extract_value(LouvresOpenPressure, "LouvresOpenPressure", line, "");
 	// compartment lights
 	{
 		auto lookup = starts.find(extract_value("CompartmentLightsStart", line));

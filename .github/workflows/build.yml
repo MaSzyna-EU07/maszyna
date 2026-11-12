@@ -14,6 +14,14 @@ on:
 
 permissions: {}
 
+# A newer push to a pull request makes the run for its older commit pointless, so that run is
+# cancelled (sonar.yml then marks the analysis of the older commit as skipped). A push to master
+# gets a group of its own, its commit, so the runs on master are neither cancelled nor held back
+# by one another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build under Build Wrapper
@@ -33,8 +41,16 @@ jobs:
         with:
           python-version: '3.14'
 
+      # A mirror that stops answering used to hold this step for over an hour.
+      # Time out each download, retry it, and give up on the whole step early.
       - name: Install build dependencies
+        timeout-minutes: 15
         run: |
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "60";' \
+            'Acquire::https::Timeout "60";' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update -y
           sudo apt-get install -y \
             build-essential \

@@ -1550,7 +1550,15 @@ basic_region::find_traction( glm::dvec3 const &Point, TTraction const *Other, in
 std::vector<basic_section *> const &
 basic_region::sections( glm::dvec3 const &Point, float const Radius ) {
 
-    m_scratchpad.sections.clear();
+    sections( Point, Radius, m_scratchpad.sections );
+    return m_scratchpad.sections;
+}
+
+// finds sections inside specified sphere, put in the list given in place of what it held
+void
+basic_region::sections( glm::dvec3 const &Point, float const Radius, std::vector<basic_section *> &Sections ) const {
+
+    Sections.clear();
 
     auto const centerx { static_cast<int>( std::floor( Point.x / EU07_SECTIONSIZE + EU07_REGIONSIDESECTIONCOUNT / 2 ) ) };
     auto const centerz { static_cast<int>( std::floor( Point.z / EU07_SECTIONSIZE + EU07_REGIONSIDESECTIONCOUNT / 2 ) ) };
@@ -1572,11 +1580,10 @@ basic_region::sections( glm::dvec3 const &Point, float const Radius ) {
             if( section != nullptr
              && glm::length2(section->area().center - Point) <= sq(section->area().radius + padding + Radius) ) {
 
-                m_scratchpad.sections.emplace_back( section );
+                Sections.emplace_back( section );
             }
         }
     }
-    return m_scratchpad.sections;
 }
 
 // checks whether specified point is within boundaries of the region

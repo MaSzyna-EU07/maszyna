@@ -321,6 +321,40 @@ def turntable(d):
         line(d, [(32 + math.cos(r) * 24, 32 + math.sin(r) * 24), (32 + math.cos(r) * 31, 32 + math.sin(r) * 31)], W - 4)
 
 
+def parallel(d):
+    # a track and a second one beside it, with the spacing between them
+    for x in (8, 22):
+        line(d, [(x, 60), (x, 4)], W - 6)
+    for x in (42, 56):
+        dashed(d, (x, 60), (x, 4), 8, 6, W - 6)
+    line(d, [(26, 32), (38, 32)], W - 8)
+    arrowhead(d, 40, 32, 0, 10)
+
+
+def station(d):
+    # two tracks of a station with a crossover between them, and the insulated joints of its track circuits
+    line(d, [(4, 22), (60, 22)], W - 6)
+    line(d, [(4, 46), (60, 46)], W - 6)
+    line(d, [(14, 46), (32, 22)], W - 6)
+    line(d, [(46, 12), (46, 32)], W - 10)
+    line(d, [(46, 36), (46, 56)], W - 10)
+
+
+def kilometrage(d):
+    # a hectometre post by the track with its digits, and the way the km rise along the track
+    rect(d, 16, 4, 36, 40, outline=True, width=W - 6, radius=3)
+    line(d, [(22, 15), (30, 15)], W - 8)
+    line(d, [(22, 28), (30, 28)], W - 8)
+    line(d, [(26, 40), (26, 48)], W - 6)
+    line(d, [(4, 56), (48, 56)], W - 6)
+    arrowhead(d, 54, 56, 0, 12)
+
+
+def more(d):
+    for x in (12, 32, 52):
+        circle(d, x, 32, 6)
+
+
 # the fields of work of the editor, in the row over the toolbar
 
 
@@ -363,6 +397,24 @@ def work_terrain(d):
         line(d, [at(u, v) for v in steps], W - 6)
 
 
+def station_signals(d):
+    # a signal and the sparkles of the automatic: the signals of a whole station placed at once
+    line(d, [(22, 34), (22, 60)], W - 2)
+    line(d, [(12, 60), (32, 60)], W - 2)
+    rect(d, 12, 4, 32, 38, radius=9)
+    poly(d, [(48, 6), (51, 15), (60, 18), (51, 21), (48, 30), (45, 21), (36, 18), (45, 15)])
+    poly(d, [(50, 39), (52, 44), (57, 46), (52, 48), (50, 53), (48, 48), (43, 46), (48, 44)])
+
+
+def line_block(d):
+    # two block signals along the track of a line and the joint of the block section between them
+    line(d, [(4, 54), (60, 54)], W - 6)
+    for x in (16, 46):
+        line(d, [(x, 24), (x, 54)], W - 6)
+        circle(d, x, 16, 9)
+    line(d, [(31, 44), (31, 62)], W - 10)
+
+
 def zoom_in(d):
     circle(d, 27, 27, 16, outline=True, width=W - 5)
     line(d, [(39, 39), (56, 56)], W - 5)
@@ -387,6 +439,8 @@ def zoom_out(d):
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
+         vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
+         work_tracks, work_roads, work_terrain, station_signals, line_block]
          vehicle, profile, speed, joints, infra, gauge, turntable, work_surroundings,
          work_tracks, work_roads, work_terrain, camera, zoom_in, zoom_out]
 
@@ -401,6 +455,12 @@ def cutouts(name, d):
     elif name == "signal":
         circle(d, 32, 14, 5)
         circle(d, 32, 28, 5)
+    elif name == "station_signals":
+        circle(d, 22, 14, 5)
+        circle(d, 22, 28, 5)
+    elif name == "line_block":
+        circle(d, 16, 16, 4)
+        circle(d, 46, 16, 4)
     elif name == "vehicle":
         rect(d, 10, 27, 20, 35)
         rect(d, 26, 27, 36, 35)

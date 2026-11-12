@@ -676,12 +676,15 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );
     // returns true if any vehicle in the consist has an open door
     bool doors_open() const;
     bool doors_permit_active() const;
     void AutoRewident(); // ustawia hamulce w składzie
+    void reinspect_brakes(); // AutoRewident() again once the train stands, when it left a brake to cut out on the run
+    bool BrakeReinspectionPending{ false }; // AutoRewident() left a brake to cut out (Cw-1 §19.9) for the next standstill
     void announce( announcement_t const Announcement );
 // members
     double fLength = 0.0; // długość składu (do wyciągania z ograniczeń)

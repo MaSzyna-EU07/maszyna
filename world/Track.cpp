@@ -15,7 +15,9 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "world/Track.h"
+#include "world/TrackRails.h"
 #include "simulation/simulation.h"
+#include "scene/scene.h"
 #include "utilities/Globals.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -46,6 +48,72 @@ const int iPrawo3[4] = {-2, -1, -3, -2}; // segmenty do skręcania w prawo
 const int iProsto3[4] = {1, -1, 2, 1}; // segmenty do jazdy prosto
 const int iEnds3[13] = {3, 0, 2, 1, 2, 0, -1, 1, 0, 2, 0, 3, 1}; // numer sąsiedniego toru na końcu segmentu "-1"
 TIsolated *TIsolated::pRoot = nullptr;
+
+namespace {
+
+// a part of a switch path, shaped like the path itself: heights on the rail heads, straights made of their own points
+void init_switch_piece( TSegment &Segment, segment_data const &Piece, bool const Rail ) {
+
+    auto p1 { Piece.points[ segment_data::point::start ] };
+    auto cp1 { Piece.points[ segment_data::point::control1 ] };
+    auto cp2 { Piece.points[ segment_data::point::control2 ] };
+    auto p2 { Piece.points[ segment_data::point::end ] };
+    if( Rail ) {
+        p1.y += 0.18;
+        p2.y += 0.18;
+    }
+    // one with its radius given is a curve however gently it bends, as a short path bent with the curve it's laid into
+    if( Piece.radius == 0.f
+     && ( glm::length2( ( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq( 0.02 )
+       || glm::length2( ( p1 + p2 + p2 ) / 3.0 - p2 - cp2 ) < sq( 0.02 ) ) ) {
+        cp1 = cp2 = glm::dvec3( 0, 0, 0 );
+    }
+    auto const straight { cp1 == glm::dvec3() && cp2 == glm::dvec3() };
+    auto segsize { 10.0 };
+    if( Piece.radius != 0.f ) {
+        segsize = std::clamp( std::abs( Piece.radius ) * ( 0.02 / Global.SplineFidelity ), 2.0 / Global.SplineFidelity, 10.0 / Global.SplineFidelity );
+    }
+    else if( false == straight ) {
+        segsize = std::clamp( glm::length( p1 - p2 ) * 0.1, 2.0 / Global.SplineFidelity, 10.0 / Global.SplineFidelity );
+    }
+    if( straight ) {
+        Segment.Init( p1, p2, segsize, Piece.rolls[ 0 ], Piece.rolls[ 1 ] );
+    }
+    else {
+        Segment.Init( p1, p1 + cp1, p2 + cp2, p2, segsize, Piece.rolls[ 0 ], Piece.rolls[ 1 ] );
+    }
+}
+
+// a path of the switch made of the pieces given for it, where they join its ends and one another; the path as given where they don't
+void chain_switch_pieces( TTrack &Track, std::size_t const Index ) {
+
+    auto const &pieces { Track.m_paths[ Index ].pieces };
+    if( pieces.empty() ) {
+        return;
+    }
+    auto joined {
+        glm::distance( pieces.front().points[ segment_data::point::start ], Track.m_paths[ Index ].points[ segment_data::point::start ] ) < 0.02
+     && glm::distance( pieces.back().points[ segment_data::point::end ], Track.m_paths[ Index ].points[ segment_data::point::end ] ) < 0.02 };
+    for( std::size_t piece = 1; piece < pieces.size(); ++piece ) {
+        joined = joined && glm::distance( pieces[ piece - 1 ].points[ segment_data::point::end ], pieces[ piece ].points[ segment_data::point::start ] ) < 0.02;
+    }
+    if( false == joined ) {
+        ErrorLog( std::format( "Bad track: pieces of path {} of switch \"{}\" don't join its ends, the path is used instead", Index + 1, Track.m_name ) );
+        return;
+    }
+    auto const texheight { Track.fTexHeight1 };
+    auto const texheightoffset { Track.fTexHeightOffset };
+    std::vector<std::shared_ptr<TSegment>> chain;
+    for( auto const &piece : pieces ) {
+        chain.emplace_back( std::make_shared<TSegment>( &Track ) );
+        init_switch_piece( *chain.back(), piece, ( Track.iCategoryFlag & 1 ) != 0 );
+    }
+    Track.fTexHeight1 = texheight;
+    Track.fTexHeightOffset = texheightoffset;
+    Track.SwitchExtension->Segments[ Index ]->InitChain( std::move( chain ) );
+}
+
+} // namespace
 
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
@@ -184,13 +252,15 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 };
 
 // tworzenie nowego odcinka ruchu
-TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata )
-{
+TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
 	++s_map_geometry_revision;
+
+    track_rails::forget();
 }
 
 TTrack::~TTrack()
 { // likwidacja odcinka
+    track_rails::forget();
 	++s_map_geometry_revision;
 	if( eType == tt_Cross ) {
 		delete SwitchExtension->vPoints; // skrzyżowanie może mieć punkty
@@ -452,7 +522,7 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     {
         // dopływ: no path of it was ever made, the simulator falling over it as it loaded. a river of its first path now, the
         // second one kept and written back
-        ErrorLog(std::format("Bad track: tributary \"{}\" in file \"{}\" (line {}) is drawn and run on as a river of its first path", m_name, parser->Name(), parser->Line()));
+        ErrorLog(std::format(R"(Bad track: tributary "{}" in file "{}" (line {}) is drawn and run on as a river of its first path)", m_name, parser->Name(), parser->Line()));
         eType = tt_Normal;
         iCategoryFlag = 4;
         m_tributary = true;
@@ -549,8 +619,6 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
         m_paths.emplace_back();
         m_paths.back().deserialize( *parser, pOrigin );
     }
-
-    init_segments( true );
 
     // optional attributes
     parser->getTokens();
@@ -665,6 +733,36 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 m_profile1 = fetch_track_rail_profile( railprofile );
             }
         }
+        else if( str == "frogs" ) {
+            // frog and check rails made from the rails of the switch
+            if( eType == tt_Switch ) {
+                SwitchExtension->m_frogs = true;
+            }
+        }
+        else if( str == "movablenose" ) {
+            // the frog of the switch with a movable nose
+            if( eType == tt_Switch ) {
+                SwitchExtension->m_movablenose = true;
+            }
+        }
+        else if( str == "blades" ) {
+            // blades <heel> <throw>: where the moving blades of the switch end and how far their tips move over, 0: from the shape of the switch
+            auto const heel { parser->getToken<double>() };
+            auto const bladethrow { parser->getToken<double>() };
+            if( eType == tt_Switch ) {
+                SwitchExtension->m_bladeheel = std::max( 0.0, heel );
+                SwitchExtension->m_bladethrow = std::max( 0.0, bladethrow );
+            }
+        }
+        else if( str == "timbermodel" ) {
+            // timbermodel <model> <skin>: the model of the timbers under the switch or the crossing the track is part of, put together
+            // from its submodels begin, main and end, or drawn whole; skin none: the textures of the model
+            auto modelpath { parser->getToken<std::string>( false ) };
+            auto skinpath { parser->getToken<std::string>( false ) };
+            replace_slashes( modelpath );
+            m_timber_model_name = modelpath;
+            m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
+        }
         else if( str == "uneven" ) {
             // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
             auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
@@ -707,15 +805,39 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 // called after segment initialisation so the path geometry is final.
             }
         }
+        else if( str == "pieces1" || str == "pieces2" ) {
+            // consecutive parts of a path, kept after the path itself for versions which know only the path
+            auto const index { static_cast<std::size_t>( str.back() - '1' ) };
+            auto const count { parser->getToken<int>() };
+            std::vector<segment_data> pieces;
+            for( int piece = 0; piece < count; ++piece ) {
+                pieces.emplace_back();
+                pieces.back().deserialize( *parser, pOrigin );
+            }
+            if( index < m_paths.size() ) {
+                m_paths[ index ].pieces = std::move( pieces );
+            }
+            else {
+                ErrorLog( "Bad track: \"" + str + "\" defined for track \"" + m_name + "\" which has no such path" );
+            }
+        }
         else
             ErrorLog("Bad track: unknown property: \"" + str + "\" defined for track \"" + m_name + "\"");
         parser->getTokens();
         *parser >> token;
 		str = token;
     }
-    // the segments were made before the attributes were read, and unevenness changes them
+
+    // a switch made sets itself straight with Switch(0), which overwrites fVelocity from SwitchExtension->fVelocity; the velocity read
+    // from the scenery is put back after it
+    auto const velocity { fVelocity };
+    init_segments( true );
+    // made with no unevenness, which is read with the attributes and goes onto them by making them again
     if( is_uneven() ) {
         init_segments( false );
+    }
+    if( SwitchExtension ) {
+        fVelocity = velocity;
     }
     // alternatywny zapis nazwy odcinka izolowanego - po znaku "@" w nazwie toru
     if ((i = m_name.find("@")) != std::string::npos && i < m_name.length())
@@ -741,6 +863,14 @@ void TTrack::update_location() {
         + CurrentSegment()->FastGetPoint( 0.5 )
         + CurrentSegment()->FastGetPoint_1() )
         / 3.0 );
+}
+
+// "prostowanie" prostych z kontrolnymi, dokładność 2cm: a path is a straight where its first control vector lies along the chord, whatever
+// the second one does, as the sceneries are made for. Length2 is better than length for comparing because it does not require sqrt
+bool TTrack::straightened( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &P2 ) {
+
+    return glm::length2( ( P1 + P1 + P2 ) / 3.0 - P1 - Cp1 ) < sq( 0.02 )
+        || glm::length2( ( P1 + P2 + P2 ) / 3.0 - P2 + Cp1 ) < sq( 0.02 );
 }
 
 void TTrack::init_segments( bool const Initial ) {
@@ -790,9 +920,7 @@ void TTrack::init_segments( bool const Initial ) {
             // na przechyłce doliczyć jeszcze pół przechyłki
         }
 
-        // length2 is better than length for comparing because it does not require sqrt function
-        if( glm::length2((p1 + p1 + p2) / 3.0 - p1 - cp1) < sq(0.02)
-         || glm::length2((p1 + p2 + p2) / 3.0 - p2 + cp1) < sq(0.02) ) {
+        if( straightened( p1, cp1, p2 ) ) {
             // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 			cp1 = cp2 = glm::dvec3(0, 0, 0);
         }
@@ -888,8 +1016,7 @@ void TTrack::init_segments( bool const Initial ) {
         if( eType != tt_Cross ) {
             // dla skrzyżowań muszą być podane kontrolne
 			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2(( p1 + p1 + p2 ) / 3.0 - p1 - cp1 ) < sq(0.02)
-             || glm::length2(( p1 + p2 + p2 ) / 3.0 - p2 + cp1 ) < sq(0.02) ) {
+            if( straightened( p1, cp1, p2 ) ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp1 = cp2 = glm::dvec3(0, 0, 0);
             }
@@ -953,8 +1080,7 @@ void TTrack::init_segments( bool const Initial ) {
         if( eType != tt_Cross ) {
             // dla skrzyżowań muszą być podane kontrolne
 			// length2 is better than length for comparing because it does not require sqrt function
-            if( glm::length2((p3 + p3 + p4) / 3.0 - p3 - cp3) < sq(0.02)
-             || glm::length2((p3 + p4 + p4) / 3.0 - p4 + cp3) < sq(0.02) ) {
+            if( straightened( p3, cp3, p4 ) ) {
                 // "prostowanie" prostych z kontrolnymi, dokładność 2cm
 				cp3 = cp4 = glm::dvec3(0, 0, 0);
             }
@@ -1011,6 +1137,20 @@ void TTrack::init_segments( bool const Initial ) {
                 SwitchExtension->Segments[3]->Init(p4, p4 + cp4, p1 + cp1, p1, segsize, r4, r1); // z punktu 4 do 1
                 SwitchExtension->Segments[4]->Init(p1, p1 + cp1, p3 + cp3, p3, segsize, r1, r3); // z punktu 1 do 3
                 SwitchExtension->Segments[5]->Init(p3, p3 + cp3, p2 + cp2, p2, segsize, r3, r2); // z punktu 3 do 2
+            }
+        }
+
+        if( eType == tt_Switch ) {
+            for( std::size_t index = 0; index < 2; ++index ) {
+                chain_switch_pieces( *this, index );
+            }
+            // the profiles of the switch are made at the mean of the rolls of its paths; lofted, they're turned from it to the roll of
+            // each path along it, so a switch on a cant ramp follows the ramp to its ends
+            float mean1 { 0.f };
+            float mean2 { 0.f };
+            profile_rolls( mean1, mean2 );
+            for( std::size_t index = 0; index < 2; ++index ) {
+                SwitchExtension->Segments[ index ]->set_baked_roll( mean1 );
             }
         }
 
@@ -1436,17 +1576,56 @@ glm::vec3 TTrack::get_nearest_point(const glm::dvec3 &point) const
 	return glm::vec3(NAN);
 }
 
+namespace {
+
+// each path of the switch with a material of its own, the first one first, handed on with its material
+template <typename Lay_>
+void for_each_railed_path( TTrack const &Track, Lay_ const &Lay ) {
+
+    for( int path = 0; path < 2; ++path ) {
+        auto const material { path ? Track.m_material2 : Track.m_material1 };
+        if( material == 0 ) {
+            continue;
+        }
+        Lay( path, material );
+    }
+}
+
+} // namespace
+
 // wypełnianie tablic VBO
 void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
     m_drawnrun = {};
 
+    track_rails::forget();
+    auto const erase = [ this ]( gfx::geometry_handle const &Chunk ) {
+        if( SwitchExtension
+         && std::ranges::any_of( SwitchExtension->m_nosechunks, [ &Chunk ]( auto const &Pooled ) { return Pooled.handle == Chunk; } ) ) {
+            return;
+        }
+        GfxRenderer->Erase( Chunk );
+    };
+    for( auto const *geometry : { &Geometry1, &Geometry2, &GeometryCut1, &GeometryCut2 } ) {
+        std::ranges::for_each( *geometry, erase );
+    }
+    for( auto const &tread : GeometryTreads ) {
+        std::ranges::for_each( tread.geometry, erase );
+        std::ranges::for_each( tread.cuts, erase );
+    }
     Geometry1.clear();
     Geometry2.clear();
+    GeometryCut1.clear();
+    GeometryCut2.clear();
+    GeometryTreads.clear();
     if( SwitchExtension ) {
+        erase( SwitchExtension->Geometry3 );
         SwitchExtension->Geometry3 = gfx::geometry_handle{};
     }
     m_sleeper_local_transforms.clear();
+    // the sleepers of this track and of the tracks around depend on where it runs
+    m_sleepers3d.dirty = true;
+    track_sleepers::unsettle_around( *this );
 
     if( Bank == null_handle ) { return; }
 
@@ -1455,7 +1634,14 @@ void TTrack::rebuild_geometry( gfx::geometrybank_handle const &Bank ) {
 
 void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
 	gfx::userdata_array empty_userdata;
+    // the rails of a frog with a movable nose are laid again as it moves over, in the same chunks
+    auto const movable { eType == tt_Switch && SwitchExtension && SwitchExtension->m_movablenose };
+    track_rails::reused_chunks const reuse { movable ? &SwitchExtension->m_nosechunks : nullptr };
+    if( eType == tt_Switch && SwitchExtension ) {
+        SwitchExtension->m_nosethrow = ( Bank != null_handle ? nose_throw() : -1.0 );
+    }
     share_joints();
+    m_sleepers3d.active = track_sleepers::lays( *this );
     if( rail_phase( 0.0 ) >= 0.0 ) {
         m_drawnrun = m_railrun;
     }
@@ -1471,11 +1657,20 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         // zwykla szyna: //Ra: czemu główki są asymetryczne na wysokości 0.140?
         gfx::vertex_array rpts1, rpts2;
         create_track_rail_profile( rpts1, rpts2 );
+        auto const drawing { make_rail_drawing( Bank ) };
+        // the open ends of a track and the blade tips: no wheel runs over them, they aren't worn
+        auto const cut_faces = [&]( gfx::vertex_array const &Strip, std::size_t const Ring, bool const Start, bool const End, geometryhandle_sequence &Geometry ) {
+            track_rails::cut_faces( Strip, Ring, Start, End, Bank, Geometry, false ); };
+        m_materialcut1 = track_rails::cut_material( m_material1 );
+        auto const layout { plan_rails( Bank != 0 ) };
+        if( Bank != 0 ) {
+            m_crossings = layout.crossed;
+        }
         switch (eType) // dalej zależnie od typu
         {
         case tt_Table: // obrotnica jak zwykły tor, tylko animacja dochodzi
         case tt_Normal:
-            if (m_material2)
+            if (m_material2 && ( Global.Sleepers3DBed || false == m_sleepers3d.active ) )
             { // podsypka z podkładami jest tylko dla zwykłego toru
                 gfx::vertex_array bpts1;
                 create_track_bed_profile( bpts1, trPrev, trNext );
@@ -1491,7 +1686,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
                 if( Bank != 0 && true == Geometry2.empty() ) {
-                    Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
+                    Geometry2.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
                 if( Bank == 0 && false == Geometry2.empty() ) {
                     // special variant, replace existing data for a turntable track
@@ -1503,12 +1698,26 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
                 auto const texturelength { texture_length( m_material1 ) };
                 gfx::vertex_array vertices;
+                auto const open { eType == tt_Normal && ( trPrev == nullptr || trNext == nullptr ) };
                 if( Bank != 0 && true == Geometry1.empty() ) {
-                    Segment->RenderLoft( vertices, m_origin, rpts1, iTrapezoid > 0, texturelength );
-                    Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                    vertices.clear(); // reuse the scratchpad
-                    Segment->RenderLoft( vertices, m_origin, rpts2, iTrapezoid > 0, texturelength );
-                    Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
+                    for( auto const side : { 1, -1 } ) {
+                        auto const &profile { side > 0 ? rpts1 : rpts2 };
+                        if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( layout, drawing, profile, { .path = 0, .side = side, .texturelength = texturelength, .from = track_rails::blade_runon( *this, side ), .openstart = ( trPrev == nullptr ), .openend = ( trNext == nullptr ) }, Geometry1, GeometryCut1 ) ) {
+                            continue;
+                        }
+                        vertices.clear(); // reuse the scratchpad
+                        // the rail starts behind the heel of a blade running on into the track from the switch before it
+                        if( auto const runon { eType == tt_Normal && iTrapezoid == 0 ? track_rails::blade_runon( *this, side ) : 0.0 }; runon > 0.0 ) {
+                            Segment->RenderLoftSpan( vertices, m_origin, profile, { .side = side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = texturelength, .from = runon, .to = Segment->GetLength() } );
+                        }
+                        else {
+                            Segment->RenderLoft( vertices, m_origin, profile, iTrapezoid > 0, texturelength );
+                        }
+                        if( open ) {
+                            cut_faces( vertices, nnumPts, trPrev == nullptr, trNext == nullptr, GeometryCut1 );
+                        }
+                        Geometry1.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
+                    }
                 }
                 if( Bank == 0 && false == Geometry1.empty() ) {
                     // special variant, replace existing data for a turntable track
@@ -1520,118 +1729,82 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 }
             }
             break;
-        case tt_Switch: // dla zwrotnicy dwa razy szyny
+        case tt_Switch: { // dla zwrotnicy dwa razy szyny
+            // positive jointlength: the switch is typically used along the main track, negative: along the diverging track
+            // TODO: determine this from names of textures assigned to the tracks
+//            auto const jointlength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.15 ) ) };
+            auto const jointlength { 0 }; // temporary until implementation of the above
+            // rail behind the blade
+            auto const fixed_rail = [ this, &layout, &drawing, &empty_userdata, &Bank ]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
+                if( lay_rail( layout, drawing, Profile, { .path = Path, .side = Side, .texturelength = Texturelength, .from = track_rails::blade_length( *this, Path ) }, Geometry, Cuts ) ) {
+                    return;
+                }
+                gfx::vertex_array vertices;
+                if( auto const &shape { blade( Path ) }; shape.valid ) {
+                    SwitchExtension->Segments[ Path ]->RenderLoftSpan( vertices, m_origin, Profile, { .side = Side, .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.heel, .to = SwitchExtension->Segments[ Path ]->GetLength() } );
+                }
+                else {
+                    SwitchExtension->Segments[ Path ]->RenderLoft( vertices, m_origin, Profile, false, Texturelength, 1.0, track_rails::blade_steps( *this, Path ) );
+                }
+                Geometry.emplace_back( track_rails::insert_chunk( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+            };
+            // rail along the whole path
+            auto const whole_rail = [ this, &layout, &drawing, &empty_userdata, &Bank ]( int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts ) {
+                if( false == lay_rail( layout, drawing, Profile, { .path = Path, .side = Side, .texturelength = Texturelength, .from = 0.0 }, Geometry, Cuts ) ) {
+                    gfx::vertex_array vertices;
+                    SwitchExtension->Segments[ Path ]->RenderLoft( vertices, m_origin, Profile, false, Texturelength, 1.0, jointlength );
+                    Geometry.emplace_back( track_rails::insert_chunk( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+                }
+            };
+            // part of the diverging rail touched by wheels of vehicle going straight, laid with the first path
+            auto const joint_rail = [ this, &empty_userdata, &Bank ]( int const Path, gfx::vertex_array const &Rail, float const Texturelength, geometryhandle_sequence &Geometry, gfx::vertex_array &Vertices ) {
+                if( Path == 0 && jointlength > 0 ) {
+                    SwitchExtension->Segments[ 1 ]->RenderLoft( Vertices, m_origin, Rail, false, Texturelength, 1.0, 0, jointlength );
+                    Geometry.emplace_back( track_rails::insert_chunk( Vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+                    Vertices.clear();
+                }
+            };
             if( m_material1 || m_material2 ) {
                 // iglice liczone tylko dla zwrotnic
                 gfx::vertex_array rpts3, rpts4;
                 create_track_blade_profile( rpts3, rpts4 );
                 // TODO, TBD: change all track geometry to triangles, to allow packing data in less, larger buffers
                 auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
-                auto const bladelength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.65 ) ) };
-                // positive jointlength: the switch is typically used along the main track, negative: along the diverging track
-                // TODO: determine this from names of textures assigned to the tracks
-//                auto const jointlength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.15 ) ) };
-                auto const jointlength { 0 }; // temporary until implementation of the above
-                if (SwitchExtension->RightSwitch)
-                { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
-                    gfx::vertex_array vertices;
-                    if( m_material1 ) {
-                        auto const texturelength { texture_length( m_material1 ) };
-                        // left blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { SwitchExtension->fOffset2, SwitchExtension->fOffset2 / 2 } );
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { SwitchExtension->fOffset2 / 2, 0.f } );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        if( jointlength > 0 ) {
-                            // part of the diverging rail touched by wheels of vehicle going straight
-                            SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, 0, jointlength );
-                            Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                            vertices.clear();
-                        }
-                        // other rail, full length
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                    }
-                    if( m_material2 ) {
-                        auto const texturelength { texture_length( m_material2 ) };
-                        // right blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -fMaxOffset + SwitchExtension->fOffset1, ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2 } );
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2, 0.f } );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // diverging rail, potentially minus part touched by wheels of vehicle going straight
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, jointlength );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                    }
-                }
-                else
-                { // lewa działa lepiej niż prawa
-                    gfx::vertex_array vertices;
-                    if( m_material1 ) {
-                        auto const texturelength { texture_length( m_material1 ) };
-                        // right blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -SwitchExtension->fOffset2, -SwitchExtension->fOffset2 / 2 } );
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { -SwitchExtension->fOffset2 / 2, 0.f } );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        // prawa szyna za iglicą
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        if( jointlength > 0 ) {
-                            // part of the diverging rail touched by wheels of vehicle going straight
-                            SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, 0, jointlength );
-                            Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                            vertices.clear();
-                        }
-                        // other rail, full length
-                        SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength );
-                        Geometry1.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                    }
-                    if( m_material2 ) {
-                        auto const texturelength { texture_length( m_material2 ) };
-                        // left blade
-                        // composed from two parts: transition from blade to regular rail, and regular rail
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { fMaxOffset - SwitchExtension->fOffset1, ( fMaxOffset - SwitchExtension->fOffset1 ) / 2 } );
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { ( fMaxOffset - SwitchExtension->fOffset1 ) / 2, 0.f } );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // fixed parts
-                        // lewa szyna za iglicą
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                        // diverging rail, potentially minus part touched by wheels of vehicle going straight
-                        SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, jointlength );
-                        Geometry2.emplace_back(GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
-                        vertices.clear();
-                    }
-                }
+                auto const dense { std::max( blade( 0 ).valid ? blade( 0 ).heel : 0.0, blade( 1 ).valid ? blade( 1 ).heel : 0.0 ) };
+                SwitchExtension->Segments[ 0 ]->set_dense( dense );
+                SwitchExtension->Segments[ 1 ]->set_dense( dense );
+                m_materialcut2 = track_rails::cut_material( m_material2 );
+                gfx::vertex_array vertices;
+                // the blades
+                for_each_railed_path( *this, [ this, &rpts1, &rpts2, &rpts3, &rpts4, &vertices, &cut_faces, nnumPts, &empty_userdata, &Bank ]( int const Path, material_handle const Material ) {
+                    auto const side { blade_side( Path ) };
+                    loft_blade( Path, side > 0 ? rpts1 : rpts2, side > 0 ? rpts3 : rpts4, texture_length( Material ), vertices );
+                    cut_faces( vertices, nnumPts, true, false, Path ? GeometryCut2 : GeometryCut1 );
+                    ( Path ? Geometry2 : Geometry1 ).emplace_back( track_rails::insert_chunk( vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP ) );
+                    vertices.clear(); } );
+                for_each_railed_path( *this, [ this, &rpts1, &rpts2, &vertices, &fixed_rail, &joint_rail, &whole_rail ]( int const Path, material_handle const Material ) {
+                    auto &geometry { Path ? Geometry2 : Geometry1 };
+                    auto &cuts { Path ? GeometryCut2 : GeometryCut1 };
+                    auto const texturelength { texture_length( Material ) };
+                    auto const side { blade_side( Path ) };
+                    auto const &rail { side > 0 ? rpts1 : rpts2 };
+                    // fixed parts
+                    // szyna za iglicą
+                    fixed_rail( Path, rail, side, texturelength, geometry, cuts );
+                    joint_rail( Path, rail, texturelength, geometry, vertices );
+                    // other rail, full length; on the diverging path potentially minus part touched by wheels of vehicle going straight
+                    whole_rail( Path, side > 0 ? rpts2 : rpts1, -side, texturelength, geometry, cuts ); } );
             }
             // auto-generated switch trackbed
             if( true == Global.CreateSwitchTrackbeds ) {
                 gfx::vertex_array vertices;
                 create_switch_trackbed( vertices );
-                SwitchExtension->Geometry3 = GfxRenderer->Insert(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP);
+                SwitchExtension->Geometry3 = track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP);
                 vertices.clear();
             }
 
             break;
+        }
         }
     } // koniec obsługi torów
     break;
@@ -1908,6 +2081,100 @@ bool TTrack::SetConnections(int i)
     return false;
 }
 
+namespace {
+
+// the ends of the paths as the codes of the track joined to them have them: 0 the start of a switch, where both paths begin, 1 the end of
+// its first path, 3 the end of its second one; a vehicle going on onto a start keeps its direction, onto an end it turns
+int joined_end_code( int const Endpoint ) {
+
+    if( Endpoint == 3 ) {
+        return 1;
+    }
+    if( Endpoint == 5 ) {
+        return 3;
+    }
+    return 0;
+}
+
+// the code of an end of a path of the switch, as the switch joined there has it: 0 the start, 1 the end of the first path, 3 of the second one
+int own_end_code( int const Path, int const End ) {
+
+    if( End == 0 ) {
+        return 0;
+    }
+    return ( Path ? 3 : 1 );
+}
+
+// the paths of the switch joined to its neighbours as it's set, as Switch() takes them
+void bind_switch( TTrack &Switch ) {
+
+    auto const &extension { *Switch.SwitchExtension };
+    auto const state { extension.CurrentIndex & 1 };
+    Switch.trNext = extension.pNexts[ state ];
+    Switch.trPrev = extension.pPrevs[ state ];
+    Switch.iNextDirection = extension.iNextDirection[ state ];
+    Switch.iPrevDirection = extension.iPrevDirection[ state ];
+}
+
+// the free end of a path of the switch joined to the end of another switch in the same point, and that one joined back to it; the
+// other switch, none: not joined
+TTrack const *join_switch_end( TTrack &Switch, int const Path, int const End ) {
+
+    auto &own { *Switch.SwitchExtension };
+    if( ( End ? own.pNexts[ Path ] : own.pPrevs[ Path ] ) != nullptr || own.Segments[ Path ] == nullptr ) {
+        return nullptr;
+    }
+    auto const point { End ? own.Segments[ Path ]->FastGetPoint_1() : own.Segments[ Path ]->FastGetPoint_0() };
+    auto const [ other, endpoint ] { simulation::Region->find_path( point, &Switch ) };
+    if( other == nullptr || other == &Switch || other->eType != tt_Switch || other->SwitchExtension == nullptr || endpoint < 2 || endpoint > 5 ) {
+        return nullptr;
+    }
+    auto &theirs { *other->SwitchExtension };
+    if( End == 0 ) {
+        own.pPrevs[ 0 ] = other;
+        own.pPrevs[ 1 ] = other;
+        own.iPrevDirection[ 0 ] = joined_end_code( endpoint );
+        own.iPrevDirection[ 1 ] = own.iPrevDirection[ 0 ];
+    }
+    else {
+        own.pNexts[ Path ] = other;
+        own.iNextDirection[ Path ] = joined_end_code( endpoint );
+    }
+    auto const ours { own_end_code( Path, End ) };
+    if( endpoint == 2 || endpoint == 4 ) {
+        theirs.pPrevs[ 0 ] = &Switch;
+        theirs.pPrevs[ 1 ] = &Switch;
+        theirs.iPrevDirection[ 0 ] = ours;
+        theirs.iPrevDirection[ 1 ] = ours;
+    }
+    else {
+        auto const theirpath { endpoint == 5 ? 1 : 0 };
+        theirs.pNexts[ theirpath ] = &Switch;
+        theirs.iNextDirection[ theirpath ] = ours;
+    }
+    bind_switch( *other );
+    return other;
+}
+
+} // namespace
+
+std::vector<TTrack const *> TTrack::join_switches()
+{
+    std::vector<TTrack const *> joined;
+    if( eType != tt_Switch || SwitchExtension == nullptr || simulation::Region == nullptr ) {
+        return joined;
+    }
+    for( int path = 0; path < 2; ++path ) {
+        for( int end = 0; end < 2; ++end ) {
+            if( auto const *other { join_switch_end( *this, path, end ) }; other != nullptr ) {
+                joined.push_back( other );
+            }
+        }
+    }
+    bind_switch( *this );
+    return joined;
+}
+
 bool TTrack::Switch(int i, float const t, float const d)
 { // przełączenie torów z uruchomieniem animacji
     if (SwitchExtension) // tory przełączalne mają doklejkę
@@ -2008,26 +2275,53 @@ bool TTrack::Switch(int i, float const t, float const d)
     return false;
 };
 
+int TTrack::nose_set() const {
+
+    return ( SwitchExtension->fOffset > 0.5f * fMaxOffset ? 1 : 0 );
+}
+
+double TTrack::nose_throw() const {
+
+    return ( fMaxOffset > 0.f ? std::clamp( static_cast<double>( SwitchExtension->fOffset / fMaxOffset ), 0.0, 1.0 ) : nose_set() );
+}
+
+namespace {
+
+// the switch run through against the way it's set: the event of that queued, the blades pushed over, a vehicle derailed at a movable nose
+void trail_switch( TTrack &Track, int const i, TDynamicObject const *o ) {
+
+    if( i == Track.SwitchExtension->CurrentIndex ) {
+        return;
+    }
+    switch (i)
+    {
+    case 0:
+        if (Track.SwitchExtension->evPlus)
+            simulation::Events.AddToQuery(Track.SwitchExtension->evPlus, o); // dodanie do kolejki
+        break;
+    case 1:
+        if (Track.SwitchExtension->evMinus)
+            simulation::Events.AddToQuery(Track.SwitchExtension->evMinus, o); // dodanie do kolejki
+        break;
+    default:
+        // a switch has no other paths
+        break;
+    }
+    Track.Switch(i); // jeśli się tu nie przełączy, to każdy pojazd powtórzy event rozrprucia
+    if( Track.SwitchExtension->m_movablenose && o != nullptr ) {
+        // the wheels can't push the nose of the frog over, the vehicle runs off the rails at it
+        o->MoverParameters->Derail( TRAILED_SWITCH );
+    }
+}
+
+} // namespace
+
 bool TTrack::SwitchForced(int i, TDynamicObject *o)
 { // rozprucie rozjazdu
     if (SwitchExtension)
         if (eType == tt_Switch)
         { //
-            if (i != SwitchExtension->CurrentIndex)
-            {
-                switch (i)
-                {
-                case 0:
-                    if (SwitchExtension->evPlus)
-                        simulation::Events.AddToQuery(SwitchExtension->evPlus, o); // dodanie do kolejki
-                    break;
-                case 1:
-                    if (SwitchExtension->evMinus)
-                        simulation::Events.AddToQuery(SwitchExtension->evMinus, o); // dodanie do kolejki
-                    break;
-                }
-                Switch(i); // jeśli się tu nie przełączy, to każdy pojazd powtórzy event rozrprucia
-            }
+            trail_switch( *this, i, o );
         }
         else if (eType == tt_Cross)
         { // ustawienie wskaźnika na wskazany segment
@@ -2112,6 +2406,42 @@ void TTrack::RaAnimListAdd(TTrack *t)
     }
 };
 
+int TTrack::blade_side( int const Path ) const {
+
+    return ( SwitchExtension->RightSwitch == ( Path == 0 ) ? 1 : -1 );
+}
+
+void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const {
+
+    auto const opening { Path == 0 ? SwitchExtension->fOffset2 : fMaxOffset - SwitchExtension->fOffset1 };
+    auto const offset { blade_side( Path ) * opening };
+    if( auto const &shape { blade( Path ) }; shape.valid ) {
+        auto const thrown { blades_throw() * std::clamp( static_cast<double>( opening ) / ( fMaxOffset + SwitchExtension->fOffsetDelay ), 0.0, 1.0 ) };
+        std::vector<glm::dvec2> offsets;
+        for( auto const &bend : shape.bends ) {
+            offsets.emplace_back( bend.x, -thrown * bend.y );
+        }
+        auto const size { rail_dimensions() };
+        auto const length { SwitchExtension->Segments[ Path ]->GetLength() };
+        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest } } );
+        // the blade running on past the end of the path goes on along the plain track joined there, whose rail starts behind the heel
+        if( auto const *next { track_rails::runon_track( *this, Path ) }; next != nullptr && shape.heel > length + 1e-3 ) {
+            auto const along = [&]( std::vector<glm::dvec2> const &Knots ) {
+                std::vector<glm::dvec2> result;
+                for( auto const &knot : Knots ) {
+                    result.emplace_back( knot.x - length, knot.y );
+                }
+                return result; };
+            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest } } );
+        }
+        return;
+    }
+    auto const bladelength { track_rails::blade_steps( *this, Path ) };
+    // composed from two parts: transition from blade to regular rail, and regular rail
+    SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Blade, true, Texturelength, 1.0, 0, bladelength / 2, { offset, offset / 2 } );
+    SwitchExtension->Segments[ Path ]->RenderLoft( Vertices, m_origin, Rail, false, Texturelength, 1.0, bladelength / 2, bladelength, { offset / 2, 0.f } );
+}
+
 TTrack * TTrack::RaAnimate()
 { // wykonanie rekurencyjne animacji, wywoływane przed wyświetleniem sektora
     // zwraca wskaźnik toru wymagającego dalszej animacji
@@ -2146,6 +2476,22 @@ TTrack * TTrack::RaAnimate()
                 m = false; // koniec animacji
             }
         }
+        if( auto const nosethrow { SwitchExtension->m_movablenose ? nose_throw() : 0.0 };
+            SwitchExtension->m_movablenose
+         && SwitchExtension->m_nosethrow >= 0.0
+         && ( std::abs( nosethrow - SwitchExtension->m_nosethrow ) >= 0.05
+           || ( false == m && nosethrow != SwitchExtension->m_nosethrow ) )
+         && false == Geometry1.empty() ) {
+            // the nose of the frog goes over to the wing rail of the other track along with the blades, laid again in steps
+            gfx::geometrybank_handle const bank { Geometry1.front().bank, 0 };
+            Geometry1.clear();
+            Geometry2.clear();
+            GeometryCut1.clear();
+            GeometryCut2.clear();
+            GeometryTreads.clear();
+            SwitchExtension->Geometry3 = gfx::geometry_handle{};
+            create_geometry( bank );
+        }
         // skip the geometry update if no geometry for this track was generated yet
         if( ( m_material1 != 0
            || m_material2 != 0 )
@@ -2157,49 +2503,20 @@ TTrack * TTrack::RaAnimate()
             gfx::vertex_array rpts3, rpts4;
             create_track_blade_profile( rpts3, rpts4 );
             gfx::vertex_array vertices;
-            auto const bladelength { static_cast<int>( std::ceil( SwitchExtension->Segments[ 0 ]->RaSegCount() * 0.65 ) ) };
             auto const nnumPts { track_rail_profile( m_profile1.second ).size() / 2 };
-            if (SwitchExtension->RightSwitch)
-            { // nowa wersja z SPKS, ale odwrotnie lewa/prawa
-                if( m_material1 ) {
-                    auto const texturelength { texture_length( m_material1 ) };
-                    // left blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { SwitchExtension->fOffset2, SwitchExtension->fOffset2 / 2 } );
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { SwitchExtension->fOffset2 / 2, 0.f } );
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry1[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
+            auto const replace_blade = [&]( geometryhandle_sequence const &Geometry, geometryhandle_sequence const &Cuts ) {
+                if( false == Cuts.empty() ) {
+                    gfx::vertex_array triangles;
+                    track_rails::cap_loft( vertices, nnumPts, true, false, triangles );
+                    auto userdata { track_rails::worn_userdata( triangles.size(), false ) };
+                    GfxRenderer->Replace( triangles, userdata, Cuts[ 0 ], GL_TRIANGLES );
                 }
-                if( m_material2 ) {
-                    auto const texturelength { texture_length( m_material2 ) };
-                    // right blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -fMaxOffset + SwitchExtension->fOffset1, ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2 } );
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { ( -fMaxOffset + SwitchExtension->fOffset1 ) / 2, 0.f } );
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry2[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
-                }
-            }
-            else { // lewa działa lepiej niż prawa
-                if( m_material1 ) {
-                    auto const texturelength { texture_length( m_material1 ) };
-                    // right blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts4, true, texturelength, 1.0, 0, bladelength / 2, { -SwitchExtension->fOffset2, -SwitchExtension->fOffset2 / 2 } );
-                    SwitchExtension->Segments[ 0 ]->RenderLoft( vertices, m_origin, rpts2, false, texturelength, 1.0, bladelength / 2, bladelength, { -SwitchExtension->fOffset2 / 2, 0.f } );
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry1[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
-                }
-                if( m_material2 ) {
-                    auto const texturelength { texture_length( m_material2 ) };
-                    // left blade
-                    // composed from two parts: transition from blade to regular rail, and regular rail
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts3, true, texturelength, 1.0, 0, bladelength / 2, { fMaxOffset - SwitchExtension->fOffset1, ( fMaxOffset - SwitchExtension->fOffset1 ) / 2 } );
-                    SwitchExtension->Segments[ 1 ]->RenderLoft( vertices, m_origin, rpts1, false, texturelength, 1.0, bladelength / 2, bladelength, { ( fMaxOffset - SwitchExtension->fOffset1 ) / 2, 0.f } );
-					GfxRenderer->Replace(vertices, empty_userdata, Geometry2[0], GL_TRIANGLE_STRIP);
-                    vertices.clear();
-                }
-            }
+                GfxRenderer->Replace( vertices, empty_userdata, Geometry[ 0 ], GL_TRIANGLE_STRIP );
+                vertices.clear(); };
+            for_each_railed_path( *this, [ this, &rpts1, &rpts2, &rpts3, &rpts4, &vertices, &replace_blade ]( int const Path, material_handle const Material ) {
+                auto const side { blade_side( Path ) };
+                loft_blade( Path, side > 0 ? rpts1 : rpts2, side > 0 ? rpts3 : rpts4, texture_length( Material ), vertices );
+                replace_blade( Path ? Geometry2 : Geometry1, Path ? GeometryCut2 : GeometryCut1 ); } );
         }
     }
     else if (eType == tt_Table) {
@@ -2375,7 +2692,7 @@ TTrack::endpoints() const {
 
 // radius() subclass details, calculates node's bounding radius
 float
-TTrack::radius_() {
+TTrack::radius_() const {
 
     auto const points { endpoints() };
     auto radius { 0.f };
@@ -2408,7 +2725,7 @@ TTrack::type_keyword() const {
         return "tributary";
     }
     if( eType == tt_Normal ) {
-        switch( iCategoryFlag ) {
+        switch( iCategoryFlag & 15 ) {
             case 1: { return "normal"; }
             case 2: { return "road"; }
             case 4: { return "river"; }
@@ -2423,6 +2740,27 @@ TTrack::type_keyword() const {
         default: { return "none"; }
     }
 }
+
+namespace {
+
+// a piece of a path as the scenery file has it: its points, the roll at its start after the first one, the roll at its end and its radius
+void export_piece_as_text( std::ostream &Output, segment_data const &Piece ) {
+
+    for( auto const point : { segment_data::point::start, segment_data::point::control1, segment_data::point::control2, segment_data::point::end } ) {
+        Output
+            << Piece.points[ point ].x << ' '
+            << Piece.points[ point ].y << ' '
+            << Piece.points[ point ].z << ' ';
+        if( point == segment_data::point::start ) {
+            Output << Piece.rolls[ 0 ] << ' ';
+        }
+    }
+    Output
+        << Piece.rolls[ 1 ] << ' '
+        << Piece.radius << ' ';
+}
+
+} // namespace
 
 // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
 void
@@ -2539,6 +2877,18 @@ TTrack::export_as_text_( std::ostream &Output ) const {
     if( fVerticalRadius != 0.f ) {
         Output << "vradius " << fVerticalRadius << ' ';
     }
+    for( std::size_t index = 0; index < m_paths.size(); ++index ) {
+        auto const &pieces { m_paths[ index ].pieces };
+        if( pieces.empty() ) {
+            continue;
+        }
+        auto const piecesprecision { Output.precision( std::numeric_limits<double>::digits10 ) };
+        Output << "pieces" << index + 1 << ' ' << pieces.size() << ' ';
+        for( auto const &piece : pieces ) {
+            export_piece_as_text( Output, piece );
+        }
+        Output.precision( piecesprecision );
+    }
     if( eType == tt_Switch
      && SwitchExtension->m_material3 != null_handle) {
         auto texturefile { GfxRenderer->Material( SwitchExtension->m_material3 )->GetName() };
@@ -2547,6 +2897,18 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             texturefile.erase( 0, std::string{ paths::textures }.size() );
         }
         Output << "trackbed " << texturefile << ' ';
+    }
+    if( eType == tt_Switch
+     && SwitchExtension->m_frogs ) {
+        Output << "frogs ";
+    }
+    if( eType == tt_Switch
+     && SwitchExtension->m_movablenose ) {
+        Output << "movablenose ";
+    }
+    if( eType == tt_Switch
+     && ( SwitchExtension->m_bladeheel > 0.0 || SwitchExtension->m_bladethrow > 0.0 ) ) {
+        Output << "blades " << SwitchExtension->m_bladeheel << ' ' << SwitchExtension->m_bladethrow << ' ';
     }
     if( iCategoryFlag == 1
      && false == m_profile1.first.empty() ) {
@@ -2566,6 +2928,12 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << m_sleeper_offset.y << ' '
             << m_sleeper_offset.z << ' '
             << m_sleeper_ballast_z << ' ';
+    }
+    if( false == m_timber_model_name.empty() ) {
+        Output
+            << "timbermodel "
+            << m_timber_model_name << ' '
+            << ( m_timber_skin_name.empty() ? std::string{ "none" } : m_timber_skin_name ) << ' ';
     }
     // footer
     Output
@@ -2588,6 +2956,12 @@ std::string TTrack::tooltip() const
 
 // locates specified profile in the profile database, potentially loading it from a file
 // returns: pair <profile name, profile handle>
+void
+TTrack::rail_profile( std::string const &Name ) {
+
+    m_profile1 = ( Name.empty() ? std::pair<std::string, int>{} : fetch_track_rail_profile( Name ) );
+}
+
 std::pair<std::string, int>
 TTrack::fetch_track_rail_profile( std::string const &Profile ) {
 
@@ -2687,6 +3061,15 @@ TTrack::track_rail_profile( int const Profile ) {
     return m_profiles[ Profile ];
 }
 
+track_rails::rail_size
+TTrack::rail_dimensions() const {
+
+    if( m_profiles.empty() ) {
+        return {};
+    }
+    return track_rails::measure_rail( track_rail_profile( m_profile1.second ) );
+}
+
 float
 TTrack::texture_length( material_handle const Material ) {
 
@@ -2695,6 +3078,13 @@ TTrack::texture_length( material_handle const Material ) {
     }
     auto const texturelength { GfxRenderer->Material( Material )->GetSize().y };
     return texturelength < 0.f ? fTexLength : texturelength;
+}
+
+float
+TTrack::rail_height() const {
+
+    // the same height the ballast is laid at, under the rail profile
+    return std::abs( track_rail_profile( m_profile1.second ).front().position.y );
 }
 
 void TTrack::MovedUp1(float const dh)
@@ -2766,10 +3156,57 @@ TTrack::DoubleSlip() const {
 }
 
 
-TTrack * TTrack::Connected(int s, double &d) const
+namespace {
+
+// the track joined at the end of a path of the switch in the direction (s) gives, turning (d) where it runs the other way
+TTrack *switch_path_neighbour( TSwitchExtension const &Extension, int const s, double &d, int const Path ) {
+
+    auto *const t { s > 0 ? Extension.pNexts[ Path ] : Extension.pPrevs[ Path ] };
+    if( t != nullptr && t->eType != tt_Cross && ( s > 0 ? Extension.iNextDirection[ Path ] : !Extension.iPrevDirection[ Path ] ) ) {
+        d = -d;
+    }
+    return t;
+}
+
+// the track joined at the end of the crossroads left in the direction (s) gives, turning (d) where it runs the other way
+TTrack *crossroads_neighbour( TSwitchExtension const &Extension, int const s, double &d ) {
+
+    switch (Extension.iRoads == 4 ? iEnds4[s + 6] :
+                                    iEnds3[s + 6]) // numer końca 0..3, -1 to błąd
+    { // zjazd ze skrzyżowania
+    case 0:
+        if (Extension.pPrevs[0] && (s > 0) == Extension.iPrevDirection[0])
+            d = -d;
+        return Extension.pPrevs[0];
+    case 1:
+        if (Extension.pNexts[0] && (s > 0) == Extension.iNextDirection[0])
+            d = -d;
+        return Extension.pNexts[0];
+    case 2:
+        if (Extension.pPrevs[1] && (s > 0) == Extension.iPrevDirection[1])
+            d = -d;
+        return Extension.pPrevs[1];
+    case 3:
+        if (Extension.pNexts[1] && (s > 0) == Extension.iNextDirection[1])
+            d = -d;
+        return Extension.pNexts[1];
+    default:
+        // no such end
+        break;
+    }
+    return nullptr;
+}
+
+} // namespace
+
+TTrack * TTrack::Connected(int s, double &d, int const Path) const
 { // zwraca wskaźnik na sąsiedni tor, w kierunku określonym znakiem (s), odwraca (d) w razie
     // niezgodności kierunku torów
     TTrack *t; // nie zmieniamy kierunku (d), jeśli nie ma toru dalej
+    if( eType == tt_Switch && Path >= 0 && Path < 2 ) {
+        // the neighbour of the path given, not of the one the switch is set to
+        return switch_path_neighbour( *SwitchExtension, s, d, Path );
+    }
     if (eType != tt_Cross)
     { // jeszcze trzeba sprawdzić zgodność
         t = s > 0 ? trNext : trPrev;
@@ -2789,36 +3226,12 @@ TTrack * TTrack::Connected(int s, double &d) const
             }
         return t; // zwrotnica ma odpowiednio ustawione (trNext)
     }
-    switch (SwitchExtension->iRoads == 4 ? iEnds4[s + 6] :
-                                             iEnds3[s + 6]) // numer końca 0..3, -1 to błąd
-    { // zjazd ze skrzyżowania
-    case 0:
-        if (SwitchExtension->pPrevs[0])
-            if (s > 0 == SwitchExtension->iPrevDirection[0])
-                d = -d;
-        return SwitchExtension->pPrevs[0];
-    case 1:
-        if (SwitchExtension->pNexts[0])
-            if (s > 0 == SwitchExtension->iNextDirection[0])
-                d = -d;
-        return SwitchExtension->pNexts[0];
-    case 2:
-        if (SwitchExtension->pPrevs[1])
-            if (s > 0 == SwitchExtension->iPrevDirection[1])
-                d = -d;
-        return SwitchExtension->pPrevs[1];
-    case 3:
-        if (SwitchExtension->pNexts[1])
-            if (s > 0 == SwitchExtension->iNextDirection[1])
-                d = -d;
-        return SwitchExtension->pNexts[1];
-    }
-    return nullptr;
+    return crossroads_neighbour( *SwitchExtension, s, d );
 };
 
 // creates rail profile data for current track
 void
-TTrack::create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left ) {
+TTrack::create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape ) const {
 
     auto const fHTW { 0.5f * std::abs( fTrackWidth ) };
 	float const fHTW2{((iTrapezoid & 2) != 0 ? // ten bit oznacza, że istnieje odpowiednie pNext
@@ -2828,9 +3241,7 @@ TTrack::create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &
         roll1{ 0.f },
         roll2{ 0.f };
 
-    if( Segment ) {
-        Segment->GetRolls( roll1, roll2 );
-    }
+    profile_rolls( roll1, roll2 );
 
     float const
         sin1 { std::sin( roll1 ) },
@@ -2838,9 +3249,9 @@ TTrack::create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &
         sin2 { std::sin( roll2 ) },
         cos2 { std::cos( roll2 ) };
 
-    auto const &railprofile { track_rail_profile( m_profile1.second ) };
+    auto const &railprofile { Shape != nullptr ? *Shape : track_rail_profile( m_profile1.second ) };
     // NOTE: rail profile defines both regular rail and switch blade profiles, so we halve total point count
-    auto const pointcount { railprofile.size() / 2 };
+    auto const pointcount { Shape != nullptr ? railprofile.size() : railprofile.size() / 2 };
     Right.resize( pointcount * ( iTrapezoid == 0 ? 1 : 2 ) );
     Left.resize(  pointcount * ( iTrapezoid == 0 ? 1 : 2 ) );
 
@@ -2905,6 +3316,28 @@ TTrack::create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &
     }
 }
 
+void
+TTrack::profile_rolls( float &Roll1, float &Roll2 ) const {
+
+    Roll1 = 0.f;
+    Roll2 = 0.f;
+    if( eType == tt_Switch && SwitchExtension ) {
+        auto sum { 0.f };
+        for( int path = 0; path < 2; ++path ) {
+            float roll1 { 0.f };
+            float roll2 { 0.f };
+            SwitchExtension->Segments[ path ]->GetRolls( roll1, roll2 );
+            sum += roll1 + roll2;
+        }
+        Roll1 = 0.25f * sum;
+        Roll2 = Roll1;
+        return;
+    }
+    if( Segment ) {
+        Segment->GetRolls( Roll1, Roll2 );
+    }
+}
+
 // creates switch blades profile data for current track
 void
 TTrack::create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left ) {
@@ -2919,9 +3352,7 @@ TTrack::create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array 
         roll1 { 0.f },
         roll2 { 0.f };
 
-    if( Segment ) {
-        Segment->GetRolls( roll1, roll2 );
-    }
+    profile_rolls( roll1, roll2 );
 
     float const
         sin1 { std::sin( roll1 ) },
@@ -3029,9 +3460,7 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
         roll1{ 0.f },
         roll2{ 0.f };
 
-    if( Segment ) {
-        Segment->GetRolls( roll1, roll2 );
-    }
+    profile_rolls( roll1, roll2 );
 
     float const
         sin1 { std::sin( roll1 ) },
@@ -3195,6 +3624,12 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
                 {-rozp, -texheight1 - railheight, 0.f},
                 {-normal1.x, normal1.y, 0.f},
                 {0.5f + map12, 0.f} }; // prawy skos
+        }
+    }
+    if( m_sleepers3d.active ) {
+        // the ballast lowered under the sleepers laid on it, so they stick out of it
+        for( auto &point : Output ) {
+            point.position.y -= static_cast<float>( track_sleepers::bed_drop );
         }
     }
 }
@@ -3433,8 +3868,8 @@ TTrack::create_switch_trackbed( gfx::vertex_array &Output ) {
      && trNext->eType == tt_Normal ) {
         SwitchExtension->m_material3 = trNext->m_material2;
     }
-    // without material don't bother
-    if( SwitchExtension->m_material3 == null_handle ) { return; }
+    // without material don't bother, nor when the ballast isn't laid under the 3D sleepers
+    if( SwitchExtension->m_material3 == null_handle || ( m_sleepers3d.active && false == Global.Sleepers3DBed ) ) { return; }
     // generate trackbed for each path of the switch...
     auto const texturelength { texture_length( SwitchExtension->m_material3 ) };
     gfx::vertex_array trackbedprofile;
@@ -3445,9 +3880,20 @@ TTrack::create_switch_trackbed( gfx::vertex_array &Output ) {
     // side trackbed
     create_track_bed_profile( trackbedprofile, SwitchExtension->pPrevs[ 1 ], SwitchExtension->pNexts[ 1 ] );
     SwitchExtension->Segments[ 1 ]->RenderLoft( trackbedvertices2, m_origin, trackbedprofile, true, texturelength );
+    if( trackbedvertices1.size() != trackbedvertices2.size() ) {
+        // a path made of several curves has more pieces than the other one, and the two are combined piece by piece,
+        // so both are lofted again in the same number of equal pieces, else the trackbed would end where the shorter count does
+        auto const steps { std::max( SwitchExtension->Segments[ 0 ]->RaSegCount(), SwitchExtension->Segments[ 1 ]->RaSegCount() ) };
+        trackbedvertices1.clear();
+        trackbedvertices2.clear();
+        create_track_bed_profile( trackbedprofile, SwitchExtension->pPrevs[ 0 ], SwitchExtension->pNexts[ 0 ] );
+        SwitchExtension->Segments[ 0 ]->RenderLoftSteps( trackbedvertices1, m_origin, trackbedprofile, texturelength, steps );
+        create_track_bed_profile( trackbedprofile, SwitchExtension->pPrevs[ 1 ], SwitchExtension->pNexts[ 1 ] );
+        SwitchExtension->Segments[ 1 ]->RenderLoftSteps( trackbedvertices2, m_origin, trackbedprofile, texturelength, steps );
+    }
     // ...then combine them into a single geometry sequence
     auto const segmentsize { 10 };
-    auto const segmentcount { trackbedvertices1.size() / segmentsize };
+    auto const segmentcount { std::min( trackbedvertices1.size(), trackbedvertices2.size() ) / segmentsize };
     auto *sampler1 { trackbedvertices1.data() };
     auto *sampler2 { trackbedvertices2.data() };
     auto const isright { SwitchExtension->RightSwitch };
@@ -3697,6 +4143,23 @@ path_table::InitTracks() {
                 }
             }
         }
+    }
+
+    // the plain tracks are joined to the switches above, a switch right after another one only here, once they are. Such joints were
+    // left open before, so each one is told in the log, with both switches
+    auto switchjoints { 0 };
+    for( auto *track : m_items ) {
+        if( track->eType != tt_Switch ) {
+            continue;
+        }
+        for( auto const *other : track->join_switches() ) {
+            ++switchjoints;
+            auto const &location { track->location() };
+            WriteLog( std::format( "Switch \"{}\" at {:.1f} {:.1f} joined directly to switch \"{}\"", track->name(), location.x, location.z, other->name() ) );
+        }
+    }
+    if( switchjoints > 0 ) {
+        WriteLog( std::format( "Switches joined directly to other switches: {} joints, left open before", switchjoints ) );
     }
 
     if( Global.CreateSwitchTrackbeds ) {

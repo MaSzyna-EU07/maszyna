@@ -79,6 +79,7 @@ option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
+option(WITH_EDITOR_SELFTESTS "Run the scripts of the editor and launcher self-tests named by the EU07_EDITOR_SELFTEST and EU07_LAUNCHER_SELFTEST variables" OFF)
 option(WITH_BETTER_RENDERER "Experimental multi-backend renderer based on NVRHI" OFF)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
 option(ENABLE_MCC "Enable multicore compilation" ON)
@@ -97,6 +98,20 @@ set(SOURCES
 "model/Texture.cpp"
 "utilities/Timer.cpp"
 "world/Track.cpp"
+"world/TrackSleepers.cpp"
+"world/SleeperPaths.cpp"
+"world/SleeperFeatures.cpp"
+"world/SleeperLines.cpp"
+"world/SleeperLayout.cpp"
+"world/SleeperModels.cpp"
+"world/SleeperWorker.cpp"
+"world/GaugeLine.cpp"
+"world/RailCrossings.cpp"
+"world/RailMaterials.cpp"
+"world/RailProfile.cpp"
+"world/RailPlan.cpp"
+"world/RailCarve.cpp"
+"world/RailLayer.cpp"
 "world/TrackUneven.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
@@ -172,28 +187,66 @@ set(SOURCES
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
+"editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
+"editor/editorTrackTrace.cpp"
+"editor/editorFouling.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorTrackShape.cpp"
+"editor/editorGroundFollow.cpp"
+"editor/editorAlignmentStore.cpp"
+"editor/editorSwitchStore.cpp"
+"editor/editorSwitchCurve.cpp"
+"editor/editorKilometrage.cpp"
+"editor/editorStation.cpp"
+"editor/editorSwitchDesign.cpp"
+"editor/editorConnections.cpp"
+"application/editormodeconnection.cpp"
+"application/editormodeconnectioncurve.cpp"
+"application/editormodedigitize.cpp"
 "editor/editorSpeed.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorHttp.cpp"
+"editor/editorNmt.cpp"
+"editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
+"editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"
+"application/editormoderoute.cpp"
+"application/editormodestraights.cpp"
+"application/editormodelay.cpp"
+"application/editormodeswitchplace.cpp"
+"application/editormodetrackgizmo.cpp"
+"application/editormoderecords.cpp"
+"application/editormodeswitchdrive.cpp"
+"application/editormodeswitchtool.cpp"
+"application/editormodeswitchtemplate.cpp"
+"application/editormodenmt.cpp"
+"application/editormodegradeline.cpp"
+"application/editormodeswitchslide.cpp"
+"application/editormodeswitchdesign.cpp"
+"application/editormodetrackbed.cpp"
 "application/editormodetrackux.cpp"
+"application/editormodetrackprops.cpp"
 "application/editormoderoad.cpp"
 "application/editormodeprofile.cpp"
 "application/editormodetextures.cpp"
 "application/editormodegauge.cpp"
+"application/editormoderide.cpp"
+"application/editormodeminimap.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
+"application/editormodesrk.cpp"
+"application/editormodekm.cpp"
 "application/editormodejoints.cpp"
 "application/editormodeparallel.cpp"
 "application/editormodelineside.cpp"
@@ -204,6 +257,17 @@ set(SOURCES
 "application/editormodesweep.cpp"
 "application/editormodeturntable.cpp"
 "application/editormodeselftest.cpp"
+"application/editormodeselftestscene.cpp"
+"application/editormodeselftestsleepers.cpp"
+"application/editormodeselftestsweep.cpp"
+"application/editormodeselftesttrack.cpp"
+"application/editormodeselftestswitch.cpp"
+"application/editormodeselftestjoin.cpp"
+"application/editormodeselftestsignal.cpp"
+"application/editormodeselftestterrain.cpp"
+"application/editormodeselftestrails.cpp"
+"application/editormodeselftestmonkey.cpp"
+"application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
 "application/editoruipanels.cpp"
@@ -483,10 +547,12 @@ set(CORE_SOURCES
 "simulation/simulationtestrules.cpp"
 "vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
+"vehicle/brakesetting.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
+"vehicle/odometer.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
@@ -629,6 +695,12 @@ else()
 	target_compile_definitions(eu07_settings INTERFACE WITH_DISCORD_RPC=0)
 endif()
 
+if(WITH_EDITOR_SELFTESTS)
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=1)
+else()
+	target_compile_definitions(eu07_settings INTERFACE WITH_EDITOR_SELFTESTS=0)
+endif()
+
 find_package(OpenAL REQUIRED)
 if (TARGET OpenAL::OpenAL)
 	target_link_libraries(eu07_settings INTERFACE OpenAL::OpenAL)
@@ -659,7 +731,8 @@ if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE ws2_32)
 endif()
 
-# http client of the editor's geoportal orthophoto layer: WinHTTP on Windows, libcurl elsewhere when available
+# http client of the editor, for the orthophoto, the terrain model and the topo map of geoportal.gov.pl: WinHTTP on Windows,
+# libcurl elsewhere when available
 if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE winhttp)
 else()
@@ -668,7 +741,7 @@ else()
 		target_link_libraries(eu07_settings INTERFACE CURL::libcurl)
 		target_compile_definitions(eu07_settings INTERFACE EU07_WITH_CURL)
 	else()
-		message(STATUS "libcurl not found: the editor's orthophoto layer will only show cached tiles")
+		message(STATUS "libcurl not found: the editor's orthophoto and terrain model will only show what's cached, its topo map nothing")
 	endif()
 endif()
 

@@ -31,6 +31,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -230,6 +231,81 @@ def read_text(path: Path | None) -> str:
         return ""
 
 
+# the black box of a run, see blackbox_doc.md: written along with the physicslogs, to
+# physicslog/<scenery>_<date>.blackbox. A header, then records: a byte of the kind, the length, the content
+BLACKBOX_MAGIC = b"EU07BBX\0"
+BLACKBOX_HEADER = 12  # the magic, the version of the format, two bytes reserved
+BLACKBOX_VEHICLE = 0x12  # a vehicle: its number and its name
+BLACKBOX_COUPLING = 0x37  # a coupler of a vehicle coupled, uncoupled, or its hoses and cables changed
+COUPLING_COUPLER = 0x01  # of the bits telling what is coupled: the coupler itself
+
+
+@dataclass
+class Coupling:
+    """A coupling record: what a coupler of a vehicle is coupled to from `time` on."""
+    time: float
+    vehicle: int  # vehicles by their numbers, 0 for none
+    side: int  # 0 the front coupler, 1 the rear one
+    other: int
+    other_side: int
+    flags: int  # what is coupled, 0 nothing
+    previous_flags: int
+    previous_other: int
+
+
+@dataclass
+class Blackbox:
+    vehicles: dict[int, str] = field(default_factory=dict)  # names by number
+    couplings: list[Coupling] = field(default_factory=list)  # in the order written
+
+
+def find_blackbox(game_dir: Path, scenery: str, since: float) -> Path | None:
+    """The black box of one run: the simulator names it after the scenery and the time it started."""
+    stem = re.sub(r"[^0-9A-Za-z_-]", "_", scenery.rsplit(".", 1)[0])
+    # the whole name, so a case whose name another one starts with doesn't take that one's file
+    name = re.compile(re.escape(stem) + r"_\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d\.blackbox")
+    files = [p for p in (game_dir / "physicslog").glob(f"{stem}_*.blackbox")
+             if name.fullmatch(p.name) and p.stat().st_mtime >= since]
+    return max(files, key=lambda p: p.stat().st_mtime, default=None)
+
+
+def read_blackbox(path: Path | None) -> Blackbox | None:
+    """The vehicles and the coupling records of a black box; None when there is none or it can't be read."""
+    try:
+        data = path.read_bytes() if path else b""
+    except FileNotFoundError:
+        return None
+    if data[:len(BLACKBOX_MAGIC)] != BLACKBOX_MAGIC:
+        return None
+    box = Blackbox()
+    at = BLACKBOX_HEADER
+    try:
+        while at + 5 <= len(data):
+            kind, length = struct.unpack_from("<BI", data, at)
+            content = data[at + 5: at + 5 + length]
+            if len(content) < length:
+                break  # a record still being written when the run ended
+            at += 5 + length
+            if kind == BLACKBOX_VEHICLE:
+                number, = struct.unpack_from("<I", content)
+                # a text: its length in 7 bit groups, low first, the high bit set on all but the last
+                size, shift, start = 0, 0, 4
+                while True:
+                    byte = content[start]
+                    start += 1
+                    size |= (byte & 0x7F) << shift
+                    shift += 7
+                    if byte < 0x80:
+                        break
+                box.vehicles[number] = content[start: start + size].decode("utf-8", errors="replace")
+            elif kind == BLACKBOX_COUPLING:
+                # the position of the coupler follows
+                box.couplings.append(Coupling(*struct.unpack_from("<dIBIBBBI", content)))
+    except (struct.error, IndexError):
+        return None  # a record shorter than its kind is
+    return box
+
+
 # load problems that leave the case without its vehicle; no point waiting for the timeout
 FATAL_LOG_LINES = ("Bad vehicle:", "Bad trainset:")
 # wall seconds from start to the first physicslog row before giving up. "Scenario loading
@@ -248,6 +324,7 @@ class RunResult:
     failure: str = ""  # why the run was cut short
     wall_seconds: float = 0.0
     logs: dict[str, Path] = field(default_factory=dict)
+    blackbox: Path | None = None
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
@@ -313,6 +390,7 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
         stdout.close()
     result.rows = read_physicslog(physicslog)
     result.logs = find_logs(game_dir, scenery, since)
+    result.blackbox = find_blackbox(game_dir, scenery, since)
     return result
 
 
@@ -476,6 +554,63 @@ CHECKS = {
 }
 
 
+def check_log_contains(log, pattern):
+    """A line of the run's log.txt matches the regex, e.g. the "Bad driving" message of a collision."""
+    found = next((line.strip() for line in log.splitlines() if re.search(pattern, line)), None)
+    if found is None:
+        return False, f"no log line matches /{pattern}/"
+    return True, f"log: {found}"
+
+
+def check_log_lacks(log, pattern):
+    """No line of the run's log.txt matches the regex."""
+    found = [line.strip() for line in log.splitlines() if re.search(pattern, line)]
+    if found:
+        return False, f"{len(found)} log line(s) match /{pattern}/, first: {found[0]}"
+    return True, f"no log line matches /{pattern}/"
+
+
+# checks on the text of the run's log.txt rather than on the physicslog rows
+LOG_CHECKS = {
+    "log_contains": check_log_contains,
+    "log_lacks": check_log_lacks,
+}
+
+
+def check_couples(box, vehicle, other):
+    """The two vehicles couple in the run and stay coupled to its end; coupled from the start doesn't count."""
+    numbers = {name: number for number, name in box.vehicles.items()}
+    unknown = [name for name in (vehicle, other) if name not in numbers]
+    if unknown:
+        return False, f"the black box has no vehicle {' nor '.join(unknown)}"
+    pair = {numbers[vehicle], numbers[other]}
+    # of the two vehicles of a coupling the one with the lower number tells it, each change of that coupler
+    # under the same vehicle and side: the record which coupled the two, for as long as they stay coupled
+    made, parted = {}, None
+    for c in box.couplings:
+        coupler = (c.vehicle, c.side)
+        if {c.vehicle, c.other} == pair and c.flags & COUPLING_COUPLER:
+            made.setdefault(coupler, c)
+        elif coupler in made:
+            parted = (made.pop(coupler), c)
+    if not made:
+        if parted:
+            return False, f"{vehicle} and {other} coupled at t={parted[0].time:.1f}s but came apart at t={parted[1].time:.1f}s"
+        return False, f"none of the {len(box.couplings)} coupling record(s) of the black box couples {vehicle} and {other}"
+    c = min(made.values(), key=lambda c: c.time)
+    if c.time <= 0:
+        return False, f"{vehicle} and {other} were coupled when the recording started"
+    ends = ("front", "rear")
+    return True, (f"at t={c.time:.1f}s the {ends[c.side]} coupler of {box.vehicles[c.vehicle]} coupled to the "
+                  f"{ends[c.other_side]} one of {box.vehicles[c.other]}, coupling 0x{c.flags:02X}")
+
+
+# checks on the black box of the run rather than on the physicslog rows
+BLACKBOX_CHECKS = {
+    "couples": check_couples,
+}
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -513,7 +648,9 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     vehicle = f"autotest_{name}"
     scenery = build_scenery(case, game_dir, name, vehicle)
     ini = out / "autotest.ini"
-    ini.write_text(TEST_INI.format(timespeed=timespeed), encoding="ascii")
+    # the case's own settings go last, over the common ones
+    ini.write_text(TEST_INI.format(timespeed=timespeed) + "".join(line + "\n" for line in case.get("ini", [])),
+                   encoding="ascii")
     physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
 
     duration = float(case["duration"]) if "duration" in case else None
@@ -535,6 +672,9 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     # other trains of the case with a driver, named <something>_<vehicle>, log too
     for other in physicslog.parent.glob(f"*_{vehicle}.dat"):
         shutil.move(other, out / other.name)
+    # the black box is named after the case scenery too
+    if result.blackbox:
+        result.blackbox = Path(shutil.move(result.blackbox, out / f"{vehicle}.blackbox"))
 
     ok = True
     sim_t = result.rows[-1][COL_TIME] if result.rows else 0.0
@@ -566,9 +706,27 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
             say(f"  FAIL  no physicslog for '{vehicle}'")
         return False
 
+    log = read_text(out / "log.txt")
+    box = read_blackbox(result.blackbox)
     for check in case.get("checks", []):
         params = {k: v for k, v in check.items() if k != "type"}
-        passed, detail = CHECKS[check["type"]](result.rows, **params)
+        if check["type"] in LOG_CHECKS:
+            # with no log text a log check proves nothing, log_lacks would pass vacuously
+            if log.strip():
+                passed, detail = LOG_CHECKS[check["type"]](log, **params)
+            else:
+                passed, detail = False, "log.txt is missing or empty"
+        elif check["type"] in BLACKBOX_CHECKS:
+            if box is not None:
+                # vehicles are named as in the fragment
+                params = {k: v.replace("{{vehicle}}", vehicle) if isinstance(v, str) else v for k, v in params.items()}
+                passed, detail = BLACKBOX_CHECKS[check["type"]](box, **params)
+            elif result.blackbox:
+                passed, detail = False, f"{result.blackbox.name} is not a black box, or is damaged"
+            else:
+                passed, detail = False, "the run left no black box (physicslog/*.blackbox); the build is too old, or has blackbox no"
+        else:
+            passed, detail = CHECKS[check["type"]](result.rows, **params)
         say(f"  {'PASS' if passed else 'FAIL'}  {check['type']}: {detail}")
         ok &= passed
 

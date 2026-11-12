@@ -101,6 +101,9 @@ public:
 		gfx::userdata_array userdata;
         // terrain file the shape comes from, see scene::terrain_file::reference_of(); 0: none, or not known (only the editor asks)
         std::uint16_t terrainfile { 0 };
+        // drawn pulled towards the camera in the depth buffer, over the surface it lies on: the photos of the editor laid on the
+        // terrain. not kept by serialize()
+        bool decal { false };
     // methods:
         // sends content of the struct to provided stream
         void
@@ -127,6 +130,9 @@ public:
     // relative to Origin. used by the editor's terrain to own editable geometry it can re-upload.
     shape_node &
         make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin );
+    // see shapenode_data::decal
+    void
+        decal( bool const Decal ) { m_data.decal = Decal; }
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( shape_node &Shape );
@@ -376,6 +382,9 @@ public:
 	    location();
     float const &
         radius();
+    // the radius as worked out already, or worked out anew and not kept
+    float
+        radius() const;
     void
         visible( bool const Visible );
     bool
@@ -418,7 +427,7 @@ public:
 private:
 // methods
     // radius() subclass details, calculates node's bounding radius
-    virtual float radius_();
+    virtual float radius_() const;
     // serialize() subclass details, sends content of the subclass to provided stream
     virtual void serialize_( std::ostream &Output ) const = 0;
     // deserialize() subclass details, restores content of the subclass from provided stream

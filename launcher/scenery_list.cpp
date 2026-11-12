@@ -395,7 +395,7 @@ void ui::scenerylist_panel::drop_new_vehicle(trainset_desc &trainset, int const 
 void ui::scenerylist_panel::drop_moved_vehicle(trainset_desc &trainset, int const position, vehicle_moved const &Moved)
 {
 	auto copy{Moved.dynamic};
-	auto &source{Moved.source};
+	auto const &source{Moved.source};
 	auto const from{Moved.position};
 	if (&trainset != &source)
 		copy.name = numbered(copy.skin ? copy.skin->skin : copy.name);

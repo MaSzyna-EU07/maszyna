@@ -523,6 +523,10 @@ public:
     // finds sections inside specified sphere. returns: list of sections
     std::vector<basic_section *> const &
         sections( glm::dvec3 const &Point, float const Radius );
+    // finds sections inside specified sphere, put in the list given in place of what it held. unlike the one above it shares no list
+    // of its own, so it's safe while other threads look for sections too
+    void
+        sections( glm::dvec3 const &Point, float const Radius, std::vector<basic_section *> &Sections ) const;
 	void
 	    create_map_geometry();
     // loads all geometry kept in binary terrain files which wasn't needed so far
