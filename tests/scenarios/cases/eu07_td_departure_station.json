@@ -1,0 +1,35 @@
+{
+  "description": "Control for eu07_td_departure_station_capitals: the same timetable with the first row written as in the relation (Stacja1). The train stops at Stacja1 and leaves at 10:35.",
+  "base_scenery": "td.scn",
+  "time": "10:33",
+  "fragment": "td_departure_station.scn",
+  "timetable": "td_departure_station.txt",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 360,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_lacks",
+      "pattern": "as TEST25: at \\d+:\\d+ passed Stacja1"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "as TEST25: at 10:35 next Przystanek"
+    },
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 240
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 0,
+      "min_distance": 1380,
+      "max_distance": 1420
+    }
+  ]
+}

@@ -135,7 +135,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 19 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 22 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -188,6 +188,7 @@ which could have been writing it.
 | `ini` | extra `eu07.ini` lines for the run, after the common ones of the runner's `-ini` file, e.g. `["crashdamage yes"]` |
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
+| `timetable` | a timetable file in `cases/` for a trainset of the fragment, for a train whose timetable no scenery of the game has: copied to the game's `scenery/` dir as `autotest_<case>.txt` for the run and removed after it; the fragment names it `{{timetable}}` |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
 | `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
@@ -209,6 +210,18 @@ starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
+
+`eu07_td_departure_station_capitals` runs an EU07 from where `td_timetable.scn` puts it, with the W4 of Stacja1 about
+35 m ahead, on a timetable of its own (`td_departure_station_capitals.txt`, fragment `td_departure_station.scn`):
+its first row, the station of departure, gives no arrival time and is written in capitals (`STACJA1`), the relation
+says `Stacja1`, as in some timetables of the game (`Os33733` of linia_107_poludnie.scn starts at `ZAGORZ`). The
+train has to stop there and leave at its departure time, 10:35, which the log shows as `as TEST24: at 10:35 next
+Przystanek`; taking Stacja1 for a station it passes through, the driver logs `passed STACJA1` at once and leaves as
+soon as the route is set at 10:34, and the train manager gives no departure signal. `eu07_td_departure_station` is the
+same with the row written as in the relation. `eu07_td_timetable_past_w4` (fragment `td_timetable_past_w4.scn`) puts
+the td/rozklad train, an EU07 with three coaches, with its head 80 m past the W4 of Stacja1, on `tor1k`: the W4 stays
+under the consist, behind the head, and the driver still counts Stacja1 and leaves at 10:35, since the scan of the
+route begins at the last vehicle and keeps a W4 behind the head.
 
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from

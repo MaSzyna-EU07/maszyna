@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/mtable.h"
+#include "world/timetablestart.h"
 #include "utilities/Globals.h"
 #include "simulation/simulationtime.h"
 #include "utilities/dictionary.h"
@@ -573,8 +574,8 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
             fin.close();
         }
     }
-    // jeśli nazwa pierwszego zgodna z relacją
-    if (conversionerror == 0 && TimeTable[1].StationName == Relation1 && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
+    // jeśli nazwa pierwszego zgodna z relacją (bez względu na wielkość liter)
+    if (conversionerror == 0 && timetable::starts_at( TimeTable[1].StationName, Relation1 ) && TimeTable[1].Ah < 0) // a nie podany czas przyjazdu
     { // to mamy zatrzymanie na pierwszym, a nie przelot
         TimeTable[1].Ah = TimeTable[1].Dh;
         TimeTable[1].Am = TimeTable[1].Dm;
