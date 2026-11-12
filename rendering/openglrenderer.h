@@ -244,6 +244,9 @@ private:
         Render_text( TSubModel *Submodel );
     void
         Render( TTrack *Track );
+    // the cut faces of the rails of a track and the treads on them
+    void
+        Render_cuts( TTrack const *Track );
     void
         Render( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
     bool

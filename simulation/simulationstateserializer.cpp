@@ -551,7 +551,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         std::unique_ptr<TTrack> made { deserialize_path( Input, Scratchpad, nodedata ) };
         if( made->eType == tt_Unknown ) {
             // with no path made it can't be joined nor drawn, and nothing could run on it: it goes with its holder
-            ErrorLog( std::format( "Bad scenario: track \"{}\" of an unknown type defined in file \"{}\" (line {}) left out", made->name(), Input.Name(), inputline ) );
+            ErrorLog( std::format( R"(Bad scenario: track "{}" of an unknown type defined in file "{}" (line {}) left out)", made->name(), Input.Name(), inputline ) );
             return;
         }
         // from here on the scene owns it

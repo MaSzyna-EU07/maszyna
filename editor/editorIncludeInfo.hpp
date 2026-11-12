@@ -37,6 +37,8 @@ struct include_info
 	std::string description;
 	std::string switch_hand; // a switch drive: side of the diverging track, left or right, looking from the start of the switch
 	std::string switch_drive; // and the side the drive stands on
+	bool switch_default{false}; // the drive put with a new switch until another is picked
+	double switch_height{0.0};
 	double turntable_length{0.0};
 	int turntable_angles{0};
 	int turntable_positions{0};
@@ -45,6 +47,23 @@ struct include_info
 	std::string signal_lamps;
 	std::string signal_lean;
 	std::string signal_read;
+	int signal_arms{0}; // of a semaphore: 1 or 2, 0 for a signal with lights or a disc
+	// m, of the zero of the model of the signal over the rail heads; under them below 0
+	double signal_height{0.0};
+	// m, how deep the model reaches under its zero, its foundation: with it the editor lowers a signal whose bottom would hang over the
+	// ground; none, it isn't
+	std::optional<double> signal_depth;
+	// the aspects the signal shows, each by its name in the signalling instruction (Sr1, S2, Od1...) with its event, the part after
+	// "(p1)_", in the order of the description. empty where the description doesn't list them
+	std::vector<std::pair<std::string, std::string>> signal_aspects;
+	// of a warning disc: its event for each speed class of the signal after it (stop, vmax, 100, 60, 40)
+	std::vector<std::pair<std::string, std::string>> signal_repeats;
+	// an indicator put on a signal: its sign (W24, W1, I...), where it goes, "head" under the lights of the signal, one under another,
+	// or "foot" at the foot of the signal, the model having its place by it built in, and its events by name (on, off, P, 60...), the
+	// part after "(p1)_"
+	std::string indicator_sign;
+	std::string indicator_place;
+	std::vector<std::pair<std::string, std::string>> indicator_events;
 	std::vector<include_parameter> parameters;
 
 	// description of specified parameter, created if there's none
@@ -66,6 +85,14 @@ bool load(std::string const &File, include_info &Info, std::string &Error);
 bool save(std::string const &File, include_info const &Info, std::string &Error);
 // highest number of (pN) placeholder used by specified template, 0 if it has none
 int parameter_count(std::string const &File);
+// the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
+// allowed, 20 the substitute signal. returns: false if the file can't be read
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
+// the names of the events the template defines, as they're written after "event", lower case. returns: false if the file can't be read
+bool event_names(std::string const &File, std::vector<std::string> &Names);
+// the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
+// the warning two signals ahead, else 3. returns: 0 if the file can't be read
+int block_aspects(std::string const &File);
 // sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
 void suggest(std::string const &File, include_info &Info);
 // true if value of a parameter with specified role is supplied by the editor when the template is placed
@@ -87,6 +114,7 @@ bool parse_directive(std::string const &Directive, std::string &File, std::vecto
 std::string compose_directive(std::string const &File, std::vector<std::string> const &Values);
 // text of a number passed as a parameter value
 std::string number(double Value);
+std::string normalized(std::string File);
 // number of the parameter with specified role, 0 if the description has none
 int parameter_with_role(include_info const &Info, std::string const &Role);
 
@@ -112,11 +140,22 @@ struct include_entry
 class editorIncludeBank
 {
   public:
-	// looks through the scenery directory for the templates, and reads their descriptions
-	void scan();
+	~editorIncludeBank();
+	// starts looking through the scenery directory for the templates in the background, unless they were found already
+	void start();
+	// looks through the scenery directory again in the background, for the templates added or changed outside of the editor
+	void rescan();
+	// takes the templates found in the background once the search is over; true if it took them
+	bool poll();
+	// waits for the templates being looked for, or looks for them if they weren't yet
+	void wait();
 	bool scanned() const
 	{
 		return m_scanned;
+	}
+	bool searching() const
+	{
+		return m_search != nullptr;
 	}
 	std::vector<include_entry> const &entries() const
 	{
@@ -136,8 +175,11 @@ class editorIncludeBank
 	}
 
   private:
+	struct search;
+
 	void index();
 
+	std::shared_ptr<search> m_search; // under way in the background
 	std::vector<include_entry> m_entries; // sorted by file name
 	std::vector<std::size_t> m_ready;
 	bool m_scanned{false};

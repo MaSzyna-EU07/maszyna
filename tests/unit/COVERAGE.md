@@ -21,6 +21,8 @@ Coverage was measured on Windows with MSVC's SanitizerCoverage (`/fsanitize-cove
 
 The aim is branch coverage with the rest explained below, not 100%.
 
+The numbers above are from 2026-11-01. Since then the **Coverage** workflow (`.github/workflows/coverage.yml`) measures every pull request and every push to master: a GCC build of the unit tests with gcov, lines, functions and branches per source file of the core library. The totals and the per-file table are in the summary of the workflow run, and the HTML report with the lines marked is in its `unit-test-coverage` artifact. Its counts are source lines and gcov's branches, so they differ somewhat from the blocks in the table. The report isn't sent to SonarQube Cloud: the project's quality gate would then require 80% coverage of the new code of every pull request.
+
 ## Code nothing in the game runs
 
 Nothing creates these objects or calls these functions anywhere in the game, which was checked against the whole source tree. A refactor can delete them, or leave them untested.
@@ -75,6 +77,79 @@ These are run by the game, by vehicles it has or by the cab, the AI or the scene
   - `UpdatePipePressure` (108 of 130): the pressure switch lock of an electric unit's pantographs, which the EW58's automatic valve keeps away. Also the EP mode of the EN57's handle and the `LockPipe` thresholds (`LPOn`, `LPOff`), which no vehicle sets.
   - `TCV1L_TR::GetPF` (9 of 20), `TKE::GetPF` (28 of 37) and the MHZ handles: settings (G with the CV1L_TR, the KE's anti-slip pressure `ASBP`) that no real vehicle has together.
 
+## The rest of the core library
+
+The core library (`eu07_core`) and the test binary hold more than the physics: the parser of the game's text files, the helpers of `utilities.cpp`, the PLC of a vehicle, the parts of the vehicles and of the simulation moved out of the big classes to be tested, and the hosts of the script screens. The sections above don't cover them. Their numbers are lines run, from the report of the Coverage workflow.
+
+The tables show the run before the tests of the parser, the helpers and the PLC (`test_parser.cpp`, `test_utilities.cpp`, `test_ladder_logic.cpp`) were written. What those tests add is measured by the Coverage run of the pull request which brings them, and shown in the summary of that run.
+
+**The run measured:** pull request #325 on 2026-11-11 (its commit `33cedc45` merged into master `10c7527a`), GCC 13.3, unoptimised, gcov lines. All 49 files of the game in the report together: lines 84.4% (10305 of 12204), functions 85.0% (927 of 1090), branches 62.3% (10325 of 16578).
+
+| File | Lines run | Functions run |
+|---|---|---|
+| `McZapkie/couplerphysics.cpp` | 93.6% (147 of 157) | 20 of 21 |
+| `scripting/ladderlogic.cpp` | 4.1% (9 of 217) | 2 of 11 |
+| `scripting/ladderlogic.h` | 0% (0 of 25) | 0 of 4 |
+| `scripting/luaprogram.cpp` | 74.7% (334 of 447) | 50 of 66 |
+| `scripting/scriptscreendrawing.cpp` | 93.8% (135 of 144) | 19 of 19 |
+| `scripting/scriptscreenkernels.cpp` | 97.7% (129 of 132) | 11 of 11 |
+| `scripting/scriptscreenrules.cpp` | 100% (50 of 50) | 7 of 7 |
+| `scripting/scriptscreens.cpp` | 82.8% (216 of 261) | 28 of 33 |
+| `scripting/wasmprogram.cpp` | 54.0% (157 of 291) | 35 of 49 |
+| `simulation/simulationtestrules.cpp` | 97.4% (75 of 77) | 10 of 10 |
+| `utilities/parser.cpp` | 40.0% (170 of 425) | 18 of 41 |
+| `utilities/parser.h` | 97.8% (44 of 45) | 11 of 15 |
+| `utilities/utilities.cpp` | 28.2% (82 of 291) | 15 of 49 |
+| `utilities/utilities.h` | 100% (41 of 41) | 12 of 12 |
+| `utilities/framepacer.h` | 100% (17 of 17) | 2 of 2 |
+| `vehicle/blackbox.cpp` | 100% (331 of 331) | 41 of 41 |
+| `vehicle/enginestart.cpp` | 96.2% (50 of 52) | 6 of 6 |
+| `vehicle/handover.cpp` | 89.2% (33 of 37) | 5 of 5 |
+| `vehicle/horn.cpp` | 100% (5 of 5) | 2 of 2 |
+| `vehicle/linebreaker.cpp` | 100% (6 of 6) | 1 of 1 |
+| `vehicle/smoke.cpp` | 100% (12 of 12) | 2 of 2 |
+| `vehicle/gaugescale.h` | 97.9% (47 of 48) | 5 of 5 |
+| `world/TrackUneven.h` | 100% (111 of 111) | 23 of 25 |
+
+Notes to the table:
+
+- The small headers with the logic of a single part are all run in full: `vehicle/doorwings.h`, `gaugeduplicates.h`, `gaugepositions.h`, `holdcoillever.h`, `lightsprogrammer.h`, `mainctrlact.h`, `mirrors.h`, `scripting/scriptscreendrawing.h`, `scriptscreenkernels.h`, `scriptscreenprogram.h`, `scriptscreens.h`, `utilities/dictionary.h` and `vehicle/blackbox.h`.
+- `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. They have tests (`test_brake_setting.cpp`, `test_odometer.cpp`) and no numbers yet.
+- The script hosts (`scriptscreens.cpp`, `luaprogram.cpp`, `wasmprogram.cpp`) aren't in the library. The test binary compiles them itself, with the real runtimes.
+- `scene/scenelayers.h`, `scene/scenenode.h` and `scene/scenenodegroups.h` are in the report with a few lines each: the parser reports the files it includes to the scenery, which the tests replace with stubs (`engine_stubs.cpp`).
+
+### The parser, the helpers and the PLC
+
+`test_parser.cpp`, `test_utilities.cpp` and `test_ladder_logic.cpp` record how `utilities/parser.cpp`, `utilities/utilities.cpp` and `scripting/ladderlogic.cpp` behave now, oddities included, so that a later change of them can be checked. The lines the measured run left out, by what it takes to run them:
+
+| File | Not run | Through the public interface | With files of the test | Left: the system or the game state | Nothing in the game calls it |
+|---|---|---|---|---|---|
+| `utilities/parser.cpp` | 255 lines | 131 | 105 | 2 | 17 |
+| `utilities/utilities.cpp` | 209 lines | 154 | 19 | 19 | 17 |
+| `scripting/ladderlogic.cpp` | 208 lines | 169 | 37 | 0 | 2 |
+
+The tests are written for the first two columns, and for what the game doesn't call as far as it can be called from outside. The files of a test are made in the build folder of the tests (`scratch.h`) and removed with it.
+
+**What stays untested, and why:**
+
+- **`parser.cpp`:**
+  - The scenery layers of a scenery opened for editing are stubs in the tests. The parser's calls of them are run (`sceneryLayers`), but only the templates used can be checked. The include of a terrain file left out for the binary terrain marks its layer as binary (2 lines): the stub has no layer to mark, so that isn't run.
+  - The messages of the log (`Failed to open file`, `Bad include`) are run, and not checked: the log of the tests is a stub.
+  - A buffer type which is neither a file nor a text (the `default:` of the constructor) can't be given without an invalid value of the type.
+- **`utilities.cpp`:**
+  - `Now()`, `user_config_path()`, `user_cache_path()` and `true_random_seed()` depend on the clock, the environment and the entropy source of the system. The tests call them and check the shape of the result. The branches for a system without the variables or without an entropy source aren't run, and those of the other systems aren't compiled.
+  - `FileCased()` looks through the working folder for a name given without a folder, and through the folder of the file elsewhere; on Windows it only asks whether the file is there. The search is run on Linux only.
+  - `Bezogonkow()` gives other letters with MSVC than with GCC and Clang, see the findings. The test takes either, told by the entry of the table the difference starts at, so each build checks the half it is.
+- **`ladderlogic.cpp`:** the two `return`s marked "not reachable" after the switches over the kind of an element.
+
+**Code nothing in the game runs** (checked against the whole source tree):
+
+- **The PLC as a whole.** A vehicle has one (`TMoverParameters::m_plc`) and runs it in every step (`m_plc.update()`), but nothing calls `load()`, so its program is always empty; nothing calls `find_or_insert()`, `input()` or `output()` either, so no file of the game data can be a program for it. Of `ladderlogic.cpp` the game runs the 9 lines of an update without timers and without operations. The tests run the rest with programs made up for them.
+- **In `parser.cpp`:** `countTokens()` with its `count()`, and `addCommentStyle()`. No caller gives the separators as a null pointer either, which `updateCharClasses()` allows for.
+- **In `utilities.cpp`:** `generate_uuid_v4()`, `FuzzyLogicAI()` and `last_modified()`. In `utilities.h`: `BorlandTime()`.
+
+**Cheap to add next:** the Lua host (`luaprogram.cpp`, 113 lines not run) is mostly functions of the scripts' API no test script calls yet: `fill`, `fill_rect`, the aligned texts, `draw_image`, `copy`, sprites, `time`, `log`, a command from a screen outside of the cab. A script of a few lines each runs them, with the folders `test_script_screen_host.cpp` already makes. The WebAssembly host (`wasmprogram.cpp`, 134 lines) has the same functions behind imports, and needs a module encoded by hand for each group of them.
+
 ## What the tests found
 
 The tests record the behaviour as it is. The following points may deserve a look by someone who knows how the real vehicles behave.
@@ -115,3 +190,31 @@ The tests record the behaviour as it is. The following points may deserve a look
 - **Game data:**
   - The 214M's file has `TurboPos` and `MotorParamTable` twice, and the EN57AL's `Engine` twice. The loader reads each in turn, so the later one overrides what both set.
   - A wagon set up braked keeps its hand brake on until someone releases it. The AI does that for the whole train (`AutoRewident`), so a test has to as well.
+- **The parser (`parser.cpp`):**
+  - Read line by line (`"\n\r"` as the separators), a traction include left out because the traction isn't loaded takes the following lines with it, up to the next `end`: the directive is cut out of its line, but the skipping reads on in the file.
+  - A traction file is told by `tr/` or `tra/` anywhere in its name, so with the traction off an include from any folder ending in "tr" (`centr/…`) is left out too.
+  - Read line by line, every line starting with the letters `include` is taken for the directive (`included in price` includes the file `d`), also when the parser is told not to expand includes (`expandIncludes = false`).
+  - Empty quotes (`""`) give no token: the next token is read in their place, so everything after a value meant to be empty moves by one.
+  - The text in quotes keeps its case when the caller asks for lower case. That may be meant.
+  - An include of an empty file is logged as a file which can't be opened (`Bad include: can't open file`, seen in the log of the test, which the test itself doesn't check).
+  - A text which ends inside a comment or inside quotes leaves the parser failed (`ok()` false), not just at its end; an empty text fails with its first read, through the check for a byte order mark.
+  - `deserialize_map()` (`utilities.h`, the sound overrides) therefore reads an empty key from an empty file, and one from a file ending with a line break; in a file with Windows line ends its values keep the carriage return. The game's `sound_overrides.txt` is a single line without a line break.
+  - The separators given as a null pointer are taken as none by the tokenizer, but passed on to `strcmp` for a token of 7 characters or more starting with `i`, which crashes (tried by hand, not kept as a test). No caller gives a null pointer.
+- **The helpers (`utilities.cpp`, `utilities.h`):**
+  - `Bezogonkow()`, which takes the marks off the letters for the timetable and the on-screen texts: its table has a `±` in the source, a UTF-8 file. MSVC makes one byte of it, GCC and Clang two, which moves every entry from 0xB2 on by one. With MSVC the 18 polish letters come out as `ACELNOSZZacelnoszz`; with GCC as `ALELDNSZZ,le,dnszl`: `Ć` as L, `Ń` as D, `Ó` as N, `ą` and `ł` as a comma, `ć` as l, `ń` as d, `ó` as n, `ż` as l, only `Ę` and `ę` by luck as themselves. The Linux and macOS builds of the game show the names of the stations that way. The test checks whichever table the build has (the GCC one was tried with the table alone, compiled by GCC 6.3).
+  - `to_minutes_str()` reads past its table of raised digits for minutes with a fraction of 0.99 or more, and before it for negative minutes, which `CompareTime()` can give it for a timetable whose times go back. Tried by hand, both ended in `std::bad_alloc`, the text read from outside of the table being no text; not kept as a test. A width under 2 throws `std::length_error`.
+  - `stol_def()` gives its default only for an empty text. A text which isn't a number gives 0 (the flags of an event, the log setting).
+  - `split_string_and_number()` throws for a name with a hyphen which no digit follows (`a-b`), and for a number too big. The gamepad bindings and the PLC use it on names from files.
+  - `extract_value()` throws `std::out_of_range` when the key is the last thing in the text with nothing after its `=`. With a space after the `=`, the next `key=value` is taken for the value.
+  - `seed_of()` takes a word starting with digits for the number in front (`12abc` is 12), so different words can stand for the same seed.
+  - `erase_extension()` cuts at the dot of a folder when the file has none (`dir.d/file` becomes `dir`).
+  - `Round()` adds a half and cuts the fraction, which rounds the negative numbers up: -1.6 becomes -1.
+- **The PLC (`ladderlogic.cpp`):**
+  - Nothing loads a program into it, see above.
+  - `and` and `or` combine the states bit by bit, and `out` passes a number on as it is: two elements which are both on, with the states 2 and 1, give 0.
+  - A counter is done until the first cycle of the program gives it its limit.
+  - `end` is read as "no operation": the lines after it are loaded and run.
+  - A name with a hyphen (`door-open`) throws out of `load()`, through `split_string_and_number()`.
+  - The kind of an element is told by its name: `t`, `ton` or `timer.` and `c` or `counter.` before the number, so a variable can't be named `t1` or `c2`, nor `t` or `c` alone: an input named `c` is a counter, on from the start.
+  - The line of an operation is split with `getTokens(3, "\t ")`, which gives the separators in the place of the lower case flag. The result is the same, the default separators being those and the semicolon.
+  - An update longer than 32.7 s doesn't fit the milliseconds a timer counts in (`short`). Tried by hand: a timer of 1 s wasn't on after an update of 40 s, nor a second later. Not kept as a test, the conversion being undefined.
