@@ -79,6 +79,8 @@ const float snow_cover      = 0.25;  // the lumps get opaque from three times th
 const float snow_lump_cell  = 0.016; // a lump at most every this many metres of the glass (its size: up to two of them)
 const float snow_heap_cells = 4.0;   // the heaps the lumps come in, cells of the lumps (bigger: bigger heaps)
 const float snow_opaque     = 1.8;   // mm of fresh snow letting 1/e of the light through (packed: half of it)
+const float snow_ice        = 0.6;   // opacity of a lump until the snow gets thick (icy: the picture shows through, bent)
+const vec3  snow_ice_tint   = vec3(0.93, 0.97, 1.0);   // the colour of the icy snow
 const float snow_thin       = 0.45;  // opacity of a single thin flake (ice crystals let most of the light through)
 const float snow_bump       = 1.0;   // strength of the relief from the normal map, 0 = flat
 const float snow_gloss      = 0.8;   // glints of the sun / headlights on the wet snow, 0 = matt
@@ -186,7 +188,7 @@ float snWetness(vec4 q)
 // the tone of the snow: grey and darker when wet (slush), a little grey when packed
 vec3 snTone(vec4 q, float random)
 {
-    vec3 tone = vec3(mix(0.94, 1.04, random));
+    vec3 tone = vec3(mix(0.94, 1.04, random)) * snow_ice_tint;
     tone *= mix(vec3(1.0), vec3(0.95, 0.96, 0.98), q.z);
     return tone * mix(vec3(1.0), vec3(0.88, 0.91, 0.94), smoothstep(0.3, 0.8, snWetness(q)));
 }
@@ -293,7 +295,7 @@ void snLumps(vec2 span, float pixelUV, lump_grid grid, inout sprite_acc acc)
                 continue;
             // fading in over the first snow (no flicker on the edge), opaque when thick; the thick snow bends nothing
             float deep = smoothstep(snow_cover * 3.0, snow_deep, q.x);
-            float alpha = smoothstep(needs, needs + 0.04, q.x) * mix(0.8, 1.0, deep);
+            float alpha = smoothstep(needs, needs + 0.04, q.x) * mix(snow_ice, 1.0, deep);
             snSprite(local, tile, alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0 - deep, acc);
         }
     }
