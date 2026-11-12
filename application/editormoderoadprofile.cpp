@@ -428,6 +428,16 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 	}
 }
 
+// whether something else meets the run at that end node (another piece or a junction arm): only there the end keeps its grade,
+// a free end takes the grade the evening out gives it
+bool end_joined(chain_profile const &Profile, std::size_t const End)
+{
+	for (auto const &other : editor_road::ends_at(Profile.positions[End]))
+		if (std::none_of(Profile.order.begin(), Profile.order.end(), [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
+			return true;
+	return false == editor_road::arms_at(Profile.positions[End]).empty();
+}
+
 } // namespace
 
 void editor_mode::road_profile_smooth()
@@ -444,9 +454,11 @@ void editor_mode::road_profile_smooth()
 	auto grades{profile.grades};
 	auto const grade{std::clamp(static_cast<double>(tool.maxgrade), 0.1, 30.0) / 100.0};
 	smooth_between(profile, 0, heights.size() - 1, grade, std::max(50.0, static_cast<double>(tool.crest)), std::max(50.0, static_cast<double>(tool.sag)), heights, grades);
-	// the ends meet the neighbours as they did: their grades kept, or the road gets a kink there
-	grades.front() = profile.grades.front();
-	grades.back() = profile.grades.back();
+	// the ends meet the neighbours as they did: their grades kept, or the road gets a kink there; a free end takes the evened grade
+	if (end_joined(profile, 0))
+		grades.front() = profile.grades.front();
+	if (end_joined(profile, grades.size() - 1))
+		grades.back() = profile.grades.back();
 	double moved{0.0}, steepest{0.0};
 	for (std::size_t i = 0; i < heights.size(); ++i)
 	{
@@ -620,9 +632,9 @@ void editor_mode::road_profile_operation()
 		}
 		auto const grade{std::clamp(static_cast<double>(tool.maxgrade), 0.1, 30.0) / 100.0};
 		smooth_between(profile, first, last, grade, std::max(50.0, static_cast<double>(tool.crest)), std::max(50.0, static_cast<double>(tool.sag)), heights, grades);
-		if (first == 0)
+		if (first == 0 && end_joined(profile, 0))
 			grades.front() = profile.grades.front();
-		if (last + 1 == grades.size())
+		if (last + 1 == grades.size() && end_joined(profile, grades.size() - 1))
 			grades.back() = profile.grades.back();
 		done = format(STR_C("Evened out over %.0f m: grade up to %.1f %%, crests R %.0f m, dips R %.0f m"), runs[last] - runs[first], tool.maxgrade, tool.crest, tool.sag);
 		break;
