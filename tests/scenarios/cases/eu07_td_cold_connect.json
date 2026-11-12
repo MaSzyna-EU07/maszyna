@@ -1,0 +1,28 @@
+{
+  "description": "EU07 with a hand brake (4E-ZEZ_GREY) on td.scn, standing cold with the hand brake on, gets the order to couple to the two coaches standing 45 m ahead (Shunt -1 3): after starting the engine it has to release its hand brake, run up to the coaches, couple and push them on. Connect is the first order the AI drives under.",
+  "base_scenery": "td.scn",
+  "fragment": "td_cold_connect.scn",
+  "vars": {
+    "locomotive": "pkp\\4e_v1 4E-ZEZ-234 4E-ZEZ_GREY",
+    "rake": [
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "track_events": {
+    "tdo_n1725": "event0 autotest_wake",
+    "tor1k": "eventall2 autotest_pass"
+  },
+  "test_config": [
+    "test.timeout 900",
+    "test.standstill 300",
+    "test.no_movement_before_pass no"
+  ],
+  "expect": "pass",
+  "timeout": 900,
+  "checks": [
+    { "type": "couples", "vehicle": "{{vehicle}}", "other": "{{vehicle}}_c2" },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}

@@ -1,0 +1,28 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// on the straight track 1 of Stacja1: a locomotive with an AI driver stands cold (trainset velocity 0, so
+// it starts "Braked": hand brake on, battery off, pantographs down) on tdo_n1725, its front 60 m past
+// point 1 of the track, facing point 2; the rake (vars.rake) stands, braked as well and with nobody in it,
+// on tdo_n1734 ahead of it, its front 60 m past point 1 of that track, some 45 m in front of the
+// locomotive (two coaches of 26.4 m).
+trainset none tdo_n1725 60.0 0.0
+node -1 0 {{vehicle}} dynamic {{locomotive}} 0 headdriver 0 0 enddynamic
+endtrainset
+
+trainset none tdo_n1734 60.0 0.0
+{{rake}}
+endtrainset
+
+// a driver of a standing trainset sleeps on Wait_for_orders until something wakes it. event0 of the
+// locomotive's track (the case's track_events) runs while it stands there and gives it, once (the memory
+// cell), the order a scenery gives a shunter to couple: Shunt -1 3, couple to the consist standing ahead
+// with the coupler and the brake hose and go on shunting. the engine is cold, so the AI starts it
+// first: its orders are Prepare_engine, Connect, Shunt, and Connect is the first one it drives under.
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_wake multiple 0 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event autotest_order PutValues 0 none 0 0 0 Shunt -1 3 endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 1 * endevent
+
+// the rake, pushed by the locomotive, runs onto tor1k (40 m ahead of its first coach) towards its
+// point 2: eventall2 of tor1k (the case's track_events) passes the test, which ends there with the train
+// still moving (test.no_movement_before_pass no), 100 m short of the exit signal at the end of tor1k.
+event autotest_pass UpdateValues 0 __test.result the_rake_was_coupled_and_pushed 1 * endevent
