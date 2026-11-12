@@ -135,7 +135,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 19 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. All 21 cases
   take about 30 s with `-j 4`, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -207,6 +207,10 @@ timetable cases therefore check that the train comes down to 1 km/h, with no hol
 from the start (each of the seven trains stops at 1397-1401 m). `td_red_signal_moving.scn` is the red signal one with the train
 starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels when braking
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
+`td_shunt_red_signal.scn` is the same with no timetable, so the AI shunts (Shunt) towards the signal at
+stop, starting `vars.offset` m into `tdo_n1734`: `eu07_td_shunt_red_signal` alone and
+`eu07_td_shunt_push_red_signal` pushing three coaches, both from 30 km/h, have to stop before the signal
+(the shunting AI used to coast up to it and pass it at about 28 km/h, backlog D24).
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
 
