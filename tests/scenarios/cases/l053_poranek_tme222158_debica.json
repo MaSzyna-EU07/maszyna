@@ -1,0 +1,31 @@
+{
+  "description": "eu07/maszyna#421, L053 poranek, TME222158: the locomotive brings the wagons with steel coils from Debica Towarowa to Debica, uncouples (Shunt 0 0 from the scenery), shunts on the Ms2 signals while the station's SM42 takes the wagons away, couples to its next train and gets the exit signal to Sandomierz (step 6 of the station's state cell).",
+  "base_scenery": "l053_poranek.scn",
+  "strip_trainsets": false,
+  "vehicle": "ET22-654",
+  "fragment": "mission_state_probe.scn",
+  "vars": {
+    "cell": "deb_tme222158_stat",
+    "state": "* 6 *",
+    "reason": "tme222158_got_the_exit_signal_at_debica"
+  },
+  "slow": true,
+  "xfail": "eu07/maszyna#421 is not reached: with every train driven by AI Debica jams 4 minutes after the start, the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint before it (tor1834:event0), so RPE23113 never reports there and TME222158 is never let into the station",
+  "physicslog": false,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.timeout 6000",
+    "test.standstill 2100",
+    "test.fail_if_stop_overran no"
+  ],
+  "expect": "pass",
+  "timeout": 3600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "Uncoupling \\[ET22-654\\]: uncoupled"
+    }
+  ]
+}

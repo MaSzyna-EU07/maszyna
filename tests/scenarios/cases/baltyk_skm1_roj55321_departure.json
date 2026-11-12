@@ -1,0 +1,18 @@
+{
+  "description": "eu07/maszyna#525, Baltyk skm1, the mission that starts in the platform of Baltyk Glowny (EN71-014ra, ROJ55321, departure 10:34): the exit signal has to clear and the unit has to leave. Standing for 10 minutes ends the test as standstill.",
+  "base_scenery": "baltyk_skm1.scn",
+  "strip_trainsets": false,
+  "vehicle": "EN71-014ra",
+  "slow": true,
+  "physicslog": false,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.standstill 600",
+    "test.fail_if_stop_overran no"
+  ],
+  "duration": 900,
+  "expect": "timeout",
+  "timeout": 900
+}

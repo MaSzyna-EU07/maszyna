@@ -1,0 +1,37 @@
+{
+  "description": "eu07/maszyna#421 as reported in 2021, with an ET21 on TME222158 (the scenery has an ET22 there now): the same run as l053_poranek_tme222158_debica, the locomotive of the mission replaced.",
+  "base_scenery": "l053_poranek.scn",
+  "strip_trainsets": false,
+  "replace": [
+    [
+      "node -1 0 ET22-654 dynamic pkp\\et22_v3 201E-654 201E -1 headdriver 3 0 enddynamic",
+      "node -1 0 ET21-367 dynamic pkp\\et21_v2 ET21-367 3e2 -1 headdriver 3 0 enddynamic"
+    ]
+  ],
+  "vehicle": "ET21-367",
+  "fragment": "mission_state_probe.scn",
+  "vars": {
+    "cell": "deb_tme222158_stat",
+    "state": "* 6 *",
+    "reason": "tme222158_got_the_exit_signal_at_debica"
+  },
+  "slow": true,
+  "xfail": "eu07/maszyna#421: the ET21 stands for good at Debica Towarowa with the shunting signal at Ms2. Running round the wagons it stops on the headshunt 20 m past the end of the overhead wire (the wire ends at z 4804 over tor2466, the locomotive stands at z 4786), loses power, and its driver never gets out of Prepare_engine; the ET22 the scenery has there now gets through",
+  "physicslog": false,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.timeout 6000",
+    "test.standstill 2100",
+    "test.fail_if_stop_overran no"
+  ],
+  "expect": "pass",
+  "timeout": 3600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "Uncoupling \\[ET21-367\\]: uncoupled"
+    }
+  ]
+}
