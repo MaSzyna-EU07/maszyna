@@ -2496,6 +2496,8 @@ void editor_mode::render_orthophoto_ui()
                 config.east = m_orthophoto_origin_edit.y;
                 changed = true;
                 persist = true;
+                // the same as "The middle the scenery file gives" of the terrain model: the heights fitted at the place before mean nothing here
+                nmt_place_scenery({config.east, config.north});
             }
         }
     }
@@ -3789,7 +3791,25 @@ void editor_mode::read_georeference()
         }
     }
     // the scenery file first, then the files it includes near its top: a scenery made of
-    // an include (the IRT one) keeps its origin in the included file
+    // an include (the IRT one) keeps its origin in the included file. Its name is found whatever its case, as the game finds it
+    auto const existing = [](std::filesystem::path const &Path) {
+        std::error_code error;
+        if (std::filesystem::exists(Path, error))
+            return Path;
+        auto const wanted{ToLower(Path.filename().string())};
+        for (std::filesystem::directory_iterator entry{Path.parent_path(), error}, end; entry != end; entry.increment(error))
+        {
+            try
+            {
+                if (ToLower(entry->path().filename().string()) == wanted)
+                    return entry->path();
+            }
+            catch (std::exception const &)
+            {
+            }
+        }
+        return Path;
+    };
     std::vector<std::filesystem::path> files{file};
     std::string line;
     for (std::size_t index = 0; index < files.size() && false == m_georeference; ++index)
@@ -3800,17 +3820,15 @@ void editor_mode::read_georeference()
         auto const mark = line.find("//$g");
         if (mark == std::string::npos)
         {
-            // include <file> ... end, only from the scenery file and one level down
-            auto const start{line.find_first_not_of(" \t")};
-            if (index == 0 && files.size() < 8 && start != std::string::npos && line.compare(start, 8, "include ") == 0)
+            // include <file> ... end, only from the scenery file and one level down; the keyword in any case and after any
+            // whitespace, as the parser of the scenery takes it
+            std::istringstream words(line);
+            std::string keyword;
+            std::string name;
+            if (index == 0 && files.size() < 8 && (words >> keyword) && ToLower(keyword) == "include" && (words >> name) && name.find("//") != 0)
             {
-                std::istringstream words(line.substr(start + 8));
-                std::string name;
-                if (words >> name && name.find("//") != 0)
-                {
-                    std::replace(name.begin(), name.end(), '\\', '/');
-                    files.emplace_back(std::filesystem::path{Global.asCurrentSceneryPath} / name);
-                }
+                std::replace(name.begin(), name.end(), '\\', '/');
+                files.emplace_back(existing(std::filesystem::path{Global.asCurrentSceneryPath} / name));
             }
             continue;
         }

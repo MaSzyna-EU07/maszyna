@@ -2161,8 +2161,10 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 		placed = true;
 	}
 	ImGui::EndDisabled();
-	item_tooltip("The place clicked on the map is where the camera stands now: the middle of the scenery is set from it, so the orthophoto, the terrain model "
-	             "and the map lie under the scenery again. Fly the camera to a place you know on the map (a station, a crossing), click that place and assign");
+	// shown while the button is still disabled too: that's when the how-to is needed, before a place is clicked on the map
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", STR_C("The place clicked on the map is where the camera stands now: the middle of the scenery is set from it, so the orthophoto, the terrain model "
+		                              "and the map lie under the scenery again. Fly the camera to a place you know on the map (a station, a crossing), click that place and assign"));
 	read_georeference();
 	if (m_georeference)
 	{
