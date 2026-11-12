@@ -177,13 +177,11 @@ void TCamera::Update()
             movement *= -1.f;
             movement.y = -movement.y;
         }
-/*
-        if( ( m_owner->ctOwner )
-         && ( m_owner->ctOwner->Vehicle()->DirectionGet() != m_owner->DirectionGet() ) ) {
+        if( m_owner->ctOwner && m_owner->ctOwner->Vehicle()
+         && m_owner->ctOwner->Vehicle()->DirectionGet() != m_owner->DirectionGet() ) {
             movement *= -1.f;
             movement.y = -movement.y;
         }
-*/
 		movement = RotateY(movement, (double)Angle.y);
 
         m_owneroffset += movement * deltatime;

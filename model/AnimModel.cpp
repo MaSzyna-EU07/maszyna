@@ -773,15 +773,18 @@ TSubModel * TAnimModel::TerrainSquare(int n)
 //---------------------------------------------------------------------------
 void TAnimModel::LightSet(int const n, float const v)
 { // ustawienie światła (n) na wartość (v)
-    if( n >= iMaxNumLights ) {
+    if( n < 0 || n >= iMaxNumLights ) {
         return; // przekroczony zakres
     }
+    if (lsLights[n] == v)
+        return;
     lsLights[ n ] = v;
+    ++m_light_revision;
 }
 
 std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::LightGet(const int n)
 {
-	if (n >= iMaxNumLights)
+	if (n < 0 || n >= iMaxNumLights)
 		return std::nullopt;
 	if (!LightsOn[n] && !LightsOff[n])
 		return std::nullopt;
@@ -794,7 +797,23 @@ std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::L
 	if (!color && LightsOn[n])
 		color = LightsOn[n]->GetDiffuse();
 
-	return std::make_tuple(lsLights[n], m_lightopacities[n], color);
+    float opacity = m_lightopacities[n];
+    auto const lightmode = static_cast<int>(std::abs(lsLights[n]));
+    if (lightmode == ls_Dark || lightmode == ls_Home) {
+        bool state =
+            Global.fLuminance - std::max(0.f, Global.Overcast - 1.f) <=
+            (lsLights[n] == static_cast<float>(lightmode)
+                ? DefaultDarkThresholdLevel
+                : lsLights[n] - static_cast<float>(lightmode));
+        if (lightmode == ls_Home) {
+            auto const simulationhour = simulation::Time.data().wHour;
+            state = state && (simulationhour < 1 || simulationhour >= 5);
+        }
+        if (!state)
+            opacity = 0.0f;
+    }
+
+	return std::make_tuple(lsLights[n], opacity, color);
 }
 
 void TAnimModel::SkinSet( int const Index, material_handle const Material ) {

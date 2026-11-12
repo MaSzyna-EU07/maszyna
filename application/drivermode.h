@@ -96,7 +96,8 @@ private:
     void InOutKey();
     void CabView();
     void ExternalView();
-    void DistantView( bool const Near = false );
+    void DistantView( bool const Near = false, bool const UseEntrySide = false );
+	void update_window_title();
 	void set_picking( bool const Picking );
 
 // members
@@ -107,6 +108,11 @@ private:
     int m_externalviewmode { view::consistfront }; // selected external view mode
 	bool m_externalview { true };
     std::array<view_config, view::count_> m_externalviewconfigs;
+    bool m_free_camera_move_active { false };
+    glm::dvec3 m_free_camera_move_start{};
+    glm::dvec3 m_free_camera_move_target{};
+    double m_free_camera_move_elapsed { 0.0 };
+    double m_free_camera_move_duration { 1.0 };
     TDynamicObject *pDynamicNearest { nullptr }; // vehicle nearest to the active camera. TODO: move to camera
     double fTime50Hz { 0.0 }; // bufor czasu dla komunikacji z PoKeys
     double const m_primaryupdaterate { 1.0 / 100.0 };
@@ -116,5 +122,7 @@ private:
     int iPause { 0 }; // wykrywanie zmian w zapauzowaniu
 	command_relay m_relay;
 	std::string change_train; // train name awaiting entering
+	int m_vehicle_entry_side { 0 };
+	std::string m_window_title;
 	bool m_editorpending { false }; // scenery was opened for editing, switch to the editor after the initial update
 };

@@ -32,7 +32,6 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
-#include "widgets/map_objects.h"
 
 void
 basic_event::event_conditions::bind( basic_event::node_sequence *Nodes ) {
@@ -544,7 +543,6 @@ updatevalues_event::run_() {
         }
     }
 
-	map::Objects.poi_dirty = true; // it could potentially change map icons
 }
 
 // export_as_text() subclass details
