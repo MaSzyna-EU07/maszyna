@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "utilities/Logs.h"
+#include "utilities/logfiles.h"
 
 #include <format>
 
@@ -81,11 +82,22 @@ std::atomic<bool> &log_stopped()
 	static std::atomic<bool> stopped{false};
 	return stopped;
 }
+// set once the settings are read: the files are named by them (multiplelogs, the scenery)
+std::atomic<bool> &log_files_open()
+{
+	static std::atomic<bool> open{false};
+	return open;
+}
 } // namespace
 
 void StopLogService()
 {
 	log_stopped() = true;
+}
+
+void OpenLogFiles()
+{
+	log_files_open() = true;
 }
 
 
@@ -95,6 +107,9 @@ void LogService()
 	for (bool last{false}; false == last;)
 	{
 		last = log_stopped();
+		// what is logged before the settings are read waits for them, or it would open (and empty) the shared log.txt
+		// of a run that writes its own files in logs/. a start that stops before that writes it anyway
+		if (log_files_open() || last)
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
@@ -113,8 +128,7 @@ void LogService()
 				{
 					if (!output.is_open())
 					{
-						std::string filename = Global.MultipleLogs ? "logs/log (" + filename_scenery() + ") " + filename_date() + ".txt" : "log.txt";
-						output.open(filename, std::ios::trunc);
+						output.open(log_file_name(log_file::log, Global.MultipleLogs, filename_scenery(), filename_date()), std::ios::trunc);
 					}
 					output << msg << "\n";
 					output.flush();
@@ -150,8 +164,7 @@ void LogService()
 
 				if (!errors.is_open())
 				{
-					std::string filename = Global.MultipleLogs ? "logs/errors (" + filename_scenery() + ") " + filename_date() + ".txt" : "errors.txt";
-					errors.open(filename, std::ios::trunc);
+					errors.open(log_file_name(log_file::errors, Global.MultipleLogs, filename_scenery(), filename_date()), std::ios::trunc);
 					errors << "EU07.EXE " + Global.asVersion << "\n";
 				}
 
