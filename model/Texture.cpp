@@ -1163,7 +1163,8 @@ texture_source::load_TGA() {
     }
 
     downsize( GL_BGRA );
-    if( data_width > Global.CurrentMaxTextureSize || data_height > Global.CurrentMaxTextureSize ) {
+    if( ( false == contains( traits, 'r' ) )
+     && ( data_width > Global.CurrentMaxTextureSize || data_height > Global.CurrentMaxTextureSize ) ) {
         // for non-square textures there's currently possibility the scaling routine will have to abort
         // before it gets all work done
         data_state = resource_state::failed;
@@ -1334,7 +1335,7 @@ opengl_texture::create( bool const Static ) {
                     // uncompressed texture data. have the gfx card do the compression as it sees fit
                     ::glTexImage2D(
                         target, 0,
-                        Global.compress_tex ? compressed_format : internal_format,
+                        ( Global.compress_tex && ( false == contains( traits, 'r' ) ) ) ? compressed_format : internal_format,
                         data_width, data_height, 0,
                         data_format, data_type, (GLubyte *)&data[ 0 ] );
                 }
@@ -1568,6 +1569,10 @@ opengl_texture::set_filtering() const
 void
 texture_source::downsize( GLuint const Format ) {
 
+    if( contains( traits, 'r' ) ) {
+        // raw data (trait r: the frames of the animations baked into textures, mat_vat): never scaled down
+        return;
+    }
     while( data_width > Global.CurrentMaxTextureSize || data_height > Global.CurrentMaxTextureSize ) {
         // scale down the base texture, if it's larger than allowed maximum
         // NOTE: scaling is uniform along both axes, meaning non-square textures can drop below the maximum

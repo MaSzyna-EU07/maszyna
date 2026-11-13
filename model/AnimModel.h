@@ -123,6 +123,9 @@ public:
     // Angles, Scale: content of the optional blocks of the definition, nullptr for a block which isn't there
     void Load( std::string const &Name, std::string const &Texture, TAnimModel const *Twin, glm::vec3 const *Angles, glm::vec3 const *Scale, bool const Transition );
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
+    // the instance drawn on its own from now on, not with the others of its model: one the game moves (the deer at the tracks),
+    // whose place the renderer takes anew in every frame
+    void draw_alone();
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
 	void LightSet( int const n, float const v );
     void SkinSet( int const Index, material_handle const Material );

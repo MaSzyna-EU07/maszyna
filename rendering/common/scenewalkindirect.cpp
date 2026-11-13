@@ -282,10 +282,10 @@ bool scene_walk::Queue_Model(TAnimModel *Instance, bool const Inrange)
 
 	auto &records{m_modelrecords[Instance]};
 	auto &bucket{records.bucket};
-	if ((bucket.recordsversion != m_instancerecordsversion) || (bucket.records.size() != 1))
+	if ((bucket.recordsversion != m_instancerecordsversion) || (bucket.records.size() != 1) || (records.area.center != Instance->location()))
 	{
 		// the key, the instance and the record anew: the editor may have given the instance another model or skins, or
-		// another instance may have taken the place of a deleted one
+		// another instance may have taken the place of a deleted one, or the game moved it (world/deer.cpp)
 		auto &key{records.key};
 		key = {};
 		key.pModel = Instance->Model();
@@ -865,9 +865,11 @@ void scene_walk::Replay_Walk(walk_band const &Walk, bool const Shadows)
 		draw.ubs = model_ubs;
 		draw.ubs.modelview = walked.modelview;
 		draw.ubs.modelviewnormal = walked.modelviewnormal;
+		// the parameters of the material go with the shadows too: a material which moves its vertices in a vertex shader of its own
+		// reads them there (vat_speed of mat_vat.vert, without which its shadow stands still); the common shadow programs don't
+		std::memcpy(&draw.ubs.param[0], &walked.param[0], sizeof(draw.ubs.param));
 		if (false == Shadows)
 		{
-			std::memcpy(&draw.ubs.param[0], &walked.param[0], sizeof(draw.ubs.param));
 			draw.ubs.opacity = walked.opacity;
 			draw.ubs.alpha_mult = walked.alpha_mult;
 		}

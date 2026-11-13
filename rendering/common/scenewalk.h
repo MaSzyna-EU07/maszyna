@@ -189,6 +189,7 @@ class scene_walk
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);
+	void Render_text(TSubModel *Submodel); // opaque characters of a text display
 	void Render_Alpha_text(TSubModel *Submodel); // characters of a text display
 
 	// TDynamicObject::renderme as the walk sets and reads it: the walk keeps its own while the passes are walked by several threads at

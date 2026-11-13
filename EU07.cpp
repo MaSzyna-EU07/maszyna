@@ -49,8 +49,9 @@ int generate_nodebank_previews(int Argc, char *Argv[]);
 static void stop_log_service()
 {
 	Global.applicationQuitOrder = true;
+	StopLogService();
 	auto const it = Global.threads.find("LogService");
-	if (it != Global.threads.end() && it->second.joinable())
+	if (it != Global.threads.end() && it->second.joinable() && it->second.get_id() != std::this_thread::get_id())
 		it->second.join();
 }
 

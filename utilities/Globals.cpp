@@ -2084,6 +2084,16 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
     else if( Token == "gfx.lights.range" ) { readvalue( gfx_lights_range, 0.f, 2000.f ); }
+    else if( Token == "moths" ) { readswitch( moths ); }
+    else if( Token == "moths.share" ) { readvalue( moths_share, 0.f, 1.f ); }
+    else if( Token == "moths.range" ) { readvalue( moths_range, 0.f, 500.f ); }
+    else if( Token == "moths.temperature" ) { readvalue( moths_temperature, -50.f, 50.f ); }
+    else if( Token == "deer" ) { readswitch( deer ); }
+    else if( Token == "deer.interval" ) { readvalue( deer_interval, 0.0f, 100000.0f ); }
+    else if( Token == "deer.distance" ) { readvalue( deer_distance, 100.0f, 10000.0f ); }
+    else if( Token == "deer.chance" ) { readvalue( deer_chance, 0.0f, 1.0f ); }
+    else if( Token == "deer.hornrange" ) { readvalue( deer_hornrange, 0.0f, 5000.0f ); }
+    else if( Token == "deer.fleedistance" ) { readvalue( deer_fleedistance, 0.0f, 1000.0f ); }
     else if( Token == "gfx.lights.shadows" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2591,6 +2601,16 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );
     export_as_text( Output, "gfx.lights.range", gfx_lights_range );
+    export_as_text( Output, "moths", moths );
+    export_as_text( Output, "moths.share", moths_share );
+    export_as_text( Output, "moths.range", moths_range );
+    export_as_text( Output, "moths.temperature", moths_temperature );
+    export_as_text( Output, "deer", deer );
+    export_as_text( Output, "deer.interval", deer_interval );
+    export_as_text( Output, "deer.distance", deer_distance );
+    export_as_text( Output, "deer.chance", deer_chance );
+    export_as_text( Output, "deer.hornrange", deer_hornrange );
+    export_as_text( Output, "deer.fleedistance", deer_fleedistance );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.lights.shadows.cab", gfx_lights_shadows_cab );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );

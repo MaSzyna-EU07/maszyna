@@ -27,6 +27,9 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 
 	// the storage bound to its point for the glasses drawn next (the bindings are kept by every context of its own)
 	void bind() const;
+	// the drops and the rivulets of the cells of the glasses with rain (mat_rain_windscreen, rain_cells.comp) worked out for the
+	// time of the frame (scene_ubs.time), once a frame before the passes; nothing while it doesn't rain
+	void update_rain_cells(float Time, float Rain);
 
   protected:
 	bool gpu_init() override;
@@ -47,9 +50,13 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 		gather,
 		settle,
 		bake,
+		snow,
 		count
 	};
 	std::array<std::unique_ptr<gl::program>, pass::count> m_programs;
 	std::unique_ptr<gl::ssbo> m_storage;
 	std::unique_ptr<gl::ubo> m_block;
+	std::unique_ptr<gl::program> m_raincellprogram;
+	std::unique_ptr<gl::ssbo> m_raincells;
+	bool m_raincelltried{false};
 };
