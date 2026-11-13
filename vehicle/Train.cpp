@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/compartmentlightsswitch.h"
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
@@ -6624,13 +6625,11 @@ void TTrain::OnCommand_compartmentlightsenable(TTrain *Train, command_data const
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitch(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the off request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightsoff_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -6665,13 +6664,11 @@ void TTrain::OnCommand_compartmentlightsdisable(TTrain *Train, command_data cons
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitchOff(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the on request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightson_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitch(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
