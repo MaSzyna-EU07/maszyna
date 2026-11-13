@@ -533,6 +533,7 @@ add_library(eu07_settings INTERFACE)
 # the parts of the simulation the game shares with the unit tests: the vehicle physics, the vehicle
 # definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
+"audio/startsample.cpp"
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
