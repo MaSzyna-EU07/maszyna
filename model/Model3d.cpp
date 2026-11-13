@@ -1702,24 +1702,27 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 	m_filename = name;
 
 	asBinary = name + ".e3d";
+	// the files as they're named on the disk, the name given is in lowercase
+	auto const textfile{FileCased(name + ".t3d")};
+	auto const binaryfile{FileCased(asBinary)};
 
 	// Hirek: Jesli mamy ustawione priorityLoadText3D na yes to wpierw ladujemy t3d
-	if (Global.priorityLoadText3D && FileExists(name + ".t3d"))
+	if (Global.priorityLoadText3D && (false == textfile.empty()))
 	{
-		WriteLog("Forced loading text model \"" + name + ".t3d\"");
-		LoadFromTextFile(name + ".t3d", dynamic);
+		WriteLog("Forced loading text model \"" + textfile + "\"");
+		LoadFromTextFile(textfile, dynamic);
 		if (!dynamic)
 			Init();
 	}
-	else if (FileExists(asBinary))
+	else if (false == binaryfile.empty())
 	{
-		LoadFromBinFile(asBinary, dynamic);
+		LoadFromBinFile(binaryfile, dynamic);
 		asBinary = "";
 		Init();
 	}
-	else if (FileExists(name + ".t3d"))
+	else if (false == textfile.empty())
 	{
-		LoadFromTextFile(name + ".t3d", dynamic);
+		LoadFromTextFile(textfile, dynamic);
 		if (!dynamic)
 			Init();
 	}

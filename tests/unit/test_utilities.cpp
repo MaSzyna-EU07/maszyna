@@ -578,6 +578,56 @@ TEST_CASE("utilities: a file is found by its name in another case") {
 	CHECK(FileCased("eu07_unit_test_no_such_file.xyz").empty());
 }
 
+TEST_CASE("utilities: a file is found in folders named in another case, the way the parser gives the names in lowercase") {
+	test::scratch_folder const folder{"utilities_cased_folders"};
+	folder.write("Scenery/Braniewo/rozklady/Os91121.txt", "x");
+	folder.write("Textures/Tabl/L101-2m.BMP", "x");
+
+	// every part of the path in lowercase: the file as it's on the disk where the case matters, the name given where it doesn't
+	auto const timetable{FileCased(folder.path("scenery/braniewo/rozklady/os91121.txt"))};
+	REQUIRE_FALSE(timetable.empty());
+	CHECK(std::filesystem::exists(timetable));
+	CHECK(ToLower(timetable) == ToLower(folder.path("Scenery/Braniewo/rozklady/Os91121.txt")));
+	CHECK(FileOnDisk(folder.path("scenery/braniewo/rozklady/os91121.txt")) == timetable);
+	// the folders written the Windows way as well
+	CHECK_FALSE(FileCased(folder.path() + "scenery\\braniewo\\rozklady\\os91121.txt").empty());
+	// a folder missing in any case
+	CHECK(FileCased(folder.path("scenery/nowhere/rozklady/os91121.txt")).empty());
+	CHECK(FileOnDisk(folder.path("scenery/nowhere/rozklady/os91121.txt")) == folder.path("scenery/nowhere/rozklady/os91121.txt"));
+
+	// among names and extensions: found in any case, given back as named, the name being the key of the banks
+	auto const texture{FileExists(std::vector<std::string>{folder.path("textures/tabl/l101-2m")}, std::vector<std::string>{".dds", ".bmp"})};
+	REQUIRE_FALSE(texture.first.empty());
+	CHECK(texture.first == folder.path("textures/tabl/l101-2m"));
+	CHECK(texture.second == ".bmp");
+	CHECK(std::filesystem::exists(FileOnDisk(texture.first + texture.second)));
+
+	// a file written after the folder was gone through is found as well
+	CHECK(FileCased(folder.path("textures/tabl/l7-2m.bmp")).empty());
+	folder.write("Textures/Tabl/L7-2m.bmp", "x");
+	auto const added{FileCased(folder.path("textures/tabl/l7-2m.bmp"))};
+	REQUIRE_FALSE(added.empty());
+	CHECK(std::filesystem::exists(added));
+}
+
+TEST_CASE("utilities: a terrain file is found in another case, by its text or by its binary file") {
+	test::scratch_folder const folder{"utilities_cased_terrain"};
+	folder.write("Scenery/L204/Teren/Woda_ter.txtf", "x");
+	folder.write("Scenery/Nmt/Gory_ter.btf", "x");
+	auto const scenery{folder.path("Scenery/")};
+	std::vector<std::string> const extensions{".txtf", ".btf"};
+
+	// the name as the parser gives it: the files are there under the name given back, which differs only in case
+	auto const text{FileStemOnDisk(scenery, "l204/teren/woda_ter", extensions)};
+	CHECK(ToLower(text) == "l204/teren/woda_ter");
+	CHECK(std::filesystem::exists(scenery + text + ".txtf"));
+	auto const binary{FileStemOnDisk(scenery, "nmt/gory_ter", extensions)};
+	CHECK(ToLower(binary) == "nmt/gory_ter");
+	CHECK(std::filesystem::exists(scenery + binary + ".btf"));
+	// neither file in any case: the name stays as given
+	CHECK(FileStemOnDisk(scenery, "nmt/nowhere_ter", extensions) == "nmt/nowhere_ter");
+}
+
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {
 	test::scratch_folder const folder{"utilities_modified"};
 	auto const name{folder.write("fresh.txt", "x")};
