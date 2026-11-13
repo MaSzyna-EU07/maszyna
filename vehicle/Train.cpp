@@ -12172,6 +12172,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-mainpipelock:", &mvOccupied->LockPipe},
 	    {"i-battery:", &mvOccupied->Power24vIsAvailable},
 	    {"i-cablight:", &Cabine[iCabn].bLight},
+	    {"i-compartmentlights:", &mvOccupied->CompartmentLights.is_active},
 	};
 	{
 		auto lookup = autolights.find(Label);
