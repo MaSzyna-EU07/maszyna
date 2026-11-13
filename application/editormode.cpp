@@ -2003,6 +2003,9 @@ void editor_mode::render_terrain_ui()
         ImGui::TextDisabled("%s", STR_C("The holes follow the ground every metre (every grid point of finer chunks), whatever the drawn grid"));
     }
 
+    if (ImGui::CollapsingHeader(STR_C("Fields"), m_terrain_tool == terrain_tool::fields ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+        render_fields_ui();
+
     if (ImGui::CollapsingHeader(STR_C("Fill"), m_terrain_tool == terrain_tool::fill ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
         auto const &layers{m_streamer.manifest().layers};
@@ -2029,7 +2032,10 @@ void editor_mode::render_terrain_ui()
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Clear the outline##fill")))
+        {
             m_paint_outline.clear();
+            m_patch_reoutline.clear();
+        }
         // the same outline for the holes and the grass
         std::vector<glm::dvec2> outline;
         for (auto const &point : m_paint_outline)
@@ -2386,7 +2392,7 @@ void editor_mode::draw_terrain_overlay()
             outline.emplace_back(point.x, water[i].level, point.y);
         polyline(outline, static_cast<int>(i) == m_water_selected ? IM_COL32(120, 200, 255, 255) : IM_COL32(60, 120, 220, 160), true, static_cast<int>(i) == m_water_selected ? 2.5f : 1.5f);
     }
-    if (m_terrain_tool == terrain_tool::fill && false == m_paint_outline.empty())
+    if ((m_terrain_tool == terrain_tool::fill || m_terrain_tool == terrain_tool::fields) && false == m_paint_outline.empty())
     {
         // laid over the ground, the edges followed every few metres
         std::vector<glm::dvec3> outline;
@@ -2956,6 +2962,7 @@ void editor_mode::handle_terrain_click(bool const Shift)
         break;
     }
     case terrain_tool::fill:
+    case terrain_tool::fields:
     {
         if (Shift)
         {

@@ -14294,3 +14294,354 @@ msgstr "Przesuwa profil na miejsce trasy, gdzie jest kamera, bez zmiany powięks
 
 msgid "The switch drawn to the joint of the tracks"
 msgstr "Rozjazd dosunięty do styku torów"
+
+msgid "Edge"
+msgstr "Krawędź"
+
+msgid "How far the edge wanders in and out of the outline, so it isn't drawn with a ruler"
+msgstr "Na ile krawędź wchodzi w obrys i z niego wychodzi, żeby nie była od linijki"
+
+msgid "About how long the waves of the edge are: small - frayed, large - gently wavy"
+msgstr "Mniej więcej długość fal krawędzi: małe - poszarpana, duże - łagodnie falista"
+
+msgid "Natural slopes"
+msgstr "Naturalne skarpy"
+
+msgid "Foot wanders by (m)"
+msgstr "Falowanie podnóża (m)"
+
+msgid "Waves along the line (m)"
+msgstr "Fale wzdłuż linii (m)"
+
+msgid "About how long the waves of the foot are along the line"
+msgstr "Mniej więcej długość fal podnóża wzdłuż linii"
+
+msgid "Gentler by up to"
+msgstr "Łagodniejsze o najwyżej"
+
+msgid "0.2: the slope 1:1.5 gets as gentle as 1:1.8 here and there, never steeper than designed"
+msgstr "0,2: skarpa 1:1,5 miejscami łagodnieje do 1:1,8, nigdy nie jest bardziej stroma niż w projekcie"
+
+msgid "Soft foot (m/m)"
+msgstr "Miękkie podnóże (m/m)"
+
+msgid "Metres the foot is rounded off over, for a metre of the height of the slope: high embankments meet the ground softer"
+msgstr "Na ilu metrach podnóże się zaokrągla, na metr wysokości skarpy: wysokie nasypy łagodniej wchodzą w teren"
+
+msgid "Bumps on the face (m)"
+msgstr "Nierówności skarpy (m)"
+
+msgid "Metres the face of the slope is uneven by, as earth settled for years"
+msgstr "O ile metrów powierzchnia skarpy jest nierówna, jak ziemia ułożona przez lata"
+
+msgid "Make the slopes natural"
+msgstr "Zrób naturalne skarpy"
+
+msgid "Back to the slopes as designed"
+msgstr "Z powrotem skarpy według projektu"
+
+msgid "Cut out as %s with %s, Ctrl+Z puts it back"
+msgstr "Wycięto jako %s z %s, Ctrl+Z przywraca"
+
+msgid "Waves of the ground"
+msgstr "Falowanie terenu"
+
+msgid "Make the ground under the surface wavy"
+msgstr "Pofałduj teren pod powierzchnią"
+
+msgid "The heights of the terrain within the outline get the waves chosen below, fading in from the edge: a field ploughed into furrows, a meadow of gentle hills, a hollow. Ctrl+Z takes them back with the surface"
+msgstr "Wysokości terenu w obrysie dostają wybrane niżej fale, narastające od krawędzi: pole zaorane w bruzdy, łąka z łagodnymi pagórkami, niecka. Ctrl+Z cofa je razem z powierzchnią"
+
+msgid "Rolling hills"
+msgstr "Łagodne pagórki"
+
+msgid "Furrows of a field"
+msgstr "Bruzdy na polu"
+
+msgid "Bumps and molehills"
+msgstr "Garby i kretowiska"
+
+msgid "Long waves"
+msgstr "Długie fale"
+
+msgid "A hollow or a mound"
+msgstr "Niecka albo kopiec"
+
+msgid "A grid of hummocks"
+msgstr "Kratka garbów"
+
+msgid "Strips of fields"
+msgstr "Pasy pól"
+
+msgid "Gentle hills of all sizes, as a meadow or a pasture has them"
+msgstr "Łagodne pagórki różnej wielkości, jak na łące albo pastwisku"
+
+msgid "Ridges and furrows side by side, along the angle below, as a ploughed field or the beds of a garden"
+msgstr "Grzbiety i bruzdy obok siebie, w kierunku podanym niżej, jak na zaoranym polu albo grządkach"
+
+msgid "Small mounds scattered about, as molehills or tussocks"
+msgstr "Rozrzucone małe garby, jak kretowiska albo kępy"
+
+msgid "Long even waves across the angle below, as a field rolling over a hill or dunes"
+msgstr "Długie równe fale w poprzek kierunku podanego niżej, jak pole na zboczu albo wydmy"
+
+msgid "The middle lowered (a negative height raises it): a hollow by a pond, a dip in a field, or a mound"
+msgstr "Obniżony środek (ujemna wysokość go podnosi): niecka przy stawie, zagłębienie w polu albo kopiec"
+
+msgid "Waves along the angle and across it at once: hummocks in rows, as a drained meadow or an orchard on ridges"
+msgstr "Fale wzdłuż kąta i w poprzek naraz: garby w rzędach, jak meliorowana łąka albo sad na zagonach"
+
+msgid "Long strips along the angle, each a little higher or lower than the next, with banks between them: the fields of a village cut up between farms"
+msgstr "Długie pasy wzdłuż kąta, każdy trochę wyżej lub niżej od sąsiada, z miedzami między nimi: wiejskie pola podzielone między gospodarstwa"
+
+msgid "Kind##waves"
+msgstr "Rodzaj##waves"
+
+msgid "Height (m)##waves"
+msgstr "Wysokość (m)##waves"
+
+msgid "From the bottom of a wave to its top; for the hollow how deep its middle goes, negative: a mound"
+msgstr "Od dołu fali do jej szczytu; dla niecki głębokość środka, ujemna: kopiec"
+
+msgid "Length of a wave (m)##waves"
+msgstr "Długość fali (m)##waves"
+
+msgid "From one top to the next: furrows 0.7-2 m, the beds of a garden 1.5-3 m, hills 20-100 m"
+msgstr "Od jednego szczytu do następnego: bruzdy 0,7-2 m, grządki 1,5-3 m, pagórki 20-100 m"
+
+msgid "Direction (deg)##waves"
+msgstr "Kierunek (°)##waves"
+
+msgid "Which way the furrows or the ridges of the waves run, counterclockwise from the x axis of the scenery; the texture turned by the same angle lies along them"
+msgstr "Kierunek bruzd albo grzbietów fal, przeciwnie do zegara od osi x scenerii; tekstura obrócona o ten sam kąt leży wzdłuż nich"
+
+msgid "as the texture"
+msgstr "jak tekstura"
+
+msgid "Rounded"
+msgstr "Zaokrąglony"
+
+msgid "Sharp ridges"
+msgstr "Ostre grzbiety"
+
+msgid "Sharp valleys"
+msgstr "Ostre doliny"
+
+msgid "Terraces"
+msgstr "Tarasy"
+
+msgid "Flat tops"
+msgstr "Płaskie wierzchy"
+
+msgid "Every wave a gentle curve, as before"
+msgstr "Każda fala łagodnym łukiem, jak dotąd"
+
+msgid "Tops pointed, sides straight: ploughed ridges, a dune crest, a bank between fields"
+msgstr "Szczyty ostre, zbocza proste: zagony po orce, grzbiet wydmy, miedza"
+
+msgid "Bottoms pointed: drainage ditches, gullies cut by water, the furrow left by a plough"
+msgstr "Dna ostre: rowy melioracyjne, żleby wymyte przez wodę, bruzda po pługu"
+
+msgid "The slopes broken into flat steps: terraced fields on a hillside, a quarry, the shelves of a vineyard"
+msgstr "Zbocza połamane na płaskie stopnie: pola tarasowe na stoku, kamieniołom, półki winnicy"
+
+msgid "Tops and bottoms cut flat with steep sides between: beds of a garden, fields on raised strips, plateaus"
+msgstr "Wierzchy i dna ścięte płasko, strome boki między nimi: grządki, pola na wyniesionych pasach, płaskowyże"
+
+msgid "Profile##waves"
+msgstr "Profil##waves"
+
+msgid "The cross-section of a wave; the rounded one makes the fields look soft, the others give them edges"
+msgstr "Przekrój fali; zaokrąglony daje miękkie, obłe pola, pozostałe nadają im krawędzie"
+
+msgid "Sharpness##waves"
+msgstr "Ostrość##waves"
+
+msgid "0: the profile barely changed from the rounded one; 1: its edges and corners as sharp as they get"
+msgstr "0: profil prawie jak zaokrąglony; 1: krawędzie i narożniki najostrzejsze, jak się da"
+
+msgid "Steps##waves"
+msgstr "Stopnie##waves"
+
+msgid "How many flat steps a slope is broken into, from the bottom of a wave to its top"
+msgstr "Na ile płaskich stopni dzieli się zbocze, od dna fali do jej szczytu"
+
+msgid "Roughness##waves"
+msgstr "Chropowatość##waves"
+
+msgid "Clods and hummocks of about 3 m over the whole surface, up to 20 cm high: a ploughed field, a trodden pasture.\nThe terrain under the surface gets a point every metre for them (and for waves shorter than 15 m), the files grow"
+msgstr "Grudy i kępy wielkości około 3 m na całej powierzchni, do 20 cm wysokości: zaorane pole, wydeptane pastwisko.\nTeren pod powierzchnią dostaje dla nich punkt co metr (także dla fal krótszych niż 15 m), pliki rosną"
+
+msgid "Differences between them##waves"
+msgstr "Zróżnicowanie##waves"
+
+msgid "0: every wave alike, as drawn; 1: waves of quite different heights and places, as nature has them"
+msgstr "0: wszystkie fale jednakowe, jak od linijki; 1: fale o bardzo różnej wysokości i położeniu, jak w naturze"
+
+msgid "Fading in from the edge (m)##waves"
+msgstr "Narastanie od krawędzi (m)##waves"
+
+msgid "Metres inside the outline over which the waves grow from nothing, so the ground around meets the surface without a step"
+msgstr "Ile metrów w głąb obrysu fale narastają od zera, żeby teren dookoła łączył się z powierzchnią bez progu"
+
+msgid "left as it grows"
+msgstr "zostaje, jak rośnie"
+
+msgid "taken away"
+msgstr "usunięta"
+
+msgid "grown: %s"
+msgstr "posadzona: %s"
+
+msgid "The 3D grass under the surface: left as it grows, taken away (gravel, a yard), or another kind of the grass palette grown there instead"
+msgstr "Trawa 3D pod powierzchnią: zostaje, jak rośnie, jest usuwana (żwir, plac) albo w jej miejsce sadzony jest inny rodzaj z palety trawy"
+
+msgid "Filter by name, words apart by spaces..."
+msgstr "Filtr po nazwie, słowa oddzielone spacjami..."
+
+msgid "%zu shown"
+msgstr "pokazanych: %zu"
+
+msgid "Material of the palette to all shown"
+msgstr "Materiał z palety dla wszystkich pokazanych"
+
+msgid "%s given to %zu surfaces, Ctrl+Z takes it back"
+msgstr "%s nadany %zu powierzchniom, Ctrl+Z cofa"
+
+msgid "The material chosen in the palette, with its repeat and rotation, to all the surfaces the filter shows"
+msgstr "Materiał wybrany w palecie, z jego powtarzaniem i obrotem, dla wszystkich powierzchni pokazanych przez filtr"
+
+msgid "%s, %zu points, %s"
+msgstr "%s, %zu punktów, %s"
+
+msgid "Material##patch"
+msgstr "Materiał##patch"
+
+msgid "From the palette##patch"
+msgstr "Z palety##patch"
+
+msgid "Repeat (m)##patch"
+msgstr "Powtarzanie (m)##patch"
+
+msgid "of the material"
+msgstr "wg materiału"
+
+msgid "Turned by (deg)##patch"
+msgstr "Obrót (st.)##patch"
+
+msgid "Transition (m)##patch"
+msgstr "Szerokość przejścia (m)##patch"
+
+msgid "Noise of the edge (m)##patch"
+msgstr "Szum krawędzi (m)##patch"
+
+msgid "Waves of the noise (m)##patch"
+msgstr "Fale szumu (m)##patch"
+
+msgid "3D grass under it##patch"
+msgstr "Trawa 3D pod spodem##patch"
+
+msgid "Lift (m)##patch"
+msgstr "Uniesienie (m)##patch"
+
+msgid "Metres the surface lies over the heights taken from the terrain"
+msgstr "Ile metrów powierzchnia leży nad wysokościami wziętymi z terenu"
+
+msgid "Outline it again##patch"
+msgstr "Obrysuj ponownie##patch"
+
+msgid "Give back to the terrain##patch"
+msgstr "Oddaj terenowi##patch"
+
+msgid "Surface removed, the ground under it has the first material of the palette again"
+msgstr "Powierzchnia usunięta, teren pod nią ma z powrotem pierwszy materiał palety"
+
+msgid "Surface removed, the hole under it closed"
+msgstr "Powierzchnię usunięto, dziura pod nią zamknięta"
+
+msgid "No formation modifier there"
+msgstr "Brak tam modyfikatora torowiska"
+
+msgid "The slopes of %zu modifiers made natural, the terrain shaped anew. Ctrl+Z takes it back"
+msgstr "Naturalne skarpy dla %zu modyfikatorów, teren ukształtowany od nowa. Ctrl+Z cofa"
+
+msgid "The slopes of %zu modifiers as designed again. Ctrl+Z takes it back"
+msgstr "Skarpy %zu modyfikatorów znów według projektu. Ctrl+Z cofa"
+
+msgid "LMB adds a point of the outline, Shift+LMB takes the last one back. The field gets the material chosen in the palette and is kept in the list below, where its material can be changed later"
+msgstr "LPM dodaje punkt obrysu, Shift+LPM cofa ostatni. Pole dostaje materiał wybrany w palecie i trafia na listę poniżej, gdzie jego materiał można później zmienić"
+
+msgid "Painted into the terrain##fields"
+msgstr "Wmalowane w teren##fields"
+
+msgid "The material goes into the paint of the chunks: no seam, the edge blends into the ground around; a chunk holds up to 8 materials"
+msgstr "Materiał trafia do malowania chunków: bez szwu, krawędź przechodzi w otoczenie; chunk mieści do 8 materiałów"
+
+msgid "A surface of its own##fields"
+msgstr "Osobna powierzchnia##fields"
+
+msgid "The ground is cut away within the outline and the field drawn over the hole as a mesh of its own, following the heights of the terrain:\nit doesn't take one of the 8 materials of a chunk, but its edge is sharp and the seam can show"
+msgstr "Grunt w obrysie zostaje wycięty, a pole rysowane nad dziurą jako osobna siatka po wysokościach terenu:\nnie zajmuje żadnego z 8 materiałów chunka, ale krawędź jest ostra i może być widać szew"
+
+msgid "Transition (m)##fields"
+msgstr "Przejście (m)##fields"
+
+msgid "Metres across the edge the material passes into the one around over, half of them inside the field.\nThe paint of the terrain is kept every metre (every 0.5 m in the chunks converted to 0.5 m), narrower comes out in steps"
+msgstr "Na ilu metrach w poprzek krawędzi materiał przechodzi w otoczenie, połowa z nich w środku pola.\nMalowanie terenu jest zapisywane co metr (co 0,5 m w chunkach przerobionych na 0,5 m), węższe wychodzi schodkami"
+
+msgid "Noise of the edge (m)##fields"
+msgstr "Szum krawędzi (m)##fields"
+
+msgid "Waves of the noise (m)##fields"
+msgstr "Fale szumu (m)##fields"
+
+msgid "3D grass under it##fields"
+msgstr "Trawa 3D pod spodem##fields"
+
+msgid "Texture turned by (deg)##fields"
+msgstr "Obrót tekstury (st.)##fields"
+
+msgid "Cut out the field"
+msgstr "Wytnij pole"
+
+msgid "Clear the outline##fields"
+msgstr "Wyczyść obrys##fields"
+
+msgid "The embankments and the cuttings of the formation modifiers not drawn with a ruler: the formation and the edges of the track bed stay as designed, the slopes and their foot wander, get gentler here and there and meet the ground softly"
+msgstr "Nasypy i przekopy modyfikatorów torowiska nie jak spod linijki: korona i krawędzie torowiska zostają według projektu, a skarpy i ich podnóże falują, miejscami łagodnieją i miękko schodzą w teren"
+
+msgid "How far the foot of the slope goes in and out of the line of the slope"
+msgstr "Jak daleko podnóże skarpy wychodzi przed linię skarpy i cofa się za nią"
+
+msgid "Around the camera##natural"
+msgstr "Wokół kamery##natural"
+
+msgid "The whole scenery##natural"
+msgstr "Cała sceneria##natural"
+
+msgid "m##natural"
+msgstr "m##natural"
+
+msgid "The terrain under the modifiers is shaped anew; Ctrl+Z takes it back"
+msgstr "Teren pod modyfikatorami zostaje ukształtowany od nowa; Ctrl+Z cofa"
+
+msgid "field %d"
+msgstr "pole %d"
+
+msgid "Fields: %zu"
+msgstr "Pola: %zu"
+
+msgid "Puts the outline of the field back as the outline being drawn"
+msgstr "Przywraca obrys pola jako rysowany obrys"
+
+msgid "Fields"
+msgstr "Pola"
+
+msgid "LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; Shift+LMB takes the last one back"
+msgstr "LPM dodaje punkt obrysu pola: powierzchni wyciętej z terenu z własnym materiałem, z pofalowanym gruntem, jeśli chcesz; Shift+LPM cofa ostatni"
+
+msgid "%s outlined again, Ctrl+Z puts it back"
+msgstr "%s obrysowane na nowo, Ctrl+Z cofa"
+
+msgid "Puts the outline of the field back as the outline being drawn; cut out again, it changes this field"
+msgstr "Wstawia obrys pola z powrotem jako rysowany obrys; wycięcie go zmienia to pole"

@@ -269,6 +269,7 @@ set(SOURCES
 "application/editormodevehicle.cpp"
 "application/editormodeselection.cpp"
 "application/editormodeviewport.cpp"
+"application/editormodefields.cpp"
 "application/editormodeterrainchunks.cpp"
 "application/editormodesignal.cpp"
 "application/editormodecatenary.cpp"

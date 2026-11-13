@@ -550,7 +550,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		restore, // takes the touch-ups over the modifiers back
 		fill, // outlines an area filled with a material
 		holes, // cuts holes in the ground (portals of tunnels), Shift: closes them
-		grass // grows the chosen kind of grass, Shift: takes the grass away
+		grass, // grows the chosen kind of grass, Shift: takes the grass away
+		fields // outlines a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
 	bool terrain_brush() const
@@ -569,9 +570,67 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void remove_selected_chunks();
 	// takes the height of whatever is under the cursor (terrain, track, model) for the target of the level brush. returns: false if there's nothing
 	bool pick_terrain_target();
-	bool terrain_clicking() const { return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water || m_terrain_tool == terrain_tool::fill; }
+	bool terrain_clicking() const
+	{
+		return m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing || m_terrain_tool == terrain_tool::water || m_terrain_tool == terrain_tool::fill ||
+		       m_terrain_tool == terrain_tool::fields;
+	}
 	// fills the outlined area with the material of the chosen palette entry, turned by m_paint_rotation
 	void fill_terrain_area();
+
+	// the fields (editormodefields.cpp): surfaces cut out of the terrain within the outline of the Fill tool, each with a material
+	// of its own, kept in a list to be changed later; painted into the paint of the chunks, or as a mesh of its own over a hole
+	// (out of the 8 materials a chunk holds, its seam showing); the ground under them made wavy; the slopes of the formation
+	// modifiers made natural
+	struct field_settings
+	{
+		float feather{1.0f}; // metres the field blends into the ground around over
+		float noise{0.3f}; // metres its edge wanders in and out by
+		float noise_scale{4.0f}; // about how long the waves of the edge are
+		int grass{-1}; // the 3D grass under it: -2 left, -1 taken away, 0 or more: that kind grown
+		bool separate{false}; // a mesh of its own over a hole instead of the paint of the chunks
+		bool everywhere{false}; // where the slopes are made natural: the whole scenery, or around the camera
+		float radius{1500.0f};
+	};
+	field_settings m_field;
+	// the ground under a field made wavy: rolling hills, furrows of a field, bumps, long waves, a hollow or a mound
+	struct terrain_waves
+	{
+		enum kind { hills, furrows, bumps, waves, hollow, grid, strips, count };
+		// the profile of a wave: rounded as a sine, sharp ridges, sharp valleys, terraces, flat tops; how sharp it goes
+		enum profile { smooth, ridges, valleys, terraces, plateaus, profiles };
+		bool on{false};
+		int kind{hills};
+		float height{0.4f}; // metres, from the lowest to the highest point of a wave; negative for the hollow, upside down
+		float length{25.0f}; // metres, of a wave
+		float angle{0.0f}; // degrees the furrows and the waves run at, counterclockwise from x
+		float edge{6.0f}; // metres inside the outline over which the waves fade in from nothing
+		float variation{0.35f}; // 0..1, how much the waves differ from one another
+		int shape{smooth};
+		float sharpness{0.5f}; // 0..1: 0 the profile still rounded, 1 its corners and edges as sharp as it gets
+		int steps{4}; // of the terraces, from the bottom of a wave to its top
+		float roughness{0.0f}; // 0..1, small bumps over the whole surface, as clods of a field
+	};
+	terrain_waves m_waves;
+	heightmap::modifier::natural_shape m_natural{0.8, 15.0, 0.15, 0.3, 0.08};
+	int m_patch_selected{-1}; // field chosen in the list
+	heightmap::surface_patch m_patch_edit; // its copy the widgets edit, kept while one of them is held
+	int m_patch_edited{-1}; // which field m_patch_edit is of
+	std::string m_patch_reoutline; // the field whose outline was put back to be drawn again: cutting out changes it
+	void render_fields_ui();
+	void cut_out_field();
+	void render_waves_options();
+	// the ground within Outline made wavy as m_waves says; returns true if it changed
+	bool apply_waves(std::vector<glm::dvec2> const &Outline);
+	// a combo of what's done with the grass; true if changed
+	bool grass_choice(char const *Label, int &Choice);
+	// a field painted into the chunks, with its grass
+	bool paint_patch(heightmap::surface_patch const &Patch);
+	// the list of the fields set to All, the ones of Changed painted again with the ones over them they touch, the ground under the
+	// ones of Cleared given back the first material of the palette
+	void repaint_patches(std::vector<heightmap::surface_patch> All, std::vector<std::size_t> const &Changed, std::vector<heightmap::surface_patch> const &Cleared = {});
+	void render_patches_list();
+	void naturalise_slopes(bool Natural);
 	// the brush, the hovered chunk and the outlines of water drawn over the viewport
 	void draw_terrain_overlay();
 	// forgets what's known about the ground, after the terrain changed

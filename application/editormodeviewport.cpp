@@ -245,6 +245,10 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
 		                   choose(terrain_tool::fill)});
+		Buttons.push_back({icon::grass, STR_C("Fields"), nullptr,
+		                   STR_C("LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; "
+		                         "Shift+LMB takes the last one back"),
+		                   chosen(terrain_tool::fields), choose(terrain_tool::fields)});
 		Buttons.push_back({icon::hole, STR_C("Holes"), nullptr, STR_C("LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"), chosen(terrain_tool::holes),
 		                   choose(terrain_tool::holes)});
 		auto const orthophoto{m_orthophoto.enabled()};

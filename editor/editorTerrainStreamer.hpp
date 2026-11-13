@@ -130,10 +130,15 @@ class terrain_streamer
 	// Feather: metres across the outline the material blends in over, half of them inside; 0: a sharp edge, as sharp as
 	// the paint samples of the chunks go. the chunks are loaded where needed
 	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength = 1.0);
+	// the same with the edge shifted by up to Noise metres, in waves of about NoiseScale metres, so it isn't drawn with a ruler
+	bool fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength, double Noise, double NoiseScale);
 	// holes, for the portals of tunnels and the like: cut in the ground (Cut true) within Radius of (X,Z), or closed again
 	bool cut(double X, double Z, double Radius, bool Cut);
 	// the same within Outline (x, z); the chunks are loaded where needed
 	bool cut(std::vector<glm::dvec2> const &Outline, bool Cut);
+	// the hole of a field of its own surface cut (Cut true) or closed: marked as the field's, so closing it leaves the holes
+	// cut otherwise (the Holes tool) there as they are; a hole of a field cut before the mark is closed whole
+	bool cut_field(std::vector<glm::dvec2> const &Outline, bool Cut);
 	// grass: grows the kind of the grass palette Kind within Radius of (X,Z), Strength (0..1) of the way at the centre;
 	// Erase: takes every kind of grass away there instead
 	bool grass(double X, double Z, double Radius, double Strength, std::uint16_t Kind, bool Erase);
@@ -159,6 +164,9 @@ class terrain_streamer
 	void water(std::vector<heightmap::water_body> Water);
 	// material of the bodies of water which don't name their own
 	void water_material(std::string const &Material);
+	// pieces of the ground cut out of the terrain with a material of their own (the fields), drawn with the water
+	std::vector<heightmap::surface_patch> const &patches() const { return m_manifest.patches; }
+	void patches(std::vector<heightmap::surface_patch> Patches);
 	// modifiers: added or replaced by name
 	void modifier(heightmap::modifier Modifier);
 	// many at once, as the formation of all the tracks: each chunk they reach is led anew once
@@ -180,6 +188,7 @@ class terrain_streamer
 		bool manifest{false}; // the palette, the water (and its material) and the modifiers below were changed
 		std::vector<heightmap::layer_def> layers;
 		std::vector<heightmap::water_body> water;
+		std::vector<heightmap::surface_patch> patches;
 		std::string water_material;
 		std::vector<heightmap::modifier> modifiers;
 		std::vector<heightmap::grass_def> grass;
@@ -281,7 +290,11 @@ class terrain_streamer
 	bool paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Layer, bool Load, std::function<double(double X, double Z)> const &Amount);
 	// cuts (Cut true) or closes the holes at the hole samples within the rectangle where Inside says so. Load: chunks not in
 	// memory are loaded
-	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside);
+	// Mark: the value of a hole sample, 255 of the holes cut by hand, kFieldHole of the fields; with Mark other than 255 only
+	// the samples of that mark are closed, and a hole already there isn't marked over
+	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside,
+	              std::uint8_t Mark = 255);
+	static std::uint8_t constexpr kFieldHole{254};
 	// grows the kind Kind of the grass palette (or takes all grass away, Erase) over the grass samples within the rectangle,
 	// Amount (0..1) of the way at each
 	bool grass_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t Kind, bool Erase, bool Load, std::function<double(double X, double Z)> const &Amount);
@@ -298,6 +311,9 @@ class terrain_streamer
 	void apply_modifiers(glm::dvec2 const &Min, glm::dvec2 const &Max);
 	std::vector<std::pair<glm::dvec2, glm::dvec2>> modifier_bounds() const;
 	void build_water();
+	// the vertices of a shape of the water or of a field in the geometry of the water: one made before filled anew, or a new one;
+	// a handle of chunk 0 if it failed
+	gfx::geometry_handle water_geometry(gfx::vertex_array Vertices);
 	void clear_water(bool const Touch);
 	std::string pack_path(heightmap::pack_key const &Key) const;
 	// the state of a chunk (null: no chunk) or of the description is kept for the change in progress, if it's the first time
@@ -334,6 +350,15 @@ class terrain_streamer
 	glm::dvec3 m_velocity{0.0};
 	double m_cameratime{0.0};
 	bool m_hascamera{false};
+	// the pieces cut out of the terrain are made around where the camera was, within patch_reach, again when it moves patch_move away
+	static constexpr double patch_reach{1500.0}; // at least; as far as the chunks are drawn
+	// a chunk under the piece is in the files but not loaded yet
+	bool waits_for_ground(heightmap::surface_patch const &Patch) const;
+	static constexpr double patch_move{200.0};
+	glm::dvec2 m_patchcentre{1e12};
+	bool m_patchpending{false}; // some waited for chunks not loaded
+	bool m_patchloaded{false}; // a chunk came since they were made
+	double m_patchtried{0.0};
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
 	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view

@@ -155,6 +155,43 @@ struct water_body
 	std::vector<glm::dvec2> outline; // x, z
 };
 
+// piece of the ground cut out of the terrain and drawn on its own with a material of its own (a yard, a platform of beaten earth, a
+// field of other crops): the terrain is cut away within the outline, the heights it had there are kept on a grid of the piece, so it
+// lies where the ground was and stays as it was cut whatever happens to the terrain later
+struct surface_patch
+{
+	std::string name;
+	std::string material; // empty: the first material of the palette
+	float size{0.f}; // metres the texture repeats at; 0: the size given by the material, or 8 m
+	float rotation{0.f}; // degrees the texture is turned by, counterclockwise seen from above
+	float lift{0.f}; // metres the surface lies over the heights kept
+	std::vector<glm::dvec2> outline; // x, z
+	glm::dvec2 origin{0.0}; // x, z of the first point of the grid
+	double spacing{1.0};
+	int columns{0}; // points along x
+	int rows{0}; // points along z
+	std::vector<float> heights; // rows of growing z
+	// the surface follows the terrain under it (its heights, holes or not) instead of heights of its own, on a grid of the spacing
+	// laid from 0; the grid and heights above are unused
+	bool follow{false};
+	// painted into the terrain instead (follow is true too): no hole and no mesh of its own, the material laid into the paint of
+	// the chunks, blending over Feather metres across the outline, the edge shifted by up to Noise metres in waves of Noise_scale
+	bool paint{false};
+	float feather{1.f};
+	float noise{0.f};
+	float noise_scale{4.f};
+	// the points it was drawn with and the options of its outline (curves, handles, along a track), for it to be outlined again as
+	// it was drawn; empty: the outline itself
+	std::string shape;
+	// the 3D grass under a painted surface: -2 left as it grows, -1 taken away, 0 or more: that kind of the grass palette grown there
+	int grass{-2};
+
+	// height kept at specified point, interpolated between the points of the grid; false out of the grid
+	bool height(double X, double Z, double &Height) const;
+	// x, z of the corners of the box around the outline
+	void bounds(glm::dvec2 &Low, glm::dvec2 &High) const;
+};
+
 // modifier of the terrain: a corridor along a line (axis of a track or a road) with a formation of specified
 // height and width, and slopes from its edges to the ground
 struct corridor_point
@@ -174,6 +211,18 @@ struct modifier
 	// portal of a tunnel; otherwise they go round it
 	bool open_start{false};
 	bool open_end{false};
+	// the slopes not drawn with a ruler: the formation and the edges of the track bed stay as designed, the slopes and their foot
+	// wander and roll as the earth does. All 0: the slopes as designed
+	struct natural_shape
+	{
+		double wander{0.0}; // metres the foot of the slopes wanders in and out by
+		double scale{15.0}; // about how long the waves of it are along the line, metres
+		double gentler{0.0}; // up to how much gentler the slopes get than designed, 0.2: up to 1:1.8 of 1:1.5 (never steeper)
+		double soften{0.0}; // the foot rounded off more, metres of the bend a metre of the height of the slope
+		double roughness{0.0}; // metres the face of the slope is bumpy by
+		bool any() const { return wander > 0.0 || gentler > 0.0 || soften > 0.0 || roughness > 0.0; }
+	};
+	natural_shape natural;
 	std::vector<corridor_point> points;
 
 	// rectangle (x, z) the modifier can change the ground in
@@ -242,10 +291,20 @@ struct manifest
 	bool compress{true}; // pack files store their data compressed with zstd
 	float spacing{default_spacing}; // point spacing of new chunks
 	std::vector<water_body> water;
+	std::vector<surface_patch> patches;
+	// file next to the manifest the patches are kept in, a line each (many of them, as cut along tracks, load faster so); empty:
+	// in the manifest, unless there are more than patches_inline
+	std::string patches_file;
 	std::vector<modifier> modifiers;
 	std::vector<grass_def> grass; // the grass palette
 };
 
+// past this many the patches are saved to their own file (manifest::patches_file)
+std::size_t constexpr patches_inline{200};
+// smooth noise of -1..1 in waves of about Scale metres, the same at the same place every time; Channel gives another one
+double natural_noise(double X, double Z, double Scale, int Channel);
+bool load_patches(std::string const &Path, std::vector<surface_patch> &Patches);
+bool save_patches(std::string const &Path, std::vector<surface_patch> const &Patches);
 bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Error = nullptr);
 bool save_manifest(std::string const &Path, manifest const &Manifest, std::string *Error = nullptr);
 
