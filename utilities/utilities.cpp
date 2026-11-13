@@ -526,23 +526,46 @@ struct cased_folder
 	bool read{false};
 	std::filesystem::file_time_type changed{};
 	std::filesystem::file_time_type listed{};
+	// when the time of the change was last looked at
+	std::chrono::steady_clock::time_point checked{};
 	std::unordered_map<std::string, std::string> names;
 };
 
 std::mutex cased_mutex;
 std::unordered_map<std::string, cased_folder> cased_folders;
+// a folder by the name it's given with (parts split by '/', a '/' at the end): as it's named on the disk, or missing in any case
+// since the time given
+struct cased_path
+{
+	std::string name;
+	bool missing{false};
+	std::chrono::steady_clock::time_point checked{};
+};
+std::unordered_map<std::string, cased_path> cased_paths;
 
 // the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
-// changed, as the editor writes files while it runs; a name missing from a folder changed shortly before it was read is looked
-// for again, the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
+// changed, as the editor writes files while it runs, the time of the change looked at once a second at most, which keeps a
+// missing file as cheap as a single check; a name missing from a folder changed shortly before it was read is looked for again,
+// the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
 std::string cased_name(std::string const &Folder, std::string const &Name)
 {
 	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
 	std::error_code error;
-	auto const changed{std::filesystem::last_write_time(folder, error)};
-	if (error)
-		return {};
 	auto &cached{cased_folders[Folder]};
+	auto const now{std::chrono::steady_clock::now()};
+	auto changed{cached.changed};
+	if ((false == cached.read) || (now - cached.checked >= std::chrono::seconds{1}))
+	{
+		changed = std::filesystem::last_write_time(folder, error);
+		if (error)
+		{
+			// a folder found before may have been renamed or removed since
+			cased_folders.erase(Folder);
+			cased_paths.clear();
+			return {};
+		}
+		cached.checked = now;
+	}
 	auto const wanted{ToLower(Name)};
 	auto const read{[&]() {
 		cached.names.clear();
@@ -569,6 +592,53 @@ std::string cased_name(std::string const &Folder, std::string const &Name)
 	return found != cached.names.end() ? found->second : std::string{};
 }
 
+// the folder as it's named on the disk into Cased, from the one given with '/' between its parts and at its end ("" the current
+// folder); false when it's missing in any case. the folders found are kept, and the missing ones for a second, so a file missing
+// costs a check of its folder alone. to be called with cased_mutex held
+bool cased_folder_path(std::string const &Folder, std::string &Cased)
+{
+	if (Folder.empty() || (Folder == "/"))
+	{
+		Cased = Folder;
+		return true;
+	}
+	auto const now{std::chrono::steady_clock::now()};
+	if (auto const found{cased_paths.find(Folder)}; found != cased_paths.end())
+	{
+		if (false == found->second.missing)
+		{
+			Cased = found->second.name;
+			return true;
+		}
+		if (now - found->second.checked < std::chrono::seconds{1})
+			return false;
+	}
+	auto const keep{[&](std::string const &Name) {
+		auto &path{cased_paths[Folder]};
+		path.name = Name;
+		path.missing = Name.empty();
+		path.checked = now;
+		Cased = Name;
+		return false == Name.empty();
+	}};
+	std::error_code error;
+	if (std::filesystem::is_directory(Folder, error))
+	{
+		// named as it is on the disk
+		return keep(Folder);
+	}
+	// the parent, then the last part among the names in it
+	auto const last{Folder.size() - 1};
+	auto const split{Folder.rfind('/', last - 1)};
+	auto const parent{split == std::string::npos ? std::string{} : Folder.substr(0, split + 1)};
+	auto const part{Folder.substr(parent.size(), last - parent.size())};
+	std::string casedparent;
+	if (false == cased_folder_path(parent, casedparent))
+		return keep({});
+	auto const name{((part == ".") || (part == "..")) ? part : cased_name(casedparent, part)};
+	return keep(name.empty() ? std::string{} : casedparent + name + '/');
+}
+
 } // namespace
 #endif
 
@@ -582,38 +652,35 @@ std::string FileCased(std::filesystem::path const &Filename)
 	// code page to throw on
 	return {};
 #else
-	// every part of the path in turn, the folders can be named in another case as well as the file
-	auto const text{Filename.string()};
-	std::string cased;
-	std::size_t start{0};
-	if ((false == text.empty()) && (text.front() == '/'))
+	// the folder, then the file in it: the folders can be named in another case as well as the file
+	auto text{Filename.string()};
+	std::replace(text.begin(), text.end(), '\\', '/');
+	std::string folder{(false == text.empty()) && (text.front() == '/') ? "/" : ""};
+	std::string file;
+	for (std::size_t start{0}; start < text.size();)
 	{
-		cased = "/";
-		start = 1;
-	}
-	while (start < text.size())
-	{
-		auto end{text.find_first_of("/\\", start)};
+		auto end{text.find('/', start)};
 		if (end == std::string::npos)
 			end = text.size();
-		auto const part{text.substr(start, end - start)};
+		if (end > start)
+		{
+			if (false == file.empty())
+				folder += file + '/';
+			file = text.substr(start, end - start);
+		}
 		start = end + 1;
-		if (part.empty())
-			continue;
-		if ((part == ".") || (part == "..") || std::filesystem::exists(cased + part, error))
-		{
-			cased += part;
-		}
-		else
-		{
-			std::scoped_lock const lock{cased_mutex};
-			auto const name{cased_name(cased, part)};
-			if (name.empty())
-				return {};
-			cased += name;
-		}
-		if (end < text.size())
-			cased += '/';
+	}
+	if (file.empty())
+		return {};
+	std::string cased;
+	{
+		std::scoped_lock const lock{cased_mutex};
+		if (false == cased_folder_path(folder, cased))
+			return {};
+		auto const name{((file == ".") || (file == "..")) ? file : cased_name(cased, file)};
+		if (name.empty())
+			return {};
+		cased += name;
 	}
 	return std::filesystem::exists(cased, error) ? cased : std::string{};
 #endif
