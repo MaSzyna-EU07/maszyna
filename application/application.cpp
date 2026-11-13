@@ -392,10 +392,14 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize glfw!");
 		return result;
 	}
-	if (needs_ogl() && (result = init_ogl()) != 0)
+	if (needs_ogl())
 	{
-		ErrorLog("Failed to initialize ogl!");
-		return result;
+		result = init_ogl();
+		if (result != 0)
+		{
+			ErrorLog("Failed to initialize ogl!");
+			return result;
+		}
 	}
 
 	if (crashreport_is_pending() && false == Global.test.enabled)

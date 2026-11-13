@@ -209,15 +209,15 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     m_sourcemodel = nullptr;
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
-        if( source != nullptr
-         && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
-            // got what we wanted, bail out
-            m_sourcemodel = source;
-            break;
+        if( source == nullptr ) {
+            continue;
         }
-        // there's a possibility the default submodel was named with _off suffix
-        if( source != nullptr
-         && ( submodel = source->GetFromName( submodelname + "_off" ) ) != nullptr ) {
+        submodel = source->GetFromName( submodelname );
+        if( submodel == nullptr ) {
+            // there's a possibility the default submodel was named with _off suffix
+            submodel = source->GetFromName( submodelname + "_off" );
+        }
+        if( submodel != nullptr ) {
             // got what we wanted, bail out
             m_sourcemodel = source;
             break;
@@ -229,8 +229,11 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     // see if we can locate optional submodel for active state, with _on suffix
     TSubModel *submodelon { nullptr };
     for( auto const *source : sources ) {
-        if( source != nullptr
-         && ( submodelon = source->GetFromName( submodelname + "_on" ) ) != nullptr ) {
+        if( source == nullptr ) {
+            continue;
+        }
+        submodelon = source->GetFromName( submodelname + "_on" );
+        if( submodelon != nullptr ) {
             // got what we wanted, bail out
             break;
         }
