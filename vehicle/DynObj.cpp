@@ -317,9 +317,13 @@ namespace {
 void deserialize_script_sign( cParser &Parser, script_screens::screen_config &Sign, std::string const &Folder ) {
 
     Sign.deserialize( Parser );
-    if( false == Sign.script.empty()
-     && substr_path( Sign.script ).empty() ) {
-        Sign.script = Folder + Sign.script;
+    if( Sign.script.empty() ) { return; }
+    if( auto path { script_screens::screen_script_path( Folder, Sign.script ) }; path.has_value() ) {
+        Sign.script = std::move( *path );
+    }
+    else {
+        ErrorLog( "Bad script sign: \"" + Sign.script + "\" leads outside the game's folder" );
+        Sign.script.clear();
     }
 }
 
@@ -8096,6 +8100,10 @@ std::shared_ptr<script_screen> TDynamicObject::draw_script_texture( std::string 
     auto const script { Name.substr( 5, query == std::string::npos ? std::string::npos : query - 5 ) };
     auto const language { script_language_of( script ) };
     if( false == language.has_value() ) { return nullptr; } // a python texture, made by the texture itself
+    if( false == script_screens::screen_script_path( "", script ).has_value() ) {
+        ErrorLog( "Bad script texture: \"" + script + "\" leads outside the game's folder" );
+        return nullptr;
+    }
 
     auto &queue { Application.screens() };
     auto &texture { GfxRenderer->Texture( GfxRenderer->Material( Material )->GetTexture( 0 ) ) };

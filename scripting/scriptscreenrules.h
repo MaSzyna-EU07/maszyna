@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -71,5 +72,10 @@ class frame_schedule
 // true for a file a screen may read: a relative path inside the screen's folder, without '..', without a
 // drive or a leading separator
 bool is_safe_relative_path(std::string_view Path);
+
+// the path the game opens the script of a screen by: a name without a folder is in the vehicle's folder (Folder), a
+// path is from the game's folder. nothing for a path that leads outside the game's folder (as for the files a screen
+// reads: absolute, with a drive, or with ".."), since the script's folder is the one the screen then reads files from
+std::optional<std::string> screen_script_path(std::string const &Folder, std::string const &Script);
 
 } // namespace script_screens

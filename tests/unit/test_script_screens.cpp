@@ -101,3 +101,19 @@ TEST_CASE("script screens: a screen reads files only below its own folder") {
 	CHECK_FALSE(script_screens::is_safe_relative_path("\\windows"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("c:/windows/win.ini"));
 }
+
+TEST_CASE("script screens: the script of a screen is in the vehicle's folder, or from the game's, and not outside it") {
+	using script_screens::screen_script_path;
+	std::string const vehicle{"dynamic/pkp/ep07_v1/"};
+	CHECK(screen_script_path(vehicle, "screen.lua") == "dynamic/pkp/ep07_v1/screen.lua");
+	CHECK(screen_script_path(vehicle, "scripts/screen.lua") == "scripts/screen.lua");
+	// a backslash isn't a folder to the game (substr_path), so the name goes in the vehicle's folder
+	CHECK(screen_script_path(vehicle, "lua\\screen.lua") == "dynamic/pkp/ep07_v1/lua\\screen.lua");
+
+	CHECK_FALSE(screen_script_path(vehicle, "../../../screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "scripts/../../screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "..\\..\\screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "/screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "c:/games/screen.lua").has_value());
+	CHECK_FALSE(screen_script_path("../outside/", "screen.lua").has_value());
+}
