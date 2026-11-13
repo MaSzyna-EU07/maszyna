@@ -559,7 +559,9 @@ std::string cased_name(std::string const &Folder, std::string const &Name)
 	if ((false == cached.read) || (cached.changed != changed))
 		read();
 	auto found{cached.names.find(wanted)};
-	if ((found == cached.names.end()) && (cached.listed - cached.changed < std::chrono::seconds{2}))
+	// a folder changed in the future, as from another clock, isn't read again on every miss
+	auto const age{cached.listed - cached.changed};
+	if ((found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
 	{
 		read();
 		found = cached.names.find(wanted);
