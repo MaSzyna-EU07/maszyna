@@ -603,6 +603,8 @@ class TESt : public TBrake
 	/// <param name="BCP">Brake cylinder (or impulse) pressure.</param>
 	/// <param name="dV1">In/out accumulator for the brake pipe flow correction.</param>
 	void CheckState(double BCP, double &dV1); // glowny przyrzad rozrzadczy
+	/// <summary>The state of a valve holding: braking on in steps, the filling stopped, or released.</summary>
+	void CheckStateHeld(double BCP, double VVP, double CVP);
 	/// <summary>Drives the releaser logic — bleeds the control reservoir while the releaser is engaged.</summary>
 	/// <param name="dt">Time step [s].</param>
 	void CheckReleaser(double dt); // odluzniacz
@@ -761,6 +763,12 @@ class TLSt : public TESt4R
 
 	/// <summary>Constructs the LSt distributor.</summary>
 	using TESt4R::TESt4R;
+
+  private:
+	// the parts of GetPF()
+	void UpdateStatusLSt(double BCP, double VVP, double CVP);
+	void ReleaserLSt(double BCP, double CVP, double dt);
+	void CylinderFlowLSt(double BCP, double BVP, double CVP, double dt, double Vel);
 };
 
 /// <summary>
@@ -801,6 +809,13 @@ class TEStED : public TLSt
 	/// <summary>Stores the load-weighing parameters.</summary>
 	void SetLP(double const TM, double const LM, double const TBP) override; // parametry przystawki wazacej
 
+  private:
+	// the parts of GetPF()
+	void UpdateStatus(double BCP, double VVP, double CVP, double MPP);
+	double IntermediateFlow(double BCP, double VVP, double CVP, double MPP, double BVP, double nastG) const;
+	void CylinderFlow(double BCP, double BVP, double dt, double Vel);
+
+  public:
 	/// <summary>Constructs the distributor and creates the intermediate reservoir.</summary>
 	inline TEStED(double i_mbp, double i_bcr, double i_bcd, double i_brc, int i_bcn, int i_BD, int i_mat, int i_ba, int i_nbpa) : TLSt(i_mbp, i_bcr, i_bcd, i_brc, i_bcn, i_BD, i_mat, i_ba, i_nbpa)
 	{
@@ -826,6 +841,10 @@ class TEStEP2 : public TLSt
 	double LoadC = 0.0;
 	/// <summary>EP intensity (-1..1).</summary>
 	double EPS = 0.0;
+
+  private:
+	// the part of GetPF()
+	void UpdateStatusEP2(double BCP, double VVP, double CVP);
 
   public:
 	/// <summary>Initialises the EP2-equipped distributor (impulse chamber, P delay).</summary>
@@ -983,6 +1002,10 @@ class TKE : public TBrake
 	double RM = 0.0; // przelozenie rapida
 	/// <summary>Auxiliary (local) brake pressure feeding the DCV.</summary>
 	double LBP = 0.0; // cisnienie hamulca pomocniczego
+
+	// the parts of GetPF() and CheckState()
+	double CylinderFlowKE(double IMP, double BCP, double BVP, double Vel, double dt);
+	void CheckStateHeld(double BCP, double VVP, double CVP);
 
   public:
 	/// <summary>Initialises the KE distributor (control / impulse / auxiliary reservoirs and BVM).</summary>
@@ -1162,6 +1185,10 @@ class TFV4aM : public TDriverHandle
 	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos (detent comparison).</summary>
 	bool EQ(double pos, double i_pos) const;
+	// the parts of GetPF()
+	void DischargeChambers(double dt);
+	void UpdateWave(double pom, double dt);
+	void UpdateReductor(double i_bcp, double ep, double dt);
 
   public:
 	/// <summary>Computes brake pipe flow for the FV4a/M handle (interpolated BPT, wave modelling, accelerator).</summary>
@@ -1212,6 +1239,10 @@ class TMHZ_EN57 : public TDriverHandle
 	double LPP_RP(double pos) const;
 	/// <summary>Returns true if pos is within ±0.5 of i_pos.</summary>
 	bool EQ(double pos, double i_pos) const;
+	// the parts of GetPF()
+	void DischargeTimedReservoir(double i_bcp, double dt);
+	void ChargeTimedReservoir(double dt);
+	double SupplyPressure(double i_bcp, double HP);
 
   public:
 	/// <summary>Computes brake pipe flow for MHZ_EN57 (covers handle positions -1..10 with EP/pneumatic mix).</summary>

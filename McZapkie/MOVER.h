@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <map>
 #include <optional>
+#include <unordered_map>
 #include "hamulce.h"
 #include "couplerphysics.h"
 #include "scripting/ladderlogic.h"
@@ -1278,6 +1279,35 @@ struct TCoupling
 	power_coupling power_high;
 	power_coupling power_110v;
 	power_coupling power_24v;
+	// the circuit of the power coupling given, nullptr for a coupling which isn't one
+	power_coupling *power(coupling const Coupling)
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
+	power_coupling const *power(coupling const Coupling) const
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
 
 	// the physical model of the coupling (couplerphysics in eu07.ini), see couplerphysics.h: the parameters of this end,
 	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
@@ -2439,6 +2469,10 @@ class TMoverParameters
 	bool CurrentSwitch(bool const State);
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
+	double BatteryDrain(double dt, bool converteractive) const;
+	double BatteryDrainCharged(double dt, bool converteractive) const;
+	double BatteryDrainLow(double dt, bool converteractive) const;
+	double BatteryDrainSwitchedOff(double dt) const;
 	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
@@ -2463,6 +2497,20 @@ class TMoverParameters
 	bool SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
 	double GetExternalCommand(std::string &Command) const;
 	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	// the parts of RunCommand(), by the area of the commands
+	bool RunControllerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunRelaysCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunCabCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBrakeCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBrakeEquipmentCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunAuxiliariesCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunPumpsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunBlowersCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunPowerCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	bool RunDoorsCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
+	void DoorPermitCommand(double CValue1, double CValue2);
+	void DoorRemoteCommand(bool Open, double CValue1, double CValue2);
+	bool RunLoadCommand(std::string const &Command, double CValue1, double CValue2, int Couplertype, bool &OK);
 	bool RunInternalCommand();
 	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);
@@ -2474,6 +2522,11 @@ class TMoverParameters
 	/*! glowny nastawnik:*/
 	bool IncMainCtrl(int CtrlSpeed);
 	bool DecMainCtrl(int CtrlSpeed);
+	// the parts of IncMainCtrl() and DecMainCtrl() which depend on the kind of the engine
+	bool IncMainCtrlByEngine(int CtrlSpeed);
+	bool IncMainCtrlSeriesMotor(int CtrlSpeed);
+	bool DecMainCtrlByEngine(int CtrlSpeed);
+	bool DecMainCtrlSeriesMotor(int CtrlSpeed);
 	bool IsMainCtrlActualNoPowerPos() const; // whether the master controller is actually set to position which won't generate any extra power
 	bool IsMainCtrlNoPowerPos() const; // whether the master controller is set to position which won't generate any extra power
 	bool IsMainCtrlMaxPowerPos() const;
@@ -2552,8 +2605,18 @@ class TMoverParameters
 	/*pomocnicze funkcje dla ukladow pneumatycznych*/
 	void UpdateBrakePressure(double dt);
 	void UpdatePipePressure(double dt);
+	// the parts of UpdatePipePressure()
+	void UpdateLocalBrakeValve(double dt);
+	void UpdateMainValve(double dt);
+	double MainValveSupply();
+	double MainValveHandlePosition() const;
+	void UpdateEmergencyValve(double dt);
+	void UpdateDistributorSettings();
+	void UpdateEPBrake();
 	void CompressorCheck(double dt); /*wlacza, wylacza kompresor, laduje zbiornik*/
 	void UpdatePantVolume(double dt); // Ra
+	void PantPressureSwitchCheck();
+	void PantPressureSwitchTrip();
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
@@ -2564,11 +2627,48 @@ class TMoverParameters
 	void ComputeTotalForce(double dt);
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
+	// the parts of TractionForce(), in the order it makes them
+	double UpdateEngineRevolutions(double dt, double &dtrans, double &dmoment);
+	double DieselElectricTargetRevolutions();
+	void UpdateVentilators(double dt);
+	void UpdateResistorBlowers(double dt);
+	double UpdateEnginePower();
+	void VoltageRelaysCheck();
+	void DumbTractionForce(double PosRatio);
+	void WheelsDrivenTractionForce(double dt);
+	void SeriesMotorTractionForce(double dt);
+	void SeriesMotorDynamicBrake(double dt);
+	void DieselEngineTractionForce(double dt, double dmoment, double dtrans);
+	void DieselElectricTractionForce(double tmp);
+	void DieselElectricShuntForce(double tmpV, double &tmp);
+	double DieselElectricDigitalForce(double tmpV, double &tempUmax, double &tempImax);
+	double DieselElectricForce(double tmpV, double LinePower, double Ratio, double HyperbolaPower) const;
+	void DieselElectricShuntPower(double tmp);
+	void DieselElectricGenerator(double tmp, double tempUmax, double tempImax);
+	void ShuntFieldRelaysCheck(double tmpV, double PosRatio, double tmp);
+	void ShuntFieldRelaysType2(double tmp);
+	void ShuntFieldRelaysType41(double tmpV);
+	void ShuntFieldRelaysType45();
+	void ShuntFieldRelaysType46();
+	void ShuntFieldRelaysType46Up();
+	void ShuntFieldRelaysType46Down();
+	void InductionMotorTractionForce(double dt);
+	void InductionMotorSpeedControl(double dt);
+	void SpeedControlByTime(double dt);
+	void SpeedControlByPosition(double dt);
+	void InductionMotorBrakeBlending(double ActiveInverters, double &PosRatio, double &tmp);
+	void InductionMotorDynamicBrakeFlag();
+	double InductionMotorBrakeRatio(double ActiveInverters, double edBCP);
+	void InductionMotorDrive(double dt);
+	void InductionMotorForceLimits();
+	void UpdateInverterFrequency();
+	void InductionMotorOff();
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity) const;
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
+	void CouplerStretchCheck(int End, double CF, double dt);
 	// whether the coupling at the end is computed by the physical model: couplerphysics set in eu07.ini, and this
 	// vehicle or the one at the end covered by it (CouplerPhysics), or every vehicle with couplerphysics all
 	bool coupler_physics_at(int const End) const;
@@ -2701,6 +2801,11 @@ class TMoverParameters
 	void LowVoltagePowerCheck(double const Deltatime);
 	void MainsCheck(double const Deltatime);
 	void PowerCouplersCheck(double const Deltatime, coupling const Coupling);
+	// the parts of PowerCouplersCheck()
+	double LocalPowerVoltage(coupling Coupling);
+	void PowerCouplersVoltage(coupling Coupling, double abslocalvoltage, bool localpowersource);
+	void PowerCouplersCurrent(coupling Coupling, bool localpowersource);
+	double *PowerCircuitCurrent(coupling Coupling);
 	void ConverterCheck(double const Timestep); // przetwornica
 	void HeatingCheck(double const Timestep);
 	void WaterPumpCheck(double const Timestep);
@@ -2725,6 +2830,11 @@ class TMoverParameters
 	/*funkcje uzalezniajace sile pociagowa od predkosci: v2n, n2r, current, momentum*/
 	double v2n(void);
 	double Current(double n, double U);
+	// the parts of Current()
+	void UpdateSeriesMotorDynamicBrakeFlag();
+	double SeriesMotorCurrent(double n, double U, double R, double Mn) const;
+	double SeriesMotorDrivingCurrent(double n, double U, double Rz, double Mn, int SP) const;
+	void MotorFailuresCheck(double n);
 	double Momentum(double I) const;
 	double MomentumF(double I, double Iw, int SCP) const;
 
@@ -2734,6 +2844,15 @@ class TMoverParameters
 	bool MinCurrentSwitch(bool State); // przelacznik pradu automatycznego rozruchu
 	bool AutoRelaySwitch(bool State); // przelacznik automatycznego rozruchu
 	bool AutoRelayCheck(); // symulacja automatycznego rozruchu
+	// the parts of AutoRelayCheck()
+	bool AutoRelayShuntStep(bool ARFASI2);
+	bool AutoRelayMainStep(bool ARFASI);
+	bool AutoRelayMainUp(bool ARFASI);
+	bool AutoRelayMainNotchUp();
+	bool AutoRelayMainDown();
+	bool AutoRelayLineContactorsStep(bool motorconnectorsoff);
+	bool CamshaftRunDown();
+	bool CamshaftRunDownEMU();
 	bool MotorConnectorsCheck();
 	bool ResistorsFlagCheck(void) const; // sprawdzenie kontrolki oporow rozruchowych NBMX
 
@@ -2742,7 +2861,16 @@ class TMoverParameters
 	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
+	// the parts of CheckEIMIC(), by the kind of the controller
+	void EIMICFromController(double brakeDemand, double offset, double multiplier);
+	void EIMICFromSteps(double dt);
+	void EIMICFromFourPositions(double dt);
+	void EIMICFromUniversalController(double dt, double brakeDemand);
+	void UniversalControllerTrainBrake();
+	void EIMICTraxxLocalBrake(double dt);
+	void EIMICLimit();
 	void CheckSpeedCtrl(double dt);
+	void SpeedCtrlRegulator(double dt, double accfactor);
 	void SpeedCtrlButton(int button);
 	void SpeedCtrlInc();
 	void SpeedCtrlDec();
@@ -2753,8 +2881,18 @@ class TMoverParameters
 	bool dizel_EngageSwitch(double state);
 	bool dizel_EngageChange(double dt);
 	bool dizel_AutoGearCheck(void);
+	bool dizel_GearShiftCheck(double VelUp, double VelDown);
+	bool dizel_GearShiftRequest(double VelUp, double VelDown);
+	void dizel_ClutchCheck();
+	void dizel_ClutchByController();
+	void dizel_ClutchByIntegratedController();
 	double dizel_fillcheck(int mcp, double dt);
+	double dizel_DigitalFill(double dt);
+	double dizel_GovernorFill(int mcp, double realfill) const;
+	double dizel_GovernorRevolutions(int mcp, double &realfill) const;
 	double dizel_Momentum(double dizel_fill, double n, double dt);
+	void hydro_TCFillCheck(double dt);
+	void hydro_TCTorque();
 	double dizel_MomentumRetarder(double n, double dt); // moment hamowania retardera
 	void dizel_HeatSet(float const Value);
 	void dizel_Heat(double const dt);
@@ -2777,6 +2915,16 @@ class TMoverParameters
 	// whether the door closure lamp in the cab of this vehicle is lit: with DoorClosureSignal, for the given state of the
 	// consist; without it, for the lock of the vehicle's own doors, as the lamp always worked
 	bool door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const;
+	// the parts of update_doors()
+	// not const: the door they change is one of Doors.instances
+	void update_door_requests(basic_door &door, bool localopencontrol, bool remoteopencontrol, bool localclosecontrol, bool remoteclosecontrol);
+	void move_door(basic_door &door, double Deltatime);
+	bool door_open_request(basic_door const &door, bool localopencontrol, bool remoteopencontrol) const;
+	bool door_close_request(basic_door const &door, bool localclosecontrol, bool remoteclosecontrol) const;
+	bool doors_powered() const;
+	bool door_step_folding(basic_door const &door) const;
+	float door_open_duration(basic_door const &door, bool localopencontrol, bool remoteopencontrol) const;
+	void update_door_timers(double Deltatime);
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
@@ -2785,12 +2933,24 @@ class TMoverParameters
 	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
 	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
+	// the parts of CheckLocomotiveParameters()
+	void CreateBrakeValve();
+	void CreateBrakeHandles();
+	void CreateBrakePipes();
+	double InitialScndPipePress(double HosePressure) const;
+	void SetReadyToDepart();
+	void SetBraked();
 	std::string EngineDescription(int what) const;
 	// the cab interior light the light preset at given position (1-based, as LightsPos) sets, if it sets one
 	std::optional<lights_preset_cablight> LightsPresetCabLight(int Position) const;
 
   private:
 	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above
+	// the parts of LoadFIZ_Parse(), for a line of the definition
+	bool LoadFIZ_TableEnd(std::string const &inputline) const;
+	bool LoadFIZ_Section(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines);
+	bool LoadFIZ_TableSection(std::string const &inputline, std::map<std::string, std::string, std::less<>> &fizlines);
+	void LoadFIZ_TableRow(std::string const &inputline);
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);
 	void LoadFIZ_Dimensions(std::string const &line);
@@ -2800,6 +2960,11 @@ class TMoverParameters
 	void LoadFIZ_BuffCoupl(std::string const &line, int const Index);
 	void LoadFIZ_TurboPos(std::string const &line);
 	void LoadFIZ_Cntrl(std::string const &line);
+	void LoadFIZ_CntrlBrakes(std::string const &line);
+	void LoadFIZ_CntrlTrainBrake(std::string const &line);
+	void LoadFIZ_CntrlAntiSlipBrake(std::string_view asb);
+	void LoadFIZ_CntrlControllers(std::string const &line);
+	void LoadFIZ_CntrlStarts(std::string const &line);
 	void LoadFIZ_Blending(std::string const &line);
 	void LoadFIZ_DCEMUED(std::string const &line);
 	void LoadFIZ_SpringBrake(std::string const &line);
@@ -2809,6 +2974,10 @@ class TMoverParameters
 	void LoadFIZ_Power(std::string const &Line);
 	void LoadFIZ_SpeedControl(std::string const &Line);
 	void LoadFIZ_Engine(std::string const &Input);
+	void LoadFIZ_EngineDiesel(std::string const &Input);
+	void LoadFIZ_EngineDieselElectric(std::string const &Input);
+	void LoadFIZ_EngineInductionMotor(std::string const &Input);
+	void LoadFIZ_EngineDieselShared(std::string const &Input);
 	void LoadFIZ_Switches(std::string const &Input);
 	void LoadFIZ_MotorParamTable(std::string const &Input);
 	void LoadFIZ_Circuit(std::string const &Input);
