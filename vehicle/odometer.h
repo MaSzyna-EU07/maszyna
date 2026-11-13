@@ -46,10 +46,19 @@ public:
 	// the odometers only count up, so of two states of a vehicle the larger is the newer one. they aren't added
 	// up: two simulations on one machine (multiplayer) count the same runs of the same vehicles
 	void merge(store const &Other);
+	// this store holds every state of the other one, the same or a newer one
+	bool holds(store const &Other) const;
 
 	// there are states recorded since they were last saved
 	bool modified() const { return m_modified; }
-	void saved() { m_modified = false; }
+	// the states were written to the file. until a later save finds them there (confirmed()), they may have been lost to
+	// another simulation's save, which read the file before this one wrote it and put its own in place after
+	void saved() {
+		m_modified = false;
+		m_unconfirmed = true;
+	}
+	bool unconfirmed() const { return m_unconfirmed; }
+	void confirmed() { m_unconfirmed = false; }
 	std::size_t size() const { return m_states.size(); }
 
 private:
@@ -62,6 +71,7 @@ private:
 
 	std::map<std::string, state> m_states;
 	bool m_modified{false};
+	bool m_unconfirmed{false};
 };
 
 // the vehicle is one the store keeps: one with a driver's cab, which can show its odometer on the cab's counter or a
@@ -113,8 +123,9 @@ bool persistent();
 store &states();
 std::filesystem::path file();
 // writes the store to the file when anything was recorded since, merged with what other simulations saved in the
-// file meanwhile. it's written to a file of this process aside first, then put in place. returns false when the
-// write failed
+// file meanwhile. it's written to a file of this process aside first, then put in place. with nothing recorded since,
+// the file is read once more after a write, and written again when it lacks any of the states (another simulation's
+// save put its file over this one's); otherwise left as it is. returns false when the write failed
 bool save(store &States, std::filesystem::path const &File);
 // saves the store of the simulation to its file. a test run doesn't save it
 bool save();
