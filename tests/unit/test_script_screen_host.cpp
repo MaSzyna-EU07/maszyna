@@ -207,16 +207,16 @@ constexpr std::array<std::uint8_t, 108> spin_module{
 TEST_CASE("wasm screens: a cab screen draws from its input and sends commands to its vehicle") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_paint"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 	REQUIRE(queue.runs(script_language::wasm));
 
 	recording_texture texture;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "cab", &texture))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "cab", &texture))};
 	REQUIRE(screen != nullptr);
 	// the same key, the same screen
-	CHECK(queue.acquire(request(script_language::wasm, module, "cab", &texture)) == screen);
+	CHECK(queue.acquire(request(script_language::wasm, module_path, "cab", &texture)) == screen);
 
 	refresh(queue, screen, speed(5.0), 42);
 	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0 && false == sent_commands().empty(); }));
@@ -243,13 +243,13 @@ TEST_CASE("wasm screens: a cab screen draws from its input and sends commands to
 TEST_CASE("wasm screens: the image goes up again when the texture is made anew, and waits while it isn't there") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_reupload"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 
 	recording_texture texture;
 	texture.ready = false;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "cab", &texture))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "cab", &texture))};
 	refresh(queue, screen, speed(9.0), 1);
 	REQUIRE(run_until(queue, [] { return false == sent_commands().empty(); }));
 	queue.update();
@@ -272,12 +272,12 @@ TEST_CASE("wasm screens: the image goes up again when the texture is made anew, 
 TEST_CASE("wasm screens: a screen outside the cab draws, but its commands are dropped") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_sign"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 
 	recording_texture texture;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "sign", &texture, script_screen_kind::external))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "sign", &texture, script_screen_kind::external))};
 	refresh(queue, screen, speed(3.0), 0);
 	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
 	queue.update();
@@ -310,13 +310,13 @@ TEST_CASE("wasm screens: a screen stuck in a loop is stopped, and the others kee
 
 TEST_CASE("wasm screens: the screens outlive the queue without harm") {
 	script_folder const folder{"wasm_outlive"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	std::shared_ptr<script_screen> screen;
 	recording_texture texture;
 	{
 		script_screen_queue queue;
 		REQUIRE(queue.init());
-		screen = queue.acquire(request(script_language::wasm, module, "cab", &texture));
+		screen = queue.acquire(request(script_language::wasm, module_path, "cab", &texture));
 		refresh(queue, screen, speed(4.0), 1);
 		REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
 	}

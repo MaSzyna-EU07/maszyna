@@ -122,7 +122,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     shape_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import_from( cParser &Input, scene::node_data const &Nodedata );
     // imports data from provided submodel
     shape_node &
         convert( TSubModel const *Submodel );
@@ -254,7 +254,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     lines_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import_from( cParser &Input, scene::node_data const &Nodedata );
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( lines_node &Lines );

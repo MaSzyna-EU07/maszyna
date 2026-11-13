@@ -514,9 +514,9 @@ class wasm_runtime_host final : public runtime
 	{
 		for (auto const &[script, entry] : m_modules)
 		{
-			if (entry.module != nullptr)
+			if (entry.wasm_module != nullptr)
 			{
-				wasm_runtime_unload(entry.module);
+				wasm_runtime_unload(entry.wasm_module);
 			}
 		}
 		if (m_started)
@@ -542,7 +542,7 @@ class wasm_runtime_host final : public runtime
 	struct module_entry
 	{
 		std::vector<std::uint8_t> bytes; // the runtime reads the module from here as long as it is loaded
-		wasm_module_t module{nullptr};
+		wasm_module_t wasm_module{nullptr};
 	};
 
 	wasm_module_t load_module(std::string const &Script);
@@ -575,7 +575,7 @@ wasm_module_t wasm_runtime_host::load_module(std::string const &Script)
 {
 	if (auto const lookup{m_modules.find(Script)}; lookup != m_modules.end())
 	{
-		return lookup->second.module;
+		return lookup->second.wasm_module;
 	}
 	// a failure is kept as well, so the module isn't tried again for every screen using it
 	auto &entry{m_modules[Script]};
@@ -592,23 +592,23 @@ wasm_module_t wasm_runtime_host::load_module(std::string const &Script)
 		return nullptr;
 	}
 	std::array<char, 256> error{};
-	entry.module = wasm_runtime_load(entry.bytes.data(), static_cast<std::uint32_t>(entry.bytes.size()), error.data(), static_cast<std::uint32_t>(error.size()));
-	if (entry.module == nullptr)
+	entry.wasm_module = wasm_runtime_load(entry.bytes.data(), static_cast<std::uint32_t>(entry.bytes.size()), error.data(), static_cast<std::uint32_t>(error.size()));
+	if (entry.wasm_module == nullptr)
 	{
 		ErrorLog(std::format("WASM screen \"{}\": failed to load the module: {}", Script, error.data()));
 	}
-	return entry.module;
+	return entry.wasm_module;
 }
 
 std::unique_ptr<program> wasm_runtime_host::load(std::string const &Script, script_screen_kind const Kind)
 {
-	auto *module{load_module(Script)};
-	if (module == nullptr)
+	auto *wasm_module{load_module(Script)};
+	if (wasm_module == nullptr)
 	{
 		return nullptr;
 	}
 	auto loaded{std::make_unique<wasm_program>(Script, Kind)};
-	if (false == loaded->instantiate(module))
+	if (false == loaded->instantiate(wasm_module))
 	{
 		return nullptr;
 	}
