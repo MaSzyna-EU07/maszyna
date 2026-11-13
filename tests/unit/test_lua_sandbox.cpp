@@ -148,8 +148,11 @@ TEST_CASE("lua sandbox: a scenery reads its scripts only from its own folder") {
 
 	CHECK(lua_sandbox::read_script_file(folder, "test.lua") == std::optional<std::string>{"return 2"});
 	CHECK(lua_sandbox::read_script_file(folder, "scripts/module.lua") == std::optional<std::string>{"return 3"});
+	// '\' separates the folders on Linux too, as in the rest of the scenery's paths
+	CHECK(lua_sandbox::with_forward_slashes("a\\b/c\\d.lua") == "a/b/c/d.lua");
 	CHECK(lua_sandbox::read_script_file(folder, "scripts\\module.lua") == std::optional<std::string>{"return 3"});
 	for (auto const &path : {std::string{"../outside.lua"}, std::string{"scripts/../../outside.lua"}, std::string{"..\\outside.lua"},
+	                         std::string{"scripts\\..\\..\\outside.lua"}, std::string{"scripts/..\\../outside.lua"},
 	                         root.path("outside.lua"), std::string{"/outside.lua"}, std::string{"\\outside.lua"}, std::string{"C:outside.lua"},
 	                         std::string{"missing.lua"}, std::string{"folder.lua"}, std::string{"scripts"}, std::string{}}) {
 		CAPTURE(path);

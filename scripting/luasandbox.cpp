@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "scripting/scriptscreenrules.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -58,6 +59,13 @@ int api_date(lua_State *L)
 }
 
 } // namespace
+
+std::string with_forward_slashes(std::string_view const Path)
+{
+	std::string result{Path};
+	std::ranges::replace(result, '\\', '/');
+	return result;
+}
 
 void open_safe_libraries(lua_State *L)
 {
@@ -121,7 +129,7 @@ std::optional<std::string> read_script_file(std::string const &Folder, std::stri
 	}
 	// a folder or a device (CON, NUL, COM1...) isn't a regular file. in the code page of the system, as the game opens
 	// its files
-	std::filesystem::path const path{Folder + std::string{Path}};
+	std::filesystem::path const path{Folder + with_forward_slashes(Path)};
 	std::error_code error;
 	if (false == std::filesystem::is_regular_file(path, error))
 	{

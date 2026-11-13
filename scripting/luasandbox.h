@@ -38,8 +38,13 @@ void open_clock_library(lua_State *L);
 // stack
 bool load_text_chunk(lua_State *L, std::string_view Code, std::string const &Name);
 
+// Path with each '\' turned into '/', as the game reads the paths in its data (replace_slashes): a scenery made on
+// Windows may name its folders either way, and on Linux only '/' separates them
+std::string with_forward_slashes(std::string_view Path);
+
 // the file Path of Folder, when Path is a relative path inside Folder (no '..', no drive, no leading separator) and
-// names a regular file of at most max_script_file bytes. nothing otherwise
+// names a regular file of at most max_script_file bytes. nothing otherwise. '\' separates folders in Path as '/' does,
+// on every system
 std::optional<std::string> read_script_file(std::string const &Folder, std::string_view Path);
 
 // reads the script Path of Folder (as read_script_file), loads it as text and runs it in protected mode. nothing when

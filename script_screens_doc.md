@@ -216,7 +216,7 @@ and works with memcells, tracks and vehicles through the table `eu07.events` (`e
 `memcell_update`, `writelog` and the rest, see `scripting/lua.cpp`). It shares the sandbox of the Lua screens:
 
 - the file is a path relative to the scenery folder (`scenery/`), and stays inside it: no `..`, no drive, no leading
-  `/`. It is text, of at most 16 MB; precompiled code is not loaded;
+  `/`. `/` and `\` both separate folders, on Linux too. It is text, of at most 16 MB; precompiled code is not loaded;
 - the script gets the base library, `table`, `string`, `math` and `bit`, and of `os` only the clock: `os.time`,
   `os.clock`, `os.difftime` and `os.date` (with the C89 conversions only, `%Y`, `%d`, `%H` and so on). It gets no
   `io`, the rest of `os`, `ffi`, `debug`, `jit`, `package`, `require`, `dofile`, `load`, `loadfile` or `loadstring`;
