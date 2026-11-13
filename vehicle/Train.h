@@ -592,6 +592,7 @@ public: // reszta może by?publiczna
     TGauge ggWiperSw; // przelacznik wycieraczek
 
     TGauge ggMaxCurrentCtrl;
+    TGauge ggAutoRelayButton; // przełącznik AutoRelay: rozruch automatyczny, załączenie bocznikowania spalinowozu
 
     TGauge ggMainOffButton;
     TGauge ggMainOnButton;
