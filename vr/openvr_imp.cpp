@@ -250,7 +250,7 @@ texture_done:
                 glm::mat3 rot = glm::mat3(device_pose);
                 trans -= Global.viewport_move;
 
-                controllers[i]->model->GetSMRoot()->ReplaceMatrix(glm::translate(glm::mat4(), trans) * glm::mat4(rot));
+                controllers[i]->model->GetSMRoot()->fMatrix = glm::translate(glm::mat4(), trans) * glm::mat4(rot);
 
                 for (TSubModel *component : controllers[i]->active_components)
                     update_component(controllers[i]->rendermodel, controllers[i]->inputhandle, component);
@@ -346,7 +346,7 @@ bool vr_openvr::update_component(const std::string &rendermodel, vr::VRInputValu
     glm::mat4 component_pose = get_matrix(component_state.mTrackingToComponentRenderModel);
     bool visible = (component_state.uProperties & vr::VRComponentProperty_IsVisible);
 
-    component->ReplaceMatrix(component_pose);
+    component->fMatrix = component_pose;
     component->iVisible = (visible ? 1 : 0);
 
     return !(component_state.uProperties & vr::VRComponentProperty_IsStatic);
