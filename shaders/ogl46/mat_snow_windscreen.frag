@@ -14,7 +14,7 @@
 //  - the lumps, in nine grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
 //    size, the snow it takes); it comes when the snow around reaches that and stays as it is until the snow goes. The grids come
 //    one after the other as the snow piles up (all of them icy fleece, more and bigger; a lump of packed snow very rarely), each on the ones before,
-//    so the snow accumulates rather than changes, and closes the glass by 2-3 mm. In a heap they come sooner
+//    so the snow accumulates rather than changes, and covers the glass by 2-3 mm, small gaps left (the scene behind them blurred). In a heap they come sooner
 //  - dots and small puffs of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -72,6 +72,7 @@ const float snow_drops      = 0.05;  // share of the texels with the water of a 
 const float snow_deep       = 2.5;   // mm of snow from which the cover is opaque (no picture behind it)
 const float snow_cover      = 0.25;  // the lumps get opaque from three times this many mm of snow
 const float snow_lump_cell  = 0.016; // a lump at most every this many metres of the glass (its size: up to two of them)
+const vec2  snow_lump_grow  = vec2(0.75, 0.88); // a lump's size as it comes .. on thick snow, of its size (small gaps stay open)
 const float snow_heap_cells = 4.0;   // the heaps the lumps come in, cells of the lumps (bigger: bigger heaps)
 const float snow_opaque     = 1.8;   // mm of fresh snow letting 1/e of the light through (packed: half of it)
 const float snow_ice        = 0.6;   // opacity of a lump until the snow gets thick (icy: the picture shows through, bent)
@@ -84,6 +85,8 @@ const float snow_translucency = 0.8; // glow of thin snow when you look towards 
 const float snow_haze       = 1.0;   // blur of the scene behind thin snow (frosted glass), 0 = off
 const float snow_drop_bend  = 1.0;   // how strongly the drops bend the picture behind them
 const float snow_wet_blur   = 0.6;   // blur of the scene behind a wet film
+const vec2  snow_blur_mm    = vec2(0.05, 0.6); // the scene behind the snow blurred from .. fully at this many mm of it (as the rain
+                                               // mists the glass up: the gaps between the lumps too, clear again behind a blade)
 
 const float WS_REFR_MAXPX = 96.0;    // the largest picture shift the post-processing makes, screen pixels; as rain_windscreen_haze.glsl
 const float WS_BEND_ENC   = 60.0;    // the bend request in the velocity target; as rain_windscreen_haze.glsl
@@ -284,7 +287,7 @@ void snLumps(vec2 span, float pixelUV, lump_grid grid, inout sprite_acc acc)
             int tile = grid.tiles + min(int(RandF(seed) * float(grid.count)), grid.count - 1);
             float random = RandF(seed);
             float aniso = mix(0.8, 1.0, RandF(seed));
-            float size = mix(grid.size.x, grid.size.y, RandF(seed)) * mix(0.85, 1.15, smoothstep(needs, needs * 2.0 + 0.2, q.x));
+            float size = mix(grid.size.x, grid.size.y, RandF(seed)) * mix(snow_lump_grow.x, snow_lump_grow.y, smoothstep(needs, needs * 2.0 + 0.2, q.x));
             vec2 local;
             if (false == snLocal(p, centre, size, vec2(1.0), rot, flip, aniso, local))
                 continue;
@@ -344,6 +347,7 @@ void main()
         wet = smoothstep(0.05, 0.3, q.y) * (1.0 - smoothstep(0.5, 2.0, q.x));
         // the picture behind thin flakes and a wet film is blurred
         snHaze = max(smoothstep(0.0, 0.3, flakes.a + layer.a) * (1.0 - smoothstep(0.5, 0.9, layer.a)) * 0.6, wet * snow_wet_blur);
+        snHaze = max(snHaze, smoothstep(snow_blur_mm.x, snow_blur_mm.y, q.x));
     }
     // the flakes over the layer
     vec3  snowRGB = flakes.rgb + layer.rgb * (1.0 - flakes.a);
