@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "utilities/utilities.h"
 
 #include <algorithm>
@@ -280,7 +281,6 @@ void blackbox_recorder::close() {
 	m_writer->end(m_time);
 	m_writer.reset();
 	m_file.close();
-	write_tapes();
 	using milliseconds = std::chrono::duration<double, std::milli>;
 	WriteLog(std::format("Black box: recording closed; {} looks around, {:.3f} ms each on average, the longest {:.3f} ms", m_looks,
 	    m_looks > 0 ? milliseconds{m_looktime}.count() / m_looks : 0.0, milliseconds{m_looklongest}.count()));
@@ -492,30 +492,16 @@ void blackbox_recorder::keep_tape_line() {
 		return;
 	auto const *vehicle{train->Dynamic()};
 	// the driver of the vehicle, whose log it would be: it keeps the name of its first vehicle, so a change of the cab
-	// in a unit goes on in the same log. in a vehicle without one, the driver of its train
-	auto const *driver{vehicle->Mechanik != nullptr ? vehicle->Mechanik : vehicle->ctOwner};
+	// in a unit goes on in the same log. a passive one stands still (its clock too), so then the driver of the train
+	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
 	if (driver == nullptr)
 		return;
-	m_tapes[driver->physicslog_name()] += driver->physicslog_line();
-}
-
-void blackbox_recorder::write_tapes() {
-	for (auto const &[name, lines] : m_tapes) {
-		// opened as the driver opens its log, so the file is the same to the byte
-		auto const filename{"physicslog/" + name + ".dat"};
-		std::fstream file{filename, std::ios::in | std::ios::out | std::ios::trunc};
-		if (false == file.is_open()) {
-			ErrorLog(std::format("Black box: can't create the physics log \"{}\"", filename));
-			continue;
-		}
-		file << TController::physicslog_header() << lines;
-		file.close();
-		if (file.fail())
-			ErrorLog(std::format("Black box: the physics log \"{}\" wasn't written whole", filename));
-		else
-			WriteLog(std::format("Black box: the physics log \"{}\" written from the recording", filename));
+	auto const &name{driver->physicslog_name()};
+	if (m_tapes.insert(name).second) {
+		PhysicsLogs.begin(name, TController::physicslog_header());
+		WriteLog(std::format("Black box: the physics log \"physicslog/{}.dat\" begun", name));
 	}
-	m_tapes.clear();
+	PhysicsLogs.append(name, driver->physicslog_line());
 }
 
 void blackbox_recorder::look_around(bool const Keyframe) {

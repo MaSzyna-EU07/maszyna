@@ -721,9 +721,9 @@ private:
 
 // logs
 // methods
+    // the line of the log, to PhysicsLogs (utilities/physicslog.h)
     void PhysicsLog();
 // members
-    std::ofstream LogFile; // zapis parametrow fizycznych
     double LastUpdatedTime = 0.0; // czas od ostatniego logu
     double ElapsedTime = 0.0; // czas od poczatku logu
 

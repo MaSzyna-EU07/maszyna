@@ -1,0 +1,67 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include <chrono>
+#include <condition_variable>
+#include <filesystem>
+#include <map>
+#include <mutex>
+#include <set>
+#include <stop_token>
+#include <string>
+#include <string_view>
+#include <thread>
+
+// the physics logs, <folder>/<name>.dat. the lines given are kept, and written every two seconds by a thread of its
+// own, each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and
+// the simulation doesn't wait for the disk. a crash loses the last two seconds of them
+class physicslog_writer {
+public:
+	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
+	physicslog_writer(physicslog_writer const &) = delete;
+	physicslog_writer &operator=(physicslog_writer const &) = delete;
+	// stops, writing what is kept
+	~physicslog_writer();
+
+	// starts the log Name anew: its file is emptied and Header written into it, the next time the logs are written.
+	// the lines of it not written yet are dropped
+	void begin(std::string const &Name, std::string_view Header);
+	// Line at the end of the log Name. a log not begun is added to as its file stands
+	void append(std::string const &Name, std::string_view Line);
+	// writes what is kept, now
+	void flush();
+	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
+	void stop();
+
+private:
+	struct pending {
+		bool fresh{false}; // its file is to be emptied first
+		std::string text;
+	};
+
+	// the thread, on the first line given, unless stopped. called with m_mutex held
+	void start();
+	void run(std::stop_token const &Stop);
+	void write();
+
+	std::filesystem::path const m_folder;
+	std::chrono::milliseconds const m_interval;
+	std::mutex m_mutex; // the lines kept and the thread
+	std::map<std::string, pending> m_pending;
+	bool m_stopped{false};
+	std::condition_variable_any m_wake;
+	std::jthread m_thread;
+	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
+	std::set<std::string> m_failed; // the logs whose file couldn't be written, told once
+};
+
+// the physics logs of the drivers (physicslog yes), and those the black box writes of the user's vehicles
+extern physicslog_writer PhysicsLogs;

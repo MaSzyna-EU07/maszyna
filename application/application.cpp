@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
+#include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
 #include <vector>
@@ -745,6 +746,9 @@ void eu07_application::exit()
 	track_sleepers::stop_background();
 	step("the black box");
 	simulation::Blackbox.close();
+	step("the physics logs");
+	// what is kept of them, the black box's written last
+	PhysicsLogs.stop();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();

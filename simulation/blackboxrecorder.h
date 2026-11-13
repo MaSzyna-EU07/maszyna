@@ -15,9 +15,9 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cstdint>
 #include <fstream>
-#include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -87,10 +87,10 @@ private:
 	void write_map();
 	static std::vector<std::pair<glm::dvec3, float>> stop_point_headings();
 	void write_cab();
-	// with the physics logs off, the line of the log of the driver the user is with, kept for the end
+	// with the physics logs off, the line of the log of the driver the user is with, to its log, physicslog/<vehicle>.dat,
+	// as the physics logs would have it. a log is begun at the first line of the recording, and goes on while the user
+	// looks around outside, until the user takes another vehicle; back in the vehicle, it goes on after the gap
 	void keep_tape_line();
-	// the kept lines, each driver's to its log, physicslog/<vehicle>.dat, as the physics logs would have it
-	void write_tapes();
 	// the clock, the user's vehicle, the vehicles, the switches and the signals
 	void look_around(bool Keyframe);
 	void look_at_vehicles(bool Keyframe);
@@ -115,8 +115,8 @@ private:
 	double m_time{0.0};
 	double m_cabdue{0.0};
 	double m_tapedue{0.0};
-	// the lines of the physics log by the name of its file, of the times the user was with its driver
-	std::map<std::string, std::string> m_tapes;
+	// the names of the logs begun by the recording
+	std::set<std::string> m_tapes;
 	double m_lookdue{0.0};
 	double m_keyframedue{0.0};
 	std::unordered_map<TDynamicObject const *, vehicle_entry> m_vehicles;

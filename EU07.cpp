@@ -22,6 +22,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "simulation/simulationtest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include <cstdlib>
 #include <exception>
 #include <string_view>
@@ -112,6 +113,8 @@ void finish_log()
 [[noreturn]] void end_test_run(std::string_view const Reason)
 {
 	simulation::test().conclude(simulation::test_result::error, Reason);
+	// the last two seconds of the physics logs, which the runner of the tests reads
+	PhysicsLogs.stop();
 	finish_log();
 	fflush(stdout);
 	fflush(stderr);
@@ -141,10 +144,10 @@ void finish_log()
 	end_test_run("the simulator stopped before the test ended");
 }
 
-// every vehicle with a driver keeps its physics log open for the whole run, and on a scenery with some five hundred
-// of them the logs took all the files the C library of Windows lets a process have open by default (512): the
-// files opened after them, the shaders of the map among them, couldn't be read. so the limit is raised to the most
-// either system allows
+// the physics logs used to keep a file open for every vehicle with a driver, and on a scenery with some five hundred
+// of them they took all the files the C library of Windows lets a process have open by default (512): the files
+// opened after them, the shaders of the map among them, couldn't be read. they keep none open now (physicslog.h),
+// but the limit is raised to the most either system allows still, for whatever else opens many files at once
 void raise_open_files_limit()
 {
 #ifdef _WIN32

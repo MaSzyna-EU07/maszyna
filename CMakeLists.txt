@@ -546,6 +546,7 @@ set(CORE_SOURCES
 "scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
 "vehicle/blackbox.cpp"
+"utilities/physicslog.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
 "vehicle/handover.cpp"

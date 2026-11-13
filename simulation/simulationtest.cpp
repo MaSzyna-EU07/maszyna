@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
@@ -262,6 +263,7 @@ void test_manager::check_wall_clock(double const Elapsed)
 	if (false == conclude(test_result::timeout, std::format("still running after {:.0f} s of real time (test.wall_timeout)", limit)))
 		ErrorLog(std::format("test: the simulator was still running {:.0f} s of real time after the start, ended", limit));
 	// what was logged last gets written, unless the log is held up by a hung thread
+	PhysicsLogs.flush();
 	StopLogService();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	std::_Exit(exit_code());

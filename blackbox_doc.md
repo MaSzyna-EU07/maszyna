@@ -12,12 +12,15 @@ starter, a viewer) can replay the session on the map, or set the user's driving 
 editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
 recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
 
-With the physics logs off it still gives the `.dat` log of each vehicle the user was in, written when the
-recording ends: `physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every
-0.05 s as `physicslog yes` would write, but only of the times the user was there. A vehicle with no driver
-of its own takes the log of the driver of its train. So the speed recorder's tape can be read from them as
-before, without the simulator keeping a log of every vehicle open all the time. A simulator that crashes
-leaves the recording, but not these logs.
+With the physics logs off it still gives the `.dat` log of each vehicle the user was in, as it goes:
+`physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every 0.05 s as
+`physicslog yes` would write. A log begins when the user first is in the vehicle, and goes on while the
+user looks around outside it, until the user takes another vehicle, whose log begins then. Back in a
+vehicle, its log goes on after the gap in its time. A vehicle with no driver of its own takes the log of the
+driver of its train. So the speed recorder's tape can be read from them as before, also while the
+simulator runs, without a log of every vehicle. Like those of `physicslog yes`, they are written every
+two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
+of them.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

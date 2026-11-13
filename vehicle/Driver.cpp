@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/handover.h"
@@ -2336,20 +2337,13 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     TableClear();
 
     if( WriteLogFlag ) {
-#ifdef _WIN32
-		CreateDirectory( "physicslog", nullptr);
-#elif __unix__
-		mkdir( "physicslog", 0740 );
-#endif
-        LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
-            std::ios::in | std::ios::out | std::ios::trunc );
+        // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
 #if LOGPRESS == 0
-        LogFile << physicslog_header();
+        PhysicsLogs.begin( VehicleName, physicslog_header() );
 #endif
 #if LOGPRESS == 1
-        LogFile << string( "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP" ).c_str() << "\n";
+        PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
 #endif
-        LogFile.flush();
     }
 
     // HACK: give the simulation a small window to potentially replace the AI with a human driver
@@ -2358,7 +2352,6 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 
 TController::~TController()
 { // wykopanie mechanika z roboty
-    // LogFile is closed by its own destructor
 };
 
 // zamiana kodu rozkazu na opis
@@ -5407,21 +5400,19 @@ std::string TController::physicslog_line() const {
 
 void TController::PhysicsLog()
 { // zapis logu - na razie tylko wypisanie parametrów
-    if (LogFile.is_open())
-    {
 #if LOGPRESS == 0
-        LogFile << physicslog_line();
+    PhysicsLogs.append( VehicleName, physicslog_line() );
 #endif
 #if LOGPRESS == 1
-        LogFile << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
-                << "\t";
-        LogFile << Controlling->AccS << "\t";
-        LogFile << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
-                << mvOccupied->BrakePress << "\t";
-        LogFile << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    std::ostringstream line;
+    line << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
+         << "\t";
+    line << mvControlling->AccS << "\t";
+    line << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
+         << mvOccupied->BrakePress << "\t";
+    line << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.append( VehicleName, line.str() );
 #endif
-        LogFile.flush();
-    }
 };
 
 void
