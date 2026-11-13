@@ -2496,6 +2496,8 @@ void editor_mode::render_orthophoto_ui()
                 config.east = m_orthophoto_origin_edit.y;
                 changed = true;
                 persist = true;
+                // the same as "The middle the scenery file gives" of the terrain model: the heights fitted at the place before mean nothing here
+                nmt_place_scenery({config.east, config.north});
             }
         }
     }
@@ -3757,6 +3759,62 @@ void editor_mode::drop_model_instances()
     ui()->set_status(status);
 }
 
+namespace
+{
+
+// the file of that name, or the one in its folder named so but for the case of the letters, as the game finds it; the path
+// given when there's none
+std::filesystem::path file_whatever_case(std::filesystem::path const &Path)
+{
+    std::error_code error;
+    if (std::filesystem::exists(Path, error))
+        return Path;
+    auto const wanted{ToLower(Path.filename().string())};
+    for (std::filesystem::directory_iterator entry{Path.parent_path(), error}, end; entry != end; entry.increment(error))
+    {
+        try
+        {
+            if (ToLower(entry->path().filename().string()) == wanted)
+                return entry->path();
+        }
+        catch (std::exception const &)
+        {
+            // a name the encoding of the system can't hold isn't the one looked for
+            continue;
+        }
+    }
+    return Path;
+}
+
+// the file a line of a scenery includes: include <file> ... end, the keyword in any case and after any whitespace, as the
+// parser of the scenery takes it; empty when the line includes none
+std::string included_file(std::string const &Line)
+{
+    std::istringstream words(Line);
+    std::string keyword;
+    std::string name;
+    if (false == static_cast<bool>(words >> keyword) || ToLower(keyword) != "include" || false == static_cast<bool>(words >> name) || name.find("//") == 0)
+        return {};
+    std::ranges::replace(name, '\\', '/');
+    return name;
+}
+
+// Rainsted writes the origin of the scenery as: //$g <system> <easting> <northing>, in kilometres. The origin read from
+// what follows the mark, as northing and easting in metres
+std::optional<glm::dvec2> georeference_origin(std::string const &Text)
+{
+    std::istringstream words(Text);
+    std::string system;
+    double east{0.0};
+    double north{0.0};
+    if (false == static_cast<bool>(words >> system >> east >> north) || system.find("1992") == std::string::npos)
+        return std::nullopt;
+    auto const scale = (east < 10000.0 && north < 10000.0) ? 1000.0 : 1.0;
+    return glm::dvec2{north * scale, east * scale};
+}
+
+} // namespace
+
 void editor_mode::read_georeference()
 {
     if (m_georeference_read)
@@ -3764,51 +3822,37 @@ void editor_mode::read_georeference()
     m_georeference_read = true;
     m_georeference = false;
     m_georeference_line.clear();
-    // the name of the scenery is kept in lower case, the file may have capitals in its name
-    std::filesystem::path file{Global.asCurrentSceneryPath + Global.SceneryFile};
-    std::error_code error;
-    if (false == std::filesystem::exists(file, error))
-    {
-        for (std::filesystem::directory_iterator entry{Global.asCurrentSceneryPath, error}, end; entry != end; entry.increment(error))
-        {
-            std::string name;
-            try
-            {
-                name = entry->path().filename().string();
-            }
-            catch (std::exception const &)
-            {
-                continue;
-            }
-            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
-            if (name == Global.SceneryFile)
-            {
-                file = entry->path();
-                break;
-            }
-        }
-    }
-    std::ifstream stream(file);
+    // the scenery file first, then the files it includes near its top: a scenery made of an include (the IRT one) keeps its
+    // origin in the included file. The name of the scenery is kept in lower case, the file may have capitals in its name
+    std::vector<std::filesystem::path> files{file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath + Global.SceneryFile})};
+    for (std::size_t index = 0; index < files.size() && false == m_georeference; ++index)
+        read_georeference(files, index);
+}
+
+// looks for the origin in the first lines of a file of the scenery; the files the scenery file itself includes are added
+// to the ones to look in (one level down only)
+void editor_mode::read_georeference(std::vector<std::filesystem::path> &Files, std::size_t const Index)
+{
+    std::ifstream stream(Files[Index]);
     std::string line;
     for (int count = 0; count < 200 && std::getline(stream, line); ++count)
     {
         auto const mark = line.find("//$g");
         if (mark == std::string::npos)
+        {
+            if (auto const name{included_file(line)}; Index == 0 && Files.size() < 8 && false == name.empty())
+                Files.emplace_back(file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath} / name));
             continue;
-        // Rainsted writes the origin of the scenery as: //$g <system> <easting> <northing>, in kilometres
-        std::istringstream words(line.substr(mark + 4));
-        std::string system;
-        double east{0.0};
-        double north{0.0};
-        if (false == static_cast<bool>(words >> system >> east >> north) || system.find("1992") == std::string::npos)
+        }
+        auto const origin{georeference_origin(line.substr(mark + 4))};
+        if (false == origin.has_value())
             continue;
-        auto const scale = (east < 10000.0 && north < 10000.0) ? 1000.0 : 1.0;
-        m_georeference_origin = {north * scale, east * scale};
+        m_georeference_origin = *origin;
         m_georeference_line = line.substr(mark);
         if (false == m_georeference_line.empty() && m_georeference_line.back() == '\r')
             m_georeference_line.pop_back();
         m_georeference = true;
-        break;
+        return;
     }
 }
 

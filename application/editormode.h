@@ -835,6 +835,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec2 m_georeference_origin{0.0}; // northing, easting
 	std::string m_georeference_line;
 	void read_georeference();
+	void read_georeference(std::vector<std::filesystem::path> &Files, std::size_t Index);
 	void draw_orthophoto();
 	void draw_ortho_compass() const;
 	// picks up the stored settings and the origin of the current scenery, and the offset of the terrain model the scenery has
