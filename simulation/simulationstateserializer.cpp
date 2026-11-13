@@ -1937,7 +1937,7 @@ state_serializer::export_nodes_to_stream(std::ostream &scmfile, bool Dirty) cons
 	}
 }
 
-TAnimModel *state_serializer::create_model(const std::string &src, const std::string &name, const glm::dvec3 &position) {
+TAnimModel *state_serializer::create_model(const std::string &src, const std::string &name, const glm::dvec3 &position, scene::layer_handle const Layer) {
 	cParser parser(src);
 	parser.getTokens(); // "node"
 	parser.getTokens(2); // ranges
@@ -1948,7 +1948,8 @@ TAnimModel *state_serializer::create_model(const std::string &src, const std::st
 	parser.getTokens(2); // name, type
 	nodedata.name = name;
 	nodedata.type = "model";
-	nodedata.layer = scene::Layers.active(); // null_handle unless the scenery was opened for editing
+	// null_handle unless the scenery was opened for editing
+	nodedata.layer = Layer != null_handle ? Layer : scene::Layers.active();
 
 	scene::scratch_data scratch;
 

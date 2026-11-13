@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignment.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorFillStore.hpp"
 #include "editor/editorSwitchCurve.hpp"
 #include "editor/editorKilometrage.hpp"
 #include "editor/editorSpeed.hpp"
@@ -844,14 +845,47 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_change_history();
 	void render_settings();
 
-	// area fill: scatters models from a package over a polygon outlined in the viewport
+	// area fill: scatters models from a package over a polygon outlined in the viewport. a filled area goes on the list of the
+	// panel (fill_store, kept in the scenery), to be picked up again later: its outline and settings back in the tool, filled anew
 	void render_area_fill();
+	void render_fill_area_list();
 	void draw_area_fill_outline() const;
 	void add_area_fill_point();
-	void run_area_fill();
+	// Enter: the outline filled and put on the list, the tool ready for the next one
+	void finish_area_fill();
+	// Esc: the outline dropped; an area picked up for a change stays as it was
+	void cancel_area_fill();
+	void edit_fill_area(std::string const &Id);
+	void remove_fill_area(std::string const &Id);
+	void show_fill_area(std::string const &Id);
 	void undo_last_area_fill();
+	// the settings of the tool as an area, without its outline, id and label
+	fill_store::area fill_settings() const;
+	// the models the area is filled with, from its seed: the same each time for the same area. returns how many were placed
+	std::size_t place_fill_area(fill_store::area const &Area, std::size_t &Target, std::size_t &Unsupported);
+	std::vector<TAnimModel *> fill_area_models(std::string const &Id) const;
+	std::size_t erase_fill_area_models(std::string const &Id);
 	std::vector<glm::dvec3> m_fill_points; // outline vertices (world space) in click order
-	std::vector<TAnimModel *> m_fill_last; // instances created by the most recent fill, for "Undo last fill"
+	std::string m_fill_editing; // the listed area whose outline is in m_fill_points, empty for a new one
+	// the rotation of the area picked up and the one of the Functions panel then: the area keeps its own unless it's changed in the tool
+	float m_fill_editing_rotation{0.0f};
+	int m_fill_editing_panel_mode{-1};
+	float m_fill_editing_panel_value{0.0f};
+	std::string m_fill_hover; // the area under the cursor in the list, drawn brighter
+	// what "Undo last fill" takes back: the area filled, changed or removed last, and how it was before
+	struct fill_undo
+	{
+		enum class kind
+		{
+			added,
+			changed,
+			removed
+		};
+		kind what{kind::added};
+		std::string id;
+		fill_store::area before;
+	};
+	std::optional<fill_undo> m_fill_undo;
 	std::vector<std::string> m_fill_custom; // user-assembled package of node templates
 	int m_fill_custom_idx{-1};
 	model_set_ref m_fill_source; // manual = m_fill_custom, otherwise a user set or node bank group

@@ -545,6 +545,7 @@ void editor_mode::editormode_input::poll()
 editor_mode::editor_mode() {
 	alignment_store::reset();
 	switch_store::reset();
+	fill_store::reset();
 	kilometrage::reset();
 	m_userinterface = std::make_shared<editor_ui>();
 	// the area fill settings live in the node bank window, in the tab of the fill mode
@@ -957,9 +958,7 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
         s.infra.erase(std::remove_if(s.infra.begin(), s.infra.end(), followed), s.infra.end());
     }
 
-    // deleted nodes also drop out of the "undo last fill" set
-    m_fill_last.erase(std::remove(m_fill_last.begin(), m_fill_last.end(), node), m_fill_last.end());
-    // and out of the selection and their group
+    // deleted nodes drop out of the selection and their group
     m_selection.erase(std::remove(m_selection.begin(), m_selection.end(), node), m_selection.end());
     scene::Groups.remove(node);
 
@@ -4684,16 +4683,44 @@ void editor_mode::add_area_fill_point()
     m_fill_points.push_back(placement_on_ground(Camera.Pos + offset));
 }
 
-void editor_mode::undo_last_area_fill()
+fill_store::area editor_mode::fill_settings() const
 {
-    // nullify_history_pointers() removes deleted nodes from m_fill_last, so work on a copy
-    auto const created = std::move(m_fill_last);
-    m_fill_last.clear();
+    fill_store::area area;
+    area.set_kind = static_cast<int>(m_fill_source.kind);
+    area.set_id = m_fill_source.id;
+    area.density = std::max(0.0f, m_fill_density);
+    area.spacing = std::max(0.0f, m_fill_min_spacing);
+    area.scale_min = std::max(0.01f, std::min(m_fill_scale_min, m_fill_scale_max));
+    area.scale_max = std::max(0.01f, std::max(m_fill_scale_min, m_fill_scale_max));
+    area.random_rotation = m_fill_random_rotation;
+    // without the random rotation the one of the Functions panel goes with the area, a fixed one or none
+    area.rotation = (false == m_fill_random_rotation && ui()->rot_mode() == functions_panel::FIXED) ? ui()->rot_val() : 0.0f;
+    area.models_as_ground = m_fill_models_as_ground;
+    if (m_fill_source.kind == model_set_ref::source::manual)
+        area.templates = m_fill_custom;
+    else
+        for (auto const *entry : ui()->nodebank().set_entries(m_fill_source))
+            area.templates.push_back(*entry);
+    area.templates.erase(std::remove_if(area.templates.begin(), area.templates.end(), [](std::string const &Template) { return Template.empty(); }), area.templates.end());
+    return area;
+}
 
-    for (TAnimModel *model : created)
+std::vector<TAnimModel *> editor_mode::fill_area_models(std::string const &Id) const
+{
+    std::vector<TAnimModel *> models;
+    if (Id.empty())
+        return models;
+    for (auto *model : simulation::Instances.sequence())
+        if (model != nullptr && fill_store::owns(Id, model->name()))
+            models.push_back(model);
+    return models;
+}
+
+std::size_t editor_mode::erase_fill_area_models(std::string const &Id)
+{
+    auto const models{fill_area_models(Id)};
+    for (auto *model : models)
     {
-        if (model == nullptr)
-            continue;
         if (m_node == model)
         {
             m_node = nullptr;
@@ -4701,66 +4728,58 @@ void editor_mode::undo_last_area_fill()
         }
         erase_model(model);
     }
-    m_fill_status = format(STR_C("Removed %zu objects of the last fill"), created.size());
+    return models.size();
 }
 
-void editor_mode::run_area_fill()
+std::size_t editor_mode::place_fill_area(fill_store::area const &Area, std::size_t &Target, std::size_t &Unsupported)
 {
     // limits keeping a single click from freezing the editor for too long
     std::size_t constexpr max_objects = 20000;
+    // the models go to the layer of the area, whichever is active (on an undo, on a change): the area and its models are saved together;
+    // the active one if the area's is gone
+    auto layer{scene::Layers.resolve(Area.layer)};
+    if (false == scene::Layers.listed(layer))
+        layer = null_handle;
     // large model instances (e.g. terrain tiles) are treated as ground, smaller ones (houses, trees) are not
     float constexpr terrain_model_radius = 50.0f;
     // ground is searched up to this far above the height interpolated from the outline points,
     // so hills inside the outline are found but bridges or roofs high above it are not
     double constexpr height_tolerance = 50.0;
 
-    if (m_fill_points.size() < 3)
-    {
-        m_fill_status = STR("Outline needs at least 3 points");
-        return;
-    }
+    Target = 0;
+    Unsupported = 0;
+    auto const &outline{Area.outline};
+    if (outline.size() < 3 || Area.templates.empty())
+        return 0;
 
-    // model package
-    std::vector<std::string> package;
-    if (m_fill_source.kind == model_set_ref::source::manual)
-        package = m_fill_custom;
-    else
-        for (auto const *entry : ui()->nodebank().set_entries(m_fill_source))
-            package.push_back(*entry);
-    package.erase(std::remove_if(package.begin(), package.end(), [](std::string const &Template) { return Template.empty(); }), package.end());
-    if (package.empty())
-    {
-        m_fill_status = STR("Selected model package is empty");
-        return;
-    }
+    // every random number of the fill comes from its seed, so the area filled again with the same settings gets the same objects
+    std::mt19937 random{Area.seed}; // NOSONAR(cpp:S2245) the placement of models, not security: it must repeat from the seed
+    auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
 
     // area bounds
     glm::dvec2 bmin(std::numeric_limits<double>::max());
     glm::dvec2 bmax(-std::numeric_limits<double>::max());
-    for (auto const &p : m_fill_points)
+    for (auto const &p : outline)
     {
         bmin = glm::min(bmin, glm::dvec2(p.x, p.z));
         bmax = glm::max(bmax, glm::dvec2(p.x, p.z));
     }
-    double const area = polygon_area_xz(m_fill_points);
-    auto const target = static_cast<std::size_t>(std::min<double>(std::round(area / 10000.0 * std::max(0.0f, m_fill_density)), max_objects));
-    if (target == 0)
-    {
-        m_fill_status = STR("Density too low for this area, nothing to place");
-        return;
-    }
+    double const area = polygon_area_xz(outline);
+    Target = static_cast<std::size_t>(std::min<double>(std::round(area / 10000.0 * std::max(0.0f, Area.density)), max_objects));
+    if (Target == 0)
+        return 0;
 
     // scatter points: random samples inside the outline, rejecting the ones closer than the minimal spacing
     // to an already accepted point (checked on a hashed grid with cell size == spacing)
-    double const spacing = std::max(0.0f, m_fill_min_spacing);
+    double const spacing = std::max(0.0f, Area.spacing);
     std::unordered_map<std::int64_t, std::vector<std::size_t>> occupancy;
     auto const cell_key = [](std::int64_t const X, std::int64_t const Z) { return (X << 32) ^ (Z & 0xffffffff); };
     std::vector<glm::dvec2> points;
-    points.reserve(target);
-    for (std::size_t attempt = 0; attempt < target * 30 && points.size() < target; ++attempt)
+    points.reserve(Target);
+    for (std::size_t attempt = 0; attempt < Target * 30 && points.size() < Target; ++attempt)
     {
-        glm::dvec2 const p(LocalRandom(bmin.x, bmax.x), LocalRandom(bmin.y, bmax.y));
-        if (false == point_in_polygon_xz(m_fill_points, p.x, p.y))
+        glm::dvec2 const p(uniform(bmin.x, bmax.x), uniform(bmin.y, bmax.y));
+        if (false == point_in_polygon_xz(outline, p.x, p.y))
             continue;
         if (spacing > 0.0)
         {
@@ -4789,23 +4808,22 @@ void editor_mode::run_area_fill()
 
     // ground geometry within the area
     std::vector<world_triangle> triangles;
-    gather_ground_triangles(bmin, bmax, m_fill_models_as_ground, terrain_model_radius, triangles);
+    gather_ground_triangles(bmin, bmax, Area.models_as_ground, terrain_model_radius, triangles);
     triangle_grid const ground(std::move(triangles), bmin, bmax);
     auto const terrains = active_terrains();
 
-    auto const rotation_mode = m_fill_random_rotation ? functions_panel::RANDOM : ui()->rot_mode();
-    auto const fixed_rotation_value = ui()->rot_val();
-    float const scalemin = std::max(0.01f, std::min(m_fill_scale_min, m_fill_scale_max));
-    float const scalemax = std::max(0.01f, std::max(m_fill_scale_min, m_fill_scale_max));
-
-    std::vector<TAnimModel *> created;
-    created.reserve(points.size());
-    std::size_t unsupported = 0;
+    std::size_t placed{0};
+    std::size_t number{0};
     for (auto const &p : points)
     {
+        // the random numbers of the point are drawn before anything can skip it, so the points after it get the same ones
+        auto const pick{uniform(0.0, 1.0)};
+        auto const yaw{uniform(0.0, 360.0)};
+        auto const scale{uniform(0.0, 1.0)};
+
         // reference height: the outline points, weighted by inverse squared distance
         double weights = 0.0, reference = 0.0;
-        for (auto const &v : m_fill_points)
+        for (auto const &v : outline)
         {
             double const w = 1.0 / std::max(1e-6, glm::length2(glm::dvec2(v.x, v.z) - p));
             weights += w;
@@ -4830,40 +4848,210 @@ void editor_mode::run_area_fill()
         if (!found)
         {
             y = reference;
-            ++unsupported;
+            ++Unsupported;
         }
 
         glm::dvec3 const location(p.x, y, p.y);
         if (!simulation::Region->point_inside(location))
             continue;
 
-        auto const &src = package[package.size() > 1 ? std::min(package.size() - 1, static_cast<std::size_t>(LocalRandom(0.0, static_cast<double>(package.size())))) : 0];
-        // NOTE: no names here either, same as with the brush
-        TAnimModel *cloned = simulation::State.create_model(src, std::string{}, location);
+        auto const &src = Area.templates[std::min(Area.templates.size() - 1, static_cast<std::size_t>(pick * static_cast<double>(Area.templates.size())))];
+        // named after the area, so its models are found again in a scenery loaded later
+        TAnimModel *cloned = simulation::State.create_model(src, fill_store::model_name(Area.id, number++), location, layer);
         if (!cloned)
             continue;
-        apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
-        if (scalemin != 1.0f || scalemax != 1.0f)
-            cloned->Scale(static_cast<float>(LocalRandom(scalemin, scalemax)));
-        created.push_back(cloned);
+        if (Area.random_rotation)
+            m_editor.rotate(cloned, glm::vec3{0.0f, static_cast<float>(yaw), 0.0f}, 1);
+        else if (Area.rotation != 0.0f)
+            m_editor.rotate(cloned, glm::vec3{0.0f, Area.rotation, 0.0f}, 0);
+        if (Area.scale_min != 1.0f || Area.scale_max != 1.0f)
+            cloned->Scale(static_cast<float>(Area.scale_min + (Area.scale_max - Area.scale_min) * scale));
+        ++placed;
     }
+    return placed;
+}
 
-    // a new fill replaces the "last fill" undo set; the previous objects stay in the scene
-    m_fill_last = std::move(created);
+void editor_mode::finish_area_fill()
+{
+    if (m_fill_points.size() < 3)
+    {
+        m_fill_status = STR("Outline needs at least 3 points");
+        return;
+    }
+    auto area{fill_settings()};
+    if (area.templates.empty())
+    {
+        m_fill_status = STR("Selected model package is empty");
+        return;
+    }
+    area.outline = m_fill_points;
+    if (std::round(polygon_area_xz(area.outline) / 10000.0 * area.density) < 1.0)
+    {
+        m_fill_status = STR("Density too low for this area, nothing to place");
+        return;
+    }
+    // a changed area keeps its name and the names of its models, a new one gets them
+    auto const *before{m_fill_editing.empty() ? nullptr : fill_store::find(m_fill_editing)};
+    fill_undo undo;
+    if (before != nullptr)
+    {
+        undo.what = fill_undo::kind::changed;
+        undo.before = *before;
+        area.id = before->id;
+        area.label = before->label;
+        // its own rotation, unless the rotation of the Functions panel was changed since it was picked up
+        if (false == area.random_rotation && false == before->random_rotation && static_cast<int>(ui()->rot_mode()) == m_fill_editing_panel_mode &&
+            ui()->rot_val() == m_fill_editing_panel_value)
+            area.rotation = m_fill_editing_rotation;
+        erase_fill_area_models(area.id);
+    }
+    else
+    {
+        undo.what = fill_undo::kind::added;
+        area.id = fill_store::next_id();
+        area.label = format(STR_C("Area %zu"), fill_store::areas().size() + 1);
+    }
+    undo.id = area.id;
+    area.seed = static_cast<std::uint32_t>(LocalRandom(0.0, 4294967295.0));
+    // a changed area stays in its layer, with its models; a new one goes to the active layer
+    area.layer = before != nullptr ? undo.before.layer : scene::Layers.active();
 
-    m_fill_status = format(STR_C("Placed %zu of %zu objects"), m_fill_last.size(), static_cast<std::size_t>(target));
-    if (points.size() < target)
+    std::size_t target{0};
+    std::size_t unsupported{0};
+    area.objects = place_fill_area(area, target, unsupported);
+    fill_store::put(area);
+    m_fill_undo = std::move(undo);
+    m_fill_points.clear();
+    m_fill_editing.clear();
+
+    m_fill_status = format(STR_C("%s: placed %zu of %zu objects"), area.label.c_str(), area.objects, target);
+    if (area.objects < target)
         m_fill_status += STR_C(" (limited by min. spacing)");
     if (unsupported > 0)
         m_fill_status += format(STR_C(", without ground under them (height from the outline): %zu"), unsupported);
     WriteLog("Editor: area fill - " + m_fill_status, logtype::generic);
 }
 
+void editor_mode::cancel_area_fill()
+{
+    if (false == m_fill_editing.empty())
+    {
+        if (auto const *area{fill_store::find(m_fill_editing)})
+            m_fill_status = format(STR_C("%s left as it was"), area->label.c_str());
+        m_fill_editing.clear();
+    }
+    m_fill_points.clear();
+}
+
+void editor_mode::edit_fill_area(std::string const &Id)
+{
+    auto const *area{fill_store::find(Id)};
+    if (area == nullptr)
+        return;
+    m_fill_editing = Id;
+    m_fill_points = area->outline;
+    m_fill_density = area->density;
+    m_fill_min_spacing = area->spacing;
+    m_fill_scale_min = area->scale_min;
+    m_fill_scale_max = area->scale_max;
+    m_fill_random_rotation = area->random_rotation;
+    m_fill_editing_rotation = area->rotation;
+    m_fill_editing_panel_mode = static_cast<int>(ui()->rot_mode());
+    m_fill_editing_panel_value = ui()->rot_val();
+    m_fill_models_as_ground = area->models_as_ground;
+    // the set the models came from, while it still holds the same templates; otherwise the templates of the area themselves
+    model_set_ref source;
+    source.kind = static_cast<model_set_ref::source>(std::clamp(area->set_kind, 0, 2));
+    source.id = area->set_id;
+    std::vector<std::string> entries;
+    if (source.kind != model_set_ref::source::manual)
+        for (auto const *entry : ui()->nodebank().set_entries(source))
+            if (false == entry->empty())
+                entries.push_back(*entry);
+    if (source.kind != model_set_ref::source::manual && entries == area->templates)
+        m_fill_source = source;
+    else
+    {
+        m_fill_source = model_set_ref{};
+        m_fill_custom = area->templates;
+        m_fill_custom_idx = -1;
+    }
+    m_fill_status = format(STR_C("%s picked up: change the outline or the settings, Enter fills it anew, Esc leaves it as it was"), area->label.c_str());
+}
+
+void editor_mode::remove_fill_area(std::string const &Id)
+{
+    auto const *area{fill_store::find(Id)};
+    if (area == nullptr)
+        return;
+    if (m_fill_editing == Id)
+    {
+        m_fill_editing.clear();
+        m_fill_points.clear();
+    }
+    fill_undo undo;
+    undo.what = fill_undo::kind::removed;
+    undo.id = Id;
+    undo.before = *area;
+    auto const removed{erase_fill_area_models(Id)};
+    m_fill_status = format(STR_C("%s removed with its %zu objects"), undo.before.label.c_str(), removed);
+    fill_store::forget(Id);
+    m_fill_undo = std::move(undo);
+}
+
+void editor_mode::show_fill_area(std::string const &Id)
+{
+    auto const *area{fill_store::find(Id)};
+    if (area == nullptr || area->outline.empty())
+        return;
+    glm::dvec3 low{std::numeric_limits<double>::max()};
+    glm::dvec3 high{-std::numeric_limits<double>::max()};
+    for (auto const &point : area->outline)
+    {
+        low = glm::min(low, point);
+        high = glm::max(high, point);
+    }
+    auto const centre{(low + high) * 0.5};
+    auto const extent{std::max(30.0, std::max(high.x - low.x, high.z - low.z))};
+    // from the south-east, high enough to see the whole outline
+    Camera.Pos = centre + glm::dvec3{-0.5 * extent, 0.8 * extent, 0.5 * extent};
+    auto const look{glm::normalize(centre - Camera.Pos)};
+    Camera.Angle = glm::vec3(static_cast<float>(std::asin(std::clamp(look.y, -1.0, 1.0))), static_cast<float>(std::atan2(-look.x, -look.z)), 0.0f);
+    Camera.Velocity = {};
+    Camera.m_owner = nullptr;
+    m_focus_active = false;
+    Global.pCamera = Camera;
+}
+
+void editor_mode::undo_last_area_fill()
+{
+    if (false == m_fill_undo.has_value())
+        return;
+    auto const undo{std::move(*m_fill_undo)};
+    m_fill_undo.reset();
+    if (m_fill_editing == undo.id)
+    {
+        m_fill_editing.clear();
+        m_fill_points.clear();
+    }
+    auto const removed{erase_fill_area_models(undo.id)};
+    if (undo.what == fill_undo::kind::added)
+    {
+        fill_store::forget(undo.id);
+        m_fill_status = format(STR_C("Removed %zu objects of the last fill"), removed);
+        return;
+    }
+    // changed or removed: the area as it was, filled again from its seed, which gives the same objects
+    std::size_t target{0};
+    std::size_t unsupported{0};
+    auto before{undo.before};
+    before.objects = place_fill_area(before, target, unsupported);
+    fill_store::put(before);
+    m_fill_status = format(STR_C("%s back as it was, %zu objects"), before.label.c_str(), before.objects);
+}
+
 void editor_mode::draw_area_fill_outline() const
 {
-    if (m_fill_points.empty())
-        return;
-
     // same camera-relative view and clean perspective the transform gizmo uses
     ImGuiIO const &io = ImGui::GetIO();
     glm::mat4 const view = GfxRenderer->Camera_View_Matrix();
@@ -4878,26 +5066,41 @@ void editor_mode::draw_area_fill_outline() const
     float constexpr nearw = 0.1f;
 
     ImDrawList *drawlist = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+    auto const draw_edges = [&](std::vector<glm::dvec3> const &Points, bool const Open, ImU32 const Color, ImU32 const Closing, float const Thickness) {
+        std::size_t const count = Points.size();
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            bool const closing = (i + 1 == count);
+            if (closing && (count < 3 || (Open && Closing == 0)))
+                break;
+            glm::vec4 a = to_clip(Points[i]);
+            glm::vec4 b = to_clip(Points[(i + 1) % count]);
+            // clip the edge against the near plane, so points behind the camera don't flip across the screen
+            if (a.w < nearw && b.w < nearw)
+                continue;
+            if (a.w < nearw)
+                a = glm::mix(a, b, (nearw - a.w) / (b.w - a.w));
+            else if (b.w < nearw)
+                b = glm::mix(b, a, (nearw - b.w) / (a.w - b.w));
+            drawlist->AddLine(to_screen(a), to_screen(b), closing && Open ? Closing : Color, Thickness);
+        }
+    };
+
+    // the areas on the list, the one under the cursor in the list brighter; the one being changed is drawn as the outline
+    for (auto const &area : fill_store::areas())
+    {
+        if (area.id == m_fill_editing)
+            continue;
+        auto const hovered{area.id == m_fill_hover};
+        draw_edges(area.outline, false, hovered ? IM_COL32(120, 230, 255, 255) : IM_COL32(120, 200, 255, 110), 0, hovered ? 3.0f : 1.5f);
+    }
+
+    if (m_fill_points.empty())
+        return;
     ImU32 const edgecolor = IM_COL32(255, 200, 40, 230);
     ImU32 const closingcolor = IM_COL32(255, 200, 40, 110);
-
+    draw_edges(m_fill_points, true, edgecolor, closingcolor, 2.0f);
     std::size_t const count = m_fill_points.size();
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        bool const closing = (i + 1 == count);
-        if (closing && count < 3)
-            break;
-        glm::vec4 a = to_clip(m_fill_points[i]);
-        glm::vec4 b = to_clip(m_fill_points[(i + 1) % count]);
-        // clip the edge against the near plane, so points behind the camera don't flip across the screen
-        if (a.w < nearw && b.w < nearw)
-            continue;
-        if (a.w < nearw)
-            a = glm::mix(a, b, (nearw - a.w) / (b.w - a.w));
-        else if (b.w < nearw)
-            b = glm::mix(b, a, (nearw - b.w) / (a.w - b.w));
-        drawlist->AddLine(to_screen(a), to_screen(b), closing ? closingcolor : edgecolor, 2.0f);
-    }
     for (std::size_t i = 0; i < count; ++i)
     {
         glm::vec4 const c = to_clip(m_fill_points[i]);
@@ -4909,14 +5112,17 @@ void editor_mode::draw_area_fill_outline() const
 
 void editor_mode::render_area_fill()
 {
-    ImGui::TextDisabled(STR_C("LMB: add outline point   Backspace: remove last point"));
+    ImGui::TextDisabled(STR_C("LMB: add outline point   Backspace: remove last point   Enter: fill and finish   Esc: drop the outline"));
+    if (false == m_fill_editing.empty())
+        if (auto const *editing{fill_store::find(m_fill_editing)})
+            ImGui::TextColored(ImVec4(0.47f, 0.9f, 1.0f, 1.0f), STR_C("Changing: %s"), editing->label.c_str());
     double const area = polygon_area_xz(m_fill_points);
     ImGui::Text(STR_C("Points: %zu   Area: %.0f m² (%.2f ha)"), m_fill_points.size(), area, area / 10000.0);
     if (ImGui::Button(STR_C("Remove last point")) && !m_fill_points.empty())
         m_fill_points.pop_back();
     ImGui::SameLine();
     if (ImGui::Button(STR_C("Clear outline")))
-        m_fill_points.clear();
+        cancel_area_fill();
 
     ImGui::Separator();
 
@@ -4951,15 +5157,102 @@ void editor_mode::render_area_fill()
 
     ImGui::Text(STR_C("Estimated objects: %.0f"), std::round(area / 10000.0 * m_fill_density));
 
-    if (ImGui::Button(STR_C("Fill area")))
-        run_area_fill();
+    if (ImGui::Button(m_fill_editing.empty() ? STR_C("Fill area (Enter)") : STR_C("Fill again (Enter)")))
+        finish_area_fill();
     ImGui::SameLine();
-    std::string const undolabel = format(STR_C("Undo last fill (%zu)"), m_fill_last.size());
-    if (ImGui::Button(undolabel.c_str()) && !m_fill_last.empty())
-        undo_last_area_fill();
+    if (m_fill_undo.has_value())
+    {
+        if (ImGui::Button(STR_C("Undo last fill")))
+            undo_last_area_fill();
+    }
+    else
+        ImGui::TextDisabled("%s", STR_C("Undo last fill"));
 
     if (!m_fill_status.empty())
-        ImGui::TextUnformatted(m_fill_status.c_str());
+        ImGui::TextWrapped("%s", m_fill_status.c_str());
+
+    render_fill_area_list();
+}
+
+void editor_mode::render_fill_area_list()
+{
+    ImGui::Separator();
+    auto const &areas{fill_store::areas()};
+    ImGui::Text(STR_C("Filled areas: %zu"), areas.size());
+    m_fill_hover.clear();
+    if (areas.empty())
+    {
+        ImGui::TextDisabled("%s", STR_C("None yet. Enter fills the outline and puts the area here, to be changed later"));
+        return;
+    }
+    // the buttons act after the list is drawn: they change the list
+    std::string edit, remove, show;
+    if (ImGui::BeginTable("fillareas", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0.0f, std::min(10, static_cast<int>(areas.size()) + 1) * ImGui::GetFrameHeightWithSpacing())))
+    {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn(STR_C("Name"), ImGuiTableColumnFlags_WidthStretch, 3.0f);
+        ImGui::TableSetupColumn(STR_C("Objects"), ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn(STR_C("ha"), ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
+        for (auto const &area : areas)
+        {
+            ImGui::PushID(area.id.c_str());
+            ImGui::TableNextRow();
+            if (area.id == m_fill_editing)
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, IM_COL32(60, 120, 150, 120));
+            ImGui::TableNextColumn();
+            // the name, changed in place and kept with the area once the field is left
+            std::array<char, 96> name{};
+            std::snprintf(name.data(), name.size(), "%s", area.label.c_str());
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputText("##name", name.data(), name.size());
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                auto changed{area};
+                changed.label = name.data();
+                fill_store::put(std::move(changed));
+                ImGui::PopID();
+                break; // the list changed under the loop
+            }
+            auto hovered{ImGui::IsItemHovered()};
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", area.objects);
+            hovered = hovered || ImGui::IsItemHovered();
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f", polygon_area_xz(area.outline) / 10000.0);
+            hovered = hovered || ImGui::IsItemHovered();
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton(STR_C("Change")))
+                edit = area.id;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("Its outline and settings back in the tool: move the points, change the models or the density, Enter fills it anew"));
+            hovered = hovered || ImGui::IsItemHovered();
+            ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Show")))
+                show = area.id;
+            hovered = hovered || ImGui::IsItemHovered();
+            ImGui::SameLine();
+            if (ImGui::SmallButton(STR_C("Remove")))
+                remove = area.id;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("The area and its models removed; Undo last fill brings them back"));
+            hovered = hovered || ImGui::IsItemHovered();
+            if (hovered)
+                m_fill_hover = area.id;
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (false == show.empty())
+        show_fill_area(show);
+    if (false == edit.empty())
+    {
+        edit_fill_area(edit);
+        show_fill_area(edit);
+    }
+    if (false == remove.empty())
+        remove_fill_area(remove);
 }
 
 glm::vec3 editor_mode::array_size(TAnimModel const &Base)
@@ -6960,7 +7253,7 @@ void editor_mode::exit()
     g_redo.clear();
     m_history.clear();
     m_orphans.clear();
-    m_fill_last.clear();
+    m_fill_undo.reset();
     m_orthophoto.cancel_pending();
     m_orthophoto.detach_scene(); // the layer is an editor aid, keep it out of the other modes
     for (auto &layer : m_wms)
@@ -7263,6 +7556,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             area_finish(false);
             break;
         }
+        // area fill: the outline dropped, an area picked up for a change left as it was
+        if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && false == ImGui::GetIO().WantTextInput && (false == m_fill_points.empty() || false == m_fill_editing.empty()))
+        {
+            cancel_area_fill();
+            break;
+        }
         if (is_press(Action))
         {
             road_cancel();
@@ -7337,6 +7636,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         {
             if (m_area_drawing.points.size() >= 3)
                 area_finish(true);
+            break;
+        }
+        // area fill: the outline filled and put on the list, the next one can be started
+        if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && false == ImGui::GetIO().WantTextInput && false == m_fill_points.empty())
+        {
+            finish_area_fill();
             break;
         }
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)

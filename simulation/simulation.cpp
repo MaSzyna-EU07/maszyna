@@ -537,8 +537,8 @@ void state_manager::process_commands() {
 	}
 }
 
-TAnimModel * state_manager::create_model(const std::string &src, const std::string &name, const glm::dvec3 &position) {
-	return m_serializer.create_model(src, name, position);
+TAnimModel * state_manager::create_model(const std::string &src, const std::string &name, const glm::dvec3 &position, scene::layer_handle const Layer) {
+	return m_serializer.create_model(src, name, position, Layer);
 }
 
 std::vector<TDynamicObject *> state_manager::insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed) {
