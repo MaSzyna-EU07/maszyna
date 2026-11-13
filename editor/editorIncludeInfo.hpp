@@ -90,6 +90,13 @@ int parameter_count(std::string const &File);
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
 // the names of the events the template defines, as they're written after "event", lower case. returns: false if the file can't be read
 bool event_names(std::string const &File, std::vector<std::string> &Names);
+// the tracks the switch events of the template throw, named by its first parameter: what follows (p1) in their names, lower case, ""
+// for the track named (p1) itself, "a" for (p1)a of a double switch; none for the sleepers or the ballast of a switch, whose events only
+// throw it or set its speed, with no (p1)+ or (p1)-. returns: false if the file can't be read
+bool switched_tracks(std::string const &File, std::vector<std::string> &Suffixes);
+// true if the template can be the sleepers or the ballast of a switch: it puts no track, includes nothing and has no events but those
+// throwing a switch or setting its speed. false if the file can't be read
+bool switch_bed(std::string const &File);
 // the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
 // the warning two signals ahead, else 3. returns: 0 if the file can't be read
 int block_aspects(std::string const &File);

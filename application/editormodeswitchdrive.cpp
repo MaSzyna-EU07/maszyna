@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
+#include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorIncludeInfo.hpp"
 
@@ -25,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -42,6 +44,21 @@ std::string drive_file(std::string Text)
 	std::replace(Text.begin(), Text.end(), '\\', '/');
 	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
 	return Text;
+}
+
+// the track the events of a drive find by the name: the game reads the names of the tracks lower case, the parameters of an include as
+// they're written
+TTrack *track_named(std::string const &Name)
+{
+	auto *track{simulation::Paths.find(Name)};
+	return track != nullptr ? track : simulation::Paths.find(drive_file(Name));
+}
+
+// a template by the name of its file, with no folder: told to the user, who picks the drives by their names
+std::string file_name(std::string const &File)
+{
+	auto const slash{File.find_last_of('/')};
+	return slash != std::string::npos ? File.substr(slash + 1) : File;
 }
 
 int drive_side(std::string const &Side)
@@ -168,7 +185,8 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 			drives = switch_drives_standing();
 		auto const found{drives->find(drive_file(track->name()))};
 		auto const spot{editor_track::drive_spot_of(*track)};
-		if (found == drives->end() || false == spot.has_value())
+		// a drive not described for the editor has no parameters known to set it with, nor a height above the rail; it stays put
+		if (found == drives->end() || found->second.family < 0 || false == spot.has_value())
 			continue;
 		auto const &drive{found->second.standing};
 		auto const &included{scene::Layers.instance(drive.instance)};
@@ -221,7 +239,15 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 	item.track = Switch.name();
 	item.tilt = spot->tilt;
 	if (auto const present{find_switch_drive(Switch)})
+	{
+		// one not described for the editor is kept: it may set the speed over the switch or carry its ballast too
+		if (present->family < 0)
+		{
+			tool.status = format(STR_C("Switch %s keeps its drive %s, which isn't described for the editor"), Switch.name().c_str(), file_name(present->standing.file).c_str());
+			return false;
+		}
 		return replace_switch_drive(Switch, tool.drive, (present->index & 1) != (driveright ? 1 : 0));
+	}
 	std::string error;
 	if (place_templates({item}, error) == 0)
 	{
@@ -255,22 +281,147 @@ std::map<std::string, editor_mode::switch_drive> const &editor_mode::switch_driv
 		    return included.removed || included.dead;
 	    }))
 		return kept->by_switch;
+	auto const variants{drive_variants()};
+	kept.emplace();
+	kept->frame = ImGui::GetFrameCount();
+	kept->revision = tool.drives_revision;
+	kept->instances = instances;
+	for (auto const &standing : standing_templates([&](std::string const &File) { return false == drive_switches(File, variants).empty(); }))
+	{
+		auto const variant{variants.find(standing.file)};
+		auto const [family, index]{variant != variants.end() ? variant->second : std::pair<int, int>{-1, -1}};
+		// the drive of a double switch of Rainsted stands for each of its switches, <name>a..<name>d
+		for (auto const &suffix : drive_switches(standing.file, variants))
+		{
+			// a drive described for the editor goes before one of Rainsted set to the same switch, which the editor kept beside it
+			auto const [entry, fresh]{kept->by_switch.try_emplace(drive_file(standing.values[0] + suffix), switch_drive{standing, family, index})};
+			if (false == fresh && entry->second.family < 0 && family >= 0)
+				entry->second = switch_drive{standing, family, index};
+		}
+	}
+	return kept->by_switch;
+}
+
+std::vector<std::string> const &editor_mode::drive_switches(std::string const &File, std::map<std::string, std::pair<int, int>, std::less<>> const &Variants)
+{
+	static std::vector<std::string> const single{std::string{}};
+	if (Variants.contains(File))
+		return single;
+	auto const [found, fresh]{m_drive_templates.try_emplace(File)};
+	if (fresh)
+		editor_includes::switched_tracks(File, found->second);
+	return found->second;
+}
+
+std::map<std::string, std::pair<int, int>, std::less<>> editor_mode::drive_variants() const
+{
+	auto const &tool{m_switch};
 	std::map<std::string, std::pair<int, int>, std::less<>> variants;
 	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
 		for (int index = 0; index < 4; ++index)
 			if (false == tool.drives[family].files[index].empty())
 				variants[drive_file(tool.drives[family].files[index])] = {family, index};
-	kept.emplace();
-	kept->frame = ImGui::GetFrameCount();
-	kept->revision = tool.drives_revision;
-	kept->instances = instances;
-	for (auto &standing : standing_templates([&](std::string const &File) { return variants.contains(File); }))
+	return variants;
+}
+
+void editor_mode::drives_changed()
+{
+	m_drives_standing.reset();
+	m_drives_named.reset();
+}
+
+std::vector<editor_mode::stray_drive> editor_mode::stray_drives(bool const Wait)
+{
+	scan_switch_drives(Wait);
+	auto const instances{static_cast<std::size_t>(scene::Layers.instance_count())};
+	auto &kept{m_drives_named};
+	if (false == kept.has_value() || kept->revision != m_switch.drives_revision || kept->instances != instances)
 	{
-		auto const &[family, index]{variants[standing.file]};
-		auto name{drive_file(standing.values[0])};
-		kept->by_switch.try_emplace(std::move(name), switch_drive{std::move(standing), family, index});
+		auto const variants{drive_variants()};
+		kept.emplace();
+		kept->revision = m_switch.drives_revision;
+		kept->instances = instances;
+		for (auto const &standing : standing_templates([&](std::string const &File) { return false == drive_switches(File, variants).empty(); }))
+		{
+			stray_drive drive{standing.instance, {}, {}, standing.file, standing.location};
+			for (auto const &suffix : drive_switches(standing.file, variants))
+				drive.switches.push_back(standing.values[0] + suffix);
+			kept->drives.push_back(std::move(drive));
+		}
 	}
-	return kept->by_switch;
+	// a switch is told by the name, as the events of the drive find it in the game; a drive of a double switch is stray with all of its
+	// switches gone, while one stands it still throws it
+	std::vector<stray_drive> stray;
+	for (auto const &drive : kept->drives)
+	{
+		auto const &included{scene::Layers.instance(drive.instance)};
+		// a gate, a derailer or a turntable of the same kind of template throws a track of another kind: only a track gone counts
+		if (included.removed || included.dead || std::any_of(drive.switches.begin(), drive.switches.end(), [](std::string const &Name) {
+			    auto const *track{track_named(Name)};
+			    return track != nullptr && false == track->m_editorremoved;
+		    }))
+			continue;
+		std::string missing;
+		for (auto const &name : drive.switches)
+			missing += (missing.empty() ? "" : ", ") + name;
+		stray.push_back(drive);
+		stray.back().name = std::move(missing);
+	}
+	return stray;
+}
+
+void editor_mode::render_stray_drives()
+{
+	auto const stray{stray_drives()};
+	if (stray.empty())
+		return;
+	ImGui::PushID("straydrives");
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.25f, 1.0f));
+	auto const open{ImGui::TreeNode("##straydrives", STR_P("%zu drive with no switch", "%zu drives with no switch", static_cast<long long>(stray.size())), stray.size())};
+	ImGui::PopStyleColor();
+	item_tooltip("Drives set to a switch the scenery hasn't got, left when a switch was deleted or renamed by hand or in an earlier editor: their events throw nothing.\nA click goes to the drive and selects it, Delete removes it; or give a switch its name");
+	if (open)
+	{
+		glm::dvec3 const camera{Global.pCamera.Pos};
+		for (auto const &drive : stray)
+		{
+			auto const label{format("%s  (%s, %.0f m)##%d", drive.name.c_str(), file_name(drive.file).c_str(), glm::length(drive.location - camera), static_cast<int>(drive.instance))};
+			if (ImGui::Selectable(label.c_str(), m_instance == drive.instance))
+			{
+				select_include(drive.instance);
+				fly_to(drive.location, glm::normalize(glm::dvec3{-1.0, -0.8, -1.0}), 25.0);
+			}
+		}
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
+}
+
+// a red mark by each drive with no switch in sight, so it's seen in the view and over the photo, not only in the list
+void editor_mode::draw_stray_drives()
+{
+	auto const stray{stray_drives()};
+	if (stray.empty())
+		return;
+	// the ones far off would only crowd the view of the whole line
+	auto constexpr range{3000.0};
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	for (auto const &drive : stray)
+	{
+		ImVec2 at;
+		if (glm::length(drive.location - camera) > range || false == projection.project(drive.location, at))
+			continue;
+		auto const selected{m_instance == drive.instance};
+		drawlist->AddCircleFilled(at, 8.0f, IM_COL32(0, 0, 0, 170));
+		drawlist->AddCircle(at, 7.0f, selected ? overlay_color::selected : overlay_color::invalid, 0, 3.0f);
+		auto const text{format(STR_C("%s: no switch of this name"), drive.name.c_str())};
+		auto const size{ImGui::CalcTextSize(text.c_str())};
+		ImVec2 const corner{at.x + 12.0f, at.y - 0.5f * size.y};
+		drawlist->AddRectFilled({corner.x - 3.0f, corner.y - 1.0f}, {corner.x + size.x + 3.0f, corner.y + size.y + 1.0f}, IM_COL32(0, 0, 0, 160), 3.0f);
+		drawlist->AddText(corner, selected ? overlay_color::selected : overlay_color::invalid, text.c_str());
+	}
 }
 
 void editor_mode::apply_switch_drive_choice(TTrack &Switch)
@@ -280,7 +431,10 @@ void editor_mode::apply_switch_drive_choice(TTrack &Switch)
 		place_switch_drive(Switch);
 		return;
 	}
-	if (auto const found{find_switch_drive(Switch)}; found.has_value() && remove_templates({found->standing.instance}) > 0)
+	auto const found{find_switch_drive(Switch)};
+	if (found.has_value() && found->family < 0)
+		m_switch.status = refused(format(STR_C("The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"), file_name(found->standing.file).c_str()));
+	else if (found.has_value() && remove_templates({found->standing.instance}) > 0)
 		m_switch.status = format(STR_C("Switch %s without a drive now"), Switch.name().c_str());
 }
 
@@ -299,7 +453,15 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 		return false;
 	}
 	auto const &found{present->standing};
+	// a drive not described for the editor, as one of a double switch, may set the speed over the switch or carry its ballast too: it's kept as it is
+	if (present->family < 0)
+	{
+		tool.status = refused(format(STR_C("The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"), file_name(found.file).c_str()));
+		return false;
+	}
 	auto const family{Family >= 0 ? Family : present->family};
+	if (family >= static_cast<int>(tool.drives.size()))
+		return false;
 	auto const index{Flip ? present->index ^ 1 : present->index};
 	template_item item;
 	item.file = tool.drives[family].files[index];
@@ -334,19 +496,82 @@ bool editor_mode::replace_switch_drive(TTrack &Switch, int const Family, bool co
 	return true;
 }
 
+std::string editor_mode::undescribed_drive(std::vector<TTrack *> const &Switches)
+{
+	// the drives described for the editor read first: before they are, every drive would pass for one not described
+	scan_switch_drives(true);
+	std::vector<std::string> names;
+	for (auto const *track : Switches)
+		if (track != nullptr)
+			names.push_back(drive_file(track->name()));
+	auto const variants{drive_variants()};
+	for (auto const &standing : standing_templates([&](std::string const &File) { return false == variants.contains(File) && false == drive_switches(File, variants).empty(); }))
+	{
+		auto const &suffixes{drive_switches(standing.file, variants)};
+		if (std::any_of(suffixes.begin(), suffixes.end(), [&](std::string const &Suffix) { return std::find(names.begin(), names.end(), drive_file(standing.values[0] + Suffix)) != names.end(); }))
+			return file_name(standing.file);
+	}
+	return {};
+}
+
 void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
 {
 	if (m_history.empty())
 		return;
+	// the names of the switches deleted, as the game finds them; they're retired already
+	std::vector<std::string> deleted;
 	for (auto const *track : Switches)
+		if (track != nullptr && track->eType == tt_Switch)
+			deleted.push_back(drive_file(track->name()));
+	if (deleted.empty())
+		return;
+	auto const named = [&](std::string const &Name) { return std::find(deleted.begin(), deleted.end(), drive_file(Name)) != deleted.end(); };
+	// an older scenery may have two tracks of a name, the name finding the later; the earlier one, left by the deletion of the other,
+	// still has the drive and the ballast, so it's looked for too
+	auto const stands = [](std::string const &Name) {
+		if (auto const *track{track_named(Name)}; track != nullptr)
+			return false == track->m_editorremoved;
+		auto const name{drive_file(Name)};
+		auto const &tracks{simulation::Paths.sequence()};
+		return std::any_of(tracks.begin(), tracks.end(), [&](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved && drive_file(Track->name()) == name; });
+	};
+	auto const take_away = [&](scene::instance_handle const Instance) {
+		if (false == scene::Layers.removable(Instance))
+			return;
+		scene::Layers.removed(Instance, true);
+		m_history.back().instances.push_back(Instance);
+	};
+	auto const variants{drive_variants()};
+	// each drive throwing a switch deleted, also one the editor kept beside a drive described for it; the drive of a double switch throws
+	// the others too, so it goes with the last of them
+	for (auto const &standing : standing_templates([&](std::string const &File) { return false == drive_switches(File, variants).empty(); }))
 	{
-		if (track == nullptr || track->eType != tt_Switch)
+		auto const &suffixes{drive_switches(standing.file, variants)};
+		if (std::any_of(suffixes.begin(), suffixes.end(), [&](std::string const &Suffix) { return named(standing.values[0] + Suffix); }) &&
+		    std::none_of(suffixes.begin(), suffixes.end(), [&](std::string const &Suffix) { return stands(standing.values[0] + Suffix); }))
+			take_away(standing.instance);
+	}
+	// the sleepers and the ballast laid by a switch, named by it as its drive is: of a double switch by the name its switches have in
+	// common, <name>a..<name>d or <name>_a..<name>_d, so they go with the last of them
+	static std::array<char const *, 9> const parts{"", "a", "b", "c", "d", "_a", "_b", "_c", "_d"};
+	std::map<std::string, bool, std::less<>> beds;
+	for (auto const &standing : standing_templates([](std::string const &) { return true; }))
+	{
+		auto const &name{standing.values[0]};
+		// named by a single switch, it's this switch's alone; a switch named <name>a beside it may be another single one
+		if (named(name))
+		{
+			if (stands(name))
+				continue;
+		}
+		else if (std::none_of(parts.begin(), parts.end(), [&](char const *Part) { return named(name + Part); }) ||
+		         std::any_of(parts.begin(), parts.end(), [&](char const *Part) { return stands(name + Part); }))
 			continue;
-		auto const found{find_switch_drive(*track)};
-		if (false == found.has_value() || false == scene::Layers.removable(found->standing.instance) || scene::Layers.instance(found->standing.instance).removed)
-			continue;
-		scene::Layers.removed(found->standing.instance, true);
-		m_history.back().instances.push_back(found->standing.instance);
+		auto const [bed, fresh]{beds.try_emplace(standing.file)};
+		if (fresh)
+			bed->second = drive_switches(standing.file, variants).empty() && editor_includes::switch_bed(standing.file);
+		if (bed->second)
+			take_away(standing.instance);
 	}
 }
 
@@ -359,7 +584,7 @@ std::size_t editor_mode::drives_to_blade_tips()
 	{
 		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
 			continue;
-		if (auto const found{find_switch_drive(*track)}; found.has_value() && scene::Layers.removable(found->standing.instance))
+		if (auto const found{find_switch_drive(*track)}; found.has_value() && found->family >= 0 && scene::Layers.removable(found->standing.instance))
 		{
 			switches.push_back(track);
 			before.emplace_back(found->standing.instance, scene::Layers.directive(found->standing.instance));

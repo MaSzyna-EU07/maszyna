@@ -286,6 +286,9 @@ bool editor_mode::change_slip_template(TTrack &Part, int const Index)
 	for (auto const *part : parts)
 		if (false == part->Dynamics.empty())
 			return fail(STR_C("The slip can't be laid again while vehicles stand on it"));
+	// its drives go with it and the new one gets its own: a drive not described for the editor can't be told apart from them
+	if (auto const drive{slip.has_value() ? undescribed_drive(slip->switches) : std::string{}}; false == drive.empty())
+		return fail(format(STR_C("The slip has the drive %s, not described for the editor, which may also set the speed or carry its ballast: it isn't laid anew"), drive.c_str()));
 	// a single slip laid again joins the pair of the tracks it joined: the point given by them
 	auto const &ends{slip.has_value() ? slip->ends : std::array<glm::dvec3, 4>{}};
 	auto const pair{slip.has_value() && record.type == "Rkp" ? 0.5 * (ends[0] + ends[3]) : glm::dvec3{0.0}};

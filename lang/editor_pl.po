@@ -14027,6 +14027,36 @@ msgstr "PPM wciśnięty, W / S"
 msgid "RMB held, A / D"
 msgstr "PPM wciśnięty, A / D"
 
+msgid "%zu drive with no switch"
+msgid_plural "%zu drives with no switch"
+msgstr[0] "%zu napęd bez zwrotnicy"
+msgstr[1] "%zu napędy bez zwrotnicy"
+msgstr[2] "%zu napędów bez zwrotnicy"
+
+msgid "Drives set to a switch the scenery hasn't got, left when a switch was deleted or renamed by hand or in an earlier editor: their events throw nothing.\nA click goes to the drive and selects it, Delete removes it; or give a switch its name"
+msgstr "Napędy ustawione na zwrotnicę, której w scenerii nie ma: zostały po zwrotnicy usuniętej lub przemianowanej ręcznie albo we wcześniejszym edytorze, ich eventy niczego nie przestawiają.\nKliknięcie przenosi do napędu i go zaznacza, Delete go usuwa; można też nadać jakiejś zwrotnicy jego nazwę"
+
+msgid "%s: no switch of this name"
+msgstr "%s: brak zwrotnicy o tej nazwie"
+
+msgid "%zu switch drive has no switch of its name: it's listed in the switch tool and marked red in the view"
+msgid_plural "%zu switch drives have no switch of their names: they're listed in the switch tool and marked red in the view"
+msgstr[0] "%zu napęd nie ma zwrotnicy o swojej nazwie: jest na liście w narzędziu zwrotnic i na czerwono w widoku"
+msgstr[1] "%zu napędy nie mają zwrotnic o swoich nazwach: są na liście w narzędziu zwrotnic i na czerwono w widoku"
+msgstr[2] "%zu napędów nie ma zwrotnic o swoich nazwach: są na liście w narzędziu zwrotnic i na czerwono w widoku"
+
+msgid "The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"
+msgstr "Napęd %s nie ma opisu dla edytora: może też ustawiać prędkość albo nieść podsypkę zwrotnicy, więc zostaje bez zmian"
+
+msgid "The slip has the drive %s, not described for the editor, which may also set the speed or carry its ballast: it isn't laid anew"
+msgstr "Rozjazd krzyżowy ma napęd %s bez opisu dla edytora, który może też ustawiać prędkość albo nieść jego podsypkę: nie zostanie ułożony od nowa"
+
+msgid "Switch %s keeps its drive %s, which isn't described for the editor"
+msgstr "Zwrotnica %s zostaje przy swoim napędzie %s, który nie ma opisu dla edytora"
+
+msgid "A drive not described for the editor, as the one of a double switch, which may also set the speed or carry the ballast of the switch: the editor keeps it as it is, it stays where it is when the switch is moved and goes when the last switch it throws is deleted"
+msgstr "Napęd bez opisu dla edytora, np. rozjazdu krzyżowego, który może też ustawiać prędkość albo nieść podsypkę zwrotnicy: edytor go nie zmienia, zostaje na miejscu, gdy zwrotnica się przesuwa, i znika razem z ostatnią zwrotnicą, którą przestawia"
+
 # the wizard of a new scenery: the range of the aerial photos, given on the map and changed in the editor
 
 msgid "A fictional scenery needs no place on the map"
