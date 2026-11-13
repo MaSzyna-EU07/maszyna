@@ -143,7 +143,7 @@ shape_node::deserialize( std::istream &Input ) {
 
 // restores content of the node from provided input stream
 shape_node &
-shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
+shape_node::import_from( cParser &Input, scene::node_data const &Nodedata ) {
 
     // import common data
     m_name = Nodedata.name;
@@ -561,7 +561,7 @@ lines_node::deserialize( std::istream &Input ) {
 
 // restores content of the node from provded input stream
 lines_node &
-lines_node::import( cParser &Input, scene::node_data const &Nodedata ) {
+lines_node::import_from( cParser &Input, scene::node_data const &Nodedata ) {
 
     // import common data
     m_name = Nodedata.name;

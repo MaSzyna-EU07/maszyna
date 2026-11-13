@@ -571,7 +571,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "road" ) {
 
         auto *road { new road_node( nodedata ) };
-        road->import(
+        road->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -587,7 +587,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "sweep" ) {
 
         auto *sweep { new sweep_node( nodedata ) };
-        sweep->import(
+        sweep->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -601,7 +601,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "junction" ) {
 
         auto *junction { new junction_node( nodedata ) };
-        junction->import(
+        junction->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -633,7 +633,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( roadpoint_node::is_keyword( nodedata.type ) ) {
         // level crossing, or a point where road vehicles appear or are taken away
         auto *point { new roadpoint_node( nodedata ) };
-        point->import(
+        point->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -734,7 +734,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         if( false == skip ) {
 
             ++Scratchpad.binary.geometry_imported;
-            auto shape { scene::shape_node().import( Input, nodedata ) };
+            auto shape { scene::shape_node().import_from( Input, nodedata ) };
             material = shape.data().material;
             if( true == Global.editor_session ) {
                 shape.source_file( scene::terrain_file::reference_of( Input.Name() ) );
@@ -772,7 +772,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
             ++Scratchpad.binary.geometry_imported;
             simulation::Region->insert(
-                scene::lines_node().import(
+                scene::lines_node().import_from(
                     Input, nodedata ),
                 Scratchpad );
         }

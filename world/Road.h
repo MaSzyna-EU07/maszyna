@@ -220,7 +220,7 @@ class road_node : public scene::basic_node
 	explicit road_node(scene::node_data const &Nodedata);
 	// methods
 	// restores content of the node from provided input stream; reads up to and including the closing 'endroad'
-	void import(cParser &Input, glm::dvec3 const &Offset);
+	void import_from(cParser &Input, glm::dvec3 const &Offset);
 	state const &definition() const
 	{
 		return m_state;
@@ -441,7 +441,7 @@ class junction_node : public scene::basic_node
 	explicit junction_node(scene::node_data const &Nodedata);
 	// methods
 	// restores content of the node from provided input stream; reads up to and including the closing 'endjunction'
-	void import(cParser &Input, glm::dvec3 const &Offset);
+	void import_from(cParser &Input, glm::dvec3 const &Offset);
 	state const &definition() const
 	{
 		return m_state;
