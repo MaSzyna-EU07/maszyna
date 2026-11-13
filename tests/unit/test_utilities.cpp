@@ -586,28 +586,28 @@ TEST_CASE("utilities: a file is found in folders named in another case, the way 
 	// every part of the path in lowercase: the file as it's on the disk where the case matters, the name given where it doesn't
 	auto const timetable{FileCased(folder.path("scenery/braniewo/rozklady/os91121.txt"))};
 	REQUIRE_FALSE(timetable.empty());
-	CHECK(FileExists(timetable));
+	CHECK(std::filesystem::exists(timetable));
 	CHECK(ToLower(timetable) == ToLower(folder.path("Scenery/Braniewo/rozklady/Os91121.txt")));
-	CHECK(FileExists(folder.path("scenery/braniewo/rozklady/os91121.txt")));
+	CHECK(FileOnDisk(folder.path("scenery/braniewo/rozklady/os91121.txt")) == timetable);
 	// the folders written the Windows way as well
 	CHECK_FALSE(FileCased(folder.path() + "scenery\\braniewo\\rozklady\\os91121.txt").empty());
 	// a folder missing in any case
 	CHECK(FileCased(folder.path("scenery/nowhere/rozklady/os91121.txt")).empty());
-	CHECK_FALSE(FileExists(folder.path("scenery/nowhere/rozklady/os91121.txt")));
+	CHECK(FileOnDisk(folder.path("scenery/nowhere/rozklady/os91121.txt")) == folder.path("scenery/nowhere/rozklady/os91121.txt"));
 
-	// among names and extensions: given back as named on the disk, so it's opened by that name, the extension too
+	// among names and extensions: found in any case, given back as named, the name being the key of the banks
 	auto const texture{FileExists(std::vector<std::string>{folder.path("textures/tabl/l101-2m")}, std::vector<std::string>{".dds", ".bmp"})};
 	REQUIRE_FALSE(texture.first.empty());
-	CHECK(ToLower(texture.second) == ".bmp");
-	CHECK(FileExists(texture.first + texture.second));
-	CHECK(ToLower(texture.first) == ToLower(folder.path("Textures/Tabl/L101-2m")));
+	CHECK(texture.first == folder.path("textures/tabl/l101-2m"));
+	CHECK(texture.second == ".bmp");
+	CHECK(std::filesystem::exists(FileOnDisk(texture.first + texture.second)));
 
 	// a file written after the folder was gone through is found as well
 	CHECK(FileCased(folder.path("textures/tabl/l7-2m.bmp")).empty());
 	folder.write("Textures/Tabl/L7-2m.bmp", "x");
 	auto const added{FileCased(folder.path("textures/tabl/l7-2m.bmp"))};
 	REQUIRE_FALSE(added.empty());
-	CHECK(FileExists(added));
+	CHECK(std::filesystem::exists(added));
 }
 
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {

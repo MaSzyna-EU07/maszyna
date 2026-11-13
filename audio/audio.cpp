@@ -35,7 +35,8 @@ decoded_sound decode_sound( std::string const &File ) {
 	SF_INFO si;
 	si.format = 0;
 
-	SNDFILE *sf = sf_open(File.c_str(), SFM_READ, &si);
+	// the file as it's named on the disk, the name of the buffer is in lowercase
+	SNDFILE *sf = sf_open(FileOnDisk(File).c_str(), SFM_READ, &si);
 
 	if (sf == nullptr)
 		throw std::runtime_error("sound: sf_open failed");

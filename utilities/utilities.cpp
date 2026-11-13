@@ -513,22 +513,19 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 
 bool FileExists(std::string const &Filename)
 {
-#ifdef _WIN32
 	return std::filesystem::exists(Filename);
-#else
-	// the names come in lowercase from the parser, the files of the data are named in any case
-	return false == FileCased(Filename).empty();
-#endif
 }
 
 #ifndef _WIN32
 namespace
 {
 
-// the names in a folder by their lowercase, and the time the folder was changed when they were read
+// the names in a folder by their lowercase, the time the folder was changed and the time they were read
 struct cased_folder
 {
+	bool read{false};
 	std::filesystem::file_time_type changed{};
+	std::filesystem::file_time_type listed{};
 	std::unordered_map<std::string, std::string> names;
 };
 
@@ -536,7 +533,8 @@ std::mutex cased_mutex;
 std::unordered_map<std::string, cased_folder> cased_folders;
 
 // the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
-// changed, as the editor writes files while it runs. to be called with cased_mutex held
+// changed, as the editor writes files while it runs; a name missing from a folder changed shortly before it was read is looked
+// for again, the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
 std::string cased_name(std::string const &Folder, std::string const &Name)
 {
 	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
@@ -545,17 +543,27 @@ std::string cased_name(std::string const &Folder, std::string const &Name)
 	if (error)
 		return {};
 	auto &cached{cased_folders[Folder]};
-	if (cached.names.empty() || cached.changed != changed)
-	{
-		cached.changed = changed;
+	auto const wanted{ToLower(Name)};
+	auto const read{[&]() {
 		cached.names.clear();
+		cached.changed = changed;
+		cached.listed = std::filesystem::file_time_type::clock::now();
 		for (std::filesystem::directory_iterator entry{folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
 		{
 			auto const name{entry->path().filename().string()};
 			cached.names.try_emplace(ToLower(name), name);
 		}
+		// a listing cut short isn't kept
+		cached.read = (false == bool(error));
+	}};
+	if ((false == cached.read) || (cached.changed != changed))
+		read();
+	auto found{cached.names.find(wanted)};
+	if ((found == cached.names.end()) && (cached.listed - cached.changed < std::chrono::seconds{2}))
+	{
+		read();
+		found = cached.names.find(wanted);
 	}
-	auto const found{cached.names.find(ToLower(Name))};
 	return found != cached.names.end() ? found->second : std::string{};
 }
 
@@ -609,6 +617,12 @@ std::string FileCased(std::filesystem::path const &Filename)
 #endif
 }
 
+std::string FileOnDisk(std::string const &Filename)
+{
+	auto cased{FileCased(Filename)};
+	return cased.empty() ? Filename : cased;
+}
+
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
 {
 
@@ -616,19 +630,11 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	{
 		for (auto const &extension : Extensions)
 		{
-#ifdef _WIN32
-			if (FileExists(name + extension))
+			// found in any case, given back as named here: the name stays the key of the banks, the file is opened by FileOnDisk()
+			if (false == FileCased(name + extension).empty())
 			{
 				return {name, extension};
 			}
-#else
-			// given back as it's named on the disk, so it's opened by that name
-			if (auto const cased{FileCased(name + extension)}; cased.size() >= extension.size())
-			{
-				auto const split{cased.size() - extension.size()};
-				return {cased.substr(0, split), cased.substr(split)};
-			}
-#endif
 		}
 	}
 	// nothing found
