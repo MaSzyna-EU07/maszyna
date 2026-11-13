@@ -208,3 +208,25 @@ clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry -o ekran.wasm ekran.c
 
 Any language that compiles to WebAssembly works the same way (Rust `wasm32-unknown-unknown`, Zig, AssemblyScript),
 as long as the module imports nothing but the `eu07` functions above.
+
+## Scenery scripts
+
+A scenery runs a Lua script with `lua <file>` in its `.scn`, while the scenery loads. The script registers events
+and works with memcells, tracks and vehicles through the table `eu07.events` (`event_create`, `event_dispatch`,
+`memcell_update`, `writelog` and the rest, see `scripting/lua.cpp`). It shares the sandbox of the Lua screens:
+
+- the file is a path relative to the scenery folder (`scenery/`), and stays inside it: no `..`, no drive, no leading
+  `/`. It is text, of at most 16 MB; precompiled code is not loaded;
+- the script gets the base library, `table`, `string`, `math` and `bit`, and of `os` only the clock: `os.time`,
+  `os.clock`, `os.difftime` and `os.date` (with the C89 conversions only, `%Y`, `%d`, `%H` and so on). It gets no
+  `io`, the rest of `os`, `ffi`, `debug`, `jit`, `package`, `require`, `dofile`, `load`, `loadfile` or `loadstring`;
+- a script that fails stops there, the error goes to the log with the file name and line, and the scenery goes on
+  loading. An event handler that fails is logged with the name of the event, and the simulation goes on.
+
+A script written for the earlier full libraries stops at the first call to one of them (`attempt to index global
+'io' (a nil value)` in the log). For a scenery you trust, `eu07.ini` can give the scripts all of LuaJIT's libraries
+again:
+
+| key                 | default | meaning                                                                                  |
+|---------------------|---------|------------------------------------------------------------------------------------------|
+| `lua.fulllibraries` | no      | yes: the scenery scripts get all of LuaJIT's libraries (`io`, `os`, `ffi`, `require`...), and with them the files and programs of the computer. The Lua screens stay sandboxed |
