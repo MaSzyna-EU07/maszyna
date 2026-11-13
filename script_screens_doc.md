@@ -223,6 +223,33 @@ and works with memcells, tracks and vehicles through the table `eu07.events` (`e
 - a script that fails stops there, the error goes to the log with the file name and line, and the scenery goes on
   loading. An event handler that fails is logged with the name of the event, and the simulation goes on.
 
+Instead of `io`, a scenery script reads and writes files through `eu07`, as the Lua screens read theirs:
+
+| function                         | meaning                                                                                  |
+|----------------------------------|------------------------------------------------------------------------------------------|
+| `eu07.read_file(path)`           | the contents of a file of the scenery folder (`scenery/`), or `nil`: a regular file of at most 16 MB, the path as for `lua <file>` |
+| `eu07.write_file(path, text)`    | writes `text` (any bytes) to a file of the scenery's data folder, replacing what was there, and makes the folders of `path`; returns `true`, or `nil` and the reason |
+| `eu07.read_data_file(path)`      | the contents of a file of the scenery's data folder, or `nil`: what `write_file` wrote there |
+
+The data folder is the scenery's own, in the player's folder of the game: `%APPDATA%\MaSzyna\scenery_data\<scenery>\`
+on Windows, `~/.config/MaSzyna/scenery_data/<scenery>/` on Linux (`~/Library/Application Support/MaSzyna/...` on a
+Mac), `<scenery>` being the `.scn` file without `.scn` (`td.scn`: `scenery_data/td/`). The game writes nowhere else
+for a script, and never into its own folder; the log says where the folder is when the scenery loads its first
+script. What is written there stays for the next run of the scenery, and the player may delete it.
+
+A path to write to is relative, with `/` or `\` between the folders, at most 8 folders deep and 200 bytes long, and
+each name in it portable: no `..`, no `.`, no empty name, no drive, no `:` `<` `>` `"` `|` `?` `*` or control
+characters, no `.` or space at the end, and none of the names Windows keeps for its devices (`con`, `nul`, `com1`,
+`lpt1`... with or without an extension). A file is at most 1 MB (1048576 bytes), and the data folder of a scenery holds at most 256
+files and 16 MB together; a write over these limits is refused, and leaves the file as it was.
+
+```lua
+local saved = eu07.read_data_file("state.txt")
+local runs = tonumber(saved or "0") + 1
+local ok, reason = eu07.write_file("state.txt", tostring(runs))
+if not ok then eu07.events.writelog("state not saved: " .. reason) end
+```
+
 A script written for the earlier full libraries stops at the first call to one of them (`attempt to index global
 'io' (a nil value)` in the log). For a scenery you trust, `eu07.ini` can give the scripts all of LuaJIT's libraries
 again:

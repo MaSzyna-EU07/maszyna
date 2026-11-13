@@ -1,6 +1,7 @@
 #pragma once
 #include <lua.hpp>
 #include <stdafx.h>
+#include "scripting/luasandbox.h"
 
 class basic_event;
 class TMemCell;
@@ -11,6 +12,9 @@ class lua
 {
     lua_State *state;
 	bool full_libraries = false; // lua.fulllibraries: all of LuaJIT's libraries opened
+	// what eu07.read_file reads (the scenery folder) and eu07.write_file writes (the scenery's data folder), known
+	// when the scenery loads its scripts (interpret())
+	lua_sandbox::file_folders files;
 
     static int atpanic(lua_State *s);
 

@@ -6,6 +6,7 @@
 #include "vehicle/Driver.h"
 #include "simulation/simulation.h"
 #include "scripting/luasandbox.h"
+#include "utilities/utilities.h"
 
 lua::lua()
 {
@@ -45,6 +46,9 @@ lua::lua()
 		{nullptr, nullptr}
 	};
 	luaL_register(state, "eu07.events", api);
+	lua_pop(state, 1);
+	// eu07.read_file, eu07.write_file and eu07.read_data_file, the files of the scenery in place of io
+	lua_sandbox::open_file_library(state, &files);
 }
 
 lua::~lua()
@@ -66,6 +70,15 @@ void lua::interpret(const std::string &folder, const std::string &file)
 		luaL_openlibs(state);
 		full_libraries = true;
 		WriteLog("lua: lua.fulllibraries is on, the scenery scripts run with all libraries (io, os, ffi, require...)", logtype::lua);
+	}
+	// the scripts read the files of the scenery folder, and write theirs into a folder of the scenery among the
+	// player's files (%APPDATA%/MaSzyna, ~/.config/MaSzyna), never into the game
+	files.scenery = folder;
+	if (auto data = lua_sandbox::scenery_data_folder(user_config_path("scenery_data"), Global.SceneryFile); data != files.data) {
+		files.data = std::move(data);
+		auto const name = files.data.u8string();
+		if (!name.empty())
+			WriteLog("lua: the scenery scripts write their files (eu07.write_file) to \"" + std::string(name.begin(), name.end()) + "\"", logtype::lua);
 	}
 	// a relative path inside the scenery folder, a file of text, run in protected mode: a script that fails stops
 	// there, and the scenery goes on loading

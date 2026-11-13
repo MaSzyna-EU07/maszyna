@@ -12,6 +12,7 @@
 #include "scripting/luasandbox.h"
 #include "scratch.h"
 
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <string>
@@ -216,6 +217,211 @@ TEST_CASE("lua sandbox: a scenery script runs in protected mode, and its errors 
 	CHECK(lua_gettop(L) == top);
 	CHECK_FALSE(lua_sandbox::run_script_file(L, folder, "good.lua").has_value());
 	CHECK(lua.run("return ran") == "11");
+}
+
+TEST_CASE("lua sandbox: eu07.read_file reads a file of the scenery folder, and nothing outside it") {
+	test::scratch_folder const root{"lua_sandbox_read"};
+	root.write("outside.txt", "secret");
+	root.write("scenery/data.txt", "line 1\nline 2");
+	root.write("scenery/sub/more.txt", "more");
+	root.write("scenery/folder/inner.txt", "inner");
+	auto const folder{std::filesystem::path{root.path("scenery")}};
+
+	CHECK(lua_sandbox::read_file(folder, "data.txt", 100) == std::optional<std::string>{"line 1\nline 2"});
+	CHECK(lua_sandbox::read_file(folder, "sub/more.txt", 100) == std::optional<std::string>{"more"});
+	CHECK(lua_sandbox::read_file(folder, "sub\\more.txt", 100) == std::optional<std::string>{"more"});
+	// the limit is the caller's
+	CHECK(lua_sandbox::read_file(folder, "sub/more.txt", 4).has_value());
+	CHECK_FALSE(lua_sandbox::read_file(folder, "sub/more.txt", 3).has_value());
+	for (auto const &path : {std::string{"../outside.txt"}, std::string{"sub/../../outside.txt"}, std::string{"..\\outside.txt"},
+	                         std::string{"sub\\..\\..\\outside.txt"}, root.path("outside.txt"), std::string{"/outside.txt"},
+	                         std::string{"\\outside.txt"}, std::string{"C:outside.txt"}, std::string{"missing.txt"},
+	                         std::string{"folder"}, std::string{}, std::string{"data.txt\0x", 10}}) {
+		CAPTURE(path);
+		CHECK_FALSE(lua_sandbox::read_file(folder, path, 100).has_value());
+	}
+}
+
+TEST_CASE("lua sandbox: the paths a script may write to") {
+	for (auto const *path : {"state.txt", "saves/state.txt", "saves\\state.txt", "a/b/c/d/e/f/g/h/file.txt", "con_log.txt", "comx.txt",
+	                         "com10.txt", "nul_state", ".hidden", "stan poci\xc4\x85gu.txt", "a..b"}) {
+		CAPTURE(path);
+		CHECK(lua_sandbox::is_safe_write_path(path));
+	}
+	for (auto const &path : {std::string{}, std::string{".."}, std::string{"../x.txt"}, std::string{"a/../../x.txt"}, std::string{"..\\x.txt"},
+	                         std::string{"/x.txt"}, std::string{"\\x.txt"}, std::string{"C:x.txt"}, std::string{"C:\\x.txt"},
+	                         std::string{"x.txt:stream"}, std::string{"a//b.txt"}, std::string{"a/"}, std::string{"./x.txt"},
+	                         std::string{"a/./x.txt"}, std::string{"con"}, std::string{"CON.txt"}, std::string{"saves/nul.dat"},
+	                         std::string{"Com1"}, std::string{"lpt9.log"}, std::string{"aux"}, std::string{"prn.x.y"},
+	                         std::string{"conin$"}, std::string{"CONOUT$.txt"}, std::string{"con .txt"}, std::string{"a<b"},
+	                         std::string{"a>b"}, std::string{"a\"b"}, std::string{"a|b"}, std::string{"a?b"}, std::string{"a*b"},
+	                         std::string{"x."}, std::string{"x "}, std::string{"dir./x"}, std::string{"a\tb"}, std::string{"a\nb"},
+	                         std::string{"a\0b", 3}, std::string{"a/b/c/d/e/f/g/h/i/file.txt"},
+	                         std::string(lua_sandbox::max_data_path + 1, 'x')}) {
+		CAPTURE(path);
+		CHECK_FALSE(lua_sandbox::is_safe_write_path(path));
+	}
+	CHECK(lua_sandbox::is_safe_write_path(std::string(lua_sandbox::max_data_path, 'x')));
+}
+
+TEST_CASE("lua sandbox: a script writes into its data folder only, and reads back what it wrote") {
+	test::scratch_folder const root{"lua_sandbox_write"};
+	root.write("outside.txt", "kept");
+	auto const data{root.root() / "data" / "td"};
+
+	// the folder is made with the first file
+	CHECK_FALSE(lua_sandbox::write_data_file(data, "state.txt", "runs=1").has_value());
+	CHECK(lua_sandbox::read_file(data, "state.txt", lua_sandbox::max_data_file) == std::optional<std::string>{"runs=1"});
+	// replaced, not appended
+	CHECK_FALSE(lua_sandbox::write_data_file(data, "state.txt", "runs=2").has_value());
+	CHECK(lua_sandbox::read_file(data, "state.txt", lua_sandbox::max_data_file) == std::optional<std::string>{"runs=2"});
+	// any bytes, and the folders of the path
+	std::string const bytes{"a\0b\r\n\xff", 6};
+	CHECK_FALSE(lua_sandbox::write_data_file(data, "saves\\day 1/bin.dat", bytes).has_value());
+	CHECK(lua_sandbox::read_file(data, "saves/day 1/bin.dat", lua_sandbox::max_data_file) == std::optional<std::string>{bytes});
+	CHECK_FALSE(lua_sandbox::write_data_file(data, "empty.txt", "").has_value());
+	CHECK(lua_sandbox::read_file(data, "empty.txt", lua_sandbox::max_data_file) == std::optional<std::string>{""});
+
+	// nothing outside the folder
+	for (auto const *path : {"../outside.txt", "../../outside.txt", "..\\outside.txt", "saves/../../outside.txt", "nul", "con.txt", "x:y"}) {
+		CAPTURE(path);
+		auto const error{lua_sandbox::write_data_file(data, path, "overwritten")};
+		REQUIRE(error.has_value());
+		CHECK(contains(*error, "not a path to write to"));
+	}
+	CHECK(lua_sandbox::write_data_file(data, root.path("outside.txt"), "overwritten").has_value());
+	CHECK(lua_sandbox::read_file(root.root(), "outside.txt", 100) == std::optional<std::string>{"kept"});
+	// a folder isn't replaced by a file
+	auto const folder{lua_sandbox::write_data_file(data, "saves", "x")};
+	REQUIRE(folder.has_value());
+	CHECK(contains(*folder, "not a file"));
+	CHECK(std::filesystem::is_directory(data / "saves"));
+	// no folder (the game knows no folder of the player), nothing written
+	CHECK(lua_sandbox::write_data_file(std::filesystem::path{}, "state.txt", "x").has_value());
+}
+
+TEST_CASE("lua sandbox: the limits of a data folder") {
+	test::scratch_folder const root{"lua_sandbox_limits"};
+	auto const data{root.root() / "data"};
+	std::string const full(static_cast<std::size_t>(lua_sandbox::max_data_file), 'x');
+
+	SUBCASE("a file") {
+		CHECK_FALSE(lua_sandbox::write_data_file(data, "full.txt", full).has_value());
+		CHECK(lua_sandbox::read_file(data, "full.txt", lua_sandbox::max_data_file).has_value());
+		auto const over{lua_sandbox::write_data_file(data, "full.txt", full + "x")};
+		REQUIRE(over.has_value());
+		CHECK(contains(*over, "larger than"));
+		// the file stays as it was
+		CHECK(std::filesystem::file_size(data / "full.txt") == lua_sandbox::max_data_file);
+	}
+	SUBCASE("the bytes of the folder") {
+		auto const files{static_cast<int>(lua_sandbox::max_data_folder / lua_sandbox::max_data_file)};
+		for (int idx = 0; idx < files; ++idx) {
+			REQUIRE_FALSE(lua_sandbox::write_data_file(data, std::format("part{}.dat", idx), full).has_value());
+		}
+		auto const over{lua_sandbox::write_data_file(data, "one_more.dat", "x")};
+		REQUIRE(over.has_value());
+		CHECK(contains(*over, "more than"));
+		CHECK_FALSE(std::filesystem::exists(data / "one_more.dat"));
+		// a file replaced counts with its new size: as large again fits, and a smaller one makes room
+		CHECK_FALSE(lua_sandbox::write_data_file(data, "part0.dat", full).has_value());
+		CHECK_FALSE(lua_sandbox::write_data_file(data, "part0.dat", "small").has_value());
+		CHECK_FALSE(lua_sandbox::write_data_file(data, "one_more.dat", "x").has_value());
+	}
+	SUBCASE("the files of the folder") {
+		for (std::size_t idx = 0; idx < lua_sandbox::max_data_files; ++idx) {
+			REQUIRE_FALSE(lua_sandbox::write_data_file(data, std::format("sub{}/file{}.txt", idx % 4, idx), "x").has_value());
+		}
+		auto const over{lua_sandbox::write_data_file(data, "one_more.txt", "x")};
+		REQUIRE(over.has_value());
+		CHECK(contains(*over, "files already"));
+		CHECK_FALSE(std::filesystem::exists(data / "one_more.txt"));
+		// one that is there is still replaced
+		CHECK_FALSE(lua_sandbox::write_data_file(data, "sub0/file0.txt", "y").has_value());
+	}
+}
+
+TEST_CASE("lua sandbox: a link in the data folder doesn't lead a write out of it") {
+	test::scratch_folder const root{"lua_sandbox_link"};
+	root.write("outside/kept.txt", "kept");
+	auto const data{root.root() / "data"};
+	std::filesystem::create_directories(data);
+	std::error_code error;
+	std::filesystem::create_directory_symlink(root.root() / "outside", data / "link", error);
+	if (error) {
+		// Windows makes links only for an administrator or in developer mode
+		MESSAGE("no folder link made (" << error.message() << "), not tested");
+		return;
+	}
+	auto const written{lua_sandbox::write_data_file(data, "link/kept.txt", "overwritten")};
+	REQUIRE(written.has_value());
+	CHECK(contains(*written, "outside the data folder"));
+	CHECK(lua_sandbox::read_file(root.root(), "outside/kept.txt", 100) == std::optional<std::string>{"kept"});
+}
+
+TEST_CASE("lua sandbox: the data folder of a scenery") {
+	std::filesystem::path const root{"user/scenery_data"};
+	CHECK(lua_sandbox::scenery_data_folder(root, "td.scn") == root / "td");
+	CHECK(lua_sandbox::scenery_data_folder(root, "Td.SCN") == root / "Td");
+	CHECK(lua_sandbox::scenery_data_folder(root, "lines\\l107.scn") == root / "lines/l107");
+	CHECK(lua_sandbox::scenery_data_folder(root, "test.scm") == root / "test.scm");
+	for (auto const *scenery : {"", ".scn", "../td.scn", "/td.scn", "C:td.scn", "con.scn"}) {
+		CAPTURE(scenery);
+		CHECK(lua_sandbox::scenery_data_folder(root, scenery).empty());
+	}
+	CHECK(lua_sandbox::scenery_data_folder(std::filesystem::path{}, "td.scn").empty());
+}
+
+TEST_CASE("lua sandbox: the file functions of a scenery script") {
+	test::scratch_folder const root{"lua_sandbox_api"};
+	root.write("outside.txt", "secret");
+	root.write("scenery/settings.txt", "speed=40");
+	lua_sandbox::file_folders folders{root.path("scenery") + "/", root.root() / "data" / "td"};
+
+	sandboxed_state const lua;
+	// next to eu07.events, as the scenery state has it
+	REQUIRE_FALSE(luaL_dostring(lua.get(), "eu07 = { events = { marker = 1 } }"));
+	lua_sandbox::open_file_library(lua.get(), &folders);
+	auto const top{lua_gettop(lua.get())};
+
+	CHECK(lua.run("return eu07.events.marker") == "1");
+	CHECK(lua.run("return eu07.read_file('settings.txt')") == "speed=40");
+	CHECK(lua.run("return eu07.read_file('../outside.txt')") == "nil");
+	CHECK(lua.run("return eu07.read_file('missing.txt')") == "nil");
+	CHECK(lua.run("return eu07.read_data_file('state.txt')") == "nil");
+	CHECK(lua.run("return eu07.write_file('state.txt', 'runs=' .. 1)") == "true");
+	CHECK(lua.run("return eu07.read_data_file('state.txt')") == "runs=1");
+	// the scenery folder and the data folder are apart
+	CHECK(lua.run("return eu07.read_file('state.txt')") == "nil");
+	CHECK(lua.run("return eu07.read_data_file('../../scenery/settings.txt')") == "nil");
+	// a number is written as its text
+	CHECK(lua.run("return eu07.write_file('number.txt', 42)") == "true");
+	CHECK(lua.run("return eu07.read_data_file('number.txt')") == "42");
+	// a refused write gives nil and the reason
+	CHECK(lua.run("local ok, reason = eu07.write_file('../outside.txt', 'x') return tostring(ok) .. ' ' .. reason") ==
+	      "nil ../outside.txt: not a path to write to (a relative path of portable names, at most 200 bytes and 8 folders deep, without '..')");
+	CHECK(lua.run("local ok, reason = eu07.write_file('big.txt', string.rep('x', 1024 * 1024 + 1)) return reason") ==
+	      "big.txt: larger than 1048576 bytes");
+	CHECK(lua_sandbox::read_file(root.root(), "outside.txt", 100) == std::optional<std::string>{"secret"});
+	// the arguments are checked
+	CHECK(contains(lua.run("return eu07.write_file('x.txt')"), "bad argument #2"));
+	CHECK(contains(lua.run("return eu07.read_file()"), "bad argument #1"));
+	CHECK(contains(lua.run("return eu07.write_file({}, 'x')"), "bad argument #1"));
+
+	// the folders are read on every call: without a data folder nothing is written or read there
+	folders.data.clear();
+	CHECK(lua.run("local ok, reason = eu07.write_file('state.txt', 'x') return tostring(ok) .. ' ' .. reason") ==
+	      "nil state.txt: no folder to write to (the game knows no folder of the player)");
+	CHECK(lua.run("return eu07.read_data_file('state.txt')") == "nil");
+	CHECK(lua_gettop(lua.get()) == top);
+}
+
+TEST_CASE("lua sandbox: the file functions make eu07 when there is none") {
+	lua_sandbox::file_folders const folders;
+	sandboxed_state const lua;
+	lua_sandbox::open_file_library(lua.get(), &folders);
+	CHECK(lua.run("return type(eu07.read_file) .. type(eu07.write_file) .. type(eu07.read_data_file)") == "functionfunctionfunction");
+	CHECK(lua.run("return eu07.read_file('x.txt')") == "nil");
 }
 
 #endif
