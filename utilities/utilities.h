@@ -227,6 +227,9 @@ bool FileExists(std::string const &Filename);
 std::string FileCased(std::filesystem::path const &Filename);
 // the file to open: as it's named on the disk, the name given when there's none
 std::string FileOnDisk(std::string const &Filename);
+// the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
+// found in any case; the name given when there's none
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);
 
 // the first name with one of the extensions which has a file in any case, in the order given; given back as named here, the file
 // is opened by FileOnDisk()

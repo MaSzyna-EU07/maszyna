@@ -692,6 +692,19 @@ std::string FileOnDisk(std::string const &Filename)
 	return cased.empty() ? Filename : cased;
 }
 
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)
+{
+	for (auto const &extension : Extensions)
+	{
+		auto const cased{FileCased(Folder + Name + extension)};
+		if (cased.size() > Folder.size() + extension.size() && cased.starts_with(Folder) && cased.ends_with(extension))
+		{
+			return cased.substr(Folder.size(), cased.size() - Folder.size() - extension.size());
+		}
+	}
+	return Name;
+}
+
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
 {
 
