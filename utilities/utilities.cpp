@@ -543,6 +543,23 @@ struct cased_path
 };
 std::unordered_map<std::string, cased_path> cased_paths;
 
+// the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
+// function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
+void read_cased_folder(cased_folder &Cached, std::filesystem::path const &Folder, std::filesystem::file_time_type const Changed)
+{
+	Cached.names.clear();
+	Cached.changed = Changed;
+	Cached.listed = std::filesystem::file_time_type::clock::now();
+	std::error_code error;
+	for (std::filesystem::directory_iterator entry{Folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
+	{
+		auto const name{entry->path().filename().string()};
+		Cached.names.try_emplace(ToLower(name), name);
+	}
+	// a listing cut short isn't kept
+	Cached.read = (false == bool(error));
+}
+
 // the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
 // changed, as the editor writes files while it runs, the time of the change looked at once a second at most, which keeps a
 // missing file as cheap as a single check; a name missing from a folder changed shortly before it was read is looked for again,
@@ -567,29 +584,28 @@ std::string cased_name(std::string const &Folder, std::string const &Name)
 		cached.checked = now;
 	}
 	auto const wanted{ToLower(Name)};
-	auto const read{[&]() {
-		cached.names.clear();
-		cached.changed = changed;
-		cached.listed = std::filesystem::file_time_type::clock::now();
-		for (std::filesystem::directory_iterator entry{folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
-		{
-			auto const name{entry->path().filename().string()};
-			cached.names.try_emplace(ToLower(name), name);
-		}
-		// a listing cut short isn't kept
-		cached.read = (false == bool(error));
-	}};
 	if ((false == cached.read) || (cached.changed != changed))
-		read();
+		read_cased_folder(cached, folder, changed);
 	auto found{cached.names.find(wanted)};
 	// a folder changed in the future, as from another clock, isn't read again on every miss
-	auto const age{cached.listed - cached.changed};
-	if ((found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
+	if (auto const age{cached.listed - cached.changed}; (found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
 	{
-		read();
+		read_cased_folder(cached, folder, changed);
 		found = cached.names.find(wanted);
 	}
 	return found != cached.names.end() ? found->second : std::string{};
+}
+
+// keeps the folder by the name it's given with as Name, or as missing since the time given when Name is empty, and puts Name into
+// Cased; false when it's missing
+bool keep_cased_path(std::string const &Folder, std::string const &Name, std::chrono::steady_clock::time_point const Now, std::string &Cased)
+{
+	auto &path{cased_paths[Folder]};
+	path.name = Name;
+	path.missing = Name.empty();
+	path.checked = Now;
+	Cased = Name;
+	return false == Name.empty();
 }
 
 // the folder as it's named on the disk into Cased, from the one given with '/' between its parts and at its end ("" the current
@@ -613,19 +629,11 @@ bool cased_folder_path(std::string const &Folder, std::string &Cased)
 		if (now - found->second.checked < std::chrono::seconds{1})
 			return false;
 	}
-	auto const keep{[&](std::string const &Name) {
-		auto &path{cased_paths[Folder]};
-		path.name = Name;
-		path.missing = Name.empty();
-		path.checked = now;
-		Cased = Name;
-		return false == Name.empty();
-	}};
 	std::error_code error;
 	if (std::filesystem::is_directory(Folder, error))
 	{
 		// named as it is on the disk
-		return keep(Folder);
+		return keep_cased_path(Folder, Folder, now, Cased);
 	}
 	// the parent, then the last part among the names in it
 	auto const last{Folder.size() - 1};
@@ -634,9 +642,9 @@ bool cased_folder_path(std::string const &Folder, std::string &Cased)
 	auto const part{Folder.substr(parent.size(), last - parent.size())};
 	std::string casedparent;
 	if (false == cased_folder_path(parent, casedparent))
-		return keep({});
+		return keep_cased_path(Folder, {}, now, Cased);
 	auto const name{((part == ".") || (part == "..")) ? part : cased_name(casedparent, part)};
-	return keep(name.empty() ? std::string{} : casedparent + name + '/');
+	return keep_cased_path(Folder, name.empty() ? std::string{} : casedparent + name + '/', now, Cased);
 }
 
 } // namespace
