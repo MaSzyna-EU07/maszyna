@@ -6606,6 +6606,16 @@ void TTrain::OnCommand_compartmentlightstoggle(TTrain *Train, command_data const
 		return;
 	}
 
+	if (Command.action == GLFW_RELEASE)
+	{
+		// the press changed the state the command is picked from below, so a release picked from it went to the other
+		// command and the push button that was pressed never withdrew its request. The release goes to both commands:
+		// each returns its own push type control to the neutral position and withdraws its request
+		OnCommand_compartmentlightsenable(Train, Command);
+		OnCommand_compartmentlightsdisable(Train, Command);
+		return;
+	}
+
 	// keep the switch from flipping back and forth if key is held down
 	if (false == Train->mvOccupied->CompartmentLights.is_active && false == Train->mvOccupied->CompartmentLights.is_enabled)
 	{
