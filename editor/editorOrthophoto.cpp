@@ -1713,7 +1713,8 @@ void editor_orthophoto::worker()
 						continue;
 					long long const dx = it->key.first - m_focus.first;
 					long long const dy = it->key.second - m_focus.second;
-					long long const d = dx * dx + dy * dy;
+					// the tiles hurried (Ctrl+~) before all the others, the nearest of them first
+					long long const d = dx * dx + dy * dy - (m_urgent.count(it->key) > 0 ? (1LL << 40) : 0LL);
 					if (d < bestdistance)
 					{
 						bestdistance = d;
@@ -1730,6 +1731,7 @@ void editor_orthophoto::worker()
 			{
 				current = *best;
 				m_queue.erase(best);
+				m_urgent.erase(current.key);
 				m_running.insert(current.key);
 				if (current.level >= hires_pixels)
 					++m_running_hires;
@@ -1956,4 +1958,50 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 			}
 		drawlist->PopTextureID();
 	}
+}
+
+std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera)
+{
+	if (false == m_enabled)
+		return 0;
+	// the tile of the camera as it is now: it isn't followed while the layer is off
+	m_camera_tile = camera_tile(Camera);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_focus = m_camera_tile;
+	}
+	auto const a{camera_tile(glm::dvec3{Min.x, 0.0, Min.y})};
+	auto const b{camera_tile(glm::dvec3{Max.x, 0.0, Max.y})};
+	tile_key const first{std::min(a.first, b.first), std::min(a.second, b.second)};
+	tile_key const last{std::max(a.first, b.first), std::max(a.second, b.second)};
+	auto const centre{m_camera_tile};
+	int const radius = m_config.radius;
+	std::size_t count{0};
+	std::vector<tile_key> keys;
+	for (int y = first.second; y <= last.second; ++y)
+		for (int x = first.first; x <= last.first; ++x)
+		{
+			tile_key const key{x, y};
+			auto const distance{std::max(std::abs(x - centre.first), std::abs(y - centre.second))};
+			if (distance > radius)
+				continue;
+			auto &t{m_tiles[key]};
+			if (t.empty)
+				continue;
+			auto const level{level_for(distance, m_config.hires)};
+			t.retry_at = 0.0;
+			if (t.level == level && t.alpha == m_alpha)
+				continue; // already shown as it should be
+			keys.push_back(key);
+			if (false == (t.requested == level && t.requested_alpha == m_alpha))
+				schedule(key, t, level, m_alpha);
+			++count;
+		}
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_urgent.clear();
+		m_urgent.insert(keys.begin(), keys.end());
+	}
+	m_wakeup.notify_all();
+	return count;
 }

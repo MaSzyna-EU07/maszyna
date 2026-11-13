@@ -861,6 +861,12 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool orthophoto_settings_open() const;
 	// view menu: the top view, the lanes of the roads, the structure gauge, the environment
 	void render_view_menu();
+	// View > Camera speed: the speed of the free camera, the Ctrl multiplier, in the top view as fast as it's zoomed; kept in the
+	// settings of the editor and handed to the camera
+	void render_camera_settings();
+	void apply_camera_settings();
+	// ~ (Ctrl): the orthophoto of what the camera sees downloaded before the rest, the ones which failed tried again at once
+	void orthophoto_hurry();
 	// time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor
 	void render_environment_window();
 	bool m_environment_open{false};

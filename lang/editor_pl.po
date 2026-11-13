@@ -14240,3 +14240,39 @@ msgstr "Kursor rysowany w obrazie (stream)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
+
+msgid "Camera speed"
+msgstr "Prędkość kamery"
+
+msgid "Speed of the camera"
+msgstr "Prędkość kamery"
+
+msgid "How fast the arrows or WSAD move the camera, Shift a bit faster; 1 as it was"
+msgstr "Jak szybko strzałki albo WSAD przesuwają kamerę, z Shiftem trochę szybciej; 1 = jak dotąd"
+
+msgid "Ctrl speeds it up"
+msgstr "Przyspieszenie z Ctrl"
+
+msgid "How many times faster the camera goes with Ctrl held, Ctrl+Shift too; 30 as it was"
+msgstr "Ile razy szybciej jedzie kamera z wciśniętym Ctrl, także Ctrl+Shift; 30 = jak dotąd"
+
+msgid "In the top view as fast as the view is zoomed"
+msgstr "W widoku z góry prędkość zależna od powiększenia"
+
+msgid "Zoomed in the map moves slowly, zoomed out fast: across the screen at the same pace whatever the zoom"
+msgstr "Przybliżona mapa jedzie wolno, oddalona szybko: po ekranie zawsze w tym samym tempie"
+
+msgid "As it was"
+msgstr "Przywróć domyślne"
+
+msgid "Orthophoto on (~)"
+msgstr "Ortofoto włączone (~)"
+
+msgid "Orthophoto off (~)"
+msgstr "Ortofoto wyłączone (~)"
+
+msgid "Orthophoto: %zu tiles of the view downloaded first (Ctrl+~)"
+msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
+
+msgid "Orthophoto: the view is all shown already (Ctrl+~)"
+msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
