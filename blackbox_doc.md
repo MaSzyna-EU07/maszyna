@@ -172,14 +172,15 @@ record.
 
 ### 0x20 cab
 
-The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 190 bytes.
+The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 194 bytes (190 in the
+files written before the speed of the wheels was added at the end).
 
 | type    | field                                                                  |
 |---------|------------------------------------------------------------------------|
 | `f64`   | t                                                                      |
 | `u32`   | number of the vehicle                                                  |
 | `dvec3` | position                                                               |
-| `f32`   | speed [km/h], positive along the front of the vehicle                  |
+| `f32`   | speed of the vehicle [km/h], positive along its front                  |
 | `f32`   | acceleration along the track [m/s²]                                    |
 | `f32`   | odometer [km]                                                          |
 | `u8`    | driver: 0 none, 1 the user, 2 the AI (the autopilot)                   |
@@ -231,6 +232,7 @@ The vehicle the user is in, every 0.1 s, also while the user looks around outsid
 | `f32`   | the clutch of a diesel's gearbox, 0 open .. 1 closed                   |
 | `f32`   | the filling of a diesel's hydraulic torque converter, 0..1             |
 | `f32`   | the highest brake cylinder pressure of the vehicles of the train [bar] |
+| `f32`   | speed of the wheels [km/h], as the speedometer shows it, signed as the speed of the vehicle: apart from it while the wheels slip, 0 while they are locked in a skid |
 
 The lights the train is to show follow from the movement and the two patterns after it: in a train run the head the pattern asked for,
 the usual one Pc 1 (both headlights and the upper one; Pc 2 is the left red marker with the right and the

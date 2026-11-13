@@ -418,6 +418,8 @@ void blackbox_recorder::write_cab() {
 	sample.vehicle = vehicle_id(vehicle);
 	sample.position = vehicle->GetPosition();
 	sample.speed_kmh = static_cast<float>(occupied->V * 3.6);
+	// of the wheels as they turn, which the speedometer shows: apart from that of the vehicle when they slip or skid
+	sample.wheel_speed_kmh = static_cast<float>(M_PI * occupied->WheelDiameter * occupied->nrot * 3.6);
 	sample.acceleration = static_cast<float>(controlling->AccS);
 	sample.lateral_acceleration = static_cast<float>(occupied->AccN);
 	if (owner != nullptr && owner->is_train()) {
