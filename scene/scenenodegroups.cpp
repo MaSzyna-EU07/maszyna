@@ -207,12 +207,12 @@ node_groups::update_map()
                         continue;
 
                     last_switch->track[lastc - 'a'] = track;
-                    for (auto trk : last_switch->track)
-                        if (!trk)
-                            goto skip_e;
+                    // all four tracks of the cross switch have to be known before it's assigned
+                    if (!std::all_of(last_switch->track.begin(), last_switch->track.end(), [](TTrack const *Track) { return Track != nullptr; }))
+                        continue;
 
                     if (!assign_cross_switch(*last_switch, sw_name, "ac", 0))
-                        skip_e: continue;
+                        continue;
                     if (!assign_cross_switch(*last_switch, sw_name, "ad", 1))
                         continue;
                     if (!assign_cross_switch(*last_switch, sw_name, "bc", 2))

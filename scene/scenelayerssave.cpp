@@ -1668,7 +1668,8 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	{
 		auto const now{std::time(nullptr)};
 		char stamp[32];
-		std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+		std::tm const local{local_tm(now)};
+		std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
 		for (auto const output : written)
 		{
 			auto const filepath{path(output)};
