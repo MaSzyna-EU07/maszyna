@@ -956,6 +956,14 @@ bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view
         return true;
     }
 
+    // the scenery scripts (lua in the .scn) with all of LuaJIT's libraries, for a scenery that needs io, ffi or
+    // require: they then reach files and programs as the player does
+    if (token == "lua.fulllibraries")
+    {
+        ParseOne(Parser, lua_fulllibraries, 1);
+        return true;
+    }
+
     if (token == "wasm.enabled")
     {
         ParseOne(Parser, wasm_enabled, 1);
@@ -1962,6 +1970,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "python.uploadmain", python_uploadmain );
     export_as_text( Output, "python.mipmaps", python_mipmaps );
     export_as_text( Output, "luascreens.enabled", luascreens_enabled );
+    export_as_text( Output, "lua.fulllibraries", lua_fulllibraries );
     export_as_text( Output, "wasm.enabled", wasm_enabled );
     export_as_text( Output, "screens.cabframes", screens_cabframes );
     export_as_text( Output, "screens.externalframes", screens_externalframes );

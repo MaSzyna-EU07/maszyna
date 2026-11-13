@@ -312,6 +312,7 @@ struct global_settings {
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
 	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool lua_fulllibraries{false}; // the scenery scripts (lua in the .scn) get all of LuaJIT's libraries (io, os, ffi, require...), not only the sandboxed ones
 	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
 	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
 	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames

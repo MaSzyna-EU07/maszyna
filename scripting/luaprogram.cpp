@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/scriptscreenprogram.h"
 #include "scripting/scriptscreendrawing.h"
 #include "scripting/scriptscreenkernels.h"
+#include "scripting/luasandbox.h"
 
 #include "utilities/Logs.h"
 #include "utilities/dictionary.h"
@@ -411,12 +412,7 @@ int api_read_file(lua_State *L)
 // loads a script as text: precompiled code is refused. leaves the chunk, or an error message, on the stack
 bool load_chunk(lua_State *L, std::string_view const Code, std::string const &Name)
 {
-	if (false == Code.empty() && Code.front() == '\x1b')
-	{
-		lua_pushfstring(L, "%s: precompiled scripts aren't loaded", Name.c_str());
-		return false;
-	}
-	return 0 == luaL_loadbufferx(L, Code.data(), Code.size(), ("@" + Name).c_str(), "t");
+	return lua_sandbox::load_text_chunk(L, Code, Name);
 }
 
 // eu07.include(path): runs another script below the script's folder and returns what it returns
@@ -724,30 +720,10 @@ void push_state(lua_State *L, dictionary_source const &Input)
 	}
 }
 
-void open_library(lua_State *L, lua_CFunction Open, char const *Name)
-{
-	lua_pushcfunction(L, Open);
-	lua_pushstring(L, Name);
-	lua_call(L, 1, 0);
-}
-
 void lua_program::open_libraries()
 {
-	open_library(m_state, luaopen_base, "");
-	open_library(m_state, luaopen_table, LUA_TABLIBNAME);
-	open_library(m_state, luaopen_string, LUA_STRLIBNAME);
-	open_library(m_state, luaopen_math, LUA_MATHLIBNAME);
-	open_library(m_state, luaopen_bit, LUA_BITLIBNAME);
-	// what reaches files or loads code
-	for (auto const *name : {"dofile", "loadfile", "load", "loadstring", "module", "require"})
-	{
-		lua_pushnil(m_state);
-		lua_setglobal(m_state, name);
-	}
-	lua_getglobal(m_state, LUA_STRLIBNAME);
-	lua_pushnil(m_state);
-	lua_setfield(m_state, -2, "dump");
-	lua_pop(m_state, 1);
+	// base, table, string, math and bit, without what reaches files or loads code
+	lua_sandbox::open_safe_libraries(m_state);
 }
 
 void lua_program::register_api()
