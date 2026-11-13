@@ -277,6 +277,15 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
         // Ra 2014-09: ustalić zasady wyznaczenia pierwotnego pliku przy przesuniętych rozkładach
         // (kolejny pociąg dostaje numer +2)
         fin.open(s.c_str()); // otwieranie pliku
+        if (false == fin.is_open())
+        {
+            // the name of the train comes in lowercase, the file can be named in another case
+            if (auto const cased{FileCased(s)}; false == cased.empty())
+            {
+                fin.clear();
+                fin.open(cased);
+            }
+        }
 		replace_slashes(s);
 
         if (!fin.is_open())

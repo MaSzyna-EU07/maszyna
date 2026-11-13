@@ -578,6 +578,38 @@ TEST_CASE("utilities: a file is found by its name in another case") {
 	CHECK(FileCased("eu07_unit_test_no_such_file.xyz").empty());
 }
 
+TEST_CASE("utilities: a file is found in folders named in another case, the way the parser gives the names in lowercase") {
+	test::scratch_folder const folder{"utilities_cased_folders"};
+	folder.write("Scenery/Braniewo/rozklady/Os91121.txt", "x");
+	folder.write("Textures/Tabl/L101-2m.BMP", "x");
+
+	// every part of the path in lowercase: the file as it's on the disk where the case matters, the name given where it doesn't
+	auto const timetable{FileCased(folder.path("scenery/braniewo/rozklady/os91121.txt"))};
+	REQUIRE_FALSE(timetable.empty());
+	CHECK(FileExists(timetable));
+	CHECK(ToLower(timetable) == ToLower(folder.path("Scenery/Braniewo/rozklady/Os91121.txt")));
+	CHECK(FileExists(folder.path("scenery/braniewo/rozklady/os91121.txt")));
+	// the folders written the Windows way as well
+	CHECK_FALSE(FileCased(folder.path() + "scenery\\braniewo\\rozklady\\os91121.txt").empty());
+	// a folder missing in any case
+	CHECK(FileCased(folder.path("scenery/nowhere/rozklady/os91121.txt")).empty());
+	CHECK_FALSE(FileExists(folder.path("scenery/nowhere/rozklady/os91121.txt")));
+
+	// among names and extensions: given back as named on the disk, so it's opened by that name, the extension too
+	auto const texture{FileExists(std::vector<std::string>{folder.path("textures/tabl/l101-2m")}, std::vector<std::string>{".dds", ".bmp"})};
+	REQUIRE_FALSE(texture.first.empty());
+	CHECK(ToLower(texture.second) == ".bmp");
+	CHECK(FileExists(texture.first + texture.second));
+	CHECK(ToLower(texture.first) == ToLower(folder.path("Textures/Tabl/L101-2m")));
+
+	// a file written after the folder was gone through is found as well
+	CHECK(FileCased(folder.path("textures/tabl/l7-2m.bmp")).empty());
+	folder.write("Textures/Tabl/L7-2m.bmp", "x");
+	auto const added{FileCased(folder.path("textures/tabl/l7-2m.bmp"))};
+	REQUIRE_FALSE(added.empty());
+	CHECK(FileExists(added));
+}
+
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {
 	test::scratch_folder const folder{"utilities_modified"};
 	auto const name{folder.write("fresh.txt", "x")};

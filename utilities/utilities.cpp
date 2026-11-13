@@ -513,8 +513,54 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 
 bool FileExists(std::string const &Filename)
 {
+#ifdef _WIN32
 	return std::filesystem::exists(Filename);
+#else
+	// the names come in lowercase from the parser, the files of the data are named in any case
+	return false == FileCased(Filename).empty();
+#endif
 }
+
+#ifndef _WIN32
+namespace
+{
+
+// the names in a folder by their lowercase, and the time the folder was changed when they were read
+struct cased_folder
+{
+	std::filesystem::file_time_type changed{};
+	std::unordered_map<std::string, std::string> names;
+};
+
+std::mutex cased_mutex;
+std::unordered_map<std::string, cased_folder> cased_folders;
+
+// the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
+// changed, as the editor writes files while it runs. to be called with cased_mutex held
+std::string cased_name(std::string const &Folder, std::string const &Name)
+{
+	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
+	std::error_code error;
+	auto const changed{std::filesystem::last_write_time(folder, error)};
+	if (error)
+		return {};
+	auto &cached{cased_folders[Folder]};
+	if (cached.names.empty() || cached.changed != changed)
+	{
+		cached.changed = changed;
+		cached.names.clear();
+		for (std::filesystem::directory_iterator entry{folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
+		{
+			auto const name{entry->path().filename().string()};
+			cached.names.try_emplace(ToLower(name), name);
+		}
+	}
+	auto const found{cached.names.find(ToLower(Name))};
+	return found != cached.names.end() ? found->second : std::string{};
+}
+
+} // namespace
+#endif
 
 std::string FileCased(std::filesystem::path const &Filename)
 {
@@ -526,13 +572,40 @@ std::string FileCased(std::filesystem::path const &Filename)
 	// code page to throw on
 	return {};
 #else
-	// only the name of the file itself, a folder named in another case isn't found
-	auto const directory{Filename.has_parent_path() ? Filename.parent_path() : std::filesystem::path{"."}};
-	auto const wanted{ToLower(Filename.filename().string())};
-	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
-		if (ToLower(entry->path().filename().string()) == wanted)
-			return Filename.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
-	return {};
+	// every part of the path in turn, the folders can be named in another case as well as the file
+	auto const text{Filename.string()};
+	std::string cased;
+	std::size_t start{0};
+	if ((false == text.empty()) && (text.front() == '/'))
+	{
+		cased = "/";
+		start = 1;
+	}
+	while (start < text.size())
+	{
+		auto end{text.find_first_of("/\\", start)};
+		if (end == std::string::npos)
+			end = text.size();
+		auto const part{text.substr(start, end - start)};
+		start = end + 1;
+		if (part.empty())
+			continue;
+		if ((part == ".") || (part == "..") || std::filesystem::exists(cased + part, error))
+		{
+			cased += part;
+		}
+		else
+		{
+			std::scoped_lock const lock{cased_mutex};
+			auto const name{cased_name(cased, part)};
+			if (name.empty())
+				return {};
+			cased += name;
+		}
+		if (end < text.size())
+			cased += '/';
+	}
+	return std::filesystem::exists(cased, error) ? cased : std::string{};
 #endif
 }
 
@@ -543,10 +616,19 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	{
 		for (auto const &extension : Extensions)
 		{
+#ifdef _WIN32
 			if (FileExists(name + extension))
 			{
 				return {name, extension};
 			}
+#else
+			// given back as it's named on the disk, so it's opened by that name
+			if (auto const cased{FileCased(name + extension)}; cased.size() >= extension.size())
+			{
+				auto const split{cased.size() - extension.size()};
+				return {cased.substr(0, split), cased.substr(split)};
+			}
+#endif
 		}
 	}
 	// nothing found

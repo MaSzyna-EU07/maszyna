@@ -216,9 +216,9 @@ openal_buffer::fetch_caption() {
     std::string captionfilename { name };
     captionfilename.erase( captionfilename.rfind( '.' ) ); // obcięcie rozszerzenia
     captionfilename += "-" + Global.asLang + ".txt"; // już może być w różnych językach
-    if( true == FileExists( captionfilename ) ) {
+    if( auto const casedfilename { FileCased( captionfilename ) }; false == casedfilename.empty() ) {
         // wczytanie
-        std::ifstream inputfile( captionfilename );
+        std::ifstream inputfile( casedfilename );
         caption.assign( std::istreambuf_iterator<char>( inputfile ), std::istreambuf_iterator<char>() );
     }
 }

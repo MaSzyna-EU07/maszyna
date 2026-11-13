@@ -549,13 +549,15 @@ opengl_texture::load() {
 
         data_state = resource_state::loading;
 
-             if( type == ".dds" ) { load_DDS(); }
-        else if( type == ".tga" ) { load_TGA(); }
-        else if( type == ".png" ) { load_STBI(); }
-        else if( type == ".ktx" ) { load_KTX(); }
-		else if( type == ".bmp" ) { load_STBI(); }
-		else if( type == ".jpg" ) { load_STBI(); }
-        else if( type == ".tex" ) { load_TEX(); }
+        // the extension as the file has it on the disk, in any case
+        auto const format { ToLower( type ) };
+             if( format == ".dds" ) { load_DDS(); }
+        else if( format == ".tga" ) { load_TGA(); }
+        else if( format == ".png" ) { load_STBI(); }
+        else if( format == ".ktx" ) { load_KTX(); }
+		else if( format == ".bmp" ) { load_STBI(); }
+		else if( format == ".jpg" ) { load_STBI(); }
+        else if( format == ".tex" ) { load_TEX(); }
         else { goto fail; }
     }
 
