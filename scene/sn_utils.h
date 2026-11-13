@@ -20,6 +20,8 @@ public:
     static glm::dvec3 d_dvec3(std::istream&);
 	static glm::vec3 d_vec3(std::istream&);
     static glm::vec4 d_vec4(std::istream&);
+    // number of bytes left to read in the stream, 0 if it failed or can't tell
+    static std::uint64_t remaining(std::istream&);
 
 	static void ls_uint16(std::ostream&, uint16_t);
 	static void ls_uint32(std::ostream&, uint32_t);

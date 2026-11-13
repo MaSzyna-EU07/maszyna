@@ -694,10 +694,13 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
         say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}{watchdog}, expected {expect}")
         ok &= passed
     # a run cut short (the real time watchdog, an error, a crash, or closed by us) could have been writing
-    # the scenery's geometry cache; the simulator checks only the header of it, so the next runs would read
-    # a truncated one. it is written again on the next run
+    # the scenery's geometry cache. the simulator writes it through <name>.sbt.tmp and turns down a cut-short
+    # one, but older builds wrote it in place and checked only its header, so the next runs would read a
+    # truncated one. either is written again on the next run
     if result.failure or (not watch and got in (None, "error", WALL_TIMEOUT)):
-        scenery_cache(game_dir, name).unlink(missing_ok=True)
+        cache = scenery_cache(game_dir, name)
+        cache.unlink(missing_ok=True)
+        cache.with_name(cache.name + ".tmp").unlink(missing_ok=True)
     if result.failure:
         say(f"  FAIL  {result.failure}")
         ok = False
