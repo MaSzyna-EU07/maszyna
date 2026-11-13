@@ -540,7 +540,9 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
 
     if (token == "blackbox")
     {
-        ParseOne(Parser, BlackBox);
+        bool blackbox{false};
+        ParseOne(Parser, blackbox);
+        BlackBox = blackbox;
         return true;
     }
 
@@ -1735,7 +1737,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
     export_as_text( Output, "physicslog", WriteLogFlag );
-    export_as_text( Output, "blackbox", BlackBox );
+    if( BlackBox ) {
+        export_as_text( Output, "blackbox", *BlackBox );
+    }
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );

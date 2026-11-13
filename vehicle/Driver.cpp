@@ -2344,16 +2344,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
             std::ios::in | std::ios::out | std::ios::trunc );
 #if LOGPRESS == 0
-        LogFile
-            << "Time[s] Velocity[m/s] Acceleration[m/ss] "
-            << "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-            << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
-            << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
-            << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
-            << "VehicleVelocity[km/h]"
-            << "\r\n";
-        LogFile << std::fixed << std::setprecision( 4 );
+        LogFile << physicslog_header();
 #endif
 #if LOGPRESS == 1
         LogFile << string( "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP" ).c_str() << "\n";
@@ -5367,47 +5358,59 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     return false; // nierozpoznana - wysłać bezpośrednio do pojazdu
 };
 
+std::string_view TController::physicslog_header() {
+    // the columns of the readers of these logs, the Hasler tape of the starter among them, stay where they are:
+    // a new one goes at the end
+    return "Time[s] Velocity[m/s] Acceleration[m/ss] "
+           "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
+           "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
+           "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
+           "Security Wheelslip "
+           "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+           "VehicleVelocity[km/h]"
+           "\r\n";
+}
+
+std::string TController::physicslog_line() const {
+    std::ostringstream line;
+    line << std::fixed << std::setprecision( 4 )
+        << ElapsedTime << " "
+        << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
+        << mvControlling->AccS << " "
+        << mvOccupied->Couplers[1].Dist << " "
+        << mvOccupied->Couplers[1].CForce << " "
+        << mvOccupied->Ft << " "
+        << mvOccupied->Ff << " "
+        << mvOccupied->Fb << " "
+        << mvOccupied->BrakePress << " "
+        << mvOccupied->PipePress << " "
+        << mvControlling->Im << " "
+        << int(mvControlling->MainCtrlPos) << " "
+        << int(mvControlling->ScndCtrlPos) << " "
+        << mvOccupied->fBrakeCtrlPos << " "
+        << mvOccupied->LocalBrakePosA << " "
+        << int(mvControlling->DirActive) << " "
+        << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
+        << mvOccupied->CommandIn.Value1 << " "
+        << mvOccupied->CommandIn.Value2 << " "
+        << int(mvControlling->SecuritySystem.is_blinking()) << " "
+        << int(mvControlling->SlippingWheels) << " "
+        << mvControlling->dizel_heat.Ts << " "
+        << mvControlling->dizel_heat.To << " "
+        << mvControlling->dizel_heat.temperatura1 << " "
+        << mvControlling->dizel_heat.temperatura2 << " "
+        // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+        << mvOccupied->V * 3.6
+        << "\r\n";
+    return line.str();
+}
+
 void TController::PhysicsLog()
 { // zapis logu - na razie tylko wypisanie parametrów
     if (LogFile.is_open())
     {
 #if LOGPRESS == 0
-/*
-<< "Time[s] Velocity[m/s] Acceleration[m/ss] "
-<< "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-<< "BrakePress[MPa] PipePress[MPa] MotorCurrent[A]    "
-<< "MCP SCP BCP LBP DmgFlag Command CVal1 CVal2 "
-<< "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
-*/
-        LogFile
-            << ElapsedTime << " "
-            << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
-            << mvControlling->AccS << " "
-            << mvOccupied->Couplers[1].Dist << " "
-            << mvOccupied->Couplers[1].CForce << " "
-            << mvOccupied->Ft << " "
-            << mvOccupied->Ff << " "
-            << mvOccupied->Fb << " "
-            << mvOccupied->BrakePress << " "
-            << mvOccupied->PipePress << " "
-            << mvControlling->Im << " "
-            << int(mvControlling->MainCtrlPos) << " "
-            << int(mvControlling->ScndCtrlPos) << " "
-            << mvOccupied->fBrakeCtrlPos << " "
-            << mvOccupied->LocalBrakePosA << " "
-            << int(mvControlling->DirActive) << " "
-            << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
-            << mvOccupied->CommandIn.Value1 << " "
-            << mvOccupied->CommandIn.Value2 << " "
-		    << int(mvControlling->SecuritySystem.is_blinking()) << " "
-            << int(mvControlling->SlippingWheels) << " "
-            << mvControlling->dizel_heat.Ts << " "
-            << mvControlling->dizel_heat.To << " "
-            << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2 << " "
-            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-            << mvOccupied->V * 3.6
-            << "\r\n";
+        LogFile << physicslog_line();
 #endif
 #if LOGPRESS == 1
         LogFile << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)

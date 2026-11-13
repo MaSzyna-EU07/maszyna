@@ -42,6 +42,7 @@ namespace {
 
 // [s] between the samples of the user's train, the looks at everything else and the full looks at the vehicles
 constexpr double cabinterval{0.1};
+constexpr double tapeinterval{0.05}; // as the physics logs (deltalog of Driver.cpp)
 constexpr double lookinterval{1.0};
 constexpr double slowlook{20.0}; // [ms] a look around taking longer is told in the log, part by part
 constexpr double keyframeinterval{60.0};
@@ -233,7 +234,8 @@ void blackbox_recorder::update(double const Deltatime) {
 		if (false == simulation::is_ready)
 			return;
 		m_started = true;
-		if (false == WriteLogFlag || false == Global.BlackBox || Global.editor_session)
+		// "blackbox yes" or "no" of eu07.ini decides by itself, with no entry it goes with the physics logs
+		if (false == Global.BlackBox.value_or(WriteLogFlag) || Global.editor_session)
 			return;
 		open();
 	}
@@ -245,6 +247,11 @@ void blackbox_recorder::update(double const Deltatime) {
 	if (m_time >= m_cabdue) {
 		write_cab();
 		m_cabdue = std::max(m_cabdue + cabinterval, m_time);
+	}
+	// with the physics logs on, each driver writes its own all the time
+	if (false == WriteLogFlag && m_time >= m_tapedue) {
+		keep_tape_line();
+		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
 	}
 	if (m_time >= m_cameradue) {
 		write_camera();
@@ -273,6 +280,7 @@ void blackbox_recorder::close() {
 	m_writer->end(m_time);
 	m_writer.reset();
 	m_file.close();
+	write_tapes();
 	using milliseconds = std::chrono::duration<double, std::milli>;
 	WriteLog(std::format("Black box: recording closed; {} looks around, {:.3f} ms each on average, the longest {:.3f} ms", m_looks,
 	    m_looks > 0 ? milliseconds{m_looktime}.count() / m_looks : 0.0, milliseconds{m_looklongest}.count()));
@@ -476,6 +484,38 @@ void blackbox_recorder::write_cab() {
 			brakes = std::max(brakes, each->MoverParameters->BrakePress);
 	sample.consist_brake_cylinder = static_cast<float>(brakes);
 	m_writer->cab(sample);
+}
+
+void blackbox_recorder::keep_tape_line() {
+	auto const *train{simulation::Train};
+	if (train == nullptr || train->Dynamic() == nullptr)
+		return;
+	auto const *vehicle{train->Dynamic()};
+	// the driver of the vehicle, whose log it would be: it keeps the name of its first vehicle, so a change of the cab
+	// in a unit goes on in the same log. in a vehicle without one, the driver of its train
+	auto const *driver{vehicle->Mechanik != nullptr ? vehicle->Mechanik : vehicle->ctOwner};
+	if (driver == nullptr)
+		return;
+	m_tapes[driver->physicslog_name()] += driver->physicslog_line();
+}
+
+void blackbox_recorder::write_tapes() {
+	for (auto const &[name, lines] : m_tapes) {
+		// opened as the driver opens its log, so the file is the same to the byte
+		auto const filename{"physicslog/" + name + ".dat"};
+		std::fstream file{filename, std::ios::in | std::ios::out | std::ios::trunc};
+		if (false == file.is_open()) {
+			ErrorLog(std::format("Black box: can't create the physics log \"{}\"", filename));
+			continue;
+		}
+		file << TController::physicslog_header() << lines;
+		file.close();
+		if (file.fail())
+			ErrorLog(std::format("Black box: the physics log \"{}\" wasn't written whole", filename));
+		else
+			WriteLog(std::format("Black box: the physics log \"{}\" written from the recording", filename));
+	}
+	m_tapes.clear();
 }
 
 void blackbox_recorder::look_around(bool const Keyframe) {

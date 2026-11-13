@@ -7,10 +7,17 @@ done at the same moment, every command the user gave, when the autopilot took ov
 the timetable and how the train kept to it at each station, and where it was told to sound the horn. From it another program (the
 starter, a viewer) can replay the session on the map, or set the user's driving against the AI's.
 
-It is written along with the physics logs: `physicslog yes` in `eu07.ini`, not in an editor session.
-`blackbox no` turns it off while the physics logs are kept (it is on by default). The file goes next to
-them, `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the recording started at).
-The `.dat` logs stay as they are.
+`blackbox yes` in `eu07.ini` writes it, with the physics logs on or off; `blackbox no` never does. With no
+`blackbox` entry it is written along with the physics logs, `physicslog yes`. It is never written in an
+editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
+recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
+
+With the physics logs off it still gives the `.dat` log of each vehicle the user was in, written when the
+recording ends: `physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every
+0.05 s as `physicslog yes` would write, but only of the times the user was there. A vehicle with no driver
+of its own takes the log of the driver of its train. So the speed recorder's tape can be read from them as
+before, without the simulator keeping a log of every vehicle open all the time. A simulator that crashes
+leaves the recording, but not these logs.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

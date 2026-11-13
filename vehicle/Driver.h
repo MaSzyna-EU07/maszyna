@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
 #include "MOVER.h"
@@ -730,6 +731,13 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line and
+    // a line of it as the vehicle is now, each with its line end. the black box keeps the lines of the vehicle the
+    // user is in, to write its log at the end when the logs of all the vehicles are off
+    std::string const &physicslog_name() const {
+        return VehicleName; }
+    static std::string_view physicslog_header();
+    std::string physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:
