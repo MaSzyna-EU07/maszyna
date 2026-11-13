@@ -1456,8 +1456,6 @@ class TSt113 : public TH14K1
 	static double const BEP_K[/*?*/ /*-1..5*/ 5 - -1 + 1];
 	/// <summary>Lookup of bh_* function codes to handle position values.</summary>
 	static double const pos_table[11]; // = {-1, 5, -1, 0, 2, 3, 4, 5, 0, 0, 1};
-	/// <summary>Local control pressure (mirrors PP).</summary>
-	double CP = 0;
 
   public:
 	/// <summary>Computes brake pipe flow for the St113 handle (with EP).</summary>
