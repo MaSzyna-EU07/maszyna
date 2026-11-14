@@ -474,6 +474,29 @@ TEST_CASE("brake setting: a bank engine's run counts as a train, shunting doesn'
 	CHECK(false == brake_setting::is_cut_out(car.mover()));
 }
 
+TEST_CASE("brake setting: the AI looks at its train under the orders it drives it under, Connect included") {
+	CHECK(brake_setting::inspects_train(Shunt, false));
+	CHECK(brake_setting::inspects_train(Loose_shunt, false));
+	CHECK(brake_setting::inspects_train(Obey_train, false));
+	CHECK(brake_setting::inspects_train(Bank, false));
+	// the run up to the wagons: a locomotive standing cold has its hand brake to release first
+	CHECK(brake_setting::inspects_train(Connect, false));
+	CHECK(brake_setting::inspects_train(Connect | Change_direction, false));
+	// but not at the coupling: the wagons just coupled wait for the next order, which may leave some of them
+	CHECK(false == brake_setting::inspects_train(Connect, true));
+	CHECK(false == brake_setting::inspects_train(Connect | Change_direction, true));
+	// a train run with a coupling on it is still a train run
+	CHECK(brake_setting::inspects_train(Obey_train | Connect, true));
+	CHECK(brake_setting::inspects_train(Shunt, true));
+	// standing, starting or stopping the engine, turning round, uncoupling: nothing to look at
+	CHECK(false == brake_setting::inspects_train(Wait_for_orders, false));
+	CHECK(false == brake_setting::inspects_train(Prepare_engine, false));
+	CHECK(false == brake_setting::inspects_train(Release_engine, false));
+	CHECK(false == brake_setting::inspects_train(Change_direction, false));
+	CHECK(false == brake_setting::inspects_train(Disconnect, false));
+	CHECK(false == brake_setting::inspects_train(Jump_to_first_order, false));
+}
+
 TEST_CASE("brake setting: R+Mg brakes as hard as R at speed, the rapid stage of an LSt kept") {
 	// the inspector sets R+Mg (Cw-1 §18.2), the bits of R and Mg together: the valves test the bit of R, not
 	// the whole setting, so the high stage of R at speed stays on with Mg. the EU07's LSt given an Mg here
