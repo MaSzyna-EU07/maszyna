@@ -71,6 +71,40 @@ vec4 water_snow_texel(uint slot, uint map, ivec2 texel)
 	return vec4(unpackHalf2x16(water_cells[index]), unpackHalf2x16(water_cells[index + 1u]));
 }
 
+// the snow of a glass laid together (water_snowlayer.comp, read by mat_snow_windscreen.frag): WATER_LAYER x WATER_LAYER texels
+// over its uv after the maps of the snow, three uint a texel: the colour (premultiplied, linear) and the cover; the normal of the
+// sprites (tangent space, premultiplied) and their translucency; the bend of the picture behind (weighted), its weight, and the
+// haze of the thin snow
+uint water_layer_base(uint slot)
+{
+	return water_snow_base(0u, 2u) + slot * uint(WATER_LAYER * WATER_LAYER * 3);
+}
+
+// the laid snow of a glass at UV, filtered between the texels: Colour (rgb, cover), Normal (xyz, translucency), Bend (xy, its
+// weight, the haze)
+void water_layer_at(uint slot, vec2 uv, out vec4 colour, out vec4 normal, out vec4 bend)
+{
+	vec2 p = uv * float(WATER_LAYER) - 0.5;
+	ivec2 i = ivec2(floor(p));
+	vec2 f = p - vec2(i);
+	colour = vec4(0.0);
+	normal = vec4(0.0);
+	bend = vec4(0.0);
+	for (int k = 0; k < 4; ++k)
+	{
+		ivec2 t = i + ivec2(k & 1, k >> 1);
+		if (any(lessThan(t, ivec2(0))) || any(greaterThanEqual(t, ivec2(WATER_LAYER))))
+			continue;
+		float w = ((k & 1) == 1 ? f.x : 1.0 - f.x) * ((k >> 1) == 1 ? f.y : 1.0 - f.y);
+		uint index = water_layer_base(slot) + 3u * uint(t.y * WATER_LAYER + t.x);
+		colour += unpackUnorm4x8(water_cells[index]) * w;
+		normal += unpackSnorm4x8(water_cells[index + 1u]) * w;
+		bend += unpackSnorm4x8(water_cells[index + 2u]) * w;
+	}
+	normal.w = normal.w * 0.5 + 0.5;
+	bend.zw = bend.zw * 0.5 + 0.5;
+}
+
 // the latest map of the snow of a glass; false when there's none yet
 bool water_snow_map(uint slot, out uint map)
 {

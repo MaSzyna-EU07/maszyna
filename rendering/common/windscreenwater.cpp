@@ -479,8 +479,50 @@ void windscreen_water::update(double const Seconds)
 	gpu_step(block, most);
 	if (anysnow)
 	{
+		lay_snow(block);
 		// the step wrote the other map of the snow
 		m_snowmap = 1 - m_snowmap;
+	}
+}
+
+namespace
+{
+
+// a texture of the material by its name in the shader, none when the shader has no such texture
+texture_handle material_texture(opengl_material const &Material, std::string const &Name)
+{
+	if ((Material.shader == nullptr) || (Material.shader->texture_conf.count(Name) == 0))
+	{
+		return null_handle;
+	}
+	return Material.textures[Material.shader->texture_conf.at(Name).id];
+}
+
+} // namespace
+
+void windscreen_water::lay_snow(gl::water_ubs const &Block)
+{
+	for (std::size_t slot = 0; slot < m_glasscount; ++slot)
+	{
+		if (Block.snow_slots[static_cast<glm::length_t>(slot)] < 0.5f)
+		{
+			continue;
+		}
+		auto const *material{m_host.material(m_glasses[slot].material)};
+		if (material == nullptr)
+		{
+			continue;
+		}
+		auto const atlas{material_texture(*material, "raindropsatlas")};
+		auto const normal{material_texture(*material, "normalmap")};
+		if ((atlas == null_handle) || (normal == null_handle))
+		{
+			continue;
+		}
+		auto layer{Block};
+		layer.counts.z = static_cast<std::uint32_t>(slot);
+		layer.counts.w = m_step;
+		gpu_snow_layer(slot, atlas, normal, layer);
 	}
 }
 

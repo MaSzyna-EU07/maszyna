@@ -36,6 +36,7 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 	void gpu_setup(std::size_t Slot, std::vector<glm::vec4> const &Axes) override;
 	bool gpu_bake(std::size_t Slot, texture_handle Mask, gl::water_ubs const &Block) override;
 	void gpu_step(gl::water_ubs const &Block, std::uint32_t Tries) override;
+	bool gpu_snow_layer(std::size_t Slot, texture_handle Atlas, texture_handle Normal, gl::water_ubs const &Block) override;
 
   private:
 	// the passes of the step, in their order
@@ -51,6 +52,7 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 		settle,
 		bake,
 		snow,
+		snowlayer,
 		count
 	};
 	std::array<std::unique_ptr<gl::program>, pass::count> m_programs;

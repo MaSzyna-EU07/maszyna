@@ -101,7 +101,8 @@ bool windscreen_water::gpu_init()
 	try
 	{
 		std::array<char const *, pass::count> const names{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp"};
+		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp",
+		                                                  "water_snowlayer.comp"};
 		for (std::size_t i = 0; i < names.size(); ++i)
 		{
 			if (false == m_kernels[i].create(m_device, *m_pipelines, m_shaders->get(names[i]), m_passlayout, {}, names[i]))
@@ -257,6 +258,36 @@ bool windscreen_water::gpu_bake(std::size_t const Slot, texture_handle const Mas
 	                          {buffer_descriptor(m_storage->handle(), 0, VK_WHOLE_SIZE), buffer_descriptor(slice.buffer, slice.offset, sizeof(gl::water_ubs)),
 	                           image_descriptor(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)},
 	                          groups(static_cast<std::size_t>(gl::WATER_MAP) * gl::WATER_MAP));
+	compute_barrier(commands);
+	return true;
+}
+
+bool windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle const Atlas, texture_handle const Normal, gl::water_ubs const &Block)
+{
+	auto const commands{m_host.commands()};
+	if ((commands == nullptr) || (false == m_full) || (Slot >= gl::WATER_SLOTS))
+	{
+		return false;
+	}
+	VkImageView atlasview{VK_NULL_HANDLE};
+	VkSampler atlassampler{VK_NULL_HANDLE};
+	VkImageView normalview{VK_NULL_HANDLE};
+	VkSampler normalsampler{VK_NULL_HANDLE};
+	if ((false == m_host.texture(Atlas, atlasview, atlassampler)) || (atlasview == VK_NULL_HANDLE) || (false == m_host.texture(Normal, normalview, normalsampler)) ||
+	    (normalview == VK_NULL_HANDLE))
+	{
+		return false;
+	}
+	auto const slice{block(Block)};
+	if (false == bool(slice))
+	{
+		return false;
+	}
+	begin(commands);
+	m_kernels[pass::snowlayer].run(commands,
+	                               {buffer_descriptor(m_storage->handle(), 0, VK_WHOLE_SIZE), buffer_descriptor(slice.buffer, slice.offset, sizeof(gl::water_ubs)),
+	                                image_descriptor(atlassampler, atlasview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), image_descriptor(normalsampler, normalview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)},
+	                               groups(static_cast<std::size_t>(gl::WATER_LAYER) * gl::WATER_LAYER));
 	compute_barrier(commands);
 	return true;
 }

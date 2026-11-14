@@ -728,6 +728,10 @@ namespace gl
     const GLuint WATER_CELL_DROPS = 32;
     const GLuint WATER_TRAIL = 1024;
     const GLuint WATER_MAP = 256;
+    // the snow of a glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels over its uv, a band of every
+    // WATER_LAYER_BANDS-th row laid anew in a step (and wherever a blade goes over it), read by mat_snow_windscreen.frag
+    const GLuint WATER_LAYER = 1024;
+    const GLuint WATER_LAYER_BANDS = 8;
     const GLuint WATER_GROUP_SIZE = 64;
     // the binding points of the opengl renderer: the storage of the water (read by the glasses, written by the passes), the block
     // of the step of the simulation (water_ubs) and the texture unit of the mask of the wipers the map is baked from. the storage
@@ -745,6 +749,9 @@ namespace gl
     const size_t RAIN_CELLS_GROUP_SIZE = 64;
     const GLuint WATER_UBO_BINDING = 6;
     const size_t WATER_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 13;
+    // the atlas and the normal map of the snow of a glass, for the laying of its snow (water_snowlayer.comp)
+    const size_t WATER_SNOW_ATLAS_TEX = MAX_TEXTURES + HELPER_TEXTURES + 20;
+    const size_t WATER_SNOW_NORMAL_TEX = MAX_TEXTURES + HELPER_TEXTURES + 21;
     // the parts of the storage of the water (std430, GLSL water_ssbo), offsets in bytes: the header of every glass (vec4), the
     // counts of every glass (uvec4), the drops (two vec4 each), the axes of the map (two vec4 a texel), the blades of the map (vec4
     // a texel), the state of the drops (uint), the drops they flow into (uint), what they gather (four int), what they keep
@@ -768,10 +775,14 @@ namespace gl
     // flakes), a step reads one and writes the other (the header of the glass says which one is the latest)
     const size_t WATER_SNOW_OFFSET = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
     const size_t WATER_SNOW_SIZE = 8 * static_cast<size_t>(WATER_MAP) * WATER_MAP;
-    const size_t WATER_STORAGE_SIZE = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
+    // the snow of every glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels of three uint each (the colour
+    // and the cover, the normal and the translucency, the bend and the haze, see water.glsl)
+    const size_t WATER_LAYER_OFFSET = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
+    const size_t WATER_LAYER_SIZE = 12 * static_cast<size_t>(WATER_LAYER) * WATER_LAYER;
+    const size_t WATER_STORAGE_SIZE = WATER_LAYER_OFFSET + WATER_LAYER_SIZE * WATER_SLOTS;
     // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
-    // cells and its paths, its header and its counts, its two maps of the snow, (offset, size) in bytes
-    inline std::array<std::pair<size_t, size_t>, 13> water_slot_parts(size_t const Slot)
+    // cells and its paths, its header and its counts, its two maps of the snow, its laid snow, (offset, size) in bytes
+    inline std::array<std::pair<size_t, size_t>, 14> water_slot_parts(size_t const Slot)
     {
         auto const drops{static_cast<size_t>(WATER_DROPS)};
         auto const texels{static_cast<size_t>(WATER_MAP) * WATER_MAP};
@@ -789,7 +800,8 @@ namespace gl
                  {WATER_HEADER_OFFSET + 16 * Slot, 16},
                  {WATER_COUNTS_OFFSET + 16 * Slot, 16},
                  {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * Slot, WATER_SNOW_SIZE},
-                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * (WATER_SLOTS + Slot), WATER_SNOW_SIZE}}};
+                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * (WATER_SLOTS + Slot), WATER_SNOW_SIZE},
+                 {WATER_LAYER_OFFSET + WATER_LAYER_SIZE * Slot, WATER_LAYER_SIZE}}};
     }
 
     // layout std140: the step of the simulation of the water on the windscreens (GLSL water_ubo), every vector in the space of the
@@ -812,7 +824,8 @@ namespace gl
         // glass), y: 1 / the mean of the diameters above it, 1 / mm (they go as Marshall-Palmer), zw: unused
         glm::vec4 rain;
         // x: random seed of the step, y: the most landings tried on a glass in the step, z: the glass the passes for a single glass
-        // work on (the baking of the mask of the wipers)
+        // work on (the baking of the mask of the wipers, the laying of the snow), w: the step (the band of rows the laying of the
+        // snow lays anew)
         glm::uvec4 counts;
         // every glass: x the landings tried in the step, y 1 / the most metres squared of the glass a unit of its uv holds (the
         // landings tried at the densest place are all taken), z 1 when it's simulated, w the size of its drops (the param

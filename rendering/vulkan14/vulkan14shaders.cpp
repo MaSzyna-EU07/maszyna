@@ -938,6 +938,8 @@ std::string binding_preamble(bool const Raytracing)
 	define("WATER_TRAIL", gl::WATER_TRAIL);
 	define("WATER_MAP", gl::WATER_MAP);
 	define("WATER_GROUP_SIZE", gl::WATER_GROUP_SIZE);
+	define("WATER_LAYER", gl::WATER_LAYER);
+	define("WATER_LAYER_BANDS", gl::WATER_LAYER_BANDS);
 	define("CAB_PROBE_SH_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_SIZE));
 	define("CAB_PROBE_SH_GROUP_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_GROUP_SIZE));
 	return preamble;
