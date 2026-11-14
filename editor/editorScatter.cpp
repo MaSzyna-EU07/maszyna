@@ -61,7 +61,7 @@ std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settin
 	// it's given up for the spacing
 	int constexpr most{2000};
 	auto const wanted{std::min(most, static_cast<int>(std::lround(std::max(0.0, Settings.density) * std::numbers::pi * radius * radius / 100.0)))};
-	std::uniform_real_distribution<double> unit{0.0, 1.0};
+	std::uniform_real_distribution unit{0.0, 1.0};
 	std::vector<glm::dvec2> made;
 	int constexpr tries_each{30};
 	auto attempts{wanted * tries_each};
