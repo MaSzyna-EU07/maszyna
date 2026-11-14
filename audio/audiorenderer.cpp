@@ -94,18 +94,16 @@ openal_source::update( double const Deltatime, glm::vec3 const &Listenervelocity
             --sound_index;
             sound_change = true;
             // potentially adjust starting point of the last buffer (to reduce chance of reverb effect with multiple, looping copies playing)
-            if( controller->start() > 0.f && sounds.size() == 1 ) {
-                ALint bufferid;
-                ::alGetSourcei(
-                    id,
-                    AL_BUFFER,
-                    &bufferid );
-                ALint buffersize;
-                ::alGetBufferi( bufferid, AL_SIZE, &buffersize );
+            if( controller->start() > 0.f && sounds.size() == 1 && last_buffer != audio::null_resource ) {
+                // NOTE: the buffer is the one queued last, not the one the source reports: for a source with queued
+                // buffers AL_BUFFER is 0 in OpenAL Soft 1.18 (the one the game comes with), and in the newer ones
+                // once the source has stopped. alGetBufferi() on buffer 0 fails with AL_INVALID_NAME
+                ALint buffersize { 0 };
+                ::alGetBufferi( last_buffer, AL_SIZE, &buffersize );
                 ::alSourcei(
                     id,
                     AL_SAMPLE_OFFSET,
-                    static_cast<ALint>( controller->start() * ( buffersize / sizeof( std::int16_t ) ) ) );
+                    audio::start_sample( controller->start(), buffersize ) );
             }
         }
 

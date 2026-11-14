@@ -19,6 +19,7 @@ openal_source::bind( sound_source *Controller, uint32_sequence Sounds, Iterator_
 
     if( id != audio::null_resource && !buffers.empty()) {
         ::alSourceQueueBuffers( id, static_cast<ALsizei>( buffers.size() ), buffers.data() );
+        last_buffer = buffers.back();
         ::alSourceRewind( id );
         // sound controller can potentially request playback to start from certain buffer point
         // for multipart sounds the offset is applied only to last piece during playback
@@ -29,12 +30,12 @@ openal_source::bind( sound_source *Controller, uint32_sequence Sounds, Iterator_
         }
         else {
             // move playback start to specified point in 0-1 range
-            ALint buffersize;
+            ALint buffersize { 0 };
             ::alGetBufferi( buffers.front(), AL_SIZE, &buffersize );
             ::alSourcei(
                 id,
                 AL_SAMPLE_OFFSET,
-                static_cast<ALint>( controller->start() * ( buffersize / sizeof( std::int16_t ) ) ) );
+                audio::start_sample( controller->start(), buffersize ) );
         }
     }
 

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "audio/audio.h"
+#include "audio/startsample.h"
 #include "model/ResourceManager.h"
 #include "application/uitranscripts.h"
 
@@ -66,6 +67,7 @@ struct openal_source {
     using buffer_sequence = std::vector<audio::buffer_handle>;
 
     ALuint id { audio::null_resource };
+    ALuint last_buffer { audio::null_resource }; // the buffer queued last, the one left playing once those before it are done
     sound_source *controller { nullptr };
     uint32_sequence sounds;
     int sound_index { 0 };
