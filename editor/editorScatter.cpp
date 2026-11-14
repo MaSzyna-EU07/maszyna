@@ -48,7 +48,7 @@ std::vector<glm::dvec2> grid_points(glm::dvec2 const &Centre, double const Radiu
 
 } // namespace
 
-std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settings, std::vector<glm::dvec2> const &Taken, std::mt19937 &Random)
+std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settings, std::vector<glm::dvec2> const &Taken, std::mt19937 &Random) // NOSONAR(cpp:S2245) placement of scenery models, not security
 {
 	auto const radius{std::max(0.1, Settings.radius)};
 	auto const spacing{std::max(0.05, Settings.spacing)};
@@ -89,7 +89,7 @@ double dab_step(dab_settings const &Settings)
 	return std::max({0.05, Settings.spacing, 0.5 * Settings.radius});
 }
 
-look pick(look_settings const &Settings, std::mt19937 &Random)
+look pick(look_settings const &Settings, std::mt19937 &Random) // NOSONAR(cpp:S2245) placement of scenery models, not security
 {
 	look out;
 	auto const spread = [&](float const Range) {

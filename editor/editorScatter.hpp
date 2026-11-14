@@ -28,7 +28,7 @@ struct dab_settings
 
 // the places of the models of one dab of the brush round Centre (x, z): inside the circle, Spacing from each other and from those
 // already Taken (by the stroke so far) at least
-std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settings, std::vector<glm::dvec2> const &Taken, std::mt19937 &Random);
+std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settings, std::vector<glm::dvec2> const &Taken, std::mt19937 &Random); // NOSONAR(cpp:S2245) placement of scenery models, not security
 
 // the distance the cursor goes before the next dab: the circles of two dabs overlap by half
 double dab_step(dab_settings const &Settings);
@@ -58,6 +58,6 @@ struct look
 };
 
 // the turn and the scale of one model
-look pick(look_settings const &Settings, std::mt19937 &Random);
+look pick(look_settings const &Settings, std::mt19937 &Random); // NOSONAR(cpp:S2245) placement of scenery models, not security
 
 } // namespace scatter
