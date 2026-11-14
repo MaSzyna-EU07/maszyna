@@ -3,7 +3,8 @@
 // the snow on the windscreens (water_sim.glsl, water.glsl, snow_sprites.glsl): the snow of a glass of the snow laid together
 // from the sprites of its atlas into its layer, which mat_snow_windscreen.frag reads (the glass only reads it: laying the nine
 // grids of the lumps at every pixel of the glass in every frame cost as much as the rest of the frame). a thread per texel of
-// the layer, the glass is water_counts.z. the snow under a lump changes slowly, so a band of every WATER_LAYER_BANDS-th row is
+// the layer (over the rectangle of the uv the glass takes, ~1 mm a texel), the glass is water_counts.z. the snow under a lump
+// changes slowly, so a band of every WATER_LAYER_BANDS-th row is
 // laid anew in a step (water_counts.w the step), and at once wherever a blade went over the glass in the step
 
 #include "common.glsl"
@@ -42,13 +43,19 @@ void main()
 {
 	uint slot = water_counts.z;
 	uint texel = gl_GlobalInvocationID.x;
-	if ((slot >= uint(WATER_SLOTS)) || (texel >= uint(WATER_LAYER * WATER_LAYER)) || (water_snow_slots[slot] < 0.5))
+	if ((slot >= uint(WATER_SLOTS)) || (texel >= uint(WATER_LAYER_TEXELS)) || (water_snow_slots[slot] < 0.5))
 		return;
 	uint map;
 	if (false == water_snow_map(slot, map))
 		return;
-	ivec2 at = ivec2(int(texel % uint(WATER_LAYER)), int(texel / uint(WATER_LAYER)));
-	vec2 uv = (vec2(at) + 0.5) / float(WATER_LAYER);
+	// the layer over the rectangle of the uv the glass takes
+	vec4 rect;
+	uvec2 size;
+	water_layer_rect(slot, rect, size);
+	if ((size.x == 0u) || (texel >= size.x * size.y))
+		return;
+	ivec2 at = ivec2(int(texel % size.x), int(texel / size.x));
+	vec2 uv = rect.xy + (vec2(at) + 0.5) / vec2(size) * rect.zw;
 	ivec2 mapAt = clamp(ivec2(floor(uv * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
 	uint mapTexel = slot * uint(WATER_MAP * WATER_MAP) + uint(mapAt.y * WATER_MAP + mapAt.x);
 	uint axis = mapTexel * 2u;
@@ -63,8 +70,8 @@ void main()
 	snMap = map;
 	snBig = (textureSize(raindropsatlas, 0).x >= 2048);
 	vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
-	snow_layer_s s = snCompose(uv, span, 1.0 / float(WATER_LAYER));
-	uint index = water_layer_base(slot) + 3u * texel;
+	snow_layer_s s = snCompose(uv, span, max(rect.z / float(size.x), rect.w / float(size.y)));
+	uint index = water_layer_base() + 3u * texel;
 	water_cells[index] = packUnorm4x8(vec4(s.rgb, s.a));
 	water_cells[index + 1u] = packSnorm4x8(vec4(s.n, s.tr * 2.0 - 1.0));
 	water_cells[index + 2u] = packSnorm4x8(vec4(s.bend, s.bendA * 2.0 - 1.0, s.haze * 2.0 - 1.0));

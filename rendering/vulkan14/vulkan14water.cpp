@@ -150,6 +150,12 @@ void windscreen_water::gpu_setup(std::size_t const Slot, std::vector<glm::vec4> 
 			commands->fill_buffer(m_storage->handle(), static_cast<VkDeviceSize>(parts[part].first), static_cast<VkDeviceSize>(parts[part].second), 0);
 		}
 	}
+	// where the layer of its snow lies, a word at a time
+	auto const info{layer_info(Slot, Axes)};
+	for (std::size_t word = 0; word < info.size(); ++word)
+	{
+		commands->fill_buffer(m_storage->handle(), static_cast<VkDeviceSize>(gl::WATER_LAYER_INFO_OFFSET + gl::WATER_LAYER_INFO_SIZE * Slot + 4 * word), 4, info[word]);
+	}
 	// the axes of the map copied after that, from a staging buffer kept until the gpu is done with the frame
 	auto const size{std::min<VkDeviceSize>(static_cast<VkDeviceSize>(parts[1].second), static_cast<VkDeviceSize>(Axes.size() * sizeof(glm::vec4)))};
 	auto staging{std::make_shared<buffer>()};
@@ -287,7 +293,7 @@ bool windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle con
 	m_kernels[pass::snowlayer].run(commands,
 	                               {buffer_descriptor(m_storage->handle(), 0, VK_WHOLE_SIZE), buffer_descriptor(slice.buffer, slice.offset, sizeof(gl::water_ubs)),
 	                                image_descriptor(atlassampler, atlasview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), image_descriptor(normalsampler, normalview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)},
-	                               groups(static_cast<std::size_t>(gl::WATER_LAYER) * gl::WATER_LAYER));
+	                               groups(gl::WATER_LAYER_TEXELS));
 	compute_barrier(commands);
 	return true;
 }

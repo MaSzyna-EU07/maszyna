@@ -106,6 +106,16 @@ class windscreen_water
 	// the snow of the glasses of the snow Block says are simulated laid together, after the step
 	void lay_snow(gl::water_ubs const &Block);
 
+  protected:
+	// where the layer of the snow of a glass lies (water.glsl): the rectangle of the uv its map holds the glass in (the corner and
+	// the size, the bits of floats) and the texels of the layer across and down, as the glass is wide and high in metres (0 when
+	// the map holds no glass or the glass has no layer)
+	// the eight uint the renderer puts at gl::WATER_LAYER_INFO_OFFSET for the glass of Slot (set up with its map Axes): the cab has
+	// one layer, for its first glass of the snow, the others get none (zeros)
+	std::array<std::uint32_t, 8> layer_info(std::size_t Slot, std::vector<glm::vec4> const &Axes);
+
+  private:
+
 	host m_host;
 	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
 	TDynamicObject const *m_vehicle{nullptr};
@@ -113,6 +123,7 @@ class windscreen_water
 	std::vector<std::pair<material_handle, int>> m_kinds; // the materials of the cab with a mask of the wipers, what kind of glass they were
 	std::array<glass, gl::WATER_SLOTS> m_glasses{};
 	std::size_t m_glasscount{0};
+	int m_layerslot{-1}; // the glass with the layer of the snow, -1 none
 	glm::vec4 m_bladesbefore{-1.f};
 	double m_time{0.0}; // seconds the simulation runs
 	std::uint32_t m_step{0};

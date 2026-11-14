@@ -72,32 +72,56 @@ vec4 water_snow_texel(uint slot, uint map, ivec2 texel)
 	return vec4(unpackHalf2x16(water_cells[index]), unpackHalf2x16(water_cells[index + 1u]));
 }
 
-// the snow of a glass laid together (water_snowlayer.comp, read by mat_snow_windscreen.frag): WATER_LAYER x WATER_LAYER texels
-// over its uv after the maps of the snow, three uint a texel: the colour (premultiplied, linear) and the cover; the normal of the
-// sprites (tangent space, premultiplied) and their translucency; the bend of the picture behind (weighted), its weight, and the
-// haze of the thin snow
-uint water_layer_base(uint slot)
+// the snow of a glass laid together (water_snowlayer.comp, read by mat_snow_windscreen.frag), after the maps of the snow: eight
+// uint of every glass (the rectangle of its uv the layer takes: the corner and the size, floats; the texels of the layer across
+// and down, 0 when the glass has no layer: the cab has one, for its first glass of the snow), then the layer, WATER_LAYER_TEXELS
+// texels of three uint each: the colour
+// (premultiplied, linear) and the cover; the normal of the sprites (tangent space, premultiplied) and their translucency; the bend
+// of the picture behind (weighted), its weight, and the haze of the thin snow
+void water_layer_rect(uint slot, out vec4 rect, out uvec2 size)
 {
-	return water_snow_base(0u, 2u) + slot * uint(WATER_LAYER * WATER_LAYER * 3);
+	uint info = water_snow_base(0u, 2u) + slot * 8u;
+	rect = uintBitsToFloat(uvec4(water_cells[info], water_cells[info + 1u], water_cells[info + 2u], water_cells[info + 3u]));
+	size = uvec2(water_cells[info + 4u], water_cells[info + 5u]);
+}
+
+uint water_layer_base()
+{
+	return water_snow_base(0u, 2u) + uint(WATER_SLOTS) * 8u;
+}
+
+// whether the glass has the layer of the snow
+bool water_layer_of(uint slot)
+{
+	vec4 rect;
+	uvec2 size;
+	water_layer_rect(slot, rect, size);
+	return (size.x > 0u) && (size.y > 0u) && all(greaterThan(rect.zw, vec2(0.0)));
 }
 
 // the laid snow of a glass at UV, filtered between the texels: Colour (rgb, cover), Normal (xyz, translucency), Bend (xy, its
-// weight, the haze)
+// weight, the haze); nothing outside the layer
 void water_layer_at(uint slot, vec2 uv, out vec4 colour, out vec4 normal, out vec4 bend)
 {
-	vec2 p = uv * float(WATER_LAYER) - 0.5;
-	ivec2 i = ivec2(floor(p));
-	vec2 f = p - vec2(i);
 	colour = vec4(0.0);
 	normal = vec4(0.0);
 	bend = vec4(0.0);
+	vec4 rect;
+	uvec2 size;
+	water_layer_rect(slot, rect, size);
+	if ((size.x == 0u) || (size.y == 0u) || any(lessThanEqual(rect.zw, vec2(0.0))))
+		return;
+	vec2 p = (uv - rect.xy) / rect.zw * vec2(size) - 0.5;
+	ivec2 i = ivec2(floor(p));
+	vec2 f = p - vec2(i);
+	uint base = water_layer_base();
 	for (int k = 0; k < 4; ++k)
 	{
 		ivec2 t = i + ivec2(k & 1, k >> 1);
-		if (any(lessThan(t, ivec2(0))) || any(greaterThanEqual(t, ivec2(WATER_LAYER))))
+		if (any(lessThan(t, ivec2(0))) || any(greaterThanEqual(t, ivec2(size))))
 			continue;
 		float w = ((k & 1) == 1 ? f.x : 1.0 - f.x) * ((k >> 1) == 1 ? f.y : 1.0 - f.y);
-		uint index = water_layer_base(slot) + 3u * uint(t.y * WATER_LAYER + t.x);
+		uint index = base + 3u * (uint(t.y) * size.x + uint(t.x));
 		colour += unpackUnorm4x8(water_cells[index]) * w;
 		normal += unpackSnorm4x8(water_cells[index + 1u]) * w;
 		bend += unpackSnorm4x8(water_cells[index + 2u]) * w;
