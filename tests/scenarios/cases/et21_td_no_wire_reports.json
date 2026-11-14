@@ -1,0 +1,27 @@
+{
+  "description": "ET21 with an AI driver on a track of td.scn's own with no overhead wire: it raises the pantographs, finds no wire and can't start; the driver tells of it in the log, once, and keeps waiting for the voltage (eu07/maszyna#421). The test ends on the standstill.",
+  "base_scenery": "td.scn",
+  "fragment": "td_no_wire.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\et21_v2 ET21-367 3e2 0 headdriver 0 0 enddynamic"
+  },
+  "test_config": [
+    "test.standstill 300"
+  ],
+  "expect": "standstill",
+  "timeout": 900,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "AI \\[autotest_et21_td_no_wire_reports\\]: can't start, no overhead wire above its raised pantographs \\(at -?[\\d.]+, -?[\\d.]+, -?[\\d.]+\\)"
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "no voltage in the overhead wire at its raised pantographs"
+    },
+    {
+      "type": "distance",
+      "max": 1
+    }
+  ]
+}

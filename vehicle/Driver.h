@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
+#include "vehicle/aipower.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -676,6 +677,9 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    // tells in the log, once, of standing with the pantographs up and no voltage (eu07/maszyna#421)
+    void report_power_stall( bool const Poweravailable, double const Pantographpressure );
+    ai_power::reporter m_powerstall; // the reports of report_power_stall()
     void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );
