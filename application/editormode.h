@@ -839,6 +839,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool restart_editor(std::string const &Scenery);
 	bool m_openscenery_asked{false};
 	bool m_opened_at_track{false};
+	// the names of the tracks with letters outside of ASCII given in plain ASCII, once the scenery is opened for editing
+	void ascii_track_names();
 	bool m_turntable_included{false};
 	bool turntable_controls(std::vector<std::string> &Rootstatements);
 	bool m_nose_included{false};

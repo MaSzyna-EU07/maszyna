@@ -14240,3 +14240,18 @@ msgstr "Kursor rysowany w obrazie (stream)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
+
+msgid "The names of %zu tracks had characters outside of ASCII (Polish letters and the like), they were changed to ASCII:"
+msgstr "UWAGA: nazwy %zu torów miały znaki spoza ASCII (polskie litery itp.), zamieniono je na ASCII:"
+
+msgid "... and %zu more, the whole list is in the log"
+msgstr "... i %zu kolejnych, pełna lista jest w logu"
+
+msgid "The events and the rest still find the tracks by their old names. Save the scenery to write the new names into its files."
+msgstr "Eventy i reszta dalej znajdują tory po starych nazwach. Zapisz scenerię, żeby nowe nazwy trafiły do plików."
+
+msgid "%d of them are in files the editor doesn't write; there they stay as they were."
+msgstr "%d z nich jest w plikach, których edytor nie zapisuje; tam zostają po staremu."
+
+msgid "Track names changed to ASCII: %zu"
+msgstr "Nazwy torów zamienione na ASCII: %zu"

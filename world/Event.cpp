@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "utilities/asciiname.h"
 #include "widgets/map_objects.h"
 
 void
@@ -2434,6 +2435,9 @@ event_manager::insert( basic_event *Event ) {
     if( lookup == m_eventmap.end() ) {
         // if it's first event with such name, it's potential candidate for the execution queue
         m_eventmap.emplace( Event->m_name, m_events.size() - 1 );
+        if( false == ascii_name::plain( Event->m_name ) ) {
+            m_asciimap.emplace( ascii_name::fold( Event->m_name ), m_events.size() - 1 );
+        }
         if( Event->m_ignored != true
          && contains(Event->m_name, "onstart") ) {
             // event uruchamiany automatycznie po starcie
@@ -2470,6 +2474,17 @@ basic_event *
 event_manager::FindEvent( std::string const &Name )
 {
 	return FindEventById(GetEventId(Name));
+}
+
+basic_event *
+event_manager::FindEventAscii( std::string const &Name ) {
+
+    auto *found { FindEvent( Name ) };
+    if( found != nullptr || Name.empty() ) {
+        return found;
+    }
+    auto const lookup { m_asciimap.find( ascii_name::fold( Name ) ) };
+    return lookup != m_asciimap.end() ? FindEventById( static_cast<uint32_t>( lookup->second ) ) : nullptr;
 }
 
 // legacy method, inserts specified event in the event query

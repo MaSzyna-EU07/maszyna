@@ -178,10 +178,13 @@ class editor_ui : public ui_layer
 	void set_notice(std::string const &Notice);
 	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back
 	void drop_refusal() { m_refusal.clear(); }
+	// a warning in the middle of the screen, for the given time counted from when it's first drawn
+	void set_warning(std::string const &Warning, double const Seconds);
 
   private:
 	// methods
 	void render_refusal();
+	void render_warning();
 	void render_mode_options(nodebank_panel::edit_mode const Mode);
 	// windows of the editor drawn by the user interface itself
 	void render_tool_options();
@@ -230,6 +233,9 @@ class editor_ui : public ui_layer
 	std::string m_refusal;
 	double m_refusaltime{-100.0};
 	bool m_refusalnotice{false}; // a warning rather than a refusal
+	std::string m_warning;
+	double m_warningtime{-1.0}; // when it was first drawn; below 0 not yet
+	double m_warningseconds{0.0};
 	double m_statustime{-100.0};
 	int m_savequeued{0}; // the frame of a save asked for from a field being typed in
 	bool m_tooloptionsopen{true};

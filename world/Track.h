@@ -520,6 +520,10 @@ class path_table : public basic_table<TTrack> {
 
 public:
     ~path_table();
+    // locates the path with the given name. a name with letters outside of ASCII finds the path under the name
+    // without them as well: the editor gives the paths such names, and the events and the rest refer to them as written
+    TTrack *
+        find( std::string const &Name ) const;
     // legacy method, initializes tracks after deserialization from scenario file
     void
         InitTracks();

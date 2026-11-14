@@ -7005,6 +7005,7 @@ void editor_mode::enter()
     if (Global.editor_session && false == m_opened_at_track)
     {
         m_opened_at_track = true;
+        ascii_track_names();
         auto const saved{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$c")};
         if (false == saved.empty())
         {
