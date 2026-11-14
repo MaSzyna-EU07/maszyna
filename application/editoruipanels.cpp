@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSettings.hpp"
 #include "imgui/imgui_internal.h"
 
+#include <array>
 #include <filesystem>
 #include <set>
 
@@ -589,7 +590,42 @@ std::string *brush_object_list::GetRandomObject()
 
 void brush_object_list::render_options(nodebank_panel &Bank)
 {
-	ImGui::SliderFloat(STR_C("Spacing"), &spacing, 0.1f, 20.0f, "%.1f m");
+	// one model at a click, or many in the circle while the button is held
+	auto many{way == kind::multi};
+	if (ImGui::RadioButton(STR_C("Single model##brush"), false == many))
+		way = kind::single;
+	ImGui::SameLine();
+	if (ImGui::RadioButton(STR_C("Many models##brush"), many))
+		way = kind::multi;
+	if (way == kind::single)
+		ImGui::TextDisabled("%s", STR_C("LMB: one model at the cross on the ground"));
+	else
+	{
+		ImGui::TextDisabled("%s", STR_C("Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"));
+		auto radius{static_cast<float>(dab.radius)};
+		if (ImGui::SliderFloat(STR_C("Radius##brush"), &radius, 0.5f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
+			dab.radius = radius;
+		int fillmode{static_cast<int>(dab.mode)};
+		std::array<char const *, 3> const fills{STR_C("Random, anywhere in the circle"), STR_C("Uniform (grid)"), STR_C("Feathered to the edge")};
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::Combo(STR_C("Fill##brush"), &fillmode, fills.data(), static_cast<int>(fills.size())))
+			dab.mode = static_cast<scatter::fill>(fillmode);
+		auto spacing{static_cast<float>(dab.spacing)};
+		if (ImGui::SliderFloat(STR_C("Spacing##brush"), &spacing, 0.1f, 50.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
+			dab.spacing = spacing;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", dab.mode == scatter::fill::uniform ? STR_C("The step of the grid the models stand on") : STR_C("The least distance between two models"));
+		if (dab.mode != scatter::fill::uniform)
+		{
+			auto density{static_cast<float>(dab.density)};
+			if (ImGui::SliderFloat(STR_C("Density##brush"), &density, 0.1f, 200.0f, STR_C("%.1f per 100 m²"), ImGuiSliderFlags_Logarithmic))
+				dab.density = density;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", STR_C("How many models a 100 m² the circle gets, as many as the spacing lets in"));
+		}
+	}
+	render_look();
+	ImGui::Separator();
 	ImGui::Checkbox(STR_C("Random model from set"), &useRandom);
 	if (false == useRandom)
 	{
@@ -605,6 +641,44 @@ void brush_object_list::render_options(nodebank_panel &Bank)
 	{
 		auto const count{Bank.set_entries(source).size()};
 		ImGui::TextDisabled(STR_C("%zu templates in set%s"), count, count == 0 ? STR_C(", the node bank selection is used") : "");
+	}
+}
+
+void brush_object_list::render_look()
+{
+	ImGui::SeparatorText(STR_C("Turn##brush"));
+	auto turn_random{look.turn == scatter::vary::random};
+	if (ImGui::RadioButton(STR_C("Fixed##brushturn"), false == turn_random))
+		look.turn = scatter::vary::fixed;
+	ImGui::SameLine();
+	if (ImGui::RadioButton(STR_C("Random##brushturn"), turn_random))
+		look.turn = scatter::vary::random;
+	if (look.turn == scatter::vary::fixed)
+		ImGui::DragFloat3(STR_C("Angles x y z##brush"), &look.angles.x, 0.5f, -180.0f, 180.0f, "%.1f°");
+	else
+	{
+		ImGui::DragFloat3(STR_C("Each way x y z##brushturn"), &look.angle_range.x, 0.5f, 0.0f, 180.0f, "±%.1f°");
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Each model turned by a random angle up to this much each way: x and z tilt it, y turns it round (180: any way)"));
+	}
+	ImGui::SeparatorText(STR_C("Scale##brush"));
+	auto size_random{look.size == scatter::vary::random};
+	if (ImGui::RadioButton(STR_C("Fixed##brushscale"), false == size_random))
+		look.size = scatter::vary::fixed;
+	ImGui::SameLine();
+	if (ImGui::RadioButton(STR_C("Random##brushscale"), size_random))
+		look.size = scatter::vary::random;
+	if (look.size == scatter::vary::fixed)
+		ImGui::DragFloat3(STR_C("Percent x y z##brush"), &look.scale.x, 0.5f, 1.0f, 1000.0f, "%.0f%%");
+	else
+	{
+		ImGui::Checkbox(STR_C("The same on every axis##brush"), &look.same_scale);
+		if (look.same_scale)
+			ImGui::DragFloat(STR_C("Each way##brushscale"), &look.scale_range.x, 0.5f, 0.0f, 99.0f, "±%.0f%%");
+		else
+			ImGui::DragFloat3(STR_C("Each way x y z##brushscale"), &look.scale_range.x, 0.5f, 0.0f, 99.0f, "±%.0f%%");
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Each model scaled by a random share up to this much each way from its own size"));
 	}
 }
 

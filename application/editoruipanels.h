@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorPreviews.hpp"
+#include "editor/editorScatter.hpp"
 
 #include <functional>
 /*
@@ -111,12 +112,24 @@ class brush_object_list
   public:
 	void render_options(nodebank_panel &Bank);
 
+	// one model where clicked, or many in the circle of the brush while the button is held
+	enum class kind
+	{
+		single,
+		multi,
+	};
+
 	// class use
 	std::vector<std::string> Objects; // manual list, used when source is set to manual
 	std::string *GetRandomObject();
 	bool useRandom = {false};
 	model_set_ref source;
-	float spacing{1.0f};
+	kind way{kind::multi};
+	scatter::dab_settings dab; // the circle of the many and how they fill it
+	scatter::look_settings look; // the turn and the scale of each model
+
+  private:
+	void render_look();
 };
 
 class nodebank_panel : public ui_panel

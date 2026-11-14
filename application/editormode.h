@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <random>
+
 #include "application/applicationmode.h"
 #include "application/editoruipanels.h"
 #include "input/editormouseinput.h"
@@ -210,6 +212,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void restore_kilometrage(EditorSnapshot &Snapshot);
 	bool m_history_busy{false}; // undo or redo under way
 	void handle_brush_mouse_hold(int Action, int Button);
+	// the brush of models (editormodebrush.cpp): the press starts a stroke of many, or puts one model; the point on the ground under
+	// the cursor, the height of the ground near a height, a model of the template the brush paints, turned and scaled as it says
+	void brush_press();
+	void end_brush_stroke();
+	void draw_brush_cursor();
+	bool brush_ground(glm::dvec3 &Point);
+	double brush_height(glm::dvec2 const &Point, double Around);
+	TAnimModel *place_brush_model(glm::dvec3 const &At);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
 	state_backup m_statebackup; // helper, cached variables to be restored on mode exit
@@ -238,8 +248,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<std::pair<TAnimModel *, int>> m_retired; // models replaced after changes of includes, with the frames left until they're destroyed
 	bool m_takesnapshot{true}; // helper, hints whether snapshot of selected node(s) should be taken before modification
 	bool m_dragging = false;
-	glm::dvec3 oldPos; // world position of the last brush placement
-	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first placement ignores spacing
+	glm::dvec3 oldPos; // world position of the last dab of the brush
+	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first dab ignores the step
+	bool m_brush_stroke{false}; // a stroke of the brush of many models is on: the last step of the history takes its models
+	std::vector<glm::dvec2> m_brush_taken; // the places the stroke put models on (x, z)
+	std::mt19937 m_brush_random{std::random_device{}()}; // NOSONAR(cpp:S2245) where the brush puts models, not security
 	bool m_draw_cursor{false}; // the cursor drawn into the picture (View menu), on only while the editor is
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;

@@ -45,7 +45,8 @@ class editor_ui : public ui_layer
 	const std::string *get_active_node_template(bool bypassRandom = false);
 	nodebank_panel::edit_mode mode();
 	void set_mode(nodebank_panel::edit_mode const Mode);
-	float getSpacing();
+	// the settings of the brush of models
+	brush_object_list const &brush() const;
 	// node bank and model set access (set selection widgets, set contents)
 	nodebank_panel &nodebank()
 	{

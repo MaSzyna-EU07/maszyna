@@ -14240,3 +14240,93 @@ msgstr "Kursor rysowany w obrazie (stream)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
+
+msgid "Single model##brush"
+msgstr "Pojedynczy model##brush"
+
+msgid "Many models##brush"
+msgstr "Wiele modeli##brush"
+
+msgid "LMB: one model at the cross on the ground"
+msgstr "LPM: jeden model w miejscu krzyżyka na gruncie"
+
+msgid "Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"
+msgstr "Przytrzymaj LPM: modele w okręgu wzdłuż drogi kursora; jedno Ctrl+Z cofa całe pociągnięcie"
+
+msgid "Radius##brush"
+msgstr "Promień##brush"
+
+msgid "Random, anywhere in the circle"
+msgstr "Losowe"
+
+msgid "Uniform (grid)"
+msgstr "Równomierne (siatka)"
+
+msgid "Feathered to the edge"
+msgstr "Rozmyte do krawędzi"
+
+msgid "Fill##brush"
+msgstr "Wypełnienie##brush"
+
+msgid "Spacing##brush"
+msgstr "Odstęp##brush"
+
+msgid "The step of the grid the models stand on"
+msgstr "Krok siatki, na której stoją modele"
+
+msgid "The least distance between two models"
+msgstr "Najmniejsza odległość między dwoma modelami"
+
+msgid "Density##brush"
+msgstr "Gęstość##brush"
+
+msgid "%.1f per 100 m²"
+msgstr "%.1f na 100 m²"
+
+msgid "How many models a 100 m² the circle gets, as many as the spacing lets in"
+msgstr "Ile modeli na 100 m² dostaje okrąg, o ile pozwala na to odstęp"
+
+msgid "Turn##brush"
+msgstr "Obrót##brush"
+
+msgid "Fixed##brushturn"
+msgstr "Stały##brushturn"
+
+msgid "Random##brushturn"
+msgstr "Losowy##brushturn"
+
+msgid "Angles x y z##brush"
+msgstr "Kąty x y z##brush"
+
+msgid "Each way x y z##brushturn"
+msgstr "W obie strony x y z##brushturn"
+
+msgid "Each model turned by a random angle up to this much each way: x and z tilt it, y turns it round (180: any way)"
+msgstr "Każdy model obrócony o losowy kąt do tylu stopni w obie strony: x i z go przechylają, y obraca wokół pionu (180: dowolnie)"
+
+msgid "Scale##brush"
+msgstr "Skala##brush"
+
+msgid "Fixed##brushscale"
+msgstr "Stała##brushscale"
+
+msgid "Random##brushscale"
+msgstr "Losowa##brushscale"
+
+msgid "Percent x y z##brush"
+msgstr "Procent x y z##brush"
+
+msgid "The same on every axis##brush"
+msgstr "Jednakowa na wszystkich osiach##brush"
+
+msgid "Each way##brushscale"
+msgstr "W obie strony##brushscale"
+
+msgid "Each way x y z##brushscale"
+msgstr "W obie strony x y z##brushscale"
+
+msgid "Each model scaled by a random share up to this much each way from its own size"
+msgstr "Każdy model przeskalowany losowo o tyle procent w obie strony od własnego rozmiaru"
+
+msgid "Brush: %zu models put; Ctrl+Z takes the whole stroke back"
+msgstr "Pędzel: postawiono %zu modeli; Ctrl+Z cofa całe pociągnięcie"

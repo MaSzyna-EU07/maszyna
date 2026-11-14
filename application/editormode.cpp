@@ -795,51 +795,6 @@ void editor_mode::snap_to_ground(scene::basic_node *node, bool const Alone, bool
     m_editor.translate(node, target, true); // true == apply the computed Y (free vertical move)
 }
 
-void editor_mode::handle_brush_mouse_hold(int Action, int Button)
-{
-    auto const mode = ui()->mode();
-    auto const rotation_mode = ui()->rot_mode();
-    auto const fixed_rotation_value = ui()->rot_val();
-
-    if(mode != nodebank_panel::BRUSH)
-        return;
-    
-    GfxRenderer->Pick_Node_Callback(
-        [this, mode, rotation_mode, fixed_rotation_value, Action, Button](scene::basic_node * /*node*/) {
-            // picks are resolved a few frames later; drop the ones queued before the button went up,
-            // or for a press that turned out to belong to the UI
-            if (!mouseHold || !viewport_click())
-                return;
-
-            // spacing is measured in world space: the mouse offset is camera-relative and the camera may move mid-stroke
-            glm::dvec3 const newPos = Camera.Pos + clamp_mouse_offset_to_max(GfxRenderer->Mouse_Position());
-            if (m_brush_has_last && glm::distance(newPos, oldPos) < ui()->getSpacing())
-                return;
-
-            // picked only when a placement is due, so a random pick from a set isn't drawn every tick
-            const std::string *src = ui()->get_active_node_template();
-            if (!src || src->starts_with(editor_includes::directive_mark)) // scenery templates are placed one at a time
-                return;
-
-            // NOTE: no name for what the brush puts in, as with thousands of nodes the names take their share of the time
-            // the scenery needs to load. a node which needs one, to be referred to by an event, gets it in the node properties
-            TAnimModel *cloned = simulation::State.create_model(*src, std::string{}, placement_on_ground(newPos));
-            oldPos = newPos;
-            m_brush_has_last = true;
-            if (!cloned)
-                return;
-
-            apply_rotation_for_new_node(cloned, rotation_mode, fixed_rotation_value);
-
-            std::string as_text;
-            cloned->export_as_text(as_text);
-            push_snapshot(cloned, EditorSnapshot::Action::Add, as_text);
-
-            m_node = cloned;
-            ui()->set_node(m_node);
-        });
-}
-
 void editor_mode::add_to_hierarchy(scene::basic_node *node)
 {
     if (!node) return;
@@ -1489,6 +1444,11 @@ bool editor_mode::update()
             if(ui()->mode() == nodebank_panel::BRUSH)
                 handle_brush_mouse_hold(GLFW_REPEAT, GLFW_MOUSE_BUTTON_LEFT);
         }
+        else
+        {
+            // the button let go: the stroke's models make one step of the history
+            end_brush_stroke();
+        }
 
         // decelerate camera velocity with thresholding
         Camera.Velocity *= 0.65f;
@@ -1703,6 +1663,9 @@ bool editor_mode::update()
     // --- area fill: outline overlay while the mode is active (its settings are drawn in the node bank window) ---
     if (ui()->mode() == nodebank_panel::FILL)
         draw_area_fill_outline();
+    // --- the brush of models: the cross on the ground under the cursor, the circle of the brush of many ---
+    if (ui()->mode() == nodebank_panel::BRUSH && false == ImGui::GetIO().WantCaptureMouse)
+        draw_brush_cursor();
     background->PopClipRect();
     draw_ortho_compass();
 
@@ -7676,6 +7639,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
         {
             mouseHold = true;
             m_brush_has_last = false; // every brush stroke starts with a placement
+
+            // the brush puts models, it doesn't select
+            if (mode == nodebank_panel::BRUSH)
+            {
+                brush_press();
+                m_input.mouse.button(Button, Action);
+                return;
+            }
 
             // in area fill mode the left button only adds outline points, it doesn't touch the selection
             if (mode == nodebank_panel::FILL)
