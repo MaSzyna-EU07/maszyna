@@ -459,9 +459,12 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
 char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
-                                " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
+                                " ^^L$A|S^CS<--RZo+,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
+
+// one plain character for each of the upper half of the code page, whatever the compiler makes of the literals
+static_assert(sizeof(charsetconversiontable) == 0x80 + 1);
 
 // wycięcie liter z ogonkami
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces)

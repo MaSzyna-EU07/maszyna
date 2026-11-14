@@ -588,7 +588,8 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
 	# /wd4996: disable "deprecation" warnings
 	# /wd4244: disable warnings for conversion with possible loss of data
 	# /wd5033: disable because it is all over Python headers
-	target_compile_options(eu07_settings INTERFACE /wd4996 /wd4244 /wd5033)
+	# the sources are UTF-8, and so are the texts the game shows: without it the literals of the files with a BOM came out in the code page of the build machine
+	target_compile_options(eu07_settings INTERFACE /utf-8 /wd4996 /wd4244 /wd5033)
 	set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/LARGEADDRESSAWARE")
 endif()
 
@@ -852,8 +853,10 @@ if(GENERATE_PDB)
         add_link_options(/DEBUG /MAP)
 
         # Ensure that the PCH is built with the correct runtime library for each configuration
-        set_target_properties(${PROJECT_NAME} eu07_core PROPERTIES
-            COMPILE_OPTIONS "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")
+        # added to the options the targets have, not put in their place: setting COMPILE_OPTIONS dropped /utf-8 and the rest
+        foreach(target ${PROJECT_NAME} eu07_core)
+            target_compile_options(${target} PRIVATE "$<$<CONFIG:Debug>:/MDd>$<$<CONFIG:Release>:/MD>")
+        endforeach()
     else()
         # GCC/Clang (ensure -g is set for all configurations)
         add_compile_options(-g)
