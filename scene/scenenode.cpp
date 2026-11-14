@@ -87,6 +87,39 @@ shape_node::shapenode_data::serialize( std::ostream &Output ) const {
     }
 }
 
+namespace {
+
+// legacy scenery shapes frequently come with all-zero normals (e.g. pkp/szafa-przek1.inc).
+// the shaders normalize the interpolated normal, which turns a zero vector into NaN; with the gl46
+// lighting (ambient sh, envmap, sky occlusion all depend on the normal) that blackens the whole surface.
+// replace missing normals with the flat normal of the triangle, using the same winding as authored data
+void
+fill_missing_normals( std::vector<world_vertex> &Vertices ) {
+
+    for( std::size_t idx = 0; idx + 2 < Vertices.size(); idx += 3 ) {
+        auto *triangle { &Vertices[ idx ] };
+        if( ( glm::length2( triangle[ 0 ].normal ) > 1e-12f )
+         && ( glm::length2( triangle[ 1 ].normal ) > 1e-12f )
+         && ( glm::length2( triangle[ 2 ].normal ) > 1e-12f ) ) {
+            continue;
+        }
+        auto const facenormal { glm::cross(
+            triangle[ 1 ].position - triangle[ 0 ].position,
+            triangle[ 2 ].position - triangle[ 0 ].position ) };
+        auto const normal { (
+            glm::length2( facenormal ) > 0.0 ?
+                glm::vec3{ glm::normalize( facenormal ) } :
+                glm::vec3{ 0.f, 1.f, 0.f } ) };
+        for( int vertexidx = 0; vertexidx < 3; ++vertexidx ) {
+            if( glm::length2( triangle[ vertexidx ].normal ) <= 1e-12f ) {
+                triangle[ vertexidx ].normal = normal;
+            }
+        }
+    }
+}
+
+} // namespace
+
 // restores content of the struct from provided input stream
 void
 shape_node::shapenode_data::deserialize( std::istream &Input ) {
@@ -118,6 +151,8 @@ shape_node::shapenode_data::deserialize( std::istream &Input ) {
 		if(has_userdata)
 			userdata[i].deserialize( Input );
     }
+    // binary caches created by older builds may still hold the zero normals
+    fill_missing_normals( vertices );
 }
 
 
@@ -311,6 +346,8 @@ shape_node::import( cParser &Input, scene::node_data const &Nodedata ) {
 
     } while( token != "endtri"
           && false == token.empty() ); // data which ends without closing the node would otherwise keep the loop going forever
+
+    fill_missing_normals( m_data.vertices );
 
     return *this;
 }
