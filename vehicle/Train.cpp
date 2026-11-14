@@ -1488,6 +1488,8 @@ void TTrain::OnCommand_notchingrelaytoggle(TTrain *Train, command_data const &Co
 			// turn off
 			Train->mvOccupied->AutoRelaySwitch(false);
 		}
+		// visual feedback
+		Train->ggAutoRelayButton.UpdateValue(Train->mvOccupied->AutoRelayFlag ? 1.f : 0.f, Train->dsbSwitch);
 	}
 }
 
@@ -9822,6 +9824,8 @@ bool TTrain::Update(double const Deltatime)
 	ggWiperSw.Update();
 	ggMaxCurrentCtrl.UpdateValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
 	ggMaxCurrentCtrl.Update();
+	ggAutoRelayButton.UpdateValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
+	ggAutoRelayButton.Update();
 	// NBMX wrzesien 2003 - drzwi
 	ggDoorLeftPermitButton.Update(lowvoltagepower);
 	ggDoorRightPermitButton.Update(lowvoltagepower);
@@ -11466,6 +11470,7 @@ void TTrain::clear_cab_controls()
 	ggBrakeOperationModeCtrl.Clear();
 	ggWiperSw.Clear();
 	ggMaxCurrentCtrl.Clear();
+	ggAutoRelayButton.Clear();
 	ggMainOffButton.Clear();
 	ggMainOnButton.Clear();
 	for (auto &remotelinebreaker : m_remotelinebreakers)
@@ -11838,6 +11843,8 @@ void TTrain::set_cab_controls(int const Cab)
 	ggCompressorListButton.PutValue(static_cast<float>(mvOccupied->CompressorListPos - 1));
 	// motor overload relay threshold / shunt mode
 	ggMaxCurrentCtrl.PutValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
+	// automatic relays (AutoRelay)
+	ggAutoRelayButton.PutValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
 	// lights
 	ggLightsButton.PutValue(static_cast<float>(mvOccupied->LightsPos - 1));
 
@@ -12242,6 +12249,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"brakeprofiler_sw:", ggBrakeProfileR},
 	                                                          {"brakeopmode_sw:", ggBrakeOperationModeCtrl},
 	                                                          {"maxcurrent_sw:", ggMaxCurrentCtrl},
+	                                                          {"autorelay_sw:", ggAutoRelayButton},
 	                                                          {"main_off_bt:", ggMainOffButton},
 	                                                          {"main_on_bt:", ggMainOnButton},
 	                                                          {"mainb_sw:", m_remotelinebreakers[0].main_switch},

@@ -3318,6 +3318,13 @@ bool TController::PrepareEngine()
                     cue_action( driver_hint::rearmotorblowerson );
                 }
             }
+            // the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional): off, the field
+            // stays full
+            if( AIControllFlag
+             && mvControlling->EngineType == TEngineType::DieselElectric
+             && mvControlling->AutoRelayType == 2 ) {
+                mvControlling->AutoRelaySwitch( true );
+            }
             // sync virtual brake state with the 'real' one
             if( mvOccupied->BrakeHandle != TBrakeHandle::NoHandle ) {
                 std::unordered_map<int, int> const brakepositions{
