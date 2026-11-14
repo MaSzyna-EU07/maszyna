@@ -1195,10 +1195,10 @@ bool TTrack::AssignEvents() {
      && false == trackname.empty() ) {
         // jeśli podana jest nazwa torów, można szukać eventów skojarzonych przez nazwę
         for( auto &eventsequence : eventsequences ) {
-            auto *event = simulation::Events.FindEventAscii( trackname + ':' + eventsequence.first );
-            if( event != nullptr ) {
+            auto *found = simulation::Events.FindEventAscii( trackname + ':' + eventsequence.first );
+            if( found != nullptr ) {
                 // HACK: auto-associated events come with empty lookup string, to avoid including them in the text format export
-                eventsequence.second->emplace_back( "", event );
+                eventsequence.second->emplace_back( "", found );
                 m_events = true;
             }
         }

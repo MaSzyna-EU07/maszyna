@@ -179,7 +179,7 @@ class editor_ui : public ui_layer
 	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back
 	void drop_refusal() { m_refusal.clear(); }
 	// a warning in the middle of the screen, for the given time counted from when it's first drawn
-	void set_warning(std::string const &Warning, double const Seconds);
+	void set_warning(std::string_view Warning, double const Seconds);
 
   private:
 	// methods

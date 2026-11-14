@@ -63,8 +63,14 @@ std::string_view plain_letter(char32_t const Code)
 	return "_";
 }
 
+// the byte at the given place, as a number
+std::uint32_t byte_at(std::string_view const Text, std::size_t const At)
+{
+	return static_cast<std::uint32_t>(static_cast<unsigned char>(Text[At]));
+}
+
 // the length of the UTF-8 sequence the byte begins, with the bits of the character it holds; 0 for a byte which can't begin one
-int sequence_length(unsigned char const Lead, char32_t &Code)
+int sequence_length(std::uint32_t const Lead, char32_t &Code)
 {
 	if (Lead < 0x80)
 	{
@@ -94,7 +100,7 @@ bool decode_one(std::string_view const Text, std::size_t const At, int const Len
 		return false;
 	for (int i = 1; i < Length; ++i)
 	{
-		auto const next{static_cast<unsigned char>(Text[At + i])};
+		auto const next{byte_at(Text, At + i)};
 		if ((next & 0xC0u) != 0x80u)
 			return false;
 		Code = (Code << 6) | (next & 0x3Fu);
@@ -111,7 +117,7 @@ bool decode_utf8(std::string_view const Text, std::vector<char32_t> &Codes)
 	while (at < Text.size())
 	{
 		char32_t code{0};
-		auto const length{sequence_length(static_cast<unsigned char>(Text[at]), code)};
+		auto const length{sequence_length(byte_at(Text, at), code)};
 		if (length == 0 || false == decode_one(Text, at, length, code))
 			return false;
 		Codes.push_back(code);
@@ -126,9 +132,9 @@ std::vector<char32_t> characters(std::string_view const Name)
 	if (decode_utf8(Name, codes))
 		return codes;
 	codes.clear();
-	for (auto const character : Name)
+	for (std::size_t at = 0; at < Name.size(); ++at)
 	{
-		auto const byte{static_cast<unsigned char>(character)};
+		auto const byte{byte_at(Name, at)};
 		if (byte < 0x80)
 			codes.push_back(byte);
 		else

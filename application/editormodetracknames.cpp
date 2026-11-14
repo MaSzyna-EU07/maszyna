@@ -40,14 +40,14 @@ std::string free_name(TTrack const &Track)
 	{
 		if (auto const *taken{simulation::Paths.find(name)}; taken == nullptr || taken == &Track)
 			return name;
-		name = base + "_" + std::to_string(number);
+		name = std::format("{}_{}", base, number);
 	}
 	return name;
 }
 
 } // namespace
 
-void editor_mode::ascii_track_names()
+void editor_mode::ascii_track_names() const
 {
 	struct change
 	{
@@ -68,7 +68,8 @@ void editor_mode::ascii_track_names()
 	}
 	for (auto *track : named)
 	{
-		auto const old{track->name()};
+		// the old name as it reads, taken before the track gets the new one
+		auto const from{ascii_name::readable(track->name())};
 		auto const name{free_name(*track)};
 		// a path of a template is written with its new name only if the name is given to it by a parameter of the include
 		auto const saved{track->from_template() ? editor_track::uses_of_name(*track).includes > 0 : scene::Layers.editable(track)};
@@ -76,8 +77,8 @@ void editor_mode::ascii_track_names()
 		editor_track::rename(*track, name);
 		if (false == saved)
 			++unsaved;
-		WriteLog(std::format("Editor: track \"{}\" renamed to \"{}\", its name had characters outside of ASCII{}", ascii_name::readable(old), name, saved ? "" : "; its file isn't written by the editor"));
-		changes.push_back({ascii_name::readable(old), name});
+		WriteLog(std::format(R"(Editor: track "{}" renamed to "{}", its name had characters outside of ASCII{})", from, name, saved ? "" : "; its file isn't written by the editor"));
+		changes.emplace_back(from, name);
 	}
 	if (changes.empty())
 		return;

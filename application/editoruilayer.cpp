@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIcons.hpp"
 
 #include <cstdio>
+#include <format>
 #include <limits>
 
 glm::vec2 editor_ui::m_viewmin{0.0f};
@@ -1100,7 +1101,7 @@ void editor_ui::render_refusal()
 	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), at, m_refusalnotice ? IM_COL32(255, 205, 110, static_cast<int>(255 * alpha)) : IM_COL32(255, 150, 130, static_cast<int>(255 * alpha)), m_refusal.c_str(), nullptr, wrap);
 }
 
-void editor_ui::set_warning(std::string const &Warning, double const Seconds)
+void editor_ui::set_warning(std::string_view const Warning, double const Seconds)
 {
 	m_warning = Warning;
 	m_warningseconds = Seconds;
@@ -1114,17 +1115,17 @@ void editor_ui::render_warning()
 	auto const now{ImGui::GetTime()};
 	if (m_warningtime < 0.0)
 		m_warningtime = now;
-	auto const left{m_warningseconds - (now - m_warningtime)};
-	if (left <= 0.0)
+	auto const remaining{m_warningseconds - (now - m_warningtime)};
+	if (remaining <= 0.0)
 	{
 		m_warning.clear();
 		return;
 	}
 	auto const &io{ImGui::GetIO()};
-	auto const alpha{static_cast<float>(std::clamp(left, 0.0, 1.0))};
+	auto const alpha{static_cast<float>(std::clamp(remaining, 0.0, 1.0))};
 	auto const fontsize{std::round(ImGui::GetFontSize() * 1.5f)};
 	auto const wrap{std::min(std::round(fontsize * 32.0f), io.DisplaySize.x - 80.0f)};
-	auto const countdown{"(" + std::to_string(static_cast<int>(std::ceil(left))) + " s)"};
+	auto const countdown{std::format("({} s)", static_cast<int>(std::ceil(remaining)))};
 	auto const size{ImGui::GetFont()->CalcTextSizeA(fontsize, std::numeric_limits<float>::max(), wrap, m_warning.c_str())};
 	auto const countdownsize{ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), std::numeric_limits<float>::max(), 0.0f, countdown.c_str())};
 	auto const pad{fontsize};

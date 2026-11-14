@@ -2436,7 +2436,7 @@ event_manager::insert( basic_event *Event ) {
         // if it's first event with such name, it's potential candidate for the execution queue
         m_eventmap.emplace( Event->m_name, m_events.size() - 1 );
         if( false == ascii_name::plain( Event->m_name ) ) {
-            m_asciimap.emplace( ascii_name::fold( Event->m_name ), m_events.size() - 1 );
+            m_asciimap.try_emplace( ascii_name::fold( Event->m_name ), m_events.size() - 1 );
         }
         if( Event->m_ignored != true
          && contains(Event->m_name, "onstart") ) {
