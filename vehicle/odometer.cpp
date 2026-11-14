@@ -176,6 +176,13 @@ void store::merge(store const &Other) {
 	}
 }
 
+bool store::holds(store const &Other) const {
+	return std::all_of(Other.m_states.begin(), Other.m_states.end(), [this](auto const &Entry) {
+		auto const lookup{m_states.find(Entry.first)};
+		return lookup != m_states.end() && false == newer(Entry.second, lookup->second);
+	});
+}
+
 std::optional<double> read_legacy(std::istream &Input) {
 	std::stringstream content;
 	content << Input.rdbuf();
@@ -277,8 +284,21 @@ store &states() {
 	return odometers;
 }
 
+namespace {
+
+// the states as the file holds them once written, the km rounded to the digits written
+store as_written(store const &States) {
+	std::stringstream text;
+	States.write(text);
+	store result;
+	result.read(text);
+	return result;
+}
+
+} // namespace
+
 bool save(store &States, std::filesystem::path const &File) {
-	if (false == States.modified())
+	if (false == States.modified() && false == States.unconfirmed())
 		return true;
 	std::error_code error;
 	if (File.has_parent_path())
@@ -286,11 +306,19 @@ bool save(store &States, std::filesystem::path const &File) {
 	// other simulations on the machine (multiplayer, parallel runs) keep their states in the same file: what they
 	// saved since this one read it is merged in, not overwritten
 	{
+		store saved;
 		std::ifstream input{File, std::ios::binary};
-		if (input.is_open()) {
-			store saved;
+		if (input.is_open())
 			saved.read(input);
-			States.merge(saved);
+		States.merge(saved);
+		// another simulation that read the file before the last save of this one and put its own in place after it
+		// dropped the states this one wrote. when the file holds them all, the same or newer, there's nothing to write
+		if (false == States.modified()) {
+			if (saved.holds(as_written(States))) {
+				States.confirmed();
+				return true;
+			}
+			WriteLog("Odometer states saved to \"" + File.string() + "\" are missing from it, saving them again");
 		}
 	}
 	// written aside first, a crash in the middle of a write doesn't lose the states. the file aside is this process'
