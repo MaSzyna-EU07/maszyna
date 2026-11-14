@@ -545,6 +545,7 @@ set(CORE_SOURCES
 "scripting/scriptscreenkernels.cpp"
 "scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
+"vehicle/aiwire.cpp"
 "vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"

@@ -109,6 +109,10 @@ public:
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
         update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+    // checks whether a wire, not broken, is within reach of a pantograph at specified point: the plane of the pantograph's
+    // movement, normal to Front, crosses it over the slide of half width Halfwidth, between Minheight and Maxheight along Up
+    bool
+        wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, glm::dvec3 const &Up, glm::dvec3 const &Left, double const Halfwidth, double const Minheight, double const Maxheight ) const;
     // legacy method, polls event launchers within radius around specified point
     void
         update_events();
@@ -320,6 +324,10 @@ public:
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
         update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+    // checks whether a wire, not broken, is within reach of a pantograph at specified point: the plane of the pantograph's
+    // movement, normal to Front, crosses it over the slide of half width Halfwidth, between Minheight and Maxheight along Up
+    bool
+        wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, glm::dvec3 const &Up, glm::dvec3 const &Left, double const Halfwidth, double const Minheight, double const Maxheight ) const;
     // legacy method, updates sounds and polls event launchers within radius around specified point
     void
         update_events( glm::dvec3 const &Location, float const Radius );
@@ -446,6 +454,11 @@ public:
     // legacy method, finds and assigns traction piece to specified pantograph of provided vehicle
     void
         update_traction( TDynamicObject *Vehicle, int const Pantographindex );
+    // checks whether there's a contact wire, not broken, over specified point of a track with heading Front, within reach of
+    // a pantograph there: over its slide of half width Halfwidth, between Minheight and Maxheight above the point. the
+    // geometry is the one the pantographs find their wire with (ai_wire::span_contact), with the vertical up
+    bool
+        wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, double const Halfwidth, double const Minheight, double const Maxheight ) const;
     // legacy method, polls event launchers around camera
     void
         update_events();
