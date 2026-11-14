@@ -5425,14 +5425,15 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// past the last position to the first one: a knob turning all the way round turns on rather than
+				// back across all the positions, and the position reached sounds (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), true, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -5463,14 +5464,14 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// back past the first position to the last one, the same way (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), false, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
