@@ -1,0 +1,24 @@
+{
+  "description": "eu07/maszyna#506, L053 poludnie, ROJ23133 Debica - Rudawa and ROJ32134 back (EN57-1797ra): the unit runs both trains among the scenery's traffic and ends at Debica (the station's state cell of ROJ32134 says done).",
+  "base_scenery": "l053_poludnie.scn",
+  "strip_trainsets": false,
+  "vehicle": "EN57-1797ra",
+  "fragment": "mission_state_probe.scn",
+  "vars": {
+    "cell": "deb_roj32134_stat",
+    "state": "d * *",
+    "reason": "roj32134_ended_at_debica"
+  },
+  "slow": true,
+  "physicslog": false,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.timeout 7200",
+    "test.standstill 1500",
+    "test.fail_if_stop_overran no"
+  ],
+  "expect": "pass",
+  "timeout": 3600
+}
