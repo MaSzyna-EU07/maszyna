@@ -22,6 +22,9 @@ layout(local_size_x = WATER_GROUP_SIZE) in;
 // the share of the sweep of a blade around where it went in the step whose snow is laid anew: a lump is laid by the snow at its
 // middle, up to two of its cells (~3 cm) away from a texel it covers
 const float SNOW_LAYER_BLADE_MARGIN = 0.06;
+// the share of the texels with the water of the melted snow showing a drop when it doesn't snow (while it snows: snow_drops, rare):
+// the snow left on the glass melts into drops, which dry
+const float SNOW_LAYER_MELT_DROPS = 0.5;
 
 // whether a blade went over the texel of the map, or near it, in the step
 bool snow_layer_swept(uint mapTexel)
@@ -67,6 +70,7 @@ void main()
 	if (false == due)
 		return;
 	snSlot = int(slot);
+	snDrops = (water_step.w > 0.5) ? snow_drops : SNOW_LAYER_MELT_DROPS;
 	snMap = map;
 	snBig = (textureSize(raindropsatlas, 0).x >= 2048);
 	vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));

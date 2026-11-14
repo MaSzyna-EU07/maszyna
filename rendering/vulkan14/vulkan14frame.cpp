@@ -1048,7 +1048,7 @@ void vulkan14_renderer::render_scene()
 	scene.water.update(Timer::GetDeltaTime());
 	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
 	// (the drops a cell may hold: as many as the glass is wet, a little more, since it's the wetness of the frame before)
-	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
+	scene.water.update_rain_cells(static_cast<float>(m_raintime), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1527,11 +1527,18 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 			auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
 			auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
 			m_wiperrain += dt * meet;
-			if (percipitation_intensity > 0.f)
+			// the glass gets wet with the rain only (the snow lies on it, the glass of the snow melts it into its own water), and its
+			// drops live by the clock of the rain, which stands while it doesn't rain: the rain stopped, the glass keeps its last drops
+			// and rivulets where they are while it dries
+			auto const raining{(percipitation_intensity > 0.f) && (Global.Weather == "rain:")};
+			if (raining)
+			{
 				m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
+				m_raintime += dt;
+			}
 			else
 				m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
-			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
+			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), static_cast<float>(m_raintime)};
 		}
 		if (owner != nullptr)
 		{

@@ -1672,11 +1672,18 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 				auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
 				auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
 				m_wiperrain += dt * meet;
-				if (percipitation_intensity > 0.f)
+				// the glass gets wet with the rain only (the snow lies on it, the glass of the snow melts it into its own water), and its
+				// drops live by the clock of the rain, which stands while it doesn't rain: the rain stopped, the glass keeps its last drops
+				// and rivulets where they are while it dries
+				auto const raining{(percipitation_intensity > 0.f) && (Global.Weather == "rain:")};
+				if (raining)
+				{
 					m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
+					m_raintime += dt;
+				}
 				else
 					m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
-				scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
+				scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), static_cast<float>(m_raintime)};
 			}
 			if (owner != nullptr)
 			{
@@ -1740,7 +1747,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			m_windscreenwater.update(Timer::GetDeltaTime());
 			// the drops and the rivulets of the glasses with rain, for the time of the block of the scene
 			// (the drops a cell may hold: as many as the glass is wet)
-			m_windscreenwater.update_rain_cells(scene_ubs.time, (scene_ubs.rain_state.y > 0.001f) ? std::min(scene_ubs.rain_state.y + 0.01f, 1.f) : 0.f);
+			m_windscreenwater.update_rain_cells(static_cast<float>(m_raintime), (scene_ubs.rain_state.y > 0.001f) ? std::min(scene_ubs.rain_state.y + 0.01f, 1.f) : 0.f);
 		}
 		m_windscreenwater.bind();
 
