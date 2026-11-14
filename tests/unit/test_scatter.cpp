@@ -79,7 +79,8 @@ TEST_CASE("scatter: the feathered fill thins out towards the edge")
 	settings.spacing = 0.1;
 	settings.density = 40.0;
 	auto const points{scatter::dab({0.0, 0.0}, settings, {}, random)};
-	int inner{0}, outer{0};
+	int inner{0};
+	int outer{0};
 	for (auto const &p : points)
 	{
 		auto const d{glm::length(p)};

@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <cmath>
+#include <numbers>
 
 namespace
 {
@@ -29,7 +30,6 @@ namespace
 ImU32 constexpr kCrossColour{IM_COL32(255, 220, 70, 255)};
 ImU32 constexpr kCircleColour{IM_COL32(255, 220, 70, 170)};
 ImU32 constexpr kShadowColour{IM_COL32(0, 0, 0, 140)};
-double constexpr kPi{3.14159265358979323846};
 
 // the last press of the left button landed in the viewport, not on a window (see editormode.cpp)
 bool viewport_click()
@@ -51,8 +51,7 @@ bool editor_mode::brush_ground(glm::dvec3 &Point)
 
 double editor_mode::brush_height(glm::dvec2 const &Point, double const Around)
 {
-	double height{Around};
-	if (m_streamer.active() && m_streamer.height_at(Point.x, Point.y, height))
+	if (double height{Around}; m_streamer.active() && m_streamer.height_at(Point.x, Point.y, height))
 		return height;
 	return placement_on_ground({Point.x, Around, Point.y}).y;
 }
@@ -80,8 +79,7 @@ void editor_mode::brush_press()
 	mouseHold = true;
 	m_brush_has_last = false;
 	m_brush_taken.clear();
-	auto const single{ui()->brush().way == brush_object_list::kind::single};
-	if (false == single)
+	if (ui()->brush().way != brush_object_list::kind::single)
 	{
 		// one step of the history for the whole stroke, the models added to it as they're put
 		trim_history();
@@ -114,35 +112,38 @@ void editor_mode::handle_brush_mouse_hold(int /*Action*/, int /*Button*/)
 {
 	if (ui()->mode() != nodebank_panel::BRUSH || false == m_brush_stroke)
 		return;
-	GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) {
-		// picks are resolved a few frames later; drop the ones queued before the button went up, or for a press that turned out
-		// to belong to the UI
-		if (false == mouseHold || false == m_brush_stroke || false == viewport_click() || m_history.empty())
-			return;
-		glm::dvec3 centre;
-		if (false == brush_ground(centre))
-			return;
-		auto const &settings{ui()->brush().dab};
-		// the next dab once the cursor went far enough, measured on the ground, whatever the camera does meanwhile
-		if (m_brush_has_last && glm::distance(glm::dvec2{centre.x, centre.z}, glm::dvec2{oldPos.x, oldPos.z}) < scatter::dab_step(settings))
-			return;
-		oldPos = centre;
-		m_brush_has_last = true;
-		auto &stroke{m_history.back()};
-		for (auto const &point : scatter::dab({centre.x, centre.z}, settings, m_brush_taken, m_brush_random))
-		{
-			auto *model{place_brush_model({point.x, brush_height(point, centre.y), point.y})};
-			// the place is taken either way, so a model which failed isn't tried there on every move
-			m_brush_taken.push_back(point);
-			if (model == nullptr)
-				continue;
-			EditorSnapshot::array_copy copy;
-			copy.model = model;
-			copy.uuid = model->uuid;
-			stroke.layer = model->layer();
-			stroke.copies.push_back(std::move(copy));
-		}
-	});
+	GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) { brush_dab(); });
+}
+
+void editor_mode::brush_dab()
+{
+	// picks are resolved a few frames later; drop the ones queued before the button went up, or for a press that turned out
+	// to belong to the UI
+	if (false == mouseHold || false == m_brush_stroke || false == viewport_click() || m_history.empty())
+		return;
+	glm::dvec3 centre;
+	if (false == brush_ground(centre))
+		return;
+	auto const &settings{ui()->brush().dab};
+	// the next dab once the cursor went far enough, measured on the ground, whatever the camera does meanwhile
+	if (m_brush_has_last && glm::distance(glm::dvec2{centre.x, centre.z}, glm::dvec2{oldPos.x, oldPos.z}) < scatter::dab_step(settings))
+		return;
+	oldPos = centre;
+	m_brush_has_last = true;
+	auto &stroke{m_history.back()};
+	for (auto const &point : scatter::dab({centre.x, centre.z}, settings, m_brush_taken, m_brush_random))
+	{
+		auto *model{place_brush_model({point.x, brush_height(point, centre.y), point.y})};
+		// the place is taken either way, so a model which failed isn't tried there on every move
+		m_brush_taken.push_back(point);
+		if (model == nullptr)
+			continue;
+		EditorSnapshot::array_copy copy;
+		copy.model = model;
+		copy.uuid = model->uuid;
+		stroke.layer = model->layer();
+		stroke.copies.push_back(std::move(copy));
+	}
 }
 
 void editor_mode::end_brush_stroke()
@@ -189,7 +190,7 @@ void editor_mode::draw_brush_cursor()
 	auto previous{ground(centre.x + radius, centre.z)};
 	for (int i = 1; i <= pieces; ++i)
 	{
-		auto const angle{2.0 * kPi * i / pieces};
+		auto const angle{2.0 * std::numbers::pi * i / pieces};
 		auto const next{ground(centre.x + radius * std::cos(angle), centre.z + radius * std::sin(angle))};
 		view.line(drawlist, previous, next, kShadowColour, 3.5f);
 		view.line(drawlist, previous, next, kCircleColour, 1.8f);

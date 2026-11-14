@@ -219,6 +219,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_brush_cursor();
 	bool brush_ground(glm::dvec3 &Point);
 	double brush_height(glm::dvec2 const &Point, double Around);
+	// one dab of the stroke of many models, at the cursor on the ground
+	void brush_dab();
 	TAnimModel *place_brush_model(glm::dvec3 const &At);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members

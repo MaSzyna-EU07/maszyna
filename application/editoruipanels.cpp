@@ -600,30 +600,7 @@ void brush_object_list::render_options(nodebank_panel &Bank)
 	if (way == kind::single)
 		ImGui::TextDisabled("%s", STR_C("LMB: one model at the cross on the ground"));
 	else
-	{
-		ImGui::TextDisabled("%s", STR_C("Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"));
-		auto radius{static_cast<float>(dab.radius)};
-		if (ImGui::SliderFloat(STR_C("Radius##brush"), &radius, 0.5f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
-			dab.radius = radius;
-		int fillmode{static_cast<int>(dab.mode)};
-		std::array<char const *, 3> const fills{STR_C("Random, anywhere in the circle"), STR_C("Uniform (grid)"), STR_C("Feathered to the edge")};
-		ImGui::SetNextItemWidth(220.0f);
-		if (ImGui::Combo(STR_C("Fill##brush"), &fillmode, fills.data(), static_cast<int>(fills.size())))
-			dab.mode = static_cast<scatter::fill>(fillmode);
-		auto spacing{static_cast<float>(dab.spacing)};
-		if (ImGui::SliderFloat(STR_C("Spacing##brush"), &spacing, 0.1f, 50.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
-			dab.spacing = spacing;
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("%s", dab.mode == scatter::fill::uniform ? STR_C("The step of the grid the models stand on") : STR_C("The least distance between two models"));
-		if (dab.mode != scatter::fill::uniform)
-		{
-			auto density{static_cast<float>(dab.density)};
-			if (ImGui::SliderFloat(STR_C("Density##brush"), &density, 0.1f, 200.0f, STR_C("%.1f per 100 m²"), ImGuiSliderFlags_Logarithmic))
-				dab.density = density;
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("%s", STR_C("How many models a 100 m² the circle gets, as many as the spacing lets in"));
-		}
-	}
+		render_dab();
 	render_look();
 	ImGui::Separator();
 	ImGui::Checkbox(STR_C("Random model from set"), &useRandom);
@@ -644,16 +621,38 @@ void brush_object_list::render_options(nodebank_panel &Bank)
 	}
 }
 
+void brush_object_list::render_dab()
+{
+	ImGui::TextDisabled("%s", STR_C("Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"));
+	if (auto radius{static_cast<float>(dab.radius)}; ImGui::SliderFloat(STR_C("Radius##brush"), &radius, 0.5f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
+		dab.radius = radius;
+	std::array<char const *, 3> const fills{STR_C("Random, anywhere in the circle"), STR_C("Uniform (grid)"), STR_C("Feathered to the edge")};
+	ImGui::SetNextItemWidth(220.0f);
+	if (int fillmode{static_cast<int>(dab.mode)}; ImGui::Combo(STR_C("Fill##brush"), &fillmode, fills.data(), static_cast<int>(fills.size())))
+		dab.mode = static_cast<scatter::fill>(fillmode);
+	if (auto spacing{static_cast<float>(dab.spacing)}; ImGui::SliderFloat(STR_C("Spacing##brush"), &spacing, 0.1f, 50.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
+		dab.spacing = spacing;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", dab.mode == scatter::fill::uniform ? STR_C("The step of the grid the models stand on") : STR_C("The least distance between two models"));
+	if (dab.mode == scatter::fill::uniform)
+		return;
+	if (auto density{static_cast<float>(dab.density)}; ImGui::SliderFloat(STR_C("Density##brush"), &density, 0.1f, 200.0f, STR_C("%.1f per 100 m²"), ImGuiSliderFlags_Logarithmic))
+		dab.density = density;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("How many models a 100 m² the circle gets, as many as the spacing lets in"));
+}
+
 void brush_object_list::render_look()
 {
+	using enum scatter::vary;
 	ImGui::SeparatorText(STR_C("Turn##brush"));
-	auto turn_random{look.turn == scatter::vary::random};
+	auto turn_random{look.turn == random};
 	if (ImGui::RadioButton(STR_C("Fixed##brushturn"), false == turn_random))
-		look.turn = scatter::vary::fixed;
+		look.turn = fixed;
 	ImGui::SameLine();
 	if (ImGui::RadioButton(STR_C("Random##brushturn"), turn_random))
-		look.turn = scatter::vary::random;
-	if (look.turn == scatter::vary::fixed)
+		look.turn = random;
+	if (look.turn == fixed)
 		ImGui::DragFloat3(STR_C("Angles x y z##brush"), &look.angles.x, 0.5f, -180.0f, 180.0f, "%.1f°");
 	else
 	{
@@ -662,13 +661,13 @@ void brush_object_list::render_look()
 			ImGui::SetTooltip("%s", STR_C("Each model turned by a random angle up to this much each way: x and z tilt it, y turns it round (180: any way)"));
 	}
 	ImGui::SeparatorText(STR_C("Scale##brush"));
-	auto size_random{look.size == scatter::vary::random};
+	auto size_random{look.size == random};
 	if (ImGui::RadioButton(STR_C("Fixed##brushscale"), false == size_random))
-		look.size = scatter::vary::fixed;
+		look.size = fixed;
 	ImGui::SameLine();
 	if (ImGui::RadioButton(STR_C("Random##brushscale"), size_random))
-		look.size = scatter::vary::random;
-	if (look.size == scatter::vary::fixed)
+		look.size = random;
+	if (look.size == fixed)
 		ImGui::DragFloat3(STR_C("Percent x y z##brush"), &look.scale.x, 0.5f, 1.0f, 1000.0f, "%.0f%%");
 	else
 	{

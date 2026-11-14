@@ -130,6 +130,8 @@ class brush_object_list
 
   private:
 	void render_look();
+	// the settings of the stroke of many models
+	void render_dab();
 };
 
 class nodebank_panel : public ui_panel

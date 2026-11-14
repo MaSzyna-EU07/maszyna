@@ -3,14 +3,13 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <numbers>
 
 namespace scatter
 {
 
 namespace
 {
-
-double constexpr kPi{3.14159265358979323846};
 
 bool clear_of(glm::dvec2 const &Point, double const Spacing, std::vector<glm::dvec2> const &Taken, std::vector<glm::dvec2> const &Made)
 {
@@ -19,7 +18,7 @@ bool clear_of(glm::dvec2 const &Point, double const Spacing, std::vector<glm::dv
 		auto const d{Point - Other};
 		return glm::dot(d, d) >= least;
 	};
-	return std::all_of(Taken.begin(), Taken.end(), far_enough) && std::all_of(Made.begin(), Made.end(), far_enough);
+	return std::ranges::all_of(Taken, far_enough) && std::ranges::all_of(Made, far_enough);
 }
 
 // the points of the grid of triangles of the world (rows Spacing·√3/2 apart, every other one shifted by half) in the circle
@@ -55,21 +54,23 @@ std::vector<glm::dvec2> dab(glm::dvec2 const &Centre, dab_settings const &Settin
 	// only what the stroke put near this circle matters: a long stroke isn't gone through whole for every point
 	std::vector<glm::dvec2> nearby;
 	auto const reach{radius + spacing};
-	std::copy_if(Taken.begin(), Taken.end(), std::back_inserter(nearby), [&](glm::dvec2 const &Point) { return glm::distance(Point, Centre) <= reach; });
+	std::ranges::copy_if(Taken, std::back_inserter(nearby), [&](glm::dvec2 const &Point) { return glm::distance(Point, Centre) <= reach; });
 	if (Settings.mode == fill::uniform)
 		return grid_points(Centre, radius, spacing, nearby);
 	// as many as the density asks for in the circle (no more than a dab can put at once), each tried a number of times before
 	// it's given up for the spacing
 	int constexpr most{2000};
-	auto const wanted{static_cast<int>(std::min<double>(most, std::lround(std::max(0.0, Settings.density) * kPi * radius * radius / 100.0)))};
+	auto const wanted{std::min(most, static_cast<int>(std::lround(std::max(0.0, Settings.density) * std::numbers::pi * radius * radius / 100.0)))};
 	std::uniform_real_distribution<double> unit{0.0, 1.0};
 	std::vector<glm::dvec2> made;
 	int constexpr tries_each{30};
-	for (int attempt = 0; attempt < wanted * tries_each && static_cast<int>(made.size()) < wanted; ++attempt)
+	auto attempts{wanted * tries_each};
+	while (attempts > 0 && static_cast<int>(made.size()) < wanted)
 	{
+		--attempts;
 		// even over the area: the square root of the share of the radius
 		auto const share{std::sqrt(unit(Random))};
-		auto const angle{2.0 * kPi * unit(Random)};
+		auto const angle{2.0 * std::numbers::pi * unit(Random)};
 		if (Settings.mode == fill::feathered)
 		{
 			// fewer towards the edge: kept with the chance falling from 1 in the middle to 0 at the edge
