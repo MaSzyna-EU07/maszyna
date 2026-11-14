@@ -4,6 +4,7 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <algorithm>
 #include <cstddef>
 #include <array>
 #include <utility>
@@ -69,6 +70,9 @@ namespace gl
     const size_t MAX_HEADLIGHT_SHADOWS = 4;
     // lights of the occupied cab the probe of the cab is drawn with (gfx::cab_probe, gl::scene_ubs::cab_probe_lamp), at most
     const size_t MAX_CAB_PROBE_LAMPS = 16;
+    // the places along the sweep of a blade (dWiperPos 0 .. 1) the rain fallen when it last went over them is kept for
+    // (gl::scene_ubs::wiper_rain_pass)
+    const size_t WIPER_PASS_BUCKETS = 64;
     // weather (opengl46_weather): the fog of the main view (3d, apply_fog.glsl) and the shadows the clouds cast (2d), read by the
     // shading. bound directly, like the ones above
     const size_t FOG_VOLUME_TEX = MAX_TEXTURES + HELPER_TEXTURES + 4;
@@ -149,7 +153,8 @@ namespace gl
         // which comes in through their windows and bounces around them (gfx.interior.bounce), w unused
         glm::vec4 env_params;
         // the water on the windscreens (mat_rain_windscreen): xyz the velocity of the air against the vehicle of the camera (the
-        // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w unused
+        // share of the wind the particles of the rain drift with, less the velocity of the vehicle), world space, m/s; w the insects
+        // the vehicle met so far (mat_bugs_windscreen): seconds of driving at 100 km/h, none below 20 km/h, more the faster
         glm::vec4 rain_wind;
         // the ambient occlusion in the light of the surfaces (gfx.postfx.ao.lighting), set only for the colour pass of the main view,
         // zero elsewhere: x 1 when SCENE_AO_TEX holds the occlusion of the depth in SCENE_DEPTH_TEX, y the power it's raised to
@@ -192,9 +197,49 @@ namespace gl
         glm::vec4 cab_probe_sun_color;
         glm::vec4 cab_probe_sun_box;
         glm::vec4 cab_probe_sun_world;
+        // the insects the vehicle had met (rain_wind.w) when the blades were at the ends of their sweep, as wiper_timer_out and
+        // wiper_timer_return (mat_bugs_windscreen: what hit the glass since a blade went over it); -1 not known
+        glm::vec4 wiper_bugs_out;
+        glm::vec4 wiper_bugs_return;
+        // the place of the camera of the pass in the world, which the models are drawn relative to: xyz of camera_hi the place
+        // rounded down to whole 64 metres, of camera_lo the rest (both exact in floats), w unused. mat_vat.vert puts a model in the
+        // world with them, inv_view and its modelview (the moment of its animation from its place)
+        glm::vec4 camera_hi;
+        glm::vec4 camera_lo;
+        // the rain the glass meets (mat_rain_windscreen): x the rain fallen so far, in seconds of the heaviest rain standing still (more
+        // at speed: the glass runs into it); y how wet the glass is, 0 dry .. 1 as full of drops as it gets (it fills with the rain,
+        // dries when it stops); z how fast the glass fills: the share left to fill goes down as exp(-z x the rain fallen); w unused
+        glm::vec4 rain_state;
+        // the rain fallen (rain_state.x) when a blade last went over a place of its sweep: element b for the places b / 64 .. (b + 1)
+        // / 64 of dWiperPos (the value of the wiper mask of a pixel), x .. w the blades (as wiper_pos); -1 not known. the drops and the
+        // haze come back with the rain fallen since. (the moments the blades were at the ends of their sweep, which the pixel took
+        // the one of by the way the blade went, gave the rain of a whole sweep back to the place a blade had just wiped)
+        glm::vec4 wiper_rain_pass[WIPER_PASS_BUCKETS];
     };
 
-    static_assert(sizeof(scene_ubs) == 928 + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+    static_assert(sizeof(scene_ubs) == 1008 + 16 * WIPER_PASS_BUCKETS + 80 * MAX_HEADLIGHT_SHADOWS + 96 * MAX_CAB_PROBE_LAMPS, "bad size of ubs");
+
+    // the bucket of scene_ubs::wiper_rain_pass a place of a blade (dWiperPos, 0 .. 1) falls in
+    inline std::size_t wiper_pass_bucket(double const Position)
+    {
+        return std::min(static_cast<std::size_t>(std::max(Position, 0.0) * static_cast<double>(WIPER_PASS_BUCKETS)), WIPER_PASS_BUCKETS - 1);
+    }
+
+    // the places blade Wiper went over from From to To (dWiperPos) get the rain fallen Value (-1: not known)
+    inline void wiper_pass_mark(scene_ubs &Scene, glm::length_t const Wiper, double const From, double const To, float const Value)
+    {
+        auto const last{wiper_pass_bucket(std::max(From, To))};
+        for (auto bucket{wiper_pass_bucket(std::min(From, To))}; bucket <= last; ++bucket)
+            Scene.wiper_rain_pass[bucket][Wiper] = Value;
+    }
+
+    // the camera of a pass in the world for the scene block (scene_ubs::camera_hi, camera_lo)
+    inline void set_camera_place(scene_ubs &Ubs, glm::dvec3 const &Place)
+    {
+        auto const high{glm::floor(Place / 64.0) * 64.0};
+        Ubs.camera_hi = glm::vec4{glm::vec3{high}, 0.f};
+        Ubs.camera_lo = glm::vec4{glm::vec3{Place - high}, 0.f};
+    }
 
     const size_t MAX_PARAMS = 3;
 
@@ -683,13 +728,30 @@ namespace gl
     const GLuint WATER_CELL_DROPS = 32;
     const GLuint WATER_TRAIL = 1024;
     const GLuint WATER_MAP = 256;
+    // the snow of a glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels over its uv, a band of every
+    // WATER_LAYER_BANDS-th row laid anew in a step (and wherever a blade goes over it), read by mat_snow_windscreen.frag
+    const GLuint WATER_LAYER = 1024;
+    const GLuint WATER_LAYER_BANDS = 8;
     const GLuint WATER_GROUP_SIZE = 64;
     // the binding points of the opengl renderer: the storage of the water (read by the glasses, written by the passes), the block
     // of the step of the simulation (water_ubs) and the texture unit of the mask of the wipers the map is baked from. the storage
     // point is used by nothing else, bound with the colour passes
     const GLuint WATER_SSBO_BINDING = 16;
+    // the drops and the rivulets of the cells of the glasses with rain (mat_rain_windscreen, rain_cells.comp, rain_cells.glsl): worked
+    // out once a frame for every cell, so a glass only reads them. RAIN_CELLS_COUNT uvec4, as rain_cells.glsl lays them out
+    const GLuint RAIN_CELLS_SSBO_BINDING = 18;
+    const size_t RAIN_DROP_CELLS = 512;
+    const size_t RAIN_RIV_CELLS = 128;
+    const size_t RAIN_RIV_LAYERS = 5;
+    // the cells (the first pass of rain_cells.comp), then the reach of the drops into the quarters of each drop cell (the second)
+    const size_t RAIN_MASK_BASE = RAIN_DROP_CELLS * RAIN_DROP_CELLS + RAIN_RIV_LAYERS * RAIN_RIV_CELLS * RAIN_RIV_CELLS;
+    const size_t RAIN_CELLS_COUNT = RAIN_MASK_BASE + RAIN_DROP_CELLS * RAIN_DROP_CELLS;
+    const size_t RAIN_CELLS_GROUP_SIZE = 64;
     const GLuint WATER_UBO_BINDING = 6;
     const size_t WATER_MASK_TEX = MAX_TEXTURES + HELPER_TEXTURES + 13;
+    // the atlas and the normal map of the snow of a glass, for the laying of its snow (water_snowlayer.comp)
+    const size_t WATER_SNOW_ATLAS_TEX = MAX_TEXTURES + HELPER_TEXTURES + 20;
+    const size_t WATER_SNOW_NORMAL_TEX = MAX_TEXTURES + HELPER_TEXTURES + 21;
     // the parts of the storage of the water (std430, GLSL water_ssbo), offsets in bytes: the header of every glass (vec4), the
     // counts of every glass (uvec4), the drops (two vec4 each), the axes of the map (two vec4 a texel), the blades of the map (vec4
     // a texel), the state of the drops (uint), the drops they flow into (uint), what they gather (four int), what they keep
@@ -708,10 +770,19 @@ namespace gl
     const size_t WATER_CELLS_OFFSET = WATER_EXTRA_OFFSET + 16 * WATER_SLOT_DROPS;
     const size_t WATER_CELLS_SIZE = 4 * static_cast<size_t>(WATER_SLOTS) * WATER_GRID * WATER_GRID * (1 + WATER_CELL_DROPS);
     const size_t WATER_TRAIL_OFFSET = WATER_CELLS_OFFSET + WATER_CELLS_SIZE;
-    const size_t WATER_STORAGE_SIZE = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
+    // the snow on the glasses (water_snow.comp, mat_snow_windscreen.frag): two maps of every glass, WATER_MAP x WATER_MAP texels of
+    // two uint each (four halves: the snow, mm; the water, mm; how packed the snow is, 0 .. 1; random 0 .. 1, the shape of its
+    // flakes), a step reads one and writes the other (the header of the glass says which one is the latest)
+    const size_t WATER_SNOW_OFFSET = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
+    const size_t WATER_SNOW_SIZE = 8 * static_cast<size_t>(WATER_MAP) * WATER_MAP;
+    // the snow of every glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels of three uint each (the colour
+    // and the cover, the normal and the translucency, the bend and the haze, see water.glsl)
+    const size_t WATER_LAYER_OFFSET = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
+    const size_t WATER_LAYER_SIZE = 12 * static_cast<size_t>(WATER_LAYER) * WATER_LAYER;
+    const size_t WATER_STORAGE_SIZE = WATER_LAYER_OFFSET + WATER_LAYER_SIZE * WATER_SLOTS;
     // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
-    // cells and its paths, its header and its counts, (offset, size) in bytes
-    inline std::array<std::pair<size_t, size_t>, 11> water_slot_parts(size_t const Slot)
+    // cells and its paths, its header and its counts, its two maps of the snow, its laid snow, (offset, size) in bytes
+    inline std::array<std::pair<size_t, size_t>, 14> water_slot_parts(size_t const Slot)
     {
         auto const drops{static_cast<size_t>(WATER_DROPS)};
         auto const texels{static_cast<size_t>(WATER_MAP) * WATER_MAP};
@@ -727,7 +798,10 @@ namespace gl
                  {WATER_CELLS_OFFSET + cells * Slot, cells},
                  {WATER_TRAIL_OFFSET + trail * Slot, trail},
                  {WATER_HEADER_OFFSET + 16 * Slot, 16},
-                 {WATER_COUNTS_OFFSET + 16 * Slot, 16}}};
+                 {WATER_COUNTS_OFFSET + 16 * Slot, 16},
+                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * Slot, WATER_SNOW_SIZE},
+                 {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * (WATER_SLOTS + Slot), WATER_SNOW_SIZE},
+                 {WATER_LAYER_OFFSET + WATER_LAYER_SIZE * Slot, WATER_LAYER_SIZE}}};
     }
 
     // layout std140: the step of the simulation of the water on the windscreens (GLSL water_ubo), every vector in the space of the
@@ -750,14 +824,21 @@ namespace gl
         // glass), y: 1 / the mean of the diameters above it, 1 / mm (they go as Marshall-Palmer), zw: unused
         glm::vec4 rain;
         // x: random seed of the step, y: the most landings tried on a glass in the step, z: the glass the passes for a single glass
-        // work on (the baking of the mask of the wipers)
+        // work on (the baking of the mask of the wipers, the laying of the snow), w: the step (the band of rows the laying of the
+        // snow lays anew)
         glm::uvec4 counts;
         // every glass: x the landings tried in the step, y 1 / the most metres squared of the glass a unit of its uv holds (the
         // landings tried at the densest place are all taken), z 1 when it's simulated, w the size of its drops (the param
         // rain_scale of its material)
         glm::vec4 slots[WATER_SLOTS];
+        // the snow (water_snow.comp): x the flakes coming to a square metre of the ground in a second, y how much warmer than the
+        // air the glass is (the cab heats it), degrees, z the speed of the vehicle, m/s, w the map of the snow the step reads (0, 1)
+        glm::vec4 snow;
+        // every glass: 1 when its snow is simulated
+        glm::vec4 snow_slots;
     };
-    static_assert(sizeof(water_ubs) == 112 + 16 * WATER_SLOTS, "bad size of water_ubs");
+    static_assert(WATER_SLOTS == 4, "snow_slots holds a glass in a component");
+    static_assert(sizeof(water_ubs) == 144 + 16 * WATER_SLOTS, "bad size of water_ubs");
 
     // layout std430: a bucket of a scene cell queued in the pass (GLSL: instance_cull_job)
     struct instance_cull_job

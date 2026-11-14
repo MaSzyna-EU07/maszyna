@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "utilities/Logs.h"
 
+#include <algorithm>
+
 #include <cstring>
 
 namespace vk14
@@ -49,6 +51,12 @@ bool windscreen_water::init(VkDevice const Device, pipeline_library &Pipelines, 
 	m_ring = &Ring;
 	m_alignment = std::max<VkDeviceSize>(Alignment, 16);
 	m_host = std::move(Host);
+	m_raincells = std::make_shared<buffer>();
+	if (false == m_raincells->create(Memory, static_cast<VkDeviceSize>(gl::RAIN_CELLS_COUNT * 16), storage_usage, memory_kind::device, "rain cells"))
+	{
+		m_raincells.reset();
+		return false;
+	}
 	m_storage = std::make_shared<buffer>();
 	m_full = m_storage->create(Memory, static_cast<VkDeviceSize>(gl::WATER_STORAGE_SIZE), storage_usage, memory_kind::device, "windscreen water");
 	if (false == m_full)
@@ -75,6 +83,9 @@ void windscreen_water::destroy()
 	{
 		kernel.destroy(m_device);
 	}
+	m_raincellkernel.destroy(m_device);
+	m_raincelltried = false;
+	m_raincells.reset();
 	m_storage.reset();
 	m_device = VK_NULL_HANDLE;
 	m_cleared = false;
@@ -90,7 +101,8 @@ bool windscreen_water::gpu_init()
 	try
 	{
 		std::array<char const *, pass::count> const names{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp"};
+		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp",
+		                                                  "water_snowlayer.comp"};
 		for (std::size_t i = 0; i < names.size(); ++i)
 		{
 			if (false == m_kernels[i].create(m_device, *m_pipelines, m_shaders->get(names[i]), m_passlayout, {}, names[i]))
@@ -164,6 +176,55 @@ void windscreen_water::gpu_setup(std::size_t const Slot, std::vector<glm::vec4> 
 	m_deletions->push(m_uploads->current_value(), [staging]() {});
 }
 
+void windscreen_water::update_rain_cells(float const Time, float const Rain)
+{
+	if ((m_device == VK_NULL_HANDLE) || (false == bool(m_raincells)) || (Rain <= 0.f) || (false == bool(m_host.commands)))
+	{
+		return;
+	}
+	if (false == m_raincelltried)
+	{
+		m_raincelltried = true;
+		try
+		{
+			if (false == m_raincellkernel.create(m_device, *m_pipelines, m_shaders->get("rain_cells.comp"), m_passlayout, {}, "rain_cells.comp"))
+			{
+				ErrorLog("rain cells: no compute pipeline of rain_cells.comp, the glasses with rain stay dry");
+			}
+		}
+		catch (gfx::shader_exception const &e)
+		{
+			ErrorLog("rain cells: can't use rain_cells.comp: " + std::string(e.what()));
+		}
+	}
+	if (false == bool(m_raincellkernel))
+	{
+		return;
+	}
+	auto const commands{m_host.commands()};
+	if (commands == nullptr)
+	{
+		return;
+	}
+	// the glasses of the frames before read the cells, this one writes them
+	memory_barrier(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+	               VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+	struct constants
+	{
+		float time;
+		float rain;
+		std::int32_t pass;
+		float pad;
+	};
+	auto const groups = [](std::size_t const Count) { return static_cast<std::uint32_t>((Count + gl::RAIN_CELLS_GROUP_SIZE - 1) / gl::RAIN_CELLS_GROUP_SIZE); };
+	std::vector<descriptor> const descriptors{buffer_descriptor(m_raincells->handle(), 0, VK_WHOLE_SIZE)};
+	// the cells, then the reach of the drops into the quarters of each drop cell, which reads them
+	m_raincellkernel.dispatch(commands, descriptors, constants{Time, Rain, 0, 0.f}, groups(gl::RAIN_MASK_BASE));
+	compute_barrier(commands);
+	m_raincellkernel.dispatch(commands, descriptors, constants{Time, Rain, 1, 0.f}, groups(gl::RAIN_CELLS_COUNT - gl::RAIN_MASK_BASE));
+	compute_barrier(commands);
+}
+
 ring_slice windscreen_water::block(gl::water_ubs const &Block)
 {
 	auto const slice{m_ring->allocate(sizeof(gl::water_ubs), m_alignment)};
@@ -201,6 +262,36 @@ bool windscreen_water::gpu_bake(std::size_t const Slot, texture_handle const Mas
 	return true;
 }
 
+bool windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle const Atlas, texture_handle const Normal, gl::water_ubs const &Block)
+{
+	auto const commands{m_host.commands()};
+	if ((commands == nullptr) || (false == m_full) || (Slot >= gl::WATER_SLOTS))
+	{
+		return false;
+	}
+	VkImageView atlasview{VK_NULL_HANDLE};
+	VkSampler atlassampler{VK_NULL_HANDLE};
+	VkImageView normalview{VK_NULL_HANDLE};
+	VkSampler normalsampler{VK_NULL_HANDLE};
+	if ((false == m_host.texture(Atlas, atlasview, atlassampler)) || (atlasview == VK_NULL_HANDLE) || (false == m_host.texture(Normal, normalview, normalsampler)) ||
+	    (normalview == VK_NULL_HANDLE))
+	{
+		return false;
+	}
+	auto const slice{block(Block)};
+	if (false == bool(slice))
+	{
+		return false;
+	}
+	begin(commands);
+	m_kernels[pass::snowlayer].run(commands,
+	                               {buffer_descriptor(m_storage->handle(), 0, VK_WHOLE_SIZE), buffer_descriptor(slice.buffer, slice.offset, sizeof(gl::water_ubs)),
+	                                image_descriptor(atlassampler, atlasview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), image_descriptor(normalsampler, normalview, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)},
+	                               groups(static_cast<std::size_t>(gl::WATER_LAYER) * gl::WATER_LAYER));
+	compute_barrier(commands);
+	return true;
+}
+
 void windscreen_water::gpu_step(gl::water_ubs const &Block, std::uint32_t const Tries)
 {
 	auto const commands{m_host.commands()};
@@ -225,20 +316,29 @@ void windscreen_water::gpu_step(gl::water_ubs const &Block, std::uint32_t const 
 	};
 	auto const drops{groups(gl::WATER_DROPS)};
 	auto const cells{groups(static_cast<std::size_t>(gl::WATER_GRID) * gl::WATER_GRID)};
+	// the drops only where a glass of the water is (the glasses of the snow have passes of their own)
+	auto const water{std::ranges::any_of(Block.slots, [](glm::vec4 const &Slot) { return Slot.z > 0.5f; })};
+	auto const drop_groups{water ? drops : 0u};
+	auto const cell_groups{water ? cells : 0u};
 	// the wetted paths the blades went over in the step wiped
-	if (Block.blades != Block.blades_before)
+	if (water && (Block.blades != Block.blades_before))
 	{
 		run(pass::trail, groups(static_cast<std::size_t>(gl::WATER_TRAIL) * gl::WATER_TRAIL));
 	}
-	run(pass::spawn, groups(Tries));
-	run(pass::move, drops);
-	run(pass::clear, cells);
-	run(pass::grid, drops);
-	run(pass::merge, drops);
-	run(pass::gather, drops);
-	run(pass::settle, drops);
-	run(pass::clear, cells);
-	run(pass::grid, drops);
+	run(pass::spawn, water ? groups(Tries) : 0u);
+	run(pass::move, drop_groups);
+	run(pass::clear, cell_groups);
+	run(pass::grid, drop_groups);
+	run(pass::merge, drop_groups);
+	run(pass::gather, drop_groups);
+	run(pass::settle, drop_groups);
+	run(pass::clear, cell_groups);
+	run(pass::grid, drop_groups);
+	// the snow of the glasses of the snow, a texel of their maps a thread
+	if (Block.snow_slots != glm::vec4{0.f})
+	{
+		run(pass::snow, groups(static_cast<std::size_t>(gl::WATER_MAP) * gl::WATER_MAP));
+	}
 }
 
 } // namespace vk14

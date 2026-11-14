@@ -553,6 +553,15 @@ void TAnimModel::update_instanceable_flag() {
     ++s_instanceable_total;
 }
 
+void TAnimModel::draw_alone() {
+
+    if( m_instanceable ) {
+        ++s_instanceable_revoked;
+        m_instanceable = false;
+        ++scene::node_state_version;
+    }
+}
+
 std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name)
 { // dodanie sterowania submodelem dla egzemplarza
     if (!pModel)

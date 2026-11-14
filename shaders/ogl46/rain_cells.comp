@@ -1,0 +1,189 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the cells of the glasses with rain (rain_cells.glsl): the drops and the rivulets of every cell worked out for the time of the
+// frame, a thread a cell, before the passes which draw the glasses (mat_rain_windscreen.frag only reads them). two passes: the
+// cells (rain_pass 0), then which drops reach the quarters of each drop cell (rain_pass 1, it reads the first)
+
+#include "common.glsl"
+
+layout(location = 0) uniform float rain_time;   // the time of the block of the scene (scene_ubs.time)
+layout(location = 1) uniform float rain_amount; // how wet the glass is (scene_ubs.rain_state.y, a little more)
+layout(location = 2) uniform int   rain_pass;   // 0 the cells, 1 the reach of the drops
+
+#include "random.glsl"
+#include "rain_cells.glsl"
+
+layout(local_size_x = RAIN_CELLS_GROUP_SIZE) in;
+
+uvec2 rain_key(ivec2 Cell)
+{
+	return uvec2(Cell + ivec2(65536));
+}
+
+// a random kept to 8 bits (rain_byte() takes it back)
+uint q8(float Value)
+{
+	return min(uint(Value * 256.0), 255u);
+}
+
+// a share 0 .. 1 kept to Steps + 1 levels, 0 and 1 exact
+uint qn(float Value, float Steps)
+{
+	return uint(round(clamp(Value, 0.0, 1.0) * Steps));
+}
+
+// a drop cell: its life now, the activation, and the drop of either side of the blades (the sequence of the randoms is the
+// one mat_rain_windscreen.frag had)
+uvec4 drop_cell(ivec2 Cell)
+{
+	uvec2 key     = rain_key(Cell);
+	uint  s0      = Hash(uvec3(key, 23u));
+	float lifeLen = mix(drop_life_min, drop_life_max, RandF(s0));
+	float tt      = rain_time / lifeLen + RandF(s0);
+	float epoch   = floor(tt);
+	float ph      = tt - epoch;
+	uint  ep      = uint(mod(epoch, 65521.0));
+	uint  s1      = Hash(uvec3(key, ep * 4u + 1u));
+	float landing = RandF(s1);
+	bool  missed  = RandF(s1) < wiper_miss;
+	float appearF = drop_appear / lifeLen;
+	float fadeF   = drop_fade / lifeLen;
+	float vis     = smoothstep(0.0, appearF, ph) * (1.0 - smoothstep(1.0 - fadeF, 1.0, ph));
+	float spread  = smoothstep(0.0, 2.0 * appearF, ph);
+	uvec4 result;
+	for (uint side = 0u; side < 2u; ++side)
+	{
+		uint  s2      = Hash(uvec3(key, ep * 4u + 2u + side * 2u));
+		float thr     = RandF(s2);
+		float cx      = RandF(s2);
+		float cy      = RandF(s2);
+		float size    = RandF(s2);
+		float sag     = RandF(s2);
+		float flip    = RandF(s2);
+		float choice  = RandF(s2);
+		float stretch = RandF(s2);
+		uint  tile    = min(uint(choice * 4.0), 3u);
+		uint  a = q8(thr) | (q8(cx) << 8) | (q8(cy) << 16) | (q8(pow(size, drop_size_bias)) << 24);
+		uint  b = q8(sag) | (q8(stretch) << 8) | ((flip < 0.5) ? (1u << 16) : 0u) | (tile << 17);
+		if (side == 0u)
+		{
+			b |= (qn(spread, 31.0) << 19) | (q8(landing) << 24);
+			result.x = a;
+			result.y = b;
+		}
+		else
+		{
+			b |= (missed ? (1u << 19) : 0u) | (qn(vis, 255.0) << 24);
+			result.z = a;
+			result.w = b;
+		}
+	}
+	return result;
+}
+
+// a rivulet cell of layer Layer (0 gravity, 1 .. 4 the air), as getRiv of mat_rain_windscreen.frag drew it
+uvec4 rivulet_cell(int Layer, ivec2 Cell)
+{
+	uint  salt    = 91u + 2u * uint(Layer);
+	uint  sSeed   = Hash(uvec3(rain_key(Cell), salt));
+	float on      = RandF(sSeed);
+	float sPeriod = ((Layer == 0) ? streak_period : wind_streak_period) * mix(0.6, 1.6, RandF(sSeed));
+	float sPhase  = fract(rain_time / sPeriod + RandF(sSeed));
+	float life    = smoothstep(0.0, 0.05, sPhase) * (1.0 - smoothstep(0.86, 1.0, sPhase));
+	float wr      = RandF(sSeed);
+	float span    = RandF(sSeed);
+	float sSteps  = floor(mix(3.0, 8.0, RandF(sSeed)));
+	float sXs     = clamp(sPhase / 0.88, 0.0, 1.0) * sSteps;
+	float sRun    = clamp((floor(sXs) + smoothstep(0.55, 1.0, fract(sXs))) / sSteps, 0.0, 1.0);
+	float top     = RandF(sSeed);
+	float left    = RandF(sSeed);
+	float flip    = RandF(sSeed);
+	float col     = RandF(sSeed);
+	float wipe    = RandF(sSeed);
+	float wavK    = RandF(sSeed);
+	float wavPh   = RandF(sSeed);
+	float wavSp   = RandF(sSeed);
+	uvec4 result;
+	result.x = min(uint(on * 65536.0), 65535u) | (qn(life, 255.0) << 16) | (q8(wipe) << 24);
+	result.y = qn(sRun, 65535.0) | (q8(wr) << 16) | (q8(span) << 24);
+	result.z = q8(top) | (q8(left) << 8) | (q8(wavK) << 16) | (q8(wavPh) << 24);
+	result.w = q8(wavSp) | ((flip < 0.5) ? (1u << 8) : 0u) | (min(uint(col * 4.0), 3u) << 9);
+	return result;
+}
+
+// how far from the centre (in cells) the drop of side half A, B of a cell can reach at most: half its size, the sag, the stretch of the
+// air at its strongest, any way it is turned
+float drop_reach(uint A, uint B, float Spread)
+{
+	float half_size = 0.5 * mix(drop_size_min, drop_size_max, rain_byte(A, 24u)) * Spread;
+	float sag       = 1.0 + drop_sag * rain_byte(B, 0u);
+	float stretch   = 1.0 + drop_wind_stretch * rain_byte(B, 8u);
+	return half_size * sqrt(1.0 + sag * sag) * stretch * 1.01;
+}
+
+// the reach of the drops around a drop cell into its quarters (rain_cells.glsl), from the cells worked out by the first pass
+uvec4 drop_masks(ivec2 Cell)
+{
+	uvec4 result = uvec4(0u);
+	// as many drops as the glass is wet (rain_amount: the wetness of the glass, scene_ubs.rain_state.y)
+	float most   = min(rain_amount * drop_density, 0.95);
+	for (int dy = -1; dy <= 1; ++dy)
+	for (int dx = -1; dx <= 1; ++dx)
+	{
+		uvec4 d = rain_cells[rain_drop_index(Cell + ivec2(dx, dy))];
+		if ((rain_byte(d.y, 24u) > most) || ((d.w >> 24) == 0u))
+			continue;
+		float spread = mix(0.8, 1.0, float((d.y >> 19) & 31u) * (1.0 / 31.0));
+		bool  missed = ((d.w >> 19) & 1u) != 0u;
+		uint  bit    = 1u << uint((dy + 1) * 3 + dx + 1);
+		for (uint side = 0u; side < 2u; ++side)
+		{
+			if ((side == 1u) && missed)
+				break;
+			uint  a      = (side == 0u) ? d.x : d.z;
+			uint  b      = (side == 0u) ? d.y : d.w;
+			vec2  centre = vec2(dx, dy) + vec2(rain_byte(a, 8u), rain_byte(a, 16u));
+			float reach  = drop_reach(a, b, spread);
+			for (uint q = 0u; q < 4u; ++q)
+			{
+				vec2 low  = vec2(float(q & 1u), float(q >> 1)) * 0.5;
+				vec2 away = max(max(low - centre, centre - (low + 0.5)), vec2(0.0));
+				if (dot(away, away) < reach * reach)
+					result[q] |= bit;
+			}
+		}
+	}
+	return result;
+}
+
+void main()
+{
+	uint index = gl_GlobalInvocationID.x;
+	if (rain_pass == 1)
+	{
+		// the second pass: the reach of the drops, a thread a drop cell
+		if (index >= uint(RAIN_DROP_CELLS * RAIN_DROP_CELLS))
+			return;
+		ivec2 texel = ivec2(int(index % uint(RAIN_DROP_CELLS)), int(index / uint(RAIN_DROP_CELLS)));
+		ivec2 cell = ivec2(texel.x == RAIN_DROP_CELLS - 1 ? -1 : texel.x, texel.y == RAIN_DROP_CELLS - 1 ? -1 : texel.y);
+		rain_cells[uint(RAIN_MASK_BASE) + index] = drop_masks(cell);
+		return;
+	}
+	if (index >= uint(RAIN_MASK_BASE))
+		return;
+	if (index < uint(RAIN_RIV_BASE))
+	{
+		ivec2 texel = ivec2(int(index % uint(RAIN_DROP_CELLS)), int(index / uint(RAIN_DROP_CELLS)));
+		// the last column and row stand for the cells -1 (the neighbours of the first ones)
+		ivec2 cell = ivec2(texel.x == RAIN_DROP_CELLS - 1 ? -1 : texel.x, texel.y == RAIN_DROP_CELLS - 1 ? -1 : texel.y);
+		rain_cells[index] = drop_cell(cell);
+		return;
+	}
+	uint  rest  = index - uint(RAIN_RIV_BASE);
+	int   layer = int(rest / uint(RAIN_RIV_CELLS * RAIN_RIV_CELLS));
+	uint  place = rest % uint(RAIN_RIV_CELLS * RAIN_RIV_CELLS);
+	ivec2 texel = ivec2(int(place % uint(RAIN_RIV_CELLS)), int(place / uint(RAIN_RIV_CELLS)));
+	// the cells -32 .. 95: the upper quarter stands for the cells below 0
+	ivec2 cell  = ivec2(texel.x >= 96 ? texel.x - RAIN_RIV_CELLS : texel.x, texel.y >= 96 ? texel.y - RAIN_RIV_CELLS : texel.y);
+	rain_cells[index] = rivulet_cell(layer, cell);
+}

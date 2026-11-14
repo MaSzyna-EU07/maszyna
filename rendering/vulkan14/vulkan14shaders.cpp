@@ -865,6 +865,7 @@ std::string binding_preamble(bool const Raytracing)
 	define("SKY_OCCLUSION_HEIGHT_TEX", SKY_OCCLUSION_HEIGHT_TEX);
 	define("SKY_OCCLUSION_TEX", SKY_OCCLUSION_TEX);
 	define("CAB_PROBE_MASK_TEX", CAB_PROBE_MASK_TEX);
+	define("RAIN_CELLS_SSBO", RAIN_CELLS_SSBO);
 	define("PASS_BINDING_COUNT", PASS_BINDING_COUNT);
 	define("MATERIAL_TEXTURE_FIRST", MATERIAL_TEXTURE_FIRST);
 	define("CL_CLUSTER_UBO", CL_CLUSTER_UBO);
@@ -897,6 +898,7 @@ std::string binding_preamble(bool const Raytracing)
 	define("MAX_PARAMS", static_cast<unsigned int>(gl::MAX_PARAMS), "U");
 	define("MAX_HEADLIGHT_SHADOWS", static_cast<unsigned int>(gl::MAX_HEADLIGHT_SHADOWS), "U");
 	define("MAX_CAB_PROBE_LAMPS", static_cast<unsigned int>(gl::MAX_CAB_PROBE_LAMPS), "U");
+	define("WIPER_PASS_BUCKETS", static_cast<unsigned int>(gl::WIPER_PASS_BUCKETS));
 	define("CLUSTER_GRID_X", gl::CLUSTER_GRID_X);
 	define("CLUSTER_GRID_Y", gl::CLUSTER_GRID_Y);
 	define("CLUSTER_GRID_Z", gl::CLUSTER_GRID_Z);
@@ -936,6 +938,8 @@ std::string binding_preamble(bool const Raytracing)
 	define("WATER_TRAIL", gl::WATER_TRAIL);
 	define("WATER_MAP", gl::WATER_MAP);
 	define("WATER_GROUP_SIZE", gl::WATER_GROUP_SIZE);
+	define("WATER_LAYER", gl::WATER_LAYER);
+	define("WATER_LAYER_BANDS", gl::WATER_LAYER_BANDS);
 	define("CAB_PROBE_SH_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_SIZE));
 	define("CAB_PROBE_SH_GROUP_SIZE", static_cast<unsigned int>(gl::CAB_PROBE_SH_GROUP_SIZE));
 	return preamble;

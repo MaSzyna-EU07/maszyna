@@ -127,8 +127,8 @@ void LogService()
 				if (log_scrollback.size() > 200)
 					log_scrollback.pop_front();
 
-				// log to console; not in test mode, where the standard output carries the result of the test only
-				if ((Global.iWriteLogEnabled & 2) && false == Global.test.enabled)
+				// log to console
+				if (Global.iWriteLogEnabled & 2)
 				{
 					if (isError)
 						printf("\033[1;37;41m%s\033[0m\n", msg.c_str());

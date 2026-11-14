@@ -53,8 +53,13 @@ void gl::glsl_common_setup()
     "#define WATER_MAP " + std::to_string(WATER_MAP) + "\n" +
     "#define WATER_GROUP_SIZE " + std::to_string(WATER_GROUP_SIZE) + "\n" +
     "#define WATER_SSBO_BINDING " + std::to_string(WATER_SSBO_BINDING) + "\n" +
+    "#define RAIN_CELLS_SSBO_BINDING " + std::to_string(RAIN_CELLS_SSBO_BINDING) + "\n" +
     "#define WATER_UBO_BINDING " + std::to_string(WATER_UBO_BINDING) + "\n" +
     "#define WATER_MASK_TEX " + std::to_string(WATER_MASK_TEX) + "\n" +
+    "#define WATER_LAYER " + std::to_string(WATER_LAYER) + "\n" +
+    "#define WATER_LAYER_BANDS " + std::to_string(WATER_LAYER_BANDS) + "\n" +
+    "#define WATER_SNOW_ATLAS_TEX " + std::to_string(WATER_SNOW_ATLAS_TEX) + "\n" +
+    "#define WATER_SNOW_NORMAL_TEX " + std::to_string(WATER_SNOW_NORMAL_TEX) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
     "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +
@@ -94,6 +99,7 @@ void gl::glsl_common_setup()
     "#define HEADLIGHT_SHADOW_TEX " + std::to_string(HEADLIGHT_SHADOW_TEX) + "\n" +
     "#define MAX_HEADLIGHT_SHADOWS " + std::to_string(MAX_HEADLIGHT_SHADOWS) + "U\n" +
     "#define MAX_CAB_PROBE_LAMPS " + std::to_string(MAX_CAB_PROBE_LAMPS) + "U\n" +
+    "#define WIPER_PASS_BUCKETS " + std::to_string(WIPER_PASS_BUCKETS) + "\n" +
     "#define FOG_VOLUME_TEX " + std::to_string(FOG_VOLUME_TEX) + "\n" +
     "#define CLOUD_SHADOW_TEX " + std::to_string(CLOUD_SHADOW_TEX) + "\n" +
     "#define CLOUD_TEX " + std::to_string(CLOUD_TEX) + "\n" +

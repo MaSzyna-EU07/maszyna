@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46renderer.h"
+#include "rendering/common/shadersource.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
@@ -30,6 +31,18 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/screenshot.h"
 #include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
+#include <filesystem>
+
+namespace
+{
+// the camera of a pass in the world for the scene block (gl::scene_ubs::camera_hi, camera_lo)
+void scene_camera_place(gl::scene_ubs &Ubs, glm::dvec3 const &Place)
+{
+	auto const high{glm::floor(Place / 64.0) * 64.0};
+	Ubs.camera_hi = glm::vec4{glm::vec3{high}, 0.f};
+	Ubs.camera_lo = glm::vec4{glm::vec3{Place - high}, 0.f};
+}
+} // namespace
 
 //#define EU07_DEBUG_OPENGL
 
@@ -1625,13 +1638,58 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 					air -= owner->VectorFront() * owner->MoverParameters->V;
 				scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
 			}
-			if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
+			// the wipers of the vehicle the camera is in, or of the train driven when the camera is outside it: the moments the blades
+			// were at the ends of their sweep (the drops on the glass come back from then) are kept while the camera is away, so the glass
+			// looks as the blades left it when it's back in the cab. they're forgotten only for another vehicle
+			TDynamicObject const *owner = Global.pCamera.m_owner;
+			if ((owner == nullptr) || (owner->MoverParameters->CabActive == 0))
+				owner = (simulation::Train != nullptr) ? simulation::Train->Dynamic() : nullptr;
+			if (owner != m_wipervehicle)
 			{
+				m_wipervehicle = owner;
+				scene_ubs.wiper_timer_out = glm::vec4{-1000.};
+				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+				scene_ubs.wiper_bugs_out = glm::vec4{-1.};
+				scene_ubs.wiper_bugs_return = glm::vec4{-1.};
+				for (auto &pass : scene_ubs.wiper_rain_pass)
+					pass = glm::vec4{-1.f};
+				m_wiperlastpos.fill(-1.0);
+				m_wiperbugs = 0.0;
+			}
+			// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
+			// driving at 100 km/h
+			if (owner != nullptr)
+				m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
+			scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
+			// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
+			// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly), and
+			// dries when it stops (by half in dry_halflife standing still, faster at speed)
+			{
+				constexpr double fill_rate{0.3};      // per second of the heaviest rain: 95% full in 10 s (20 s at cloud cover 1.5)
+				constexpr double fill_speed{1.5};     // at 100 km/h and more the glass meets x (1 + fill_speed) as much rain
+				constexpr double dry_halflife{180.0}; // seconds standing still
+				auto const dt{Timer::GetDeltaTime()};
+				auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
+				auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
+				m_wiperrain += dt * meet;
+				if (percipitation_intensity > 0.f)
+					m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
+				else
+					m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
+				scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
+			}
+			if (owner != nullptr)
+			{
+				auto const cabactive{owner->MoverParameters->CabActive != 0 ? owner->MoverParameters->CabActive : 1};
 				for (int i = 0; i < 4; ++i)
 				{
 					if (i < owner->dWiperPos.size())
 					{
-						int index = owner->MoverParameters->CabActive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+						int index = cabactive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+						// the places of its sweep the blade went over since the last frame get the rain fallen now
+						auto const position{owner->dWiperPos[index]};
+						gl::wiper_pass_mark(scene_ubs, i, (m_wiperlastpos[i] < 0.0) ? position : m_wiperlastpos[i], position, static_cast<float>(m_wiperrain));
+						m_wiperlastpos[i] = position;
 						scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
 						if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
 						{
@@ -1640,10 +1698,12 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 						if (owner->dWiperPos[index] < .025)
 						{
 							scene_ubs.wiper_timer_out[i] = scene_ubs.time;
+							scene_ubs.wiper_bugs_out[i] = static_cast<float>(m_wiperbugs);
 						}
 						if (owner->dWiperPos[index] > .975)
 						{
 							scene_ubs.wiper_timer_return[i] = scene_ubs.time;
+							scene_ubs.wiper_bugs_return[i] = static_cast<float>(m_wiperbugs);
 						}
 					}
 					else
@@ -1651,14 +1711,16 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 						scene_ubs.wiper_pos[i] = 0.;
 						scene_ubs.wiper_timer_out[i] = -1000.;
 						scene_ubs.wiper_timer_return[i] = -1000.;
+						scene_ubs.wiper_bugs_out[i] = -1.;
+						scene_ubs.wiper_bugs_return[i] = -1.;
+						gl::wiper_pass_mark(scene_ubs, i, 0.0, 1.0, -1.f);
+						m_wiperlastpos[i] = -1.0;
 					}
 				}
 			}
 			else
 			{
 				scene_ubs.wiper_pos = glm::vec4{0.};
-				scene_ubs.wiper_timer_out = glm::vec4{-1000.};
-				scene_ubs.wiper_timer_return = glm::vec4{-1000.};
 			}
 		}
 		// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour
@@ -1669,11 +1731,17 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		m_skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
         scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_colorpass.pass_camera.modelview() } } );
+        scene_camera_place( scene_ubs, m_colorpass.pass_camera.position() );
         scene_ubo->update(scene_ubs);
 		scene_ubo->bind_uniform();
 		// the water on the windscreens of the cab: a step of its simulation once a frame, its storage for the glasses of every view
 		if (vp.main)
+		{
 			m_windscreenwater.update(Timer::GetDeltaTime());
+			// the drops and the rivulets of the glasses with rain, for the time of the block of the scene
+			// (the drops a cell may hold: as many as the glass is wet)
+			m_windscreenwater.update_rain_cells(scene_ubs.time, (scene_ubs.rain_state.y > 0.001f) ? std::min(scene_ubs.rain_state.y + 0.01f, 1.f) : 0.f);
+		}
 		m_windscreenwater.bind();
 
 		if (Global.bWireFrame)
@@ -1738,14 +1806,16 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if (vp.main && !vp.custom_backbuffer) // TODO: update window sizes also for extra viewports
             target_size = Global.fb_size;
 
-		// the motion blur only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last frame.
-		// with nothing moving the velocity is zero everywhere, the blur takes a single sample of each pixel and gives back the
-		// image it was given, so the velocity target, its resolve and the blur are left out and the picture stays the same.
-		// a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel
-		auto const motionblur{
+		// the motion is blurred only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last
+		// frame (a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel). the pass
+		// itself runs in every frame: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) ask it in the velocity target for
+		// the picture in their drops and the haze, also standing still, with the motion blur off and with any anti-aliasing (the
+		// motion is then blurred by 0)
+		auto const moving{
 		    Global.gfx_postfx_motionblur_enabled
 		    && (m_vehiclesmoved
 		        || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+		auto const motionblur{Global.gfx_motion_vectors() && (vp.main_texv != nullptr)};
 
 		if (!Global.gfx_skippipeline)
 		{
@@ -1839,6 +1909,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		// back to the rotation of the camera after the faces of the environment map, which are drawn with their own
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+		scene_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 
@@ -2050,7 +2121,7 @@ if (!Global.gfx_skippipeline)
 				{
 					if (taa)
 						gpupart("motion blur");
-					model_ubs.param[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+					model_ubs.param[0].x = moving ? m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter) : 0.0;
 					model_ubo->update(model_ubs);
 					m_pfx_motionblur->apply({image, vp.main_texv.get(), vp.main_texd.get()}, vp.main2_fb.get());
 				}
@@ -2195,6 +2266,10 @@ if (!Global.gfx_skippipeline)
 
 		glViewport(0, 0, m_shadowbuffersize, m_shadowbuffersize);
 		auto csmstageboundaries { Shadow_Fixed_Splits() };
+		// the rotation of the camera of the view, given back to the scene block after the cascades
+		auto const colorinvview { scene_ubs.inv_view };
+		auto const colorcamerahi { scene_ubs.camera_hi };
+		auto const colorcameralo { scene_ubs.camera_lo };
 		// the cascades fitted to the depth of the view (gfx.shadow.sdsm) go between the distances of its pixels, each map
 		// covering the area of the pixels its cascade takes
 		std::array<std::optional<std::array<glm::vec3, 8>>, gl::MAX_CASCADES> fitareas;
@@ -2222,6 +2297,10 @@ if (!Global.gfx_skippipeline)
 
             setup_matrices();
             scene_ubs.projection = OpenGLMatrices.data( GL_PROJECTION );
+            // the rotation of the camera of this pass (the sun's): the shaders which put the model in the world (mat_vat.vert, the
+            // moment of the animation of every one of the people from its turn) see the same turn as in the color pass
+            scene_ubs.inv_view = glm::inverse( glm::mat4{ glm::mat3{ m_renderpass.pass_camera.modelview() } } );
+            scene_camera_place( scene_ubs, m_renderpass.pass_camera.position() );
             auto const csmstagezfar {
                 (csmstageboundaries[ idx + 1 ])
               + ( m_shadowpass.size() - idx ) }; // we can fairly safely add some extra padding in the early stages
@@ -2240,6 +2319,10 @@ if (!Global.gfx_skippipeline)
             }
         }
 		m_shadow_fb->unbind();
+		scene_ubs.inv_view = colorinvview;
+		scene_ubs.camera_hi = colorcamerahi;
+		scene_ubs.camera_lo = colorcameralo;
+		scene_ubo->update( scene_ubs );
 
 		glDebug("rendermode::shadows end");
 
@@ -2276,6 +2359,7 @@ if (!Global.gfx_skippipeline)
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		// world space directions of the shading of the face (the sky, the directional ambient light)
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+		scene_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 		scene_ubo->update(scene_ubs);
 		Render(&simulation::Environment);
 		// the passes after this one expect the state the opaque scenery left behind (depth writes on, no blending)
@@ -3208,7 +3292,19 @@ std::shared_ptr<gfx::shader_program> opengl46_renderer::Fetch_Shader(const std::
 	if (it == m_shaders.end())
 	{
 		gl::shader fragment("mat_" + name + ".frag");
-		gl::program *program = new gl::program({fragment, *m_vertex_shader.get()});
+		gl::program *program{nullptr};
+		// a material can move its vertices in a vertex shader of its own, mat_<name>.vert (people animated by textures,
+		// mat_vat.vert), the others take the common one
+		if (std::filesystem::exists(gfx::shader_source_dir(gfx::shader_api::opengl46) + "mat_" + name + ".vert"))
+		{
+			gl::shader vertex("mat_" + name + ".vert");
+			program = new gl::program({fragment, vertex});
+			m_ownvertexprograms.insert(program);
+		}
+		else
+		{
+			program = new gl::program({fragment, *m_vertex_shader.get()});
+		}
 		m_shaders.insert({name, std::shared_ptr<gl::program>(program)});
 		// the variant for the multi draws of the instances, made now rather than when the instances first come into view
 		if ((Global.gfx_gpucull == 1) && Global.gfx_gpucull_multidraw)
@@ -3440,6 +3536,24 @@ void opengl46_renderer::Bind_Material_Shadow(material_handle const Material)
 	if (Material != null_handle)
 	{
 		auto &material = m_materials.material(Material);
+
+		if (false == m_cubeshadows)
+		{
+			// a material which moves its vertices itself casts the shadow of where they are: its vertex shader, with the
+			// textures and the params it reads them by
+			if (auto *program{Material_Shadow_Program(Material, material.textures[0] != null_handle)})
+			{
+				for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
+				{
+					if (material.textures[unit] == null_handle)
+						break;
+					m_textures.bind(unit, material.textures[unit]);
+				}
+				memcpy(&model_ubs.param[0], &material.params[0], sizeof(model_ubs.param));
+				program->bind();
+				return;
+			}
+		}
 
 		if (material.textures[0] != null_handle)
 		{
@@ -3995,8 +4109,11 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 	for( std::size_t index = 0; index < count; ) {
 		auto const &draw { m_indirectdraws[ index ] };
 		auto const texture { Indirect_Shadow_Texture( draw.material ) };
+		// the materials with a vertex shader of their own are drawn one by one, with it (Bind_Material_Shadow())
+		auto const ownvertex = [ this ]( material_handle const Material ) {
+			return ( false == m_cubeshadows ) && ( Material_Shadow_Program( Material, Indirect_Shadow_Texture( Material ) != null_handle ) != nullptr ); };
 		auto *multidrawprogram {
-			m_indirectmultidraw ?
+			( m_indirectmultidraw && ( false == ownvertex( draw.material ) ) ) ?
 				( m_cubeshadows ?
 					m_localshadows.multidraw_program( texture != null_handle ) :
 					( texture != null_handle ? m_alpha_shadow_multidraw_shader.get() : m_shadow_multidraw_shader.get() ) ) :
@@ -4008,7 +4125,8 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				&& ( m_indirectdraws[ last ].group == draw.group )
 				&& ( m_indirectdraws[ last ].type == draw.type )
 				&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
-				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture ) ) {
+				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture )
+				&& ( false == ownvertex( m_indirectdraws[ last ].material ) ) ) {
 				++last;
 			}
 			if( texture != null_handle ) {
@@ -4022,8 +4140,10 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 			index = last;
 		}
 		else {
-			Bind_Material_Shadow( draw.material );
+			// the block of the draw first: Bind_Material_Shadow() puts the params of the material in it, for the materials which
+			// read them in their vertex shader
 			model_ubs = draw.ubs;
+			Bind_Material_Shadow( draw.material );
 			model_ubo->update( model_ubs );
 			m_geometry.draw_indirect( draw.geometry, m_indirectcull->draw_command_offset( Set, index ) );
 			++counts.draws;
@@ -4088,7 +4208,14 @@ gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
 		if( shader.second.get() != Program ) { continue; }
 		try {
 			gl::shader fragment( "mat_" + shader.first + ".frag", "#define MODEL_DRAWS 1\n" );
-			variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, *m_vertex_multidraw_shader } );
+			if( m_ownvertexprograms.count( Program ) > 0 ) {
+				// the vertex shader of the material itself, in its variant of the multi draws
+				gl::shader vertex( "mat_" + shader.first + ".vert", "#define MODEL_DRAWS 1\n" );
+				variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, vertex } );
+			}
+			else {
+				variant = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ fragment, *m_vertex_multidraw_shader } );
+			}
 		}
 		catch( gl::shader_exception const &e ) {
 			ErrorLog( "material " + shader.first + " drawn without multi draws: " + std::string( e.what() ) );
@@ -4097,6 +4224,35 @@ gl::program *opengl46_renderer::Multidraw_Program( gl::program const *Program )
 	}
 	auto *result { variant.get() };
 	m_multidrawprograms.emplace( Program, std::move( variant ) );
+	return result;
+}
+
+gl::program *opengl46_renderer::Material_Shadow_Program( material_handle const Material, bool const Alphatest )
+{
+	if( Material == null_handle ) { return nullptr; }
+	auto const &material { m_materials.material( Material ) };
+	if( ( false == material.is_good ) || ( material.shader == nullptr ) ) { return nullptr; }
+	auto const *program { static_cast<gl::program const *>( material.shader.get() ) };
+	if( m_ownvertexprograms.count( program ) == 0 ) { return nullptr; }
+	auto &programs { m_materialshadowprograms[ Alphatest ? 1 : 0 ] };
+	auto const lookup { programs.find( program ) };
+	if( lookup != programs.end() ) { return lookup->second.get(); }
+
+	std::unique_ptr<gl::program> shadow;
+	for( auto const &shader : m_shaders ) {
+		if( shader.second.get() != program ) { continue; }
+		try {
+			gl::shader vertex( "mat_" + shader.first + ".vert", "#define MATERIAL_SHADOW 1\n" );
+			gl::shader fragment( Alphatest ? "alphashadowmap.frag" : "shadowmap.frag" );
+			shadow = std::make_unique<gl::program>( std::vector<std::reference_wrapper<const gl::shader>>{ vertex, fragment } );
+		}
+		catch( gl::shader_exception const &e ) {
+			ErrorLog( "material " + shader.first + " casts its shadow in the pose of the model: " + std::string( e.what() ) );
+		}
+		break;
+	}
+	auto *result { shadow.get() };
+	programs.emplace( program, std::move( shadow ) );
 	return result;
 }
 
@@ -4167,8 +4323,9 @@ void opengl46_renderer::Render_Scene_Depth( glm::mat4 const &Future, bool const 
 		m_scenerecordedparts = static_cast<std::uint32_t>( m_scenechunks.size() );
 	}
 	else {
-		// the conditions of the cab drawn early by the colour pass
-		if( ( false == FreeFlyModeFlag ) && ( Global.Overcast <= 1.0f ) && ( Global.render_cab ) ) {
+		// the cab first, also in the rain: the colour pass draws it after the rain then (the rain inside it hidden), but with its depth
+		// here nothing the cab hides is shaded by the opaque pass
+		if( ( false == FreeFlyModeFlag ) && ( Global.render_cab ) ) {
 			model_ubs.future = m_cabfuture;
 			auto const *vehicle { simulation::Train->Dynamic() };
 			Render_cab( vehicle, vehicle->InteriorLightLevel, false );
@@ -5839,6 +5996,7 @@ void opengl46_renderer::Preview_Color(TAnimModel *Instance, float const Squaredi
 
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{View}});
+	scene_camera_place(scene_ubs, Eye);
 	scene_ubs.time = 0.f;
 	for (auto idx = 0; idx < m_shadowpass.size(); ++idx)
 	{
@@ -6652,7 +6810,13 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	camera.update_frustum(glm::perspective(fieldofview, 1.f, nearplane, reach));
 	setup_matrices();
 	auto const colorprojection{scene_ubs.projection};
+	auto const colorinvview{scene_ubs.inv_view};
+	auto const colorcamerahi{scene_ubs.camera_hi};
+	auto const colorcameralo{scene_ubs.camera_lo};
 	scene_ubs.projection = projection;
+	// the rotation and the place of the projector, as the ones of the sun in its shadows (see rendermode::shadows)
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{camera.modelview()}});
+	scene_camera_place(scene_ubs, camera.position());
 	scene_ubo->update(scene_ubs);
 
 	m_localshadows.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
@@ -6668,6 +6832,9 @@ void opengl46_renderer::Render_headlight_shadow(std::size_t const Slot, light_ar
 	m_shadowskipvehicle = nullptr;
 	m_localshadows.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	scene_ubs.projection = colorprojection;
+	scene_ubs.inv_view = colorinvview;
+	scene_ubs.camera_hi = colorcamerahi;
+	scene_ubs.camera_lo = colorcameralo;
 	scene_ubo->update(scene_ubs);
 	m_renderpass = m_colorpass;
 	glPolygonMode(GL_FRONT_AND_BACK, Global.bWireFrame ? GL_LINE : GL_FILL);

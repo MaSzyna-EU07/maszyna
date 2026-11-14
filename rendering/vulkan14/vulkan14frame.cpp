@@ -387,7 +387,8 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	{
 		ok = ok && make(Targets.motion_image, velocity, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "scene velocity");
 	}
-	if (motion && Global.gfx_postfx_motionblur_enabled)
+	// the pass of the motion blur runs in every frame: the windscreens ask it for their drops and haze (see render_post())
+	if (motion)
 	{
 		ok = ok && make(Targets.blurred, hdr, sampledcolour, VK_SAMPLE_COUNT_1_BIT, "motion blurred", outputextent);
 	}
@@ -1045,6 +1046,9 @@ void vulkan14_renderer::render_scene()
 	auto &scene{ctx.scene};
 	// the water on the windscreens of the cab: a step of its simulation once a frame, before the passes which draw the glasses
 	scene.water.update(Timer::GetDeltaTime());
+	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
+	// (the drops a cell may hold: as many as the glass is wet, a little more, since it's the wetness of the frame before)
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1489,13 +1493,58 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 				air -= owner->VectorFront() * owner->MoverParameters->V;
 			scene_ubs.rain_wind = glm::vec4{glm::vec3{air}, 0.f};
 		}
-		if (TDynamicObject const *owner = Global.pCamera.m_owner; owner && !!owner->MoverParameters->CabActive)
+		// the wipers of the vehicle the camera is in, or of the train driven when the camera is outside it: the moments the blades
+		// were at the ends of their sweep (the drops on the glass come back from then) are kept while the camera is away, so the glass
+		// looks as the blades left it when it's back in the cab. they're forgotten only for another vehicle
+		TDynamicObject const *owner = Global.pCamera.m_owner;
+		if ((owner == nullptr) || (owner->MoverParameters->CabActive == 0))
+			owner = (simulation::Train != nullptr) ? simulation::Train->Dynamic() : nullptr;
+		if (owner != m_wipervehicle)
 		{
+			m_wipervehicle = owner;
+			scene_ubs.wiper_timer_out = glm::vec4{-1000.};
+			scene_ubs.wiper_timer_return = glm::vec4{-1000.};
+			scene_ubs.wiper_bugs_out = glm::vec4{-1.};
+			scene_ubs.wiper_bugs_return = glm::vec4{-1.};
+			for (auto &pass : scene_ubs.wiper_rain_pass)
+				pass = glm::vec4{-1.f};
+			m_wiperlastpos.fill(-1.0);
+			m_wiperbugs = 0.0;
+		}
+		// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
+		// driving at 100 km/h
+		if (owner != nullptr)
+			m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
+		scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
+		// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
+		// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly), and
+		// dries when it stops (by half in dry_halflife standing still, faster at speed)
+		{
+			constexpr double fill_rate{0.3};      // per second of the heaviest rain: 95% full in 10 s (20 s at cloud cover 1.5)
+			constexpr double fill_speed{1.5};     // at 100 km/h and more the glass meets x (1 + fill_speed) as much rain
+			constexpr double dry_halflife{180.0}; // seconds standing still
+			auto const dt{Timer::GetDeltaTime()};
+			auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
+			auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
+			m_wiperrain += dt * meet;
+			if (percipitation_intensity > 0.f)
+				m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
+			else
+				m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
+			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
+		}
+		if (owner != nullptr)
+		{
+			auto const cabactive{owner->MoverParameters->CabActive != 0 ? owner->MoverParameters->CabActive : 1};
 			for (int i = 0; i < 4; ++i)
 			{
 				if (i < owner->dWiperPos.size())
 				{
-					int index = owner->MoverParameters->CabActive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+					int index = cabactive > 0 ? i : static_cast<int>(owner->dWiperPos.size() - 1) - i;
+					// the places of its sweep the blade went over since the last frame get the rain fallen now
+					auto const position{owner->dWiperPos[index]};
+					gl::wiper_pass_mark(scene_ubs, i, (m_wiperlastpos[i] < 0.0) ? position : m_wiperlastpos[i], position, static_cast<float>(m_wiperrain));
+					m_wiperlastpos[i] = position;
 					scene_ubs.wiper_pos[i] = owner->dWiperPos[index];
 					if (owner->dWiperPos[index] > 0. && owner->wiperDirection[index])
 					{
@@ -1504,10 +1553,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 					if (owner->dWiperPos[index] < .025)
 					{
 						scene_ubs.wiper_timer_out[i] = scene_ubs.time;
+						scene_ubs.wiper_bugs_out[i] = static_cast<float>(m_wiperbugs);
 					}
 					if (owner->dWiperPos[index] > .975)
 					{
 						scene_ubs.wiper_timer_return[i] = scene_ubs.time;
+						scene_ubs.wiper_bugs_return[i] = static_cast<float>(m_wiperbugs);
 					}
 				}
 				else
@@ -1515,14 +1566,16 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 					scene_ubs.wiper_pos[i] = 0.;
 					scene_ubs.wiper_timer_out[i] = -1000.;
 					scene_ubs.wiper_timer_return[i] = -1000.;
+					scene_ubs.wiper_bugs_out[i] = -1.;
+					scene_ubs.wiper_bugs_return[i] = -1.;
+					gl::wiper_pass_mark(scene_ubs, i, 0.0, 1.0, -1.f);
+					m_wiperlastpos[i] = -1.0;
 				}
 			}
 		}
 		else
 		{
 			scene_ubs.wiper_pos = glm::vec4{0.};
-			scene_ubs.wiper_timer_out = glm::vec4{-1000.};
-			scene_ubs.wiper_timer_return = glm::vec4{-1000.};
 		}
 	}
 	// the stages after D: no contact shadows, no cascades fitted to the depth, no shadow maps of headlights
@@ -1584,7 +1637,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		render_ray_scene(vp);
 	}
 
-	// the motion blur only when something in the view moves (see opengl46_renderer::Render_pass())
+	// the motion blurred only when something in the view moves (see opengl46_renderer::Render_pass()); the pass runs anyway
 	auto const motionblur{Global.gfx_postfx_motionblur_enabled && targets.motion &&
 	                      (m_vehiclesmoved || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
 
@@ -1621,6 +1674,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		scene.skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());
 		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 		scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+		gl::set_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 		setup_shadow_matrices();
 		upload_scene_block();
 		if (clustered)
@@ -1656,6 +1710,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	walk_blending(true);
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_colorpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_colorpass.pass_camera.position());
 	upload_scene_block();
 	render_environment(&simulation::Environment);
 
@@ -1872,8 +1927,9 @@ void vulkan14_renderer::render_scene_depth(std::size_t const Index, glm::mat4 co
 	auto const colourstats{m_renderpass.draw_stats};
 	m_renderpass.draw_stats = {};
 	walk_blending(false);
-	// the conditions of the cab drawn early by the colour pass
-	if ((false == FreeFlyModeFlag) && (Global.Overcast <= 1.0f) && Global.render_cab && simulation::Train)
+	// the cab first, also in the rain: the colour pass draws it after the rain then (the rain inside it hidden), but with its depth here
+	// nothing the cab hides is shaded by the opaque pass (in a station seen from the cab: about a third of the time of the opaque pass)
+	if ((false == FreeFlyModeFlag) && Global.render_cab && simulation::Train)
 	{
 		model_ubs.future = m_cabfuture;
 		auto const *vehicle{simulation::Train->Dynamic()};
@@ -2318,6 +2374,10 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 		ensure_cull();
 	}
 	static char const *const parts[] = {"sun shadows 1", "sun shadows 2", "sun shadows 3"};
+	// the camera of the view, given back to the scene block after the cascades (walk_cascade() puts the one of each in it)
+	auto const colorinvview{scene_ubs.inv_view};
+	auto const colorcamerahi{scene_ubs.camera_hi};
+	auto const colorcameralo{scene_ubs.camera_lo};
 	for (std::size_t idx = 0; idx < m_shadowpass.size(); ++idx)
 	{
 		ctx.passes.begin_pass(parts[idx], {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, depth_stage, depth_access)});
@@ -2341,6 +2401,9 @@ void vulkan14_renderer::render_shadows(viewport_config &Viewport)
 		}
 		ctx.passes.end_pass();
 	}
+	scene_ubs.inv_view = colorinvview;
+	scene_ubs.camera_hi = colorcamerahi;
+	scene_ubs.camera_lo = colorcameralo;
 	vk14::barriers(commands, {vk14::use_of(*scene.shadow_map, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 }
 
@@ -2365,6 +2428,10 @@ void vulkan14_renderer::walk_cascade(std::size_t const Index)
 	start_draws(scene.shadow_formats, static_cast<int>(scene.shadow_size), static_cast<int>(scene.shadow_size), vk14::scene_state::set_plain, true);
 	m_shadowcascade = static_cast<int>(Index);
 	walk_blending(false);
+	// the rotation and the place of the camera of the cascade (the sun's): the shaders which put the model in the world (mat_vat.vert,
+	// the moment of the animation of every one of the animals and people from its place and turn) see the same as in the colour pass
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 	upload_scene_block();
 	if (m_shadowcolor != colors::white)
 	{
@@ -2527,6 +2594,7 @@ void vulkan14_renderer::render_reflection_face(viewport_config &Viewport)
 	walk_blending(true);
 	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
 	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
+	gl::set_camera_place(scene_ubs, m_renderpass.pass_camera.position());
 	upload_scene_block();
 	// the sky and the clouds alone: the scenery is reflected by the screen space reflections (gfx.ssr) and the ray tracing, the
 	// environment map gives what they don't find
@@ -3661,10 +3729,13 @@ void vulkan14_renderer::render_post(std::size_t const Index, bool const Motionbl
 		store_ssr_history(Index, *hdr);
 	}
 	m_ssrframe = false;
-	if (Motionblur && targets.blurred)
+	// the pass of the motion blur in every frame: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) ask it in the velocity
+	// target for the picture in their drops and the haze, also standing still, with the motion blur off and with any anti-aliasing.
+	// the motion is blurred only with Motionblur (by 0 otherwise)
+	if (targets.blurred && targets.motion_image)
 	{
 		vk14::draw_constants constants;
-		constants.data[0].x = m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter);
+		constants.data[0].x = Motionblur ? m_framerate / (1.0 / Global.gfx_postfx_motionblur_shutter) : 0.0;
 		// with the frames generated by dlss each frame drawn is shown for a part of its time: the blur as much shorter (the guide of
 		// the frame generation)
 		if (m_generationinputs && m_viewports[Index].main)

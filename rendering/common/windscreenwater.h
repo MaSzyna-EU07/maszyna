@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -79,6 +80,10 @@ class windscreen_water
 	virtual bool gpu_bake(std::size_t Slot, texture_handle Mask, gl::water_ubs const &Block) = 0;
 	// the step of the simulation of the glasses Block says are simulated; Tries: the most landings tried on a glass
 	virtual void gpu_step(gl::water_ubs const &Block, std::uint32_t Tries) = 0;
+	// the snow of a glass of the snow laid together from the sprites of its atlas into its layer, after the step
+	// (water_snowlayer.comp; Block.counts: z the glass, w the step); Atlas, Normal: the atlas of the snow and its normal map (textures
+	// of the renderer); false when they aren't ready yet
+	virtual bool gpu_snow_layer(std::size_t Slot, texture_handle Atlas, texture_handle Normal, gl::water_ubs const &Block) = 0;
 
   private:
 	struct glass
@@ -89,6 +94,7 @@ class windscreen_water
 		float area{0.f}; // metres squared of the glass
 		double landings{0.0}; // the share of a landing left over from the steps before
 		bool baked{false};
+		bool snow{false}; // a glass of the snow (mat_snow_windscreen), else of the water
 	};
 
 	// the glasses of the model of a cab found and set up
@@ -97,17 +103,21 @@ class windscreen_water
 	void rasterize(TSubModel *Submodel, material_handle Material, glm::vec3 const &Inside, std::vector<glm::vec4> &Axes) const;
 	// the slots given to the materials of the glasses (every frame: a material made anew takes its default params)
 	void assign(bool Assigned);
+	// the snow of the glasses of the snow Block says are simulated laid together, after the step
+	void lay_snow(gl::water_ubs const &Block);
 
 	host m_host;
 	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
 	TDynamicObject const *m_vehicle{nullptr};
 	TModel3d const *m_cab{nullptr};
+	std::vector<std::pair<material_handle, int>> m_kinds; // the materials of the cab with a mask of the wipers, what kind of glass they were
 	std::array<glass, gl::WATER_SLOTS> m_glasses{};
 	std::size_t m_glasscount{0};
 	glm::vec4 m_bladesbefore{-1.f};
 	double m_time{0.0}; // seconds the simulation runs
 	std::uint32_t m_step{0};
 	std::uint32_t m_tries{0}; // landings tried in the last step, all glasses
+	int m_snowmap{0}; // the map of the snow of the glasses the next step reads (0, 1)
 };
 
 } // namespace gfx

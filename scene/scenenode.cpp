@@ -764,6 +764,8 @@ basic_node::deserialize( std::istream &Input ) {
 void
 basic_node::export_as_text( std::ostream &Output ) const {
 
+    // what the game made while it runs isn't a part of the scenery
+    if( m_generated ) { return; }
     Output
         // header
         << "node"
