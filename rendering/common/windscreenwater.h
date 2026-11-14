@@ -80,6 +80,10 @@ class windscreen_water
 	virtual bool gpu_bake(std::size_t Slot, texture_handle Mask, gl::water_ubs const &Block) = 0;
 	// the step of the simulation of the glasses Block says are simulated; Tries: the most landings tried on a glass
 	virtual void gpu_step(gl::water_ubs const &Block, std::uint32_t Tries) = 0;
+	// the snow of a glass of the snow laid together from the sprites of its atlas into its layer, after the step
+	// (water_snowlayer.comp; Block.counts: z the glass, w the step); Atlas, Normal: the atlas of the snow and its normal map (textures
+	// of the renderer); false when they aren't ready yet
+	virtual bool gpu_snow_layer(std::size_t Slot, texture_handle Atlas, texture_handle Normal, gl::water_ubs const &Block) = 0;
 
   private:
 	struct glass
@@ -99,6 +103,8 @@ class windscreen_water
 	void rasterize(TSubModel *Submodel, material_handle Material, glm::vec3 const &Inside, std::vector<glm::vec4> &Axes) const;
 	// the slots given to the materials of the glasses (every frame: a material made anew takes its default params)
 	void assign(bool Assigned);
+	// the snow of the glasses of the snow Block says are simulated laid together, after the step
+	void lay_snow(gl::water_ubs const &Block);
 
 	host m_host;
 	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
