@@ -56,6 +56,10 @@ void gl::glsl_common_setup()
     "#define RAIN_CELLS_SSBO_BINDING " + std::to_string(RAIN_CELLS_SSBO_BINDING) + "\n" +
     "#define WATER_UBO_BINDING " + std::to_string(WATER_UBO_BINDING) + "\n" +
     "#define WATER_MASK_TEX " + std::to_string(WATER_MASK_TEX) + "\n" +
+    "#define WATER_LAYER " + std::to_string(WATER_LAYER) + "\n" +
+    "#define WATER_LAYER_BANDS " + std::to_string(WATER_LAYER_BANDS) + "\n" +
+    "#define WATER_SNOW_ATLAS_TEX " + std::to_string(WATER_SNOW_ATLAS_TEX) + "\n" +
+    "#define WATER_SNOW_NORMAL_TEX " + std::to_string(WATER_SNOW_NORMAL_TEX) + "\n" +
     "#define INSTANCE_COUNTER_HEADER " + std::to_string(INSTANCE_COUNTER_HEADER) + "\n" +
     "#define INSTANCE_JOB_SLEEPERS " + std::to_string(INSTANCE_JOB_SLEEPERS) + "U\n" +
     "#define LIGHT_SSBO_BINDING " + std::to_string(LIGHT_SSBO_BINDING) + "\n" +

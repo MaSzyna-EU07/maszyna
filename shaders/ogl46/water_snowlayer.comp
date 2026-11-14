@@ -1,0 +1,71 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the snow on the windscreens (water_sim.glsl, water.glsl, snow_sprites.glsl): the snow of a glass of the snow laid together
+// from the sprites of its atlas into its layer, which mat_snow_windscreen.frag reads (the glass only reads it: laying the nine
+// grids of the lumps at every pixel of the glass in every frame cost as much as the rest of the frame). a thread per texel of
+// the layer, the glass is water_counts.z. the snow under a lump changes slowly, so a band of every WATER_LAYER_BANDS-th row is
+// laid anew in a step (water_counts.w the step), and at once wherever a blade went over the glass in the step
+
+#include "common.glsl"
+#include "water_sim.glsl"
+#include "random.glsl"
+
+// the atlas of the snow of the glass and its normal map (raindropsatlas, normalmap of its material)
+layout(binding = WATER_SNOW_ATLAS_TEX) uniform sampler2D raindropsatlas;
+layout(binding = WATER_SNOW_NORMAL_TEX) uniform sampler2D normalmap;
+
+#include "snow_sprites.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+// the share of the sweep of a blade around where it went in the step whose snow is laid anew: a lump is laid by the snow at its
+// middle, up to two of its cells (~3 cm) away from a texel it covers
+const float SNOW_LAYER_BLADE_MARGIN = 0.06;
+
+// whether a blade went over the texel of the map, or near it, in the step
+bool snow_layer_swept(uint mapTexel)
+{
+	vec4 place = water_blades[mapTexel];
+	for (int blade = 0; blade < 4; ++blade)
+	{
+		float now = water_blades_now[blade];
+		float before = water_blades_before[blade];
+		if ((now < 0.0) || (now == before) || (place[blade] <= 0.001))
+			continue;
+		if ((place[blade] >= min(now, before) - SNOW_LAYER_BLADE_MARGIN) && (place[blade] <= max(now, before) + SNOW_LAYER_BLADE_MARGIN))
+			return true;
+	}
+	return false;
+}
+
+void main()
+{
+	uint slot = water_counts.z;
+	uint texel = gl_GlobalInvocationID.x;
+	if ((slot >= uint(WATER_SLOTS)) || (texel >= uint(WATER_LAYER * WATER_LAYER)) || (water_snow_slots[slot] < 0.5))
+		return;
+	uint map;
+	if (false == water_snow_map(slot, map))
+		return;
+	ivec2 at = ivec2(int(texel % uint(WATER_LAYER)), int(texel / uint(WATER_LAYER)));
+	vec2 uv = (vec2(at) + 0.5) / float(WATER_LAYER);
+	ivec2 mapAt = clamp(ivec2(floor(uv * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
+	uint mapTexel = slot * uint(WATER_MAP * WATER_MAP) + uint(mapAt.y * WATER_MAP + mapAt.x);
+	uint axis = mapTexel * 2u;
+	// nothing of the glass there (the glass reads its layer only where it is, filtered next to it)
+	if (water_axes[axis].w <= 0.0)
+		return;
+	// a band of the rows in a step (the snow builds up and melts slowly), and wherever a blade went
+	bool due = ((uint(at.y) % uint(WATER_LAYER_BANDS)) == (water_counts.w % uint(WATER_LAYER_BANDS))) || snow_layer_swept(mapTexel);
+	if (false == due)
+		return;
+	snSlot = int(slot);
+	snMap = map;
+	snBig = (textureSize(raindropsatlas, 0).x >= 2048);
+	vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
+	snow_layer_s s = snCompose(uv, span, 1.0 / float(WATER_LAYER));
+	uint index = water_layer_base(slot) + 3u * texel;
+	water_cells[index] = packUnorm4x8(vec4(s.rgb, s.a));
+	water_cells[index + 1u] = packSnorm4x8(vec4(s.n, s.tr * 2.0 - 1.0));
+	water_cells[index + 2u] = packSnorm4x8(vec4(s.bend, s.bendA * 2.0 - 1.0, s.haze * 2.0 - 1.0));
+}

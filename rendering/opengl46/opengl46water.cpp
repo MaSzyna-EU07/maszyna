@@ -30,7 +30,8 @@ bool opengl46_windscreen_water::gpu_init()
 	try
 	{
 		std::array<char const *, pass::count> const names{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp"};
+		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp",
+		                                                  "water_snowlayer.comp"};
 		for (std::size_t i = 0; i < names.size(); ++i)
 		{
 			gl::shader shader(names[i]);
@@ -120,6 +121,28 @@ bool opengl46_windscreen_water::gpu_bake(std::size_t const Slot, texture_handle 
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_MASK_TEX), static_cast<GLuint>(texture.get_id()));
 	m_programs[pass::bake]->dispatch(groups(static_cast<std::size_t>(gl::WATER_MAP) * gl::WATER_MAP));
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_MASK_TEX), 0);
+	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+	gl::program::unbind();
+	return true;
+}
+
+bool opengl46_windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle const Atlas, texture_handle const Normal, gl::water_ubs const &Block)
+{
+	if ((!m_storage) || (Slot >= gl::WATER_SLOTS) || (Atlas == null_handle) || (Normal == null_handle))
+		return false;
+	auto &atlas{GfxRenderer->Texture(Atlas)};
+	auto &normal{GfxRenderer->Texture(Normal)};
+	if ((false == atlas.create()) || (false == atlas.get_is_ready()) || (atlas.get_id() == 0) || (false == normal.create()) || (false == normal.get_is_ready()) ||
+	    (normal.get_id() == 0))
+		return false;
+	m_storage->bind_base();
+	m_block->update(Block);
+	m_block->bind_uniform();
+	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_ATLAS_TEX), static_cast<GLuint>(atlas.get_id()));
+	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_NORMAL_TEX), static_cast<GLuint>(normal.get_id()));
+	m_programs[pass::snowlayer]->dispatch(groups(static_cast<std::size_t>(gl::WATER_LAYER) * gl::WATER_LAYER));
+	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_ATLAS_TEX), 0);
+	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_NORMAL_TEX), 0);
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	gl::program::unbind();
 	return true;
