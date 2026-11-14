@@ -1,0 +1,55 @@
+{
+  "_source": "pkp/6dg_v1/6dg.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "70000", "Mred": "10000", "Vmax": "90", "PWR": "708", "SandCap": "300"},
+  "Dimensions": {"L": "14.24", "H": "4.285", "W": "3.170", "Cx": "0.2"},
+  "Wheels": {"D": "1.100", "AIM": "4000", "Tw": "1.435", "Axle": "Bo'Bo'", "Ad": "2.6", "Bd": "7.524", "Rmin": "80"},
+  "Brake": {"BrakeValve": "LSt", "NBpA": "4", "MBF": "85.0", "MaxBP": "6.2", "MaxASBP": "2.0", "BCN": "4", "BCR": "0.1143", "BCD": "0.05", "BCM": "6.68", "HiPP": "5.0", "LoPP": "3.5", "Vv": "0.8", "MinCP": "7.5", "MaxCP": "8.5", "CompressorSpeed": "0.05", "CompressorPower": "Converter", "BVV": "200", "BRE": "0.9", "UBB1": "1", "UBB2": "12", "UBB3": "16", "HandlePipeUnlockPos": "-0.5", "LPOn": "2.75", "LPOff": "4.5"},
+  "BuffCoupl": {"ControlType": "6Dg", "CType": "Screw", "kB": "9200", "DmaxB": "0.15", "FmaxB": "740", "kC": "4800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "BCPN": "10", "BDelay1": "15", "BDelay2": "3", "BDelay3": "35", "BDelay4": "36", "ASB": "Manual", "LocalBrake": "PneumaticBrake", "MCPN": "6", "SCPN": "1", "AutoRelay": "Yes", "IniCDelay": "0.5", "SCDelay": "0.1", "BrakeDelays": "GP", "BrakeHandle": "MHZ_K8P", "LocBrakeHandle": "FD1", "ConverterStart": "Automatic", "ConverterStartDelay": "10", "FuelStart": "Automatic", "OilStart": "Automatic", "BrakeOpModes": "PN", "EIMCtrlType": "3", "DirChangeMaxPos": "3", "HAO": "No", "HMO": "Yes", "HGDP1": "2", "rows": [
+    ["-1","0.7","-1","15","Pneumatic"],
+    ["0","0.5","-1","9","Pneumatic"],
+    ["1","0.46","-1","9","Pneumatic"],
+    ["2","0.42","-1","9","Pneumatic"],
+    ["3","0.38","-1","9","Pneumatic"],
+    ["4","0.34","-1","9","Pneumatic"],
+    ["5","0.29","-1","9","Pneumatic"],
+    ["6","0","-1","15","Pneumatic"]
+  ]},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "5", "MaxHoldTime": "1.0", "EmergencyBrakeDelay": "6", "RadioStop": "Yes"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "91"},
+  "Engine": {"AIM": "0.55", "EngineType": "DumbDE", "Trans": "17:75", "Ftmax": "219000", "Vhyp": "7", "Vadd": "5.5", "Cr": "1", "ShuntMode": "0", "WaterCoolingTemperature": "81", "WaterCoolingFanSpeed": "-1200", "WaterMaxTemperature": "85", "OilMinPressure": "0.15", "OilMinTemperature": "25", "OilMaxTemperature": "90", "HeaterMinTemperature": "55", "HeaterMaxTemperature": "60", "HeatKFS": "35", "HeatKFO": "30", "HeatKFE": "7", "HeatKW": "0.01", "HeatKV": "0.3", "HeatKFO2": "100"},
+  "MotorParamTable": {"rows": [
+    ["0","17.567","64","1500","15","800","1320"],
+    ["1","15","183.3","2000","49","800","1320"]
+  ]},
+  "SpringBrake": {"Volume": "8", "MBF": "5", "MaxSP": "6", "ResetP": "4.0", "MinFP": "3.5", "PressOff": "4.5", "PressOn": "3.5", "ValveOnArea": "0.0002", "ValveOffArea": "0.0002", "ValvePNBArea": "0.002", "MTC": "4"},
+  "WWList": {"Size": "6", "rows": [
+    ["596","0","0","0"],
+    ["840","120","324","1150"],
+    ["1080","240","468","1350"],
+    ["1320","360","612","1550"],
+    ["1560","480","756","1750"],
+    ["1800","600","900","2000"],
+    ["1800","600","900","2000"]
+  ]},
+  "SpeedControl": {"SpeedCtrl": "Yes", "OverrideManual": "Yes", "InitPwr": "0.3", "MaxPwrVel": "5", "StartVel": "2", "MinPwr": "0.3", "MaxPwr": "1.0", "MinVel": "0", "MaxVel": "120", "Offset": "-0.5", "kPpos": "0.1", "kPneg": "0.4", "kIpos": "0.06", "kIneg": "0.06", "BrakeIntervention": "Yes"},
+  "LightsList": {"Size": "7", "Wrap": "no", "Default": "1", "rows": [
+    ["0","0"],
+    ["34","34"],
+    ["38","34"],
+    ["22","34"],
+    ["16","1"],
+    ["1","16"],
+    ["21","34"]
+  ]},
+  "UCList": {"Size": "6", "IntegratedBrakePN": "no", "IntegratedLocBrake": "yes", "IntegratedBrake": "no", "CtrlValStep": "0.05", "rows": [
+    ["0","0","-1","0","-1","0.15","0.15","0","1","1"],
+    ["1","0","-1","0","0","0.00","0.00","1","3","1"],
+    ["2","0","-1","0","0","0.15","0.00","1","3","1"],
+    ["3","0","0","0","0","0.00","0.00","1","5","3"],
+    ["4","0","0","1","0","0.00","0.15","3","5","5"],
+    ["5","0","0","1","0","0.00","0.00","3","6","5"],
+    ["6","0","0","1","1","0.15","0.15","5","6","5"]
+  ]}
+}
