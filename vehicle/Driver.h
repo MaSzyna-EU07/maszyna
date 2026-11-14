@@ -717,6 +717,7 @@ private:
     bool IsAnyConverterEnabled{ false };
     bool IsAnyConverterExplicitlyEnabled{ false }; // only takes into account manually controlled devices
     bool IsAnyCouplerStretched{ false }; // whether there's a coupler in the consist stretched above limit
+    bool IsAnyBrakeHeldAtStand{ false }; // whether a standing vehicle's distributor holds or applies its brake
 
 // logs
 // methods

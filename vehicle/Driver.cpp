@@ -166,6 +166,9 @@ const double FSOverchargePipePress = 5.2;
 const double FSOverchargeTime = 2.0;
 const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
+// the shortest filling stroke given for a blocked departure: the pressure at the driver's valve passes the release
+// level within a frame or two of the time speeded up, before the pipe along the train has risen at all
+const double FSMinTimeDepartBlocked = 3.0;
 const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
@@ -6509,6 +6512,7 @@ TController::determine_consist_state() {
 	                                                                                                       mvOccupied->PipePress < std::max(3.9, mvOccupied->BrakePressureActual.PipePressureVal) + 0.1;
     fAccGravity = 0.0; // przyspieszenie wynikające z pochylenia
     IsAnyCouplerStretched = false;
+    IsAnyBrakeHeldAtStand = false;
     IsAnyDoorOnlyOpen[ side::right ] = IsAnyDoorOnlyOpen[ side::left ] = false;
 	IsAnyDoorOpen[ side::right ] = IsAnyDoorOpen[ side::left ] = false;
     IsAnyDoorPermitActive[ side::right ] = IsAnyDoorPermitActive[ side::left ] = false;
@@ -6556,6 +6560,9 @@ TController::determine_consist_state() {
             // ciężar razy składowa styczna grawitacji
             fAccGravity -= vehicle->TotalMassxg * dy * ( p->DirectionGet() == iDirection ? 1 : -1 );
         }
+        IsAnyBrakeHeldAtStand |=
+            vehicle->Vel < 1.0
+         && TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on );
         // check coupler state
         IsAnyCouplerStretched =
             IsAnyCouplerStretched
@@ -9155,7 +9162,10 @@ void TController::control_main_pipe() {
      || mvOccupied->BrakeHandle == TBrakeHandle::M394 ) {
 
         auto const departblocked { is_departure_blocked( DepartBlockedFSDelay ) };
-        if( (iDrivigFlags & moveOerlikons || true == IsCargoTrain || departblocked) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 && fReady > 0.35 &&
+        if( (iDrivigFlags & moveOerlikons || true == IsCargoTrain || departblocked) && BrakeCtrlPosition == gbh_RP && AbsAccS < 0.03 && AccDesired > -0.03 && VelDesired - mvOccupied->Vel > 2.0 &&
+            // a distributor left in the lap position with less than 0.35 bar in the cylinder blocks the departure as well,
+            // and nothing else releases it: the individual release acts from 0.4 bar
+            ( fReady > 0.35 || ( departblocked && IsAnyBrakeHeldAtStand ) ) &&
 		    ( mvOccupied->EqvtPipePress < 4.5 || departblocked ) // don't charge with a risk of overcharging the main pipe
 		    && mvOccupied->Compressor >= 7.5 // don't charge without sufficient pressure in the tank
 		    && BrakeChargingCooldown >= 0.0 // don't charge while cooldown is active
@@ -9171,7 +9181,9 @@ void TController::control_main_pipe() {
 
         if( mvOccupied->Compressor < 5.0
          || ( BrakeCtrlPosition < gbh_RP
-           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) || is_brake_charging_done() ) ) ) {
+           && ( ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2)
+               && ( false == departblocked || BrakeChargingStart < 0.0 || ElapsedTime - BrakeChargingStart >= FSMinTimeDepartBlocked ) )
+             || is_brake_charging_done() ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
     }
