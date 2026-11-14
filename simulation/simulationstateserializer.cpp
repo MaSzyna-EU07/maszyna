@@ -424,7 +424,13 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
         // TBD: postpone loading furter and only load required blocks during the simulation?
 		if (false == Scratchpad.binary.terrain_included)
 		{
-			Region->deserialize(Scratchpad.name);
+			if (false == Region->deserialize(Scratchpad.name))
+			{
+				// the file looked whole to is_scene() but its content is damaged. the geometry it holds is missing from this
+				// session, as the text definitions were skipped already. the file is the game's own copy of the text, so it
+				// goes, and the next start loads the text and writes it anew
+				Region->discard_scene(Scratchpad.name);
+			}
 		}
 		else
 		{

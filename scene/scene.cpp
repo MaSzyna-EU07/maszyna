@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "scene/sn_utils.h"
+#include "scene/regionfile.h"
 #include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
@@ -29,6 +30,26 @@ std::string const EU07_FILEEXTENSION_REGION { ".sbt" };
 std::uint32_t const EU07_FILEHEADER { MAKE_ID4( 'E','U','0','7' ) };
 std::uint32_t const EU07_FILEVERSION_REGION { MAKE_ID4( 'S', 'B', 'T', '2' ) };
 std::map<std::string, basic_node *> Hierarchy;
+
+namespace {
+
+// name of the region file kept for specified scenario file
+std::string
+region_file_name( std::string const &Scenariofile ) {
+
+    auto filename { Scenariofile };
+    while( filename[ 0 ] == '$' ) {
+        // trim leading $ char rainsted utility may add to the base name for modified .scn files
+        filename.erase( 0, 1 );
+    }
+    erase_extension( filename );
+    filename = Global.asCurrentSceneryPath + filename;
+    filename += EU07_FILEEXTENSION_REGION;
+
+    return filename;
+}
+
+} // namespace
  
 // potentially activates event handler with the same name as provided node, and within handler activation range
 void
@@ -232,20 +253,36 @@ basic_cell::deserialize( std::istream &Input ) {
     m_area.deserialize( Input );
     // cell shapes
     // shape count followed by opaque shape data
+    // NOTE: a damaged count is cut short by the end of the data rather than followed
     auto itemcount { sn_utils::ld_uint32( Input ) };
-    while( itemcount-- ) {
+    while( ( itemcount-- ) && ( true == Input.good() ) ) {
         m_shapesopaque.emplace_back( shape_node().deserialize( Input ) );
     }
     itemcount = sn_utils::ld_uint32( Input );
-    while( itemcount-- ) {
+    while( ( itemcount-- ) && ( true == Input.good() ) ) {
         m_shapestranslucent.emplace_back( shape_node().deserialize( Input ) );
     }
     itemcount = sn_utils::ld_uint32( Input );
-    while( itemcount-- ) {
+    while( ( itemcount-- ) && ( true == Input.good() ) ) {
         m_lines.emplace_back( lines_node().deserialize( Input ) );
     }
     // cell activation flag
     m_active = true == m_active || false == m_shapesopaque.empty() || false == m_shapestranslucent.empty() || false == m_lines.empty();
+}
+
+// takes over the content restored from a file into another cell, as deserialize() would have added it to this one
+void
+basic_cell::merge( basic_cell &&Other ) {
+
+    m_area.center = Other.m_area.center;
+    m_area.radius = std::max( m_area.radius, Other.m_area.radius );
+    m_shapesopaque.insert( m_shapesopaque.end(), std::make_move_iterator( Other.m_shapesopaque.begin() ), std::make_move_iterator( Other.m_shapesopaque.end() ) );
+    m_shapestranslucent.insert( m_shapestranslucent.end(), std::make_move_iterator( Other.m_shapestranslucent.begin() ), std::make_move_iterator( Other.m_shapestranslucent.end() ) );
+    m_lines.insert( m_lines.end(), std::make_move_iterator( Other.m_lines.begin() ), std::make_move_iterator( Other.m_lines.end() ) );
+    m_active = true == m_active || true == Other.m_active;
+    Other.m_shapesopaque.clear();
+    Other.m_shapestranslucent.clear();
+    Other.m_lines.clear();
 }
 
 // sends content of the class in legacy (text) format to provided stream
@@ -860,12 +897,25 @@ basic_section::deserialize( std::istream &Input ) {
     m_area.deserialize( Input );
     // section shapes: shape count followed by shape data
     auto shapecount { sn_utils::ld_uint32( Input ) };
-    while( shapecount-- ) {
+    while( ( shapecount-- ) && ( true == Input.good() ) ) {
         m_shapes.emplace_back( shape_node().deserialize( Input ) );
     }
     // partitioned data
     for( auto &cell : m_cells ) {
         cell.deserialize( Input );
+    }
+}
+
+// takes over the content restored from a file into another section, as deserialize() would have added it to this one
+void
+basic_section::merge( basic_section &&Other ) {
+
+    m_area.center = Other.m_area.center;
+    m_area.radius = std::max( m_area.radius, Other.m_area.radius );
+    m_shapes.insert( m_shapes.end(), std::make_move_iterator( Other.m_shapes.begin() ), std::make_move_iterator( Other.m_shapes.end() ) );
+    Other.m_shapes.clear();
+    for( std::size_t index { 0 }; index < m_cells.size(); ++index ) {
+        m_cells[ index ].merge( std::move( Other.m_cells[ index ] ) );
     }
 }
 
@@ -1172,26 +1222,17 @@ basic_region::update_traction( TDynamicObject *Vehicle, int const Pantographinde
 bool
 basic_region::is_scene( std::string const &Scenariofile ) const {
 
-    auto filename { Scenariofile };
-    while( filename[ 0 ] == '$' ) {
-        // trim leading $ char rainsted utility may add to the base name for modified .scn files
-        filename.erase( 0, 1 );
-    }
-    erase_extension( filename );
-    filename = Global.asCurrentSceneryPath + filename;
-    filename += EU07_FILEEXTENSION_REGION;
+    auto const filename { region_file_name( Scenariofile ) };
 
     if( false == FileExists( filename ) ) {
         return false;
     }
-    // file type and version check
+    // file type and version check, and whether the sections add up to the whole file. a file cut short (by a write
+    // interrupted with an older version, or a copy) is caught here, while the scenery can still be loaded from the text
     std::ifstream input( filename, std::ios::binary );
-
-    uint32_t headermain{ sn_utils::ld_uint32( input ) };
-    uint32_t headertype{ sn_utils::ld_uint32( input ) };
-
-    if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
-        // wrong file type
+    auto const layout { region_file::check_layout( input, EU07_FILEHEADER, EU07_FILEVERSION_REGION, static_cast<std::uint32_t>( m_sections.size() ) ) };
+    if( false == layout.empty() ) {
+        WriteLog( "Bad file: \"" + filename + "\" " + layout + ", ignored" );
         return false;
     }
 
@@ -1202,38 +1243,35 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
 void
 basic_region::serialize( std::string const &Scenariofile ) const {
 
-    auto filename { Scenariofile };
-    while( filename[ 0 ] == '$' ) {
-        // trim leading $ char rainsted utility may add to the base name for modified .scn files
-        filename.erase( 0, 1 );
-    }
-    erase_extension( filename );
-    filename = Global.asCurrentSceneryPath + filename;
-    filename += EU07_FILEEXTENSION_REGION;
+    auto const filename { region_file_name( Scenariofile ) };
 
-    std::ofstream output { filename, std::ios::binary };
-
-    // region file version 1
-    // header: EU07SBT + version (0-255)
-    sn_utils::ls_uint32( output, EU07_FILEHEADER );
-    sn_utils::ls_uint32( output, EU07_FILEVERSION_REGION );
-    // sections
-    // TBD, TODO: build table of sections and file offsets, if we postpone section loading until they're within range
-    std::uint32_t sectioncount { 0 };
-    for( auto *section : m_sections ) {
-        if( section != nullptr ) {
-            ++sectioncount;
+    // the file is written under a temporary name and takes the final one only when complete, so a write cut short
+    // (a crash, the process killed) leaves no partial file to be read on the next start
+    auto const error { region_file::write_through_temporary( filename, [ this ]( std::ostream &output ) {
+        // region file version 1
+        // header: EU07SBT + version (0-255)
+        sn_utils::ls_uint32( output, EU07_FILEHEADER );
+        sn_utils::ls_uint32( output, EU07_FILEVERSION_REGION );
+        // sections
+        // TBD, TODO: build table of sections and file offsets, if we postpone section loading until they're within range
+        std::uint32_t sectioncount { 0 };
+        for( auto *section : m_sections ) {
+            if( section != nullptr ) {
+                ++sectioncount;
+            }
         }
-    }
-    // section count, followed by section data
-    sn_utils::ls_uint32( output, sectioncount );
-    std::uint32_t sectionindex { 0 };
-    for( auto *section : m_sections ) {
-        // section data: section index, followed by length of section data, followed by section data
-        if( section != nullptr ) {
-            sn_utils::ls_uint32( output, sectionindex );
-            section->serialize( output ); }
-        ++sectionindex;
+        // section count, followed by section data
+        sn_utils::ls_uint32( output, sectioncount );
+        std::uint32_t sectionindex { 0 };
+        for( auto *section : m_sections ) {
+            // section data: section index, followed by length of section data, followed by section data
+            if( section != nullptr ) {
+                sn_utils::ls_uint32( output, sectionindex );
+                section->serialize( output ); }
+            ++sectionindex;
+        } } ) };
+    if( false == error.empty() ) {
+        ErrorLog( "Bad file: binary version of the scenery wasn't written, " + error );
     }
 }
 
@@ -1241,46 +1279,87 @@ basic_region::serialize( std::string const &Scenariofile ) const {
 bool
 basic_region::deserialize( std::string const &Scenariofile ) {
 
-    auto filename { Scenariofile };
-    while( filename[ 0 ] == '$' ) {
-        // trim leading $ char rainsted utility may add to the base name for modified .scn files
-        filename.erase( 0, 1 );
-    }
-    erase_extension( filename );
-    filename = Global.asCurrentSceneryPath + filename;
-    filename += EU07_FILEEXTENSION_REGION;
+    auto const filename { region_file_name( Scenariofile ) };
 
     if( false == FileExists( filename ) ) {
 		Global.file_binary_terrain_state = false;
         return false;
     }
     // region file version 1
-    // file type and version check
+    // file type and version check, and whether the sections add up to the whole file
     std::ifstream input( filename, std::ios::binary );
-
-    uint32_t headermain { sn_utils::ld_uint32( input ) };
-    uint32_t headertype { sn_utils::ld_uint32( input ) };
-
-    if( headermain != EU07_FILEHEADER || headertype != EU07_FILEVERSION_REGION ) {
-        // wrong file type
-        WriteLog( "Bad file: \"" + filename + "\" is of either unrecognized type or version" );
+    auto const sectionlimit { static_cast<std::uint32_t>( m_sections.size() ) };
+    auto error { region_file::check_layout( input, EU07_FILEHEADER, EU07_FILEVERSION_REGION, sectionlimit ) };
+    if( false == error.empty() ) {
+        ErrorLog( "Bad file: \"" + filename + "\" " + error + ", the geometry it holds is missing" );
         return false;
     }
     // sections
     // TBD, TODO: build table of sections and file offsets, if we postpone section loading until they're within range
-    // section count
-    auto sectioncount { sn_utils::ld_uint32( input ) };
-    while( sectioncount-- ) {
-        // section index, followed by section data size, followed by section data
-        auto const sectionindex { sn_utils::ld_uint32( input ) };
-        auto const sectionsize { sn_utils::ld_uint32( input ) };
-        if( m_sections[ sectionindex ] == nullptr ) {
-            m_sections[ sectionindex ] = new basic_section();
+    // the sections are restored apart from the region, which takes them over only once the whole file was read
+    // without a fault: a damaged file leaves nothing of itself behind
+    std::vector<std::pair<std::uint32_t, std::unique_ptr<basic_section>>> sections;
+    try {
+        input.clear();
+        input.seekg( 2 * sizeof( std::uint32_t ), std::ios::beg );
+        // section count
+        auto sectioncount { sn_utils::ld_uint32( input ) };
+        sections.reserve( sectioncount );
+        while( ( sectioncount-- ) && ( true == error.empty() ) ) {
+            // section index, followed by section data size (counted from the start of the index), followed by section data
+            std::uint32_t sectionindex, sectionsize;
+            error = region_file::read_section_header( input, sectionlimit, sectionindex, sectionsize );
+            if( false == error.empty() ) { break; }
+            // the section is read out of its own data, it can't reach into the next one
+            std::string data( sectionsize - region_file::section_header_size, '\0' );
+            input.read( data.data(), static_cast<std::streamsize>( data.size() ) );
+            if( false == input.good() ) {
+                error = "ends inside section " + std::to_string( sectionindex );
+                break;
+            }
+            std::istringstream sectioninput { std::move( data ) };
+            auto section { std::make_unique<basic_section>() };
+            section->deserialize( sectioninput );
+            if( true == sectioninput.fail() ) {
+                error = "has section " + std::to_string( sectionindex ) + " shorter than its content";
+            }
+            else if( sectioninput.peek() != std::char_traits<char>::eof() ) {
+                error = "has section " + std::to_string( sectionindex ) + " longer than its content";
+            }
+            sections.emplace_back( sectionindex, std::move( section ) );
         }
-        m_sections[ sectionindex ]->deserialize( input );
+    }
+    catch( std::exception const &Exception ) {
+        error = std::string( "can't be read, " ) + Exception.what();
+    }
+    if( false == error.empty() ) {
+        ErrorLog( "Bad file: \"" + filename + "\" " + error + ", the geometry it holds is missing" );
+        return false;
+    }
+    for( auto &[ sectionindex, section ] : sections ) {
+        if( m_sections[ sectionindex ] == nullptr ) {
+            m_sections[ sectionindex ] = section.release();
+        }
+        else {
+            m_sections[ sectionindex ]->merge( std::move( *section ) );
+        }
     }
 
     return true;
+}
+
+// removes the region file of specified scenario file, which turned out to be damaged, so the next start writes it anew
+void
+basic_region::discard_scene( std::string const &Scenariofile ) const {
+
+    auto const filename { region_file_name( Scenariofile ) };
+    std::error_code error;
+    if( true == std::filesystem::remove( filename, error ) ) {
+        WriteLog( "Bad file: \"" + filename + "\" removed, it will be made anew from the scenery on the next start" );
+    }
+    else if( error ) {
+        ErrorLog( "Bad file: \"" + filename + "\" can't be removed, " + error.message() + ". Remove it to have it made anew from the scenery" );
+    }
 }
 
 // sends content of the class in legacy (text) format to provided stream
