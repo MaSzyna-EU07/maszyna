@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "utilities/logfiles.h"
 #include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
@@ -345,8 +346,10 @@ int eu07_application::init(int Argc, char *Argv[])
 	Global.threads.emplace("LogService", std::move(sLoggingService));
 
 	init_debug();
+	result = init_settings(Argc, Argv);
+	// the log files are named by the settings (multiplelogs), so they are cleared and opened once those are read
 	init_files();
-	if ((result = init_settings(Argc, Argv)) != 0)
+	if (result != 0)
 	{
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
 		return result;
@@ -1183,16 +1186,19 @@ void eu07_application::init_console()
 
 void eu07_application::init_files()
 {
-
+	// without multiplelogs the run writes the shared log.txt / errors.txt, and those of the run before go. with it the
+	// run writes files of its own in logs/, and the shared ones are left to whoever ran the game last without it
+	for (auto const &file : stale_log_files(Global.MultipleLogs))
+	{
+		std::error_code error; // not there is fine
+		std::filesystem::remove(file, error);
+	}
 #ifdef _WIN32
-	DeleteFile("log.txt");
-	DeleteFile("errors.txt");
 	CreateDirectory("logs", nullptr);
 #elif __unix__
-	unlink("log.txt");
-	unlink("errors.txt");
 	mkdir("logs", 0750);
 #endif
+	OpenLogFiles();
 }
 namespace fs = std::filesystem;
 

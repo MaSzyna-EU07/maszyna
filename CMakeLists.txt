@@ -538,6 +538,7 @@ set(CORE_SOURCES
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
+"utilities/logfiles.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scripting/ladderlogic.cpp"
