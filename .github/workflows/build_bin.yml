@@ -221,8 +221,13 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update
 
+          # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
+          # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
           sudo apt-get install -y \
             build-essential \
+            libasound2-dev \
+            libpulse-dev \
+            libpipewire-0.3-dev \
             libgl1-mesa-dev \
             libglew-dev \
             libglfw3-dev \
@@ -249,12 +254,17 @@ jobs:
             https://github.com/kcat/openal-soft.git \
             /tmp/openal-soft
 
+          # the backends are loaded with dlopen at run time (ALSOFT_DLOPEN), so the bundled library needs none of them;
+          # REQUIRE makes a missing header fail the build instead of shipping a library without sound
           cmake \
             -S /tmp/openal-soft \
             -B /tmp/openal-soft/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DALSOFT_EXAMPLES=OFF \
-            -DALSOFT_UTILS=OFF
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_REQUIRE_PIPEWIRE=ON \
+            -DALSOFT_REQUIRE_PULSEAUDIO=ON \
+            -DALSOFT_REQUIRE_ALSA=ON
 
           cmake \
             --build /tmp/openal-soft/build \
