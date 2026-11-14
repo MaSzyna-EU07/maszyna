@@ -97,7 +97,23 @@ void main()
         vec4 layerColour;
         vec4 layerNormal;
         vec4 layerBend;
-        water_layer_at(uint(snSlot), f_coord, layerColour, layerNormal, layerBend);
+        if (water_layer_of(uint(snSlot)))
+        {
+            water_layer_at(uint(snSlot), f_coord, layerColour, layerNormal, layerBend);
+        }
+        else
+        {
+            // a second glass of the snow in the cab (the layer goes to the first one): its snow laid at the pixel, as it was
+            // before the layer, slower but the same
+            snBig = (textureSize(raindropsatlas, 0).x >= 2048);
+            ivec2 texel = clamp(ivec2(floor(f_coord * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
+            uint axis = (uint(snSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
+            vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
+            snow_layer_s laid = snCompose(f_coord, span, max(length(duv1), length(duv2)));
+            layerColour = vec4(laid.rgb, laid.a);
+            layerNormal = vec4(laid.n, laid.tr);
+            layerBend = vec4(laid.bend, laid.bendA, laid.haze);
+        }
         snowRGB = layerColour.rgb;
         snowA   = layerColour.a;
         snowN   = layerNormal.xyz;

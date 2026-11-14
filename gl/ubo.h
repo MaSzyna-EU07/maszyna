@@ -728,9 +728,11 @@ namespace gl
     const GLuint WATER_CELL_DROPS = 32;
     const GLuint WATER_TRAIL = 1024;
     const GLuint WATER_MAP = 256;
-    // the snow of a glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels over its uv, a band of every
-    // WATER_LAYER_BANDS-th row laid anew in a step (and wherever a blade goes over it), read by mat_snow_windscreen.frag
-    const GLuint WATER_LAYER = 1024;
+    // the snow of a glass laid together (water_snowlayer.comp): WATER_LAYER_TEXELS texels over the rectangle of its uv the glass
+    // takes (across and down as the glass is wide and high, ~1 mm a texel), a band of every WATER_LAYER_BANDS-th row laid anew in
+    // a step (and wherever a blade goes over it), read by mat_snow_windscreen.frag. one layer: the first glass of the snow of the
+    // cab has it (a cab has one glass of the snow as a rule), the others lay their snow at every pixel as they're drawn
+    const GLuint WATER_LAYER_TEXELS = 2 * 1024 * 1024;
     const GLuint WATER_LAYER_BANDS = 8;
     const GLuint WATER_GROUP_SIZE = 64;
     // the binding points of the opengl renderer: the storage of the water (read by the glasses, written by the passes), the block
@@ -775,13 +777,18 @@ namespace gl
     // flakes), a step reads one and writes the other (the header of the glass says which one is the latest)
     const size_t WATER_SNOW_OFFSET = WATER_TRAIL_OFFSET + 4 * static_cast<size_t>(WATER_SLOTS) * WATER_TRAIL * WATER_TRAIL;
     const size_t WATER_SNOW_SIZE = 8 * static_cast<size_t>(WATER_MAP) * WATER_MAP;
-    // the snow of every glass laid together (water_snowlayer.comp): WATER_LAYER x WATER_LAYER texels of three uint each (the colour
-    // and the cover, the normal and the translucency, the bend and the haze, see water.glsl)
-    const size_t WATER_LAYER_OFFSET = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
-    const size_t WATER_LAYER_SIZE = 12 * static_cast<size_t>(WATER_LAYER) * WATER_LAYER;
-    const size_t WATER_STORAGE_SIZE = WATER_LAYER_OFFSET + WATER_LAYER_SIZE * WATER_SLOTS;
+    // the snow of the glass of the snow laid together (water_snowlayer.comp): first eight uint of every glass (the rectangle of its
+    // uv the layer takes, four floats; the texels of the layer across and down, 0 when the glass has no layer), then the layer,
+    // WATER_LAYER_TEXELS texels of three uint each (the colour and the cover, the normal and the translucency, the bend and the
+    // haze, see water.glsl)
+    const size_t WATER_LAYER_INFO_OFFSET = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
+    const size_t WATER_LAYER_INFO_SIZE = 32;
+    const size_t WATER_LAYER_OFFSET = WATER_LAYER_INFO_OFFSET + WATER_LAYER_INFO_SIZE * WATER_SLOTS;
+    const size_t WATER_LAYER_SIZE = 12 * static_cast<size_t>(WATER_LAYER_TEXELS);
+    const size_t WATER_STORAGE_SIZE = WATER_LAYER_OFFSET + WATER_LAYER_SIZE;
     // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
-    // cells and its paths, its header and its counts, its two maps of the snow, its laid snow, (offset, size) in bytes
+    // cells and its paths, its header and its counts, its two maps of the snow, the layer of the snow (the one of the cab, laid
+    // anew whichever glass it goes to), (offset, size) in bytes
     inline std::array<std::pair<size_t, size_t>, 14> water_slot_parts(size_t const Slot)
     {
         auto const drops{static_cast<size_t>(WATER_DROPS)};
@@ -801,7 +808,7 @@ namespace gl
                  {WATER_COUNTS_OFFSET + 16 * Slot, 16},
                  {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * Slot, WATER_SNOW_SIZE},
                  {WATER_SNOW_OFFSET + WATER_SNOW_SIZE * (WATER_SLOTS + Slot), WATER_SNOW_SIZE},
-                 {WATER_LAYER_OFFSET + WATER_LAYER_SIZE * Slot, WATER_LAYER_SIZE}}};
+                 {WATER_LAYER_OFFSET, WATER_LAYER_SIZE}}};
     }
 
     // layout std140: the step of the simulation of the water on the windscreens (GLSL water_ubo), every vector in the space of the

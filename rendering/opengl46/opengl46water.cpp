@@ -105,6 +105,9 @@ void opengl46_windscreen_water::gpu_setup(std::size_t const Slot, std::vector<gl
 		::glClearNamedBufferSubData(*m_storage, GL_R32UI, static_cast<GLintptr>(part.first), static_cast<GLsizeiptr>(part.second), GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
 	auto const axes{gl::water_slot_parts(Slot)[1]};
 	m_storage->update(Axes.data(), static_cast<GLintptr>(axes.first), static_cast<GLsizeiptr>(std::min(axes.second, Axes.size() * sizeof(glm::vec4))));
+	// where the layer of its snow lies
+	auto const info{layer_info(Slot, Axes)};
+	m_storage->update(info.data(), static_cast<GLintptr>(gl::WATER_LAYER_INFO_OFFSET + gl::WATER_LAYER_INFO_SIZE * Slot), static_cast<GLsizeiptr>(sizeof(info)));
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 }
 
@@ -140,7 +143,7 @@ bool opengl46_windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_h
 	m_block->bind_uniform();
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_ATLAS_TEX), static_cast<GLuint>(atlas.get_id()));
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_NORMAL_TEX), static_cast<GLuint>(normal.get_id()));
-	m_programs[pass::snowlayer]->dispatch(groups(static_cast<std::size_t>(gl::WATER_LAYER) * gl::WATER_LAYER));
+	m_programs[pass::snowlayer]->dispatch(groups(gl::WATER_LAYER_TEXELS));
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_ATLAS_TEX), 0);
 	::glBindTextureUnit(static_cast<GLuint>(gl::WATER_SNOW_NORMAL_TEX), 0);
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

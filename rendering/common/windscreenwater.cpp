@@ -10,6 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/common/windscreenwater.h"
 
+#include <algorithm>
+#include <bit>
+#include <cmath>
+
 #include "model/Model3d.h"
 #include "model/material.h"
 #include "rendering/renderer.h"
@@ -121,6 +125,7 @@ void windscreen_water::release()
 	assign(false);
 	m_glasses = {};
 	m_glasscount = 0;
+	m_layerslot = -1;
 	m_kinds.clear();
 	m_vehicle = nullptr;
 	m_cab = nullptr;
@@ -500,29 +505,75 @@ texture_handle material_texture(opengl_material const &Material, std::string con
 
 } // namespace
 
+std::array<std::uint32_t, 8> windscreen_water::layer_info(std::size_t const Slot, std::vector<glm::vec4> const &Axes)
+{
+	std::array<std::uint32_t, 8> info{};
+	if ((Slot >= m_glasses.size()) || (false == m_glasses[Slot].snow) || ((m_layerslot >= 0) && (m_layerslot != static_cast<int>(Slot))))
+	{
+		return info;
+	}
+	auto const size{static_cast<int>(gl::WATER_MAP)};
+	glm::ivec2 least{size};
+	glm::ivec2 most{-1};
+	glm::dvec2 span{0.0};
+	auto on{0};
+	for (int y = 0; y < size; ++y)
+	{
+		for (int x = 0; x < size; ++x)
+		{
+			auto const texel{static_cast<std::size_t>(y * size + x)};
+			if ((texel * 2 + 1 >= Axes.size()) || (Axes[texel * 2].w <= 0.f))
+			{
+				continue;
+			}
+			least = glm::min(least, glm::ivec2{x, y});
+			most = glm::max(most, glm::ivec2{x, y});
+			if (Axes[texel * 2].w >= 1.f)
+			{
+				// metres of the glass in a unit of its uv, across and down
+				span += glm::dvec2{glm::length(glm::vec3{Axes[texel * 2]}), glm::length(glm::vec3{Axes[texel * 2 + 1]})};
+				++on;
+			}
+		}
+	}
+	if ((on == 0) || (most.x < least.x) || (most.y < least.y))
+	{
+		return info;
+	}
+	m_layerslot = static_cast<int>(Slot);
+	span /= static_cast<double>(on);
+	auto const corner{glm::vec2{least} / static_cast<float>(size)};
+	auto const extent{glm::vec2{most - least + 1} / static_cast<float>(size)};
+	// the texels across and down as the glass is wide and high (the same size in metres both ways)
+	auto const wide{std::max(static_cast<double>(extent.x) * span.x, 1e-3)};
+	auto const high{std::max(static_cast<double>(extent.y) * span.y, 1e-3)};
+	auto const texels{static_cast<double>(gl::WATER_LAYER_TEXELS)};
+	auto const across{static_cast<std::uint32_t>(std::clamp(std::round(std::sqrt(texels * wide / high)), 16.0, texels / 16.0))};
+	auto const down{static_cast<std::uint32_t>(gl::WATER_LAYER_TEXELS / across)};
+	info = {std::bit_cast<std::uint32_t>(corner.x), std::bit_cast<std::uint32_t>(corner.y), std::bit_cast<std::uint32_t>(extent.x), std::bit_cast<std::uint32_t>(extent.y), across, down, 0u, 0u};
+	return info;
+}
+
 void windscreen_water::lay_snow(gl::water_ubs const &Block)
 {
-	for (std::size_t slot = 0; slot < m_glasscount; ++slot)
+	// the one glass with the layer
+	if ((m_layerslot < 0) || (static_cast<std::size_t>(m_layerslot) >= m_glasscount))
 	{
-		if (Block.snow_slots[static_cast<glm::length_t>(slot)] < 0.5f)
-		{
-			continue;
-		}
+		return;
+	}
+	auto const slot{static_cast<std::size_t>(m_layerslot)};
+	if (Block.snow_slots[static_cast<glm::length_t>(slot)] >= 0.5f)
+	{
 		auto const *material{m_host.material(m_glasses[slot].material)};
-		if (material == nullptr)
+		auto const atlas{(material != nullptr) ? material_texture(*material, "raindropsatlas") : null_handle};
+		auto const normal{(material != nullptr) ? material_texture(*material, "normalmap") : null_handle};
+		if ((atlas != null_handle) && (normal != null_handle))
 		{
-			continue;
+			auto layer{Block};
+			layer.counts.z = static_cast<std::uint32_t>(slot);
+			layer.counts.w = m_step;
+			gpu_snow_layer(slot, atlas, normal, layer);
 		}
-		auto const atlas{material_texture(*material, "raindropsatlas")};
-		auto const normal{material_texture(*material, "normalmap")};
-		if ((atlas == null_handle) || (normal == null_handle))
-		{
-			continue;
-		}
-		auto layer{Block};
-		layer.counts.z = static_cast<std::uint32_t>(slot);
-		layer.counts.w = m_step;
-		gpu_snow_layer(slot, atlas, normal, layer);
 	}
 }
 
