@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +29,8 @@ class TDynamicObject;
 
 namespace gfx
 {
+
+struct snow_look; // the look of the material of a glass of the snow (windscreenwater.cpp)
 
 // the water on the windscreens of the cab of the train, simulated on the gpu, whichever api runs it.
 //
@@ -95,6 +98,9 @@ class windscreen_water
 		double landings{0.0}; // the share of a landing left over from the steps before
 		bool baked{false};
 		bool snow{false}; // a glass of the snow (mat_snow_windscreen), else of the water
+		// the material of a glass of the snow as it was set up: it stays on the glass when it stops snowing (until it rains), so
+		// the snow left on it melts into drops and dries
+		std::shared_ptr<snow_look> snowmaterial;
 	};
 
 	// the glasses of the model of a cab found and set up
@@ -105,6 +111,9 @@ class windscreen_water
 	void assign(bool Assigned);
 	// the snow of the glasses of the snow Block says are simulated laid together, after the step
 	void lay_snow(gl::water_ubs const &Block);
+	// the glasses of the snow keep the material of the snow when it stops snowing, until it rains (the weather gave the material
+	// the shader of the rain back)
+	void keep_snow();
 
   protected:
 	// where the layer of the snow of a glass lies (water.glsl): the rectangle of the uv its map holds the glass in (the corner and
