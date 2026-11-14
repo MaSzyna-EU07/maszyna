@@ -35,13 +35,14 @@ std::string free_name(TTrack const &Track)
 {
 	auto const base{ascii_name::fold(Track.name())};
 	auto name{base};
-	for (int number = 2;; ++number)
+	// far more numbers than a scenery has tracks
+	for (int number = 2; number <= 1000000; ++number)
 	{
-		auto const *taken{simulation::Paths.find(name)};
-		if (taken == nullptr || taken == &Track)
+		if (auto const *taken{simulation::Paths.find(name)}; taken == nullptr || taken == &Track)
 			return name;
 		name = base + "_" + std::to_string(number);
 	}
+	return name;
 }
 
 } // namespace

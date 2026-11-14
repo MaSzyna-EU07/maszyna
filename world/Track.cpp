@@ -3949,8 +3949,7 @@ TTrack::copy_adjacent_trackbed_material( TTrack const *Exclude ) {
 TTrack *
 path_table::find( std::string const &Name ) const {
 
-    auto *found { basic_table<TTrack>::find( Name ) };
-    if( found != nullptr || ascii_name::plain( Name ) ) {
+    if( auto *found { basic_table<TTrack>::find( Name ) }; found != nullptr || ascii_name::plain( Name ) ) {
         return found;
     }
     return basic_table<TTrack>::find( ascii_name::fold( Name ) );

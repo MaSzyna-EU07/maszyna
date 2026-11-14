@@ -63,6 +63,46 @@ std::string_view plain_letter(char32_t const Code)
 	return "_";
 }
 
+// the length of the UTF-8 sequence the byte begins, with the bits of the character it holds; 0 for a byte which can't begin one
+int sequence_length(unsigned char const Lead, char32_t &Code)
+{
+	if (Lead < 0x80)
+	{
+		Code = Lead;
+		return 1;
+	}
+	if (Lead < 0xC2 || Lead >= 0xF5)
+		return 0;
+	if (Lead < 0xE0)
+	{
+		Code = Lead & 0x1Fu;
+		return 2;
+	}
+	if (Lead < 0xF0)
+	{
+		Code = Lead & 0x0Fu;
+		return 3;
+	}
+	Code = Lead & 0x07u;
+	return 4;
+}
+
+// the character of the UTF-8 sequence at the given place; false if there's no valid one
+bool decode_one(std::string_view const Text, std::size_t const At, int const Length, char32_t &Code)
+{
+	if (At + Length > Text.size())
+		return false;
+	for (int i = 1; i < Length; ++i)
+	{
+		auto const next{static_cast<unsigned char>(Text[At + i])};
+		if ((next & 0xC0u) != 0x80u)
+			return false;
+		Code = (Code << 6) | (next & 0x3Fu);
+	}
+	// the shortest form only, as UTF-8 has it
+	return false == ((Length == 3 && Code < 0x800) || (Length == 4 && (Code < 0x10000 || Code > 0x10FFFF)));
+}
+
 // the characters of a valid UTF-8 text; false if it isn't one
 bool decode_utf8(std::string_view const Text, std::vector<char32_t> &Codes)
 {
@@ -70,37 +110,9 @@ bool decode_utf8(std::string_view const Text, std::vector<char32_t> &Codes)
 	std::size_t at{0};
 	while (at < Text.size())
 	{
-		auto const lead{static_cast<unsigned char>(Text[at])};
-		int length{1};
-		char32_t code{lead};
-		if (lead >= 0xF0 && lead < 0xF5)
-		{
-			length = 4;
-			code = lead & 0x07u;
-		}
-		else if (lead >= 0xE0)
-		{
-			length = 3;
-			code = lead & 0x0Fu;
-		}
-		else if (lead >= 0xC2)
-		{
-			length = 2;
-			code = lead & 0x1Fu;
-		}
-		else if (lead >= 0x80)
-			return false;
-		if (lead >= 0xF5 || at + length > Text.size())
-			return false;
-		for (int i = 1; i < length; ++i)
-		{
-			auto const next{static_cast<unsigned char>(Text[at + i])};
-			if ((next & 0xC0u) != 0x80u)
-				return false;
-			code = (code << 6) | (next & 0x3Fu);
-		}
-		// the shortest form only, as UTF-8 has it
-		if ((length == 3 && code < 0x800) || (length == 4 && (code < 0x10000 || code > 0x10FFFF)))
+		char32_t code{0};
+		auto const length{sequence_length(static_cast<unsigned char>(Text[at]), code)};
+		if (length == 0 || false == decode_one(Text, at, length, code))
 			return false;
 		Codes.push_back(code);
 		at += length;

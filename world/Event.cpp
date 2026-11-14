@@ -2479,8 +2479,7 @@ event_manager::FindEvent( std::string const &Name )
 basic_event *
 event_manager::FindEventAscii( std::string const &Name ) {
 
-    auto *found { FindEvent( Name ) };
-    if( found != nullptr || Name.empty() ) {
+    if( auto *found { FindEvent( Name ) }; found != nullptr || Name.empty() ) {
         return found;
     }
     auto const lookup { m_asciimap.find( ascii_name::fold( Name ) ) };
