@@ -29,8 +29,6 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cstring>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <new>
 #include <string_view>
 #include <type_traits>
@@ -43,20 +41,28 @@ namespace
 {
 
 constexpr int hook_interval{1000};
-constexpr char const *image_metatable{"eu07.image"};
-constexpr char const *font_metatable{"eu07.font"};
-constexpr char const *sprite_metatable{"eu07.sprite"};
+// the longest string string.rep makes
+constexpr double max_repeat{1024 * 1024};
+// arrays, to be arguments of collect<>
+constexpr char image_metatable[]{"eu07.image"};
+constexpr char font_metatable[]{"eu07.font"};
+constexpr char sprite_metatable[]{"eu07.sprite"};
 // the address is the key of the program in the registry of its state
 constexpr char program_key{0};
 
 class lua_program final : public program
 {
   public:
-	lua_program(std::string const &Script, script_screen_kind const Kind) : kind{Kind}, script{Script}, folder{substr_path(Script)} {}
+	lua_program(std::string const &Script, script_screen_kind const Kind)
+	    : kind{Kind}, script{Script}, folder{substr_path(Script)}, output{std::format("Lua screen \"{}\"", Script)}
+	{
+	}
 	~lua_program() override
 	{
 		if (m_state != nullptr)
 		{
+			// the finalizers lua_close runs aren't counted: the budget of the last call may be spent
+			lua_sethook(m_state, nullptr, 0, 0);
 			lua_close(m_state);
 		}
 	}
@@ -71,6 +77,7 @@ class lua_program final : public program
 	std::string const folder;
 	render_call *call{nullptr}; // the refresh in progress
 	bool commands_ignored{false}; // a screen outside the cab tried to send a command, and it was logged
+	output_limits output;
 	std::int64_t budget{0}; // instructions left to the call in progress
 
   private:
@@ -102,6 +109,11 @@ void count_hook(lua_State *L, lua_Debug * /*Debug*/)
 	self->budget -= hook_interval;
 	if (self->budget < 0)
 	{
+		// from now on the hook runs at every instruction, and raises the error again. a script that catches it (pcall,
+		// xpcall, coroutine.resume) gets it again at its next instruction, so the error comes out of every level of the
+		// script in turn, and the call ends. run() sets the interval back for the next call. the hook is the state's,
+		// shared by its coroutines
+		lua_sethook(L, count_hook, LUA_MASKCOUNT, 1);
 		luaL_error(L, "instruction limit exceeded");
 	}
 }
@@ -120,12 +132,6 @@ template <typename Type_> std::remove_cvref_t<Type_> *push_object(lua_State *L, 
 	return object;
 }
 
-template <typename Type_> int collect(lua_State *L)
-{
-	static_cast<Type_ *>(lua_touserdata(L, 1))->~Type_();
-	return 0;
-}
-
 // the object at the index when it has the metatable, otherwise nullptr
 template <typename Type_> Type_ *test_object(lua_State *L, int const Index, char const *Metatable)
 {
@@ -138,6 +144,19 @@ template <typename Type_> Type_ *test_object(lua_State *L, int const Index, char
 	auto const matches{lua_rawequal(L, -1, -2) != 0};
 	lua_pop(L, 2);
 	return matches ? static_cast<Type_ *>(object) : nullptr;
+}
+
+// __gc. the metatables are locked (make_metatable), so only the collector calls it; all the same it destroys only an
+// object of its own type, and once: the object loses its metatable, which its methods check for
+template <typename Type_, char const *Metatable_> int collect(lua_State *L)
+{
+	if (auto *object{test_object<Type_>(L, 1, Metatable_)}; object != nullptr)
+	{
+		object->~Type_();
+		lua_pushnil(L);
+		lua_setmetatable(L, 1);
+	}
+	return 0;
 }
 
 template <typename Type_> Type_ &check_object(lua_State *L, int const Index, char const *Metatable)
@@ -262,6 +281,12 @@ std::optional<decoded_image> read_png(std::string const &Folder, std::string_vie
 	int width{0};
 	int height{0};
 	int channels{0};
+	// the size first: a small file may declare an image of gigabytes
+	if (0 == stbi_info_from_memory(reinterpret_cast<stbi_uc const *>(file->data()), static_cast<int>(file->size()), &width, &height, &channels) ||
+	    false == valid_image_side(width) || false == valid_image_side(height))
+	{
+		return std::nullopt;
+	}
 	// the texture loader turns every image bottom row first, for all threads (model/Texture.cpp): fonts and sprites are
 	// read top row first, as led_util reads them
 	stbi_set_flip_vertically_on_load_thread(0);
@@ -362,9 +387,13 @@ int api_log(lua_State *L)
 	{
 		lua_concat(L, count * 2 - 1);
 	}
-	auto const *self{program_of(L)};
-	auto const *text{lua_tostring(L, -1)};
-	WriteLog(std::format("Lua screen \"{}\": {}", self->script, text != nullptr ? text : ""));
+	auto *self{program_of(L)};
+	std::size_t length{0};
+	auto const *text{lua_tolstring(L, -1, &length)};
+	if (auto const line{self->output.take_log(text != nullptr ? std::string_view{text, length} : std::string_view{})}; line.has_value())
+	{
+		WriteLog(*line);
+	}
 	return 0;
 }
 
@@ -388,7 +417,10 @@ int api_command(lua_State *L)
 		}
 		return 0;
 	}
-	self->call->commands.emplace_back(std::string{name}, param1, param2, self->call->vehicle);
+	if (self->output.take_command(*self->call, name))
+	{
+		self->call->commands.emplace_back(std::string{name}, param1, param2, self->call->vehicle);
+	}
 	return 0;
 }
 
@@ -663,6 +695,58 @@ constexpr std::array api_functions{
     luaL_Reg{nullptr, nullptr},
 };
 
+// string.rep, which makes no string longer than max_repeat. a separator (a third argument, where LuaJIT takes one)
+// is counted as well
+int api_repeat(lua_State *L)
+{
+	std::size_t length{0};
+	luaL_checklstring(L, 1, &length);
+	auto const count{luaL_checknumber(L, 2)};
+	std::size_t separator{0};
+	luaL_optlstring(L, 3, "", &separator);
+	// as a double: no overflow for any count, and a count of NaN fails both comparisons
+	if (false == (count <= 0) && false == (static_cast<double>(length) * count + static_cast<double>(separator) * (count - 1) <= max_repeat))
+	{
+		return luaL_error(L, "string.rep: the result would be over %d bytes", static_cast<int>(max_repeat));
+	}
+	lua_pushvalue(L, lua_upvalueindex(1));
+	lua_insert(L, 1);
+	lua_call(L, lua_gettop(L) - 1, 1);
+	return 1;
+}
+
+// xpcall(f, handler, ...). LuaJIT calls the handler where the error was raised, before the stack unwinds: for the error
+// of the instruction hook that is while the hook still runs, when no hook is called, so a handler that loops would never
+// be stopped. here f runs under pcall (the upvalue), and the handler is called, under pcall as well, once the error
+// has left f. a script has no debug library to look at the stack with, so the handler gets what it got before
+int api_xpcall(lua_State *L)
+{
+	auto const arguments{lua_gettop(L)};
+	luaL_checkany(L, 2);
+	lua_pushvalue(L, lua_upvalueindex(1));
+	lua_pushvalue(L, 1);
+	for (int idx = 3; idx <= arguments; ++idx)
+	{
+		lua_pushvalue(L, idx);
+	}
+	lua_call(L, arguments - 1, LUA_MULTRET);
+	if (lua_toboolean(L, arguments + 1) != 0)
+	{
+		// true and the results of f
+		return lua_gettop(L) - arguments;
+	}
+	// false and what the handler made of the error
+	auto const error{lua_gettop(L)};
+	lua_pushboolean(L, 0);
+	lua_pushvalue(L, lua_upvalueindex(1));
+	lua_pushvalue(L, 2);
+	lua_pushvalue(L, error);
+	lua_call(L, 2, 2);
+	// pcall(handler, error) gave true and the handler's value, or false and the handler's own error
+	lua_remove(L, -2);
+	return 2;
+}
+
 template <std::size_t Size_> void make_metatable(lua_State *L, char const *Name, std::array<luaL_Reg, Size_> const &Methods, lua_CFunction Collect)
 {
 	luaL_newmetatable(L, Name);
@@ -679,6 +763,9 @@ template <std::size_t Size_> void make_metatable(lua_State *L, char const *Name,
 	lua_setfield(L, -2, "__index");
 	lua_pushcfunction(L, Collect);
 	lua_setfield(L, -2, "__gc");
+	// getmetatable() of an object gives this instead of the table
+	lua_pushboolean(L, 0);
+	lua_setfield(L, -2, "__metatable");
 	lua_pop(L, 1);
 }
 
@@ -747,7 +834,15 @@ void lua_program::open_libraries()
 	lua_getglobal(m_state, LUA_STRLIBNAME);
 	lua_pushnil(m_state);
 	lua_setfield(m_state, -2, "dump");
+	// string.rep with a cap on the length, around the library's own. strings share the table as their methods
+	lua_getfield(m_state, -1, "rep");
+	lua_pushcclosure(m_state, api_repeat, 1);
+	lua_setfield(m_state, -2, "rep");
 	lua_pop(m_state, 1);
+	// xpcall made of pcall, see api_xpcall
+	lua_getglobal(m_state, "pcall");
+	lua_pushcclosure(m_state, api_xpcall, 1);
+	lua_setglobal(m_state, "xpcall");
 }
 
 void lua_program::register_api()
@@ -757,9 +852,9 @@ void lua_program::register_api()
 	lua_pushlightuserdata(L, this);
 	lua_rawset(L, LUA_REGISTRYINDEX);
 
-	make_metatable(L, image_metatable, image_methods, collect<lua_image>);
-	make_metatable(L, font_metatable, font_methods, collect<bitmap_font>);
-	make_metatable(L, sprite_metatable, sprite_methods, collect<glyph>);
+	make_metatable(L, image_metatable, image_methods, collect<lua_image, image_metatable>);
+	make_metatable(L, font_metatable, font_methods, collect<bitmap_font, font_metatable>);
+	make_metatable(L, sprite_metatable, sprite_methods, collect<glyph, sprite_metatable>);
 
 	lua_newtable(L);
 	for (auto const &function : api_functions)
@@ -780,6 +875,9 @@ void lua_program::register_api()
 bool lua_program::run(int const Arguments, int const Results, std::string_view const What)
 {
 	budget = instruction_limit;
+	// the interval, which the hook shortens once the budget of a call is spent
+	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
+	output.start_call();
 	if (0 == lua_pcall(m_state, Arguments, Results, 0))
 	{
 		return true;
@@ -804,14 +902,13 @@ bool lua_program::start()
 	register_api();
 	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
 
-	std::ifstream file{script, std::ios::binary};
-	if (false == file.is_open())
+	auto const code{read_regular_file(script)};
+	if (false == code.has_value())
 	{
-		ErrorLog(std::format("Lua screen \"{}\": file not found", script));
+		ErrorLog(std::format("Lua screen \"{}\": file not found, or larger than {} bytes", script, max_screen_file));
 		return false;
 	}
-	std::string const code{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
-	if (false == load_chunk(m_state, code, script))
+	if (false == load_chunk(m_state, *code, script))
 	{
 		ErrorLog(std::format("Lua screen \"{}\": {}", script, lua_tostring(m_state, -1)));
 		return false;

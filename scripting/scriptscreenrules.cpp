@@ -123,4 +123,15 @@ bool is_safe_relative_path(std::string_view const Path)
 	return true;
 }
 
+std::optional<std::string> screen_script_path(std::string const &Folder, std::string const &Script)
+{
+	// as substr_path() tells a folder
+	auto path{Script.find('/') == std::string::npos ? Folder + Script : Script};
+	if (false == is_safe_relative_path(path))
+	{
+		return std::nullopt;
+	}
+	return path;
+}
+
 } // namespace script_screens

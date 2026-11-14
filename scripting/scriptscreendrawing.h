@@ -57,12 +57,19 @@ class glyph
 	std::vector<bool> m_lit;
 };
 
+// what a font may be: an image no larger than a screen image, a glyph no wider; no more glyphs, nor columns of them
+// side by side, than a font can use. a glyph past the image's edge is unlit there, as with led_util
+constexpr int max_font_image_side{4096};
+constexpr int max_font_glyphs{4096};
+constexpr int max_font_columns{2 * max_font_image_side};
+
 class bitmap_font
 {
   public:
 	// a font as led_util.load_font() reads it: Rgba (Width x Height) has the glyphs side by side, a column apart;
 	// Description has a comment line, then a line per glyph: the character and its width. a pixel is lit unless it is
-	// opaque white. nothing for a description without glyphs
+	// opaque white. a glyph wider than max_font_image_side is skipped. nothing for a description without glyphs, or
+	// beyond the limits above
 	static std::optional<bitmap_font> parse(std::span<std::uint8_t const> Rgba, int Width, int Height, std::string_view Description);
 	// a sprite as led_util.load_spr() reads it: the whole image as one glyph
 	static glyph sprite(std::span<std::uint8_t const> Rgba, int Width, int Height);

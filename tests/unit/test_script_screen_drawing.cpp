@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string>
 #include <vector>
 
 // the drawing the Lua screens get from the game: fonts read as scripts/led_util.py reads them, text and images
@@ -83,6 +84,44 @@ TEST_CASE("script screen drawing: a description without glyphs, or one wider tha
 	REQUIRE(font.has_value());
 	CHECK(font->find(U'w').width() == 5);
 	CHECK_FALSE(font->find(U'w').lit(4, 0));
+}
+
+TEST_CASE("script screen drawing: a glyph wider than the largest image is skipped") {
+	auto const pixels{image(2, 1, {})};
+	auto const font{bitmap_font::parse(pixels, 2, 1, "//\nw5000\nv1\nx2147483647\n")};
+	REQUIRE(font.has_value());
+	// not in the font: the fallback, its first glyph
+	CHECK(font->find(U'w').width() == 1);
+	CHECK(font->find(U'x').width() == 1);
+	CHECK(font->find(U'v').width() == 1);
+	// the largest one is taken
+	auto const widest{bitmap_font::parse(pixels, 2, 1, "//\nw4096\n")};
+	REQUIRE(widest.has_value());
+	CHECK(widest->find(U'w').width() == 4096);
+}
+
+TEST_CASE("script screen drawing: a font of too many glyphs, too many columns or too large an image is refused") {
+	auto const pixels{image(2, 1, {})};
+	// more glyphs than any font has
+	std::string many{"//\n"};
+	for (char32_t character = 0x100; character < 0x100 + 5000; ++character) {
+		// the character in UTF-8 (two bytes up to 0x7FF, three above), then its width
+		if (character < 0x800) {
+			many += static_cast<char>(0xC0 | (character >> 6));
+		}
+		else {
+			many += static_cast<char>(0xE0 | (character >> 12));
+			many += static_cast<char>(0x80 | ((character >> 6) & 0x3F));
+		}
+		many += static_cast<char>(0x80 | (character & 0x3F));
+		many += "0\n";
+	}
+	CHECK_FALSE(bitmap_font::parse(pixels, 2, 1, many).has_value());
+	// glyphs side by side much wider than the largest image
+	CHECK_FALSE(bitmap_font::parse(pixels, 2, 1, "//\na4000\nb4000\nc4000\n").has_value());
+	// an image taller than the largest one
+	std::vector<std::uint8_t> const tall(static_cast<std::size_t>(1) * 5000 * 4, 255);
+	CHECK_FALSE(bitmap_font::parse(tall, 1, 5000, "//\na1\n").has_value());
 }
 
 TEST_CASE("script screen drawing: text is drawn from x rightwards and returns where it ends") {

@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -34,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include <span>
 #include <stop_token>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -99,12 +101,73 @@ std::optional<std::string> read_screen_file(std::string const &Folder, std::stri
 	{
 		return std::nullopt;
 	}
-	std::ifstream file{Folder + std::string{Path}, std::ios::binary};
+	return read_regular_file(Folder + std::string{Path});
+}
+
+std::optional<std::string> read_regular_file(std::string const &Path)
+{
+	// a folder or a device (CON, NUL, COM1...) isn't a regular file
+	std::error_code error;
+	// in the code page of the system, as the game opens its files
+	std::filesystem::path const path{Path};
+	if (false == std::filesystem::is_regular_file(path, error))
+	{
+		return std::nullopt;
+	}
+	auto const size{std::filesystem::file_size(path, error)};
+	if (error || size > max_screen_file)
+	{
+		return std::nullopt;
+	}
+	std::ifstream file{path, std::ios::binary};
 	if (false == file.is_open())
 	{
 		return std::nullopt;
 	}
-	return std::string{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+	std::string contents(static_cast<std::size_t>(size), '\0');
+	file.read(contents.data(), static_cast<std::streamsize>(contents.size()));
+	// what was read, should the file have shrunk meanwhile
+	contents.resize(static_cast<std::size_t>(file.gcount()));
+	return contents;
+}
+
+bool output_limits::take_command(render_call const &Call, std::string_view const Name)
+{
+	if (Call.commands.size() < max_commands_per_call && Name.size() <= max_command_name)
+	{
+		return true;
+	}
+	if (false == m_commands_dropped)
+	{
+		m_commands_dropped = true;
+		ErrorLog(std::format("{}: commands over {} in a refresh, or with names over {} characters, are dropped", m_name, max_commands_per_call, max_command_name));
+	}
+	return false;
+}
+
+std::optional<std::string> output_limits::take_log(std::string_view Text)
+{
+	if (m_log_lines >= max_log_lines_per_call)
+	{
+		if (false == m_logs_dropped)
+		{
+			m_logs_dropped = true;
+			ErrorLog(std::format("{}: log lines over {} in a call are dropped", m_name, max_log_lines_per_call));
+		}
+		return std::nullopt;
+	}
+	++m_log_lines;
+	if (Text.size() <= max_log_line)
+	{
+		return std::format("{}: {}", m_name, Text);
+	}
+	// cut on the start of a UTF-8 character
+	auto end{max_log_line};
+	while (end > 0 && (static_cast<std::uint8_t>(Text[end]) & 0xC0) == 0x80)
+	{
+		--end;
+	}
+	return std::format("{}: {} [cut at {} of {} bytes]", m_name, Text.substr(0, end), end, Text.size());
 }
 
 double screen_time()

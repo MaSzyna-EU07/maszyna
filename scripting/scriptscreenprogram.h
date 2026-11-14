@@ -14,11 +14,13 @@ http://mozilla.org/MPL/2.0/.
 
 #include "scripting/scriptscreens.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace script_screens
@@ -28,6 +30,14 @@ namespace script_screens
 constexpr int max_image_side{4096};
 // the most instructions one call into a screen may run, so that a script stuck in a loop can't hang the worker
 constexpr std::int64_t instruction_limit{200'000'000};
+// what one call into a screen may send and log; the rest is dropped, which the log tells once per screen. the longest
+// name of a command the engine knows is under 40 characters
+constexpr std::size_t max_commands_per_call{64};
+constexpr std::size_t max_command_name{64};
+constexpr int max_log_lines_per_call{32};
+constexpr std::size_t max_log_line{1024}; // bytes of the text, a longer one is cut
+// the largest file a screen reads: its script or module, a file below its folder
+constexpr std::uintmax_t max_screen_file{16 * 1024 * 1024};
 
 struct pending_command
 {
@@ -86,6 +96,31 @@ std::unique_ptr<runtime> make_wasm_runtime();
 std::string utf8_text(std::string const &Text);
 // a file of the screen's folder or below; nothing for a path leading outside, or no such file
 std::optional<std::string> read_screen_file(std::string const &Folder, std::string_view Path);
+// the file, when it is a regular file of at most max_screen_file bytes: not a folder, a device or anything larger
+std::optional<std::string> read_regular_file(std::string const &Path);
+
+// what a screen sends and logs, held to the limits of one call. Name: how the log names the screen
+class output_limits
+{
+  public:
+	explicit output_limits(std::string Name) : m_name{std::move(Name)} {}
+
+	// a new call into the screen
+	void start_call()
+	{
+		m_log_lines = 0;
+	}
+	// true when the command may go with the call; a command over the limits is dropped
+	bool take_command(render_call const &Call, std::string_view Name);
+	// the line to log, cut to max_log_line; nothing when the call logged enough
+	std::optional<std::string> take_log(std::string_view Text);
+
+  private:
+	std::string m_name;
+	int m_log_lines{0};
+	bool m_commands_dropped{false}; // logged once
+	bool m_logs_dropped{false}; // logged once
+};
 // seconds of a steady clock, the same for every screen, for animations that don't depend on how often the screen is
 // refreshed
 double screen_time();

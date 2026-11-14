@@ -11,6 +11,10 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
 
 // settings ---------------------------------------------------------------------------------------
 
@@ -27,9 +31,39 @@ bool log_enabled() {
 	static bool const enabled{std::getenv("EU07_UNIT_TESTS_LOG") != nullptr};
 	return enabled;
 }
+
+// the lines kept for a test that checks what goes to the log, from any thread; see unit_tests_log_capture()
+std::mutex &captured_mutex() {
+	static std::mutex mutex;
+	return mutex;
+}
+
+std::optional<std::vector<std::string>> &captured_lines() {
+	static std::optional<std::vector<std::string>> lines;
+	return lines;
+}
+
 } // namespace
 
+// for the tests: keeps every line logged from now on (true), or stops keeping them and forgets them (false)
+void unit_tests_log_capture(bool const Enabled) {
+	std::scoped_lock lock{captured_mutex()};
+	captured_lines() = Enabled ? std::make_optional<std::vector<std::string>>() : std::nullopt;
+}
+
+// for the tests: the lines kept so far
+std::vector<std::string> unit_tests_logged_lines() {
+	std::scoped_lock lock{captured_mutex()};
+	return captured_lines().value_or(std::vector<std::string>{});
+}
+
 void WriteLog(const char *str, logtype const, bool const isError) {
+	if (str != nullptr) {
+		std::scoped_lock lock{captured_mutex()};
+		if (captured_lines().has_value()) {
+			captured_lines()->emplace_back(str);
+		}
+	}
 	if (log_enabled() && str != nullptr) {
 		(isError ? std::cerr : std::cout) << str << "\n";
 	}

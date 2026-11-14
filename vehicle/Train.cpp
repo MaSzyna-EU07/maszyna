@@ -10625,9 +10625,14 @@ void TTrain::load_script_screen(cParser &Parser, script_language const Language)
 	{
 		return;
 	}
-	if (substr_path(entry.config.script).empty())
+	if (auto path{script_screens::screen_script_path(DynamicObject->asBaseDir, entry.config.script)}; path.has_value())
 	{
-		entry.config.script = DynamicObject->asBaseDir + entry.config.script;
+		entry.config.script = std::move(*path);
+	}
+	else
+	{
+		ErrorLog(std::format("Bad script screen: \"{}\" leads outside the game's folder", entry.config.script));
+		return;
 	}
 
 	TSubModel *submodel{nullptr};
