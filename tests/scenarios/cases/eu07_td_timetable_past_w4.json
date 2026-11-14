@@ -1,0 +1,28 @@
+{
+  "description": "EU07 with three coaches on td.scn on the td/rozklad timetable, placed with its head 80 m past the W4 of Stacja1, the first station of the timetable, which stays under the consist. The driver counts Stacja1 as the stop it stands at and leaves at 10:35.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable_past_w4.scn",
+  "vars": {
+    "offset": 15,
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "as ROJ65113: at 10:35 next Przystanek"
+    },
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 240
+    }
+  ]
+}
