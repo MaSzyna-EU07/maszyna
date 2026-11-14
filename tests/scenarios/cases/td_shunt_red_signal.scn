@@ -1,0 +1,7 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// like td_red_signal_moving.scn (no route, the exit signal stacja1_j about 150 m ahead of the start of
+// tdo_n1734 stays at stop), but the train has no timetable, so its AI driver shunts (Shunt), and it
+// starts {{offset}} m into tdo_n1734, already moving at {{velocity}} km/h.
+trainset none tdo_n1734 {{offset}} {{velocity}}
+{{consist}}
+endtrainset
