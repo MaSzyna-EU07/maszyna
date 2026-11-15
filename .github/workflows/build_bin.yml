@@ -205,12 +205,23 @@ jobs:
   # ============================================================
 
   linux:
-    name: Linux x64 / GCC
+    name: Linux x64 / GCC / ${{ matrix.variant.name }}
     runs-on: ubuntu-24.04
-    # see the note above the windows job
+    # see the notes above the windows job: two variants, each with a concurrency group of its own
     concurrency:
-      group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      group: ${{ github.workflow }}-linux-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
       cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: "AVX2"
+            suffix: "avx2"
+            cmake_flags: "-DENABLE_AVX2=ON"
+          - name: "No AVX2"
+            suffix: "noavx2"
+            cmake_flags: "-DENABLE_AVX2=OFF"
 
     steps:
       - name: Checkout repository
@@ -308,6 +319,7 @@ jobs:
             -DWITH_ZMQ=OFF \
             -DWITH_OPENVR=OFF \
             -DUSE_LTO=OFF \
+            ${{ matrix.variant.cmake_flags }} \
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once"
 
@@ -373,7 +385,7 @@ jobs:
       - name: Upload Linux build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          name: maszyna-linux-x64-${{ matrix.variant.suffix }}-${{ env.CONFIG_LINUX }}
           path: |
             build/bin/
           if-no-files-found: error
@@ -409,24 +421,34 @@ jobs:
           name: maszyna-windows-x64-noavx2-${{ env.CONFIG_WIN }}
           path: dist/maszyna-windows-x64-noavx2
 
-      - name: Download Linux build
+      - name: Download Linux build (AVX2)
         uses: actions/download-artifact@v4
         with:
-          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          name: maszyna-linux-x64-avx2-${{ env.CONFIG_LINUX }}
           path: dist/maszyna-linux-x64
+
+      - name: Download Linux build (no AVX2)
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-linux-x64-noavx2-${{ env.CONFIG_LINUX }}
+          path: dist/maszyna-linux-x64-noavx2
 
       - name: Pack
         run: |
           cd dist
 
-          find maszyna-linux-x64 -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
-          if [ -d maszyna-linux-x64/linuxpython64/bin ]; then
-            chmod +x maszyna-linux-x64/linuxpython64/bin/*
-          fi
+          # the artifacts lose the executable bit
+          for dir in maszyna-linux-x64 maszyna-linux-x64-noavx2; do
+            find "$dir" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
+            if [ -d "$dir/linuxpython64/bin" ]; then
+              chmod +x "$dir"/linuxpython64/bin/*
+            fi
+          done
 
           (cd maszyna-windows-x64 && zip -qr9 ../maszyna-windows-x64.zip .)
           (cd maszyna-windows-x64-noavx2 && zip -qr9 ../maszyna-windows-x64-noavx2.zip .)
           tar -czf maszyna-linux-x64.tar.gz -C maszyna-linux-x64 .
+          tar -czf maszyna-linux-x64-noavx2.tar.gz -C maszyna-linux-x64-noavx2 .
           ls -la
 
       - name: Publish rolling release of the branch
@@ -448,6 +470,7 @@ jobs:
             "- Windows: $base/maszyna-windows-x64.zip" \
             "- Windows, CPUs without AVX2 (older than Haswell, 2013): $base/maszyna-windows-x64-noavx2.zip" \
             "- Linux: $base/maszyna-linux-x64.tar.gz" \
+            "- Linux, CPUs without AVX2: $base/maszyna-linux-x64-noavx2.tar.gz" \
             "" \
             "Unpack over a MaSzyna installation (the game data isn't included). Build log: $RUN_URL")"
 
@@ -456,6 +479,7 @@ jobs:
             dist/maszyna-windows-x64.zip \
             dist/maszyna-windows-x64-noavx2.zip \
             dist/maszyna-linux-x64.tar.gz \
+            dist/maszyna-linux-x64-noavx2.tar.gz \
             --target "$SHA" \
             --prerelease \
             --latest=false \
@@ -466,3 +490,4 @@ jobs:
           echo "- Windows: $base/maszyna-windows-x64.zip" >> "$GITHUB_STEP_SUMMARY"
           echo "- Windows, no AVX2: $base/maszyna-windows-x64-noavx2.zip" >> "$GITHUB_STEP_SUMMARY"
           echo "- Linux: $base/maszyna-linux-x64.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Linux, no AVX2: $base/maszyna-linux-x64-noavx2.tar.gz" >> "$GITHUB_STEP_SUMMARY"
