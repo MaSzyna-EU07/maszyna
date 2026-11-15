@@ -1512,6 +1512,9 @@ void global_settings::ConfigParse(cParser& Parser)
         if (ConfigParse_gfx(Parser, token))
             continue;
 
+        if (ConfigParse_gfx_lamps(Parser, token))
+            continue;
+
         if (ConfigParseGeneral(Parser, token))
             continue;
 
@@ -2228,7 +2231,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.sun.disc" ) { readvalue( gfx_sun_disc, 0.f, 4.f ); }
     else if( Token == "gfx.moon.disc" ) { readvalue( gfx_moon_disc, 0.f, 16.f ); }
     else if( Token == "gfx.moonlight" ) { readvalue( gfx_moonlight, 0.f, 10.f ); }
-    else { return ConfigParse_gfx_lamps( Parser, Token ); }
+    else { return false; }
 
     return true;
 }
