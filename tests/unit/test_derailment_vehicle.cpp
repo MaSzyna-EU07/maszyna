@@ -5,6 +5,8 @@
 #include "McZapkie/MOVER.h"
 #include "utilities/Globals.h"
 
+#include <cmath>
+
 // a vehicle too fast in a curve with physics.derailment of eu07.ini: the criteria of McZapkie/derailment.h checked by
 // TMoverParameters::check_derailment(), and what the vehicle comes to off the rails
 
@@ -82,13 +84,14 @@ TEST_CASE("derailment: a vehicle too fast in a curve") {
 	SUBCASE("the same with steps of 0.01 and 0.05 s") {
 		for (auto const dt : {0.01, 0.05}) {
 			CAPTURE(dt);
+			auto const steps{static_cast<int>(std::lround(1.0 / dt))};
 			vehicle eu07vehicle{definition::fiz("4e_v1/4e"), critical + 2.0};
-			for (auto time = 0.0; time < 1.0; time += dt) {
+			for (auto step = 0; step < steps; ++step) {
 				eu07vehicle.step(curve, dt);
 			}
 			CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
 			vehicle slower{definition::fiz("4e_v1/4e"), critical - 2.0};
-			for (auto time = 0.0; time < 1.0; time += dt) {
+			for (auto step = 0; step < steps; ++step) {
 				slower.step(curve, dt);
 			}
 			CHECK(slower->Derailed == dr::outcome::none);

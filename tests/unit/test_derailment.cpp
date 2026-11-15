@@ -143,7 +143,7 @@ TEST_CASE("derailment: the decision and the place don't depend on the step") {
 	auto const coarse{run(1.05 * critical, 0.5)};
 	REQUIRE(fine.has_value());
 	REQUIRE(coarse.has_value());
-	CHECK(std::abs(*coarse - *fine) <= 1.05 * critical * 0.5);
+	CHECK(std::abs(coarse.value() - fine.value()) <= 1.05 * critical * 0.5);
 }
 
 TEST_CASE("derailment: a peak shorter than the window doesn't derail") {
