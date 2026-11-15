@@ -49,6 +49,19 @@ private:
 	bool m_previous{Global.crash_damage};
 };
 
+// the legacy collisions of physics.derailment old for the test, restored after it: the rule of the safe closing speed
+// weighed by the ratio of the masses (the crush of the ends of the new model is in test_collisions.cpp)
+class legacy_collisions {
+public:
+	legacy_collisions() { Global.derailment = global_settings::derailment_model::old; }
+	~legacy_collisions() { Global.derailment = m_previous; }
+	legacy_collisions(legacy_collisions const &) = delete;
+	legacy_collisions &operator=(legacy_collisions const &) = delete;
+
+private:
+	global_settings::derailment_model m_previous{Global.derailment};
+};
+
 } // namespace
 
 // issue #86: automatic couplers used to catch at any closing speed, so the vehicles never collided nor derailed
@@ -202,6 +215,7 @@ TEST_CASE("couplers: a wagon rolling slowly into a standing one couples with it"
 
 TEST_CASE("couplers: a wagon hitting a standing one too fast doesn't couple, nor once the hit has slowed it down") {
 	crash_damage_setting const crashdamage{true};
+	legacy_collisions const legacy;
 	auto moving{automatic_wagon(30.0, "moving")};
 	auto standing{automatic_wagon(0.0, "standing")};
 	test::pair pair{moving, end::front, standing, end::rear, 1.0};
@@ -268,6 +282,7 @@ TEST_CASE("couplers: the automatic coupling locked by a hit is unlocked once the
 
 TEST_CASE("couplers: a hit a little too fast for the couplers bounces the vehicles apart, uncoupled and on the rails") {
 	crash_damage_setting const crashdamage{true};
+	legacy_collisions const legacy;
 	auto moving{automatic_wagon(20.0, "moving")};
 	auto standing{automatic_wagon(0.0, "standing")};
 	test::pair pair{moving, end::front, standing, end::rear, 1.0};
@@ -281,6 +296,7 @@ TEST_CASE("couplers: a hit a little too fast for the couplers bounces the vehicl
 
 TEST_CASE("couplers: a hit too fast for the couplers derails the vehicles over the limit adjusted for their mass ratio") {
 	crash_damage_setting const crashdamage{true};
+	legacy_collisions const legacy;
 
 	SUBCASE("equal masses: both derail") {
 		auto moving{automatic_wagon(30.0, "moving")};
@@ -318,6 +334,7 @@ TEST_CASE("couplers: a hit too fast for the couplers derails the vehicles over t
 
 TEST_CASE("couplers: wagons running head-on into each other couple only up to the safe closing speed") {
 	crash_damage_setting const crashdamage{true};
+	legacy_collisions const legacy;
 
 	SUBCASE("7 + 7 km/h, the couplers catch") {
 		auto first{automatic_wagon(7.0, "first")};
