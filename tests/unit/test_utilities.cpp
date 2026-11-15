@@ -364,18 +364,10 @@ TEST_CASE("utilities: a text for the timetable loses its marks, control characte
 	CHECK(Bezogonkow("Bia\xA3" "a_Podlaska", true) == "BiaLa Podlaska");
 }
 
-TEST_CASE("utilities: the polish letters from 0xB2 on lose their marks only in a build which makes one byte of the table's mark") {
-	// the table of Bezogonkow() has a plus-minus sign for 0xB1, written as the character in the source, a utf-8 file.
-	// MSVC puts it into the table as the one byte of the system's code page, and the table is as it was meant.
-	// GCC and Clang put the two bytes of utf-8 there, which moves the entries after it by one (see COVERAGE.md)
-	if (Bezogonkow("\xB1") == "\xB1") {
-		CHECK(Bezogonkow(kWin1250) == "ACELNOSZZacelnoszz");
-	}
-	else {
-		// the first byte of the sign for 0xB1, the second for 0xB2, and each letter after them as the entry before its own
-		CHECK(Bezogonkow("\xB1\xB2") == "\xC2\xB1");
-		CHECK(Bezogonkow(kWin1250) == "ALELDNSZZ,le,dnszl");
-	}
+TEST_CASE("utilities: the polish letters from 0xB2 on lose their marks in every build") {
+	// the table of Bezogonkow() is plain ASCII, so every compiler makes one byte of each of its entries
+	CHECK(Bezogonkow("\xB1") == "+");
+	CHECK(Bezogonkow(kWin1250) == "ACELNOSZZacelnoszz");
 }
 
 TEST_CASE("utilities: utf-8 is decoded into code points of one to four bytes") {
