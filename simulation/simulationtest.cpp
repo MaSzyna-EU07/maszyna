@@ -262,8 +262,9 @@ void test_manager::check_wall_clock(double const Elapsed)
 	// but which doesn't close ends with its result
 	if (false == conclude(test_result::timeout, std::format("still running after {:.0f} s of real time (test.wall_timeout)", limit)))
 		ErrorLog(std::format("test: the simulator was still running {:.0f} s of real time after the start, ended", limit));
-	// what was logged last gets written, unless the log is held up by a hung thread
-	PhysicsLogs.flush();
+	// what was logged last gets written, unless the log is held up by a hung thread, or the physics logs by a disk
+	// which doesn't answer: the run ends anyway
+	PhysicsLogs.flush_for(std::chrono::seconds{2});
 	StopLogService();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	std::_Exit(exit_code());

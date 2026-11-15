@@ -17,6 +17,13 @@ http://mozilla.org/MPL/2.0/.
 
 physicslog_writer PhysicsLogs;
 
+namespace {
+
+// the most of a log kept while its file can't be written; the oldest lines go beyond it
+constexpr std::size_t keptwhilefailing{4 * 1024 * 1024};
+
+} // namespace
+
 physicslog_writer::physicslog_writer(std::filesystem::path Folder, std::chrono::milliseconds const Interval) : m_folder{std::move(Folder)}, m_interval{Interval} {}
 
 physicslog_writer::~physicslog_writer() {
@@ -27,7 +34,8 @@ void physicslog_writer::begin(std::string const &Name, std::string_view const He
 	std::scoped_lock lock{m_mutex};
 	auto &lines{m_pending[Name]};
 	lines.fresh = true;
-	lines.text.assign(Header);
+	lines.header.assign(Header);
+	lines.text.clear();
 	start();
 }
 
@@ -38,20 +46,36 @@ void physicslog_writer::append(std::string const &Name, std::string_view const L
 }
 
 void physicslog_writer::flush() {
+	std::scoped_lock files{m_filemutex};
 	write();
 }
 
+bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
+	std::unique_lock files{m_filemutex, Timeout};
+	if (false == files.owns_lock())
+		return false;
+	write();
+	return true;
+}
+
 void physicslog_writer::stop() {
+	std::jthread thread;
 	{
 		std::scoped_lock lock{m_mutex};
 		m_stopped = true;
+		// taken by the first to stop, so it's joined once
+		thread = std::move(m_thread);
 	}
-	// started only before m_stopped was set, so no one else touches it now
-	if (m_thread.joinable()) {
-		m_thread.request_stop();
-		m_thread.join();
+	if (thread.joinable()) {
+		if (thread.get_id() == std::this_thread::get_id()) {
+			// stopped from the thread itself, by the end of a run which failed in it: the files may be held by it
+			thread.detach();
+			return;
+		}
+		thread.request_stop();
+		thread.join();
 	}
-	write();
+	flush();
 }
 
 void physicslog_writer::start() {
@@ -68,12 +92,11 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 			if (m_wake.wait_for(lock, Stop, m_interval, [] { return false; }) || Stop.stop_requested())
 				return;
 		}
-		write();
+		flush();
 	}
 }
 
 void physicslog_writer::write() {
-	std::scoped_lock files{m_filemutex};
 	std::map<std::string, pending> taken;
 	{
 		std::scoped_lock lock{m_mutex};
@@ -83,16 +106,42 @@ void physicslog_writer::write() {
 		return;
 	std::error_code error;
 	std::filesystem::create_directories(m_folder, error);
-	for (auto const &[name, lines] : taken) {
+	std::map<std::string, pending> failed;
+	for (auto &[name, lines] : taken) {
 		if (lines.text.empty() && false == lines.fresh)
 			continue;
 		auto const path{m_folder / (name + ".dat")};
 		// in text mode, as the logs were always written: on Windows their lines, which end with "\r\n", end with "\r\r\n"
 		std::ofstream file{path, lines.fresh ? std::ios::out | std::ios::trunc : std::ios::out | std::ios::app};
-		if (file.is_open())
+		if (file.is_open()) {
+			if (lines.fresh)
+				file << lines.header;
 			file << lines.text;
+		}
 		file.close();
-		if (file.fail() && m_failed.insert(name).second)
-			ErrorLog("Bad physics log: can't write " + path.string());
+		if (false == file.fail()) {
+			if (m_failed.erase(name) > 0)
+				WriteLog("Physics log: " + path.string() + " written again");
+			continue;
+		}
+		if (m_failed.insert(name).second)
+			ErrorLog("Bad physics log: can't write " + path.string() + ", its lines are kept for the next try");
+		failed.emplace(name, std::move(lines));
+	}
+	if (failed.empty())
+		return;
+	// tried again the next time, before what came since; a file held by another program for a while doesn't lose
+	// them, nor its header. a log begun anew since drops them
+	std::scoped_lock lock{m_mutex};
+	for (auto &[name, lines] : failed) {
+		auto &now{m_pending[name]};
+		if (now.fresh)
+			continue;
+		lines.text.append(now.text);
+		if (lines.text.size() > keptwhilefailing) {
+			auto const cut{lines.text.find('\n', lines.text.size() - keptwhilefailing)};
+			lines.text.erase(0, cut == std::string::npos ? lines.text.size() : cut + 1);
+		}
+		now = std::move(lines);
 	}
 }

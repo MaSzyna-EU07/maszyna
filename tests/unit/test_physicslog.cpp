@@ -83,7 +83,8 @@ TEST_CASE("physicslog: no file is kept open between the writings, and a log not 
 
 	logs.begin("SM42-001", header);
 	logs.flush();
-	// Windows doesn't let a file open in a program be removed
+	// Windows doesn't let a file open in a program be removed. Linux does, so there it checks nothing; the log is
+	// written again below anyway
 	std::error_code error;
 	CHECK(std::filesystem::remove(folder.path() / "SM42-001.dat", error));
 	CHECK_FALSE(error);
@@ -118,6 +119,63 @@ TEST_CASE("physicslog: stopping writes what is kept at once, and what comes afte
 	CHECK(folder.read("EN57-1001") == std::string{header} + "0.0500 0.0000\r\n");
 	logs.flush();
 	CHECK(folder.read("EN57-1001") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.0000\r\n");
+}
+
+TEST_CASE("physicslog: the lines of a log whose file can't be written are kept, with its header, for the next try") {
+	log_folder folder{"failed"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	// a folder in the way of the file: it can't be opened, as one held by another program
+	std::filesystem::create_directories(folder.path() / "EU07-005.dat");
+	logs.begin("EU07-005", header);
+	logs.append("EU07-005", "0.0500 0.0000\r\n");
+	logs.flush();
+	logs.append("EU07-005", "0.1000 0.5000\r\n");
+	logs.flush();
+	CHECK(std::filesystem::is_directory(folder.path() / "EU07-005.dat"));
+
+	std::filesystem::remove(folder.path() / "EU07-005.dat");
+	logs.append("EU07-005", "0.1500 1.0000\r\n");
+	logs.flush();
+	CHECK(folder.read("EU07-005") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.5000\r\n0.1500 1.0000\r\n");
+}
+
+TEST_CASE("physicslog: a log begun anew while its file can't be written drops what was kept for it") {
+	log_folder folder{"failedbegun"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	std::filesystem::create_directories(folder.path() / "SU45-001.dat");
+	logs.begin("SU45-001", header);
+	logs.append("SU45-001", "0.0500 0.0000\r\n");
+	logs.flush();
+	std::filesystem::remove(folder.path() / "SU45-001.dat");
+	logs.begin("SU45-001", header);
+	logs.append("SU45-001", "0.0500 2.0000\r\n");
+	logs.flush();
+	CHECK(folder.read("SU45-001") == std::string{header} + "0.0500 2.0000\r\n");
+}
+
+TEST_CASE("physicslog: stopping twice, from two threads at once, writes once and ends") {
+	log_folder folder{"stoptwice"};
+	physicslog_writer logs{folder.path(), std::chrono::milliseconds{20}};
+
+	logs.begin("EP09-001", header);
+	logs.append("EP09-001", "0.0500 0.0000\r\n");
+	{
+		std::jthread other{[&logs] { logs.stop(); }};
+		logs.stop();
+	}
+	CHECK(folder.read("EP09-001") == std::string{header} + "0.0500 0.0000\r\n");
+}
+
+TEST_CASE("physicslog: a flush with a time limit writes, as flush does") {
+	log_folder folder{"flushfor"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	logs.begin("ET41-001", header);
+	logs.append("ET41-001", "0.0500 0.0000\r\n");
+	CHECK(logs.flush_for(std::chrono::seconds{1}));
+	CHECK(folder.read("ET41-001") == std::string{header} + "0.0500 0.0000\r\n");
 }
 
 TEST_CASE("physicslog: what is kept is written when the writer goes") {

@@ -22,7 +22,8 @@ http://mozilla.org/MPL/2.0/.
 
 // the physics logs, <folder>/<name>.dat. the lines given are kept, and written every two seconds by a thread of its
 // own, each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and
-// the simulation doesn't wait for the disk. a crash loses the last two seconds of them
+// the simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file
+// can't be written, held by another program say, are kept for the next try
 class physicslog_writer {
 public:
 	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
@@ -38,18 +39,22 @@ public:
 	void append(std::string const &Name, std::string_view Line);
 	// writes what is kept, now
 	void flush();
+	// as flush, unless the files are being written for longer than Timeout: then false, and nothing done
+	bool flush_for(std::chrono::milliseconds Timeout);
 	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
 	void stop();
 
 private:
 	struct pending {
-		bool fresh{false}; // its file is to be emptied first
+		bool fresh{false}; // its file is to be emptied first, and the header written into it
+		std::string header;
 		std::string text;
 	};
 
 	// the thread, on the first line given, unless stopped. called with m_mutex held
 	void start();
 	void run(std::stop_token const &Stop);
+	// called with m_filemutex held
 	void write();
 
 	std::filesystem::path const m_folder;
@@ -59,7 +64,7 @@ private:
 	bool m_stopped{false};
 	std::condition_variable_any m_wake;
 	std::jthread m_thread;
-	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
+	std::timed_mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
 	std::set<std::string> m_failed; // the logs whose file couldn't be written, told once
 };
 

@@ -242,6 +242,9 @@ int main(int argc, char *argv[])
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 		}
 #endif
+		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
+		// otherwise, and a second stop only writes what came since
+		PhysicsLogs.stop();
 	}
 #ifndef _WIN32
 	fflush(stdout);
