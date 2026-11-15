@@ -274,7 +274,10 @@ class scene_walk
 	virtual void walk_light_query(TSubModel *Submodel, bool const Begin) = 0;
 	// the point of the light drawn once more right after walk_light_query(), unseen and whole, for the backend which makes the
 	// glare as bright as the part of the point seen (the opengl renderer); by default nothing
-	virtual void walk_light_reference(gfx::geometry_handle const &Geometry) {}
+	virtual void walk_light_reference(gfx::geometry_handle const &Geometry)
+	{
+		// a backend which doesn't scale the glare by the part of the point seen has nothing to draw here
+	}
 	// what the backend may draw itself (the gpu culling of the opengl renderer); by default the walk draws everything
 	// the start of the walk of a region
 	virtual void walk_region_begin() {}
@@ -637,6 +640,8 @@ class scene_walk
 
   private:
 	static float editor_ortho_reach();
+	// the glare around a light point drawn just before, Lightcenter in view space
+	void Render_Glare(TSubModel *Submodel, glm::vec4 const &Lightcenter, bool Pointlight);
 };
 
 } // namespace gfx

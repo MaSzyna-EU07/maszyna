@@ -2,6 +2,8 @@
 #include "glsl_common.h"
 #include "rendering/common/shadersource.h"
 
+#include <format>
+
 std::string gl::glsl_common;
 
 void gl::glsl_common_setup()
@@ -110,7 +112,6 @@ void gl::glsl_common_setup()
     "#define SKY_OCCLUSION_HEIGHT_TEX " + std::to_string(SKY_OCCLUSION_HEIGHT_TEX) + "\n" +
     "#define SKY_OCCLUSION_TEX " + std::to_string(SKY_OCCLUSION_TEX) + "\n" +
     "#define CAB_PROBE_SSBO_BINDING " + std::to_string(CAB_PROBE_SSBO_BINDING) + "\n" +
-    "#define GLARE_SSBO_BINDING " + std::to_string(GLARE_SSBO_BINDING) + "\n" +
     "#define CAB_PROBE_SH_SIZE " + std::to_string(CAB_PROBE_SH_SIZE) + "\n" +
     "#define CAB_PROBE_SH_GROUP_SIZE " + std::to_string(CAB_PROBE_SH_GROUP_SIZE) + "\n" +
     "#define WEATHER_UBO_BINDING " + std::to_string(WEATHER_UBO_BINDING) + "\n" +
@@ -119,6 +120,8 @@ void gl::glsl_common_setup()
     "#define FOG_HORIZON_SAMPLES " + std::to_string(FOG_HORIZON_SAMPLES) + "\n" +
     "#define WEATHER_GROUP_SIZE " + std::to_string(WEATHER_GROUP_SIZE) + "\n" +
     "#define FOG_VOLUME_BIAS " + std::to_string(FOG_VOLUME_BIAS) + "\n";
+    // the counts of the samples of the light points seen, which their glares are made as bright as
+    glsl_common += std::format("#define GLARE_SSBO_BINDING {}\n", GLARE_SSBO_BINDING);
 }
 
 std::string gl::glsl_settings_defines()
