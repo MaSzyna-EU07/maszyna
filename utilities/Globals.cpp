@@ -2051,19 +2051,6 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
     else if( Token == "gfx.lights.cab.intensity" ) { readvalue( gfx_lights_cab_intensity, 0.f, 100.f ); }
     else if( Token == "gfx.lights.cab.bounce" ) { readvalue( gfx_lights_cab_bounce, 0.f, 1.f ); }
-    else if( Token == "gfx.lights.points.near" ) { readswitch( gfx_lights_points_near ); }
-    else if( Token == "gfx.lights.stars" ) {
-        // names of the submodels separated with |, or "no"
-        Parser.getTokens( 1 );
-        Parser >> gfx_lights_stars;
-        if( gfx_lights_stars == "no" ) { gfx_lights_stars.clear(); } }
-    else if( Token == "gfx.lights.freespot.mincone" ) { readvalue( gfx_lights_freespot_mincone, 0.f, 89.f ); }
-    else if( Token == "gfx.lights.lamps.gain" ) { readvalue( gfx_lights_lamps_gain, 0.1f, 10.f ); }
-    else if( Token == "gfx.lights.hideglow" ) {
-        // textures separated with |, or "no"
-        Parser.getTokens( 1 );
-        Parser >> gfx_lights_hideglow;
-        if( gfx_lights_hideglow == "no" ) { gfx_lights_hideglow.clear(); } }
     else if( Token == "gfx.cabprobe" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2241,6 +2228,31 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.sun.disc" ) { readvalue( gfx_sun_disc, 0.f, 4.f ); }
     else if( Token == "gfx.moon.disc" ) { readvalue( gfx_moon_disc, 0.f, 16.f ); }
     else if( Token == "gfx.moonlight" ) { readvalue( gfx_moonlight, 0.f, 10.f ); }
+    else { return ConfigParse_gfx_lamps( Parser, Token ); }
+
+    return true;
+}
+
+bool
+global_settings::ConfigParse_gfx_lamps( cParser &Parser, std::string_view const Token ) {
+
+    // a list of names separated with |, or "no" for none
+    auto const readlist = [&Parser]( std::string &Value ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        if( Value == "no" ) { Value.clear(); } };
+    auto const readvalue = [&Parser]( float &Value, float const Min, float const Max ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        Value = std::clamp( Value, Min, Max ); };
+
+    if( Token == "gfx.lights.points.near" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_points_near; }
+    else if( Token == "gfx.lights.stars" ) { readlist( gfx_lights_stars ); }
+    else if( Token == "gfx.lights.freespot.mincone" ) { readvalue( gfx_lights_freespot_mincone, 0.f, 89.f ); }
+    else if( Token == "gfx.lights.lamps.gain" ) { readvalue( gfx_lights_lamps_gain, 0.1f, 10.f ); }
+    else if( Token == "gfx.lights.hideglow" ) { readlist( gfx_lights_hideglow ); }
     else { return false; }
 
     return true;

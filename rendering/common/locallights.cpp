@@ -457,15 +457,19 @@ void gfx::local_lights::gather_cab_lights(gfx::geometrybank_manager const &Geome
 	m_cablampon = (false == m_cablights.empty());
 }
 
+float gfx::local_lights::walk_min_distance(TSubModel const &Submodel) const
+{
+	// a lamp of the scenery lights also closer than its glare is seen from (gfx_lights_points_near)
+	auto const lampnear{(m_walkowner != nullptr) && Global.gfx_lights_points_near && ((Submodel.eType == TP_FREESPOTLIGHT) || is_lamp_points(Submodel))};
+	return (lampnear ? 0.f : Submodel.fSquareMinDist);
+}
+
 void gfx::local_lights::walk(TSubModel *Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness)
 {
 	// visibility, lod ranges, transforms and animations as in opengl46_renderer::Render_Alpha(TSubModel *)
 	for (auto *submodel{Submodel}; submodel != nullptr; submodel = submodel->Next)
 	{
-		// a lamp of the scenery lights also closer than its glare is seen from (gfx_lights_points_near)
-		auto const lampnear{(m_walkowner != nullptr) && Global.gfx_lights_points_near && ((submodel->eType == TP_FREESPOTLIGHT) || is_lamp_points(*submodel))};
-		auto const mindistance{lampnear ? 0.f : submodel->fSquareMinDist};
-		if ((submodel->iVisible == 0) || (TSubModel::fSquareDist < mindistance) || (TSubModel::fSquareDist >= submodel->fSquareMaxDist))
+		if (auto const mindistance{walk_min_distance(*submodel)}; (submodel->iVisible == 0) || (TSubModel::fSquareDist < mindistance) || (TSubModel::fSquareDist >= submodel->fSquareMaxDist))
 		{
 			continue;
 		}
@@ -523,8 +527,8 @@ void gfx::local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 con
 	// a lamp of the scenery shining downwards: brighter by gfx_lights_lamps_gain, its cone widened to gfx_lights_freespot_mincone
 	auto const lamp{(m_walkowner != nullptr) && shines_down(direction)};
 	auto const gain{lamp ? Global.gfx_lights_lamps_gain : 1.f};
-	auto const color{to_linear(diffuse) * (Brightness * gain * Submodel.fHotspotPower * Submodel.fVisible * std::min(Submodel.f4Emision.a, 1.f))};
-	if (max_component(color) <= LIGHT_THRESHOLD)
+	auto const lightcolor{to_linear(diffuse) * (Brightness * gain * Submodel.fHotspotPower * Submodel.fVisible * std::min(Submodel.f4Emision.a, 1.f))};
+	if (max_component(lightcolor) <= LIGHT_THRESHOLD)
 	{
 		return;
 	}
@@ -532,13 +536,13 @@ void gfx::local_lights::add_light_point(TSubModel const &Submodel, glm::mat4 con
 	light lightpoint;
 	lightpoint.position = glm::dvec3{Placement * glm::dvec4{glm::dvec3{Transform[3]}, 1.0}};
 	lightpoint.direction = direction;
-	lightpoint.color = color;
+	lightpoint.color = lightcolor;
 	// the cone of the glare: where the point is seen from is where it shines. the glare goes from no brightness at the falloff
 	// angle to full at the hotspot angle, which some models have the wrong way round
 	auto const cone{light_cone(Submodel.fCosFalloffAngle, Submodel.fCosHotspotAngle, lamp)};
 	lightpoint.cos_outer = cone.x;
 	lightpoint.cos_inner = cone.y;
-	lightpoint.range = light_range(color);
+	lightpoint.range = light_range(lightcolor);
 	lightpoint.radius = Submodel.fLightRadius;
 	lightpoint.soft_falloff = Submodel.bSoftFalloff;
 	lightpoint.cast_shadows = Submodel.bCastShadows;
@@ -568,18 +572,18 @@ void gfx::local_lights::add_lamp_points(TSubModel const &Submodel, glm::mat4 con
 	{
 		// a glowing point keeps its colour in its normal; one without any takes the colour of the submodel
 		auto const pointcolor{max_component(vertex.normal) > 0.f ? vertex.normal : glm::vec3{Submodel.f4Diffuse}};
-		auto const color{to_linear(pointcolor) * (Brightness * Global.gfx_lights_lamps_gain)};
-		if (max_component(color) <= LIGHT_THRESHOLD)
+		auto const lightcolor{to_linear(pointcolor) * (Brightness * Global.gfx_lights_lamps_gain)};
+		if (max_component(lightcolor) <= LIGHT_THRESHOLD)
 		{
 			continue;
 		}
 		light lightpoint;
 		lightpoint.position = glm::dvec3{Placement * glm::dvec4{glm::dvec3{Transform * glm::vec4{vertex.position, 1.f}}, 1.0}};
 		lightpoint.direction = glm::vec3{0.f, -1.f, 0.f};
-		lightpoint.color = color;
+		lightpoint.color = lightcolor;
 		lightpoint.cos_outer = cone.x;
 		lightpoint.cos_inner = cone.y;
-		lightpoint.range = light_range(color);
+		lightpoint.range = light_range(lightcolor);
 		lightpoint.radius = LAMP_POINT_RADIUS;
 		lightpoint.soft_falloff = true;
 		// the point names the lamp from frame to frame (the shadow maps of the lamps)
@@ -619,6 +623,17 @@ bool gfx::local_lights::has_light_points(TModel3d *Model)
 	return found;
 }
 
+void gfx::local_lights::add_lit_instances(std::vector<TAnimModel *> const &Instances, std::unordered_set<TAnimModel const *> &Added, std::vector<TAnimModel *> &Lit)
+{
+	for (auto *instance : Instances)
+	{
+		if ((instance->pModel != nullptr) && has_light_points(instance->pModel) && Added.insert(instance).second)
+		{
+			Lit.emplace_back(instance);
+		}
+	}
+}
+
 gfx::local_lights::cell_data const &gfx::local_lights::cell_instances(scene::basic_cell &Cell, bool const Rebuild)
 {
 	// light points are drawn in the translucent phase, so the instances which have them are on the translucent list of the cell.
@@ -631,16 +646,8 @@ gfx::local_lights::cell_data const &gfx::local_lights::cell_instances(scene::bas
 	{
 		data.instances.clear();
 		std::unordered_set<TAnimModel const *> added;
-		for (auto const *list : {&instances, &opaque})
-		{
-			for (auto *instance : *list)
-			{
-				if ((instance->pModel != nullptr) && has_light_points(instance->pModel) && added.insert(instance).second)
-				{
-					data.instances.emplace_back(instance);
-				}
-			}
-		}
+		add_lit_instances(instances, added, data.instances);
+		add_lit_instances(opaque, added, data.instances);
 		data.source_size = instances.size();
 		data.source_data = instances.data();
 		data.opaque_size = opaque.size();

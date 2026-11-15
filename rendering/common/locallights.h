@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace scene
@@ -132,6 +133,8 @@ class local_lights
 	// lights of the light points of the submodel tree, gone through the way the render goes through it. Transform: model space of
 	// Submodel's parent, Placement: model space to world space, Brightness: of a light point of white colour
 	void walk(TSubModel *Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float const Brightness);
+	// the square of the distance from the camera the submodel lights from at the least
+	float walk_min_distance(TSubModel const &Submodel) const;
 	void add_light_point(TSubModel const &Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float Brightness);
 	// lights of the glowing points of a smt_Stars submodel of a scenery lamp (gfx_lights_stars), each one shining downwards
 	void add_lamp_points(TSubModel const &Submodel, glm::mat4 const &Transform, glm::dmat4 const &Placement, float Brightness);
@@ -140,6 +143,8 @@ class local_lights
 	void gather_cab_lights(gfx::geometrybank_manager const &Geometry);
 	bool has_light_points(TModel3d *Model);
 	cell_data const &cell_instances(scene::basic_cell &Cell, bool const Rebuild);
+	// the instances of the list with light points not yet in Added, appended to Lit
+	void add_lit_instances(std::vector<TAnimModel *> const &Instances, std::unordered_set<TAnimModel const *> &Added, std::vector<TAnimModel *> &Lit);
 	section_data const &section(TModel3d *Model, TSubModel *Section, gfx::geometrybank_manager const &Geometry);
 	section_data const &model_bounds(TModel3d *Model, gfx::geometrybank_manager const &Geometry);
 

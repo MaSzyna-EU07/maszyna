@@ -87,6 +87,11 @@ bool is_listed_glow(std::string_view const Name, std::string_view const List)
 
 } // namespace
 
+bool scene_walk::drawn_in_phase(TSubModel const *Submodel, int const Mask)
+{
+	return ((Submodel->iAlpha & Submodel->iFlags & Mask) != 0) && (false == is_fake_glow(Submodel));
+}
+
 bool scene_walk::is_fake_glow(TSubModel const *Submodel)
 {
 	if (Global.gfx_lights_hideglow.empty() || (false == Global.gfx_lights_clustered) || (false == Global.gfx_lights_scenery) || (Submodel->m_material <= 0))
@@ -2150,7 +2155,7 @@ void scene_walk::Render(TSubModel *Submodel)
 		if (Submodel->eType < TP_ROTATOR)
 		{
 			// renderowanie obiektów OpenGL
-			if ((Submodel->iAlpha & Submodel->iFlags & 0x1F) && (false == is_fake_glow(Submodel)))
+			if (drawn_in_phase(Submodel, 0x1F))
 			{
 				// rysuj gdy element nieprzezroczysty
 
@@ -3190,7 +3195,7 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 		if (Submodel->eType < TP_ROTATOR)
 		{
 			// renderowanie obiektów OpenGL
-			if ((Submodel->iAlpha & Submodel->iFlags & 0x2F) && (false == is_fake_glow(Submodel)))
+			if (drawn_in_phase(Submodel, 0x2F))
 			{
                 // rysuj gdy element przezroczysty
 

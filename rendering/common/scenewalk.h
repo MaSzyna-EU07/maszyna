@@ -210,9 +210,6 @@ class scene_walk
 	static bool editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit);
 	// material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
 	static material_handle submodel_material(TSubModel const *Submodel);
-	// a plane faking the light of a lamp (its texture is one of gfx_lights_hideglow), left out while the lamps of the scenery
-	// light their surroundings
-	bool is_fake_glow(TSubModel const *Submodel);
 
 	// what the backend does with the draws of the walk
 	// binds the material for the colour passes: its program, its textures and its parameters in model_ubs (opacity, alpha_mult,
@@ -465,7 +462,6 @@ class scene_walk
 		unsigned int frame{0}; // queued last
 	};
 	std::unordered_map<TAnimModel const *, model_records> m_modelrecords;
-	std::unordered_map<material_handle, bool> m_fakeglows; // whether the material is one of gfx_lights_hideglow
 	// counts per lod band of the sleepers Render_Sleepers() drew in the pass, by model and skin, for the comparison (they're
 	// drawn before the culling runs)
 	std::unordered_map<scene::basic_cell::instance_bucket_key, std::vector<std::uint32_t>, scene::basic_cell::instance_bucket_key_hash> m_sleeperbandcounts;
@@ -636,6 +632,14 @@ class scene_walk
 
   private:
 	static float editor_ortho_reach();
+	// a plane faking the light of a lamp (its texture is one of gfx_lights_hideglow), left out while the lamps of the scenery
+	// light their surroundings
+	bool is_fake_glow(TSubModel const *Submodel);
+	// whether the submodel is drawn in the phase of the mask (0x1F opaque, 0x2F translucent): it has a part of it, and isn't
+	// a fake glow
+	bool drawn_in_phase(TSubModel const *Submodel, int Mask);
+
+	std::unordered_map<material_handle, bool> m_fakeglows; // whether the material is one of gfx_lights_hideglow
 };
 
 } // namespace gfx
