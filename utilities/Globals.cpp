@@ -321,6 +321,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "gfxrenderer")
     {
         ParseOne(Parser, GfxRenderer);
+        // read in any case, as the starter does: "Legacy" written by hand is the legacy renderer
+        GfxRenderer = ToLower(GfxRenderer);
 
         if (GfxRenderer == "full")
             GfxRenderer = "default";
