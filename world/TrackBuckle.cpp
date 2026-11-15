@@ -61,6 +61,18 @@ double TTrack::plan_radius( double const Distance, int &Outward ) const {
     return 1.0 / curvature;
 }
 
+double TTrack::buckle_curvature( double const Distance, double const Base ) const {
+
+    if( false == is_buckled() || false == track_buckle::within( m_buckle, Distance ) ) {
+        return 0.0;
+    }
+    auto const bend { track_buckle::mean_bend( m_buckle, Distance, Base ) };
+    auto outward { 0 };
+    plan_radius( Distance, outward );
+    // the centre of the curve is away from the outer side
+    return outward != 0 ? -outward * bend : bend;
+}
+
 std::uint64_t TTrack::buckle_key() const {
 
     if( false == m_name.empty() && m_name != "none" ) {

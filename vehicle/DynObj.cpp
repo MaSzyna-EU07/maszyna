@@ -3230,6 +3230,8 @@ bool TDynamicObject::Update(double dt, double dt1)
     // the uneven track under the outer axles, for the criteria of derailment: its lateral curvature, and its cross level
     ts.uneven_curvature = glm::dot( 0.5 * ( Axle0.UnevenBend() + Axle1.UnevenBend() ), vLeft );
     ts.uneven_cross = MyTrack->uneven_underway().cross;
+    // a buckle of the track under the body: the mean of the curvatures at the outer axles, each over the wheelbase of its bogie
+    ts.buckle_curvature = 0.5 * ( Axle0.BuckleCurvature( MoverParameters->ADist ) + Axle1.BuckleCurvature( MoverParameters->ADist ) );
     // TTrackParam tp;
     tp.Width = MyTrack->fTrackWidth;
     // McZapkie-250202

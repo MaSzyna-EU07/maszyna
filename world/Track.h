@@ -426,6 +426,9 @@ public:
     static void update_buckling( double const Deltatime );
     // the radius of the path in the plan at the distance, 0 straight, and the side away from its centre: -1 left, 1 right, 0 straight
     double plan_radius( double const Distance, int &Outward ) const;
+    // the curvature the buckle adds at the distance, averaged over Base around it, 1/m: positive bending with the curve, on a straight
+    // track to the right of the path
+    double buckle_curvature( double const Distance, double const Base ) const;
     // closes the gaps and steps of cant between the ends of joined paths
     void share_joints();
     double joint_depth() const; // mm

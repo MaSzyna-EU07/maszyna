@@ -1545,6 +1545,7 @@ void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam co
 	track.gauge = TrackW;
 	track.uneven_curvature = Shape.uneven_curvature;
 	track.uneven_cross = Shape.uneven_cross;
+	track.buckle_curvature = Shape.buckle_curvature;
 	track.damage = Track.DamageFlag;
 
 	auto const verdict{derailment_monitor.update(vehicle, track, V, Distance)};
@@ -1574,6 +1575,11 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 	                     Name, Derailed == derailment::outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(V) * 3.6, std::abs(Track.radius), cant,
 	                     Verdict.acceleration, Verdict.unloading, Verdict.flange_ratio, Vehicle.mass / 1000.0, Vehicle.centre_of_gravity, Vehicle.ends[end::front].compression / 1000.0,
 	                     Vehicle.ends[end::rear].compression / 1000.0, Track.damage, Track.uneven_cross));
+	if (Track.buckle_curvature != 0.0)
+	{
+		ErrorLog(std::format("Bad driving: {} derailed on buckled track, the buckle bending the line by 1/{:.0f} m {} the curve", Name, 1.0 / std::abs(Track.buckle_curvature),
+		                     Track.buckle_curvature > 0.0 ? "with" : "against"));
+	}
 }
 
 void TMoverParameters::Derail(DerailReason const Reason)
