@@ -2225,9 +2225,17 @@ void scene_walk::Render(TSubModel *Submodel)
 			}
 			}
 		}
-		if (Submodel->Child != nullptr)
-			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
+		if (Submodel->Child != nullptr && (TSubModel::iAlpha & Submodel->iFlags & 0x001F0000))
+		{
+			if (Submodel->eType == TP_TEXT)
+			{ // the opaque characters of a text display, drawn with depth like the rest of the opaque geometry
+				Render_text(Submodel);
+			}
+			else
+			{
 				Render(Submodel->Child);
+			}
+		}
 
 		if (Submodel->iFlags & 0xC000)
 		{
@@ -3093,6 +3101,23 @@ bool scene_walk::Render_Alpha(TModel3d *Model, material_data const *Material, fl
 	::glPopMatrix();
 
 	return result;
+}
+
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void scene_walk::Render_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	::glPushMatrix();
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{
+		Render(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+	::glPopMatrix();
 }
 
 // characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250

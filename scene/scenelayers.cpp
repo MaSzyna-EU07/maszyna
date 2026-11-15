@@ -392,6 +392,14 @@ bool node_layers::editable(basic_node const *Node, std::string *Reason) const
 	{
 		return false;
 	}
+	if (Node->m_generated)
+	{
+		if (Reason != nullptr)
+		{
+			*Reason = STR_C("it's made by the game while it runs (the moths at a lamp), not a part of the scenery");
+		}
+		return false;
+	}
 	if (Node->m_catenary)
 	{
 		// moved, copied or deleted by itself it would part from the catenary which keeps it (and is rebuilt from its own file)

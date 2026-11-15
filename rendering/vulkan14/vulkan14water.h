@@ -50,12 +50,21 @@ class windscreen_water : public gfx::windscreen_water
 	{
 		return m_storage ? m_storage->handle() : VK_NULL_HANDLE;
 	}
+	// the drops and the rivulets of the cells of the glasses with rain (RAIN_CELLS_SSBO, rain_cells.comp), the pass sets hold it
+	VkBuffer rain_cells() const
+	{
+		return m_raincells ? m_raincells->handle() : VK_NULL_HANDLE;
+	}
+	// the cells worked out for the time of the frame (the time of the block of the scene), with the commands of the frame before
+	// its passes; nothing while it doesn't rain
+	void update_rain_cells(float Time, float Rain);
 
   protected:
 	bool gpu_init() override;
 	void gpu_setup(std::size_t Slot, std::vector<glm::vec4> const &Axes) override;
 	bool gpu_bake(std::size_t Slot, texture_handle Mask, gl::water_ubs const &Block) override;
 	void gpu_step(gl::water_ubs const &Block, std::uint32_t Tries) override;
+	bool gpu_snow_layer(std::size_t Slot, texture_handle Atlas, texture_handle Normal, gl::water_ubs const &Block) override;
 
   private:
 	// the passes of the step, in their order
@@ -70,6 +79,8 @@ class windscreen_water : public gfx::windscreen_water
 		gather,
 		settle,
 		bake,
+		snow,
+		snowlayer,
 		count
 	};
 	// the block of the step in the ring of the frame; empty when the ring is full
@@ -89,6 +100,9 @@ class windscreen_water : public gfx::windscreen_water
 	host m_host;
 	std::array<compute_kernel, pass::count> m_kernels;
 	std::shared_ptr<buffer> m_storage;
+	std::shared_ptr<buffer> m_raincells;
+	compute_kernel m_raincellkernel;
+	bool m_raincelltried{false};
 	bool m_full{false}; // the storage is as large as the simulation needs (else a stand-in, the glasses make their water up)
 	bool m_cleared{false};
 };

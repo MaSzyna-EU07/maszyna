@@ -474,6 +474,9 @@ struct scene_state
 	// the depth prepass of the scene (the stage P3): without and with the alpha test, and which of them a program of a material takes
 	std::shared_ptr<scene_program> prepass, prepass_alpha;
 	std::unordered_map<gfx::shader_program const *, int> prepass_classes;
+	// the sun shadows of the materials which move their vertices in a vertex shader of their own (mat_<name>.vert, the animals
+	// and people animated by textures): by the program of the material, without and with the alpha test; made with the program
+	std::unordered_map<gfx::shader_program const *, std::array<std::shared_ptr<scene_program>, 2>> own_shadows;
 	// the post-processing, by the fragment shader
 	std::unordered_map<std::string, std::shared_ptr<shader_code const>> post_fragments;
 	std::shared_ptr<shader_code const> quad;

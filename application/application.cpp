@@ -1374,7 +1374,12 @@ void eu07_application::select_gfx_backend()
 	auto *factory{gfx_renderer_factory::get_instance()};
 	m_gfxbackend = nullptr;
 
-	if (Global.GfxRenderer == "vulkan")
+	if (Global.GfxRenderer == "null")
+	{
+		// draws nothing and loads no textures (test mode)
+		m_gfxbackend = factory->backend("null");
+	}
+	else if (Global.GfxRenderer == "vulkan")
 	{
 		// a renderer which can't run here falls back to opengl, so a setting in eu07.ini doesn't leave the user with a black screen
 		std::string reason;

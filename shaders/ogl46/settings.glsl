@@ -4,7 +4,8 @@
 #ifndef SETTINGS_GLSL
 #define SETTINGS_GLSL
 
-#ifdef GL_SPIRV
+// (some drivers, AMD's among them, define GL_SPIRV also when they compile the source: the game always puts the values before it)
+#if defined(GL_SPIRV) && !defined(SHADOWMAP_ENABLED_VALUE)
 layout(constant_id = 0) const bool SHADOWMAP_ENABLED = true;
 layout(constant_id = 1) const bool ENVMAP_ENABLED = true;
 layout(constant_id = 2) const bool MOTIONBLUR_ENABLED = true;

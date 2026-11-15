@@ -41,6 +41,11 @@ layout(std140, set = COMPUTE_SET, binding = 1) uniform water_ubo
 	// every glass: x the landings tried in the step, y 1 / the most metres squared a unit of its uv holds, z 1 when it's simulated,
 	// w the size of its drops (rain_scale of its material)
 	vec4 water_slots[WATER_SLOTS];
+	// the snow (water_snow.comp): x the flakes coming to a square metre of the ground in a second, y how much warmer than the air
+	// the glass is, degrees, z the speed of the vehicle, m/s, w the map of the snow the step reads (0, 1)
+	vec4 water_snow;
+	// every glass: 1 when its snow is simulated
+	vec4 water_snow_slots;
 };
 
 const float WATER_GRAVITY = 9.81;

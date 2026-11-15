@@ -424,7 +424,9 @@ struct global_settings {
     bool gfx_bufferstreaming = true;
     bool gfx_postfx_motionblur_enabled = true;
     // the colour pass writes the velocities of the pixels: for the motion blur, the temporal anti-aliasing or dlss
-    bool gfx_motion_vectors() const { return gfx_postfx_motionblur_enabled || gfx_taa() || gfx_dlss(); }
+    // the velocity target is always drawn: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) send the post-processing their
+    // drops and haze through it, whatever the motion blur and the anti-aliasing (not without the pipeline: no post-processing there)
+    bool gfx_motion_vectors() const { return ( false == gfx_skippipeline ) || gfx_postfx_motionblur_enabled; }
     float gfx_postfx_motionblur_shutter = 0.01f;
     GLenum gfx_postfx_motionblur_format = GL_RG16F;
     GLenum gfx_format_color = GL_RGB16F;
@@ -557,6 +559,20 @@ struct global_settings {
     // the sound and the driver
     bool gfx_tunnelflags { false };
     float gfx_lights_range { 300.f }; // distance from the camera the lights of models and vehicles are taken from, metres
+    // moths flying about the lit lamps of the scenery (rendering/common/moths.cpp): a swarm (the model animals/cmy, animated by
+    // textures) at a part of the lamps shining downwards, picked by their places, in the warm months, within the range of the camera
+    bool moths { true };
+    float moths_share { 0.4f }; // part of the lamps with a swarm, 0-1
+    float moths_range { 80.f }; // distance from the camera the swarms are shown at, metres
+    float moths_temperature { 8.f }; // the lowest temperature of the air moths fly at, degrees Celsius
+    // deer at the tracks (world/deer.cpp): put on the path ahead of the train of the player, grazing, they run away from the horn
+    // or the train coming close. off unless turned on
+    bool deer { false };
+    float deer_interval { 2000.0f }; // metres the train covers between the deer, 0 none
+    float deer_distance { 2000.0f }; // metres ahead of the train a deer is put at
+    float deer_chance { 1.0f }; // of a deer at each interval, 0-1
+    float deer_hornrange { 600.0f }; // the horn sends away the deer within this many metres
+    float deer_fleedistance { 150.0f }; // a deer runs away from the train come this close, metres
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab
     int gfx_lights_shadows { 2 };

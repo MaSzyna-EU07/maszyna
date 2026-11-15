@@ -410,6 +410,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void update_clusters(glm::ivec2 const &Targetsize);
 	// which program of the depth prepass stands for the program of the material: 0 none, 1 without the alpha test, 2 with it
 	int prepass_class(material_handle const Material);
+	// the program of the sun shadows of a material with a vertex shader of its own (mat_<name>.vert), nullptr for the others
+	vk14::scene_program *own_shadow_program(material_handle const Material) const;
 	// the depth of the whole opaque scene of the colour pass of the main viewport before its colour, for the contact shadows
 	// (Contactonly: with them alone) or for itself (gfx.depthprepass.scene), and the contact shadows set up to read it
 	void render_scene_depth(std::size_t const Viewport, glm::mat4 const &Future);
@@ -545,6 +547,16 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	glm::vec3 m_fogcolor{0.f};
 	glm::vec4 m_shadowcolor{colors::shadow};
 	gl::scene_ubs scene_ubs{};
+	// the vehicle whose wipers the timers of the blades in scene_ubs (wiper_timer_out / wiper_timer_return) follow
+	TDynamicObject const *m_wipervehicle{nullptr};
+	// the insects that vehicle met so far: seconds of driving at 100 km/h (scene_ubs.rain_wind.w)
+	double m_wiperbugs{0.0};
+	// the place of each blade (dWiperPos) the last frame, -1 not known: the places it went over since get the rain fallen
+	// (gl::wiper_pass_mark)
+	std::array<double, 4> m_wiperlastpos{-1.0, -1.0, -1.0, -1.0};
+	// the rain the glass met so far and how wet it is (scene_ubs::rain_state)
+	double m_wiperrain{0.0};
+	double m_glasswet{0.0};
 	gl::light_data light_data{};
 	std::uint32_t m_lightcount{1}; // lights written to light_data
 	// the copies of the light buffer in the ring of the frame since the lights were last written, by the header and the sun

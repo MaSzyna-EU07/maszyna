@@ -10,6 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/common/windscreenwater.h"
 
+#include <algorithm>
+#include <bit>
+#include <cmath>
+
 #include "model/Model3d.h"
 #include "model/material.h"
 #include "rendering/renderer.h"
@@ -19,6 +23,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Train.h"
+
+#include <algorithm>
 
 namespace gfx
 {
@@ -38,15 +44,40 @@ double constexpr WIND_SHARE{0.5};
 float constexpr LEAST_DROP{0.5f};
 // the water a flake of snow brings, mm3 on average (water_spawn.comp: 0.3 .. 2.5)
 float constexpr FLAKE_WATER{1.4f};
+// how much warmer than the air a glass of the cab is, degrees: the cab is heated (the blowing on the glass isn't simulated),
+// less so at speed, when the air cools the glass from the outside (water_snow.comp)
+float constexpr GLASS_WARMTH{3.f};
 // the most landings tried on a glass in a step
 std::uint32_t constexpr MOST_TRIES{1024};
 // the longest step, seconds: a longer frame slows the water down rather than let it jump
 double constexpr LONGEST_STEP{0.05};
 
-// whether the material is a glass: one of mat_rain_windscreen, with a mask of the wipers
-bool is_glass(opengl_material const *Material)
+// whether the material is a glass of the water: one of mat_rain_windscreen, with a mask of the wipers
+bool is_water_glass(opengl_material const *Material)
 {
 	return (Material != nullptr) && (Material->shader != nullptr) && (Material->shader->texture_conf.count("wipermask") > 0) && (Material->shader->param_conf.count("water_slot") > 0);
+}
+
+// whether the material is a glass of the snow: one of mat_snow_windscreen, with a mask of the wipers (its param snow_slot is in
+// the place of water_slot)
+bool is_snow_glass(opengl_material const *Material)
+{
+	return (Material != nullptr) && (Material->shader != nullptr) && (Material->shader->texture_conf.count("wipermask") > 0) && (Material->shader->param_conf.count("snow_slot") > 0);
+}
+
+// whether the material is a glass, of the water or of the snow
+bool is_glass(opengl_material const *Material)
+{
+	return is_water_glass(Material) || is_snow_glass(Material);
+}
+
+// what a material of the cab with a mask of the wipers is now: 0 no glass, 1 a glass of the water, 2 a glass of the snow (its
+// shader goes with the weather)
+int glass_kind(opengl_material const *Material)
+{
+	if (is_snow_glass(Material))
+		return 2;
+	return is_water_glass(Material) ? 1 : 0;
 }
 
 // calls Visit for every submodel of the branch, its children and its siblings
@@ -94,6 +125,8 @@ void windscreen_water::release()
 	assign(false);
 	m_glasses = {};
 	m_glasscount = 0;
+	m_layerslot = -1;
+	m_kinds.clear();
 	m_vehicle = nullptr;
 	m_cab = nullptr;
 }
@@ -230,6 +263,12 @@ void windscreen_water::build(TModel3d &Cab)
 			}
 		}
 		auto const material{Submodel->m_material};
+		if ((material != null_handle) && (material > 0) && (Submodel->eType == GL_TRIANGLES) && std::ranges::none_of(m_kinds, [material](auto const &Kind) { return Kind.first == material; }))
+		{
+			// every material with a mask of the wipers, what it is kept: it's a glass of another kind when the weather changes
+			if (auto const *opengl{m_host.material(material)}; (opengl != nullptr) && (opengl->shader != nullptr) && (opengl->shader->texture_conf.count("wipermask") > 0))
+				m_kinds.emplace_back(material, glass_kind(opengl));
+		}
 		if ((material != null_handle) && (material > 0) && (Submodel->eType == GL_TRIANGLES) && (std::find(materials.begin(), materials.end(), material) == materials.end()) && is_glass(m_host.material(material)))
 		{
 			materials.push_back(material);
@@ -255,6 +294,7 @@ void windscreen_water::build(TModel3d &Cab)
 		glass = windscreen_water::glass{};
 		glass.material = material;
 		auto const *opengl{m_host.material(material)};
+		glass.snow = is_snow_glass(opengl);
 		glass.mask = opengl->textures[opengl->shader->texture_conf.at("wipermask").id];
 		for (std::size_t texel = 0; texel < texels; ++texel)
 		{
@@ -317,7 +357,10 @@ void windscreen_water::update(double const Seconds)
 	}
 	auto const *vehicle{simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr};
 	auto *cab{vehicle != nullptr ? vehicle->mdKabina : nullptr};
-	if ((vehicle != m_vehicle) || (cab != m_cab))
+	// a material of the glasses of another kind: the weather changed, the materials have the shaders of the other weather (the
+	// snow comes with the shader of the snow and goes with it)
+	auto const changed{std::ranges::any_of(m_kinds, [this](auto const &Kind) { return glass_kind(m_host.material(Kind.first)) != Kind.second; })};
+	if ((vehicle != m_vehicle) || (cab != m_cab) || changed)
 	{
 		// another cab: its glasses dry
 		release();
@@ -409,11 +452,15 @@ void windscreen_water::update(double const Seconds)
 	auto const coming{glm::length(air - up * fall)};
 	std::uint32_t most{0};
 	m_tries = 0;
+	bool anysnow{false};
 	for (std::size_t slot = 0; slot < m_glasscount; ++slot)
 	{
 		auto &glass{m_glasses[slot]};
 		auto const *material{m_host.material(glass.material)};
-		auto const simulated{glass.baked && is_glass(material)};
+		auto const snowed{glass.baked && glass.snow && is_snow_glass(material)};
+		block.snow_slots[static_cast<glm::length_t>(slot)] = (snowed ? 1.f : 0.f);
+		anysnow = anysnow || snowed;
+		auto const simulated{glass.baked && (false == glass.snow) && is_water_glass(material)};
 		glass.landings += static_cast<double>(perground / fall * coming * glass.densest) * seconds;
 		auto const whole{std::floor(glass.landings)};
 		glass.landings -= whole;
@@ -432,8 +479,102 @@ void windscreen_water::update(double const Seconds)
 	    m_bladesbefore.x < 0.f ? blades.x : m_bladesbefore.x, m_bladesbefore.y < 0.f ? blades.y : m_bladesbefore.y, m_bladesbefore.z < 0.f ? blades.z : m_bladesbefore.z, m_bladesbefore.w < 0.f ? blades.w : m_bladesbefore.w};
 	block.rain = glm::vec4{LEAST_DROP, lambda, 1.f, 0.f};
 	block.counts = glm::uvec4{m_step * 2654435761u, most, 0u, 0u};
+	block.snow = glm::vec4{snow ? perground : 0.f, GLASS_WARMTH, static_cast<float>(std::abs(vehicle->MoverParameters->V)), static_cast<float>(m_snowmap)};
 	m_bladesbefore = blades;
 	gpu_step(block, most);
+	if (anysnow)
+	{
+		lay_snow(block);
+		// the step wrote the other map of the snow
+		m_snowmap = 1 - m_snowmap;
+	}
+}
+
+namespace
+{
+
+// a texture of the material by its name in the shader, none when the shader has no such texture
+texture_handle material_texture(opengl_material const &Material, std::string const &Name)
+{
+	if ((Material.shader == nullptr) || (Material.shader->texture_conf.count(Name) == 0))
+	{
+		return null_handle;
+	}
+	return Material.textures[Material.shader->texture_conf.at(Name).id];
+}
+
+} // namespace
+
+std::array<std::uint32_t, 8> windscreen_water::layer_info(std::size_t const Slot, std::vector<glm::vec4> const &Axes)
+{
+	std::array<std::uint32_t, 8> info{};
+	if ((Slot >= m_glasses.size()) || (false == m_glasses[Slot].snow) || ((m_layerslot >= 0) && (m_layerslot != static_cast<int>(Slot))))
+	{
+		return info;
+	}
+	auto const size{static_cast<int>(gl::WATER_MAP)};
+	glm::ivec2 least{size};
+	glm::ivec2 most{-1};
+	glm::dvec2 span{0.0};
+	auto on{0};
+	for (int y = 0; y < size; ++y)
+	{
+		for (int x = 0; x < size; ++x)
+		{
+			auto const texel{static_cast<std::size_t>(y * size + x)};
+			if ((texel * 2 + 1 >= Axes.size()) || (Axes[texel * 2].w <= 0.f))
+			{
+				continue;
+			}
+			least = glm::min(least, glm::ivec2{x, y});
+			most = glm::max(most, glm::ivec2{x, y});
+			if (Axes[texel * 2].w >= 1.f)
+			{
+				// metres of the glass in a unit of its uv, across and down
+				span += glm::dvec2{glm::length(glm::vec3{Axes[texel * 2]}), glm::length(glm::vec3{Axes[texel * 2 + 1]})};
+				++on;
+			}
+		}
+	}
+	if ((on == 0) || (most.x < least.x) || (most.y < least.y))
+	{
+		return info;
+	}
+	m_layerslot = static_cast<int>(Slot);
+	span /= static_cast<double>(on);
+	auto const corner{glm::vec2{least} / static_cast<float>(size)};
+	auto const extent{glm::vec2{most - least + 1} / static_cast<float>(size)};
+	// the texels across and down as the glass is wide and high (the same size in metres both ways)
+	auto const wide{std::max(static_cast<double>(extent.x) * span.x, 1e-3)};
+	auto const high{std::max(static_cast<double>(extent.y) * span.y, 1e-3)};
+	auto const texels{static_cast<double>(gl::WATER_LAYER_TEXELS)};
+	auto const across{static_cast<std::uint32_t>(std::clamp(std::round(std::sqrt(texels * wide / high)), 16.0, texels / 16.0))};
+	auto const down{static_cast<std::uint32_t>(gl::WATER_LAYER_TEXELS / across)};
+	info = {std::bit_cast<std::uint32_t>(corner.x), std::bit_cast<std::uint32_t>(corner.y), std::bit_cast<std::uint32_t>(extent.x), std::bit_cast<std::uint32_t>(extent.y), across, down, 0u, 0u};
+	return info;
+}
+
+void windscreen_water::lay_snow(gl::water_ubs const &Block)
+{
+	// the one glass with the layer
+	if ((m_layerslot < 0) || (static_cast<std::size_t>(m_layerslot) >= m_glasscount))
+	{
+		return;
+	}
+	auto const slot{static_cast<std::size_t>(m_layerslot)};
+	if (Block.snow_slots[static_cast<glm::length_t>(slot)] >= 0.5f)
+	{
+		auto const *material{m_host.material(m_glasses[slot].material)};
+		auto const atlas{(material != nullptr) ? material_texture(*material, "raindropsatlas") : null_handle};
+		auto const normal{(material != nullptr) ? material_texture(*material, "normalmap") : null_handle};
+		if ((atlas != null_handle) && (normal != null_handle))
+		{
+			auto layer{Block};
+			layer.counts.z = static_cast<std::uint32_t>(slot);
+			layer.counts.w = m_step;
+			gpu_snow_layer(slot, atlas, normal, layer);
+		}
+	}
 }
 
 std::string windscreen_water::info() const

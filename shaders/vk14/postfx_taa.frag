@@ -23,4 +23,54 @@ layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 3) uniform sampler2D histo
 #define TAA_HISTORY_VALID (param[0].x > 0.5)
 #define TAA_REPROJECTION mat4(param[2], param[3], param[4], param[5])
 #define TAA_NEAR param[0].y
+#include "rain_windscreen_haze.glsl"
+
+// the resolve of the taa under another name: main() below gives the wet windscreen (mat_rain_windscreen.frag) its haze and the
+// picture in its drops first
+#define main taa_resolve_main
 #include "taa_resolve.glsl"
+#undef main
+
+// the drops and the haze are made from the frame alone (the history of the taa would smear them over the frames): drawn with the
+// offsets of the taa they shimmer from frame to frame. they stay where they are on the screen, so the result of the last frame at
+// the same pixel is blended in: fully while the view stands still, half while it moves, kept near this frame's result (no ghosts
+// of a wiper or of drops gone)
+const float WS_TEMPORAL_SHARE = 0.2;    // the share of this frame while the view stands still
+const float WS_TEMPORAL_MOVING = 0.5;   // ... and while it moves
+const float WS_TEMPORAL_RANGE = 0.12;   // the last frame kept within this of this frame (colours squeezed into 0..1)
+
+vec3 wsStabilize(vec3 current, ivec2 pixel)
+{
+    if (false == TAA_HISTORY_VALID)
+        return current;
+    vec4 last = texelFetch(history_tex, pixel, 0);
+    if (any(isnan(last)) || (false == wsWasHazed(last.a)))   // not a drop or haze pixel in the last frame
+        return current;
+    vec2 size = vec2(textureSize(color_tex, 0));
+    float depth = texelFetch(depth_tex, pixel, 0).r;
+    vec4 world = TAA_REPROJECTION * vec4(f_coords * 2.0 - 1.0, depth, 1.0);
+    bool still = (world.w > 0.0) && (length((world.xy / world.w * 0.5 + 0.5 - f_coords) * size) < 0.5);
+    vec3 c = taa_compress(current);
+    vec3 h = clamp(taa_compress(taa_clean(last.rgb)), c - WS_TEMPORAL_RANGE, c + WS_TEMPORAL_RANGE);
+    return taa_decompress(clamp(mix(h, c, still ? WS_TEMPORAL_SHARE : WS_TEMPORAL_MOVING), vec3(0.0), vec3(1.0 - 1.0 / TAA_HALF_MAX)));
+}
+
+void main()
+{
+    // the drops: the picture of this frame bent by them; the hazy glass: the picture of this frame blurred over it. both without
+    // the history (else they would smear on frame after frame), marked for the motion blur after
+    ivec2 pixel = ivec2(f_coords * vec2(textureSize(velocity_tex, 0)));
+    vec2 raw = texelFetch(velocity_tex, pixel, 0).xy;
+    if (wsIsDrop(raw))
+    {
+        out_color = vec4(wsStabilize(taa_clean(wsDropRefraction(color_tex, velocity_tex, depth_tex, f_coords, raw)), pixel), WS_HAZED);
+        return;
+    }
+    float blurAmt = wsBlur(raw);
+    if (blurAmt > 0.0)
+    {
+        out_color = vec4(wsStabilize(taa_clean(wsHaze(color_tex, velocity_tex, f_coords, blurAmt)), pixel), WS_HAZED);
+        return;
+    }
+    taa_resolve_main();
+}

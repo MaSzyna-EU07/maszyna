@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
 #include "world/Event.h"
+#include "world/deer.h"
 #include "input/messaging.h"
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
@@ -318,6 +319,7 @@ bool driver_mode::update()
 		Timer::subsystem.sim_lights.start();
 		simulation::Lights.update();
 		Timer::subsystem.sim_lights.stop();
+		simulation::Deer.update(deltatime);
 
 		if (Global.test.enabled && simulation::is_ready)
 		{
