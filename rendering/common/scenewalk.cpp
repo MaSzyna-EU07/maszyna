@@ -2067,6 +2067,37 @@ bool scene_walk::Render(TModel3d *Model, material_data const *Material, float co
 	return result;
 }
 
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void scene_walk::Render_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	::glPushMatrix();
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{
+		Render(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+	::glPopMatrix();
+}
+
+// opaque sub-models under the given one. the children of a text display are its character set, only the characters
+// of the displayed text are drawn
+void scene_walk::Render_children(TSubModel *Submodel)
+{
+	if (Submodel->eType == TP_TEXT)
+	{
+		Render_text(Submodel);
+	}
+	else
+	{
+		Render(Submodel->Child);
+	}
+}
+
 void scene_walk::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
@@ -2227,7 +2258,7 @@ void scene_walk::Render(TSubModel *Submodel)
 		}
 		if (Submodel->Child != nullptr)
 			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
-				Render(Submodel->Child);
+				Render_children(Submodel);
 
 		if (Submodel->iFlags & 0xC000)
 		{
