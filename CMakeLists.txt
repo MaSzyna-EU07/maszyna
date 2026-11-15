@@ -715,6 +715,9 @@ else()
 endif()
 
 find_package(OpenAL REQUIRED)
+target_include_directories(eu07_settings BEFORE INTERFACE
+	"${CMAKE_SOURCE_DIR}/ref/openal/include"
+)
 if (TARGET OpenAL::OpenAL)
 	target_link_libraries(eu07_settings INTERFACE OpenAL::OpenAL)
 else()
