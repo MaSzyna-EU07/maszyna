@@ -129,8 +129,8 @@ struct track_state {
 
 // what the state of the track does to the lateral forces and the wheel loads
 struct track_condition {
-	double lateral{1.0}; // multiplier of the lateral acceleration
-	double unloading{0.0}; // share of the wheel load the twist of the track takes off
+	double lateral{1.0}; // multiplier of the sway of the vehicle and of the short waves of an uneven track
+	double unloading{0.0}; // share of the wheel load the twist of the track (its cross level) takes off
 };
 track_condition condition_of(track_state const &Track);
 // share of the vehicle that follows the short waves of an uneven track: the wheelsets and the bogies, the body not
@@ -144,7 +144,8 @@ struct wheel_forces {
 	double lateral{0.0}; // the lateral force on the vehicle, positive out of the curve [N]
 	double y{0.0}; // lateral force of the flanging wheel [N]
 	double q{0.0}; // its vertical force [N]
-	double ratio() const { return q > 0.0 ? y / q : 1e9; }
+	// a wheel lifted off the rail with a force on it is past any limit; no force at all (a vehicle without a mass) none
+	double ratio() const { return q > 0.0 ? y / q : (y > 0.0 ? 1e9 : 0.0); }
 };
 // the forces of the flanging wheel of the leading axle, at the speed [m/s]
 wheel_forces flange_forces(vehicle_state const &Vehicle, track_state const &Track, double Velocity);

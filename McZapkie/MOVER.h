@@ -2438,7 +2438,7 @@ class TMoverParameters
 	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]
 	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
 	// the vehicle leaves the rails, as the criteria of derailment.h found
-	void derail(derailment::verdict const &Verdict, TTrackShape const &Shape);
+	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track);
 	// height of the centre of gravity above the rail with the load [m]
 	double centre_of_gravity() const;
 	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other

@@ -128,12 +128,14 @@ double nadal_limit(double const FlangeAngle, double const Friction) {
 
 track_condition condition_of(track_state const &Track) {
 	track_condition condition;
-	// as the legacy criterion had it, a loose rail sways the vehicles 1.4 times as much
+	// the flags make the ride rougher: the sway of the vehicles and the short waves of the track grow, the curve and
+	// the cant stay what they are. sceneries set them for the jolts of a worn track (damage 31 on all of line 107),
+	// not for broken rails. a loose rail sways the vehicles 1.4 times as much, as the legacy criterion had it
 	condition.lateral = 1.0 + 0.4 * has(Track.damage, track_damage::freerail) + 0.5 * has(Track.damage, track_damage::railbend) + 0.1 * has(Track.damage, track_damage::railwear) +
 	                    0.1 * has(Track.damage, track_damage::thinrail);
 	// the twist of the track lifts a wheel: 1 % of its load for each mm of cross level, up to the 0.6 the twist test
 	// of EN 14363 lets the load drop by
-	condition.unloading = std::min(0.6, 0.01 * std::max(0.0, Track.uneven_cross) + 0.1 * has(Track.damage, track_damage::freerail) + 0.1 * has(Track.damage, track_damage::railbend));
+	condition.unloading = std::min(0.6, 0.01 * std::max(0.0, Track.uneven_cross));
 	return condition;
 }
 
@@ -160,8 +162,8 @@ wheel_forces flange_forces(vehicle_state const &Vehicle, track_state const &Trac
 	auto const quasistatic{inertia + couplings};
 	// the sway and the uneven track push the worst way: towards the rail the vehicle already leans on
 	auto const direction{quasistatic >= 0.0 ? 1.0 : -1.0};
-	auto const dynamic{Vehicle.mass * dynamic_acceleration(Track, Velocity)};
-	result.lateral = direction * (std::abs(quasistatic) + dynamic) * condition.lateral;
+	auto const dynamic{Vehicle.mass * dynamic_acceleration(Track, Velocity) * condition.lateral};
+	result.lateral = direction * (std::abs(quasistatic) + dynamic);
 
 	// the leading axle meets the rail at an angle in a curve, the creep force of its inner wheel at most the friction
 	auto guiding{0.0};
@@ -172,7 +174,7 @@ wheel_forces flange_forces(vehicle_state const &Vehicle, track_state const &Trac
 	result.y = std::abs(result.lateral) / axles + guiding;
 
 	// the lateral forces at their heights move the load onto the wheels they push towards
-	auto const moment{(direction * (inertia * height + couplings * buffer_height) + dynamic * height) * condition.lateral};
+	auto const moment{direction * (inertia * height + couplings * buffer_height) + dynamic * height};
 	auto const shift{moment / (spacing * axles)};
 	result.q = std::max(0.0, (staticload + shift) * (1.0 - condition.unloading));
 	return result;
@@ -185,7 +187,7 @@ double body_acceleration(vehicle_state const &Vehicle, track_state const &Track,
 	auto const height{leaning_height(Vehicle.centre_of_gravity, suspension{})};
 	// the couplings pull at the height of the buffers: as much of a lean as their moment gives
 	auto const moment{Vehicle.mass * unbalanced_acceleration(Velocity, Track.radius, Track.cant) * height + coupling_force(Vehicle, Track) * buffer_height};
-	return (std::abs(moment) / (Vehicle.mass * height) + dynamic_acceleration(Track, Velocity)) * condition_of(Track).lateral;
+	return std::abs(moment) / (Vehicle.mass * height) + dynamic_acceleration(Track, Velocity) * condition_of(Track).lateral;
 }
 
 bool stretch::update(bool const Holds, double const Distance, double const Window) {

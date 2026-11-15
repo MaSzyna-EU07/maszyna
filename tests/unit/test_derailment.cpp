@@ -155,6 +155,19 @@ TEST_CASE("derailment: a peak shorter than the window doesn't derail") {
 	CHECK(stretch.distance() == doctest::Approx(2.0));
 }
 
+TEST_CASE("derailment: a vehicle without a mass never derails") {
+	// a definition without M (or with all of it in the rotating masses) gives no forces, not a lifted wheel
+	dr::vehicle_state massless;
+	massless.mass = 0.0;
+	dr::track_state track;
+	track.radius = 150.0;
+	CHECK(dr::flange_forces(massless, track, 30.0).ratio() == 0.0);
+	dr::monitor monitor;
+	for (int step = 0; step < 10; ++step) {
+		CHECK(monitor.update(massless, track, 30.0, 1.0).result == dr::outcome::none);
+	}
+}
+
 TEST_CASE("derailment: pushing a light wagon between heavy vehicles in a curve") {
 	// the empty 3WL (10.5 t, 2 axles 6 m apart, 9.87 m long) between two EU07 in a 150 m curve: the more the train
 	// pushes, the more the couplings push the wagon out of the curve, the higher its Y/Q
@@ -209,9 +222,9 @@ TEST_CASE("derailment: pushing a light wagon between heavy vehicles in a curve")
 		return result > flat;
 	}()};
 	CHECK(twisted);
-	// on a bent rail, with a twist of 40 mm, the wagon pushed with 300 kN climbs the rail over 2 m, without falling over
+	// on a bent rail, with a twist of 50 mm, the wagon pushed with 300 kN climbs the rail over 2 m, without falling over
 	track.damage = dr::track_damage::railbend;
-	track.uneven_cross = 40.0;
+	track.uneven_cross = 50.0;
 	dr::monitor monitor;
 	auto pushed{wagon};
 	for (auto &end : pushed.ends) {
@@ -224,4 +237,44 @@ TEST_CASE("derailment: pushing a light wagon between heavy vehicles in a curve")
 	CAPTURE(verdict.unloading);
 	CHECK(verdict.unloading < 1.0);
 	CHECK(verdict.result == dr::outcome::off_rails);
+}
+
+TEST_CASE("derailment: the damage flags of the track make the ride rougher, not the curve sharper") {
+	// line 107 has damage 31 on every track, for the jolts. a 401Ka wagon creeping at 28 km/h through a 282 m curve
+	// with a cant of 179 mm, pulled by a freight train, stays on: in the 2026-11-15 run with the flags scaling the
+	// whole lateral acceleration it overturned into the curve
+	dr::vehicle_state wagon;
+	wagon.mass = 23000.0;
+	wagon.axles = 4;
+	wagon.length = 14.7;
+	wagon.axle_base = 1.8;
+	wagon.centre_of_gravity = dr::default_centre_of_gravity(4.2, dr::vehicle_class::unpowered);
+	for (auto &end : wagon.ends) {
+		end.compression = -200e3;
+		end.other_length = 14.7;
+	}
+	dr::track_state track;
+	track.radius = 282.0;
+	track.cant = std::asin(0.179 / 1.5);
+	auto const speed{28.0 * kmh};
+	auto const smooth{dr::body_acceleration(wagon, track, speed)};
+	track.damage = 31;
+	auto const rough{dr::body_acceleration(wagon, track, speed)};
+	// the sway grows, by what a rough track adds to the sway at that speed
+	CHECK(rough > smooth);
+	CHECK(rough - smooth == doctest::Approx(1.1 * dr::body_vibration(speed)));
+	CHECK(dr::unloading_ratio(rough, wagon.centre_of_gravity, 1.5) < 0.5);
+	CHECK(dr::flange_forces(wagon, track, speed).ratio() < 0.8);
+	// at speed the rough track still lowers the overturning speed some, as the legacy criterion's factor did
+	{
+		dr::vehicle_state eu07vehicle;
+		eu07vehicle.mass = 80000.0;
+		eu07vehicle.centre_of_gravity = eu07;
+		dr::track_state good;
+		good.radius = 300.0;
+		auto worn{good};
+		worn.damage = 31;
+		CHECK(dr::body_acceleration(eu07vehicle, worn, 30.0) > dr::body_acceleration(eu07vehicle, good, 30.0));
+		CHECK(dr::body_acceleration(eu07vehicle, worn, 30.0) - dr::body_acceleration(eu07vehicle, good, 30.0) == doctest::Approx(1.1 * dr::vibration));
+	}
 }

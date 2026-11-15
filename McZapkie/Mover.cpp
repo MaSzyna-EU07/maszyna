@@ -1550,11 +1550,11 @@ void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam co
 	auto const verdict{derailment_monitor.update(vehicle, track, V, Distance)};
 	if (verdict.result != derailment::outcome::none)
 	{
-		derail(verdict, Shape);
+		derail(verdict, vehicle, track);
 	}
 }
 
-void TMoverParameters::derail(derailment::verdict const &Verdict, TTrackShape const &Shape)
+void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track)
 {
 	if (false == SetFlag(DamageFlag, dtrain_out))
 	{
@@ -1568,10 +1568,12 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, TTrackShape co
 	{
 		AlarmChainFlag = true;
 	}
-	auto const cant{1000.0 * derailment::contact_spacing(TrackW) * std::sin(std::abs(Shape.dHrail))};
-	ErrorLog(std::format("Bad driving: {} {} at {:.0f} km/h, curve radius {:.0f} m, cant {:.0f} mm: lateral acceleration {:.2f} m/s2, wheel unloading {:.2f}, Y/Q {:.2f}", Name,
-	                     Derailed == derailment::outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(V) * 3.6, std::abs(Shape.R), cant, Verdict.acceleration,
-	                     Verdict.unloading, Verdict.flange_ratio));
+	auto const cant{1000.0 * derailment::contact_spacing(Track.gauge) * std::sin(std::abs(Track.cant))};
+	ErrorLog(std::format("Bad driving: {} {} at {:.0f} km/h, curve radius {:.0f} m, cant {:.0f} mm: lateral acceleration {:.2f} m/s2, wheel unloading {:.2f}, Y/Q {:.2f}"
+	                     " (mass {:.1f} t, centre of gravity {:.2f} m, couplings pushing {:.0f} / {:.0f} kN, track damage {}, cross level {:.0f} mm)",
+	                     Name, Derailed == derailment::outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(V) * 3.6, std::abs(Track.radius), cant,
+	                     Verdict.acceleration, Verdict.unloading, Verdict.flange_ratio, Vehicle.mass / 1000.0, Vehicle.centre_of_gravity, Vehicle.ends[end::front].compression / 1000.0,
+	                     Vehicle.ends[end::rear].compression / 1000.0, Track.damage, Track.uneven_cross));
 }
 
 void TMoverParameters::Derail(DerailReason const Reason)
@@ -1652,6 +1654,10 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce()
 		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
+		// stuck in the ballast: the friction holds a derailed vehicle once it stopped, until the forces on it are larger
+		auto const stuck{Derailed != derailment::outcome::none && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
+		if (stuck)
+			AccS = 0.0;
 
 		// przyspieszenie normalne
 		if (abs(Shape.R) > 0.01)
@@ -1662,6 +1668,8 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		// velocity change
 		auto const Vprev{V};
 		V += (3.0 * AccS - AccSprev) * dt / 2.0; // przyrost predkosci
+		if (stuck)
+			V = 0.0;
 		if (V * Vprev <= 0 && std::abs(FStand) > std::abs(FTrain))
 		{
 			// tlumienie predkosci przy hamowaniu
@@ -1757,12 +1765,17 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 
 		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
+		auto const stuck{Derailed != derailment::outcome::none && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
+		if (stuck)
+			AccS = 0.0;
 
 		// simple mode skips calculation of normal acceleration
 
 		// velocity change
 		auto const Vprev{V};
 		V += (3.0 * AccS - AccSprev) * dt / 2.0; // przyrost predkosci
+		if (stuck)
+			V = 0.0;
 		if (V * Vprev <= 0 && std::abs(FStand) > std::abs(FTrain))
 		{
 			// tlumienie predkosci przy hamowaniu

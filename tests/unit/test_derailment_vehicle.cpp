@@ -140,3 +140,24 @@ TEST_CASE("derailment: the brake hoses tear") {
 	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
 	CHECK(eu07vehicle->AlarmChainFlag);
 }
+
+TEST_CASE("derailment: a stopped derailed vehicle stays put on a gradient") {
+	// the friction of the ballast holds it, rather than the vehicle creeping and stopping in turn in every step, which
+	// kept the physics of its whole train awake (the run of line 107 went at half the speed after a derailment)
+	model_setting const physical{global_settings::derailment_model::physical};
+	test::track curve;
+	curve.radius = 300.0;
+	curve.gradient = 0.01;
+	vehicle eu07vehicle{definition::fiz("4e_v1/4e"), 150.0};
+	for (int step = 0; step < 2000; ++step) {
+		eu07vehicle.step(curve);
+	}
+	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
+	REQUIRE(eu07vehicle->V == 0.0);
+	auto still{true};
+	for (int step = 0; step < 500; ++step) {
+		eu07vehicle.step(curve);
+		still = still && eu07vehicle->V == 0.0 && eu07vehicle->AccS == 0.0;
+	}
+	CHECK(still);
+}
