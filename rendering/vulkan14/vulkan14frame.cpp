@@ -1512,8 +1512,19 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 			m_wiperbugs = 0.0;
 		}
 		// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
-		// driving at 100 km/h
-		if (owner != nullptr)
+		// driving at 100 km/h. none in winter, and the rain or the snow washes them off: once it stops (and out of winter) the glass
+		// gets them anew from none, and what the blades left of them before is forgotten
+		auto const insects{(Global.Season != "winter:") && (Global.Weather != "rain:") && (Global.Weather != "snow:")};
+		if (false == insects)
+		{
+			if (m_wiperbugs > 0.0)
+			{
+				scene_ubs.wiper_bugs_out = glm::vec4{-1.};
+				scene_ubs.wiper_bugs_return = glm::vec4{-1.};
+			}
+			m_wiperbugs = 0.0;
+		}
+		else if (owner != nullptr)
 			m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
 		scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
 		// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
