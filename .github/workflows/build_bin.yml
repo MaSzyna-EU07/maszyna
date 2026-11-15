@@ -32,11 +32,14 @@ jobs:
   # running is left to finish; with a build cancelled the publish job of that run is skipped. A push
   # to master gets a group of its own, its commit, so the builds of master are never cancelled.
 
+  # Windows is built twice: with AVX2 (the default of ENABLE_AVX2) and without it, for CPUs older
+  # than Haswell (2013). Each variant has its own concurrency group, or one would cancel the other.
+
   windows:
     name: Windows x64 / MSVC / ${{ matrix.variant.name }}
     runs-on: windows-2022
     concurrency:
-      group: ${{ github.workflow }}-windows-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      group: ${{ github.workflow }}-windows-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
       cancel-in-progress: true
 
     strategy:
@@ -45,7 +48,7 @@ jobs:
         variant:
           - name: "AVX2"
             suffix: "avx2"
-            cmake_flags: ""
+            cmake_flags: "-DENABLE_AVX2=ON"
           - name: "No AVX2"
             suffix: "noavx2"
             cmake_flags: "-DENABLE_AVX2=OFF"
@@ -393,11 +396,18 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Download Windows build
+      # the AVX2 build keeps the old name of the download, so the links already handed out still work
+      - name: Download Windows build (AVX2)
         uses: actions/download-artifact@v4
         with:
-          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-avx2-${{ env.CONFIG_WIN }}
           path: dist/maszyna-windows-x64
+
+      - name: Download Windows build (no AVX2)
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-windows-x64-noavx2-${{ env.CONFIG_WIN }}
+          path: dist/maszyna-windows-x64-noavx2
 
       - name: Download Linux build
         uses: actions/download-artifact@v4
@@ -415,6 +425,7 @@ jobs:
           fi
 
           (cd maszyna-windows-x64 && zip -qr9 ../maszyna-windows-x64.zip .)
+          (cd maszyna-windows-x64-noavx2 && zip -qr9 ../maszyna-windows-x64-noavx2.zip .)
           tar -czf maszyna-linux-x64.tar.gz -C maszyna-linux-x64 .
           ls -la
 
@@ -435,6 +446,7 @@ jobs:
             "" \
             "Download without a GitHub account:" \
             "- Windows: $base/maszyna-windows-x64.zip" \
+            "- Windows, CPUs without AVX2 (older than Haswell, 2013): $base/maszyna-windows-x64-noavx2.zip" \
             "- Linux: $base/maszyna-linux-x64.tar.gz" \
             "" \
             "Unpack over a MaSzyna installation (the game data isn't included). Build log: $RUN_URL")"
@@ -442,6 +454,7 @@ jobs:
           gh release delete "$tag" --yes --cleanup-tag || true
           gh release create "$tag" \
             dist/maszyna-windows-x64.zip \
+            dist/maszyna-windows-x64-noavx2.zip \
             dist/maszyna-linux-x64.tar.gz \
             --target "$SHA" \
             --prerelease \
@@ -451,4 +464,5 @@ jobs:
 
           echo "### Public download" >> "$GITHUB_STEP_SUMMARY"
           echo "- Windows: $base/maszyna-windows-x64.zip" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Windows, no AVX2: $base/maszyna-windows-x64-noavx2.zip" >> "$GITHUB_STEP_SUMMARY"
           echo "- Linux: $base/maszyna-linux-x64.tar.gz" >> "$GITHUB_STEP_SUMMARY"
