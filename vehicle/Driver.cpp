@@ -169,6 +169,7 @@ const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
 const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
+bool WriteTrainLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
 std::string StopReasonTable[] = {
@@ -2336,14 +2337,8 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
     TableClear();
 
-    if( WriteLogFlag ) {
-        // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
-#if LOGPRESS == 0
-        PhysicsLogs.begin( VehicleName, physicslog_header() );
-#endif
-#if LOGPRESS == 1
-        PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
-#endif
+    if( writes_physicslog() ) {
+        begin_physicslog();
     }
 
     // HACK: give the simulation a small window to potentially replace the AI with a human driver
@@ -5398,6 +5393,18 @@ std::string TController::physicslog_line() const {
     return line.str();
 }
 
+void TController::begin_physicslog()
+{
+    // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
+#if LOGPRESS == 0
+    PhysicsLogs.begin( VehicleName, physicslog_header() );
+#endif
+#if LOGPRESS == 1
+    PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
+#endif
+    PhysicsLogBegun = true;
+}
+
 void TController::PhysicsLog()
 { // zapis logu - na razie tylko wypisanie parametrów
 #if LOGPRESS == 0
@@ -6463,10 +6470,18 @@ TController::update_timers( double dt ) {
 void
 TController::update_logs( double const dt ) {
     // log vehicle data
+    if( false == writes_physicslog() ) {
+        // not counted while it isn't logged: a driver which begins to, made primary, writes a line every 0.05 s
+        // from then on, not one each update to make up for the time before
+        LastUpdatedTime = 0.0;
+        return;
+    }
     LastUpdatedTime += dt;
-    if( WriteLogFlag
-     && LastUpdatedTime > deltalog ) {
+    if( LastUpdatedTime > deltalog ) {
         // zapis do pliku DAT
+        if( false == PhysicsLogBegun ) {
+            begin_physicslog();
+        }
         PhysicsLog();
         LastUpdatedTime -= deltalog;
     }

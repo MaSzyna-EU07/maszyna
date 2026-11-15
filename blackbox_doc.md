@@ -8,7 +8,9 @@ the timetable and how the train kept to it at each station, and where it was tol
 starter, a viewer) can replay the session on the map, or set the user's driving against the AI's.
 
 `blackbox yes` in `eu07.ini` writes it, with the physics logs on or off; `blackbox no` never does. With no
-`blackbox` entry it is written along with the physics logs, `physicslog yes`. It is never written in an
+`blackbox` entry it is written along with the physics logs, `physicslog yes` or `physicslog.trains yes`.
+The latter writes the `.dat` logs of the trains only: of each driver who drives rail vehicles, not of the
+passengers nor of the vehicles of the roads, so a big scenery gives far fewer of them. It is never written in an
 editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
 recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
 
@@ -20,7 +22,8 @@ moves to another cab of the unit or another vehicle of the same train. Taking a 
 goes on in that driver's log, begun then if it is the first time. Back with a driver, the log goes on after
 the gap in its time. A vehicle with no driver of its own, or whose own driver is passive, takes the log of
 the driver of its train. So the speed recorder's tape can be read from them as before, also while the
-simulator runs, without a log of every vehicle. Like those of `physicslog yes`, they are written every
+simulator runs, without a log of every vehicle. A driver who writes a log of its own, with
+`physicslog.trains yes`, isn't written twice. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
 of real time of them (at a higher time speed, more of the simulated time). A file another program holds
 for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
@@ -300,7 +303,8 @@ whose motors the cab drives (the motor car of a unit).
 | 0x0800'0000 | the cruise control holds a speed |
 
 The doors, their permits and steps, the departure signal and the releaser are of the vehicle the user is
-in; the pumps, the fans, the engine's heat and the cruise control of the one whose motors the cab drives.
+in. Left and right are those of the vehicle, seen from its front: from the rear cab (the cab -1) the driver's
+left doors are the vehicle's right, as the simulator works them from there. The pumps, the fans, the engine's heat and the cruise control of the one whose motors the cab drives.
 
 The lights: 0x001 left headlight, 0x002 left red marker, 0x004 upper headlight, 0x010 right
 headlight, 0x020 right red marker, 0x040 rear-end signals, 0x080 left and 0x100 right auxiliary

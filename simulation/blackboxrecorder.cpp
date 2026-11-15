@@ -236,7 +236,7 @@ void blackbox_recorder::update(double const Deltatime) {
 			return;
 		m_started = true;
 		// "blackbox yes" or "no" of eu07.ini decides by itself, with no entry it goes with the physics logs
-		if (false == Global.BlackBox.value_or(WriteLogFlag) || Global.editor_session)
+		if (false == Global.BlackBox.value_or(WriteLogFlag || WriteTrainLogFlag) || Global.editor_session)
 			return;
 		open();
 	}
@@ -502,6 +502,9 @@ void blackbox_recorder::keep_tape_line() {
 	// in a unit goes on in the same log. a passive one stands still (its clock too), so then the driver of the train
 	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
 	if (driver == nullptr)
+		return;
+	// a driver writing its own, of a train with "physicslog.trains yes", isn't written twice
+	if (driver->writes_physicslog())
 		return;
 	auto const &name{driver->physicslog_name()};
 	if (m_tapes.insert(name).second) {
