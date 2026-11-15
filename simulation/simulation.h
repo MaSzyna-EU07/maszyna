@@ -40,12 +40,26 @@ public:
  	// create model from node string
 	TAnimModel *
 	    create_model(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	// places the vehicles, given as their node statements, as a trainset on the path. returns: the vehicles made
+	std::vector<TDynamicObject *>
+	    insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
 	// create eventlauncher from node string
 	TEventLauncher *
 	    create_eventlauncher(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	// creates model instances defined by an include directive placed in the scenery editor
+	std::pair<int, int>
+	    preview_include(std::string const &Directive, scene::layer_context const &Context, scene::layer_handle Layer, scene::instance_handle Instance);
+	// replaces models shown for specified include with the ones defined by its current directive. Retired: receives
+	// the replaced models made by the editor. they're out of the scene already, but the renderer can still hold on
+	// to them for a few frames; pass them to Instances.purge() afterwards
+	std::pair<int, int>
+	    rebuild_include(scene::instance_handle Instance, std::vector<TAnimModel *> &Retired);
 	// delete TAnimModel instance
 	void
 	    delete_model(TAnimModel *model);
+	// gives TAnimModel instance another name; empty text leaves it without one. returns: false if another instance uses the name
+	bool
+	    rename_model(TAnimModel *model, std::string const &name);
 	// delete TEventLauncher instance
 	void
 	    delete_eventlauncher(TEventLauncher *launcher);
@@ -74,6 +88,10 @@ extern state_manager State;
 extern event_manager Events;
 extern memory_table Memory;
 extern path_table Paths;
+extern road_table Roads;
+extern sweep_table Sweeps;
+extern junction_table Junctions;
+extern roadpoint_table Roadpoints;
 extern traction_table Traction;
 extern powergridsource_table Powergrid;
 extern instance_table Instances;

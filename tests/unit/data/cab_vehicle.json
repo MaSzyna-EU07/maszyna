@@ -1,0 +1,34 @@
+{
+  "_comment": "The wagon with the cab devices the driver uses: sandbox, light preset selector and modern headlight dimmer, both tables made after the Vectron's. No traction: enough for the logic of the cab controls.",
+  "Param": { "Category": "train", "M": 42200, "Vmax": 120, "SandCap": 500 },
+  "Dimensions": { "L": 26.8, "H": 4.7, "W": 2.88, "Cx": 0.15 },
+  "Wheels": { "D": 0.96, "Tw": 1.435, "Axle": "2'2'", "Ad": 2.5, "Bd": 19.5, "Rmin": 80, "BearingType": "Roll" },
+  "Brake": {
+    "BrakeValve": "KE", "NBpA": 6, "MBF": 15, "MaxBP": 3.8, "TareMaxBP": 2.3,
+    "BCN": 12, "BCR": 0.127, "BCD": 0.04, "BCM": 1.5, "BCS": 1.2, "BSA": 0, "BM": "Disk1", "BVV": 125
+  },
+  "BuffCoupl": { "CType": "Screw", "kB": 9200, "DmaxB": 0.11, "FmaxB": 320, "kC": 4500, "DmaxC": 0.1, "FmaxC": 850, "beta": 0.58, "AllowedFlag": 115 },
+  "Cntrl": { "BrakeSystem": "Pneumatic", "LocalBrake": "ManualBrake", "BrakeDelays": "P", "MaxBPMass": 63 },
+  "Switches": { "ModernDimmer": "Yes" },
+  "_lights": "light bits: 1 headlight left, 2 red marker left, 4 headlight upper, 16 headlight right, 32 red marker right",
+  "LightsList": {
+    "Size": 4, "Wrap": "No", "Default": 1,
+    "rows": [
+      [0, 0],
+      [21, 34],
+      [34, 0],
+      [17, 0]
+    ]
+  },
+  "_dimmer": "rows: high beam, dimmed, off",
+  "DimmerList": {
+    "Size": 5, "Cycle": "no", "DefaultPos": 3,
+    "rows": [
+      ["yes", "no", "no"],
+      ["yes", "yes", "no"],
+      ["no", "no", "yes"],
+      ["no", "no", "no"],
+      ["no", "yes", "no"]
+    ]
+  }
+}

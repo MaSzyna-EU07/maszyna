@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
+#include "simulation/blackboxrecorder.h"
 #include "scene/scene.h"
 #include "rendering/lightarray.h"
 #include "rendering/particles.h"
@@ -159,6 +161,30 @@ bool driver_mode::init()
 }
 
 // mode-specific update of simulation data. returns: false on error, true otherwise
+namespace {
+
+// the camera as the black box tells it: where it is and where it looks, as the heading of a vehicle
+blackbox::camera_state blackbox_camera(TCamera const &Camera, std::uint8_t const Mode, int const View) {
+	blackbox::camera_state state;
+	state.mode = Mode;
+	state.view = static_cast<std::uint8_t>(View);
+	state.position = Camera.Pos;
+	state.pitch = Camera.Angle.x;
+	if (Camera.m_owner != nullptr && false == DebugCameraFlag) {
+		// it looks at a point, then turns by its yaw from there
+		auto const where{Camera.LookAt - Camera.Pos};
+		state.heading = static_cast<float>(std::atan2(where.x, where.z)) + Camera.Angle.y;
+	}
+	else {
+		// the yaw alone: 0 looks towards -z
+		state.heading = static_cast<float>(std::atan2(-std::sin(Camera.Angle.y), -std::cos(Camera.Angle.y)));
+	}
+	state.heading = std::remainder(state.heading, 2.0f * glm::pi<float>());
+	return state;
+}
+
+} // namespace
+
 bool driver_mode::update()
 {
 
@@ -255,6 +281,19 @@ bool driver_mode::update()
 
 		// variable step simulation time routines
 
+		if (false == Global.editor_enter_vehicle.empty())
+		{
+			auto const name{std::move(Global.editor_enter_vehicle)};
+			Global.editor_enter_vehicle.clear();
+			if (auto *dynamic{simulation::Vehicles.find(name)})
+			{
+				if (false == FreeFlyModeFlag)
+					InOutKey();
+				m_relay.post(user_command::entervehicle, 0.0, simulation::Train ? simulation::Train->id() : 0, GLFW_PRESS, 0, dynamic->GetPosition(), &dynamic->name());
+				change_train = dynamic->name();
+			}
+		}
+
 		if (!change_train.empty())
 		{
 			TTrain *train = simulation::Trains.find(change_train);
@@ -292,6 +331,22 @@ bool driver_mode::update()
 		simulation::Events.update();
 		simulation::Region->update_events();
 		simulation::Lights.update();
+		{
+			// where the user looks from, for the black box
+			auto const &camera{DebugCameraFlag ? DebugCamera : Camera};
+			auto const mode{DebugCameraFlag      ? blackbox::camera_modes::debug :
+			                false == FreeFlyModeFlag ? blackbox::camera_modes::cab :
+			                m_externalview       ? blackbox::camera_modes::external :
+			                                       blackbox::camera_modes::free};
+			simulation::Blackbox.camera(blackbox_camera(camera, mode, mode == blackbox::camera_modes::external ? m_externalviewmode : 0),
+			    DebugCameraFlag ? nullptr : camera.m_owner);
+		}
+		simulation::Blackbox.update(deltatime);
+
+		if (Global.test.enabled && simulation::is_ready)
+		{
+			simulation::test().update(deltatime);
+		}
 	}
 
 	// render time routines follow:
@@ -412,6 +467,14 @@ bool driver_mode::update()
 
 	simulation::is_ready = simulation::is_ready || (simulation::Train != nullptr && simulation::Train->is_cab_initialized) || Global.local_start_vehicle == "ghostview";
 
+	if (m_editorpending)
+	{
+		// edit session starts in the editor. the switch is made after the initial update on purpose, so the
+		// simulation state is set up the same way as when the editor is entered by hand right after the load
+		m_editorpending = false;
+		Application.push_mode(eu07_application::mode::editor);
+	}
+
 	return true;
 }
 
@@ -457,7 +520,16 @@ void driver_mode::enter()
 
 	Timer::ResetTimers();
 
+	if (Global.test.enabled)
+	{
+		// the test runs as fast as it can compute, in steps of fixed length, so that runs on different machines agree
+		Timer::set_fixed_step(simulation::test_manager::frame_step);
+		simulation::test().start();
+	}
+
 	set_picking(!Global.captureonstart);
+
+	m_editorpending = Global.editor_session;
 }
 
 // maintenance method, called when the mode is deactivated
@@ -667,7 +739,7 @@ void driver_mode::update_camera(double const Deltatime)
 	// reset window state, it'll be set again if applicable in a check below
 	Global.CabWindowOpen = false;
 
-	if (simulation::Train != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
+	if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
 	{
 		// jeśli jazda w kabinie, przeliczyć trzeba parametry kamery
 		/*
@@ -681,7 +753,7 @@ void driver_mode::update_camera(double const Deltatime)
 
 			auto const lr{m_input.keyboard.key(GLFW_KEY_LEFT) != GLFW_RELEASE};
 			// Camera.Yaw powinno być wyzerowane, aby po powrocie patrzeć do przodu
-			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka
+			Camera.Pos = controlled->GetPosition() + simulation::Train->MirrorPosition(lr); // pozycja lusterka // NOSONAR
 			Camera.Angle.y = 0; // odchylenie na bok od Camera.LookAt
 			if (simulation::Train->Occupied()->CabOccupied == 0)
 			{

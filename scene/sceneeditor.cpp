@@ -50,9 +50,8 @@ basic_editor::translate( scene::basic_node *Node, glm::dvec3 const &Location, bo
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
         auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 translate_node( node, node->location() + translation ); } );
     }
 }
@@ -72,9 +71,8 @@ basic_editor::translate( scene::basic_node *Node, float const Offset ) {
         // TODO: contextual switch between group and item translation
         // TODO: translation of affected/relevant events
         auto &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 translate_node( node, offset ); } );
     }
 }
@@ -102,7 +100,7 @@ basic_editor::translate_node( scene::basic_node *Node, float const Offset ) {
 }
 
 void
-basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) {
+basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Location ) const {
 
     simulation::Region->erase( Instance );
     Instance->location( Location );
@@ -110,7 +108,7 @@ basic_editor::translate_instance( TAnimModel *Instance, glm::dvec3 const &Locati
 }
 
 void
-basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) {
+basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) const {
 
     auto location { Instance->location() };
     location.y += Offset;
@@ -118,7 +116,7 @@ basic_editor::translate_instance( TAnimModel *Instance, float const Offset ) {
 }
 
 void
-basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) {
+basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Location ) const {
 
     simulation::Region->erase( Memorycell );
     Memorycell->location( Location );
@@ -126,7 +124,7 @@ basic_editor::translate_memorycell( TMemCell *Memorycell, glm::dvec3 const &Loca
 }
 
 void
-basic_editor::translate_memorycell( TMemCell *Memorycell, float const Offset ) {
+basic_editor::translate_memorycell( TMemCell *Memorycell, float const Offset ) const {
 
     auto location { Memorycell->location() };
     location.y += Offset;
@@ -161,9 +159,8 @@ basic_editor::rotate( scene::basic_node *Node, glm::vec3 const &Angle, float con
         // TODO: translation of affected/relevant events
         auto const &rotationcenter { Node->location() };
         auto const &nodegroup { scene::Groups.group( Node->group() ).nodes };
-        std::for_each(
-            std::begin( nodegroup ), std::end( nodegroup ),
-            [&]( auto *node ) {
+        std::ranges::for_each(
+            nodegroup, [&]( auto *node ) {
                 rotate_node( node, rotation );
                 if( node != Node ) {
                     translate_node(
@@ -184,7 +181,7 @@ basic_editor::rotate_node( scene::basic_node *Node, glm::vec3 const &Angle ) {
 }
 
 void
-basic_editor::rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) {
+basic_editor::rotate_instance( TAnimModel *Instance, glm::vec3 const &Angle ) const {
 
     auto targetangle { Instance->Angles() + Angle };
 

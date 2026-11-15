@@ -1,0 +1,39 @@
+{
+  "description": "EU07 pushing three coaches on td.scn with slippery rail and no route set, starting at 30 km/h: brakes for the exit signal at stop and skids. Pushed by the train it doesn't roll back at the stop, so it used to stay skidding on locked wheels with the brakes capped by the sliding adhesion and creep (eu07/maszyna#479).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "track_friction": 0.03,
+  "fragment": "td_red_signal_moving.scn",
+  "test_config": [
+    "test.fail_if_stop_overran no"
+  ],
+  "vars": {
+    "velocity": "30",
+    "consist": [
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+    ]
+  },
+  "duration": 240,
+  "timeout": 900,
+  "checks": [
+    {
+      "type": "slips",
+      "within": 60
+    },
+    {
+      "type": "slip_clears",
+      "moving_speed": 5,
+      "stop_speed": 0.05,
+      "within": 5
+    },
+    {
+      "type": "holds_still",
+      "moving_speed": 5,
+      "stop_speed": 0.05,
+      "max_distance": 0.01
+    }
+  ]
+}

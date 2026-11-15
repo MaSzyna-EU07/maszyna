@@ -47,6 +47,7 @@ public:
 // destructor
     virtual ~basic_event();
 // methods
+    std::vector<scene::basic_node *> target_nodes() const;
     // restores event data from provided stream
     virtual
     void
@@ -334,6 +335,9 @@ public:
     void init() override;
 
 	std::vector<std::string> dump_children_names() const;
+	std::vector<basic_event *> children() const;
+	// the events it sets off, each with whether it's one of those set off when its condition isn't met
+	std::vector<std::pair<basic_event *, bool>> branches() const;
 
 private:
 // types
@@ -427,6 +431,8 @@ public:
 // methods
     // prepares event for use
     void init() override;
+    // the animation it set brought to its end at once, for the editor which shows it with the time stopped
+    void finish() const;
 
 private:
 // methods
@@ -699,6 +705,17 @@ public:
 	// returns all eventlaunchers in radius ignoring height
 	std::vector<TEventLauncher *>
 	    find_eventlaunchers(glm::vec2 center, float radius) const;
+	std::deque<basic_event *> const &
+	    sequence() const {
+	        return m_events; }
+	// all event launchers, global ones included
+	std::vector<TEventLauncher *>
+	    launchers() const {
+	        auto const &input { m_inputdrivenlaunchers.sequence() };
+	        auto const &radio { m_radiodrivenlaunchers.sequence() };
+	        std::vector<TEventLauncher *> result( input.begin(), input.end() );
+	        result.insert( result.end(), radio.begin(), radio.end() );
+	        return result; }
 
 private:
 // types

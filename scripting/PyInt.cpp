@@ -30,36 +30,36 @@ void render_task::run()
 		cancel();
 		return;
 	}
-	for (auto const &datapair : m_input->floats)
+	for (auto const &[dataname, datavalue] : m_input->floats)
 	{
-		auto *value{PyGetFloat(datapair.second)};
+		auto *value{PyGetFloat(datavalue)};
 		if (value == nullptr)
 		{
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->integers)
+	for (auto const &[dataname, datavalue] : m_input->integers)
 	{
-		auto *value{PyLong_FromLong(datapair.second)};
+		auto *value{PyLong_FromLong(datavalue)};
 		if (value == nullptr)
 		{
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->bools)
+	for (auto const &[dataname, datavalue] : m_input->bools)
 	{
 		// Py_True / Py_False sa niesmiertelne, ale PyDict_SetItemString i tak
 		// pobiera wlasna referencje - nie zwalniamy
-		auto *value{PyGetBool(datapair.second)};
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		auto *value{PyGetBool(datavalue)};
+		PyDict_SetItemString(input, dataname.c_str(), value);
 	}
-	for (auto const &datapair : m_input->strings)
+	for (auto const &[dataname, datavalue] : m_input->strings)
 	{
 		// Nazwy scenerii/wagonow (asName, SceneryFile, asCarName, cCode...) moga
 		// byc albo w UTF-8, albo w starym kodowaniu Windows-1250. PyUnicode_FromString
@@ -68,8 +68,8 @@ void render_task::run()
 		//
 		// Strategia: najpierw probujemy UTF-8 (strict). Jesli sie nie uda - probujemy
 		// cp1250. Jesli oba zawioda - pomijamy klucz, ale nie wywracamy symulatora.
-		char const *const str{datapair.second.c_str()};
-		Py_ssize_t const len{static_cast<Py_ssize_t>(datapair.second.size())};
+		char const *const str{datavalue.c_str()};
+		Py_ssize_t const len{static_cast<Py_ssize_t>(datavalue.size())};
 
 		auto *value{PyUnicode_DecodeUTF8(str, len, "strict")};
 		if (value == nullptr)
@@ -82,16 +82,16 @@ void render_task::run()
 			PyErr_Clear();
 			continue;
 		}
-		PyDict_SetItemString(input, datapair.first.c_str(), value);
+		PyDict_SetItemString(input, dataname.c_str(), value);
 		Py_DECREF(value);
 	}
-	for (auto const &datapair : m_input->vec2_lists)
+	for (auto const &[dataname, datavalue] : m_input->vec2_lists)
 	{
-		PyObject *list = PyList_New(datapair.second.size());
+		PyObject *list = PyList_New(datavalue.size());
 
-		for (size_t i = 0; i < datapair.second.size(); i++)
+		for (size_t i = 0; i < datavalue.size(); i++)
 		{
-			auto const &vec = datapair.second[i];
+			auto const &vec = datavalue[i];
 			WriteLog("passing " + glm::to_string(vec));
 
 			PyObject *tuple = PyTuple_New(2);
@@ -101,24 +101,24 @@ void render_task::run()
 			PyList_SetItem(list, i, tuple); // steals ref
 		}
 
-		PyDict_SetItemString(input, datapair.first.c_str(), list);
+		PyDict_SetItemString(input, dataname.c_str(), list);
 		Py_DECREF(list);
 	}
 	m_input = nullptr;
 
 	// call the renderer
-	auto *output{PyObject_CallMethod(m_renderer, const_cast<char *>("render"), const_cast<char *>("O"), input)};
+	auto *output{PyObject_CallMethod(m_renderer, "render", "O", input)};
 	Py_DECREF(input);
 
 	if (output != nullptr)
 	{
-		auto *outputWidth = PyObject_CallMethod(m_renderer, const_cast<char *>("get_width"), nullptr);
-		auto *outputHeight = PyObject_CallMethod(m_renderer, const_cast<char *>("get_height"), nullptr);
+		auto *outputWidth = PyObject_CallMethod(m_renderer, "get_width", nullptr);
+		auto *outputHeight = PyObject_CallMethod(m_renderer, "get_height", nullptr);
 
 		if (outputWidth != nullptr && outputHeight != nullptr && m_target != nullptr)
 		{
-			const int screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
-			const int screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
+			const auto screenWidth = static_cast<int>(PyLong_AsLong(outputWidth));
+			const auto screenHeight = static_cast<int>(PyLong_AsLong(outputHeight));
 
 			const bool useRgb = false && !Global.gfx_usegles;
 
@@ -166,7 +166,7 @@ void render_task::run()
 	}
 
 	// get commands from renderer
-	auto *commandsPO = PyObject_CallMethod(m_renderer, const_cast<char *>("getCommands"), nullptr);
+	auto *commandsPO = PyObject_CallMethod(m_renderer, "getCommands", nullptr);
 	if (commandsPO != nullptr)
 	{
 		std::vector<std::string> commands = python_external_utils::PyObjectToStringArray(commandsPO);
@@ -178,10 +178,10 @@ void render_task::run()
 			for (const auto &cmd : commands)
 			{
 				std::string baseCmd;
-				int p1 = 0, p2 = 0;
+				int p1 = 0;
+				int p2 = 0;
 
-				size_t pos1 = cmd.find(';');
-				if (pos1 == std::string::npos)
+				if (size_t pos1 = cmd.find(';'); pos1 == std::string::npos)
 				{
 					baseCmd = cmd;
 				}
@@ -224,7 +224,7 @@ void render_task::run()
 	}
 }
 
-void render_task::upload()
+void render_task::upload() const
 {
 	if (Global.python_uploadmain && m_target && m_target->shared_tex)
 	{
@@ -232,7 +232,7 @@ void render_task::upload()
 	}
 }
 
-void render_task::cancel() {}
+void render_task::cancel() const { /* nothing to do */ }
 
 // initializes the module. returns true on success
 auto python_taskqueue::init() -> bool
@@ -310,7 +310,7 @@ auto python_taskqueue::init() -> bool
 	stringiomodule = PyImport_ImportModule("io");
 	stringioclassname = stringiomodule != nullptr ? PyObject_GetAttrString(stringiomodule, "StringIO") : nullptr;
 	stringioobject = stringioclassname != nullptr ? PyObject_CallObject(stringioclassname, nullptr) : nullptr;
-	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject(const_cast<char *>("stderr"), stringioobject) != 0 ? nullptr : stringioobject)};
+	m_stderr = {(stringioobject == nullptr ? nullptr : PySys_SetObject("stderr", stringioobject) != 0 ? nullptr : stringioobject)};
 
 	if (false == run_file("abstractscreenrenderer"))
 	{
@@ -362,23 +362,23 @@ void python_taskqueue::exit()
 	// document intent. clearing the deque also actually releases the tasks,
 	// which the previous code did not do (cancel() is a no-op stub).
 	{
-		std::lock_guard<std::mutex> lock(m_tasks.mutex);
-		for (auto &task : m_tasks.data)
+		std::scoped_lock lock(m_tasks.mutex);
+		for (auto const &task : m_tasks.data)
 		{
 			task->cancel();
 		}
 		m_tasks.data.clear();
 	}
 	{
-		std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
+		std::scoped_lock lock(m_uploadtasks.mutex);
 		m_uploadtasks.data.clear();
 	}
 	// reclaim cached python objects while the interpreter is still alive,
 	// so no Py_DECREF lands on a finalized interpreter during later teardown
 	acquire_lock();
-	for (auto &entry : m_renderers)
+	for (auto const &[renderername, rendererobject] : m_renderers)
 	{
-		Py_XDECREF(entry.second);
+		Py_XDECREF(rendererobject);
 	}
 	m_renderers.clear();
 	Py_XDECREF(m_stderr);
@@ -394,7 +394,7 @@ void python_taskqueue::exit()
 auto python_taskqueue::insert(task_request const &Task) -> bool
 {
 
-	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == 0)
+	if (!m_initialized || false == Global.python_enabled || Task.renderer.empty() || Task.input == nullptr || Task.target == nullptr)
 	{
 		return false;
 	}
@@ -409,7 +409,7 @@ auto python_taskqueue::insert(task_request const &Task) -> bool
 	bool newtaskinserted{false};
 	// acquire a lock on the task queue and add the new task
 	{
-		std::lock_guard<std::mutex> lock(m_tasks.mutex);
+		std::scoped_lock lock(m_tasks.mutex);
 		// check the task list for a pending request with the same target
 		for (auto &task : m_tasks.data)
 		{
@@ -437,13 +437,13 @@ auto python_taskqueue::insert(task_request const &Task) -> bool
 auto python_taskqueue::run_file(std::string const &File, std::string const &Path) -> bool
 {
 
-	auto const lookup{FileExists({Path + File, "python/local/" + File}, {".py"})};
-	if (lookup.first.empty())
+	auto const [filepath, fileextension]{FileExists({Path + File, "python/local/" + File}, {".py"})};
+	if (filepath.empty())
 	{
 		return false;
 	}
 
-	std::ifstream inputfile{lookup.first + lookup.second};
+	std::ifstream inputfile{filepath + fileextension};
 	std::string input;
 	input.assign(std::istreambuf_iterator<char>(inputfile), std::istreambuf_iterator<char>());
 
@@ -464,17 +464,16 @@ void python_taskqueue::acquire_lock()
 }
 
 // releases the python gil and swaps the main thread out
-void python_taskqueue::release_lock()
+void python_taskqueue::release_lock() const
 {
 
 	PyEval_SaveThread();
 }
 
-auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
+auto python_taskqueue::fetch_renderer(std::string const &Renderer) -> PyObject *
 {
 
-	auto const lookup{m_renderers.find(Renderer)};
-	if (lookup != std::end(m_renderers))
+	if (auto const lookup{m_renderers.find(Renderer)}; lookup != std::end(m_renderers))
 	{
 		return lookup->second;
 	}
@@ -510,7 +509,7 @@ auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 		}
 		renderer = PyObject_CallObject(renderername, rendererarguments);
 
-		PyObject_CallMethod(renderer, const_cast<char *>("manul_set_format"), const_cast<char *>("(s)"), "RGBA");
+		PyObject_CallMethod(renderer, "manul_set_format", "(s)", "RGBA");
 
 		if (PyErr_Occurred() != nullptr)
 		{
@@ -527,11 +526,11 @@ auto python_taskqueue::fetch_renderer(std::string const Renderer) -> PyObject *
 	}
 	release_lock();
 	// cache the failures as well so we don't try again on subsequent requests
-	m_renderers.emplace(Renderer, renderer);
+	m_renderers.try_emplace(Renderer, renderer);
 	return renderer;
 }
 
-void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> &Exit)
+void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> const &Exit)
 {
 
 	if (Context)
@@ -554,7 +553,7 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 			task = nullptr;
 			// acquire a lock on the task queue and potentially grab a task from it
 			{
-				std::lock_guard<std::mutex> lock(Tasks.mutex);
+				std::scoped_lock lock(Tasks.mutex);
 				if (false == Tasks.data.empty())
 				{
 					// fifo
@@ -573,7 +572,7 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 						task->upload();
 					else
 					{
-						std::lock_guard<std::mutex> lock(Upload_Tasks.mutex);
+						std::scoped_lock lock(Upload_Tasks.mutex);
 						Upload_Tasks.data.push_back(task);
 					}
 					if (PyErr_Occurred() != nullptr)
@@ -608,9 +607,9 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 
 void python_taskqueue::update()
 {
-	std::lock_guard<std::mutex> lock(m_uploadtasks.mutex);
+	std::scoped_lock lock(m_uploadtasks.mutex);
 
-	for (auto &task : m_uploadtasks.data)
+	for (auto const &task : m_uploadtasks.data)
 		task->upload();
 
 	m_uploadtasks.data.clear();
@@ -622,21 +621,21 @@ void python_taskqueue::error()
 	{
 		// std err pythona jest buforowane
 		PyErr_Print();
-		auto *errortext{PyObject_CallMethod(m_stderr, const_cast<char *>("getvalue"), nullptr)};
-		if (errortext != nullptr)
+		if (auto *errortext{PyObject_CallMethod(m_stderr, "getvalue", nullptr)}; errortext != nullptr)
 		{
-			const char *errstr = PyUnicode_AsUTF8(errortext);
-			if (errstr != nullptr)
+			if (const char *errstr = PyUnicode_AsUTF8(errortext); errstr != nullptr)
 				ErrorLog(errstr);
 			Py_DECREF(errortext);
 		}
-		PyObject_CallMethod(m_stderr, const_cast<char *>("truncate"), const_cast<char *>("L"), (long long)0);
-		PyObject_CallMethod(m_stderr, const_cast<char *>("seek"), const_cast<char *>("L"), (long long)0);
+		PyObject_CallMethod(m_stderr, "truncate", "L", (long long)0);
+		PyObject_CallMethod(m_stderr, "seek", "L", (long long)0);
 	}
 	else
 	{
 		// nie dziala buffor pythona
-		PyObject *type, *value, *traceback;
+		PyObject *type;
+		PyObject *value;
+		PyObject *traceback;
 		PyErr_Fetch(&type, &value, &traceback);
 		if (type == nullptr)
 		{
@@ -647,11 +646,9 @@ void python_taskqueue::error()
 		{
 			ErrorLog("Python Interpreter: don't know how to handle null exception");
 		}
-		auto *typetext{PyObject_Str(type)};
-		if (typetext != nullptr)
+		if (auto *typetext{PyObject_Str(type)}; typetext != nullptr)
 		{
-			const char *s = PyUnicode_AsUTF8(typetext);
-			if (s)
+			if (const char *s = PyUnicode_AsUTF8(typetext); s)
 				ErrorLog(s);
 			Py_DECREF(typetext);
 		}
@@ -660,8 +657,7 @@ void python_taskqueue::error()
 			auto *valuetext{PyObject_Str(value)};
 			if (valuetext != nullptr)
 			{
-				const char *s = PyUnicode_AsUTF8(valuetext);
-				if (s)
+				if (const char *s = PyUnicode_AsUTF8(valuetext); s)
 					ErrorLog(s);
 				Py_DECREF(valuetext);
 			}
@@ -669,8 +665,7 @@ void python_taskqueue::error()
 		auto *tracebacktext{PyObject_Str(traceback)};
 		if (tracebacktext != nullptr)
 		{
-			const char *s = PyUnicode_AsUTF8(tracebacktext);
-			if (s)
+			if (const char *s = PyUnicode_AsUTF8(tracebacktext); s)
 				ErrorLog(s);
 			Py_DECREF(tracebacktext);
 		}
@@ -709,7 +704,7 @@ std::vector<std::string> python_external_utils::PyObjectToStringArray(PyObject *
 			return emptyIfError;
 		}
 
-		result.push_back(std::string(str));
+		result.emplace_back(str);
 		Py_DECREF(item); // Decrease reference count for the item
 	}
 

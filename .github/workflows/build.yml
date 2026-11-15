@@ -14,6 +14,14 @@ on:
 
 permissions: {}
 
+# A newer push to a pull request makes the run for its older commit pointless, so that run is
+# cancelled (sonar.yml then marks the analysis of the older commit as skipped). A push to master
+# gets a group of its own, its commit, so the runs on master are neither cancelled nor held back
+# by one another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build under Build Wrapper
@@ -23,18 +31,26 @@ jobs:
     env:
       BUILD_WRAPPER_OUT_DIR: bw-output
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.14'
 
+      # A mirror that stops answering used to hold this step for over an hour.
+      # Time out each download, retry it, and give up on the whole step early.
       - name: Install build dependencies
+        timeout-minutes: 15
         run: |
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "60";' \
+            'Acquire::https::Timeout "60";' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update -y
           sudo apt-get install -y \
             build-essential \
@@ -103,10 +119,11 @@ jobs:
             --exclude='*.o' \
             --exclude='*.a' \
             --exclude='*.so' \
+            --exclude='*.so.*' \
             -C "$GITHUB_WORKSPACE" .
 
       - name: Upload analysis input
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sonar-input
           path: /tmp/workspace.tar.gz

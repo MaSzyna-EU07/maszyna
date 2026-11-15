@@ -10,9 +10,15 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 //---------------------------------------------------------------------------
 // Q: 20160805 - odlaczenie pliku fizyki .pas od kompilacji
+#include <array>
 #include <map>
+#include <optional>
 #include "hamulce.h"
+#include "couplerphysics.h"
 #include "scripting/ladderlogic.h"
+#include "vehicle/odometerreading.h"
+
+class cParser;
 /*
 MaSzyna EU07 locomotive simulator
 Copyright (C) 2001-2004  Maciej Czapkiewicz and others
@@ -167,6 +173,8 @@ enum DerailReason
 	WRONG_TRACK_TYPE = 4, // Ra: powód wykolejenia: nieodpowiednia trajektoria
 	/// <summary>Collision with another vehicle.</summary>
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
+	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
+	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -259,6 +267,22 @@ enum class range_t
 	/// <summary>Affects the entire consist.</summary>
 	consist
 };
+/// <summary>State of the door closure signalling (SOD) of a vehicle or a consist, ordered from the least to the most
+/// severe: the state of a consist is the most severe state of its vehicles.</summary>
+enum class door_closure_t
+{
+	/// <summary>No doors worked by the crew: the vehicle doesn't take part in the signalling.</summary>
+	none,
+	/// <summary>All doors closed and locked: they can't be opened.</summary>
+	locked,
+	/// <summary>All doors closed, but released: a permit is given, or no lock holds them shut.</summary>
+	released,
+	/// <summary>A door is open, or not fully closed yet.</summary>
+	open
+};
+/// <summary>Whether the door closure signalling lamp is lit: steadily for locked doors, in the lit phase of the
+/// blinking for released ones, never with a door open or with no doors signalled.</summary>
+bool door_closure_lamp(door_closure_t const State, bool const BlinkLit);
 /// <summary>Possible settings for an enable/disable input pair (mutually exclusive).</summary>
 enum class operation_t
 {
@@ -276,6 +300,16 @@ enum class operation_t
 	disable_on,
 	/// <summary>Disable button release transition.</summary>
 	disable_off,
+};
+/// <summary>What else the line contactors of a vehicle need before they can close (LineContactorsInterlock in the Cntrl. section).</summary>
+enum class line_contactors_interlock
+{
+	/// <summary>Nothing more, the legacy behaviour.</summary>
+	none,
+	/// <summary>The converter of the vehicle itself running, where it drives the traction motor fans (ET42).</summary>
+	converter,
+	/// <summary>The traction motor blowers of the vehicle running.</summary>
+	motor_blowers
 };
 /// <summary>Auto-start method for ancillary devices (mutually exclusive).</summary>
 enum class start_t
@@ -320,6 +354,21 @@ enum light
 	highbeamlight_left = 1 << 9,
 	/// <summary>High-beam headlight, right.</summary>
 	highbeamlight_right = 1 << 10
+};
+
+/// <summary>The cab interior light a position of the light preset selector sets (eu07/maszyna#529).</summary>
+struct lights_preset_cablight
+{
+	/// <summary>Bits of the optional third column of a LightsList row.</summary>
+	enum flag
+	{
+		/// <summary>The cab light is on.</summary>
+		light_on = 1 << 0,
+		/// <summary>The cab light is dimmed.</summary>
+		light_dimmed = 1 << 1
+	};
+	bool light{false};
+	bool dim{false};
 };
 
 /// <summary>Door operation method (who controls them and how) — mutually exclusive.</summary>
@@ -674,6 +723,13 @@ struct TTractionParam
 };
 /*powyzsze parametry zwiazane sa z torem po ktorym aktualnie pojazd jedzie*/
 
+// what a horn needs to sound: air from the main reservoir, or the low voltage
+enum class horn_supply
+{
+	air,
+	electric
+};
+
 /// <summary>High-level brake-system family.</summary>
 enum class TBrakeSystem
 {
@@ -764,7 +820,7 @@ enum class TLocalBrake
 	HydraulicBrake
 };
 /// <summary>Brake delay parameter table (apply/release for passenger and freight).</summary>
-typedef double TBrakeDelayTable[4];
+using TBrakeDelayTable = double[4];
 
 /// <summary>One row of the brake pressure / pipe pressure / flow-speed table for a brake handle position.</summary>
 struct TBrakePressure
@@ -780,7 +836,7 @@ struct TBrakePressure
 };
 
 /// <summary>Brake pressure table indexed by handle position.</summary>
-typedef std::map<int, TBrakePressure> TBrakePressureTable;
+using TBrakePressureTable = std::map<int, TBrakePressure>;
 
 /// <summary>Engine / drive type.</summary>
 enum class TEngineType
@@ -989,11 +1045,11 @@ struct TTransducer
 struct TPowerParameters
 {
 	/// <summary>Maximum source voltage [V].</summary>
-	double MaxVoltage;
+	double MaxVoltage{0.0};
 	/// <summary>Maximum source current [A].</summary>
-	double MaxCurrent;
+	double MaxCurrent{0.0};
 	/// <summary>Internal resistance [Ω].</summary>
-	double IntR;
+	double IntR{0.001};
 	/// <summary>Type of source (selects which union member is meaningful).</summary>
 	TPowerSource SourceType;
 	union
@@ -1029,9 +1085,6 @@ struct TPowerParameters
 	};
 	inline TPowerParameters()
 	{
-		MaxVoltage = 0.0;
-		MaxCurrent = 0.0;
-		IntR = 0.001;
 		SourceType = TPowerSource::NotDefined;
 		PowerType = TPowerType::NoPower;
 		RPowerCable.PowerTrans = TPowerType::NoPower;
@@ -1048,7 +1101,7 @@ struct TScheme
 	bool AutoSwitch = false; /*czy dana pozycja nastawniana jest recznie czy autom.*/
 	int ScndAct = 0; /*jesli ma bocznik w nastawniku, to ktory bocznik na ktorej pozycji*/
 };
-typedef TScheme TSchemeTable[ResArraySize + 1]; /*tablica rezystorow rozr.*/
+using TSchemeTable = TScheme[ResArraySize + 1]; /*tablica rezystorow rozr.*/
 struct TDEScheme
 {
 	double RPM = 0.0; /*obroty diesla*/
@@ -1056,13 +1109,13 @@ struct TDEScheme
 	double Umax = 0.0; /*napiecie maksymalne*/
 	double Imax = 0.0; /*prad maksymalny*/
 };
-typedef TDEScheme TDESchemeTable[33]; /*tablica WWList dla silnikow spalinowych*/
+using TDESchemeTable = TDEScheme[33]; /*tablica WWList dla silnikow spalinowych*/
 struct TFFScheme
 {
 	double v = 0.0; // parametr wejsciowy
 	double freq = 0.0; // wyjscie: czestotliwosc falownika
 };
-typedef TFFScheme TFFSchemeTable[33];
+using TFFSchemeTable = TFFScheme[33];
 
 struct TWiperScheme
 {
@@ -1071,7 +1124,7 @@ struct TWiperScheme
 	double interval = 0.0; // interwal pracy wycieraczki
 	double outBackDelay = 0.0; // czas po jakim wycieraczka zacznie wracac z konca do poczatku
 };
-typedef TWiperScheme TWiperSchemeTable[16];
+using TWiperSchemeTable = TWiperScheme[16];
 
 struct TShuntScheme
 {
@@ -1080,33 +1133,23 @@ struct TShuntScheme
 	double Pmin = 0.0;
 	double Pmax = 0.0;
 };
-typedef TShuntScheme TShuntSchemeTable[33];
+using TShuntSchemeTable = TShuntScheme[33];
 struct TMPTRelay
 { /*lista przekaznikow bocznikowania*/
 	double Iup = 0.0;
 	double Idown = 0.0;
 };
-typedef TMPTRelay TMPTRelayTable[8];
+using TMPTRelayTable = TMPTRelay[MotorParametersArraySize + 1]; // indexed like MotorParam
 
 struct TMotorParameters
 {
-	double mfi;
-	double mIsat;
-	double mfi0; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
-	double fi;
-	double Isat;
-	double fi0; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
-	bool AutoSwitch;
-	TMotorParameters()
-	{
-		mfi = 0.0;
-		mIsat = 0.0;
-		mfi0 = 0.0;
-		fi = 0.0;
-		Isat = 0.0;
-		fi0 = 0.0;
-		AutoSwitch = false;
-	}
+	double mfi{0.0};
+	double mIsat{0.0};
+	double mfi0{0.0}; // aproksymacja M(I) silnika} {dla dizla mIsat=przekladnia biegu
+	double fi{0.0};
+	double Isat{0.0};
+	double fi0{0.0}; // aproksymacja E(n)=fi*n}    {dla dizla fi, mfi: predkosci przelozenia biegu <->
+	bool AutoSwitch{false};
 };
 
 struct TUniversalCtrl
@@ -1135,6 +1178,7 @@ class TSecuritySystem
 	bool is_sifa = false; // Sifa-like pedal device, with inverted input for convenient keyboard usage
 	bool separate_acknowledge = false; // cabsignal reset button is separate from vigilance
 	bool cabsignal_lock = false;
+	bool vigilance_suspended = false; // the vigilance device switched off by the shunt mode of the vehicle, see AwareOffInShuntMode
 
 	double vigilance_timer = 0.0;
 	double alert_timer = 0.0;
@@ -1150,6 +1194,7 @@ class TSecuritySystem
 	double EmergencyBrakeDelay = 5.0;
 	double MaxHoldTime = 1.5;
 	bool CabDependent = false;
+	bool AwareOffInShuntMode = false; // the shunt mode of the vehicle switches the vigilance device off, as on the SM42
 
   public:
 	void set_enabled(bool e);
@@ -1159,6 +1204,7 @@ class TSecuritySystem
 	void update(double dt, double Vel, bool pwr, int cab);
 	void set_cabsignal();
 	void set_cabsignal_lock(bool);
+	void set_shunt_mode(bool State);
 	bool is_blinking() const;
 	bool is_vigilance_blinking() const;
 	bool is_cabsignal_blinking() const;
@@ -1223,6 +1269,7 @@ struct TCoupling
 	double Dist = 0.0; /*strzalka ugiecia zderzaków*/
 	bool CheckCollision = false; /*czy sprawdzac sile czy pedy*/
 	float stretch_duration{0.f}; // seconds, elapsed time with excessive force applied to the coupler
+	bool broken{false}; // the coupler broke (damage_coupler()), until it's repaired (repair_coupler())
 	// optional adapter piece
 	double adapter_length{0.0}; // meters, value added on the given end to standard vehicle (half)length
 	double adapter_height{0.0}; // meters, distance from rail level
@@ -1232,6 +1279,11 @@ struct TCoupling
 	power_coupling power_110v;
 	power_coupling power_24v;
 
+	// the physical model of the coupling (couplerphysics in eu07.ini), see couplerphysics.h: the parameters of this end,
+	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
+	coupler_physics::end_parameters physics;
+	coupler_physics::pair_state physics_state;
+
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
 	std::string control_type; // abstraction of control coupling interface and communication standard
@@ -1240,7 +1292,7 @@ struct TCoupling
 	{
 		return adapter_type != TCouplerType::NoCoupler;
 	}
-	inline TCouplerType const type() const
+	inline TCouplerType type() const
 	{
 		return adapter_type == TCouplerType::NoCoupler ? CouplerType : adapter_type;
 	}
@@ -1443,6 +1495,7 @@ class TMoverParameters
 		float auto_velocity{-1.f}; // automatic door closure velocity threshold
 		bool auto_include_remote{false}; // automatic door closure applies also to remote control
 		bool permit_needed{false};
+		bool closure_signal{false}; // the door closure lamp (SOD) of the cab signals the doors of the whole consist in three states
 		std::vector<int> permit_presets; // permit presets selectable with preset switch
 		float voltage{0.f}; // power type required for door movement
 		// ld inputs
@@ -1465,7 +1518,8 @@ class TMoverParameters
 		{
 			float temp_min{-1}; // lowest accepted temperature
 			float temp_max{-1}; // highest accepted temperature
-		} config;
+		};
+		heater_config_t config;
 		// ld inputs
 		bool breaker{false}; // device is allowed to operate
 		bool is_enabled{false}; // device is requested to operate
@@ -1500,12 +1554,17 @@ class TMoverParameters
 				float temp_cooling{-1}; // active cooling activation point
 				float temp_flow{-1}; // fluid flow activation point
 				bool shutters{false}; // the radiator has shutters to assist the cooling
-			} config;
+			};
+			circuit_config_t config;
 			bool is_cold{false}; // fluid is too cold
 			bool is_warm{false}; // fluid is too hot
 			bool is_hot{false}; // fluid temperature crossed cooling threshold
 			bool is_flowing{false}; // fluid is being pushed through the circuit
-		} water, water_aux, oil, engine;
+		};
+		fluid_circuit_t water;
+		fluid_circuit_t water_aux;
+		fluid_circuit_t oil;
+		fluid_circuit_t engine;
 		// output, state of affected devices
 		bool PA{false}; // malfunction flag
 		float rpmw{0.0}; // current main circuit fan revolutions
@@ -1588,6 +1647,9 @@ class TMoverParameters
 	double EpForce = 0.0; /*Poziom zadanej sily EP*/
 	bool Signalling = false; /*Czy jest zalaczona sygnalizacja hamowania ostatniego wagonu*/
 	bool Radio = false; /*Czy jest zalaczony radiotelefon*/
+	// the cut-off in the radio's power supply: a fuse in the cabinet, a lever on the desk or the switch on the radio's power
+	// supply (eu07/maszyna#438). Closed unless the driver opens it, so vehicles without such a switch work as before
+	bool RadioFuse = true;
 	float NominalBatteryVoltage = 0.f; /*Winger - baterie w elektrykach*/
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
@@ -1701,6 +1763,13 @@ class TMoverParameters
 	int LightsDefPos = 1;
 	bool LightsWrap = false;
 	int Lights[2][18]; // pozycje świateł, przód - tył, 1 .. 16 (17 do lightsset)
+	// the cab interior light each light preset sets, from the optional third column of LightsList (bits of
+	// lights_preset_cablight::flag); -1: the preset leaves the cab light as it is (eu07/maszyna#529)
+	std::array<int, 18> LightsCabLight{[] {
+		std::array<int, 18> positions;
+		positions.fill(-1);
+		return positions;
+	}()};
 	int ScndInMain{0}; /*zaleznosc bocznika od nastawnika*/
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
@@ -1715,12 +1784,20 @@ class TMoverParameters
 	float DistanceCounterDoublePressPeriod = {1.f}; // czas w jakim nalezy podwojnie wcisnac przycisk, aby rozpoczac pomiar odleglosci
 	TSecuritySystem SecuritySystem;
 	int EmergencyBrakeWarningSignal{0}; // combined with basic WarningSignal when manual emergency brake is active
+	horn_supply HornSupply{horn_supply::air}; // of the low and high tone horns (WarningSignal 1 and 2)
+	horn_supply Horn3Supply{horn_supply::air}; // of the third horn (WarningSignal 4)
+	// main reservoir pressure [bar, as MinCP and MaxCP] below which a pneumatic horn stays silent
+	static constexpr double HornMinPressure{2.0};
 	TUniversalCtrlTable UniCtrlList; /*lista pozycji uniwersalnego nastawnika*/
 	int UniCtrlListSize = 0; /*wielkosc listy pozycji uniwersalnego nastawnika*/
 	bool UniCtrlIntegratedBrakePNCtrl = false; /*zintegrowany nastawnik JH obsluguje hamulec PN*/
 	bool UniCtrlIntegratedBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie*/
 	bool UniCtrlIntegratedLocalBrakeCtrl = false; /*zintegrowany nastawnik JH obsluguje hamowanie hamulcem pomocniczym*/
 	int UniCtrlNoPowerPos{0}; // cached highesr position not generating traction force
+	// UCList CtrlValStep: the universal controller (EIMCtrlType 3) changes its setting in steps of this size (e.g. 0.05 for the
+	// 5% steps of the 6Dg), one at once when moved to a raising or lowering position, then one each time its SpeedUp / SpeedDown
+	// covers a step; 0 (the default) changes it continuously
+	double UniCtrlValStep{0.0};
 	std::pair<std::string, std::array<int, 2>> PantsPreset{"0132", {0, 0}}; // pantograph preset switches; .first holds possible setups as chars, .second holds currently selected preset in each cab
 
 	/*-sekcja parametrow dla lokomotywy elektrycznej*/
@@ -1729,6 +1806,15 @@ class TMoverParameters
 	TMotorParameters MotorParam[MotorParametersArraySize + 1];
 	/*rozne parametry silnika przy bocznikowaniach*/
 	/*dla lokomotywy spalinowej z przekladnia mechaniczna: przelozenia biegow*/
+	// bounds-safe read access to MotorParam
+	TMotorParameters const &motor_param(int const Position) const
+	{
+		if (Position < 0)
+			return MotorParam[0];
+		if (Position > MotorParametersArraySize)
+			return MotorParam[MotorParametersArraySize];
+		return MotorParam[Position];
+	}
 	TTransmision Transmision;
 	// record   {liczba zebow przekladni}
 	//  NToothM, NToothW : byte;
@@ -1880,9 +1966,9 @@ class TMoverParameters
 	double MED_Vmin = 0; // predkosc minimalna dla obliczen chwilowej sily hamowania EP w MED
 	double MED_Vref = 0; // predkosc referencyjna dla obliczen dostepnej sily hamowania EP w MED
 	double MED_amax{9.81}; // maksymalne opoznienie hamowania sluzbowego MED
-	bool MED_EPVC = 0; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
+	bool MED_EPVC = false; // czy korekcja sily hamowania EP, gdy nie ma dostepnego ED
 	double MED_EPVC_Time = 7; // czas korekcji sily hamowania EP, gdy nie ma dostepnego ED
-	bool MED_Ncor = 0; // czy korekcja sily hamowania z uwzglednieniem nacisku
+	bool MED_Ncor = false; // czy korekcja sily hamowania z uwzglednieniem nacisku
 	double MED_MinBrakeReqED = 0; // minimalne zadanie sily hamowania uruchamiajace ED - ponizej tylko EP
 	double MED_FrED_factor = 1; // mnoznik sily hamowania ED do korekty blendingu
 	double MED_ED_Delay1 = 0; // opoznienie wdrazania hamowania ED (pierwszy raz)
@@ -1928,6 +2014,7 @@ class TMoverParameters
 	double MirrorVelClose{5.0};
 	bool MirrorForbidden{false}; /*czy jest pozwolenie na otworzenie lusterek (przycisk)*/
 	bool ScndS = false; /*Czy jest bocznikowanie na szeregowej*/
+	bool ScndCtrlResistiveLock{false}; // the shunt controller can't be moved, up or down, while the master controller is at zero or on a resistive position, and drops to 0 when the master controller gets there (ScndCtrlResistiveLock=Yes in Cntrl.)
 	bool SpeedCtrl = false; /*czy jest tempomat*/
 	speed_control SpeedCtrlUnit; /*parametry tempomatu*/
 	double SpeedCtrlButtons[10]{30, 40, 50, 60, 70, 80, 90, 100, 110, 120}; /*przyciski prędkości*/
@@ -1940,6 +2027,9 @@ class TMoverParameters
 	glm::vec3 Front{};
 	std::string Name; /*nazwa wlasna*/
 	TCoupling Couplers[2]; // urzadzenia zderzno-sprzegowe, polaczenia miedzy wagonami
+	// the physical coupler model covers the vehicle: it's in the player's train or in one the player's train closes in on
+	// (vehicle_table::update_coupler_physics()); with couplerphysics all in eu07.ini every vehicle is covered
+	bool CouplerPhysics{false};
 	std::array<neighbour_data, 2> Neighbours; // potential collision sources
 	bool Power110vIsAvailable = false; // cached availability of 110v power
 	bool Power24vIsAvailable = false; // cached availability of 110v power
@@ -1948,6 +2038,7 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
 	double Vel = 0.0; // moduł prędkości w [km/h], używany przez AI
@@ -1997,6 +2088,8 @@ class TMoverParameters
 	bool CompressorAllow = false; /*! zezwolenie na uruchomienie sprezarki  NBMX*/
 	bool CompressorAllowLocal{true}; // local device state override (most units don't have this fitted so it's set to true not to intefere)
 	bool CompressorGovernorLock{false}; // indicates whether compressor pressure switch was activated due to reaching cut-out pressure
+	double CompressorStartDelay{0.0}; // time [s] the compressor waits after getting its power before it can start, after the engine starts say
+	double CompressorPowerTime{0.0}; // time [s] since the compressor got its power
 	bool CompressorTankValve{false}; // indicates excessive pressure is vented from compressor tank directly and instantly
 	start_t CompressorStart{start_t::manual}; // whether the compressor is started manually, or another way
 	start_t PantographCompressorStart{start_t::manual};
@@ -2043,6 +2136,9 @@ class TMoverParameters
 	bool UnlockPipe = false; /*unlockig brake pipe button pressed*/
 	int BrakeDelayFlag = 0; /*nastawa opoznienia ham. osob/towar/posp/exp 0/1/2/4*/
 	int BrakeDelays = 0; /*nastawy mozliwe do uzyskania*/
+	// the AI wagon inspector cut the brake out (b_dmg) and puts it back when the train no longer needs it
+	// cut out (brake_setting::apply). Anyone else cutting it out or putting it back takes it over
+	bool BrakeCutOutByInspector = false;
 	int BrakeOpModeFlag = 0; /*nastawa trybu pracy PS/PN/EP/MED 1/2/4/8*/
 	int BrakeOpModes = 0; /*nastawy mozliwe do uzyskania*/
 	bool DynamicBrakeFlag = false; /*czy wlaczony hamulec elektrodymiczny*/
@@ -2076,6 +2172,14 @@ class TMoverParameters
 	double MainsInitTime{0.0}; // config, initialization time (in seconds) of the main circuit after it receives power, before it can be closed
 	double MainsInitTimeCountdown{0.0}; // current state of main circuit initialization, remaining time (in seconds) until it's ready
 	start_t MainsStart{start_t::manual};
+	// config, Engine:JointEngineStart. whether the cab's line breaker / engine start switch works the vehicles in multiple
+	// too; when it doesn't, the cab has separate switches for them (mainb_*, mainc_*)
+	bool JointEngineStart{true};
+	// config, .fiz Cntrl.PantRequiresMain: the line breaker closes without traction voltage and holds without it, and the
+	// pantographs rise and stay up only while it's closed (EU05, EP05, ČD 181 family); off, the pantographs come first and the line
+	// breaker needs their voltage. what the main circuit feeds still needs the voltage (MainCircuitPowered()), and without
+	// it the undervoltage relay opens the line contactors (NoVoltRelay)
+	bool PantographsRequireMains{false};
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
@@ -2090,7 +2194,7 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
-	inline bool IsCabMaster()
+	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
 	} // czy aktualna kabina jest na pewno tą, z której można sterować
@@ -2135,13 +2239,17 @@ class TMoverParameters
 	start_t GroundRelayStart{start_t::manual}; // relay activation method
 	bool StLinFlag = false; /*!o styczniki liniowe*/
 	bool StLinSwitchOff{false}; // state of the button forcing motor connectors open
+	line_contactors_interlock LineContactorsInterlock{line_contactors_interlock::none}; // what else the line contactors need to close
+	double LouvresOpenPressure{5.0}; // main reservoir pressure [bar] at which the pneumatic louvres of the motor fans open (ET22)
 	bool ResistorsFlag = false; /*!o jazda rezystorowa*/
 	double RventRot = 0.0; /*!s obroty wentylatorow rozruchowych*/
 	double PantographVoltage{0.0}; // voltage supplied to pantographs
 	double PantPress = 0.0; /*Cisnienie w zbiornikach pantografow*/
 	bool PantPressSwitchActive{false}; // state of the pantograph pressure switch. gets primed at defined pressure level in pantograph air system
 	bool PantPressLockActive{false}; // pwr system state flag. fires when pressure switch activates by pantograph pressure dropping below defined level
-	bool NoVoltRelay{true}; // switches off if the power level drops below threshold
+	// switches off if the power level drops below threshold, which opens the line breaker; with PantographsRequireMains
+	// it opens the line contactors instead, and switches back on only with the master controller at zero or the first position
+	bool NoVoltRelay{true};
 	bool OvervoltageRelay{true}; // switches off if the power level goes above threshold
 	bool s_CAtestebrake = false; // hunter-091012: zmienna dla testu ca
 	std::array<std::pair<double, double>, 4> PowerCircuits; // 24v, 110v, 3x400v and 3000v power circuits, voltage from local sources and current draw pairs
@@ -2154,6 +2262,10 @@ class TMoverParameters
 	bool dizel_startup{false}; // engine startup procedure request indicator
 	bool dizel_ignition{false}; // engine ignition request indicator
 	bool dizel_spinup{false}; // engine spin up to idle speed flag
+	// the starter turns the engine a while before it fires: smoke comes out only after SmokeDelay (the Engine section of the vehicle's
+	// .fiz, seconds from the start of the spin up) has passed. 0, the default, lets it out as soon as the starter turns, as before eu07/maszyna#523
+	double dizel_SmokeDelay{0.0};
+	double dizel_FiringCountdown{0.0}; // seconds left until the engine being started fires, 0 once it runs on its own
 	double dizel_engagedeltaomega = 0.0; /*roznica predkosci katowych tarcz sprzegla*/
 	double dizel_n_old = 0.0; /*poredkosc na potrzeby obliczen sprzegiel*/
 	double dizel_Torque = 0.0; /*aktualny moment obrotowy silnika spalinowego*/
@@ -2182,12 +2294,14 @@ class TMoverParameters
 	double eimic = 0; /*aktualna pozycja zintegrowanego sterowania jazda i hamowaniem*/
 	double eimic_analog = 0; /*pozycja zadajnika analogowa*/
 	double eimic_real = 0; /*faktycznie uzywana pozycja zintegrowanego sterowania jazda i hamowaniem*/
+	double eimic_step_progress{0.0}; // the part of the next UniCtrlValStep the controller has covered so far
 	double eim_localbrake = 0; /*nastawa hamowania dodatkowego pneumatycznego lokomotywy*/
 	int EIMCtrlType = 0; /*rodzaj wariantu zadajnika jazdy*/
 	bool SpeedCtrlTypeTime = false; /*czy tempomat sterowany czasowo*/
 	int SpeedCtrlAutoTurnOffFlag = 0; /*czy tempomat sam się wyłącza*/
 	bool EIMCtrlAdditionalZeros = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
 	bool EIMCtrlEmergency = false; /*czy ma dodatkowe zero jazdy i zero hamowania */
+	bool EIMCtrlMainEmergency = false; /*czy zadajnik typu 2 (Elf) ma pozycje hamowania naglego ponizej swojej pozycji 0*/
 	double eimv_pr = 0; /*realizowany procent dostepnej sily rozruchu/hamowania*/
 	double eimv[21];
 	static std::vector<std::string> const eimv_labels;
@@ -2224,6 +2338,7 @@ class TMoverParameters
 	// TODO: move these switch types where they belong, cabin definition
 	std::string PantSwitchType;
 	std::string ConvSwitchType;
+	bool HeatingSwitchImpulse{false}; // the train heating switch springs back to its middle position
 	std::string StLinSwitchType;
 
 	bool Heating = false; // ogrzewanie 'Winger 020304
@@ -2268,6 +2383,14 @@ class TMoverParameters
 	// bool modernContainOffPos{true};
 	bool enableModernDimmer{false};
 	bool modernDimmerCanCycle{false};
+	// the given dimmer position brought into the DimmerList, to its first or last entry; 0 for an empty list
+	int clampDimmerPosition(int Position) const;
+	// the entry of the current dimmer position, or a plain one (not off, not dimmed, no high beam) when the
+	// position is outside the DimmerList: the .fiz can give a short or an empty list, or a DefaultPos past its end
+	dimPosition currentDimPosition() const;
+	// moves the dimmer by Step positions within the DimmerList, around to its other end when it can cycle;
+	// a position outside the list is brought into it first. false when the dimmer doesn't move
+	bool stepDimmerPosition(int Step);
 
 	// Barwa reflektora
 	int refR{255}; // Czerwony
@@ -2282,11 +2405,13 @@ class TMoverParameters
 	plc::basic_controller m_plc;
 
 	int AIHintPantstate{0}; // suggested pantograph setup
+	// suggested pantograph setup in shunting (AI: ShuntPantstate=, eu07/maszyna#461), the bits as in Pantstate: 1 front,
+	// 2 rear, 3 both; 0 (the default) shunts with the pantographs handled as in train mode
+	int AIHintShuntPantstate{0};
 	bool AIHintPantUpIfIdle{true}; // whether raise both pantographs if idling for a while
 	double AIHintLocalBrakeAccFactor{1.05}; // suggested acceleration weight for local brake operation
 
-  public:
-	TMoverParameters(double VelInitial, std::string TypeNameInit, std::string NameInit, int Cab);
+	TMoverParameters(double VelInitial, std::string const &TypeNameInit, std::string const &NameInit, int Cab);
 	// obsługa sprzęgów
 	static double CouplerDist(TMoverParameters const *Left, TMoverParameters const *Right);
 	static double Distance(const TLocation &Loc1, const TLocation &Loc2, const TDimension &Dim1, const TDimension &Dim2);
@@ -2294,11 +2419,15 @@ class TMoverParameters
 	int DettachStatus(int ConnectNo);
 	bool Dettach(int ConnectNo);
 	void damage_coupler(int const End);
+	// repairs the broken coupler of the end, and the one of the vehicle it was coupled with, so they can be coupled
+	// again; the vehicles clear their coupler damage once neither of their couplers is broken. returns: whether there
+	// was a broken coupler to repair
+	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
-	inline double IsVehicleEIMBrakingFactor()
+	inline double IsVehicleEIMBrakingFactor() const
 	{
 		return DynamicBrakeFlag && ResistorsFlag ? 0.0 : eimv[eimv_Ipoj] < 0 ? -1.0 : 1.0;
 	}
@@ -2310,32 +2439,32 @@ class TMoverParameters
 	bool CurrentSwitch(bool const State);
 	bool IsMotorOverloadRelayHighThresholdOn() const;
 	void UpdateBatteryVoltage(double dt);
-	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam &Track, TTractionParam &ElectricTraction, TLocation const &NewLoc,
+	double ComputeMovement(double dt, double dt1, const TTrackShape &Shape, TTrackParam const &Track, TTractionParam const &ElectricTraction, TLocation const &NewLoc,
 	                       TRotation const &NewRot); // oblicza przesuniecie pojazdu
 	double FastComputeMovement(double dt, const TTrackShape &Shape, TTrackParam &Track, TLocation const &NewLoc, TRotation const &NewRot); // oblicza przesuniecie pojazdu - wersja zoptymalizowana
 	void compute_movement_(double const Deltatime);
-	double ShowEngineRotation(int VehN);
+	double ShowEngineRotation(int VehN) const;
 
 	// Q *******************************************************************************************
 	double GetTrainsetVoltage(int const Coupling = coupling::heating | coupling::highvoltage) const;
 	double GetTrainsetHighVoltage() const;
 	bool switch_physics(bool const State);
-	double LocalBrakeRatio(void);
-	double ManualBrakeRatio(void);
-	double PipeRatio(void); /*ile napelniac*/
-	double RealPipeRatio(void); /*jak szybko*/
+	double LocalBrakeRatio(void) const;
+	double ManualBrakeRatio(void) const;
+	double PipeRatio(void) const; /*ile napelniac*/
+	double RealPipeRatio(void) const; /*jak szybko*/
 	double BrakeVP(void) const;
 	double EngineRPMRatio() const; // returns current engine revolutions as percentage of max engine revolutions, in range 0-1
 	double EngineIdleRPM() const;
 	double EngineMaxRPM() const;
 
 	/*! przesylanie komend sterujacych*/
-	bool SendCtrlToNext(std::string const CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
-	bool SetInternalCommand(std::string NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
-	double GetExternalCommand(std::string &Command);
-	bool RunCommand(std::string Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
+	bool SendCtrlToNext(std::string const &CtrlCommand, double const ctrlvalue, double const dir, int const Couplertype = coupling::control);
+	bool SetInternalCommand(std::string const &NewCommand, double NewValue1, double NewValue2, int const Couplertype = coupling::control);
+	double GetExternalCommand(std::string &Command) const;
+	bool RunCommand(std::string const &Command, double CValue1, double CValue2, int const Couplertype = coupling::control);
 	bool RunInternalCommand();
-	void PutCommand(std::string NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
+	void PutCommand(std::string const &NewCommand, double NewValue1, double NewValue2, const TLocation &NewLocation);
 	bool CabActivisation(bool const Enforce = false);
 	bool CabDeactivisation(bool const Enforce = false);
 	bool CabActivisationAuto(bool const Enforce = false);
@@ -2351,10 +2480,24 @@ class TMoverParameters
 	int MainCtrlNoPowerPos() const; // highest setting of master controller which won't cause engine to generate extra power
 	int MainCtrlActualPowerPos() const; // current actual setting of master controller, relative to the highest setting not generating extra power
 	int MainCtrlPowerPos() const; // current setting of master controller, relative to the highest setting not generating extra power
+	// positions the master controller of the EIMCtrlType 2 (Elf) has below its own position 0, the emergency brake (0 or 1)
+	int EIMCtrlEmergencyPositions() const;
+	// whether the master controller is in its emergency brake position (EIMCtrlType 2 with EIMCtrlMainEmergency)
+	bool IsMainCtrlEmergencyPos() const;
+	// the master controller position sent to the coupled vehicles ("MainCtrl"), the same with and without
+	// EIMCtrlMainEmergency: the Elf's positions without the emergency brake one, which goes as the full braking
+	int MainCtrlPosForCoupled() const;
+	// the master controller position of this vehicle for one received from a coupled vehicle ("MainCtrl")
+	int MainCtrlPosFromCoupled(int Position) const;
 	/*! pomocniczy nastawnik:*/
 	bool IncScndCtrl(int CtrlSpeed);
 	bool DecScndCtrl(int CtrlSpeed);
-	int GetVirtualScndPos();
+	int GetVirtualScndPos() const;
+	// whether ScndCtrlResistiveLock keeps the shunt controller from being moved at the current master controller position
+	bool IsScndCtrlLockedByMainCtrl() const;
+	// ScndCtrlResistiveLock: the shunt controller drops to 0 once the master controller is at zero or on a resistive position, so it
+	// can't stay engaged there, locked in place (eu07/maszyna#402)
+	void ScndCtrlResistiveLockCheck();
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
@@ -2396,6 +2539,8 @@ class TMoverParameters
 	bool BrakeReleaser(int state);
 	bool UniversalBrakeButton(int button, int state); /*uniwersalny przycisk hamulca*/
 	bool SwitchEPBrake(int state);
+	// whether the EP brake control of the cab has power: battery, the reverser out of neutral and the EP fuse on
+	bool EPBrakeControlPowered() const;
 	bool AntiSlippingButton(void); /*! reczny wlacznik urzadzen antyposlizgowych*/
 
 	/*funkcje dla ukladow pneumatycznych*/
@@ -2420,11 +2565,105 @@ class TMoverParameters
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
 	double FrictionForce() const;
-	double BrakeForceR(double ratio, double velocity);
-	double BrakeForceP(double press, double velocity);
+	double BrakeForceR(double ratio, double velocity) const;
+	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);
 	double CouplerForce(int const End, double dt);
+	// whether the coupling at the end is computed by the physical model: couplerphysics set in eu07.ini, and this
+	// vehicle or the one at the end covered by it (CouplerPhysics), or every vehicle with couplerphysics all
+	bool coupler_physics_at(int const End) const;
+	// the force of the coupling at the end by the physical model (couplerphysics in eu07.ini), see couplerphysics.h
+	double coupler_force_physical(int const End, double const dt);
+	// with the physical model: whether the vehicles at the end hit the stop of their springs at the last update and
+	// still close in on it, so that they collide; a hit hard enough breaks the coupling or crushes the buffers
+	bool coupler_stop_hit(int const End, TMoverParameters &Other, int const OtherEnd);
+	// couples the automatic couplers of the end and of the other vehicle pressed against each other, unless the hit
+	// is too fast for them to catch
+	void automatic_coupling(int const End, TMoverParameters &Other, int const OtherEnd);
 	void CollisionDetect(int const End, double const dt);
+	// closing speed of a collision [km/h] above which the vehicles involved may derail, adjusted for their mass ratio
+	static constexpr double SafeCollisionVelocity{15.0};
+	// closing speed [km/h] of the End of this vehicle and the OtherEnd of the other vehicle it touches, along the coupler
+	// axis: the sum of the speeds in a head-on collision, the difference in a rear-end one, negative when they part
+	double CollisionVelocity(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// velocity [m/s] of this vehicle relative to the other vehicle it touches with its End and the OtherEnd of the
+	// other one, along this vehicle's axis
+	double CouplerVelocityDifference(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// whether the automatic couplers at the End of this vehicle and the OtherEnd of the other one can catch each other on
+	// contact, rather than the vehicles colliding (with crash damage enabled, only at a closing speed which doesn't derail them)
+	bool AutomaticCouplingSafe(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// whether the control coupling (multiple-unit control) can join the End of this vehicle and the OtherEnd of the other
+	// one: not between an electric and a diesel traction vehicle, unless both couplers name the same control system
+	// (ControlType). Vehicles without own traction (cars, control trailers) take any. Global.control_coupling_engine_check
+	// off allows it always (eu07/maszyna#520)
+	bool ControlCouplingAllowed(int const End, TMoverParameters const &Other, int const OtherEnd) const;
+	// the CouplingType to join the End of this vehicle and the OtherEnd of the other one with, without the control coupling
+	// when ControlCouplingAllowed() rules it out. a permanent coupling (of the vehicles of one unit) is kept whole
+	int CompatibleCoupling(int const End, TMoverParameters const &Other, int const OtherEnd, int const CouplingType) const;
+	// the horns of the Signal (WarningSignal bits) which have the air or the voltage they need to sound
+	int SoundingHorns(int const Signal) const;
+	// whether the signal lamps of the main circuit (line contactors, ground relay, motor overload relays) can light:
+	// the pressure switch, when fitted, cuts the start off and puts them out, otherwise they go out once the brakes are applied
+	bool MainCircuitLampsEnabled() const
+	{
+		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+	}
+	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
+	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the
+	// contactors are open, whatever opened them: the master controller at 0, or the pressure switch (eu07/maszyna#263)
+	bool LineContactorsLampLit() const
+	{
+		if (EngineType == TEngineType::DieselElectric)
+		{
+			return false == StLinFlag;
+		}
+		return false == StLinFlag && MainCircuitLampsEnabled();
+	}
+	// the vehicles the line breaker / engine start switch of this vehicle works, and its engine stopping on its own
+	// stops: the whole consist, or with JointEngineStart=No this vehicle alone (eu07/maszyna#80)
+	range_t MainSwitchRange() const
+	{
+		return JointEngineStart ? range_t::consist : range_t::local;
+	}
+	// whether the pneumatic louvres of the motor fans are still closed, the main reservoir short of the pressure that opens them
+	bool LouvresClosed() const
+	{
+		return Compressor < LouvresOpenPressure;
+	}
+	// whether the devices the line contactors are interlocked with (LineContactorsInterlock) let them close
+	bool LineContactorsInterlockReleased() const;
+	// whether the line contactors wait for the converter of the vehicle, switched off with its local switch (converterlocal_sw).
+	// the AI driver doesn't leave it so: the converters of the other vehicles running, it would wait for the contactors forever
+	bool LineContactorsHeldByLocalConverterSwitch() const
+	{
+		return LineContactorsInterlock == line_contactors_interlock::converter && false == ConverterAllowLocal;
+	}
+	// whether the vehicle has a driver's cab: it has the driver's brake valve (BrakeHandle in the Cntrl. section of the
+	// .fiz), which the wagons and most cars of the units without a cab don't (a few copy the Cntrl. section of the cab
+	// car, as the EN57 s car does). it's the vehicle type's, unlike the cab the scenario puts a driver in
+	bool HasDriverCab() const
+	{
+		return BrakeHandle != TBrakeHandle::NoHandle;
+	}
+	// whether the cab command opening the main circuit opens it where the only cab switch of the circuit is the button
+	// closing it: on a diesel that's the starter button, and the command is the one way to stop an engine whose fuel pump
+	// starts on its own (eu07/maszyna#427). the other vehicles with such a button keep ignoring the command
+	bool MainCircuitOpensWithStarterOnly() const
+	{
+		return EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric;
+	}
+	// whether the pumps a joint oil and fuel pump switch works, those not started automatically, are all switched on
+	bool OilFuelPumpsEnabled() const
+	{
+		auto const fuelmanual{FuelPump.start_type != start_t::automatic};
+		auto const oilmanual{OilPump.start_type != start_t::automatic};
+		return (fuelmanual || oilmanual) && (false == fuelmanual || FuelPump.is_enabled) && (false == oilmanual || OilPump.is_enabled);
+	}
+	// whether the radio is switched on, its power supply isn't cut off and it has the low voltage to work
+	bool RadioPowered() const
+	{
+		return Radio && RadioFuse && (Power24vIsAvailable || Power110vIsAvailable);
+	}
 	/*obrot kol uwzgledniajacy poslizg*/
 	double ComputeRotatingWheel(double WForce, double dt, double n) const;
 
@@ -2452,6 +2691,11 @@ class TMoverParameters
 	bool HeatingSwitch(bool const State, range_t const Notify = range_t::consist);
 	void HeatingSwitch_(bool const State);
 	double EnginePowerSourceVoltage() const; // returns voltage of defined main engine power source
+	// whether the main circuit feeds what runs on it (the converter, a compressor, the heating, the motor and resistor
+	// blowers, the traction motors): the line breaker closed, and where it closes ahead of the pantographs and holds
+	// without traction voltage (PantographsRequireMains) also the voltage there, at least the one the undervoltage
+	// trip takes. everywhere else it's the same as Mains
+	bool MainCircuitPowered() const;
 
 	/*-funkcje typowe dla lokomotywy elektrycznej*/
 	void LowVoltagePowerCheck(double const Deltatime);
@@ -2464,6 +2708,8 @@ class TMoverParameters
 	void FuelPumpCheck(double const Timestep);
 	void OilPumpCheck(double const Timestep);
 	void MotorBlowersCheck(double const Timestep);
+	// whether the circuit a traction motor blower runs off has power: the battery, the converter or the main circuit, by its start type
+	bool MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const;
 	void PantographsCheck(double const Timestep);
 	void LightsCheck(double const Timestep);
 	bool FuseOn(range_t const Notify = range_t::consist); // bezpiecznik nadamiary
@@ -2479,8 +2725,8 @@ class TMoverParameters
 	/*funkcje uzalezniajace sile pociagowa od predkosci: v2n, n2r, current, momentum*/
 	double v2n(void);
 	double Current(double n, double U);
-	double Momentum(double I);
-	double MomentumF(double I, double Iw, int SCP);
+	double Momentum(double I) const;
+	double MomentumF(double I, double Iw, int SCP) const;
 
 	bool CutOffEngine(void); // odlaczenie udszkodzonych silnikow
 	/*funkcje automatycznego rozruchu np EN57*/
@@ -2517,7 +2763,7 @@ class TMoverParameters
 
 	/* funckje dla wagonow*/
 	bool AssignLoad(std::string const &Name, float const Amount = 0.f);
-	bool LoadingDone(double LSpeed, std::string const &Loadname);
+	bool LoadingDone(double LSpeed, std::string_view Loadname);
 	bool PermitDoors(side const Door, bool const State = true, range_t const Notify = range_t::consist);
 	void PermitDoors_(side const Door, bool const State = true);
 	bool ChangeDoorPermitPreset(int const Change, range_t const Notify = range_t::consist);
@@ -2527,16 +2773,24 @@ class TMoverParameters
 	bool LockDoors(bool const State, range_t const Notify = range_t::consist);
 	bool signal_departure(bool const State, range_t const Notify = range_t::consist); // toggles departure warning
 	void update_doors(double const Deltatime); // door controller update
+	door_closure_t door_closure() const; // state of the door closure signalling of this vehicle
+	// whether the door closure lamp in the cab of this vehicle is lit: with DoorClosureSignal, for the given state of the
+	// consist; without it, for the lock of the vehicle's own doors, as the lamp always worked
+	bool door_closure_lamp_lit(door_closure_t const Consist, bool const BlinkLit) const;
 
 	/* funkcje dla samochodow*/
 	bool ChangeOffsetH(double DeltaOffset);
 
 	/*funkcje ladujace pliki opisujace pojazd*/
-	bool LoadFIZ(std::string chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
+	bool LoadFIZ(std::string const &chkpath); // Q 20160717    bool LoadChkFile(std::string chkpath);
+	bool LoadFIZ_Text(std::string const &Text); // the same, from text in the .fiz format
 	bool CheckLocomotiveParameters(bool ReadyFlag, int Dir);
 	std::string EngineDescription(int what) const;
+	// the cab interior light the light preset at given position (1-based, as LightsPos) sets, if it sets one
+	std::optional<lights_preset_cablight> LightsPresetCabLight(int Position) const;
 
   private:
+	bool LoadFIZ_Parse(cParser &Parser); // reads the definition from either of the above
 	void LoadFIZ_Param(std::string const &line);
 	void LoadFIZ_Load(std::string const &line);
 	void LoadFIZ_Dimensions(std::string const &line);
@@ -2568,10 +2822,10 @@ class TMoverParameters
 	void LoadFIZ_LightsList(std::string const &Input);
 	void LoadFIZ_DimmerList(std::string const &Input);
 	void LoadFIZ_CompressorList(std::string const &Input);
-	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const Prefix, std::string const &Input);
-	TPowerType LoadFIZ_PowerDecode(std::string const &Power);
-	TPowerSource LoadFIZ_SourceDecode(std::string const &Source);
-	TEngineType LoadFIZ_EngineDecode(std::string const &Engine);
+	void LoadFIZ_PowerParamsDecode(TPowerParameters &Powerparameters, std::string const &Prefix, std::string const &Input);
+	TPowerType LoadFIZ_PowerDecode(std::string const &Power) const;
+	TPowerSource LoadFIZ_SourceDecode(std::string const &Source) const;
+	TEngineType LoadFIZ_EngineDecode(std::string const &Engine) const;
 	bool readMPT0(std::string const &line);
 	bool readMPT(std::string const &line); // Q 20160717
 	bool readMPTElectricSeries(std::string const &line);

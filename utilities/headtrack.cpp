@@ -2,19 +2,16 @@
 #include "utilities/headtrack.h"
 #include "utilities/Globals.h"
 
-headtrack::headtrack()
-{
-
-}
+headtrack::headtrack() = default;
 
 void headtrack::find_joy() {
     for (size_t i = GLFW_JOYSTICK_1; i <= GLFW_JOYSTICK_LAST; i++) {
-        if (!glfwJoystickPresent(i))
+        if (!glfwJoystickPresent(static_cast<int>(i)))
             continue;
 
-        std::string name(glfwGetJoystickName(i));
+        std::string name(glfwGetJoystickName(static_cast<int>(i)));
         if (name == Global.headtrack_conf.joy) {
-            joy_id = i;
+            joy_id = static_cast<int>(i);
             return;
         }
     }
@@ -22,7 +19,7 @@ void headtrack::find_joy() {
     joy_id = -1;
 }
 
-float headtrack::get_axis(const float *data, int count, int axis, float mul) {
+float headtrack::get_axis(const float *data, int count, int axis, float mul) const {
     if (axis < 0)
         return 0.0f;
     if (axis >= count)

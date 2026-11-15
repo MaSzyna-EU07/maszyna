@@ -12,12 +12,16 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <vector>
 #include <deque>
+#include <array>
 
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 
 #include "utilities/Classes.h"
 #include "world/Segment.h"
+#include "world/RailLayout.h"
+#include "world/TrackSleepers.h"
+#include "world/TrackUneven.h"
 #include "model/material.h"
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
@@ -52,6 +56,14 @@ class TTrack;
 class TGroundNode;
 class TSubRect;
 class TTraction;
+
+// a chunk of the geometry of a track kept to be laid again in, for the rails changing with the state of a switch
+struct pooled_chunk {
+    int type { 0 };
+    gfx::geometry_handle handle;
+    bool used { false };
+};
+using chunk_pool = std::vector<pooled_chunk>;
 
 class TSwitchExtension
 { // dodatkowe dane do toru, który jest zwrotnicą
@@ -98,6 +110,12 @@ class TSwitchExtension
 	glm::dvec3 vTrans; // docelowa translacja przesuwnicy
     material_handle m_material3 = 0; // texture of auto generated switch trackbed
     gfx::geometry_handle Geometry3; // geometry of auto generated switch trackbed
+    bool m_frogs { false }; // the frog and check rails are made from the rails, for switches with no model of them in their includes
+    bool m_movablenose { false }; // the nose of the frog moves over to the rail of the track set, closing its flangeway; no check rails
+    double m_bladeheel { 0.0 }; // where the moving blades end along the paths, as the template of the switch gives it; 0: as long as the flangeway needs
+    double m_bladethrow { 0.0 }; // how far the tips of the blades move over; 0: the usual throw
+    double m_nosethrow { -1.0 }; // how far over to the second path the movable nose was laid, -1: no geometry yet
+    chunk_pool m_nosechunks; // the geometry of the switch, laid again in the same chunks as the nose moves over
 
 	gfx::geometrybank_handle map_geometry[6]; // geometry for map visualisation
 };
@@ -154,6 +172,7 @@ class TTrack : public scene::basic_node
     friend opengl33_renderer;
     // NOTE: temporary arrangement
     friend itemproperties_panel;
+    friend class editor_track;
 
 public:
     std::vector<TIsolated*> Isolated; // obwód izolowany obsługujący zajęcia/zwolnienia grupy torów
@@ -179,11 +198,29 @@ public:
     material_handle m_material1 = 0; // tekstura szyn albo nawierzchni
     material_handle m_material2 = 0; // tekstura automatycznej podsypki albo pobocza
     std::pair<std::string, int> m_profile1 {}; // profile of geometry chunks textured with texture 1
+    // sets the rail profile by its name, as railprofile does; empty: none, the default shape
+    void rail_profile( std::string const &Name );
     using geometryhandle_sequence = std::vector<gfx::geometry_handle>;
     geometryhandle_sequence Geometry1; // geometry chunks textured with texture 1
     geometryhandle_sequence Geometry2; // geometry chunks textured with texture 2
+    material_handle m_materialcut1 = 0; // matte variant of texture 1, for the cut faces of rails
+    material_handle m_materialcut2 = 0; // matte variant of texture 2, for the cut faces of rails of the other switch path
+    geometryhandle_sequence GeometryCut1; // cut faces of rails textured with texture 1, the blade tip first for a switch
+    geometryhandle_sequence GeometryCut2; // cut faces of rails textured with texture 2, the blade tip first
+    struct tread_geometry {
+        material_handle material { 0 };
+        material_handle matte { 0 };
+        geometryhandle_sequence geometry;
+        geometryhandle_sequence cuts;
+    };
+    std::vector<tread_geometry> GeometryTreads;
 
     std::vector<segment_data> m_paths; // source data for owned paths
+    bool m_editorremoved { false };
+    bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
+    std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
+    scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
+    std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
 
     // sleepermodel optional parameter -------------------------------------------------
@@ -198,12 +235,19 @@ public:
     std::string m_sleeper_skin_name;  // replacable skin path, or "none" for default
     glm::vec3 m_sleeper_offset { 0.f, 0.f, 0.f }; // local offset from track centerline (x: left/right, y: forward/back, z: up/down)
     float m_sleeper_ballast_z { 0.f }; // vertical offset applied to the trackbed (ballast) profile
+    // timbermodel optional parameter: the model of the timbers laid under the track where it's part of a switch or a crossing,
+    // in place of the one set with sleepers3d in eu07.ini. Defined in scenery file as:
+    //   timbermodel <model> <skin>
+    std::string m_timber_model_name;
+    std::string m_timber_skin_name; // replacable skin, empty for the textures of the model
     TModel3d *m_sleeper_model { nullptr }; // resolved on init; nullptr means no model / failed to load
     material_handle m_sleeper_skin { 0 }; // resolved replacable skin handle, 0 = use model defaults
     // precomputed local-space transforms (relative to m_origin) for every sleeper instance along the path.
     // Each matrix is translate(world_pos - m_origin) * rotate(direction, roll) * translate(local_offset).
     // The renderer composes this with (view * translate(m_origin - camera_pos)) per draw.
     std::vector<glm::mat4> m_sleeper_local_transforms;
+    // sleepers and switch timbers made of the model set with sleepers3d in eu07.ini, laid where the simulator makes the ballast
+    track_sleepers::laid m_sleepers3d;
 
 public:
     using dynamics_sequence = std::deque<TDynamicObject *>;
@@ -233,6 +277,7 @@ public:
     TEnvironmentType eEnvironment = e_flat; // dźwięk i oświetlenie
     int iAction = 0; // czy modyfikowany eventami (specjalna obsługa przy skanowaniu)
     float fOverhead = -1.0; // można normalnie pobierać prąd (0 dla jazdy bezprądowej po danym odcinku, >0-z opuszczonym i ograniczeniem prędkości)
+    track_uneven::attribute m_uneven; // plain tracks and switches
 private:
     double fVelocity = -1.0; // ograniczenie prędkości // prędkość dla AI (powyżej rośnie prawdopowobieństwo wykolejenia)
 public:
@@ -258,14 +303,23 @@ public:
     material_handle copy_adjacent_trackbed_material( TTrack const *Exclude = nullptr );
     inline double Length() const {
         return Segment->GetLength(); };
+    // how far below the top of the rails their feet are, by the rail profile of the track
+    float rail_height() const;
 	inline std::shared_ptr<TSegment> CurrentSegment() const {
         return Segment; };
     inline TTrack *CurrentNext() const {
         return trNext; };
     inline TTrack *CurrentPrev() const {
         return trPrev; };
-    TTrack *Connected(int s, double &d) const;
+    TTrack *Connected(int s, double &d, int const Path = -1) const; // Path: of a switch, the one to leave by whichever way it is set
+    int nose_set() const; // the path the movable nose of the frog lies for, following the blades
+    double nose_throw() const; // how far the movable nose of the frog went over to the second path, following the blades
+    material_handle rail_material( int const Path ) const;
+    glm::vec2 tread_band() const;
     bool SetConnections(int i);
+    // joins the free ends of the switch to the free ends of other switches in the same points, which the plain tracks joined to switches
+    // leave out: a switch right after another one, at the end of either path of it, two facing at their starts or meeting at their ends
+    std::vector<TTrack const *> join_switches(); // the switches the free ends were joined to, one for each joint
     bool Switch(int i, float const t = -1.f, float const d = -1.f);
     bool SwitchForced(int i, TDynamicObject *o);
     int CrossSegment(int from, int into);
@@ -277,7 +331,22 @@ public:
     int
         RouteCount() const {
         return SwitchExtension != nullptr ? SwitchExtension->iRoads - 1 : 1; }
+    // picks one of the routes through a crossroads for a driver heading for it. the routes are numbered from 1
+    int RouteDraw() const;
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
+    void init_segments( bool const Initial );
+    // whether a path is drawn as a straight, told by its first control vector alone
+    static bool straightened( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &P2 );
+    track_rails::switch_frog frog() const;
+    track_rails::switch_blade const &blade( int const Path ) const;
+    double blades_throw() const; // how far the tips of the blades move over between the two paths
+    std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true );
+    track_rails::rail_size rail_dimensions() const;
+    // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
+    track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings ) const;
+    // Carve: the parts of the rails at crossings carved out of what lies around them, false: only their design
+    track_rails::rail_layout plan_rails( bool const Crossings, bool const Carve = true );
+    void update_location();
     bool AssignEvents();
     bool AssignForcedEvents(basic_event *NewEventPlus, basic_event *NewEventMinus);
     void QueueEvents( event_sequence const &Events, TDynamicObject const *Owner );
@@ -300,6 +369,7 @@ public:
 	double ActiveLength();
 
 	void create_geometry( gfx::geometrybank_handle const &Bank ); // wypełnianie VBO
+	void rebuild_geometry( gfx::geometrybank_handle const &Bank );
 	void create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra);
 	void get_map_active_paths(map_colored_paths &handles);
     void get_map_paths_for_state(map_colored_paths &handles, int state);
@@ -329,6 +399,29 @@ public:
     void VelocitySet(float v);
     double VelocityGet();
     float Friction() const;
+    // a switch has two paths, any other track the one
+    int path_count() const;
+    TSegment *path_segment( int const Path ) const;
+    TTrack *path_neighbour( int const Path, int const End ) const;
+    // the unevenness the track declares, on a path of a switch
+    track_uneven::amounts uneven_declared( int const Path = 0 ) const;
+    bool is_uneven() const;
+    // the unevenness along what the vehicles take now: the path set on a switch, with what the switches joined and the tracks by them allow
+    track_uneven::amounts uneven_underway();
+    // the unevenness at a distance along a path, meeting the tracks joined at its ends
+    track_uneven::amounts uneven_at( double const Distance, int const Path = 0 );
+    // how much of the displacement a point of the profile at the depth takes
+    double uneven_bed_share( double const Depth ) const;
+    // closes the gaps and steps of cant between the ends of joined paths
+    void share_joints();
+    double joint_depth() const; // mm
+    double joint_dip( double const Distance ); // m
+    // distance from the rail joint behind; negative: the track has no joints that dip
+    double rail_phase( double const Distance );
+    // whether the rail joints are elsewhere than the geometry of the track has them
+    bool rail_joints_moved();
+    // the uneven tracks whose values go by the switches among the given: all the switches joined to those, and the tracks they meet
+    static std::vector<TTrack *> switch_followers( std::vector<TTrack *> const &Tracks );
     void ConnectionsLog();
     bool DoubleSlip() const;
     static void fetch_default_profiles();
@@ -340,13 +433,15 @@ private:
     using profiles_map = std::unordered_map<std::string, int>;
 // methods
     // radius() subclass details, calculates node's bounding radius
-    float radius_();
+    float radius_() const override;
     // serialize() subclass details, sends content of the subclass to provided stream
     void serialize_( std::ostream &Output ) const;
     // deserialize() subclass details, restores content of the subclass from provided stream
     void deserialize_( std::istream &Input );
     // export() subclass details, sends basic content of the class in legacy (text) format to provided stream
     void export_as_text_( std::ostream &Output ) const;
+    // the keyword the track is written with, by its type and for a plain one by what runs on it
+    char const *type_keyword() const;
     // locates specified profile in the profile database, potentially loading it from a file
     static std::pair<std::string, int> fetch_track_rail_profile( std::string const &Profile );
     // loads content of specified file and converts it into a vertex array
@@ -357,9 +452,37 @@ private:
     float texture_length( material_handle const Material );
     // creates profile for a part of current path
     void create_switch_trackbed( gfx::vertex_array &Output );
-    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
+    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr ) const;
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
+    void profile_rolls( float &Roll1, float &Roll2 ) const;
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
+    // rail joints run on across joined tracks, however the line is cut into them, so the clatter keeps its rhythm
+    struct rail_run {
+        double origin { 0.0 }; // position along the run of Point1
+        double way { 1.0 }; // direction of the path along the run
+        int stamp { -1 };
+    };
+    void settle_rail_run();
+    rail_run m_railrun;
+    rail_run m_drawnrun; // as the geometry has it; stamp -1: it has no joints that dip
+    // the value along each path of a switch: the lowest of that path in the switches joined, 0 next to a track with none.
+    // And at the ends of the paths, by what meets there: the other path at the common end, the path of a switch joined
+    struct switch_stray {
+        std::array<track_uneven::amounts, 2> paths;
+        std::array<std::array<track_uneven::amounts, 2>, 2> ends;
+        int stamp { -1 };
+    };
+    switch_stray m_switchstray;
+    switch_stray const &switch_uneven();
+    void settle_switch_stray();
+    void settle_switch_ends();
+    // the lowest value of the paths ending at the point
+    track_uneven::amounts switch_paths_at( glm::dvec3 const &Point ) const;
+    // what a plain track comes to at its end, where it meets the other one
+    track_uneven::amounts uneven_met( TTrack *Other, glm::dvec3 const &Point ) const;
+    // the value of a switch where a track joined to it meets it
+    track_uneven::amounts switch_uneven_at( glm::dvec3 const &Point );
+    static int s_layoutstamp; // bumped when tracks are joined or changed, invalidates the two above. Once per change: a run is walked again after each
     void create_road_profile( gfx::vertex_array &Output, bool const Forcetransition = false );
     void create_road_side_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const &Road, bool const Forcetransition = false );
     /// <summary>
@@ -368,6 +491,23 @@ private:
     /// Safe to call multiple times; clears any previously cached transforms first.
     /// </summary>
     void build_sleeper_transforms();
+    struct rail_drawing {
+        gfx::geometrybank_handle bank;
+        track_rails::rail_size size;
+        float halfwidth { 0.f };
+        std::array<gfx::vertex_array, 2> checkshapes;
+        std::array<gfx::vertex_array, 2> plates;
+        std::array<gfx::vertex_array, 2> fillers;
+        float platetexture { 0.f };
+    };
+    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank ) const;
+    // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
+    bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, gfx::vertex_array const &Profile, track_rails::rail_course const &Course, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+    class rail_layer;
+    class rail_planner;
+    int blade_side( int const Path ) const;
+    material_handle shared_tread( int const Path, TTrack const &Other, int const Otherpath ) const;
+    void loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::vertex_array const &Blade, float const Texturelength, gfx::vertex_array &Vertices ) const;
 // members
     static profiles_array m_profiles; // shared database of path element profiles
     static profiles_map m_profilesmap;

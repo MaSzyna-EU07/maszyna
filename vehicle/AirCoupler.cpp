@@ -18,16 +18,14 @@ AirCoupler::AirCoupler()
     Clear();
 }
 
-AirCoupler::~AirCoupler()
-{
-}
+AirCoupler::~AirCoupler() = default;
 
 /**
  * \return 1 when \(straight\) TModel3d \c only ModelOn exists
  * \return 2 when \(slanted\) TModel3d \c ModelxOn exists
  * \return 0 when neither of them exist
  */
-int AirCoupler::GetStatus()
+int AirCoupler::GetStatus() const
 {
     if (ModelxOn)
 		return 2;
@@ -51,7 +49,7 @@ void AirCoupler::Clear()
 /**
  * Looks for submodels in the model and updates pointers.
  */
-void AirCoupler::Init(std::string const &asName, TModel3d *Model)
+void AirCoupler::Init(std::string const &asName, TModel3d const *Model)
 {
     if (!Model)
         return;

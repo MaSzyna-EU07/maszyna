@@ -70,6 +70,8 @@ struct node_data {
     double range_max { std::numeric_limits<double>::max() };
     std::string name;
     std::string type;
+    layer_handle layer { null_handle }; // scenery layer the node is defined in, if any
+    instance_handle instance { 0 }; // include of an *.inc template which defines the node, if it isn't defined directly by a scenery layer file
 };
 
 // holds unique piece of geometry, covered with single material
@@ -77,6 +79,7 @@ class shape_node
 {
 
     friend class basic_region; // region might want to modify node content when it's being inserted
+    friend class terrain_file; // binary terrain files hold complete content of the nodes
 
 public:
 // types
@@ -96,6 +99,11 @@ public:
         gfx::geometry_handle geometry { 0, 0 }; // relative origin-centered chunk of geometry held by gfx renderer
         std::vector<world_vertex> vertices; // world space source data of the geometry
 		gfx::userdata_array userdata;
+        // terrain file the shape comes from, see scene::terrain_file::reference_of(); 0: none, or not known (only the editor asks)
+        std::uint16_t terrainfile { 0 };
+        // drawn pulled towards the camera in the depth buffer, over the surface it lies on: the photos of the editor laid on the
+        // terrain. not kept by serialize()
+        bool decal { false };
     // methods:
         // sends content of the struct to provided stream
         void
@@ -122,6 +130,9 @@ public:
     // relative to Origin. used by the editor's terrain to own editable geometry it can re-upload.
     shape_node &
         make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin );
+    // see shapenode_data::decal
+    void
+        decal( bool const Decal ) { m_data.decal = Decal; }
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( shape_node &Shape );
@@ -143,6 +154,15 @@ public:
     // replaces the renderable geometry handle (used by the editor when it re-uploads terrain geometry)
     void
         geometry( gfx::geometry_handle const &Handle );
+    // set lighting (used by generated geometry painted with plain colour)
+    void
+        lighting( lighting_data const &Lighting );
+    // sets whether the shape is drawn with the translucent geometry (used by generated geometry)
+    void
+        translucent( bool const Translucent );
+    // notes the terrain file the shape comes from
+    void
+        source_file( std::uint16_t const Reference ) { m_data.terrainfile = Reference; }
     // data access
     shapenode_data const &
         data() const;
@@ -173,6 +193,17 @@ inline
 void
 shape_node::geometry( gfx::geometry_handle const &Handle ) {
     m_data.geometry = Handle;
+}
+// set lighting
+inline
+void
+shape_node::lighting( lighting_data const &Lighting ) {
+    m_data.lighting = Lighting;
+}
+inline
+void
+shape_node::translucent( bool const Translucent ) {
+    m_data.translucent = Translucent;
 }
 // data access
 inline
@@ -351,6 +382,9 @@ public:
 	    location();
     float const &
         radius();
+    // the radius as worked out already, or worked out anew and not kept
+    float
+        radius() const;
     void
         visible( bool const Visible );
     bool
@@ -359,6 +393,13 @@ public:
         group( scene::group_handle Group );
     scene::group_handle
         group() const;
+    void
+        layer( scene::layer_handle Layer );
+    scene::layer_handle
+        layer() const;
+    // true if the node is defined by an *.inc template
+    bool
+        from_template() const { return m_instance != 0; }
 	void
 	    mark_dirty() { m_dirty = true; }
 	bool
@@ -375,12 +416,18 @@ public:
     bool m_visible { true }; // visibility flag
     std::string m_name;
 	bool m_dirty { false };
+    bool m_layerhidden { false }; // the node was visible until the editor hid its scenery layer, or the include which defines it
+    bool m_preview { false }; // the node was made by the editor to show an include it placed or changed, and is replaced when the include changes
+    scene::layer_handle m_layer { null_handle }; // scenery layer this node belongs to, if any
+    // include of an *.inc template which defines the node; 0 if the node is defined directly by a scenery layer file.
+    // such nodes can't be rewritten one by one on scenery save. set only for scenery opened for editing
+    scene::instance_handle m_instance { 0 };
     UID uuid;
 
 private:
 // methods
     // radius() subclass details, calculates node's bounding radius
-    virtual float radius_();
+    virtual float radius_() const;
     // serialize() subclass details, sends content of the subclass to provided stream
     virtual void serialize_( std::ostream &Output ) const = 0;
     // deserialize() subclass details, restores content of the subclass from provided stream
@@ -441,6 +488,18 @@ inline
 scene::group_handle
 basic_node::group() const {
     return m_group;
+}
+
+inline
+void
+basic_node::layer( scene::layer_handle Layer ) {
+    m_layer = Layer;
+}
+
+inline
+scene::layer_handle
+basic_node::layer() const {
+    return m_layer;
 }
 
 } // scene

@@ -31,25 +31,26 @@ editorkeyboard_input::apply_scheme() {
 
 void
 editorkeyboard_input::default_bindings() {
+    using enum user_command;
 
     if (EditorSettings.movement() == editorSettings::movement_scheme::legacy) {
         m_bindingsetups = {
-            { user_command::moveleft, {GLFW_KEY_LEFT, "Move left"} },
-            { user_command::moveright, {GLFW_KEY_RIGHT, "Move right"} },
-            { user_command::moveforward, {GLFW_KEY_UP, "Move forwards"} },
-            { user_command::moveback, {GLFW_KEY_DOWN, "Move backwards"} },
-            { user_command::moveup, {GLFW_KEY_PAGE_UP, "Move up"} },
-            { user_command::movedown, {GLFW_KEY_PAGE_DOWN, "Move down"} },
+            { moveleft, {GLFW_KEY_LEFT, "Move left"} },
+            { moveright, {GLFW_KEY_RIGHT, "Move right"} },
+            { moveforward, {GLFW_KEY_UP, "Move forwards"} },
+            { moveback, {GLFW_KEY_DOWN, "Move backwards"} },
+            { moveup, {GLFW_KEY_PAGE_UP, "Move up"} },
+            { movedown, {GLFW_KEY_PAGE_DOWN, "Move down"} },
         };
     }
     else {
         m_bindingsetups = {
-            { user_command::moveleft, {GLFW_KEY_A, "Move left"} },
-            { user_command::moveright, {GLFW_KEY_D, "Move right"} },
-            { user_command::moveforward, {GLFW_KEY_W, "Move forwards"} },
-            { user_command::moveback, {GLFW_KEY_S, "Move backwards"} },
-            { user_command::moveup, {GLFW_KEY_E, "Move up"} },
-            { user_command::movedown, {GLFW_KEY_Q, "Move down"} },
+            { moveleft, {GLFW_KEY_A, "Move left"} },
+            { moveright, {GLFW_KEY_D, "Move right"} },
+            { moveforward, {GLFW_KEY_W, "Move forwards"} },
+            { moveback, {GLFW_KEY_S, "Move backwards"} },
+            { moveup, {GLFW_KEY_E, "Move up"} },
+            { movedown, {GLFW_KEY_Q, "Move down"} },
         };
     }
 }

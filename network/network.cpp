@@ -30,9 +30,7 @@ void network::connection::set_handler(std::function<void (const message &)> hand
 	message_handler = handler;
 }
 
-network::connection::connection(bool client, size_t counter) {
-	packet_counter = counter;
-	is_client = client;
+network::connection::connection(bool client, size_t counter) : is_client(client), packet_counter(counter) {
 	state = AWAITING_HELLO;
 }
 
@@ -43,7 +41,7 @@ void network::connection::connected()
 	if (is_client) {
 		client_hello msg;
 		msg.version = EU07_NETWORK_VERSION;
-		msg.start_packet = packet_counter;
+		msg.start_packet = static_cast<uint32_t>(packet_counter);
 		send_message(msg);
 	}
 }
@@ -79,7 +77,7 @@ void network::connection::catch_up()
 	send_messages(messages);
 }
 
-void network::connection::send_complete(std::shared_ptr<std::string> buf)
+void network::connection::send_complete(std::shared_ptr<std::string> /*buf*/)
 {
 	if (!is_client && state == CATCHING_UP) {
 		catch_up();
@@ -151,7 +149,7 @@ void network::server::handle_message(std::shared_ptr<connection> conn, const mes
 		const auto& cmd = dynamic_cast<const request_command&>(msg);
 
 		for (auto const &kv : cmd.commands)
-			client_commands_queue.emplace(kv);
+			client_commands_queue.try_emplace(kv.first, kv.second);
 	}
 }
 
@@ -188,9 +186,9 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 	}
 
 
-	float size = delta_queue.size() - consume_counter;
+	float size = static_cast<float>(delta_queue.size()) - consume_counter;
 	const auto& entry = delta_queue.front();
-	float mult = entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count();
+	auto mult = static_cast<float>(entry.render_dt / std::chrono::duration_cast<std::chrono::duration<float>>(frame_time).count());
 
 	if (counter == 1 && size < MAX_BUFFER_SIZE * 2.0f) {
 		last_target = last_target * TARGET_MIX +
@@ -220,7 +218,7 @@ std::tuple<double, double, command_queue::commands_map> network::client::get_nex
 	}
 }
 
-void network::client::send_commands(command_queue::commands_map commands)
+void network::client::send_commands(command_queue::commands_map const &commands) const
 {
 	if (!conn || conn->state == connection::DEAD || commands.empty())
 		return;
@@ -232,17 +230,17 @@ void network::client::send_commands(command_queue::commands_map commands)
 	conn->send_message(msg);
 }
 
-void network::client::handle_message(std::shared_ptr<connection> conn, const message &msg)
+void network::client::handle_message(std::shared_ptr<connection> Connection, const message &msg)
 {
 	if (msg.type >= message::TYPE_MAX)
 	{
-		conn->disconnect();
+		Connection->disconnect();
 		return;
 	}
 
 	if (msg.type == message::SERVER_HELLO) {
 		const auto& cmd = dynamic_cast<const server_hello&>(msg);
-		conn->state = connection::ACTIVE;
+		Connection->state = connection::ACTIVE;
 
 		if (!Global.ready_to_load) {
 			Global.random_seed = cmd.seed;
@@ -253,14 +251,14 @@ void network::client::handle_message(std::shared_ptr<connection> conn, const mes
 			Global.ready_to_load = true;
 		} else if (Global.random_seed != cmd.seed) {
 			ErrorLog("net: seed mismatch", logtype::net);
-			conn->disconnect();
+			Connection->disconnect();
 			return;
 		}
 
 		WriteLog("net: accept received", logtype::net);
 	}
 
-	if (conn->state != connection::ACTIVE)
+	if (Connection->state != connection::ACTIVE)
 		return;
 
 	if (msg.type == message::FRAME_INFO) {

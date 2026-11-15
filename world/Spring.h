@@ -27,7 +27,7 @@ public:
     //    void Init(TParticnp1, TParticle *np2, double nKs= 0.5f, double nKd= 0.002f,
     //    double nrestLen= -1.0f);
     void Init(double nKs = 0.5f, double nKd = 0.002f);
-	glm::dvec3 ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2);
+	glm::dvec3 ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) const;
 	//private:
 // members
     double restLen { 0.01 }; // LENGTH OF SPRING AT REST

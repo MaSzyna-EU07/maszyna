@@ -1,0 +1,13 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed: two trains at Stacja1.
+// the train under test (test.vehicle) stands on track 2, where its driver has nothing to do; the other one,
+// AI traffic, has the td/rozklad timetable on track 1 and leaves for Przystanek at 10:35. the standstill of
+// the test waits for the train under test only, so the traffic running on doesn't hold it up.
+trainset none tor2k 30.0 0.0
+node -1 0 {{vehicle}} dynamic pkp\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic
+endtrainset
+trainset td/rozklad tdo_n1734 0.0 0.1
+node -1 0 traffic_{{vehicle}} dynamic pkp\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic
+endtrainset
+
+// the way out of track 1 for the traffic, see td_timetable.scn
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end

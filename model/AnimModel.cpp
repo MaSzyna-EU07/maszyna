@@ -88,6 +88,23 @@ void TAnimContainer::SetTranslateAnim(glm::dvec3 vNewTranslate, double fNewSpeed
     }
 }
 
+void TAnimContainer::Finish()
+{
+    // the next UpdateModel() finds them there and ends the animation as it would have
+    if (fRotateSpeed != 0.0)
+        vRotateAngles = vDesiredAngles;
+    if (fTranslateSpeed != 0.0)
+        vTranslation = vTranslateTo;
+    // and the submodel takes them now: one brought back to its rest is no longer prepared, it'd keep the angles of the jump
+    // before, where the frames of a run leave it a step short of the rest only
+    if (pSubModel) {
+        if (iAnim & 1)
+            pSubModel->SetRotateXYZ(vRotateAngles);
+        if (iAnim & 2)
+            pSubModel->SetTranslate(vTranslation);
+    }
+}
+
 // przeliczanie animacji wykonać tylko raz na model
 void TAnimContainer::UpdateModel() {
 
@@ -251,12 +268,26 @@ TAnimModel::TAnimModel( scene::node_data const &Nodedata ) : basic_node( Nodedat
 
 bool TAnimModel::Init(std::string const &asName, std::string const &asReplacableTexture)
 {
+    m_skintoken = asReplacableTexture;
     if( asReplacableTexture.substr( 0, 1 ) == "*" ) {
         // od gwiazdki zaczynają się teksty na wyświetlaczach
         asText = asReplacableTexture.substr( 1, asReplacableTexture.length() - 1 ); // zapamiętanie tekstu
     }
     else if( asReplacableTexture != "none" ) {
-        m_materialdata.assign( asReplacableTexture );
+        // the same skin is typically shared by lots of instances, and locating its files takes a couple dozen disk lookups.
+        // NOTE: only located skins are kept, so a missing one is still searched for each time, the way it used to be
+        static std::unordered_map<std::string, material_data> skins;
+        auto const skinkey { Global.asCurrentTexturePath + '|' + asReplacableTexture };
+        auto const lookup { skins.find( skinkey ) };
+        if( lookup != skins.end() ) {
+            m_materialdata = lookup->second;
+        }
+        else {
+            m_materialdata.assign( asReplacableTexture );
+            if( m_materialdata.replacable_skins[ 1 ] != null_handle ) {
+                skins.emplace( skinkey, m_materialdata );
+            }
+        }
     }
 
 // TODO: redo the random timer initialization
@@ -277,12 +308,9 @@ TAnimModel::is_keyword( std::string const &Token ) const {
         || Token == "notransition";
 }
 
-bool TAnimModel::Load(cParser *parser, bool ter)
-{ // rozpoznanie wpisu modelu i ustawienie świateł
-	std::string name = parser->getToken<std::string>();
-	std::string texture = parser->getToken<std::string>(false);
-    replace_slashes( name );
-    replace_slashes( texture );
+// assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model
+void TAnimModel::assign_model( std::string &name, std::string const &texture, bool const ter )
+{
     if (!Init( name, texture ))
     {
         if (name != "notload")
@@ -303,30 +331,27 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     }
     else
     { // wiązanie świateł, o ile model wczytany
-        LightsOn[0] = pModel->GetFromName("Light_On00");
-        LightsOn[1] = pModel->GetFromName("Light_On01");
-        LightsOn[2] = pModel->GetFromName("Light_On02");
-        LightsOn[3] = pModel->GetFromName("Light_On03");
-        LightsOn[4] = pModel->GetFromName("Light_On04");
-        LightsOn[5] = pModel->GetFromName("Light_On05");
-        LightsOn[6] = pModel->GetFromName("Light_On06");
-        LightsOn[7] = pModel->GetFromName("Light_On07");
-        LightsOff[0] = pModel->GetFromName("Light_Off00");
-        LightsOff[1] = pModel->GetFromName("Light_Off01");
-        LightsOff[2] = pModel->GetFromName("Light_Off02");
-        LightsOff[3] = pModel->GetFromName("Light_Off03");
-        LightsOff[4] = pModel->GetFromName("Light_Off04");
-        LightsOff[5] = pModel->GetFromName("Light_Off05");
-        LightsOff[6] = pModel->GetFromName("Light_Off06");
-        LightsOff[7] = pModel->GetFromName("Light_Off07");
-		sm_winter_variant = pModel->GetFromName("winter_variant");
-		sm_spring_variant = pModel->GetFromName("spring_variant");
-		sm_summer_variant = pModel->GetFromName("summer_variant");
-		sm_autumn_variant = pModel->GetFromName("autumn_variant");
+        // the submodels are located once for the model and shared by its instances
+        auto const &submodels { pModel->instance_parts() };
+        LightsOn = submodels.lights_on;
+        LightsOff = submodels.lights_off;
+        sm_winter_variant = submodels.variants[ 0 ];
+        sm_spring_variant = submodels.variants[ 1 ];
+        sm_summer_variant = submodels.variants[ 2 ];
+        sm_autumn_variant = submodels.variants[ 3 ];
     }
     for (int i = 0; i < iMaxNumLights; ++i)
         if (LightsOn[i] || LightsOff[i]) // Ra: zlikwidowałem wymóg istnienia obu
             iNumLights = i + 1;
+}
+
+bool TAnimModel::Load(cParser *parser, bool ter)
+{ // rozpoznanie wpisu modelu i ustawienie świateł
+	std::string name = parser->getToken<std::string>();
+	std::string texture = parser->getToken<std::string>(false);
+    replace_slashes( name );
+    replace_slashes( texture );
+    assign_model( name, texture, ter );
 
     std::string token;
     do {
@@ -398,13 +423,53 @@ bool TAnimModel::Load(cParser *parser, bool ter)
     return true;
 }
 
+// sets up the instance from the values of a definition which was already taken apart, the way Load() does it from the text
+void TAnimModel::Load( std::string const &Name, std::string const &Texture, TAnimModel const *Twin, glm::vec3 const *Angles, glm::vec3 const *Scale, bool const Transition )
+{
+    if( Twin != nullptr
+     && Twin->pModel != nullptr
+     && ( Twin->m_materialdata.replacable_skins[ 1 ] != null_handle || Texture == "none" ) ) {
+        // the same model with the same skin was located for the twin already.
+        // NOTE: a model or a skin which couldn't be located is searched for and reported for each instance, like it always was
+        m_skintoken = Twin->m_skintoken;
+        m_materialdata = Twin->m_materialdata;
+        pModel = Twin->pModel;
+        LightsOn = Twin->LightsOn;
+        LightsOff = Twin->LightsOff;
+        sm_winter_variant = Twin->sm_winter_variant;
+        sm_spring_variant = Twin->sm_spring_variant;
+        sm_summer_variant = Twin->sm_summer_variant;
+        sm_autumn_variant = Twin->sm_autumn_variant;
+        iNumLights = Twin->iNumLights;
+    }
+    else {
+        auto name { Name };
+        assign_model( name, Texture, false );
+    }
+    // the optional blocks, each with the effect it has in Load()
+    if( Angles != nullptr ) {
+        vAngle = *Angles;
+    }
+    if( Scale != nullptr
+     && Scale->x > 0.0f && Scale->y > 0.0f && Scale->z > 0.0f ) {
+        m_scale.x *= Scale->x;
+        m_scale.y *= Scale->y;
+        m_scale.z *= Scale->z;
+    }
+    if( false == Transition ) {
+        m_transition = false;
+    }
+
+    update_instanceable_flag();
+}
+
 namespace {
 // returns true if this animation type mutates per-instance state on the shared
 // TSubModel tree, which would make batched rendering unsafe. Most animations
 // loaded from .t3d files are global functions of time (clocks, wind, sky) and
 // only transform the local modelview matrix — those are safe to share. Camera-
-// relative billboards also operate purely on the local matrix using whatever
-// modelview the caller pushed, which is exactly per-instance behaviour.
+// relative billboards are not: they're computed on the cpu from the modelview of
+// the drawn instance, which in a batch is only the submodel-local chain.
 // The runtime SetRotate/SetTranslate animations (at_Rotate / at_RotateXYZ /
 // at_Translate) are tied to per-instance iAnimOwner and are unsafe to share.
 // at_Undefined is the type assigned to .t3d submodels declared with `anim: true`
@@ -425,17 +490,42 @@ bool anim_type_unsafe_for_instancing( TAnimType a ) {
     }
 }
 
+// returns true if this animation type depends only on global state (simulation
+// time, wind, sky) and so gives every instance of the model the same local
+// transform. The batch evaluates it once and the per-instance placement comes
+// from the instance matrix, the result is the same as with per-instance drawing.
+bool anim_type_shared_by_instances( TAnimType a ) {
+    switch( a ) {
+    case TAnimType::at_SecondsJump:
+    case TAnimType::at_MinutesJump:
+    case TAnimType::at_HoursJump:
+    case TAnimType::at_Hours24Jump:
+    case TAnimType::at_Seconds:
+    case TAnimType::at_Minutes:
+    case TAnimType::at_Hours:
+    case TAnimType::at_Hours24:
+    case TAnimType::at_Wind:
+    case TAnimType::at_Sky:
+        return true;
+    default:
+        return false;
+    }
+}
+
 // recursively walks a submodel tree and returns true if any submodel declares
 // an animation type that's unsafe to batch, OR carries the runtime "needs
-// animation matrix" flag (iFlags bit 0x4000), which is set whenever the
-// submodel was tagged as animatable in the .t3d file or had WillBeAnimated()
-// called on it during model load. Either signal means the submodel may receive
+// animation matrix" flag (iFlags bit 0x4000) for anything else than an animation
+// shared by all instances. The flag is set whenever the submodel was tagged as
+// animatable in the .t3d file (any `anim:` other than `false`) or had
+// WillBeAnimated() called on it during model load. Such a submodel may receive
 // per-instance event-driven animation commands at runtime, which the GPU-
 // instanced path (one shared submodel tree across all instances) cannot serve.
 bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
     if( Sub == nullptr ) { return false; }
+    // a text display shows the text of its instance, a tree shared by all instances can't do that
+    if( Sub->eType == TP_TEXT ) { return true; }
     if( anim_type_unsafe_for_instancing( Sub->b_Anim ) ) { return true; }
-    if( ( Sub->iFlags & 0x4000 ) != 0 ) { return true; }
+    if( ( ( Sub->iFlags & 0x4000 ) != 0 ) && ( false == anim_type_shared_by_instances( Sub->b_Anim ) ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Child ) ) { return true; }
     if( submodel_tree_blocks_instancing( Sub->Next ) ) { return true; }
     return false;
@@ -443,6 +533,7 @@ bool submodel_tree_blocks_instancing( TSubModel const *Sub ) {
 } // anonymous namespace
 
 int TAnimModel::s_instanceable_total = 0;
+unsigned int TAnimModel::s_instanceable_revoked = 0;
 int TAnimModel::s_classified_total = 0;
 int TAnimModel::s_rejected_no_pmodel = 0;
 int TAnimModel::s_rejected_lights = 0;
@@ -478,6 +569,10 @@ std::shared_ptr<TAnimContainer> TAnimModel::AddContainer(std::string const &Name
 		auto tmp = std::make_shared<TAnimContainer>();
         tmp->Init(tsb);
 		m_animlist.push_back(tmp);
+		// containers are added by events after the instance was loaded and bucketed;
+		// the instanced path skips RaAnimate(), so this instance has to be drawn on its own
+		if( m_instanceable ) { ++s_instanceable_revoked; }
+		m_instanceable = false;
 		return tmp;
     }
 	return nullptr;
@@ -572,11 +667,11 @@ void TAnimModel::on_season_update() {
 
 void TAnimModel::RaPrepare()
 { // ustawia światła i animacje we wzorcu modelu przed renderowaniem egzemplarza
-    bool state; // stan światła
 	if (Global.UpdateMaterials)
 	    on_season_update();
     for (int i = 0; i < iNumLights; ++i)
     {
+        bool state{ false }; // stan światła
         auto const lightmode { static_cast<int>( std::abs( lsLights[ i ] ) ) };
         switch( lightmode ) {
             case ls_On:
@@ -627,11 +722,32 @@ void TAnimModel::RaPrepare()
         }
     }
     TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( this ); //żeby nie robić cudzych animacji
+    // NOTE: scenery models don't pick texture variants of their own, so we clear the seed left by the
+    // last rendered vehicle. instanced draws share a single material bind anyway, which would make
+    // per instance variants inconsistent between batched and individually drawn models
+    TSubModel::iVariantSeed = 0;
     TSubModel::pasText = &asText; // przekazanie tekstu do wyświetlacza (!!!! do przemyślenia)
 
 	for (auto entry : m_animlist) {
 		entry->PrepareModel();
 	}
+}
+
+glm::mat4 const &TAnimModel::rotation_scale() {
+
+    if( ( false == m_rotationscalevalid ) || ( vAngle != m_rotationscaleangles ) || ( m_scale != m_rotationscalescale ) ) {
+        // same order as the per-instance render path
+        glm::mat4 transform( 1.0f );
+        if( vAngle.y != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
+        if( vAngle.x != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
+        if( vAngle.z != 0.0f ) { transform = glm::rotate( transform, glm::radians( vAngle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
+        if( m_scale != glm::vec3( 1.0f ) ) { transform = glm::scale( transform, m_scale ); }
+        m_rotationscale = transform;
+        m_rotationscaleangles = vAngle;
+        m_rotationscalescale = m_scale;
+        m_rotationscalevalid = true;
+    }
+    return m_rotationscale;
 }
 
 int TAnimModel::Flags()
@@ -684,6 +800,9 @@ std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::L
 void TAnimModel::SkinSet( int const Index, material_handle const Material ) {
 
     m_materialdata.replacable_skins[ std::clamp( Index, 1, 4 ) ] = Material;
+    // the instance stays in the bucket of its old skin set, where it would get the textures of the batch
+    if( m_instanceable ) { ++s_instanceable_revoked; }
+    m_instanceable = false;
 }
 
 void TAnimModel::AnimUpdate(double dt)
@@ -703,7 +822,7 @@ void TAnimModel::AnimUpdate(double dt)
 // For non-uniform scale we use the largest axis factor so the bounding sphere
 // fully contains the scaled model — undersizing would cause incorrect culling.
 float
-TAnimModel::radius_() {
+TAnimModel::radius_() const {
 
     if( pModel == nullptr ) { return 0.f; }
     float const max_scale = std::max( { m_scale.x, m_scale.y, m_scale.z } );
@@ -757,13 +876,18 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
     }
     Output << modelfile << ' ';
     // texture
-    auto texturefile { (
-        m_materialdata.replacable_skins[ 1 ] != null_handle ?
-            GfxRenderer->Material( m_materialdata.replacable_skins[ 1 ] )->GetName() :
-            "none" ) };
-    if( texturefile.find( paths::textures ) == 0 ) {
-        // don't include 'textures/' in the path
-        texturefile.erase( 0, std::string{ paths::textures }.size() );
+    // the skin goes out the way it came in. the materials it was turned into can't give it back: they don't tell
+    // a set of skins from a single one, a text for a display from no skin at all, or what a texture was to be generated from
+    auto texturefile { m_skintoken };
+    if( texturefile.empty() ) {
+        texturefile = (
+            m_materialdata.replacable_skins[ 1 ] != null_handle ?
+                GfxRenderer->Material( m_materialdata.replacable_skins[ 1 ] )->GetName() :
+                "none" );
+        if( texturefile.find( paths::textures ) == 0 ) {
+            // don't include 'textures/' in the path
+            texturefile.erase( 0, std::string{ paths::textures }.size() );
+        }
     }
     if( contains( texturefile, ' ' ) ) {
         Output << "\"" << texturefile << "\"" << ' ';
@@ -776,6 +900,23 @@ TAnimModel::export_as_text_( std::ostream &Output ) const {
         Output << "lights ";
         for( int lightidx = 0; lightidx < iNumLights; ++lightidx ) {
             Output << lsLights[ lightidx ] << ' ';
+        }
+    }
+    // colors given to the lights; goes right after the lights, the way it's read
+    if( std::any_of( std::begin( m_lightcolors ), std::begin( m_lightcolors ) + iNumLights, []( glm::vec3 const &Color ) { return Color.r >= 0.f; } ) ) {
+        Output << "lightcolors ";
+        for( int lightidx = 0; lightidx < iNumLights; ++lightidx ) {
+            auto const &color { m_lightcolors[ lightidx ] };
+            if( color.r < 0.f ) {
+                // the light was left with the color the model gives it
+                Output << "-1 ";
+                continue;
+            }
+            auto const component = []( float const Value ) { return std::clamp( static_cast<int>( std::lround( Value * 255.f ) ), 0, 255 ); };
+            Output
+                << std::hex << std::setfill( '0' ) << std::setw( 6 )
+                << ( component( color.r ) << 16 | component( color.g ) << 8 | component( color.b ) )
+                << std::dec << std::setfill( ' ' ) << ' ';
         }
     }
     // potential light transition switch

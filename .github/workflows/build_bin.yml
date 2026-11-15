@@ -27,9 +27,17 @@ jobs:
   # Windows / MSVC
   # ============================================================
 
+  # A newer push to the same branch or pull request cancels the build of the older commit. The
+  # groups are set on the build jobs rather than on the workflow, so a publish job that is already
+  # running is left to finish; with a build cancelled the publish job of that run is skipped. A push
+  # to master gets a group of its own, its commit, so the builds of master are never cancelled.
+
   windows:
     name: Windows x64 / MSVC / ${{ matrix.variant.name }}
     runs-on: windows-2022
+    concurrency:
+      group: ${{ github.workflow }}-windows-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     strategy:
       fail-fast: false
@@ -44,17 +52,26 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Setup Python 3.14
         id: python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
           architecture: "x64"
+
+      # the cab screens are drawn with Pillow; CMake copies this Python's Lib, site-packages included, next to the
+      # executable as python64\Lib, so Pillow has to be installed here to come with the build (as on Linux)
+      - name: Install Pillow for the screens
+        shell: pwsh
+        run: |
+          $pythonExe = "${{ steps.python.outputs.python-path }}"
+          & $pythonExe -m pip install --no-cache-dir Pillow
+          & $pythonExe -c "from PIL import Image; print('Pillow:', Image.__version__)"
 
       - name: Show environment
         shell: pwsh
@@ -78,6 +95,27 @@ jobs:
         run: |
           call setup.bat
 
+      # the unit tests run at the end of the build and load lua51.dll (the Lua screens), but ref/luajit has only its import
+      # library. LuaJIT of the same 2.0 line is built here and put on PATH for them; it doesn't go into the uploaded build
+      - name: Build lua51.dll for the unit tests
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          git init -q "%RUNNER_TEMP%\LuaJIT" || exit /b 1
+          cd /d "%RUNNER_TEMP%\LuaJIT"
+          rem the v2.0 branch of LuaJIT, pinned
+          git fetch -q --depth 1 https://github.com/LuaJIT/LuaJIT.git b83bcba6ea300d4eb16e8257ddf80bcdef1f938b || exit /b 1
+          git checkout -q FETCH_HEAD || exit /b 1
+          cd src
+          rem msvcbuild.bat runs the tools it builds (minilua, buildvm) from the current folder
+          set NoDefaultCurrentDirectoryInExePath=
+          call .\msvcbuild.bat || exit /b 1
+          if not exist lua51.dll exit /b 1
+          mkdir "%RUNNER_TEMP%\lua51"
+          copy /y lua51.dll "%RUNNER_TEMP%\lua51\" || exit /b 1
+          echo %RUNNER_TEMP%\lua51>> "%GITHUB_PATH%"
+
       - name: Configure
         shell: pwsh
         run: |
@@ -100,7 +138,7 @@ jobs:
             --config $env:CONFIG_WIN `
             --parallel
 
-      - name: Copy shaders
+      - name: Copy shaders and translations
         shell: pwsh
         run: |
           $output = "build/bin/$env:CONFIG_WIN"
@@ -116,8 +154,31 @@ jobs:
             -Recurse `
             -Force
 
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$output/lang" | Out-Null
+
+          Copy-Item `
+            -Path "lang/*" `
+            -Destination "$output/lang" `
+            -Recurse `
+            -Force
+
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "$output/python/local" | Out-Null
+
+          Copy-Item `
+            -Path "staticFiles/python/local/*" `
+            -Destination "$output/python/local" `
+            -Recurse `
+            -Force
+
       - name: Upload Windows build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-windows-x64-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
@@ -126,7 +187,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Windows debug symbols
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-windows-x64-symbols-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
@@ -143,26 +204,43 @@ jobs:
   linux:
     name: Linux x64 / GCC
     runs-on: ubuntu-24.04
+    # see the note above the windows job
+    concurrency:
+      group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Setup Python 3.14
         id: python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
 
+      # A mirror that stops answering used to hold this step for over an hour.
+      # Time out each download, retry it, and give up on the whole step early.
       - name: Install Linux dependencies
+        timeout-minutes: 15
         run: |
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "60";' \
+            'Acquire::https::Timeout "60";' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update
 
+          # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
+          # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
           sudo apt-get install -y \
             build-essential \
+            libasound2-dev \
+            libpulse-dev \
+            libpipewire-0.3-dev \
             libgl1-mesa-dev \
             libglew-dev \
             libglfw3-dev \
@@ -171,6 +249,7 @@ jobs:
             libluajit-5.1-dev \
             libserialport-dev \
             libsndfile1-dev \
+            libcurl4-openssl-dev \
             xorg-dev \
             libxkbcommon-dev \
             libwayland-dev \
@@ -188,12 +267,17 @@ jobs:
             https://github.com/kcat/openal-soft.git \
             /tmp/openal-soft
 
+          # the backends are loaded with dlopen at run time (ALSOFT_DLOPEN), so the bundled library needs none of them;
+          # REQUIRE makes a missing header fail the build instead of shipping a library without sound
           cmake \
             -S /tmp/openal-soft \
             -B /tmp/openal-soft/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DALSOFT_EXAMPLES=OFF \
-            -DALSOFT_UTILS=OFF
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_REQUIRE_PIPEWIRE=ON \
+            -DALSOFT_REQUIRE_PULSEAUDIO=ON \
+            -DALSOFT_REQUIRE_ALSA=ON
 
           cmake \
             --build /tmp/openal-soft/build \
@@ -229,7 +313,31 @@ jobs:
           cmake \
             --build build \
             --parallel "$(nproc)"
-            
+
+      # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
+      # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
+      - name: Check the bundled libraries
+        run: |
+          GAME="$(find build/bin -maxdepth 1 -type f -name 'eu07*' -perm -u+x | head -n 1)"
+          test -n "$GAME"
+          echo "Game: $GAME"
+          readelf -d "$GAME" | grep -E 'R(UN)?PATH'
+          readelf -d "$GAME" | grep -q 'Library rpath: \[\$ORIGIN\]'
+          cat build/bin/bundled_libs.txt
+          ldd "$GAME"
+          if ldd "$GAME" | grep -q 'not found'; then
+            echo "::error::the game needs a library that is neither bundled nor in the system"
+            exit 1
+          fi
+          while read -r name; do
+            [ -n "$name" ] || continue
+            loaded="$(ldd "$GAME" | awk -v n="$name" '$1 == n { print $3 }')"
+            if [ -z "$loaded" ] || [ "$(realpath "$loaded")" != "$(realpath "build/bin/$name")" ]; then
+              echo "::error::$name is bundled, but the game loads it from '$loaded'"
+              exit 1
+            fi
+          done < build/bin/bundled_libs.txt
+
       - name: Prepare Linux Python environment
         run: |
           PYTHON_ROOT="$(python -c 'import sys; print(sys.base_prefix)')"
@@ -251,16 +359,96 @@ jobs:
 
           "$PYTHON_HOME/bin/python" -c "from PIL import Image; print('Pillow:', Image.__version__)"
           
-      - name: Copy shaders
+      - name: Copy shaders and translations
         run: |
-          mkdir -p build/bin/shaders
+          mkdir -p build/bin/shaders build/bin/lang build/bin/python/local
           cp -R shaders/. build/bin/shaders/
+          cp -R lang/. build/bin/lang/
+          # the Python 3 version of the module every cab screen builds on; the game data still has the Python 2 one
+          cp -R staticFiles/python/local/. build/bin/python/local/
 
       - name: Upload Linux build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
           path: |
             build/bin/
           if-no-files-found: error
           retention-days: 14
+
+
+  # ============================================================
+  # Public download: release assets need no GitHub account
+  # ============================================================
+
+  publish:
+    name: Publish public download
+    needs: [windows, linux]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          path: dist/maszyna-windows-x64
+
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          path: dist/maszyna-linux-x64
+
+      - name: Pack
+        run: |
+          cd dist
+
+          find maszyna-linux-x64 -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
+          if [ -d maszyna-linux-x64/linuxpython64/bin ]; then
+            chmod +x maszyna-linux-x64/linuxpython64/bin/*
+          fi
+
+          (cd maszyna-windows-x64 && zip -qr9 ../maszyna-windows-x64.zip .)
+          tar -czf maszyna-linux-x64.tar.gz -C maszyna-linux-x64 .
+          ls -la
+
+      - name: Publish rolling release of the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          slug="$(printf '%s' "$BRANCH" | tr '/ ' '--' | tr -cd '[:alnum:]._-')"
+          tag="build-$slug"
+          base="${{ github.server_url }}/${{ github.repository }}/releases/download/$tag"
+
+          notes="$(printf '%s\n' \
+            "Automatic build of branch \`$BRANCH\`, commit $SHA, replaced by every push to the branch." \
+            "" \
+            "Download without a GitHub account:" \
+            "- Windows: $base/maszyna-windows-x64.zip" \
+            "- Linux: $base/maszyna-linux-x64.tar.gz" \
+            "" \
+            "Unpack over a MaSzyna installation (the game data isn't included). Build log: $RUN_URL")"
+
+          gh release delete "$tag" --yes --cleanup-tag || true
+          gh release create "$tag" \
+            dist/maszyna-windows-x64.zip \
+            dist/maszyna-linux-x64.tar.gz \
+            --target "$SHA" \
+            --prerelease \
+            --latest=false \
+            --title "Build: $BRANCH" \
+            --notes "$notes"
+
+          echo "### Public download" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Windows: $base/maszyna-windows-x64.zip" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Linux: $base/maszyna-linux-x64.tar.gz" >> "$GITHUB_STEP_SUMMARY"

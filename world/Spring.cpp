@@ -13,19 +13,18 @@ http://mozilla.org/MPL/2.0/.
 void TSpring::Init(double nKs, double nKd) {
     Ks = nKs;
     Kd = nKd;
-    ks = Ks;
-    kd = Kd;
+    ks = static_cast<float>(Ks);
+    kd = static_cast<float>(Kd);
 }
 
-glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) {
+glm::dvec3 TSpring::ComputateForces(glm::dvec3 const &pPosition1, glm::dvec3 const &pPosition2) const {
 	glm::vec3 springForce;
     //		p1 = &system[spring->p1];
     //		p2 = &system[spring->p2];
     //		VectorDifference(&p1->pos,&p2->pos,&deltaP);	// Vector distance
     auto deltaP = pPosition1 - pPosition2;
     //		dist = VectorLength(&deltaP);					// Magnitude of deltaP
-	auto dist = glm::length(deltaP);
-    if( dist > restLen ) {
+    if( auto dist = glm::length(deltaP); dist > restLen ) {
 
         //		Hterm = (dist - spring->restLen) * spring->Ks;	// Ks * (dist - rest)
         auto Hterm = ( dist - restLen ) * Ks; // Ks * (dist - rest)

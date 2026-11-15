@@ -40,8 +40,8 @@ void TCamera::Reset() {
 
 
 void TCamera::OnCursorMove(double x, double y) {
-    m_rotationoffsets.x += y;
-    m_rotationoffsets.y += x;
+    m_rotationoffsets.x += static_cast<float>(y);
+    m_rotationoffsets.y += static_cast<float>(x);
 }
 
 static double ComputeAxisSpeed(double param, double walkspeed, double maxspeed, double threshold) {
@@ -142,13 +142,13 @@ void TCamera::Update()
     // update rotation
     auto const rotationfactor { std::min( 1.0, 20 * deltatime ) };
 
-    Angle.y -= m_rotationoffsets.y * rotationfactor;
-    m_rotationoffsets.y *= 1.0 - rotationfactor;
-    Angle.y = std::remainder(Angle.y, 2.0 * M_PI);
+    Angle.y -= static_cast<float>(m_rotationoffsets.y * rotationfactor);
+    m_rotationoffsets.y *= static_cast<float>(1.0 - rotationfactor);
+    Angle.y = static_cast<float>(std::remainder(Angle.y, 2.0 * M_PI));
 
     // Limit the camera pitch to +/- 90°.
-    Angle.x = std::clamp(Angle.x - m_rotationoffsets.x * rotationfactor, -M_PI_2, M_PI_2);
-    m_rotationoffsets.x *= 1.0 - rotationfactor;
+    Angle.x = static_cast<float>(std::clamp(Angle.x - m_rotationoffsets.x * rotationfactor, -M_PI_2, M_PI_2));
+    m_rotationoffsets.x *= static_cast<float>(1.0 - rotationfactor);
 
     // update position
     if( m_owner == nullptr
@@ -172,11 +172,7 @@ void TCamera::Update()
         // attached movement position update
         auto movement { Velocity * -2.0 };
         movement.y = -movement.y;
-        auto const *owner { (
-            m_owner->Mechanik ?
-                m_owner->Mechanik :
-                m_owner->ctOwner ) };
-        if( owner && owner->Occupied()
+        if( auto const *owner { ( m_owner->Mechanik ? m_owner->Mechanik : m_owner->ctOwner ) }; owner && owner->Occupied()
          && owner->Occupied()->CabOccupied < 0 ) { 
             movement *= -1.f;
             movement.y = -movement.y;
@@ -194,7 +190,7 @@ void TCamera::Update()
     }
 }
 
-bool TCamera::SetMatrix( glm::dmat4 &Matrix ) {
+bool TCamera::SetMatrix( glm::dmat4 &Matrix ) const {
 
     Matrix = glm::rotate(Matrix, -(double)Angle.x, glm::dvec3(1, 0, 0));
 	Matrix = glm::rotate(Matrix, -(double)Angle.y, glm::dvec3(0, 1, 0)); // w zewnętrznym widoku: kierunek patrzenia
@@ -215,12 +211,12 @@ void TCamera::RaLook()
 { // zmiana kierunku patrzenia - przelicza Yaw
     auto where = LookAt - Pos /*+ Math3D::vector3(0, 3, 0)*/; // trochę w górę od szyn
     if( where.x != 0.0 || where.z != 0.0 ) {
-        Angle.y = atan2( -where.x, -where.z ); // kąt horyzontalny
+        Angle.y = static_cast<float>(atan2( -where.x, -where.z )); // kąt horyzontalny
         m_rotationoffsets.y = 0.0;
     }
     double l = glm::length(where);
     if( l > 0.0 ) {
-        Angle.x = asin( where.y / l ); // kąt w pionie
+        Angle.x = static_cast<float>(asin( where.y / l )); // kąt w pionie
         m_rotationoffsets.x = 0.0;
     }
 };

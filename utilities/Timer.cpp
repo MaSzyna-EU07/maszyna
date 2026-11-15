@@ -16,7 +16,8 @@ namespace Timer {
 
 subsystem_stopwatches subsystem;
 
-double DeltaTime = 0.0, DeltaRenderTime = 0.0;
+double DeltaTime = 0.0;
+double DeltaRenderTime = 0.0;
 double fFPS{ 0.0f };
 double fLastTime{ 0.0f };
 DWORD dwFrames{ 0 };
@@ -25,6 +26,17 @@ double fRenderTime{ 0.0 };
 double fSoundTimer{ 0.0 };
 double fSinceStart{ 0.0 };
 double override_delta = -1.0f;
+
+namespace {
+
+// when set (test mode), every frame lasts this long, see set_fixed_step()
+double &fixed_step()
+{
+	static double step{0.0};
+	return step;
+}
+
+} // namespace
 
 double GetTime()
 {
@@ -52,6 +64,11 @@ void set_delta_override(double t)
 	override_delta = t;
 }
 
+void set_fixed_step(double t)
+{
+	fixed_step() = t;
+}
+
 void ResetTimers()
 {
     UpdateTimers( Global.iPause != 0 );
@@ -59,7 +76,9 @@ void ResetTimers()
     DeltaRenderTime = 0.0;
 }
 
-uint64_t fr, count, oldCount;
+uint64_t fr;
+uint64_t count;
+uint64_t oldCount;
 
 void UpdateTimers(bool pause)
 {
@@ -73,10 +92,16 @@ void UpdateTimers(bool pause)
 	fr = 1000000000;
 #endif
     DeltaRenderTime = double(count - oldCount) / double(fr);
+    auto const fixedstep{fixed_step()};
+    if (fixedstep > 0.0)
+    {
+        // the frame lasts exactly as long as said, however long it took to compute; the time speed doesn't apply
+        DeltaRenderTime = fixedstep;
+    }
     fRenderTime += DeltaRenderTime;
     if (!pause)
     {
-        DeltaTime = Global.fTimeSpeed * DeltaRenderTime;
+        DeltaTime = (fixedstep > 0.0 ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
         fSoundTimer += DeltaTime;
         if (fSoundTimer > 0.1)
             fSoundTimer = 0.0;
@@ -92,7 +117,7 @@ void UpdateTimers(bool pause)
     oldCount = count;
     // Keep track of the time lapse and frame count
 #if __unix__
-	double fTime = (double)(count / 1000000000);
+	auto fTime = (double)(count / 1000000000);
 #elif _WIN32_WINNT >= _WIN32_WINNT_VISTA
     double fTime = ::GetTickCount64() * 0.001f; // Get current time in seconds
 #elif _WIN32

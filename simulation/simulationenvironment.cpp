@@ -20,6 +20,22 @@ world_environment Environment;
 
 } // simulation
 
+namespace {
+
+// turbidity of the sky under the given cloud cover
+float
+turbidity_of( float const Overcast ) {
+
+    if( Overcast <= 0.20 ) { return 4.f; }
+    if( Overcast <= 0.40 ) { return 5.f; }
+    if( Overcast <= 0.60 ) { return 6.f; }
+    if( Overcast <= 0.70 ) { return 7.f; }
+    if( Overcast <= 0.80 ) { return 8.f; }
+    return 9.f;
+}
+
+} // namespace
+
 void
 world_environment::on_daylight_change() {
 
@@ -46,11 +62,10 @@ world_environment::compute_season( int const Yearday ) {
         { 341, "autumn:" },
         { 366, "winter:" } };
     auto const lookup =
-        std::lower_bound(
-            std::begin( seasonsequence ), std::end( seasonsequence ),
+        std::ranges::lower_bound(
+            seasonsequence,
             std::clamp( Yearday, 1, seasonsequence.back().first ),
-            []( dayseasonpair const &Left, const int Right ) {
-                return Left.first < Right; } );
+            {}, &dayseasonpair::first );
     
     Global.Season = lookup->second;
     // season can affect the weather so if it changes, re-calculate weather as well
@@ -59,7 +74,7 @@ world_environment::compute_season( int const Yearday ) {
 
 // calculates current weather
 void
-world_environment::compute_weather() {
+world_environment::compute_weather() const {
 
     Global.Weather = Global.Overcast <= 0.10 ? "clear:" :
 	                 Global.Overcast <= 0.50 ? "scattered:" :
@@ -69,17 +84,7 @@ world_environment::compute_weather() {
 	                 Global.AirTemperature > 1 ? "rain:" :
 	                                             "snow:";
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
-	                    Global.Overcast <= 0.20 ? 4 :
-	                    Global.Overcast <= 0.30 ? 5 :
-	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 5 :
-	                    Global.Overcast <= 0.60 ? 5 :
-	                    Global.Overcast <= 0.70 ? 6 :
-	                    Global.Overcast <= 0.80 ? 7 :
-	                    Global.Overcast <= 0.90 ? 8 :
-	                    Global.Overcast > 0.90  ? 9 :
-	                                              9;
+    Global.fTurbidity = turbidity_of( Global.Overcast );
 }
 
 void
@@ -140,7 +145,7 @@ world_environment::update() {
         m_lightintensity = moonlightlevel;
         // if the moon is up, it overrides the twilight
         twilightfactor = 0.0f;
-        keylightcolor = glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 202.0f / 255.0f );
+        keylightcolor = glm::vec3( 1.0f, 0.9490196f, 0.7921569f );
     }
     else {
         // regular situation with sun as the key light
@@ -152,8 +157,8 @@ world_environment::update() {
         // include 'golden hour' effect in twilight lighting
         float const duskfactor = 1.25f - std::clamp( Global.SunAngle, 0.0f, 18.0f ) / 18.0f;
 		keylightcolor = glm::mix(
-            glm::vec3( 255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f ),
-            glm::vec3( 235.0f / 255.0f, 120.0f / 255.0f, 36.0f / 255.0f ),
+            glm::vec3( 1.0f, 0.9490196f, 0.9058824f ), // 255, 242, 231 / 255
+            glm::vec3( 0.9215686f, 0.4705882f, 0.1411765f ), // 235, 120, 36 / 255
             duskfactor );
     }
     // ...retrieve current sky colour and brightness...
@@ -169,9 +174,8 @@ world_environment::update() {
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
-    keylightcolor = keylightcolor * diffuselevel;
-    Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
-    Global.DayLight.specular = glm::vec4( keylightcolor * 0.85f, diffuselevel );
+    Global.DayLight.diffuse = glm::vec4( keylightcolor * diffuselevel, Global.DayLight.diffuse.a );
+    Global.DayLight.specular = glm::vec4( keylightcolor * diffuselevel * 0.85f, diffuselevel );
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)
@@ -197,7 +201,7 @@ world_environment::update() {
     if( true == (FreeFlyModeFlag || Global.CabWindowOpen)
      && Global.Weather == "rain:" ) {
         if( m_rainsound.is_combined() ) {
-            m_rainsound.pitch( Global.Overcast - 1.0 );
+            m_rainsound.pitch( static_cast<float>(Global.Overcast - 1.0) );
         }
         m_rainsound
             .gain( m_rainsound.m_amplitudeoffset + m_rainsound.m_amplitudefactor * 1.f )
@@ -229,12 +233,12 @@ world_environment::update_wind() {
 
     m_wind.change_time -= timedelta;
     if( m_wind.change_time < 0 ) {
-        m_wind.change_time = Random( 5, 15 );
-        m_wind.velocity_change = Random( -0.2, 0.2 );
+        m_wind.change_time = static_cast<float>(Random( 5, 15 ));
+        m_wind.velocity_change = static_cast<float>(Random( -0.2, 0.2 ));
         if( Random() < 0.05 ) {
             // changes in wind direction should be less frequent than changes in wind speed
             // TBD, TODO: configuration-driven direction change frequency
-            m_wind.azimuth_change = Random( -5, 5 );
+            m_wind.azimuth_change = static_cast<float>(Random( -5, 5 ));
         }
         else {
             // keep direction change periods short, to avoid too drastic changes in direction

@@ -24,7 +24,7 @@ public:
         update_frustum() { update_frustum( m_projection, m_modelview ); }
     inline
     void
-        update_frustum(glm::mat4 frustumtest_proj) {
+        update_frustum(glm::mat4 const &frustumtest_proj) {
             update_frustum(frustumtest_proj, m_modelview); }
     void
         update_frustum( glm::mat4 const &Projection, glm::mat4 const &Modelview );

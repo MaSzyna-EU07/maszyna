@@ -1,0 +1,189 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#pragma once
+
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+// description of an *.inc scenery template: what the template is, and what its (pN) parameters mean.
+// it's kept in the template file itself, as a YAML document made of the comment lines starting with "//$e", e.g.
+//   //$e version: 1
+//   //$e name: Semaphore, 5 lights
+//   //$e params:
+//   //$e   - {id: 1, role: name, label: Name}
+// being a comment it's invisible to the scenery parser and to the older tools
+struct include_parameter
+{
+	int id{0}; // number of the (pN) placeholder
+	std::string role{"free"}; // what the value is; one of editor_includes::roles
+	std::string label; // name to show to the user
+	std::string value; // default value
+};
+
+struct include_info
+{
+	std::string name;
+	std::string category;
+	std::string description;
+	std::string switch_hand; // a switch drive: side of the diverging track, left or right, looking from the start of the switch
+	std::string switch_drive; // and the side the drive stands on
+	bool switch_default{false}; // the drive put with a new switch until another is picked
+	double switch_height{0.0};
+	double turntable_length{0.0};
+	int turntable_angles{0};
+	int turntable_positions{0};
+	std::string signal_kind;
+	std::string signal_mount;
+	std::string signal_lamps;
+	std::string signal_lean;
+	std::string signal_read;
+	int signal_arms{0}; // of a semaphore: 1 or 2, 0 for a signal with lights or a disc
+	// m, of the zero of the model of the signal over the rail heads; under them below 0
+	double signal_height{0.0};
+	// m, how deep the model reaches under its zero, its foundation: with it the editor lowers a signal whose bottom would hang over the
+	// ground; none, it isn't
+	std::optional<double> signal_depth;
+	// the aspects the signal shows, each by its name in the signalling instruction (Sr1, S2, Od1...) with its event, the part after
+	// "(p1)_", in the order of the description. empty where the description doesn't list them
+	std::vector<std::pair<std::string, std::string>> signal_aspects;
+	// of a warning disc: its event for each speed class of the signal after it (stop, vmax, 100, 60, 40)
+	std::vector<std::pair<std::string, std::string>> signal_repeats;
+	// an indicator put on a signal: its sign (W24, W1, I...), where it goes, "head" under the lights of the signal, one under another,
+	// or "foot" at the foot of the signal, the model having its place by it built in, and its events by name (on, off, P, 60...), the
+	// part after "(p1)_"
+	std::string indicator_sign;
+	std::string indicator_place;
+	std::vector<std::pair<std::string, std::string>> indicator_events;
+	std::vector<include_parameter> parameters;
+
+	// description of specified parameter, created if there's none
+	include_parameter &parameter(int Id);
+};
+
+namespace editor_includes
+{
+
+// recognized parameter roles. "free" is a value typed in by the user, with no meaning to the editor;
+// the placement roles (pos.*, rot.*) and "name" are the ones the editor can fill in on its own
+extern std::vector<std::string> const roles;
+
+// reads description of specified template, located in the scenery directory. a template without the description
+// yields an empty one. returns: false if the file can't be read or its description isn't a valid YAML document
+bool load(std::string const &File, include_info &Info, std::string &Error);
+// stores provided description in specified template. entries of the existing description which aren't
+// a part of include_info are preserved. returns: false if the file can't be updated
+bool save(std::string const &File, include_info const &Info, std::string &Error);
+// highest number of (pN) placeholder used by specified template, 0 if it has none
+int parameter_count(std::string const &File);
+// the speeds the events of a signal template set it to show, by their SetVelocity: of the signal itself, km/h, -1 the highest
+// allowed, 20 the substitute signal. returns: false if the file can't be read
+bool signal_speeds(std::string const &File, std::vector<int> &Speeds);
+// the names of the events the template defines, as they're written after "event", lower case. returns: false if the file can't be read
+bool event_names(std::string const &File, std::vector<std::string> &Names);
+// the aspects of a block signal of the template: 4 where its events give S3, the green light flashing with the next signal at S5,
+// the warning two signals ahead, else 3. returns: 0 if the file can't be read
+int block_aspects(std::string const &File);
+// sets roles of the parameters whose use in the template makes their meaning clear. roles already set are left alone
+void suggest(std::string const &File, include_info &Info);
+// true if value of a parameter with specified role is supplied by the editor when the template is placed
+bool automatic(std::string const &Role);
+// true if the description has everything it takes to place the template straight from the node bank: a name, and
+// either a default value or a role filled in by the editor for each of specified number of parameters.
+// optionally tells what is missing
+bool complete(include_info const &Info, int Parameters, std::string *Issue = nullptr);
+// builds include directive which places specified template. Location and Yaw are the placement to pass through
+// the parameters with matching roles, in the coordinates of the place the directive goes to; without Yaw the
+// rotation parameters receive their default values
+std::string directive(std::string const &File, include_info const &Info, int Parameters, glm::dvec3 const &Location, std::optional<float> Yaw, std::string const &Track = {}, glm::dvec2 const &Tilt = glm::dvec2{0.0}, std::map<std::string, std::string> const &Values = {});
+std::string substitute(std::string const &Text, std::vector<std::string> const &Values);
+
+// splits include directive into the name of the included file and the values of the parameters, both as they're
+// written. returns: false if the text isn't a complete include directive
+bool parse_directive(std::string const &Directive, std::string &File, std::vector<std::string> &Values);
+// builds include directive out of the name of the included file and the values of the parameters
+std::string compose_directive(std::string const &File, std::vector<std::string> const &Values);
+// text of a number passed as a parameter value
+std::string number(double Value);
+std::string normalized(std::string File);
+// number of the parameter with specified role, 0 if the description has none
+int parameter_with_role(include_info const &Info, std::string const &Role);
+
+// marks node bank template which stands for a scenery template rather than for definition of a single node
+extern std::string const directive_mark;
+
+} // namespace editor_includes
+
+// *.inc template found in the scenery directory
+struct include_entry
+{
+	std::string file; // name of the template, relative to the scenery directory
+	std::string name; // from the description
+	std::string category;
+	bool described{false};
+	bool complete{false}; // can be placed from the node bank, see editor_includes::complete()
+	std::string issue; // what keeps the template out of the node bank
+	std::shared_ptr<std::string> statement; // node bank template standing for the include
+};
+
+// the scenery templates available to the editor: every *.inc file in the scenery directory. the templates whose
+// descriptions are complete are offered by the node bank
+class editorIncludeBank
+{
+  public:
+	~editorIncludeBank();
+	// starts looking through the scenery directory for the templates in the background, unless they were found already
+	void start();
+	// looks through the scenery directory again in the background, for the templates added or changed outside of the editor
+	void rescan();
+	// takes the templates found in the background once the search is over; true if it took them
+	bool poll();
+	// waits for the templates being looked for, or looks for them if they weren't yet
+	void wait();
+	bool scanned() const
+	{
+		return m_scanned;
+	}
+	bool searching() const
+	{
+		return m_search != nullptr;
+	}
+	std::vector<include_entry> const &entries() const
+	{
+		return m_entries;
+	}
+	// indices of the entries offered by the node bank, ordered by category and name
+	std::vector<std::size_t> const &ready() const
+	{
+		return m_ready;
+	}
+	// reads description of specified template again, after it was changed
+	void update(std::string const &File);
+	// changes with each change of the entries
+	int revision() const
+	{
+		return m_revision;
+	}
+
+  private:
+	struct search;
+
+	void index();
+
+	std::shared_ptr<search> m_search; // under way in the background
+	std::vector<include_entry> m_entries; // sorted by file name
+	std::vector<std::size_t> m_ready;
+	bool m_scanned{false};
+	int m_revision{0};
+};
+
+extern editorIncludeBank EditorIncludes;

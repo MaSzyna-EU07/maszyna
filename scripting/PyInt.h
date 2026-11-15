@@ -80,8 +80,8 @@ class render_task
 	render_task(PyObject *Renderer, std::shared_ptr<dictionary_source> Input, std::shared_ptr<python_rt> Target) : m_renderer(Renderer), m_input(Input), m_target(Target) {}
 	// methods
 	void run();
-	void upload();
-	void cancel();
+	void upload() const;
+	void cancel() const;
 	auto target() const -> std::shared_ptr<python_rt>
 	{
 		return m_target;
@@ -120,7 +120,7 @@ class python_taskqueue
 	// acquires the python gil and sets the main thread as current
 	void acquire_lock();
 	// releases the python gil and swaps the main thread out
-	void release_lock();
+	void release_lock() const;
 
 	void update();
 
@@ -131,8 +131,8 @@ class python_taskqueue
 	using rendertask_sequence = threading::lockable<std::deque<std::shared_ptr<render_task>>>;
 	using uploadtask_sequence = threading::lockable<std::deque<std::shared_ptr<render_task>>>;
 	// methods
-	auto fetch_renderer(std::string const Renderer) -> PyObject *;
-	void run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> &Exit);
+	auto fetch_renderer(std::string const &Renderer) -> PyObject *;
+	void run(GLFWwindow *Context, rendertask_sequence &Tasks, uploadtask_sequence &Upload_Tasks, threading::condition_variable &Condition, std::atomic<bool> const &Exit);
 	void error();
 
 	// members

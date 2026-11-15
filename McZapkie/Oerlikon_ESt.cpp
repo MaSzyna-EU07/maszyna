@@ -16,6 +16,11 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "Oerlikon_ESt.h"
 #include "utilities/utilities.h"
 
+// wstepny nacisk sprezyn na glowny przyrzad rozrzadczy, wyrazony jako roznica cisnien ZS - PG [bar]
+static double const dPSprezyny = 0.21;
+// najmniejszy stopien hamowania w cylindrze [bar] (tablica 3-9, proby 12 i 22: 0,25-0,30)
+static double const pStopnia = 0.28;
+
 double d2A( double const d )
 {
     return d * d * 0.7854 / 1000.0;
@@ -211,17 +216,18 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     double dV{ 0.0 };
     double dV1{ 0.0 };
 
-    double const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
+    auto const nastG = static_cast<double>(BrakeDelayFlag & bdelay_G);
 
     // sprawdzanie stanu
     CheckState(BCP, dV1);
     CheckReleaser(dt);
 
     // luzowanie
+    double const cel{ CelBCP( CVP, VVP ) };
     if ((BrakeStatus & b_hld) == b_off)
         dV =
             PF(0.0, BCP, Nozzles[dTO] * nastG + (1.0 - nastG) * Nozzles[dOO])
-            * dt * (0.1 + 4.9 * std::min(0.2, BCP - ((CVP - 0.05 - VVP) * BVM + 0.1)));
+            * dt * (0.1 + 4.9 * std::min(0.2, BCP - (cel > 0.0 ? cel + 0.1 : 0.0))); // bez stopnia luzuje do zera
     else
         dV = 0.0;
     //  BrakeCyl.Flow(-dV);
@@ -229,7 +235,7 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     if ( (BrakeStatus & b_on) == b_on && Przekladniki[1]->P() * HBG300 < MaxBP )
         dV =
             PF( BVP, BCP, Nozzles[dTN] * (nastG + 2.0 * (BCP < Podskok ? 1.0 : 0.0)) + Nozzles[dON] * (1.0 - nastG) )
-            * dt * (0.1 + 4.9 * std::min( 0.2, (CVP - 0.05 - VVP) * BVM - BCP ) );
+            * dt * (0.1 + 4.9 * std::min( 0.2, cel - BCP ) );
     else
         dV = 0;
     //  BrakeCyl.Flow(-dV);
@@ -294,8 +300,9 @@ double TNESt3::GetPF( double const PP, double const dt, double const Vel ) // pr
     return dV - dV1;
 }
 
-void TNESt3::EStParams( double const i_crc ) // parametry charakterystyczne dla ESt
+void TNESt3::EStParams( double const /*i_crc*/ ) const // parametry charakterystyczne dla ESt
 {
+	// no effect for this device type
 }
 
 void TNESt3::Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF )
@@ -312,16 +319,29 @@ void TNESt3::Init( double const PP, double const HPP, double const LPP, double c
     Miedzypoj->CreateCap(5.0);
     Miedzypoj->CreatePress(PP);
 
-    BVM = 1.0 / (HPP - 0.05 - LPP) * MaxBP;
+    BVM = 1.0 / (HPP - dPSprezyny - LPP) * MaxBP;
 
     BrakeDelayFlag = BDF;
 
     Zamykajacy = false;
 
-    if ( typeid(*FM) == typeid(TDisk1) || typeid(*FM) == typeid(TDisk2) ) // jesli zeliwo to schodz
+    auto const &frictionmaterial { *FM };
+    auto const &frictionmaterialtype { typeid( frictionmaterial ) };
+    if ( frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2) ) // jesli zeliwo to schodz
         RapidStaly = true;
     else
         RapidStaly = false;
+}
+
+double TNESt3::GetRapidRatio(double const Vel) const
+{
+    // ESt3 has no rapid relay, and with disc brakes the rapid step stays engaged at all speeds
+    if( ( PrzekRapid == nullptr ) || RapidStaly ) {
+        return 1.0;
+    }
+    // a braking vehicle comes from above, so the step is still engaged down to the speed
+    // at which GetPF() drops it, not the one at which it engages
+    return ( Vel < 50.0 ? 1.0 / PrzekRapid->GetRapidMult() : 1.0 );
 }
 
 double TNESt3::GetCRP()
@@ -331,9 +351,26 @@ double TNESt3::GetCRP()
     //  return Miedzypoj.P;
 }
 
-void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrzadczy
+double TNESt3::GetBrakeRatio( double const Ratio ) const // udzial cisnienia w cylindrze dla udzialu spadku w PG
 {
-    double const BVP{ BrakeRes->P() }; //-> tu ma byc komora rozprezna
+    if( MaxBP <= 0.0 || BVM <= 0.0 ) {
+        return Ratio;
+    }
+    // pelny spadek sluzbowy w PG (HPP - LPP), odtworzony z przelozenia
+    double const spadek{ MaxBP / BVM + dPSprezyny };
+    double const cel{ ( Ratio * spadek - dPSprezyny ) * BVM };
+    return ( cel > 0.0 ? std::max( cel, pStopnia ) / MaxBP : 0.0 );
+}
+
+double TNESt3::CelBCP( double const CVP, double const VVP ) const // docelowe cisnienie w cylindrze
+{
+    double const cel{ ( CVP - dPSprezyny - VVP ) * BVM };
+    // gdy zawor hamuje, nie daje mniej niz najmniejszy stopien
+    return ( cel > 0.0 ? std::max( cel, pStopnia ) : cel );
+}
+
+void TNESt3::CheckState(double const BCP, double & /*dV1*/) // glowny przyrzad rozrzadczy
+{
     double const VVP{ ValveRes->P() };
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -342,27 +379,26 @@ void TNESt3::CheckState(double const BCP, double &dV1) // glowny przyrzad rozrza
         Przys_blok = false;
 
     // sprawdzanie stanu
-    // if ((BrakeStatus and 1)=1)and(BCP>0.25)then
-    if (VVP + 0.01 + BCP / BVM < CVP - 0.05 && Przys_blok)
+    if (double const cel{ CelBCP( CVP, VVP ) }; BCP < cel - 0.01 * BVM && Przys_blok)
         BrakeStatus |= b_on | b_hld; // hamowanie stopniowe;
-    else if (VVP - 0.01 + (BCP - 0.1) / BVM > CVP - 0.05)
+    else if (BCP - 0.1 > cel + 0.01 * BVM)
         BrakeStatus &= ~( b_on | b_hld ); // luzowanie;
-    else if (VVP + BCP / BVM > CVP - 0.05)
+    else if (BCP > cel)
         BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-    else if (VVP + (BCP - 0.1) / BVM < CVP - 0.05 && BCP > 0.25) // zatrzymanie luzowania
+    else if (BCP - 0.1 < cel && BCP > 0.25) // zatrzymanie luzowania
         BrakeStatus |= b_hld;
 
     if( ( BrakeStatus & b_hld ) == 0 )
         SoundFlag |= sf_CylU;
 
-    if (VVP + 0.10 < CVP && BCP < 0.25) // poczatek hamowania
-        if (false == Przys_blok)
-        {
-            ValveRes->CreatePress(0.1 * VVP);
-            SoundFlag |= sf_Acc;
-            ValveRes->Act();
-            Przys_blok = true;
-        }
+    // poczatek hamowania
+    if (VVP + 0.10 < CVP && BCP < 0.25 && false == Przys_blok)
+    {
+        ValveRes->CreatePress(0.1 * VVP);
+        SoundFlag |= sf_Acc;
+        ValveRes->Act();
+        Przys_blok = true;
+    }
 
     if (BCP > 0.5)
         Zamykajacy = true;
@@ -378,13 +414,13 @@ void TNESt3::CheckReleaser(double const dt) // odluzniacz
     // odluzniacz automatyczny
     if ((BrakeStatus & b_rls) == b_rls)
     {
-        CntrlRes->Flow(PF(CVP, 0, 0.02) * dt);
+        CntrlRes->Flow(PF(CVP, 0, 0.0049) * dt); // ZS 15 l z 5,0 do 0,4 bar w 23 s (proba odbioru nr 27)
         if (CVP < VVP + 0.3 || false == autom)
             BrakeStatus &= ~b_rls;
     }
 }
 
-double TNESt3::CVs(double const BP) // napelniacz sterujacego
+double TNESt3::CVs(double const /*BP*/) const // napelniacz sterujacego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -398,7 +434,7 @@ double TNESt3::CVs(double const BP) // napelniacz sterujacego
         return Nozzles[dSm];
 }
 
-double TNESt3::BVs(double const BCP) // napelniacz pomocniczego
+double TNESt3::BVs(double const BCP) const // napelniacz pomocniczego
 {
     double const CVP{ CntrlRes->P() };
     double const MPP{ Miedzypoj->P() };
@@ -447,6 +483,18 @@ void TNESt3::SetLP(double const TM, double const LM, double const TBP)
 void TNESt3::SetLBP(double const P)
 {
     LBP = P;
+}
+
+void TNESt3::ScaleNozzlesForAL2() // dysze cylindra przy przekladniku AL2
+{
+    if( PrzekCiagly == nullptr ) {
+        return;
+    }
+    // dysze cylindra skalibrowane na komore impulsowa przekladnika AL2 (1 l) wg czasow z tablicy 3-9
+    Nozzles[dON] *= 0.914;
+    Nozzles[dTN] *= 0.885;
+    Nozzles[dOO] *= 0.82;
+    Nozzles[dTO] *= 0.8;
 }
 
 void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie dysz (rozmiaru ZR)
@@ -547,7 +595,7 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     { // dON,dOO,dTN,dTO,dP,dS
         Nozzles[dON] = 3.7;
         Nozzles[dOO] = 2.50;
-        Nozzles[dTN] = 1.65;
+        Nozzles[dTN] = 1.62;
         Nozzles[dTO] = 1.39;
         Nozzles[dP] = 2.65;
         Nozzles[dPd] = 1.80;
@@ -636,15 +684,18 @@ void TNESt3::SetSize( int const size, std::string const &params ) // ustawianie 
     Nozzles[dSd] = 1.1;
     Nozzles[dSm] = 0.9;
 
+    ScaleNozzlesForAL2();
+
     // przeliczanie z mm^2 na l/m
-    for (int i = 0; i < dMAX; ++i)
+    for (auto &nozzle : Nozzles)
     {
-        Nozzles[i] = d2A(Nozzles[i]); //(/1000^2*pi/4*1000)
+        nozzle = d2A(nozzle); //(/1000^2*pi/4*1000)
     }
     for (int i = 1; i < 4; ++i)
     {
         Przekladniki[i]->BrakeRes = BrakeRes;
-        Przekladniki[i]->CreateCap(i);
+        // komora impulsowa przekladnika AL2 ma 1 l
+        Przekladniki[i]->CreateCap( ( Przekladniki[i] == PrzekCiagly ) ? 1.0 : i );
         Przekladniki[i]->CreatePress(BrakeCyl->P());
         if (i < 3)
             Przekladniki[i]->Next = Przekladniki[i + 1];

@@ -54,6 +54,8 @@ private:
 	scenery_desc *selected_scenery = nullptr;
 	trainset_desc *selected_trainset = nullptr;
 	deferred_image placeholder_mini;
+	// a vehicle dropped on a gap between the vehicles of a trainset: put in there once they're all drawn, not while they are
+	std::function<void()> m_drop;
 
 	void draw_scenery_list();
 	void draw_scenery_info();
@@ -67,6 +69,8 @@ private:
 	void open_link(const std::string &link);
 	void draw_trainset(trainset_desc &trainset);
 	void draw_droptarget(trainset_desc &trainset, int position);
+	void drop_new_vehicle(trainset_desc &trainset, int position, skin_set const *Skin);
+	void drop_moved_vehicle(trainset_desc &trainset, int position, vehicle_moved const &Moved);
 	void purge_selected_trainset();
 };
 } // namespace ui

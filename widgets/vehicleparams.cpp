@@ -60,7 +60,7 @@ void ui::vehicleparams_panel::draw_mini(const TMoverParameters &mover)
 
 	if (ImGui::BeginChild("mini", ImVec2(x, y)))
 	{
-		ImGui::Image(reinterpret_cast<void *>(tex.get_id()), ImVec2(x, y), ImVec2(0, 1), ImVec2(1, 0));
+		ImGui::Image((ImTextureID)(intptr_t)(tex.get_id()), ImVec2(x, y), ImVec2(0, 1), ImVec2(1, 0));
 
 		if (mover.Pantographs[end::rear].is_active)
 			draw_infobutton("╨╨╨", ImVec2(126, 10));
@@ -129,7 +129,7 @@ void ui::vehicleparams_panel::render_contents()
 
 					ImVec2 size = ImGui::GetContentRegionAvail();
 
-					ImGui::Image(reinterpret_cast<void *>(entry.rt->shared_tex), size, ImVec2(uv0.x, uv0.y), ImVec2(uv1.x, uv1.y));
+					ImGui::Image((ImTextureID)(intptr_t)(entry.rt->shared_tex), size, ImVec2(uv0.x, uv0.y), ImVec2(uv1.x, uv1.y));
 				}
 				ImGui::End();
 			}

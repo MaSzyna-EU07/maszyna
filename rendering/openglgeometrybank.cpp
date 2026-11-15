@@ -90,23 +90,23 @@ opengl_vbogeometrybank::draw_( gfx::geometry_handle const &Geometry, gfx::stream
             }
             ::glDrawRangeElementsBaseVertex(
                 chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
-                chunkrecord.vertex_offset );
+                0, static_cast<GLuint>(chunkrecord.vertex_count),
+                static_cast<GLsizei>(chunkrecord.index_count), GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ),
+                static_cast<GLint>(chunkrecord.vertex_offset) );
         }
         else {
             bind_streams( Units, Streams, chunkrecord.vertex_offset );
             ::glDrawRangeElements(
                 chunk.type,
-                0, chunkrecord.vertex_count,
-                chunkrecord.index_count, GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
+                0, static_cast<GLuint>(chunkrecord.vertex_count),
+                static_cast<GLsizei>(chunkrecord.index_count), GL_UNSIGNED_INT, reinterpret_cast<void const *>( chunkrecord.index_offset * sizeof( gfx::basic_index ) ) );
         }
     }
     else {
         if( m_activestreams != Streams ) {
             bind_streams( Units, Streams );
         }
-        ::glDrawArrays( chunk.type, chunkrecord.vertex_offset, chunkrecord.vertex_count );
+        ::glDrawArrays( chunk.type, static_cast<GLint>(chunkrecord.vertex_offset), static_cast<GLsizei>(chunkrecord.vertex_count) );
     }
     // ...post-render cleanup
 /*
@@ -139,9 +139,8 @@ opengl_vbogeometrybank::setup_buffer() {
     // may be better to initiate upload earlier (during update phase) and trust this effort won't go to waste
     if( true == m_chunks.empty() ) { return; }
 
-    std::size_t
-        vertexcount{ 0 },
-        indexcount{ 0 };
+    std::size_t vertexcount{ 0 };
+    std::size_t indexcount{ 0 };
     auto chunkiterator = m_chunks.cbegin();
     for( auto &chunkrecord : m_chunkrecords ) {
         // fill records for all chunks, based on the chunk data
@@ -195,7 +194,7 @@ opengl_vbogeometrybank::setup_buffer() {
 }
 
 void
-opengl_vbogeometrybank::bind_buffer() {
+opengl_vbogeometrybank::bind_buffer() const {
 
     ::glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_indexbuffer );
     ::glBindBuffer( GL_ARRAY_BUFFER, m_vertexbuffer );

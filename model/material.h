@@ -18,7 +18,13 @@ http://mozilla.org/MPL/2.0/.
 // a collection of parameters for the rendering setup.
 // for modern opengl this translates to set of attributes for shaders
 struct opengl_material : public IMaterial {
-    std::array<texture_handle, gl::MAX_TEXTURES> textures = { null_handle };
+    using texture_set = std::array<texture_handle, gl::MAX_TEXTURES>;
+
+    texture_set textures = { null_handle };
+    // alternative texture sets, defined with "textureN_variants:" key.
+    // one of them is picked per rendered model instance, empty when the material declares no variants.
+    // NOTE: all variants share the remaining material properties, opacity and translucency included
+    std::vector<texture_set> texture_variants;
     std::array<glm::vec4, gl::MAX_PARAMS> params;
     std::vector<gl::shader::param_entry> params_state;
 
@@ -60,6 +66,14 @@ struct opengl_material : public IMaterial {
 	  {
 		  return textures[slot];
 	  }
+	  // returns texture set to use for model instance identified by provided variant id
+	  texture_set const &GetTextures(std::uint32_t const Variant) const
+	  {
+		  return (
+			  texture_variants.empty() ?
+				  textures :
+				  texture_variants[Variant % texture_variants.size()]);
+	  }
 	// members
     static struct path_data {
         std::unordered_map<std::string, int> index_map;
@@ -71,10 +85,23 @@ struct opengl_material : public IMaterial {
     bool update_on_season_change{ false };
 
 private:
+// types
+    // texture binding which comes with a pool of alternatives: slot the binding fills, and the pool itself
+    using variant_binding = std::pair<std::size_t, std::vector<std::string> const *>;
+
 // methods
     // imports member data pair from the config file
     bool
         deserialize_mapping( cParser &Input, int const Priority, bool const Loadnow );
+    // imports texture binding, potentially carrying a pool of alternatives, from the config file
+    void
+        deserialize_texture_mapping( cParser &Input, std::string const &Key, int const Priority );
+    // returns texture slot provided binding key resolves to, or -1 if it doesn't resolve to any
+    int
+        texture_slot( std::string const &Key );
+    // fills the alternative texture sets from provided pools, one set per entry of the longest pool
+    void
+        build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow );
         void log_error(const std::string &str);
 
 // members
@@ -90,6 +117,9 @@ private:
         {
             std::string name;
             int priority;
+            // optional pool of alternative textures for the same binding, one picked per model instance.
+            // empty for regular, single texture bindings
+            std::vector<std::string> variants;
         };
         struct param_def
         {
@@ -109,6 +139,16 @@ public:
 
     material_handle
         create( std::string const &Filename, bool const Loadnow );
+    // material described by provided text (the content of a .mat file), not kept in a file. returns: handle to the material or null_handle
+    material_handle
+        create_from_text( std::string const &Name, std::string const &Definition );
+    // copy of provided material with its specular highlights and reflections damped. returns: handle to the copy, made once per material
+    material_handle
+        create_matte( material_handle const Material );
+    // copy of provided material with its texture tinted to the colour as far as the userdata of the vertices says. returns: handle to
+    // the copy, made once per material and colour; the material itself when its shader can't tint it
+    material_handle
+        create_tinted( material_handle const Material, glm::vec3 const &Colour );
     opengl_material const &
         material( material_handle const Material ) const { return m_materials[ Material ]; }
     opengl_material &
@@ -128,6 +168,9 @@ private:
     // checks whether specified texture is in the texture bank. returns texture id, or npos.
     material_handle
         find_in_databank( std::string const &Materialname ) const;
+    // the matte and tinted copies of the materials changed with the weather or the season made again from them, under their handles
+    void
+        update_variants( bool const Weather );
     public:
     // checks whether specified file exists. returns name of the located file, or empty string.
     static std::pair<std::string, std::string>
@@ -137,6 +180,8 @@ private:
 	  // members:
     material_sequence m_materials;
     index_map m_materialmappings;
+    std::unordered_map<material_handle, material_handle> m_mattes;
+    std::map<std::tuple<material_handle, float, float, float>, material_handle> m_tints;
 };
 
 //---------------------------------------------------------------------------

@@ -1,0 +1,1969 @@
+/*
+This Source Code Form is subject to the
+terms of the Mozilla Public License, v.
+2.0. If a copy of the MPL was not
+distributed with this file, You can
+obtain one at
+http://mozilla.org/MPL/2.0/.
+*/
+
+#include "stdafx.h"
+#include "application/editormode.h"
+#include "application/editorprojection.h"
+#include "application/editormodeshared.h"
+#include "editor/editorFormat.hpp"
+#include "editor/editorGeometry.hpp"
+
+#include "editor/editorIncludeInfo.hpp"
+#include "model/AnimModel.h"
+#include "model/Model3d.h"
+#include "scene/scenelayers.h"
+#include "simulation/simulation.h"
+#include "utilities/Logs.h"
+#include "utilities/utilities.h"
+#include "world/Event.h"
+#include "world/EvLaunch.h"
+#include "world/MemCell.h"
+#include "world/Track.h"
+#include "world/Traction.h"
+
+#include "imgui/imgui.h"
+#include "utilities/translation.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <map>
+#include <set>
+#include <optional>
+#include <sstream>
+#include <unordered_set>
+
+namespace
+{
+
+using geometry::bezier;
+using geometry::plan_distance;
+using geometry::plan_of;
+
+std::string const kBindingMark{"//$b"};
+// the templates of the signalling which go with a path without a signal template of their own: the SHP resonator, read by its
+// event, and the control of a block section, by the path nearest to it
+std::string const kResonatorFile{"rezonator.inc"};
+std::string const kControlFile{"sbl_odstep.inc"};
+double constexpr kAdoptReach{12.0}; // m, of a point object from the axis of its path
+double constexpr kBoundReach{30.0}; // m, of a point object bound by hand, as far as a changed path looks for it
+
+template <typename Type_>
+bool contains(std::vector<Type_> const &Items, Type_ const &Item)
+{
+	return std::find(Items.begin(), Items.end(), Item) != Items.end();
+}
+
+ImU32 colour(infra::category const Category, int const Alpha = 255)
+{
+	switch (Category)
+	{
+	case infra::category::signal: return IM_COL32(255, 80, 80, Alpha);
+	case infra::category::sign: return IM_COL32(255, 220, 60, Alpha);
+	case infra::category::pole: return IM_COL32(160, 160, 255, Alpha);
+	case infra::category::catenary: return IM_COL32(80, 200, 255, Alpha);
+	case infra::category::logic: return IM_COL32(220, 120, 255, Alpha);
+	case infra::category::other: return IM_COL32(200, 200, 200, Alpha);
+	case infra::category::equipment: return IM_COL32(255, 150, 60, Alpha);
+	case infra::category::environment: return IM_COL32(110, 190, 110, Alpha);
+	}
+	return IM_COL32(200, 200, 200, Alpha);
+}
+
+// nodes still present in the scene; the editor deletes models outright
+class live_nodes
+{
+  public:
+	void refresh()
+	{
+		std::array<std::size_t, 4> const sizes{simulation::Instances.sequence().size(), simulation::Traction.sequence().size(), simulation::Memory.sequence().size(), simulation::Events.launchers().size()};
+		if (sizes == m_sizes && m_valid)
+			return;
+		m_sizes = sizes;
+		m_valid = true;
+		m_nodes.clear();
+		for (auto *node : simulation::Instances.sequence())
+			m_nodes.insert(node);
+		for (auto *node : simulation::Traction.sequence())
+			m_nodes.insert(node);
+		for (auto *node : simulation::Memory.sequence())
+			m_nodes.insert(node);
+		for (auto *node : simulation::Events.launchers())
+			m_nodes.insert(node);
+	}
+	bool alive(scene::basic_node const *Node) const
+	{
+		return Node != nullptr && m_nodes.count(Node) > 0;
+	}
+	void forget(scene::basic_node const *Node)
+	{
+		m_nodes.erase(Node);
+		m_valid = false;
+	}
+
+  private:
+	std::unordered_set<scene::basic_node const *> m_nodes;
+	std::array<std::size_t, 4> m_sizes{};
+	bool m_valid{false};
+};
+live_nodes Live;
+
+bool alive(infra::binding const &Binding)
+{
+	if (Binding.type == infra::kind::include)
+	{
+		if (false == scene::Layers.tracked(Binding.include))
+			return false;
+		auto const &included{scene::Layers.instance(Binding.include)};
+		return false == included.removed && false == included.dead;
+	}
+	return Live.alive(Binding.node);
+}
+
+// placement parameters of an include
+struct include_place
+{
+	std::string file;
+	std::vector<std::string> values;
+	std::array<int, 3> position{-1, -1, -1}; // indices of the values
+	int yaw{-1};
+	glm::dvec3 offset{0.0};
+	std::string description; // name and category of the template
+	std::string category; // of the description of the template
+};
+
+bool include_place_of(scene::instance_handle const Instance, include_place &Place)
+{
+	if (false == scene::Layers.tracked(Instance))
+		return false;
+	auto const &included{scene::Layers.instance(Instance)};
+	if (included.removed || included.dead || included.file == nullptr)
+		return false;
+	// with a rotation or a scale in effect the parameters don't translate to a location in a single way
+	if (included.context.rotation != glm::vec3{0.f} || included.context.scale != glm::vec3{1.f})
+		return false;
+	if (false == editor_includes::parse_directive(scene::Layers.directive(Instance), Place.file, Place.values))
+		return false;
+	static std::map<std::string, include_info> descriptions;
+	auto found{descriptions.find(*included.file)};
+	if (found == descriptions.end())
+	{
+		include_info info;
+		std::string error;
+		editor_includes::load(*included.file, info, error);
+		editor_includes::suggest(*included.file, info);
+		found = descriptions.emplace(*included.file, std::move(info)).first;
+	}
+	auto const &info{found->second};
+	auto const index = [&](char const *Role) {
+		auto const result{editor_includes::parameter_with_role(info, Role) - 1};
+		double value;
+		return (result >= 0 && result < static_cast<int>(Place.values.size()) && numeric(Place.values[result], value)) ? result : -1;
+	};
+	Place.position = {index("pos.x"), index("pos.y"), index("pos.z")};
+	Place.yaw = index("rot.y");
+	Place.offset = included.context.offset;
+	Place.description = info.name + ' ' + info.category;
+	Place.category = info.category;
+	return Place.position[0] >= 0 && Place.position[1] >= 0 && Place.position[2] >= 0;
+}
+
+glm::dvec3 include_location(include_place const &Place)
+{
+	glm::dvec3 result{Place.offset};
+	for (int axis = 0; axis < 3; ++axis)
+	{
+		double value{0.0};
+		numeric(Place.values[Place.position[axis]], value);
+		result[axis] += value;
+	}
+	return result;
+}
+
+// points which define the object, and its rotation around the vertical axis if it has one
+bool object_points(infra::binding const &Binding, std::vector<glm::dvec3> &Points, std::optional<double> &Yaw)
+{
+	Points.clear();
+	Yaw.reset();
+	switch (Binding.type)
+	{
+	case infra::kind::model:
+	{
+		auto const *model{static_cast<TAnimModel const *>(Binding.node)};
+		Points.push_back(model->location());
+		Yaw = model->Angles().y;
+		return true;
+	}
+	case infra::kind::include:
+	{
+		include_place place;
+		if (false == include_place_of(Binding.include, place))
+			return false;
+		Points.push_back(include_location(place));
+		if (place.yaw >= 0)
+		{
+			double value{0.0};
+			numeric(place.values[place.yaw], value);
+			Yaw = value;
+		}
+		return true;
+	}
+	case infra::kind::traction:
+	{
+		auto const *traction{static_cast<TTraction const *>(Binding.node)};
+		Points = {traction->pPoint1, traction->pPoint2, traction->pPoint3, traction->pPoint4};
+		return true;
+	}
+	case infra::kind::memcell:
+	case infra::kind::launcher: Points.push_back(Binding.node->location()); return true;
+	}
+	return false;
+}
+
+std::string object_key(infra::binding const &Binding)
+{
+	std::string result;
+	switch (Binding.type)
+	{
+	case infra::kind::model:
+	{
+		auto const *model{static_cast<TAnimModel const *>(Binding.node)};
+		result = model->Model() != nullptr ? model->Model()->NameGet() : std::string{};
+		break;
+	}
+	case infra::kind::include: result = *scene::Layers.instance(Binding.include).file; break;
+	case infra::kind::traction: break;
+	case infra::kind::memcell:
+	case infra::kind::launcher: result = Binding.node->name(); break;
+	}
+	if (result.empty() || result.find_first_of(" \t\r\n") != std::string::npos)
+		result = "-";
+	return result;
+}
+
+std::string object_label(infra::binding const &Binding)
+{
+	switch (Binding.type)
+	{
+	case infra::kind::model:
+	{
+		auto const *model{static_cast<TAnimModel const *>(Binding.node)};
+		auto name{model->Model() != nullptr ? model->Model()->NameGet() : std::string{}};
+		if (false == model->name().empty() && model->name() != "none")
+			name = model->name() + " (" + name + ')';
+		return name;
+	}
+	case infra::kind::include: return *scene::Layers.instance(Binding.include).file;
+	case infra::kind::traction: return Binding.node->name().empty() || Binding.node->name() == "none" ? std::string{"traction"} : Binding.node->name();
+	case infra::kind::memcell: return "memcell " + Binding.node->name();
+	case infra::kind::launcher: return "eventlauncher " + Binding.node->name();
+	}
+	return {};
+}
+
+void move_model(TAnimModel *Model, glm::dvec3 const &Location, glm::vec3 const &Angles)
+{
+	if (glm::distance(Model->location(), Location) > 1e-6)
+	{
+		simulation::Region->erase(Model);
+		Model->location(Location);
+		simulation::Region->insert(Model);
+	}
+	Model->Angles(Angles);
+}
+
+void move_traction(TTraction *Traction, std::array<glm::dvec3, 4> const &Points)
+{
+	if (Traction->pPoint1 == Points[0] && Traction->pPoint2 == Points[1] && Traction->pPoint3 == Points[2] && Traction->pPoint4 == Points[3])
+		return;
+	// the height of the lowest dropper stays the same
+	auto const minheight{(Traction->pPoint3.y - Traction->pPoint1.y + Traction->pPoint4.y - Traction->pPoint2.y) * 0.5 - Traction->fHeightDifference};
+	simulation::Region->erase_and_unregister(Traction);
+	Traction->pPoint1 = Points[0];
+	Traction->pPoint2 = Points[1];
+	Traction->pPoint3 = Points[2];
+	Traction->pPoint4 = Points[3];
+	Traction->fHeightDifference = (Points[2].y - Points[0].y + Points[3].y - Points[1].y) * 0.5 - minheight;
+	Traction->Init();
+	Traction->location(glm::mix(Points[1], Points[0], 0.5));
+	Traction->m_area.radius = -1.f;
+	simulation::Region->insert_and_register(Traction);
+	GfxRenderer->Erase(Traction->m_geometry);
+	Traction->m_geometry = gfx::geometry_handle{};
+	auto &section{simulation::Region->section(Traction->location())};
+	if (section.m_geometrycreated)
+		Traction->create_geometry(section.m_geometrybank);
+	Traction->mark_dirty();
+}
+
+void move_memcell(TMemCell *Memcell, glm::dvec3 const &Location)
+{
+	if (glm::distance(Memcell->location(), Location) <= 1e-6)
+		return;
+	simulation::Region->erase(Memcell);
+	Memcell->location(Location);
+	simulation::Region->insert(Memcell);
+}
+
+void move_launcher(TEventLauncher *Launcher, glm::dvec3 const &Location)
+{
+	if (glm::distance(Launcher->location(), Location) <= 1e-6)
+		return;
+	// global and radio launchers aren't a part of the region
+	auto const placed{false == Launcher->IsGlobal() && false == Launcher->IsRadioActivated()};
+	if (placed)
+		simulation::Region->erase(Launcher);
+	Launcher->location(Location);
+	if (placed)
+		simulation::Region->insert(Launcher);
+	Launcher->mark_dirty();
+}
+
+// bounding circle of the paths of a track, in the plan
+struct track_area
+{
+	TTrack *track{nullptr};
+	glm::dvec3 centre{0.0};
+	double radius{0.0};
+};
+
+track_area area_of(TTrack &Track)
+{
+	track_area result;
+	result.track = &Track;
+	std::vector<glm::dvec3> points;
+	for (auto const &path : Track.m_paths)
+	{
+		auto const &start{path.points[segment_data::point::start]};
+		auto const &end{path.points[segment_data::point::end]};
+		points.insert(points.end(), {start, end, start + path.points[segment_data::point::control1], end + path.points[segment_data::point::control2]});
+	}
+	if (points.empty())
+		return result;
+	for (auto const &point : points)
+		result.centre += point / static_cast<double>(points.size());
+	for (auto const &point : points)
+		result.radius = std::max(result.radius, plan_distance(point, result.centre));
+	return result;
+}
+
+// the point lies sideways of the path, not beyond one of its ends
+bool beside(infra::station const &Station, glm::dvec3 const &Point, bool const Interior)
+{
+	if (Interior)
+		return true;
+	auto const axis{infra::frame_at(Station)};
+	return std::abs(glm::dot(plan_of(Point - axis.point), axis.forward)) <= 0.5;
+}
+
+// nearest point of the tracks, sideways from the axis within the corridor
+template <typename Areas_>
+bool nearest_beside(Areas_ const &Areas, glm::dvec3 const &Point, double const Corridor, infra::station &Station)
+{
+	auto best{-1.0};
+	for (auto const &entry : Areas)
+	{
+		track_area const &area = entry;
+		if (plan_distance(Point, area.centre) > area.radius + Corridor)
+			continue;
+		infra::station station;
+		bool interior;
+		auto const distance{infra::project(*area.track, Point, station, interior)};
+		if (distance <= Corridor && (best < 0.0 || distance < best) && beside(station, Point, interior))
+		{
+			best = distance;
+			Station = station;
+		}
+	}
+	return best >= 0.0;
+}
+
+// paths of the whole scenery by cells of the plan, for the lookups reaching up to kReach from the axis
+class track_index
+{
+  public:
+	static constexpr double kReach{55.0};
+	void add(TTrack &Track)
+	{
+		auto const index{m_areas.size()};
+		m_areas.push_back(area_of(Track));
+		std::set<cell_key> cells;
+		for (auto const &path : Track.m_paths)
+			for (auto const &point : infra::outline(path, kCell * 0.5))
+				for (auto x = key(point.x - kReach - kCell * 0.25); x <= key(point.x + kReach + kCell * 0.25); ++x)
+					for (auto z = key(point.z - kReach - kCell * 0.25); z <= key(point.z + kReach + kCell * 0.25); ++z)
+						cells.insert({x, z});
+		for (auto const &cell : cells)
+			m_cells[cell].push_back(index);
+	}
+	bool nearest(glm::dvec3 const &Point, double const Corridor, infra::station &Station) const
+	{
+		auto const cell{m_cells.find({key(Point.x), key(Point.z)})};
+		if (cell == m_cells.end())
+			return false;
+		std::vector<std::reference_wrapper<track_area const>> areas;
+		for (auto const index : cell->second)
+			areas.emplace_back(m_areas[index]);
+		return nearest_beside(areas, Point, std::min(Corridor, kReach), Station);
+	}
+	bool empty() const
+	{
+		return m_areas.empty();
+	}
+
+  private:
+	static constexpr double kCell{64.0};
+	using cell_key = std::pair<long long, long long>;
+	static long long key(double const Value)
+	{
+		return static_cast<long long>(std::floor(Value / kCell));
+	}
+	std::vector<track_area> m_areas;
+	std::map<cell_key, std::vector<std::size_t>> m_cells;
+};
+
+struct cell_reader
+{
+	TTrack *track{nullptr};
+	std::string event;
+	std::string cell;
+	bool loose{false};
+};
+
+class event_links
+{
+  public:
+	event_links()
+	{
+		std::unordered_map<std::string, TTrack *> named;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && false == track->name().empty() && track->name() != "none")
+				named.emplace(track->name(), track);
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (track == nullptr || track->m_editorremoved)
+				continue;
+			for (auto const *sequence : {&track->m_events0, &track->m_events1, &track->m_events2, &track->m_events0all, &track->m_events1all, &track->m_events2all})
+				for (auto const &entry : *sequence)
+					read(track, entry.second != nullptr ? entry.second : simulation::Events.FindEvent(entry.first), entry.first.empty());
+		}
+		static std::set<std::string> const kinds{"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+		std::unordered_set<scene::basic_node const *> models(simulation::Instances.sequence().begin(), simulation::Instances.sequence().end());
+		std::unordered_set<scene::basic_node const *> cells(simulation::Memory.sequence().begin(), simulation::Memory.sequence().end());
+		for (auto *event : simulation::Events.sequence())
+		{
+			if (event == nullptr)
+				continue;
+			auto const &name{event->name()};
+			auto const colon{name.rfind(':')};
+			if (colon != std::string::npos && colon > 0 && kinds.count(name.substr(colon + 1)) > 0)
+			{
+				auto const track{named.find(name.substr(0, colon))};
+				if (track != named.end())
+					read(track->second, event, true);
+			}
+			auto const *multi{dynamic_cast<multi_event const *>(event)};
+			if (multi == nullptr)
+				continue;
+			std::vector<scene::basic_node const *> shown;
+			std::vector<TMemCell *> set;
+			for (auto *child : multi->children())
+			{
+				auto const setter{dynamic_cast<updatevalues_event const *>(child) != nullptr || dynamic_cast<copyvalues_event const *>(child) != nullptr};
+				for (auto *target : child->target_nodes()) // NOSONAR
+				{
+					if (models.count(target) > 0 && false == contains(shown, static_cast<scene::basic_node const *>(target)))
+						shown.push_back(target);
+					else if (setter && cells.count(target) > 0 && false == contains(set, static_cast<TMemCell *>(target)))
+						set.push_back(static_cast<TMemCell *>(target));
+				}
+			}
+			if (shown.size() > 4 || set.size() > 4)
+				continue;
+			for (auto const *model : shown)
+				for (auto *cell : set)
+					if (plan_distance(model->location(), cell->location()) <= kCellReach && false == contains(m_cells[model], cell))
+						m_cells[model].push_back(cell);
+		}
+		for (auto *cell : simulation::Memory.sequence())
+		{
+			if (cell == nullptr)
+				continue;
+			if (cell->m_instance != 0)
+				m_included[cell->m_instance].push_back(cell);
+			if (false == cell->name().empty() && cell->name() != "none")
+				m_named.emplace_back(cell->name(), cell);
+		}
+		std::sort(m_named.begin(), m_named.end(), [](auto const &A, auto const &B) { return A.first < B.first; });
+	}
+	std::vector<TMemCell *> cells_of(infra::binding const &Binding) const
+	{
+		std::vector<TMemCell *> result;
+		switch (Binding.type)
+		{
+		case infra::kind::memcell: result.push_back(static_cast<TMemCell *>(Binding.node)); break;
+		case infra::kind::include:
+		{
+			auto const found{m_included.find(Binding.include)};
+			if (found != m_included.end())
+				result = found->second;
+			break;
+		}
+		case infra::kind::model:
+		{
+			auto const found{m_cells.find(Binding.node)};
+			if (found != m_cells.end())
+				result = found->second;
+			auto const &name{Binding.node->name()};
+			if (result.empty() && name.size() >= 3 && name != "none")
+				for (auto entry{std::lower_bound(m_named.begin(), m_named.end(), name, [](auto const &Entry, std::string const &Name) { return Entry.first < Name; })};
+				     entry != m_named.end() && entry->first.compare(0, name.size(), name) == 0; ++entry)
+					if (plan_distance(entry->second->location(), Binding.node->location()) <= kCellReach)
+						result.push_back(entry->second);
+			break;
+		}
+		default: break;
+		}
+		return result;
+	}
+	std::vector<cell_reader> readers_of(std::vector<TMemCell *> const &Cells) const
+	{
+		std::vector<cell_reader> result;
+		for (auto const *cell : Cells)
+		{
+			auto const found{m_readers.find(cell)};
+			if (found == m_readers.end())
+				continue;
+			for (auto const &reader : found->second)
+				if (std::none_of(result.begin(), result.end(), [&](cell_reader const &Reader) { return Reader.track == reader.track; }))
+					result.push_back(reader);
+		}
+		return result;
+	}
+
+  private:
+	static constexpr double kCellReach{60.0};
+	void read(TTrack *Track, basic_event *Event, bool const Loose)
+	{
+		std::vector<basic_event *> pending{Event};
+		std::unordered_set<basic_event *> seen;
+		while (false == pending.empty())
+		{
+			auto *event{pending.back()};
+			pending.pop_back();
+			if (event == nullptr || false == seen.insert(event).second)
+				continue;
+			if (auto const *multi{dynamic_cast<multi_event const *>(event)})
+			{
+				auto const children{multi->children()};
+				pending.insert(pending.end(), children.begin(), children.end());
+				continue;
+			}
+			if (dynamic_cast<getvalues_event const *>(event) == nullptr)
+				continue;
+			auto const targets{event->target_nodes()};
+			if (targets.empty())
+				continue;
+			auto &list{m_readers[targets.front()]};
+			if (std::none_of(list.begin(), list.end(), [&](cell_reader const &Reader) { return Reader.track == Track; }))
+				list.push_back({Track, Event->name(), targets.front()->name(), Loose});
+		}
+	}
+	std::unordered_map<scene::basic_node const *, std::vector<cell_reader>> m_readers;
+	std::unordered_map<scene::basic_node const *, std::vector<TMemCell *>> m_cells;
+	std::unordered_map<scene::instance_handle, std::vector<TMemCell *>> m_included;
+	std::vector<std::pair<std::string, TMemCell *>> m_named;
+};
+
+// lookup of points by a grid of 1 m cells in the plan
+template <typename Type_>
+class point_grid
+{
+  public:
+	void add(glm::dvec3 const &Point, Type_ Item)
+	{
+		m_cells[key(Point)].emplace_back(Point, Item);
+	}
+	template <typename Match_>
+	std::optional<Type_> find(glm::dvec3 const &Point, double const Tolerance, Match_ const &Match) const
+	{
+		auto const centre{key(Point)};
+		for (auto x = centre.first - 1; x <= centre.first + 1; ++x)
+			for (auto z = centre.second - 1; z <= centre.second + 1; ++z)
+			{
+				auto const cell{m_cells.find({x, z})};
+				if (cell == m_cells.end())
+					continue;
+				for (auto const &entry : cell->second)
+					if (glm::distance(entry.first, Point) <= Tolerance && Match(entry.second))
+						return entry.second;
+			}
+		return std::nullopt;
+	}
+
+  private:
+	using cell_key = std::pair<long long, long long>;
+	static cell_key key(glm::dvec3 const &Point)
+	{
+		return {static_cast<long long>(std::floor(Point.x)), static_cast<long long>(std::floor(Point.z))};
+	}
+	std::map<cell_key, std::vector<std::pair<glm::dvec3, Type_>>> m_cells;
+};
+
+double turn_of(infra::binding const &Binding, double const Yaw)
+{
+	auto const axis{infra::frame_at(Binding.anchors.front().at)};
+	return clamp_circular(Yaw - infra::heading(axis.forward));
+}
+
+// the objects which the stored bindings can name, by their locations
+struct bindable_objects
+{
+	point_grid<TTrack *> paths;
+	point_grid<TAnimModel *> models;
+	point_grid<TTraction *> traction;
+	point_grid<scene::basic_node *> logic;
+	point_grid<scene::instance_handle> includes;
+
+	bindable_objects()
+	{
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (auto const &path : track->m_paths)
+					paths.add(path.points[segment_data::point::start], track);
+		for (auto *model : simulation::Instances.sequence())
+			if (model != nullptr && false == model->from_template() && model->Model() != nullptr)
+				models.add(model->location(), model);
+		for (auto *piece : simulation::Traction.sequence())
+			if (piece != nullptr && false == piece->from_template())
+				traction.add(piece->pPoint1, piece);
+		for (auto *memcell : simulation::Memory.sequence())
+			if (memcell != nullptr && false == memcell->from_template())
+				logic.add(memcell->location(), memcell);
+		for (auto *launcher : simulation::Events.launchers())
+			if (launcher != nullptr && false == launcher->from_template())
+				logic.add(launcher->location(), launcher);
+		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+		{
+			include_place place;
+			if (include_place_of(handle, place))
+				includes.add(include_location(place), handle);
+		}
+	}
+};
+
+// format of the lines, coordinates in the space of the file:
+//   <kind> <category> <x y z of the object> <file or name, - if none> <turns 0/1> <anchor count> { <path> <start x y z> <end x y z> }
+// the object is the model, the include (position from its parameters), the traction piece (its first point), the memory
+// cell or the event launcher found at the location; the anchors name the paths by their ends
+std::optional<infra::binding> read_binding(std::string const &Text, scene::layer_context const &Context, bindable_objects const &Objects)
+{
+	double const tolerance{0.05};
+	std::istringstream line{Text};
+	std::string kindname;
+	std::string key;
+	int group{0};
+	int turns{0};
+	int count{0};
+	glm::dvec3 location;
+	line >> kindname >> group >> location.x >> location.y >> location.z >> key >> turns >> count;
+	if (line.fail() || count < 1 || count > 4)
+		return std::nullopt;
+	location = Context.to_world(location);
+	infra::binding binding;
+	binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::environment)));
+	binding.turns = (turns != 0);
+	auto found{false};
+	if (kindname == infra::name(infra::kind::model))
+	{
+		binding.type = infra::kind::model;
+		auto const model{Objects.models.find(location, tolerance, [&](TAnimModel *Model) { return Model->Model()->NameGet() == key; })};
+		if ((found = model.has_value()))
+			binding.node = *model;
+	}
+	else if (kindname == infra::name(infra::kind::include))
+	{
+		binding.type = infra::kind::include;
+		auto const handle{Objects.includes.find(location, tolerance, [&](scene::instance_handle Handle) { return *scene::Layers.instance(Handle).file == key; })};
+		if ((found = handle.has_value()))
+			binding.include = *handle;
+	}
+	else if (kindname == infra::name(infra::kind::traction))
+	{
+		binding.type = infra::kind::traction;
+		auto const piece{Objects.traction.find(location, tolerance, [](TTraction *) { return true; })};
+		if ((found = piece.has_value()))
+			binding.node = *piece;
+	}
+	else if (kindname == infra::name(infra::kind::memcell) || kindname == infra::name(infra::kind::launcher))
+	{
+		binding.type = (kindname == infra::name(infra::kind::memcell) ? infra::kind::memcell : infra::kind::launcher);
+		auto const node{Objects.logic.find(location, tolerance, [&](scene::basic_node *Node) {
+			auto const ismemcell{dynamic_cast<TMemCell *>(Node) != nullptr};
+			return ismemcell == (binding.type == infra::kind::memcell) && (key == "-" || Node->name() == key);
+		})};
+		if ((found = node.has_value()))
+			binding.node = *node;
+	}
+	std::vector<glm::dvec3> points;
+	std::optional<double> yaw;
+	if (false == found || false == object_points(binding, points, yaw))
+		return std::nullopt;
+	for (int i = 0; i < count && found; ++i)
+	{
+		int path{0};
+		glm::dvec3 start;
+		glm::dvec3 end;
+		line >> path >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
+		start = Context.to_world(start);
+		end = Context.to_world(end);
+		auto const track{Objects.paths.find(start, tolerance, [&](TTrack *Track) {
+			return path >= 0 && path < static_cast<int>(Track->m_paths.size()) &&
+			       glm::distance(Track->m_paths[path].points[segment_data::point::start], start) <= tolerance &&
+			       glm::distance(Track->m_paths[path].points[segment_data::point::end], end) <= tolerance;
+		})};
+		if (line.fail() || false == track.has_value())
+		{
+			found = false;
+			break;
+		}
+		auto const &point{points[std::min<std::size_t>(i, points.size() - 1)]};
+		binding.anchors.push_back(infra::make_anchor(*track, path, point));
+	}
+	if (false == found || binding.anchors.size() != points.size())
+		return std::nullopt;
+	binding.turns = binding.turns && yaw.has_value();
+	if (binding.turns)
+		binding.yaw = turn_of(binding, *yaw);
+	binding.label = object_label(binding);
+	return binding;
+}
+
+} // namespace
+
+void editor_mode::infra_load()
+{
+	if (m_bindings_loaded || scene::Layers.empty())
+		return;
+	m_bindings_loaded = true;
+	auto const marked{scene::Layers.marked_layers(kBindingMark)};
+	if (marked.empty())
+		return;
+
+	bindable_objects const objects;
+	auto resolved{0};
+	for (auto const layer : marked)
+	{
+		auto const &context{scene::Layers.layer(layer).context_insert()};
+		for (auto const &text : scene::Layers.marked(layer, kBindingMark))
+		{
+			if (text.empty() || text.front() == '#')
+				continue;
+			auto binding{read_binding(text, context, objects)};
+			if (false == binding.has_value())
+			{
+				m_bindings_unresolved.emplace_back(layer, text);
+				continue;
+			}
+			m_bindings.push_back(std::move(*binding));
+			++resolved;
+		}
+	}
+	WriteLog("Editor: " + std::to_string(resolved) + " object(s) bound to the paths read from the scenery" +
+	             (m_bindings_unresolved.empty() ? std::string{} : ", " + std::to_string(m_bindings_unresolved.size()) + " binding(s) whose objects or paths weren't found are kept as they are"),
+	         logtype::generic);
+}
+
+void editor_mode::infra_forget(scene::basic_node const *Node)
+{
+	Live.forget(Node);
+	auto const held = [Node](infra::binding const &Binding) { return Binding.type != infra::kind::include && Binding.node == Node; };
+	m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), held), m_bindings.end());
+	m_infra_buffer.erase(std::remove_if(m_infra_buffer.begin(), m_infra_buffer.end(), [&](infra::object_state const &State) { return held(State.saved); }), m_infra_buffer.end());
+	for (auto &candidate : m_infra.candidates)
+		if (held(candidate.binding))
+			candidate.binding.node = nullptr;
+}
+
+void editor_mode::infra_store()
+{
+	if (false == m_bindings_loaded || scene::Layers.empty())
+		return;
+	Live.refresh();
+	m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), [](infra::binding const &Binding) { return false == alive(Binding); }), m_bindings.end());
+
+	std::map<scene::layer_handle, std::vector<std::string>> lines;
+	for (auto const layer : scene::Layers.marked_layers(kBindingMark))
+		lines[layer];
+	for (auto const &entry : m_bindings_unresolved)
+		lines[entry.first].push_back(entry.second);
+	for (auto const &binding : m_bindings)
+	{
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (binding.adopted || binding.anchors.empty() || false == object_points(binding, points, yaw))
+			continue;
+		auto layer{scene::Layers.resolve(binding.anchors.front().at.track->layer())};
+		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
+			layer = scene::Layers.active();
+		if (false == scene::Layers.valid(layer))
+			layer = 1;
+		auto const &context{scene::Layers.layer(layer).context_insert()};
+		auto const local = [&](glm::dvec3 const &Point) {
+			auto const point{context.to_local(Point)};
+			return format("%.4f %.4f %.4f", point.x, point.y, point.z);
+		};
+		auto text{std::string{infra::name(binding.type)} + ' ' + std::to_string(static_cast<int>(binding.group)) + ' ' + local(points.front()) + ' ' + object_key(binding) + ' ' +
+		          (binding.turns ? "1 " : "0 ") + std::to_string(binding.anchors.size())};
+		for (auto const &anchor : binding.anchors)
+		{
+			auto const &path{anchor.at.track->m_paths[anchor.at.path]};
+			text += ' ' + std::to_string(anchor.at.path) + ' ' + local(path.points[segment_data::point::start]) + ' ' + local(path.points[segment_data::point::end]);
+		}
+		lines[layer].push_back(std::move(text));
+	}
+	for (auto &entry : lines)
+	{
+		if (false == entry.second.empty())
+			entry.second.insert(entry.second.begin(), "# objects bound to the paths in the track editor, they follow changes of the track; the simulation skips these lines");
+		scene::Layers.mark(entry.first, kBindingMark, std::move(entry.second));
+	}
+}
+
+std::vector<TTrack *> editor_mode::infra_scope() const
+{
+	std::vector<TTrack *> result;
+	auto const add = [&](TTrack *Track) {
+		if (Track != nullptr && false == Track->m_editorremoved && editor_track::is_supported(*Track) && false == contains(result, Track))
+			result.push_back(Track);
+	};
+	auto *selected{selected_track()};
+	switch (m_infra.scope)
+	{
+	case 0: add(selected); break;
+	case 1:
+		if (selected != nullptr)
+			for (auto const &span : editor_track::run_route(*selected, m_infra.reach).spans)
+				add(span.track);
+		break;
+	case 2:
+		for (auto const &span : m_profile.route.spans)
+			add(span.track);
+		break;
+	case 3:
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && editor_track::is_supported(*track))
+				result.push_back(track);
+		break;
+	default: break;
+	}
+	return result;
+}
+
+infra::binding *editor_mode::infra_find(infra::binding const &Binding)
+{
+	for (auto &binding : m_bindings)
+		if (binding.same(Binding))
+			return &binding;
+	return nullptr;
+}
+
+std::string editor_mode::infra_carried_note()
+{
+	auto const count{m_infra_carried.size()};
+	m_infra_carried.clear();
+	return count > 0 ? format(STR_P("\n%zu object by the tracks moved sideways with them", "\n%zu objects by the tracks moved sideways with them", count), count) : std::string{};
+}
+
+int editor_mode::infra_bound_count() const
+{
+	return static_cast<int>(std::count_if(m_bindings.begin(), m_bindings.end(), [](infra::binding const &Binding) { return false == Binding.adopted; }));
+}
+
+void editor_mode::infra_recognize()
+{
+	auto &state{m_infra};
+	infra_load();
+	state.candidates.clear();
+	state.hovered = -1;
+	state.error.clear();
+	state.status.clear();
+	state.tracks = infra_scope();
+	if (state.tracks.empty())
+	{
+		state.error = (state.scope == 2 ? STR_C("Open the vertical profile of a route first") : state.scope == 3 ? STR_C("The scenery has no paths the editor can handle") : STR_C("Select a path first"));
+		return;
+	}
+	state.read = 0;
+	state.overruled = 0;
+	state.unread = 0;
+	state.elsewhere = 0;
+	track_index index;
+	std::unordered_set<std::string> names;
+	std::unordered_set<TTrack const *> const scope(state.tracks.begin(), state.tracks.end());
+	for (auto *track : state.tracks)
+	{
+		index.add(*track);
+		if (false == track->name().empty() && track->name() != "none")
+			names.insert(track->name());
+	}
+	Live.refresh();
+	event_links const links;
+	std::unordered_map<TTrack *, std::vector<track_area>> threads;
+	auto const thread_of = [&](TTrack *Reader) -> std::vector<track_area> const & {
+		auto found{threads.find(Reader)};
+		if (found != threads.end())
+			return found->second;
+		std::vector<track_area> areas;
+		for (auto const &span : editor_track::run_route(*Reader, 250.0).spans)
+			if (scope.count(span.track) > 0 && std::none_of(areas.begin(), areas.end(), [&](track_area const &Area) { return Area.track == span.track; }))
+				areas.push_back(area_of(*span.track));
+		return threads.emplace(Reader, std::move(areas)).first->second;
+	};
+
+	auto const corridor{static_cast<double>(state.corridor)};
+	auto const add = [&](infra::binding Binding, std::string const &Reason, double const Reach) {
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == object_points(Binding, points, yaw))
+			return;
+		infra_candidate candidate;
+		auto const cells{points.size() == 1 ? links.cells_of(Binding) : std::vector<TMemCell *>{}};
+		auto const readers{links.readers_of(cells)};
+		infra::station geometric;
+		auto const nearby{index.nearest(points.front(), Reach, geometric)};
+		if (false == readers.empty())
+		{
+			auto best{-1.0};
+			infra::station station;
+			for (auto const &reader : readers)
+			{
+				infra::station at;
+				auto const &thread{thread_of(reader.track)};
+				if (false == nearest_beside(thread, points.front(), std::max(Reach, 25.0), at))
+					continue;
+				auto const distance{plan_distance(infra::frame_at(at).point, points.front())};
+				if (best < 0.0 || distance < best)
+				{
+					best = distance;
+					station = at;
+					candidate.reader = reader.track;
+					candidate.event = reader.event;
+					candidate.cell = reader.cell;
+					candidate.loose = reader.loose;
+				}
+			}
+			if (candidate.reader == nullptr)
+			{
+				state.elsewhere += nearby ? 1 : 0;
+				return;
+			}
+			auto const &thread{thread_of(candidate.reader)};
+			if (nearby && geometric.track != station.track && std::none_of(thread.begin(), thread.end(), [&](track_area const &Area) { return Area.track == geometric.track; }))
+			{
+				candidate.nearer = geometric.track;
+				candidate.nearer_foot = infra::frame_at(geometric).point;
+			}
+			Binding.anchors.push_back(infra::make_anchor(station, points.front()));
+			if (Binding.group == infra::category::other && Binding.type != infra::kind::memcell)
+				Binding.group = infra::category::signal;
+		}
+		else
+		{
+			for (auto const &point : points)
+			{
+				infra::station station;
+				if (false == index.nearest(point, Reach, station))
+					return;
+				Binding.anchors.push_back(infra::make_anchor(station, point));
+			}
+			candidate.unread = (false == cells.empty() && Binding.type != infra::kind::memcell && Binding.group == infra::category::signal);
+		}
+		if (std::abs(Binding.anchors.front().height) > 40.0)
+			return;
+		Binding.turns = yaw.has_value() && Binding.type != infra::kind::traction;
+		if (Binding.turns)
+			Binding.yaw = turn_of(Binding, *yaw);
+		Binding.label = object_label(Binding);
+		candidate.offset = Binding.anchors.front().offset;
+		candidate.reason = Reason;
+		auto const *existing{infra_find(Binding)};
+		candidate.bound = (existing != nullptr && false == existing->adopted);
+		candidate.chosen = (false == candidate.bound && Binding.group != infra::category::other && Binding.group != infra::category::environment);
+		candidate.binding = std::move(Binding);
+		state.read += candidate.reader != nullptr ? 1 : 0;
+		state.overruled += candidate.nearer != nullptr ? 1 : 0;
+		state.unread += candidate.unread ? 1 : 0;
+		state.candidates.push_back(std::move(candidate));
+	};
+
+	for (auto *model : simulation::Instances.sequence())
+	{
+		// models of the includes follow along with their include
+		if (model == nullptr || model->from_template() || model->Model() == nullptr)
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::model;
+		binding.node = model;
+		binding.group = infra::classify(model->Model()->NameGet() + ' ' + model->name(), state.rules);
+		add(binding, binding.group == infra::category::other ? STR("nearby, no rule matches the file name") : STR("the file name matches a rule"), corridor);
+	}
+	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+	{
+		include_place place;
+		if (false == include_place_of(handle, place))
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::include;
+		binding.include = handle;
+		// the kind the description of the template names, else by the rules
+		if (auto const named{infra::category_named(place.category)})
+		{
+			binding.group = *named;
+			add(binding, STR("the description of the template says what it is"), corridor);
+			continue;
+		}
+		binding.group = infra::classify(place.file + ' ' + place.description, state.rules);
+		add(binding, binding.group == infra::category::other ? STR("nearby, no rule matches the template or its description") : STR("the template or its description matches a rule"), corridor);
+	}
+	for (auto *piece : simulation::Traction.sequence())
+	{
+		if (piece == nullptr || piece->from_template())
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::traction;
+		binding.node = piece;
+		binding.group = infra::category::catenary;
+		add(binding, STR("wire over the track"), corridor);
+	}
+	for (auto *memcell : simulation::Memory.sequence())
+	{
+		if (memcell == nullptr || memcell->from_template())
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::memcell;
+		binding.node = memcell;
+		binding.group = infra::category::logic;
+		auto const named{false == memcell->asTrackName.empty() && names.count(memcell->asTrackName) > 0};
+		add(binding, named ? format(STR_C("names the path %s"), memcell->asTrackName.c_str()) : STR("nearby"), named ? std::max(corridor, 50.0) : corridor);
+	}
+	for (auto *launcher : simulation::Events.launchers())
+	{
+		if (launcher == nullptr || launcher->from_template())
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::launcher;
+		binding.node = launcher;
+		binding.group = infra::category::logic;
+		add(binding, STR("nearby"), corridor);
+	}
+	std::stable_sort(state.candidates.begin(), state.candidates.end(), [](infra_candidate const &A, infra_candidate const &B) { return A.binding.group < B.binding.group; });
+	state.status = format(STR_C("%d object(s) found along %d path(s)"), static_cast<int>(state.candidates.size()), static_cast<int>(state.tracks.size()));
+	if (state.elsewhere > 0)
+		state.status += format(STR_C("; %d left out: they stand by the scope, but the paths which read them are elsewhere"), state.elsewhere);
+}
+
+void editor_mode::infra_bind_chosen()
+{
+	auto &state{m_infra};
+	auto count{0};
+	Live.refresh();
+	for (auto &candidate : state.candidates)
+	{
+		if (false == candidate.chosen || candidate.bound || false == alive(candidate.binding))
+			continue;
+		if (auto *existing{infra_find(candidate.binding)})
+			*existing = candidate.binding;
+		else
+			m_bindings.push_back(candidate.binding);
+		candidate.bound = true;
+		candidate.chosen = false;
+		++count;
+	}
+	state.status = format(STR_C("%d object(s) bound, they follow the changes of the track. The bindings are kept in the scenery files on save"), count);
+}
+
+void editor_mode::infra_unbind(std::vector<std::size_t> Indices)
+{
+	std::sort(Indices.begin(), Indices.end());
+	Indices.erase(std::unique(Indices.begin(), Indices.end()), Indices.end());
+	for (auto index{Indices.rbegin()}; index != Indices.rend(); ++index)
+	{
+		if (*index >= m_bindings.size())
+			continue;
+		for (auto &candidate : m_infra.candidates)
+			if (candidate.binding.same(m_bindings[*index]))
+				candidate.bound = false;
+		m_bindings.erase(m_bindings.begin() + *index);
+	}
+}
+
+infra::object_state editor_mode::infra_state_of(infra::binding const &Binding) const
+{
+	infra::object_state result;
+	result.saved = Binding;
+	switch (Binding.type)
+	{
+	case infra::kind::model:
+	{
+		auto const *model{static_cast<TAnimModel const *>(Binding.node)};
+		result.location = model->location();
+		result.angles = model->Angles();
+		break;
+	}
+	case infra::kind::include: result.directive = scene::Layers.directive(Binding.include); break;
+	case infra::kind::traction:
+	{
+		auto const *traction{static_cast<TTraction const *>(Binding.node)};
+		result.points = {traction->pPoint1, traction->pPoint2, traction->pPoint3, traction->pPoint4};
+		break;
+	}
+	case infra::kind::memcell:
+	case infra::kind::launcher: result.location = Binding.node->location(); break;
+	}
+	return result;
+}
+
+void editor_mode::infra_restore_state(infra::object_state const &State)
+{
+	Live.refresh();
+	if (false == alive(State.saved))
+		return;
+	if (auto *binding{infra_find(State.saved)})
+		*binding = State.saved;
+	switch (State.saved.type)
+	{
+	case infra::kind::model: move_model(static_cast<TAnimModel *>(State.saved.node), State.location, State.angles); break;
+	case infra::kind::include:
+		if (false == State.directive.empty() && State.directive != scene::Layers.directive(State.saved.include))
+			set_include_directive(State.saved.include, State.directive);
+		break;
+	case infra::kind::traction: move_traction(static_cast<TTraction *>(State.saved.node), State.points); break;
+	case infra::kind::memcell: move_memcell(static_cast<TMemCell *>(State.saved.node), State.location); break;
+	case infra::kind::launcher: move_launcher(static_cast<TEventLauncher *>(State.saved.node), State.location); break;
+	}
+}
+
+void editor_mode::infra_buffer(infra::binding const &Binding, bool const Refresh)
+{
+	for (auto &entry : m_infra_buffer)
+	{
+		if (false == entry.saved.same(Binding))
+			continue;
+		if (Refresh && false == entry.moved)
+			entry = infra_state_of(Binding);
+		return;
+	}
+	if (false == Refresh && false == m_history.empty() && m_history.back().action == EditorSnapshot::Action::TrackEdit)
+	{
+		// a drag keeps a single undo step, which holds the state from before the drag already
+		for (auto const &entry : m_history.back().infra)
+			if (entry.saved.same(Binding))
+				return;
+	}
+	m_infra_buffer.push_back(infra_state_of(Binding));
+}
+
+void editor_mode::infra_adopt(TTrack &Track)
+{
+	auto const revision{history_revision()};
+	if (revision != m_point_objects_revision || scene::Layers.instance_count() != m_point_objects_count)
+	{
+		m_point_objects_revision = revision;
+		m_point_objects_count = scene::Layers.instance_count();
+		m_point_objects.clear();
+		std::unordered_map<std::string, TTrack *> readers;
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved)
+				for (int list = 0; list < 6; ++list)
+					for (auto const &event : editor_track::events(*track, list))
+						if (false == event.first.empty())
+							readers.emplace(ToLower(event.first), track);
+		static auto const rules{infra::default_rules()};
+		// an indicator goes with its signal: by the path reading the signal named by its first parameter, not by the path nearest
+		// to it, which can be another one
+		std::unordered_map<std::string, std::string> signal_reads;
+		std::vector<std::pair<point_object, std::string>> marks;
+		for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
+		{
+			include_place place;
+			if (false == include_place_of(handle, place) || place.values.empty() || false == scene::Layers.removable(handle))
+				continue;
+			point_object object;
+			object.include = handle;
+			object.location = include_location(place);
+			auto const file{ToLower(place.file)};
+			if (indicator_template_of(place.file) != nullptr)
+			{
+				object.group = infra::category::sign;
+				marks.emplace_back(std::move(object), ToLower(place.values.front()));
+				continue;
+			}
+			auto const *signal{signal_template_of(place.file)};
+			std::string read;
+			if (signal != nullptr)
+			{
+				object.group = infra::category::signal;
+				read = signal->read.empty() ? std::string{} : editor_includes::substitute(signal->read, place.values);
+				signal_reads[ToLower(place.values.front())] = read;
+			}
+			else if (file == kResonatorFile)
+			{
+				object.group = infra::category::equipment;
+				read = place.values.front() + "_shp";
+			}
+			else if (file == kControlFile)
+				object.group = infra::category::logic;
+			else
+			{
+				auto const named{infra::category_named(place.category)};
+				object.group = named.has_value() ? *named : infra::classify(place.file + ' ' + place.description, rules);
+				if (object.group != infra::category::signal && object.group != infra::category::sign)
+					continue;
+			}
+			if (false == read.empty())
+				if (auto const reader{readers.find(ToLower(read))}; reader != readers.end())
+					object.reader = reader->second;
+			m_point_objects.push_back(std::move(object));
+		}
+		// one whose signal no path reads is left where it is
+		for (auto &[object, name] : marks)
+			if (auto const read{signal_reads.find(name)}; read != signal_reads.end() && false == read->second.empty())
+				if (auto const reader{readers.find(ToLower(read->second))}; reader != readers.end())
+				{
+					object.reader = reader->second;
+					m_point_objects.push_back(std::move(object));
+				}
+		// the path nearest to each one no path reads, the objects by cells of the plan
+		auto constexpr cell{200.0};
+		auto const key = [&](double const Value) { return static_cast<long long>(std::floor(Value / cell)); };
+		std::map<std::pair<long long, long long>, std::vector<std::size_t>> cells;
+		for (std::size_t i = 0; i < m_point_objects.size(); ++i)
+			if (m_point_objects[i].reader == nullptr)
+				cells[{key(m_point_objects[i].location.x), key(m_point_objects[i].location.z)}].push_back(i);
+		std::vector<double> nearest(m_point_objects.size(), kAdoptReach);
+		for (auto *track : simulation::Paths.sequence())
+		{
+			if (cells.empty() || track == nullptr || track->m_editorremoved || false == editor_track::is_supported(*track))
+				continue;
+			auto const area{area_of(*track)};
+			auto const reach{area.radius + kAdoptReach};
+			for (auto x = key(area.centre.x - reach); x <= key(area.centre.x + reach); ++x)
+				for (auto z = key(area.centre.z - reach); z <= key(area.centre.z + reach); ++z)
+				{
+					auto const found{cells.find({x, z})};
+					if (found == cells.end())
+						continue;
+					for (auto const i : found->second)
+					{
+						auto &object{m_point_objects[i]};
+						if (plan_distance(object.location, area.centre) > area.radius + nearest[i])
+							continue;
+						infra::station station;
+						bool interior;
+						auto const distance{infra::project(*track, object.location, station, interior)};
+						if (distance < nearest[i] && beside(station, object.location, interior))
+						{
+							nearest[i] = distance;
+							object.nearest = track;
+						}
+					}
+				}
+		}
+	}
+	auto const area{area_of(Track)};
+	for (auto const &object : m_point_objects)
+	{
+		if (plan_distance(object.location, area.centre) > area.radius + kAdoptReach)
+			continue;
+		infra::binding binding;
+		binding.type = infra::kind::include;
+		binding.include = object.include;
+		if (infra_find(binding) != nullptr)
+			continue;
+		// of the line of the track: read by it or by a path of its run, else nearest to it; not one of the track alongside
+		if (object.reader != nullptr && object.reader != &Track)
+		{
+			auto const spans{editor_track::run_route(*object.reader, 250.0).spans};
+			if (std::none_of(spans.begin(), spans.end(), [&](auto const &Span) { return Span.track == &Track; }))
+				continue;
+		}
+		if (object.reader == nullptr && object.nearest != &Track)
+			continue;
+		infra::station station;
+		bool interior;
+		if (infra::project(Track, object.location, station, interior) > kAdoptReach || false == beside(station, object.location, interior))
+			continue;
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == object_points(binding, points, yaw) || points.empty())
+			continue;
+		binding.group = object.group;
+		binding.anchors.push_back(infra::make_anchor(station, points.front()));
+		binding.turns = yaw.has_value() && object.group != infra::category::logic;
+		if (binding.turns)
+			binding.yaw = turn_of(binding, *yaw);
+		binding.label = object_label(binding);
+		binding.adopted = true;
+		binding.measured = points.front();
+		m_bindings.push_back(std::move(binding));
+	}
+}
+
+void editor_mode::track_captured(TTrack const &Track)
+{
+	sweeps_captured(Track);
+	switch_drive_captured(Track);
+	grade_line_captured(Track);
+	if (m_infra_suspended || false == m_infra.follow)
+		return;
+	infra_load();
+	// the signals and the like of the track follow it, staying where they stand along it
+	infra_adopt(const_cast<TTrack &>(Track));
+	if (m_bindings.empty())
+		return;
+	Live.refresh();
+	std::vector<std::size_t> gone;
+	for (std::size_t index = 0; index < m_bindings.size(); ++index)
+	{
+		auto &binding{m_bindings[index]};
+		if (std::none_of(binding.anchors.begin(), binding.anchors.end(), [&](infra::anchor const &Anchor) { return Anchor.at.track == &Track; }) || false == alive(binding))
+			continue;
+		// an object moved by hand since it was bound is measured again, as long as the path is the way it was measured. one of a single
+		// point moved away from the track, off its side, doesn't follow it any more: measured along it, it would be taken back to its end
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		auto away{false};
+		if (object_points(binding, points, yaw) && points.size() == binding.anchors.size())
+		{
+			for (std::size_t i = 0; i < points.size() && false == away; ++i)
+			{
+				auto &anchor{binding.anchors[i]};
+				if (anchor.at.track != &Track || anchor.at.path >= static_cast<int>(Track.m_paths.size()))
+					continue;
+				auto const &path{Track.m_paths[anchor.at.path]};
+				if (glm::distance(path.points[segment_data::point::start], anchor.start) > 1e-4 || glm::distance(path.points[segment_data::point::end], anchor.end) > 1e-4)
+					continue;
+				auto placed{anchor};
+				if (glm::distance(infra::place(placed), points[i]) <= 0.01)
+					continue;
+				infra::station station;
+				bool interior{false};
+				auto const reach{binding.adopted ? kAdoptReach : kBoundReach};
+				if (points.size() == 1 && (infra::project(const_cast<TTrack &>(Track), points[i], station, interior) > reach || false == beside(station, points[i], interior)))
+					away = true;
+				else
+					anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
+			}
+			if (false == away && binding.turns && yaw.has_value() && binding.anchors.front().at.track == &Track)
+				binding.yaw = turn_of(binding, *yaw);
+		}
+		if (away)
+		{
+			WriteLog("Editor: " + binding.label + " moved away from track " + Track.name() + ", it doesn't follow it any more");
+			gone.push_back(index);
+			continue;
+		}
+		if (binding.adopted && false == points.empty())
+			binding.measured = points.front();
+		infra_buffer(binding, true);
+	}
+	infra_unbind(std::move(gone));
+}
+
+void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
+{
+	nmt_track_changed(Tracks);
+	m_joints.tracks_committed(Tracks);
+	sweeps_committed(Tracks);
+	switch_drives_committed(Tracks);
+	grade_lines_committed(Tracks);
+	if (m_infra_suspended || false == m_infra.follow)
+		return;
+	infra_load();
+	if (m_bindings.empty())
+		return;
+	Live.refresh();
+	std::vector<track_area> areas;
+	for (auto *track : Tracks)
+		if (false == track->m_editorremoved)
+			areas.push_back(area_of(*track));
+	// paths which took over may have been committed before the old ones were retired
+	std::optional<std::vector<track_area>> everywhere;
+	auto const take_over = [&](glm::dvec3 const &Foot, infra::station &Station) {
+		if (nearest_beside(areas, Foot, 30.0, Station))
+			return true;
+		if (false == everywhere.has_value())
+		{
+			everywhere.emplace();
+			for (auto *track : simulation::Paths.sequence())
+				if (track != nullptr && false == track->m_editorremoved && editor_track::is_supported(*track))
+					everywhere->push_back(area_of(*track));
+		}
+		// only a path running where the old one did, not the one alongside
+		return nearest_beside(*everywhere, Foot, 1.0, Station);
+	};
+	std::vector<scene::instance_handle> dropped;
+	for (auto &binding : m_bindings)
+	{
+		auto const affected{std::any_of(binding.anchors.begin(), binding.anchors.end(), [&](infra::anchor const &Anchor) {
+			return Anchor.at.track != nullptr && (Anchor.at.track->m_editorremoved || contains(Tracks, Anchor.at.track));
+		})};
+		if (false == affected || false == alive(binding))
+			continue;
+		std::vector<glm::dvec3> standing;
+		std::optional<double> facing;
+		if (binding.adopted && (false == object_points(binding, standing, facing) || standing.empty() || glm::distance(standing.front(), binding.measured) > 0.01))
+		{
+			// moved by another tool while its track was being changed: it stays where that put it, bound again with the next change
+			dropped.push_back(binding.include);
+			continue;
+		}
+		auto moved{binding};
+		auto lost{false};
+		for (auto &anchor : moved.anchors)
+		{
+			auto *track{anchor.at.track};
+			if (false == track->m_editorremoved && false == contains(Tracks, track))
+				continue;
+			// the object goes square to the new axis from the point of the old one, so a shift of the track carries it
+			// sideways rather than along; its own path goes first, then the ones which took over
+			infra::station station;
+			auto found{false};
+			if (false == track->m_editorremoved && anchor.at.path < static_cast<int>(track->m_paths.size()))
+			{
+				double s;
+				bool interior;
+				auto const distance{infra::project(track->m_paths[anchor.at.path], anchor.foot, s, interior)};
+				station = {track, anchor.at.path, s};
+				found = (distance <= 30.0 && beside(station, anchor.foot, interior));
+			}
+			if (false == found && false == take_over(anchor.foot, station))
+			{
+				lost = true;
+				break;
+			}
+			auto const offset{anchor.offset};
+			auto const height{anchor.height};
+			// a path taking the object over may run the other way: the object stays on its side, turned as it was
+			auto const before{plan_of(anchor.end - anchor.start)};
+			anchor = infra::make_anchor(station, anchor.foot);
+			auto const reversed{glm::length(before) > 1e-6 && glm::dot(before, infra::frame_at(anchor.at).forward) < 0.0};
+			anchor.offset = reversed ? -offset : offset;
+			anchor.height = height;
+			if (reversed && &anchor == &moved.anchors.front())
+				moved.yaw = clamp_circular(moved.yaw + 180.0);
+		}
+		if (lost)
+		{
+			if (binding.adopted)
+				dropped.push_back(binding.include);
+			else
+				binding.lost = true;
+			continue;
+		}
+		if (binding.adopted)
+		{
+			// where nothing moved, the directive stays as it is written
+			auto const there{infra::place(moved.anchors.front())};
+			auto const turned{facing.has_value() && moved.turns ? std::abs(clamp_circular(infra::heading(infra::frame_at(moved.anchors.front().at).forward) + moved.yaw - *facing + 180.0) - 180.0) : 0.0};
+			if (glm::distance(there, standing.front()) < 0.005 && turned < 0.01)
+			{
+				moved.lost = false;
+				binding = std::move(moved);
+				continue;
+			}
+		}
+		infra_buffer(binding, false);
+		moved.lost = false;
+		binding = std::move(moved);
+		infra_move(binding);
+		m_infra_carried.emplace(binding.node, binding.include);
+		if (binding.adopted)
+		{
+			std::vector<glm::dvec3> points;
+			std::optional<double> yaw;
+			if (object_points(binding, points, yaw) && false == points.empty())
+				binding.measured = points.front();
+		}
+		for (auto &entry : m_infra_buffer)
+			if (entry.saved.same(binding))
+				entry.moved = true;
+	}
+	if (false == dropped.empty())
+		m_bindings.erase(std::remove_if(m_bindings.begin(), m_bindings.end(), [&](infra::binding const &Binding) { return Binding.adopted && contains(dropped, Binding.include); }), m_bindings.end());
+}
+
+void editor_mode::track_retired(TTrack &Track)
+{
+	nmt_track_gone(Track);
+	tracks_committed({});
+}
+
+void editor_mode::track_renamed(TTrack const &Track, std::string const &Old)
+{
+	grade_line_renamed(Track, Old);
+}
+
+void editor_mode::track_split(TTrack &Original, TTrack &Created, segment_data const &First)
+{
+	sweeps_split(Original, Created);
+	grade_line_split(Original, Created);
+	signal_split(Original, Created);
+	if (m_infra_suspended || Created.m_paths.empty())
+		return;
+	auto const length{infra::plan_length(First)};
+	auto const &second{Created.m_paths.front()};
+	for (auto &binding : m_bindings)
+		for (auto &anchor : binding.anchors)
+		{
+			if (anchor.at.track != &Original || anchor.at.path != 0)
+				continue;
+			if (anchor.at.s > length)
+			{
+				anchor.at.track = &Created;
+				anchor.at.s -= length;
+				anchor.start = second.points[segment_data::point::start];
+				anchor.end = second.points[segment_data::point::end];
+				anchor.length = infra::plan_length(second);
+			}
+			else
+			{
+				anchor.end = First.points[segment_data::point::end];
+				anchor.length = length;
+			}
+		}
+}
+
+void editor_mode::infra_move(infra::binding &Binding)
+{
+	if (Binding.anchors.empty())
+		return;
+	auto const location{infra::place(Binding.anchors.front())};
+	auto const facing = [&]() { return clamp_circular(infra::heading(infra::frame_at(Binding.anchors.front().at).forward) + Binding.yaw); };
+	switch (Binding.type)
+	{
+	case infra::kind::model:
+	{
+		auto *model{static_cast<TAnimModel *>(Binding.node)};
+		auto angles{model->Angles()};
+		if (Binding.turns)
+			angles.y = static_cast<float>(facing());
+		move_model(model, location, angles);
+		break;
+	}
+	case infra::kind::include:
+	{
+		include_place place;
+		if (false == include_place_of(Binding.include, place))
+			return;
+		for (int axis = 0; axis < 3; ++axis)
+			place.values[place.position[axis]] = editor_includes::number(location[axis] - place.offset[axis]);
+		if (Binding.turns && place.yaw >= 0)
+			place.values[place.yaw] = editor_includes::number(facing());
+		auto const directive{editor_includes::compose_directive(place.file, place.values)};
+		if (directive != scene::Layers.directive(Binding.include))
+			set_include_directive(Binding.include, directive);
+		break;
+	}
+	case infra::kind::traction:
+	{
+		if (Binding.anchors.size() != 4)
+			return;
+		std::array<glm::dvec3, 4> points;
+		for (std::size_t i = 0; i < 4; ++i)
+			points[i] = infra::place(Binding.anchors[i]);
+		move_traction(static_cast<TTraction *>(Binding.node), points);
+		break;
+	}
+	case infra::kind::memcell: move_memcell(static_cast<TMemCell *>(Binding.node), location); break;
+	case infra::kind::launcher: move_launcher(static_cast<TEventLauncher *>(Binding.node), location); break;
+	}
+}
+
+void editor_mode::infra_attach(EditorSnapshot &Snapshot)
+{
+	auto const involved = [&](infra::object_state const &State) {
+		if (State.moved)
+			return true;
+		// one the editor bound for the change which didn't move: its own changes, if any, are taken back by the tool which made them
+		if (State.saved.adopted)
+			return false;
+		for (auto const &anchor : State.saved.anchors)
+		{
+			if (contains(Snapshot.created, anchor.at.track) || contains(Snapshot.removed, anchor.at.track))
+				return true;
+			for (auto const &entry : Snapshot.tracks)
+				if (entry.first == anchor.at.track)
+					return true;
+		}
+		return false;
+	};
+	for (auto &entry : m_infra_buffer)
+		if (involved(entry))
+			Snapshot.infra.push_back(std::move(entry));
+	m_infra_buffer.clear();
+}
+
+void editor_mode::render_infra_body()
+{
+	auto &state{m_infra};
+	infra_load();
+	Live.refresh();
+
+	auto follow{state.follow};
+	if (ImGui::Checkbox(STR_C("Bound objects follow the changes of the track"), &follow))
+	{
+		state.follow = follow;
+		if (follow)
+			infra_rebase();
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip(STR_C("Bound objects keep their chainage along the path, the offset from its axis and the height above the rail top;\n"
+		                  "models and includes turn with the path and stay upright. The move is a part of the undo step of the change."));
+	ImGui::SameLine();
+	ImGui::Checkbox(STR_C("Show in 3D"), &state.show);
+	ImGui::Text(STR_C("Objects bound in the scenery: %d"), infra_bound_count());
+	if (false == m_bindings_unresolved.empty())
+	{
+		ImGui::SameLine();
+		ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), STR_C("(%d stored binding(s) not found, kept as they are)"), static_cast<int>(m_bindings_unresolved.size()));
+	}
+
+	ImGui::Separator();
+	render_infra_search();
+	render_infra_candidates();
+	render_infra_bound();
+	if (false == state.error.empty())
+		ImGui::TextColored(ImVec4(1.f, 0.4f, 0.35f, 1.f), "%s", state.error.c_str());
+	else if (false == state.status.empty())
+		ImGui::TextWrapped("%s", state.status.c_str());
+}
+
+// what changed while the bindings did not follow the track becomes their new starting point
+void editor_mode::infra_rebase()
+{
+	for (auto &binding : m_bindings)
+	{
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == alive(binding) || false == object_points(binding, points, yaw) || points.size() != binding.anchors.size())
+			continue;
+		for (std::size_t i = 0; i < points.size(); ++i)
+		{
+			auto &anchor{binding.anchors[i]};
+			if (anchor.at.track == nullptr || anchor.at.track->m_editorremoved || anchor.at.path >= static_cast<int>(anchor.at.track->m_paths.size()))
+			{
+				binding.lost = true;
+				continue;
+			}
+			anchor = infra::make_anchor(anchor.at.track, anchor.at.path, points[i]);
+		}
+		if (binding.turns && yaw.has_value())
+			binding.yaw = turn_of(binding, *yaw);
+	}
+}
+
+void editor_mode::render_infra_search()
+{
+	auto &state{m_infra};
+	char const *const scopes[] = {STR_C("Selected path"), STR_C("Line through the selected path"), STR_C("Route of the vertical profile"), STR_C("Whole scenery")};
+	ImGui::SetNextItemWidth(260.f);
+	ImGui::Combo(STR_C("Look along"), &state.scope, scopes, IM_ARRAYSIZE(scopes));
+	if (ImGui::TreeNode(STR_C("More settings")))
+	{
+		if (state.scope == 1)
+		{
+			ImGui::SetNextItemWidth(120.f);
+			ImGui::InputFloat(STR_C("Reach each way, m"), &state.reach, 100.f, 500.f, "%.0f");
+			state.reach = std::clamp(state.reach, 10.f, 20000.f);
+		}
+		ImGui::SetNextItemWidth(120.f);
+		ImGui::InputFloat(STR_C("Corridor each side of the axis, m"), &state.corridor, 0.5f, 2.f, "%.1f");
+		state.corridor = std::clamp(state.corridor, 0.5f, 50.f);
+		if (ImGui::TreeNode(STR_C("Rules for names of the files")))
+		{
+			ImGui::TextDisabled("%s", STR_C("Parts of the names, separated by spaces; the first rule which matches decides"));
+			for (std::size_t i = 0; i < state.rules.size(); ++i)
+			{
+				auto &rule{state.rules[i]};
+				char buffer[512];
+				std::snprintf(buffer, sizeof(buffer), "%s", rule.keywords.c_str());
+				ImGui::SetNextItemWidth(360.f);
+				if (ImGui::InputText((std::string{STR_C(infra::name(rule.group))} + "##rule" + std::to_string(i)).c_str(), buffer, sizeof(buffer)))
+					rule.keywords = buffer;
+			}
+			if (ImGui::SmallButton(STR_C("Default rules")))
+				state.rules = infra::default_rules();
+			ImGui::TextDisabled("%s", STR_C("Includes are matched by the template name and its //$e description, models by the file and node name;\n"
+			                          "traction is always the catenary, memory cells and event launchers the logic"));
+			ImGui::TreePop();
+		}
+		ImGui::TreePop();
+	}
+	if (ImGui::Button(STR_C("Find objects")))
+		infra_recognize();
+
+}
+
+void editor_mode::render_infra_candidates()
+{
+	auto &state{m_infra};
+	auto &candidates{state.candidates};
+	ImVec4 const readcolour{0.45f, 0.85f, 1.f, 1.f};
+	ImVec4 const warncolour{1.f, 0.75f, 0.3f, 1.f};
+	auto const shown = [&](infra_candidate const &Candidate) {
+		switch (state.filter)
+		{
+		case 1: return Candidate.reader != nullptr;
+		case 2: return Candidate.nearer != nullptr;
+		case 3: return Candidate.unread;
+		default: return true;
+		}
+	};
+	auto const choose = [&](std::optional<infra::category> const Group, bool const Chosen) {
+		for (auto &candidate : candidates)
+			if ((false == Group.has_value() || candidate.binding.group == *Group) && shown(candidate))
+				candidate.chosen = Chosen && false == candidate.bound;
+	};
+	state.hovered = -1;
+	if (candidates.empty())
+		return;
+	int chosen{0};
+	for (auto const &candidate : candidates)
+		chosen += candidate.chosen ? 1 : 0;
+	ImGui::SameLine();
+	if (ImGui::Button(format(STR_C("Bind the chosen (%d)"), chosen).c_str()))
+		infra_bind_chosen();
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("All")))
+		choose({}, true);
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("None")))
+		choose({}, false);
+
+	if (state.read > 0 || state.unread > 0)
+	{
+		std::string const labels[]{format("%s (%d)", STR_C("All"), static_cast<int>(candidates.size())), format("%s (%d)", STR_C("Read by a path"), state.read),
+		                           format("%s (%d)", STR_C("Nearer to another path"), state.overruled), format("%s (%d)", STR_C("Not read"), state.unread)};
+		choice_chips("infrafilter", state.filter,
+		             {{0, labels[0].c_str()},
+		              {1, labels[1].c_str(),
+		               "The memory cell of the object is read by a getvalues event of a path, listed by the path, inside a multiple\n"
+		               "event or written loose as <path>:event<n>. The object is bound to the thread of that path, not to the nearest one"},
+		              {2, labels[2].c_str(), "By the distance alone these would go to the wrong thread. Check them in 3D: the dashed line goes to the nearer path"},
+		              {3, labels[3].c_str(), "The signal has a memory cell, but no event of a path reads it: the vehicles won't see it.\nBound to the nearest path"}});
+	}
+
+	ImGui::BeginChild("##infracandidates", ImVec2(0.f, 260.f), true);
+	std::vector<int> rows;
+	for (auto const group : infra::categories())
+	{
+		rows.clear();
+		for (int i = 0; i < static_cast<int>(candidates.size()); ++i)
+			if (candidates[i].binding.group == group && shown(candidates[i]))
+				rows.push_back(i);
+		if (rows.empty())
+			continue;
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(colour(group)));
+		auto const open{ImGui::TreeNodeEx(format("%s (%d)", STR_C(infra::name(group)), static_cast<int>(rows.size())).c_str(), group == infra::category::other || group == infra::category::environment ? 0 : ImGuiTreeNodeFlags_DefaultOpen)};
+		ImGui::PopStyleColor();
+		ImGui::SameLine();
+		if (ImGui::SmallButton((std::string{STR_C("all##g")} + infra::name(group)).c_str()))
+			choose(group, true);
+		ImGui::SameLine();
+		if (ImGui::SmallButton((std::string{STR_C("none##g")} + infra::name(group)).c_str()))
+			choose(group, false);
+		if (false == open)
+			continue;
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(rows.size()));
+		while (clipper.Step())
+		{
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				auto const i{rows[row]};
+				auto &candidate{candidates[i]};
+				auto const &anchor{candidate.binding.anchors.front()};
+				ImGui::PushID(i);
+				if (candidate.bound)
+					ImGui::TextDisabled(STR_C("[bound]"));
+				else
+					ImGui::Checkbox("##chosen", &candidate.chosen);
+				ImGui::SameLine();
+				if (ImGui::Selectable(candidate.binding.label.c_str(), false, ImGuiSelectableFlags_None, ImVec2(ImGui::CalcTextSize(candidate.binding.label.c_str()).x, 0.f)) && anchor.at.track != nullptr)
+					focus_track(*anchor.at.track, anchor.at.path, anchor.foot);
+				if (ImGui::IsItemHovered())
+				{
+					state.hovered = i;
+					std::string text{format(STR_C("%s, %s\n%.2f m %s of the axis, %.2f m above the rail top\n%s"), infra::name(candidate.binding.type), anchor.at.track != nullptr ? anchor.at.track->name().c_str() : "-", std::abs(candidate.offset),
+					                        candidate.offset >= 0.0 ? STR_C("on the right") : STR_C("on the left"), anchor.height, candidate.reason.c_str())};
+					if (candidate.reader != nullptr)
+						text += format(STR_C("\nRead by the path %s: event %s, getvalues of the memory cell %s"), candidate.reader->name().c_str(), candidate.event.c_str(), candidate.cell.c_str()) +
+						        (candidate.loose ? STR(" (written loose, the path takes it by the name)") : std::string{});
+					if (candidate.nearer != nullptr)
+						text += format(STR_C("\nThe path %s is nearer, but it doesn't read the object"), candidate.nearer->name().c_str());
+					if (candidate.unread)
+						text += STR("\nNo path reads the memory cell of the signal");
+					text += STR("\nClick to look at it");
+					ImGui::SetTooltip("%s", text.c_str());
+				}
+				ImGui::SameLine();
+				ImGui::TextDisabled("%s %+.1f m", infra::name(candidate.binding.type), candidate.offset);
+				if (candidate.reader != nullptr)
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(readcolour, STR_C("read by %s"), candidate.reader->name().c_str());
+				}
+				if (candidate.nearer != nullptr)
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(warncolour, STR_C("(nearer: %s)"), candidate.nearer->name().c_str());
+				}
+				if (candidate.unread)
+				{
+					ImGui::SameLine();
+					ImGui::TextColored(warncolour, "%s", STR_C("not read"));
+				}
+				ImGui::PopID();
+			}
+		}
+		ImGui::TreePop();
+	}
+	ImGui::EndChild();
+}
+
+void editor_mode::render_infra_bound()
+{
+	if (ImGui::TreeNode(STR_C("Bound objects along the scope")))
+	{
+		auto const scope{infra_scope()};
+		std::unordered_set<TTrack const *> const tracks(scope.begin(), scope.end());
+		std::vector<std::size_t> along;
+		for (std::size_t i = 0; i < m_bindings.size(); ++i)
+			if (false == m_bindings[i].adopted && std::any_of(m_bindings[i].anchors.begin(), m_bindings[i].anchors.end(), [&](infra::anchor const &Anchor) { return tracks.count(Anchor.at.track) > 0; }))
+				along.push_back(i);
+		ImGui::Text(STR_C("%d of %d"), static_cast<int>(along.size()), infra_bound_count());
+		if (false == along.empty())
+		{
+			ImGui::SameLine();
+			if (ImGui::SmallButton(STR_C("Unbind all of these")))
+			{
+				infra_unbind(along);
+				along.clear();
+			}
+		}
+		std::optional<std::size_t> unbind;
+		ImGui::BeginChild("##infrabound", ImVec2(0.f, 160.f), true);
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(along.size()));
+		while (clipper.Step())
+		{
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				auto const index{along[row]};
+				auto const &binding{m_bindings[index]};
+				ImGui::PushID(static_cast<int>(index));
+				if (ImGui::SmallButton(STR_C("unbind")))
+					unbind = index;
+				ImGui::SameLine();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(binding.lost ? IM_COL32(255, 80, 70, 255) : colour(binding.group)));
+				ImGui::Text("%s%s", binding.label.c_str(), binding.lost ? STR_C("  (no path to follow)") : "");
+				ImGui::PopStyleColor();
+				ImGui::PopID();
+			}
+		}
+		ImGui::EndChild();
+		if (unbind)
+			infra_unbind({*unbind});
+		ImGui::TreePop();
+	}
+}
+
+void editor_mode::draw_infra_overlay() const
+{
+	auto const &state{m_infra};
+	if (false == state.open || false == state.show)
+		return;
+	Live.refresh();
+	screen_projection const projection;
+	ImDrawList *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	auto const camera{GfxRenderer->Camera_Position()};
+	auto const draw = [&](infra::binding const &Binding, ImU32 const Colour, float const Size) {
+		if (Binding.anchors.empty() || glm::distance(Binding.anchors.front().foot, camera) > 2000.0)
+			return;
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		if (false == alive(Binding) || false == object_points(Binding, points, yaw))
+			return;
+		for (std::size_t i = 0; i < points.size() && i < Binding.anchors.size(); ++i)
+		{
+			auto anchor{Binding.anchors[i]};
+			auto const foot{infra::frame_at(anchor.at).point};
+			projection.line(drawlist, foot, points[i], Colour, 1.5f);
+		}
+		ImVec2 screen;
+		if (projection.project(points.front(), screen))
+			drawlist->AddCircleFilled(screen, Size, Colour);
+	};
+	for (auto const &binding : m_bindings)
+		if (false == binding.adopted)
+			draw(binding, binding.lost ? overlay_color::invalid : IM_COL32(90, 230, 110, 220), 3.5f);
+	auto const object = [&](infra_candidate const &Candidate) {
+		std::vector<glm::dvec3> points;
+		std::optional<double> yaw;
+		return object_points(Candidate.binding, points, yaw) ? points.front() : Candidate.binding.anchors.front().foot;
+	};
+	auto const dashed = [&](glm::dvec3 const &From, glm::dvec3 const &To, ImU32 const Colour) {
+		auto const steps{std::clamp(static_cast<int>(glm::distance(From, To) / 0.5), 2, 40)};
+		for (int k = 0; k < steps; k += 2)
+			projection.line(drawlist, glm::mix(From, To, static_cast<double>(k) / steps), glm::mix(From, To, static_cast<double>(k + 1) / steps), Colour, 2.f);
+	};
+	for (int i = 0; i < static_cast<int>(state.candidates.size()); ++i)
+	{
+		auto const &candidate{state.candidates[i]};
+		if (candidate.nearer != nullptr && alive(candidate.binding) && glm::distance(candidate.nearer_foot, camera) <= 2000.0)
+		{
+			auto const point{object(candidate)};
+			ImVec2 screen;
+			if (projection.project(point, screen))
+				drawlist->AddCircle(screen, i == state.hovered ? 13.f : 8.f, IM_COL32(255, 190, 70, 230), 16, 2.f);
+			if (i == state.hovered)
+				dashed(point, candidate.nearer_foot, IM_COL32(255, 190, 70, 230));
+		}
+		if (candidate.bound)
+			continue;
+		draw(candidate.binding, colour(candidate.binding.group, candidate.chosen ? 255 : 110), i == state.hovered ? 9.f : (candidate.chosen ? 5.f : 3.f));
+	}
+	if (state.hovered >= 0 && state.hovered < static_cast<int>(state.candidates.size()))
+	{
+		auto const &candidate{state.candidates[state.hovered]};
+		auto const outline = [&](TTrack const *Track, ImU32 const Colour, float const Width) {
+			if (Track == nullptr || Track->m_editorremoved)
+				return;
+			for (auto const &path : Track->m_paths)
+			{
+				bezier const curve{path};
+				auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
+				auto previous{curve.point(0.0)};
+				for (int k = 1; k <= count; ++k)
+				{
+					auto const next{curve.point(static_cast<double>(k) / count)};
+					projection.line(drawlist, previous, next, Colour, Width);
+					previous = next;
+				}
+			}
+		};
+		outline(candidate.binding.anchors.front().at.track, IM_COL32(255, 255, 255, 200), 3.f);
+		if (candidate.reader != candidate.binding.anchors.front().at.track)
+			outline(candidate.reader, IM_COL32(110, 215, 255, 220), 3.f);
+	}
+}

@@ -1,10 +1,9 @@
 #include "stdafx.h"
 #include "ubo.h"
 
-gl::ubo::ubo(size_t size, int idx, GLenum hint)
+gl::ubo::ubo(size_t size, int idx, GLenum hint) : index(idx)
 {
     allocate(buffer::UNIFORM_BUFFER, size, hint);
-    index = idx;
     bind_uniform();
 }
 
@@ -16,4 +15,9 @@ void gl::ubo::bind_uniform()
 void gl::ubo::update(const uint8_t *data, int offset, GLsizeiptr size)
 {
     upload(buffer::UNIFORM_BUFFER, data, offset, size);
+}
+
+void gl::ubo::update(std::span<std::byte const> Data, int const Offset)
+{
+    upload(buffer::UNIFORM_BUFFER, Data.data(), Offset, static_cast<GLsizeiptr>(Data.size()));
 }

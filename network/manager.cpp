@@ -17,7 +17,7 @@ network::server_manager::server_manager()
 	backbuffer = std::make_shared<std::fstream>("backbuffer.bin", std::ios::out | std::ios::in | std::ios::trunc | std::ios::binary);
 }
 
-command_queue::commands_map network::server_manager::pop_commands()
+command_queue::commands_map network::server_manager::pop_commands() const
 {
 	command_queue::commands_map map;
 
@@ -27,7 +27,7 @@ command_queue::commands_map network::server_manager::pop_commands()
 	return map;
 }
 
-void network::server_manager::push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands)
+void network::server_manager::push_delta(double render_dt, double dt, double sync, const command_queue::commands_map &commands) const
 {
 	if (dt == 0.0 && commands.empty())
 		return;
@@ -55,14 +55,12 @@ void network::server_manager::create_server(const std::string &backend, const st
 	servers.emplace_back(it->second->create_server(backbuffer, conf));
 }
 
-network::manager::manager()
-{
-}
+network::manager::manager() = default;
 
 void network::manager::update()
 {
-	for (auto &backend : backend_list())
-		backend.second->update();
+	for (auto const &[backendname, backendinstance] : backend_list())
+		backendinstance->update();
 
 	if (client)
 		client->update();

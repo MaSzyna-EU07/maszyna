@@ -31,7 +31,7 @@ basic_precipitation::init() {
 void 
 basic_precipitation::update() {
 
-    auto const timedelta { static_cast<float>( ( DebugModeFlag ? Timer::GetDeltaTime() : Timer::GetDeltaTime() ) ) };
+    auto const timedelta { static_cast<float>( Timer::GetDeltaTime() ) };
 
     if( timedelta == 0.0 ) { return; }
 

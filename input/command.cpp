@@ -158,6 +158,9 @@ commanddescription_sequence Commands_descriptions = {
     {"radiovolumeincrease", command_target::vehicle, command_mode::oneoff},
     {"radiovolumedecrease", command_target::vehicle, command_mode::oneoff},
     {"radiovolumeset", command_target::vehicle, command_mode::oneoff},
+    {"radiofusetoggle", command_target::vehicle, command_mode::oneoff},
+    {"radiofuseenable", command_target::vehicle, command_mode::oneoff},
+    {"radiofusedisable", command_target::vehicle, command_mode::oneoff},
     {"cabchangeforward", command_target::vehicle, command_mode::oneoff},
     {"cabchangebackward", command_target::vehicle, command_mode::oneoff},
     {"modernlightdimmerdecrease", command_target::vehicle, command_mode::oneoff},
@@ -405,10 +408,18 @@ commanddescription_sequence Commands_descriptions = {
     {"wiperswitchincrease", command_target::vehicle, command_mode::oneoff},
     {"wiperswitchdecrease", command_target::vehicle, command_mode::oneoff},
     {"lightsset", command_target::vehicle, command_mode::oneoff},
+    {"oilfuelpumptoggle", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertoggleb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakercloseb", command_target::vehicle, command_mode::oneoff},
+    {"linebreakertogglec", command_target::vehicle, command_mode::oneoff},
+    {"linebreakeropenc", command_target::vehicle, command_mode::oneoff},
+    {"linebreakerclosec", command_target::vehicle, command_mode::oneoff},
+    {"repaircoupler", command_target::simulation, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
-std::unordered_map<std::string, user_command> commandMap = {
+std::unordered_map<std::string, user_command> const commandMap = {
 	{"aidriverdisable", user_command::aidriverdisable},
 	{"jointcontrollerset", user_command::jointcontrollerset},
 	{"mastercontrollerincrease", user_command::mastercontrollerincrease},
@@ -543,6 +554,9 @@ std::unordered_map<std::string, user_command> commandMap = {
 	{"radiovolumeincrease", user_command::radiovolumeincrease},
 	{"radiovolumedecrease", user_command::radiovolumedecrease},
 	{"radiovolumeset", user_command::radiovolumeset},
+	{"radiofusetoggle", user_command::radiofusetoggle},
+	{"radiofuseenable", user_command::radiofuseenable},
+	{"radiofusedisable", user_command::radiofusedisable},
 	{"cabchangeforward", user_command::cabchangeforward},
 	{"cabchangebackward", user_command::cabchangebackward},
 	{"viewturn", user_command::viewturn},
@@ -789,6 +803,14 @@ std::unordered_map<std::string, user_command> commandMap = {
 	{"wiperswitchincrease", user_command::wiperswitchincrease},
 	{"wiperswitchdecrease", user_command::wiperswitchdecrease},
     {"lightsset", user_command::lightsset},
+    {"oilfuelpumptoggle", user_command::oilfuelpumptoggle},
+    {"linebreakertoggleb", user_command::linebreakertoggleb},
+    {"linebreakeropenb", user_command::linebreakeropenb},
+    {"linebreakercloseb", user_command::linebreakercloseb},
+    {"linebreakertogglec", user_command::linebreakertogglec},
+    {"linebreakeropenc", user_command::linebreakeropenc},
+    {"linebreakerclosec", user_command::linebreakerclosec},
+    {"repaircoupler", user_command::repaircoupler},
 	{"none", user_command::none}};
 
 } // namespace simulation
@@ -796,12 +818,12 @@ std::unordered_map<std::string, user_command> commandMap = {
 void command_queue::update()
 {
 	double delta = Timer::GetDeltaTime();
-	for (auto c : m_active_continuous)
+	for (auto [activecommand, activerecipient] : m_active_continuous)
 	{
-		command_data data({c.first, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
-		auto lookup = m_commands.emplace( c.second, commanddata_sequence() );
+		command_data data({activecommand, GLFW_REPEAT, 0.0, 0.0, delta, false, glm::vec3()}); // todo: improve
+		auto [queueiterator, queueinserted] = m_commands.try_emplace( activerecipient, commanddata_sequence() );
 		// recipient stack was either located or created, so we can add to it quite safely
-		lookup.first->second.emplace_back( data );
+		queueiterator->second.emplace_back( data );
 	}
 }
 
@@ -809,16 +831,15 @@ void command_queue::update()
 void
 command_queue::push( command_data const &Command, uint32_t const Recipient ) {
 	if (is_network_target(Recipient)) {
-		auto lookup = m_intercept_queue.emplace(Recipient, commanddata_sequence());
-		lookup.first->second.emplace_back(Command);
+		auto [queueiterator, queueinserted] = m_intercept_queue.try_emplace(Recipient, commanddata_sequence());
+		queueiterator->second.emplace_back(Command);
 	} else {
 		push_direct(Command, Recipient);
 	}
 }
 
 void command_queue::push_direct(const command_data &Command, const uint32_t Recipient) {
-	auto const &desc = simulation::Commands_descriptions[ static_cast<std::size_t>( Command.command ) ];
-	if (desc.mode == command_mode::continuous)
+	if (auto const &desc = simulation::Commands_descriptions[ static_cast<std::size_t>( Command.command ) ]; desc.mode == command_mode::continuous)
 	{
 		if (Command.action == GLFW_PRESS)
 			m_active_continuous.emplace(std::make_pair(Command.command, Recipient));
@@ -828,9 +849,9 @@ void command_queue::push_direct(const command_data &Command, const uint32_t Reci
 			return;
 	}
 
-	auto lookup = m_commands.emplace( Recipient, commanddata_sequence() );
+	auto [queueiterator, queueinserted] = m_commands.try_emplace( Recipient, commanddata_sequence() );
 	// recipient stack was either located or created, so we can add to it quite safely
-	lookup.first->second.emplace_back( Command );
+	queueiterator->second.emplace_back( Command );
 }
 
 // retrieves oldest posted command for specified recipient, if any. returns: true on retrieval, false if there's nothing to retrieve
@@ -854,10 +875,9 @@ command_queue::pop( command_data &Command, uint32_t const Recipient ) {
     return true;
 }
 
-bool command_queue::is_network_target(uint32_t const Recipient) {
-	const command_target target = (command_target)(Recipient & ~0xffff);
+bool command_queue::is_network_target(uint32_t const Recipient) const {
 
-	if (target == command_target::entity)
+	if (const auto target = (command_target)(Recipient & ~0xffff); target == command_target::entity)
 		return false;
 
 	return true;
@@ -870,9 +890,9 @@ command_queue::commands_map command_queue::pop_intercept_queue() {
 }
 
 void command_queue::push_commands(const commands_map &commands) {
-	for (auto const &kv : commands)
-		for (command_data const &data : kv.second)
-			push_direct(data, kv.first);
+	for (auto const &[recipient, sequence] : commands)
+		for (command_data const &data : sequence)
+			push_direct(data, recipient);
 }
 
 void

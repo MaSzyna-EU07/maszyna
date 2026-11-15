@@ -28,6 +28,9 @@ template <typename T> constexpr T sq(T v)
 // returns the per-user config path for `filename` (platform-specific dir),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
+// the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
+// %LOCALAPPDATA%\MaSzyna\cache, ~/Library/Caches/MaSzyna, $XDG_CACHE_HOME/MaSzyna or ~/.cache/MaSzyna; empty as user_config_path
+std::filesystem::path user_cache_path(const std::string &filename);
 
 // TODO: Shouldn't this be in globals?
 namespace paths
@@ -100,7 +103,7 @@ inline double LocalRandom(double b)
 inline double BorlandTime()
 {
 	auto timesinceepoch = std::time(nullptr);
-	return timesinceepoch / (24.0 * 60 * 60);
+	return static_cast<double>(timesinceepoch) / (24.0 * 60 * 60);
 	/*
 	    // std alternative
 	    auto timesinceepoch = std::chrono::system_clock::now().time_since_epoch();
@@ -166,14 +169,19 @@ void win1250_to_ascii(std::string &Input);
 std::string Bezogonkow(std::string Input, bool const Underscorestospaces = false);
 
 std::string win1250_to_utf8(const std::string &input);
+// counterpart of win1250_to_utf8(): the polish letters, the other characters outside of ascii as question marks
+std::string utf8_to_win1250(std::string const &Text);
+// decodes utf-8 encoded text into unicode code points. returns false if the text isn't valid utf-8
+bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
+// decodes windows-1250 (ansi) encoded text into unicode code points
+void win1250_to_utf32(std::string const &Text, std::u32string &Output);
 
 inline std::string extract_value(std::string const &Key, std::string const &Input)
 {
 	// NOTE, HACK: the leading space allows to uniformly look for " variable=" substring
 	std::string const input{" " + Input};
 	std::string value;
-	auto lookup = input.find(" " + Key + "=");
-	if (lookup != std::string::npos)
+	if (auto lookup = input.find(" " + Key + "="); lookup != std::string::npos)
 	{
 		value = input.substr(input.find_first_not_of(' ', lookup + Key.size() + 2));
 		lookup = value.find(' ');
@@ -214,11 +222,18 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
+// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
+// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+std::string FileCased(std::filesystem::path const &Filename);
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
 std::time_t last_modified(std::string const &Filename);
+
+// thread-safe replacements for std::localtime and std::gmtime, which hand out a pointer to shared static storage
+std::tm local_tm(std::time_t Time);
+std::tm utc_tm(std::time_t Time);
 
 // potentially erases file extension from provided file name. returns: true if extension was removed, false otherwise
 bool erase_extension(std::string &Filename);
@@ -307,7 +322,7 @@ template <typename T> T clamp_power_of_two(T Value, T const Min = T(1), T const 
 template <typename Type_> Type_ quantize(Type_ const Value, Type_ const Step)
 {
 
-	return Step * std::round(Value / Step);
+	return static_cast<Type_>(Step * std::round(Value / Step));
 }
 
 template <typename T> T min_speed(T const Left, T const Right)
@@ -377,6 +392,14 @@ glm::dvec3 LoadPoint(class cParser &Input);
 // extracts a group of tokens from provided data stream
 std::string deserialize_random_set(cParser &Input, char const *Break = "\n\r\t ;");
 
+// extracts a group of tokens from provided data stream, returns all of them.
+// a single token, not enclosed in "[]", is returned as one element sequence
+std::vector<std::string> deserialize_set(cParser &Input, char const *Break = "\n\r\t ;");
+
+// returns hash of provided string, combined with provided seed. FNV-1a, picked for having
+// identical result regardless of platform and standard library, unlike std::hash
+std::uint32_t hash_string(std::string const &String, std::uint32_t const Seed = 0);
+
 // extracts a group of <key, value> pairs from provided data stream
 // NOTE: expects no more than single pair per line
 template <typename MapType_> void deserialize_map(MapType_ &Map, cParser &Input)
@@ -411,12 +434,12 @@ class condition_variable
 	// methods
 	void wait()
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait(lock, [this]() { return m_spurious == false; });
 	}
 	template <class Rep_, class Period_> void wait_for(const std::chrono::duration<Rep_, Period_> &Time)
 	{
-		std::unique_lock<std::mutex> lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		m_condition.wait_for(lock, Time, [this]() { return m_spurious == false; });
 	}
 	void notify_one()
@@ -431,7 +454,7 @@ class condition_variable
 	}
 	void spurious(bool const Spurious)
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
+		std::scoped_lock lock(m_mutex);
 		m_spurious = Spurious;
 	}
 

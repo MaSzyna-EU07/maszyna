@@ -65,6 +65,7 @@ public:
 	bool Replace(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type, const std::size_t Offset = 0) override;
     // adds supplied vertex data at the end of specified chunk
 	bool Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) override;
+	void Erase( gfx::geometry_handle const &Geometry ) override;
     // provides direct access to index data of specfied chunk
     gfx::index_array const &
         Indices( gfx::geometry_handle const &Geometry ) const override;
@@ -103,8 +104,12 @@ public:
         Pick_Control() const override { return m_pickcontrolitem; }
     scene::basic_node const *
         Pick_Node() const override { return m_picksceneryitem; }
+    void
+        Forget_Node( scene::basic_node const *Node ) override;
     glm::dvec3
         Mouse_Position() const override { return m_worldmousecoordinates; }
+    bool
+        Mouse_Hit() const override { return m_mousehit; }
     glm::mat4
         Camera_View_Matrix() const override { return glm::mat4( glm::mat3( m_colorpass.camera.modelview() ) ); }
     glm::mat4
@@ -234,8 +239,14 @@ private:
         Render( TModel3d *Model, material_data const *Material, float const Squaredistance );
     void
         Render( TSubModel *Submodel );
+    // opaque characters of a text display
+    void
+        Render_text( TSubModel *Submodel );
     void
         Render( TTrack *Track );
+    // the cut faces of the rails of a track and the treads on them
+    void
+        Render_cuts( TTrack const *Track );
     void
         Render( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last );
     bool
@@ -270,6 +281,9 @@ private:
         Render_Alpha( TModel3d *Model, material_data const *Material, float const Squaredistance );
     void
         Render_Alpha( TSubModel *Submodel );
+    // characters of a text display
+    void
+        Render_Alpha_text( TSubModel *Submodel );
     void
         Update_Lights( light_array &Lights );
     bool
@@ -355,6 +369,7 @@ private:
     float m_specularopaquescalefactor { 1.f };
     float m_speculartranslucentscalefactor { 1.f };
     bool m_renderspecular{ false }; // controls whether to include specular component in the calculations
+    bool m_normalizenormals{ false }; // set while a scaled model instance is drawn, its normals need normalizing for the lighting
 
     renderpass_config m_renderpass; // parameters for current render pass
     section_sequence m_sectionqueue; // list of sections in current render pass
@@ -367,6 +382,7 @@ private:
     std::vector<scene::basic_node *> m_picksceneryitems;
     scene::basic_node *m_picksceneryitem { nullptr };
     glm::vec3 m_worldmousecoordinates { 0.f };
+    bool m_mousehit { false }; // the depth under the cursor was of something drawn, not of the far plane
     std::vector<std::function<void( TSubModel const *, const glm::vec2 )>> m_control_pick_requests;
     std::vector<std::function<void( scene::basic_node * )>> m_node_pick_requests;
 #ifdef EU07_USE_DEBUG_CAMERA
@@ -382,6 +398,8 @@ private:
 		virtual void Shutdown() override;
 		virtual void BeginFrame() override;
 		virtual void Render() override;
+		virtual std::uint64_t Create_Image(std::uint8_t const *Rgba, int const Width, int const Height) override;
+		virtual void Release_Image(std::uint64_t const Image) override;
 	} m_imgui_renderer;
 
 	virtual imgui_renderer *GetImguiRenderer() override

@@ -32,12 +32,12 @@ void network::server_hello::deserialize(std::istream &stream)
 
 void ::network::request_command::serialize(std::ostream &stream) const
 {
-	sn_utils::ls_uint32(stream, commands.size());
-	for (auto const &kv : commands)
+	sn_utils::ls_uint32(stream, static_cast<uint32_t>(commands.size()));
+	for (auto const &[recipient, sequence] : commands)
 	{
-		sn_utils::ls_uint32(stream, kv.first);
-		sn_utils::ls_uint32(stream, kv.second.size());
-		for (command_data const &data : kv.second)
+		sn_utils::ls_uint32(stream, recipient);
+		sn_utils::ls_uint32(stream, static_cast<uint32_t>(sequence.size()));
+		for (command_data const &data : sequence)
 		{
 			sn_utils::ls_uint32(stream, (uint32_t)data.command);
 			sn_utils::ls_int32(stream, data.action);
@@ -62,7 +62,7 @@ void network::request_command::deserialize(std::istream &stream)
 		uint32_t sequence_size = sn_utils::ld_uint32(stream);
 
 		command_queue::commanddata_sequence sequence;
-		for (uint32_t i = 0; i < sequence_size; i++)
+		for (uint32_t j = 0; j < sequence_size; j++)
 		{
 			command_data data;
 			data.command = (user_command)sn_utils::ld_uint32(stream);
@@ -79,7 +79,7 @@ void network::request_command::deserialize(std::istream &stream)
 			sequence.emplace_back(data);
 		}
 
-		commands.emplace(recipient, sequence);
+		commands.try_emplace(recipient, sequence);
 	}
 }
 
@@ -103,7 +103,7 @@ void network::frame_info::deserialize(std::istream &stream)
 
 std::shared_ptr<network::message> network::deserialize_message(std::istream &stream)
 {
-	message::type_e type = (message::type_e)sn_utils::ld_uint16(stream);
+	auto type = (message::type_e)sn_utils::ld_uint16(stream);
 
 	std::shared_ptr<message> msg;
 

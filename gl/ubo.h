@@ -4,6 +4,8 @@
 #include "bindable.h"
 #include "buffer.h"
 #include <glm/glm.hpp>
+#include <cstddef>
+#include <span>
 
 #define UBS_PAD(x) uint8_t PAD[x]
 
@@ -27,9 +29,11 @@ namespace gl
         void bind_uniform();
 
         void update(const uint8_t *data, int offset, GLsizeiptr size);
+        // the bytes given, put from the offset on
+        void update(std::span<std::byte const> Data, int Offset);
         template <typename T> void update(const T &data, size_t offset = 0)
         {
-            update(reinterpret_cast<const uint8_t*>(&data), offset, sizeof(data));
+            update(reinterpret_cast<const uint8_t*>(&data), static_cast<int>(offset), sizeof(data));
         }
     };
 
@@ -62,7 +66,7 @@ namespace gl
 
     static_assert(sizeof(scene_ubs) == 400, "bad size of ubs");
 
-    const size_t MAX_PARAMS = 3;
+    const size_t MAX_PARAMS = 4;
 
     struct model_ubs
     {
@@ -76,7 +80,11 @@ namespace gl
         float fog_density;
         float alpha_mult;
         float shadow_tone;
-        UBS_PAD(12);
+        // 1.0 while GL_SAMPLE_ALPHA_TO_COVERAGE is on, so the alpha tested shaders write the
+        // coverage of their test edge; 0.0 keeps their plain alpha test. set together with
+        // the GL state by opengl33_renderer::setup_alpha_to_coverage()
+        float alpha_to_coverage;
+        UBS_PAD(8);
 
         void set_modelview(const glm::mat4 &mv)
         {

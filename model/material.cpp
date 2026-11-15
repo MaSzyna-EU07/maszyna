@@ -64,54 +64,95 @@ std::map<std::string, int> texture_bindings {
     { "normalmap", 1 }
 };
 
+int opengl_material::texture_slot( std::string const &Key )
+{
+    auto key { Key };
+
+    if( ( key.size() > 0 ) && ( key[ 0 ] != '_' ) )
+    {
+        // numbered binding, "textureN:" fills the slot N-1
+        key.erase( key.find_first_not_of( "-1234567890" ) );
+        size_t const num = std::stoi( key ) - 1;
+        if( num < gl::MAX_TEXTURES ) {
+            return static_cast<int>( num );
+        }
+        log_error( "invalid texture binding: " + std::to_string( num ) );
+        is_good = false;
+        return -1;
+    }
+
+    if( key.size() > 2 )
+    {
+        // named binding, the slot it fills is up to the shader
+        key.erase( 0, 1 );
+        key.pop_back();
+        if( shader && ( shader->texture_conf.find( key ) != shader->texture_conf.end() ) ) {
+            return static_cast<int>( shader->texture_conf[ key ].id );
+        }
+        auto const lookup { texture_bindings.find( key ) };
+        if( ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
+            return lookup->second;
+        }
+        // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
+        if( Global.GfxRenderer == "default" ) {
+            log_error( "unknown texture binding: " + key );
+            is_good = false;
+        }
+        return -1;
+    }
+
+    log_error( "unrecognized texture binding: " + key );
+    is_good = false;
+    return -1;
+}
+
+void opengl_material::build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow )
+{
+    if( true == Bindings.empty() ) { return; }
+
+    // build a texture set for each entry of the largest of the declared pools.
+    // pools of different size can be combined, shorter ones simply repeat from the start
+    std::size_t variantcount { 0 };
+    for( auto const &[ slot, pool ] : Bindings ) {
+        variantcount = std::max( variantcount, pool->size() );
+    }
+    texture_variants.resize( variantcount, textures );
+
+    for( auto const &[ slot, pool ] : Bindings ) {
+        for( std::size_t variantindex = 0; variantindex < variantcount; ++variantindex ) {
+            auto const &texturename { ( *pool )[ variantindex % pool->size() ] };
+            auto const texturehandle { GfxRenderer->Fetch_Texture( texturename, Loadnow ) };
+            if( texturehandle == null_handle ) {
+                // a single bad entry shouldn't take down the whole material, fall back to the basic texture
+                log_error( "missing texture variant: " + texturename );
+                continue;
+            }
+            texture_variants[ variantindex ][ slot ] = texturehandle;
+        }
+    }
+}
+
 void opengl_material::finalize(bool Loadnow)
 {
     is_good = true;
 
     if (parse_info)
     {
-        for (auto it : parse_info->tex_mapping)
-        {
-            std::string key = it.first;
-            std::string value = it.second.name;
+        // texture bindings which come with a pool of alternatives, gathered while resolving regular bindings
+        std::vector<variant_binding> variantbindings;
 
-            if (key.size() > 0 && key[0] != '_')
-            {
-                key.erase( key.find_first_not_of( "-1234567890" ) );
-                size_t num = std::stoi(key) - 1;
-                if (num < gl::MAX_TEXTURES) {
-                    textures[num] = GfxRenderer->Fetch_Texture(value, Loadnow);
-                }
-                else {
-                    log_error("invalid texture binding: " + std::to_string(num));
-                    is_good = false;
-                }
-            }
-            else if (key.size() > 2)
-            {
-                key.erase(0, 1);
-                key.pop_back();
-                std::map<std::string, int>::iterator lookup;
-                if( shader && shader->texture_conf.find( key ) != shader->texture_conf.end() ) {
-                    textures[ shader->texture_conf[ key ].id ] = GfxRenderer->Fetch_Texture( value, Loadnow );
-                }
-                else if( shader == nullptr
-                      && ( lookup = texture_bindings.find( key ) ) != texture_bindings.end() ) {
-                    textures[ lookup->second ] = GfxRenderer->Fetch_Texture( value, Loadnow );
-                }
-                else {
-                    // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
-                    if( Global.GfxRenderer == "default" ) {
-                        log_error( "unknown texture binding: " + key );
-                        is_good = false;
-                    }
-                }
-            }
-            else {
-                log_error("unrecognized texture binding: " + key);
-                is_good = false;
+        for( auto const &[ bindingkey, binding ] : parse_info->tex_mapping )
+        {
+            auto const slot { texture_slot( bindingkey ) };
+            if( slot < 0 ) { continue; }
+
+            textures[ slot ] = GfxRenderer->Fetch_Texture( binding.name, Loadnow );
+            if( binding.variants.size() > 1 ) {
+                variantbindings.emplace_back( static_cast<std::size_t>( slot ), &( binding.variants ) );
             }
         }
+
+        build_texture_variants( variantbindings, Loadnow );
 
         if (!shader)
         {
@@ -289,6 +330,44 @@ bool is_weather( std::string const &String ) {
 }
 
 // imports member data pair from the config file
+void opengl_material::deserialize_texture_mapping( cParser &Input, std::string const &Key, int const Priority ) {
+
+    // a texture binding can be provided as a pool of alternatives, "textureN_variants: [ a b c ]".
+    // unlike a regular random set, which is resolved once when the material is loaded and thus shared
+    // by everything using it, such pool is preserved whole and one entry is picked per model instance
+    auto key { Key };
+    auto const variantmarker { key.find( "_variants" ) };
+    auto const isvariantset { variantmarker != std::string::npos };
+    if( true == isvariantset ) {
+        // reduce the key to its plain form, "N_variants:" becomes "N:"
+        key.erase( variantmarker, std::string( "_variants" ).size() );
+    }
+
+    std::vector<std::string> variants;
+    std::string value;
+    if( false == isvariantset ) {
+        value = deserialize_random_set( Input );
+        replace_slashes( value );
+    }
+    else {
+        variants = deserialize_set( Input );
+        for( auto &variant : variants ) {
+            replace_slashes( variant );
+        }
+        if( true == variants.empty() ) {
+            log_error( "empty texture variant pool: " + key );
+            return;
+        }
+        // first entry doubles as the regular, variant-agnostic texture of the material
+        value = variants.front();
+    }
+
+    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, parse_info_s::tex_def{ value, Priority, variants } ) };
+    if( ( false == inserted ) && ( Priority > it->second.priority ) ) {
+        it->second = parse_info_s::tex_def{ value, Priority, variants };
+    }
+}
+
 bool
 opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool const Loadnow ) {
 
@@ -324,17 +403,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
 
         else if (key.compare(0, 7, "texture") == 0) {
             key.erase(0, 7);
-
-            auto value { deserialize_random_set( Input ) };
-            replace_slashes( value );
-            auto it = parse_info->tex_mapping.find(key);
-            if (it == parse_info->tex_mapping.end())
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
-            else if (Priority > it->second.priority)
-            {
-                parse_info->tex_mapping.erase(it);
-                parse_info->tex_mapping.emplace(std::make_pair(key, parse_info_s::tex_def({ value, Priority })));
-            }
+            deserialize_texture_mapping( Input, key, Priority );
         }
         else if (key.compare(0, 5, "param") == 0) {
             key.erase(0, 5);
@@ -571,12 +640,198 @@ material_manager::create( std::string const &Filename, bool const Loadnow ) {
     return materialhandle;
 };
 
+material_handle
+material_manager::create_from_text( std::string const &Name, std::string const &Definition ) {
+
+    opengl_material material;
+    cParser materialparser( Definition, cParser::buffer_TEXT );
+    if( false == material.deserialize( materialparser, true ) ) {
+        return null_handle;
+    }
+    material.name = Name;
+    try {
+        material.finalize( true );
+    }
+    catch( gl::shader_exception const &e ) {
+        ErrorLog( "invalid shader: " + std::string( e.what() ) );
+        return null_handle;
+    }
+    auto const materialhandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( material ) );
+    // not listed under its name: the name isn't a file which could be asked for
+    return materialhandle;
+}
+
+namespace {
+
+opengl_material
+variant_of( opengl_material const &Source, std::string const &Suffix ) {
+
+    opengl_material variant;
+    variant.textures = Source.textures;
+    variant.texture_variants = Source.texture_variants;
+    variant.params = Source.params;
+    variant.params_state = Source.params_state;
+    variant.shader = Source.shader;
+    variant.opacity = Source.opacity;
+    variant.selfillum = Source.selfillum;
+    variant.shadow_rank = Source.shadow_rank;
+    variant.glossiness = Source.glossiness;
+    variant.name = Source.name + Suffix;
+    variant.size = Source.size;
+    variant.is_good = Source.is_good;
+    variant.path = Source.path;
+    return variant;
+}
+
+// the params of a shader, as the shader keeps them
+using param_confs = decltype( gl::shader::param_conf );
+
+// whether another param of the shader lies on a component of the named one, which a value set for that one would change too
+bool
+shares_slot( param_confs const &Conf, std::string const &Name ) {
+
+    auto const own { Conf.find( Name ) };
+    if( own == Conf.end() ) {
+        return false;
+    }
+    return std::ranges::any_of(
+        Conf,
+        [ &Name, &own ]( auto const &Entry ) {
+            return Entry.first != Name
+                && Entry.second.location == own->second.location
+                && Entry.second.offset < own->second.offset + own->second.size
+                && own->second.offset < Entry.second.offset + Entry.second.size; } );
+}
+
+// the highlights of a copy of a material damped and its weathering on
+void
+make_matte( opengl_material &Variant ) {
+
+    Variant.glossiness = 0.1f;
+    if( !Variant.shader ) {
+        return;
+    }
+    for( auto const &[ key, value ] : std::vector<std::pair<std::string, glm::vec4>>{ { "weathering", glm::vec4{ 1.f } } } ) {
+        auto const entry { Variant.shader->param_conf.find( key ) };
+        if( entry == Variant.shader->param_conf.end()
+         || shares_slot( Variant.shader->param_conf, key ) ) {
+            continue;
+        }
+        auto &slot { Variant.params[ entry->second.location ] };
+        auto const offset { static_cast<glm::length_t>( entry->second.offset ) };
+        auto const size { static_cast<glm::length_t>( entry->second.size ) };
+        for( glm::length_t i = 0; i < size; ++i ) {
+            slot[ offset + i ] = value[ i ];
+        }
+        std::erase_if(
+            Variant.params_state,
+            [ &entry ]( gl::shader::param_entry const &State ) {
+                return State.location == entry->second.location && State.offset == entry->second.offset; } );
+    }
+}
+
+// the colour in the rgb of the slot of the weathering of a copy of a material, which tells the shader to tint by its sign. returns:
+// whether the shader can tint it, the weathering and the tint alone in that slot
+bool
+make_tinted( opengl_material &Variant, glm::vec3 const &Colour ) {
+
+    if( !Variant.shader ) {
+        return false;
+    }
+    auto const &conf { Variant.shader->param_conf };
+    auto const weathering { conf.find( "weathering" ) };
+    if( auto const tint { conf.find( "tint" ) };
+        weathering == conf.end()
+     || tint == conf.end()
+     || weathering->second.offset != 3
+     || tint->second.location != weathering->second.location
+     || tint->second.offset != 0
+     || std::ranges::any_of(
+            conf,
+            [ &weathering, &tint ]( auto const &Entry ) {
+                return Entry.first != weathering->first && Entry.first != tint->first && Entry.second.location == weathering->second.location; } ) ) {
+        return false;
+    }
+    auto const location { weathering->second.location };
+    Variant.params[ location ] = glm::vec4{ Colour, -1.f };
+    std::erase_if(
+        Variant.params_state,
+        [ location ]( gl::shader::param_entry const &State ) {
+            return State.location == location; } );
+    return true;
+}
+
+} // namespace
+
+material_handle
+material_manager::create_matte( material_handle const Material ) {
+
+    if( Material == null_handle || Material >= m_materials.size() ) {
+        return Material;
+    }
+    if( auto const lookup { m_mattes.find( Material ) }; lookup != m_mattes.end() ) {
+        return lookup->second;
+    }
+    auto matte { variant_of( m_materials[ Material ], ":matte" ) };
+    make_matte( matte );
+    auto const mattehandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( matte ) );
+    m_mattes.emplace( Material, mattehandle );
+    return mattehandle;
+}
+
+material_handle
+material_manager::create_tinted( material_handle const Material, glm::vec3 const &Colour ) {
+
+    if( Material == null_handle || Material >= m_materials.size() || !m_materials[ Material ].shader ) {
+        return Material;
+    }
+    auto const key { std::make_tuple( Material, Colour.r, Colour.g, Colour.b ) };
+    if( auto const lookup { m_tints.find( key ) }; lookup != m_tints.end() ) {
+        return lookup->second;
+    }
+    auto tinted { variant_of( m_materials[ Material ], ":tinted" ) };
+    if( false == make_tinted( tinted, Colour ) ) {
+        return Material;
+    }
+    auto const tintedhandle { static_cast<material_handle>( m_materials.size() ) };
+    m_materials.emplace_back( std::move( tinted ) );
+    m_tints.emplace( key, tintedhandle );
+    return tintedhandle;
+}
+
+void
+material_manager::update_variants( bool const Weather ) {
+
+    // the copies don't update themselves, their names aren't files to read again
+    auto const changed = [&]( material_handle const Source ) {
+        auto const &source { m_materials[ Source ] };
+        return Weather ? source.update_on_weather_change : source.update_on_season_change; };
+    for( auto const &[ source, matte ] : m_mattes ) {
+        if( changed( source ) ) {
+            auto variant { variant_of( m_materials[ source ], ":matte" ) };
+            make_matte( variant );
+            m_materials[ matte ] = std::move( variant );
+        }
+    }
+    for( auto const &[ key, tinted ] : m_tints ) {
+        auto const source { std::get<0>( key ) };
+        if( changed( source ) ) {
+            auto variant { variant_of( m_materials[ source ], ":tinted" ) };
+            make_tinted( variant, glm::vec3 { std::get<1>( key ), std::get<2>( key ), std::get<3>( key ) } );
+            m_materials[ tinted ] = std::move( variant );
+        }
+    }
+}
+
 void
 material_manager::on_weather_change() {
 
     for( auto &material : m_materials ) {
         if( material.update_on_weather_change ) { material.update(); }
     }
+    update_variants( true );
 }
 
 void
@@ -585,6 +840,7 @@ material_manager::on_season_change() {
     for( auto &material : m_materials ) {
         if( material.update_on_season_change ) { material.update(); }
     }
+    update_variants( false );
 }
 
 // checks whether specified material is in the material bank. returns handle to the material, or a null handle

@@ -38,12 +38,34 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
+#include <format>
+
+namespace {
+
+// how close to a broken coupler the camera has to be for the driving aid to offer its repair [m]
+constexpr float coupler_repair_radius { 5.f };
+
+// the broken coupler nearest to the camera, within reach: the vehicle and its end, or no vehicle
+std::pair<TDynamicObject const *, int> broken_coupler_nearby( glm::dvec3 const &Camera ) {
+    auto const *vehicle { std::get<TDynamicObject *>( simulation::Region->find_vehicle( Camera, coupler_repair_radius, false, true ) ) };
+    if( vehicle == nullptr || vehicle->MoverParameters == nullptr ) { return { nullptr, end::front }; }
+    auto const front { glm::distance( vehicle->CouplerPosition( end::front ), Camera ) };
+    auto const rear { glm::distance( vehicle->CouplerPosition( end::rear ), Camera ) };
+    auto const nearest { front <= rear ? end::front : end::rear };
+    if( std::min( front, rear ) > coupler_repair_radius || false == vehicle->MoverParameters->Couplers[ nearest ].broken ) { return { nullptr, end::front }; }
+    return { vehicle, nearest };
+}
+
+} // namespace
+
 void
 drivingaid_panel::update() {
 
     if( false == is_open ) { return; }
 
 	text_lines.clear();
+
+    std::tie( m_brokenvehicle, m_brokenend ) = broken_coupler_nearby( Global.pCamera.Pos );
 
     auto const *train { simulation::Train };
     auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
@@ -52,7 +74,7 @@ drivingaid_panel::update() {
      || controlled->Mechanik == nullptr ) { return; }
 
     auto const *mover = controlled->MoverParameters;
-    auto const *driver = controlled->Mechanik;
+    auto const *vehicledriver = controlled->Mechanik;
     auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
 
     { // throttle, velocity, speed limits and grade
@@ -61,8 +83,7 @@ drivingaid_panel::update() {
             // grade
             std::string gradetext;
             auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
-            auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser };
-            if( std::abs( grade ) >= 0.25 ) {
+            if( auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser }; std::abs( grade ) >= 0.25 ) {
                 std::snprintf(
                     m_buffer.data(), m_buffer.size(),
 				    STR_C(" Grade: %.1f%%%%"),
@@ -71,54 +92,7 @@ drivingaid_panel::update() {
             }
             // next speed limit
             auto const speedlimit { static_cast<int>( owner->VelDesired ) };
-            auto nextspeedlimit { speedlimit };
-            auto nextspeedlimitdistance { std::numeric_limits<double>::max() };
-            if( speedlimit != 0 ) { // if we aren't allowed to move then any next speed limit is irrelevant
-                // nie przekraczać rozkladowej
-                auto const schedulespeedlimit { (
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
-                        -1 ) };
-                // first take note of any speed change which should occur after passing potential current speed limit
-                if( owner->VelLimitLastDist.second > 0 ) {
-                    nextspeedlimit = min_speed( schedulespeedlimit, static_cast<int>( owner->VelLimitLastDist.first ) );
-                    nextspeedlimitdistance = owner->VelLimitLastDist.second;
-                }
-                // then take into account speed change ahead, compare it with speed after potentially clearing last limit
-                // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
-                auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
-                auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) };
-                if( speedatproximitydistance == nextspeedlimit ) {
-                    if( noactivespeedlimit ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( speedatproximitydistance < nextspeedlimit ) {
-                    // if the speed limit ahead is more strict than our current limit, it's important enough to report
-                    if( speedatproximitydistance < owner->VelDesired ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                    // otherwise report it only if it's located after our current (lower) limit ends
-                    else if( owner->ActualProximityDist > nextspeedlimitdistance ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( noactivespeedlimit ) { // implicit proximity > last, report only if last limit isn't present
-                    nextspeedlimit = speedatproximitydistance;
-                    nextspeedlimitdistance = owner->ActualProximityDist;
-                }
-                // HACK: if our current speed limit extends beyond our scan range don't display potentially misleading information about its length
-                if( nextspeedlimitdistance >= EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE ) {
-                    nextspeedlimit = speedlimit;
-                }
-                // HACK: hide next speed limit if the 'limit' is a vehicle in front of us
-                else if( owner->ActualProximityDist == std::abs( owner->TrackObstacle() ) ) {
-                    nextspeedlimit = speedlimit;
-                }
-            }
+            auto const [ nextspeedlimit, nextspeedlimitdistance ] { owner->next_speed_limit() };
             std::string nextspeedlimittext;
             if( nextspeedlimit != speedlimit ) {
                 std::snprintf(
@@ -142,8 +116,8 @@ drivingaid_panel::update() {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
             STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : driver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? driver->Controlling()->MainCtrlPos : driver->Controlling()->ScndCtrlPos,
+            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
+            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
             mover->SpeedCtrlUnit.IsActive ? 'T' :
 		              mover->DirActive > 0          ? 'D' :
 		              mover->DirActive < 0          ? 'R' :
@@ -209,6 +183,30 @@ drivingaid_panel::update() {
 }
 
 void
+drivingaid_panel::render_contents() {
+    ImGui::Checkbox(STR_C("expand"), &is_expanded);
+
+    ImGui::SameLine();
+
+    auto const *driver = (simulation::Train && simulation::Train->Dynamic()) ? simulation::Train->Dynamic()->Mechanik : nullptr;
+    if (driver && (false == Global.RealisticControlMode || DebugModeFlag)) {
+        bool autopilot = driver->AIControllFlag;
+        if (ImGui::Checkbox(STR_C("autopilot"), &autopilot)) {
+            command_relay commandrelay;
+            commandrelay.post(autopilot ? user_command::aidriverenable : user_command::aidriverdisable, 0.0, 0.0, GLFW_PRESS, 0);
+        }
+    }
+
+    // only the coupler the camera is next to, and the one of the vehicle it was coupled with
+    if( m_brokenvehicle != nullptr && ImGui::Button( STR_C( "Repair coupler" ) ) ) {
+        command_relay commandrelay;
+        commandrelay.post( user_command::repaircoupler, m_brokenend, 0.0, GLFW_PRESS, 0, glm::vec3( 0.0f ), &m_brokenvehicle->name() );
+    }
+
+    ui_panel::render_contents();
+}
+
+void
 scenario_panel::update() {
 
     if( false == is_open ) { return; }
@@ -253,12 +251,7 @@ scenario_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // potential assignment section
         auto const *owner { (
             m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
@@ -274,21 +267,19 @@ scenario_panel::render() {
         }
         // current task
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // hints
-        if( owner != nullptr ) {
-            if( true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen ) ) {
-                for( auto const &hint : owner->m_hints ) {
-                    auto const isdone { std::get<TController::hintpredicate>( hint )( std::get<float>( hint ) ) };
-                    auto const hintcolor{ (
-                        isdone ?
-                            colors::uitextgreen :
-                            Global.UITextColor ) };
-                    ImGui::PushStyleColor( ImGuiCol_Text, { hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a } );
-                    ImGui::TextWrapped( Translations.lookup_c(driver_hints_texts[(size_t)std::get<driver_hint>( hint )], true), std::get<float>( hint ) );
-                    ImGui::PopStyleColor();
-                }
+        if (owner != nullptr && true == ImGui::CollapsingHeader( STR_C("Hints"), ImGuiTreeNodeFlags_DefaultOpen )) {
+            for( auto const &hint : owner->m_hints ) {
+                auto const isdone { std::get<TController::hintpredicate>( hint )( std::get<float>( hint ) ) };
+                auto const hintcolor{ (
+                    isdone ?
+                        colors::uitextgreen :
+                        Global.UITextColor ) };
+                ImGui::PushStyleColor( ImGuiCol_Text, { hintcolor.r, hintcolor.g, hintcolor.b, hintcolor.a } );
+                ImGui::TextWrapped( Translations.lookup_c(driver_hints_texts[(size_t)std::get<driver_hint>( hint )], true), std::get<float>( hint ) );
+                ImGui::PopStyleColor();
             }
         }
     }
@@ -364,8 +355,7 @@ timetable_panel::update() {
 				//odejmij lokomotywy czynne, a przynajmniej aktualną
 				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
 				// subtract potential other half of a two-part vehicle
-				auto const *previous { owner->pVehicle->Prev( coupling::permanent ) };
-				if( previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
 				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
 				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
 			}
@@ -428,13 +418,13 @@ timetable_panel::update() {
                     && i < table.StationIndex
                     && ( tableline->Ah < 0 // pass-through, always valid
                       || tableline->is_maintenance // maintenance stop, always valid
-                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= tableline->Dh * 60 + tableline->Dm ) ) };
+                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= static_cast<float>(tableline->Dh * 60) + tableline->Dm ) ) };
                 auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0 ) };
                 auto const isatpassengerstop { true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0 };
                 auto const traveltime { (
                     i < 2 ? "   " :
-                    tableline->Ah >= 0 ? to_minutes_str( CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am ), false, 3 ) :
-                    to_minutes_str( std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 ), false, 3 ) ) };
+                    tableline->Ah >= 0 ? to_minutes_str( static_cast<float>(CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am )), false, 3 ) :
+                    to_minutes_str( static_cast<float>(std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 )), false, 3 ) ) };
                 auto const linecolor { (
                     i != table.StationStart ? Global.UITextColor :
                     loadchangeinprogress ? colors::uitextred :
@@ -486,19 +476,14 @@ timetable_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x * horizontalScale, size_min.y ), ImVec2S( size_max.x * horizontalScale, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-            m_name :
-            title )
-        + "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         if( is_expanded ) {
             ImGui::PushStyleVar( ImGuiStyleVar_ItemSpacing, ImVec2( 1, 0 ) );
             for( auto const &line : m_tablelines ) {
-                ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+                ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
             }
             ImGui::PopStyleVar();
         }
@@ -541,6 +526,7 @@ void debug_panel::update()
 	m_powergridlines.clear();
 	m_cameralines.clear();
 	m_rendererlines.clear();
+	m_couplerlines.clear();
 #ifdef WITH_UART
     m_uartlines.clear();
 #endif
@@ -554,6 +540,7 @@ void debug_panel::update()
 	update_section_powergrid( m_powergridlines );
 	update_section_camera( m_cameralines );
 	update_section_renderer( m_rendererlines );
+	update_section_coupler( m_couplerlines );
 #ifdef WITH_UART
     update_section_uart(m_uartlines);
 #endif
@@ -576,26 +563,18 @@ debug_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for( auto const &line : text_lines ) {
-            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), line.data.c_str() );
+            ImGui::TextColored( ImVec4( line.color.r, line.color.g, line.color.b, line.color.a ), "%s", line.data.c_str() );
         }
         // sections
         ImGui::Separator();
-        if( true == render_section( "Vehicle", m_vehiclelines ) ) {
-            if( DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 ) {
-                if( true == ImGui::Button( "Stop and repair consist" ) ) {
-                    command_relay relay;
-                    relay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
-                }
-            }
+        if (true == render_section( "Vehicle", m_vehiclelines ) && DebugModeFlag && m_input.mover && m_input.mover->DamageFlag != 0 && true == ImGui::Button( "Stop and repair consist" )) {
+            command_relay commandrelay;
+            commandrelay.post(user_command::resetconsist, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(0.0f), &m_input.vehicle->name());
         }
+        render_section_coupler();
         render_section( "Vehicle Engine", m_enginelines );
         render_section( "Vehicle AI", m_ailines );
         render_section( "Vehicle Scan Table", m_scantablelines );
@@ -611,13 +590,13 @@ debug_panel::render() {
 		render_section_developer(); // Developer tools
 #ifdef WITH_UART
         if(true == render_section( "UART", m_uartlines)) {
-            int ports_num = UartStatus.available_ports.size();
-            char **avlports = new char*[ports_num];
+            auto ports_num = static_cast<int>(UartStatus.available_ports.size());
+            auto avlports = new char*[ports_num];
             for (int i=0; i < ports_num; i++) {
                 avlports[i] = (char *) UartStatus.available_ports[i].c_str();
             }
             ImGui::Combo("Port", &UartStatus.selected_port_index, avlports, ports_num);
-            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, uart_baudrates_list_num);
+            ImGui::Combo("Baud", &UartStatus.selected_baud_index, uart_baudrates_list, static_cast<int>(uart_baudrates_list_num));
             ImGui::Checkbox("Enabled", &UartStatus.enabled);
         }
 #endif
@@ -625,8 +604,8 @@ debug_panel::render() {
         ImGui::Separator();
         bool flag = DebugModeFlag;
         if (ImGui::Checkbox("Debug Mode", &flag)) {
-            command_relay relay;
-            relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
+            command_relay commandrelay;
+            commandrelay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
         }
     }
 
@@ -647,8 +626,8 @@ debug_panel::render_section_scenario() {
         auto fogrange = std::log( Global.fFogEnd );
         if( ImGui::SliderFloat(
             ( to_string( std::exp( fogrange ), 0, 5 ) + " m###fogend" ).c_str(), &fogrange, std::log( 10.0f ), std::log( 50000.0f ), "Fog distance" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setweather,
                 std::clamp( std::exp( fogrange ), 10.0f, 50000.0f ),
                 Global.Overcast,
@@ -661,8 +640,8 @@ debug_panel::render_section_scenario() {
 		        (to_string(Airtemperature, 1) + " deg C###Airtemperature").c_str(),
 		        &Airtemperature, -35.0f, 40.0f, "Air Temperature"))
 		{
-			command_relay relay;
-            relay.post(
+			command_relay commandrelay;
+            commandrelay.post(
                 user_command::settemperature, 
                 std::clamp(Airtemperature, -35.0f, 40.0f),
 			           Global.Overcast,
@@ -673,8 +652,8 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.Overcast, 2, 5 ) + " (" + Global.Weather + ")###overcast" ).c_str(), &Global.Overcast, 0.0f, 2.0f, "Cloud cover" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setweather,
                 Global.fFogEnd,
                 std::clamp( Global.Overcast, 0.0f, 2.0f ),
@@ -685,8 +664,8 @@ debug_panel::render_section_scenario() {
     {
         if( ImGui::SliderFloat(
             ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
-            command_relay relay;
-            relay.post(
+            command_relay commandrelay;
+            commandrelay.post(
                 user_command::setdatetime,
                 std::clamp( Global.fMoveLight, 0.0f, 365.0f ),
                 simulation::Time.data().wHour * 60 + simulation::Time.data().wMinute,
@@ -695,10 +674,8 @@ debug_panel::render_section_scenario() {
     }
     // dynamic material update checkbox
     ImGui::Checkbox( "Update Item Materials", &Global.UpdateMaterials );
-    if( DebugModeFlag ) {
-        if( ImGui::Checkbox( "Force Daylight", &Global.FakeLight ) ) {
-            simulation::Environment.on_daylight_change();
-        }
+    if (DebugModeFlag && ImGui::Checkbox( "Force Daylight", &Global.FakeLight )) {
+        simulation::Environment.on_daylight_change();
     }
     // advanced options, only visible in debug mode
     if( DebugModeFlag ) {
@@ -713,8 +690,8 @@ debug_panel::render_section_scenario() {
                     + ":"
                     + std::string( std::to_string( int( 100 + simulation::Time.data().wMinute ) ).substr( 1, 2 ) ) ) };
             if( ImGui::SliderInt( ( timestring + " (" + Global.Period + ")###simulationtime" ).c_str(), &time, 0, 1439, "Time of day" ) ) {
-                command_relay relay;
-                relay.post(
+                command_relay commandrelay;
+                commandrelay.post(
                     user_command::setdatetime,
                     Global.fMoveLight,
                     std::clamp( time, 0, 1439 ),
@@ -836,7 +813,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 	              mover.HeatingAllow ? 'h' :
 	                                   '.',
         mover.Hamulec->Releaser() ? '^' : '.',
-        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
+        std::string( m_input.mechanik ? STR(" R") + ( mover.Radio && mover.RadioFuse ? std::to_string( m_input.mechanik->iRadioChannel ) : "-" ) : "" ).c_str(),
         std::string( isdieselenginepowered ? STR(" oil pressure: ") + to_string( mover.OilPump.pressure, 2 )  : "" ).c_str(),
         // power transfers
         // 3000v
@@ -903,7 +880,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         mover.LoadFlag,
         mover.LocalBrakePosA,
         mover.LocalBrakePosAEIM,
-        mover.ManualBrakePos / static_cast<float>(ManualBrakePosNo),
+        static_cast<float>(mover.ManualBrakePos) / static_cast<float>(ManualBrakePosNo),
         mover.SpringBrake.Activate ? 1.f : 0.f,
         // cylinders
         mover.BrakePress,
@@ -981,11 +958,11 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
 
 	if (!std::isnan(last_time)) {
 		double dt = Timer::GetTime() - last_time;
-		AccN_jerk_graph.update((mover.AccN - last_AccN) / dt);
-		AccN_acc_graph.update(mover.AccN);
+		AccN_jerk_graph.update(static_cast<float>((mover.AccN - last_AccN) / dt));
+		AccN_acc_graph.update(static_cast<float>(mover.AccN));
 	}
 
-	last_AccN = mover.AccN;
+	last_AccN = static_cast<float>(mover.AccN);
 	last_time = Timer::GetTime();
 }
 
@@ -1002,7 +979,7 @@ void debug_panel::graph_data::update(float val) {
 void debug_panel::graph_data::render() {
 	ImGui::PushID(this);
 	ImGui::SliderFloat(STR_C("##Range"), &range, 0.5f, 60.0f, "%.1f");
-	ImGui::PlotLines("##plot", data.data(), data.size(), pos, nullptr, 0.0f, range, ImVec2(0, 100));
+	ImGui::PlotLines("##plot", data.data(), static_cast<int>(data.size()), static_cast<int>(pos), nullptr, 0.0f, range, ImVec2(0, 100));
 	ImGui::PopID();
 }
 
@@ -1047,9 +1024,9 @@ debug_panel::update_vehicle_brake() const {
 		{ bdelay_R, "R" },
 		{ bdelay_M, "+Mg" } };
 
-	for( auto const &delay : delays ) {
-		if( ( mover.BrakeDelayFlag & delay.first ) == delay.first ) {
-			brakedelay += delay.second;
+	for( auto const &[delayflag, delayname] : delays ) {
+		if( ( mover.BrakeDelayFlag & delayflag ) == delayflag ) {
+			brakedelay += delayname;
 		}
 	}
 
@@ -1057,7 +1034,7 @@ debug_panel::update_vehicle_brake() const {
 }
 
 void
-debug_panel::update_section_engine( std::vector<text_line> &Output ) {
+debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
 
 	if( m_input.vehicle == nullptr ) { return; }
 	if( m_input.mover == nullptr ) { return; }
@@ -1072,9 +1049,9 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
 		for( int i = 0; i <= 20; ++i ) {
 
 			std::string parameters =
-			    mover.eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
+			    TMoverParameters::eimc_labels[ i ] + to_string( mover.eimc[ i ], 2, 9 )
 			    + " | "
-			    + mover.eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
+			    + TMoverParameters::eimv_labels[ i ] + to_string( mover.eimv[ i ], 2, 9 );
 
 			if( i < 10 ) {
 				parameters +=
@@ -1084,7 +1061,7 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
 				parameters += "        med:";
 			}
 			else if( i >= 13 ) {
-				parameters += " | " + vehicle.MED_labels[ i - 13 ] + to_string( vehicle.MED[ 0 ][ i - 13 ], 2, 9 );
+				parameters += " | " + TDynamicObject::MED_labels[ i - 13 ] + to_string( vehicle.MED[ 0 ][ i - 13 ], 2, 9 );
 			}
 
             Output.emplace_back( parameters, Global.UITextColor );
@@ -1112,8 +1089,8 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
             { "cdesi: ", mover.dizel_engagestate },
             { "cdelt: ", mover.dizel_engagedeltaomega },
             { "gears: ", mover.dizel_automaticgearstatus} };
-        for( auto const &parameter : paramvalues ) {
-            parameterstext += "\n" + parameter.first + to_string( parameter.second, 2, 9 );
+        for( auto const &[parametername, parametervalue] : paramvalues ) {
+            parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
         }
         Output.emplace_back( parameterstext, Global.UITextColor );
 
@@ -1130,15 +1107,15 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) {
 			{ "hRtTq: ", mover.hydro_R_Torque }
 
 		};
-		for( auto const &parameter : hydrovalues ) {
-			parameterstext += "\n" + parameter.first + to_string( parameter.second, 2, 9 );
+		for( auto const &[parametername, parametervalue] : hydrovalues ) {
+			parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
 		}
 		Output.emplace_back( parameterstext, Global.UITextColor );
 	}
 }
 
 void
-debug_panel::update_section_ai( std::vector<text_line> &Output ) {
+debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
 
     if( m_input.mover == nullptr )    { return; }
     if( m_input.mechanik == nullptr ) { return; }
@@ -1202,14 +1179,14 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
         { mover.RunningTrack.Velmax, "track" } };
 
     std::string restrictionstext;
-    for( auto const &restriction : restrictions ) {
-        if( restriction.first < 0.0 ) { continue; }
+    for( auto const &[restrictionspeed, restrictionsource] : restrictions ) {
+        if( restrictionspeed < 0.0 ) { continue; }
         if( false == restrictionstext.empty() ) {
             restrictionstext += ", ";
         }
         restrictionstext +=
-            to_string( restriction.first, 0 )
-            + " (" + restriction.second + ")";
+            to_string( restrictionspeed, 0 )
+            + " (" + restrictionsource + ")";
     }
 
     if( false == restrictionstext.empty() ) {
@@ -1262,7 +1239,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
+debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 
 	if( m_input.mechanik == nullptr ) { return; }
 
@@ -1284,8 +1261,8 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) {
 
 #ifdef WITH_UART
 void
-debug_panel::update_section_uart( std::vector<text_line> &Output ) {
-    uart_status *status = &UartStatus;
+debug_panel::update_section_uart( std::vector<text_line> &Output ) const {
+    uart_status const *status = &UartStatus;
 
     Output.emplace_back(
         ("Port: " + status->port_name).c_str(),
@@ -1312,7 +1289,7 @@ debug_panel::update_section_uart( std::vector<text_line> &Output ) {
 #endif
 
 void
-debug_panel::update_section_scenario( std::vector<text_line> &Output ) {
+debug_panel::update_section_scenario( std::vector<text_line> &Output ) const {
 
     auto textline =
         "vehicles: " + to_string( Timer::subsystem.sim_dynamics.average(), 2 ) + " msec"
@@ -1326,7 +1303,7 @@ debug_panel::update_section_scenario( std::vector<text_line> &Output ) {
         + to_string( simulation::Environment.wind_azimuth(), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
         + " "
         + std::string( "N NEE SES SWW NW" )
-        .substr( 0 + 2 * std::floor( std::fmod( 8 + ( glm::radians( simulation::Environment.wind_azimuth() ) + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ), 2 )
+        .substr( static_cast<std::size_t>( 2 * std::floor( std::fmod( 8 + ( glm::radians( simulation::Environment.wind_azimuth() ) + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 )
         + ", " + to_string( glm::length( simulation::Environment.wind() ), 1 ) + " m/s";
     textline += "\nAir temperature: " + to_string( Global.AirTemperature, 1 ) + " deg C";
 
@@ -1340,36 +1317,36 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 
     // current event queue
     auto const time { Timer::GetTime() };
-    auto const *event { simulation::Events.begin() };
+    auto const *queuedevent { simulation::Events.begin() };
     auto const searchfilter { std::string( m_eventsearch.data() ) };
 
 	Output.emplace_back( "Delay:   Event:", Global.UITextColor );
 
-	while( event != nullptr
+	while( queuedevent != nullptr
 	    && Output.size() < 30 ) {
 
-		if( false == event->m_ignored
-		 && false == event->m_passive
+		if( false == queuedevent->m_ignored
+		 && false == queuedevent->m_passive
 		 && ( false == m_eventqueueactivevehicleonly
-		   || event->m_activator == m_input.vehicle ) ) {
+		   || queuedevent->m_activator == m_input.vehicle ) ) {
 
-            auto const label { event->m_name + ( event->m_activator ? " (by: " + event->m_activator->asName + ")" : "" ) };
+            auto const label { queuedevent->m_name + ( queuedevent->m_activator ? " (by: " + queuedevent->m_activator->asName + ")" : "" ) };
 
             if( false == searchfilter.empty()
              && false == contains(label, searchfilter) ) {
-                event = event->m_next;
+                queuedevent = queuedevent->m_next;
                 continue;
             }
 
-            auto const delay { "   " + to_string( std::max( 0.0, event->m_launchtime - time ), 1 ) };
+            auto const delay { "   " + to_string( std::max( 0.0, queuedevent->m_launchtime - time ), 1 ) };
             textline =
                 delay.substr( delay.length() - 6 )
                 + "   "
-                + label + ( event->m_sibling ? " (joint event)" : "" );
+                + label + ( queuedevent->m_sibling ? " (joint event)" : "" );
 
             Output.emplace_back( textline, Global.UITextColor );
         }
-        event = event->m_next;
+        queuedevent = queuedevent->m_next;
     }
     if( Output.size() == 1 ) {
         // event queue can be empty either because no event got through active filters, or because it is genuinely empty
@@ -1378,7 +1355,7 @@ debug_panel::update_section_eventqueue( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
+debug_panel::update_section_powergrid( std::vector<text_line> &Output ) const {
 
 	auto const lowpowercolor { glm::vec4( 164.0f / 255.0f, 132.0f / 255.0f, 84.0f / 255.0f, 1.f ) };
 	auto const nopowercolor { glm::vec4( 164.0f / 255.0f, 84.0f / 255.0f, 84.0f / 255.0f, 1.f ) };
@@ -1420,7 +1397,7 @@ debug_panel::update_section_powergrid( std::vector<text_line> &Output ) {
 }
 
 void
-debug_panel::update_section_camera( std::vector<text_line> &Output ) {
+debug_panel::update_section_camera( std::vector<text_line> &Output ) const {
 
 	if( m_input.camera == nullptr ) { return; }
 
@@ -1440,13 +1417,13 @@ debug_panel::update_section_camera( std::vector<text_line> &Output ) {
 	    + to_string( 180.0 - glm::degrees( camera.Angle.y ), 0 ) // ma być azymut, czyli 0 na północy i rośnie na wschód
 	    + " "
 	    + std::string( "S SEE NEN NWW SW" )
-	    .substr( 0 + 2 * floor( fmod( 8 + ( camera.Angle.y + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ), 2 );
+	    .substr( static_cast<std::size_t>( 2 * floor( fmod( 8 + ( camera.Angle.y + 0.5 * M_PI_4 ) / M_PI_4, 8 ) ) ), 2 );
 
 	Output.emplace_back( textline, Global.UITextColor );
 }
 
 void
-debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
+debug_panel::update_section_renderer( std::vector<text_line> &Output ) const {
 
             // gfx renderer data
             auto textline =
@@ -1516,6 +1493,172 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
 
 }
 
+namespace {
+
+// how far from the camera a coupler shows in the coupler section [m]
+constexpr float coupler_pick_radius { 10.f };
+
+std::string_view coupler_type_name( TCouplerType const Type ) {
+    switch( Type ) {
+        case TCouplerType::Articulated: { return "articulated"; }
+        case TCouplerType::Bare: { return "bare"; }
+        case TCouplerType::Chain: { return "chain"; }
+        case TCouplerType::Screw: { return "screw"; }
+        case TCouplerType::Automatic: { return "automatic"; }
+        default: { return "none"; }
+    }
+}
+
+// the couplerphysics setting of eu07.ini
+std::string_view coupler_physics_setting() {
+    if( Global.coupler_physics_all ) { return "all"; }
+    return Global.coupler_physics ? "yes" : "no";
+}
+
+std::string_view coupler_stop_name( int const Stop ) {
+    if( Stop > 0 ) { return "draw gear solid"; }
+    if( Stop < 0 ) { return "buffers solid"; }
+    return "none";
+}
+
+// a value shown in the Scale of its unit (1000 for kN, 0.001 for mm), dragged within Min and Max of that unit
+bool edit_value( char const *Label, double &Value, double const Scale, double const Min, double const Max, char const *Format ) {
+    auto shown { Value / Scale };
+    if( false == ImGui::DragScalar( Label, ImGuiDataType_Double, &shown, static_cast<float>( ( Max - Min ) / 1000.0 ), &Min, &Max, Format ) ) {
+        return false;
+    }
+    Value = std::clamp( shown, Min, Max ) * Scale;
+    return true;
+}
+
+bool edit_spring( char const *Name, coupler_physics::spring_curve &Curve, double &Unloading ) {
+    ImGui::PushID( Name );
+    ImGui::TextUnformatted( Name );
+    auto changed { edit_value( "Stiffness [kN/m]", Curve.stiffness, 1000.0, 100.0, 50000.0, "%.0f" ) };
+    changed = edit_value( "Travel [mm]", Curve.travel, 0.001, 5.0, 300.0, "%.0f" ) || changed;
+    changed = edit_value( "Progression", Curve.progression, 1.0, 0.0, 0.9, "%.2f" ) || changed;
+    changed = edit_value( "Unloading ratio", Unloading, 1.0, 0.05, 1.0, "%.2f" ) || changed;
+    ImGui::Text( "End force: %.0f kN", Curve.end_force() / 1000.0 );
+    ImGui::PopID();
+    return changed;
+}
+
+bool edit_link( coupler_physics::end_parameters &Parameters ) {
+    auto &link { Parameters.link };
+    ImGui::PushID( "link" );
+    ImGui::TextUnformatted( "Link" );
+    auto changed { ImGui::Checkbox( "Breakable", &link.breakable ) };
+    changed = edit_value( "Ultimate force [kN]", link.ultimate, 1000.0, 10.0, 5000.0, "%.0f" ) || changed;
+    changed = edit_value( "Yield force [kN]", link.yield, 1000.0, 10.0, 5000.0, "%.0f" ) || changed;
+    link.yield = std::min( link.yield, link.ultimate );
+    // the permanent stretch at which the link breaks, which is what the hardening gives
+    auto stretch { ( link.ultimate - link.yield ) / link.hardening };
+    if( edit_value( "Stretch to break [mm]", stretch, 0.001, 1.0, 200.0, "%.1f" ) ) {
+        link.hardening = std::max( ( link.ultimate - link.yield ) / stretch, 1.0 );
+        changed = true;
+    }
+    changed = edit_value( "Link stiffness [kN/m]", Parameters.link_stiffness, 1000.0, 1000.0, 2000000.0, "%.0f" ) || changed;
+    changed = edit_value( "Buffers crush force [kN]", Parameters.crush_force, 1000.0, 100.0, 10000.0, "%.0f" ) || changed;
+    changed = edit_value( "Restitution of a solid hit", Parameters.solid_restitution, 1.0, 0.05, 0.95, "%.2f" ) || changed;
+    ImGui::PopID();
+    return changed;
+}
+
+bool edit_coupler_parameters( coupler_physics::end_parameters &Parameters ) {
+    auto changed { edit_value( "Slack [mm]", Parameters.slack, 0.001, -100.0, 300.0, "%.1f" ) };
+    changed = edit_value( "Damping [kN s/m]", Parameters.damping, 1000.0, 0.0, 1000.0, "%.1f" ) || changed;
+    changed = edit_spring( "Buffers", Parameters.buffers, Parameters.buffers_unloading ) || changed;
+    changed = edit_spring( "Draw gear", Parameters.draw_gear, Parameters.draw_gear_unloading ) || changed;
+    changed = edit_link( Parameters ) || changed;
+    return changed;
+}
+
+} // namespace
+
+void
+debug_panel::update_section_coupler( std::vector<text_line> &Output ) {
+
+    m_coupler = {};
+    if( m_input.camera == nullptr ) { return; }
+    auto const &camera { m_input.camera->Pos };
+    auto const *vehicle { std::get<TDynamicObject *>( simulation::Region->find_vehicle( camera, coupler_pick_radius, false, true ) ) };
+    if( vehicle == nullptr || vehicle->MoverParameters == nullptr ) {
+        Output.emplace_back( std::format( "No coupler within {:.0f} m of the camera", coupler_pick_radius ), Global.UITextColor );
+        return;
+    }
+    auto const nearerfront { glm::distance( vehicle->CouplerPosition( end::front ), camera ) <= glm::distance( vehicle->CouplerPosition( end::rear ), camera ) };
+    m_coupler = { vehicle, nearerfront ? end::front : end::rear };
+
+    auto const &mover { *vehicle->MoverParameters };
+    auto const &coupler { mover.Couplers[ m_coupler.end ] };
+    auto const &neighbour { mover.Neighbours[ m_coupler.end ] };
+    auto const &state { coupler.physics_state };
+
+    Output.emplace_back(
+        std::format( "{}, {} end, {} coupler{}", vehicle->name(), nearerfront ? "front" : "rear", coupler_type_name( coupler.type() ), coupler.has_adapter() ? " (adapter)" : "" ),
+        Global.UITextColor );
+    Output.emplace_back(
+        std::format(
+            "Model: {} (couplerphysics {}, vehicle {}covered), crash damage {}",
+            mover.coupler_physics_at( m_coupler.end ) ? "physical" : "legacy",
+            coupler_physics_setting(),
+            mover.CouplerPhysics ? "" : "not ",
+            Global.crash_damage ? "on" : "off" ),
+        Global.UITextColor );
+    if( neighbour.vehicle != nullptr ) {
+        Output.emplace_back(
+            std::format( "Neighbour: {} ({} end), coupling [{}], gap {:.1f} mm", neighbour.vehicle->name(), neighbour.vehicle_end == end::front ? "front" : "rear", coupler.CouplingFlag, neighbour.distance * 1000.0 ),
+            Global.UITextColor );
+    }
+    else {
+        Output.emplace_back( "Neighbour: none", Global.UITextColor );
+    }
+    Output.emplace_back( std::format( "Force: {:.1f} kN", coupler.CForce / 1000.0 ), Global.UITextColor );
+    Output.emplace_back(
+        std::format( "Draw gear: {:.1f} mm, {:.1f} kN  Buffers: {:.1f} mm, {:.1f} kN", state.draw_gear.deflection * 1000.0, state.draw_gear.force / 1000.0, state.buffers.deflection * 1000.0, state.buffers.force / 1000.0 ),
+        Global.UITextColor );
+    Output.emplace_back(
+        std::format( "Stretch: {:.1f} mm, stop: {}, overloaded for {:.1f} s", state.elongation * 1000.0, coupler_stop_name( state.stop ), coupler.stretch_duration ),
+        Global.UITextColor );
+    if( coupler.broken ) {
+        Output.emplace_back( "Coupler broken (repair it in the driving aid, F1)", glm::vec4( 1.f, 0.25f, 0.25f, 1.f ) );
+    }
+}
+
+bool
+debug_panel::render_section_coupler() {
+
+    if( false == render_section( "Coupler", m_couplerlines ) ) { return false; }
+    // the parameters to try out, in the debug mode, on the simulation itself
+    if( false == DebugModeFlag || m_coupler.vehicle == nullptr || Application.is_client() ) { return true; }
+
+    ImGui::Separator();
+    ImGui::Checkbox( "Physical coupler model", &Global.coupler_physics );
+    ImGui::Checkbox( "Physical model for every train", &Global.coupler_physics_all );
+    ImGui::Checkbox( "Crash damage", &Global.crash_damage );
+    ImGui::Checkbox( "Apply to the other end of the pair too", &m_couplerbothends );
+
+    auto &mover { *m_coupler.vehicle->MoverParameters };
+    auto &coupler { mover.Couplers[ m_coupler.end ] };
+    auto const &neighbour { mover.Neighbours[ m_coupler.end ] };
+    auto *othercoupler { neighbour.vehicle != nullptr ? &neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] : nullptr };
+
+    if( auto parameters { coupler.physics }; edit_coupler_parameters( parameters ) ) {
+        coupler.physics = parameters;
+        if( m_couplerbothends && othercoupler != nullptr ) {
+            othercoupler->physics = parameters;
+        }
+    }
+    if( ImGui::Button( "Reset the stretch of the coupling" ) ) {
+        // both vehicles keep the state of the pair alike
+        coupler.physics_state.elongation = 0.0;
+        if( othercoupler != nullptr ) {
+            othercoupler->physics_state.elongation = 0.0;
+        }
+    }
+    return true;
+}
+
 bool
 debug_panel::render_section( std::string const &Header, std::vector<text_line> const &Lines ) {
 
@@ -1526,7 +1669,7 @@ debug_panel::render_section( std::string const &Header, std::vector<text_line> c
 }
 
 bool
-debug_panel::render_section( std::vector<text_line> const &Lines ) {
+debug_panel::render_section( std::vector<text_line> const &Lines ) const {
 
     for( auto const &line : Lines ) {
         ImGui::PushStyleColor( ImGuiCol_Text, { line.color.r, line.color.g, line.color.b, line.color.a } );
@@ -1537,7 +1680,7 @@ debug_panel::render_section( std::vector<text_line> const &Lines ) {
 	return true;
 }
 
-bool debug_panel::render_section_developer()
+bool debug_panel::render_section_developer() const
 {
 	if (false == ImGui::CollapsingHeader("Developer tools"))
 		return false;
@@ -1553,7 +1696,7 @@ bool debug_panel::render_section_developer()
 }
 
 bool
-debug_panel::render_section_settings() {
+debug_panel::render_section_settings() const {
 
     if( false == ImGui::CollapsingHeader( "Settings" ) ) { return false; }
 
@@ -1563,9 +1706,9 @@ debug_panel::render_section_settings() {
     // reflection fidelity
     ImGui::SliderInt( ( std::to_string( Global.reflectiontune.fidelity ) + "###reflectionfidelity" ).c_str(), &Global.reflectiontune.fidelity, 0, 2, "Reflection fidelity" );
     ImGui::SliderInt( ( std::to_string( Global.gfx_shadow_rank_cutoff ) + "###shadowrankcutoff" ).c_str(), &Global.gfx_shadow_rank_cutoff, 1, 3, "Shadow ranks" );
-    if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2, "Shadow angle cutoff" ) ) {
+    if( ImGui::SliderFloat( ( to_string( std::abs( Global.gfx_shadow_angle_min ), 2 ) + "###shadowanglecutoff" ).c_str(), &Global.gfx_shadow_angle_min, -1.0, -0.2f, "Shadow angle cutoff" ) ) {
         Global.gfx_shadow_angle_min = quantize( Global.gfx_shadow_angle_min, 0.05f );
-    };
+    }
     if( DebugModeFlag ) {
         // sky sliders
         {
@@ -1595,8 +1738,8 @@ debug_panel::render_section_settings() {
     if (simulation::Train) {
         float val = simulation::Train->get_radiovolume();
         if( ImGui::SliderFloat( ( std::to_string( static_cast<int>( val * 100 ) ) + "%###volumeradio" ).c_str(), &val, 0.0f, 1.0f, "Vehicle radio volume" ) ) {
-            command_relay relay;
-            relay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
+            command_relay commandrelay;
+            commandrelay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
     }
 
@@ -1635,12 +1778,7 @@ transcripts_panel::render() {
     if( size_min.x > 0 ) {
         ImGui::SetNextWindowSizeConstraints( ImVec2S( size_min.x, size_min.y ), ImVec2S( size_max.x, size_max.y ) );
     }
-    auto const panelname { (
-        title.empty() ?
-		    m_name :
-            title )
-		+ "###" + m_name };
-    if( true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
+    if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // header section
         for( auto const &line : text_lines ) {
             ImGui::TextWrapped( "%s", line.data.c_str() );

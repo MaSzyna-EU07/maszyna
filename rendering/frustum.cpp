@@ -22,30 +22,14 @@ cFrustum::calculate() {
 void
 cFrustum::calculate( glm::mat4 const &Projection, glm::mat4 const &Modelview ) {
 
-    float const *proj = glm::value_ptr( Projection );
-    float const *modl = glm::value_ptr( Modelview );
-    float clip[ 16 ];
-
-    // multiply the matrices to retrieve clipping planes
-    clip[ 0 ] = modl[ 0 ] * proj[ 0 ] + modl[ 1 ] * proj[ 4 ] + modl[ 2 ] * proj[ 8 ] + modl[ 3 ] * proj[ 12 ];
-    clip[ 1 ] = modl[ 0 ] * proj[ 1 ] + modl[ 1 ] * proj[ 5 ] + modl[ 2 ] * proj[ 9 ] + modl[ 3 ] * proj[ 13 ];
-    clip[ 2 ] = modl[ 0 ] * proj[ 2 ] + modl[ 1 ] * proj[ 6 ] + modl[ 2 ] * proj[ 10 ] + modl[ 3 ] * proj[ 14 ];
-    clip[ 3 ] = modl[ 0 ] * proj[ 3 ] + modl[ 1 ] * proj[ 7 ] + modl[ 2 ] * proj[ 11 ] + modl[ 3 ] * proj[ 15 ];
-
-    clip[ 4 ] = modl[ 4 ] * proj[ 0 ] + modl[ 5 ] * proj[ 4 ] + modl[ 6 ] * proj[ 8 ] + modl[ 7 ] * proj[ 12 ];
-    clip[ 5 ] = modl[ 4 ] * proj[ 1 ] + modl[ 5 ] * proj[ 5 ] + modl[ 6 ] * proj[ 9 ] + modl[ 7 ] * proj[ 13 ];
-    clip[ 6 ] = modl[ 4 ] * proj[ 2 ] + modl[ 5 ] * proj[ 6 ] + modl[ 6 ] * proj[ 10 ] + modl[ 7 ] * proj[ 14 ];
-    clip[ 7 ] = modl[ 4 ] * proj[ 3 ] + modl[ 5 ] * proj[ 7 ] + modl[ 6 ] * proj[ 11 ] + modl[ 7 ] * proj[ 15 ];
-
-    clip[ 8 ] = modl[ 8 ] * proj[ 0 ] + modl[ 9 ] * proj[ 4 ] + modl[ 10 ] * proj[ 8 ] + modl[ 11 ] * proj[ 12 ];
-    clip[ 9 ] = modl[ 8 ] * proj[ 1 ] + modl[ 9 ] * proj[ 5 ] + modl[ 10 ] * proj[ 9 ] + modl[ 11 ] * proj[ 13 ];
-    clip[ 10 ] = modl[ 8 ] * proj[ 2 ] + modl[ 9 ] * proj[ 6 ] + modl[ 10 ] * proj[ 10 ] + modl[ 11 ] * proj[ 14 ];
-    clip[ 11 ] = modl[ 8 ] * proj[ 3 ] + modl[ 9 ] * proj[ 7 ] + modl[ 10 ] * proj[ 11 ] + modl[ 11 ] * proj[ 15 ];
-
-    clip[ 12 ] = modl[ 12 ] * proj[ 0 ] + modl[ 13 ] * proj[ 4 ] + modl[ 14 ] * proj[ 8 ] + modl[ 15 ] * proj[ 12 ];
-    clip[ 13 ] = modl[ 12 ] * proj[ 1 ] + modl[ 13 ] * proj[ 5 ] + modl[ 14 ] * proj[ 9 ] + modl[ 15 ] * proj[ 13 ];
-    clip[ 14 ] = modl[ 12 ] * proj[ 2 ] + modl[ 13 ] * proj[ 6 ] + modl[ 14 ] * proj[ 10 ] + modl[ 15 ] * proj[ 14 ];
-    clip[ 15 ] = modl[ 12 ] * proj[ 3 ] + modl[ 13 ] * proj[ 7 ] + modl[ 14 ] * proj[ 11 ] + modl[ 15 ] * proj[ 15 ];
+    // multiply the matrices to retrieve clipping planes (column-major, same layout as the old float[16] form)
+    auto const clipmatrix { Projection * Modelview };
+    std::array<float, 16> clip{};
+    for( int column = 0; column < 4; ++column ) {
+        for( int row = 0; row < 4; ++row ) {
+            clip[ column * 4 + row ] = clipmatrix[ column ][ row ];
+        }
+    }
 
     // get the sides of the frustum.
     m_frustum[ side_RIGHT ][ plane_A ] = clip[ 3 ] - clip[ 0 ];
@@ -89,16 +73,11 @@ bool
 cFrustum::point_inside( float const X, float const Y, float const Z ) const {
 
     // cycle through the sides of the frustum, checking if the point is behind them
-    for( int idx = 0; idx < 6; ++idx ) {
-        if( m_frustum[ idx ][ plane_A ] * X
-            + m_frustum[ idx ][ plane_B ] * Y
-            + m_frustum[ idx ][ plane_C ] * Z
-            + m_frustum[ idx ][ plane_D ] <= 0 )
-            return false;
-    }
-
-    // the point is in front of each frustum plane, i.e. inside of the frustum
-    return true;
+    return std::ranges::all_of( m_frustum, [&]( auto const &frustumplane ) {
+        return frustumplane[ plane_A ] * X
+                + frustumplane[ plane_B ] * Y
+                + frustumplane[ plane_C ] * Z
+                + frustumplane[ plane_D ] > 0; } );
 }
 
 float
@@ -106,12 +85,12 @@ cFrustum::sphere_inside( float const X, float const Y, float const Z, float cons
 
     float distance;
     // go through all the sides of the frustum. bail out as soon as possible
-    for( int idx = 0; idx < 6; ++idx ) {
+    for (auto &frustumplane : m_frustum) {
         distance =
-            m_frustum[ idx ][ plane_A ] * X
-            + m_frustum[ idx ][ plane_B ] * Y
-            + m_frustum[ idx ][ plane_C ] * Z
-            + m_frustum[ idx ][ plane_D ];
+            frustumplane[ plane_A ] * X
+            + frustumplane[ plane_B ] * Y
+            + frustumplane[ plane_C ] * Z
+            + frustumplane[ plane_D ];
         if( distance <= -Radius )
             return 0.0f;
     }
@@ -121,52 +100,50 @@ cFrustum::sphere_inside( float const X, float const Y, float const Z, float cons
 bool
 cFrustum::cube_inside( float const X, float const Y, float const Z, float const Size ) const {
 
-    for( int idx = 0; idx < 6; ++idx ) {
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z - Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y - Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X - Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
-        if( m_frustum[ idx ][ plane_A ] * ( X + Size )
-            + m_frustum[ idx ][ plane_B ] * ( Y + Size )
-            + m_frustum[ idx ][ plane_C ] * ( Z + Size )
-            + m_frustum[ idx ][ plane_D ] > 0 )
-            continue;
+    // the cube is inside unless all of its corners lie behind one of the frustum planes
+    return std::ranges::all_of( m_frustum, [&]( auto const &frustumplane ) {
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z - Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y - Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X - Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
+        if( frustumplane[ plane_A ] * ( X + Size )
+            + frustumplane[ plane_B ] * ( Y + Size )
+            + frustumplane[ plane_C ] * ( Z + Size )
+            + frustumplane[ plane_D ] > 0 )
+            return true;
 
-        return false;
-    }
-
-    return true;
+        return false; } );
 }
 
 void cFrustum::normalize_plane( cFrustum::side const Side ) {

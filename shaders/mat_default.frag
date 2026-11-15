@@ -29,7 +29,8 @@ void main()
 {
 	vec4 tex_color = texture(diffuse, f_coord);
 
-	bool alphatestfail = ( opacity >= 0.0 ? (tex_color.a < opacity) : (tex_color.a >= -opacity) );
+	float alphacoverage = alpha_coverage(tex_color.a);
+	bool alphatestfail = alpha_test_fail(tex_color.a, alphacoverage);
 	if(alphatestfail)
 		discard;
 //	if (tex_color.a < opacity)
@@ -42,7 +43,7 @@ void main()
 	glossiness = abs(param[1].w);
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, 0.0, shadow_tone);
-	vec4 color = vec4(apply_fog(fragcolor), tex_color.a * alpha_mult);
+	vec4 color = vec4(apply_fog(fragcolor), alphacoverage * alpha_mult);
 /*
 	float distance = dot(f_pos.xyz, f_pos.xyz);
 	     if( distance <= cascade_end.x ) { color.r += 0.25; }

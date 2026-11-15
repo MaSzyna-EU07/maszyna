@@ -19,6 +19,9 @@ double GetDeltaRenderTime();
 
 void set_delta_override(double v);
 
+// every frame advances the clocks by this many seconds, whatever the real time; 0 = real time (test mode)
+void set_fixed_step(double v);
+
 void ResetTimers();
 
 void UpdateTimers(bool pause);
@@ -35,7 +38,7 @@ public:
 	std::chrono::duration<float, std::milli>
         stop() {
 		    m_last = std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::steady_clock::now() - m_start );
-			m_accumulator = 0.95f * m_accumulator + m_last.count() / 1000.f;
+			m_accumulator = 0.95f * m_accumulator + static_cast<float>(m_last.count()) / 1000.f;
 			return m_last; }
     float
         average() const {
@@ -64,6 +67,7 @@ struct subsystem_stopwatches {
     stopwatch sim_events;
     stopwatch sim_ai;
     stopwatch mainloop_total;
+    stopwatch mainloop_period; // start to start, the wait for fpslimit included
 };
 
 extern subsystem_stopwatches subsystem;

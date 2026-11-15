@@ -117,10 +117,13 @@ public:
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array& Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     auto draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in specified chunk N times via glDrawElementsInstanced*
     auto draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams = basic_streams ) -> std::size_t;
+    // draws geometry stored in supplied sequence of chunks of the bank, in their order. the bank is free to combine them into fewer draw calls
+    auto draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) -> std::size_t;
     // draws geometry stored in supplied list of chunks
     template <typename Iterator_>
     auto draw( Iterator_ First, Iterator_ Last, gfx::stream_units const &Units, unsigned int const Streams = basic_streams ) ->std::size_t {
@@ -136,6 +139,9 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex user data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk, GL_TRIANGLES, GL_TRIANGLE_STRIP...; no_primitive for a handle to no chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
+	static constexpr unsigned int no_primitive { ~0u };
 
 protected:
 // types:
@@ -187,6 +193,11 @@ private:
         std::size_t count { 0 };
         for( std::size_t i = 0; i < InstanceCount; ++i ) { count += draw_( Geometry, Units, Streams ); }
         return count; }
+    // draw_batch() subclass details. Default implementation falls back to regular draw of each chunk.
+    virtual auto draw_batch_( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) -> std::size_t {
+        std::size_t count { 0 };
+        for( ; First != Last; ++First ) { count += draw_( *First, Units, Streams ); }
+        return count; }
     // resource release subclass details
     virtual void release_() = 0;
 };
@@ -213,11 +224,14 @@ public:
     auto replace( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, std::size_t const Offset = 0 ) -> bool;
     // adds supplied vertex data at the end of specified chunk
     auto append( gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool;
+    void erase( gfx::geometry_handle const &Geometry );
     // draws geometry stored in specified chunk
     void draw( gfx::geometry_handle const &Geometry, unsigned int const Streams = basic_streams );
     // draws geometry stored in specified chunk InstanceCount times via GPU instancing.
     // The shader reads per-instance modelview matrices from instance_ubo[gl_InstanceID].
     void draw_instanced( gfx::geometry_handle const &Geometry, std::size_t const InstanceCount, unsigned int const Streams = basic_streams );
+    // draws geometry stored in supplied sequence of chunks, in their order. neighbouring chunks of the same bank are passed to it together
+    void draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams = basic_streams );
     template <typename Iterator_>
     void draw( Iterator_ First, Iterator_ Last, unsigned int const Streams = basic_streams ) {
             while( First != Last ) { 
@@ -229,6 +243,8 @@ public:
 	auto vertices( gfx::geometry_handle const &Geometry ) const -> gfx::vertex_array const &;
 	// provides direct access to vertex data of specfied chunk
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
+	// kind of geometry of specified chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
     // sets target texture unit for the texture data stream
     auto units() -> gfx::stream_units & { return m_units; }
     // provides access to primitives count

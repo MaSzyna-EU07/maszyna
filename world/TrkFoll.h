@@ -39,6 +39,10 @@ public:
     // inline double GetLength(vector3 p1, vector3 cp1, vector3 cp2, vector3 p2)
     //{ return pCurrentSegment->ComputeLength(p1,cp1,cp2,p2); };
     // inline double GetRadius(double L, double d);  //McZapkie-150503
+    inline glm::dvec3 UnevenBend() const {
+        return pCurrentSegment ? pCurrentSegment->uneven_bend( fCurrentDistance ) : glm::dvec3 { 0.0 }; };
+    // TTrack::rail_phase of the point Offset ahead of the axle along the vehicle
+    double RailPhase( double const Offset ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
 	void Reset();
     void Render(float fNr);

@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Gauge.h"
+#include "vehicle/gaugepositions.h"
+#include "vehicle/gaugeduplicates.h"
 #include "utilities/parser.h"
 #include "model/Model3d.h"
 #include "vehicle/DynObj.h"
@@ -76,7 +78,7 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
     auto const nulloffset { glm::vec3{} };
     auto const offset { model_offset() };
     {
-        std::vector<sound_source *> soundfxs = {
+        std::vector soundfxs = {
             &m_soundfxincrease,
             &m_soundfxdecrease,
             &m_soundfxon,
@@ -88,24 +90,39 @@ void TGauge::Init(TSubModel *Submodel, TSubModel *Submodelon, TGaugeAnimation Ty
             }
         }
     }
-    for( auto &soundfx : m_soundfxvalues ) {
-        if( soundfx.second.offset() == nulloffset ) {
-            soundfx.second.offset( offset );
+    for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+        if( soundfxsource.offset() == nulloffset ) {
+            soundfxsource.offset( offset );
         }
     }
 };
 
 void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mul ) {
 
-    std::string submodelname, gaugetypename;
-    float scale, endscale, endvalue, offset, friction;
+    std::string submodelname;
+    std::string gaugetypename;
+    float scale;
+    float endscale;
+    float endvalue;
+    float offset;
+    float friction;
     endscale = -1;
     endvalue = -1;
     bool interpolatescale { false };
 
+    // the control as defined so far in this cab, which a definition marked as its duplicate adds a copy to
+    // rather than replacing it (eu07/maszyna#527)
+    std::optional<TGauge> original;
+    if( gauge_duplicates::adds_copy<TModel3d>( true, m_sourcemodel, Owner->mdKabina, Owner->mdLowPolyInt ) ) {
+        original = *this;
+    }
+    scratch_data scratchpad;
+
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
+        // it has no scaletable:, drop the one of an earlier definition of the same control
+        m_scaletable.clear();
         Parser >> submodelname;
         gaugetypename = Parser.getToken<std::string>( true );
         Parser.getTokens( 3, false );
@@ -142,10 +159,15 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         }
         // new, variable length section
         {
-            scratch_data scratchpad;
             while( true == Load_mapping( Parser, scratchpad ) ) {
-                ; // all work done by while()
+                // all work done by while()
             }
+            // the values of the table are in the units the config uses for the scale, which the multiplier converts the gauge's value to
+            for( auto &point : scratchpad.scaletable ) {
+                point.value = static_cast<float>( point.value / mul );
+            }
+            gauge_scale::sort( scratchpad.scaletable );
+            m_scaletable = std::move( scratchpad.scaletable );
             // post-deserialization cleanup
             // set provided custom soundproofing to assigned sounds (for sounds without their own custom soundproofing)
             if( scratchpad.soundproofing ) {
@@ -161,9 +183,9 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
                 if( !m_soundfxoff.soundproofing() ) {
                     m_soundfxoff.soundproofing() = scratchpad.soundproofing;
                 }
-                for( auto &soundfxrecord : m_soundfxvalues ) {
-                    if( !soundfxrecord.second.soundproofing() ) {
-                        soundfxrecord.second.soundproofing() = scratchpad.soundproofing;
+                for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+                    if( !soundfxsource.soundproofing() ) {
+                        soundfxsource.soundproofing() = scratchpad.soundproofing;
                     }
                 }
             }
@@ -175,26 +197,29 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     m_soundfxdecrease.owner( Owner );
     m_soundfxon.owner( Owner );
     m_soundfxoff.owner( Owner );
-    for( auto &soundfxrecord : m_soundfxvalues ) {
-        soundfxrecord.second.owner( Owner );
+    for( auto &[soundfxkey, soundfxsource] : m_soundfxvalues ) {
+        soundfxsource.owner( Owner );
     }
 
-	scale *= mul;
+	scale *= static_cast<float>(mul);
     if( interpolatescale ) {
-        endscale *= mul;
+        endscale *= static_cast<float>(mul);
     }
     TSubModel *submodel { nullptr };
+    m_sourcemodel = nullptr;
     std::array<TModel3d *, 2> sources { Owner->mdKabina, Owner->mdLowPolyInt };
     for( auto const *source : sources ) {
         if( source != nullptr
          && ( submodel = source->GetFromName( submodelname ) ) != nullptr ) {
             // got what we wanted, bail out
+            m_sourcemodel = source;
             break;
         }
         // there's a possibility the default submodel was named with _off suffix
         if( source != nullptr
          && ( submodel = source->GetFromName( submodelname + "_off" ) ) != nullptr ) {
             // got what we wanted, bail out
+            m_sourcemodel = source;
             break;
         }
     }
@@ -211,7 +236,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
         }
     }
 
-    std::map<std::string, TGaugeAnimation> gaugetypes {
+    std::map<std::string, TGaugeAnimation, std::less<>> gaugetypes {
         { "rot", TGaugeAnimation::gt_Rotate },
         { "rotvar", TGaugeAnimation::gt_Rotate },
         { "mov", TGaugeAnimation::gt_Move },
@@ -224,6 +249,14 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
 
     Init( submodel, submodelon, type, scale, offset, friction, 0, endvalue, endscale, interpolatescale );
 
+    if( scratchpad.duplicate && original ) {
+        // a duplicate submodel of the control already defined: the control stays as it was, with one more copy
+        // animated along with it. the duplicate's own sounds, if any, are left out so the control isn't heard twice
+        auto duplicate { MirrorCopy() };
+        *this = std::move( *original );
+        m_mirrors.emplace_back( std::move( duplicate ) );
+    }
+
 //    return md2 != nullptr; // true, gdy podany model zewnętrzny, a w kabinie nie było
 };
 
@@ -234,15 +267,21 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
     auto const key { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
     if( true == key.empty() || key == "}" ) { return false; }
     // if not block end then the key is followed by assigned value or sub-block
-    if( key == "type:" ) {
+    if( key == "duplicate:" ) {
+        // the definition is another submodel of the control defined before it, rather than its replacement
+        auto const duplicate { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
+        Scratchpad.duplicate = gauge_duplicates::is_duplicate( duplicate );
+    }
+    else if( key == "type:" ) {
+        using enum TGaugeType;
         auto const gaugetype { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
-        m_type = gaugetype == "push"       ? TGaugeType::push :
-		         gaugetype == "impulse"    ? TGaugeType::push :
-		         gaugetype == "return"     ? TGaugeType::push :
-		         gaugetype == "delayed"    ? TGaugeType::push_delayed :
-		         gaugetype == "pushtoggle" ? TGaugeType::pushtoggle :
-		         gaugetype == "toggle"     ? TGaugeType::toggle :
-		                                     TGaugeType::toggle; // default
+        m_type = gaugetype == "push"       ? push :
+		         gaugetype == "impulse"    ? push :
+		         gaugetype == "return"     ? push :
+		         gaugetype == "delayed"    ? push_delayed :
+		         gaugetype == "pushtoggle" ? pushtoggle :
+		                                     toggle; // "toggle" and default
+        m_typedeclared = true;
     }
     else if( key == "soundinc:" ) {
         m_soundfxincrease.deserialize( Input, sound_type::single );
@@ -269,12 +308,16 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
             >> soundproofing[ 5 ];
         Scratchpad.soundproofing = soundproofing;
     }
+    else if( key == "scaletable:" ) {
+        // non-uniform scale in format [ value1 scaled1, value2 scaled2, ... ]
+        return Load_scaletable( Input, Scratchpad );
+    }
     else if( key.starts_with("sound") ) {
         // sounds assigned to specific gauge values, defined by key soundX: where X = value
         auto const indexstart { key.find_first_of( "-1234567890" ) };
         auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
         if( indexstart != std::string::npos ) {
-            m_soundfxvalues.emplace(
+            m_soundfxvalues.try_emplace(
                 std::stoi( key.substr( indexstart, indexend - indexstart ) ),
                 sound_source( m_soundtemplate ).deserialize( Input, sound_type::single ) );
         }
@@ -282,15 +325,27 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
     return true; // return value marks a key: value pair was extracted, nothing about whether it's recognized
 }
 
+// imports the optional non-uniform scale (MaSzyna-EU07/maszyna#74); returns false if it ran into the end of the block
+bool
+TGauge::Load_scaletable( cParser &Input, TGauge::scratch_data &Scratchpad ) {
+
+    auto table { gauge_scale::read( Input ) };
+    if( table.malformed || false == table.closed || table.points.size() < 2 ) {
+        ErrorLog( "Bad model: malformed scaletable of a gauge, it needs [ value scaled, value scaled, ... ] with at least two pairs", logtype::model );
+    }
+    if( table.points.size() >= 2 ) {
+        Scratchpad.scaletable = std::move( table.points );
+    }
+    return false == table.block_end;
+}
+
 // ustawienie wartości docelowej. plays provided fallback sound, if no sound was defined in the control itself
 bool
 TGauge::UpdateValue( float fNewDesired, std::optional<sound_source> &Fallbacksound ) {
 
-    if( false == UpdateValue( fNewDesired ) ) {
-        if( Fallbacksound ) {
-            Fallbacksound->play( m_soundtype );
-            return true;
-        }
+    if (false == UpdateValue( fNewDesired ) && Fallbacksound) {
+        Fallbacksound->play( m_soundtype );
+        return true;
     }
     return false;
 }
@@ -299,44 +354,37 @@ bool
 TGauge::UpdateValue( float fNewDesired ) {
 
     auto const desiredtimes100 = static_cast<int>( std::round( 100.0 * fNewDesired ) );
-    if( desiredtimes100 == static_cast<int>( std::round( 100.0 * m_targetvalue ) ) ) {
+    auto const previoustimes100 = static_cast<int>( std::round( 100.0 * m_targetvalue ) );
+    if( desiredtimes100 == previoustimes100 ) {
         return true;
     }
     m_targetvalue = fNewDesired;
-    // if there's any sound associated with new requested value, play it
-    // check value-specific table first...
-    auto const fullinteger { desiredtimes100 % 100 == 0 };
-    if( fullinteger ) {
-        // filter out values other than full integers
-        auto const lookup = m_soundfxvalues.find( desiredtimes100 / 100 );
-        if( lookup != m_soundfxvalues.end() ) {
-            lookup->second.play();
-            return true;
-        }
-    }
-    else {
+    if( desiredtimes100 % 100 != 0 ) {
         // toggle the control to continous range/exclusive sound mode from now on
         m_soundtype = sound_flags::exclusive;
     }
-    // ...and if there isn't any, fall back on the basic set...
-    auto const currentvalue = GetValue();
-    // HACK: crude way to discern controls with continuous and quantized value range
-    if( currentvalue < fNewDesired ) {
-        // shift up
-        if( false == m_soundfxincrease.empty() ) {
-            m_soundfxincrease.play( m_soundtype );
-            return true;
-        }
+    // if there's any sound associated with a position reached on the way to the new requested value, play it
+    // check value-specific table first...
+    if( auto const reached = gauge_positions::last_reached( m_soundfxvalues, previoustimes100, desiredtimes100 );
+        reached != m_soundfxvalues.end() ) {
+        reached->second.play();
+        return true;
     }
-    else if( currentvalue > fNewDesired ) {
+    // ...and if there isn't any, fall back on the basic set...
+    // HACK: crude way to discern controls with continuous and quantized value range
+    auto const currentvalue = GetValue();
+    if( currentvalue < fNewDesired && false == m_soundfxincrease.empty() ) {
+        // shift up
+        m_soundfxincrease.play( m_soundtype );
+        return true;
+    }
+    if( currentvalue > fNewDesired && false == m_soundfxdecrease.empty() ) {
         // shift down
-        if( false == m_soundfxdecrease.empty() ) {
-            m_soundfxdecrease.play( m_soundtype );
-            return true;
-        }
+        m_soundfxdecrease.play( m_soundtype );
+        return true;
     }
     return false; // no suitable sound was found
-};
+}
 
 void TGauge::PutValue(float fNewDesired)
 { // McZapkie-281102: natychmiastowe wpisanie wartosci
@@ -358,7 +406,7 @@ void TGauge::Update( bool const Power ) {
     // update value
     // TODO: remove passing manually power state when LD is in place
     if( m_value != m_targetvalue ) {
-        float dt = Timer::GetDeltaTime();
+        auto dt = static_cast<float>(Timer::GetDeltaTime());
         if( m_friction > 0 && dt < 0.5 * m_friction ) {
             // McZapkie-281102: zabezpieczenie przed oscylacjami dla dlugich czasow
             m_value += dt * ( m_targetvalue - m_value ) / m_friction;
@@ -379,6 +427,22 @@ void TGauge::Update( bool const Power ) {
         else                { m_soundfxoff.play(); }
     }
     m_state = state;
+    UpdateVisibility();
+    // update submodel animations
+    UpdateAnimation( SubModel );
+    UpdateAnimation( SubModelOn );
+    // the copies follow the control's value and state, each with its own animation
+    for( auto &mirror : m_mirrors ) {
+        mirror.m_value = m_value;
+        mirror.m_targetvalue = m_targetvalue;
+        mirror.m_state = m_state;
+        mirror.UpdateVisibility();
+        mirror.UpdateAnimation( mirror.SubModel );
+        mirror.UpdateAnimation( mirror.SubModelOn );
+    }
+};
+
+void TGauge::UpdateVisibility() const {
     // toggle submodel visibility only if the active state submodel is present,
     // keep the default model always visible otherwise
     if( SubModelOn != nullptr ) {
@@ -387,10 +451,27 @@ void TGauge::Update( bool const Power ) {
             SubModel->iVisible = !m_state;
         }
     }
-    // update submodel animations
-    UpdateAnimation( SubModel );
-    UpdateAnimation( SubModelOn );
-};
+}
+
+TGauge TGauge::MirrorCopy() const {
+
+    TGauge mirror;
+    mirror.SubModel = SubModel;
+    mirror.SubModelOn = SubModelOn;
+    mirror.m_animation = m_animation;
+    mirror.m_friction = m_friction;
+    mirror.m_targetvalue = m_targetvalue;
+    mirror.m_value = m_value;
+    mirror.m_offset = m_offset;
+    mirror.m_scale = m_scale;
+    mirror.m_endscale = m_endscale;
+    mirror.m_endvalue = m_endvalue;
+    mirror.m_interpolatescale = m_interpolatescale;
+    mirror.m_scaletable = m_scaletable;
+    mirror.m_state = m_state;
+    mirror.m_sourcemodel = m_sourcemodel;
+    return mirror;
+}
 
 void TGauge::AssignFloat(float *fValue)
 {
@@ -425,11 +506,11 @@ void TGauge::UpdateValue()
             break;
         }
         case 'd': {
-            UpdateValue( *dData );
+            UpdateValue( static_cast<float>(*dData) );
             break;
         }
         case 'i': {
-            UpdateValue( *iData );
+            UpdateValue( static_cast<float>(*iData) );
             break;
         }
         case 'b': {
@@ -449,17 +530,20 @@ void TGauge::AssignState( bool const *State ) {
 
 float TGauge::GetScaledValue() const {
 
+    if( false == m_scaletable.empty() ) {
+        return gauge_scale::interpolate( m_scaletable, m_value );
+    }
     return false == m_interpolatescale ? m_value * m_scale + m_offset : m_value * std::lerp(m_scale, m_endscale, std::clamp(m_value / m_endvalue, 0.f, 1.f)) + m_offset;
 }
 
 void
-TGauge::UpdateAnimation( TSubModel *Submodel ) {
+TGauge::UpdateAnimation( TSubModel *Submodel ) const {
 
     if( Submodel == nullptr ) { return; }
 
     switch (m_animation) {
         case TGaugeAnimation::gt_Rotate: {
-            Submodel->SetRotate( float3( 0, 1, 0 ), GetScaledValue() * 360.0 );
+            Submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>(GetScaledValue() * 360.0) );
             break;
         }
         case TGaugeAnimation::gt_Move: {
@@ -468,13 +552,12 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
         }
         case TGaugeAnimation::gt_Wiper: {
             auto const scaledvalue { GetScaledValue() };
-            Submodel->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
-            auto *sm = Submodel->ChildGet();
-            if( sm ) {
-                sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+            Submodel->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
+            if( auto *sm = Submodel->ChildGet(); sm ) {
+                sm->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
                 sm = sm->ChildGet();
                 if( sm )
-                    sm->SetRotate( float3( 0, 1, 0 ), scaledvalue * 360.0 );
+                    sm->SetRotate( float3( 0, 1, 0 ), static_cast<float>(scaledvalue * 360.0) );
             }
             break;
         }
@@ -489,7 +572,7 @@ TGauge::UpdateAnimation( TSubModel *Submodel ) {
                  && std::isdigit(sm->pName[0]) ) {
                     sm->SetRotate(
                         float3( 0, 1, 0 ),
-                        -36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' ) );
+                        static_cast<float>(-36.0 * ( n[ '0' + 9 - sm->pName[ 0 ] ] - '0' )) );
                 }
                 sm = sm->NextGet();
             } while( sm );

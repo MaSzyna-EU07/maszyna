@@ -305,6 +305,13 @@ openal_renderer::buffer( audio::buffer_handle const Buffer ) const {
     return m_buffers.buffer( Buffer );
 }
 
+// makes buffers of all sound files still decoded in the background, waiting for them
+void
+openal_renderer::complete_buffers() {
+
+    m_buffers.update( true );
+}
+
 // initializes the service
 bool
 openal_renderer::init() {
@@ -349,6 +356,9 @@ openal_renderer::erase( sound_source const *Controller ) {
 // updates state of all active emitters
 void
 openal_renderer::update( double const Deltatime ) {
+
+    // buffers of sound files decoded in the background since the last update
+    m_buffers.update();
 
     ALenum err = alGetError();
     if (err != AL_NO_ERROR)
@@ -563,15 +573,12 @@ openal_renderer::init_caps() {
     if( ::alcIsExtensionPresent( nullptr, "ALC_ENUMERATION_EXT" ) == AL_TRUE ) {
         // enumeration supported
         WriteLog( "available audio devices:" );
-        auto const *devices { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
-        auto const
-            *device { devices },
-            *next { devices + 1 };
-        while( device && *device != '\0' && next && *next != '\0' ) {
-            WriteLog( { device } );
-            auto const len { std::strlen( device ) };
-            device += len + 1;
-            next += len + 2;
+        // device list is a sequence of null-terminated names, ending with an empty name
+        auto const *device { ::alcGetString( nullptr, ALC_DEVICE_SPECIFIER ) };
+        while( device != nullptr && *device != '\0' ) {
+            std::string const devicename { device };
+            WriteLog( devicename );
+            device += devicename.size() + 1;
         }
     }
 

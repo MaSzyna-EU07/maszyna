@@ -24,3 +24,5 @@ vcpkg.json
 
 # Local Python (setup.bat / CMake) for embedding
 tools/python314/
+__pycache__/
+*.pyc

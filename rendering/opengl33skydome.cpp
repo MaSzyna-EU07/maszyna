@@ -44,15 +44,13 @@ void opengl33_skydome::update() {
 		m_indexbuffer->upload(gl::buffer::ELEMENT_ARRAY_BUFFER, skydome.indices().data(), 0, skydome.indices().size() * sizeof( unsigned short ));
 		m_vao->setup_ebo(*m_indexbuffer);
 
-		m_vao->unbind();
+		gl::vao::unbind();
     }
     // ship the current dynamic data to the gpu
-    if( true == skydome.is_dirty() ) {
-        if( m_coloursbuffer ) {
-            // the colour buffer was already initialized, so on this run we update its content
-            m_coloursbuffer->upload( gl::buffer::ARRAY_BUFFER, skydome.colors().data(), 0, skydome.colors().size() * sizeof( glm::vec3 ) );
-            skydome.is_dirty() = false;
-        }
+    if (true == skydome.is_dirty() && m_coloursbuffer) {
+        // the colour buffer was already initialized, so on this run we update its content
+        m_coloursbuffer->upload( gl::buffer::ARRAY_BUFFER, skydome.colors().data(), 0, skydome.colors().size() * sizeof( glm::vec3 ) );
+        skydome.is_dirty() = false;
     }
 }
 

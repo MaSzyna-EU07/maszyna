@@ -46,7 +46,7 @@ class TAnimVocaloidFrame
 
 class basic_event;
 
-class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
+class TAnimContainer : public std::enable_shared_from_this<TAnimContainer>
 { // opakowanie submodelu, określające animację egzemplarza - obsługiwane jako lista
     friend TAnimModel;
 
@@ -83,6 +83,8 @@ class TAnimContainer : std::enable_shared_from_this<TAnimContainer>
         return pSubModel ? pSubModel->pName : ""; };
     void SetRotateAnim( glm::vec3 vNewRotateAngles, double fNewRotateSpeed);
     void SetTranslateAnim( glm::dvec3 vNewTranslate, double fNewSpeed);
+    // the rotation and the shift set brought to their ends at once, for the editor which shows them with the time stopped
+    void Finish();
     void AnimSetVMD(double fNewSpeed);
     void PrepareModel();
     void UpdateModel();
@@ -118,6 +120,11 @@ public:
     static void AnimUpdate( double dt );
     bool Init(std::string const &asName, std::string const &asReplacableTexture);
     bool Load(cParser *parser, bool ter = false);
+    // sets up the instance from the values of a definition which was already taken apart, the way Load(cParser *) does it
+    // from the text. Name, Texture: as that method gets them ready, lower case model name and forward slashes in both.
+    // Twin: instance set up for the same model and texture, to take them after instead of locating them again; can be nullptr.
+    // Angles, Scale: content of the optional blocks of the definition, nullptr for a block which isn't there
+    void Load( std::string const &Name, std::string const &Texture, TAnimModel const *Twin, glm::vec3 const *Angles, glm::vec3 const *Scale, bool const Transition );
 	std::shared_ptr<TAnimContainer> AddContainer(std::string const &Name);
 	std::shared_ptr<TAnimContainer> GetContainer(std::string const &Name = "");
 	void LightSet( int const n, float const v );
@@ -172,10 +179,12 @@ public:
 public:
 // methods
     void RaPrepare(); // ustawienie animacji egzemplarza na wzorcu
+    // rotation and scale of the instance as a matrix: rotate y * rotate x * rotate z * scale
+    glm::mat4 const &rotation_scale();
     void RaAnimate( unsigned int const Framestamp ); // przeliczenie animacji egzemplarza
 
     // radius() subclass details, calculates node's bounding radius
-    float radius_();
+    float radius_() const override;
     // serialize() subclass details, sends content of the subclass to provided stream
     void serialize_( std::ostream &Output ) const;
     // deserialize() subclass details, restores content of the subclass from provided stream
@@ -190,9 +199,16 @@ public:
     TModel3d *pModel { nullptr };
     glm::vec3 vAngle; // bazowe obroty egzemplarza względem osi
     glm::vec3 m_scale { 1.0f, 1.0f, 1.0f }; // per-axis scale (see Scale() accessors above)
+    // rotation and scale part of the instance transform, cached for the instanced render path.
+    // rebuilt by rotation_scale() whenever the angles or the scale differ from the ones it was built from
+    glm::mat4 m_rotationscale { 1.0f };
+    glm::vec3 m_rotationscaleangles { 0.0f, 0.0f, 0.0f };
+    glm::vec3 m_rotationscalescale { 1.0f, 1.0f, 1.0f };
+    bool m_rotationscalevalid { false };
     material_data m_materialdata;
 
     std::string asText; // tekst dla wyświetlacza znakowego
+    std::string m_skintoken; // replacable skin the way the definition of the node gave it, kept for the export
     // TODO: wrap into a light state struct, remove fixed element count
     int iNumLights { 0 };
     std::array<TSubModel *, iMaxNumLights> LightsOn {}; // Ra: te wskaźniki powinny być w ramach TModel3d
@@ -217,10 +233,15 @@ public:
     bool m_instanceable { false };
     // helper: evaluates current state and updates m_instanceable accordingly.
     void update_instanceable_flag();
+    // helper: assigns the model and the replacable skin to the instance, and binds light and variant submodels of the model
+    void assign_model( std::string &name, std::string const &texture, bool const ter );
 
     // diagnostic counters (process-wide). Updated inside update_instanceable_flag()
     // so the renderer can surface load-time classification stats in the debug overlay.
     static int s_instanceable_total;       // count of TAnimModel*'s classified instanceable
+    // bumped whenever an instance loses its instanceable status after it was put in a scene cell (an event adds
+    // an animation container, or changes a skin); the cells rebuild their lists of instances drawn one by one then
+    static unsigned int s_instanceable_revoked;
     static int s_classified_total;         // count of TAnimModel*'s that ran through the classifier
     static int s_rejected_no_pmodel;
     static int s_rejected_lights;

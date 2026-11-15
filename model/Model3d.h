@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "model/material.h"
 #include "gl/query.h"
 
+#include <string_view>
+
 #define EU07_USE_GEOMETRYINDEXING
 
 // Ra: specjalne typy submodeli, poza tym GL_TRIANGLES itp.
@@ -137,6 +139,9 @@ public:
     TSubModel *Child { nullptr };
 public:
     material_handle m_material { null_handle }; // numer tekstury, -1 wymienna, 0 brak
+    // index of the top level branch of the model this submodel belongs to. submodels sharing a branch
+    // also share the texture variant picked for them, so a multi-mesh load chunk stays consistent
+    int m_variantgroup { 0 };
     bool bWire { false }; // nie używane, ale wczytywane
     float Opacity { 1.0f };
     float f_Angle { 0.0f };
@@ -153,7 +158,15 @@ public: // chwilowo
     std::uintptr_t iAnimOwner{ 0 }; // roboczy numer egzemplarza, który ustawił animację
     TAnimType b_aAnim{ TAnimType::at_None }; // kody animacji oddzielnie, bo zerowane
 	std::shared_ptr<float4x4> mAnimMatrix; // macierz do animacji kwaternionowych
-    TSubModel **smLetter{ nullptr }; // wskaźnik na tablicę submdeli do generoania tekstu (docelowo zapisać do E3D)
+    // text display (TP_TEXT) data, filled on first use
+    std::unordered_map<char32_t, TSubModel *> m_letters; // sub-models of the available characters, by unicode code point
+    bool m_lettersready { false }; // whether the character lookup was built yet
+    // transparent hasher, so the text layouts can be looked up with any string type without a temporary std::string
+    struct text_hash {
+        using is_transparent = void;
+        std::size_t operator()( std::string_view const Text ) const noexcept { return std::hash<std::string_view>{}( Text ); }
+    };
+    std::unordered_map<std::string, std::vector<TSubModel *>, text_hash, std::equal_to<>> m_textlayouts; // sub-models of consecutive characters, for each text shown
     TSubModel *Parent{ nullptr }; // nadrzędny, np. do wymnażania macierzy
     int iVisible { 1 }; // roboczy stan widoczności
     float fVisible { 1.f }; // visibility level
@@ -168,6 +181,9 @@ public:
 
 public:
 	static size_t iInstance; // identyfikator egzemplarza, który aktualnie renderuje model
+	// seed of the currently rendered model instance, combined with m_variantgroup it picks
+	// texture variants for materials which declare them. 0 for instances without own seed
+	static std::uint32_t iVariantSeed;
 	static material_handle const *ReplacableSkinId;
 	static int iAlpha; // maska bitowa dla danego przebiegu
 	static float fSquareDist;
@@ -196,6 +212,8 @@ public:
 	void SetTranslate(float3 vNewTransVector);
 	void SetRotateIK1(float3 vNewAngles);
 	TSubModel * GetFromName( std::string const &search, bool i = true );
+    // text display (TP_TEXT): returns sub-models of the characters to draw for provided text, in drawing order
+    std::vector<TSubModel *> const & text_letters( std::string const &Text );
 	inline float4x4 * GetMatrix() { return fMatrix; };
     inline float4x4 const * GetMatrix() const { return fMatrix; };
     // returns offset vector from root
@@ -211,6 +229,8 @@ public:
 	static void ReplacableSet(material_handle const *r, int a) {
 		ReplacableSkinId = r;
 		iAlpha = a; };
+	// returns id of texture variant to use for provided submodel of the currently rendered instance
+	static std::uint32_t VariantId(TSubModel const *Submodel);
 	void Name_Material( std::string const &Name );
 	void Name( std::string const &Name );
 	// Ra: funkcje do budowania terenu z E3D
@@ -259,6 +279,12 @@ class TModel3d
     friend opengl33_renderer;
 
 public:
+    // submodels which scenery instances of the model refer to by name
+    struct instance_submodels {
+        std::array<TSubModel *, 8> lights_on {}; // Light_On00 - Light_On07
+        std::array<TSubModel *, 8> lights_off {}; // Light_Off00 - Light_Off07
+        std::array<TSubModel *, 4> variants {}; // winter_variant, spring_variant, summer_variant, autumn_variant
+    };
     TSubModel *Root { nullptr }; // drzewo submodeli
     uint32_t iFlags { 0 }; // Ra: czy submodele mają przezroczyste tekstury
 public: // Ra: tymczasowo
@@ -273,6 +299,8 @@ private:
 	std::string asBinary; // nazwa pod którą zapisać model binarny
     std::string m_filename;
     nameoffset_sequence m_smokesources; // list of particle sources defined in the model
+    instance_submodels m_instancesubmodels; // filled on first use, see instance_parts()
+    bool m_instancesubmodelslocated { false };
 
 public:
     TModel3d() = default;
@@ -281,6 +309,9 @@ public:
         return Root ? Root->m_boundingradius : 0.f; }
 	inline TSubModel * GetSMRoot() { return Root; };
 	TSubModel * GetFromName(std::string const &Name) const;
+    // returns submodels which scenery instances of the model refer to by name. the search for a name goes through the whole
+    // submodel tree, so it's done once for the model instead of once for each of its instances
+    instance_submodels const & instance_parts();
 	TSubModel * AddToNamed(const char *Name, TSubModel *SubModel);
     nameoffset_sequence const & find_smoke_sources();
 	void AddTo(TSubModel *tmp, TSubModel *SubModel);
@@ -291,6 +322,8 @@ public:
 	void SaveToBinFile(std::string const &FileName);
 	uint32_t Flags() const { return iFlags; };
 	void Init();
+	// assigns each top level branch of the model, and everything below it, its own variant group id
+	void assign_variant_groups();
 	std::string NameGet() const { return m_filename; };
     nameoffset_sequence const & smoke_sources() const {
         return m_smokesources; }

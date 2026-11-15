@@ -21,7 +21,7 @@ namespace gl
 #ifdef SHADERVALIDATOR_STANDALONE
         shader() = default;
 #endif
-        shader(const std::string &filename);
+        explicit shader(const std::string &filename);
         ~shader();
 
         enum class components_e
@@ -63,6 +63,9 @@ namespace gl
         std::unordered_map<std::string, texture_entry> texture_conf;
         std::unordered_map<std::string, param_entry> param_conf;
         std::string name;
+        // the shader does its alpha test with alpha_test_fail() of glsl_common, so its alpha
+        // output can drive GL_SAMPLE_ALPHA_TO_COVERAGE in the opaque pass
+        bool alpha_to_coverage{ false };
 
 #ifndef SHADERVALIDATOR_STANDALONE
     private:
@@ -73,19 +76,19 @@ namespace gl
         void parse_texture_entries(std::string &str);
         void parse_param_entries(std::string &str);
 
-        std::string read_file(const std::string &filename);
+        std::string read_file(const std::string &filename) const;
 
         static std::unordered_map<std::string, components_e> components_mapping;
         static std::unordered_map<std::string, defaultparam_e> defaultparams_mapping;
 
-        void log_error(const std::string &str);
+        void log_error(const std::string &str) const;
     };
 
     class program : public object, public bindable<program>
     {
     public:
         program();
-        program(std::vector<std::reference_wrapper<const gl::shader>>);
+        explicit program(std::vector<std::reference_wrapper<const gl::shader>> const &);
         ~program();
 
         using bindable::bind;
@@ -96,6 +99,7 @@ namespace gl
 
         std::unordered_map<std::string, shader::texture_entry> texture_conf;
         std::unordered_map<std::string, shader::param_entry> param_conf;
+        bool alpha_to_coverage{ false };
 
 	private:
         void init();

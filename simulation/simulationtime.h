@@ -56,7 +56,7 @@ private:
         convert_transition_time( SYSTEMTIME &Time ) const;
     // calculates day and month from given day of year
     void
-        daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday );
+        daymonth( WORD &Day, WORD &Month, WORD const Year, WORD const Yearday ) const;
     // calculates day of year from given date
     int
         year_day( int Day, int const Month, int const Year ) const;

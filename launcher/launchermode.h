@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/applicationmode.h"
+#include "application/scriptedinput.h"
 
 class launcher_mode : public application_mode {
 
@@ -27,10 +28,13 @@ public:
 	void exit() override;
 	// input handlers
 	void on_key( int Key, int Scancode, int Action, int Mods ) override;
-	void on_cursor_pos( double const Horizontal, double const Vertical ) override { ; }
-	void on_mouse_button( int const Button, int const Action, int const Mods ) override { ; }
-	void on_scroll( double const Xoffset, double const Yoffset ) override { ; }
+	void on_cursor_pos( double const Horizontal, double const Vertical ) override { /* not handled by the launcher */ }
+	void on_mouse_button( int const Button, int const Action, int const Mods ) override { /* not handled by the launcher */ }
+	void on_scroll( double const Xoffset, double const Yoffset ) override { /* not handled by the launcher */ }
 	void on_window_resize( int w, int h ) override;
-	void on_event_poll() override { ; }
+	void on_event_poll() override { m_script.deliver(); }
 	bool is_command_processor() const override { return false; }
+
+private:
+	input_script m_script{"EU07_LAUNCHER_SELFTEST"};
 };

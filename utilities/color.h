@@ -15,9 +15,9 @@ glm::vec3
 XYZtoRGB( glm::vec3 const &XYZ ) {
 
     // M^-1 for Adobe RGB from http://www.brucelindbloom.com/Eqn_RGB_XYZ_Matrix.html
-    float const mi[ 3 ][ 3 ] = { 2.041369f, -0.969266f, 0.0134474f, -0.5649464f, 1.8760108f, -0.1183897f, -0.3446944f, 0.041556f, 1.0154096f };
+//    float const mi[ 3 ][ 3 ] = { 2.041369f, -0.969266f, 0.0134474f, -0.5649464f, 1.8760108f, -0.1183897f, -0.3446944f, 0.041556f, 1.0154096f };
     // m^-1 for sRGB:
-//    float const mi[ 3 ][ 3 ] = { 3.240479f, -0.969256f, 0.055648f, -1.53715f, 1.875991f, -0.204043f, -0.49853f, 0.041556f, 1.057311f };
+    float const mi[ 3 ][ 3 ] = { 3.240479f, -0.969256f, 0.055648f, -1.53715f, 1.875991f, -0.204043f, -0.49853f, 0.041556f, 1.057311f };
 
     return glm::vec3{
         XYZ.x*mi[ 0 ][ 0 ] + XYZ.y*mi[ 1 ][ 0 ] + XYZ.z*mi[ 2 ][ 0 ],
@@ -59,10 +59,10 @@ RGBtoHSV( glm::vec3 const &RGB ) {
         else
             hsv.x = 4.f + ( RGB.r - RGB.g ) / delta;  // between magenta & cyan
 
-    hsv.x *= 60.0;                              // degrees
+    hsv.x *= 60.0f;                              // degrees
 
     if( hsv.x < 0.0 )
-        hsv.x += 360.0;
+        hsv.x += 360.0f;
 
     return hsv;
 }
@@ -81,9 +81,9 @@ HSVtoRGB( glm::vec3 const &HSV ) {
     }
     float hh = HSV.x;
     if( hh >= 360.0 ) hh = 0.0;
-    hh /= 60.0;
-    int const i = (int)hh;
-    float const ff = hh - i;
+    hh /= 60.0f;
+    auto const i = (int)hh;
+    float const ff = hh - static_cast<float>(i);
     float const p = HSV.z * ( 1.f - HSV.y );
     float const q = HSV.z * ( 1.f - HSV.y * ff );
     float const t = HSV.z * ( 1.f - HSV.y * (1.f - ff) );

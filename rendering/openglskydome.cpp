@@ -54,20 +54,18 @@ void opengl_skydome::update() {
     }
     // ship the current dynamic data to the gpu
     // TODO: ship the data if it changed since the last update
-    if( true == skydome.is_dirty() ) {
-        if( ( m_coloursbuffer > 0 ) && ( m_coloursbuffer != (GLuint)-1 ) ) {
-            ::glBindBuffer( GL_ARRAY_BUFFER, m_coloursbuffer );
-            auto &colors{ skydome.colors() };
-            /*
-            float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
-            auto gamma = std::lerp( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
-            for( auto & color : colors ) {
-                color = glm::pow( color, gamma );
-            }
-            */
-            ::glBufferSubData( GL_ARRAY_BUFFER, 0, colors.size() * sizeof( glm::vec3 ), colors.data() );
-            skydome.is_dirty() = false;
+    if (true == skydome.is_dirty() && ( m_coloursbuffer > 0 ) && ( m_coloursbuffer != (GLuint)-1 )) {
+        ::glBindBuffer( GL_ARRAY_BUFFER, m_coloursbuffer );
+        auto &colors{ skydome.colors() };
+        /*
+        float twilightfactor = std::clamp( -simulation::Environment.sun().getAngle(), 0.0f, 18.0f ) / 18.0f;
+        auto gamma = std::lerp( glm::vec3( 0.45f ), glm::vec3( 1.0f ), twilightfactor );
+        for( auto & color : colors ) {
+            color = glm::pow( color, gamma );
         }
+        */
+        ::glBufferSubData( GL_ARRAY_BUFFER, 0, colors.size() * sizeof( glm::vec3 ), colors.data() );
+        skydome.is_dirty() = false;
     }
     // cleanup
     ::glPopClientAttrib();

@@ -8,7 +8,7 @@ class vehiclelist_panel : public ui_panel
     bool m_first_show = true;
 
   public:
-	vehiclelist_panel(ui_layer &parent);
+	explicit vehiclelist_panel(ui_layer &parent);
 
 	void render_contents() override;
 };

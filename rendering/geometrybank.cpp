@@ -85,6 +85,26 @@ basic_vertex::deserialize_packed( std::istream &s, bool const Tangent ) {
     }
 }
 
+namespace {
+
+// the tangent of a vertex across its normal, from the direction the texture of its faces runs in
+glm::vec3 tangent_across( glm::vec3 const &Normal, glm::vec3 const &Texture ) {
+
+    if( auto const tangent { Texture - Normal * glm::dot( Normal, Texture ) };
+        glm::dot( tangent, tangent ) > 1e-12f ) {
+        return tangent;
+    }
+    // the texture of the faces gives the vertex no direction, as where they all have one spot of it like the cut ends of the rails;
+    // normalized, nothing would be NaN and the pixels black whatever the light and fog, any direction across the normal does
+    if( auto const tangent { glm::cross( Normal, ( std::abs( Normal.x ) < 0.9f ? glm::vec3 { 1.f, 0.f, 0.f } : glm::vec3 { 0.f, 1.f, 0.f } ) ) };
+        glm::dot( tangent, tangent ) > 1e-12f ) {
+        return tangent;
+    }
+    return { 1.f, 0.f, 0.f };
+}
+
+} // namespace
+
 // based on
 // Lengyel, Eric. “Computing Tangent Space Basis Vectors for an Arbitrary Mesh”.
 // Terathon Software, 2001. http://terathon.com/code/tangent.html
@@ -197,7 +217,7 @@ void calculate_tangents(vertex_array &vertices, index_array const &indices, int 
 
         vertices[a].tangent =
             glm::vec4(
-                glm::normalize((t - n * glm::dot(n, t))),
+                glm::normalize( tangent_across( n, t ) ),
                 (glm::dot(glm::cross(n, t), t2) < 0.0F) ?
                    -1.0F :
                     1.0F);
@@ -300,8 +320,8 @@ geometry_bank::replace( gfx::vertex_array &Vertices, userdata_array &Userdata, g
         // TBD: we could bail out with an error instead if such request occurs
         chunk.vertices.resize( Offset + Vertices.size(), gfx::basic_vertex() );
 		chunk.userdata.resize( Offset + Userdata.size(), gfx::vertex_userdata() );
-        chunk.vertices.insert( std::end( chunk.vertices ), std::begin( Vertices ), std::end( Vertices ) );
-		chunk.userdata.insert( std::end( chunk.userdata ), std::begin( Userdata ), std::end( Userdata ) );
+        std::copy( std::begin( Vertices ), std::end( Vertices ), std::begin( chunk.vertices ) + Offset );
+		std::copy( std::begin( Userdata ), std::end( Userdata ), std::begin( chunk.userdata ) + Offset );
     }
     // template method implementation
     replace_( Geometry );
@@ -318,6 +338,20 @@ geometry_bank::append( gfx::vertex_array &Vertices, userdata_array &Userdata, gf
     return replace( Vertices, Userdata, Geometry, gfx::geometry_bank::chunk( Geometry ).vertices.size() );
 }
 
+void
+geometry_bank::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return; }
+
+    auto &chunk = gfx::geometry_bank::chunk( Geometry );
+    if( chunk.vertices.empty() && chunk.indices.empty() ) { return; }
+
+    gfx::vertex_array().swap( chunk.vertices );
+    gfx::index_array().swap( chunk.indices );
+    gfx::userdata_array().swap( chunk.userdata );
+    replace_( Geometry );
+}
+
 // draws geometry stored in specified chunk
 std::size_t
 geometry_bank::draw( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, unsigned int const Streams ) {
@@ -330,6 +364,13 @@ std::size_t
 geometry_bank::draw_instanced( gfx::geometry_handle const &Geometry, gfx::stream_units const &Units, std::size_t const InstanceCount, unsigned int const Streams ) {
     if( InstanceCount == 0 ) { return 0; }
     return draw_instanced_( Geometry, Units, InstanceCount, Streams );
+}
+
+// draws geometry stored in supplied sequence of chunks of the bank
+std::size_t
+geometry_bank::draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, gfx::stream_units const &Units, unsigned int const Streams ) {
+    // template method implementation
+    return draw_batch_( First, Last, Units, Streams );
 }
 
 // frees subclass-specific resources associated with the bank, typically called when the bank wasn't in use for a period of time
@@ -351,6 +392,15 @@ vertex_array const &
 geometry_bank::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return geometry_bank::chunk( Geometry ).vertices;
+}
+
+// kind of geometry of specified chunk
+unsigned int
+geometry_bank::primitive( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.chunk == 0 ) || ( Geometry.chunk > m_chunks.size() ) ) { return no_primitive; }
+
+    return geometry_bank::chunk( Geometry ).type;
 }
 
 // provides direct access to vertex user data of specfied chunk
@@ -411,6 +461,14 @@ geometrybank_manager::append( gfx::vertex_array &Vertices, userdata_array &Userd
 
     return bank( Geometry ).first->append( Vertices, Userdata, Geometry );
 }
+
+void
+geometrybank_manager::erase( gfx::geometry_handle const &Geometry ) {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return; }
+
+    bank( Geometry ).first->erase( Geometry );
+}
 // draws geometry stored in specified chunk
 void
 geometrybank_manager::draw( gfx::geometry_handle const &Geometry, unsigned int const Streams ) {
@@ -436,6 +494,32 @@ geometrybank_manager::draw_instanced( gfx::geometry_handle const &Geometry, std:
     m_primitivecount += bankrecord.first->draw_instanced( Geometry, m_units, InstanceCount, Streams );
 }
 
+// draws geometry stored in supplied sequence of chunks
+void
+geometrybank_manager::draw_batch( gfx::geometry_handle const *First, gfx::geometry_handle const *Last, unsigned int const Streams ) {
+
+    while( First != Last ) {
+
+        if( *First == null_handle ) {
+            ++First;
+            continue;
+        }
+        // neighbouring chunks stored in the same bank go to the bank together
+        auto const *last { First + 1 };
+        while( ( last != Last )
+            && ( last->bank == First->bank ) ) {
+            ++last;
+        }
+
+        auto &bankrecord = bank( *First );
+
+        bankrecord.second = m_garbagecollector.timestamp();
+        m_primitivecount += bankrecord.first->draw_batch( First, last, m_units, Streams );
+
+        First = last;
+    }
+}
+
 // provides direct access to index data of specfied chunk
 gfx::index_array const &
 geometrybank_manager::indices( gfx::geometry_handle const &Geometry ) const {
@@ -448,6 +532,15 @@ gfx::vertex_array const &
 geometrybank_manager::vertices( gfx::geometry_handle const &Geometry ) const {
 
     return bank( Geometry ).first->vertices( Geometry );
+}
+
+// kind of geometry of specified chunk
+unsigned int
+geometrybank_manager::primitive( gfx::geometry_handle const &Geometry ) const {
+
+    if( ( Geometry.bank == 0 ) || ( Geometry.bank > m_geometrybanks.size() ) ) { return geometry_bank::no_primitive; }
+
+    return bank( Geometry ).first->primitive( Geometry );
 }
 
 // provides direct access to vertex user data of specfied chunk

@@ -90,7 +90,7 @@ private:
 };
 
 enum stack_mode { gl_modelview = 0, gl_projection = 1, gl_texture = 2 };
-typedef std::vector<opengl_stack> openglstack_array;
+using openglstack_array = std::vector<opengl_stack>;
 
 public:
 // constructors:

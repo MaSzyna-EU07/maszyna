@@ -12,7 +12,7 @@ ui::vehiclelist_panel::vehiclelist_panel(ui_layer &parent)
 void ui::vehiclelist_panel::render_contents()
 {
     if (m_first_show && Global.gui_trainingdefault) {
-        for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
+        for (TDynamicObject const *vehicle : simulation::Vehicles.sequence())
         {
             if (!vehicle->Mechanik || vehicle->name() != ToLower(Global.local_start_vehicle))
                 continue;
@@ -26,7 +26,7 @@ void ui::vehiclelist_panel::render_contents()
         return;
     }
 
-	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
+	for (TDynamicObject const *vehicle : simulation::Vehicles.sequence())
 	{
 		if (!vehicle->Mechanik)
 			continue;
@@ -37,7 +37,7 @@ void ui::vehiclelist_panel::render_contents()
 		if (vehicle->Mechanik)
 			timetable = vehicle->Mechanik->TrainName() + ", ";
 
-		std::string label = std::string(name + ", " + timetable + std::to_string(speed) + " km/h###");
+		auto label = std::string(name + ", " + timetable + std::to_string(speed) + " km/h###");
 
 		ImGui::PushID(vehicle);
 		if (ImGui::Button(label.c_str())) {

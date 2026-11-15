@@ -1,0 +1,52 @@
+{
+  "_source": "pkp/elf_v1/21we-c.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "28650", "Vmax": "160", "PWR": "800", "SandCap": "500", "Type": "ezt", "HeatingP": "37"},
+  "Load": {"MaxLoad": "95", "LoadQ": "pieces", "LoadAccepted": "Passengers,Pantstate", "OverLoadFactor": "2.3", "LoadSpeed": "1", "UnLoadSpeed": "2"},
+  "Dimensions": {"L": "20.70", "H": "4.228", "W": "2.96", "Cx": "0.1"},
+  "Wheels": {"D": "0.850", "AIM": "8000", "Tw": "1.435", "Axle": "Bo'", "Ad": "2.83", "Bd": "16.3", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "EStED", "NBpA": "4", "MBF": "85.0", "MaxBP": "3.1", "MaxLBP": "4.2", "RM": "0.74", "RV": "-1", "BCN": "4", "BCR": "0.127", "BCD": "0.05", "BCM": "1.9075", "HiPP": "5", "LoPP": "3.5", "Vv": "0.5", "MinCP": "7.0", "MaxCP": "8.5", "CompressorSpeed": "0.025", "BVV": "150", "BM": "Cosid", "BCS": "1", "BSA": "0.00", "BRE": "0.95", "TareMaxBP": "2.6", "CompressorPower": "Converter", "LPOn": "3.0", "LPOff": "4.5", "UBB1": "2", "UBB2": "8"},
+  "SpringBrake": {"Volume": "10", "MBF": "2.9", "MaxSP": "5.5", "ResetP": "4.0", "MinFP": "3.5", "PressOff": "4.5", "PressOn": "4.2", "ValveOnArea": "0.0005", "ValveOffArea": "0.0005", "ValvePNBArea": "0.002", "MTC": "4"},
+  "Doors": {"OpenCtrl": "Mixed", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.24", "CloseSpeed": "0.2", "DoorMaxShiftL": "0.74", "DoorMaxShiftR": "0.74", "DoorOpenMethod": "Plug", "DoorStayOpen": "5.0", "DoorClosureWarningAuto": "Yes", "DoorBlocked": "Yes", "DoorMaxShiftPlug": "0.05", "DoorCloseDelay": "1.8", "PlatformMaxShift": "0.270", "PlatformSpeed": "0.4", "PlatformOpenMethod": "Shift", "MirrorMaxShift": "45", "DoorNeedPermit": "Yes", "DoorPermitList": "1|0|2|3", "DoorPermitListDefault": "2", "DoorAutoCloseRemote": "Yes", "MirrorVelClose": "25"},
+  "BuffCoupl1": {"CType": "Articulated", "kB": "4200", "DmaxB": "0.05", "FmaxB": "1740", "kC": "6800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "-255"},
+  "BuffCoupl2": {"CType": "Automatic", "kB": "4200", "DmaxB": "0.05", "FmaxB": "1740", "kC": "6800", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.58", "AllowedFlag": "39", "AutomaticFlag": "39", "ControlType": "en62"},
+  "Cntrl": {"BrakeHandle": "MHZ_K5P", "LocBrakeHandle": "FD1", "BrakeSystem": "ElectroPneumatic", "MaxBPMass": "37", "BCPN": "6", "BDelay1": "15", "BDelay2": "4", "LocalBrake": "PneumaticBrake", "MCPN": "4", "EIMCtrlType": "2", "SCPN": "1", "MainInitTime": "10", "IniCDelay": "1.0", "SCDelay": "0.2", "CoupledCtrl": "No", "SBD": "0.6", "ASB": "Yes", "CompressorStart": "Automatic", "ConverterStart": "Automatic", "ConverterStartDelay": "10.0", "PantCompressorStart": "Mixed", "PantAutoValve": "Yes", "BrakeDelays": "PR", "BrakeOpModes": "PN", "DirChangeMaxPos": "3", "HAO": "No", "HMO": "Yes", "HGDP1": "0", "ReleaseParkingBySpringBrake": "Yes", "MotorBlowersStart": "Converter", "CompartmentLightsStart": "Manual", "AutomaticCabActivation": "No", "InactivaCabEmergencyBrake": "Yes", "InactiveCabFlag": "3", "rows": [
+    ["-1","0.5","0.0","6","ElectroPneumatic"],
+    ["0","0.5","-1","4","ElectroPneumatic"],
+    ["1","0.5","0.35","4","ElectroPneumatic"],
+    ["2","0.5","0.35","4","Pneumatic"],
+    ["3","0.5","0.35","4","Pneumatic"],
+    ["4","-1","0.35","4","Pneumatic"],
+    ["5","0.34","-1","4","Pneumatic"],
+    ["6","-1","-1","0","Pneumatic"]
+  ]},
+  "Circuit": {"ImaxHi": "500"},
+  "Security": {"AwareSystem": "Active,CabSignal", "AwareDelay": "60", "SoundSignalDelay": "2.4", "MaxHoldTime": "0.1", "EmergencyBrakeDelay": "2.1", "CabDependent": "Yes", "RadioStop": "Yes", "EmergencyBrakeWarningSignal": "2", "MagnetLocation": "4.5"},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "110", "LMaxCurrent": "155"},
+  "Clima": {"Heating": "Main", "HMaxVoltage": "400"},
+  "Power": {"EnginePower": "CurrentCollector", "CollectorsNo": "1", "MaxVoltage": "4000", "MinV": "2000", "MaxCurrent": "1200", "MinH": "0.38", "MaxH": "2.4", "CSW": "1.4", "PhysicalLayout": "2"},
+  "Blending": {"MED_amax": "1.04", "MED_EPVC": "No", "MED_Ncor": "No", "MED_FirstDelayED": "2", "MED_ScndDelayED": "1"},
+  "Engine": {"EngineType": "ElectricInductionMotor", "Trans": "40:218", "dfic": "470", "dfmax": "0.790", "p": "2", "cfu": "33.43", "cim": "10.22", "icif": "0.67", "Uzmax": "2340", "Uzh": "2340", "DU": "20", "I0": "20", "fcfu": "33.5", "F0": "75", "a1": "0.0", "Pmax": "980", "Fh": "48", "Ph": "830", "Vh0": "2", "Vh1": "5", "Imax": "377", "abed": "0", "Flat": "Yes", "edep": "1.0", "MotorBlowersSpeed": "-29", "InvNo": "2", "InvCtrCplFlag": "255"},
+  "SpeedControl": {"SpeedCtrl": "Yes", "SpeedButtons": "0|40|50|60|70|80|100|120|140|160", "OverrideManual": "Yes", "InitPwr": "0.3", "MaxPwrVel": "5", "StartVel": "2", "VelStep": "5", "PwrStep": "0.1", "MinPwr": "0.3", "MaxPwr": "1.0", "MinVel": "0", "MaxVel": "160", "Offset": "-0.5", "kPpos": "0.1", "kPneg": "0.4", "kIpos": "0.06", "kIneg": "0.06", "BrakeIntervention": "No", "PowerUpSpeed": "0.3", "PowerDownSpeed": "0.3"},
+  "AI": {"Pantstate": "2"},
+  "ffList": {"Size": "10", "rows": [
+    ["0","2.49"],
+    ["22.1","2.49"],
+    ["24.1","2.50"],
+    ["31.3","2.50"],
+    ["32.3","2.53"],
+    ["39.3","3.0"],
+    ["65","5.0"],
+    ["91","7.0"],
+    ["124","9.0"],
+    ["161","11.7"],
+    ["177","13.0"]
+  ]},
+  "LightsList": {"Size": "5", "Wrap": "no", "Default": "1", "rows": [
+    ["0","0"],
+    ["21","34"],
+    ["22","34"],
+    ["34","34"],
+    ["16","1"]
+  ]}
+}

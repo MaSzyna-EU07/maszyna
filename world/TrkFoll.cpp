@@ -51,6 +51,9 @@ TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)
         {
         case tt_Switch: // jeśli zwrotnica, to przekładamy ją, aby uzyskać dobry segment
         {
+            if( pCurrentTrack == nullptr ) {
+                break;
+            }
             int i = end ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
             if (i > 0) // jeżeli wjazd z ostrza
                 pTrack->SwitchForced(i >> 1, Owner); // to przełożenie zwrotnicy - rozprucie!
@@ -263,6 +266,11 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
         }
     }
 };
+
+double TTrackFollower::RailPhase( double const Offset ) const {
+
+    return pCurrentTrack != nullptr ? pCurrentTrack->rail_phase( fCurrentDistance + fDirection * Offset ) : -1.0;
+}
 
 bool TTrackFollower::ComputatePosition()
 { // ustalenie współrzędnych XYZ

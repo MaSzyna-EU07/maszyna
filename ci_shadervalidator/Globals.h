@@ -8,6 +8,7 @@ struct _global
         bool gfx_extraeffects;
         bool gfx_shadergamma;
         bool gfx_usegles;
+        int iMultisampling;
 };
 
 extern _global Global;

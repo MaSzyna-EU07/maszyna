@@ -27,7 +27,7 @@ public:
     bool GetValue() const {
         return m_state; }
     inline
-    bool Active() {
+    bool Active() const {
         return pModelOn != nullptr || pModelOff != nullptr; }
     void Update( bool const Power = true );
     bool Init( std::string const &asName, TModel3d const *pModel, bool bNewOn = false );
@@ -36,7 +36,7 @@ public:
     // returns offset of submodel associated with the button from the model centre
     glm::vec3 model_offset() const;
 	void gain(float new_volume);
-	inline uint8_t b() { return m_state ? 1 : 0; };
+	inline uint8_t b() const { return m_state ? 1 : 0; };
 
 private:
 // methods
@@ -48,9 +48,8 @@ private:
         play();
 
 // members
-    TSubModel
-        *pModelOn { nullptr },
-        *pModelOff { nullptr }; // submodel dla stanu załączonego i wyłączonego
+    TSubModel *pModelOn { nullptr };
+    TSubModel *pModelOff { nullptr }; // submodel dla stanu załączonego i wyłączonego
     bool m_state { false };
     bool const *bData { nullptr };
     int iFeedbackBit { 0 }; // Ra: bit informacji zwrotnej, do wyprowadzenia na pulpit

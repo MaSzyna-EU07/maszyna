@@ -21,12 +21,79 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "rendering/opengl33geometrybank.h"
 #include "rendering/screenshot.h"
+#include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
 
 //#define EU07_DEBUG_OPENGL
 
 int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound with the pick framebuffer
 int constexpr EU07_REFLECTIONFIDELITYOFFSET { 250 }; // artificial increase of range for reflection pass detail reduction
+
+namespace {
+
+// the top view of the editor shows everything this close to the camera, the corners of the screen included
+float
+editor_ortho_reach()
+{
+	auto const aspect{Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	return Global.EditorOrthoExtent * std::sqrt(1.f + aspect * aspect) + 500.f;
+}
+
+float
+editor_track_view_range(float const Range, bool const Apply)
+{
+	if (false == Apply || false == Global.editor_tracks)
+		return Range;
+	float extra = 50000.0f;
+	if (Global.EditorOrtho)
+		extra = editor_ortho_reach();
+	return Range > extra ? Range : extra;
+}
+
+// the top view of the editor may leave the ballast of the railway out, for the ground under the tracks to show
+bool
+editor_ballast_hidden(TTrack const *Track, bool const Colour)
+{
+	return Colour && EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 0 && (Track->iCategoryFlag & 15) == 1;
+}
+
+// ...or the sleepers and the timbers of the switches too, the rails alone as on a plan
+bool
+editor_sleepers_hidden()
+{
+	return EditorModeFlag && Global.EditorOrtho && Global.EditorOrthoTracks > 1;
+}
+
+// far off the camera the tracks of the editor are drawn alone, the terrain, the models and the rest only as far as the
+// scenery reaches in the game; the top view measures it off its centre on the ground, its camera being high above it
+bool
+editor_far_tracks_only(bool const Apply, scene::bounding_area const &Area, glm::dvec3 const &Camera, double const SceneryLimit)
+{
+	if (false == Apply)
+		return false;
+	auto offset{Area.center - Camera};
+	if (Global.EditorOrtho)
+		offset.y = 0.0;
+	double nearest = glm::length(offset) - static_cast<double>(Area.radius);
+	if (nearest < 0.0)
+		nearest = 0.0;
+	return nearest > SceneryLimit;
+}
+
+// returns material assigned to the submodel, resolving replacable skins. null_handle if no skin set is bound
+material_handle
+submodel_material( TSubModel const *Submodel ) {
+
+    if( Submodel->m_material >= 0 ) {
+        return Submodel->m_material;
+    }
+    return (
+        TSubModel::ReplacableSkinId != nullptr ?
+            TSubModel::ReplacableSkinId[ -Submodel->m_material ] :
+            null_handle );
+}
+
+} // namespace
 
 void GLAPIENTRY
 ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam ) {
@@ -64,6 +131,10 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
         glDebugMessageCallback( ErrorCallback, 0 );
     }
 
+	glClearColor( 0.f, 0.f, 0.f, 1.f );
+	glClear( GL_COLOR_BUFFER_BIT );
+	glfwSwapBuffers( Window );
+
 	if (!Init_caps())
 		return false;
 
@@ -81,9 +152,9 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 	}
 
 	// rgb value for 5780 kelvin
-	Global.DayLight.diffuse[0] = 255.0f / 255.0f;
-	Global.DayLight.diffuse[1] = 242.0f / 255.0f;
-	Global.DayLight.diffuse[2] = 231.0f / 255.0f;
+	Global.DayLight.diffuse[0] = 1.0f;        // 255 / 255
+	Global.DayLight.diffuse[1] = 0.9490196f;  // 242 / 255
+	Global.DayLight.diffuse[2] = 0.9058824f;  // 231 / 255
 	Global.DayLight.is_directional = true;
 	m_sunlight.id = opengl33_renderer::sunlight;
 
@@ -176,7 +247,7 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 
 	// Generate hemisphere kernel (z > 0 = toward surface normal)
 	std::uniform_real_distribution<float> rnd(0.0f, 1.0f);
-	std::default_random_engine gen(42); // fixed seed for consistency
+	std::default_random_engine gen(42); // NOSONAR fixed seed on purpose, SSAO kernel has to be identical every run
 	for (int i = 0; i < 32; i++) {
 		glm::vec3 s(rnd(gen)*2.0f-1.0f, rnd(gen)*2.0f-1.0f, rnd(gen));
 		s = glm::normalize(s) * rnd(gen);
@@ -372,6 +443,21 @@ bool opengl33_renderer::Init(GLFWwindow *Window)
 void opengl33_renderer::Shutdown()
 {
     vr.reset();
+    m_screen_post.reset();
+}
+
+script_screens::post_processor *opengl33_renderer::Screen_post_processor()
+{
+    // GLES converts what's written into an sRGB texture, and the passes give the bytes as they are: the cpu does it there
+    if (Global.gfx_usegles)
+    {
+        return nullptr;
+    }
+    if (m_screen_post == nullptr)
+    {
+        m_screen_post = std::make_unique<opengl33_screen_post>();
+    }
+    return m_screen_post.get();
 }
 
 bool opengl33_renderer::AddViewport(const global_settings::extraviewport_config &conf)
@@ -576,6 +662,12 @@ bool opengl33_renderer::Render()
 	}
 	// generate new frame
     opengl_texture::reset_unit_cache();
+	// textures of new heightmap terrain layers go to the arrays the terrain shader reads them from
+	m_terrainmaterials.update();
+	if( EditorModeFlag ) {
+		// the editor moves and resizes model instances in place, which leaves the copies of their bounds out of date
+		++m_instanceboundsversion;
+	}
 
 	m_renderpass.draw_mode = rendermode::none; // force setup anew
 	m_renderpass.draw_stats = debug_stats();
@@ -634,11 +726,15 @@ void opengl33_renderer::SwapBuffers()
 
     m_debugtimestext.clear();
     m_debugtimestext =
-        "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
+        "cpu frame total: " + to_string( Timer::subsystem.gfx_color.average() + Timer::subsystem.gfx_shadows.average() + ( Global.gfx_envmap_enabled ? Timer::subsystem.gfx_reflections.average() : 0.f ) + Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n"
         + " color: " + to_string( Timer::subsystem.gfx_color.average(), 2 ) + " ms (" + std::to_string( m_cellqueue.size() ) + " sectors)\n";
     if( Global.gfx_shadowmap_enabled ) {
         m_debugtimestext +=
             " shadows: " + to_string( Timer::subsystem.gfx_shadows.average(), 2 ) + " ms\n";
+    }
+    if( Global.gfx_envmap_enabled ) {
+        m_debugtimestext +=
+            " reflections: " + to_string( Timer::subsystem.gfx_reflections.average(), 2 ) + " ms\n";
     }
     m_debugtimestext += " swap: " + to_string( Timer::subsystem.gfx_swap.average(), 2 ) + " ms\n";
     if( !Global.gfx_usegles ) {
@@ -696,8 +792,8 @@ void opengl33_renderer::draw_debug_ui()
 		ImGui::SliderFloat("in_cutoff", &conf.in_cutoff, 0.9f, 1.1f);
 		ImGui::SliderFloat("out_cutoff", &conf.out_cutoff, 0.9f, 1.1f);
 
-		ImGui::SliderFloat("falloff_linear", &conf.falloff_linear, 0.0f, 1.0f, "%.3f", 2.0f);
-		ImGui::SliderFloat("falloff_quadratic", &conf.falloff_quadratic, 0.0f, 1.0f, "%.3f", 2.0f);
+		ImGui::SliderFloat("falloff_linear", &conf.falloff_linear, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+		ImGui::SliderFloat("falloff_quadratic", &conf.falloff_quadratic, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
 
 		ImGui::SliderFloat("ambient", &conf.ambient, 0.0f, 3.0f);
 		ImGui::SliderFloat("intensity", &conf.intensity, 0.0f, 10.0f);
@@ -824,8 +920,10 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			// potentially update environmental cube map
             m_renderpass.draw_stats = {};
+			Timer::subsystem.gfx_reflections.start();
             if (Render_reflections(vp))
 				m_renderpass = m_colorpass; // restore color pass settings
+			Timer::subsystem.gfx_reflections.stop();
 			setup_env_map(m_env_tex.get());
 		}
 
@@ -933,6 +1031,7 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		glDebug("render translucent region");
 		setup_drawing(true);
 		Render_Alpha(simulation::Region);
+		Render_editor_overlay();
 
 		// particles
 		Render_particles();
@@ -1286,6 +1385,7 @@ bool opengl33_renderer::Render_lowpoly( TDynamicObject *Dynamic, float const Squ
     if( Setup ) {
 
         TSubModel::iInstance = reinterpret_cast<std::uintptr_t>( Dynamic ); //żeby nie robić cudzych animacji
+        TSubModel::iVariantSeed = Dynamic->variant_seed();
         glm::dvec3 const originoffset{ Dynamic->vPosition - m_renderpass.pass_camera.position() };
 
         Dynamic->ABuLittleUpdate( Squaredistance ); // ustawianie zmiennych submodeli dla wspólnego modelu
@@ -1381,24 +1481,39 @@ bool opengl33_renderer::Render_coupler_adapter( TDynamicObject *Dynamic, float c
 bool opengl33_renderer::Render_reflections(viewport_config &vp)
 {
     if( Global.reflectiontune.update_interval == 0 ) { return false; }
+    // the top view of the editor shows nothing the reflections would be seen on: the cube map stays as it was
+    if( EditorModeFlag && Global.EditorOrtho ) { return false; }
 
-    auto const timestamp{ Timer::GetRenderTime() };
-    if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )
-     && ( glm::length2( m_renderpass.pass_camera.position() - m_environmentupdatelocation ) < sq(1000.0)) ) // length2 is better than length for comparing because it does not require sqrt function
-	{
-        // run update every 5+ mins of simulation time, or at least 1km from the last location
-        return false;
+    if( m_environmentupdateface >= 6 ) {
+        // no update in progress, check whether it's time for another one
+        auto const timestamp{ Timer::GetRenderTime() };
+        if( ( timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval )
+         && ( glm::length2( m_renderpass.pass_camera.position() - m_environmentupdatelocation ) < sq(1000.0)) ) // length2 is better than length for comparing because it does not require sqrt function
+        {
+            // run update every 5+ mins of simulation time, or at least 1km from the last location
+            return false;
+        }
+        m_environmentupdatetime = timestamp;
+        m_environmentupdatelocation = m_renderpass.pass_camera.position();
+        m_environmentupdateface = 0;
     }
-    m_environmentupdatetime = timestamp;
-	m_environmentupdatelocation = m_renderpass.pass_camera.position();
+	// an update draws the scene six times, which is too much for a single frame. its cost is spread
+	// by drawing one face of the map per frame, all of them as seen from the place the update began at.
+	// the first update is done in one go, as there's nothing to show in the meantime
+	auto const lastface{ m_environmentready ? m_environmentupdateface : 5 };
 	glViewport(0, 0, gl::ENVMAP_SIZE, gl::ENVMAP_SIZE);
-	for (m_environmentcubetextureface = 0; m_environmentcubetextureface < 6; ++m_environmentcubetextureface)
+	for (; m_environmentupdateface <= lastface; ++m_environmentupdateface)
 	{
+		m_environmentcubetextureface = m_environmentupdateface;
 		m_env_fb->attach(*m_env_tex, m_environmentcubetextureface, GL_COLOR_ATTACHMENT0);
 		if (m_env_fb->is_complete())
 			Render_pass(vp, rendermode::reflections);
 	}
-	m_env_tex->generate_mipmaps();
+	if (m_environmentupdateface >= 6)
+	{
+		m_env_tex->generate_mipmaps();
+		m_environmentready = true;
+	}
 	m_env_fb->detach(GL_COLOR_ATTACHMENT0);
 
 	return true;
@@ -1465,7 +1580,7 @@ glm::mat4 opengl33_renderer::perspective_projection_raw(float fovy, float aspect
 {
     if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control)
     {
-        const float f = 1.0f / tan(fovy / 2.0f);
+        const float f = 1.0f / std::tan(fovy / 2.0f);
 
         // when clip_control available, use projection matrix with 1..0 Z range and infinite zfar
         return glm::mat4( //
@@ -1515,6 +1630,17 @@ glm::mat4 opengl33_renderer::ortho_frustumtest_projection(float l, float r, floa
 {
 	// for frustum calculation, use standard opengl matrix
 	return glm::ortho(l, r, b, t, znear, zfar);
+}
+
+// the main viewport of the editor in the orthographic view replaces the perspective projection
+void opengl33_renderer::editor_ortho_projection(viewport_config const &Viewport, float const Zfar, glm::mat4 &Projection, glm::mat4 &Frustum)
+{
+	if (false == (EditorModeFlag && Global.EditorOrtho && Viewport.main))
+		return;
+	auto const height{Global.EditorOrthoExtent};
+	auto const width{height * Global.window_size.x / std::max(1.f, static_cast<float>(Global.window_size.y))};
+	Projection = ortho_projection(-width, width, -height, height, -Zfar, Zfar);
+	Frustum = ortho_frustumtest_projection(-width, width, -height, height, -Zfar, Zfar);
 }
 
 void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config &Config, rendermode const Mode,
@@ -1588,10 +1714,13 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         Config.draw_range = std::max( 2000.f, Config.draw_range );
 
 		// projection
-		auto const zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
+		auto zfar  = ( Zfar  > 1.f ? Zfar : Config.draw_range * Zfar );
 		auto const znear = ( Znear > 1.f ? Znear : Znear > 0.f ? Znear * zfar : 0.1f * Global.ZoomFactor);
+		if (EditorModeFlag && Viewport.main)
+			zfar = editor_track_view_range(zfar, true);
 
 		camera.projection() = perspective_projection(Viewport.projection, znear, zfar, frustumtest_proj);
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::shadows:
@@ -1671,6 +1800,8 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         // projection
         float znear = 0.1f * Global.ZoomFactor;
         float zfar = Config.draw_range * Global.fDistanceFactor;
+		if (EditorModeFlag && Viewport.main && Mode == rendermode::pickscenery)
+			zfar = editor_track_view_range(zfar, true);
 
         if (vr) {
             glm::mat4 transform = vr->get_pick_transform();
@@ -1691,12 +1822,15 @@ void opengl33_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
         }
 
         camera.projection() = perspective_projection(proj, znear, zfar, frustumtest_proj);
+		editor_ortho_projection(Viewport, zfar, camera.projection(), frustumtest_proj);
 		break;
 	}
 	case rendermode::reflections:
 	{
 		// modelview
-		camera.position() = (((true == DebugCameraFlag) && (false == Ignoredebug)) ? Global.pDebugCamera.Pos : Global.pCamera.Pos);
+		// the faces of the map are drawn over a few frames. each is drawn from the place the camera was at
+		// when the update began, so they fit together along the edges when the camera moves in the meantime
+		camera.position() = m_environmentupdatelocation;
 		glm::dvec3 const cubefacetargetvectors[6] = {{1.0, 0.0, 0.0}, {-1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}};
 		glm::dvec3 const cubefaceupvectors[6] = {{0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}, {0.0, -1.0, 0.0}, {0.0, -1.0, 0.0}};
 		auto const cubefaceindex = m_environmentcubetextureface;
@@ -1730,6 +1864,22 @@ void opengl33_renderer::setup_matrices()
     OpenGLMatrices.load_matrix(glm::mat4{glm::mat3{m_renderpass.pass_camera.modelview()}});
 }
 
+void opengl33_renderer::setup_alpha_to_coverage(bool const Enable)
+{
+	// the shaders keep the plain alpha test unless told the coverage of their alpha is used;
+	// uploaded with the rest of the model block at the next draw
+	model_ubs.alpha_to_coverage = (Enable ? 1.f : 0.f);
+
+	if (Enable == m_alphatocoverageenabled)
+		return;
+
+	if (Enable)
+		glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	else
+		glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+	m_alphatocoverageenabled = Enable;
+}
+
 void opengl33_renderer::setup_drawing(bool const Alpha)
 {
 	if (Alpha)
@@ -1744,6 +1894,8 @@ void opengl33_renderer::setup_drawing(bool const Alpha)
 		glDepthMask(GL_TRUE);
 		m_blendingenabled = false;
 	}
+	// turned on again per material, by the ones which need it
+	setup_alpha_to_coverage(false);
 
 	switch (m_renderpass.draw_mode)
 	{
@@ -1934,7 +2086,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 
     auto const fogfactor{std::clamp(Global.fFogEnd / 2000.f, 0.f, 1.f)}; // stronger fog reduces opacity of the celestial bodies
 	float const duskfactor = 1.0f - std::clamp(std::abs(Environment->m_sun.getAngle()), 0.0f, 12.0f) / 12.0f;
-	glm::vec3 suncolor = glm::mix(glm::vec3(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
+	glm::vec3 suncolor = glm::mix(glm::vec3(1.0f, 242.0f / 255.0f, 231.0f / 255.0f), glm::vec3(235.0f / 255.0f, 140.0f / 255.0f, 36.0f / 255.0f), duskfactor);
 
 	// sun
 	{
@@ -1942,12 +2094,12 @@ bool opengl33_renderer::Render(world_environment *Environment)
 		glm::vec4 color(suncolor.x, suncolor.y, suncolor.z, std::clamp(1.5f - Global.Overcast, 0.f, 1.f) * fogfactor);
 		auto const sunvector = Environment->m_sun.getDirection();
 
-        /*float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
+        float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0325f,
             0.0275f,
-            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_sun.getAngle(), 0.f, 90.f ) / 90.f );
 		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), 0.00463f /* size */);
+        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(sunvector, 1.0f)), size);
 		model_ubs.param[2] = glm::vec4(0.0f, 1.0f, 1.0f, 0.0f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1955,7 +2107,7 @@ bool opengl33_renderer::Render(world_environment *Environment)
 	// moon
 	{
 		Bind_Texture(0, m_moontexture);
-		glm::vec3 mooncolor(255.0f / 255.0f, 242.0f / 255.0f, 231.0f / 255.0f);
+    	glm::vec3 mooncolor(1.0f, 0.9490196f, 0.9058824f);
 		glm::vec4 color(mooncolor.r, mooncolor.g, mooncolor.b,
 		                // fade the moon if it's near the sun in the sky, especially during the day
 		                std::max<float>(0.f, 1.0 - 0.5 * Global.fLuminance - 0.65 * std::max(0.f, glm::dot(Environment->m_sun.getDirection(), Environment->m_moon.getDirection()))) * fogfactor);
@@ -2018,14 +2170,13 @@ bool opengl33_renderer::Render(world_environment *Environment)
 			moonu = 0.0f;
 		}
 
-        /*
         float const size = std::lerp( // TODO: expose distance/scale factor from the moon object
             0.0160f,
             0.0135f,
-            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );*/
+            std::clamp( Environment->m_moon.getAngle(), 0.f, 90.f ) / 90.f );
 
 		model_ubs.param[0] = color;
-        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), 0.00451f /* size */);
+        model_ubs.param[1] = glm::vec4(glm::vec3(modelview * glm::vec4(moonvector, 1.0f)), size);
 		model_ubs.param[2] = glm::vec4(moonu, moonv, 0.333f, 0.0f);
 		model_ubo->update(model_ubs);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -2115,8 +2266,13 @@ bool opengl33_renderer::Append(gfx::vertex_array &Vertices, gfx::userdata_array 
 	return m_geometry.append(Vertices, Userdata, Geometry);
 }
 
+void opengl33_renderer::Erase(gfx::geometry_handle const &Geometry)
+{
+	m_geometry.erase(Geometry);
+}
+
 // provides direct access to index data of specfied chunk
-gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const 
+gfx::index_array const & opengl33_renderer::Indices(gfx::geometry_handle const &Geometry) const
 {
     return m_geometry.indices(Geometry);
 }
@@ -2132,11 +2288,29 @@ gfx::userdata_array const &opengl33_renderer::UserData(const gfx::geometry_handl
 	return m_geometry.userdata(Geometry);
 }
 
+int opengl33_renderer::Primitive(gfx::geometry_handle const &Geometry) const
+{
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
+}
+
 // material methods
 material_handle opengl33_renderer::Fetch_Material(std::string const &Filename, bool const Loadnow)
 {
 
 	return m_materials.create(Filename, Loadnow);
+}
+
+material_handle opengl33_renderer::Matte_Material(material_handle const Material)
+{
+
+	return m_materials.create_matte(Material);
+}
+
+material_handle opengl33_renderer::Tinted_Material(material_handle const Material, glm::vec3 const &Colour)
+{
+
+	return m_materials.create_tinted(Material, Colour);
 }
 
 std::shared_ptr<gl::program> opengl33_renderer::Fetch_Shader(const std::string &name)
@@ -2262,14 +2436,33 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 		else
 			model_ubs.alpha_mult = 1.0f;
 
+		// the alpha test drops or keeps whole pixels, so multisampling alone leaves its edges (e.g. sides
+		// of the trackbed textures) jagged. the alpha tested materials of the opaque colour pass get them
+		// antialiased with alpha to coverage instead; their shaders give the coverage as the alpha.
+		// the model previews draw in colour mode too, but to a single-sampled framebuffer
+		setup_alpha_to_coverage(
+			Global.iMultisampling > 0
+			&& false == m_blendingenabled
+			&& m_renderpass.draw_mode == rendermode::color
+			&& false == m_previewing
+			&& model_ubs.opacity > 0.f
+			&& material.shader->alpha_to_coverage );
+
+		// materials which declare texture variants provide a different texture set per model instance,
+		// picked from the seed of the rendered instance and the variant group of the submodel
+		auto const &materialtextures{
+			material.texture_variants.empty() ?
+		        material.textures :
+		        material.GetTextures(TSubModel::VariantId(sm))};
+
 		if (GLAD_GL_ARB_multi_bind)
 		{
 			GLuint lastdiff = 0;
 			size_t i;
 			for (i = 0; i < gl::MAX_TEXTURES; i++)
-				if (material.textures[i] != null_handle)
+				if (materialtextures[i] != null_handle)
 				{
-					opengl_texture &tex = m_textures.mark_as_used(material.textures[i]);
+					opengl_texture &tex = m_textures.mark_as_used(materialtextures[i]);
 					tex.create();
 					if (opengl_texture::units[i] != tex.id)
 					{
@@ -2286,7 +2479,7 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 		else
 		{
 			size_t unit = 0;
-			for (auto &tex : material.textures)
+			for (auto &tex : materialtextures)
 			{
 				if (tex == null_handle)
 					break;
@@ -2326,6 +2519,20 @@ IMaterial const *opengl33_renderer::Material(material_handle const Material) con
 	return &m_materials.material(Material);
 }
 
+material_handle opengl33_renderer::Terrain_Material(material_handle const Reuse, std::vector<gfx::terrain_layer> const &Layers, int const Samples, std::uint8_t const *Weights, glm::vec3 const &Placement)
+{
+	auto const material{m_terrainmaterials.make(Reuse, Layers, Samples, Weights, Placement)};
+	if (material != null_handle)
+		return material;
+	// the terrain shader can't be used, the chunk makes do with a plain material
+	return gfx_renderer::Terrain_Material(Reuse, Layers, Samples, Weights, Placement);
+}
+
+void opengl33_renderer::Terrain_Release(material_handle const Material)
+{
+	m_terrainmaterials.release(Material);
+}
+
 opengl_material &opengl33_renderer::Material(material_handle const Material)
 {
 	return m_materials.material(Material);
@@ -2333,8 +2540,7 @@ opengl_material &opengl33_renderer::Material(material_handle const Material)
 
 opengl_material const & opengl33_renderer::Material( TSubModel const * Submodel ) const {
 
-    auto const material { Submodel->m_material >= 0 ? Submodel->m_material : Submodel->ReplacableSkinId[ -Submodel->m_material ] };
-    return m_materials.material( material );
+    return m_materials.material( submodel_material( Submodel ) );
 }
 
 texture_handle opengl33_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
@@ -2374,13 +2580,18 @@ void opengl33_renderer::Render(scene::basic_region *Region)
 
 	m_sectionqueue.clear();
 	m_cellqueue.clear();
-	// discard last pass's accumulated instance buckets before this pass starts
-	m_frame_instance_buckets.clear();
+	// discard last pass's accumulated instance buckets before this pass starts.
+	// the vectors themselves are kept, so their allocations get reused by the following passes
+	for( auto &bucket : m_frame_instance_buckets ) {
+		bucket.second.clear();
+	}
 	// build a list of region sections to render
 	glm::vec3 const cameraposition{m_renderpass.pass_camera.position()};
 	auto const camerax = static_cast<int>(std::floor(cameraposition.x / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
 	auto const cameraz = static_cast<int>(std::floor(cameraposition.z / scene::EU07_SECTIONSIZE + scene::EU07_REGIONSIDESECTIONCOUNT / 2));
-	int const segmentcount = 2 * static_cast<int>(std::ceil(m_renderpass.draw_range * Global.fDistanceFactor / scene::EU07_SECTIONSIZE));
+	float section_range = m_renderpass.draw_range * Global.fDistanceFactor;
+	section_range = editor_track_view_range(section_range, EditorModeFlag && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery));
+	int const segmentcount = 2 * static_cast<int>(std::ceil(section_range / scene::EU07_SECTIONSIZE));
 	int const originx = camerax - segmentcount / 2;
 	int const originz = cameraz - segmentcount / 2;
 
@@ -2479,6 +2690,11 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 		break;
 	}
 
+	// the ground of the sections far off, the terrain of the editor among it, isn't drawn with the tracks reaching there
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery)};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+
 	while (First != Last)
 	{
 
@@ -2493,7 +2709,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 		case rendermode::shadows:
         case rendermode::pickscenery:
 		{
-			if (false == section->m_shapes.empty())
+			if (false == section->m_shapes.empty() && false == editor_far_tracks_only(far_paths, section->m_area, camera, scenery_limit))
 			{
 				// since all shapes of the section share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -2528,6 +2744,12 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					// a cell with nothing but instances too far to be drawn is left out of the color pass altogether
+					if( ( true == Prepare_Instances( cell ) )
+					 && ( m_renderpass.draw_mode == rendermode::color )
+					 && ( true == Cell_Out_Of_Range( cell ) ) ) {
+						continue;
+					}
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2542,6 +2764,7 @@ void opengl33_renderer::Render(section_sequence::iterator First, section_sequenc
 			{
 				if ((true == cell.m_active) && (m_renderpass.pass_camera.visible(cell.m_area)))
 				{
+					Prepare_Instances( cell );
 					// store visible cells with content as well as their current distance, for sorting later
 					m_cellqueue.emplace_back(glm::length2(m_renderpass.pass_camera.position() - cell.m_area.center), &cell);
 				}
@@ -2576,6 +2799,9 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 	// cache initial iterator for the second sweep
 	auto first{First};
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks && (m_renderpass.draw_mode == rendermode::color || m_renderpass.draw_mode == rendermode::pickscenery)};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
 	// first pass draws elements which we know are located in section banks, to reduce vbo switching
 	while (First != Last)
 	{
@@ -2583,6 +2809,7 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		auto *cell = First->second;
 		// przeliczenia animacji torów w sektorze
 		cell->RaAnimate(m_framestamp);
+		bool const tracks_only{editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit)};
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -2595,9 +2822,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 
 			// render
 			// opaque non-instanced shapes
-			for (auto const &shape : cell->m_shapesopaque)
+			if (false == tracks_only)
 			{
-				Render(shape, false);
+				for (auto const &shape : cell->m_shapesopaque)
+				{
+					Render(shape, false);
+				}
 			}
 			// tracks
 			// TODO: update after path node refactoring
@@ -2653,9 +2883,12 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 			// render
 			// opaque non-instanced shapes
 			// non-interactive scenery elements get neutral colour
-			model_ubs.param[0] = colors::none;
-			for (auto const &shape : cell->m_shapesopaque)
-				Render(shape, false);
+			if (false == tracks_only)
+			{
+				model_ubs.param[0] = colors::none;
+				for (auto const &shape : cell->m_shapesopaque)
+					Render(shape, false);
+			}
 			// tracks
 			for (auto *path : cell->m_paths)
 			{
@@ -2686,6 +2919,8 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		case rendermode::color:
         case rendermode::shadows:
         {
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
+				break;
             // TBD, TODO: refactor in to a method to reuse in branch below?
 			// opaque parts of instanced models -- accumulate this cell's buckets
 			// into the frame-level map; the actual Render_Instanced() calls are
@@ -2718,14 +2953,13 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 					/ ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) )
 					/ static_cast<double>( Global.fDistanceFactor ) };
 				if( cellnearestdistancesquared <= sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) {
-					for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-						auto &dest = m_frame_instance_buckets[ bucket.first ];
-						dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
-					}
+					Queue_Instances( cell );
 				}
 			}
-			// remaining (non-instanceable) opaque instance nodes go through the per-node path
-			for (auto *instance : cell->m_instancesopaque)
+			// remaining (non-instanceable) opaque instance nodes go through the per-node path. the list of them kept for
+			// the cell spares going through every instance of it only to skip the instanceable ones - with many of these
+			// (vegetation) that took more time than drawing everything else
+			for (auto *instance : ( Instance_Cache_Valid( *cell ) ? cell->m_instancecache.single : cell->m_instancesopaque ))
 			{
 				if( instance->m_instanceable ) { continue; } // already handled via bucket
 				Render(instance);
@@ -2742,13 +2976,16 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 		}
         case rendermode::reflections:
         {
-            if( Global.reflectiontune.fidelity >= 1 ) {
+            // a cell lying whole beyond the range the reflections draw model instances at is left out, as each
+            // of its instances would fail the range test done for it in Render_Instanced() and Render( TAnimModel * ).
+            // like the cull of the regular passes above, the test goes by the nearest point of the bounding sphere
+            // of the cell, which holds the locations of all its instances
+            auto const cellnearestdistance { std::max( 0.0, glm::length( cell->m_area.center - m_renderpass.pass_camera.position() ) - cell->m_area.radius ) };
+            if( ( Global.reflectiontune.fidelity >= 1 )
+             && ( cellnearestdistance <= Global.reflectiontune.range_instances ) ) {
                 // opaque parts of instanced models -- accumulate into the
                 // frame-level map; flushed once per unique model after the loop.
-                for( auto const &bucket : cell->m_instancebuckets_opaque ) {
-                    auto &dest = m_frame_instance_buckets[ bucket.first ];
-                    dest.insert( dest.end(), bucket.second.begin(), bucket.second.end() );
-                }
+                Queue_Instances( cell );
                 for( auto *instance : cell->m_instancesopaque ) {
                     if( instance->m_instanceable ) { continue; }
                     Render( instance );
@@ -2766,6 +3003,8 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
         }
         case rendermode::pickscenery:
 		{
+			if (editor_far_tracks_only(far_paths, cell->m_area, camera, scenery_limit))
+				break;
 			// opaque parts of instanced models
 			// same procedure like with regular render, but each node receives custom colour used for picking.
 			// picking always uses the per-instance path because each instance needs a unique pick colour;
@@ -2794,15 +3033,22 @@ void opengl33_renderer::Render(cell_sequence::iterator First, cell_sequence::ite
 	// still happens inside Render_Instanced(), so correctness is unchanged -- only
 	// the number of calls and glBufferSubData round-trips drops sharply.
 	// (For pickscenery/pickcontrols modes the map stays empty, so this is a no-op.)
-	for( auto const &bucket : m_frame_instance_buckets ) {
+	for( auto &bucket : m_frame_instance_buckets ) {
+		if( bucket.second.empty() ) { continue; }
 		Render_Instanced( bucket.first.pModel, bucket.second );
+		bucket.second.clear();
 	}
-	m_frame_instance_buckets.clear();
 }
 
 void opengl33_renderer::Draw_Geometry(std::vector<gfx::geometrybank_handle>::iterator begin, std::vector<gfx::geometrybank_handle>::iterator end)
 {
-	m_geometry.draw(begin, end);
+	if (begin == end)
+	{
+		return;
+	}
+	// the handles are handed over as a whole, so chunks kept in the same bank can be drawn with fewer calls
+	auto const *first{&(*begin)};
+	m_geometry.draw_batch(first, first + std::distance(begin, end));
 }
 
 void opengl33_renderer::Draw_Geometry(const gfx::geometrybank_handle &handle)
@@ -2894,8 +3140,16 @@ void opengl33_renderer::Render(scene::shape_node const &Shape, bool const Ignore
 		break;
 	}
 	// render
-
+	// a decal comes nearer the camera: the depth is reversed (GL_GEQUAL), so a positive offset. not in the shadows, it casts none
+	auto const decal{data.decal && m_renderpass.draw_mode != rendermode::shadows};
+	if (decal)
+	{
+		::glEnable(GL_POLYGON_OFFSET_FILL);
+		::glPolygonOffset(2.f, 8.f);
+	}
 	draw(data.geometry);
+	if (decal)
+		::glDisable(GL_POLYGON_OFFSET_FILL);
 	// debug data
 	++m_renderpass.draw_stats.shapes;
 	++m_renderpass.draw_stats.drawcalls;
@@ -3000,6 +3254,168 @@ void opengl33_renderer::Render(TAnimModel *Instance)
 	}
 }
 
+// adds the bucketed instances of a scene cell to the frame-level buckets, for Render_Instanced() to draw.
+// Render_Instanced() culls each instance it's given. the tests it makes are repeated here on the copies of instance
+// bounds kept by the buckets, with some slack for the single precision of the copies, and the instances which fail are
+// left out: the instances themselves are fetched only when there's a chance for them to be drawn
+void opengl33_renderer::Queue_Instances( scene::basic_cell const *Cell )
+{
+	// the editor moves and resizes the instances in place, the copies can't be relied on while it's active
+	auto const usebounds { false == EditorModeFlag };
+	auto const reflections { m_renderpass.draw_mode == rendermode::reflections };
+	// same choices as in Render_Instanced(): shadows measure the distance from the real camera, reflections
+	// ignore zoom and distance factor, test the plain distance against their own range and add the fidelity offset
+	auto const &distancecamera { m_renderpass.draw_mode == rendermode::shadows ? m_renderpass.viewport_camera : m_renderpass.pass_camera };
+	glm::dvec3 const cameraposition { distancecamera.position() };
+	auto const distancescale { reflections ? 1.0 : 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
+	auto const distanceoffset { reflections ? sq( static_cast<double>( EU07_REFLECTIONFIDELITYOFFSET ) ) : 0.0 };
+	auto const slack { 1.001 };
+	auto const distancelimit { slack * ( reflections ? sq( static_cast<double>( Global.reflectiontune.range_instances ) ) : sq( static_cast<double>( m_renderpass.draw_range ) + 250.0 ) ) };
+	// up close the rounding of the copies is too large a part of the distance for the slack to cover it
+	auto const distancetested { sq( 64.0 ) };
+	// the nearest point of the bounding sphere of the cell, which holds the locations of all its instances. no instance
+	// of the cell is closer, so where this distance fails the range test below for the largest range in a bucket,
+	// it fails it for each instance of that bucket, and the bucket can be skipped without going through them
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell->m_area.center - cameraposition ) - Cell->m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
+
+	for( auto const &bucket : Cell->m_instancebuckets_opaque ) {
+		auto const &instances { bucket.second.instances };
+		if( false == usebounds ) {
+			auto &dest { m_frame_instance_buckets[ bucket.first ] };
+			dest.insert( dest.end(), instances.begin(), instances.end() );
+			continue;
+		}
+		if( ( bucket.second.boundsversion != m_instanceboundsversion )
+		 || ( bucket.second.bounds.size() != instances.size() ) ) {
+			Update_Instance_Bounds( bucket.first.pModel, bucket.second );
+		}
+		else if( ( bucket.second.rangeversion == m_instanceboundsversion )
+		      && ( cellnearestdistancesquared > distancetested )
+		      && ( cellnearestdistancesquared * distancescale + distanceoffset >= slack * bucket.second.rangesquaredmax ) ) {
+			continue;
+		}
+		auto const &bounds { bucket.second.bounds };
+		std::vector<TAnimModel *> *dest { nullptr }; // looked up when there's something to put in it
+		for( std::size_t idx = 0; idx < bounds.size(); ++idx ) {
+			auto const &instancebounds { bounds[ idx ] };
+			auto const center { glm::dvec3{ instancebounds.center } };
+			auto const distancesquared { glm::length2( center - cameraposition ) };
+			if( distancesquared > distancetested ) {
+				auto const scaleddistancesquared { distancesquared * distancescale };
+				if( scaleddistancesquared > distancelimit ) { continue; }
+				if( scaleddistancesquared + distanceoffset >= slack * instancebounds.rangesquaredmax ) { continue; }
+			}
+			if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ center, instancebounds.radius } ) ) { continue; }
+			if( dest == nullptr ) {
+				dest = &m_frame_instance_buckets[ bucket.first ];
+			}
+			dest->emplace_back( instances[ idx ] );
+		}
+	}
+}
+
+// brings up to date what the renderer keeps of the instances of the cell: the copies of the bounds of the instances
+// and the largest range in each bucket, the largest range in the cell, and the list of its instances drawn one by one.
+// rebuilt after the content of the cell changed, or any instance lost its instanceable status (an event added an
+// animation container, or changed a skin). returns: true if the cache can be used; it can't in the editor, which
+// moves and resizes the instances in place, as with the copies of their bounds
+bool opengl33_renderer::Prepare_Instances( scene::basic_cell &Cell )
+{
+	if( EditorModeFlag ) { return false; }
+	if( Instance_Cache_Valid( Cell ) ) { return true; }
+
+	auto &cache { Cell.m_instancecache };
+	cache.rangesquaredmax = 0.f;
+	for( auto &[ key, bucket ] : Cell.m_instancebuckets_opaque ) {
+		if( ( bucket.boundsversion != m_instanceboundsversion )
+		 || ( bucket.bounds.size() != bucket.instances.size() ) ) {
+			Update_Instance_Bounds( key.pModel, bucket );
+		}
+		auto rangesquaredmax { 0.f };
+		for( auto const &instancebounds : bucket.bounds ) {
+			rangesquaredmax = std::max( rangesquaredmax, instancebounds.rangesquaredmax );
+		}
+		bucket.rangesquaredmax = rangesquaredmax;
+		bucket.rangeversion = m_instanceboundsversion;
+		cache.rangesquaredmax = std::max( cache.rangesquaredmax, rangesquaredmax );
+	}
+	cache.single.clear();
+	for( auto *instance : Cell.m_instancesopaque ) {
+		if( false == instance->m_instanceable ) {
+			cache.single.emplace_back( instance );
+		}
+	}
+	cache.instancedonly =
+		( false == Cell.m_instancebuckets_opaque.empty() )
+		&& Cell.m_paths.empty()
+		&& Cell.m_shapesopaque.empty()
+		&& Cell.m_shapestranslucent.empty()
+		&& Cell.m_lines.empty()
+		&& Cell.m_traction.empty()
+		&& Cell.m_instancetranslucent.empty()
+		&& cache.single.empty();
+	cache.boundsversion = m_instanceboundsversion;
+	cache.revoked = TAnimModel::s_instanceable_revoked;
+	return true;
+}
+
+bool opengl33_renderer::Instance_Cache_Valid( scene::basic_cell const &Cell ) const
+{
+	return ( false == EditorModeFlag )
+		&& ( Cell.m_instancecache.boundsversion == m_instanceboundsversion )
+		&& ( Cell.m_instancecache.revoked == TAnimModel::s_instanceable_revoked );
+}
+
+// true if nothing of the cell would be drawn by the color pass: it holds only instances drawn with the instanced path,
+// and the nearest point of the cell is past the largest range of them. the test is the one made for each bucket in
+// Queue_Instances(), done before the cell is put in the cell queue: a scenery with many small instances of a short
+// range has them in nearly every cell up to the draw range, and queueing, sorting and visiting these cells only
+// to skip all their buckets took a good part of the frame
+bool opengl33_renderer::Cell_Out_Of_Range( scene::basic_cell const &Cell ) const
+{
+	if( ( false == Instance_Cache_Valid( Cell ) ) || ( false == Cell.m_instancecache.instancedonly ) ) { return false; }
+	// same measures as in Queue_Instances() for the color pass
+	auto const distancescale { 1.0 / ( static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.ZoomFactor ) * static_cast<double>( Global.fDistanceFactor ) ) };
+	auto const slack { 1.001 };
+	auto const distancetested { sq( 64.0 ) };
+	auto const cellnearestdistance { std::max( 0.0, glm::length( Cell.m_area.center - m_renderpass.pass_camera.position() ) - Cell.m_area.radius ) };
+	auto const cellnearestdistancesquared { cellnearestdistance * cellnearestdistance };
+	return ( cellnearestdistancesquared > distancetested )
+		&& ( cellnearestdistancesquared * distancescale >= slack * Cell.m_instancecache.rangesquaredmax );
+}
+
+// makes the copies of the bounds of the instances held by a bucket of a scene cell
+void opengl33_renderer::Update_Instance_Bounds( TModel3d const *Model, scene::basic_cell::instance_bucket const &Bucket )
+{
+	// a submodel is drawn only closer than its fSquareMaxDist, see Render( TSubModel * ). past the largest of these
+	// there's nothing of the model left to draw, which makes it another limit of the range of its instances
+	auto lodrangesquared { ( Model != nullptr && Model->Root != nullptr ) ? 0.f : std::numeric_limits<float>::max() };
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Model != nullptr ? Model->Root : nullptr );
+	while( false == m_instance_lodpending.empty() ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		lodrangesquared = std::max( lodrangesquared, submodel->fSquareMaxDist );
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+
+	Bucket.bounds.clear();
+	Bucket.bounds.reserve( Bucket.instances.size() );
+	for( auto const *instance : Bucket.instances ) {
+		scene::basic_cell::instance_bounds instancebounds;
+		if( instance != nullptr ) {
+			instancebounds.center = glm::vec3{ instance->m_area.center };
+			instancebounds.radius = instance->m_area.radius;
+			instancebounds.rangesquaredmax = std::min( lodrangesquared, static_cast<float>( std::min( instance->m_rangesquaredmax, static_cast<double>( std::numeric_limits<float>::max() ) ) ) );
+		}
+		Bucket.bounds.emplace_back( instancebounds );
+	}
+	Bucket.boundsversion = m_instanceboundsversion;
+}
+
 // True GPU-instanced render path for a group of TAnimModel instances sharing the same
 // TModel3d. The submodel tree is walked ONCE per batch; at every submodel that draws
 // geometry we issue a single glDrawElementsInstancedBaseVertex(N) covering all visible
@@ -3014,15 +3430,46 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	if( Model == nullptr ) { return; }
 	if( Instances.empty() ) { return; }
 
-	// 1. Visibility / distance cull. Build parallel arrays of surviving
-	// instances and their precomputed camera-space root modelview matrices.
-	// m_instance_modelviews is a persistent member reused across every
-	// Render_Instanced() call: clear() drops the contents but keeps the
-	// allocated capacity, so after the first few frames this stops calling
-	// malloc/free entirely (the reserve() below becomes a no-op once the
-	// buffer has grown to the largest batch encountered).
-	m_instance_modelviews.clear();
-	m_instance_modelviews.reserve( Instances.size() );
+	// LOD: a submodel is drawn only while fSquareDist lies inside its [fSquareMinDist, fSquareMaxDist)
+	// range, so the distinct range bounds split distance into bands with constant LOD. The bucket
+	// collects instances from every visible cell, so a single fSquareDist for all of them would draw
+	// far instances at the LOD of the nearest one. Each instance is assigned to its band and every
+	// band is drawn with its own fSquareDist, like in Render_Sleepers(). The grouping is a counting
+	// sort, linear in the instance count.
+	// the same walk also checks whether any piece of the model can get into the shadow map. Models
+	// whose materials are all excluded by the shadow rank cutoff (e.g. grass) would otherwise go through
+	// the whole per-instance culling and the batched draws in every shadow pass, only for every submodel
+	// to be skipped in Render(TSubModel*)
+	auto const *skins { Instances.front() != nullptr && Instances.front()->Material() != nullptr ? Instances.front()->Material()->replacable_skins : nullptr };
+	bool castsshadow { m_renderpass.draw_mode != rendermode::shadows };
+	m_instance_lodbounds.clear();
+	m_instance_lodpending.clear();
+	m_instance_lodpending.push_back( Model->Root );
+	while( false == m_instance_lodpending.empty() ) {
+		auto const *submodel = m_instance_lodpending.back();
+		m_instance_lodpending.pop_back();
+		if( submodel == nullptr ) { continue; }
+		if( submodel->fSquareMinDist > 0.f ) { m_instance_lodbounds.emplace_back( submodel->fSquareMinDist ); }
+		if( submodel->fSquareMaxDist < std::numeric_limits<float>::max() ) { m_instance_lodbounds.emplace_back( submodel->fSquareMaxDist ); }
+		if( ( false == castsshadow ) && ( submodel->eType < TP_ROTATOR ) ) {
+			auto const material { submodel->m_material >= 0 ? submodel->m_material : ( skins != nullptr ? skins[ -submodel->m_material ] : null_handle ) };
+			castsshadow = ( Material( material ).shadow_rank <= Global.gfx_shadow_rank_cutoff );
+		}
+		m_instance_lodpending.push_back( submodel->Child );
+		m_instance_lodpending.push_back( submodel->Next );
+	}
+	if( false == castsshadow ) { return; }
+	std::sort( m_instance_lodbounds.begin(), m_instance_lodbounds.end() );
+	m_instance_lodbounds.erase( std::unique( m_instance_lodbounds.begin(), m_instance_lodbounds.end() ), m_instance_lodbounds.end() );
+	auto const bandcount { m_instance_lodbounds.size() + 1 };
+
+	// 1. Visibility / distance cull. Collect surviving instances with their precomputed
+	// camera-space root modelview matrices and lod bands. m_instance_survivors and the other
+	// scratch vectors are persistent members reused across every Render_Instanced() call:
+	// clear() drops the contents but keeps the allocated capacity, so after the first few
+	// frames this stops calling malloc/free entirely.
+	m_instance_survivors.clear();
+	m_instance_survivors.reserve( Instances.size() );
 
 	// Pull the current pass camera/view transform once. We use the current GL
 	// modelview matrix as the view matrix because at the point Render_Instanced
@@ -3031,11 +3478,14 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 	glm::mat4 const view_matrix = OpenGLMatrices.data( GL_MODELVIEW );
 
 	bool prepared_shared_state = false; // RaPrepare() runs once per bucket
-	float closest_distancesquared = std::numeric_limits<float>::max();
 	material_data const *batch_material { nullptr };
+	float farthest_distancesquared { 0.f };
 
 	for( auto *Instance : Instances ) {
 		if( Instance == nullptr ) { continue; }
+		// instances which lost their instanceable status after being bucketed (animation or skin
+		// assigned by an event) are drawn by the per-node path
+		if( false == Instance->m_instanceable ) { continue; }
 		if( false == Instance->m_visible ) { continue; }
 		if( false == m_renderpass.pass_camera.visible( Instance->m_area ) ) { continue; }
 
@@ -3068,78 +3518,103 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 			batch_material = Instance->Material();
 		}
 		Instance->m_framestamp = m_framestamp;
-		closest_distancesquared = std::min<float>( closest_distancesquared, static_cast<float>(distancesquared) );
 
 		// Build the camera-relative root modelview for this instance:
 		//   mv = view * translate(instance_pos - camera_pos) * rotate(instance_angles) * scale(m_scale)
-		// The scale is folded in here so the GPU-instanced path produces visually
-		// identical output to the regular per-instance path: each instance gets
-		// its own (translate × rotate × scale) baked into instance_modelview[i],
-		// which the shader applies via effective_modelview = instance_mv * model_local.
-		glm::dvec3 const offset = Instance->location() - m_renderpass.pass_camera.position();
-		glm::mat4 mv = view_matrix;
-		mv = glm::translate( mv, glm::vec3( offset ) );
-		auto const &angle = Instance->vAngle;
-		if( angle.y != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.y ), glm::vec3( 0.f, 1.f, 0.f ) ); }
-		if( angle.x != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.x ), glm::vec3( 1.f, 0.f, 0.f ) ); }
-		if( angle.z != 0.0f ) { mv = glm::rotate( mv, glm::radians( angle.z ), glm::vec3( 0.f, 0.f, 1.f ) ); }
-		auto const &scale = Instance->Scale();
-		if( scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f ) {
-			mv = glm::scale( mv, scale );
-		}
-		m_instance_modelviews.emplace_back( mv );
+		// The rotation and scale part is cached by the instance, the translation goes into its last
+		// column. The scale is folded in so the GPU-instanced path produces visually identical output
+		// to the regular per-instance path; the shader applies it via effective_modelview = instance_mv * model_local.
+		glm::mat4 root { Instance->rotation_scale() };
+		root[ 3 ] = glm::vec4( glm::vec3( Instance->location() - m_renderpass.pass_camera.position() ), 1.f );
+
+		auto const distance { static_cast<float>( distancesquared ) };
+		farthest_distancesquared = std::max( farthest_distancesquared, distance );
+		m_instance_survivors.push_back( {
+			view_matrix * root,
+			distance,
+			static_cast<std::uint32_t>( std::upper_bound( m_instance_lodbounds.begin(), m_instance_lodbounds.end(), distance ) - m_instance_lodbounds.begin() ) } );
 	}
 
-	if( m_instance_modelviews.empty() ) { return; }
+	if( m_instance_survivors.empty() ) { return; }
+
+	// group the modelviews by lod band into a contiguous array, for the UBO upload. every distance in
+	// a band selects the same lod; the nearest one represents the band.
+	// within a band the instances are additionally ordered roughly near-to-far, in distance slots. dense
+	// alpha tested foliage then gets the most out of the early depth test, as the nearest instances fill
+	// the depth buffer first and hide the fragments of those behind them before they get shaded.
+	// both levels are done with a single counting sort, linear in the instance count
+	auto const distanceslots { 16 };
+	auto const keycount { bandcount * distanceslots };
+	auto const slotscale { distanceslots / std::sqrt( std::max( farthest_distancesquared, 1.f ) ) };
+	m_instance_bandstarts.assign( keycount + 1, 0 );
+	m_instance_banddistances.assign( bandcount, std::numeric_limits<float>::max() );
+	for( auto &survivor : m_instance_survivors ) {
+		m_instance_banddistances[ survivor.band ] = std::min( m_instance_banddistances[ survivor.band ], survivor.distancesquared );
+		auto const slot { std::min( distanceslots - 1, static_cast<int>( std::sqrt( survivor.distancesquared ) * slotscale ) ) };
+		survivor.band = static_cast<std::uint32_t>( survivor.band * distanceslots + slot ); // from now on it's the sort key
+		++m_instance_bandstarts[ survivor.band + 1 ];
+	}
+	for( std::size_t key = 1; key <= keycount; ++key ) {
+		m_instance_bandstarts[ key ] += m_instance_bandstarts[ key - 1 ];
+	}
+	m_instance_bandcursors.assign( m_instance_bandstarts.begin(), m_instance_bandstarts.end() - 1 );
+	m_instance_modelviews.resize( m_instance_survivors.size() );
+	for( auto const &survivor : m_instance_survivors ) {
+		m_instance_modelviews[ m_instance_bandcursors[ survivor.band ]++ ] = survivor.modelview;
+	}
+
+	auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
+	alpha ^= 0x0F0F000F;
 
 	// 2. Walk the submodel tree once per sub-batch. The submodel-local matrix
 	// stack starts at identity; the per-instance camera transform comes from
 	// instance_modelview[gl_InstanceID] in the shader.
-	std::size_t const total = m_instance_modelviews.size();
-	std::size_t offset_idx = 0;
-	while( offset_idx < total ) {
-		std::size_t const this_batch = std::min<std::size_t>( total - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
+	for( std::size_t band = 0; band < bandcount; ++band ) {
 
-		// 2a. Upload N modelviews to instance_ubo[0..N-1].
-		instance_ubo->update(
-			reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
-			0,
-			static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
+		std::size_t offset_idx = m_instance_bandstarts[ band * distanceslots ];
+		std::size_t const band_end = m_instance_bandstarts[ ( band + 1 ) * distanceslots ];
+		while( offset_idx < band_end ) {
+			std::size_t const this_batch = std::min<std::size_t>( band_end - offset_idx, gl::MAX_INSTANCES_PER_BATCH );
 
-		// 2b. Push identity onto the matrix stack so submodel transforms
-		// accumulate from identity, not from camera/instance space.
-		::glPushMatrix();
-		::glLoadIdentity();
+			// 2a. Upload N modelviews to instance_ubo[0..N-1].
+			instance_ubo->update(
+				reinterpret_cast<uint8_t const *>( m_instance_modelviews.data() + offset_idx ),
+				0,
+				static_cast<int>( this_batch * sizeof( glm::mat4 ) ) );
 
-		// 2c. Configure the existing TModel3d/TSubModel render path. Setting
-		// m_current_instance_count routes draw(handle) calls to draw_instanced.
-		m_current_instance_count = this_batch;
+			// 2b. Push identity onto the matrix stack so submodel transforms
+			// accumulate from identity, not from camera/instance space.
+			::glPushMatrix();
+			::glLoadIdentity();
 
-		Model->Root->fSquareDist = closest_distancesquared; // shared global, used by submodel LOD
-		auto alpha = ( batch_material != nullptr ? batch_material->textures_alpha : 0x30300030 );
-		alpha ^= 0x0F0F000F;
-		Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
-		Model->Root->pRoot = Model;
+			// 2c. Configure the existing TModel3d/TSubModel render path. Setting
+			// m_current_instance_count routes draw(handle) calls to draw_instanced.
+			m_current_instance_count = this_batch;
 
-		Render( Model->Root );
+			Model->Root->fSquareDist = m_instance_banddistances[ band ]; // shared global, used by submodel LOD
+			Model->Root->ReplacableSet( ( batch_material != nullptr ? batch_material->replacable_skins : nullptr ), alpha );
+			Model->Root->pRoot = Model;
 
-		m_current_instance_count = 0;
+			Render( Model->Root );
 
-		::glPopMatrix();
+			m_current_instance_count = 0;
 
-		// 2d. Restore instance_modelview[0] to identity so subsequent
-		// non-instanced draws continue to compute identity * modelview.
-		{
-			glm::mat4 const identity( 1.0f );
-			instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
+			::glPopMatrix();
+
+			offset_idx += this_batch;
+			++m_renderpass.draw_stats.instanced_drawcalls;
 		}
-
-		offset_idx += this_batch;
-		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+	// 3. Restore instance_modelview[0] to identity so subsequent
+	// non-instanced draws continue to compute identity * modelview.
+	// done once the last batch is out, as everything drawn up to that point is instanced
+	{
+		glm::mat4 const identity( 1.0f );
+		instance_ubo->update( reinterpret_cast<uint8_t const *>( &identity ), 0, sizeof( identity ) );
 	}
 
-	m_renderpass.draw_stats.instances += static_cast<int>( total );
-	m_renderpass.draw_stats.models += static_cast<int>( total );
+	m_renderpass.draw_stats.instances += static_cast<int>( m_instance_survivors.size() );
+	m_renderpass.draw_stats.models += static_cast<int>( m_instance_survivors.size() );
 }
 
 // Renders the per-track sleeper instances (TTrack::m_sleeper_local_transforms) using the
@@ -3152,6 +3627,119 @@ void opengl33_renderer::Render_Instanced( TModel3d *Model, std::vector<TAnimMode
 //   - Global.SleeperDistance == 0 (sleeper rendering globally disabled)
 //   - the track has no sleepermodel
 //   - the track is farther than Global.SleeperDistance meters from the camera
+// releases gl textures used only by vehicles farther than gfx.textures.releasedistance times the draw range
+void opengl33_renderer::Update_Texture_Release()
+{
+	if (m_colorpass.draw_range <= 0.f)
+	{
+		return;
+	}
+	auto const range{static_cast<double>(Global.gfx_texture_releasedistance) * m_colorpass.draw_range};
+	auto const camera{m_colorpass.pass_camera.position()};
+
+	m_textures.begin_release_scan();
+	for (auto *vehicle : simulation::Vehicles.sequence())
+	{
+		if (vehicle == nullptr)
+		{
+			continue;
+		}
+		bool const isnear{glm::length(vehicle->vPosition - camera) - vehicle->radius() <= range};
+		auto const mark_model = [&](TModel3d *Model) {
+			if (Model == nullptr)
+			{
+				return;
+			}
+			for (auto const texture : Model_Textures(Model))
+			{
+				m_textures.mark_as_needed(texture, isnear);
+			}
+		};
+		mark_model(vehicle->mdModel);
+		mark_model(vehicle->mdLowPolyInt);
+		mark_model(vehicle->mdLoad);
+		for (auto *attachment : vehicle->mdAttachments)
+		{
+			mark_model(attachment);
+		}
+		for (auto const skin : vehicle->m_materialdata.replacable_skins)
+		{
+			if (skin <= 0)
+			{
+				continue;
+			}
+			auto const &material{m_materials.material(skin)};
+			for (auto const texture : material.textures)
+			{
+				m_textures.mark_as_needed(texture, isnear);
+			}
+			for (auto const &variant : material.texture_variants)
+			{
+				for (auto const texture : variant)
+				{
+					m_textures.mark_as_needed(texture, isnear);
+				}
+			}
+		}
+	}
+	m_textures.release_unneeded();
+}
+
+// textures used by materials of the sub-models of specified model, replaceable skins excluded
+std::vector<texture_handle> const &opengl33_renderer::Model_Textures(TModel3d *Model)
+{
+	auto const lookup{m_modeltextures.find(Model)};
+	if (lookup != m_modeltextures.end())
+	{
+		return lookup->second;
+	}
+	auto &textures{m_modeltextures[Model]};
+	std::vector<TSubModel *> submodels;
+	if (Model->GetSMRoot() != nullptr)
+	{
+		submodels.emplace_back(Model->GetSMRoot());
+	}
+	while (false == submodels.empty())
+	{
+		auto *submodel{submodels.back()};
+		submodels.pop_back();
+		if (submodel->NextGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->NextGet());
+		}
+		if (submodel->ChildGet() != nullptr)
+		{
+			submodels.emplace_back(submodel->ChildGet());
+		}
+		// negative material is one of replaceable skins of the vehicle, these are handled with the vehicle
+		if (submodel->GetMaterial() <= 0)
+		{
+			continue;
+		}
+		auto const &material{m_materials.material(submodel->GetMaterial())};
+		for (auto const texture : material.textures)
+		{
+			if (texture > 0)
+			{
+				textures.emplace_back(texture);
+			}
+		}
+		for (auto const &variant : material.texture_variants)
+		{
+			for (auto const texture : variant)
+			{
+				if (texture > 0)
+				{
+					textures.emplace_back(texture);
+				}
+			}
+		}
+	}
+	std::sort(std::begin(textures), std::end(textures));
+	textures.erase(std::unique(std::begin(textures), std::end(textures)), std::end(textures));
+	return textures;
+}
+
 void opengl33_renderer::Render_Sleepers( TTrack *Track )
 {
 	if( Track == nullptr ) { return; }
@@ -3336,6 +3924,195 @@ void opengl33_renderer::Render_Sleepers( TTrack *Track )
 	m_renderpass.draw_stats.models    += static_cast<int>( total );
 }
 
+namespace {
+
+// the level of detail of the whole model a run of beams is seen at, from its distance
+float timber_band( track_sleepers::beam_model const &Model, double const Distance )
+{
+	auto const squaredistance { static_cast<float>( Distance * Distance ) };
+	auto band { Model.bands.empty() ? 0.f : Model.bands.front() };
+	for( auto const start : Model.bands ) {
+		if( squaredistance >= start ) {
+			band = start;
+		}
+	}
+	return band;
+}
+
+// the transforms of a run of beams, relative to the origin of their track, put in the camera space of the modelview given
+void append_timbers( std::vector<glm::mat4> &Instances, glm::mat4 const &Modelview, std::vector<glm::mat4> const &Transforms, std::size_t const First, std::size_t const Last )
+{
+	for( auto index { First }; index < Last; ++index ) {
+		Instances.emplace_back( Modelview * Transforms[ index ] );
+	}
+}
+
+} // namespace
+
+// Renders the sleepers and switch timbers of a run of tracks of a cell. Each beam is made of instances of the parts of a model or
+// of a whole model, kept by its track relative to the origin of the track. The runs of beams in range and in sight are gathered
+// for the whole run of tracks by the model and its part or its level of detail, and each is drawn in as few instanced batches
+// as they fit in. In the shadow pass only those near the camera are drawn, their shadows falling where they can be seen.
+void opengl33_renderer::Render_Timbers( scene::basic_cell::path_sequence::const_iterator First, scene::basic_cell::path_sequence::const_iterator Last )
+{
+	if( Global.SleeperDistance <= 0.f ) { return; }
+	// a name alone, without looking the model up: the tracks it failed to load for aren't laid
+	if( Global.Sleepers3D.empty() ) { return; }
+
+	auto const shadows = ( m_renderpass.draw_mode == rendermode::shadows );
+	timber_view const view {
+		// the distance is taken from the camera of the view, the shadow pass culling against its own frustum
+		( shadows ? m_renderpass.viewport_camera.position() : m_renderpass.pass_camera.position() ),
+		static_cast<double>( shadows ? std::min( Global.SleeperDistance, 50.f ) : Global.SleeperDistance ),
+		shadows,
+		OpenGLMatrices.data( GL_MODELVIEW ) };
+	for( auto &bucket : m_timberbuckets ) {
+		bucket.instances.clear();
+	}
+	for( auto first { First }; first != Last; ++first ) {
+		gather_timbers( **first, view );
+	}
+	std::size_t total { 0 };
+	for( auto const &bucket : m_timberbuckets ) {
+		if( bucket.instances.empty() ) { continue; }
+		total += bucket.instances.size();
+		draw_timbers( bucket );
+	}
+	if( total == 0 ) { return; }
+	// instance_modelview[0] back to identity for the draws which aren't instanced
+	{
+		glm::mat4 const identity( 1.0f );
+		instance_ubo->update( std::as_bytes( std::span { &identity, 1 } ), 0 );
+	}
+	m_renderpass.draw_stats.instances += static_cast<int>( total );
+}
+
+// the camera-space transforms of the beams of a model and its part or its level of detail gathered for the frame, in a bucket of
+// their own made for the first of them
+std::vector<glm::mat4> &opengl33_renderer::timber_instances( track_sleepers::beam_model const *Model, int const Part, float const Band )
+{
+	for( auto &bucket : m_timberbuckets ) {
+		if( bucket.model == Model && bucket.part == Part && bucket.band == Band ) {
+			return bucket.instances;
+		}
+	}
+	auto &bucket { m_timberbuckets.emplace_back() };
+	bucket.model = Model;
+	bucket.part = Part;
+	bucket.band = Band;
+	return bucket.instances;
+}
+
+// the beams of a track in range and in sight gathered into the buckets, laid first where they've changed; those of a track about to
+// come in range laid ahead, in the background
+void opengl33_renderer::gather_timbers( TTrack &Track, timber_view const &View )
+{
+	if( false == Track.m_visible || false == Track.m_sleepers3d.active ) { return; }
+	if( glm::length( Track.location() - View.camera ) > View.reach + Track.radius() ) {
+		// worked out ahead, in the background, before it comes in range
+		if( false == View.shadows && Track.m_sleepers3d.dirty && glm::length( Track.location() - View.camera ) < View.reach + Track.radius() + 300.0 ) {
+			track_sleepers::prefetch( Track );
+		}
+		return;
+	}
+	if( Track.m_sleepers3d.dirty ) {
+		track_sleepers::lay( Track );
+	}
+	auto const &laid = Track.m_sleepers3d;
+	if( laid.timbers == nullptr ) { return; }
+	for( auto const &chunk : laid.chunks ) {
+		auto const centre = Track.m_origin + glm::dvec3( chunk.centre );
+		auto const distance = glm::length( centre - View.camera );
+		if( distance > View.reach + chunk.radius ) { continue; }
+		if( false == m_renderpass.pass_camera.visible( scene::bounding_area{ centre, chunk.radius } ) ) { continue; }
+		// the transforms of the beams are relative to the origin of the track, which the modelview is translated to already
+		gather_timber_chunk( laid, chunk, std::max( 0.0, distance - chunk.radius ), View.modelview );
+	}
+}
+
+// the beams of a run of them along a track gathered into the buckets: the parts of the timbers of a model made of them, the whole
+// timbers and the plain sleepers at the level of detail they're seen at from the nearest of them
+void opengl33_renderer::gather_timber_chunk( track_sleepers::laid const &Laid, track_sleepers::chunk const &Chunk, double const Nearest, glm::mat4 const &Modelview )
+{
+	if( Laid.timbers->stretchable ) {
+		for( int part = 0; part < track_sleepers::part_count; ++part ) {
+			auto &instances { timber_instances( Laid.timbers, part, 0.f ) };
+			append_timbers( instances, Modelview, Laid.instances[ part ], Chunk.first[ part ], Chunk.last[ part ] );
+		}
+	}
+	if( Chunk.wholelast > Chunk.wholefirst ) {
+		auto &instances { timber_instances( Laid.timbers, -1, timber_band( *Laid.timbers, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.whole, Chunk.wholefirst, Chunk.wholelast );
+	}
+	if( Laid.plains != nullptr && Chunk.plainlast > Chunk.plainfirst ) {
+		auto &instances { timber_instances( Laid.plains, -1, timber_band( *Laid.plains, Nearest ) ) };
+		append_timbers( instances, Modelview, Laid.plain, Chunk.plainfirst, Chunk.plainlast );
+	}
+}
+
+// the beams of a bucket drawn in as few instanced batches as they fit in: of a part of a model with the rest of it hidden, or of a whole
+// model at the level of detail of the bucket
+void opengl33_renderer::draw_timbers( timber_bucket const &Bucket )
+{
+	auto const &beammodel = *Bucket.model;
+	auto *model = beammodel.model;
+	if( Bucket.part >= 0 ) {
+		show_timber_part( beammodel, Bucket.part );
+	}
+	material_data skins {};
+	if( beammodel.skin != null_handle ) {
+		skins.replacable_skins[ 1 ] = beammodel.skin;
+	}
+	auto const alpha = ( 0x30300030 ^ 0x0F0F000F );
+	auto const &instances = Bucket.instances;
+	for( std::size_t offset = 0; offset < instances.size(); offset += gl::MAX_INSTANCES_PER_BATCH ) {
+		auto const batch = std::min<std::size_t>( instances.size() - offset, gl::MAX_INSTANCES_PER_BATCH );
+		instance_ubo->update( std::as_bytes( std::span { instances.data() + offset, batch } ), 0 );
+		::glPushMatrix();
+		::glLoadIdentity();
+		m_current_instance_count = batch;
+		// inside the range of the level of detail the beams are at
+		TSubModel::fSquareDist = ( Bucket.part >= 0 ? 0.f : Bucket.band + 1.f );
+		TSubModel::ReplacableSet( ( beammodel.skin != null_handle ? skins.replacable_skins : nullptr ), alpha );
+		TSubModel::pRoot = model;
+		Render( model->Root );
+		m_current_instance_count = 0;
+		::glPopMatrix();
+		++m_renderpass.draw_stats.instanced_drawcalls;
+	}
+	if( Bucket.part >= 0 ) {
+		restore_timber_parts( beammodel );
+	}
+}
+
+// only the given part of a timber model seen, its siblings skipped as the model is walked: the other parts, and what else the model
+// holds, like the fastenings of the rails, which aren't laid. what each was is kept to put it back
+void opengl33_renderer::show_timber_part( track_sleepers::beam_model const &Model, int const Part )
+{
+	m_timbervisibility.clear();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		m_timbervisibility.push_back( Model.parts[ part ]->iVisible );
+		Model.parts[ part ]->iVisible = ( part == Part ? 1 : 0 );
+	}
+	for( auto *other : Model.others ) {
+		m_timbervisibility.push_back( other->iVisible );
+		other->iVisible = 0;
+	}
+}
+
+// the parts of a timber model and its other submodels seen as they were, some hidden by the model itself, which may stand in the
+// scenery too
+void opengl33_renderer::restore_timber_parts( track_sleepers::beam_model const &Model )
+{
+	auto visibility = m_timbervisibility.begin();
+	for( int part = 0; part < track_sleepers::part_count; ++part ) {
+		Model.parts[ part ]->iVisible = *visibility++;
+	}
+	for( auto *other : Model.others ) {
+		other->iVisible = *visibility++;
+	}
+}
+
 bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 {
 	glDebug("Render TDynamicObject");
@@ -3351,6 +4128,7 @@ bool opengl33_renderer::Render(TDynamicObject *Dynamic)
 
 	// setup
 	TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(Dynamic); //żeby nie robić cudzych animacji
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 	glm::dvec3 const originoffset = Dynamic->vPosition - m_renderpass.pass_camera.position();
 	// lod visibility ranges are defined for base (x 1.0) viewing distance. for render we adjust them for actual range multiplier and zoom
 	float squaredistance;
@@ -3518,10 +4296,12 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
 	{
 
 		TSubModel::iInstance = 0;
+		TSubModel::iVariantSeed = 0;
 		return false;
 	}
 
 	TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(Dynamic);
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 
 	if ((true == FreeFlyModeFlag) || (false == Dynamic->bDisplayCab) || (Dynamic->mdKabina == Dynamic->mdModel))
 	{
@@ -3647,11 +4427,28 @@ bool opengl33_renderer::Render(TModel3d *Model, material_data const *Material, f
 	return result;
 }
 
+// opaque characters of a text display, laid out in a row the same way as the translucent ones
+void opengl33_renderer::Render_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	::glPushMatrix();
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{
+		Render(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+	::glPopMatrix();
+}
+
 void opengl33_renderer::Render(TSubModel *Submodel)
 {
 	glDebug("Render TSubModel");
 
-	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist))
+	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist) && (false == m_previewing || Submodel->fVisible > 0.f))
 	{
 		glm::mat4 future_stack = model_ubs.future;
 
@@ -3693,7 +4490,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -3719,7 +4516,9 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 				case rendermode::shadows:
 				{
                     // skip if the shadow caster rank is too low for currently set threshold
-                    if( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                    // or if the submodel is hidden (colour pass only fades it out, e.g. inactive seasonal variant)
+                    if( ( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                     || ( Submodel->fVisible <= 0.f ) )
                     {
                         --m_renderpass.draw_stats.submodels;
                         --m_renderpass.draw_stats.drawcalls;
@@ -3728,7 +4527,7 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 
                     if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{
@@ -3795,9 +4594,17 @@ void opengl33_renderer::Render(TSubModel *Submodel)
 			}
 			}
 		}
-		if (Submodel->Child != nullptr)
-			if (Submodel->iAlpha & Submodel->iFlags & 0x001F0000)
+		if (Submodel->Child != nullptr && (TSubModel::iAlpha & Submodel->iFlags & 0x001F0000))
+		{
+			if (Submodel->eType == TP_TEXT)
+			{
+				Render_text(Submodel);
+			}
+			else
+			{
 				Render(Submodel->Child);
+			}
+		}
 
 		if (Submodel->iFlags & 0xC000)
 		{
@@ -3838,6 +4645,8 @@ void opengl33_renderer::Render(TTrack *Track)
 
 		draw(std::begin(Track->Geometry1), std::end(Track->Geometry1));
 		draw(std::begin(Track->Geometry2), std::end(Track->Geometry2));
+		for (auto &tread : Track->GeometryTreads)
+			draw(std::begin(tread.geometry), std::end(tread.geometry));
 		if (Track->eType == tt_Switch)
 			draw(Track->SwitchExtension->Geometry3);
 		break;
@@ -3847,6 +4656,63 @@ void opengl33_renderer::Render(TTrack *Track)
 		break;
 	}
 	}
+}
+
+// the cut faces of the rails of a track and the treads of the wheels on them, in the matte variants of the rail materials: batched with
+// those of the other tracks, unless the track lies where the light differs
+void opengl33_renderer::Render_cuts(TTrack *Track, material_handle &Batchmaterial)
+{
+	// most tracks have none, the frogs and the blades off or the track plain: nothing to go through
+	if (Track->GeometryCut1.empty() && Track->GeometryCut2.empty() && Track->GeometryTreads.empty())
+	{
+		return;
+	}
+	auto const part = [this, Track, &Batchmaterial](material_handle const Material, TTrack::geometryhandle_sequence &Geometry) {
+		if ((Material == null_handle) || Geometry.empty())
+		{
+			return;
+		}
+		if (Track->eEnvironment != e_flat)
+		{
+			flush_path_batch(Batchmaterial);
+			setup_environment_light(Track->eEnvironment);
+			Bind_Material(Material);
+			draw(std::begin(Geometry), std::end(Geometry));
+			setup_environment_light();
+			return;
+		}
+		begin_path_batch(Batchmaterial, Material);
+		m_pathbatch.insert(std::end(m_pathbatch), std::begin(Geometry), std::end(Geometry));
+	};
+	part(Track->m_materialcut1, Track->GeometryCut1);
+	part(Track->m_materialcut2, Track->GeometryCut2);
+	for (auto &tread : Track->GeometryTreads)
+	{
+		part(tread.material, tread.geometry);
+		part(tread.matte, tread.cuts);
+	}
+}
+
+void opengl33_renderer::flush_path_batch(material_handle &Batchmaterial)
+{
+	if (false == m_pathbatch.empty())
+	{
+		draw(std::begin(m_pathbatch), std::end(m_pathbatch));
+		m_pathbatch.clear();
+	}
+	Batchmaterial = null_handle;
+}
+
+bool opengl33_renderer::begin_path_batch(material_handle &Batchmaterial, material_handle const Material)
+{
+	if (Material == Batchmaterial)
+	{
+		return false;
+	}
+	flush_path_batch(Batchmaterial);
+	Bind_Material(Material);
+	Batchmaterial = Material;
+	return true;
 }
 
 // experimental, does track rendering in two passes, to take advantage of reduced texture switching
@@ -3867,6 +4733,13 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		break;
 	}
 	}
+
+	// geometry of neighbouring tracks which share the material is gathered and drawn together.
+	// only neighbours are combined, the tracks are still drawn in their order in the cell
+	material_handle batchmaterial{null_handle};
+	auto const flush_batch = [this, &batchmaterial]() { flush_path_batch(batchmaterial); };
+	// returns: true if the material starts a new batch, false if it continues the current one
+	auto const begin_batch = [this, &batchmaterial](material_handle const Material) { return begin_path_batch(batchmaterial, Material); };
 
 	// TODO: render auto generated trackbeds together with regular trackbeds in pass 1, and all rails in pass 2
 	// first pass, material 1
@@ -3894,15 +4767,21 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				// track with light level of its own is drawn on its own
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->m_material1);
-			draw(std::begin(track->Geometry1), std::end(track->Geometry1));
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->m_material1);
+				draw(std::begin(track->Geometry1), std::end(track->Geometry1));
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			if (false == begin_batch(track->m_material1))
+			{
+				// the track is drawn with the call of its predecessor
+				--m_renderpass.draw_stats.drawcalls;
+			}
+			m_pathbatch.insert(std::end(m_pathbatch), std::begin(track->Geometry1), std::end(track->Geometry1));
 			break;
 		}
 		case rendermode::shadows:
@@ -3910,10 +4789,14 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 			if ((std::abs(track->fTexHeight1) < 0.35f) || (track->iCategoryFlag != 2))
 			{
 				// shadows are only calculated for high enough roads, typically meaning track platforms
+				--m_renderpass.draw_stats.paths;
+				--m_renderpass.draw_stats.drawcalls;
 				continue;
 			}
             if( Material( track->m_material1 ).shadow_rank > Global.gfx_shadow_rank_cutoff ) {
                 // skip if the shadow caster rank is too low for currently set threshold
+                --m_renderpass.draw_stats.paths;
+                --m_renderpass.draw_stats.drawcalls;
                 continue;
             }
 			Bind_Material_Shadow(track->m_material1);
@@ -3928,6 +4811,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
 	// second pass, material 2
 	for (auto first{First}; first != Last; ++first)
 	{
@@ -3941,6 +4825,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (track->eType == tt_Normal && editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -3949,15 +4837,16 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->m_material2);
-			draw(std::begin(track->Geometry2), std::end(track->Geometry2));
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->m_material2);
+				draw(std::begin(track->Geometry2), std::end(track->Geometry2));
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			begin_batch(track->m_material2);
+			m_pathbatch.insert(std::end(m_pathbatch), std::begin(track->Geometry2), std::end(track->Geometry2));
 			break;
 		}
 		case rendermode::shadows:
@@ -3983,6 +4872,7 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
 
 	// third pass, material 3
 	for (auto first{First}; first != Last; ++first)
@@ -4002,6 +4892,10 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			continue;
 		}
+		if (editor_ballast_hidden(track, m_renderpass.draw_mode == rendermode::color))
+		{
+			continue;
+		}
 
 		switch (m_renderpass.draw_mode)
 		{
@@ -4010,15 +4904,16 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		{
 			if (track->eEnvironment != e_flat)
 			{
+				flush_batch();
 				setup_environment_light(track->eEnvironment);
-			}
-			Bind_Material(track->SwitchExtension->m_material3);
-			draw(track->SwitchExtension->Geometry3);
-			if (track->eEnvironment != e_flat)
-			{
+				Bind_Material(track->SwitchExtension->m_material3);
+				draw(track->SwitchExtension->Geometry3);
 				// restore default lighting
 				setup_environment_light();
+				break;
 			}
+			begin_batch(track->SwitchExtension->m_material3);
+			m_pathbatch.emplace_back(track->SwitchExtension->Geometry3);
 			break;
 		}
 		case rendermode::shadows:
@@ -4044,6 +4939,23 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 		}
 		}
 	}
+	flush_batch();
+
+	// cut faces of rails, in matte variants of the rail materials
+	if ((m_renderpass.draw_mode == rendermode::color) || (m_renderpass.draw_mode == rendermode::reflections))
+	{
+		for (auto first{First}; first != Last; ++first)
+		{
+			auto const track{*first};
+
+			if (false == track->m_visible)
+			{
+				continue;
+			}
+			Render_cuts(track, batchmaterial);
+		}
+		flush_batch();
+	}
 
 	// fourth pass: per-track sleeper models (sleepermodel optional directive).
 	// drawn after rails/trackbeds so depth pre-pass culling is favourable, and only in passes
@@ -4051,12 +4963,22 @@ void opengl33_renderer::Render(scene::basic_cell::path_sequence::const_iterator 
 	switch( m_renderpass.draw_mode ) {
 	case rendermode::color:
 	case rendermode::reflections: {
+		if( editor_sleepers_hidden() ) { break; }
 		for( auto first { First }; first != Last; ++first ) {
 			auto *track = *first;
 			if( false == track->m_visible )       { continue; }
 			if( false == track->m_sleeper_enabled ) { continue; }
+			// a track with the sleepers and timbers of eu07.ini lays its sleeper model there
+			if( track->m_sleepers3d.active )      { continue; }
 			Render_Sleepers( track );
 		}
+		if( m_renderpass.draw_mode == rendermode::color ) {
+			Render_Timbers( First, Last );
+		}
+		break;
+	}
+	case rendermode::shadows: {
+		Render_Timbers( First, Last );
 		break;
 	}
 	default:
@@ -4207,6 +5129,11 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 {
 
 	// NOTE: this method is launched only during color pass therefore we don't bother with mode test here
+	// the cells far off with the tracks alone drawn there have nothing translucent drawn either
+	auto const scenery_limit{static_cast<double>(Global.BaseDrawRange) * Global.fDistanceFactor + 250.0};
+	bool const far_paths{EditorModeFlag && Global.editor_tracks};
+	glm::dvec3 const camera{m_renderpass.pass_camera.position()};
+	auto const distant = [&](scene::basic_cell const *Cell) { return editor_far_tracks_only(far_paths, Cell->m_area, camera, scenery_limit); };
 	// first pass draws elements which we know are located in section banks, to reduce vbo switching
 	{
 		auto first{First};
@@ -4215,7 +5142,7 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 
 			auto const *cell = first->second;
 
-			if (false == cell->m_shapestranslucent.empty())
+			if (false == cell->m_shapestranslucent.empty() && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -4241,6 +5168,11 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 		{
 
 			auto const *cell = first->second;
+			if (distant(cell))
+			{
+				++first;
+				continue;
+			}
 
 			// translucent parts of instanced models
 			for (auto *instance : cell->m_instancetranslucent)
@@ -4268,7 +5200,7 @@ void opengl33_renderer::Render_Alpha(cell_sequence::reverse_iterator First, cell
 
 			auto const *cell = first->second;
 
-			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())))
+			if ((false == cell->m_traction.empty() || (false == cell->m_lines.empty())) && false == distant(cell))
 			{
 				// since all shapes of the cell share center point we can optimize out a few calls here
 				::glPushMatrix();
@@ -4400,6 +5332,55 @@ void opengl33_renderer::Render_Alpha(TTraction *Traction)
 		glLineWidth(1.0f);
 }
 
+void opengl33_renderer::Render_editor_overlay()
+{
+	if (false == EditorModeFlag || EditorOverlay.batches.empty())
+		return;
+	glDebug("Render_editor_overlay");
+
+	if (m_editor_overlay_revision != EditorOverlay.revision)
+	{
+		m_editor_overlay_revision = EditorOverlay.revision;
+		if (m_editor_overlay_bank == null_handle)
+			m_editor_overlay_bank = Create_Bank();
+		auto const &batches{EditorOverlay.batches};
+		for (std::size_t i = 0; i < batches.size(); ++i)
+		{
+			gfx::vertex_array vertices;
+			vertices.reserve(batches[i].points.size());
+			for (auto const &point : batches[i].points)
+				vertices.emplace_back(point, glm::vec3(0.f, 1.f, 0.f), glm::vec2());
+			gfx::userdata_array userdata;
+			if (i >= m_editor_overlay_geometry.size())
+				m_editor_overlay_geometry.emplace_back();
+			auto &geometry{m_editor_overlay_geometry[i]};
+			if (geometry != null_handle)
+				m_geometry.replace(vertices, userdata, geometry);
+			else if (false == vertices.empty())
+				geometry = m_geometry.create_chunk(vertices, userdata, m_editor_overlay_bank, batches[i].type);
+		}
+	}
+
+	::glPushMatrix();
+	auto const origin{EditorOverlay.origin - m_renderpass.pass_camera.position()};
+	::glTranslated(origin.x, origin.y, origin.z);
+	::glDisable(GL_CULL_FACE);
+	::glDepthMask(GL_FALSE);
+	m_line_shader->bind();
+	auto const &batches{EditorOverlay.batches};
+	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
+	{
+		if (batches[i].points.empty() || m_editor_overlay_geometry[i] == null_handle)
+			continue;
+		model_ubs.param[0] = batches[i].color;
+		draw(m_editor_overlay_geometry[i]);
+		++m_renderpass.draw_stats.drawcalls;
+	}
+	::glDepthMask(GL_TRUE);
+	::glEnable(GL_CULL_FACE);
+	::glPopMatrix();
+}
+
 void opengl33_renderer::Render_Alpha(scene::lines_node const &Lines)
 {
 	glDebug("Render_Alpha scene::lines_node");
@@ -4445,6 +5426,7 @@ bool opengl33_renderer::Render_Alpha(TDynamicObject *Dynamic)
 
 	// setup
 	TSubModel::iInstance = (size_t)Dynamic; //żeby nie robić cudzych animacji
+	TSubModel::iVariantSeed = Dynamic->variant_seed();
 	glm::dvec3 const originoffset = Dynamic->vPosition - m_renderpass.pass_camera.position();
 	// lod visibility ranges are defined for base (x 1.0) viewing distance. for render we adjust them for actual range multiplier and zoom
 	float squaredistance;
@@ -4557,10 +5539,25 @@ bool opengl33_renderer::Render_Alpha(TModel3d *Model, material_data const *Mater
 	return result;
 }
 
+// characters of a text display, laid out in a row. the text can be encoded in utf-8 or in windows-1250
+void opengl33_renderer::Render_Alpha_text(TSubModel *Submodel)
+{
+	if (TSubModel::pasText == nullptr)
+	{
+		return;
+	}
+	for (auto *p : Submodel->text_letters(*TSubModel::pasText))
+	{ // translucent only, for the time being
+		Render_Alpha(p);
+		if (p->fMatrix)
+			::glMultMatrixf(p->fMatrix->readArray()); // move on to the place of the next character
+	}
+}
+
 void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
-	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist))
+	if ((Submodel->iVisible) && (TSubModel::fSquareDist >= Submodel->fSquareMinDist) && (TSubModel::fSquareDist < Submodel->fSquareMaxDist) && (false == m_previewing || Submodel->fVisible > 0.f))
 	{
 		glm::mat4 future_stack = model_ubs.future;
 
@@ -4597,7 +5594,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 					// textures...
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material(Submodel->ReplacableSkinId[-Submodel->m_material], Submodel);
+						Bind_Material(submodel_material(Submodel), Submodel);
 					}
 					else
 					{
@@ -4618,7 +5615,9 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 				case rendermode::shadows:
 				{
                     // skip if the shadow caster rank is too low for currently set threshold
-                    if( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                    // or if the submodel is hidden (colour pass only fades it out, e.g. inactive seasonal variant)
+                    if( ( Material( Submodel ).shadow_rank > Global.gfx_shadow_rank_cutoff )
+                     || ( Submodel->fVisible <= 0.f ) )
                     {
                         --m_renderpass.draw_stats.submodels;
                         --m_renderpass.draw_stats.drawcalls;
@@ -4627,7 +5626,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 
 					if (Submodel->m_material < 0)
 					{ // zmienialne skóry
-						Bind_Material_Shadow(Submodel->ReplacableSkinId[-Submodel->m_material]);
+						Bind_Material_Shadow(submodel_material(Submodel));
 					}
 					else
 					{
@@ -4783,29 +5782,7 @@ void opengl33_renderer::Render_Alpha(TSubModel *Submodel)
 		{
 			if (Submodel->eType == TP_TEXT)
 			{ // tekst renderujemy w specjalny sposób, zamiast submodeli z łańcucha Child
-				int i, j = (int)Submodel->pasText->size();
-				TSubModel *p;
-				if (!Submodel->smLetter)
-				{ // jeśli nie ma tablicy, to ją stworzyć; miejsce nieodpowiednie, ale tymczasowo może być
-					Submodel->smLetter = new TSubModel *[256]; // tablica wskaźników submodeli dla wyświetlania tekstu
-					memset(Submodel->smLetter, 0, 256 * sizeof(TSubModel *)); // wypełnianie zerami
-					p = Submodel->Child;
-					while (p)
-					{
-						Submodel->smLetter[p->pName[0]] = p;
-						p = p->Next; // kolejny znak
-					}
-				}
-				for (i = 1; i <= j; ++i)
-				{
-					p = Submodel->smLetter[(*(Submodel->pasText))[i]]; // znak do wyświetlenia
-					if (p)
-					{ // na razie tylko jako przezroczyste
-						Render_Alpha(p);
-						if (p->fMatrix)
-							::glMultMatrixf(p->fMatrix->readArray()); // przesuwanie widoku
-					}
-				}
+				Render_Alpha_text(Submodel);
 			}
 			else if (Submodel->iAlpha & Submodel->iFlags & 0x002F0000)
 				Render_Alpha(Submodel->Child);
@@ -4934,6 +5911,13 @@ void opengl33_renderer::Pick_Node_Callback(std::function<void(scene::basic_node 
 	m_node_pick_requests.push_back(callback);
 }
 
+void opengl33_renderer::Forget_Node(scene::basic_node const *Node)
+{
+	if (m_picksceneryitem == Node)
+		m_picksceneryitem = nullptr;
+	std::ranges::replace_if(m_picksceneryitems, [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
+}
+
 glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 {
 	if (!m_depth_pointer_pbo->is_busy())
@@ -5011,6 +5995,7 @@ glm::dvec3 opengl33_renderer::Update_Mouse_Position()
 
 		if (pointdepth != std::numeric_limits<float>::max())
 		{
+			m_mousehit = (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) ? pointdepth > 0.0f : pointdepth < 1.0f;
 			if (GLAD_GL_ARB_clip_control || GLAD_GL_EXT_clip_control) {
 				if (pointdepth > 0.0f)
 					m_worldmousecoordinates = glm::unProjectZO(glm::vec3(bufferpos, pointdepth), glm::mat4(glm::mat3(m_colorpass.pass_camera.modelview())), m_colorpass.pass_camera.projection(),
@@ -5038,12 +6023,15 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 
 	m_updateaccumulator = 0.0;
-    m_framerate = 1000.f / ( Timer::subsystem.mainloop_total.average() );
+	// the frames actually shown, the wait for fpslimit included (eu07/maszyna#416)
+	m_framerate = 1000.f / ( Timer::subsystem.mainloop_period.average() );
+	// the frames the work alone would allow, so a frame rate held down by fpslimit doesn't cut the draw ranges
+	auto const workframerate{1000.f / Timer::subsystem.mainloop_total.average()};
 
 	// adjust draw ranges etc, based on recent performance
 
 	if (Global.targetfps != 0.0f) {
-		float fps_diff = Global.targetfps - m_framerate;
+		float fps_diff = Global.targetfps - workframerate;
 		if (fps_diff > 0.0f)
 			Global.fDistanceFactor = std::max(0.5f, Global.fDistanceFactor - 0.05f);
 		else
@@ -5051,7 +6039,7 @@ void opengl33_renderer::Update(double const Deltatime)
 	}
 	// legacy framerate parameters
 	else if (Global.fFpsAverage != 0.f) {
-		auto const fps_diff = m_framerate - Global.fFpsAverage;
+		auto const fps_diff = workframerate - Global.fFpsAverage;
 		if (fps_diff < -Global.fFpsDeviation) {
 			Global.fDistanceFactor = std::min(std::max(1.0f, Global.fDistanceFactor - 0.05f), Global.gfx_distance_factor_max);
 		}
@@ -5080,6 +6068,11 @@ void opengl33_renderer::Update(double const Deltatime)
 		// garbage collection
 		m_geometry.update();
 		m_textures.update();
+	}
+
+	if ((Global.gfx_texture_releasedistance > 0.f) && (true == simulation::is_ready))
+	{
+		Update_Texture_Release();
 	}
 
 	if ((true == Global.ControlPicking) && (false == FreeFlyModeFlag))
@@ -5123,6 +6116,414 @@ std::string const &opengl33_renderer::info_stats() const
 void opengl33_renderer::MakeScreenshot()
 {
 	screenshot_manager::make_screenshot();
+}
+
+// model previews
+
+namespace
+{
+// direction from the previewed model to the camera. models are made facing -z (the front view of 3ds max),
+// so the camera looks at their front, right side and top
+glm::dvec3 const preview_viewdirection{-0.6123724, 0.5, -0.6123724};
+// vertical field of view of the preview camera, in degrees
+float const preview_fieldofview{30.f};
+// brightness of the hdr background, past the white point of the tonemapping, so translucent parts blend with white
+float const preview_background{16.f};
+} // namespace
+
+void opengl33_renderer::Preview_Bounds(TSubModel const *Submodel, glm::dmat4 const &Transform, glm::dvec3 &Min, glm::dvec3 &Max) const
+{
+	// same walk as the one of Render(TSubModel *) bar the range checks, which leave out parts only for the bounds to be smaller
+	for (auto const *submodel{Submodel}; submodel != nullptr; submodel = submodel->Next)
+	{
+		if ((submodel->iVisible == 0) || (submodel->fVisible <= 0.f))
+		{
+			continue;
+		}
+		auto transform{Transform};
+		if ((submodel->iFlags & 0xC000) && (submodel->fMatrix != nullptr))
+		{
+			transform *= glm::dmat4{glm::make_mat4(submodel->fMatrix->readArray())};
+		}
+		if ((submodel->eType < TP_ROTATOR) && (submodel->m_geometry.handle != null_handle))
+		{
+			for (auto const &vertex : m_geometry.vertices(submodel->m_geometry.handle))
+			{
+				auto const point{glm::dvec3{transform * glm::dvec4{glm::dvec3{vertex.position}, 1.0}}};
+				Min = glm::min(Min, point);
+				Max = glm::max(Max, point);
+			}
+		}
+		Preview_Bounds(submodel->Child, transform, Min, Max);
+	}
+}
+
+bool opengl33_renderer::Preview_Targets(int const Size)
+{
+	if (m_preview.size == Size)
+	{
+		return true;
+	}
+	m_preview = preview_targets();
+
+	m_preview.hdr_tex = std::make_unique<opengl_texture>();
+	m_preview.hdr_tex->alloc_rendertarget(GL_RGBA16F, GL_RGBA, Size, Size, 1, 1, GL_CLAMP_TO_EDGE);
+	m_preview.hdr_rbds = std::make_unique<gl::renderbuffer>();
+	m_preview.hdr_rbds->alloc(GL_DEPTH32F_STENCIL8, Size, Size);
+	m_preview.hdr_fb = std::make_unique<gl::framebuffer>();
+	m_preview.hdr_fb->attach(*m_preview.hdr_tex, GL_COLOR_ATTACHMENT0);
+	m_preview.hdr_fb->attach(*m_preview.hdr_rbds, GL_DEPTH_STENCIL_ATTACHMENT);
+	m_preview.hdr_fb->setup_drawing(1);
+	if (false == m_preview.hdr_fb->is_complete())
+	{
+		ErrorLog("preview framebuffer setup failed");
+		m_preview = preview_targets();
+		return false;
+	}
+	// the tonemapping writes srgb values, either by itself or through the srgb target
+	m_preview.ldr_tex = std::make_unique<opengl_texture>();
+	m_preview.ldr_tex->alloc_rendertarget((Global.gfx_shadergamma ? GL_RGBA8 : GL_SRGB8_ALPHA8), GL_RGBA, Size, Size, 1, 1, GL_CLAMP_TO_EDGE);
+	m_preview.ldr_fb = std::make_unique<gl::framebuffer>();
+	m_preview.ldr_fb->attach(*m_preview.ldr_tex, GL_COLOR_ATTACHMENT0);
+	m_preview.ldr_fb->setup_drawing(1);
+	if (false == m_preview.ldr_fb->is_complete())
+	{
+		ErrorLog("preview framebuffer setup failed");
+		m_preview = preview_targets();
+		return false;
+	}
+	gl::framebuffer::unbind();
+
+	m_preview.size = Size;
+	return true;
+}
+
+void opengl33_renderer::Preview_Model(TAnimModel *Instance, float const Squaredistance, bool const Alpha)
+{
+	// the placement of Render(TAnimModel *), without its range and visibility tests
+	::glPushMatrix();
+	auto const position{Instance->location() - m_renderpass.pass_camera.position()};
+	::glTranslated(position.x, position.y, position.z);
+	auto const &angle{Instance->vAngle};
+	if (angle.y != 0.0)
+		::glRotated(angle.y, 0.f, 1.f, 0.f);
+	if (angle.x != 0.0)
+		::glRotated(angle.x, 1.f, 0.f, 0.f);
+	if (angle.z != 0.0)
+		::glRotated(angle.z, 0.f, 0.f, 1.f);
+	auto const &scale{Instance->Scale()};
+	::glScalef(scale.x, scale.y, scale.z);
+	if (Alpha)
+		Render_Alpha(Instance->pModel, Instance->Material(), Squaredistance);
+	else
+		Render(Instance->pModel, Instance->Material(), Squaredistance);
+	::glPopMatrix();
+}
+
+void opengl33_renderer::Preview_Color(TAnimModel *Instance, float const Squaredistance, int const Size, glm::dvec3 const &Eye, glm::mat4 const &View, glm::mat4 const &Projection, bool const Shadows)
+{
+	m_renderpass.draw_mode = rendermode::color;
+	m_renderpass.pass_camera.position() = Eye;
+	m_renderpass.pass_camera.modelview() = View;
+	m_renderpass.pass_camera.projection() = Projection;
+	m_renderpass.viewport_camera.position() = Eye;
+	setup_matrices();
+
+	scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{View}});
+	scene_ubs.time = 0.f;
+	for (auto idx = 0; idx < m_shadowpass.size(); ++idx)
+	{
+		// everything is in the first cascade
+		scene_ubs.cascade_end[idx] = std::numeric_limits<float>::max();
+	}
+	scene_ubo->update(scene_ubs);
+	scene_ubo->bind_uniform();
+	// the sun is the only light, and there's no fog
+	auto const &modelview{OpenGLMatrices.data(GL_MODELVIEW)};
+	light_ubs.ambient = m_sunlight.ambient;
+	light_ubs.fog_color = glm::vec3{1.f};
+	light_ubs.lights_count = 1;
+	light_ubs.lights[0].type = gl::light_element_ubs::DIR;
+	light_ubs.lights[0].dir = modelview * glm::vec4(m_sunlight.direction, 0.0f);
+	light_ubs.lights[0].color = m_sunlight.diffuse;
+	light_ubs.lights[0].ambient = 0.0f;
+	light_ubs.lights[0].intensity = 1.0f;
+	light_ubo->update(light_ubs);
+	model_ubs.fog_density = 0.f;
+	model_ubs.future = glm::mat4();
+	model_ubs.emission = 0.f;
+	if (Shadows)
+	{
+		setup_shadow_bind_map();
+		setup_shadow_color(colors::shadow);
+	}
+	else
+	{
+		setup_shadow_unbind_map();
+		setup_shadow_color(colors::white);
+	}
+	setup_env_map(nullptr);
+
+	m_preview.hdr_fb->bind();
+	glViewport(0, 0, Size, Size);
+	glClearColor(preview_background, preview_background, preview_background, 1.f);
+	glClearStencil(0);
+	glStencilMask(0xFF);
+	m_preview.hdr_fb->clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	if (!Global.gfx_usegles)
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glEnable(GL_DEPTH_TEST);
+	// every fragment which made it past the alpha test marks the pixel as covered, translucent ones included
+	glEnable(GL_STENCIL_TEST);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
+	setup_drawing(false);
+	Preview_Model(Instance, Squaredistance, false);
+	setup_drawing(true);
+	Preview_Model(Instance, Squaredistance, true);
+	setup_drawing(false);
+
+	glDisable(GL_STENCIL_TEST);
+	setup_shadow_unbind_map();
+}
+
+bool opengl33_renderer::Render_Preview(TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image)
+{
+	if ((Instance == nullptr) || (Instance->pModel == nullptr) || (Size <= 0) || (Margin < 0) || (Margin * 2 >= Size))
+	{
+		return false;
+	}
+	// the image is drawn at double size and scaled down, for antialiased edges which blend with the white background
+	GLint maxtexturesize{0}, maxrenderbuffersize{0};
+	GLint maxviewport[2]{0, 0};
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxtexturesize);
+	glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &maxrenderbuffersize);
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, maxviewport);
+	auto const maxsize{std::min({maxtexturesize, maxrenderbuffersize, maxviewport[0], maxviewport[1]})};
+	if (Size > maxsize)
+	{
+		ErrorLog("preview size " + std::to_string(Size) + " exceeds the limit of the graphics driver, " + std::to_string(maxsize));
+		return false;
+	}
+	auto const supersampling{(Size * 2 <= maxsize ? 2 : 1)};
+	auto const targetsize{Size * supersampling};
+	if (false == Preview_Targets(targetsize))
+	{
+		return false;
+	}
+
+	glfwMakeContextCurrent(m_window);
+	opengl_texture::reset_unit_cache();
+	gfx::opengl33_vaogeometrybank::reset();
+	m_previewing = true;
+	// lights and visibility of the submodels, for this instance
+	Instance->RaAnimate(m_framestamp);
+	Instance->RaPrepare();
+
+	// bounding sphere of the model, which the camera is placed to fit in its view
+	glm::dvec3 boundsmin{std::numeric_limits<double>::max()};
+	glm::dvec3 boundsmax{std::numeric_limits<double>::lowest()};
+	Preview_Bounds(Instance->pModel->Root, glm::translate(glm::dmat4{1.0}, Instance->location()) * glm::dmat4{Instance->rotation_scale()}, boundsmin, boundsmax);
+	if (boundsmin.x > boundsmax.x)
+	{
+		m_previewing = false;
+		return false;
+	}
+	auto const centre{(boundsmin + boundsmax) * 0.5};
+	auto const radius{std::max(0.01, glm::length(boundsmax - boundsmin) * 0.5)};
+	auto const fieldofview{glm::radians(preview_fieldofview)};
+	auto const distance{radius / std::sin(fieldofview * 0.5)};
+	auto const eye{centre + glm::normalize(preview_viewdirection) * distance};
+	glm::mat4 const view{glm::lookAt(eye, centre, glm::dvec3{0.0, 1.0, 0.0})};
+	// the sphere is given some slack for parts which aren't where their vertices are, like billboards turning to the camera
+	auto const znear{static_cast<float>(std::max(distance - radius * 1.5, distance * 0.05))};
+	auto const zfar{static_cast<float>(distance + radius * 1.5)};
+	auto const projection{perspective_projection_raw(fieldofview, 1.f, znear, zfar)};
+	// level of detail as seen from the camera, like in Render(TAnimModel *)
+	auto const squaredistance{static_cast<float>(glm::length2(Instance->location() - eye) / Global.fDistanceFactor)};
+
+	// key light from above the left shoulder of the viewer, so the visible sides of the model differ in tone
+	auto const forward{glm::normalize(centre - eye)};
+	auto const right{glm::normalize(glm::cross(forward, glm::dvec3{0.0, 1.0, 0.0}))};
+	auto const tosun{glm::normalize(-forward * 0.4 + glm::dvec3{0.0, 1.0, 0.0} - right * 0.9)};
+	m_sunlight.direction = glm::vec3{-tosun};
+	m_sunlight.diffuse = glm::vec4{1.0f, 0.9686275f, 0.9411765f, 1.f};
+	m_sunlight.ambient = glm::vec4{0.65f, 0.66f, 0.68f, 1.f};
+	m_sunlight.factor = 1.f;
+
+	auto const shadows{Shadows && Global.gfx_shadowmap_enabled && (m_shadow_fb != nullptr)};
+	if (shadows)
+	{
+		// one map covering the whole model, seen from the sun
+		m_renderpass.draw_mode = rendermode::shadows;
+		m_renderpass.pass_camera.position() = centre;
+		m_renderpass.pass_camera.modelview() = glm::mat4{glm::lookAt(centre, centre + glm::dvec3{m_sunlight.direction}, glm::dvec3{0.0, 1.0, 0.0})};
+		auto const extent{static_cast<float>(radius * 1.5)};
+		m_renderpass.pass_camera.projection() = ortho_projection(-extent, extent, -extent, extent, -extent, extent);
+		m_renderpass.viewport_camera.position() = eye;
+		setup_matrices();
+		scene_ubs.projection = OpenGLMatrices.data(GL_PROJECTION);
+		scene_ubo->update(scene_ubs);
+
+		glViewport(0, 0, m_shadowbuffersize, m_shadowbuffersize);
+		m_shadow_fb->attach(*m_shadow_tex, GL_DEPTH_ATTACHMENT, 0);
+		m_shadow_fb->clear(GL_DEPTH_BUFFER_BIT);
+		glEnable(GL_DEPTH_TEST);
+		setup_drawing(false);
+		Preview_Model(Instance, squaredistance, false);
+		m_shadow_fb->unbind();
+		for (auto &pass : m_shadowpass)
+		{
+			pass = m_renderpass;
+		}
+	}
+
+	// the view is cropped to the part of the image the model covers: a look from a bit further first, to find it,
+	// then a closer one at the full size, as thin parts can show up only there, to refine the crop to a pixel.
+	// the crop maps the area to the image less the margins
+	std::vector<std::uint8_t> coverage;
+	auto const fitsize{targetsize};
+	auto const area{1.0 - 2.0 * Margin / Size}; // half of the extent of the area for the model, in normalized device coordinates
+	glm::dvec2 cropcentre{0.0};
+	auto cropscale{0.75};
+	auto tight{false}; // whether the crop was fitted to the model
+	auto const cropped = [&]() {
+		return glm::mat4{glm::scale(glm::dmat4{1.0}, glm::dvec3{cropscale, cropscale, 1.0}) * glm::translate(glm::dmat4{1.0}, glm::dvec3{-cropcentre, 0.0})} * projection;
+	};
+	for (auto attempt = 0; attempt < 6; ++attempt)
+	{
+		auto const passsize{(tight ? fitsize : std::min(fitsize, 512))};
+		Preview_Color(Instance, squaredistance, passsize, eye, view, cropped(), shadows);
+		coverage.resize(static_cast<std::size_t>(passsize) * passsize);
+		m_preview.hdr_fb->bind();
+		glReadPixels(0, 0, passsize, passsize, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, coverage.data());
+
+		glm::ivec2 pixelmin{passsize, passsize}, pixelmax{-1, -1};
+		for (auto y = 0; y < passsize; ++y)
+		{
+			auto const *row{coverage.data() + static_cast<std::size_t>(y) * passsize};
+			for (auto x = 0; x < passsize; ++x)
+			{
+				if (row[x] != 0)
+				{
+					pixelmin = glm::min(pixelmin, glm::ivec2{x, y});
+					pixelmax = glm::max(pixelmax, glm::ivec2{x, y});
+				}
+			}
+		}
+		if (pixelmax.x < 0)
+		{
+			if (attempt == 0)
+			{
+				// nothing to see
+				m_previewing = false;
+				m_renderpass.draw_mode = rendermode::none;
+				gl::framebuffer::unbind();
+				return false;
+			}
+			// the crop missed the model, start over with the plain view
+			cropcentre = glm::dvec2{0.0};
+			cropscale = 0.5;
+			tight = false;
+			continue;
+		}
+		// covered area in normalized device coordinates of the uncropped view
+		auto const tondc = [&](glm::ivec2 const &Pixel) { return (glm::dvec2{-1.0} + 2.0 * glm::dvec2{Pixel} / static_cast<double>(passsize)) / cropscale + cropcentre; };
+		auto const ndcmin{tondc(pixelmin)};
+		auto const ndcmax{tondc(pixelmax + 1)};
+		cropcentre = (ndcmin + ndcmax) * 0.5;
+		// a model fitted to the area keeps clear of the image edges, unless the margin is too thin to tell
+		auto const clipped{(pixelmin.x == 0) || (pixelmin.y == 0) || (pixelmax.x == passsize - 1) || (pixelmax.y == passsize - 1)};
+		if (clipped && ((false == tight) || (Margin * passsize / Size >= 2)))
+		{
+			// part of the model is out of the view, look again from further away
+			cropscale *= 0.5;
+			tight = false;
+			continue;
+		}
+		cropscale = 2.0 * area / std::max(ndcmax.x - ndcmin.x, ndcmax.y - ndcmin.y);
+		if (tight)
+		{
+			// measured through a fitted crop, which makes it accurate to a pixel of the fitting pass
+			break;
+		}
+		tight = true;
+	}
+
+	// the image itself
+	Preview_Color(Instance, squaredistance, targetsize, eye, view, cropped(), shadows);
+	glViewport(0, 0, targetsize, targetsize);
+	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		glEnable(GL_FRAMEBUFFER_SRGB);
+	m_pfx_tonemapping->apply(*m_preview.hdr_tex, m_preview.ldr_fb.get());
+	if (!Global.gfx_usegles && !Global.gfx_shadergamma)
+		glDisable(GL_FRAMEBUFFER_SRGB);
+	opengl_texture::reset_unit_cache();
+	// the post processing binds its own vertex array, which the geometry banks don't know about
+	gfx::opengl33_vaogeometrybank::reset();
+
+	auto const targetpixels{static_cast<std::size_t>(targetsize) * targetsize};
+	std::vector<std::uint8_t> colors(targetpixels * 4);
+	m_preview.ldr_fb->bind();
+	glReadPixels(0, 0, targetsize, targetsize, GL_RGBA, GL_UNSIGNED_BYTE, colors.data());
+	coverage.resize(targetpixels);
+	m_preview.hdr_fb->bind();
+	glReadPixels(0, 0, targetsize, targetsize, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, coverage.data());
+	gl::framebuffer::unbind();
+	glDepthMask(GL_TRUE);
+
+	m_previewing = false;
+	m_renderpass.draw_mode = rendermode::none;
+
+	// uncovered pixels are white, the samples are averaged in linear space and the rows flipped to go from the top
+	static auto const tolinear{[]() {
+		std::array<float, 256> table;
+		for (auto idx = 0; idx < 256; ++idx)
+		{
+			auto const value{idx / 255.f};
+			table[idx] = (value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f));
+		}
+		return table;
+	}()};
+	auto const tosrgb = [](float const Value) {
+		auto const value{std::clamp(Value, 0.f, 1.f)};
+		auto const encoded{(value <= 0.0031308f ? value * 12.92f : 1.055f * std::pow(value, 1.f / 2.4f) - 0.055f)};
+		return static_cast<std::uint8_t>(std::lround(encoded * 255.f));
+	};
+	auto const samplecount{static_cast<float>(supersampling * supersampling)};
+	Image.resize(static_cast<std::size_t>(Size) * Size * 3);
+	for (auto y = 0; y < Size; ++y)
+	{
+		auto *output{Image.data() + static_cast<std::size_t>(y) * Size * 3};
+		auto const sourcey{(Size - 1 - y) * supersampling};
+		for (auto x = 0; x < Size; ++x)
+		{
+			glm::vec3 color{0.f};
+			for (auto sy = 0; sy < supersampling; ++sy)
+			{
+				for (auto sx = 0; sx < supersampling; ++sx)
+				{
+					auto const sample{static_cast<std::size_t>(sourcey + sy) * targetsize + x * supersampling + sx};
+					if (coverage[sample] != 0)
+					{
+						auto const *rgba{colors.data() + sample * 4};
+						color += glm::vec3{tolinear[rgba[0]], tolinear[rgba[1]], tolinear[rgba[2]]};
+					}
+					else
+					{
+						color += glm::vec3{1.f};
+					}
+				}
+			}
+			color /= samplecount;
+			output[x * 3 + 0] = tosrgb(color.r);
+			output[x * 3 + 1] = tosrgb(color.g);
+			output[x * 3 + 2] = tosrgb(color.b);
+		}
+	}
+	return true;
 }
 
 void opengl33_renderer::Update_Lights(light_array &Lights)
@@ -5448,5 +6849,35 @@ void opengl33_renderer::opengl33_imgui_renderer::Render()
 {
 	gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+std::uint64_t opengl33_renderer::opengl33_imgui_renderer::Create_Image(std::uint8_t const *Rgba, int const Width, int const Height)
+{
+	// the ui colours are made linear in its shaders, the image is too, by sampling it as srgb. the bindings the renderer
+	// keeps track of are put back as they were
+	GLint texture{0}, unpack{0}, alignment{4};
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+	glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack);
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	GLuint image{0};
+	glGenTextures(1, &image);
+	glBindTexture(GL_TEXTURE_2D, image);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, Rgba);
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, static_cast<GLuint>(unpack));
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+	return image;
+}
+
+void opengl33_renderer::opengl33_imgui_renderer::Release_Image(std::uint64_t const Image)
+{
+	auto const image{static_cast<GLuint>(Image)};
+	glDeleteTextures(1, &image);
 }
 

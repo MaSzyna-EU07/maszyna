@@ -20,7 +20,8 @@ class TLPT;
 class TKeyTrans
 { // przekodowanie kodu naciśnięcia i zwolnienia klawisza
   public:
-    short int iDown, iUp;
+    short int iDown;
+    short int iUp;
 };
 
 class Console

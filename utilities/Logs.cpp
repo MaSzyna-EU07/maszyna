@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/Logs.h"
 
+#include <format>
+
 #include "utilities/Globals.h"
 #include "winheaders.h"
 #include "utilities/utilities.h"
@@ -19,9 +21,8 @@ http://mozilla.org/MPL/2.0/.
 std::ofstream output; // standardowy "log.txt", można go wyłączyć
 std::ofstream errors; // lista błędów "errors.txt", zawsze działa
 std::ofstream comms; // lista komunikatow "comms.txt", można go wyłączyć
-char logbuffer[ 256 ];
 
-char endstring[10] = "\n";
+char const endstring[10] = "\n";
 
 std::deque<std::string> log_scrollback;
 
@@ -31,31 +32,28 @@ std::string filename_date() {
 #ifdef __unix__
     timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    tm *tms = localtime(&ts.tv_sec);
-    st.wYear = tms->tm_year;
-    st.wMonth = tms->tm_mon;
-    st.wDayOfWeek = tms->tm_wday;
-    st.wDay = tms->tm_mday;
-    st.wHour = tms->tm_hour;
-    st.wMinute = tms->tm_min;
-    st.wSecond = tms->tm_sec;
-    st.wMilliseconds = ts.tv_nsec / 1000000;
+    std::tm const tm = local_tm(ts.tv_sec);
+    std::tm const *tms = &tm;
+    st.wYear = static_cast<uint16_t>(tms->tm_year);
+    st.wMonth = static_cast<uint16_t>(tms->tm_mon);
+    st.wDayOfWeek = static_cast<uint16_t>(tms->tm_wday);
+    st.wDay = static_cast<uint16_t>(tms->tm_mday);
+    st.wHour = static_cast<uint16_t>(tms->tm_hour);
+    st.wMinute = static_cast<uint16_t>(tms->tm_min);
+    st.wSecond = static_cast<uint16_t>(tms->tm_sec);
+    st.wMilliseconds = static_cast<uint16_t>(ts.tv_nsec / 1000000);
 #elif _WIN32
     ::GetLocalTime( &st );
 #endif
 
-    std::snprintf(
-        logbuffer,
-        sizeof(logbuffer),
-	    "%d%02d%02d_%02d%02d%03d",
+    return std::format(
+	    "{}{:02}{:02}_{:02}{:02}{:03}",
         st.wYear,
         st.wMonth,
         st.wDay,
         st.wHour,
 	    st.wMinute,
 	    st.wMilliseconds);
-
-    return std::string( logbuffer );
 }
 
 std::string filename_scenery() {
@@ -75,33 +73,40 @@ std::deque<std::string> ErrorStack;
 
 // lock for log stacks
 std::mutex logMutex;
+namespace
+{
+// the log is written through the closing of the simulator, to the end: set once the closing has nothing more to tell
+std::atomic<bool> &log_stopped()
+{
+	static std::atomic<bool> stopped{false};
+	return stopped;
+}
+} // namespace
+
+void StopLogService()
+{
+	log_stopped() = true;
+}
 
 
 void LogService()
 {
-	// prevent crash if mutex is not initialized
-	while (true)
+	// one more pass after the stop, so what came just before it gets written too
+	for (bool last{false}; false == last;)
 	{
-		try
-		{
-			logMutex.lock();
-			break;
-		}
-		catch (...) {}
-	}
-	logMutex.unlock();
-
-	while (!Global.applicationQuitOrder)
-	{
+		last = log_stopped();
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = InfoStack.front().first;
-				bool isError = InfoStack.front().second;
-				InfoStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				bool isError;
+				{
+					std::scoped_lock lock(logMutex);
+					msg = InfoStack.front().first;
+					isError = InfoStack.front().second;
+					InfoStack.pop_front();
+				}
 
 				// log to file
 				if (Global.iWriteLogEnabled & 1)
@@ -120,8 +125,8 @@ void LogService()
 				if (log_scrollback.size() > 200)
 					log_scrollback.pop_front();
 
-				// log to console
-				if (Global.iWriteLogEnabled & 2)
+				// log to console; not in test mode, where the standard output carries the result of the test only
+				if ((Global.iWriteLogEnabled & 2) && false == Global.test.enabled)
 				{
 					if (isError)
 						printf("\033[1;37;41m%s\033[0m\n", msg.c_str());
@@ -133,10 +138,12 @@ void LogService()
 			// --- Obsługa ErrorStack ---
 			while (!ErrorStack.empty())
 			{
-				logMutex.lock();
-				std::string msg = ErrorStack.front();
-				ErrorStack.pop_front();
-				logMutex.unlock();
+				std::string msg;
+				{
+					std::scoped_lock lock(logMutex);
+					msg = ErrorStack.front();
+					ErrorStack.pop_front();
+				}
 
 				if (!(Global.iWriteLogEnabled & 1))
 					continue;
@@ -180,8 +187,8 @@ void WriteLog(std::string_view str, logtype type, bool isError)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
-	InfoStack.push_back({message, isError});
+	std::scoped_lock lock(logMutex);
+	InfoStack.emplace_back(message, isError);
 }
 
 void ErrorLog(std::string_view str, logtype type)
@@ -191,7 +198,7 @@ void ErrorLog(std::string_view str, logtype type)
 
 	const auto message = FormatLogMessage(str);
 
-	std::lock_guard<std::mutex> lock(logMutex);
+	std::scoped_lock lock(logMutex);
 	ErrorStack.push_back(message);
 }
 
@@ -212,14 +219,14 @@ void ErrorLog(const char* str, logtype type)
 }
 
 
-void Error(const std::string &asMessage, bool box)
+void Error(const std::string &asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage.c_str(), string("EU07 " + Global.asRelease).c_str(), MB_OK);
-    ErrorLog(asMessage.c_str());
+    ErrorLog(asMessage);
 }
 
-void Error(const char *&asMessage, bool box)
+void Error(const char *&asMessage, bool /*box*/)
 {
     // if (box)
     //	MessageBox(NULL, asMessage, string("EU07 " + Global.asRelease).c_str(), MB_OK);

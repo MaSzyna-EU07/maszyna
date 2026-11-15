@@ -1,0 +1,21 @@
+name: Remove public build of a deleted branch
+
+on:
+  delete:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete the rolling release of the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.ref }}
+        run: |
+          slug="$(printf '%s' "$BRANCH" | tr '/ ' '--' | tr -cd '[:alnum:]._-')"
+          gh release delete "build-$slug" --yes --cleanup-tag || true
