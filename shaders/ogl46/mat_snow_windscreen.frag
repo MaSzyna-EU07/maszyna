@@ -10,12 +10,14 @@
 // the blades wipe it as they wipe the rain (a wet trace stays), it melts at the warm glass, slush slides down. The renderer gives
 // the glass its map through the param snow_slot (1 + its slot); a glass without a map has no snow.
 //
-// The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen, laid together into
-// a layer of the glass by water_snowlayer.comp (snow_sprites.glsl) when the snow under them changes, so the glass only reads it:
+// The look is only sprites from the atlas, as the drops of rain_windscreen and the splats of bugs_windscreen, laid at each pixel
+// sharp from the atlas (snow_sprites.glsl). water_snowlayer.comp lists, for each texel of a layer of the glass (~1 mm), the
+// sprites coming within it when the snow under them changes, so the glass lays only those instead of looking through every cell:
 //  - the lumps, in nine grids of ~1.6 cm cells shifted against each other: each cell has its lump fixed once (tile, place,
 //    size, the snow it takes); it comes when the snow around reaches that and stays as it is until the snow goes. The grids come
-//    one after the other as the snow piles up (all of them icy fleece, more and bigger; a lump of packed snow very rarely), each on the ones before,
-//    so the snow accumulates rather than changes, and covers the glass by 2-3 mm, small gaps left (the scene behind them blurred). In a heap they come sooner
+//    one after the other as the snow piles up (mostly icy fleece, more and bigger; now and then a lump of packed or wet snow),
+//    each on the ones before, so the snow accumulates rather than changes, and covers the glass by 2-3 mm, small gaps left (the
+//    scene behind them blurred). In a heap they come sooner
 //  - dots and small puffs of dry snow between them, and drops where a flake has melted (they bend the picture behind, as rain does)
 // A thin flake lets the light through (ice crystals): the picture behind it is blurred, not hidden.
 //
@@ -85,7 +87,8 @@ void main()
     Bgl *= invmax;
 
     vec4 tex_color = texture(diffuse, f_coord);   // no discard: clean glass between faint dirt must still get snow and blur
-    // the snow laid together from the sprites (water_snowlayer.comp, a band of its rows every step and wherever a blade goes)
+    // the snow laid together from the sprites (listed by water_snowlayer.comp, a band of its rows every step and wherever a blade
+    // goes)
     vec3  snowRGB = vec3(0.0);
     float snowA   = 0.0;
     vec3  snowN   = vec3(0.0);
@@ -94,26 +97,28 @@ void main()
     snSlot = int(param[2].z + 0.5) - 1;
     if ((snSlot >= 0) && (snSlot < WATER_SLOTS) && water_snow_map(uint(snSlot), snMap))
     {
-        vec4 layerColour;
-        vec4 layerNormal;
-        vec4 layerBend;
-        if (water_layer_of(uint(snSlot)))
+        // the sprites coming within the texel of the layer at the pixel (water_snowlayer.comp) laid at the pixel, sharp from the
+        // atlas; a second glass of the snow in the cab (the layer goes to the first one) looks through all the cells around the
+        // pixel, as it was before the layer, slower but the same
+        snBig = (textureSize(raindropsatlas, 0).x >= 2048);
+        float pixelUV = max(length(duv1), length(duv2));
+        snow_layer_s laid;
+        uvec4 refs;
+        vec2 centreUV;
+        vec2 span;
+        if (water_layer_refs(uint(snSlot), f_coord, refs, centreUV))
         {
-            water_layer_at(uint(snSlot), f_coord, layerColour, layerNormal, layerBend);
+            snSpan(uint(snSlot), centreUV, span);
+            laid = snComposeRefs(f_coord, centreUV, span, pixelUV, refs);
         }
         else
         {
-            // a second glass of the snow in the cab (the layer goes to the first one): its snow laid at the pixel, as it was
-            // before the layer, slower but the same
-            snBig = (textureSize(raindropsatlas, 0).x >= 2048);
-            ivec2 texel = clamp(ivec2(floor(f_coord * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
-            uint axis = (uint(snSlot) * uint(WATER_MAP * WATER_MAP) + uint(texel.y * WATER_MAP + texel.x)) * 2u;
-            vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
-            snow_layer_s laid = snCompose(f_coord, span, max(length(duv1), length(duv2)));
-            layerColour = vec4(laid.rgb, laid.a);
-            layerNormal = vec4(laid.n, laid.tr);
-            layerBend = vec4(laid.bend, laid.bendA, laid.haze);
+            snSpan(uint(snSlot), f_coord, span);
+            laid = snCompose(f_coord, span, pixelUV);
         }
+        vec4 layerColour = vec4(laid.rgb, laid.a);
+        vec4 layerNormal = vec4(laid.n, laid.tr);
+        vec4 layerBend = vec4(laid.bend, laid.bendA, laid.haze);
         snowRGB = layerColour.rgb;
         snowA   = layerColour.a;
         snowN   = layerNormal.xyz;
