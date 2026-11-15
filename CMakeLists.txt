@@ -537,6 +537,7 @@ set(CORE_SOURCES
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
+"McZapkie/derailment.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
