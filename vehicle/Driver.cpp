@@ -2337,7 +2337,10 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
     TableClear();
 
-    if( writes_physicslog() ) {
+    // the logs of all, begun at once as they always were. one of a train only at its first line (update_logs): every
+    // crew is made primary here, and the drivers but one of a train with crews in more vehicles are made passive
+    // before it starts, so they get no file with only the header
+    if( WriteLogFlag ) {
         begin_physicslog();
     }
 
@@ -6471,8 +6474,8 @@ void
 TController::update_logs( double const dt ) {
     // log vehicle data
     if( false == writes_physicslog() ) {
-        // not counted while it isn't logged: a driver which begins to, made primary, writes a line every 0.05 s
-        // from then on, not one each update to make up for the time before
+        // not counted while it isn't logged (the driver of a road vehicle, or no logs on): were the logs turned on,
+        // it would write a line every 0.05 s from then on, not one each update to make up for the time before
         LastUpdatedTime = 0.0;
         return;
     }
