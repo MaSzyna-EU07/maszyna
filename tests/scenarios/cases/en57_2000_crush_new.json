@@ -1,0 +1,17 @@
+{
+  "description": "G14 stage 2: an EN57-2000 unit without a driver runs at 20 km/h into a standing one on td.scn, with physics.derailment new. Too fast for the automatic couplers to catch: past the buffers the cab ends crush, a few decimetres, too little for either unit to climb onto the other, so both stay on the rails; the run ends on the 60 s test timeout.",
+  "base_scenery": "td.scn",
+  "ini": ["crashdamage yes", "physics.derailment new"],
+  "fragment": "td_automatic_coupler_hit.scn",
+  "vars": {
+    "velocity": "20",
+    "offset": "0"
+  },
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 300,
+  "checks": [
+    { "type": "log_contains", "pattern": "Bad driving: autotest_\\S+ and autotest_\\S+ collided at \\d+ km/h, the \\w+ end of autotest_\\S+ crushed" },
+    { "type": "log_lacks", "pattern": "Bad driving: autotest_\\S+ derailed" }
+  ]
+}
