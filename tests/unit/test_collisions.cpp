@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "consist.h"
+#include "drive.h"
 #include "vehicle.h"
 #include "McZapkie/collision.h"
 #include "McZapkie/MOVER.h"
@@ -204,6 +205,49 @@ double locomotive_into_wagon(double const Speed, double const Dt) {
 	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, Speed, 0.5)};
 	train.run(3.0, {}, Dt);
 	return wagon->Couplers[end::rear].crush + locomotive->Couplers[end::front].crush;
+}
+
+// the energy the crush of both ends of the pair took, by their curves [J]
+double crush_energy(TMoverParameters const &First, int const FirstEnd, TMoverParameters const &Second, int const SecondEnd) {
+	return First.crush_curve_at(FirstEnd).energy(0.0, First.Couplers[FirstEnd].crush) + Second.crush_curve_at(SecondEnd).energy(0.0, Second.Couplers[SecondEnd].crush);
+}
+
+// what the buffers of EN 15551 of the two ends take in [J]
+double capacity_of(TMoverParameters const &First, int const FirstEnd, TMoverParameters const &Second, int const SecondEnd) {
+	return cl::buffer_capacity(First.Couplers[FirstEnd].collision, First.collision_kind()) + cl::buffer_capacity(Second.Couplers[SecondEnd].collision, Second.collision_kind());
+}
+
+// the kinetic energy of the relative motion of two vehicles closing in at the velocity [J]
+double relative_energy(TMoverParameters const &First, TMoverParameters const &Second, double const Velocity) {
+	auto const mass{First.TotalMass * Second.TotalMass / (First.TotalMass + Second.TotalMass)};
+	return 0.5 * mass * Velocity * Velocity;
+}
+
+struct contact_outcome {
+	double crush{0.0}; // of both ends [m]
+	double energy{0.0}; // the crush took [J]
+	double available{0.0}; // the kinetic energy of the hit past the buffers of EN 15551 [J]
+	bool derailed{false}; // either vehicle
+};
+
+// the second vehicle runs into the rear end of the first one standing, Gap metres short of the hit (negative: the
+// buffers pressed that far already), unbraked and alone on the track
+contact_outcome contact(definition const &Front, definition const &Back, double const Speed, double const Gap, double const Seconds = 5.0, double const Dt = 0.01) {
+	consist train;
+	auto &front{train.add(Front)};
+	auto &back{train.add(Back, 0, coupling::faux, Speed, Gap)};
+	train.run(Seconds, {}, Dt);
+	contact_outcome result;
+	result.crush = front->Couplers[end::rear].crush + back->Couplers[end::front].crush;
+	result.energy = crush_energy(front.mover(), end::rear, back.mover(), end::front);
+	result.available = std::max(0.0, relative_energy(front.mover(), back.mover(), Speed * kmh) - capacity_of(front.mover(), end::rear, back.mover(), end::front));
+	result.derailed = derailed(front.mover()) || derailed(back.mover());
+	return result;
+}
+
+// a coach of data/wagon.json of the given mass without its rotating masses
+definition coach(double const Mass) {
+	return definition::load("wagon").set("Param", "M", Mass);
 }
 
 } // namespace
@@ -701,4 +745,314 @@ TEST_CASE("collisions: identical units built to EN 15227 at 36 km/h") {
 		auto const held{crash(true, 32.0, 0.04)};
 		CHECK(held.derailed == 0);
 	}
+}
+
+// ---- the energy of the hit: what the buffers of EN 15551 take in never crushes (found running every scenario of the
+// install: calkowo_v2_kontenera, baltyk_sdm)
+
+TEST_CASE("collisions: the buffers of EN 15551 of an end take in their energy, of the category given or by the kind") {
+	CHECK(cl::buffer_capacity({}, cl::vehicle_kind::wagon) == doctest::Approx(60.0e3));
+	CHECK(cl::buffer_capacity({}, cl::vehicle_kind::locomotive) == doctest::Approx(60.0e3));
+	CHECK(cl::buffer_capacity({}, cl::vehicle_kind::coach) == doctest::Approx(60.0e3));
+	CHECK(cl::default_buffers(cl::vehicle_kind::coach) == cl::buffer_category::passenger);
+	cl::end_definition category_c;
+	category_c.buffers = cl::buffer_category::C;
+	CHECK(cl::buffer_capacity(category_c, cl::vehicle_kind::wagon) == doctest::Approx(140.0e3));
+	// the key of the .fiz
+	vehicle wagon{definition::load("wagon").set("BuffCoupl", "BufferCategory", "B")};
+	REQUIRE(wagon->Couplers[end::front].collision.buffers.has_value());
+	CHECK(*wagon->Couplers[end::front].collision.buffers == cl::buffer_category::B);
+	CHECK(cl::buffer_capacity(wagon->Couplers[end::rear].collision, wagon->collision_kind()) == doctest::Approx(100.0e3));
+}
+
+TEST_CASE("collisions: the budget of a contact, by what the hit brings to the buffers") {
+	cl::contact_energy contact;
+	// not touching: nothing
+	contact.update(false, false, 1.0, 0.0, 0.0, 0.01);
+	CHECK(contact.absorbed() == 0.0);
+	// pressed in, closing: the springs take in their work
+	contact.update(true, false, 1.0, 1.0e6, 0.05, 0.01);
+	CHECK(contact.absorbed() == doctest::Approx(10.0e3));
+	// pressed all the way, they take in nothing more
+	contact.update(true, true, 1.0, 1.4e6, 0.3, 0.01);
+	CHECK(contact.absorbed() == doctest::Approx(10.0e3));
+	// the kinetic energy and what the buffers took, past their capacity
+	CHECK(contact.budget(40.0e3, 2.0, 60.0e3) == doctest::Approx(0.5 * 40.0e3 * 4.0 + 10.0e3 - 60.0e3));
+	// the springs of the .fiz taking in more than the buffers of EN 15551: no more than the kinetic energy
+	CHECK(contact.budget(40.0e3, 2.0, 5.0e3) == doctest::Approx(0.5 * 40.0e3 * 4.0));
+	// springing back they hold no more than their springs pressed in
+	contact.update(true, false, -0.5, 0.2e6, 0.02, 0.01);
+	CHECK(contact.absorbed() == doctest::Approx(0.5 * 0.2e6 * 0.02));
+	// a train pushing at a stand: the oscillation of the pair never builds the energy up
+	for (int i = 0; i < 6000; ++i) {
+		auto const closing{0.05 * std::sin(i * 0.3)};
+		contact.update(true, false, closing, 0.3e6 + 1.0e6 * closing, 0.03, 0.01);
+	}
+	CHECK(contact.absorbed() < 0.5 * 0.35e6 * 0.03 + 0.35e6 * 0.05 * 0.01 * 12.0);
+	// parted: a new contact
+	contact.crushed(5.0e3);
+	CHECK(contact.crush_work() == doctest::Approx(5.0e3));
+	contact.update(false, false, 0.0, 0.0, 0.0, 0.01);
+	CHECK(contact.absorbed() == 0.0);
+	CHECK(contact.crush_work() == 0.0);
+}
+
+TEST_CASE("collisions: the crush of a hit takes no more than its energy past the buffers, with any step") {
+	// two masses at the stop of their buffers from the start (nothing taken in by the springs), the budget of the
+	// crush taken anew in every step of the hit, as the vehicles take it
+	struct masses {
+		double mass1;
+		double mass2;
+	};
+	constexpr double capacity{120.0e3};
+	constexpr double springs{1.2e6};
+	for (auto const &[mass1, mass2] : {masses{80.0e3, 80.0e3}, masses{117.0e3, 84.0e3}, masses{300.0e3, 20.0e3}, masses{36.0e3, 41.6e3}}) {
+		auto const reduced{mass1 * mass2 / (mass1 + mass2)};
+		for (auto const speed : {2.0, 5.0, 8.0, 12.0, 20.0, 30.0, 45.0, 60.0}) {
+			for (auto const dt : {0.001, 0.003, 0.01, 0.02, 0.03}) {
+				CAPTURE(mass1);
+				CAPTURE(mass2);
+				CAPTURE(speed);
+				CAPTURE(dt);
+				cl::end_state first{locomotive_curve, 0.0};
+				cl::end_state second{wagon_curve, 0.0};
+				auto velocity1{speed * kmh};
+				auto velocity2{0.0};
+				auto work{0.0};
+				for (int step = 0; step < 100000; ++step) {
+					auto const start{velocity1 - velocity2};
+					velocity1 -= springs * dt / mass1;
+					velocity2 += springs * dt / mass2;
+					auto const closing{velocity1 - velocity2};
+					if (closing <= 0.0) {
+						break;
+					}
+					cl::hit_input input;
+					input.velocity = closing;
+					input.start_velocity = start;
+					input.mass1 = mass1;
+					input.mass2 = mass2;
+					input.stiffness = 1.4e8;
+					input.springs = springs;
+					input.dt = dt;
+					input.budget = 0.5 * reduced * start * start - capacity;
+					auto const hit{cl::hit(first, second, input)};
+					if (false == hit.crushing) {
+						break;
+					}
+					CHECK(hit.work <= input.budget * (1.0 + 1e-9) + 1e-6);
+					work += hit.work;
+					first.crush += hit.crush1;
+					second.crush += hit.crush2;
+					velocity1 -= hit.impulse / mass1;
+					velocity2 += hit.impulse / mass2;
+					if (hit.velocity <= 0.0) {
+						break;
+					}
+				}
+				auto const available{std::max(0.0, 0.5 * reduced * (speed * kmh) * (speed * kmh) - capacity)};
+				auto const crushed{locomotive_curve.energy(0.0, first.crush) + wagon_curve.energy(0.0, second.crush)};
+				CHECK(work <= available + 1.0);
+				CHECK(crushed <= available * 1.001 + 1.0);
+				if (available <= 0.0) {
+					CHECK(first.crush + second.crush == 0.0);
+				}
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: the crush of two vehicles takes no more than the energy of the hit past the buffers, with any step") {
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	struct pair_of {
+		char const *name;
+		definition front;
+		definition back;
+	};
+	for (auto const &[name, front, back] : {pair_of{"EU07 into EU07", definition::fiz("4e_v1/4e"), definition::fiz("4e_v1/4e")},
+	                                        pair_of{"SU45 into SM42", definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d")},
+	                                        pair_of{"EU07 into a wagon", definition::fiz("430w_v2/430w"), definition::fiz("4e_v1/4e")}}) {
+		for (auto const speed : {2.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0}) {
+			for (auto const dt : {0.001, 0.01, 0.03}) {
+				CAPTURE(name);
+				CAPTURE(speed);
+				CAPTURE(dt);
+				auto const result{contact(front, back, speed, 0.5, 4.0, dt)};
+				// the explicit steps of the springs before the stop rate what they took in a little off. at 0.03 s, 0.5 m a
+				// step at 60 km/h, the legacy movement of the vehicles past the stop gives the hit energy of its own (the
+				// crush goes past what it is at 0.01 s and 0.001 s): the budget doesn't bind there, every step of the hit
+				// is within it (the test of the hit of two masses above), the same crush as before the budget
+				CHECK(result.energy <= result.available * (dt > 0.02 ? 1.15 : 1.05) + 5.0e3);
+				if (result.available <= 0.0) {
+					CHECK(result.crush == 0.0);
+				}
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: two locomotives (117 t and 84 t) touching at walking speed don't crush (calkowo_v2_kontenera)") {
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	auto const su45{definition::fiz("su45_v2/301d")};
+	auto const sm42{definition::fiz("sm42_v1/6d1")};
+	{
+		vehicle check{su45};
+		CHECK(check->TotalMass == doctest::Approx(117.0e3).epsilon(0.02));
+	}
+	for (auto const physics : {false, true}) {
+		CAPTURE(physics);
+		flag_setting const couplerphysics{Global.coupler_physics, physics};
+		flag_setting const everywhere{Global.coupler_physics_all, physics};
+		for (auto const speed : {5.0, 5.8, 6.0}) {
+			CAPTURE(speed);
+			// a hit from a metre away
+			{
+				auto const result{contact(sm42, su45, speed, 1.0)};
+				CHECK(result.crush == 0.0);
+				CHECK_FALSE(result.derailed);
+			}
+			// put down by the scenery with the buffers pressed in, up to past their stop, closing in: the log of the run
+			// had 5.8 km/h at the stop, both ends crushed, deeper hit after hit until both overrode
+			for (auto const overlap : {0.1, 0.4, 1.0}) {
+				CAPTURE(overlap);
+				auto const result{contact(sm42, su45, speed, -overlap, 10.0)};
+				CHECK(result.crush == 0.0);
+				CHECK_FALSE(result.derailed);
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: two coaches (36 t and 41.6 t) at 8 km/h don't crush, nor run into a wall (baltyk_sdm)") {
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	auto const light{coach(32.0e3)};
+	auto const heavy{coach(37.6e3)};
+	{
+		vehicle check{light};
+		MESSAGE("the coaches: ", check->TotalMass / 1000.0, " t and ", vehicle{heavy}->TotalMass / 1000.0, " t");
+	}
+	for (auto const speed : {5.0, 8.0}) {
+		CAPTURE(speed);
+		// a hit from a metre away, and one with the buffers pressed all the way already, as the coach knocked onto the
+		// other one by the hit of the train on the vehicle derailed at the end of the track
+		for (auto const gap : {1.0, -0.25}) {
+			CAPTURE(gap);
+			auto const result{contact(light, heavy, speed, gap)};
+			CHECK(result.crush == 0.0);
+			CHECK_FALSE(result.derailed);
+		}
+	}
+	// the vehicle derailed the legacy way is a wall that the coach runs into
+	for (auto const gap : {1.0, -0.25}) {
+		CAPTURE(gap);
+		consist train;
+		auto &wall{train.add(light)};
+		wall->Derail(END_OF_TRACK);
+		REQUIRE(derailed(wall.mover()));
+		auto &running{train.add(heavy, 0, coupling::faux, 5.0, gap)};
+		train.run(5.0);
+		CHECK(wall->Couplers[end::rear].crush + running->Couplers[end::front].crush == 0.0);
+		CHECK(running->CollisionDerail == NONE);
+	}
+}
+
+TEST_CASE("collisions: a locomotive pushing a standing braked train at full power doesn't crush") {
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	test::track const line{0.15, 0.0, test::catenary_3kv};
+	// the diesel-electric keeps its full power at a stand (an electric one trips its overload relays there)
+	for (auto const *path : {"su45_v2/301d"}) {
+		CAPTURE(path);
+		consist train;
+		// four loaded coal wagons, braked in emergency once their brakes are charged
+		constexpr int wagons{4};
+		for (int i = 0; i < wagons; ++i) {
+			add_mixed(train, 0, consist::full_coupling, 0.0, 0.0).hold_brake_pipe(5.0);
+		}
+		train.run(90.0, line);
+		for (int i = 0; i < wagons; ++i) {
+			train[i].hold_brake_pipe(0.0);
+		}
+		train.run(30.0, line);
+		// the locomotive behind them, touching, driven forwards into them at full power
+		auto &locomotive{train.add(definition::fiz(path), 1, coupling::faux, 0.0, 0.0)};
+		test::driven const driver{locomotive.mover(), locomotive.mover(), locomotive.mover(), [&train](double const Seconds, test::track const &Track) { train.run(Seconds, Track); }};
+		REQUIRE(test::start_up(driver, line));
+		test::release_brakes(locomotive.mover());
+		for (int i = 0; i < 3 && locomotive->DirActive <= 0; ++i) {
+			locomotive->DirectionForward();
+		}
+		test::drive(driver, line, 10.0);
+		auto pushed{0.0};
+		auto seconds{0}; // pushing with 100 kN or more
+		auto const push = [&]() {
+			auto const force{std::max(0.0, -locomotive->Couplers[end::front].CForce)};
+			pushed = std::max(pushed, force);
+			seconds += force >= 100.0e3;
+		};
+		// the line contactors close at the first position, once their delay and the pressure switch let them
+		locomotive->IncMainCtrl(1);
+		for (int i = 0; i < 90 && false == locomotive->StLinFlag; ++i) {
+			test::drive(driver, line, 1.0);
+		}
+		for (int i = 0; i < 60 && false == locomotive->IsMainCtrlMaxPowerPos(); ++i) {
+			locomotive->IncMainCtrl(1);
+			test::drive(driver, line, 1.0);
+			push();
+		}
+		for (int i = 0; i < 60; ++i) {
+			test::drive(driver, line, 1.0);
+			push();
+		}
+		MESSAGE(std::format("{}: pushing at up to {:.0f} kN, {} s at 100 kN or more, at {:.1f} km/h at the end", path, pushed / 1000.0, seconds, locomotive.speed()));
+		CHECK(pushed > 200.0e3);
+		CHECK(seconds >= 55);
+		for (std::size_t i = 0; i < train.size(); ++i) {
+			CAPTURE(i);
+			CHECK(crush_of(train[i].mover()) == 0.0);
+			CHECK_FALSE(derailed(train[i].mover()));
+		}
+	}
+}
+
+TEST_CASE("collisions: vehicles put down with their buffers pressed in don't crush") {
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const physics : {false, true}) {
+		CAPTURE(physics);
+		flag_setting const couplerphysics{Global.coupler_physics, physics};
+		flag_setting const everywhere{Global.coupler_physics_all, physics};
+		for (auto const overlap : {0.1, 0.3, 0.6}) {
+			CAPTURE(overlap);
+			for (auto const &[front, back] : {std::pair{definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d")}, std::pair{coach(32.0e3), coach(37.6e3)},
+			                                  std::pair{definition::fiz("3wl_v2/3wl"), definition::fiz("4e_v1/4e")}}) {
+				auto const result{contact(front, back, 0.0, -overlap, 10.0)};
+				CHECK(result.crush == 0.0);
+				CHECK_FALSE(result.derailed);
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: the monitor goes by the energy of the hit as well") {
+	flag_setting const crashdamage{Global.crash_damage, true};
+	model_setting const monitor{global_settings::collision_model::monitor};
+	// a hit the buffers take in: the monitor tells of nothing
+	for (auto const gap : {1.0, -0.4}) {
+		CAPTURE(gap);
+		consist train;
+		train.add(definition::fiz("sm42_v1/6d1"));
+		train.add(definition::fiz("su45_v2/301d"), 0, coupling::faux, 5.8, gap);
+		train.run(5.0);
+		CHECK(train[0]->crush_reports + train[1]->crush_reports == 0);
+	}
+	// one past them it does
+	consist train;
+	train.add(definition::fiz("4e_v1/4e"));
+	train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 25.0, 20.0);
+	train.run(10.0);
+	CHECK(train[0]->crush_reports + train[1]->crush_reports == 1);
 }

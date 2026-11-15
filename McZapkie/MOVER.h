@@ -1304,6 +1304,8 @@ struct TCoupling
 	double hit_duration{0.0};
 	// physics.collisions monitor: the log told of the crush of this hit of the pair already
 	bool crush_monitored{false};
+	// the energy the contact of the pair brought to its buffers, for the budget of the crush
+	collision::contact_energy contact;
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/

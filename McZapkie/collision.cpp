@@ -156,6 +156,51 @@ std::optional<buffer_category> buffer_category_of(char const Name) {
 	}
 }
 
+buffer_category default_buffers(vehicle_kind const Kind) {
+	return Kind == vehicle_kind::coach ? buffer_category::passenger : buffer_category::A;
+}
+
+double buffer_capacity(end_definition const &Definition, vehicle_kind const Kind) {
+	// two buffers side by side
+	return 2.0 * rating(Definition.buffers.value_or(default_buffers(Kind))).energy;
+}
+
+void contact_energy::update(bool const Pressed, bool const Solid, double const Closing, double const Force, double const Compression, double const Dt) {
+	if (false == Pressed) {
+		// the buffers apart, the contact is over
+		reset();
+		return;
+	}
+	if (Solid) {
+		// pressed all the way, the buffers take in nothing more
+		return;
+	}
+	auto const force{std::max(Force, 0.0)};
+	if (Closing > 0.0) {
+		m_absorbed += force * Closing * std::max(Dt, 0.0);
+	}
+	else if (Closing < 0.0) {
+		// springing back, they hold no more than their springs pressed in so far
+		m_absorbed = std::min(m_absorbed, 0.5 * force * std::max(Compression, 0.0));
+	}
+}
+
+void contact_energy::crushed(double const Work) {
+	m_crushed += std::max(Work, 0.0);
+}
+
+double contact_energy::budget(double const Mass, double const Closing, double const Capacity) const {
+	auto const closing{std::max(Closing, 0.0)};
+	// what the buffers of EN 15551 would still take in: the springs of the .fiz taking in more leave no more energy past
+	// the buffers than the hit has
+	return 0.5 * std::max(Mass, 0.0) * closing * closing - std::max(0.0, Capacity - m_absorbed);
+}
+
+void contact_energy::reset() {
+	m_absorbed = 0.0;
+	m_crushed = 0.0;
+}
+
 hit_result hit(end_state const &First, end_state const &Second, hit_input const &Input) {
 	hit_result result;
 	if (Input.velocity <= 0.0 || Input.mass1 <= 0.0 || Input.mass2 <= 0.0 || Input.dt <= 0.0) {
@@ -177,7 +222,7 @@ hit_result hit(end_state const &First, end_state const &Second, hit_input const 
 	auto const elastic_limit = [&](double const Force) { return std::max(0.0, Force - springs) / root; };
 	{
 		auto const force{std::min(First.curve.force(crush1), Second.curve.force(crush2))};
-		if (false == std::isfinite(force) || velocity <= elastic_limit(force)) {
+		if (false == std::isfinite(force) || velocity <= elastic_limit(force) || false == (Input.budget > 0.0)) {
 			// the steel takes it all: the legacy elastic exchange
 			return result;
 		}
@@ -189,6 +234,8 @@ hit_result hit(end_state const &First, end_state const &Second, hit_input const 
 	auto time{0.0};
 	auto rebound{false};
 	auto crushtime{0.0};
+	auto work{0.0};
+	auto cap{0.0}; // the force the crush went at last
 	while (Input.dt - time > 1e-12) {
 		auto const force1{First.curve.force(crush1)};
 		auto const force2{Second.curve.force(crush2)};
@@ -205,7 +252,19 @@ hit_result hit(end_state const &First, end_state const &Second, hit_input const 
 			step = (velocity - limit) * mass / force;
 			change = velocity - limit;
 		}
-		auto const crush{(velocity - 0.5 * change) * step};
+		auto crush{(velocity - 0.5 * change) * step};
+		auto spent{false};
+		if (work + force * crush > Input.budget) {
+			// the energy of the hit past the buffers runs out in the slice: the crush goes as far as it takes, the
+			// buffers of EN 15551 would take in the rest
+			auto const share{std::clamp((Input.budget - work) / std::max(force * crush, 1e-12), 0.0, 1.0)};
+			step *= share;
+			change *= share;
+			crush *= share;
+			spent = true;
+		}
+		work += force * crush;
+		cap = force;
 		// the weaker end gives, both alike when they're alike
 		if (std::abs(force1 - force2) <= 1e-9 * force) {
 			crush1 += 0.5 * crush;
@@ -221,14 +280,20 @@ hit_result hit(end_state const &First, end_state const &Second, hit_input const 
 		time += step;
 		crushtime += step;
 		result.force = std::max(result.force, force);
+		if (spent) {
+			result.spent = true;
+			rebound = true;
+			break;
+		}
 	}
 
 	auto after{velocity};
 	auto duration{crushtime};
 	if (rebound) {
 		// the steel springs back with the restitution, the springs push the pair apart over the rest of the step
-		// under the force the weaker end gives at, as the slices stopped there
-		result.force = std::max(result.force, springs + velocity * root);
+		// under the force the weaker end gives at, as the slices stopped there. a crush stopped at the budget: the
+		// buffers of EN 15551 would have taken in the rest, its force no more than what crushes the end
+		result.force = std::max(result.force, result.spent ? std::min(springs + velocity * root, cap) : springs + velocity * root);
 		if (velocity > 0.0) {
 			duration += (1.0 + restitution) * velocity * mass / std::max(velocity * root, 1.0);
 		}
@@ -239,6 +304,7 @@ hit_result hit(end_state const &First, end_state const &Second, hit_input const 
 	result.duration = std::min(duration, Input.dt);
 	result.crush1 = crush1 - First.crush;
 	result.crush2 = crush2 - Second.crush;
+	result.work = work;
 	return result;
 }
 

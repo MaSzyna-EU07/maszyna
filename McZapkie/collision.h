@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <limits>
 #include <optional>
 
 #include "couplerphysics.h"
@@ -17,7 +18,8 @@ http://mozilla.org/MPL/2.0/.
 // TMoverParameters::CollisionDetect()), as plain functions of the vehicles and the hit:
 //
 // crush: once the buffers of the pair are pressed all the way, the underframes carry the rest of the hit, up to the
-//   force the weaker end gives at. past it the end crushes for good: a short peak of force, then a lower plateau as
+//   force the weaker end gives at. only the energy the hit brings past what the buffers of EN 15551 of both ends take
+//   in can crush them (contact_energy): a hit the buffers would take, or the push of a train at a stand, never does. past it the end crushes for good: a short peak of force, then a lower plateau as
 //   the structure folds, then it packs down and stiffens (the force-crush curves of the full scale tests of the FRA:
 //   Tyrell et al., IMECE2002-33247). the hit is an impulse limited to that force over the step, so the force never
 //   goes past it and the depth of the crush is the same with any step; the depth stays with the end
@@ -64,6 +66,15 @@ enum class vehicle_kind {
 // do (2 MN of the crash buffers in service)
 crush_curve default_crush(vehicle_kind Kind);
 
+// the buffers of EN 15551, by their category
+enum class buffer_category {
+	A, // 105 mm, 30 kJ
+	B, // 105 mm, 50 kJ
+	C, // 105 mm, 70 kJ
+	L, // the long stroke, 150 mm
+	passenger // 110 mm, of the coaches
+};
+
 // the optional keys of the .fiz for an end (BuffCoupl): what's not given comes from the kind of the vehicle
 struct end_definition {
 	std::optional<double> peak; // FcrushPeak [N]
@@ -75,6 +86,7 @@ struct end_definition {
 	std::optional<bool> crash_zone; // CrashZone: built to EN 15227
 	std::optional<bool> anticlimber; // AntiClimber
 	std::optional<double> buffer_height; // BufferHeight, of the empty vehicle above the rail [m]
+	std::optional<buffer_category> buffers; // BufferCategory
 };
 vehicle_kind kind_of(bool Powered, bool Passenger, bool CrashZone);
 crush_curve crush_of(end_definition const &Definition, vehicle_kind Kind);
@@ -85,13 +97,6 @@ double buffer_height(end_definition const &Definition, vehicle_kind Kind, double
 
 // ---- the buffers, EN 15551
 
-enum class buffer_category {
-	A, // 105 mm, 30 kJ
-	B, // 105 mm, 50 kJ
-	C, // 105 mm, 70 kJ
-	L, // the long stroke, 150 mm
-	passenger // 110 mm, of the coaches
-};
 struct buffer_rating {
 	double stroke{0.105}; // [m]
 	double energy{30.0e3}; // dynamic energy of one buffer [J]
@@ -101,6 +106,45 @@ buffer_rating rating(buffer_category Category);
 // over the stroke
 coupler_physics::spring_curve buffer_curve(buffer_category Category, double Progression);
 std::optional<buffer_category> buffer_category_of(char Name);
+// the buffers of an end without the category given: of category A, those of a coach of its own category (EN 15551,
+// 30 kJ a buffer either way)
+buffer_category default_buffers(vehicle_kind Kind);
+// the energy the two buffers of an end take in over their stroke, of the category given or the default of the kind [J]
+double buffer_capacity(end_definition const &Definition, vehicle_kind Kind);
+
+// ---- the energy of a hit, for the crush
+
+// the energy budget of the crush in a contact of two ends. what a hit brings to the stop of the buffers is the kinetic
+// energy of the relative motion of the pair there, and what its buffers took in on the way (the springs of the .fiz,
+// which may take less than the buffers of EN 15551 would). the buffers of EN 15551 of both ends take in their
+// capacity of it first, the crush may take only the rest:
+//   budget = 1/2 mu v^2 - max(0, capacity - absorbed)
+// over the steps of a crush the crush done already is in neither term, so the crush of the whole hit never takes more
+// than the hit brought past the buffers. the train behind the pair pushing it on through the crush brings in more:
+// it's in the velocity the pair closes in with in the next step. the buffers take in in the stroke under way: the
+// buffers pressed and the pair closing in. springing back they keep what they still hold, so a train pushing at a
+// stand never builds up what it feeds into their damping. the buffers pressed all the way from the start of the
+// contact took in nothing: vehicles put down inside each other, or knocked onto each other by a hit elsewhere, bring
+// in only the kinetic energy they close in with
+class contact_energy {
+public:
+	// the step of the pair: whether its buffers press, and all the way; the closing velocity [m/s] and the force
+	// pressing the buffers [N] at the start of the step; how far they're pressed in [m]; the length of the step [s]
+	void update(bool Pressed, bool Solid, double Closing, double Force, double Compression, double Dt);
+	// the crush of the hit took the energy [J]
+	void crushed(double Work);
+	// the energy the crush may take now, closing in at the velocity [m/s] with the reduced mass [kg], the buffers of
+	// both ends taking in the capacity [J]; zero or less, the hit stays elastic
+	double budget(double Mass, double Closing, double Capacity) const;
+	// what the buffers took in in the stroke under way [J], and the crush in the contact
+	double absorbed() const { return m_absorbed; }
+	double crush_work() const { return m_crushed; }
+	void reset();
+
+private:
+	double m_absorbed{0.0};
+	double m_crushed{0.0};
+};
 
 // ---- the hit past the buffers
 
@@ -121,6 +165,9 @@ struct hit_input {
 	// the closing velocity the pair started the step with, before the forces of the step [m/s]; without it (0), the
 	// velocity with what the springs took off it over the step
 	double start_velocity{0.0};
+	// the energy the crush may take at most [J] (contact_energy::budget()); none left, the hit stays elastic, and the
+	// crush stops once it took it, the rest springs back as the buffers would have taken it
+	double budget{std::numeric_limits<double>::infinity()};
 };
 
 struct hit_result {
@@ -131,6 +178,8 @@ struct hit_result {
 	double duration{0.0}; // how long that force acted over the step [s]
 	double crush1{0.0}; // added to the end of the first vehicle [m]
 	double crush2{0.0}; // of the second one
+	double work{0.0}; // the crush took [J]
+	bool spent{false}; // the crush stopped at the budget
 };
 
 // the hit of the step: the steel takes the hit elastically up to the force the weaker end gives at, past that the end

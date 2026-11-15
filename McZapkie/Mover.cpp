@@ -1623,6 +1623,11 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	// the monitor takes the whole hit at once, over a second, longer than the crush of any hit lasts
 	input.dt = monitor ? 1.0 : dt;
 	input.start_velocity = thiscoupler.closing;
+	// the crush takes only what the hit brings past what the buffers of EN 15551 of both ends take in
+	auto const reduced{mass * othermass / (mass + othermass)};
+	auto const capacity{collision::buffer_capacity(thiscoupler.collision, collision_kind()) + collision::buffer_capacity(othercoupler.collision, othervehicle->collision_kind())};
+	auto const hitvelocity{std::max(closing, thiscoupler.closing)};
+	input.budget = thiscoupler.contact.budget(reduced, hitvelocity, capacity);
 	auto const hit{collision::hit({firstcurve, thiscoupler.crush}, {secondcurve, othercoupler.crush}, input)};
 	// the override, by the crush of both ends
 	auto const climbing_of = [&](double const Crush1, double const Crush2) {
@@ -1664,7 +1669,6 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	{
 		// the steel takes it, the legacy collision follows; its peak, under the force an end gives at, for the push
 		// off the track
-		auto const reduced{mass * othermass / (mass + othermass)};
 		auto const weaker{std::min(firstcurve.force(thiscoupler.crush), secondcurve.force(othercoupler.crush))};
 		auto const peak{std::min(springs + coupler_physics::impact_force(closing, stiffness, mass, othermass), weaker)};
 		auto const duration{std::min(dt, (1.0 + input.restitution) * std::sqrt(reduced / stiffness))};
@@ -1691,13 +1695,19 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	record_hit(thiscoupler, hit.force, hit.duration);
 	record_hit(othercoupler, hit.force, hit.duration);
 
+	// the energy the crush took, for both vehicles' count of the contact
+	thiscoupler.contact.crushed(hit.work);
+	othercoupler.contact.crushed(hit.work);
 	// what the log tells of the pair, for the analysis of a crush
+	auto const kinetic{0.5 * reduced * hitvelocity * hitvelocity};
 	auto const pair = [&]() {
 		return std::format("{} {:.1f} t {}, {} end crushed {:.2f} m, gives at {:.0f} kN; {} {:.1f} t {}, {} end crushed {:.2f} m, gives at {:.0f} kN; force {:.0f} kN, springs {:.0f} kN, "
-		                   "closing at {:.1f} km/h at the start of the step",
+		                   "closing at {:.1f} km/h at the start of the step; energy {:.0f} kJ of the motion and {:.0f} kJ in the buffers, past the {:.0f} kJ they take in, "
+		                   "{:.0f} kJ crushed in the contact",
 		                   Name, TotalMass / 1000.0, kind_name(collision_kind()), end_name(End), thiscoupler.crush, firstcurve.force(thiscoupler.crush) / 1000.0, othervehicle->Name,
 		                   othervehicle->TotalMass / 1000.0, kind_name(othervehicle->collision_kind()), end_name(otherend), othercoupler.crush,
-		                   secondcurve.force(othercoupler.crush) / 1000.0, hit.force / 1000.0, springs / 1000.0, input.start_velocity * 3.6);
+		                   secondcurve.force(othercoupler.crush) / 1000.0, hit.force / 1000.0, springs / 1000.0, input.start_velocity * 3.6, kinetic / 1000.0,
+		                   thiscoupler.contact.absorbed() / 1000.0, capacity / 1000.0, thiscoupler.contact.crush_work() / 1000.0);
 	};
 	auto const crushed = [&](TMoverParameters const &Vehicle, int const VehicleEnd, double const Before, double const After) {
 		if (Before < collision::crush_mark && After >= collision::crush_mark)
@@ -5819,9 +5829,15 @@ void TMoverParameters::ComputeTotalForce(double dt)
 			Couplers[end].closing = -CouplerVelocityDifference(end, *Neighbours[end].vehicle->MoverParameters, Neighbours[end].vehicle_end) * DirF(end);
 			Couplers[end].CForce = CouplerForce(end, dt);
 			FTrain += Couplers[end].CForce;
+			// what the buffers of the pair take in, for the budget of the crush (physics.collisions new and monitor)
+			auto &coupler{Couplers[end]};
+			coupler.contact.update(coupler.Dist < 0.0, coupler.CheckCollision, coupler.closing, compression_at(coupler, end), std::max(0.0, -coupler.Dist), dt);
 		}
 		else
+		{
 			Couplers[end].CForce = 0;
+			Couplers[end].contact.reset();
+		}
 	}
 
 	FStand += Fb;
@@ -11928,6 +11944,7 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		thiscoupler->physics.buffers = collision::buffer_curve(*category, thiscoupler->physics.buffers.progression);
 	}
 	thiscoupler->collision = collision_definition(line);
+	thiscoupler->collision.buffers = category;
 
 	if (Index == 0)
 	{
