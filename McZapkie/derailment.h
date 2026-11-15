@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <string>
+#include <string_view>
 
 // the criteria of a vehicle leaving the rails, as plain functions of what the vehicle and the track under it are
 // like, so the collisions and the buckled track can use them as well as the speed in a curve does
@@ -201,5 +203,10 @@ private:
 inline constexpr double off_rails_friction{0.3};
 inline constexpr double overturned_friction{0.5};
 double sliding_friction(outcome Outcome);
+
+// what the criteria found, for the log: "overturned at 113 km/h on track t1, curve radius 300 m, cant 0 mm: lateral
+// acceleration ..., wheel unloading ..., Y/Q ... (mass ..., centre of gravity ..., couplings pushing ... / ... kN,
+// track damage ..., cross level ... mm)"
+std::string report(verdict const &Verdict, vehicle_state const &Vehicle, track_state const &Track, double Velocity, std::string_view TrackName);
 
 } // namespace derailment

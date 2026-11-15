@@ -278,3 +278,24 @@ TEST_CASE("derailment: the damage flags of the track make the ride rougher, not 
 		CHECK(dr::body_acceleration(eu07vehicle, worn, 30.0) - dr::body_acceleration(eu07vehicle, good, 30.0) == doctest::Approx(1.1 * dr::vibration));
 	}
 }
+
+TEST_CASE("derailment: the report of the log") {
+	dr::verdict verdict;
+	verdict.result = dr::outcome::overturned;
+	verdict.acceleration = 3.31;
+	verdict.unloading = 1.02;
+	verdict.flange_ratio = 0.55;
+	dr::vehicle_state vehicle;
+	vehicle.mass = 80000.0;
+	vehicle.centre_of_gravity = 1.65;
+	vehicle.ends[1].compression = 50000.0;
+	dr::track_state track;
+	track.radius = -300.0;
+	track.damage = 31;
+	auto const text{dr::report(verdict, vehicle, track, 113.0 / 3.6, "track_7")};
+	CHECK(text ==
+	      "overturned at 113 km/h on track track_7, curve radius 300 m, cant 0 mm: lateral acceleration 3.31 m/s2, wheel unloading 1.02, Y/Q 0.55 (mass 80.0 t, centre of gravity 1.65 m,"
+	      " couplings pushing 0 / 50 kN, track damage 31, cross level 0 mm)");
+	verdict.result = dr::outcome::off_rails;
+	CHECK(dr::report(verdict, vehicle, track, 20.0, "").starts_with("derailed, the flange climbed the rail at 72 km/h on track (none),"));
+}

@@ -179,6 +179,7 @@ TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 	TTrackParam param;
 	param.Width = Track.width;
 	param.friction = Track.friction;
+	param.Name = &Track.name;
 	// the vehicle's own kind of way: a road vehicle on rails derails as soon as it moves
 	if (Track.category != 0) {
 		param.CategoryFlag = Track.category;

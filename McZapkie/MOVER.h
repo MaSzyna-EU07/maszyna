@@ -712,6 +712,8 @@ struct TTrackParam
 	int DamageFlag = 0;
 	/// <summary>Maximum allowed velocity on this segment (used by AI driver).</summary>
 	double Velmax; /*dla uzytku maszynisty w ai_driver*/
+	/// <summary>Name of the track, for the log; nullptr where there is none.</summary>
+	std::string const *Name = nullptr;
 };
 
 /// <summary>Traction-supply parameters at the vehicle's current location.</summary>
@@ -2049,6 +2051,10 @@ class TMoverParameters
 	// the criteria of derailment (physics.derailment new), and the distance travelled since they were checked [m]
 	derailment::monitor derailment_monitor;
 	double derailment_distance = 0.0;
+	// physics.derailment monitor: the name of the track the criteria were last reported on (one report on a track), and
+	// how many reports there were
+	std::optional<std::string const *> derailment_reported;
+	int derailment_reports = 0;
 	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
@@ -2435,10 +2441,11 @@ class TMoverParameters
 	// was a broken coupler to repair
 	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
-	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]
+	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]; monitor: what
+	// they would do, to the log
 	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
 	// the vehicle leaves the rails, as the criteria of derailment.h found
-	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track);
+	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName = nullptr);
 	// height of the centre of gravity above the rail with the load [m]
 	double centre_of_gravity() const;
 	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other

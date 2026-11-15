@@ -293,8 +293,9 @@ struct global_settings {
 	// a vehicle too fast in a curve (physics.derailment in eu07.ini): new, it overturns or its flange climbs the rail
 	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
 	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
-	// it; off, it stays on the rails at any speed
-	enum class derailment_model { off, old, physical };
+	// it; off, it stays on the rails at any speed; monitor, the legacy draw decides and the log tells where the criteria
+	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was
+	enum class derailment_model { off, old, physical, monitor };
 	derailment_model derailment = derailment_model::physical;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
@@ -444,6 +445,23 @@ global_settings::export_as_text( std::ostream &Output, std::string const Key, st
 template <>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, bool const &Value ) const;
+
+// the models of physics.derailment by their names in eu07.ini: new (the default, also for a name it doesn't know), old, off
+// or no, monitor
+inline global_settings::derailment_model derailment_model_of(std::string_view const Name) {
+    if( Name == "old" ) { return global_settings::derailment_model::old; }
+    if( Name == "off" || Name == "no" ) { return global_settings::derailment_model::off; }
+    if( Name == "monitor" ) { return global_settings::derailment_model::monitor; }
+    return global_settings::derailment_model::physical;
+}
+inline std::string_view name_of( global_settings::derailment_model const Model ) {
+    switch( Model ) {
+        case global_settings::derailment_model::old: { return "old"; }
+        case global_settings::derailment_model::off: { return "off"; }
+        case global_settings::derailment_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
 
 extern global_settings& GetGlobalSettings();
 
