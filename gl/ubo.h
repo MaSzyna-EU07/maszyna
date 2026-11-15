@@ -208,8 +208,7 @@ namespace gl
         glm::vec4 camera_lo;
         // the rain the glass meets (mat_rain_windscreen): x the rain fallen so far, in seconds of the heaviest rain standing still (more
         // at speed: the glass runs into it); y how wet the glass is, 0 dry .. 1 as full of drops as it gets (it fills with the rain,
-        // dries when it stops); z how fast the glass fills: the share left to fill goes down as exp(-z x the rain fallen); w the clock of
-        // the drops, s: it runs while it rains, so the glass keeps its last drops while it dries
+        // dries when it stops); z how fast the glass fills: the share left to fill goes down as exp(-z x the rain fallen); w unused
         glm::vec4 rain_state;
         // the rain fallen (rain_state.x) when a blade last went over a place of its sweep: element b for the places b / 64 .. (b + 1)
         // / 64 of dWiperPos (the value of the wiper mask of a pixel), x .. w the blades (as wiper_pos); -1 not known. the drops and the

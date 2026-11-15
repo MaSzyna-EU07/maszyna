@@ -6,7 +6,7 @@
 
 #include "common.glsl"
 
-layout(location = 0) uniform float rain_time;   // the clock of the rain (scene_ubs.rain_state.w): it runs while it rains, the drops stay as they are when it stops
+layout(location = 0) uniform float rain_time;   // the time of the block of the scene (scene_ubs.time)
 layout(location = 1) uniform float rain_amount; // how wet the glass is (scene_ubs.rain_state.y, a little more)
 layout(location = 2) uniform int   rain_pass;   // 0 the cells, 1 the reach of the drops
 

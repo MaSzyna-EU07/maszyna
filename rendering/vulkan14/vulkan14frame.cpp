@@ -1048,7 +1048,7 @@ void vulkan14_renderer::render_scene()
 	scene.water.update(Timer::GetDeltaTime());
 	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
 	// (the drops a cell may hold: as many as the glass is wet, a little more, since it's the wetness of the frame before)
-	scene.water.update_rain_cells(static_cast<float>(m_raintime), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());
@@ -1517,28 +1517,20 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 			m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
 		scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
 		// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
-		// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly), and
-		// dries when it stops (by half in dry_halflife standing still, faster at speed)
+		// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly) while
+		// it rains, and is clear at once when it doesn't (the rain stopped, or the glass holds snow)
 		{
 			constexpr double fill_rate{0.3};      // per second of the heaviest rain: 95% full in 10 s (20 s at cloud cover 1.5)
 			constexpr double fill_speed{1.5};     // at 100 km/h and more the glass meets x (1 + fill_speed) as much rain
-			constexpr double dry_halflife{180.0}; // seconds standing still
 			auto const dt{Timer::GetDeltaTime()};
 			auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
 			auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
 			m_wiperrain += dt * meet;
-			// the glass gets wet with the rain only (the snow lies on it, the glass of the snow melts it into its own water), and its
-			// drops live by the clock of the rain, which stands while it doesn't rain: the rain stopped, the glass keeps its last drops
-			// and rivulets where they are while it dries
-			auto const raining{(percipitation_intensity > 0.f) && (Global.Weather == "rain:")};
-			if (raining)
-			{
+			if ((percipitation_intensity > 0.f) && (Global.Weather == "rain:"))
 				m_glasswet += (1.0 - m_glasswet) * (1.0 - std::exp(-fill_rate * dt * meet));
-				m_raintime += dt;
-			}
 			else
-				m_glasswet *= std::exp(-dt * std::log(2.0) / dry_halflife * (1.0 + 2.0 * speed));
-			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), static_cast<float>(m_raintime)};
+				m_glasswet = 0.0;
+			scene_ubs.rain_state = glm::vec4{static_cast<float>(m_wiperrain), static_cast<float>(m_glasswet), static_cast<float>(fill_rate), 0.f};
 		}
 		if (owner != nullptr)
 		{
