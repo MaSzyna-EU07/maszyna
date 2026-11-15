@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-// collisions past the buffers with physics.derailment new (McZapkie/collision.h): the crush of the ends, the override,
+// collisions past the buffers with physics.collisions new (McZapkie/collision.h): the crush of the ends, the override,
 // the push off the track, and what they do in trains of real vehicles
 
 using test::consist;
@@ -23,16 +23,16 @@ namespace {
 
 constexpr double kmh{1.0 / 3.6};
 
-// the given model of derailment for the test, restored after it
+// the given model of collisions for the test, restored after it
 class model_setting {
 public:
-	explicit model_setting(global_settings::derailment_model Model) : m_previous{Global.derailment} { Global.derailment = Model; }
-	~model_setting() { Global.derailment = m_previous; }
+	explicit model_setting(global_settings::collision_model Model) : m_previous{Global.collisions} { Global.collisions = Model; }
+	~model_setting() { Global.collisions = m_previous; }
 	model_setting(model_setting const &) = delete;
 	model_setting &operator=(model_setting const &) = delete;
 
 private:
-	global_settings::derailment_model m_previous;
+	global_settings::collision_model m_previous;
 };
 
 // the given setting of a global flag for the test, restored after it
@@ -453,7 +453,7 @@ TEST_CASE("collisions: an empty two-axle wagon between loaded ones in a curve of
 
 // ---- the model of eu07.ini
 
-TEST_CASE("collisions: the legacy rule with physics.derailment old, the crush with new") {
+TEST_CASE("collisions: the legacy rule with physics.collisions old, the crush with new") {
 	flag_setting const crashdamage{Global.crash_damage, true};
 	struct collision {
 		char const *name;
@@ -464,18 +464,22 @@ TEST_CASE("collisions: the legacy rule with physics.derailment old, the crush wi
 		bool backout_old;
 		bool frontout_new;
 		bool backout_new;
+		int monitored; // the hits the monitor tells of
 	};
 	// the legacy rule: over 15 km/h weighed by the ratio of the masses. the crush: the light wagon is crushed deep and
 	// climbs onto the locomotive at 60 km/h; two locomotives at 25 km/h crush their ends 0.1-0.3 m and stay on the rails
-	for (auto const &[name, front, back, speed, frontout_old, backout_old, frontout_new, backout_new] : {
-	         collision{"locomotive into a wagon at 60", "3wl_v2/3wl", "4e_v1/4e", 60.0, true, false, true, false},
-	         collision{"locomotive into a locomotive at 25", "4e_v1/4e", "4e_v1/4e", 25.0, true, true, false, false},
-	         collision{"locomotive into a locomotive at 50", "4e_v1/4e", "4e_v1/4e", 50.0, true, true, true, true},
+	// the monitor tells of each hit once: the wagon derailed by the legacy rule is a wall, which the locomotive behind
+	// it hits once more; the locomotives derailed both stay where they are
+	for (auto const &[name, front, back, speed, frontout_old, backout_old, frontout_new, backout_new, monitored] : {
+	         collision{"locomotive into a wagon at 60", "3wl_v2/3wl", "4e_v1/4e", 60.0, true, false, true, false, 2},
+	         collision{"locomotive into a locomotive at 25", "4e_v1/4e", "4e_v1/4e", 25.0, true, true, false, false, 1},
+	         collision{"locomotive into a locomotive at 50", "4e_v1/4e", "4e_v1/4e", 50.0, true, true, true, true, 1},
 	     }) {
 		CAPTURE(name);
-		for (auto const model : {global_settings::derailment_model::old, global_settings::derailment_model::physical}) {
-			auto const physical{model == global_settings::derailment_model::physical};
-			CAPTURE(physical);
+		// monitor: the legacy rule, and the log tells of the crush once
+		for (auto const model : {global_settings::collision_model::old, global_settings::collision_model::physical, global_settings::collision_model::monitor}) {
+			auto const physical{model == global_settings::collision_model::physical};
+			CAPTURE(name_of(model));
 			model_setting const setting{model};
 			consist train;
 			train.add(definition::fiz(front));
@@ -491,12 +495,46 @@ TEST_CASE("collisions: the legacy rule with physics.derailment old, the crush wi
 			else {
 				CHECK(crush == 0.0);
 			}
+			CHECK(train[0]->crush_reports + train[1]->crush_reports == (model == global_settings::collision_model::monitor ? monitored : 0));
+		}
+	}
+}
+
+TEST_CASE("collisions: the names of the models in eu07.ini") {
+	using model = global_settings::collision_model;
+	CHECK(collision_model_of("new") == model::physical);
+	CHECK(collision_model_of("old") == model::old);
+	CHECK(collision_model_of("monitor") == model::monitor);
+	// a name it doesn't know is the default
+	CHECK(collision_model_of("physical") == model::physical);
+	CHECK(global_settings{}.collisions == model::physical);
+	for (auto const value : {model::old, model::physical, model::monitor}) {
+		CHECK(collision_model_of(name_of(value)) == value);
+	}
+	CHECK(name_of(model::physical) == "new");
+}
+
+TEST_CASE("collisions: the model of the collisions goes apart from the one of the derailment") {
+	// the crush with the legacy draw of the derailment in a curve, the legacy collisions with the criteria
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const derailment : {global_settings::derailment_model::old, global_settings::derailment_model::physical}) {
+		for (auto const collisions : {global_settings::collision_model::old, global_settings::collision_model::physical}) {
+			auto const previous{Global.derailment};
+			Global.derailment = derailment;
+			model_setting const setting{collisions};
+			consist train;
+			train.add(definition::fiz("4e_v1/4e"));
+			train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 25.0, 20.0);
+			train.run(10.0);
+			Global.derailment = previous;
+			auto const crush{train[0]->Couplers[end::rear].crush + train[1]->Couplers[end::front].crush};
+			CHECK((crush > 0.05) == (collisions == global_settings::collision_model::physical));
 		}
 	}
 }
 
 TEST_CASE("collisions: the crush of a locomotive hitting a wagon doesn't depend on the step, nor on the model of the coupling") {
-	model_setting const physical{global_settings::derailment_model::physical};
+	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	for (auto const physics : {false, true}) {
 		CAPTURE(physics);
@@ -523,7 +561,7 @@ TEST_CASE("collisions: the crush of a locomotive hitting a wagon doesn't depend 
 }
 
 TEST_CASE("collisions: automatic couplers hit too fast don't catch, the ends crush; torn off, they don't couple again") {
-	model_setting const physical{global_settings::derailment_model::physical};
+	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	auto const automatic{definition::load("wagon").set("BuffCoupl", "CType", "Automatic").set("BuffCoupl", "AutomaticFlag", coupling::coupler | coupling::brakehose)};
 	for (auto const speed : {20.0, 30.0, 45.0}) {
@@ -557,9 +595,9 @@ TEST_CASE("collisions: automatic couplers hit too fast don't catch, the ends cru
 
 TEST_CASE("collisions: road vehicles keep the legacy rule") {
 	// the traffic of a scenery: cars and buses have no underframe to crush; over 15 km/h weighed by the masses they
-	// derail, as with physics.derailment old (found running line 107: two cars of its traffic, 119 km/h head-on)
+	// derail, as with physics.collisions old (found running line 107: two cars of its traffic, 119 km/h head-on)
 	flag_setting const crashdamage{Global.crash_damage, true};
-	for (auto const model : {global_settings::derailment_model::old, global_settings::derailment_model::physical}) {
+	for (auto const model : {global_settings::collision_model::old, global_settings::collision_model::physical, global_settings::collision_model::monitor}) {
 		model_setting const setting{model};
 		consist road;
 		road.add(definition::fiz("road/man/nl293"));
@@ -569,11 +607,12 @@ TEST_CASE("collisions: road vehicles keep the legacy rule") {
 		CHECK(derailed(road[1].mover()));
 		CHECK(road[0]->Couplers[end::rear].crush == 0.0);
 		CHECK(road[1]->CollisionDerail == NONE);
+		CHECK(road[0]->crush_reports + road[1]->crush_reports == 0);
 	}
 }
 
 TEST_CASE("collisions: a vehicle off the rails by the new model stays in the chain of forces") {
-	model_setting const physical{global_settings::derailment_model::physical};
+	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	consist train;
 	auto &wagon{train.add(definition::fiz("430w_v2/430w"))};
@@ -595,7 +634,7 @@ TEST_CASE("collisions: a vehicle off the rails by the new model stays in the cha
 }
 
 TEST_CASE("collisions: a freight train running into a standing one, the cases of the PoC of G14") {
-	model_setting const physical{global_settings::derailment_model::physical};
+	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	struct crash {
 		double speed;
@@ -616,7 +655,7 @@ TEST_CASE("collisions: a freight train running into a standing one, the cases of
 }
 
 TEST_CASE("collisions: identical units built to EN 15227 at 36 km/h") {
-	model_setting const physical{global_settings::derailment_model::physical};
+	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
 	// two coaches of data/wagon.json (42.2 t) a unit, their ends crash zones with anticlimbers, unbraked
 	auto const unit = [](bool const Anticlimbers, double const Height) {

@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "couplerphysics.h"
 
-// what a collision of two vehicles does to them past their buffers (physics.derailment new in eu07.ini, see
+// what a collision of two vehicles does to them past their buffers (physics.collisions new in eu07.ini, see
 // TMoverParameters::CollisionDetect()), as plain functions of the vehicles and the hit:
 //
 // crush: once the buffers of the pair are pressed all the way, the underframes carry the rest of the hit, up to the

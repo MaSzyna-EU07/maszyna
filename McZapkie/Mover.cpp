@@ -1338,12 +1338,18 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
 	auto const physical{coupler_physics_at(End)};
-	// physics.derailment new: past the buffers the ends of rail vehicles crush (collision.h); a hit the steel takes stays
+	// physics.collisions new: past the buffers the ends of rail vehicles crush (collision.h); a hit the steel takes stays
 	// the legacy one, and so do the collisions of the road vehicles (the traffic of a scenery), with the legacy rule
-	auto const crushing{Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && TestFlag(othervehicle->CategoryFlag, 1)};
+	auto const rails{TestFlag(CategoryFlag, 1) && TestFlag(othervehicle->CategoryFlag, 1)};
+	auto const crushing{Global.collisions == global_settings::collision_model::physical && rails};
 	if (crushing && (thiscoupler.hit_handled || crush_hit(End, dt)))
 	{
 		return;
+	}
+	// physics.collisions monitor: the legacy collision follows, the log tells what the crush would be
+	if (Global.collisions == global_settings::collision_model::monitor && rails)
+	{
+		crush_hit(End, dt);
 	}
 	if (physical && false == coupler_stop_hit(End, *othervehicle, otherend))
 	{
@@ -1476,7 +1482,7 @@ void TMoverParameters::damage_coupler(int const End)
 }
 
 // *************************************************************************************************
-// physics.derailment new: the collisions past the buffers, see collision.h
+// physics.collisions new: the collisions past the buffers, see collision.h
 // *************************************************************************************************
 collision::vehicle_kind TMoverParameters::collision_kind() const
 {
@@ -1585,8 +1591,12 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	auto const closing{-CouplerVelocityDifference(End, *othervehicle, otherend) * DirF(End)};
 	if (false == Global.crash_damage || false == buffers || closing <= 0.0)
 	{
+		// the hit is over, the next one is another one for the monitor
+		thiscoupler.crush_monitored = false;
+		othercoupler.crush_monitored = false;
 		return false;
 	}
+	auto const monitor{Global.collisions == global_settings::collision_model::monitor};
 	// a vehicle derailed the legacy way (the end of the track, say) stays where it is, whatever hits it
 	auto const wall{TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
 	auto const otherwall{TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
@@ -1610,9 +1620,46 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	input.restitution = std::sqrt(std::max(0.0, 1.0 - loss));
 	input.stiffness = stiffness;
 	input.springs = springs;
-	input.dt = dt;
+	// the monitor takes the whole hit at once, over a second, longer than the crush of any hit lasts
+	input.dt = monitor ? 1.0 : dt;
 	input.start_velocity = thiscoupler.closing;
 	auto const hit{collision::hit({firstcurve, thiscoupler.crush}, {secondcurve, othercoupler.crush}, input)};
+	// the override, by the crush of both ends
+	auto const climbing_of = [&](double const Crush1, double const Crush2) {
+		collision::override_input climbing;
+		climbing.crush1 = Crush1;
+		climbing.crush2 = Crush2;
+		climbing.mass1 = TotalMass - Mred;
+		climbing.mass2 = othervehicle->TotalMass - othervehicle->Mred;
+		climbing.height1 = buffer_height_at(End);
+		climbing.height2 = othervehicle->buffer_height_at(otherend);
+		climbing.anticlimbers = collision::anticlimber_of(thiscoupler.collision, collision_kind()) && collision::anticlimber_of(othercoupler.collision, othervehicle->collision_kind());
+		climbing.zone1 = firstcurve.densify;
+		climbing.zone2 = secondcurve.densify;
+		return climbing;
+	};
+	if (monitor)
+	{
+		if (hit.crushing && false == thiscoupler.crush_monitored)
+		{
+			thiscoupler.crush_monitored = true;
+			othercoupler.crush_monitored = true;
+			++crush_reports;
+			auto const crush1{thiscoupler.crush + hit.crush1};
+			auto const crush2{othercoupler.crush + hit.crush2};
+			auto const climbed{collision::override_of(climbing_of(crush1, crush2))};
+			auto const torn{std::max(crush1, crush2) >= collision::draw_gear_crush};
+			std::string const outcome{climbed.first && climbed.second ? std::string{"both would leave the rails"}
+			                          : climbed.first                 ? Name + " would ride up onto " + othervehicle->Name
+			                          : climbed.second                ? othervehicle->Name + " would ride up onto " + Name
+			                                                          : std::string{"both would stay on the rails"}};
+			WriteLog(std::format("collision monitor: {} and {} collided at {:.0f} km/h: the {} end of {} ({:.1f} t {}) would crush by {:.2f} m, the {} end of {} ({:.1f} t {}) by {:.2f} m, "
+			                     "at {:.0f} kN; draw gear {}; {}",
+			                     Name, othervehicle->Name, closing * 3.6, end_name(End), Name, TotalMass / 1000.0, kind_name(collision_kind()), crush1, end_name(otherend), othervehicle->Name,
+			                     othervehicle->TotalMass / 1000.0, kind_name(othervehicle->collision_kind()), crush2, hit.force / 1000.0, torn ? "torn off" : "holds", outcome));
+		}
+		return false;
+	}
 	if (false == hit.crushing)
 	{
 		// the steel takes it, the legacy collision follows; its peak, under the force an end gives at, for the push
@@ -1689,16 +1736,7 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	}
 
 	// the end crushed deep enough lets one vehicle climb onto the other one
-	collision::override_input climbing;
-	climbing.crush1 = thiscoupler.crush;
-	climbing.crush2 = othercoupler.crush;
-	climbing.mass1 = TotalMass - Mred;
-	climbing.mass2 = othervehicle->TotalMass - othervehicle->Mred;
-	climbing.height1 = buffer_height_at(End);
-	climbing.height2 = othervehicle->buffer_height_at(otherend);
-	climbing.anticlimbers = collision::anticlimber_of(thiscoupler.collision, collision_kind()) && collision::anticlimber_of(othercoupler.collision, othervehicle->collision_kind());
-	climbing.zone1 = firstcurve.densify;
-	climbing.zone2 = secondcurve.densify;
+	auto const climbing{climbing_of(thiscoupler.crush, othercoupler.crush)};
 	auto const climbed{collision::override_of(climbing)};
 	auto const why = [&](TMoverParameters const &Climber, TMoverParameters const &Other) {
 		return std::format("{} rode up onto {} at {:.0f} km/h, the ends crushed by {:.2f} m, buffers at {:.0f} / {:.0f} mm, anticlimbers {} ({})", Climber.Name, Other.Name, closing * 3.6,
@@ -1717,7 +1755,7 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 
 void TMoverParameters::check_pushed_off(double const dt)
 {
-	if (Global.derailment != global_settings::derailment_model::physical || false == Global.crash_damage || TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) ||
+	if (Global.collisions != global_settings::collision_model::physical || false == Global.crash_damage || TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) ||
 	    DebugModeFlag)
 	{
 		pushed_off_monitor.reset();
@@ -5995,7 +6033,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	auto const initialdistance{Neighbours[End].distance}; // odległość od sprzęgu sąsiada
 	auto const distancedelta{(End == end::front ? othervehiclemove - dMoveLen : dMoveLen - othervehiclemove)};
 
-	// the ends crushed for good (physics.derailment new, see collision.h) let the buffers meet that much closer
+	// the ends crushed for good (physics.collisions new, see collision.h) let the buffers meet that much closer
 	auto const crushed{thiscoupler.crush + othercoupler.crush};
 	auto const rawdistance{initialdistance + 10.0 * distancedelta};
 	auto const newdistance{rawdistance < 0.0 ? std::min(0.0, rawdistance + crushed) : rawdistance};
@@ -6143,8 +6181,8 @@ void TMoverParameters::automatic_coupling(int const End, TMoverParameters &Other
 	{
 		return;
 	}
-	// a coupler torn off by the crush of its end (physics.derailment new) doesn't catch
-	if (Global.derailment == global_settings::derailment_model::physical && (thiscoupler.broken || othercoupler.broken))
+	// a coupler torn off by the crush of its end (physics.collisions new) doesn't catch
+	if (Global.collisions == global_settings::collision_model::physical && (thiscoupler.broken || othercoupler.broken))
 	{
 		return;
 	}
@@ -6281,8 +6319,8 @@ bool TMoverParameters::coupler_stop_hit(int const End, TMoverParameters &Other, 
 	auto const hit{coupler_physics::impact(thiscoupler.physics, othercoupler.physics, state, closing, TotalMass, Other.TotalMass)};
 	// the other vehicle keeps the state of the pair alike
 	othercoupler.physics_state.elongation = state.elongation;
-	// with physics.derailment new the crush of the ends past the buffers is crush_hit()'s
-	if (hit.broken || (hit.crushed && Global.derailment != global_settings::derailment_model::physical))
+	// with physics.collisions new the crush of the ends past the buffers is crush_hit()'s
+	if (hit.broken || (hit.crushed && Global.collisions != global_settings::collision_model::physical))
 	{
 		damage_coupler(End);
 	}
@@ -11755,7 +11793,7 @@ void scale_strength(coupler_physics::link_strength &Link, double const Factor)
 	Link.ultimate *= Factor;
 }
 
-// the optional keys of the collisions past the buffers (physics.derailment new, see collision.h), what's not given
+// the optional keys of the collisions past the buffers (physics.collisions new, see collision.h), what's not given
 // comes from the kind of the vehicle:
 //   FcrushPeak, FcrushPlateau [kN] the force the end starts to crush at, and keeps crushing at
 //   CrushOnset, CrushDensify, CrushLimit [m] the crush the peak drops at, it packs down past, it can't go past

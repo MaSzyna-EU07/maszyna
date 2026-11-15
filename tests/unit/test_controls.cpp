@@ -496,11 +496,11 @@ TEST_CASE("controls: a freight wagon loaded and braked") {
 }
 
 TEST_CASE("controls: a locomotive running into a standing wagon") {
-	// the legacy collisions of physics.derailment old: derailed, the wagon is a wall (test_collisions.cpp has the new)
+	// the legacy collisions of physics.collisions old: derailed, the wagon is a wall (test_collisions.cpp has the new)
 	struct legacy {
-		global_settings::derailment_model previous{Global.derailment};
-		legacy() { Global.derailment = global_settings::derailment_model::old; }
-		~legacy() { Global.derailment = previous; }
+		global_settings::collision_model previous{Global.collisions};
+		legacy() { Global.collisions = global_settings::collision_model::old; }
+		~legacy() { Global.collisions = previous; }
 		legacy(legacy const &) = delete;
 		legacy &operator=(legacy const &) = delete;
 	} const model;

@@ -296,6 +296,12 @@ struct global_settings {
 	// it; off, it stays on the rails at any speed
 	enum class derailment_model { off, old, physical };
 	derailment_model derailment = derailment_model::physical;
+	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
+	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
+	// closing speed weighed by the masses; monitor, the legacy rule decides and the log tells what the crush would be
+	// (collision monitor:, once for a hit). the road vehicles of the traffic keep the legacy rule with any
+	enum class collision_model { old, physical, monitor };
+	collision_model collisions = collision_model::physical;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
@@ -444,6 +450,21 @@ global_settings::export_as_text( std::ostream &Output, std::string const Key, st
 template <>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, bool const &Value ) const;
+
+// the models of physics.collisions by their names in eu07.ini: new (the default, also for a name it doesn't know), old,
+// monitor
+inline global_settings::collision_model collision_model_of( std::string_view const Name ) {
+    if( Name == "old" ) { return global_settings::collision_model::old; }
+    if( Name == "monitor" ) { return global_settings::collision_model::monitor; }
+    return global_settings::collision_model::physical;
+}
+inline std::string_view name_of( global_settings::collision_model const Model ) {
+    switch( Model ) {
+        case global_settings::collision_model::old: { return "old"; }
+        case global_settings::collision_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
 
 extern global_settings& GetGlobalSettings();
 

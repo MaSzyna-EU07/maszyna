@@ -49,17 +49,17 @@ private:
 	bool m_previous{Global.crash_damage};
 };
 
-// the legacy collisions of physics.derailment old for the test, restored after it: the rule of the safe closing speed
+// the legacy collisions of physics.collisions old for the test, restored after it: the rule of the safe closing speed
 // weighed by the ratio of the masses (the crush of the ends of the new model is in test_collisions.cpp)
 class legacy_collisions {
 public:
-	legacy_collisions() { Global.derailment = global_settings::derailment_model::old; }
-	~legacy_collisions() { Global.derailment = m_previous; }
+	legacy_collisions() { Global.collisions = global_settings::collision_model::old; }
+	~legacy_collisions() { Global.collisions = m_previous; }
 	legacy_collisions(legacy_collisions const &) = delete;
 	legacy_collisions &operator=(legacy_collisions const &) = delete;
 
 private:
-	global_settings::derailment_model m_previous{Global.derailment};
+	global_settings::collision_model m_previous{Global.collisions};
 };
 
 } // namespace
