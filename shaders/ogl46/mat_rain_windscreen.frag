@@ -406,7 +406,7 @@ float rivWob(Riv r, float dW, out float ramp, out float wobD)
     ramp        = rampT * rampT * (3.0 - 2.0 * rampT);
     float rampD = 3.0 * rampT * (1.0 - rampT) / 2.5;
     float a1    = dW * r.wavK + r.wavPh;
-    float a2    = dW * r.wavK * 1.7 - rain_state.w * r.wavSp * 1.0472 + r.wavPh * 2.0;   // the wave runs DOWN (the clock of the rain)
+    float a2    = dW * r.wavK * 1.7 - time * r.wavSp * 1.0472 + r.wavPh * 2.0;   // the wave runs DOWN
     float w1    = 0.7 * sin(a1) + 0.3 * sin(a2);
     float w1D   = 0.7 * cos(a1) * r.wavK + 0.3 * cos(a2) * r.wavK * 1.7;
     wobD        = -streak_wiggle * (rampD * w1 + ramp * w1D);
@@ -535,7 +535,7 @@ void drawRivulet(inout Hit hit, Riv r, vec2 sUVr, vec2 rd1, vec2 rd2)
                     vec2 slope = -nxy / max(nz, 0.08);
                     if (!inHead)
                         slope.y = slope.y * vtSign / STREAK_TAIL_SCALE - slope.x * wobD
-                                  + streak_flow * ramp * sin(dW * 4.8 - rain_state.w * 4.0);
+                                  + streak_flow * ramp * sin(dW * 4.8 - time * 4.0);
                     // the slope of the layer to the one of the glass
                     if (STREAK_FLIP_Y != 0) slope.y = -slope.y;
                     slope = wsFromLayerDir(slope);
@@ -787,7 +787,7 @@ void main()
             uvec2 mk  = cellKey(mc);
             uint  m0  = Hash(uvec3(mk, 51u));
             float mLife = micro_life * mix(0.6, 1.6, RandF(m0));
-            float mtt   = rain_state.w / mLife + RandF(m0);   // the clock of the rain: still when it doesn't rain
+            float mtt   = time / mLife + RandF(m0);
             float mph   = fract(mtt);
             uint  mep   = uint(mod(floor(mtt), 65521.0));
             uint  m1    = Hash(uvec3(mk, mep * 4u + 1u));
