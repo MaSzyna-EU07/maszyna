@@ -239,7 +239,13 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	::curl_easy_setopt(m_platform->curl, CURLOPT_URL, Url.c_str());
 	::curl_easy_setopt(m_platform->curl, CURLOPT_USERAGENT, "MaSzyna-editor");
 	if (auto const &certificates{certificates_file()}; false == certificates.empty())
+	{
 		::curl_easy_setopt(m_platform->curl, CURLOPT_CAINFO, certificates.c_str());
+#if LIBCURL_VERSION_NUM >= 0x073400
+		// an https proxy is checked with the same file
+		::curl_easy_setopt(m_platform->curl, CURLOPT_PROXY_CAINFO, certificates.c_str());
+#endif
+	}
 	::curl_easy_setopt(m_platform->curl, CURLOPT_FOLLOWLOCATION, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXREDIRS, 10L);
 	// http kept for the services the user types; nothing else, also where a redirect leads
