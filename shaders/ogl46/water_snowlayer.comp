@@ -1,11 +1,11 @@
 #version 460 core
 #define STAGE_COMPUTE 1
-// the snow on the windscreens (water_sim.glsl, water.glsl, snow_sprites.glsl): the snow of a glass of the snow laid together
-// from the sprites of its atlas into its layer, which mat_snow_windscreen.frag reads (the glass only reads it: laying the nine
-// grids of the lumps at every pixel of the glass in every frame cost as much as the rest of the frame). a thread per texel of
-// the layer (over the rectangle of the uv the glass takes, ~1 mm a texel), the glass is water_counts.z. the snow under a lump
-// changes slowly, so a band of every WATER_LAYER_BANDS-th row is
-// laid anew in a step (water_counts.w the step), and at once wherever a blade went over the glass in the step
+// the snow on the windscreens (water_sim.glsl, water.glsl, snow_sprites.glsl): the sprites of the snow of a glass coming within
+// each texel of its layer listed, which mat_snow_windscreen.frag lays at its pixels, sharp from the atlas (looking through the
+// nine cells of the ten lists at every pixel of the glass in every frame cost as much as the rest of the frame). a thread per
+// texel of the layer (over the rectangle of the uv the glass takes, ~1 mm a texel), the glass is water_counts.z. the snow under
+// a lump changes slowly, so a band of every WATER_LAYER_BANDS-th row is listed anew in a step (water_counts.w the step), and at
+// once wherever a blade went over the glass in the step
 
 #include "common.glsl"
 #include "water_sim.glsl"
@@ -58,21 +58,23 @@ void main()
 	vec2 uv = rect.xy + (vec2(at) + 0.5) / vec2(size) * rect.zw;
 	ivec2 mapAt = clamp(ivec2(floor(uv * float(WATER_MAP))), ivec2(0), ivec2(WATER_MAP - 1));
 	uint mapTexel = slot * uint(WATER_MAP * WATER_MAP) + uint(mapAt.y * WATER_MAP + mapAt.x);
-	uint axis = mapTexel * 2u;
-	// nothing of the glass there (the glass reads its layer only where it is, filtered next to it)
-	if (water_axes[axis].w <= 0.0)
-		return;
 	// a band of the rows in a step (the snow builds up and melts slowly), and wherever a blade went
 	bool due = ((uint(at.y) % uint(WATER_LAYER_BANDS)) == (water_counts.w % uint(WATER_LAYER_BANDS))) || snow_layer_swept(mapTexel);
 	if (false == due)
 		return;
-	snSlot = int(slot);
-	snMap = map;
-	snBig = (textureSize(raindropsatlas, 0).x >= 2048);
-	vec2 span = max(vec2(length(water_axes[axis].xyz), length(water_axes[axis + 1u].xyz)), vec2(0.05));
-	snow_layer_s s = snCompose(uv, span, max(rect.z / float(size.x), rect.w / float(size.y)));
-	uint index = water_layer_base() + 3u * texel;
-	water_cells[index] = packUnorm4x8(vec4(s.rgb, s.a));
-	water_cells[index + 1u] = packSnorm4x8(vec4(s.n, s.tr * 2.0 - 1.0));
-	water_cells[index + 2u] = packSnorm4x8(vec4(s.bend, s.bendA * 2.0 - 1.0, s.haze * 2.0 - 1.0));
+	uint index = water_layer_base() + 4u * texel;
+	// nothing of the glass there or next to it (a texel on the edge of the glass takes the size of the glass beside it)
+	vec2 span;
+	uvec4 refs = uvec4(0u);
+	if (snSpan(slot, uv, span))
+	{
+		snSlot = int(slot);
+		snMap = map;
+		snBig = (textureSize(raindropsatlas, 0).x >= 2048);
+		refs = snList(uv, span, max(rect.z / float(size.x), rect.w / float(size.y)));
+	}
+	water_cells[index] = refs.x;
+	water_cells[index + 1u] = refs.y;
+	water_cells[index + 2u] = refs.z;
+	water_cells[index + 3u] = refs.w;
 }

@@ -779,12 +779,12 @@ namespace gl
     const size_t WATER_SNOW_SIZE = 8 * static_cast<size_t>(WATER_MAP) * WATER_MAP;
     // the snow of the glass of the snow laid together (water_snowlayer.comp): first eight uint of every glass (the rectangle of its
     // uv the layer takes, four floats; the texels of the layer across and down, 0 when the glass has no layer), then the layer,
-    // WATER_LAYER_TEXELS texels of three uint each (the colour and the cover, the normal and the translucency, the bend and the
-    // haze, see water.glsl)
+    // WATER_LAYER_TEXELS texels of four uint each (the sprites of the snow coming within the texel, see water.glsl and
+    // snow_sprites.glsl)
     const size_t WATER_LAYER_INFO_OFFSET = WATER_SNOW_OFFSET + 2 * WATER_SNOW_SIZE * WATER_SLOTS;
     const size_t WATER_LAYER_INFO_SIZE = 32;
     const size_t WATER_LAYER_OFFSET = WATER_LAYER_INFO_OFFSET + WATER_LAYER_INFO_SIZE * WATER_SLOTS;
-    const size_t WATER_LAYER_SIZE = 12 * static_cast<size_t>(WATER_LAYER_TEXELS);
+    const size_t WATER_LAYER_SIZE = 16 * static_cast<size_t>(WATER_LAYER_TEXELS);
     const size_t WATER_STORAGE_SIZE = WATER_LAYER_OFFSET + WATER_LAYER_SIZE;
     // the parts of a glass in the storage: its drops and what the passes keep of them, its map (the axes the second part), its
     // cells and its paths, its header and its counts, its two maps of the snow, the layer of the snow (the one of the cab, laid
