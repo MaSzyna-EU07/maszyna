@@ -29,35 +29,6 @@ http://mozilla.org/MPL/2.0/.
 namespace gfx
 {
 
-// what the material of a glass of the snow draws with (the parts opengl_material copies for its variants, model/material.cpp)
-struct snow_look
-{
-	opengl_material::texture_set textures{};
-	std::vector<opengl_material::texture_set> texture_variants;
-	std::array<glm::vec4, gl::MAX_PARAMS> params{};
-	std::vector<gfx::shader_param_entry> params_state;
-	std::shared_ptr<gfx::shader_program> shader;
-	std::optional<float> opacity;
-	std::optional<float> selfillum;
-	float glossiness{10.f};
-
-	static snow_look of(opengl_material const &Material)
-	{
-		return snow_look{Material.textures, Material.texture_variants, Material.params, Material.params_state, Material.shader, Material.opacity, Material.selfillum, Material.glossiness};
-	}
-	void give(opengl_material &Material) const
-	{
-		Material.textures = textures;
-		Material.texture_variants = texture_variants;
-		Material.params = params;
-		Material.params_state = params_state;
-		Material.shader = shader;
-		Material.opacity = opacity;
-		Material.selfillum = selfillum;
-		Material.glossiness = glossiness;
-	}
-};
-
 namespace
 {
 
@@ -324,10 +295,6 @@ void windscreen_water::build(TModel3d &Cab)
 		glass.material = material;
 		auto const *opengl{m_host.material(material)};
 		glass.snow = is_snow_glass(opengl);
-		if (glass.snow)
-		{
-			glass.snowmaterial = std::make_shared<snow_look>(snow_look::of(*opengl));
-		}
 		glass.mask = opengl->textures[opengl->shader->texture_conf.at("wipermask").id];
 		for (std::size_t texel = 0; texel < texels; ++texel)
 		{
@@ -390,10 +357,6 @@ void windscreen_water::update(double const Seconds)
 	}
 	auto const *vehicle{simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr};
 	auto *cab{vehicle != nullptr ? vehicle->mdKabina : nullptr};
-	if ((vehicle == m_vehicle) && (cab == m_cab))
-	{
-		keep_snow();
-	}
 	// a material of the glasses of another kind: the weather changed, the materials have the shaders of the other weather (the
 	// snow comes with the shader of the snow and goes with it)
 	auto const changed{std::ranges::any_of(m_kinds, [this](auto const &Kind) { return glass_kind(m_host.material(Kind.first)) != Kind.second; })};
@@ -589,28 +552,6 @@ std::array<std::uint32_t, 8> windscreen_water::layer_info(std::size_t const Slot
 	auto const down{static_cast<std::uint32_t>(gl::WATER_LAYER_TEXELS / across)};
 	info = {std::bit_cast<std::uint32_t>(corner.x), std::bit_cast<std::uint32_t>(corner.y), std::bit_cast<std::uint32_t>(extent.x), std::bit_cast<std::uint32_t>(extent.y), across, down, 0u, 0u};
 	return info;
-}
-
-void windscreen_water::keep_snow()
-{
-	if (Global.Weather == "rain:")
-	{
-		// the rain washes the snow off: the glass of the snow becomes a glass of the water again (built anew)
-		return;
-	}
-	for (std::size_t slot = 0; slot < m_glasscount; ++slot)
-	{
-		auto const &glass{m_glasses[slot]};
-		if ((false == glass.snow) || (false == bool(glass.snowmaterial)))
-		{
-			continue;
-		}
-		if (auto *material{m_host.material(glass.material)}; (material != nullptr) && (false == is_snow_glass(material)))
-		{
-			// the weather took the shader of the snow away: it's given back (the slot param is set again by assign())
-			glass.snowmaterial->give(*material);
-		}
-	}
 }
 
 void windscreen_water::lay_snow(gl::water_ubs const &Block)

@@ -40,7 +40,6 @@ const float SNOW_PACKED = 0.4;       // and of packed snow
 const int TILE_DROP = 15;
 
 vec2  snUV   = vec2(0.0); // the place on the glass laid, uv
-float snDrops = snow_drops; // share of the texels with water showing a drop (water_snowlayer.comp: more when it stopped snowing)
 int   snSlot = 0;
 uint  snMap  = 0u;
 bool  snBig  = true;      // a 4 x 4 atlas (else the older 2 x 2)
@@ -168,7 +167,7 @@ void snFlakes(vec2 span, float pixelUV, inout sprite_acc acc)
             bool crystal = (q.x >= 0.05);
             if ((false == drop) && (false == crystal))
                 continue;
-            if (chance > (drop ? snDrops * smoothstep(0.03, 0.2, q.y) : snow_crystals))
+            if (chance > (drop ? snow_drops * smoothstep(0.03, 0.2, q.y) : snow_crystals))
                 continue;
             float size = sizeDraw * (drop ? mix(0.7, 1.4, smoothstep(0.03, 0.3, q.y)) : 1.0);
             if (false == snLocal(p, centre, size, vec2(1.0), rot, flip, 1.0, local))
