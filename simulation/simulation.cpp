@@ -130,6 +130,8 @@ state_manager::update( double const Deltatime, int Iterationcount ) {
     simulation::Junctions.update( totaltime );
     simulation::Roadpoints.update( totaltime );
     simulation::Vehicles.update( Deltatime, Iterationcount );
+    // the tracks the heat buckles, by itself or under the trains just moved
+    TTrack::update_buckling( totaltime );
 }
 
 void
