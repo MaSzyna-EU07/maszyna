@@ -51,8 +51,12 @@ derailment::outcome ride(track_buckle::shape const &Shape, double const Radius, 
 	derailment::monitor monitor;
 	auto const velocity{Speed / 3.6};
 	auto const reach{track_buckle::reach(Shape) + Stock.pivots};
-	for (auto at = Shape.centre - reach - 5.0; at <= Shape.centre + reach + 5.0; at += velocity * Step)
+	auto const start{Shape.centre - reach - 5.0};
+	auto const advance{velocity * Step};
+	auto const steps{static_cast<int>(std::floor((2.0 * (reach + 5.0)) / advance))};
+	for (auto step = 0; step <= steps; ++step)
 	{
+		auto const at{start + step * advance};
 		derailment::track_state track;
 		track.radius = Radius;
 		auto const bend{track_buckle::body_bend(Shape, at, Stock.pivots, Stock.base)};

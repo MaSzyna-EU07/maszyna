@@ -180,8 +180,9 @@ TEST_CASE("the buckle has its amplitude in the middle, side lobes the other way 
 	CHECK(track_buckle::bend(shape, 60.0) == doctest::Approx(-peak));
 	// none larger anywhere, and the curvature with no jumps
 	auto previous{track_buckle::bend(shape, 35.0)};
-	for (auto at = 35.0; at <= 85.0; at += 0.01)
+	for (auto step = 0; step <= 5000; ++step)
 	{
+		auto const at{35.0 + 0.01 * step};
 		auto const bend{track_buckle::bend(shape, at)};
 		CHECK(std::abs(bend) <= peak * 1.0001);
 		CHECK(std::abs(bend - previous) < 0.01 * peak);
@@ -230,8 +231,8 @@ TEST_CASE("a bogie feels the curvature of the buckle averaged over its wheelbase
 	CHECK(std::abs(across) < 0.5 * peak);
 	// the most the body feels, at any place, is less than a bogie does
 	auto most{0.0};
-	for (auto at = 20.0; at <= 80.0; at += 0.05)
-		most = std::max(most, std::abs(track_buckle::body_bend(shape, at, 17.0, 2.5)));
+	for (auto step = 0; step <= 1200; ++step)
+		most = std::max(most, std::abs(track_buckle::body_bend(shape, 20.0 + 0.05 * step, 17.0, 2.5)));
 	CHECK(most < 0.95 * peak);
 	CHECK(most > 0.3 * peak);
 }
