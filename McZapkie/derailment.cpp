@@ -79,6 +79,22 @@ double unbalanced_acceleration(double const Velocity, double const Radius, doubl
 	return Velocity * Velocity / std::abs(Radius) - cant;
 }
 
+double line_curvature(track_state const &Track) {
+	auto const buckle{buckle_share * Track.buckle_curvature};
+	if (false == curved(Track.radius)) {
+		return std::abs(buckle);
+	}
+	return 1.0 / std::abs(Track.radius) + buckle;
+}
+
+double line_acceleration(track_state const &Track, double const Velocity) {
+	if (Track.buckle_curvature == 0.0) {
+		return unbalanced_acceleration(Velocity, Track.radius, Track.cant);
+	}
+	// bent against the curve, out of the bend is into the curve, where the cant leans the vehicle too
+	return Velocity * Velocity * line_curvature(Track) - gravity * std::sin(std::abs(Track.cant));
+}
+
 double unloading_ratio(double const Acceleration, double const CentreOfGravity, double const ContactSpacing, suspension const &Suspension) {
 	return 2.0 / ContactSpacing * std::abs(Acceleration) / gravity * leaning_height(CentreOfGravity, Suspension);
 }
@@ -157,7 +173,7 @@ wheel_forces flange_forces(vehicle_state const &Vehicle, track_state const &Trac
 	auto const height{leaning_height(Vehicle.centre_of_gravity, suspension{})};
 	auto const staticload{Vehicle.mass * gravity / (2.0 * axles)};
 
-	auto const inertia{Vehicle.mass * unbalanced_acceleration(Velocity, Track.radius, Track.cant)};
+	auto const inertia{Vehicle.mass * line_acceleration(Track, Velocity)};
 	auto const couplings{coupling_force(Vehicle, Track)};
 	auto const quasistatic{inertia + couplings};
 	// the sway and the uneven track push the worst way: towards the rail the vehicle already leans on
@@ -167,8 +183,8 @@ wheel_forces flange_forces(vehicle_state const &Vehicle, track_state const &Trac
 
 	// the leading axle meets the rail at an angle in a curve, the creep force of its inner wheel at most the friction
 	auto guiding{0.0};
-	if (curved(Track.radius)) {
-		auto const attack{Vehicle.axle_base / (2.0 * std::abs(Track.radius))};
+	if (auto const curvature{std::abs(line_curvature(Track))}; curvature > 0.0) {
+		auto const attack{0.5 * Vehicle.axle_base * curvature};
 		guiding = tread_friction * staticload * std::min(1.0, attack / saturated_attack);
 	}
 	result.y = std::abs(result.lateral) / axles + guiding;
@@ -186,7 +202,7 @@ double body_acceleration(vehicle_state const &Vehicle, track_state const &Track,
 	}
 	auto const height{leaning_height(Vehicle.centre_of_gravity, suspension{})};
 	// the couplings pull at the height of the buffers: as much of a lean as their moment gives
-	auto const moment{Vehicle.mass * unbalanced_acceleration(Velocity, Track.radius, Track.cant) * height + coupling_force(Vehicle, Track) * buffer_height};
+	auto const moment{Vehicle.mass * line_acceleration(Track, Velocity) * height + coupling_force(Vehicle, Track) * buffer_height};
 	return std::abs(moment) / (Vehicle.mass * height) + dynamic_acceleration(Track, Velocity) * condition_of(Track).lateral;
 }
 
