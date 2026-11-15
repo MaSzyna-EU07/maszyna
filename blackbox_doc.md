@@ -14,13 +14,16 @@ recording started at), next to the `.dat` logs of the vehicles when those are on
 
 With the physics logs off it still gives the `.dat` log of each vehicle the user was in, as it goes:
 `physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every 0.05 s as
-`physicslog yes` would write. A log begins when the user first is in the vehicle, and goes on while the
-user looks around outside it, until the user takes another vehicle, whose log begins then. Back in a
-vehicle, its log goes on after the gap in its time. A vehicle with no driver of its own takes the log of the
-driver of its train. So the speed recorder's tape can be read from them as before, also while the
+`physicslog yes` would write. A log is the driver's, named after the vehicle that driver began in: it
+begins the first time the user is with that driver, and goes on while the user looks around outside, or
+moves to another cab of the unit or another vehicle of the same train. Taking a vehicle of another driver
+goes on in that driver's log, begun then if it is the first time. Back with a driver, the log goes on after
+the gap in its time. A vehicle with no driver of its own, or whose own driver is passive, takes the log of
+the driver of its train. So the speed recorder's tape can be read from them as before, also while the
 simulator runs, without a log of every vehicle. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
-of them.
+of real time of them (at a higher time speed, more of the simulated time). A file another program holds
+for a while doesn't lose its lines: they are written once it can be.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no
@@ -232,7 +235,7 @@ files written before the speed of the wheels was added at the end).
 | `f32`   | the clutch of a diesel's gearbox, 0 open .. 1 closed                   |
 | `f32`   | the filling of a diesel's hydraulic torque converter, 0..1             |
 | `f32`   | the highest brake cylinder pressure of the vehicles of the train [bar] |
-| `f32`   | speed of the wheels [km/h], as the speedometer shows it, signed as the speed of the vehicle: apart from it while the wheels slip, 0 while they are locked in a skid |
+| `f32`   | speed of the wheels [km/h], as the speedometer shows it: those of the powered vehicle (in a unit driven from an unpowered car, its motor car), signed as the speed of the vehicle: apart from it while the wheels slip, 0 while they are locked in a skid |
 
 The lights the train is to show follow from the movement and the two patterns after it: in a train run the head the pattern asked for,
 the usual one Pc 1 (both headlights and the upper one; Pc 2 is the left red marker with the right and the
