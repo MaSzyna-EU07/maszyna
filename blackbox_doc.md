@@ -23,7 +23,7 @@ the driver of its train. So the speed recorder's tape can be read from them as b
 simulator runs, without a log of every vehicle. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
 of real time of them (at a higher time speed, more of the simulated time). A file another program holds
-for a while doesn't lose its lines: they are written once it can be.
+for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

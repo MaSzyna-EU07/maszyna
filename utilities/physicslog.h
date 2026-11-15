@@ -23,7 +23,7 @@ http://mozilla.org/MPL/2.0/.
 // the physics logs, <folder>/<name>.dat. the lines given are kept, and written every two seconds by a thread of its
 // own, each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and
 // the simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file
-// can't be written, held by another program say, are kept for the next try
+// can't be written, held by another program say, are kept for the next try: the last 64 MB of them all at most
 class physicslog_writer {
 public:
 	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
@@ -39,7 +39,8 @@ public:
 	void append(std::string const &Name, std::string_view Line);
 	// writes what is kept, now
 	void flush();
-	// as flush, unless the files are being written for longer than Timeout: then false, and nothing done
+	// as flush, waited for no longer than Timeout: then false, and the writing goes on by itself, on a thread left
+	// behind. for the end of the process, the files held up or the disk not answering
 	bool flush_for(std::chrono::milliseconds Timeout);
 	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
 	void stop();
@@ -64,7 +65,8 @@ private:
 	bool m_stopped{false};
 	std::condition_variable_any m_wake;
 	std::jthread m_thread;
-	std::timed_mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
+	std::thread::id m_writer; // of the thread, kept after it is taken to be joined: the writer knows itself by it
+	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
 	std::set<std::string> m_failed; // the logs whose file couldn't be written, told once
 };
 

@@ -421,9 +421,8 @@ void blackbox_recorder::write_cab() {
 	// of the wheels as they turn, which the speedometer shows: apart from that of the vehicle when they slip or skid.
 	// those of the powered vehicle, as the speedometer has it (TTrain::DynamicSet), which in a unit driven from an
 	// unpowered car is another one, maybe facing the other way: signed as the occupied one's speed
-	auto *powered{train->Dynamic()->FindPowered()};
-	if (powered == nullptr)
-		powered = train->Dynamic();
+	// the vehicle itself, if none in the unit is powered
+	auto const *powered{train->Dynamic()->FindPowered()};
 	auto const facing{powered->DirectionGet() * vehicle->DirectionGet()};
 	sample.wheel_speed_kmh = static_cast<float>(facing * M_PI * powered->MoverParameters->WheelDiameter * powered->MoverParameters->nrot * 3.6);
 	sample.acceleration = static_cast<float>(controlling->AccS);
