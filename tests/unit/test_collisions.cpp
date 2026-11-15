@@ -555,6 +555,23 @@ TEST_CASE("collisions: automatic couplers hit too fast don't catch, the ends cru
 	}
 }
 
+TEST_CASE("collisions: road vehicles keep the legacy rule") {
+	// the traffic of a scenery: cars and buses have no underframe to crush; over 15 km/h weighed by the masses they
+	// derail, as with physics.derailment old (found running line 107: two cars of its traffic, 119 km/h head-on)
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const model : {global_settings::derailment_model::old, global_settings::derailment_model::physical}) {
+		model_setting const setting{model};
+		consist road;
+		road.add(definition::fiz("road/man/nl293"));
+		road.add(definition::fiz("road/man/nl293"), 0, coupling::faux, 40.0, 5.0);
+		road.run(5.0);
+		CHECK(derailed(road[0].mover()));
+		CHECK(derailed(road[1].mover()));
+		CHECK(road[0]->Couplers[end::rear].crush == 0.0);
+		CHECK(road[1]->CollisionDerail == NONE);
+	}
+}
+
 TEST_CASE("collisions: a vehicle off the rails by the new model stays in the chain of forces") {
 	model_setting const physical{global_settings::derailment_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};

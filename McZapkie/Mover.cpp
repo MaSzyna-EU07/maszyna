@@ -1338,8 +1338,9 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
 	auto const physical{coupler_physics_at(End)};
-	// physics.derailment new: past the buffers the ends crush (collision.h); a hit the steel takes stays the legacy one
-	auto const crushing{Global.derailment == global_settings::derailment_model::physical};
+	// physics.derailment new: past the buffers the ends of rail vehicles crush (collision.h); a hit the steel takes stays
+	// the legacy one, and so do the collisions of the road vehicles (the traffic of a scenery), with the legacy rule
+	auto const crushing{Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && TestFlag(othervehicle->CategoryFlag, 1)};
 	if (crushing && (thiscoupler.hit_handled || crush_hit(End, dt)))
 	{
 		return;
@@ -1532,6 +1533,22 @@ char const *end_name(int const End)
 	return End == end::front ? "front" : "rear";
 }
 
+char const *kind_name(collision::vehicle_kind const Kind)
+{
+	switch (Kind)
+	{
+	case collision::vehicle_kind::locomotive:
+		return "locomotive";
+	case collision::vehicle_kind::coach:
+		return "coach";
+	case collision::vehicle_kind::crash_zone:
+		return "crash zone";
+	case collision::vehicle_kind::wagon:
+	default:
+		return "wagon";
+	}
+}
+
 // the force pressing the end in, of the coupling or of the buffers touching [N]: forwards at the front pulls
 double compression_at(TCoupling const &Coupler, int const End)
 {
@@ -1627,10 +1644,18 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	record_hit(thiscoupler, hit.force, hit.duration);
 	record_hit(othercoupler, hit.force, hit.duration);
 
+	// what the log tells of the pair, for the analysis of a crush
+	auto const pair = [&]() {
+		return std::format("{} {:.1f} t {}, {} end crushed {:.2f} m, gives at {:.0f} kN; {} {:.1f} t {}, {} end crushed {:.2f} m, gives at {:.0f} kN; force {:.0f} kN, springs {:.0f} kN, "
+		                   "closing at {:.1f} km/h at the start of the step",
+		                   Name, TotalMass / 1000.0, kind_name(collision_kind()), end_name(End), thiscoupler.crush, firstcurve.force(thiscoupler.crush) / 1000.0, othervehicle->Name,
+		                   othervehicle->TotalMass / 1000.0, kind_name(othervehicle->collision_kind()), end_name(otherend), othercoupler.crush,
+		                   secondcurve.force(othercoupler.crush) / 1000.0, hit.force / 1000.0, springs / 1000.0, input.start_velocity * 3.6);
+	};
 	auto const crushed = [&](TMoverParameters const &Vehicle, int const VehicleEnd, double const Before, double const After) {
 		if (Before < collision::crush_mark && After >= collision::crush_mark)
 		{
-			ErrorLog(std::format("Bad driving: {} and {} collided at {:.0f} km/h, the {} end of {} crushed", Name, othervehicle->Name, closing * 3.6, end_name(VehicleEnd), Vehicle.Name));
+			ErrorLog(std::format("Bad driving: {} and {} collided at {:.0f} km/h, the {} end of {} crushed ({})", Name, othervehicle->Name, closing * 3.6, end_name(VehicleEnd), Vehicle.Name, pair()));
 		}
 	};
 	auto const before{thiscoupler.crush};
@@ -1676,7 +1701,8 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	climbing.zone2 = secondcurve.densify;
 	auto const climbed{collision::override_of(climbing)};
 	auto const why = [&](TMoverParameters const &Climber, TMoverParameters const &Other) {
-		return std::format("{} rode up onto {} at {:.0f} km/h, the ends crushed by {:.2f} m", Climber.Name, Other.Name, closing * 3.6, thiscoupler.crush + othercoupler.crush);
+		return std::format("{} rode up onto {} at {:.0f} km/h, the ends crushed by {:.2f} m, buffers at {:.0f} / {:.0f} mm, anticlimbers {} ({})", Climber.Name, Other.Name, closing * 3.6,
+		                   thiscoupler.crush + othercoupler.crush, climbing.height1 * 1000.0, climbing.height2 * 1000.0, climbing.anticlimbers ? "yes" : "no", pair());
 	};
 	if (climbed.first)
 	{
@@ -1741,8 +1767,12 @@ void TMoverParameters::check_pushed_off(double const dt)
 	}
 	if (pushed_off_monitor.update(holds, duration))
 	{
-		derail_in_collision(COLLISION_PUSHED_OFF, std::format("{:.0f} kN pressing its {} end in, at {:.0f} km/h, curve radius {:.0f} m: Y/Q {:.2f}", worstforce / 1000.0, end_name(worstend), Vel,
-		                                                      std::abs(RunningShape.R), std::min(worst, 99.0)));
+		derail_in_collision(COLLISION_PUSHED_OFF, std::format("{:.0f} kN pressing its {} end in for {:.3f} s, at {:.0f} km/h, curve radius {:.0f} m: Y/Q {:.2f} ({:.1f} t {}, {} axles, "
+		                                                      "springs {:.0f} / {:.0f} kN, hits {:.0f} / {:.0f} kN, crushed {:.2f} / {:.2f} m)",
+		                                                      worstforce / 1000.0, end_name(worstend), pushed_off_monitor.time(), Vel, std::abs(RunningShape.R), std::min(worst, 99.0),
+		                                                      vehicle.mass / 1000.0, kind_name(collision_kind()), vehicle.axles, compression_at(Couplers[end::front], end::front) / 1000.0,
+		                                                      compression_at(Couplers[end::rear], end::rear) / 1000.0, Couplers[end::front].hit_force / 1000.0, Couplers[end::rear].hit_force / 1000.0,
+		                                                      Couplers[end::front].crush, Couplers[end::rear].crush));
 	}
 }
 
