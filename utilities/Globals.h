@@ -290,6 +290,12 @@ struct global_settings {
 	// train with coupler_physics_all
 	bool coupler_physics = false;
 	bool coupler_physics_all = false;
+	// a vehicle too fast in a curve (physics.derailment in eu07.ini): new, it overturns or its flange climbs the rail
+	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
+	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
+	// it; off, it stays on the rails at any speed
+	enum class derailment_model { off, old, physical };
+	derailment_model derailment = derailment_model::physical;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;

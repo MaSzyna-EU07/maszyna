@@ -1503,6 +1503,77 @@ bool TMoverParameters::repair_coupler(int const End)
 	return true;
 }
 
+static_assert(derailment::track_damage::railwear == dtrack_railwear && derailment::track_damage::freerail == dtrack_freerail && derailment::track_damage::thinrail == dtrack_thinrail &&
+              derailment::track_damage::railbend == dtrack_railbend);
+
+double TMoverParameters::centre_of_gravity() const
+{
+	auto const kind{EngineType == TEngineType::None ? derailment::vehicle_class::unpowered : derailment::vehicle_class::powered};
+	auto const empty{CentreOfGravity > 0.0 ? CentreOfGravity : derailment::default_centre_of_gravity(Dim.H, kind)};
+	auto const loadmass{TotalMass - Mass - Mred};
+	auto const loadshare{MaxLoad > 0.f ? LoadAmount / MaxLoad : 1.0};
+	return derailment::loaded_centre_of_gravity(empty, Mass, loadmass, loadshare, Floor, Dim.H);
+}
+
+void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double const Distance)
+{
+	if (TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) || DebugModeFlag)
+	{
+		derailment_monitor.reset();
+		return;
+	}
+	derailment::vehicle_state vehicle;
+	vehicle.mass = TotalMass - Mred;
+	vehicle.axles = NAxles > 0 ? NAxles : 4;
+	vehicle.length = Dim.L;
+	vehicle.axle_base = ADist > 0.0 ? ADist : BDist;
+	vehicle.centre_of_gravity = centre_of_gravity();
+	for (int end = end::front; end <= end::rear; ++end)
+	{
+		auto const *other{Neighbours[end].vehicle};
+		if (other == nullptr)
+		{
+			continue;
+		}
+		// the force of the coupling, or of the buffers touching, along this vehicle: forwards at the front pulls
+		vehicle.ends[end].compression = (end == end::front ? -1.0 : 1.0) * Couplers[end].CForce;
+		vehicle.ends[end].other_length = other->MoverParameters->Dim.L;
+	}
+	derailment::track_state track;
+	track.radius = Shape.R;
+	track.cant = Shape.dHrail;
+	track.gauge = TrackW;
+	track.uneven_curvature = Shape.uneven_curvature;
+	track.uneven_cross = Shape.uneven_cross;
+	track.damage = Track.DamageFlag;
+
+	auto const verdict{derailment_monitor.update(vehicle, track, V, Distance)};
+	if (verdict.result != derailment::outcome::none)
+	{
+		derail(verdict, Shape);
+	}
+}
+
+void TMoverParameters::derail(derailment::verdict const &Verdict, TTrackShape const &Shape)
+{
+	if (false == SetFlag(DamageFlag, dtrain_out))
+	{
+		return;
+	}
+	Derailed = Verdict.result;
+	EventFlag = true;
+	MainSwitch(false, range_t::local);
+	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
+	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
+	{
+		AlarmChainFlag = true;
+	}
+	auto const cant{1000.0 * derailment::contact_spacing(TrackW) * std::sin(std::abs(Shape.dHrail))};
+	ErrorLog(std::format("Bad driving: {} {} at {:.0f} km/h, curve radius {:.0f} m, cant {:.0f} mm: lateral acceleration {:.2f} m/s2, wheel unloading {:.2f}, Y/Q {:.2f}", Name,
+	                     Derailed == derailment::outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(V) * 3.6, std::abs(Shape.R), cant, Verdict.acceleration,
+	                     Verdict.unloading, Verdict.flange_ratio));
+}
+
 void TMoverParameters::Derail(DerailReason const Reason)
 {
 	if (SetFlag(DamageFlag, dtrain_out))
@@ -1578,7 +1649,8 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
-		if (TestFlag(DamageFlag, dtrain_out))
+		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce()
+		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
 
 		// przyspieszenie normalne
@@ -1621,7 +1693,9 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		{
 			if (TestFlag(Track.DamageFlag, dtrack_norail))
 				Derail(END_OF_TRACK);
-			if (FuzzyLogic(AccN / g * (1.0 + 0.1 * (Track.DamageFlag & dtrack_freerail)), TrackW / Dim.H, 1))
+			// too fast in a curve: the legacy draw in every step (physics.derailment old), or the physical criteria
+			// once the step's distance is known, below
+			if (Global.derailment == global_settings::derailment_model::old && FuzzyLogic(AccN / g * (1.0 + 0.1 * (Track.DamageFlag & dtrack_freerail)), TrackW / Dim.H, 1))
 				Derail(TOO_HIGH_SPEED);
 			// wykolejanie na poszerzeniu toru
 			if (FuzzyLogic(abs(Track.Width - TrackW), TrackW / 10.0, 1))
@@ -1634,6 +1708,12 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		// dL:=(V+AccS*dt/2)*dt;
 		// przyrost dlugosci czyli przesuniecie
 		dL = (3.0 * V - Vprev) * dt / 2.0; // metoda Adamsa-Bashfortha}
+		if (Global.derailment == global_settings::derailment_model::physical)
+		{
+			// over the distance of this step and of the simpler ones of the frame before it
+			check_derailment(Shape, Track, derailment_distance + std::abs(dL));
+		}
+		derailment_distance = 0.0;
 		// ale jesli jest kolizja (zas. zach. pedu) to...}
 		for (int b = 0; b < 2; b++)
 			if (Couplers[b].CheckCollision)
@@ -1675,7 +1755,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
-		if (TestFlag(DamageFlag, dtrain_out))
+		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
 
 		// simple mode skips calculation of normal acceleration
@@ -1702,6 +1782,8 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		}
 
 		dL = (3.0 * V - Vprev) * dt / 2.0; // metoda Adamsa-Bashfortha
+		// the criteria of derailment go by the distance, checked in the full step which ends the frame
+		derailment_distance += std::abs(dL);
 		// ale jesli jest kolizja (zas. zach. pedu) to...
 		for (int b = 0; b < 2; b++)
 			if (Couplers[b].CheckCollision)
@@ -5252,9 +5334,17 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	FStand = FrictionForce(); // siła oporów ruchu
 	if (true == TestFlag(DamageFlag, dtrain_out))
 	{
-		// HACK: crude way to reduce speed after derailment
-		// TBD, TODO: more accurate approach?
-		FStand *= 1e20;
+		if (Derailed != derailment::outcome::none)
+		{
+			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side
+			FStand = derailment::sliding_friction(Derailed) * (TotalMass - Mred) * g;
+		}
+		else
+		{
+			// HACK: crude way to reduce speed after derailment
+			// TBD, TODO: more accurate approach?
+			FStand *= 1e20;
+		}
 	}
 	double old_nrot = abs(nrot);
 	nrot = v2n(); // przeliczenie prędkości liniowej na obrotową
@@ -10967,6 +11057,8 @@ void TMoverParameters::LoadFIZ_Dimensions(std::string const &line)
 	extract_value(Dim.L, "L", line, "");
 	extract_value(Dim.H, "H", line, "");
 	extract_value(Dim.W, "W", line, "");
+	// height of the centre of gravity of the empty vehicle [m], for the criteria of derailment
+	extract_value(CentreOfGravity, "CoGH", line, "");
 
 	extract_value(Cx, "Cx", line, "0.3");
 	if (Dim.H <= 2.0)

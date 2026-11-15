@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include "hamulce.h"
 #include "couplerphysics.h"
+#include "derailment.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/odometerreading.h"
 
@@ -690,6 +691,10 @@ struct TTrackShape
 	double dHtrack = 0.0; // nachylenie
 	/// <summary>Track cant / superelevation.</summary>
 	double dHrail = 0.0; // przechylka
+	/// <summary>Lateral curvature of the track unevenness under the vehicle [1/m], see world/TrackUneven.h.</summary>
+	double uneven_curvature = 0.0;
+	/// <summary>Cross level unevenness of the track [mm].</summary>
+	double uneven_cross = 0.0;
 };
 
 /// <summary>Per-segment track parameters: gauge, friction, category, load capacity, damage.</summary>
@@ -1654,6 +1659,9 @@ class TMoverParameters
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
 	float Floor = 0.96f; // poziom podłogi dla ładunków
+	// height of the centre of gravity of the empty vehicle above the rail [m] (CoGH in the Dimensions of the .fiz),
+	// negative when the definition gives none: derailment::default_centre_of_gravity() then
+	double CentreOfGravity = -1.0;
 	float WheelDiameter = 1.f; /*srednica kol napednych*/
 	float WheelDiameterL = 0.9f; // Ra: srednica kol tocznych przednich
 	float WheelDiameterT = 0.9f; // Ra: srednica kol tocznych tylnych
@@ -2038,6 +2046,9 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	// the criteria of derailment (physics.derailment new), and the distance travelled since they were checked [m]
+	derailment::monitor derailment_monitor;
+	double derailment_distance = 0.0;
 	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
@@ -2424,6 +2435,15 @@ class TMoverParameters
 	// was a broken coupler to repair
 	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
+	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]
+	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
+	// the vehicle leaves the rails, as the criteria of derailment.h found
+	void derail(derailment::verdict const &Verdict, TTrackShape const &Shape);
+	// height of the centre of gravity above the rail with the load [m]
+	double centre_of_gravity() const;
+	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
+	// derailment, which stops it as the legacy model does
+	derailment::outcome Derailed{derailment::outcome::none};
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;

@@ -66,6 +66,8 @@ struct track {
 	int category{0};
 	int iterations{1};
 	double width{1.435};
+	double radius{0.0}; // of a curve [m], 0 straight
+	double cant{0.0}; // [rad]
 };
 
 // the catenary of the Polish railways [V]

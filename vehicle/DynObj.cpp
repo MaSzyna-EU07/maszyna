@@ -3227,6 +3227,9 @@ bool TDynamicObject::Update(double dt, double dt1)
     // między skrajnymi osiami
     // (!!!odwrotny)
     ts.dHrail = (Axle1.GetRoll() + Axle0.GetRoll()) * 0.5; //średnia przechyłka pudła
+    // the uneven track under the outer axles, for the criteria of derailment: its lateral curvature, and its cross level
+    ts.uneven_curvature = glm::dot( 0.5 * ( Axle0.UnevenBend() + Axle1.UnevenBend() ), vLeft );
+    ts.uneven_cross = MyTrack->uneven_underway().cross;
     // TTrackParam tp;
     tp.Width = MyTrack->fTrackWidth;
     // McZapkie-250202

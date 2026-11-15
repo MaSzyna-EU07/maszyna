@@ -882,6 +882,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.derailment")
+    {
+        // new: the physical criteria (McZapkie/derailment.h), old: the legacy draw, off: no derailment from the speed
+        std::string model;
+        ParseOne(Parser, model, 1);
+        if (model == "old")
+            derailment = derailment_model::old;
+        else if (model == "off" || model == "no")
+            derailment = derailment_model::off;
+        else
+            derailment = derailment_model::physical;
+        return true;
+    }
+
     if (token == "controlcoupling.enginecheck")
     {
         ParseOne(Parser, control_coupling_engine_check, 1);
@@ -1776,6 +1790,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
         couplerphysics = "all";
     }
     export_as_text( Output, "couplerphysics", couplerphysics );
+    export_as_text( Output, "physics.derailment", std::string{
+        derailment == derailment_model::old ? "old" :
+        derailment == derailment_model::off ? "off" :
+        "new" } );
     export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );

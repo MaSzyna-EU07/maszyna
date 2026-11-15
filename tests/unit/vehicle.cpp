@@ -170,6 +170,8 @@ TTrackShape shape_of(track const &Track) {
 	TTrackShape shape;
 	shape.Len = 1000.0;
 	shape.dHtrack = Track.gradient;
+	shape.R = Track.radius;
+	shape.dHrail = Track.cant;
 	return shape;
 }
 
