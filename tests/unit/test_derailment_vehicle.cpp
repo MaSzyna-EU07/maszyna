@@ -220,6 +220,7 @@ TEST_CASE("derailment: the names of the models in eu07.ini") {
 	// a name it doesn't know is the default
 	CHECK(derailment_model_of("physical") == model::physical);
 	CHECK(global_settings{}.derailment == model::physical);
+	CHECK_FALSE(global_settings{}.track_check);
 	// written back the way it's read
 	for (auto const value : {model::off, model::old, model::physical, model::monitor}) {
 		CHECK(derailment_model_of(name_of(value)) == value);

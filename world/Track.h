@@ -523,6 +523,9 @@ public:
     // legacy method, initializes tracks after deserialization from scenario file
     void
         InitTracks();
+    // physics.trackcheck: logs the geometry of the rail tracks the checks of world/TrackCheck.h find suspicious
+    void
+        CheckTracks() const;
     // legacy method, sends list of occupied paths over network
     void
         TrackBusyList() const;

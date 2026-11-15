@@ -297,6 +297,9 @@ struct global_settings {
 	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was
 	enum class derailment_model { off, old, physical, monitor };
 	derailment_model derailment = derailment_model::physical;
+	// physics.trackcheck: the geometry of the rail tracks the criteria of derailment find suspicious, to the log once the
+	// scenery loaded (trackcheck:, see world/TrackCheck.h)
+	bool track_check = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;

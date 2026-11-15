@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -203,6 +204,11 @@ private:
 inline constexpr double off_rails_friction{0.3};
 inline constexpr double overturned_friction{0.5};
 double sliding_friction(outcome Outcome);
+
+// the lowest speed [m/s] from the one the cant balances at which the flange of the leading axle climbs the rail (Y / Q
+// at the climbing limit); none when it doesn't climb up to 200 m/s: a lone vehicle on a good track mostly overturns
+// first, its Y / Q goes to the ratio of the contact spacing to the height of the centre of gravity at speed
+std::optional<double> climbing_speed(vehicle_state const &Vehicle, track_state const &Track);
 
 // what the criteria found, for the log: "overturned at 113 km/h on track t1, curve radius 300 m, cant 0 mm: lateral
 // acceleration ..., wheel unloading ..., Y/Q ... (mass ..., centre of gravity ..., couplings pushing ... / ... kN,

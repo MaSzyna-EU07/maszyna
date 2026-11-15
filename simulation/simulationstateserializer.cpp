@@ -445,6 +445,9 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     Scratchpad.binary.terrain_binaryfiles.clear();
 
     simulation::Paths.InitTracks();
+    if( Global.track_check ) {
+        simulation::Paths.CheckTracks();
+    }
     // the roads tie up their own lanes where they gain or lose some, the junctions tie the lanes of the roads together,
     // what's left loose after that gets closed by the roads
     simulation::Roads.InitLanes();

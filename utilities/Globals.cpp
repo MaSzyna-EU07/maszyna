@@ -892,6 +892,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.trackcheck")
+    {
+        ParseOne(Parser, track_check, 1);
+        return true;
+    }
+
     if (token == "controlcoupling.enginecheck")
     {
         ParseOne(Parser, control_coupling_engine_check, 1);
@@ -1787,6 +1793,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     }
     export_as_text( Output, "couplerphysics", couplerphysics );
     export_as_text( Output, "physics.derailment", std::string{ name_of( derailment ) } );
+    export_as_text( Output, "physics.trackcheck", track_check );
     export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
