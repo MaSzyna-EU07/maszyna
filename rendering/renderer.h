@@ -151,6 +151,7 @@ public:
 
     bool register_backend(const std::string &backend, create_method func);
     std::unique_ptr<gfx_renderer> create(const std::string &name);
+    bool has_backend(const std::string &name) const;
 
     static gfx_renderer_factory* get_instance();
 

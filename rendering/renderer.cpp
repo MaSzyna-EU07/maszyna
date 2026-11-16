@@ -29,6 +29,11 @@ std::unique_ptr<gfx_renderer> gfx_renderer_factory::create(const std::string &ba
     return nullptr;
 }
 
+bool gfx_renderer_factory::has_backend(const std::string &name) const
+{
+    return backends.contains(name);
+}
+
 gfx_renderer_factory *gfx_renderer_factory::get_instance()
 {
     if (!instance)

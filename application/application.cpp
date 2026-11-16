@@ -1323,6 +1323,21 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		simulation::apply_test_mode_settings();
 	}
 
+	// a renderer this build doesn't have gets the full one: the starter writes the words of every build it knows
+	// ("vulkan" for the vulkan builds), and any word not known here used to start the legacy renderer.
+	// "simpleshader" and "off" of the older starters keep the legacy one they always had
+	auto const &renderer{Global.GfxRenderer};
+	auto const known{renderer == "default" || renderer == "legacy" || renderer == "simple" || renderer == "null" || renderer == "simpleshader" ||
+	                 renderer == "off" || (renderer == "experimental" && gfx_renderer_factory::get_instance()->has_backend(renderer))};
+	if (false == known)
+	{
+		WriteLog("gfxrenderer \"" + renderer + "\" isn't in this build, the full renderer is used instead");
+		Global.GfxRenderer = "default";
+		Global.NvRenderer = false;
+		Global.LegacyRenderer = false;
+		Global.BasicRenderer = false;
+	}
+
 	return 0;
 }
 
