@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <iterator>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <RmlUi/Core.h>
@@ -64,6 +65,7 @@ struct menu_values
 	Rml::String save_status;
 	bool radio_shown{false};
 	std::vector<binding_row> bindings;
+	bool hud_reset{false}; // Reset of the editing of the hud was pressed
 };
 
 std::size_t ssr_level()
@@ -252,6 +254,7 @@ void bind_menu(Rml::DataModelConstructor &Constructor, menu_values &Values, keyb
 	Constructor.BindEventCallback("resume", [](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { resume(); });
 	Constructor.BindEventCallback("quit", [](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { Application.queue_quit(false); });
 	Constructor.BindEventCallback("save", [values = &Values](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { values->save_status = save_settings(); });
+	Constructor.BindEventCallback("hud_reset", [values = &Values](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { values->hud_reset = true; });
 	Constructor.BindEventCallback("show", [values = &Values, keyboard = &Keyboard](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &Arguments) {
 		if (false == Arguments.empty())
 			show_page(*values, *keyboard, Arguments.front().Get<Rml::String>());
@@ -330,6 +333,16 @@ bool pause_menu::on_key(int const Key, int const Action)
 	return true;
 }
 
+bool pause_menu::editing_hud() const
+{
+	return m_state != nullptr && m_state->values.shown && m_state->values.page == "hud";
+}
+
+bool pause_menu::take_hud_reset()
+{
+	return m_state != nullptr && std::exchange(m_state->values.hud_reset, false);
+}
+
 #else
 
 struct pause_menu::state
@@ -351,6 +364,16 @@ bool pause_menu::update(bool)
 }
 
 bool pause_menu::on_key(int, int)
+{
+	return false;
+}
+
+bool pause_menu::editing_hud() const
+{
+	return false;
+}
+
+bool pause_menu::take_hud_reset()
 {
 	return false;
 }

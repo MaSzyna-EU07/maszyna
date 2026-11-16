@@ -45,6 +45,7 @@ void imgui_render_interface::begin_frame(ImDrawList *List, ImVec2 const Origin)
 {
 	m_list = List;
 	m_origin = Origin;
+	m_vertices = 0;
 	m_scissor = false;
 	m_transform.reset();
 }
@@ -102,6 +103,7 @@ void imgui_render_interface::RenderGeometry(Rml::CompiledGeometryHandle const Ge
 		m_list->PushTextureID(static_cast<ImTextureID>(image->second));
 
 	m_list->PrimReserve(static_cast<int>(indices.size()), static_cast<int>(vertices.size()));
+	m_vertices += static_cast<int>(vertices.size());
 	// read after the reservation, which may start the vertices of a new draw at 0
 	auto const base{m_list->_VtxCurrentIdx};
 	auto const white{ImGui::GetFontTexUvWhitePixel()};

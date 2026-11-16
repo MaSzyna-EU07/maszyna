@@ -1,0 +1,150 @@
+<rml>
+<!--
+	The screen of the loading of a scenery drawn with RmlUi (ui.rmlui yes in eu07.ini), over the background of the trivia and a
+	gradient darkening the lower half of the screen, which the game draws under it. A copy of this file is built into the
+	program; ui/loading.rml in the game folder is used in its place.
+
+	The values of the data model loading_screen:
+	percent          how much is loaded, 0 to 100
+	done             the same as the width of a bar, n%
+	subtask          how much of the part loaded now is loaded, as the width of a bar
+	text             what's loaded (translated)
+	title            the name of the scenery, empty when the trivia names none
+	trivia           a piece of trivia (translated), empty when there's none
+
+	The texts of the elements are looked up in the translations of the game (lang/*.po).
+-->
+<head>
+	<title>Loading</title>
+	<style>
+		@keyframes spin {
+			from { transform: rotate(0deg); }
+			to { transform: rotate(360deg); }
+		}
+		body {
+			display: block;
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			font-family: DejaVu Sans;
+			font-size: 15dp;
+			color: #ffffff;
+			pointer-events: none;
+		}
+		div {
+			display: block;
+		}
+		#title {
+			position: absolute;
+			left: 48dp;
+			top: 40dp;
+		}
+		.eyebrow {
+			color: #41c400;
+			font-size: 13dp;
+			font-weight: bold;
+			letter-spacing: 2dp;
+		}
+		.name {
+			margin-top: 4dp;
+			font-family: Bahnschrift;
+			font-size: 40dp;
+		}
+		#trivia {
+			position: absolute;
+			right: 48dp;
+			bottom: 112dp;
+			max-width: 560dp;
+			padding: 16dp 20dp;
+			border-radius: 12dp;
+			background-color: #0e1217c0;
+			border-left: 4dp #41c400;
+		}
+		#trivia .head {
+			margin-bottom: 6dp;
+			font-family: Bahnschrift;
+			font-size: 20dp;
+			font-weight: bold;
+		}
+		#trivia .text {
+			color: #d8dde2;
+			line-height: 1.4;
+		}
+		#bottom {
+			position: absolute;
+			left: 48dp;
+			right: 48dp;
+			bottom: 36dp;
+		}
+		.status {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			margin-bottom: 12dp;
+		}
+		.spinner {
+			width: 22dp;
+			height: 22dp;
+			margin-right: 14dp;
+			border: 3dp;
+			border-color: #41c400 #ffffff26 #ffffff26 #ffffff26;
+			border-radius: 14dp;
+			transform-origin: 50% 50%;
+			animation: 1.1s linear-in-out infinite spin;
+		}
+		.what {
+			flex: 1;
+			font-family: Bahnschrift;
+			font-size: 22dp;
+		}
+		.percent {
+			font-family: Bahnschrift;
+			font-size: 22dp;
+			color: #41c400;
+		}
+		.bar {
+			height: 6dp;
+			border-radius: 3dp;
+			background-color: #ffffff26;
+		}
+		.bar .fill {
+			height: 6dp;
+			border-radius: 3dp;
+			background-color: #41c400;
+			transition: width 0.4s cubic-out;
+		}
+		.subbar {
+			height: 2dp;
+			margin-top: 6dp;
+			border-radius: 1dp;
+			background-color: #ffffff14;
+		}
+		.subbar .fill {
+			height: 2dp;
+			border-radius: 1dp;
+			background-color: #ffffff80;
+		}
+	</style>
+</head>
+<body data-model="loading_screen">
+	<div id="title" data-if="title != ''">
+		<div class="eyebrow">Loading scenery</div>
+		<div class="name">{{title}}</div>
+	</div>
+	<div id="trivia" data-if="trivia != ''">
+		<div class="head">Did you know?</div>
+		<div class="text">{{trivia}}</div>
+	</div>
+	<div id="bottom">
+		<div class="status">
+			<div class="spinner"></div>
+			<div class="what">{{text}}</div>
+			<div class="percent">{{percent}}%</div>
+		</div>
+		<div class="bar"><div class="fill" data-style-width="done"></div></div>
+		<div class="subbar"><div class="fill" data-style-width="subtask"></div></div>
+	</div>
+</body>
+</rml>

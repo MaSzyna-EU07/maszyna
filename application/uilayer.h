@@ -85,6 +85,8 @@ public:
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
     static void shutdown();
 	virtual void showDebugUI() {};
+	// a menu of the ui wants the cursor (the pause, the map): the mode doesn't hide it until the menu closes
+	virtual bool holds_cursor() const { return false; }
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     virtual bool on_key( int Key, int Action );
     // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise

@@ -626,7 +626,7 @@ struct global_settings {
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;
     bool ui_viewports = true; // panels of the ui can be dragged out of the simulator window, into windows of their own
-    bool ui_rmlui = false; // the parts of the ui made with RmlUi (the hud of the driver) in place of those of imgui
+    bool ui_rmlui = false; // the new ui of the driver: the parts made with RmlUi in place of those of imgui, the map on Tab over the whole screen
 
 	float map_highlight_distance = 3000.0f;
 

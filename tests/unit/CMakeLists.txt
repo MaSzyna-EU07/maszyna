@@ -36,6 +36,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/application/rmluipixels.cpp"
 	# the settings of the menu of the pause written into eu07.ini
 	"${CMAKE_SOURCE_DIR}/application/inisettings.cpp"
+	# and the places of the parts of the hud
+	"${CMAKE_SOURCE_DIR}/application/hudlayout.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

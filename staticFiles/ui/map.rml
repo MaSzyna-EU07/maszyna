@@ -1,0 +1,659 @@
+<rml>
+<!--
+	The map over the whole screen drawn with RmlUi (ui.rmlui yes in eu07.ini): Tab shows it and hides it, so does Esc. The image
+	of the map is drawn by the game under the element with the id view, which takes the mouse: dragged it moves the map, the
+	wheel zooms it, the right button opens the panel of the signal, the switch, the level crossing, the obstacle or the vehicle
+	under the cursor (or of the track there, to put an obstacle on), the middle one puts the free camera there. A copy of this
+	file is built into the program; ui/map.rml in the game folder is used in its place.
+
+	The values of the data model map_screen:
+	shown            the map is shown
+	available        the renderer draws the map (the opengl one does)
+	mode             0: the map is moved by hand, 1: it follows the camera, 2: it follows a vehicle
+	following        the vehicle followed is one chosen on the map, not the one driven
+	layer_names, layer_objects, layer_grid   the names of the trains (of the train chosen always), the signals and the other
+	                 objects, the grid are shown
+	marks            the trains on the view: key (the name of the vehicle), name, speed (km/h), left and top (px within the
+	                 view), heading (the rotation of the arrow), own (the train driven), selected
+	trains           all the trains: key, name, speed, route, next (the next stop), late and delay (+N min), ai (driven by the
+	                 autopilot), own, selected
+	card, card_shown the train chosen, as in trains
+	vehicles         the rolling stock to scale, while a vehicle is at least 6 px long: left, top (its middle), width (its length),
+	                 height (its width), transform (centred and turned along the track), powered, own (of the consist driven);
+	                 vehicles_drawn: there are some, the arrows of the trains aren't needed then
+	scale_width, scale_text   the bar of the scale: its length in px, and what it is in m or km
+	sig_shown        the nearest signal ahead of the train driven is known: sig_name, sig_distance, sig_heads (name, lamps: colour)
+	grid             the lines of the grid: left, top, width (px) and rotate
+	hover_shown      an object is under the cursor: hover_left, hover_top (px within the view), hover_kind, hover_name, and of a
+	                 signal hover_heads: name and lamps (colour)
+	obj_shown        the object clicked with the right button: obj_left, obj_top (px), obj_kind, obj_name; obj_choices (name, kind)
+	                 when there's more than one there; of a signal obj_heads (name, lamps: colour); obj_actions_title and
+	                 obj_actions (name): what can be done to it
+	The events: view(mode) sets the mode, zoom(steps) zooms about the middle (above 0 closer), layer('names' | 'objects' |
+	'grid') shows or hides a layer, select(key) chooses a train and follows it, unselect forgets it, close hides the map;
+	pick(index) chooses an object of obj_choices, act(index) does an action of obj_actions, preview(index) shows the tracks a
+	position of a switch sets (-1: none), lamp(head, lamp) sets a lamp of a signal to its next level, panel_close closes the
+	panel of the object.
+
+	The texts of the elements are looked up in the translations of the game (lang/*.po). An element repeated by data-for has no
+	bindings of the items of its own, they're on the elements in it: RmlUi updates those after it drops the items an array lost,
+	those of the repeated element itself before, which warns of an index out of bounds.
+-->
+<head>
+	<title>Map</title>
+	<style>
+		body {
+			display: block;
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			font-family: DejaVu Sans;
+			font-size: 14dp;
+			color: #e8ecef;
+			pointer-events: none;
+		}
+		div {
+			display: block;
+		}
+		#view {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			pointer-events: auto;
+		}
+
+		/* the grid, the rolling stock, the trains and the card of the object, over the image of the map */
+		.gridline {
+			position: absolute;
+			height: 1px;
+			background-color: #ffffff14;
+			transform-origin: 0 0;
+		}
+		.vehicle {
+			position: absolute;
+			border-radius: 1px;
+			background-color: #e4e6e0;
+			border: 1px #1a2617;
+		}
+		.vehicle.powered {
+			background-color: #ffad42;
+		}
+		.vehicle.own {
+			background-color: #8de05a;
+		}
+		.vehicle.own.powered {
+			background-color: #41c400;
+		}
+		.mark {
+			position: absolute;
+			width: 480dp;
+			height: 0;
+		}
+		.arrow {
+			position: absolute;
+			left: -9dp;
+			top: -11dp;
+			width: 18dp;
+			color: #e4e6e0;
+			font-size: 18dp;
+			text-align: center;
+			transform-origin: 50% 60%;
+		}
+		.mark.own .arrow {
+			color: #41c400;
+			font-size: 22dp;
+		}
+		.pill {
+			position: absolute;
+			left: 14dp;
+			top: -11dp;
+			padding: 2dp 8dp;
+			border-radius: 10dp;
+			background-color: #0e1217e0;
+			border: 1dp #3a424a;
+			font-size: 12dp;
+			white-space: nowrap;
+			pointer-events: auto;
+		}
+		.pill:hover {
+			border-color: #c8d2da;
+		}
+		.mark.own .pill {
+			border-color: #41c400;
+		}
+		.mark.selected .pill {
+			border-color: #ffcc33;
+		}
+		.pill .speed {
+			margin-left: 6dp;
+			color: #8f9aa3;
+		}
+		#hover {
+			position: absolute;
+			min-width: 140dp;
+			padding: 8dp 12dp;
+			border-radius: 8dp;
+			background-color: #0e1217f0;
+			border: 1dp #3a424a;
+			font-size: 12dp;
+			pointer-events: none;
+		}
+		#hover .kind {
+			color: #8f9aa3;
+			font-size: 11dp;
+		}
+		#hover .name {
+			font-weight: bold;
+		}
+		.head {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			margin-top: 4dp;
+		}
+		.head .lamps {
+			display: flex;
+			flex-direction: row;
+			margin-left: 8dp;
+		}
+		.lamp {
+			width: 10dp;
+			height: 10dp;
+			margin-right: 3dp;
+			border-radius: 5dp;
+			border: 1dp #00000080;
+		}
+
+		/* the panel of the object clicked */
+		#object {
+			position: absolute;
+			min-width: 200dp;
+			max-width: 320dp;
+			padding: 10dp 12dp;
+			border-radius: 10dp;
+			background-color: #161b21f2;
+			border: 1dp #ffcc33;
+			font-size: 13dp;
+			pointer-events: auto;
+		}
+		#object .top {
+			display: flex;
+			flex-direction: row;
+			align-items: flex-start;
+			margin-bottom: 6dp;
+		}
+		#object .kind {
+			color: #8f9aa3;
+			font-size: 11dp;
+		}
+		#object .section {
+			margin-top: 8dp;
+		}
+		#object .name {
+			font-weight: bold;
+		}
+		#object .x {
+			margin-left: auto;
+			padding: 0 6dp;
+			border-radius: 6dp;
+			color: #8f9aa3;
+		}
+		#object .x:hover {
+			background-color: #232b33;
+			color: #ffffff;
+		}
+		.actions {
+			display: flex;
+			flex-direction: row;
+			flex-wrap: wrap;
+			margin-top: 4dp;
+		}
+		.action {
+			margin: 3dp 4dp 0 0;
+			padding: 5dp 10dp;
+			border-radius: 6dp;
+			background-color: #232b33;
+			color: #e8ecef;
+		}
+		.action:hover {
+			background-color: #177f00;
+		}
+		.ckind {
+			color: #8f9aa3;
+			font-size: 11dp;
+		}
+		.lamp.big {
+			width: 16dp;
+			height: 16dp;
+			margin-right: 5dp;
+			border-radius: 8dp;
+			border: 2dp #00000099;
+		}
+		.lamp.big:hover {
+			border-color: #ffffff;
+		}
+
+		/* the panels */
+		.panel {
+			position: absolute;
+			background-color: #161b21eb;
+			border: 1dp #2c343c;
+			border-radius: 12dp;
+			pointer-events: auto;
+		}
+		#bar {
+			top: 14dp;
+			left: 16dp;
+			right: 336dp;
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			padding: 6dp;
+		}
+		.title {
+			margin: 0 14dp 0 8dp;
+			font-weight: bold;
+			font-size: 16dp;
+		}
+		.group {
+			display: flex;
+			flex-direction: row;
+			margin-right: 10dp;
+			padding: 2dp;
+			border-radius: 8dp;
+			background-color: #0e1217;
+		}
+		.button {
+			padding: 5dp 11dp;
+			border-radius: 6dp;
+			color: #b9c3cb;
+			text-align: center;
+		}
+		.button:hover {
+			background-color: #232b33;
+			color: #ffffff;
+		}
+		.button.active {
+			background-color: #177f00;
+			color: #ffffff;
+		}
+		.button.round {
+			width: 16dp;
+			font-weight: bold;
+		}
+		.close {
+			margin-left: auto;
+		}
+		.close:hover {
+			background-color: #c0261b;
+		}
+
+		/* the trains */
+		#side {
+			top: 14dp;
+			right: 16dp;
+			bottom: 16dp;
+			width: 304dp;
+			display: flex;
+			flex-direction: column;
+			padding: 10dp;
+		}
+		.heading {
+			margin: 2dp 4dp 8dp 4dp;
+			color: #8f9aa3;
+			font-size: 12dp;
+			font-weight: bold;
+		}
+		#card {
+			margin-bottom: 10dp;
+			padding: 10dp 12dp;
+			border-radius: 10dp;
+			background-color: #0e1217;
+			border: 1dp #ffcc33;
+		}
+		#card .top {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+		}
+		#card .name {
+			font-size: 17dp;
+			font-weight: bold;
+		}
+		#card .x {
+			margin-left: auto;
+			padding: 0 6dp;
+			border-radius: 6dp;
+			color: #8f9aa3;
+		}
+		#card .x:hover {
+			background-color: #232b33;
+			color: #ffffff;
+		}
+		#card .speedometer {
+			margin-top: 6dp;
+			font-size: 26dp;
+			font-weight: bold;
+		}
+		#card .unit {
+			margin-left: 4dp;
+			color: #8f9aa3;
+			font-size: 13dp;
+			font-weight: normal;
+		}
+		.fact {
+			display: flex;
+			flex-direction: row;
+			margin-top: 4dp;
+			font-size: 12dp;
+		}
+		.fact .label {
+			width: 92dp;
+			color: #8f9aa3;
+		}
+		.fact .value {
+			flex: 1;
+		}
+		.late {
+			color: #ff4a3d;
+			font-weight: bold;
+		}
+		.ontime {
+			color: #41c400;
+		}
+		#list {
+			flex: 1;
+			overflow-y: auto;
+		}
+		.train {
+			padding: 7dp 8dp;
+			margin-bottom: 4dp;
+			border-radius: 8dp;
+			border-left: 3dp #00000000;
+		}
+		.train:hover {
+			background-color: #1f262d;
+		}
+		.train.own {
+			border-left-color: #41c400;
+		}
+		.train.selected {
+			background-color: #232b33;
+			border-left-color: #ffcc33;
+		}
+		.train .line {
+			display: flex;
+			flex-direction: row;
+		}
+		.train .name {
+			flex: 1;
+			font-weight: bold;
+		}
+		.train .speed {
+			color: #b9c3cb;
+		}
+		.train .route {
+			margin-top: 2dp;
+			color: #8f9aa3;
+			font-size: 11dp;
+		}
+		.badge {
+			margin-left: 6dp;
+			padding: 0 5dp;
+			border-radius: 4dp;
+			background-color: #2c343c;
+			color: #b9c3cb;
+			font-size: 10dp;
+			font-weight: normal;
+		}
+		.badge.you {
+			background-color: #177f00;
+			color: #ffffff;
+		}
+		scrollbarvertical {
+			width: 6dp;
+		}
+		scrollbarvertical slidertrack {
+			background-color: #00000000;
+		}
+		scrollbarvertical sliderbar {
+			min-height: 30dp;
+			border-radius: 3dp;
+			background-color: #3a424a;
+		}
+		scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc {
+			width: 0;
+			height: 0;
+		}
+
+		/* the nearest signal and the scale */
+		#scale {
+			left: 16dp;
+			bottom: 16dp;
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			padding: 8dp 12dp;
+		}
+		.signal {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			margin-right: 16dp;
+		}
+		.mast {
+			display: flex;
+			flex-direction: row;
+			padding: 4dp;
+			border-radius: 6dp;
+			background-color: #0b0e11;
+			border: 1dp #2c343c;
+		}
+		.heads {
+			margin: 0 2dp;
+		}
+		.bulb {
+			width: 12dp;
+			height: 12dp;
+			margin: 2dp 0;
+			border-radius: 6dp;
+			border: 1dp #00000099;
+		}
+		.about {
+			margin-left: 10dp;
+		}
+		.about .kind {
+			color: #8f9aa3;
+			font-size: 11dp;
+		}
+		.about .name {
+			font-weight: bold;
+		}
+		.about .distance {
+			color: #ffcc33;
+			font-size: 12dp;
+		}
+		.bar {
+			height: 4dp;
+			border: 1dp #e8ecef;
+			border-top-width: 0;
+		}
+		.scaletext {
+			margin-left: 8dp;
+			font-size: 12dp;
+		}
+		#help {
+			left: 16dp;
+			top: 66dp;
+			padding: 5dp 12dp;
+			border-radius: 8dp;
+			font-size: 11dp;
+			color: #8f9aa3;
+		}
+		.unavailable {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background-color: #0e1217ee;
+			pointer-events: auto;
+		}
+		.unavailable .message {
+			margin-top: 40%;
+			text-align: center;
+			color: #8f9aa3;
+		}
+	</style>
+</head>
+<body data-model="map_screen">
+	<div data-if="shown">
+		<div id="view">
+			<div data-if="layer_grid">
+				<div data-for="line : grid">
+					<div class="gridline" data-style-left="line.left" data-style-top="line.top" data-style-width="line.width" data-style-transform="line.rotate"></div>
+				</div>
+			</div>
+			<div data-for="vehicle : vehicles">
+				<div class="vehicle" data-style-left="vehicle.left" data-style-top="vehicle.top" data-style-width="vehicle.width" data-style-height="vehicle.height" data-style-transform="vehicle.transform" data-class-powered="vehicle.powered" data-class-own="vehicle.own"></div>
+			</div>
+			<div data-for="mark : marks">
+				<div class="mark" data-style-left="mark.left" data-style-top="mark.top" data-class-own="mark.own" data-class-selected="mark.selected">
+					<div class="arrow" data-if="!vehicles_drawn" data-style-transform="mark.heading">▲</div>
+					<div class="pill" data-if="layer_names || mark.selected" data-event-click="select(mark.key)">{{mark.name}}<span class="speed">{{mark.speed}} km/h</span></div>
+				</div>
+			</div>
+			<div id="hover" data-if="hover_shown && !obj_shown" data-style-left="hover_left" data-style-top="hover_top">
+				<div class="kind">{{hover_kind}}</div>
+				<div class="name">{{hover_name}}</div>
+				<div data-for="head : hover_heads">
+					<div class="head">
+						<span>{{head.name}}</span>
+						<div class="lamps">
+							<div data-for="lamp : head.lamps">
+								<div class="lamp" data-style-background-color="lamp.colour"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="object" data-if="obj_shown" data-style-left="obj_left" data-style-top="obj_top">
+			<div class="top">
+				<div>
+					<div class="kind">{{obj_kind}}</div>
+					<div class="name">{{obj_name}}</div>
+				</div>
+				<span class="x" data-event-click="panel_close">×</span>
+			</div>
+			<div data-for="choice, c : obj_choices">
+				<div class="action" data-event-click="pick(c)"><span class="ckind">{{choice.kind}}</span> {{choice.name}}</div>
+			</div>
+			<div data-for="head, h : obj_heads">
+				<div class="head">
+					<span>{{head.name}}</span>
+					<div class="lamps">
+						<div data-for="lamp, l : head.lamps">
+							<div class="lamp big" data-style-background-color="lamp.colour" data-event-click="lamp(h, l)"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="kind section" data-if="obj_actions_title != ''">{{obj_actions_title}}</div>
+			<div class="actions">
+				<div data-for="action, a : obj_actions">
+					<div class="action" data-event-click="act(a)" data-event-mouseover="preview(a)" data-event-mouseout="preview(-1)">{{action.name}}</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="unavailable" data-if="!available">
+			<div class="message">The map is drawn by the OpenGL renderer only</div>
+		</div>
+
+		<div id="bar" class="panel">
+			<span class="title">Map</span>
+			<div class="group">
+				<div class="button round" data-event-click="zoom(-1)">−</div>
+				<div class="button round" data-event-click="zoom(1)">+</div>
+			</div>
+			<div class="group">
+				<div class="button" data-class-active="mode == 0" data-event-click="view(0)">Pan</div>
+				<div class="button" data-class-active="mode == 1" data-event-click="view(1)">Follow camera</div>
+				<div class="button" data-class-active="mode == 2 && !following" data-event-click="view(2)">Follow vehicle</div>
+			</div>
+			<div class="group">
+				<div class="button" data-class-active="layer_names" data-event-click="layer('names')">Names</div>
+				<div class="button" data-class-active="layer_objects" data-event-click="layer('objects')">Signals</div>
+				<div class="button" data-class-active="layer_grid" data-event-click="layer('grid')">Grid</div>
+			</div>
+			<div class="button round close" data-event-click="close">×</div>
+		</div>
+
+		<div id="side" class="panel" data-if="available">
+			<div id="card" data-if="card_shown">
+				<div class="top">
+					<span class="name">{{card.name}}</span>
+					<span class="badge you" data-if="card.own">You</span>
+					<span class="badge" data-if="card.ai">AI</span>
+					<span class="x" data-event-click="unselect">×</span>
+				</div>
+				<div class="speedometer">{{card.speed}}<span class="unit">km/h</span></div>
+				<div class="fact" data-if="card.route != ''">
+					<span class="label">Route</span>
+					<span class="value">{{card.route}}</span>
+				</div>
+				<div class="fact" data-if="card.next != ''">
+					<span class="label">Next stop</span>
+					<span class="value">{{card.next}}</span>
+				</div>
+				<div class="fact">
+					<span class="label">Delay</span>
+					<span class="value late" data-if="card.late">{{card.delay}}</span>
+					<span class="value ontime" data-if="!card.late">On time</span>
+				</div>
+			</div>
+			<div class="heading">Trains</div>
+			<div id="list">
+				<div data-for="train : trains">
+					<div class="train" data-class-own="train.own" data-class-selected="train.selected" data-event-click="select(train.key)">
+						<div class="line">
+							<span class="name">{{train.name}}</span>
+							<span class="speed">{{train.speed}} km/h</span>
+						</div>
+						<div class="route" data-if="train.route != ''">{{train.route}}</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="scale" class="panel" data-if="available">
+			<div class="signal" data-if="sig_shown">
+				<div class="mast">
+					<div data-for="head : sig_heads">
+						<div class="heads">
+							<div data-for="lamp : head.lamps">
+								<div class="bulb" data-style-background-color="lamp.colour"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="about">
+					<div class="kind">Signal</div>
+					<div class="name">{{sig_name}}</div>
+					<div class="distance">{{sig_distance}}</div>
+				</div>
+			</div>
+			<div class="bar" data-style-width="scale_width"></div>
+			<span class="scaletext">{{scale_text}}</span>
+		</div>
+		</div>
+		<div id="help" class="panel" data-if="available">Drag: move · Wheel: zoom · Right button: signals, switches, obstacles · Click a train: follow it</div>
+	</div>
+</body>
+</rml>

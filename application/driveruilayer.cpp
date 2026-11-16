@@ -19,6 +19,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/rmluilayer.h"
 
+#include <utility>
+
 driver_ui::driver_ui(keyboard_input const &Keyboard) : m_pausemenu(Keyboard)
 {
 
@@ -105,6 +107,9 @@ bool driver_ui::on_key(int const Key, int const Action)
 	// escape goes back to the first page of the menu of the pause, before it ends the pause
 	if (m_pausemenu.on_key(Key, Action))
 		return true;
+	// escape closes the map of RmlUi, unless the menu of the pause is over it
+	if (Key == GLFW_KEY_ESCAPE && close_map_on_escape(Action))
+		return true;
 
 	switch (Key)
 	{
@@ -139,7 +144,11 @@ bool driver_ui::on_key(int const Key, int const Action)
 
 	case GLFW_KEY_TAB:
 	{
-		m_mappanel.is_open = !m_mappanel.is_open;
+		// while RmlUi runs the map of RmlUi over the whole screen, else the window of the map
+		if (rmlui::active())
+			m_mapshown = !m_mapshown;
+		else
+			m_mappanel.is_open = !m_mappanel.is_open;
 
 		return true;
 	}
@@ -197,15 +206,27 @@ bool driver_ui::on_key(int const Key, int const Action)
 // potentially processes provided mouse movement. returns: true if the input was processed, false otherwise
 bool driver_ui::on_cursor_pos(double const Horizontal, double const Vertical)
 {
-	// intercept mouse movement when the pause window is on
-	return m_paused;
+	// intercept mouse movement when the pause window or the map is on
+	return m_holdscursor;
 }
 
 // potentially processes provided mouse button. returns: true if the input was processed, false otherwise
 bool driver_ui::on_mouse_button(int const Button, int const Action)
 {
-	// intercept mouse movement when the pause window is on
-	return m_paused;
+	// intercept mouse movement when the pause window or the map is on
+	return m_holdscursor;
+}
+
+bool driver_ui::close_map_on_escape(int const Action)
+{
+	// the release of the escape which closed the map is taken too
+	if (Action == GLFW_RELEASE)
+		return std::exchange(m_mapescape, false);
+	if (false == m_mapshown || m_paused)
+		return false;
+	m_mapshown = false;
+	m_mapescape = true;
+	return true;
 }
 
 // updates state of UI elements
@@ -214,15 +235,36 @@ void driver_ui::update()
 
 	auto const pausemask{1 | 2};
 	auto ispaused{false == DebugModeFlag && (Global.iPause & pausemask) != 0};
-	if (ispaused != m_paused && false == Global.ControlPicking)
-	{
-		set_cursor(ispaused);
-	}
 	m_paused = ispaused;
 
-	// before the panels are updated: the panel of the driving aid isn't, while the hud shows it
-	m_aidpanel.replaced = m_hud.update(m_aidpanel.is_open, m_aidpanel.is_expanded);
+	// the map of RmlUi, closed by its button, and not shown when RmlUi can't show it
+	if (m_mapscreen.take_closed())
+		m_mapshown = false;
+	m_mapshown = m_mapscreen.update(m_mapshown) && m_mapshown;
+
+	// the cursor is seen while the pause or the map is on, it isn't hidden while they are
+	auto const holdscursor{m_paused || m_mapshown};
+	if (holdscursor != m_holdscursor && false == Global.ControlPicking)
+	{
+		set_cursor(holdscursor);
+	}
+	m_holdscursor = holdscursor;
+
+	// before the panels are updated: those the hud shows aren't. the map hides the hud
 	m_pausemenushown = m_pausemenu.update(m_paused);
+	if (m_pausemenu.take_hud_reset())
+		m_hud.reset_layout();
+	driver_hud::panels panels;
+	panels.aid = m_aidpanel.is_open && false == m_mapshown;
+	panels.aid_expanded = m_aidpanel.is_expanded;
+	panels.timetable = m_timetablepanel.is_open && false == m_mapshown;
+	panels.timetable_expanded = m_timetablepanel.is_expanded;
+	panels.scenario = m_scenariopanel.is_open && false == m_mapshown;
+	panels.editing = m_pausemenu.editing_hud() && false == m_mapshown;
+	auto const hud{m_hud.update(panels)};
+	m_aidpanel.replaced = hud;
+	m_timetablepanel.replaced = hud;
+	m_scenariopanel.replaced = hud;
 
 	ui_layer::update();
 }
@@ -245,7 +287,9 @@ void driver_ui::set_cursor(bool const Visible)
 // render() subclass details
 void driver_ui::render_()
 {
-	// the documents of RmlUi (the hud, the menu of the pause), into the background of imgui, under its windows
+	// the image of the map of RmlUi first, then the documents of RmlUi over it (the map, the hud, the menu of the pause), into
+	// the background of imgui, under its windows
+	m_mapscreen.draw();
 	rmlui::render();
 
 	const std::string *rec_name = m_trainingcardpanel.is_recording();

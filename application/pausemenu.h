@@ -32,6 +32,10 @@ class pause_menu
 	// a key, before the simulation gets it. true: the menu took it (escape goes back from a page of the menu to the first one,
 	// on the first one it goes on to the simulation and ends the pause)
 	bool on_key(int Key, int Action);
+	// the player places the parts of the hud (Edit HUD): the menu shows only its bar, the hud lets its parts be dragged
+	bool editing_hud() const;
+	// the player asked for the parts of the hud back where they were at first (Reset), since the last call
+	bool take_hud_reset();
 
   private:
 	struct state;

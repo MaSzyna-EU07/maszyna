@@ -6,7 +6,8 @@
 
 	The values of the data model pause_menu:
 	shown            the simulation is paused
-	page             the page shown: main, settings, controls or quit
+	page             the page shown: main, settings, controls, quit, or hud while the player places the parts of the hud
+	                 (only the bar of the menu is shown then, the hud takes the mouse)
 	ssr, ssr_name    the level of the screen space reflections, 0 to 3, and its name (translated)
 	shadow_ranks     1 to 3
 	shadow_angle     the angle of the sun below which there are no shadows, 0.2 to 1
@@ -17,7 +18,7 @@
 	save_status      what became of saving the settings (translated), empty before
 	bindings         the keys of the controls: action (its description) and key
 	The settings take effect as they're changed. The events: resume ends the pause, show('page') shows a page, save writes the
-	settings into eu07.ini, quit ends the simulation.
+	settings into eu07.ini, quit ends the simulation, hud_reset puts the parts of the hud back where they were at first.
 
 	The texts of the elements are looked up in the translations of the game (lang/*.po).
 -->
@@ -34,11 +35,36 @@
 			font-family: DejaVu Sans;
 			font-size: 15dp;
 			color: #ffffff;
+			pointer-events: none;
 		}
 		div, h1, h2 {
 			display: block;
 		}
+		#toolbar {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			display: flex;
+			flex-direction: row;
+			justify-content: center;
+			align-items: center;
+			padding: 6dp 0;
+			background-color: #1e2327f2;
+			border-bottom: 1dp #ffcc33;
+			pointer-events: auto;
+		}
+		#toolbar .hint {
+			margin-right: 16dp;
+			color: #ffcc33;
+		}
+		#toolbar .button {
+			margin-top: 0;
+			margin-right: 8dp;
+			padding: 4dp 16dp;
+		}
 		#dim {
+			pointer-events: auto;
 			display: flex;
 			flex-direction: column;
 			justify-content: center;
@@ -170,13 +196,19 @@
 	</style>
 </head>
 <body data-model="pause_menu">
-	<div id="dim" data-if="shown">
+	<div id="toolbar" data-if="shown && page == 'hud'">
+		<span class="hint">Drag the parts of the HUD, they snap to the edges</span>
+		<div class="button" data-event-click="hud_reset">Reset</div>
+		<div class="button" data-event-click="show('main')">Done</div>
+	</div>
+	<div id="dim" data-if="shown && page != 'hud'">
 		<div id="menu">
 			<div data-if="page == 'main'">
 				<h1>Simulation Paused</h1>
 				<div class="button" data-event-click="resume">Resume</div>
 				<div class="button" data-event-click="show('settings')">Settings</div>
 				<div class="button" data-event-click="show('controls')">Controls</div>
+				<div class="button" data-event-click="show('hud')">Edit HUD</div>
 				<div class="button" data-event-click="show('quit')">Quit</div>
 			</div>
 			<div data-if="page == 'settings'">

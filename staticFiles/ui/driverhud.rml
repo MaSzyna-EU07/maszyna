@@ -1,11 +1,18 @@
 <rml>
 <!--
-	The hud of the driver: the driving aid of F1 drawn with RmlUi (ui.rmlui yes in eu07.ini). F1 shows it, shows it expanded
-	and hides it. A copy of this file is built into the program; ui/driverhud.rml in the game folder is used in its place.
+	The hud of the driver drawn with RmlUi (ui.rmlui yes in eu07.ini): the driving aid (F1), the timetable (F2) and the scenario
+	(F3). F1 and F2 show their part, show it expanded and hide it, F3 shows and hides its part. A copy of this file is built into
+	the program; ui/driverhud.rml in the game folder is used in its place.
+
+	The parts the player places (the menu of the pause, Edit HUD) are the elements with the ids aid, timetable and scenario: the
+	game sets their left or right and top or bottom where the player left them (hud_layout.ini in the profile), and while they're
+	placed the element with the id hud has the class editing, and the parts are dragged.
 
 	The values of the data model driver_hud:
-	shown            the hud is shown (F1) and there's a vehicle driven
-	expanded         the hud is expanded (F1 pressed again)
+	editing          the player places the parts: all of them are shown
+	The driving aid:
+	shown            the part is shown (F1) and there's a vehicle driven
+	expanded         the part is expanded (F1 pressed again)
 	speed            km/h, rounded down
 	limit            km/h the driver may go at now
 	next_limit_shown there's a next limit to tell of
@@ -27,8 +34,26 @@
 	autopilot_shown  the driver may hand the vehicle to the autopilot here
 	autopilot        the autopilot drives
 	The event toggle_autopilot hands the vehicle to the autopilot or takes it back.
+	The timetable:
+	tt_shown, tt_expanded   as the driving aid
+	tt_time          the time of the simulation, h:mm:ss
+	tt_relation      the relation and the name of the train
+	tt_next          the next stop
+	tt_consist       the mass and the length of the consist are told: tt_mass_specified and tt_mass_actual (t), tt_length (m)
+	tt_has_table     the train has a timetable
+	tt_late          the train is late, by tt_delay (+N min)
+	tt_stops         the stops ahead: vmax (empty when the same as before), station, km, ware, arrival and departure (empty
+	                 when passing through), travel (minutes from the stop before), tracks (1 or 2), state (normal, exchange,
+	                 can_depart, at_stop)
+	The scenario:
+	sc_shown         the part is shown (F3) and there's a driver to tell of
+	sc_task          the current task of the driver
+	sc_assignment    the assignment of the scenario, empty when none
+	sc_hints         the hints: text and done
 
-	The texts of the elements are looked up in the translations of the game (lang/*.po).
+	The texts of the elements are looked up in the translations of the game (lang/*.po). An element repeated by data-for has no
+	bindings of the items of its own, they're on the elements in it: RmlUi updates those after it drops the items an array lost,
+	those of the repeated element itself before, which warns of an index out of bounds.
 -->
 <head>
 	<title>Driver hud</title>
@@ -45,17 +70,63 @@
 			color: #ffffff;
 			pointer-events: none;
 		}
-		div {
+		div, p {
 			display: block;
 		}
-		#aid {
+		#hud {
 			position: absolute;
-			left: 16dp;
-			bottom: 16dp;
-			min-width: 250dp;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+		}
+		.part {
+			position: absolute;
 			padding: 10dp 14dp 12dp 14dp;
 			background-color: #1e2327e0;
 			border: 1dp #3a424a;
+		}
+		.edit-title {
+			display: none;
+		}
+		.editing .part {
+			pointer-events: auto;
+			drag: drag;
+			border-color: #ffcc33;
+		}
+		.editing .part .edit-title {
+			display: block;
+			margin-bottom: 4dp;
+			color: #ffcc33;
+			font-weight: bold;
+		}
+		.title {
+			display: flex;
+			flex-direction: row;
+			margin-bottom: 6dp;
+			font-weight: bold;
+		}
+		.title .clock {
+			margin-left: auto;
+			padding-left: 16dp;
+			font-weight: normal;
+		}
+		.label {
+			margin-right: 4dp;
+			color: #a0a0a2;
+		}
+		.value {
+			margin-right: 14dp;
+		}
+		.row {
+			margin-top: 6dp;
+		}
+
+		/* the driving aid */
+		#aid {
+			left: 16dp;
+			bottom: 16dp;
+			min-width: 250dp;
 		}
 		.speedrow {
 			display: flex;
@@ -86,16 +157,6 @@
 		.next {
 			margin-left: 12dp;
 			color: #ffcc33;
-		}
-		.row {
-			margin-top: 6dp;
-		}
-		.label {
-			margin-right: 4dp;
-			color: #a0a0a2;
-		}
-		.value {
-			margin-right: 14dp;
 		}
 		.mark {
 			color: #ffb020;
@@ -129,39 +190,189 @@
 		.button.on {
 			background-color: #177f00;
 		}
+
+		/* the timetable */
+		#timetable {
+			right: 16dp;
+			top: 48dp;
+			min-width: 300dp;
+		}
+		.relation {
+			color: #d0d4d8;
+		}
+		.nextstop {
+			margin-top: 4dp;
+			color: #ffcc33;
+		}
+		.consist {
+			margin-top: 4dp;
+			color: #a0a0a2;
+		}
+		table {
+			display: table;
+			margin-top: 6dp;
+		}
+		tr {
+			display: table-row;
+		}
+		td {
+			display: table-cell;
+			padding: 3dp 6dp;
+			border-bottom: 1dp #2a3036;
+			vertical-align: top;
+		}
+		tr.head td {
+			color: #a0a0a2;
+			font-size: 12dp;
+		}
+		td.vmax, td.travel {
+			text-align: right;
+			color: #a0a0a2;
+		}
+		td.station {
+			min-width: 180dp;
+		}
+		td.times {
+			text-align: right;
+		}
+		.sub {
+			color: #a0a0a2;
+			font-size: 12dp;
+		}
+		.double {
+			color: #41c400;
+		}
+		td.station.exchange {
+			color: #ff4a3d;
+		}
+		td.station.can_depart {
+			color: #41c400;
+		}
+		td.station.at_stop {
+			color: #ffb020;
+		}
+		/* late: the time of the timetable struck through, and by how much in red */
+		.late {
+			color: #a0a0a2;
+			text-decoration: line-through;
+		}
+		.delay {
+			margin-left: 4dp;
+			color: #ff4a3d;
+			font-weight: bold;
+		}
+
+		/* the scenario */
+		#scenario {
+			left: 16dp;
+			top: 48dp;
+			min-width: 300dp;
+			max-width: 520dp;
+		}
+		.assignment {
+			margin-bottom: 6dp;
+			color: #d0d4d8;
+		}
+		.task {
+			margin-bottom: 6dp;
+		}
+		.hint {
+			margin-top: 3dp;
+		}
+		.hint.done {
+			color: #41c400;
+		}
 	</style>
 </head>
 <body data-model="driver_hud">
-	<div id="aid" data-if="shown">
-		<div class="speedrow">
-			<span class="speed">{{speed}}</span>
-			<span class="unit">km/h</span>
-			<div class="limit">{{limit}}</div>
-			<div class="next" data-if="expanded && next_limit_shown">→ {{next_limit}} km/h, {{next_limit_distance}} km</div>
+	<div id="hud" data-class-editing="editing">
+		<div id="aid" class="part" data-if="shown || editing">
+			<div class="edit-title">Driving Aid</div>
+			<div class="speedrow">
+				<span class="speed">{{speed}}</span>
+				<span class="unit">km/h</span>
+				<div class="limit">{{limit}}</div>
+				<div class="next" data-if="expanded && next_limit_shown">→ {{next_limit}} km/h, {{next_limit_distance}} km</div>
+			</div>
+			<div class="row">
+				<span class="label">Throttle</span>
+				<span class="value">{{throttle}} {{direction}}</span>
+				<span class="label">Brakes</span>
+				<span class="value">{{brake}}</span>
+				<span class="mark" data-if="slipping">!</span>
+			</div>
+			<div class="row" data-if="expanded">
+				<span class="label">Brake cylinders</span>
+				<span class="value">{{brake_pressure}} kPa</span>
+				<span class="label">Train pipe</span>
+				<span class="value">{{pipe_pressure}} kPa</span>
+			</div>
+			<div class="row" data-if="expanded && grade_shown">
+				<span class="label">Grade</span>
+				<span class="value">{{grade}} %</span>
+			</div>
+			<div class="alerts" data-if="alerter || cab_signal">
+				<span class="alert" data-if="alerter">{{alerter_text}}</span>
+				<span class="alert" data-if="cab_signal">{{shp_text}}</span>
+			</div>
+			<div class="holdup" data-if="expanded && hold_up_shown">{{hold_up}}</div>
+			<div class="button" data-if="autopilot_shown" data-class-on="autopilot" data-event-click="toggle_autopilot">Autopilot</div>
 		</div>
-		<div class="row">
-			<span class="label">Throttle</span>
-			<span class="value">{{throttle}} {{direction}}</span>
-			<span class="label">Brakes</span>
-			<span class="value">{{brake}}</span>
-			<span class="mark" data-if="slipping">!</span>
+
+		<div id="timetable" class="part" data-if="tt_shown || editing">
+			<div class="title">
+				<span>Timetable</span>
+				<span class="clock">{{tt_time}}</span>
+			</div>
+			<div class="relation">{{tt_relation}}</div>
+			<div class="nextstop" data-if="!tt_expanded && tt_next != ''">→ {{tt_next}}</div>
+			<div data-if="tt_expanded">
+				<div class="consist" data-if="tt_consist">
+					<span class="label">Consist</span>
+					<span>{{tt_mass_actual}} t ({{tt_mass_specified}} t), {{tt_length}} m</span>
+				</div>
+				<div class="row" data-if="!tt_has_table">(no timetable)</div>
+				<table data-if="tt_has_table">
+					<tr class="head">
+						<td class="vmax">km/h</td>
+						<td class="station"></td>
+						<td class="times"></td>
+						<td class="travel">min</td>
+					</tr>
+					<tr data-for="stop : tt_stops">
+						<td class="vmax">{{stop.vmax}}</td>
+						<td class="station" data-class-exchange="stop.state == 'exchange'" data-class-can_depart="stop.state == 'can_depart'" data-class-at_stop="stop.state == 'at_stop'">
+							{{stop.station}}<span class="double" data-if="stop.tracks != 1"> ║</span>
+							<div class="sub">{{stop.km}} {{stop.ware}}</div>
+						</td>
+						<td class="times">
+							<div>
+								<span data-if="stop.arrival == ''">|</span>
+								<span data-if="stop.arrival != ''" data-class-late="tt_late">{{stop.arrival}}</span>
+								<span class="delay" data-if="tt_late && stop.arrival != ''">({{tt_delay}})</span>
+							</div>
+							<div>
+								<span data-if="stop.departure == ''">|</span>
+								<span data-if="stop.departure != ''" data-class-late="tt_late">{{stop.departure}}</span>
+								<span class="delay" data-if="tt_late && stop.departure != ''">({{tt_delay}})</span>
+							</div>
+						</td>
+						<td class="travel">{{stop.travel}}</td>
+					</tr>
+				</table>
+			</div>
 		</div>
-		<div class="row" data-if="expanded">
-			<span class="label">Brake cylinders</span>
-			<span class="value">{{brake_pressure}} kPa</span>
-			<span class="label">Train pipe</span>
-			<span class="value">{{pipe_pressure}} kPa</span>
+
+		<div id="scenario" class="part" data-if="sc_shown || editing">
+			<div class="edit-title">Scenario</div>
+			<div class="assignment" data-if="sc_assignment != ''">{{sc_assignment}}</div>
+			<div class="label">Current task:</div>
+			<div class="task">{{sc_task}}</div>
+			<div class="label" data-if="sc_hints.size > 0">Hints</div>
+			<div data-for="hint : sc_hints">
+				<div class="hint" data-class-done="hint.done">{{hint.text}}</div>
+			</div>
 		</div>
-		<div class="row" data-if="expanded && grade_shown">
-			<span class="label">Grade</span>
-			<span class="value">{{grade}} %</span>
-		</div>
-		<div class="alerts" data-if="alerter || cab_signal">
-			<span class="alert" data-if="alerter">{{alerter_text}}</span>
-			<span class="alert" data-if="cab_signal">{{shp_text}}</span>
-		</div>
-		<div class="holdup" data-if="expanded && hold_up_shown">{{hold_up}}</div>
-		<div class="button" data-if="autopilot_shown" data-class-on="autopilot" data-event-click="toggle_autopilot">Autopilot</div>
 	</div>
 </body>
 </rml>

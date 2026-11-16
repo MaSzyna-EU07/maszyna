@@ -14,9 +14,13 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string_view>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Debugger.h>
@@ -41,9 +45,25 @@ class system_interface final : public SystemInterface_GLFW
 
 	bool LogMessage(Rml::Log::Type const Type, Rml::String const &Message) override
 	{
+		if (Type != Rml::Log::LT_ERROR && Type != Rml::Log::LT_ASSERT && Type != Rml::Log::LT_WARNING && Type != Rml::Log::LT_ALWAYS)
+			return true;
+		// a message which comes again each frame is written once, the log doesn't grow with it
+		if (m_recent.contains(Message))
+		{
+			++m_repeated;
+			return true;
+		}
+		if (m_recent.size() >= 64)
+			m_recent.clear();
+		m_recent.insert(Message);
+		if (m_repeated > 0)
+		{
+			WriteLog("rmlui: " + std::to_string(m_repeated) + " messages written before not written again");
+			m_repeated = 0;
+		}
 		if (Type == Rml::Log::LT_ERROR || Type == Rml::Log::LT_ASSERT)
 			ErrorLog("rmlui: " + Message);
-		else if (Type == Rml::Log::LT_WARNING || Type == Rml::Log::LT_ALWAYS)
+		else
 			WriteLog("rmlui: " + Message);
 		// true: an assertion doesn't stop the program in the debugger
 		return true;
@@ -61,6 +81,10 @@ class system_interface final : public SystemInterface_GLFW
 	{
 		// nothing to do
 	}
+
+  private:
+	std::unordered_set<Rml::String> m_recent; // the messages written lately
+	int m_repeated{0}; // of them, not written again since
 };
 
 struct state
@@ -70,6 +94,10 @@ struct state
 	Rml::Context *context{nullptr};
 	int renderedframe{-2}; // the frame of imgui the documents were last drawn in
 	bool cursorvisible{false};
+	bool debugger{false}; // the debugger was started, the first time it was asked for
+	std::vector<std::pair<Rml::ElementDocument *, int>> framebound; // the documents shown in a frame only, and the frame
+	rmlui::frame_cost cost;
+
 };
 
 std::unique_ptr<state> &instance()
@@ -92,6 +120,7 @@ bool load_fonts()
 	    font_file{"fonts/dejavusans-bold.ttf", false},
 	    font_file{"fonts/DejaVuSans-Bold.ttf", false},
 	    font_file{"fonts/dejavusansmono.ttf", false},
+	    font_file{"fonts/bahnschrift.ttf", false},
 	    font_file{"fonts/NotoSansSC-Regular.ttf", true},
 	};
 	auto texts{false};
@@ -149,7 +178,6 @@ bool start(GLFWwindow *Window)
 		return false;
 	}
 	running->context->SetDensityIndependentPixelRatio(Global.ui_scale);
-	Rml::Debugger::Initialise(running->context);
 	instance() = std::move(running);
 	WriteLog("rmlui: " + Rml::GetVersion() + " started");
 	return true;
@@ -200,23 +228,77 @@ void rmlui::render()
 		return;
 	if (running->context->GetDimensions() != size)
 		running->context->SetDimensions(size);
+	// the screens of the modes not drawn in this frame are gone with their modes
+	std::erase_if(running->framebound, [frame = ImGui::GetFrameCount()](std::pair<Rml::ElementDocument *, int> const &Entry) {
+		if (Entry.second == frame)
+			return false;
+		Entry.first->Hide();
+		return true;
+	});
+	using clock = std::chrono::steady_clock;
+	auto const start{clock::now()};
 	running->context->Update();
+	auto const updated{clock::now()};
 	auto *viewport{ImGui::GetMainViewport()};
 	running->render.begin_frame(ImGui::GetBackgroundDrawList(viewport), viewport->Pos);
 	running->context->Render();
 	running->render.end_frame();
+	auto const drawn{clock::now()};
 	running->renderedframe = ImGui::GetFrameCount();
+	// averaged over about the last 30 frames
+	auto const milliseconds = [](clock::duration const Duration) { return std::chrono::duration<float, std::milli>(Duration).count(); };
+	auto &cost{running->cost};
+	cost.update_ms += (milliseconds(updated - start) - cost.update_ms) * 0.033f;
+	cost.draw_ms += (milliseconds(drawn - updated) - cost.draw_ms) * 0.033f;
+	cost.vertices = running->render.vertices();
+}
+
+rmlui::frame_cost rmlui::cost()
+{
+	auto const *running{instance().get()};
+	return running != nullptr ? running->cost : frame_cost{};
+}
+
+void rmlui::show_in_frame(Rml::ElementDocument *Document)
+{
+	auto *running{instance().get()};
+	if (running == nullptr || Document == nullptr || ImGui::GetCurrentContext() == nullptr)
+		return;
+	auto const frame{ImGui::GetFrameCount()};
+	auto const entry{std::ranges::find(running->framebound, Document, &std::pair<Rml::ElementDocument *, int>::first)};
+	if (entry != running->framebound.end())
+		entry->second = frame;
+	else
+		running->framebound.emplace_back(Document, frame);
+	if (false == Document->IsVisible())
+		Document->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
+}
+
+void rmlui::forget(Rml::ElementDocument *Document)
+{
+	if (auto *running{instance().get()}; running != nullptr)
+		std::erase_if(running->framebound, [Document](std::pair<Rml::ElementDocument *, int> const &Entry) { return Entry.first == Document; });
 }
 
 void rmlui::show_debugger(bool const Show)
 {
-	if (active())
-		Rml::Debugger::SetVisible(Show);
+	auto *running{instance().get()};
+	if (running == nullptr)
+		return;
+	// started when it's first asked for: until then it doesn't gather the messages and the events of the documents
+	if (false == running->debugger)
+	{
+		if (false == Show)
+			return;
+		running->debugger = Rml::Debugger::Initialise(running->context);
+	}
+	Rml::Debugger::SetVisible(Show);
 }
 
 bool rmlui::debugger_shown()
 {
-	return active() && Rml::Debugger::IsVisible();
+	auto const *running{instance().get()};
+	return running != nullptr && running->debugger && Rml::Debugger::IsVisible();
 }
 
 bool rmlui::on_key(int const Key, int const Action, int const Mods)
@@ -300,6 +382,21 @@ Rml::Context *rmlui::context()
 }
 
 void rmlui::render()
+{
+	// built without RmlUi
+}
+
+void rmlui::show_in_frame(Rml::ElementDocument *)
+{
+	// built without RmlUi
+}
+
+rmlui::frame_cost rmlui::cost()
+{
+	return {};
+}
+
+void rmlui::forget(Rml::ElementDocument *)
 {
 	// built without RmlUi
 }

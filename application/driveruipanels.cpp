@@ -32,6 +32,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "widgets/vehicleparams.h"
 #include "utilities/U8.h"
+#include "application/rmluilayer.h"
+
+#include <format>
 
 #define DRIVER_HINT_CONTENT
 #include "application/driverhints.h"
@@ -155,6 +158,12 @@ drivingaid_panel::read() {
     aid.obstacle_distance = std::abs( owner->TrackObstacle() );
     aid.autopilot_allowed = ( false == Global.RealisticControlMode || DebugModeFlag );
     aid.autopilot = vehicledriver->AIControllFlag;
+    // the nearest signal ahead, of the table of the speeds the driver scans
+    if( vehicledriver->SemNextIndex < vehicledriver->sSpeedTable.size() ) {
+        auto const &point { vehicledriver->sSpeedTable[ vehicledriver->SemNextIndex ] };
+        aid.next_signal = point.evEvent;
+        aid.next_signal_distance = point.fDist;
+    }
     return aid;
 }
 
@@ -211,24 +220,127 @@ drivingaid_panel::render_contents() {
     ui_panel::render_contents();
 }
 
+namespace {
+
+// the vehicle the panels of the scenario and of the timetable tell of: the one driven, or with the free camera the one it's in
+// or the nearest one
+TDynamicObject const *vehicle_in_view() {
+
+    if( false == FreeFlyModeFlag ) {
+        auto const *train { simulation::Train };
+        return ( train ? train->Dynamic() : nullptr );
+    }
+    auto const &camera { Global.pCamera };
+    if( camera.m_owner != nullptr ) { return camera.m_owner; }
+    // w trybie latania lokalizujemy wg mapy
+    return std::get<TDynamicObject *>( simulation::Region->find_vehicle( camera.Pos, 20, false, false ) );
+}
+
+// the driver of the vehicle, or if the vehicle doesn't have a direct one, its owner
+TController const *owner_of( TDynamicObject const &Vehicle ) {
+
+    return (
+        Vehicle.Mechanik != nullptr && Vehicle.Mechanik->primary() ?
+            Vehicle.Mechanik :
+            Vehicle.ctOwner );
+}
+
+// a text printed with a format of the translations, which are in printf syntax, as long as it is
+template <typename... Args>
+std::string print_text( char const *Format, Args const... Arguments ) {
+
+    auto const length { std::snprintf( nullptr, 0, Format, Arguments... ) }; // NOSONAR: the formats of the translations are in printf syntax
+    if( length <= 0 ) { return {}; }
+    std::string text( static_cast<std::size_t>( length ) + 1, '\0' );
+    std::snprintf( text.data(), text.size(), Format, Arguments... ); // NOSONAR: the formats of the translations are in printf syntax
+    text.resize( static_cast<std::size_t>( length ) );
+    return text;
+}
+
+// minutes of travel from the stop before, as the timetable shows them
+std::string travel_time( Mtable::TTrainParameters const &Table, int const Index ) {
+
+    if( Index < 2 ) { return "   "; }
+    auto const *tableline { Table.TimeTable + Index };
+    auto const &previous { Table.TimeTable[ Index - 1 ] };
+    if( tableline->Ah >= 0 ) {
+        return to_minutes_str( static_cast<float>( CompareTime( previous.Dh, previous.Dm, tableline->Ah, tableline->Am ) ), false, 3 );
+    }
+    return to_minutes_str( static_cast<float>( std::max( 0.0, CompareTime( previous.Dh, previous.Dm, tableline->Dh, tableline->Dm ) - 0.5 ) ), false, 3 );
+}
+
+glm::vec4 line_colour( timetable_stop_state const State ) {
+
+    switch( State ) {
+        case timetable_stop_state::exchange: { return colors::uitextred; }
+        // czas minął i odjazd był, to nazwa stacji będzie na zielono
+        case timetable_stop_state::can_depart: { return colors::uitextgreen; }
+        case timetable_stop_state::at_stop: { return colors::uitextorange; }
+        default: { return Global.UITextColor; }
+    }
+}
+
+// the timetable drawn with the characters of boxes, two lines a stop
+std::vector<ui_panel::text_line> table_lines( timetable_reading const &Reading ) {
+
+    std::vector<ui_panel::text_line> lines;
+    // header
+    lines.emplace_back(U8("┌─────┬────────────────────────────────────┬─────────┬─────┐"), Global.UITextColor);
+    for( std::size_t index = 0; index < Reading.stops.size(); ++index ) {
+        auto const &stop { Reading.stops[ index ] };
+        std::string vmax { "   " };
+        if( true == stop.vmax_changed ) {
+            vmax += to_string( stop.vmax, 0 );
+            vmax = vmax.substr( vmax.size() - 3, 3 ); // z wyrównaniem do prawej
+        }
+        auto const station { (
+            Bezogonkow( stop.station, true )
+            + "                                  " )
+            .substr( 0, 34 ) };
+        auto const location { (
+            ( stop.km > 0.0 ?
+                to_string( stop.km, 2 ) :
+                "" )
+            + "                                  " )
+            .substr( 0, 34 - stop.ware.size() ) };
+        auto const arrival { ( stop.arrival.empty() ? U8("  │   ") : stop.arrival ) };
+        auto const departure { ( stop.departure.empty() ? U8("  │   ") : stop.departure ) };
+        auto const linecolor { line_colour( stop.state ) };
+        std::string const trackcount{ ( stop.tracks == 1 ? U8(" ┃  ") : U8(" ║  " )) };
+        lines.emplace_back(U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + stop.travel + U8(" │"),
+            linecolor );
+        lines.emplace_back(U8("│     │ ") + location + stop.ware + trackcount + departure + U8(" │     │"),
+            linecolor );
+        // divider/footer
+        if( index + 1 < Reading.stops.size() ) {
+            auto const &next { Reading.stops[ index + 1 ] };
+            std::string const vmaxnext{ ( next.vmax_changed ? U8("├─────┼") : U8("│     ├") ) };
+            auto const trackcountnext{ ( next.tracks == 1 ? U8("╂") : U8("╫") ) };
+            lines.emplace_back(
+                vmaxnext + U8("────────────────────────────────────") + trackcountnext + U8("─────────┼─────┤"),
+                Global.UITextColor );
+        }
+        else {
+            lines.emplace_back(
+                U8("└─────┴────────────────────────────────────┴─────────┴─────┘"),
+                Global.UITextColor );
+        }
+    }
+    return lines;
+}
+
+} // namespace
+
 void
 scenario_panel::update() {
 
-    if( false == is_open ) { return; }
+    if( false == is_open || replaced ) { return; }
 
     text_lines.clear();
 
-    auto const *train { simulation::Train };
-    auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
-    auto const &camera { Global.pCamera };
-    m_nearest = false == FreeFlyModeFlag  ? controlled :
-	            camera.m_owner != nullptr ? camera.m_owner :
-	                                        std::get<TDynamicObject *>(simulation::Region->find_vehicle(camera.Pos, 20, false, false)); // w trybie latania lokalizujemy wg mapy
+    m_nearest = vehicle_in_view();
     if( m_nearest == nullptr ) { return; }
-    auto const *owner { (
-        m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
-            m_nearest->Mechanik :
-            m_nearest->ctOwner ) };
+    auto const *owner { owner_of( *m_nearest ) };
     if( owner == nullptr ) { return; }
 
     std::string textline =
@@ -238,10 +350,30 @@ scenario_panel::update() {
     text_lines.emplace_back( textline, Global.UITextColor );
 }
 
+std::optional<scenario_reading>
+scenario_panel::read() {
+
+    auto const *vehicle { vehicle_in_view() };
+    if( vehicle == nullptr ) { return std::nullopt; }
+    auto const *owner { owner_of( *vehicle ) };
+    if( owner == nullptr ) { return std::nullopt; }
+
+    scenario_reading reading;
+    reading.task = owner->OrderCurrent();
+    reading.assignment = owner->assignment();
+    for( auto const &hint : owner->m_hints ) {
+        auto const value { std::get<float>( hint ) };
+        reading.hints.emplace_back(
+            print_text( Translations.lookup_c( driver_hints_texts[ static_cast<std::size_t>( std::get<driver_hint>( hint ) ) ], true ), value ),
+            std::get<TController::hintpredicate>( hint )( value ) );
+    }
+    return reading;
+}
+
 void
 scenario_panel::render() {
 
-    if( false == is_open ) { return; }
+    if( false == is_open || replaced ) { return; }
     if( true == text_lines.empty() ) { return; }
     if( m_nearest == nullptr ) { return; } // possibly superfluous given the above but, eh
 
@@ -258,10 +390,7 @@ scenario_panel::render() {
     }
     if( auto const panelname { ( title.empty() ? m_name : title ) + "###" + m_name }; true == ImGui::Begin( panelname.c_str(), &is_open, flags ) ) {
         // potential assignment section
-        auto const *owner { (
-            m_nearest->Mechanik != nullptr && m_nearest->Mechanik->primary() ?
-                m_nearest->Mechanik :
-                m_nearest->ctOwner ) };
+        auto const *owner { owner_of( *m_nearest ) };
         if( owner != nullptr ) {
             auto const assignmentheader { STR("Assignment") };
             if( false == owner->assignment().empty()
@@ -291,17 +420,96 @@ scenario_panel::render() {
     ImGui::End();
 }
 
+std::optional<timetable_reading>
+timetable_panel::read() {
+
+    auto const *vehicle { vehicle_in_view() };
+    if( vehicle == nullptr ) { return std::nullopt; }
+    auto const *owner { owner_of( *vehicle ) };
+    if( owner == nullptr ) { return std::nullopt; }
+
+    auto const &table = owner->TrainTimetable();
+
+    timetable_reading reading;
+    reading.relation = owner->Relation();
+    reading.train = owner->TrainName();
+    reading.next_stop = owner->NextStop();
+    if( owner->is_train() ) {
+        // consist data
+        auto consistmass { owner->fMass };
+        auto consistlength { owner->fLength };
+        if( false == owner->is_dmu()
+         && false == owner->is_emu() ) {
+            //odejmij lokomotywy czynne, a przynajmniej aktualną
+            consistmass -= owner->pVehicle->MoverParameters->TotalMass;
+            // subtract potential other half of a two-part vehicle
+            if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
+            auto const *next { owner->pVehicle->Next( coupling::permanent ) };
+            if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
+        }
+        reading.consist = true;
+        reading.mass_specified = static_cast<int>( table.LocLoad );
+        reading.mass_actual = static_cast<int>( consistmass / 1000 );
+        reading.length = static_cast<int>( consistlength );
+    }
+    // below 0 when late, as the driver takes it (moveLate)
+    reading.delay = static_cast<int>( std::lround( std::max( 0.0, -table.CheckTrainLatency() ) ) );
+    // only bother if there's stations to list
+    reading.timetable = ( table.StationCount != 0 );
+    if( reading.timetable ) {
+        read_stops( reading, *owner, *vehicle );
+    }
+    return reading;
+}
+
+void
+timetable_panel::read_stops( timetable_reading &Reading, TController const &Owner, TDynamicObject const &Vehicle ) {
+
+    auto const &table = Owner.TrainTimetable();
+    auto const &time { simulation::Time.data() };
+
+    for( int i = table.StationStart; i <= table.StationCount; ++i ) {
+        // wyświetlenie pozycji z rozkładu
+        auto const *tableline { table.TimeTable + i }; // linijka rozkładu
+        timetable_reading::stop stop;
+        stop.vmax = tableline->vmax;
+        stop.vmax_changed = ( i == table.StationStart || tableline->vmax != ( tableline - 1 )->vmax ); // NOSONAR: the same values read from the timetable
+        stop.station = tableline->StationName;
+        stop.km = tableline->km;
+        stop.ware = tableline->StationWare;
+        if( tableline->Ah >= 0 ) {
+            stop.arrival = std::to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 );
+        }
+        if( tableline->Dh >= 0 ) {
+            stop.departure = std::to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 );
+        }
+        stop.travel = travel_time( table, i );
+        stop.tracks = tableline->TrackNo;
+        if( i == table.StationStart ) {
+            auto const candepart { (
+                   table.StationStart < table.StationIndex
+                && i < table.StationIndex
+                && ( tableline->Ah < 0 // pass-through, always valid
+                  || tableline->is_maintenance // maintenance stop, always valid
+                  || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= static_cast<float>(tableline->Dh * 60) + tableline->Dm ) ) };
+            auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * Owner.fStopTime)) > 0 ) };
+            auto const isatpassengerstop { true == Owner.IsAtPassengerStop && Vehicle.MoverParameters->Vel < 1.0 };
+            if( loadchangeinprogress ) { stop.state = timetable_stop_state::exchange; }
+            else if( candepart ) { stop.state = timetable_stop_state::can_depart; }
+            else if( isatpassengerstop ) { stop.state = timetable_stop_state::at_stop; }
+        }
+        Reading.stops.push_back( std::move( stop ) );
+    }
+}
+
 void
 timetable_panel::update() {
 
-	if( false == is_open ) { return; }
+	if( false == is_open || replaced ) { return; }
 
 	text_lines.clear();
 	m_tablelines.clear();
 
-	auto const *train { simulation::Train };
-	auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
-	auto const &camera { Global.pCamera };
 	auto const &time { simulation::Time.data() };
 
     { // current time
@@ -317,153 +525,52 @@ timetable_panel::update() {
         title = m_buffer.data();
     }
 
-    auto *vehicle { (
-        false == FreeFlyModeFlag ? controlled :
-        camera.m_owner != nullptr ? camera.m_owner :
-        std::get<TDynamicObject *>( simulation::Region->find_vehicle( camera.Pos, 20, false, false ) ) ) }; // w trybie latania lokalizujemy wg mapy
-
-    if( vehicle == nullptr ) { return; }
-    // if the nearest located vehicle doesn't have a direct driver, try to query its owner
-    auto const *owner = vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner;
-    if( owner == nullptr ) { return; }
-
-    auto const &table = owner->TrainTimetable();
+    auto const reading { read() };
+    if( false == reading.has_value() ) { return; }
 
     // destination
     {
-        auto textline = Bezogonkow( owner->Relation(), true );
+        auto textline = Bezogonkow( reading->relation, true );
         if( false == textline.empty() ) {
-            textline += " (" + Bezogonkow( owner->TrainName(), true ) + ")";
+            textline += " (" + Bezogonkow( reading->train, true ) + ")";
         }
         text_lines.emplace_back( textline, Global.UITextColor );
     }
 
     if( false == is_expanded ) {
         // next station
-        auto const nextstation = owner->NextStop();
-        if( false == nextstation.empty() ) {
+        if( false == reading->next_stop.empty() ) {
             // jeśli jest podana relacja, to dodajemy punkt następnego zatrzymania
-            auto textline = " -> " + nextstation;
+            auto textline = " -> " + reading->next_stop;
 
             text_lines.emplace_back( textline, Global.UITextColor );
         }
+        return;
     }
 
-    if( is_expanded ) {
+    if( reading->consist ) {
+        std::snprintf(
+            m_buffer.data(), m_buffer.size(),
+            STR_C("Consist weight: %d t (specified) %d t (actual)\nConsist length: %d m"),
+            reading->mass_specified,
+            reading->mass_actual,
+            reading->length );
 
-        if( owner->is_train() ) {
-            // consist data
-            auto consistmass { owner->fMass };
-            auto consistlength { owner->fLength };
-            if( false == owner->is_dmu()
-             && false == owner->is_emu() ) {
-				//odejmij lokomotywy czynne, a przynajmniej aktualną
-				consistmass -= owner->pVehicle->MoverParameters->TotalMass;
-				// subtract potential other half of a two-part vehicle
-				if( auto const *previous { owner->pVehicle->Prev( coupling::permanent ) }; previous != nullptr ) { consistmass -= previous->MoverParameters->TotalMass; }
-				auto const *next { owner->pVehicle->Next( coupling::permanent ) };
-				if( next != nullptr ) { consistmass -= next->MoverParameters->TotalMass; }
-			}
-            std::snprintf(
-                m_buffer.data(), m_buffer.size(),
-                STR_C("Consist weight: %d t (specified) %d t (actual)\nConsist length: %d m"),
-                static_cast<int>( table.LocLoad ),
-                static_cast<int>( consistmass / 1000 ),
-                static_cast<int>( consistlength ) );
+        text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
+        text_lines.emplace_back( "", Global.UITextColor );
+    }
 
-            text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
-            text_lines.emplace_back( "", Global.UITextColor );
-        }
-
-        if( 0 == table.StationCount ) {
-            // only bother if there's stations to list
-            text_lines.emplace_back( STR("(no timetable)"), Global.UITextColor );
-        }
-        else {
-			// header
-			m_tablelines.emplace_back(U8("┌─────┬────────────────────────────────────┬─────────┬─────┐"), Global.UITextColor);
-
-            TMTableLine const *tableline;
-            for( int i = table.StationStart; i <= table.StationCount; ++i ) {
-                // wyświetlenie pozycji z rozkładu
-                tableline = table.TimeTable + i; // linijka rozkładu
-
-                bool vmaxchange { true };
-                if( i > table.StationStart ) {
-                    auto const *previoustableline { tableline - 1 };
-                    if( tableline->vmax == previoustableline->vmax ) {
-                        vmaxchange = false;
-                    }
-                }
-                std::string vmax { "   " };
-                if( true == vmaxchange ) {
-                    vmax += to_string( tableline->vmax, 0 );
-                    vmax = vmax.substr( vmax.size() - 3, 3 ); // z wyrównaniem do prawej
-                }
-                auto const station { (
-                    Bezogonkow( tableline->StationName, true )
-                    + "                                  " )
-                    .substr( 0, 34 ) };
-                auto const location { (
-                    ( tableline->km > 0.0 ?
-                        to_string( tableline->km, 2 ) :
-                        "" )
-                    + "                                  " )
-                    .substr( 0, 34 - tableline->StationWare.size() ) };
-                auto const arrival { (
-                    tableline->Ah >= 0 ?
-                        std::to_string( int( 100 + tableline->Ah ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Am, true, 3 ) :
-                        U8("  │   ") ) };
-                auto const departure { (
-                    tableline->Dh >= 0 ?
-                        std::to_string( int( 100 + tableline->Dh ) ).substr( 1, 2 ) + ":" + to_minutes_str( tableline->Dm, true, 3 ) :
-                        U8("  │   ") ) };
-                auto const candepart { (
-                       table.StationStart < table.StationIndex
-                    && i < table.StationIndex
-                    && ( tableline->Ah < 0 // pass-through, always valid
-                      || tableline->is_maintenance // maintenance stop, always valid
-                      || time.wHour * 60 + time.wMinute + time.wSecond * 0.0167 >= static_cast<float>(tableline->Dh * 60) + tableline->Dm ) ) };
-                auto const loadchangeinprogress { ( static_cast<int>(std::ceil(-1.0 * owner->fStopTime)) > 0 ) };
-                auto const isatpassengerstop { true == owner->IsAtPassengerStop && vehicle->MoverParameters->Vel < 1.0 };
-                auto const traveltime { (
-                    i < 2 ? "   " :
-                    tableline->Ah >= 0 ? to_minutes_str( static_cast<float>(CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Ah, tableline->Am )), false, 3 ) :
-                    to_minutes_str( static_cast<float>(std::max( 0.0, CompareTime( table.TimeTable[ i - 1 ].Dh, table.TimeTable[ i - 1 ].Dm, tableline->Dh, tableline->Dm ) - 0.5 )), false, 3 ) ) };
-                auto const linecolor { (
-                    i != table.StationStart ? Global.UITextColor :
-                    loadchangeinprogress ? colors::uitextred :
-                    candepart ? colors::uitextgreen : // czas minął i odjazd był, to nazwa stacji będzie na zielono
-                    isatpassengerstop ? colors::uitextorange :
-                    Global.UITextColor ) };
-                std::string const trackcount{ ( tableline->TrackNo == 1 ? U8(" ┃  ") : U8(" ║  " )) };
-                m_tablelines.emplace_back(U8("│ ") + vmax + U8(" │ ") + station + trackcount + arrival + U8(" │ ") + traveltime + U8(" │"),
-                    linecolor );
-                m_tablelines.emplace_back(U8("│     │ ") + location + tableline->StationWare + trackcount + departure + U8(" │     │"),
-                    linecolor );
-                // divider/footer
-                if( i < table.StationCount ) {
-                    auto const *nexttableline { tableline + 1 };
-                    std::string const vmaxnext{ ( tableline->vmax == nexttableline->vmax ? U8("│     ├") : U8("├─────┼") ) };
-                    auto const trackcountnext{ ( nexttableline->TrackNo == 1 ? U8("╂") : U8("╫") ) };
-                    m_tablelines.emplace_back(
-                        vmaxnext + U8("────────────────────────────────────") + trackcountnext + U8("─────────┼─────┤"),
-                        Global.UITextColor );
-                }
-                else {
-                    m_tablelines.emplace_back(
-                        U8("└─────┴────────────────────────────────────┴─────────┴─────┘"),
-                        Global.UITextColor );
-                }
-            }
-        }
-    } // is_expanded
+    if( false == reading->timetable ) {
+        text_lines.emplace_back( STR("(no timetable)"), Global.UITextColor );
+        return;
+    }
+    m_tablelines = table_lines( *reading );
 }
 
 void
 timetable_panel::render() {
 
-    if( false == is_open ) { return; }
+    if( false == is_open || replaced ) { return; }
     if( true  == text_lines.empty() ) { return; }
 
 	ImGui::PushFont(ui_layer::font_mono);
@@ -1484,6 +1591,14 @@ debug_panel::update_section_renderer( std::vector<text_line> &Output ) {
             if( m_renderersections.empty() ) {
                 Output.emplace_back( GfxRenderer->info_times(), Global.UITextColor );
                 Output.emplace_back( GfxRenderer->info_stats(), Global.UITextColor );
+            }
+
+            // what the documents of RmlUi take, while it runs
+            if( rmlui::active() ) {
+                auto const cost { rmlui::cost() };
+                Output.emplace_back(
+                    std::format( "RmlUi: {:.2f} ms a frame (layout {:.2f}, drawing {:.2f}), {} vertices", cost.update_ms + cost.draw_ms, cost.update_ms, cost.draw_ms, cost.vertices ),
+                    Global.UITextColor );
             }
 
             // CPU related

@@ -210,7 +210,10 @@ set(SOURCES
 "application/drivingaid.cpp"
 "application/driverhud.cpp"
 "application/pausemenu.cpp"
+"application/mapscreen.cpp"
+"application/loadingscreen.cpp"
 "application/inisettings.cpp"
+"application/hudlayout.cpp"
 "application/rmluilayer.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
@@ -1001,7 +1004,7 @@ if (WITH_RMLUI)
 		COMPILE_DEFINITIONS "GLFW_INCLUDE_NONE" SKIP_PRECOMPILE_HEADERS ON)
 	# the documents are built into the executable, used when the game folder has no ui/<name>.rml of its own: each one is
 	# written out as the bytes of the array <name>_rml in geninc/<name>_rml.inc
-	foreach(RML_NAME driverhud pausemenu)
+	foreach(RML_NAME driverhud pausemenu map loading)
 		set(RML_FILE "${CMAKE_SOURCE_DIR}/staticFiles/ui/${RML_NAME}.rml")
 		set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RML_FILE}")
 		file(SIZE "${RML_FILE}" RML_SIZE)

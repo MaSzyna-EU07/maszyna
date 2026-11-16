@@ -32,6 +32,11 @@ class imgui_render_interface final : public Rml::RenderInterface
 	void end_frame();
 	// the images of the textures still held are released, while the renderer is still there
 	void release_all();
+	// the vertices drawn since the frame began
+	int vertices() const
+	{
+		return m_vertices;
+	}
 
 	// Rml::RenderInterface
 	Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<Rml::Vertex const> Vertices, Rml::Span<int const> Indices) override;
@@ -59,6 +64,7 @@ class imgui_render_interface final : public Rml::RenderInterface
 
 	ImDrawList *m_list{nullptr};
 	ImVec2 m_origin{0.f, 0.f};
+	int m_vertices{0};
 	bool m_scissor{false};
 	Rml::Rectanglei m_scissorregion;
 	std::optional<Rml::Matrix4f> m_transform;

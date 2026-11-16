@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <RmlUi/Core.h>
 
+#include "application/inisettings.h"
 #include "application/rmluilayer.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
@@ -19,12 +20,23 @@ http://mozilla.org/MPL/2.0/.
 namespace rmlui
 {
 
+std::string game_text(std::string Text, bool const Underscores)
+{
+	for (auto &character : Text)
+	{
+		if (static_cast<unsigned char>(character) < 0x20U || (Underscores && character == '_'))
+			character = ' ';
+	}
+	return ini_settings::is_utf8(Text) ? Text : win1250_to_utf8(Text);
+}
+
 document::~document()
 {
 	// with RmlUi ended, the document went with it
 	auto *context{rmlui::context()};
 	if (m_element == nullptr || context == nullptr)
 		return;
+	rmlui::forget(m_element);
 	m_element->Close();
 	// the document is unloaded with the update, the data model can go then
 	context->Update();
@@ -75,6 +87,11 @@ void document::hide()
 {
 	if (m_element != nullptr && m_element->IsVisible())
 		m_element->Hide();
+}
+
+void document::show_in_frame()
+{
+	rmlui::show_in_frame(m_element);
 }
 
 bool document::visible() const

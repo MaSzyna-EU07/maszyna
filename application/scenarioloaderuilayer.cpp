@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include <nlohmann/json.hpp>
 #include "utilities/Logs.h"
+#include "application/rmluilayer.h"
 #include <sstream>
 
 using json = nlohmann::json;
@@ -94,6 +95,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	std::string background = triviaData[i]["background"];
 	if (triviaData[i].contains("scenery"))
 		sceneryName = triviaData[i]["scenery"];
+	m_triviatext = triviaStr;
 
 	// divide trivia into multiple lines - UTF-8 safe implementation
 	// Different languages need different character limits due to character width differences
@@ -188,6 +190,23 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 
 void scenarioloader_ui::render_()
 {
+	// the screen of RmlUi while RmlUi runs: the gradient under it, as under the one of imgui
+	loading_screen::progress progress;
+	progress.done = m_progress;
+	progress.subtask = m_subtaskprogress;
+	progress.text = m_progresstext;
+	progress.title = sceneryName;
+	progress.trivia = m_trivia.empty() ? std::string{} : m_triviatext;
+	if (m_screen.update(progress))
+	{
+		auto const *viewport{ImGui::GetMainViewport()};
+		ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())
+		    ->AddImage((ImTextureID)(intptr_t)m_gradient_overlay_tex, ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y / 2), ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y),
+		               ImVec2(0, 0), ImVec2(1, 1));
+		rmlui::render();
+		return;
+	}
+
 	// For some reason, ImGui windows have some padding. Offset it.
 	// TODO: Find out a way to exactly adjust the position.
 	constexpr int padding = 12;

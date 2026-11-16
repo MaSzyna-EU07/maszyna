@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/driveruipanels.h"
 #include "application/driverhud.h"
 #include "application/pausemenu.h"
+#include "application/mapscreen.h"
 #include "input/command.h"
 
 #include "widgets/vehiclelist.h"
@@ -43,6 +44,8 @@ public:
     // updates state of UI elements
     void
         update() override;
+    // the pause or the map of RmlUi is on
+    bool holds_cursor() const override { return m_holdscursor; }
 
 protected:
     void render_menu_contents() override;
@@ -56,6 +59,9 @@ private:
     // render() subclass details
     void
         render_() override;
+    // escape, while the map of RmlUi is on and the simulation isn't paused, closes it. returns: the key was taken
+    bool
+        close_map_on_escape( int const Action );
 
 // members
 	drivingaid_panel m_aidpanel { "Driving Aid", false };
@@ -72,7 +78,11 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
-	driver_hud m_hud; // the driving aid made with RmlUi, in place of m_aidpanel while RmlUi runs
+	driver_hud m_hud; // the driving aid, the timetable and the scenario made with RmlUi, in place of their panels while RmlUi runs
 	pause_menu m_pausemenu; // the menu of the pause made with RmlUi, in place of the window of imgui while RmlUi runs
 	bool m_pausemenushown { false }; // m_pausemenu shows the pause
+	map_screen m_mapscreen { m_mappanel }; // the map over the whole screen made with RmlUi, on Tab while RmlUi runs
+	bool m_mapshown { false }; // m_mapscreen is on
+	bool m_mapescape { false }; // escape closed the map, its release is taken too
+	bool m_holdscursor { false }; // the pause or the map is on, the cursor is seen
 };

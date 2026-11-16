@@ -13,6 +13,7 @@ struct GLFWwindow;
 namespace Rml
 {
 class Context;
+class ElementDocument;
 }
 
 // RmlUi: the user interface made of documents (rml) and style sheets (rcss), shown over the simulation beside the one of imgui
@@ -34,6 +35,20 @@ Rml::Context *context();
 // lays the documents out and draws them under the windows of imgui. called in a frame of imgui, by the user interface of a mode
 // which shows them
 void render();
+// the document shown in this frame, and hidden in the first frame it isn't shown in again: a screen of a mode, which goes when
+// the mode does (the screen of the loading, once the scenery is loaded)
+void show_in_frame(Rml::ElementDocument *Document);
+// the document closed, not to be shown or hidden any more
+void forget(Rml::ElementDocument *Document);
+// what RmlUi takes a frame, averaged over the last frames: the processor time of laying the documents out and of drawing them,
+// and the vertices drawn
+struct frame_cost
+{
+	float update_ms{0.f};
+	float draw_ms{0.f};
+	int vertices{0};
+};
+frame_cost cost();
 // the debugger of RmlUi (the elements of the documents, their styles, the log) shown or hidden
 void show_debugger(bool Show);
 bool debugger_shown();

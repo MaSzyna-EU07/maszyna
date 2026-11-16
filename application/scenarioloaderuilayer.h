@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/uilayer.h"
+#include "application/loadingscreen.h"
 #include "launcher/deferred_image.h"
 
 class scenarioloader_ui : public ui_layer {
@@ -18,6 +19,8 @@ class scenarioloader_ui : public ui_layer {
 	std::uint64_t m_gradient_overlay_tex; // imgui_renderer image
 	deferred_image m_loading_wheel_frames[60];
     std::vector<std::string> m_trivia;
+	std::string m_triviatext; // the trivia whole, for the screen of RmlUi which wraps it itself
+	loading_screen m_screen; // the screen made with RmlUi, in place of the one of imgui while RmlUi runs
 public:
 	scenarioloader_ui();
 	void render_() override;

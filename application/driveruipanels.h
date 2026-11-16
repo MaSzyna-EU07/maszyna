@@ -43,6 +43,36 @@ private:
     static driving_aid::speed_limit_inputs speed_limit_inputs_of( TController const &Owner );
 };
 
+// the state of a stop of the timetable worth a colour of its own: the first stop ahead while the passengers or the load are
+// exchanged, when the train can depart, or when it stands at the stop
+enum class timetable_stop_state { normal, exchange, can_depart, at_stop };
+
+// what the panel of the timetable shows (F2), of the vehicle driven or the one the free camera is at; the hud of RmlUi reads it too
+struct timetable_reading {
+    struct stop {
+        double vmax { 0.0 }; // km/h
+        bool vmax_changed { true }; // differs from the one of the stop before
+        std::string station; // as the timetable has it: in Windows-1250, with '_' for spaces
+        double km { 0.0 }; // 0: not given
+        std::string ware; // what the station has (StationWare)
+        std::string arrival; // hh:mm, empty when the train passes through
+        std::string departure;
+        std::string travel; // minutes from the stop before, three characters
+        int tracks { 1 }; // of the line to the next stop
+        timetable_stop_state state { timetable_stop_state::normal }; // of the first stop ahead
+    };
+    std::string relation; // as the timetable has it
+    std::string train;
+    std::string next_stop;
+    bool consist { false }; // the mass and the length of the consist are told (a train)
+    int mass_specified { 0 }; // t
+    int mass_actual { 0 }; // t, the active locomotives taken off
+    int length { 0 }; // m
+    bool timetable { false }; // the train has a timetable; its stops ahead are in stops
+    int delay { 0 }; // minutes the train is late by, as the driver noted it at the last station (CheckTrainLatency)
+    std::vector<stop> stops;
+};
+
 class timetable_panel : public ui_expandable_panel {
 
 public:
@@ -52,10 +82,28 @@ public:
     void update() override;
     void render() override;
 
+    // what the panel shows, none without a vehicle and its driver
+    static std::optional<timetable_reading> read();
+
+    // the hud of RmlUi shows the timetable, the panel stays hidden; is_open and is_expanded still tell what the hud shows
+    bool replaced { false };
+
 private:
+    static void read_stops( timetable_reading &Reading, TController const &Owner, TDynamicObject const &Vehicle );
     // members
     std::array<char, 256> m_buffer;
     std::vector<text_line> m_tablelines;
+};
+
+// what the panel of the scenario shows (F3), of the vehicle driven or the one the free camera is at
+struct scenario_reading {
+    struct hint {
+        std::string text; // translated
+        bool done { false };
+    };
+    std::string task; // the current task of the driver
+    std::string assignment; // of the scenario, empty: none
+    std::vector<hint> hints;
 };
 
 class scenario_panel : public ui_panel {
@@ -67,7 +115,12 @@ public:
     void update() override;
     void render() override;
 
+    // what the panel shows, none without a vehicle and its driver
+    static std::optional<scenario_reading> read();
+
     bool is_expanded{ false };
+    // the hud of RmlUi shows the scenario, the panel stays hidden; is_open still tells whether the hud shows it
+    bool replaced { false };
 
 private:
 // members

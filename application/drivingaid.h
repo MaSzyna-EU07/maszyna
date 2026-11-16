@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+class basic_event;
+
 // what the driving aid tells the driver: the panel of F1 (imgui) and the hud of RmlUi show the same reading. the limit ahead is
 // worked out here from what the driver (TController) knows of the line, apart from the controller, so the rules can be tested
 // on their own
@@ -62,6 +64,8 @@ struct reading
 	double obstacle_distance{0.0}; // metres to the vehicle ahead
 	bool autopilot_allowed{false}; // the driver may hand the vehicle to the autopilot from the user interface
 	bool autopilot{false}; // the autopilot drives
+	basic_event const *next_signal{nullptr}; // the event of the nearest signal ahead the driver knows of, none if none
+	double next_signal_distance{0.0}; // metres to it
 };
 
 // the grade is told of from this many percent on

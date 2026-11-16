@@ -1357,8 +1357,12 @@ void driver_mode::set_picking(bool const Picking)
 	{
 		// switch off
 		m_input.mouse_pickmodepos = glm::dvec2(Global.cursor_pos);
-		Application.set_cursor(GLFW_CURSOR_DISABLED);
-		Application.set_cursor_pos(0, 0);
+		// a menu of the ui (the pause, the map) keeps the cursor, the ui hides it when the menu closes
+		if (false == m_userinterface->holds_cursor())
+		{
+			Application.set_cursor(GLFW_CURSOR_DISABLED);
+			Application.set_cursor_pos(0, 0);
+		}
 	}
 	// actually toggle the mode
 	Global.ControlPicking = Picking;
