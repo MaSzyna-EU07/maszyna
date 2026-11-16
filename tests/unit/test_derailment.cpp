@@ -143,7 +143,7 @@ TEST_CASE("derailment: the decision and the place don't depend on the step") {
 	auto const coarse{run(1.05 * critical, 0.5)};
 	REQUIRE(fine.has_value());
 	REQUIRE(coarse.has_value());
-	CHECK(std::abs(*coarse - *fine) <= 1.05 * critical * 0.5);
+	CHECK(std::abs(coarse.value() - fine.value()) <= 1.05 * critical * 0.5);
 }
 
 TEST_CASE("derailment: a peak shorter than the window doesn't derail") {
@@ -277,4 +277,69 @@ TEST_CASE("derailment: the damage flags of the track make the ride rougher, not 
 		CHECK(dr::body_acceleration(eu07vehicle, worn, 30.0) > dr::body_acceleration(eu07vehicle, good, 30.0));
 		CHECK(dr::body_acceleration(eu07vehicle, worn, 30.0) - dr::body_acceleration(eu07vehicle, good, 30.0) == doctest::Approx(1.1 * dr::vibration));
 	}
+}
+
+TEST_CASE("derailment: the speed the flange climbs the rail at") {
+	dr::vehicle_state vehicle;
+	vehicle.mass = 80000.0;
+	vehicle.axles = 4;
+	vehicle.length = 16.0;
+	vehicle.axle_base = 3.0;
+	vehicle.centre_of_gravity = 1.65;
+	dr::track_state track;
+	track.radius = 300.0;
+	SUBCASE("a lone vehicle on a good track overturns first: its Y/Q stays under the limit") {
+		CHECK_FALSE(dr::climbing_speed(vehicle, track).has_value());
+	}
+	SUBCASE("on a twisted track it climbs, at the speed Y/Q reaches the limit") {
+		// 50 mm of cross level takes half the load off the wheel
+		track.uneven_cross = 50.0;
+		auto const speed{dr::climbing_speed(vehicle, track)};
+		REQUIRE(speed.has_value());
+		CHECK(*speed > 0.0);
+		CHECK(dr::flange_forces(vehicle, track, *speed).ratio() >= dr::climbing_limit);
+		CHECK(dr::flange_forces(vehicle, track, *speed - 0.01).ratio() < dr::climbing_limit);
+		SUBCASE("the cant moves it up") {
+			track.cant = std::asin(0.1 / 1.5);
+			auto const canted{dr::climbing_speed(vehicle, track)};
+			REQUIRE(canted.has_value());
+			CHECK(*canted > *speed);
+		}
+	}
+	SUBCASE("pushed hard enough it climbs at a standstill: from the speed the cant balances") {
+		// an empty 3WL between heavy vehicles pushing 1 MN in a curve of 150 m, on 40 mm of cross level
+		vehicle.mass = 10500.0;
+		vehicle.axles = 2;
+		vehicle.length = 9.0;
+		vehicle.axle_base = 5.0;
+		vehicle.centre_of_gravity = 1.1;
+		vehicle.ends[0] = {1000000.0, 16.0};
+		vehicle.ends[1] = {1000000.0, 16.0};
+		track.radius = 150.0;
+		track.uneven_cross = 40.0;
+		auto const speed{dr::climbing_speed(vehicle, track)};
+		REQUIRE(speed.has_value());
+		CHECK(*speed == 0.0);
+	}
+}
+
+TEST_CASE("derailment: the report of the log") {
+	dr::verdict verdict;
+	verdict.result = dr::outcome::overturned;
+	verdict.acceleration = 3.31;
+	verdict.unloading = 1.02;
+	verdict.flange_ratio = 0.55;
+	dr::vehicle_state vehicle;
+	vehicle.mass = 80000.0;
+	vehicle.centre_of_gravity = 1.65;
+	vehicle.ends[1].compression = 50000.0;
+	dr::track_state track;
+	track.radius = -300.0;
+	track.damage = 31;
+	auto const text{dr::report(verdict, vehicle, track, 113.0 / 3.6, "track_7")};
+	CHECK(text ==
+	      "overturned at 113 km/h on track track_7, curve radius 300 m, cant 0 mm: lateral acceleration 3.31 m/s2, wheel unloading 1.02, Y/Q 0.55 (mass 80.0 t, centre of gravity 1.65 m,"
+	      " couplings pushing 0 / 50 kN, track damage 31, cross level 0 mm)");
+	verdict.result = dr::outcome::off_rails;
+	CHECK(dr::report(verdict, vehicle, track, 20.0, "").starts_with("derailed, the flange climbed the rail at 72 km/h on track (none),"));
 }

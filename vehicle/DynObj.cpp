@@ -3237,6 +3237,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     tp.CategoryFlag = MyTrack->iCategoryFlag & 15;
     tp.DamageFlag = MyTrack->iDamageFlag;
     tp.QualityFlag = MyTrack->iQualityFlag;
+    tp.Name = &MyTrack->name();
 
     // couplers
     if( MoverParameters->Couplers[0].CouplingFlag != coupling::faux

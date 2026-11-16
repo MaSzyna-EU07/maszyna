@@ -1924,13 +1924,26 @@ void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam co
 	track.damage = Track.DamageFlag;
 
 	auto const verdict{derailment_monitor.update(vehicle, track, V, Distance)};
-	if (verdict.result != derailment::outcome::none)
+	if (verdict.result == derailment::outcome::none)
 	{
-		derail(verdict, vehicle, track);
+		return;
 	}
+	if (Global.derailment == global_settings::derailment_model::physical)
+	{
+		derail(verdict, vehicle, track, Track.Name);
+		return;
+	}
+	// physics.derailment monitor: the legacy draw decides, the log tells what the criteria would do, once on a track
+	if (derailment_reported.has_value() && *derailment_reported == Track.Name)
+	{
+		return;
+	}
+	derailment_reported = Track.Name;
+	++derailment_reports;
+	WriteLog("derailment monitor: " + Name + " " + derailment::report(verdict, vehicle, track, V, Track.Name != nullptr ? *Track.Name : std::string{}));
 }
 
-void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track)
+void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName)
 {
 	if (false == SetFlag(DamageFlag, dtrain_out))
 	{
@@ -1944,12 +1957,7 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 	{
 		AlarmChainFlag = true;
 	}
-	auto const cant{1000.0 * derailment::contact_spacing(Track.gauge) * std::sin(std::abs(Track.cant))};
-	ErrorLog(std::format("Bad driving: {} {} at {:.0f} km/h, curve radius {:.0f} m, cant {:.0f} mm: lateral acceleration {:.2f} m/s2, wheel unloading {:.2f}, Y/Q {:.2f}"
-	                     " (mass {:.1f} t, centre of gravity {:.2f} m, couplings pushing {:.0f} / {:.0f} kN, track damage {}, cross level {:.0f} mm)",
-	                     Name, Derailed == derailment::outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(V) * 3.6, std::abs(Track.radius), cant,
-	                     Verdict.acceleration, Verdict.unloading, Verdict.flange_ratio, Vehicle.mass / 1000.0, Vehicle.centre_of_gravity, Vehicle.ends[end::front].compression / 1000.0,
-	                     Vehicle.ends[end::rear].compression / 1000.0, Track.damage, Track.uneven_cross));
+	ErrorLog("Bad driving: " + Name + " " + derailment::report(Verdict, Vehicle, Track, V, TrackName != nullptr ? *TrackName : std::string{}));
 }
 
 void TMoverParameters::Derail(DerailReason const Reason)
@@ -2079,7 +2087,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 				Derail(END_OF_TRACK);
 			// too fast in a curve: the legacy draw in every step (physics.derailment old), or the physical criteria
 			// once the step's distance is known, below
-			if (Global.derailment == global_settings::derailment_model::old && FuzzyLogic(AccN / g * (1.0 + 0.1 * (Track.DamageFlag & dtrack_freerail)), TrackW / Dim.H, 1))
+			if ((Global.derailment == global_settings::derailment_model::old || Global.derailment == global_settings::derailment_model::monitor) && FuzzyLogic(AccN / g * (1.0 + 0.1 * (Track.DamageFlag & dtrack_freerail)), TrackW / Dim.H, 1))
 				Derail(TOO_HIGH_SPEED);
 			// wykolejanie na poszerzeniu toru
 			if (FuzzyLogic(abs(Track.Width - TrackW), TrackW / 10.0, 1))
@@ -2092,7 +2100,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		// dL:=(V+AccS*dt/2)*dt;
 		// przyrost dlugosci czyli przesuniecie
 		dL = (3.0 * V - Vprev) * dt / 2.0; // metoda Adamsa-Bashfortha}
-		if (Global.derailment == global_settings::derailment_model::physical)
+		if (Global.derailment == global_settings::derailment_model::physical || Global.derailment == global_settings::derailment_model::monitor)
 		{
 			// over the distance of this step and of the simpler ones of the frame before it
 			check_derailment(Shape, Track, derailment_distance + std::abs(dL));

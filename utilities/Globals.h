@@ -293,8 +293,9 @@ struct global_settings {
 	// a vehicle too fast in a curve (physics.derailment in eu07.ini): new, it overturns or its flange climbs the rail
 	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
 	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
-	// it; off, it stays on the rails at any speed
-	enum class derailment_model { off, old, physical };
+	// it; off, it stays on the rails at any speed; monitor, the legacy draw decides and the log tells where the criteria
+	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was
+	enum class derailment_model { off, old, physical, monitor };
 	derailment_model derailment = derailment_model::physical;
 	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
 	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
@@ -302,6 +303,9 @@ struct global_settings {
 	// (collision monitor:, once for a hit). the road vehicles of the traffic keep the legacy rule with any
 	enum class collision_model { old, physical, monitor };
 	collision_model collisions = collision_model::physical;
+	// physics.trackcheck: the geometry of the rail tracks the criteria of derailment find suspicious, to the log once the
+	// scenery loaded (trackcheck:, see world/TrackCheck.h)
+	bool track_check = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
@@ -462,6 +466,22 @@ inline std::string_view name_of( global_settings::collision_model const Model ) 
     switch( Model ) {
         case global_settings::collision_model::old: { return "old"; }
         case global_settings::collision_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
+// the models of physics.derailment by their names in eu07.ini: new (the default, also for a name it doesn't know), old, off
+// or no, monitor
+inline global_settings::derailment_model derailment_model_of(std::string_view const Name) {
+    if( Name == "old" ) { return global_settings::derailment_model::old; }
+    if( Name == "off" || Name == "no" ) { return global_settings::derailment_model::off; }
+    if( Name == "monitor" ) { return global_settings::derailment_model::monitor; }
+    return global_settings::derailment_model::physical;
+}
+inline std::string_view name_of( global_settings::derailment_model const Model ) {
+    switch( Model ) {
+        case global_settings::derailment_model::old: { return "old"; }
+        case global_settings::derailment_model::off: { return "off"; }
+        case global_settings::derailment_model::monitor: { return "monitor"; }
         default: { return "new"; }
     }
 }
