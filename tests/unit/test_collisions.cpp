@@ -673,6 +673,64 @@ TEST_CASE("collisions: a train propelling an empty wagon into a braked one in a 
 	CHECK(empty->CollisionDerail == COLLISION_PUSHED_OFF);
 }
 
+// ---- recovery
+
+TEST_CASE("collisions: a repaired vehicle has its ends rebuilt and is back on the rails") {
+	// resetconsist: the crush of the ends shifted the stop of the buffers, the next hit of the repaired consist would
+	// have started from it; and a vehicle derailed in a collision kept its reason and the state of the push
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	consist train;
+	auto &wagon{add_loaded(train, coupling::faux, 0.0, 0.0)};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 30.0, 0.5)};
+	train.run(3.0);
+	REQUIRE(wagon->Couplers[end::rear].crush + locomotive->Couplers[end::front].crush > cl::override_crush);
+	REQUIRE((derailed(wagon.mover()) || derailed(locomotive.mover())));
+	for (auto *vehicle : {&wagon, &locomotive}) {
+		auto &mover{vehicle->mover()};
+		mover.repair_damage();
+		CHECK(mover.DamageFlag == 0);
+		CHECK(mover.Derailed == derailment::outcome::none);
+		CHECK(mover.CollisionDerail == NONE);
+		CHECK(mover.pushed_off_monitor.distance() == 0.0);
+		CHECK(mover.pushed_off_monitor.time() == 0.0);
+		for (auto const &coupler : mover.Couplers) {
+			CHECK(coupler.crush == 0.0);
+			CHECK(coupler.contact.absorbed() == 0.0);
+			CHECK(coupler.contact.crush_work() == 0.0);
+			CHECK_FALSE(coupler.hit_handled);
+			CHECK(coupler.hit_force == 0.0);
+			CHECK_FALSE(coupler.crush_monitored);
+			CHECK_FALSE(coupler.inside_reported);
+		}
+	}
+}
+
+TEST_CASE("collisions: the repair of a coupler torn off by the crush rebuilds its end") {
+	vehicle wagon{definition::fiz("430w_v2/430w")};
+	auto &coupler{wagon->Couplers[end::rear]};
+	coupler.crush = 0.3;
+	coupler.broken = true;
+	coupler.hit_force = 2.0e6;
+	SetFlag(wagon->DamageFlag, dtrain_coupling);
+	REQUIRE(wagon->repair_coupler(end::rear));
+	CHECK(coupler.crush == 0.0);
+	CHECK(coupler.hit_force == 0.0);
+	CHECK_FALSE(coupler.broken);
+	CHECK_FALSE(TestFlag(wagon->DamageFlag, dtrain_coupling));
+}
+
+TEST_CASE("collisions: SetDamage taking the derailment off clears the collision's") {
+	vehicle wagon{definition::fiz("3wl_v2/3wl")};
+	wagon->derail_in_collision(COLLISION_PUSHED_OFF, "test");
+	REQUIRE(wagon->CollisionDerail == COLLISION_PUSHED_OFF);
+	REQUIRE(wagon->Derailed == derailment::outcome::off_rails);
+	wagon->RunCommand("SetDamage", dtrain_out, -1);
+	CHECK(wagon->CollisionDerail == NONE);
+	CHECK(wagon->Derailed == derailment::outcome::none);
+	CHECK_FALSE(TestFlag(wagon->DamageFlag, dtrain_out));
+}
+
 // ---- the model of eu07.ini
 
 TEST_CASE("collisions: the legacy rule with physics.collisions old, the crush with new") {

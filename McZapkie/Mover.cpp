@@ -1856,13 +1856,26 @@ void TMoverParameters::check_pushed_off(double const dt, double const Distance)
 namespace
 {
 
-// the coupler as good as new, the vehicle without the coupler damage (and the emergency braking of the torn brake
-// hose) once neither of its couplers is broken
+// the end as it was built (physics.collisions new): not crushed, and nothing of a contact or a hit kept
+void restore_end(TCoupling &Coupler)
+{
+	Coupler.crush = 0.0;
+	Coupler.contact.reset();
+	Coupler.hit_handled = false;
+	Coupler.hit_force = 0.0;
+	Coupler.hit_duration = 0.0;
+	Coupler.crush_monitored = false;
+	Coupler.inside_reported = false;
+}
+
+// the coupler as good as new, its end with it (the crush that tore the draw gear off), the vehicle without the coupler
+// damage (and the emergency braking of the torn brake hose) once neither of its couplers is broken
 void repair(TMoverParameters &Vehicle, TCoupling &Coupler)
 {
 	Coupler.broken = false;
 	Coupler.stretch_duration = 0.f;
 	Coupler.physics_state.couple();
+	restore_end(Coupler);
 	if (Vehicle.Couplers[end::front].broken || Vehicle.Couplers[end::rear].broken)
 	{
 		return;
@@ -1979,6 +1992,9 @@ void TMoverParameters::rerail()
 	derailment_monitor.reset();
 	derailment_distance = 0.0;
 	derailment_reported.reset();
+	// nor derailed in a collision
+	CollisionDerail = NONE;
+	pushed_off_monitor.reset();
 	// back on the axis of the track, which the derailment shifted the vehicle off aside and down (a road vehicle keeps
 	// its place on the road)
 	if (TestFlag(CategoryFlag, 1))
@@ -1994,6 +2010,11 @@ void TMoverParameters::repair_damage()
 	EngDmgFlag = 0;
 	WheelFlat = 0.0;
 	AlarmChainFlag = false;
+	// the crushed ends rebuilt
+	for (auto &coupler : Couplers)
+	{
+		restore_end(coupler);
+	}
 	rerail();
 }
 
