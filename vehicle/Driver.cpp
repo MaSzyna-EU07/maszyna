@@ -4474,7 +4474,16 @@ void TController::SpeedCntrl(double DesiredSpeed)
 {
     if( false == mvControlling->SpeedCtrl ) { return; }
 
-	if (mvControlling->EngineType == TEngineType::DieselEngine)
+	if (mvControlling->IsSpeedCtrlSeparate())
+	{
+		// a switch of its own, the secondary controller left to the field shunting (eu07/maszyna#69)
+		if (DesiredSpeed < 0.1) {
+			DesiredSpeed = 0;
+		}
+		mvControlling->SpeedCtrlSwitch(DesiredSpeed > 0);
+		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+	}
+	else if (mvControlling->EngineType == TEngineType::DieselEngine)
 	{
 		if (DesiredSpeed < 0.1) {
 			mvControlling->DecScndCtrl(2);
@@ -4498,7 +4507,7 @@ void TController::SpeedCntrl(double DesiredSpeed)
         while( mvControlling->ScndCtrlPos < DesiredPos && true == mvControlling->IncScndCtrl(1) ) { ; } // all work is done in the condition loop
 	}
 
-    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->ScndCtrlPos > 0 ) {
+    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->IsSpeedCtrlEngaged() ) {
 		while (mvControlling->SpeedCtrlUnit.DesiredPower < mvControlling->SpeedCtrlUnit.MaxPower)
 		{
 			mvControlling->SpeedCtrlPowerInc();

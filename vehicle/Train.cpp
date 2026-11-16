@@ -1447,8 +1447,8 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			Train->ggScndCtrlButton.UpdateValue(Command.action == GLFW_RELEASE ? 0.f : 1.f, Train->dsbSwitch);
 		}
@@ -1511,17 +1511,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 		// glfw_press
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on if it's not active
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// otherwise turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -1541,17 +1541,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
@@ -1653,8 +1653,8 @@ void TTrain::OnCommand_secondcontrollerdecrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -9725,7 +9725,7 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (ggScndCtrlButton.is_toggle())
 		{
-			ggScndCtrlButton.UpdateValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f, dsbSwitch);
+			ggScndCtrlButton.UpdateValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f, dsbSwitch);
 		}
 		ggScndCtrlButton.Update(lowvoltagepower);
 	}
@@ -11993,7 +11993,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// tempomat
 	if (false == ggScndCtrlButton.is_push())
 	{
-		ggScndCtrlButton.PutValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f);
+		ggScndCtrlButton.PutValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f);
 	}
 	// sandbox
 	if (ggAutoSandButton.type() != TGaugeType::push)
