@@ -65,7 +65,7 @@ bool contains(std::string_view const Text, std::string_view const Part) {
 TEST_CASE("lua sandbox: no library that reaches files, programs, ffi or the debugger, and nothing that loads code") {
 	sandboxed_state const lua;
 	for (auto const *name : {"io", "ffi", "debug", "package", "jit", "require", "module", "dofile", "loadfile", "load", "loadstring",
-	                         "string.dump", "os.execute", "os.exit", "os.remove", "os.rename", "os.getenv", "os.tmpname",
+	                         "newproxy", "string.dump", "os.execute", "os.exit", "os.remove", "os.rename", "os.getenv", "os.tmpname",
 	                         "os.setlocale"}) {
 		CAPTURE(name);
 		CHECK(lua.run(std::format("return {}", name)) == "nil");
@@ -422,6 +422,114 @@ TEST_CASE("lua sandbox: the file functions make eu07 when there is none") {
 	lua_sandbox::open_file_library(lua.get(), &folders);
 	CHECK(lua.run("return type(eu07.read_file) .. type(eu07.write_file) .. type(eu07.read_data_file)") == "functionfunctionfunction");
 	CHECK(lua.run("return eu07.read_file('x.txt')") == "nil");
+}
+
+TEST_CASE("lua sandbox: no userdata of the script's own, whose __gc would run without the hooks") {
+	sandboxed_state const lua;
+	CHECK(lua.run("return newproxy") == "nil");
+	// a table's __gc isn't called (Lua 5.1, LuaJIT): no other way to a finalizer of the script's own
+	CHECK(lua.run("collected = false setmetatable({}, { __gc = function() collected = true end }) collectgarbage() collectgarbage() return collected") ==
+	      "false");
+}
+
+namespace {
+
+// two objects of the simulation, of which a script holds handles
+int memcell_object{1};
+int track_object{2};
+
+// eu07.test_memcell(handle): the number of the memcell object, nil for none; eu07.test_track(handle) likewise
+int test_memcell(lua_State *L) {
+	auto const *object{lua_sandbox::check_handle<int>(L, 1, lua_sandbox::handle_kind::memcell)};
+	if (object == nullptr) {
+		lua_pushnil(L);
+	} else {
+		lua_pushnumber(L, *object);
+	}
+	return 1;
+}
+
+int test_track(lua_State *L) {
+	auto const *object{lua_sandbox::check_handle<int>(L, 1, lua_sandbox::handle_kind::track)};
+	if (object == nullptr) {
+		lua_pushnil(L);
+	} else {
+		lua_pushnumber(L, *object);
+	}
+	return 1;
+}
+
+// a state with the handles, the functions above, and the globals memcell, track (handles), memcell2 (the memcell's
+// handle pushed again) and light (a light userdata, which a script can't make, as the game gave them before)
+class handle_state : public sandboxed_state {
+  public:
+	handle_state() {
+		auto *L{get()};
+		lua_sandbox::open_handles(L);
+		lua_register(L, "test_memcell", test_memcell);
+		lua_register(L, "test_track", test_track);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::memcell, &memcell_object);
+		lua_setglobal(L, "memcell");
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::memcell, &memcell_object);
+		lua_setglobal(L, "memcell2");
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::track, &track_object);
+		lua_setglobal(L, "track");
+		// the address of the memcell as a handle of another kind: told apart all the same
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::track, &memcell_object);
+		lua_setglobal(L, "memcell_as_track");
+		lua_pushlightuserdata(L, &memcell_object);
+		lua_setglobal(L, "light");
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::event, nullptr);
+		lua_setglobal(L, "none");
+	}
+};
+
+} // namespace
+
+TEST_CASE("lua sandbox: a handle of the scenery api reaches the object of its kind") {
+	handle_state const lua;
+	CHECK(lua.run("return test_memcell(memcell)") == "1");
+	CHECK(lua.run("return test_track(track)") == "2");
+	CHECK(lua.run("return type(memcell)") == "userdata");
+	// what the find functions give for a missing object, and what the functions take as no object
+	CHECK(lua.run("return none") == "nil");
+	CHECK(lua.run("return test_memcell(nil)") == "nil");
+	CHECK(lua.run("return test_memcell()") == "nil");
+	// one object, one handle: equal, and the same key of a table
+	CHECK(lua.run("return rawequal(memcell, memcell2)") == "true");
+	CHECK(lua.run("local t = { [memcell] = 'cell' } return t[memcell2]") == "cell");
+	CHECK(lua.run("return rawequal(memcell, memcell_as_track)") == "false");
+	// the handle of a dropped handle is made again
+	REQUIRE_FALSE(luaL_dostring(lua.get(), "memcell = nil memcell2 = nil collectgarbage() collectgarbage()"));
+	lua_sandbox::push_handle(lua.get(), lua_sandbox::handle_kind::memcell, &memcell_object);
+	lua_setglobal(lua.get(), "memcell");
+	CHECK(lua.run("return test_memcell(memcell)") == "1");
+}
+
+TEST_CASE("lua sandbox: a handle of another kind, or anything else, is a Lua error and not an object") {
+	handle_state const lua;
+	// a track where a memcell goes (memcell_update(track_find(...)) once wrote into a track as a memcell). not a tail
+	// call, which LuaJIT gives no function name in the message
+	CHECK(contains(lua.run("local r = test_memcell(track) return r"), "bad argument #1 to 'test_memcell' (eu07.memcell expected, got userdata)"));
+	CHECK(contains(lua.run("local r = test_track(memcell) return r"), "bad argument #1 to 'test_track' (eu07.track expected, got userdata)"));
+	CHECK(contains(lua.run("return test_memcell(memcell_as_track)"), "eu07.memcell expected"));
+	CHECK(contains(lua.run("return test_memcell(light)"), "eu07.memcell expected, got userdata"));
+	for (auto const *value : {"1", "'memcell'", "{}", "true", "false", "print", "coroutine.create(function() end)"}) {
+		CAPTURE(value);
+		CHECK(contains(lua.run(std::format("return test_memcell({})", value)), "eu07.memcell expected"));
+	}
+	// the error is the script's: caught by pcall, and the state goes on
+	CHECK(lua.run("return (pcall(test_memcell, track))") == "false");
+	CHECK(lua.run("return test_memcell(memcell)") == "1");
+}
+
+TEST_CASE("lua sandbox: a script can't reach the metatable of a handle") {
+	handle_state const lua;
+	CHECK(lua.run("return getmetatable(memcell)") == "false");
+	CHECK(contains(lua.run("local r = setmetatable(memcell, {}) return r"), "bad argument #1 to 'setmetatable' (table expected, got userdata)"));
+	// no field to read or write
+	CHECK(contains(lua.run("return memcell.x"), "attempt to index"));
+	CHECK(contains(lua.run("memcell.x = 1"), "attempt to index"));
 }
 
 #endif

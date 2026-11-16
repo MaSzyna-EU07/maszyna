@@ -98,4 +98,37 @@ struct file_folders
 // Folders, read on every call: Folders is to outlive the state
 void open_file_library(lua_State *L, file_folders const *Folders);
 
+// the objects of the simulation a scenery script holds (eu07.events): each kind is a userdata of a metatable of its
+// own, so a function given the handle of another kind, a light userdata or anything else raises a Lua error, and never
+// takes one object for another. the objects outlive the state (the scenery's events, tracks, memcells and isolated
+// track circuits, and its vehicles, which the game takes off the tracks but doesn't delete)
+enum class handle_kind
+{
+	event,
+	track,
+	isolated,
+	vehicle,
+	memcell
+};
+
+// the name of the metatable of the kind, as the errors give it ("eu07.memcell expected, got userdata")
+char const *handle_name(handle_kind Kind);
+
+// makes the metatables of the handles; once, before the first handle. a script can't reach them (getmetatable gives
+// false)
+void open_handles(lua_State *L);
+
+// pushes the handle of Object, of the kind, or nil for nullptr. one object has one handle while the script holds it:
+// the handles of an object found twice are equal, and the same key of a table
+void push_handle(lua_State *L, handle_kind Kind, void *Object);
+
+// the object of the handle at Index: nullptr for nil or nothing (what the find functions give for a missing object),
+// a Lua error (bad argument) for anything else than a handle of the kind
+void *check_handle(lua_State *L, int Index, handle_kind Kind);
+
+template <typename Type_> Type_ *check_handle(lua_State *L, int const Index, handle_kind const Kind)
+{
+	return static_cast<Type_ *>(check_handle(L, Index, Kind));
+}
+
 } // namespace lua_sandbox

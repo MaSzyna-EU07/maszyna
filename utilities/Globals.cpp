@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "vehicle/Driver.h"
 #include "utilities/Logs.h"
+#include "utilities/inionlysettings.h"
 #include "utilities/utilities.h"
 #include "Console.h"
 #include "scripting/PyInt.h"
@@ -957,7 +958,8 @@ bool global_settings::ConfigParseScriptScreens(cParser& Parser, std::string_view
     }
 
     // the scenery scripts (lua in the .scn) with all of LuaJIT's libraries, for a scenery that needs io, ffi or
-    // require: they then reach files and programs as the player does
+    // require: they then reach files and programs as the player does. from eu07.ini only: a config block of the
+    // scenery doesn't change it (utilities/inionlysettings.h)
     if (token == "lua.fulllibraries")
     {
         ParseOne(Parser, lua_fulllibraries, 1);
@@ -1451,8 +1453,10 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
     return false;
 }
 
-void global_settings::ConfigParse(cParser& Parser)
+void global_settings::ConfigParse(cParser& Parser, config_source const Source)
 {
+    // what a scenery doesn't change, kept before its keys are read
+    std::optional<ini_only_settings> const inionly{Source == config_source::scenery ? std::make_optional<ini_only_settings>(*this) : std::nullopt};
     std::string token;
 
     do
@@ -1506,6 +1510,15 @@ void global_settings::ConfigParse(cParser& Parser)
         // WriteLog(std::format("Unknown config token: {}", token), logtype::warning, false);
 
     } while (true);
+
+    if (inionly.has_value())
+    {
+        // put back before FinalizeConfig() acts on them (feedbackmode)
+        for (auto const key : inionly->restore(*this))
+        {
+            ErrorLog("scenery config: \"" + std::string(key) + "\" is read from eu07.ini only, ignored");
+        }
+    }
 
     FinalizeConfig();
 }

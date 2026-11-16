@@ -362,8 +362,9 @@ state_serializer::deserialize_camera( cParser &Input, scene::scratch_data &Scrat
 void
 state_serializer::deserialize_config( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    // config parameters (re)definition
-    Global.ConfigParse( Input );
+    // config parameters (re)definition, but for what only eu07.ini sets: programs to run, connections, the sandbox of
+    // the scripts (utilities/inionlysettings.h)
+    Global.ConfigParse( Input, config_source::scenery );
     if( Global.test.enabled ) {
         // a scenery doesn't get to turn on what a test keeps off
         simulation::apply_test_mode_settings();

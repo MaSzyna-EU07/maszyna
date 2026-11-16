@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/scriptscreenrules.h"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -76,8 +77,9 @@ void open_safe_libraries(lua_State *L)
 	open_library(L, luaopen_string, LUA_STRLIBNAME);
 	open_library(L, luaopen_math, LUA_MATHLIBNAME);
 	open_library(L, luaopen_bit, LUA_BITLIBNAME);
-	// what reaches files or loads code
-	for (auto const *name : {"dofile", "loadfile", "load", "loadstring", "module", "require"})
+	// what reaches files or loads code, and newproxy: a userdata of a metatable of the script's own, whose __gc LuaJIT
+	// runs without the hooks (the instruction limit of the Lua screens), at any allocation and in lua_close
+	for (auto const *name : {"dofile", "loadfile", "load", "loadstring", "module", "require", "newproxy"})
 	{
 		lua_pushnil(L);
 		lua_setglobal(L, name);
@@ -430,14 +432,91 @@ void open_file_library(lua_State *L, file_folders const *Folders)
 		lua_pushvalue(L, -1);
 		lua_setglobal(L, "eu07");
 	}
-	for (auto const &[name, function] : {std::pair{"read_file", api_read_file}, std::pair{"write_file", api_write_file},
-	                                     std::pair{"read_data_file", api_read_data_file}})
+	// luaL_Reg, not std::pair: GCC deduces std::pair{"read_file", api_read_file} as a pair of an array and a function
+	static constexpr luaL_Reg functions[]{{"read_file", api_read_file}, {"write_file", api_write_file}, {"read_data_file", api_read_data_file}};
+	for (auto const &[name, function] : functions)
 	{
 		lua_pushlightuserdata(L, const_cast<file_folders *>(Folders));
 		lua_pushcclosure(L, function, 1);
 		lua_setfield(L, -2, name);
 	}
 	lua_pop(L, 1);
+}
+
+namespace
+{
+
+constexpr std::array<char const *, 5> handle_names{"eu07.event", "eu07.track", "eu07.isolated", "eu07.vehicle", "eu07.memcell"};
+// the addresses are the keys of the handles of each kind in the registry: the objects, to their userdata
+constexpr std::array<char, handle_names.size()> handle_cache_keys{};
+
+void *cache_key(handle_kind const Kind)
+{
+	return const_cast<char *>(&handle_cache_keys[static_cast<std::size_t>(Kind)]); // NOSONAR: the address is only a key
+}
+
+} // namespace
+
+char const *handle_name(handle_kind const Kind)
+{
+	return handle_names[static_cast<std::size_t>(Kind)];
+}
+
+void open_handles(lua_State *L)
+{
+	for (std::size_t idx = 0; idx < handle_names.size(); ++idx)
+	{
+		auto const kind{static_cast<handle_kind>(idx)};
+		luaL_newmetatable(L, handle_name(kind));
+		// getmetatable() of a handle gives this instead of the table
+		lua_pushboolean(L, 0);
+		lua_setfield(L, -2, "__metatable");
+		lua_pop(L, 1);
+		// the handles made, weak: a handle the script dropped is collected, and made again when asked for
+		lua_pushlightuserdata(L, cache_key(kind));
+		lua_newtable(L);
+		lua_createtable(L, 0, 1);
+		lua_pushliteral(L, "v");
+		lua_setfield(L, -2, "__mode");
+		lua_setmetatable(L, -2);
+		lua_rawset(L, LUA_REGISTRYINDEX);
+	}
+}
+
+void push_handle(lua_State *L, handle_kind const Kind, void *Object)
+{
+	if (Object == nullptr)
+	{
+		lua_pushnil(L);
+		return;
+	}
+	lua_pushlightuserdata(L, cache_key(Kind));
+	lua_rawget(L, LUA_REGISTRYINDEX);
+	lua_pushlightuserdata(L, Object);
+	lua_rawget(L, -2);
+	if (false == lua_isnil(L, -1))
+	{
+		// the cache, the handle
+		lua_remove(L, -2);
+		return;
+	}
+	lua_pop(L, 1);
+	*static_cast<void **>(lua_newuserdata(L, sizeof(void *))) = Object;
+	luaL_getmetatable(L, handle_name(Kind));
+	lua_setmetatable(L, -2);
+	lua_pushlightuserdata(L, Object);
+	lua_pushvalue(L, -2);
+	lua_rawset(L, -4);
+	lua_remove(L, -2);
+}
+
+void *check_handle(lua_State *L, int const Index, handle_kind const Kind)
+{
+	if (lua_isnoneornil(L, Index))
+	{
+		return nullptr;
+	}
+	return *static_cast<void **>(luaL_checkudata(L, Index, handle_name(Kind)));
 }
 
 } // namespace lua_sandbox

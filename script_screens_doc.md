@@ -221,7 +221,13 @@ and works with memcells, tracks and vehicles through the table `eu07.events` (`e
   `os.clock`, `os.difftime` and `os.date` (with the C89 conversions only, `%Y`, `%d`, `%H` and so on). It gets no
   `io`, the rest of `os`, `ffi`, `debug`, `jit`, `package`, `require`, `dofile`, `load`, `loadfile` or `loadstring`;
 - a script that fails stops there, the error goes to the log with the file name and line, and the scenery goes on
-  loading. An event handler that fails is logged with the name of the event, and the simulation goes on.
+  loading. An event handler that fails is logged with the name of the event, and the simulation goes on;
+- the events, tracks, isolated circuits, memcells and vehicles the functions give (`event_find`, `track_find`,
+  `memcell_find`, the event and the vehicle an event handler gets...) are handles of their kind: equal for the same
+  object, usable as keys of a table, and taken only where that kind goes. Another kind, or any other value, is an
+  error (`bad argument #1 to 'memcell_update' (eu07.memcell expected, got userdata)`); `nil`, which the find
+  functions give for a missing object, is taken as no object, as before. An event run without a vehicle gives its
+  handler `nil` for the vehicle.
 
 Instead of `io`, a scenery script reads and writes files through `eu07`, as the Lua screens read theirs:
 
@@ -257,3 +263,8 @@ again:
 | key                 | default | meaning                                                                                  |
 |---------------------|---------|------------------------------------------------------------------------------------------|
 | `lua.fulllibraries` | no      | yes: the scenery scripts get all of LuaJIT's libraries (`io`, `os`, `ffi`, `require`...), and with them the files and programs of the computer. The Lua screens stay sandboxed |
+
+Only `eu07.ini` sets it: a `config` block of a scenery doesn't (the log says the key was ignored). Nor does it set
+the other keys that would take a scenery out of its sandbox or reach the computer: `execonexit`, `extcam.cmd`,
+`extcam.rec`, `screenshotsdir`, `network.server`, `network.client`, `zmq.address`, `motiontelemetry`, `uart`,
+`feedbackmode`, `feedbackport`, `python.enabled`, `luascreens.enabled` and `wasm.enabled`.

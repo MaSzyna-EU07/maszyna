@@ -3,10 +3,12 @@
 #include <stdafx.h>
 #include "scripting/luasandbox.h"
 
+#include <string>
+
 class basic_event;
 class TMemCell;
 class TDynamicObject;
-struct memcell_values { const char *str; double num1; double num2; };
+struct memcell_values { std::string str; double num1; double num2; };
 
 class lua
 {

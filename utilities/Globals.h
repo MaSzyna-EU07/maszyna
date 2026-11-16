@@ -25,6 +25,12 @@ http://mozilla.org/MPL/2.0/.
 #include "input/zmq_input.h"
 #endif
 
+// where the keys global_settings::ConfigParse reads come from
+enum class config_source {
+	ini, // eu07.ini, and the file given with -ini
+	scenery // a config block of a scenery (.scn, .inc), read as it loads
+};
+
 struct global_settings {
 // members
     // data items
@@ -403,7 +409,9 @@ struct global_settings {
 	// methods
 	void LoadIniFile( std::string asFileName );
 	void FinalizeConfig();
-	void ConfigParse(cParser &parser);
+	// the keys of eu07.ini. Source: where they come from, eu07.ini or a config block of a scenery, which doesn't change
+	// the settings only eu07.ini sets (utilities/inionlysettings.h)
+	void ConfigParse(cParser &parser, config_source Source = config_source::ini);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
 	bool ConfigParseAudio(cParser& Parser, const std::string& token);
 	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
