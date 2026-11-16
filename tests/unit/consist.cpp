@@ -74,6 +74,7 @@ void consist::step(track const &Track, double Dt) {
 		for (std::size_t i = 0; i < m_vehicles.size(); ++i) {
 			m_positions[i] += m_vehicles[i]->fast_move(Track, Dt, TLocation{m_positions[i], 0.0, 0.0});
 		}
+		update_brake_pipes(Dt);
 	}
 	for (auto const &vehicle : m_vehicles) {
 		vehicle->forces(Dt);
@@ -90,6 +91,16 @@ void consist::step(track const &Track, double Dt) {
 	for (std::size_t i = 0; i < m_vehicles.size(); ++i) {
 		m_positions[i] += m_vehicles[i]->move(Track, Dt, TLocation{m_positions[i], 0.0, 0.0}, pipe);
 	}
+	update_brake_pipes(Dt);
+}
+
+void consist::update_brake_pipes(double Dt) {
+	// vehicle_table::update_brake_pipes()
+	std::vector<TMoverParameters *> movers;
+	for (auto const &vehicle : m_vehicles) {
+		movers.push_back(&vehicle->mover());
+	}
+	TMoverParameters::UpdatePipeCouplers(movers, Dt);
 }
 
 void consist::run(double Seconds, track const &Track, double Dt) {

@@ -2078,6 +2078,7 @@ class TMoverParameters
 	double LocBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z pomocniczego*/
 	double PipeBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z przewodu*/
 	double PipePress = 0.0; /*!o cisnienie w przewodzie glownym*/
+	bool PipeCouplersPending{false}; // the brake pipe stepped, its air exchange through the hoses is yet to come (UpdatePipeCouplers())
 	double EqvtPipePress = 0.0; /*!o cisnienie w przewodzie glownym skladu*/
 	double Volume = 0.0; /*objetosc spr. powietrza w zbiorniku hamulca*/
 	double CompressedVolume = 0.0; /*objetosc spr. powietrza w ukl. zasilania*/
@@ -2557,6 +2558,9 @@ class TMoverParameters
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
+	int PipeCouplersSubsteps(double dt) const;
+	// the air exchange through the brake hoses, after the vehicles stepped
+	static void UpdatePipeCouplers(std::vector<TMoverParameters *> const &Vehicles, double dt);
 
 	/*funkcje obliczajace sily*/
 	void ComputeConstans(void); // ABu: wczesniejsze wyznaczenie stalych dla liczenia sil

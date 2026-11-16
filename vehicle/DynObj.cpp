@@ -9023,6 +9023,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
             for( auto *vehicle : m_items ) {
                 vehicle->FastUpdate( Deltatime );
             }
+            update_brake_pipes( Deltatime );
         }
     }
     for( auto *vehicle : m_items ) {
@@ -9035,6 +9036,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         // Ra 2015-01: tylko tu przelicza sieć trakcyjną
         vehicle->Update( Deltatime, totaltime );
     }
+    update_brake_pipes( Deltatime );
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
@@ -9044,6 +9046,19 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     if( m_odometersavetimer >= 60.0 ) {
         save_odometers();
     }
+}
+
+// the air exchange through the brake hoses of the vehicles which stepped their physics, after all of them did
+void
+vehicle_table::update_brake_pipes( double const Deltatime ) {
+
+    m_brakepipes.clear();
+    for( auto *vehicle : m_items ) {
+        if( true == vehicle->MoverParameters->PipeCouplersPending ) {
+            m_brakepipes.push_back( vehicle->MoverParameters );
+        }
+    }
+    TMoverParameters::UpdatePipeCouplers( m_brakepipes, Deltatime );
 }
 
 // records the odometer states of the vehicles and saves them for the next sessions (eu07/maszyna#72)

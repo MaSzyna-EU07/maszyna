@@ -45,6 +45,7 @@ public:
 
 private:
 	void update_neighbours();
+	void update_brake_pipes(double Dt);
 
 	std::vector<std::unique_ptr<vehicle>> m_vehicles;
 	std::vector<double> m_positions; // of the vehicles' middles along the track

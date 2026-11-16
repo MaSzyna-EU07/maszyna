@@ -4958,7 +4958,9 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		temp = 0.0; // odetnij
 	else
 		temp = 1.0; // połącz
-	Pipe->Flow(temp * Hamulec->GetPF(temp * PipePress, dt, Vel) + GetDVc(dt));
+	Pipe->Flow(temp * Hamulec->GetPF(temp * PipePress, dt, Vel));
+	// the air the brake hoses carry to and from the neighbours comes once all vehicles have stepped, UpdatePipeCouplers()
+	PipeCouplersPending = true;
 
 	if (ASBType == 128)
 		Hamulec->ASB(int(SlippingWheels && Vel > 1) * (1 + 2 * int(nrot_eps < -0.01)));
@@ -5123,6 +5125,70 @@ double TMoverParameters::GetDVc(double dt)
 	//     }
 	//  suma
 	return dv2 + dv1;
+}
+
+// *************************************************************************************************
+// the number of sub-steps of dt the air exchange through the brake hoses of the vehicle needs: in one, the air
+// a hose carries stays below what evens out the pipes on its ends. taken in a single step of 0.01 s, the hose
+// between two 14 m freight wagons carries twice that, their pipes overshoot each other in turns and the
+// distributors see the pressure up to 0.28 bar off what's in the pipe (eu07/maszyna#368)
+// *************************************************************************************************
+int TMoverParameters::PipeCouplersSubsteps(double const dt) const
+{
+	auto substeps{1};
+	auto const area{Spg / (1.0 + 0.015 / Spg * Dim.L)}; // as in GetDVc()
+	for (auto const &coupler : Couplers)
+	{
+		if (coupler.Connected == nullptr || false == TestFlag(coupler.CouplingFlag, ctrain_pneumatic))
+		{
+			continue;
+		}
+		auto const &other{*coupler.Connected};
+		// the flow per bar of the difference, at small differences, where it's the largest
+		auto const pressure{std::max(PipePress, other.PipePress)};
+		auto const conductance{std::abs(PF(pressure, pressure - 0.01, area)) / 0.01};
+		auto const equalising{Pipe->GetCap() * other.Pipe->GetCap() / (Pipe->GetCap() + other.Pipe->GetCap())};
+		substeps = std::max(substeps, static_cast<int>(std::ceil(dt * conductance / equalising)));
+	}
+	return std::min(substeps, 10);
+}
+
+// *************************************************************************************************
+// the air exchange through the brake hoses of the vehicles which stepped their brake pipe (UpdatePipePressure())
+// since the last call, in the order they stepped: in as many sub-steps of dt as the vehicle needing the most of
+// them takes, each going through the vehicles one after another, as the step of the vehicles does
+// *************************************************************************************************
+void TMoverParameters::UpdatePipeCouplers(std::vector<TMoverParameters *> const &Vehicles, double const dt)
+{
+	auto substeps{1};
+	for (auto const *vehicle : Vehicles)
+	{
+		if (vehicle->PipeCouplersPending)
+		{
+			substeps = std::max(substeps, vehicle->PipeCouplersSubsteps(dt));
+		}
+	}
+	auto const substep{dt / substeps};
+	for (auto i = 0; i < substeps; ++i)
+	{
+		for (auto *vehicle : Vehicles)
+		{
+			if (false == vehicle->PipeCouplersPending)
+			{
+				continue;
+			}
+			auto &pipe{*vehicle->Pipe};
+			pipe.Act(); // what the neighbours have sent in the meantime
+			vehicle->PipePress = pipe.P();
+			pipe.Flow(vehicle->GetDVc(substep));
+			pipe.Act();
+			vehicle->PipePress = pipe.P();
+		}
+	}
+	for (auto *vehicle : Vehicles)
+	{
+		vehicle->PipeCouplersPending = false;
+	}
 }
 
 // *************************************************************************************************

@@ -948,8 +948,12 @@ private:
     // the trains it closes in on
     void
         update_coupler_physics() const;
+    // the air exchange through the brake hoses of the vehicles which stepped their physics, after all of them did
+    void
+        update_brake_pipes( double const Deltatime );
 
     double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
+    std::vector<TMoverParameters *> m_brakepipes; // the vehicles of update_brake_pipes(), kept for the memory
 };
 
 
