@@ -257,6 +257,18 @@ TEST_CASE("speed control apart: which vehicles' cruise control has a switch of i
 	CHECK(eu07->IsSpeedCtrlSeparate());
 }
 
+namespace {
+
+// Seconds of the scenario going on, a second at a time, counting the seconds with the field shunted and not
+void count_shunting(scenario &Scenario, TMoverParameters const &Vehicle, int const Seconds, int &Shunted, int &Unshunted) {
+	for (int second = 0; second < Seconds; ++second) {
+		Scenario.wait(1.0);
+		++(Vehicle.ScndCtrlPos > 0 ? Shunted : Unshunted);
+	}
+}
+
+} // namespace
+
 TEST_CASE("speed control apart: the 6Dg's cruise control on its own switch, the field shunting going on by itself") {
 	scenario scenario{"speed control apart/6dg_v1/6dg", motion() + traction() + cruise(), test::track{}};
 	scenario.add("6dg_v1/6dg", 1);
@@ -285,13 +297,7 @@ TEST_CASE("speed control apart: the 6Dg's cruise control on its own switch, the 
 	// the shunt goes by itself all the while, by the current of the motors, which the cruise control's demand sets
 	auto shunted{0};
 	auto unshunted{0};
-	auto const run{[&scenario, &loco, &shunted, &unshunted](int const Seconds) {
-		for (int second = 0; second < Seconds; ++second) {
-			scenario.wait(1.0);
-			++(loco.ScndCtrlPos > 0 ? shunted : unshunted);
-		}
-	}};
-	run(60);
+	count_shunting(scenario, loco, 60, shunted, unshunted);
 	CHECK(loco.Vel == doctest::Approx(held).epsilon(0.03));
 	CHECK_FALSE(loco.SpeedCtrlUnit.Standby);
 	CHECK(loco.eimic_real < loco.eimic); // the cruise control holding the power back
@@ -301,7 +307,7 @@ TEST_CASE("speed control apart: the 6Dg's cruise control on its own switch, the 
 	loco.SpeedCtrlInc();
 	auto const higher{loco.SpeedCtrlValue};
 	CHECK(higher == doctest::Approx(held + 10.0).epsilon(0.1));
-	run(60);
+	count_shunting(scenario, loco, 60, shunted, unshunted);
 	CHECK(loco.Vel == doctest::Approx(higher).epsilon(0.03));
 	CHECK(loco.StLinFlag);
 	CHECK(shunted > 0);
