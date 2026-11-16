@@ -1929,21 +1929,6 @@ opengl_renderer::Unload_Texture( texture_handle const Texture ) {
 }
 
 void
-opengl_renderer::Unload_Material( material_handle const Material ) {
-
-    if( Material == null_handle ) { return; }
-    auto const &material { m_materials.material( Material ) };
-    for( auto const texture : material.textures ) {
-        m_textures.unload( texture );
-    }
-    for( auto const &variant : material.texture_variants ) {
-        for( auto const texture : variant ) {
-            m_textures.unload( texture );
-        }
-    }
-}
-
-void
 opengl_renderer::Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) {
 
     m_control_pick_requests.emplace_back( Callback );

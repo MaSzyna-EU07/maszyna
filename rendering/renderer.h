@@ -106,7 +106,7 @@ public:
     // texture picker scrolled past. backends which keep their textures otherwise leave it
     virtual void Unload_Texture( texture_handle const Texture ) {}
     // the same for all the textures of a material, those of its variants with them
-    virtual void Unload_Material( material_handle const Material ) {}
+    void Unload_Material( material_handle const Material );
     // utility methods
     virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
