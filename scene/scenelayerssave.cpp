@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
@@ -1701,6 +1702,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			std::filesystem::copy_file(filepath, filepath + ".bak", error);
 		}
 		std::filesystem::rename(filepath + ".tmp", filepath, error);
+		cased_path_changed(filepath);
 		if (error)
 		{
 			// e.g. the file is held open by another program. take back what was done so far: the scenery files
@@ -1884,7 +1886,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			terrainfile.erase(0, 1);
 		}
 		erase_extension(terrainfile);
-		if (std::filesystem::remove(Global.asCurrentSceneryPath + terrainfile + ".sbt", error))
+		if (std::filesystem::remove(disk_path(Global.asCurrentSceneryPath + terrainfile + ".sbt"), error))
 		{
 			WriteLog("Scenery save: binary terrain file removed, it'll be generated again on the next load");
 		}

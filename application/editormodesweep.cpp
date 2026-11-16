@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "world/Sweep.h"
 #include "model/AnimModel.h"
 #include "world/Track.h"
@@ -819,7 +820,7 @@ void editor_mode::render_sweep_ui()
 		tool.parameter_choices.assign(static_cast<std::size_t>(count), {});
 		// a parameter which makes a part of the name of a texture gets the variants of that texture to choose from
 		{
-			std::ifstream file(Global.asCurrentSceneryPath + model);
+			std::ifstream file(disk_path(Global.asCurrentSceneryPath + model));
 			std::stringstream content;
 			content << file.rdbuf();
 			std::string word;

@@ -709,8 +709,11 @@ bool save_manifest(std::string const &Path, manifest const &Manifest, std::strin
 		return false;
 	}
 	std::error_code ec;
-	std::filesystem::create_directories(std::filesystem::path(Path).parent_path(), ec);
-	std::ofstream file{Path, std::ios::binary | std::ios::trunc};
+	// the file there in another case is written over, a new one is made in the folders as they are on the disk
+	auto const path{disk_path_for_write(Path)};
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+	std::ofstream file{path, std::ios::binary | std::ios::trunc};
+	cased_path_changed(path);
 	file << out.c_str() << '\n';
 	if (false == file.good())
 	{
@@ -1013,8 +1016,10 @@ bool write_pack(std::string const &Path, pack_key const &Key, std::vector<chunk_
 
 	// written next to the old file first, so a failed write doesn't take the old content with it
 	std::error_code ec;
-	std::filesystem::create_directories(std::filesystem::path(Path).parent_path(), ec);
-	auto const temporary{Path + ".tmp"};
+	// the file there in another case is replaced, a new one is made in the folders as they are on the disk
+	auto const path{disk_path_for_write(Path)};
+	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+	auto const temporary{path + ".tmp"};
 	{
 		std::ofstream out{temporary, std::ios::binary | std::ios::trunc};
 		out.write(reinterpret_cast<char const *>(file.data()), file.size());
@@ -1025,12 +1030,13 @@ bool write_pack(std::string const &Path, pack_key const &Key, std::vector<chunk_
 			return false;
 		}
 	}
-	std::filesystem::rename(temporary, Path, ec);
+	std::filesystem::rename(temporary, path, ec);
+	cased_path_changed(path);
 	if (ec)
 	{
 		// some systems won't replace an existing file with rename
-		std::filesystem::remove(Path, ec);
-		std::filesystem::rename(temporary, Path, ec);
+		std::filesystem::remove(path, ec);
+		std::filesystem::rename(temporary, path, ec);
 		if (ec)
 		{
 			if (Error != nullptr)

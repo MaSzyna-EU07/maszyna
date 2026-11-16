@@ -173,5 +173,8 @@ picker (`launcher_mode`), not StarterNG.
 - The data is made on Windows, where a file is found in any case, and the game asks for nearly every file in lower case. On Linux
   the case matters, so a data file is checked with `FileExists()` and opened through `disk_path()` (`utilities/casedpath.h`) at the
   moment it is opened (`std::ifstream`, `stbi_load`, `sf_open`, `luaL_dofile`...), while the name asked for stays the key it is
-  kept under and the name in the log. Files read by `cParser` are found by the parser itself. On Windows both are what they were:
-  `disk_path()` gives the path back without a look at the disk.
+  kept under and the name in the log. Files read by `cParser` are found by the parser itself. A data file the game or the editor
+  writes (scenery files, terrain, `.sbt`, `.e3d`) is written through `disk_path_for_write()`: a file there in another case is
+  written over instead of getting a second one next to it, a new one is made in the folders as they are on the disk; after making
+  or renaming one, `cased_path_changed(path)`. On Windows all of them are what they were: the path given back without a look at
+  the disk.

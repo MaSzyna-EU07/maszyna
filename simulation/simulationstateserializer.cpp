@@ -35,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "editor/editorTerrainStreamer.hpp"
 
 #include <format>
@@ -1727,7 +1728,7 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 		filename.erase( 0, 1 );
     }
 	erase_extension( filename );
-	auto absfilename = Global.asCurrentSceneryPath + filename + "_export";
+	auto absfilename = disk_path_for_write( Global.asCurrentSceneryPath + filename + "_export" );
 
 	std::ofstream scmdirtyfile { absfilename + "_dirty.scm" };
 	export_nodes_to_stream(scmdirtyfile, true);
@@ -1779,7 +1780,7 @@ state_serializer::export_as_text(std::string const &Scenariofile) const {
 		filename.erase( 0, 1 );
     }
 	erase_extension( filename );
-	auto absfilename = Global.asCurrentSceneryPath + filename + "_export";
+	auto absfilename = disk_path_for_write( Global.asCurrentSceneryPath + filename + "_export" );
 
 	std::ofstream scmdirtyfile { absfilename + "_dirty.scm" };
 	export_nodes_to_stream(scmdirtyfile, true);

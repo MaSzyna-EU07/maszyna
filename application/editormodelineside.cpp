@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
@@ -201,7 +202,7 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 	// the first line of the files made here, which tells them from the files of the scenery named alike
 	auto const header{"// scenery layer created in the editor for its " + Part + " part"};
 	auto const headed = [&](std::string const &Name) {
-		std::ifstream input{Global.asCurrentSceneryPath + Name, std::ios_base::binary};
+		std::ifstream input{disk_path(Global.asCurrentSceneryPath + Name), std::ios_base::binary};
 		std::string first;
 		std::getline(input, first);
 		if (false == first.empty() && first.back() == '\r')

@@ -2914,7 +2914,8 @@ void TModel3d::Init()
 
 		if (Global.iConvertModels & 1 && false == asBinary.empty())
 		{
-			SaveToBinFile(asBinary);
+			// next to the text file, in its folders as they are on the disk
+			SaveToBinFile(disk_path_for_write(asBinary));
 			asBinary = ""; // zablokowanie powtórnego zapisu
 		}
 	}

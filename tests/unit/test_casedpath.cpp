@@ -5,14 +5,18 @@
 #include "utilities/casedpath.h"
 #include "utilities/utilities.h"
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <set>
 #include <thread>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 // files named in another case than on the disk (utilities/casedpath.h). the index is tested twice: on a file system made
 // up here, which tells the case apart on every system, and on the real one in a scratch folder, which tells it apart on
@@ -744,6 +748,204 @@ TEST_CASE("cased path: disk_path() of a std::filesystem::path opens the file as 
 	// system can't hold stays as it was
 	auto const wide{folder.root() / L"\u4e2d\u6587" / L"PLIK.txt"};
 	CHECK((disk_path(wide).native() == wide.native()));
+	CHECK(cased::path_index().listings() == listings);
+#else
+	static_cast<void>(listings);
+#endif
+	cased_path_forget_all();
+}
+
+// the files written -----------------------------------------------------------------------------------------------------
+
+namespace {
+
+// an index of the made up file system which counts the checks of the names and keeps what it's told of
+struct told_index {
+	fake_disk disk;
+	std::atomic<int> probes{0};
+	std::mutex toldlock;
+	std::vector<std::pair<std::string, std::string>> told;
+	cased::index index{[this](std::string const &Directory, std::vector<std::string> &Names) { return disk.list(Directory, Names); },
+	                   [this](std::string const &Path) {
+		                   ++probes;
+		                   return disk.exists(Path);
+	                   },
+	                   [this](std::string const &Asked, std::string const &Found) {
+		                   std::scoped_lock const lock{toldlock};
+		                   told.emplace_back(Asked, Found);
+	                   }};
+
+	told_index() = default;
+	told_index(told_index const &) = delete;
+	told_index &operator=(told_index const &) = delete;
+};
+
+// how many names in the folder on the disk are the name given, in any case
+int named_alike(std::string const &Directory, std::string const &Name) {
+	std::vector<std::string> names;
+	cased::list_directory(Directory, names);
+	return static_cast<int>(std::count_if(names.begin(), names.end(), [&](std::string const &Listed) { return cased::lower(Listed) == cased::lower(Name); }));
+}
+
+std::string read_whole(std::string const &Path) {
+	std::ifstream input{Path, std::ios::binary};
+	return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+} // namespace
+
+TEST_CASE("cased path: a file is written over where it's there in another case, a new one goes to the folders on the disk") {
+	fake_index fake;
+	fake.disk.add("scenery/Braniewo/Base.ctr");
+	fake.disk.add("scenery/plain.scn");
+	// named as it is: nothing listed
+	CHECK(fake.index.path_to_write("scenery/plain.scn") == "scenery/plain.scn");
+	CHECK(fake.index.listings() == 0);
+	// there in another case: written over under its name on the disk
+	CHECK(fake.index.path_to_write("scenery/braniewo/base.ctr") == "scenery/Braniewo/Base.ctr");
+	// not there: the name given, in the folder on the disk (the .btf the terrain of Braniewo is converted to)
+	CHECK(fake.index.path_to_write("scenery/braniewo/teren.btf") == "scenery/Braniewo/teren.btf");
+	CHECK(fake.index.path_to_write("scenery\\braniewo\\teren.btf") == "scenery/Braniewo/teren.btf");
+	// folders not there in any case named as given, for the writer to make
+	CHECK(fake.index.path_to_write("scenery/braniewo/nowe/glebiej/plik.scm") == "scenery/Braniewo/nowe/glebiej/plik.scm");
+	CHECK(fake.index.path_to_write("scenery/braniewo/nowe/") == "scenery/Braniewo/nowe/");
+	CHECK(fake.index.path_to_write("scenery/braniewo/") == "scenery/Braniewo/");
+	CHECK(fake.index.path_to_write("scenery/new.scm") == "scenery/new.scm");
+	CHECK(fake.index.path_to_write("nothing/at/all.txt") == "nothing/at/all.txt");
+	CHECK(fake.index.path_to_write("plik.txt") == "plik.txt");
+	CHECK(fake.index.path_to_write("/absent/plik.txt") == "/absent/plik.txt");
+	CHECK(fake.index.path_to_write("").empty());
+	// each folder listed once
+	CHECK(fake.disk.listed("scenery") == 1);
+	CHECK(fake.disk.listed("scenery/Braniewo") == 1);
+}
+
+TEST_CASE("cased path: a file made under the name asked for in a folder named in another case is found without forgetting") {
+	told_index fake;
+	fake.disk.add("scenery/Braniewo/Base.ctr");
+	CHECK(fake.index.resolve("scenery/braniewo/base.ctr") == "scenery/Braniewo/Base.ctr");
+	CHECK(fake.disk.listed("scenery/Braniewo") == 1);
+	// the editor saves the terrain and a new layer where path_to_write() told it to
+	fake.disk.add(fake.index.path_to_write("scenery/braniewo/teren.btf"));
+	fake.disk.add(fake.index.path_to_write("scenery/braniewo/nowe/plik.scm"));
+	CHECK(fake.index.resolve("scenery/braniewo/teren.btf") == "scenery/Braniewo/teren.btf");
+	CHECK(fake.index.resolve("scenery/braniewo/nowe/plik.scm") == "scenery/Braniewo/nowe/plik.scm");
+	CHECK(fake.disk.listed("scenery/Braniewo") == 1);
+	CHECK(fake.disk.listed("scenery/Braniewo/nowe") == 0);
+
+	// made in another case than it's asked for: found once told of
+	fake.disk.add("scenery/Braniewo/Inny.SCM");
+	CHECK(fake.index.resolve("scenery/braniewo/inny.scm").empty());
+	fake.index.changed("scenery/braniewo/inny.scm");
+	CHECK(fake.index.resolve("scenery/braniewo/inny.scm") == "scenery/Braniewo/Inny.SCM");
+	CHECK(fake.disk.listed("scenery/Braniewo") == 2);
+
+	// a file not there, in a folder named as asked for and listed already, costs what it did: the check of the whole path,
+	// and of the folder not listed on the way. the name isn't checked again in the folder listed
+	fake.disk.add("textures/Wall.dds");
+	CHECK(fake.index.resolve("textures/nothing.dds").empty());
+	auto const probes{fake.probes.load()};
+	CHECK(fake.index.resolve("textures/nothing.dds").empty());
+	CHECK(fake.probes.load() == probes + 2);
+}
+
+TEST_CASE("cased path: a path changed forgets the folders on the way to it, and the folder itself") {
+	fake_index fake;
+	fake.disk.add("A/B/C.txt");
+	fake.disk.add("Other/D.txt");
+	CHECK(fake.index.resolve("a/b/c.txt") == "A/B/C.txt");
+	CHECK(fake.index.resolve("other/d.txt") == "Other/D.txt");
+	CHECK(fake.disk.listed(".") == 1);
+	CHECK(fake.disk.listed("A") == 1);
+	CHECK(fake.disk.listed("A/B") == 1);
+	CHECK(fake.disk.listed("Other") == 1);
+
+	// a file made in A/B: the folders it's in are listed again, the others not
+	fake.index.changed("a\\b/new.txt");
+	CHECK(fake.index.resolve("a/b/c.txt") == "A/B/C.txt");
+	CHECK(fake.index.resolve("other/d.txt") == "Other/D.txt");
+	CHECK(fake.disk.listed(".") == 2);
+	CHECK(fake.disk.listed("A") == 2);
+	CHECK(fake.disk.listed("A/B") == 2);
+	CHECK(fake.disk.listed("Other") == 1);
+
+	// a folder: itself too
+	fake.index.changed("OTHER");
+	CHECK(fake.index.resolve("other/d.txt") == "Other/D.txt");
+	CHECK(fake.index.resolve("a/b/c.txt") == "A/B/C.txt");
+	CHECK(fake.disk.listed("Other") == 2);
+	CHECK(fake.disk.listed(".") == 3);
+	CHECK(fake.disk.listed("A") == 2);
+}
+
+TEST_CASE("cased path: each file found in another case is told of once, for the log") {
+	told_index fake;
+	fake.disk.add(braniewo_timetable);
+	fake.disk.add("scenery/plain.scn");
+	CHECK(fake.index.resolve(braniewo_asked) == braniewo_timetable);
+	CHECK(fake.index.resolve(braniewo_asked) == braniewo_timetable);
+	// asked for in another case again: the same file
+	CHECK(fake.index.resolve("SCENERY/BRANIEWO/ROZKLADY/tgs3657.TXT") == braniewo_timetable);
+	REQUIRE(fake.told.size() == 1);
+	CHECK(fake.told[0].first == braniewo_asked);
+	CHECK(fake.told[0].second == braniewo_timetable);
+
+	// named as it is, the folders separated either way, or not there: nothing to tell
+	CHECK(fake.index.resolve("scenery/plain.scn") == "scenery/plain.scn");
+	CHECK(fake.index.resolve_in_any_case("scenery/plain.scn") == "scenery/plain.scn");
+	CHECK(fake.index.resolve_in_any_case("scenery\\plain.scn") == "scenery/plain.scn");
+	CHECK(fake.index.resolve("scenery/nothing.scn").empty());
+	CHECK(fake.told.size() == 1);
+
+	// a folder asked for in another case is told of as well, once: not again for a file to be written in it
+	CHECK(fake.index.resolve("scenery/braniewo") == "scenery/Braniewo");
+	CHECK(fake.index.path_to_write("scenery/braniewo/nowy.scm") == "scenery/Braniewo/nowy.scm");
+	CHECK(fake.told.size() == 2);
+	CHECK(fake.told[1].second == "scenery/Braniewo");
+}
+
+TEST_CASE("cased path: a file written through disk_path_for_write() on the disk itself") {
+	test::scratch_folder const folder{"cased_write"};
+	auto const sensitive{case_matters(folder)};
+	CAPTURE(sensitive);
+	auto const root{folder.path()};
+	folder.write("Scenery/Braniewo/Base.ctr", "old");
+	auto const listings{cased::path_index().listings()};
+
+	// written over under its name on the disk, as the editor saves a layer
+	auto const over{disk_path_for_write(root + "scenery/braniewo/base.ctr")};
+	CHECK(over == root + (sensitive ? "Scenery/Braniewo/Base.ctr" : "scenery/braniewo/base.ctr"));
+	std::ofstream{over, std::ios::binary} << "new";
+	cased_path_changed(over);
+	// a new one in the folder on the disk, as the terrain is converted
+	auto const made{disk_path_for_write(root + "scenery/braniewo/teren.btf")};
+	CHECK(made == root + (sensitive ? "Scenery/Braniewo/teren.btf" : "scenery/braniewo/teren.btf"));
+	std::ofstream{made, std::ios::binary} << "terrain";
+	cased_path_changed(made);
+	// and in a new folder there
+	auto const deeper{disk_path_for_write(root + "scenery/braniewo/nowe/plik.scm")};
+	CHECK(deeper == root + (sensitive ? "Scenery/Braniewo/nowe/plik.scm" : "scenery/braniewo/nowe/plik.scm"));
+	std::filesystem::create_directories(std::filesystem::path{deeper}.parent_path());
+	std::ofstream{deeper, std::ios::binary} << "layer";
+	cased_path_changed(deeper);
+
+	// no second file nor folder named alike but for the case
+	CHECK(named_alike(folder.path("."), "scenery") == 1);
+	CHECK(named_alike(root + "Scenery", "braniewo") == 1);
+	CHECK(named_alike(root + "Scenery/Braniewo", "base.ctr") == 1);
+	CHECK(named_alike(root + "Scenery/Braniewo", "teren.btf") == 1);
+	CHECK(named_alike(root + "Scenery/Braniewo", "nowe") == 1);
+	CHECK(exactly_on_disk(root + "Scenery/Braniewo/Base.ctr", root));
+	CHECK(exactly_on_disk(root + "Scenery/Braniewo/teren.btf", root));
+	CHECK(exactly_on_disk(root + "Scenery/Braniewo/nowe/plik.scm", root));
+	CHECK(read_whole(root + "Scenery/Braniewo/Base.ctr") == "new");
+	// and they're read back as the game asks for them
+	CHECK(FileExists(root + "scenery/braniewo/teren.btf"));
+	CHECK(read_whole(disk_path(root + "scenery/braniewo/nowe/plik.scm")) == "layer");
+
+#ifdef _WIN32
+	// on Windows the path given, with no look at the disk
+	CHECK(disk_path_for_write(root + "SCENERY/x.scm") == root + "SCENERY/x.scm");
 	CHECK(cased::path_index().listings() == listings);
 #else
 	static_cast<void>(listings);

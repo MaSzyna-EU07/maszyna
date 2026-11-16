@@ -634,6 +634,7 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 	// the finished file replaces the previous version in one go, so an interrupted conversion doesn't leave a broken one behind
 	std::error_code error;
 	std::filesystem::rename(temporaryfile, Binaryfile, error);
+	cased_path_changed(Binaryfile);
 	if (error)
 	{
 		Message = "can't write to file \"" + Binaryfile + "\"";
@@ -710,8 +711,9 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 
 	WriteLog("Terrain file \"" + Textfile + "\": " + (binarypresent ? "binary version doesn't match the text" : "no usable binary version found") + ", converting...");
 	std::string message;
-	// a binary file there in another case is replaced, not joined by a second one next to it
-	if (write(text, disk_path(Binaryfile), message))
+	// a binary file there in another case is replaced, not joined by a second one next to it; a new one is made in the folder
+	// as it is on the disk (scenery/Braniewo/x.btf for scenery/braniewo/x.btf)
+	if (write(text, disk_path_for_write(Binaryfile), message))
 	{
 		WriteLog("Terrain file \"" + Textfile + "\": conversion done, " + message);
 		return state::binary;

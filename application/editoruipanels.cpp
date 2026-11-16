@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 
 #include "utilities/Globals.h"
+#include "utilities/casedpath.h"
 #include "vehicle/Camera.h"
 #include "model/AnimModel.h"
 #include "world/Track.h"
@@ -616,7 +617,7 @@ nodebank_panel::nodebank_panel(std::string const &Name, bool const Isopen) : ui_
 	memset(m_nodesearch, 0, sizeof(m_nodesearch));
 
 	std::ifstream file;
-	file.open("nodebank.txt", std::ios_base::in | std::ios_base::binary);
+	file.open(disk_path("nodebank.txt"), std::ios_base::in | std::ios_base::binary);
 
 	std::string line;
 	while (std::getline(file, line))
@@ -655,7 +656,7 @@ void nodebank_panel::nodebank_reload()
 		m_largepreviews->clear();
 	}
 	std::ifstream file;
-	file.open("nodebank.txt", std::ios_base::in | std::ios_base::binary);
+	file.open(disk_path("nodebank.txt"), std::ios_base::in | std::ios_base::binary);
 	std::string line;
 	while (std::getline(file, line))
 	{
@@ -1541,7 +1542,7 @@ void nodebank_panel::add_template(const std::string &desc)
 	m_nodebank.push_back({label, std::make_shared<std::string>(desc)});
 
 	std::ofstream file;
-	file.open("nodebank.txt", std::ios_base::out | std::ios_base::app | std::ios_base::binary);
+	file.open(disk_path_for_write("nodebank.txt"), std::ios_base::out | std::ios_base::app | std::ios_base::binary);
 	file << label << " " << desc;
 }
 

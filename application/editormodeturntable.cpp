@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "world/Track.h"
 
 #include "imgui/imgui.h"
@@ -81,7 +82,7 @@ double line_angle(double const Angle)
 std::vector<double> fixed_angles(std::string const &File)
 {
 	std::vector<double> result;
-	std::ifstream input{Global.asCurrentSceneryPath + File, std::ios_base::binary};
+	std::ifstream input{disk_path(Global.asCurrentSceneryPath + File), std::ios_base::binary};
 	if (false == input.is_open())
 		return result;
 	std::string const content{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
@@ -181,7 +182,7 @@ char const *const kControlsHeader{"// made by the scenery editor on each save: T
 // true if the file is one of the turntable controls the editor writes
 bool controls_file(std::string const &Path)
 {
-	std::ifstream input{Path, std::ios_base::binary};
+	std::ifstream input{disk_path(Path), std::ios_base::binary};
 	std::string first;
 	std::getline(input, first);
 	if (false == first.empty() && first.back() == '\r')
@@ -1168,7 +1169,7 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 			if (false == editor_includes::parse_directive(scene::Layers.directive(handle), target, values) || kind->track > static_cast<int>(values.size()) || ToLower(values[kind->track - 1]) != name)
 				continue;
 			{
-				std::ifstream input{Global.asCurrentSceneryPath + kind->file, std::ios_base::binary};
+				std::ifstream input{disk_path(Global.asCurrentSceneryPath + kind->file), std::ios_base::binary};
 				events.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
 				events = ToLower(events);
 				std::replace_if(events.begin(), events.end(), [](char const Character) { return Character == '\t' || Character == '\r' || Character == '\n'; }, ' ');
@@ -1225,7 +1226,7 @@ bool editor_mode::turntable_controls(std::vector<std::string> &Rootstatements)
 				range = std::min(range, distance * 0.5);
 		text << "node -1 0 " << name << "_key eventlauncher " << at << ' ' << format("%.1f", range) << " t 0 " << name << "_next " << name << "_prev end\r\n";
 	}
-	auto const path{Global.asCurrentSceneryPath + file};
+	auto const path{disk_path_for_write(Global.asCurrentSceneryPath + file)};
 	std::error_code error;
 	auto const exists{std::filesystem::exists(path, error)};
 	if (tables == 0 && false == exists)

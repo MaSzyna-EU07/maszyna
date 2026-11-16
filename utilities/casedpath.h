@@ -35,6 +35,8 @@ http://mozilla.org/MPL/2.0/.
 // The names are folded in ASCII only, as ToLower() does: the bytes of UTF-8 (or cp1250) letters are compared as they are.
 // Two names in one folder which differ in case only (which Windows can't hold, so the data hardly has them) give the
 // one named exactly as asked, otherwise the first of them in the order of their bytes; the log tells of it once.
+// The log tells once of each file found only in another case than asked for too: the list for the authors of the data to
+// name them as the game asks for them. On Windows nothing is looked for here, so there's nothing to tell.
 
 namespace cased
 {
@@ -43,10 +45,14 @@ namespace cased
 using directory_lister = std::function<bool(std::string const &Directory, std::vector<std::string> &Names)>;
 // whether there's a file or a folder named exactly so
 using path_probe = std::function<bool(std::string const &Path)>;
+// told of a file or a folder found named in another case than asked for, once for each one found
+using case_reporter = std::function<void(std::string const &Asked, std::string const &Found)>;
 
 // the lister and the probe of the file system itself
 bool list_directory(std::string const &Directory, std::vector<std::string> &Names);
 bool path_exists(std::string const &Path);
+// writes to the log the file named in another case, for the authors of the data to name it as the game asks for it
+void log_case(std::string const &Asked, std::string const &Found);
 
 // ASCII letters lowered, the other bytes as they are
 std::string lower(std::string_view Name);
@@ -61,21 +67,30 @@ std::string normal_path(std::string_view Path);
 class index
 {
   public:
-	explicit index(directory_lister Lister = list_directory, path_probe Probe = path_exists);
+	explicit index(directory_lister Lister = list_directory, path_probe Probe = path_exists, case_reporter Reporter = log_case);
 
 	// the path as it is on the disk: the path given, if it's there; otherwise the path given with its names in another case
 	// changed to the names on the disk (so of the same length, with '/' for '\'); empty when it isn't there in any case.
-	// a name not found in a folder listed already isn't looked for again: a file added later is found after forget()
+	// a name not found in a folder listed already isn't looked for again: a file added later is found after forget(), or
+	// right away when it's named as asked for in a folder named in another case (the file the editor made there).
+	// a path found in another case is told of to the reporter, once
 	std::string resolve(std::string_view Path);
 	// as resolve(), when the path as given is known not to be there
 	std::string resolve_in_any_case(std::string_view Path);
 	// the path to open the file with: as resolve(), or the path given when it isn't there in any case, for the opening to
 	// fail on it as it did
 	std::string path_to_open(std::string_view Path);
+	// the path to write a file with: the file there in another case is written over, not joined by a second one named alike
+	// but for the case; a new file gets the name given, in the folders above it as they are on the disk (those not there in
+	// any case named as given, for the writer to make), e.g. scenery/Braniewo/x.btf for scenery/braniewo/x.btf
+	std::string path_to_write(std::string_view Path);
 
 	// the content of the folder changed (a file written, removed, renamed): it's listed again when needed. the folder is
 	// named in any case, any form normal_path() makes the same
 	void forget(std::string_view Directory);
+	// the file or the folder was made, written, removed or renamed: the folders on the way to it, and the folder itself, are
+	// listed again when needed
+	void changed(std::string_view Path);
 	void forget_all();
 
 	// how many times a folder was listed, for the tests
@@ -93,13 +108,17 @@ class index
 	std::shared_ptr<folder const> list(std::string const &Directory);
 	std::string walk(std::string_view Path, std::vector<std::string> &Listed);
 	void report_collision(std::string const &Directory, std::vector<std::string> const &Names, std::string const &Chosen);
+	void report_case(std::string_view Asked, std::string const &Found);
 
 	directory_lister m_lister;
 	path_probe m_probe;
+	case_reporter m_reporter;
 	mutable std::shared_mutex m_lock;
 	std::unordered_map<std::string, std::shared_ptr<folder const>> m_folders;
 	std::mutex m_reportedlock;
 	std::unordered_set<std::string> m_reported;
+	// the paths found in another case, told of already
+	std::unordered_set<std::string> m_reportedcase;
 	std::atomic<std::size_t> m_listings{0};
 };
 
@@ -136,6 +155,16 @@ template <std::same_as<std::filesystem::path> Path> Path disk_path(Path const &F
 	return Path{disk_path(std::string_view{File.native()})};
 #endif
 }
+// the path to write a file of the game data with (the scenery files the editor saves, the terrain made of the text), see
+// cased::index::path_to_write(): the file there in another case is written over, a new one is made in the folders as they
+// are on the disk, under the name given. on Windows the path given, with no look at the disk.
+//
+// a file written so is then told of with cased_path_changed(), which the index needs where the file was made under another
+// name than the one asked for later. files the game writes and reads back under its own name (the settings, the caches,
+// the logs) need neither
+std::string disk_path_for_write(std::string_view Path);
 // the content of the folder changed, see cased::index::forget(); nothing to do on Windows
 void cased_path_forget(std::string_view Directory);
+// the file or the folder was made, written, removed or renamed, see cased::index::changed(); nothing to do on Windows
+void cased_path_changed(std::string_view Path);
 void cased_path_forget_all();

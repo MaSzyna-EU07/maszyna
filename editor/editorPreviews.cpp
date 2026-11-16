@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "stb/stb_image.h"
 
 #include <algorithm>
@@ -298,7 +299,7 @@ void image_cache::work()
 			m_queue.pop_front();
 		}
 		int width{0}, height{0}, components{0};
-		auto *pixels{stbi_load(image.path.c_str(), &width, &height, &components, 4)};
+		auto *pixels{stbi_load(disk_path(image.path).c_str(), &width, &height, &components, 4)};
 		if (pixels != nullptr && width > 0 && height > 0)
 		{
 			// scaled down by the average of the pixels which make each one, the longer side to the size of the cache

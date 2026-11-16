@@ -57,6 +57,7 @@ extern char **environ;
 #include "scene/sceneterrain.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 
 
 #include "imgui/imgui.h"
@@ -8013,7 +8014,7 @@ void editor_mode::starter_trainset(std::vector<std::string> &Trailing)
         auto const &layer{scene::Layers.layer(static_cast<scene::layer_handle>(handle))};
         if (layer.created)
             continue;
-        std::ifstream input{Global.asCurrentSceneryPath + layer.name, std::ios_base::binary};
+        std::ifstream input{disk_path(Global.asCurrentSceneryPath + layer.name), std::ios_base::binary};
         std::string const content{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
         if (std::regex_search(content, trainset))
             return;

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Traction.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
@@ -542,9 +543,8 @@ bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor)
 
 std::string node_layers::path(layer_handle const Layer) const
 {
-	auto const named{Global.asCurrentSceneryPath + layer(Layer).name};
-	auto const cased{FileCased(named)};
-	return cased.empty() ? named : cased;
+	// read and written there: the file there in another case, a new one in the folders as they are on the disk
+	return disk_path_for_write(Global.asCurrentSceneryPath + layer(Layer).name);
 }
 
 // stores current state of the layer file, to detect later whether it was changed behind our back

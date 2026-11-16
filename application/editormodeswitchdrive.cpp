@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 
 #include "imgui/imgui.h"
 #include <algorithm>
@@ -82,7 +83,7 @@ char const *const kNoseHeader{"// made by the scenery editor on each save: T and
 // true if the file is one of the keys by the movable noses the editor writes
 bool nose_file(std::string const &Path)
 {
-	std::ifstream input{Path, std::ios_base::binary};
+	std::ifstream input{disk_path(Path), std::ios_base::binary};
 	std::string first;
 	std::getline(input, first);
 	if (false == first.empty() && first.back() == '\r')
@@ -432,7 +433,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 		text << "node -1 0 " << name << "_dziob eventlauncher " << format("%.3f %.3f %.3f %.1f", nose.x, nose.y, nose.z, range) << " t 0 " << name << "+ " << name << "- end\r\n";
 		++noses;
 	}
-	auto const path{Global.asCurrentSceneryPath + file};
+	auto const path{disk_path_for_write(Global.asCurrentSceneryPath + file)};
 	std::error_code error;
 	auto const exists{std::filesystem::exists(path, error)};
 	if (noses == 0 && false == exists)

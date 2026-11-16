@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "rendering/renderer.h"
 #include "stb/stb_image.h"
+#include "utilities/casedpath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,7 @@ void clip::open(std::string const &Path)
 void clip::decode(frames &Frames, std::string const &Path)
 {
 	stbi_set_flip_vertically_on_load_thread(0);
-	std::ifstream file(Path, std::ios::binary);
+	std::ifstream file(disk_path(Path), std::ios::binary);
 	std::vector<unsigned char> const bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 	if (bytes.empty())
 		return;

@@ -116,6 +116,11 @@ bool path_exists(std::string const &Path)
 	return std::filesystem::exists(std::filesystem::path{Path}, error);
 }
 
+void log_case(std::string const &Asked, std::string const &Found)
+{
+	WriteLog("File \"" + Asked + "\" found as \"" + Found + "\": named in another case on the disk than the game asks for", logtype::file);
+}
+
 std::string lower(std::string_view const Name)
 {
 	std::string lowered{Name};
@@ -150,7 +155,10 @@ std::string normal_path(std::string_view const Path)
 	return directory_of(root, names);
 }
 
-index::index(directory_lister Lister, path_probe Probe) : m_lister{std::move(Lister)}, m_probe{std::move(Probe)} {}
+index::index(directory_lister Lister, path_probe Probe, case_reporter Reporter)
+    : m_lister{std::move(Lister)}, m_probe{std::move(Probe)}, m_reporter{std::move(Reporter)}
+{
+}
 
 std::string index::resolve(std::string_view const Path)
 {
@@ -176,15 +184,42 @@ std::string index::resolve_in_any_case(std::string_view const Path)
 	if (auto const found{walk(Path, listed)}; false == found.empty())
 	{
 		if (m_probe(found))
+		{
+			report_case(Path, found);
 			return found;
+		}
 		// the folders were listed before the file was taken away or renamed: listed again, once
 		for (auto const &directory : listed)
 			forget(directory);
 		listed.clear();
 		if (auto const again{walk(Path, listed)}; false == again.empty() && m_probe(again))
+		{
+			report_case(Path, again);
 			return again;
+		}
 	}
 	return {};
+}
+
+std::string index::path_to_write(std::string_view const Path)
+{
+	if (Path.empty())
+		return {};
+	if (auto resolved{resolve(Path)}; false == resolved.empty())
+		return resolved;
+	// not there in any case: the folder above as it is on the disk, the name as given
+	std::string path{Path};
+	std::replace(path.begin(), path.end(), '\\', '/');
+	auto const rootlength{root_length(path)};
+	auto end{path.size()};
+	while (end > rootlength && path[end - 1] == '/')
+		--end;
+	if (end <= rootlength)
+		return path;
+	auto const separator{path.rfind('/', end - 1)};
+	if (separator == std::string::npos || separator < rootlength)
+		return path;
+	return path_to_write(std::string_view{path}.substr(0, separator)) + path.substr(separator);
 }
 
 std::string index::walk(std::string_view const Path, std::vector<std::string> &Listed)
@@ -196,6 +231,7 @@ std::string index::walk(std::string_view const Path, std::vector<std::string> &L
 	auto const rootlength{root_length(result)};
 	auto const root{root_key(std::string_view{result}.substr(0, rootlength))};
 	std::vector<std::string> names; // the folders on the way, as on the disk
+	auto moved{false};              // whether a folder on the way is named in another case on the disk
 	auto position{rootlength};
 	while (position < result.size())
 	{
@@ -214,6 +250,7 @@ std::string index::walk(std::string_view const Path, std::vector<std::string> &L
 		}
 		auto const directory{directory_of(root, names)};
 		auto listing{cached(directory)};
+		auto const listedbefore{listing != nullptr};
 		if (listing == nullptr)
 		{
 			// a name as it's on the disk needs no listing of its folder, which may be a large one, e.g. textures/
@@ -229,11 +266,21 @@ std::string index::walk(std::string_view const Path, std::vector<std::string> &L
 			return {};
 		auto const found{listing->names.find(lower(name))};
 		if (found == listing->names.end())
+		{
+			// made since the folder was listed, under the name asked for (the file the editor saved in scenery/Braniewo asked
+			// for in scenery/braniewo). in a folder named as asked for, the check of the whole path told already it isn't there
+			if (moved && listedbefore && m_probe(join(directory, name)))
+			{
+				names.emplace_back(name);
+				continue;
+			}
 			return {};
+		}
 		auto const &candidates{found->second};
 		auto const &chosen{std::find(candidates.begin(), candidates.end(), name) != candidates.end() ? name : candidates.front()};
 		if (candidates.size() > 1)
 			report_collision(directory, candidates, chosen);
+		moved = moved || chosen != name;
 		result.replace(start, name.size(), chosen);
 		names.emplace_back(chosen);
 	}
@@ -276,6 +323,29 @@ void index::forget(std::string_view const Directory)
 	}
 }
 
+void index::changed(std::string_view const Path)
+{
+	auto const path{lower(normal_path(Path))};
+	auto const relative{root_length(path) == 0};
+	// the folder itself, and each one the path is in: "." for a relative path, the root for the others
+	auto const holds = [&](std::string const &Directory) {
+		if (Directory == path)
+			return true;
+		if (Directory == ".")
+			return relative;
+		return path.size() > Directory.size() && path.compare(0, Directory.size(), Directory) == 0 &&
+		       (Directory.back() == '/' || path[Directory.size()] == '/');
+	};
+	std::unique_lock const lock{m_lock};
+	for (auto entry{m_folders.begin()}; entry != m_folders.end();)
+	{
+		if (holds(lower(entry->first)))
+			entry = m_folders.erase(entry);
+		else
+			++entry;
+	}
+}
+
 void index::forget_all()
 {
 	std::unique_lock const lock{m_lock};
@@ -298,6 +368,21 @@ void index::report_collision(std::string const &Directory, std::vector<std::stri
 	for (auto const &name : Names)
 		names += (names.empty() ? "\"" : ", \"") + name + "\"";
 	WriteLog("Files named alike but for the case in \"" + Directory + "\": " + names + "; \"" + Chosen + "\" is used", logtype::file);
+}
+
+void index::report_case(std::string_view const Asked, std::string const &Found)
+{
+	// the path found is the one asked for with its names changed in place, '/' for '\'
+	auto const same{std::equal(Asked.begin(), Asked.end(), Found.begin(), Found.end(),
+	                           [](char const Left, char const Right) { return Left == Right || (Left == '\\' && Right == '/'); })};
+	if (same || m_reporter == nullptr)
+		return;
+	{
+		std::scoped_lock const lock{m_reportedlock};
+		if (false == m_reportedcase.insert(Found).second)
+			return;
+	}
+	m_reporter(std::string{Asked}, Found);
 }
 
 index &path_index()
@@ -338,12 +423,31 @@ std::string disk_path(std::string_view const Path)
 #endif
 }
 
+std::string disk_path_for_write(std::string_view const Path)
+{
+#ifdef _WIN32
+	// the system writes over the file in any case itself, and makes a new one in the folders whatever their case
+	return std::string{Path};
+#else
+	return cased::path_index().path_to_write(Path);
+#endif
+}
+
 void cased_path_forget(std::string_view const Directory)
 {
 #ifdef _WIN32
 	static_cast<void>(Directory);
 #else
 	cased::path_index().forget(Directory);
+#endif
+}
+
+void cased_path_changed(std::string_view const Path)
+{
+#ifdef _WIN32
+	static_cast<void>(Path);
+#else
+	cased::path_index().changed(Path);
 #endif
 }
 

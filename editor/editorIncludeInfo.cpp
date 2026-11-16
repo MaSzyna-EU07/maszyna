@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "utilities/translation.h"
 #include "editor/editorFormat.hpp"
 
@@ -117,7 +118,7 @@ bool read_file(std::filesystem::path const &Path, std::string const &File, templ
 	// scripts of tools/editor write it with --sidecar: a check of the game files doesn't take it away
 	if (Text.yaml.empty())
 	{
-		std::ifstream beside{"editor/templates/" + File, std::ios_base::binary};
+		std::ifstream beside{disk_path("editor/templates/" + File), std::ios_base::binary};
 		if (beside.is_open())
 			Text.yaml.assign(std::istreambuf_iterator<char>(beside), std::istreambuf_iterator<char>());
 	}
@@ -130,7 +131,7 @@ bool read_file(std::filesystem::path const &Path, std::string const &File, templ
 
 bool read_template(std::string const &File, template_text &Text, std::string &Error)
 {
-	if (false == read_file(Global.asCurrentSceneryPath + File, File, Text))
+	if (false == read_file(disk_path(Global.asCurrentSceneryPath + File), File, Text))
 	{
 		Error = format(STR_C("can't open file \"%s\""), File.c_str());
 		return false;
@@ -495,7 +496,7 @@ bool save(std::string const &File, include_info const &Info, std::string &Error)
 	}
 	content.insert(location, block);
 
-	auto const filepath{Global.asCurrentSceneryPath + File};
+	auto const filepath{disk_path_for_write(Global.asCurrentSceneryPath + File)};
 	std::ofstream output{filepath + ".tmp", std::ios_base::binary | std::ios_base::trunc};
 	output << content;
 	output.close();

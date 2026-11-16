@@ -1212,7 +1212,10 @@ basic_region::serialize( std::string const &Scenariofile ) const {
     filename = Global.asCurrentSceneryPath + filename;
     filename += EU07_FILEEXTENSION_REGION;
 
+    // the file there in another case is written over, a new one is made in the folder as it is on the disk
+    filename = disk_path_for_write( filename );
     std::ofstream output { filename, std::ios::binary };
+    cased_path_changed( filename );
 
     // region file version 1
     // header: EU07SBT + version (0-255)
