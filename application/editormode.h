@@ -745,13 +745,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char filter[64]{};
 		float size{96.f}; // of the images, pixels
 		std::string selected;
-		std::map<std::string, int> thumbnails; // texture shown for the item of the name, 0: none
+		struct thumbnail
+		{
+			int texture{0}; // 0: none
+			double shown{0.0}; // when it was last asked for, ImGui time
+		};
+		std::map<std::string, thumbnail> thumbnails; // texture shown for the item of the name
 		int loads{0}; // textures read in the frame, a few at most so the browser doesn't stall the editor
 		int loadsframe{-1};
 	} m_textures;
 	void render_texture_browser();
 	// texture of the image of the item of the browser, 0 while there's none
 	std::uint64_t texture_thumbnail(texture_browser::item const &Item);
+	// the textures of the images out of sight for a while taken out of the memory: a picker of thousands of them scrolled
+	// through would keep them all, full size, until the memory ran out
+	void thumbnails_trim();
 	// takes a material dragged from the texture browser onto the item drawn last. returns: true if one was dropped, its name in Name
 	static bool material_drop(std::string &Name);
 	// the same, for a text field

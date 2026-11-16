@@ -102,14 +102,34 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 		}
 		else
 			texture = GfxRenderer->Fetch_Texture(Item.name, true);
-		lookup = browser.thumbnails.emplace(Item.name, texture).first;
+		lookup = browser.thumbnails.emplace(Item.name, texture_browser::thumbnail{texture}).first;
 	}
-	if (lookup->second == null_handle)
+	lookup->second.shown = ImGui::GetTime();
+	if (lookup->second.texture == null_handle)
 		return 0;
-	auto &texture{GfxRenderer->Texture(lookup->second)};
+	auto &texture{GfxRenderer->Texture(lookup->second.texture)};
 	if (false == texture.get_is_ready())
 		texture.create();
 	return texture.get_is_ready() ? static_cast<std::uint64_t>(texture.get_id()) : 0;
+}
+
+void editor_mode::thumbnails_trim()
+{
+	// a few seconds out of sight, so scrolling back and forth doesn't read them over and over
+	auto constexpr kept{3.0};
+	auto const now{ImGui::GetTime()};
+	auto &thumbnails{m_textures.thumbnails};
+	for (auto entry{thumbnails.begin()}; entry != thumbnails.end();)
+	{
+		if (entry->second.texture == null_handle || now - entry->second.shown < kept)
+		{
+			++entry;
+			continue;
+		}
+		// the scene's own textures stay; shown again, the image is read anew within the few a frame
+		GfxRenderer->Unload_Texture(entry->second.texture);
+		entry = thumbnails.erase(entry);
+	}
 }
 
 void editor_mode::render_texture_browser()
@@ -173,6 +193,8 @@ void editor_mode::render_texture_browser()
 	if (ImGui::Button(STR_C("Refresh")))
 	{
 		browser.listed = false;
+		for (auto const &[name, thumbnail] : browser.thumbnails)
+			GfxRenderer->Unload_Texture(thumbnail.texture);
 		browser.thumbnails.clear();
 	}
 	ImGui::SameLine();

@@ -1886,6 +1886,34 @@ texture_manager::mark_as_needed( texture_handle const Texture, bool const Near )
     }
 }
 
+void
+texture_manager::unload( texture_handle const Texture ) {
+
+    if( ( Texture <= 0 )
+     || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
+        return;
+    }
+    auto const &record { m_textures[ Texture ] };
+    auto &texture { *record.first };
+    if( ( record.second != resource_timestamp() )
+     || ( texture.id == opengl_texture::invalid_id )
+     || ( texture.id == 0 )
+     || ( true == texture.is_static )
+     || ( true == texture.is_rendertarget )
+     || ( texture.type == "make:" )
+     || ( texture.type == "internalsrc:" ) ) {
+        return;
+    }
+    texture.release();
+    texture.data = std::vector<unsigned char>();
+    texture.data_state = resource_state::none;
+    texture.reload_on_use = true;
+    // the released gl name can be given to a new texture, the unit cache can't trust it
+    for( auto &unit : opengl_texture::units ) {
+        unit = -1;
+    }
+}
+
 // releases gl textures of vehicles not needed nor drawn for a while
 void
 texture_manager::release_unneeded() {
