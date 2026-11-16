@@ -44,6 +44,9 @@ public:
 	bool flush_for(std::chrono::milliseconds Timeout);
 	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
 	void stop();
+	// the file of the log Name, made of its bytes as they are: those of the code page of a scenery (1250) too, on a
+	// Windows set to UTF-8, where the standard library throws making a path of them. there they become U+FFFD
+	std::filesystem::path file(std::string const &Name) const;
 
 private:
 	struct pending {
@@ -55,10 +58,18 @@ private:
 	// the thread, on the first line given, unless stopped. called with m_mutex held
 	void start();
 	void run(std::stop_token const &Stop);
+	// as flush, letting nothing out: on the writer's thread, or at the end of the process, an exception would end the
+	// simulator. what was taken for a writing which failed as a whole is lost, the next one goes on with what came since
+	void flush_safely() noexcept;
 	// called with m_filemutex held
 	void write();
+	// the lines of the log Name written into its file. returns: true if they all were
+	bool write_log(std::string const &Name, pending const &Lines) const;
+	// the file of the log Name, for the log of the simulator
+	std::string shown(std::string const &Name) const;
 
 	std::filesystem::path const m_folder;
+	std::string const m_shownfolder;
 	std::chrono::milliseconds const m_interval;
 	std::mutex m_mutex; // the lines kept and the thread
 	std::map<std::string, pending> m_pending;

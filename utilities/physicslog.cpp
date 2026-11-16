@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <exception>
 #include <fstream>
 #include <future>
 #include <memory>
@@ -35,9 +36,19 @@ void keep_last(std::string &Text, std::size_t const Most) {
 	Text.erase(0, cut == std::string::npos ? Text.size() : cut + 1);
 }
 
+// told in the log of the simulator, if there's the memory for it
+void tell(std::string const &Text) noexcept {
+	try {
+		ErrorLog(Text);
+	} catch (...) {
+		// out of memory for a line of the log too: nothing more to be done about it
+	}
+}
+
 } // namespace
 
-physicslog_writer::physicslog_writer(std::filesystem::path Folder, std::chrono::milliseconds const Interval) : m_folder{std::move(Folder)}, m_interval{Interval} {}
+physicslog_writer::physicslog_writer(std::filesystem::path Folder, std::chrono::milliseconds const Interval) :
+    m_folder{std::move(Folder)}, m_shownfolder{m_folder.generic_string()}, m_interval{Interval} {}
 
 physicslog_writer::~physicslog_writer() {
 	try {
@@ -73,7 +84,7 @@ bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
 	auto done{std::make_shared<std::promise<void>>()};
 	auto ended{done->get_future()};
 	std::thread([this, done] {
-		flush();
+		flush_safely();
 		done->set_value();
 	}).detach();
 	return ended.wait_for(Timeout) == std::future_status::ready;
@@ -100,7 +111,26 @@ void physicslog_writer::stop() {
 	}
 	if (thread.joinable())
 		thread.join();
-	flush();
+	flush_safely();
+}
+
+std::filesystem::path physicslog_writer::file(std::string const &Name) const {
+	auto const name{Name + ".dat"};
+#ifdef _WIN32
+	// in the code page of the system, as the standard library would convert it, but with the bytes not of it replaced
+	// instead of an exception thrown: a vehicle of a scenery written in 1250 on a Windows set to UTF-8, say
+	auto const size{static_cast<int>(name.size())};
+	std::wstring wide(static_cast<std::size_t>(::MultiByteToWideChar(CP_ACP, 0, name.data(), size, nullptr, 0)), L'\0');
+	::MultiByteToWideChar(CP_ACP, 0, name.data(), size, wide.data(), static_cast<int>(wide.size()));
+	return m_folder / wide;
+#else
+	// the bytes are the name of the file as they are
+	return m_folder / name;
+#endif
+}
+
+std::string physicslog_writer::shown(std::string const &Name) const {
+	return m_shownfolder + '/' + Name + ".dat";
 }
 
 void physicslog_writer::start() {
@@ -124,7 +154,17 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 			if (m_wake.wait_for(lock, m_interval, [&Stop] { return Stop.stop_requested(); }))
 				return;
 		}
+		flush_safely();
+	}
+}
+
+void physicslog_writer::flush_safely() noexcept {
+	try {
 		flush();
+	} catch (std::exception const &Error) {
+		tell(std::string{"Bad physics log: the writing failed ("} + Error.what() + "), the lines taken for it are lost");
+	} catch (...) {
+		tell("Bad physics log: the writing failed, the lines taken for it are lost");
 	}
 }
 
@@ -142,28 +182,22 @@ void physicslog_writer::write() {
 	for (auto &[name, lines] : taken) {
 		if (lines.text.empty() && false == lines.fresh)
 			continue;
-		auto const path{m_folder / (name + ".dat")};
-		// how long it was, to be cut back to if the lines are written in part only, a disk filling up say: else
-		// they'd be written twice, the next time
-		auto const before{lines.fresh ? 0 : std::filesystem::file_size(path, error)};
-		auto const existed{false == lines.fresh && false == static_cast<bool>(error)};
-		// in text mode, as the logs were always written: on Windows their lines, which end with "\r\n", end with "\r\r\n"
-		std::ofstream file{path, lines.fresh ? std::ios::out | std::ios::trunc : std::ios::out | std::ios::app};
-		if (file.is_open()) {
-			if (lines.fresh)
-				file << lines.header;
-			file << lines.text;
+		// a log going wrong otherwise, out of memory say, is kept for the next try as one whose file can't be written:
+		// the others are written still, and the writer goes on
+		auto written{false};
+		std::string problem{"can't write"};
+		try {
+			written = write_log(name, lines);
+		} catch (std::exception const &Error) {
+			problem = std::string{"failed ("} + Error.what() + ") to write";
 		}
-		file.close();
-		if (false == file.fail()) {
+		if (written) {
 			if (m_failed.erase(name) > 0)
-				WriteLog("Physics log: " + path.string() + " written again");
+				WriteLog("Physics log: " + shown(name) + " written again");
 			continue;
 		}
-		if (existed)
-			std::filesystem::resize_file(path, before, error);
 		if (m_failed.insert(name).second)
-			ErrorLog("Bad physics log: can't write " + path.string() + ", its last lines are kept for the next try");
+			ErrorLog("Bad physics log: " + problem + " " + shown(name) + ", its last lines are kept for the next try");
 		failed.emplace(name, std::move(lines));
 	}
 	if (failed.empty())
@@ -182,4 +216,26 @@ void physicslog_writer::write() {
 		lines.text.append(now.text);
 		now = std::move(lines);
 	}
+}
+
+bool physicslog_writer::write_log(std::string const &Name, pending const &Lines) const {
+	auto const path{file(Name)};
+	std::error_code error;
+	// how long it was, to be cut back to if the lines are written in part only, a disk filling up say: else they'd be
+	// written twice, the next time
+	auto const before{Lines.fresh ? 0 : std::filesystem::file_size(path, error)};
+	auto const existed{false == Lines.fresh && false == static_cast<bool>(error)};
+	// in text mode, as the logs were always written: on Windows their lines, which end with "\r\n", end with "\r\r\n"
+	std::ofstream stream{path, Lines.fresh ? std::ios::out | std::ios::trunc : std::ios::out | std::ios::app};
+	if (stream.is_open()) {
+		if (Lines.fresh)
+			stream << Lines.header;
+		stream << Lines.text;
+	}
+	stream.close();
+	if (false == stream.fail())
+		return true;
+	if (existed)
+		std::filesystem::resize_file(path, before, error);
+	return false;
 }

@@ -32,8 +32,9 @@ public:
 
 	std::filesystem::path const &path() const { return m_path; }
 	// the log as it stands, read in text mode as it is written: what was given to it
-	std::string read(std::string const &Name) const {
-		std::ifstream file{m_path / (Name + ".dat")};
+	std::string read(std::string const &Name) const { return read_file(m_path / (Name + ".dat")); }
+	static std::string read_file(std::filesystem::path const &File) {
+		std::ifstream file{File};
 		if (false == file.is_open())
 			return {};
 		std::ostringstream text;
@@ -153,6 +154,33 @@ TEST_CASE("physicslog: a log begun anew while its file can't be written drops wh
 	logs.append("SU45-001", "0.0500 2.0000\r\n");
 	logs.flush();
 	CHECK(folder.read("SU45-001") == std::string{header} + "0.0500 2.0000\r\n");
+}
+
+TEST_CASE("physicslog: a log whose file can't be written doesn't keep the others from theirs") {
+	log_folder folder{"failedother"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	std::filesystem::create_directories(folder.path() / "EU07-006.dat");
+	logs.begin("EU07-006", header);
+	logs.append("EU07-006", "0.0500 0.0000\r\n");
+	logs.begin("EU07-007", header);
+	logs.append("EU07-007", "0.0500 1.0000\r\n");
+	logs.flush();
+	CHECK(std::filesystem::is_directory(folder.path() / "EU07-006.dat"));
+	CHECK(folder.read("EU07-007") == std::string{header} + "0.0500 1.0000\r\n");
+}
+
+TEST_CASE("physicslog: a vehicle named in the code page of its scenery has its log, whatever the code page of the system") {
+	log_folder folder{"codepage"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	// "SM42-Łódź" in 1250, as the sceneries have it: not UTF-8, which a Windows set to it would have thrown on
+	std::string const name{"SM42-\xA3\xF3" "d\x9F"}; // apart, or the d would be read as a digit of the \xF3
+	logs.begin(name, header);
+	logs.append(name, "0.0500 0.0000\r\n");
+	logs.flush();
+	CHECK(logs.file(name).parent_path() == folder.path());
+	CHECK(log_folder::read_file(logs.file(name)) == std::string{header} + "0.0500 0.0000\r\n");
 }
 
 TEST_CASE("physicslog: stopping twice, from two threads at once, writes once and ends") {
