@@ -77,10 +77,11 @@ namespace
 bool timer_period_set{false};
 #endif
 
+// asks for the finer timer once, when fpslimit is set
 void begin_timer_period()
 {
 #ifdef _WIN32
-	if (Global.minframetime.count() > 0.f)
+	if (!timer_period_set && Global.minframetime.count() > 0.f)
 		timer_period_set = (timeBeginPeriod(1) == TIMERR_NOERROR);
 #endif
 }
@@ -718,6 +719,8 @@ int eu07_application::run()
 		// fpslimit: wait for the next frame's slot (eu07/maszyna#416)
 		if (auto const nextframe{framepacer.next_frame(frame_pacer::clock::now(), Global.minframetime)})
 		{
+			// fpslimit may come from the config block of the scenery, read after the settings
+			begin_timer_period();
 			std::this_thread::sleep_until(*nextframe);
 		}
 	}

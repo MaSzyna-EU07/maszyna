@@ -1642,7 +1642,9 @@ opengl_texture::invalidate_unit_cache() {
 void
 opengl_texture::sync_unit_cache() {
 
-    if( false == m_unitcachestale.exchange( false, std::memory_order_acq_rel ) ) {
+    // a plain load first: bind() calls this for every texture, and a read-modify-write each time would cost more
+    if( ( false == m_unitcachestale.load( std::memory_order_relaxed ) )
+     || ( false == m_unitcachestale.exchange( false, std::memory_order_acq_rel ) ) ) {
         return;
     }
     for( auto &unit : units ) {
