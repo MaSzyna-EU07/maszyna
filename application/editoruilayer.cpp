@@ -593,6 +593,18 @@ void editor_ui::render_()
 	// the keyboard navigation of ImGui is off, so Esc would not close an open list or menu by itself
 	if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		ImGui::ClosePopupsExceptModals();
+	// the keys don't get to the editor from a field being typed in: Ctrl+S leaves the field, what was typed is taken, then the scenery saved
+	if (ImGui::GetIO().WantTextInput && false == ImGui::GetIO().KeyShift && (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) && ImGui::IsKeyPressed(ImGuiKey_S, false))
+	{
+		ImGui::ClearActiveID();
+		m_savequeued = ImGui::GetFrameCount() + 2;
+	}
+	if (m_savequeued != 0 && ImGui::GetFrameCount() >= m_savequeued)
+	{
+		m_savequeued = 0;
+		if (m_save)
+			m_save();
+	}
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
 	// the fields of work of the editor under the menu, in a row twice as high; the tools of the one chosen in the toolbar under it
@@ -600,7 +612,11 @@ void editor_ui::render_()
 	{
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-		if (ImGui::BeginViewportSideBar("##editorworkspaces", viewport, ImGuiDir_Up, ImGui::GetFrameHeight() * 2.0f, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse))
+		// opaque as the toolbar under it: the bright sky through it leaves its names unreadable
+		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+		auto const workspaces{ImGui::BeginViewportSideBar("##editorworkspaces", viewport, ImGuiDir_Up, ImGui::GetFrameHeight() * 2.0f, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse)};
+		ImGui::PopStyleColor();
+		if (workspaces)
 		{
 			m_workspacebar();
 		}

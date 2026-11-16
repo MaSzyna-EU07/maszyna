@@ -102,6 +102,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 		UserData( gfx::geometry_handle const &Geometry ) const override;
 	int
 		Primitive( gfx::geometry_handle const &Geometry ) const override;
+	bool
+		Draws_Timbers() const override { return true; }
     // material methods
     material_handle
         Fetch_Material( std::string const &Filename, bool const Loadnow = true ) override;
@@ -138,6 +140,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
         Texture( texture_handle const Texture ) override;
     ITexture const &
         Texture( texture_handle const Texture ) const override;
+    void
+        Unload_Texture( texture_handle const Texture ) override;
     // utility methods
     void
         Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) override;
@@ -225,6 +229,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	std::uint32_t walk_instances_reserve(std::size_t const Count) override;
 	void walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges) override;
 	void walk_cull_face(bool const Enabled) override;
+	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;

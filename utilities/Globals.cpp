@@ -349,6 +349,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "gfxrenderer")
     {
         ParseOne(Parser, GfxRenderer);
+        // read in any case, as the starter does: "Legacy" written by hand is the legacy renderer
+        GfxRenderer = ToLower(GfxRenderer);
 
         // "default": the opengl 4.6 renderer, "vulkan": the vulkan 1.4 one (opengl when it can't run on the machine)
         if ((GfxRenderer == "full") || (GfxRenderer == "opengl") || (GfxRenderer == "gl46"))
@@ -570,6 +572,21 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    // the physics logs of the trains only, of the drivers of rail vehicles; "physicslog yes" writes them all anyway
+    if (token == "physicslog.trains")
+    {
+        ParseOne(Parser, WriteTrainLogFlag);
+        return true;
+    }
+
+    if (token == "blackbox")
+    {
+        bool blackbox{false};
+        ParseOne(Parser, blackbox);
+        BlackBox = blackbox;
+        return true;
+    }
+
     if (token == "fullphysics")
     {
         ParseOne(Parser, FullPhysics);
@@ -767,6 +784,13 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "frogs")
+    {
+        // yes: the rails of the plain tracks and of the switches with the key frogs cut where they cross other rails
+        ParseOne(Parser, Frogs);
+        return true;
+    }
+
     if (token == "timespeed")
     {
         ParseOne(Parser, default_timespeed, 1, false);
@@ -871,6 +895,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "ai.brakesetting.cw1")
+    {
+        ParseOne(Parser, AIBrakeSettingCw1, 1, false);
+        return true;
+    }
+
     if (token == "pause")
     {
         std::string value;
@@ -920,6 +950,16 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     if (token == "crashdamage")
     {
         ParseOne(Parser, crash_damage, 1);
+        return true;
+    }
+
+    if (token == "couplerphysics")
+    {
+        // yes: the player's train and the trains it closes in on, all: every train
+        std::string scope;
+        ParseOne(Parser, scope, 1);
+        coupler_physics_all = scope == "all";
+        coupler_physics = coupler_physics_all || scope == "yes" || scope == "true" || scope == "1";
         return true;
     }
 
@@ -2272,6 +2312,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "fmradio.cleansound", fmradio_cleansound );
     export_as_text( Output, "fmradio.stations", fmradio_stations );
     export_as_text( Output, "physicslog", WriteLogFlag );
+    export_as_text( Output, "physicslog.trains", WriteTrainLogFlag );
+    if( BlackBox ) {
+        export_as_text( Output, "blackbox", *BlackBox );
+    }
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "physics.sleepheld", physics_sleepheld );
     export_as_text( Output, "physics.roadlod", physics_roadlod );
@@ -2312,6 +2356,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
+    std::string couplerphysics { coupler_physics ? "yes" : "no" };
+    if( coupler_physics_all ) {
+        couplerphysics = "all";
+    }
+    export_as_text( Output, "couplerphysics", couplerphysics );
+    export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
     export_as_text( Output, "shadows", RenderShadows );
@@ -2334,6 +2384,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     Output << "sleepers3dplain " << ( Sleepers3DPlain.empty() ? std::string{ "none" } : Sleepers3DPlain ) << ' ' << ( Sleepers3DPlainSkin.empty() ? std::string{ "none" } : Sleepers3DPlainSkin ) << ' ' << Sleepers3DPlainSeat << '\n';
     export_as_text( Output, "rendercab", render_cab );
     export_as_text( Output, "createswitchtrackbeds", CreateSwitchTrackbeds );
+    export_as_text( Output, "frogs", Frogs );
     export_as_text( Output, "gfx.resource.sweep", ResourceSweep );
     export_as_text( Output, "gfx.resource.move", ResourceMove );
     export_as_text( Output, "gfx.textures.streaming", gfx_texture_streaming );

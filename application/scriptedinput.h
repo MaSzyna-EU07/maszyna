@@ -17,6 +17,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/glm.hpp>
 
+// the file of the self-test script the variable names, or none. a build made without WITH_EDITOR_SELFTESTS reads no
+// script, so nothing takes over the input of a player
+char const *selftest_script(char const *Variable);
+
 class scripted_input
 {
   public:

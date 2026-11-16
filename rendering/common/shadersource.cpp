@@ -11,11 +11,13 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/shadersource.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <system_error>
 
 #include "utilities/Logs.h"
 
@@ -48,7 +50,13 @@ std::string read_file(std::string const &Path)
 {
 	bool found{false};
 	auto text{read_text(Path, found)};
-	if ((false == found) || text.empty())
+	if (false == found)
+	{
+		// with the reason the system gives: a file which is there but can't be opened (too many files open) looks
+		// the same as a missing one otherwise
+		throw shader_exception("cannot open shader: " + Path + " (" + std::generic_category().message(errno) + ")");
+	}
+	if (text.empty())
 	{
 		throw shader_exception("cannot read shader: " + Path);
 	}

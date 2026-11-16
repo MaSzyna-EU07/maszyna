@@ -1241,7 +1241,7 @@ void sweep_node::hide()
 	m_shapes.hide();
 }
 
-float sweep_node::radius_()
+float sweep_node::radius_() const
 {
 	return static_cast<float>(0.5 * length() + std::abs(m_state.lateral) + 25.0);
 }

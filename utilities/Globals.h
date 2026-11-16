@@ -81,6 +81,7 @@ struct global_settings {
     bool bSmoothTraction{ true };
     bool CatenaryProcedural{ true }; // przęsła z dopiskiem "type" rysowane wg typu sieci (lina nośna, wieszaki i Y liczone)
     bool CreateSwitchTrackbeds{ true };
+    bool Frogs{ false }; // whether the rails are cut where they cross other rails into frogs, wing rails and check rails; off, they're laid whole as before
     std::string szTexturesTGA{ ".tga" }; // lista tekstur od TGA
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS
     std::string szDefaultExt{ szTexturesDDS };
@@ -114,6 +115,9 @@ struct global_settings {
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
     bool crashdump_full{ false }; // crash dump with the whole memory of the process instead of the small one
+    // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
+    // never, and with no entry it is written along with the physics logs
+    std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -152,6 +156,7 @@ struct global_settings {
     bool bJoinEvents{ false }; // czy grupować eventy o tych samych nazwach
     int iHiddenEvents{ 1 }; // czy łączyć eventy z torami poprzez nazwę toru
     bool AITrainman{ true }; // virtual assistant performing consist coupling/decoupling and other maintenance tasks
+    bool AIBrakeSettingCw1{ true }; // ai.brakesetting.cw1: the AI wagon inspector sets the brakes (G/P/R/Mg) by the instruction Cw-1, no: as before eu07/maszyna#350
     // ui
     int PythonScreenUpdateRate{ 200 }; // delay between python-based screen updates, in milliseconds
     int iTextMode{ 0 }; // tryb pracy wyświetlacza tekstowego
@@ -321,6 +326,12 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
+	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
+	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
+	// train with coupler_physics_all
+	bool coupler_physics = false;
+	bool coupler_physics_all = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;

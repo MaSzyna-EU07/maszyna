@@ -439,7 +439,7 @@ double TMoverParameters::Current(double n, double U)
 				//          writepaslog("Delta          ", FloatToStr(Delta));
 				//          writepaslog("DeltaQ         ", FloatToStr(DeltaQ));
 				//          writepaslog("U              ", FloatToStr(U));
-				if (Mains)
+				if (MainCircuitPowered())
 				{
 					if (U > 0)
 						MotorCurrent = (U1 - Isf * Rz - Mn * motor_param(SP).fi * n + std::sqrt(Delta)) / (2.0 * Rz);
@@ -644,6 +644,9 @@ bool TMoverParameters::Attach(int ConnectNo, int ConnectToNr, TMoverParameters *
 	// stykaja sie zderzaki i kompatybilne typy sprzegow, chyba że łączenie na starcie
 	if (thiscoupler.CouplingFlag == coupling::faux)
 	{
+		// a new coupling: the play of the coupling as set up anew, without the stretch of the one before
+		thiscoupler.physics_state.couple();
+		othercoupler.physics_state.couple();
 		// jeśli wcześniej nie było połączone, ustalenie z której strony rysować sprzęg
 		thiscoupler.Render = true; // tego rysować
 		othercoupler.Render = false; // a tego nie
@@ -1335,6 +1338,15 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	auto const otherend{Neighbours[End].vehicle_end};
 	auto const &othercoupler{othervehicle->Couplers[otherend]};
 
+	auto const physical{coupler_physics_at(End)};
+	if (physical && false == coupler_stop_hit(End, *othervehicle, otherend))
+	{
+		return;
+	}
+	// the share of the energy of the relative motion the hit takes: in the physical model the springs gone solid give
+	// for good, rather than spring back as the legacy model has it
+	auto const loss{physical ? coupler_physics::solid_hit_loss(thiscoupler.physics, othercoupler.physics) : (thiscoupler.beta + othercoupler.beta) / 2.0};
+
 	// the velocities along this vehicle's axis: the other vehicle's one is turned around when the vehicles face each
 	// other (touch with the same ends), as in CouplerForce()
 	auto const otherdirection{DirPatch(End, otherend)};
@@ -1348,12 +1360,12 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	{
 	case 0:
 	{
-		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(velocity, othervehiclevelocity, TotalMass, othervehicle->TotalMass, loss, VirtualCoupling) / dt;
 		break; // yB: ej ej ej, a po
 	}
 	case 1:
 	{
-		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, (thiscoupler.beta + othercoupler.beta) / 2.0, VirtualCoupling) / dt;
+		CCF = ComputeCollision(othervehiclevelocity, velocity, othervehicle->TotalMass, TotalMass, loss, VirtualCoupling) / dt;
 		break;
 	}
 	default:
@@ -1364,7 +1376,8 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 
 	if (Global.crash_damage)
 	{
-		if (-thiscoupler.Dist >= thiscoupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (thiscoupler.FmaxC + 1.0), p_coupldmg))
+		// the physical model breaks the coupling and crushes the buffers by the force of the hit (coupler_stop_hit())
+		if (false == physical && -thiscoupler.Dist >= thiscoupler.DmaxB && FuzzyLogic(std::abs(CCF), 5.0 * (thiscoupler.FmaxC + 1.0), p_coupldmg))
 		{
 			// small chance to smash the coupler if it's hit with excessive force
 			damage_coupler(End);
@@ -1393,18 +1406,21 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 		}
 	}
 
-	// adjust velocity and acceleration of affected vehicles
+	// adjust velocity and acceleration of affected vehicles. the physical model changes the velocities alone: the
+	// integration of the next step (ComputeMovement()) would carry a quarter of an acceleration spike over into the
+	// velocity once more, and the vehicles would bounce off the stop faster than they hit it
+	auto const accelerationspike{physical ? 0.0 : 1.0};
 	if (false == TestFlag(DamageFlag, dtrain_out))
 	{
 		auto const accelerationchange{(velocity - V) / dt};
-		AccS += accelerationchange;
+		AccS += accelerationchange * accelerationspike;
 		V = velocity;
 	}
 	if (false == TestFlag(othervehicle->DamageFlag, dtrain_out))
 	{
 		auto const othervehiclenewvelocity{othervehiclevelocity * otherdirection}; // back along the other vehicle's axis
 		auto const othervehicleaccelerationchange{(othervehiclenewvelocity - othervehicle->V) / dt};
-		othervehicle->AccS += othervehicleaccelerationchange;
+		othervehicle->AccS += othervehicleaccelerationchange * accelerationspike;
 		othervehicle->V = othervehiclenewvelocity;
 	}
 }
@@ -1422,37 +1438,70 @@ void TMoverParameters::damage_coupler(int const End)
 	if (SetFlag(DamageFlag, dtrain_coupling))
 		EventFlag = true;
 
-	if ((thiscoupler.CouplingFlag & coupling::brakehose) == coupling::brakehose)
+	auto const hosetorn{(thiscoupler.CouplingFlag & coupling::brakehose) == coupling::brakehose};
+	if (hosetorn)
 	{
 		// hamowanie nagle - zerwanie przewodow hamulcowych
 		AlarmChainFlag = true;
 	}
 
 	thiscoupler.CouplingFlag = 0;
+	thiscoupler.broken = true;
 
 	if (thiscoupler.Connected != nullptr)
 	{
-		switch (End)
+		// break connection with other vehicle, if there's any: on the end it's coupled with, which is the front one too
+		// for vehicles facing each other
+		auto &othercoupler{thiscoupler.Connected->Couplers[thiscoupler.ConnectedNr]};
+		othercoupler.CouplingFlag = coupling::faux;
+		// the coupling broke between the two, either end can be repaired
+		othercoupler.broken = true;
+		if (hosetorn && coupler_physics_at(End))
 		{
-		// break connection with other vehicle, if there's any
-		case 0:
-		{
-			thiscoupler.Connected->Couplers[end::rear].CouplingFlag = coupling::faux;
-			break;
-		}
-		case 1:
-		{
-			thiscoupler.Connected->Couplers[end::front].CouplingFlag = coupling::faux;
-			break;
-		}
-		default:
-		{
-			break;
-		}
+			// the brake pipe of the other part of the train vents through the torn hose as well
+			thiscoupler.Connected->AlarmChainFlag = true;
 		}
 	}
 
 	WriteLog("Bad driving: " + Name + " broke a coupler");
+}
+
+namespace
+{
+
+// the coupler as good as new, the vehicle without the coupler damage (and the emergency braking of the torn brake
+// hose) once neither of its couplers is broken
+void repair(TMoverParameters &Vehicle, TCoupling &Coupler)
+{
+	Coupler.broken = false;
+	Coupler.stretch_duration = 0.f;
+	Coupler.physics_state.couple();
+	if (Vehicle.Couplers[end::front].broken || Vehicle.Couplers[end::rear].broken)
+	{
+		return;
+	}
+	ClearFlag(Vehicle.DamageFlag, dtrain_coupling);
+	// either vehicle of the pair may have been braking through the torn hose
+	Vehicle.AlarmChainFlag = false;
+}
+
+} // namespace
+
+bool TMoverParameters::repair_coupler(int const End)
+{
+	auto &thiscoupler{Couplers[End]};
+	if (false == thiscoupler.broken)
+	{
+		return false;
+	}
+	repair(*this, thiscoupler);
+	// the other half of the coupling, which may be the vehicle flagged with the damage
+	if (auto *other{thiscoupler.Connected}; other != nullptr && other->Couplers[thiscoupler.ConnectedNr].broken)
+	{
+		repair(*other, other->Couplers[thiscoupler.ConnectedNr]);
+	}
+	WriteLog(std::format("Coupler of {} repaired, at its {} end", Name, End == end::front ? "front" : "rear"));
+	return true;
 }
 
 void TMoverParameters::Derail(DerailReason const Reason)
@@ -1597,6 +1646,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1663,6 +1713,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 	                                                        dL)};
 
 	DistCounter += fabs(dL) / 1000.0;
+	Odometer.run(dL);
 	dL = 0;
 
 	// koniec procedury, tu nastepuja dodatkowe procedury pomocnicze
@@ -1824,7 +1875,8 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 		break;
 	}
 	}
-	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1};
+	// a line breaker closed ahead of the pantographs gets ready on the low voltage circuits
+	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1 || (PantographsRequireMains && (Power24vIsAvailable || Power110vIsAvailable))};
 
 	if (true == maincircuitpowersupply)
 	{
@@ -1903,7 +1955,7 @@ void TMoverParameters::PowerCouplersCheck(double const /*Deltatime*/, coupling c
 			case TPowerSource::Main:
 			{
 				// HACK: main circuit can be fed through couplers, so we explicitly check pantograph supply here
-				localvoltage = true == Mains ? PantographVoltage : 0.0;
+				localvoltage = MainCircuitPowered() ? PantographVoltage : 0.0;
 				break;
 			}
 			default:
@@ -2160,7 +2212,7 @@ void TMoverParameters::ConverterCheck(double const Timestep)
 	if (ConverterAllow && ConverterAllowLocal && false == ConvOvldFlag &&
 	    false == PantPressLockActive
 	    // HACK: allow carriages to operate converter without (missing) fuse prerequisite
-	    && (Power > 1.0 ? Mains : GetTrainsetHighVoltage() > 0.0))
+	    && (Power > 1.0 ? MainCircuitPowered() : GetTrainsetHighVoltage() > 0.0))
 	{
 		// delay timer can be optionally configured, and is set anew whenever converter goes off
 		if (ConverterStartDelayTimer <= 0.0)
@@ -2246,7 +2298,7 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 	}
 	case TPowerSource::Main:
 	{
-		voltage = true == Mains ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		voltage = MainCircuitPowered() ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
 		break;
 	}
 	default:
@@ -2355,9 +2407,7 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		}
 		blower.is_active =
 		    // TODO: bind properly power source when ld is in place
-		    (blower.start_type == start_t::battery   ? Power24vIsAvailable :
-		     blower.start_type == start_t::converter ? Power110vIsAvailable :
-		                                               Mains) // power source
+		    MotorBlowerPowerIsAvailable(blower) // power source
 		    // breaker condition disabled until it's implemented in the class data
 		    //         && ( true == blower.breaker )
 		    && false == disable &&
@@ -2384,6 +2434,19 @@ void TMoverParameters::MotorBlowersCheck(double const Timestep)
 		{
 			fan.revolutions *= static_cast<float>(std::max(0.0, 1.0 - Timestep));
 		}
+	}
+}
+
+bool TMoverParameters::MotorBlowerPowerIsAvailable(cooling_fan const &Blower) const
+{
+	switch (Blower.start_type)
+	{
+	case start_t::battery:
+		return Power24vIsAvailable;
+	case start_t::converter:
+		return Power110vIsAvailable;
+	default:
+		return MainCircuitPowered();
 	}
 }
 
@@ -2416,7 +2479,8 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 		valve.is_active = (valve.spring ? lowvoltagepower : true) // spring actuator needs power to maintain non-default state
 		                  && (manualcontrol && lowvoltagepower ? false == valve.is_disabled : true) // needs power to change state, without it just pass through
 		                  && (manualcontrol && lowvoltagepower ? false == PantAllDown : true) &&
-		                  (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
+		                  (Mains || false == PantographsRequireMains) // fed through the closed line breaker, where it comes first
+		                  && (valve.is_active || (manualcontrol && lowvoltagepower && valve.is_enabled) || (autostart && lowvoltagepower)); // shouldn't ever get this far but, eh
 
 		auto const pantographexists{EnginePowerSource.SourceType == TPowerSource::CurrentCollector && EnginePowerSource.CollectorParameters.PhysicalLayout & 1 << pant_id};
 
@@ -3814,7 +3878,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	case ElectricInductionMotor:
 	{
 		// TODO: check whether we can simplify this check and skip the outer EngineType switch
-		powerisavailable = EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
+		// closed ahead of the pantographs, the line breaker runs on the low voltage circuits
+		powerisavailable = PantographsRequireMains ? Power24vIsAvailable || Power110vIsAvailable : EnginePowerSourceVoltage() > 0.5 * EnginePowerSource.MaxVoltage;
 		break;
 	}
 	default:
@@ -3824,7 +3889,8 @@ bool TMoverParameters::MainSwitchCheck() const
 	}
 
 	return powerisavailable && (ScndCtrlPos == 0 || EngineType == ElectricInductionMotor) && MainsInitTimeCountdown <= 0.0 &&
-	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && true == NoVoltRelay && true == OvervoltageRelay && LastSwitchingTime > CtrlDelay &&
+	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && (true == NoVoltRelay || PantographsRequireMains) && true == OvervoltageRelay &&
+	       LastSwitchingTime > CtrlDelay &&
 	       (HasCamshaft                       ? IsMainCtrlActualNoPowerPos() :
 	        LineBreakerClosesOnlyAtNoPowerPos ? IsMainCtrlNoPowerPos() :
 	                                            true) &&
@@ -3927,6 +3993,25 @@ double TMoverParameters::EnginePowerSourceVoltage() const
 	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? std::max(GetTrainsetHighVoltage(), PantographVoltage) :
 	       EnginePowerSource.SourceType == TPowerSource::Accumulator      ? Power24vVoltage :
 	                                                                        0.0;
+}
+
+// whether the main circuit feeds what runs on it: the converter, a compressor, the heating, the motor and resistor
+// blowers, the traction motors
+bool TMoverParameters::MainCircuitPowered() const
+{
+	if (false == Mains)
+	{
+		return false;
+	}
+	if (false == PantographsRequireMains || EnginePowerSource.SourceType != TPowerSource::CurrentCollector)
+	{
+		// the closed line breaker says it all: the undervoltage trip opens it without traction voltage, and an engine
+		// which runs is its own supply
+		return true;
+	}
+	// closed ahead of the pantographs the line breaker holds without the voltage, which the undervoltage trip isn't
+	// there to vouch for
+	return EnginePowerSourceVoltage() >= EnginePowerSource.CollectorParameters.MinV;
 }
 
 // *************************************************************************************************
@@ -4522,7 +4607,7 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 
 	// the main circuit, also for a compressor driven by the engine, otherwise the low voltage
-	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? Mains : Power110vIsAvailable};
+	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? MainCircuitPowered() : Power110vIsAvailable};
 	CompressorPowerTime = compressorpower ? CompressorPowerTime + dt : 0.0;
 	auto const compressorready{compressorpower && CompressorPowerTime >= CompressorStartDelay};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
@@ -5495,6 +5580,10 @@ double TMoverParameters::Adhesive(double staticfriction) const
 // *************************************************************************************************
 double TMoverParameters::CouplerForce(int const End, double dt)
 {
+	if (coupler_physics_at(End))
+	{
+		return coupler_force_physical(End, dt);
+	}
 
 	auto &thiscoupler{Couplers[End]};
 	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
@@ -5608,27 +5697,9 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 				// zderzenie
 				thiscoupler.CheckCollision = true;
 			}
-			if (-newdistance >= std::min(collisiondistance, dEpsilon) && thiscoupler.type() == TCouplerType::Automatic && thiscoupler.type() == othercoupler.type() && thiscoupler.CouplingFlag == coupling::faux &&
-				    thiscoupler.AutomaticCouplingAllowed &&
-				    othercoupler.AutomaticCouplingAllowed)
+			if (-newdistance >= std::min(collisiondistance, dEpsilon))
 			{
-				// sprzeganie wagonow z samoczynnymi sprzegami
-				auto couplingtype{thiscoupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
-				// potentially exclude incompatible control coupling
-				if (thiscoupler.control_type != othercoupler.control_type)
-				{
-					couplingtype &= ~coupling::control;
-				}
-				couplingtype = CompatibleCoupling(End, *othervehicle, otherend, couplingtype);
-
-				// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
-				auto const safe{AutomaticCouplingSafe(End, *othervehicle, otherend)};
-				auto const caught{safe && Attach(End, otherend, othervehicle, couplingtype)};
-				// HACK: we're reusing sound enum to mark whether vehicle was connected to another
-				AIFlag |= (caught ? sound::attachcoupler : 0);
-				// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
-				thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
-				othercoupler.AutomaticCouplingAllowed = safe && false == caught;
+				automatic_coupling(End, *othervehicle, otherend);
 			}
 		}
 	}
@@ -5641,6 +5712,172 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	}
 
 	return CF;
+}
+
+bool TMoverParameters::coupler_physics_at(int const End) const
+{
+	if (false == Global.coupler_physics)
+	{
+		return false;
+	}
+	if (Global.coupler_physics_all || CouplerPhysics)
+	{
+		return true;
+	}
+	// either vehicle of the pair covered takes the pair in, so both of them compute it the same way
+	auto const *other{Neighbours[End].vehicle};
+	return other != nullptr && other->MoverParameters->CouplerPhysics;
+}
+
+void TMoverParameters::automatic_coupling(int const End, TMoverParameters &Other, int const OtherEnd)
+{
+	auto &thiscoupler{Couplers[End]};
+	auto &othercoupler{Other.Couplers[OtherEnd]};
+
+	if (thiscoupler.type() != TCouplerType::Automatic || thiscoupler.type() != othercoupler.type() || thiscoupler.CouplingFlag != coupling::faux || false == thiscoupler.AutomaticCouplingAllowed ||
+	    false == othercoupler.AutomaticCouplingAllowed)
+	{
+		return;
+	}
+	// sprzeganie wagonow z samoczynnymi sprzegami
+	auto couplingtype{thiscoupler.AutomaticCouplingFlag & othercoupler.AutomaticCouplingFlag};
+	// potentially exclude incompatible control coupling
+	if (thiscoupler.control_type != othercoupler.control_type)
+	{
+		couplingtype &= ~coupling::control;
+	}
+	couplingtype = CompatibleCoupling(End, Other, OtherEnd, couplingtype);
+
+	// too fast for the couplers to catch, the vehicles collide instead (and may derail, see CollisionDetect())
+	auto const safe{AutomaticCouplingSafe(End, Other, OtherEnd)};
+	auto const caught{safe && Attach(End, OtherEnd, &Other, couplingtype)};
+	// HACK: we're reusing sound enum to mark whether vehicle was connected to another
+	AIFlag |= (caught ? sound::attachcoupler : 0);
+	// coupled, or locked until the vehicles part, so they don't couple as soon as the collision slows them down
+	thiscoupler.AutomaticCouplingAllowed = safe && false == caught;
+	othercoupler.AutomaticCouplingAllowed = safe && false == caught;
+}
+
+namespace
+{
+
+// the gap between the ends of a coupled pair, taking up the play of the coupling, opens up enough to jerk the train
+constexpr double coupler_stretch_threshold{0.001};
+
+// the sounds of the buffers hitting each other, and of the coupling taking up its play
+struct coupler_sound_input
+{
+	double gap{0.0}; // between the ends [m]
+	double previous_gap{0.0};
+	double gap_rate{0.0}; // [m/s]
+	double draw_gear{0.0}; // deflection [m]
+	double previous_draw_gear{0.0};
+	bool coupled{false};
+	bool adapter{false};
+	bool moving{false};
+};
+
+int coupler_sounds(coupler_sound_input const &Input)
+{
+	if (Input.gap < 0.0 && Input.gap < Input.previous_gap && Input.gap_rate < -0.1 && false == Input.adapter)
+	{
+		// 090503: dzwieki pracy zderzakow
+		return std::abs(Input.gap_rate) > 5.0 ? sound::bufferclash | sound::loud : sound::bufferclash;
+	}
+	if (Input.coupled && Input.moving && Input.draw_gear > coupler_stretch_threshold && Input.previous_draw_gear <= coupler_stretch_threshold && std::abs(Input.gap_rate) > 0.005)
+	{
+		// 090503: dzwieki pracy sprzegu
+		return std::abs(Input.gap_rate) > 0.035 ? sound::couplerstretch | sound::loud : sound::couplerstretch;
+	}
+	return sound::none;
+}
+
+} // namespace
+
+double TMoverParameters::coupler_force_physical(int const End, double const dt)
+{
+	auto &thiscoupler{Couplers[End]};
+	auto *othervehicle{Neighbours[End].vehicle->MoverParameters};
+	auto const otherend{Neighbours[End].vehicle_end};
+	auto &othercoupler{othervehicle->Couplers[otherend]};
+	auto &state{thiscoupler.physics_state};
+
+	// the gap as it is now: the distance found at the start of the frame, and the movement of both vehicles since
+	auto const othervehiclemove{othervehicle->dMoveLen * DirPatch(End, otherend)};
+	auto const gap{Neighbours[End].distance + (End == end::front ? othervehiclemove - dMoveLen : dMoveLen - othervehiclemove)};
+	// the gap opens up when the front end falls behind the vehicle ahead of it, or the rear end runs ahead of the one behind
+	auto const gaprate{CouplerVelocityDifference(End, *othervehicle, otherend) * DirF(End)};
+	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const adapter{thiscoupler.has_adapter() || othercoupler.has_adapter()};
+
+	if (false == coupled && Neighbours[End].distance > 0.05)
+	{ // arbitrary distance
+		// potentially reset auto coupling lock
+		thiscoupler.AutomaticCouplingAllowed = true;
+	}
+
+	auto const previousgap{state.gap};
+	auto const previousdrawgear{state.draw_gear.deflection};
+	auto const result{coupler_physics::update_pair(thiscoupler.physics, othercoupler.physics, state, {gap, gaprate, coupled, adapter, Global.crash_damage})};
+
+	SetFlag(thiscoupler.sounds, coupler_sounds({gap, previousgap, gaprate, state.draw_gear.deflection, previousdrawgear, coupled, adapter, Vel > 1.0}));
+
+	thiscoupler.CheckCollision = state.stop != 0;
+	// for the buffers drawn pressed in, see TDynamicObject: twice the deflection of the buffers of this end
+	thiscoupler.Dist = result.compression > 0.0 ? -2.0 * result.buffers_deflection : std::max(gap, 0.0);
+	// the link pulled past its yield force, which the AI drivers ease off on
+	thiscoupler.stretch_duration = result.overloaded ? thiscoupler.stretch_duration + static_cast<float>(dt) : 0.f;
+
+	if (result.broken)
+	{
+		damage_coupler(End);
+	}
+	if (false == coupled && gap < 0.0)
+	{
+		auto const collisiondistance{adapter ? std::min(thiscoupler.DmaxB, othercoupler.DmaxB) : thiscoupler.DmaxB + othercoupler.DmaxB};
+		if (-gap >= std::min(collisiondistance, dEpsilon))
+		{
+			automatic_coupling(End, *othervehicle, otherend);
+		}
+	}
+
+	// tension pulls this vehicle towards the other one
+	auto const force{result.force * -DirF(End)};
+	if (thiscoupler.CouplingFlag != coupling::faux)
+	{
+		// uzgadnianie prawa Newtona, as in CouplerForce()
+		othercoupler.CForce = -force * DirPatch(End, otherend);
+	}
+	return force;
+}
+
+bool TMoverParameters::coupler_stop_hit(int const End, TMoverParameters &Other, int const OtherEnd)
+{
+	auto &thiscoupler{Couplers[End]};
+	auto &othercoupler{Other.Couplers[OtherEnd]};
+	auto &state{thiscoupler.physics_state};
+
+	// the draw gear went solid with the gap opening up, the buffers with it closing
+	auto const gaprate{CouplerVelocityDifference(End, Other, OtherEnd) * DirF(End)};
+	auto const closing{state.stop > 0 ? gaprate : -gaprate};
+	if (state.stop == 0 || closing <= 0.0)
+	{
+		// parting from the stop already, after the hit on the other vehicle's end
+		return false;
+	}
+	if (false == Global.crash_damage)
+	{
+		return true;
+	}
+	auto const hit{coupler_physics::impact(thiscoupler.physics, othercoupler.physics, state, closing, TotalMass, Other.TotalMass)};
+	// the other vehicle keeps the state of the pair alike
+	othercoupler.physics_state.elongation = state.elongation;
+	if (hit.broken || hit.crushed)
+	{
+		damage_coupler(End);
+	}
+	// a broken coupling lets the vehicles part
+	return false == hit.broken;
 }
 
 // *************************************************************************************************
@@ -5728,7 +5965,7 @@ double TMoverParameters::TractionForce(double dt)
 
 	case TEngineType::ElectricSeriesMotor:
 	{
-		if (true == Mains)
+		if (MainCircuitPowered())
 		{
 			switch (RVentType)
 			{
@@ -5860,11 +6097,18 @@ double TMoverParameters::TractionForce(double dt)
 	{
 		// update the state of voltage relays
 		auto const voltage{std::max(GetTrainsetHighVoltage(), PantographVoltage)};
-		NoVoltRelay = EnginePowerSource.SourceType != TPowerSource::CurrentCollector || voltage >= EnginePowerSource.CollectorParameters.MinV;
+		// where the line breaker holds without voltage (closed ahead of the pantographs) the undervoltage relay opens the
+		// line contactors instead, see MotorConnectorsCheck(). it picks up again only with the master controller back
+		// where a start begins, as the line breaker it stands in for wouldn't close on a running position either: at
+		// zero, or at the first position, which is the first resistance step, where the line contactors close on any
+		// start, and where the AI waits for them rather than going back to zero
+		auto const novoltrelaypicksup{false == PantographsRequireMains || NoVoltRelay || MainCtrlPowerPos() <= 1};
+		NoVoltRelay = EnginePowerSource.SourceType != TPowerSource::CurrentCollector || (voltage >= EnginePowerSource.CollectorParameters.MinV && novoltrelaypicksup);
 		OvervoltageRelay =
 		    EnginePowerSource.SourceType != TPowerSource::CurrentCollector || voltage <= EnginePowerSource.CollectorParameters.MaxV || false == EnginePowerSource.CollectorParameters.OVP;
 		// wywalanie szybkiego z powodu niewłaściwego napięcia
-		EventFlag |= true == Mains && (false == NoVoltRelay || false == OvervoltageRelay) &&
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		EventFlag |= true == Mains && ((false == NoVoltRelay && false == PantographsRequireMains) || false == OvervoltageRelay) &&
 		             MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		break;
 	}
@@ -5873,7 +6117,8 @@ double TMoverParameters::TractionForce(double dt)
 	{
 		// TODO: check if we can use instead the code for electricseriesmotor
 		// nie wchodzić w funkcję bez potrzeby
-		if (Mains && (std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV ||
+		// (a line breaker closed ahead of the pantographs holds without voltage)
+		if (Mains && ((std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV && false == PantographsRequireMains) ||
 			    std::max(GetTrainsetHighVoltage(), PantographVoltage) > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
@@ -6394,7 +6639,7 @@ double TMoverParameters::TractionForce(double dt)
 
 		case TEngineType::ElectricInductionMotor:
 		{
-			if (true == Mains && !SecuritySystem.is_engine_blocked())
+			if (MainCircuitPowered() && !SecuritySystem.is_engine_blocked())
 			{
 				double ActiveInverters = 0.0;
 				for (auto const &inv : Inverters)
@@ -7312,9 +7557,36 @@ bool TMoverParameters::MotorConnectorsCheck()
 		return false;
 	}
 
-	auto const connectorsoff{false == Mains || true == FuseFlag || true == StLinSwitchOff || DirActive == 0};
+	// a line breaker closed ahead of the pantographs holds without voltage; what cuts the motors off there is its
+	// undervoltage relay, which elsewhere opens the line breaker
+	auto const undervoltage{PantographsRequireMains && false == NoVoltRelay};
 
-	return false == connectorsoff;
+	auto const connectorsoff{false == Mains || undervoltage || true == FuseFlag || true == StLinSwitchOff || DirActive == 0};
+
+	return false == connectorsoff && LineContactorsInterlockReleased();
+}
+
+bool TMoverParameters::LineContactorsInterlockReleased() const
+{
+	switch (LineContactorsInterlock)
+	{
+	case line_contactors_interlock::converter:
+		// the converter of this very vehicle, not the 110 V of the trainset: a section with its fans off doesn't start
+		return ConverterFlag;
+	case line_contactors_interlock::motor_blowers:
+		return std::ranges::all_of(MotorBlowers, [this](auto const &Blower) {
+			if (Blower.min_start_velocity < 0)
+			{
+				return Blower.is_active;
+			}
+			// a blower which starts with the speed and the motor current (MotorBlowersStartVelocity) can't run before
+			// the contactors close, nor after a stop longer than it keeps running for: it's enough that it's
+			// switched on and has power, so it starts once the vehicle moves
+			return MotorBlowerPowerIsAvailable(Blower) && false == Blower.is_disabled && (Blower.start_type == start_t::manual ? Blower.is_enabled : true);
+		});
+	default:
+		return true;
+	}
 }
 
 bool TMoverParameters::OperatePantographsValve(operation_t const State, range_t const Notify)
@@ -7687,7 +7959,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic = 0;
 	}
 
-	auto const eimicpowerenabled{(true == Mains || Power == 0.0) && (!SpringBrake.IsActive || !SpringBrakeCutsOffDrive) && !LockPipe && DirAbsolute != 0};
+	auto const eimicpowerenabled{(MainCircuitPowered() || Power == 0.0) && (!SpringBrake.IsActive || !SpringBrakeCutsOffDrive) && !LockPipe && DirAbsolute != 0};
 	auto const eimicdoorenabled{(SpringBrake.IsActive && ReleaseParkingBySpringBrakeWhenDoorIsOpen)};
 	double eimic_max = 0.0;
 	if (Doors.instances[side::left].open_permit == false && Doors.instances[side::right].open_permit == false)
@@ -11012,6 +11284,82 @@ void TMoverParameters::LoadFIZ_Doors(std::string const &line)
 	extract_value(DoorsPermitLightBlinking, "DoorsPermitLightBlinking", line, "");
 }
 
+namespace
+{
+
+// the value of an optional key of the line, or the default without it
+double optional_value(std::string const &Line, std::string const &Key, double const Default)
+{
+	auto value{Default};
+	extract_value(value, Key, Line, "");
+	return value;
+}
+
+// the value of an optional key of the line given in kilo-units, in units; or the default (in units) without it
+double optional_kilo_value(std::string const &Line, std::string const &Key, double const Default)
+{
+	auto value{0.0};
+	return extract_value(value, Key, Line, "") && value > 0.0 ? value * 1000.0 : Default;
+}
+
+// the play of a coupling as made, for each kind: a screw coupling is tightened so that the buffers touch, the knuckles of
+// an automatic coupler have about a centimetre between them, a chain hangs loose
+double default_slack(TCouplerType const Type)
+{
+	switch (Type)
+	{
+	case TCouplerType::Automatic:
+		return 0.005;
+	case TCouplerType::Chain:
+		return 0.05;
+	default:
+		return 0.0;
+	}
+}
+
+// the parameters of the physical model of the coupling (couplerphysics in eu07.ini, see couplerphysics.h), taken from
+// those of the legacy model, and the optional keys of the .fiz for what the legacy model doesn't have:
+//   Slack [m] the play of the coupling of this end, negative for a screw coupling tightened to press the buffers in
+//   ProgB, ProgC [-] progression of the buffers and of the draw gear, 0 linear, up to 0.9
+//   UnloadB, UnloadC [-] force of the unloading curve of the buffers and of the draw gear to that of the loading one
+//   FyieldC [kN] the force past which the link stretches for good; DbreakC [m] the elongation at which it breaks
+//   kL [kN/m] stiffness of the steel parts past the travel of the springs; FcrushB [kN] the buffers give under it
+//   RestitutionSolid [-] coefficient of restitution of a hit on the springs gone solid
+coupler_physics::end_parameters coupler_physics_parameters(TCoupling const &Coupler, std::string const &Line)
+{
+	coupler_physics::end_parameters parameters;
+	parameters.buffers = {Coupler.SpringKB, Coupler.DmaxB, std::clamp(optional_value(Line, "ProgB", 0.5), 0.0, 0.9)};
+	parameters.draw_gear = {Coupler.SpringKC, Coupler.DmaxC, std::clamp(optional_value(Line, "ProgC", 0.3), 0.0, 0.9)};
+	// only a screw coupling can be tightened to press the buffers in, and not past their travel
+	auto const tightest{Coupler.CouplerType == TCouplerType::Screw ? -Coupler.DmaxB : 0.0};
+	parameters.slack = std::max(optional_value(Line, "Slack", default_slack(Coupler.CouplerType)), tightest);
+	// the legacy model sprang back at beta of the force it was loaded with
+	auto const unloading{Coupler.beta > 0.0 && Coupler.beta < 1.0 ? Coupler.beta : 0.5};
+	parameters.buffers_unloading = std::clamp(optional_value(Line, "UnloadB", unloading), 0.05, 1.0);
+	parameters.draw_gear_unloading = std::clamp(optional_value(Line, "UnloadC", unloading), 0.05, 1.0);
+	// as much as the legacy model had
+	parameters.damping = CouplerTune * (Coupler.FmaxC + Coupler.FmaxB) * std::max(Coupler.beta, 0.0);
+
+	// FmaxC is the rated breaking force of the coupling
+	auto const ultimate{std::max(Coupler.FmaxC, 1.0)};
+	auto const yield{std::min(optional_kilo_value(Line, "FyieldC", 0.8 * ultimate), ultimate)};
+	auto const elongation{std::max(optional_value(Line, "DbreakC", 0.02), 0.001)};
+	parameters.link = {yield, ultimate, std::max((ultimate - yield) / elongation, 1.0), Coupler.CouplerType != TCouplerType::Articulated};
+	// the steel parts give a few millimetres under the rated force
+	parameters.link_stiffness = optional_kilo_value(Line, "kL", ultimate / 0.003);
+	parameters.crush_force = optional_kilo_value(Line, "FcrushB", 2.5 * std::max(Coupler.FmaxB, Coupler.FmaxC));
+	parameters.solid_restitution = std::clamp(optional_value(Line, "RestitutionSolid", parameters.solid_restitution), 0.05, 0.95);
+	return parameters;
+}
+
+void scale_strength(coupler_physics::link_strength &Link, double const Factor)
+{
+	Link.yield *= Factor;
+	Link.ultimate *= Factor;
+}
+
+} // namespace
+
 void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Index)
 {
 
@@ -11090,10 +11438,20 @@ void TMoverParameters::LoadFIZ_BuffCoupl(std::string const &line, int const Inde
 		thiscoupler->DmaxB = std::max(0.05, thiscoupler->FmaxC / thiscoupler->SpringKB);
 	}
 
+	thiscoupler->physics = coupler_physics_parameters(*thiscoupler, line);
+
 	if (Index == 0)
 	{
 		// 0 indicates single entry for both couplers
 		Couplers[1] = Couplers[0];
+	}
+	// each coupling as made is a little stronger than its rated force, a different one at each end
+	for (int end = end::front; end <= end::rear; ++end)
+	{
+		if (Index == 0 || end == (Index == 2 ? end::rear : end::front))
+		{
+			scale_strength(Couplers[end].physics.link, coupler_physics::strength_scatter(Name, end));
+		}
 	}
 }
 
@@ -11321,6 +11679,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		auto lookup = starts.find(extract_value("MainStart", line));
 		MainsStart = lookup != starts.end() ? lookup->second : start_t::manual;
 	}
+	extract_value(PantographsRequireMains, "PantRequiresMain", line, "");
 	// battery
 	{
 		auto lookup = starts.find(extract_value("BatteryStart", line));
@@ -11388,6 +11747,14 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		MotorBlowers[end::rear].start_type = lookup != starts.end() ? lookup->second : start_t::manual;
 		MotorBlowers[end::front].start_type = MotorBlowers[end::rear].start_type;
 	}
+	// what else the line contactors need to close
+	{
+		std::map<std::string, line_contactors_interlock, std::less<>> const interlocks{{"Converter", line_contactors_interlock::converter},
+		                                                                             {"MotorBlowers", line_contactors_interlock::motor_blowers}};
+		auto lookup = interlocks.find(extract_value("LineContactorsInterlock", line));
+		LineContactorsInterlock = lookup != interlocks.end() ? lookup->second : line_contactors_interlock::none;
+	}
+	extract_value(LouvresOpenPressure, "LouvresOpenPressure", line, "");
 	// compartment lights
 	{
 		auto lookup = starts.find(extract_value("CompartmentLightsStart", line));

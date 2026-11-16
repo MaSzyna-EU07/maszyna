@@ -2573,8 +2573,9 @@ std::vector<std::vector<route>> routes(std::vector<post> const &Posts, std::vect
 		}
 		std::vector<reach> stack{{start.track, path, start.facing, from, 0.0, 0.0, -1, {}, {}}};
 		auto pieces{0};
-		while (false == stack.empty() && pieces++ < kPieces)
+		while (false == stack.empty() && pieces < kPieces)
 		{
+			++pieces;
 			auto here{std::move(stack.back())};
 			stack.pop_back();
 			auto const &track{*here.track};

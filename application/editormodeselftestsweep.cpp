@@ -236,6 +236,11 @@ editor_mode::selftest_result editor_mode::selftest_sweep(std::string const &comm
 		}
 		return selftest_result::handled;
 	}
+	if (command == "bendretrack" ||command == "bendend" || command == "bendslide")
+	{
+		WriteLog("SELFTEST " + command + ": " + bend_selftest(command, words));
+		return selftest_result::handled;
+	}
 	if (command == "bendprobe")
 	{
 		auto *sweep{m_bend.edited};

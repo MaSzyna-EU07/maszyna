@@ -393,6 +393,9 @@ class editor_track
 		double length{0.0};
 	};
 	static bool find_route(TTrack *From, TTrack *To, route &Route, std::string &Error);
+	// the route from one to the other as long as given, within a metre, passing the middle given: not the one of the fewest paths,
+	// which a route laid along the main tracks of a station needn't be
+	static bool find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route);
 	// continues both ways from the path, through switches along their path 0; Path: the path of the track to start along, -1 for its
 	// main one
 	static route run_route(TTrack &Track, double const Maximum, int const Path = -1);
@@ -555,6 +558,8 @@ class editor_track
 		virtual void track_retired(TTrack &Track) = 0;
 		// called before the commit; Original keeps the beginning of the path, given in First
 		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;
+		// under the new name already, Old the one it had
+		virtual void track_renamed(TTrack const &Track, std::string const &Old) = 0;
 	};
 	static void observe(observer *Observer) { s_observer = Observer; }
 

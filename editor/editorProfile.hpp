@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,6 +84,8 @@ struct context
 		std::string name;
 	};
 	std::vector<zone> switches;
+	// the humps of a marshalling yard: the switches of their fans lie on curves sharper than anywhere else
+	std::vector<zone> humps;
 	// elevations which the grade line has to keep (chainage, elevation)
 	std::vector<std::pair<double, double>> fixed;
 	// adjoining track at the ends; grades rise along the route
@@ -182,6 +185,8 @@ std::vector<double> breaks(line const &Line);
 // of the breaks those the paths between Joints can't do without: a path from one joint or break kept to the next follows the line
 // within Tolerance with the heights and the grades of its ends
 std::vector<double> fewest_breaks(line const &Line, std::vector<double> Joints, double const Tolerance);
+// the same of any breaks, the paths following Elevation, the grade of Grade at their ends, the one inward at a break
+std::vector<double> fewest_breaks(std::vector<double> const &Breaks, std::vector<double> Joints, double const Tolerance, std::function<double(double)> const &Elevation, std::function<double(double)> const &Grade);
 
 std::string format_chainage(double const Chainage);
 

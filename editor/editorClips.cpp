@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <thread>
@@ -32,34 +33,51 @@ void clip::open(std::string const &Path)
 	if (Path == m_path && m_frames)
 		return;
 	close();
+	// the loaders done with their clips are joined, those still decoding are kept, so none is waited for here
+	std::erase_if(m_loaders, [](loader const &Loader) { return Loader.decoded->done.load(); });
 	m_path = Path;
 	auto frames{std::make_shared<clip::frames>()};
 	m_frames = frames;
-	std::thread([frames, Path]() {
-		stbi_set_flip_vertically_on_load_thread(0);
-		std::ifstream file(Path, std::ios::binary);
-		std::vector<unsigned char> const bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-		if (false == bytes.empty())
-		{
-			int *delays{nullptr};
-			int width{0}, height{0}, count{0}, components{0};
-			auto *rgba{stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()), &delays, &width, &height, &count, &components, 4)};
-			if (rgba != nullptr && width > 0 && height > 0 && count > 0)
-			{
-				frames->rgba.assign(rgba, rgba + static_cast<std::size_t>(width) * height * 4 * count);
-				frames->delays.resize(count);
-				for (int index = 0; index < count; ++index)
-					frames->delays[index] = std::max(delays != nullptr ? delays[index] : 100, 20);
-				frames->width = width;
-				frames->height = height;
-			}
-			if (rgba != nullptr)
-				stbi_image_free(rgba);
-			if (delays != nullptr)
-				stbi_image_free(delays);
-		}
+	if (std::error_code error; false == std::filesystem::exists(Path, error))
+	{
+		// no clip for the lesson: told at once, so no empty frame is shown while a thread finds the file missing
 		frames->done = true;
-	}).detach();
+		return;
+	}
+	std::jthread thread([frames, Path] {
+		decode(*frames, Path);
+		frames->done = true;
+	});
+	m_loaders.push_back(loader{frames, std::move(thread)});
+}
+
+void clip::decode(frames &Frames, std::string const &Path)
+{
+	stbi_set_flip_vertically_on_load_thread(0);
+	std::ifstream file(Path, std::ios::binary);
+	std::vector<unsigned char> const bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+	if (bytes.empty())
+		return;
+	int *delays{nullptr};
+	int width{0};
+	int height{0};
+	int count{0};
+	int components{0};
+	auto *rgba{stbi_load_gif_from_memory(bytes.data(), static_cast<int>(bytes.size()), &delays, &width, &height, &count, &components, 4)};
+	if (rgba != nullptr && width > 0 && height > 0 && count > 0)
+	{
+		Frames.rgba = std::unique_ptr<std::uint8_t, void (*)(void *)>(rgba, stbi_image_free);
+		rgba = nullptr;
+		Frames.delays.resize(count);
+		for (int index = 0; index < count; ++index)
+			Frames.delays[index] = std::max(delays != nullptr ? delays[index] : 100, 20);
+		Frames.width = width;
+		Frames.height = height;
+	}
+	if (rgba != nullptr)
+		stbi_image_free(rgba);
+	if (delays != nullptr)
+		stbi_image_free(delays);
 }
 
 void clip::close()
@@ -113,7 +131,7 @@ std::uint64_t clip::texture(double const Seconds)
 		return 0;
 	if (m_texture != 0)
 		renderer->Release_Image(m_texture);
-	m_texture = renderer->Create_Image(frames.rgba.data() + static_cast<std::size_t>(frames.width) * frames.height * 4 * index, frames.width, frames.height);
+	m_texture = renderer->Create_Image(frames.rgba.get() +static_cast<std::size_t>(frames.width) * frames.height * 4 * index, frames.width, frames.height);
 	m_shown = index;
 	return m_texture;
 }

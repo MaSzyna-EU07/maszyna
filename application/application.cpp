@@ -18,12 +18,14 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationsounds.h"
+#include "simulation/blackboxrecorder.h"
 #include "vehicle/Train.h"
 #include "utilities/dictionary.h"
 #include "scene/sceneeditor.h"
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
@@ -33,6 +35,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
+#include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
 #include <vector>
@@ -747,6 +750,14 @@ void eu07_application::exit()
 	auto const step = [closing](char const *What) {
 		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
+	step("the sleepers laid in the background");
+	// the sleepers laid in the background read the scenery, which goes below
+	track_sleepers::stop_background();
+	step("the black box");
+	simulation::Blackbox.close();
+	step("the physics logs");
+	// what is kept of them, the black box's written last
+	PhysicsLogs.stop();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
@@ -758,6 +769,8 @@ void eu07_application::exit()
 	m_network.reset();
 
 	//    SafeDelete( simulation::Train );
+	step("the odometers");
+	simulation::Vehicles.save_odometers();
 	step("the scenery");
 	SafeDelete(simulation::Region);
 
@@ -1436,9 +1449,9 @@ int eu07_application::create_main_window()
 		Global.bFullScreen = true;
 	}
 
-	// a selftest of the editor run while the computer is in use for something else draws into a window never shown nor focused,
-	// and test mode keeps its window hidden: glfw, the ui and the input still need one, but nothing is shown in it
-	bool const shown{std::getenv("EU07_EDITOR_SELFTEST_HIDDEN") == nullptr && false == Global.test.enabled};
+	// test mode keeps its window hidden: glfw, the ui and the input still need one, but nothing is shown in it.
+	// so does a selftest of the editor run while the computer is in use for something else: never shown nor focused
+	bool const shown{false == Global.test.enabled && selftest_script("EU07_EDITOR_SELFTEST_HIDDEN") == nullptr};
 	auto *mainwindow = window(-1, shown, Global.window_size.x, Global.window_size.y, Global.bFullScreen && shown ? monitor : nullptr, true, false);
 
 	if (mainwindow == nullptr)

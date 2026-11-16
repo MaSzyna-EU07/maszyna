@@ -55,7 +55,8 @@ bool scenarioloader_mode::update() {
 		try {
 			state = simulation::State.deserialize_begin(Global.SceneryFile);
 		}
-		// the file it can't read, as the parser and the scenery opening it report it
+		// the file it can't read, as the parser and the scenery opening report it; invalid_scenery_exception is one of these, and so is
+		// what the file system throws
 		catch (std::runtime_error const &e) {
 			ErrorLog(std::format("Bad init: scenario \"{}\" couldn't be opened ({})", Global.SceneryFile, e.what()));
 			state.reset();

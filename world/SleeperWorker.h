@@ -30,5 +30,8 @@ void settle_background();
 // the layout of the cluster kept for the track let go, once the track laid its beams or went far; the cluster stays while
 // another track of it keeps it
 void forget_layout( TTrack const &Track );
+// the thread working out the layouts stopped for good, before the scenery it reads goes; the layouts asked for after are worked out
+// where they're asked for
+void stop_background();
 
 } // namespace track_sleepers

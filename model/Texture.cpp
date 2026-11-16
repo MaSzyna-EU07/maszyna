@@ -568,7 +568,7 @@ void texture_source::load_STBI()
 {
 	int x, y, n;
 	stbi_set_flip_vertically_on_load(1);
-	uint8_t *image = stbi_load((name + type).c_str(), &x, &y, &n, 4);
+	uint8_t *image = stbi_load(FileOnDisk(name + type).c_str(), &x, &y, &n, 4);
 
 	if (!image) {
 		data_state = resource_state::failed;
@@ -744,7 +744,7 @@ DDSURFACEDESC2 texture_source::deserialize_ddsd(std::istream &s)
 void
 texture_source::load_DDS() {
 
-    std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
 
@@ -864,7 +864,7 @@ texture_source::load_DDS() {
     if( true == Global.gfx_texture_streaming ) {
         // the data is read by a worker thread, everything else about the texture is known already
         request = std::make_shared<texture_request>();
-        request->file = name + type;
+        request->file = FileOnDisk( name + type );
         request->offset = static_cast<std::size_t>( file.tellg() ) + offset;
         request->size = datasize;
         request->flip = flip;
@@ -927,7 +927,7 @@ texture_source::load_DDS() {
 
 void
 texture_source::load_KTX() {
-    std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
 
@@ -988,7 +988,7 @@ texture_source::load_KTX() {
 void
 texture_source::load_TEX() {
 
-    std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary ); file.unsetf( std::ios::skipws );
 
     char head[ 5 ];
     file.read( head, 4 );
@@ -1035,7 +1035,7 @@ texture_source::load_TEX() {
 void
 texture_source::load_TGA() {
 
-    std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary ); file.unsetf( std::ios::skipws );
 
     // Read the header of the TGA, compare it with the known headers for compressed and uncompressed TGAs
     unsigned char tgaheader[ 18 ];
@@ -1756,6 +1756,17 @@ opengl_texture::destroy() {
 }
 
 void
+opengl_texture::unload_object() {
+
+    // deleted outright: release() would read the texture back from the card with gfx.resource.move, only for it to be dropped
+    if( ( id != invalid_id ) && ( id != 0 ) ) {
+        ::glDeleteTextures( 1, &id );
+    }
+    id = invalid_id;
+    is_ready = false;
+}
+
+void
 opengl_texture::on_failed() {
 
     // NOTE: temporary workaround for texture assignment errors: the texture counts as made, with no gl texture
@@ -1798,6 +1809,48 @@ texture_bank::mark_as_needed( texture_handle const Texture, bool const Near ) {
         // from now on the texture can be released, if no vehicle near enough needs it for a while
         needed = m_releasescantime;
     }
+}
+
+void
+texture_bank::unload( texture_handle const Texture ) {
+
+    if( ( Texture <= 0 )
+     || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
+        return;
+    }
+    auto const &record { m_textures[ Texture ] };
+    auto &texture { *record.first };
+    if( ( record.second != resource_timestamp() )
+     || ( true == texture.busy() ) // another thread of the renderer makes it
+     || ( ( true == texture.resident() ) && ( texture.get_id() == 0 ) ) // failed to load
+     || ( true == texture.is_static )
+     || ( true == texture.is_rendertarget )
+     || ( texture.type == "make:" )
+     || ( texture.type == "internalsrc:" ) ) {
+        return;
+    }
+    if( ( texture.data_state == resource_state::loading )
+     && ( texture.request != nullptr ) ) {
+        // read by a worker thread: taken over first, to be dropped with the rest
+        texture.complete_data();
+        if( texture.data_state == resource_state::failed ) {
+            return;
+        }
+    }
+    auto const created { texture.resident() };
+    if( ( false == created )
+     && ( texture.data_state != resource_state::good ) ) {
+        // nothing read nor made, e.g. the textures of a material asked for without loading
+        return;
+    }
+    if( true == created ) {
+        texture.unload_object();
+        // the released names can be given to new textures, the unit cache can't trust them
+        released();
+    }
+    texture.data = std::vector<unsigned char>();
+    texture.data_state = resource_state::none;
+    texture.reload_on_use = true;
 }
 
 // releases gl textures of vehicles not needed nor drawn for a while

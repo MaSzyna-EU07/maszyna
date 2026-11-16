@@ -9,16 +9,12 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-// features of the tracks built into the simulator but switched off in it as a whole, whatever the scenery or eu07.ini sets
+// features of the tracks switched on or off in the build as a whole, whatever the scenery or eu07.ini sets
 namespace track_features {
 
-// the rails cut where they cross other rails into frogs, wing rails and check rails; off, the rails of plain tracks and of
-// switches with the key frogs are laid whole, as before
-bool constexpr crossings { true };
-// the 3D sleepers and switch timbers of sleepers3d; off, the tracks keep their ballast whatever eu07.ini sets
-bool constexpr sleepers { true };
-// the blades of the switches with the key frogs shaped as their templates have them, from the tip their planed nose ends at to the heel,
-// with the rails left whole where the crossings are off; off with the crossings too, they're laid from the start of the switch as before
+// on: the blades of the switches with the key frogs shaped as their templates have them, from the tip their planed nose ends at to
+// the heel. that's whether frogs in eu07.ini is on or off: with it off only the frogs aren't cut, the rails are left whole there and
+// the blades shaped still. off: the blades laid from the start of the switch as before, for the switches with the key too
 bool constexpr blades { true };
 
 } // namespace track_features

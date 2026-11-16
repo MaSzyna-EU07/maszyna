@@ -201,6 +201,9 @@ public:
         set_uneven( bool const Uneven, int const Path = 0 ) {
             m_setting.uneven = Uneven;
             m_setting.path = Path; }
+    // a point of the path and the unit vector across it in the plan, towards the right rail profile; zero for a path never made
+    void
+        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
     float
         design_roll( int const End ) const {
             return m_setting.designrolls[ End ]; }
@@ -242,9 +245,6 @@ public:
     // the profile lofted from distance From to To, moved outwards by Offsets and cut on its outer side to Extents beyond the gauge line, both as (distance, value) knots
     bool
         RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const;
-    // point of the path and the unit vector across it towards the right rail profile, at a distance from Point1
-    void
-        plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
     void
         set_dense( double const Distance ) {
             m_dense = Distance; }

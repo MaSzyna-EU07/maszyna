@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <cstring>
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -167,13 +168,12 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 				if (segment == nullptr)
 					continue;
 				output << "axis " << track->name() << ' ' << path;
-				auto at{0.0};
-				while (at <= segment->GetLength() + 1e-6)
+				for (int k = 0; k * 0.25 <= segment->GetLength() + 1e-6; ++k)
 				{
+					auto const at{k * 0.25};
 					glm::dvec3 spot, across;
 					segment->plan_frame(std::min(at, segment->GetLength()), spot, across);
 					output << format(" %.4f %.4f", spot.x, spot.z);
-					at += 0.25;
 				}
 				output << "\n";
 			}
@@ -381,11 +381,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						auto const lengthb{b->eType == tt_Switch ? b->SwitchExtension->Segments[pb]->GetLength() : b->Segment->GetLength()};
 						auto least{1e9};
 						auto where{0.0};
-						auto next_at{0.0};
-						while (next_at <= length)
+						for (int k = 0; k * 0.02 <= length; ++k)
 						{
-							auto const at{next_at};
-							next_at += 0.02;
+							auto const at{k * 0.02};
 							double d, l;
 							track_rails::rail_offset(*b, pb, sb, track_rails::rail_point(*a, pa, sa, at, head_a), d, l);
 							if (d < 0.0 || d > lengthb || l < -0.3 || l > 0.3)
@@ -434,12 +432,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							continue;
 						++count;
 						std::string hits;
-						auto at{from};
-						while (at <= to)
-						{
+						for (int k = 0; from + k * 0.05 <= to; ++k)
 							// the head of the check rail as drawn, 40 mm at the head of the rail of 73.5
 							for (auto const lateral : {-track_rails::check_flangeway, -track_rails::check_flangeway - 0.020 * size.head / 0.0735, -track_rails::check_flangeway - 0.040 * size.head / 0.0735})
 							{
+								auto const at{from + k * 0.05};
 								auto const point{track_rails::rail_point(*track, path, side, at, lateral)};
 								for (auto *other : others)
 									for (int otherpath = 0; otherpath < (other->eType == tt_Switch ? 2 : 1); ++otherpath)
@@ -457,8 +454,6 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 												hits += hit + format(" at %.2f m", at);
 										}
 							}
-							at += 0.05;
-						}
 						if (false == hits.empty())
 							++faults;
 						WriteLog(format("SELFTEST check %s path %d side %+d: %.3f-%.3f m drawn of %.3f-%.3f m%s", name.c_str(), path, side, from, to, check.from, check.to, hits.empty() ? ", clear" : (", over" + hits + " FAULT").c_str()));
@@ -494,11 +489,11 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						auto const point{track_rails::rail_point(*track, path, side, At, knots::sample(Offsets, At, 0.0) + 0.5 * head)};
 						return format("%.3f m (%.3f %.3f) offset %.3f", At, point.x, point.z, knots::sample(Offsets, At, 0.0));
 					};
-					WriteLog(format("SELFTEST cut %s path %d side %+d at %.3f: end %s%s, start %s%s, of %.3f m", name.c_str(), path, side, cut.at, where(cut.end, cut.endoffsets).c_str(), cut.endextents.empty() ? "" : " extents", where(cut.start, cut.startoffsets).c_str(), cut.startextents.empty() ? "" : " extents", track_rails::path_segment(*track, path).GetLength()));
+					WriteLog(format("SELFTEST cut %s path %d side %+d at %.3f: end %s%s, start %s%s, of %.3f m", name.c_str(), path, side, cut.at, where(cut.end, cut.ending.offsets).c_str(), cut.ending.extents.empty() ? "" : " extents", where(cut.start, cut.starting.offsets).c_str(), cut.starting.extents.empty() ? "" : " extents", track_rails::path_segment(*track, path).GetLength()));
 					if (detail == "knots")
 						for (auto const &[label, line] : std::initializer_list<std::pair<char const *, knots::line const *>>{
-								 {"endoffsets", &cut.endoffsets}, {"endextents", &cut.endextents}, {"endinner", &cut.endinner}, {"endrolled", &cut.endrolled}, {"endworn", &cut.endworn},
-								 {"startoffsets", &cut.startoffsets}, {"startextents", &cut.startextents}, {"startinner", &cut.startinner}, {"startrolled", &cut.startrolled}, {"startworn", &cut.startworn}})
+								 {"endoffsets", &cut.ending.offsets}, {"endextents", &cut.ending.extents}, {"endinner", &cut.ending.inner}, {"endrolled", &cut.ending.rolled}, {"endworn", &cut.ending.worn},
+								 {"startoffsets", &cut.starting.offsets}, {"startextents", &cut.starting.extents}, {"startinner", &cut.starting.inner}, {"startrolled", &cut.starting.rolled}, {"startworn", &cut.starting.worn}})
 							if (false == line->empty())
 								WriteLog(format("SELFTEST   %s%s", label, knots_of(*line).c_str()));
 				}
@@ -529,7 +524,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 				auto const offset{knots::sample(Offsets, At, 0.0)};
 				return Lateral >= offset + std::max(0.0, knots::sample(Inner, At, 0.0)) && Lateral <= offset + std::min(Head, knots::sample(Extents, At, Head));
 			};
-			return (At <= cut->end && part(cut->endoffsets, cut->endextents, cut->endinner)) || (At >= cut->start && part(cut->startoffsets, cut->startextents, cut->startinner));
+			return (At <= cut->end && part(cut->ending.offsets, cut->ending.extents, cut->ending.inner)) || (At >= cut->start && part(cut->starting.offsets, cut->starting.extents, cut->starting.inner));
 		};
 		int count{0};
 		int faults{0};
@@ -553,7 +548,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 					for (auto const &cut : layout.plans[path][right].cuts)
 						for (auto const coming : {true, false})
 						{
-							auto const &offsets{coming ? cut.endoffsets : cut.startoffsets};
+							auto const &offsets{coming ? cut.ending.offsets : cut.starting.offsets};
 							if (offsets.size() < 2 || offsets.back().x - offsets.front().x < 0.05)
 								continue;
 							auto const from{std::max(0.0, coming ? offsets.front().x : std::max(offsets.front().x, cut.start))};
@@ -562,17 +557,15 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 								continue;
 							++count;
 							std::string hits;
-							auto next_at{from};
-							while (next_at <= to)
+							for (int k = 0; from + k * 0.02 <= to; ++k)
 							{
-								auto const at{next_at};
-								next_at += 0.02;
+								auto const at{from + k * 0.02};
 								auto const offset{knots::sample(offsets, at, 0.0)};
 								if (offset <= 0.002)
 									continue;
 								// only what is left of the head where the wing rail is planed
-								auto const lo{offset + std::max(0.0, knots::sample(coming ? cut.endinner : cut.startinner, at, 0.0))};
-								auto const hi{offset + std::min(head, knots::sample(coming ? cut.endextents : cut.startextents, at, head))};
+								auto const lo{offset + std::max(0.0, knots::sample(coming ? cut.ending.inner : cut.starting.inner, at, 0.0))};
+								auto const hi{offset + std::min(head, knots::sample(coming ? cut.ending.extents : cut.starting.extents, at, head))};
 								if (hi - lo < 0.012)
 									continue;
 								for (auto const lateral : {lo + 0.005, 0.5 * (lo + hi), hi - 0.005})
@@ -690,9 +683,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 		auto const lines_at = [&](piece const &Part, double const S) -> lines {
 			auto const before{Part.before != nullptr && (Part.after == nullptr || std::abs(S - Part.before->at) <= std::abs(S - Part.after->at))};
 			if (before)
-				return {&Part.before->startoffsets, &Part.before->startextents, &Part.before->startinner};
+				return {&Part.before->starting.offsets, &Part.before->starting.extents, &Part.before->starting.inner};
 			if (Part.after != nullptr)
-				return {&Part.after->endoffsets, &Part.after->endextents, &Part.after->endinner};
+				return {&Part.after->ending.offsets, &Part.after->ending.extents, &Part.after->ending.inner};
 			return {&none, &none, &none};
 		};
 		auto const head_of = [&](rail const &Rail, piece const &Part, double const S, double &Offset, double &Low, double &High) {
@@ -753,32 +746,28 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							where[Kind] = What;
 						} };
 					// past the last knots of its lines, the lines planing on as they end
+					for (int k = 0; from + k * 0.02 <= to + 1e-9; ++k)
 					{
-						auto s{from};
-						while (s <= to + 1e-9)
+						auto const s{from + k * 0.02};
+						auto const l{lines_at(part, s)};
+						for (auto const *line : {l.extents, l.inner})
 						{
-							auto const l{lines_at(part, s)};
-							for (auto const *line : {l.extents, l.inner})
-							{
-								if (line->empty())
-									continue;
-								auto const value{knots::sample(*line, s, 0.0)};
-								auto const planing{line == l.extents ? value < ours.size.head - 1e-4 : value > 1e-4};
-								// the lines have knots every 2 cm at most
-								if (planing && (s > line->back().x + 0.025 || s < line->front().x - 0.025))
-									fault(2, format("%s at %.2f m, past its knots %.2f-%.2f m", line == l.extents ? "extents" : "inner", s, line->front().x, line->back().x));
-							}
-							s += 0.02;
+							if (line->empty())
+								continue;
+							auto const value{knots::sample(*line, s, 0.0)};
+							auto const planing{line == l.extents ? value < ours.size.head - 1e-4 : value > 1e-4};
+							// the lines have knots every 2 cm at most
+							if (planing && (s > line->back().x + 0.025 || s < line->front().x - 0.025))
+								fault(2, format("%s at %.2f m, past its knots %.2f-%.2f m", line == l.extents ? "extents" : "inner", s, line->front().x, line->back().x));
 						}
 					}
 					// along the part: nothing of the head left, the head jumping in width
 					auto start{from + 0.05};
 					auto end{to - 0.05};
-					if (part.before != nullptr && part.before->startkind == track_rails::rail_end::sharp)
-					{
-						auto s{from};
-						while (s < to)
+					if (part.before != nullptr && part.before->starting.kind == track_rails::rail_end::sharp)
+						for (int k = 0; from + k * 0.02 < to; ++k)
 						{
+							auto const s{from + k * 0.02};
 							double offset, low, high;
 							head_of(ours, part, s, offset, low, high);
 							if (high - low >= 0.001)
@@ -786,23 +775,19 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 								start = std::max(start, s + 0.04);
 								break;
 							}
-							s += 0.02;
 						}
-					}
 					std::vector<double> stations, widths;
+					auto const first{std::ceil(start / 0.02) * 0.02};
+					for (int k = 0; first + k * 0.02 <= end; ++k)
 					{
-						auto s{std::ceil(start / 0.02) * 0.02};
-						while (s <= end)
-						{
-							double offset, low, high;
-							head_of(ours, part, s, offset, low, high);
-							auto const width{std::max(0.0, high - low)};
-							if (width < 0.001 && false == obtuse_near(part, s))
-								fault(4, format("at %.2f m, %.1f mm left", s, width * 1000.0));
-							stations.push_back(s);
-							widths.push_back(width);
-							s += 0.02;
-						}
+						auto const s{first + k * 0.02};
+						double offset, low, high;
+						head_of(ours, part, s, offset, low, high);
+						auto const width{std::max(0.0, high - low)};
+						if (width < 0.001 && false == obtuse_near(part, s))
+							fault(4, format("at %.2f m, %.1f mm left", s, width * 1000.0));
+						stations.push_back(s);
+						widths.push_back(width);
 					}
 					// a step in width well past those around it: a head tapering off steeply at a wide angle aside
 					for (std::size_t i = 1; i < widths.size(); ++i)
@@ -821,11 +806,10 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 							auto const &low{theirs.line->low};
 							auto const &high{theirs.line->high};
 							auto distance{-1e9};
-							auto next_s{std::ceil(from / 0.02) * 0.02};
-							while (next_s <= to)
+							auto const first{std::ceil(from / 0.02) * 0.02};
+							for (int k = 0; first + k * 0.02 <= to; ++k)
 							{
-								auto const s{next_s};
-								next_s += 0.02;
+								auto const s{first + k * 0.02};
 								double offset, lo, hi;
 								head_of(ours, part, s, offset, lo, hi);
 								if (hi - lo < 2.0 * tolerance)
@@ -964,7 +948,9 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 									return Latest ? std::max(a, b) : std::min(a, b);
 								};
 								auto covered{false};
-								for (auto const &theirs : against->plan_rails(true).guards[againstpath][againstside > 0])
+								// the plan kept while its guard rails are gone through: one made in the loop would go before them
+								auto const plan{against->plan_rails(true)};
+								for (auto const &theirs : plan.guards[againstpath][againstside > 0])
 									covered |= (along > reach(theirs.frommiter, theirs.from, false) - 0.002 && along < reach(theirs.tomiter, theirs.to, true) + 0.002);
 								result += covered ? ", on its guard rail" : ", no guard rail there";
 								fault |= (false == covered || std::abs(lateral + track_rails::flangeway) > 0.002);
@@ -979,7 +965,7 @@ editor_mode::selftest_result editor_mode::selftest_rails(std::string const &comm
 						text += "from " + end(guard.frommiter, guard.flarefrom, false == guard.flarefrom) + "; to " + end(guard.tomiter, guard.flareto, false == guard.flareto);
 						for (auto const &cut : guard.plan.cuts)
 							if (cut.end > 0.0 && cut.start < length)
-								text += format("; break %.3f-%.3f: ", cut.end, cut.start) + end(cut.endmiter, false, false) + " / " + end(cut.startmiter, false, false);
+								text += format("; break %.3f-%.3f: ", cut.end, cut.start) + end(cut.ending.miter, false, false) + " / " + end(cut.starting.miter, false, false);
 						WriteLog(format("SELFTEST guard %s path %d side %+d %.3f-%.3f m: %s", track->name().c_str(), path, side, guard.from, guard.to, text.c_str()));
 					}
 				}

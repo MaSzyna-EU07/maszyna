@@ -16,28 +16,32 @@ using namespace track_rails;
 namespace {
 
 // a wing rail ending right beside a check rail of the rail it runs along goes on in its place up to the far end of it, past the end of the wing
-std::vector<glm::dvec2> wing_extension( TTrack &Track, track_rails::check_rail_set const &Checks, int const Path, int const Side, double const At, double const Toward, double const Slope, TTrack &Partner, int const Partnerpath, int const Partnerside, double const Partnerat, double const Partnerdirection ) {
+std::vector<glm::dvec2> wing_extension( TTrack const &Track, track_rails::check_rail_set const &Checks, track_rails::rail_crossing const &Crossing, double const Toward, double const Slope ) {
 
+    auto &partner { *Crossing.track };
+    auto const partnerdirection { Crossing.aligned ? -Toward : Toward };
     std::vector<glm::dvec2> knots;
-    auto const partnerchecks { &Partner == &Track ? Checks : rail_checks( Partner ) };
-    auto const wingend { Partnerat + Partnerdirection * wing_reach( Slope ) };
+    auto const partnerchecks { &partner == &Track ? Checks : rail_checks( partner ) };
+    auto const wingend { Crossing.otherat + partnerdirection * wing_reach( Slope ) };
     auto farend { 0.0 };
-    if( false == replaced_check( partnerchecks[ Partnerpath ][ Partnerside > 0 ], wingend, Partnerdirection, farend ) ) {
+    if( false == replaced_check( partnerchecks[ Crossing.otherpath ][ Crossing.otherside > 0 ], wingend, partnerdirection, farend ) ) {
         return knots;
     }
-    auto const theirs { make_gauge_line( path_segment( Partner, Partnerpath ), Partnerside * ( 0.5 * std::abs( Partner.fTrackWidth ) - flangeway ), 0.0 ) };
-    auto const ours { make_gauge_line( path_segment( Track, Path ), Side * ( 0.5f * std::abs( Track.fTrackWidth ) ), 0.0 ) };
-    auto s { At - Toward * wing_reach( Slope ) };
+    auto const theirs { make_gauge_line( path_segment( partner, Crossing.otherpath ), Crossing.otherside * ( 0.5 * std::abs( partner.fTrackWidth ) - flangeway ), 0.0 ) };
+    auto const ours { make_gauge_line( path_segment( Track, Crossing.path ), Crossing.side * ( 0.5f * std::abs( Track.fTrackWidth ) ), 0.0 ) };
+    auto s { Crossing.at - Toward * wing_reach( Slope ) };
     auto const count { std::max( 1, static_cast<int>( std::ceil( std::abs( farend - wingend ) / 0.5 ) ) ) };
     for( int i = 1; i <= count; ++i ) {
-        glm::dvec3 target, tangent, point;
+        glm::dvec3 target;
+        glm::dvec3 tangent;
+        glm::dvec3 point;
         theirs.at( glm::mix( wingend, farend, static_cast<double>( i ) / count ), target, tangent );
         for( int step = 0; step < 4; ++step ) {
             ours.at( s, point, tangent );
             s += glm::dot( plan( target - point ), glm::normalize( plan( tangent ) ) );
         }
         ours.at( s, point, tangent );
-        knots.emplace_back( s, -glm::dot( plan( target - point ), plan( ours.normal( s, Side ) ) ) );
+        knots.emplace_back( s, -glm::dot( plan( target - point ), plan( ours.normal( s, Crossing.side ) ) ) );
     }
     return knots;
 }
@@ -50,7 +54,8 @@ knots::line flangeway_wing( TTrack const &Track, track_rails::rail_crossing cons
     auto const direction { Wingend > Throat ? 1.0 : -1.0 };
     auto const start { Throat - direction * 2.0 };
     auto const count { std::max( 2, static_cast<int>( std::ceil( std::abs( Wingend - start ) / 0.05 ) ) ) };
-    glm::dvec3 point, tangent;
+    glm::dvec3 point;
+    glm::dvec3 tangent;
     ours.at( start, point, tangent );
     auto distance { nearest_distance( theirs, point ) };
     knots::line wing;
@@ -112,23 +117,23 @@ void designed_acute( track_rails::rail_plan &Plan, TTrack const &Track, track_ra
     cut.carved = true;
     if( Toward < 0.0 ) {
         cut.end = Wingend;
-        cut.endoffsets = wing;
-        cut.endrolled = rolled_wing( wing );
-        cut.endkind = track_rails::rail_end::point;
-        cut.endanchor = throat;
-        cut.endrunon = 1.0;
+        cut.ending.offsets = wing;
+        cut.ending.rolled = rolled_wing( wing );
+        cut.ending.kind = track_rails::rail_end::point;
+        cut.ending.anchor = throat;
+        cut.ending.runon = 1.0;
         cut.start = Crossing.at;
-        cut.startkind = track_rails::rail_end::blunt;
+        cut.starting.kind = track_rails::rail_end::blunt;
     }
     else {
         cut.end = Crossing.at;
-        cut.endkind = track_rails::rail_end::blunt;
+        cut.ending.kind = track_rails::rail_end::blunt;
         cut.start = Wingend;
-        cut.startoffsets = wing;
-        cut.startrolled = rolled_wing( wing );
-        cut.startkind = track_rails::rail_end::point;
-        cut.startanchor = throat;
-        cut.startrunon = 1.0;
+        cut.starting.offsets = wing;
+        cut.starting.rolled = rolled_wing( wing );
+        cut.starting.kind = track_rails::rail_end::point;
+        cut.starting.anchor = throat;
+        cut.starting.runon = 1.0;
     }
     Plan.cuts.push_back( cut );
 }
@@ -137,6 +142,7 @@ void designed_acute( track_rails::rail_plan &Plan, TTrack const &Track, track_ra
 // out of the flangeway of the other rail
 void designed_obtuse( track_rails::rail_plan &Plan, double const At, double const Into, glm::dvec2 const &Mark ) {
 
+    using enum track_rails::rail_end;
     auto const bend { knuckle_bend( Into ) };
     track_rails::rail_cut cut;
     cut.at = At;
@@ -146,14 +152,14 @@ void designed_obtuse( track_rails::rail_plan &Plan, double const At, double cons
     cut.obtuse = true;
     cut.mark = Mark;
     if( Into > 0.0 ) {
-        cut.endbend = -bend;
-        cut.endkind = track_rails::rail_end::mitre;
-        cut.startkind = track_rails::rail_end::blunt;
+        cut.ending.bend = -bend;
+        cut.ending.kind = mitre;
+        cut.starting.kind = blunt;
     }
     else {
-        cut.endkind = track_rails::rail_end::blunt;
-        cut.startbend = bend;
-        cut.startkind = track_rails::rail_end::mitre;
+        cut.ending.kind = blunt;
+        cut.starting.bend = bend;
+        cut.starting.kind = mitre;
     }
     Plan.cuts.push_back( cut );
 }
@@ -177,8 +183,8 @@ void wide( track_rails::rail_plan &Plan, track_rails::rail_crossing const &Cross
     cut.at = at;
     cut.end = at + std::min( low, high );
     cut.start = at + std::max( low, high );
-    cut.endmiter = { at + ( into > 0.0 ? Cut.from - 0.005 : Cut.to + 0.005 ) / into, facing / into };
-    cut.startmiter = { at + ( into > 0.0 ? Cut.to + 0.005 : Cut.from - 0.005 ) / into, facing / into };
+    cut.ending.miter = { at + ( into > 0.0 ? Cut.from - 0.005 : Cut.to + 0.005 ) / into, facing / into };
+    cut.starting.miter = { at + ( into > 0.0 ? Cut.to + 0.005 : Cut.from - 0.005 ) / into, facing / into };
     Plan.cuts.push_back( cut );
 }
 
@@ -192,12 +198,12 @@ track_rails::rail_cut corner_cut( track_rails::rail_crossing const &Crossing, do
     auto const rising { Crossing.into > 0.0 };
     track_rails::rail_cut cut;
     cut.at = Crossing.at;
-    cut.endmiter = ( rising ? rail : guard );
-    cut.startmiter = ( rising ? guard : rail );
-    cut.end = cut.endmiter.x + cut.endmiter.y * Face;
-    cut.start = cut.startmiter.x + cut.startmiter.y * Face;
-    cut.endbend = cut.endmiter.y;
-    cut.startbend = cut.startmiter.y;
+    cut.ending.miter = ( rising ? rail : guard );
+    cut.starting.miter = ( rising ? guard : rail );
+    cut.end = cut.ending.miter.x + cut.ending.miter.y * Face;
+    cut.start = cut.starting.miter.x + cut.starting.miter.y * Face;
+    cut.ending.bend = cut.ending.miter.y;
+    cut.starting.bend = cut.starting.miter.y;
     return cut;
 }
 
@@ -275,8 +281,8 @@ bool goes_through( TTrack const &Track, TTrack const &Other ) {
     if( Track.name() != Other.name() ) {
         return Track.name() < Other.name();
     }
-    auto const here { Track.location() };
-    auto const there { Other.location() };
+    auto const &here { Track.location() };
+    auto const &there { Other.location() };
     return ( here.x != there.x ? here.x < there.x : here.z < there.z );
 }
 
@@ -286,7 +292,8 @@ track_rails::rail_band groove_band( double const At, double const Into, double c
     track_rails::rail_band band { At, Into, Facing };
     band.whole = ( false == Through );
     band.from = ( Through ? 0.0 : seam - Other.tread );
-    band.to = ( Through ? ( Other.grooved ? -Other.lip : flangeway ) : -Other.ledge - seam );
+    auto const throughto { Other.grooved ? -Other.lip : flangeway };
+    band.to = ( Through ? throughto : -Other.ledge - seam );
     return band;
 }
 
@@ -355,18 +362,23 @@ track_rails::rail_tread wide_tread( track_rails::rail_crossing const &Crossing, 
     return tread;
 }
 
-std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, double const From, double const To, bool &Below, std::vector<glm::dvec2> &Gauge ) {
+// where the wheels of the other rail roll on ours along a tread, as offsets from the gauge line of ours: the edge of their band and the gauge
+// line of the other rail, and which side of that gauge line the edge lies on along most of the tread
+void tread_edge( TTrack const &Track, int const Path, int const Side, TTrack const &Other, int const Otherpath, int const Otherside, track_rails::rail_tread &Tread ) {
 
+    auto const from { Tread.from };
+    auto const to { Tread.to };
     auto const &ours { rail_line( Track, Path, Side > 0, false ) };
     auto const &theirs { rail_line( Other, Otherpath, Otherside > 0, false ) };
-    glm::dvec3 point, tangent;
-    ours.at( From, point, tangent );
+    glm::dvec3 point;
+    glm::dvec3 tangent;
+    ours.at( from, point, tangent );
     auto otherat { nearest_distance( theirs, point ) };
     std::vector<glm::dvec2> knots;
     auto below { 0 };
-    auto const count { std::max( 2, static_cast<int>( std::ceil( ( To - From ) / 0.1 ) ) + 1 ) };
+    auto const count { std::max( 2, static_cast<int>( std::ceil( ( to - from ) / 0.1 ) ) + 1 ) };
     for( int i = 0; i < count; ++i ) {
-        auto distance { glm::mix( From, To, static_cast<double>( i ) / ( count - 1 ) ) };
+        auto distance { glm::mix( from, to, static_cast<double>( i ) / ( count - 1 ) ) };
         ours.at( distance, point, tangent );
         lateral( theirs, Otherside, point, otherat );
         glm::dvec3 line;
@@ -374,16 +386,16 @@ std::vector<glm::dvec2> tread_edge( TTrack const &Track, int const Path, int con
         auto const normal { theirs.normal( otherat, Otherside ) };
         auto at { distance };
         auto const gauge { lateral( ours, Side, line, at ) };
-        Gauge.emplace_back( at, gauge );
+        Tread.gauge.emplace_back( at, gauge );
         at = distance;
         auto const edge { lateral( ours, Side, line - normal * rolled_band, at ) };
         below += ( gauge < edge ? 1 : -1 );
         knots.emplace_back( at, edge );
     }
     knots::sort( knots );
-    knots::sort( Gauge );
-    Below = ( below > 0 );
-    return knots;
+    knots::sort( Tread.gauge );
+    Tread.below = ( below > 0 );
+    Tread.edge = std::move( knots );
 }
 
 } // namespace
@@ -407,9 +419,20 @@ void merge_guard( std::vector<track_rails::guard_rail> &Guards, track_rails::gua
     Guards.push_back( Guard );
 }
 
-void join_opposite_guards( std::vector<track_rails::guard_rail> ( &Guards )[ 2 ] ) {
+// a guard rail stretched over the spans of the guard rails on the other side of the track it overlaps
+void stretch_over( track_rails::guard_rail &Guard, knots::line const &Opposites ) {
 
-    knots::line spans[ 2 ];
+    for( auto const &opposite : Opposites ) {
+        if( opposite.x < Guard.to && opposite.y > Guard.from ) {
+            Guard.from = std::min( Guard.from, opposite.x );
+            Guard.to = std::max( Guard.to, opposite.y );
+        }
+    }
+}
+
+void join_opposite_guards( std::array<std::vector<track_rails::guard_rail>, 2> &Guards ) {
+
+    std::array<knots::line, 2> spans;
     for( int side = 0; side < 2; ++side ) {
         for( auto const &guard : Guards[ side ] ) {
             spans[ side ].emplace_back( guard.from, guard.to );
@@ -417,12 +440,7 @@ void join_opposite_guards( std::vector<track_rails::guard_rail> ( &Guards )[ 2 ]
     }
     for( int side = 0; side < 2; ++side ) {
         for( auto &guard : Guards[ side ] ) {
-            for( auto const &opposite : spans[ 1 - side ] ) {
-                if( opposite.x < guard.to && opposite.y > guard.from ) {
-                    guard.from = std::min( guard.from, opposite.x );
-                    guard.to = std::max( guard.to, opposite.y );
-                }
-            }
+            stretch_over( guard, spans[ 1 - side ] );
         }
     }
 }
@@ -450,7 +468,10 @@ private:
     void acute_frog( rail_crossing const &Crossing, double const Toward );
     void movable_frog( rail_crossing const &Crossing, double const Push );
     void add_vee( rail_crossing const &Crossing, rail_size const &Other, bool const Filled );
+    void fill_guards();
+    void fill_checks( int const Path, int const Side );
     void frame_middle_crossings();
+    void add_frame_guard( rail_crossing const &Start, rail_crossing const &End );
     track_rails::guard_rail frame_guard( rail_crossing const &Start, rail_crossing const &End ) const;
     void switch_frog();
     void add_tread( int const Path, int const Side, glm::dvec2 const &Span, TTrack const &Other, int const Otherpath, int const Anchor = 0, int const Otherside = 0 );
@@ -496,14 +517,7 @@ rail_layout TTrack::rail_planner::lay_out() {
         for( auto &pathguards : m_layout.guards ) {
             join_opposite_guards( pathguards );
         }
-        for( int path = 0; path < 2; ++path ) {
-            for( int side = 0; side < 2; ++side ) {
-                for( auto const &guard : m_layout.guards[ path ][ side ] ) {
-                    auto const fills { guard_fills( guard, m_size ) };
-                    m_layout.fills[ path ][ side ].insert( m_layout.fills[ path ][ side ].end(), fills.begin(), fills.end() );
-                }
-            }
-        }
+        fill_guards();
         frame_middle_crossings();
     }
     if( m_track.eType == tt_Switch && cut_rails( m_track ) ) {
@@ -516,12 +530,7 @@ rail_layout TTrack::rail_planner::lay_out() {
     }
     for( int path = 0; path < 2; ++path ) {
         for( int side = 0; side < 2; ++side ) {
-            for( auto const &check : m_layout.checks[ path ][ side ] ) {
-                if( false == replaced_by_wing( check, m_layout.wingends[ path ][ side ] ) ) {
-                    auto const fills { check_fills( check, m_size ) };
-                    m_layout.fills[ path ][ side ].insert( m_layout.fills[ path ][ side ].end(), fills.begin(), fills.end() );
-                }
-            }
+            fill_checks( path, side );
         }
     }
     if( m_carve && m_crossings ) {
@@ -530,9 +539,33 @@ rail_layout TTrack::rail_planner::lay_out() {
     return m_layout;
 }
 
+// the spacers between the guard rails and the running rails
+void TTrack::rail_planner::fill_guards() {
+
+    for( int path = 0; path < 2; ++path ) {
+        for( int side = 0; side < 2; ++side ) {
+            for( auto const &guard : m_layout.guards[ path ][ side ] ) {
+                auto const fills { guard_fills( guard, m_size ) };
+                m_layout.fills[ path ][ side ].insert( m_layout.fills[ path ][ side ].end(), fills.begin(), fills.end() );
+            }
+        }
+    }
+}
+
+// the spacers between the check rails beside a rail and the rail, but for the check rails a wing rail goes on in place of
+void TTrack::rail_planner::fill_checks( int const Path, int const Side ) {
+
+    for( auto const &check : m_layout.checks[ Path ][ Side ] ) {
+        if( false == replaced_by_wing( check, m_layout.wingends[ Path ][ Side ] ) ) {
+            auto const fills { check_fills( check, m_size ) };
+            m_layout.fills[ Path ][ Side ].insert( m_layout.fills[ Path ][ Side ].end(), fills.begin(), fills.end() );
+        }
+    }
+}
+
 void TTrack::rail_planner::add_crossing( rail_crossing const &Crossing ) {
 
-    if( std::find( m_layout.crossed.begin(), m_layout.crossed.end(), Crossing.track ) == m_layout.crossed.end() ) {
+    if( std::ranges::find( m_layout.crossed, Crossing.track ) == m_layout.crossed.end() ) {
         m_layout.crossed.push_back( Crossing.track );
     }
     auto const theirs { Crossing.track->rail_dimensions() };
@@ -550,7 +583,8 @@ void TTrack::rail_planner::add_crossing( rail_crossing const &Crossing ) {
         acute_frog( Crossing, Crossing.into > 0.0 ? 1.0 : -1.0 );
     }
     else {
-        glm::dvec3 point, tangent;
+        glm::dvec3 point;
+        glm::dvec3 tangent;
         rail_line( m_track, Crossing.path, Crossing.side > 0, false ).at( Crossing.at, point, tangent );
         designed_obtuse( plan_of( Crossing ), Crossing.at, Crossing.into, plan( point ) );
         auto const reach { ( rolled_band + m_size.head + tread_fade ) / std::max( std::tan( Crossing.angle ), 0.01 ) + 0.2 };
@@ -560,7 +594,8 @@ void TTrack::rail_planner::add_crossing( rail_crossing const &Crossing ) {
 
 void TTrack::rail_planner::cross_grooved( rail_crossing const &Crossing, rail_size const &Other ) {
 
-    auto const through { m_size.grooved != Other.grooved ? m_size.grooved : goes_through( Crossing.owner ? *Crossing.owner : m_track, *Crossing.track ) };
+    auto const &owner { Crossing.owner ? *Crossing.owner : m_track };
+    auto const through { m_size.grooved != Other.grooved ? m_size.grooved : goes_through( owner, *Crossing.track ) };
     m_layout.bands[ Crossing.path ][ Crossing.side > 0 ].push_back( groove_band( Crossing.at, Crossing.into, Crossing.facing, through, Other ) );
     if( m_size.grooved && Other.grooved && Crossing.angle <= middle_angle ) {
         add_vee( Crossing, Other, through );
@@ -573,8 +608,7 @@ void TTrack::rail_planner::cross_grooved( rail_crossing const &Crossing, rail_si
 void TTrack::rail_planner::cross_wide( rail_crossing const &Crossing, rail_size const &Other ) {
 
     plan_of( Crossing ).cuts.push_back( corner_cut( Crossing, 0.0, -1.0, m_size.head, Other.head ) );
-    auto const material { m_track.shared_tread( Crossing.path, *Crossing.track, Crossing.otherpath ) };
-    if( material != m_track.rail_material( Crossing.path ) ) {
+    if( auto const material { m_track.shared_tread( Crossing.path, *Crossing.track, Crossing.otherpath ) }; material != m_track.rail_material( Crossing.path ) ) {
         m_layout.treads[ Crossing.path ][ Crossing.side > 0 ].push_back( wide_tread( Crossing, material, 0.0, m_size.head, rolled_band ) );
     }
     auto const reach { ( flangeway + m_size.head + guard_reach ) / std::abs( Crossing.into ) };
@@ -594,7 +628,7 @@ void TTrack::rail_planner::acute_frog( rail_crossing const &Crossing, double con
     auto &plan { plan_of( Crossing ) };
     auto const slope { std::tan( Crossing.angle ) };
     m_layout.wingends[ Crossing.path ][ Crossing.side > 0 ].emplace_back( Crossing.at - Toward * wing_reach( slope ), -Toward );
-    auto const extension { wing_extension( m_track, m_layout.checks, Crossing.path, Crossing.side, Crossing.at, Toward, slope, *Crossing.track, Crossing.otherpath, Crossing.otherside, Crossing.otherat, Crossing.aligned ? -Toward : Toward ) };
+    auto const extension { wing_extension( m_track, m_layout.checks, Crossing, Toward, slope ) };
     designed_acute( plan, m_track, Crossing, Toward, slope, extension.empty() ? Crossing.at - Toward * wing_reach( slope ) : extension.back().x );
     // the nose is carved yet, it ends near where its legs get as wide as its tip
     auto const half { slope / ( 1.0 + std::sqrt( 1.0 + slope * slope ) ) };
@@ -620,7 +654,7 @@ void TTrack::rail_planner::add_vee( rail_crossing const &Crossing, rail_size con
 // crossings at a middle angle: guard rails along the sides of the quadrilateral between the tracks, glued at its corners to the guard rails of the other track
 void TTrack::rail_planner::frame_middle_crossings() {
 
-    std::sort( m_corners.begin(), m_corners.end(), []( rail_crossing const &A, rail_crossing const &B ) { return A.at < B.at; } );
+    std::ranges::sort( m_corners, []( rail_crossing const &A, rail_crossing const &B ) { return A.at < B.at; } );
     for( std::size_t i = 0; i < m_corners.size(); ++i ) {
         auto const &start { m_corners[ i ] };
         if( start.into <= 0.0 ) {
@@ -632,13 +666,18 @@ void TTrack::rail_planner::frame_middle_crossings() {
                 continue;
             }
             if( end.into < 0.0 ) {
-                auto const guard { frame_guard( start, end ) };
-                if( guard.to - guard.from > 0.1 ) {
-                    m_layout.guards[ start.path ][ start.side > 0 ].push_back( guard );
-                }
+                add_frame_guard( start, end );
             }
             break;
         }
+    }
+}
+
+// a guard rail along a side of the quadrilateral between the tracks, from its corner Start to End, unless it's too short to lay
+void TTrack::rail_planner::add_frame_guard( rail_crossing const &Start, rail_crossing const &End ) {
+
+    if( auto const guard { frame_guard( Start, End ) }; guard.to - guard.from > 0.1 ) {
+        m_layout.guards[ Start.path ][ Start.side > 0 ].push_back( guard );
     }
 }
 
@@ -673,14 +712,14 @@ track_rails::guard_rail TTrack::rail_planner::frame_guard( rail_crossing const &
         auto &cut { guard.plan.cuts.back() };
         if( forward ) {
             cut.end = guard.to;
-            cut.endmiter = guard.tomiter;
+            cut.ending.miter = guard.tomiter;
             guard.to = reach;
             guard.tomiter = {};
             guard.flareto = true;
         }
         else {
             cut.start = guard.from;
-            cut.startmiter = guard.frommiter;
+            cut.starting.miter = guard.frommiter;
             guard.from = reach;
             guard.frommiter = {};
             guard.flarefrom = true;
@@ -695,8 +734,9 @@ void TTrack::rail_planner::switch_frog() {
     if( false == frog.valid ) {
         return;
     }
-    glm::dvec3 point, tangents[ 2 ];
-    glm::dvec2 normals[ 2 ];
+    glm::dvec3 point;
+    std::array<glm::dvec3, 2> tangents;
+    std::array<glm::dvec2, 2> normals;
     for( int path = 0; path < 2; ++path ) {
         auto const &line { rail_line( m_track, path, frog.side[ path ] > 0, false ) };
         line.at( frog.at[ path ], point, tangents[ path ] );
@@ -745,7 +785,8 @@ void TTrack::rail_planner::movable_frog( rail_crossing const &Crossing, double c
     // the legs are carved as they lie with the first path set, the leg of the second one pushed over: the same whichever is set
     auto const flare { std::max( Crossing.at + wing_reach( slope ), throat + length + 0.5 ) };
     auto const wing { flangeway_wing( m_track, Crossing, throat, flare ) };
-    knots::line carved, offsets;
+    knots::line carved;
+    knots::line offsets;
     for( int i = 0; i <= static_cast<int>( std::ceil( length / 0.1 ) ); ++i ) {
         auto const at { std::min( throat + 0.1 * i, throat + length ) };
         carved.emplace_back( at, -pushed( at ) );
@@ -756,18 +797,18 @@ void TTrack::rail_planner::movable_frog( rail_crossing const &Crossing, double c
     cut.at = Crossing.at;
     cut.carved = true;
     cut.end = flare;
-    cut.endoffsets = wing;
-    cut.endrolled = rolled_wing( wing );
-    cut.endkind = rail_end::point;
-    cut.endanchor = throat;
+    cut.ending.offsets = wing;
+    cut.ending.rolled = rolled_wing( wing );
+    cut.ending.kind = rail_end::point;
+    cut.ending.anchor = throat;
     cut.start = throat;
-    cut.startkind = rail_end::sharp;
+    cut.starting.kind = rail_end::sharp;
     cut.throwable = true;
     if( Push > 0.0 ) {
-        cut.startoffsets = offsets;
+        cut.starting.offsets = offsets;
     }
     if( Crossing.path == 1 ) {
-        cut.startcarve = carved;
+        cut.starting.carve = carved;
     }
     plan.cuts.push_back( cut );
     if( Push <= 0.0 ) {
@@ -784,11 +825,11 @@ void TTrack::rail_planner::add_tread( int const Path, int const Side, glm::dvec2
     }
     auto &treads { m_layout.treads[ Path ][ Side > 0 ] };
     if( Otherside == 0 ) {
-        treads.push_back( { Span.x, Span.y, material, Anchor } );
+        treads.emplace_back( Span.x, Span.y, material, Anchor );
         return;
     }
     rail_tread part { Span.x, Span.y, material, Anchor };
-    part.edge = tread_edge( m_track, Path, Side, Other, Otherpath, Otherside, Span.x, Span.y, part.below, part.gauge );
+    tread_edge( m_track, Path, Side, Other, Otherpath, Otherside, part );
     auto from { 1e9 };
     auto to { -1e9 };
     for( std::size_t i = 0; i < part.edge.size() && i < part.gauge.size(); ++i ) {

@@ -29,6 +29,9 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
 	# and the switches laid into the curves
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	# and the fouling points of the switches, widened in the curves as the gauge is
+	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# which textures the shadow maps draw without the alpha test
 	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
 	${UNIT_TEST_CASES})
@@ -47,6 +50,9 @@ endif()
 target_include_directories(${UNIT_TESTS_NAME} PRIVATE "${DEPS_DIR}/doctest")
 # the names the tests CAPTURE are often C strings, shown as text rather than pointers
 target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data" DOCTEST_CONFIG_TREAT_CHAR_STAR_AS_STRING)
+# the folders of the tests that write files (the scripts of test_script_screen_host.cpp) are made in the build folder,
+# and removed by the test that made them
+target_compile_definitions(${UNIT_TESTS_NAME} PRIVATE EU07_UNIT_TESTS_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}")
 if (MSVC)
 	target_compile_options(${UNIT_TESTS_NAME} PRIVATE /bigobj)
 endif()

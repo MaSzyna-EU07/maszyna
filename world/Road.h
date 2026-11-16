@@ -287,7 +287,7 @@ class road_node : public scene::basic_node
   private:
 	// methods
 	// radius() subclass details, calculates node's bounding radius
-	float radius_() override;
+	float radius_() const override;
 	// serialize() subclass details, sends content of the subclass to provided stream
 	void serialize_(std::ostream &Output) const override;
 	// deserialize() subclass details, restores content of the subclass from provided stream
@@ -490,7 +490,7 @@ class junction_node : public scene::basic_node
 
   private:
 	// methods
-	float radius_() override;
+	float radius_() const override;
 	void serialize_(std::ostream &Output) const override;
 	void deserialize_(std::istream &Input) override;
 	void export_as_text_(std::ostream &Output) const override;

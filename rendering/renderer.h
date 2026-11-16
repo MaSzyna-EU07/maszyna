@@ -113,6 +113,8 @@ public:
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
 	// kind of geometry of specified chunk, -1 when the renderer doesn't tell
 	virtual auto Primitive( gfx::geometry_handle const &Geometry ) const -> int { return -1; }
+	// whether the 3D sleepers and switch timbers are drawn; where they aren't, the tracks keep their ballast as without them
+	virtual auto Draws_Timbers() const -> bool { return false; }
     // material methods
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
@@ -151,6 +153,11 @@ public:
     virtual void Bind_Texture( std::size_t const Unit, texture_handle const Texture ) = 0;
     virtual auto Texture( texture_handle const Texture ) -> ITexture & = 0;
     virtual auto Texture( texture_handle const Texture ) const -> ITexture const & = 0;
+    // a texture the scene has never drawn taken out of the gfx card and the memory, read again when it's used: the image of a
+    // texture picker scrolled past. backends which keep their textures otherwise leave it
+    virtual void Unload_Texture( texture_handle const Texture ) {}
+    // the same for all the textures of a material, those of its variants with them
+    void Unload_Material( material_handle const Material );
     // utility methods
     virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
@@ -162,7 +169,9 @@ public:
     }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
-    virtual auto Mouse_Hit() const -> bool { return true; }
+    // whether the cursor was over something drawn when Mouse_Position() was read; a renderer which doesn't read it says no,
+    // so a caller never takes a stale or empty position for a hit
+    virtual auto Mouse_Hit() const -> bool { return false; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
@@ -236,6 +245,7 @@ public:
     // the description of the backend registered by the name, null if there's none (e.g. not built in)
     gfx_backend_desc const *backend(const std::string &name) const;
     std::unique_ptr<gfx_renderer> create(const std::string &name);
+    bool has_backend(const std::string &name) const;
 
     static gfx_renderer_factory* get_instance();
 

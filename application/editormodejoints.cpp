@@ -774,8 +774,14 @@ editor_selftest_result joints_tool::selftest(std::string const &Command, std::is
 		started = false;
 		std::size_t count{0};
 		for (auto const &issue : m_joints.issues)
-			if (issue.type == joint_issue::kind::model && count++ < 40)
-				WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
+		{
+			if (issue.type != joint_issue::kind::model)
+				continue;
+			if (count == 40)
+				break;
+			++count;
+			WriteLog(format("SELFTEST jointsmodel: %+.2f m at %.1f %.1f, %s path %d", issue.value, issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.point.path));
+		}
 		WriteLog("SELFTEST jointsmodel: " + m_joints.status);
 		return editor_selftest_result::handled;
 	}
@@ -784,7 +790,16 @@ editor_selftest_result joints_tool::selftest(std::string const &Command, std::is
 		live_update();
 		std::string text;
 		for (auto const &issue : m_live.issues)
-			text += format(" [%s %s at %.1f %.1f]", kind_name(issue.type), value_text(issue).c_str(), issue.position.x, issue.position.z);
+		{
+			text += format(" [%s %s at %.1f %.1f, %s / %s", kind_name(issue.type), value_text(issue).c_str(), issue.position.x, issue.position.z, issue.track != nullptr ? issue.track->name().c_str() : "-", issue.other != nullptr ? issue.other->name().c_str() : "-");
+			// which way the other end lies, across or up
+			if (issue.type == joint_issue::kind::gap && issue.other != nullptr)
+			{
+				auto const off{editor_track::point_position(*issue.other, issue.theirs) - issue.position};
+				text += format(", off %+.3f %+.3f %+.3f", off.x, off.y, off.z);
+			}
+			text += "]";
+		}
 		WriteLog(format("SELFTEST jointslive: %zu pending, %zu marked", m_live.pending.size(), m_live.issues.size()) + text);
 		return editor_selftest_result::handled;
 	}
