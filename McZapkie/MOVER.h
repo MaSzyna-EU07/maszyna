@@ -1842,6 +1842,29 @@ class TMoverParameters
 	int DynamicBrakeAmpmeters = 2; /*liczba amperomierzy przy hamowaniu ED*/
 	bool SplitEDPneumaticBrake = false; /*czy hamulec ED i pneumatyczny pomocniczy są rozdzielone na osobne nastawniki*/
 	int DynamicBrakeCtrlPosNo = 10; /*ilosc pozycji nastawnika hamulca ED (DBPN, domyslnie 10)*/
+	// the dynamic brake of a diesel-electric vehicle (Engine: EDBrake=...): the traction motors brake into resistors while
+	// the engine runs, with the force of the definition rather than from a circuit, as the drive of these vehicles is
+	// computed from the generator's power. no definition, no dynamic brake (MaSzyna-EU07/maszyna#82)
+	struct diesel_electric_dynamic_brake
+	{
+		enum class control
+		{
+			none,
+			controller, // the negative range of the integrated controller (EIMCtrlType > 0), as the TRAXX one of the BR285
+			lever // a lever of its own (the SplitEDPneumaticBrake one, DBPN steps), with the master controller at zero
+		};
+		control source{control::none};
+		double max_force{0.0}; // [N] at the wheel rims of the whole vehicle, EDBrakeFmax [kN]
+		double max_power{0.0}; // [W] the resistors take, EDBrakePmax [kW]; 0: no limit
+		double fade_low{0.0}; // [km/h] EDBrakeV0: no force below
+		double fade_high{0.0}; // [km/h] EDBrakeV1: the whole force above, rising in between
+		double rate{0.5}; // [1/s] EDBrakeRate: how fast the effort follows the demand
+		bool blending{false}; // EDBrakeBlending: the locomotive's train brake lets off while the dynamic brake works (Hamulec->SetED)
+		// state
+		double level{0.0}; // the effort, 0..1
+		double force{0.0}; // [N] the braking force, against the motion
+	};
+	diesel_electric_dynamic_brake DEDynamicBrake;
 	double DynamicBrakeRes = 5.8; /*rezystancja oporników przy hamowaniu ED*/
 	double DynamicBrakeRes1 = 5.8; /*rezystancja oporników przy hamowaniu ED - 1 tryb*/
 	double DynamicBrakeRes2 = 5.8; /*rezystancja oporników przy hamowaniu ED - 2 tryb*/
@@ -2564,6 +2587,12 @@ class TMoverParameters
 	void ComputeTotalForce(double dt);
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
+	// the dynamic brake of a diesel-electric vehicle: the effort following the demand, the force it gives at the speed
+	void update_dieselelectric_dynamic_brake(double dt);
+	double dieselelectric_dynamic_brake_demand() const; // 0..1, the effort the driver asks for
+	double dieselelectric_dynamic_brake_limit() const; // [N] the force at full effort at the speed
+	void apply_dieselelectric_dynamic_brake(); // the force in place of the drive's one
+	double dieselelectric_motor_current(double Moment) const; // the current of the motors giving the moment
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity) const;
 	double BrakeForceP(double press, double velocity) const;
@@ -2815,6 +2844,7 @@ class TMoverParameters
 	void LoadFIZ_AI(std::string const &Input);
 	void LoadFIZ_RList(std::string const &Input);
 	void LoadFIZ_UCList(std::string const &Input);
+	void LoadFIZ_DieselElectricDynamicBrake(std::string const &Input);
 	void LoadFIZ_DList(std::string const &Input);
 	void LoadFIZ_FFList(std::string const &Input);
 	void LoadFIZ_FFEDList(std::string const &Input);

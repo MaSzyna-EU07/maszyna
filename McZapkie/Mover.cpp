@@ -6119,6 +6119,11 @@ double TMoverParameters::TractionForce(double dt)
 	}
 	}
 
+	if (EngineType == TEngineType::DieselElectric && DEDynamicBrake.source != diesel_electric_dynamic_brake::control::none)
+	{
+		update_dieselelectric_dynamic_brake(dt);
+	}
+
 	if (DirActive != 0)
 		switch (EngineType)
 		{
@@ -6361,11 +6366,7 @@ double TMoverParameters::TractionForce(double dt)
 			Mw = Fw * WheelDiameter / 2.0; // moment na osi kola
 			Mm = Mw / Transmision.Ratio; // moment silnika trakcyjnego
 
-			// with MotorParam[ScndCtrlPos] do
-			if (abs(Mm) > motor_param(ScndCtrlPos).fi)
-				Im = NPoweredAxles * abs(abs(Mm) / motor_param(ScndCtrlPos).mfi + motor_param(ScndCtrlPos).mIsat);
-			else
-				Im = NPoweredAxles * sqrt(abs(Mm * motor_param(ScndCtrlPos).Isat));
+			Im = dieselelectric_motor_current(Mm);
 
 			if (ShuntMode)
 			{
@@ -6610,6 +6611,11 @@ double TMoverParameters::TractionForce(double dt)
 						SetFlag(SoundFlag, sound::relay | sound::shuntfield);
 					}
 				}
+			}
+			if (DEDynamicBrake.level > 0.0)
+			{
+				// braking: no power asked for, so the drive above gave no force
+				apply_dieselelectric_dynamic_brake();
 			}
 			break;
 		} // DieselElectric
@@ -6938,6 +6944,91 @@ double TMoverParameters::TractionForce(double dt)
 	}
 
 	return Ft;
+}
+
+// the current of a diesel-electric vehicle's traction motors giving the moment [N m] of one motor
+double TMoverParameters::dieselelectric_motor_current(double const Moment) const
+{
+	// with MotorParam[ScndCtrlPos] do
+	if (abs(Moment) > motor_param(ScndCtrlPos).fi)
+		return NPoweredAxles * abs(abs(Moment) / motor_param(ScndCtrlPos).mfi + motor_param(ScndCtrlPos).mIsat);
+	else
+		return NPoweredAxles * sqrt(abs(Moment * motor_param(ScndCtrlPos).Isat));
+}
+
+// the effort of a diesel-electric vehicle's dynamic brake the driver asks for, 0..1
+double TMoverParameters::dieselelectric_dynamic_brake_demand() const
+{
+	switch (DEDynamicBrake.source)
+	{
+	case diesel_electric_dynamic_brake::control::controller:
+		return std::clamp(-eimic_real, 0.0, 1.0);
+	case diesel_electric_dynamic_brake::control::lever:
+		return DynamicBrakeRatio();
+	default:
+		return 0.0;
+	}
+}
+
+// the force [N] of a diesel-electric vehicle's dynamic brake at full effort at the speed: the most the motors take
+// (the current), above the speed where the resistors' power takes over, the power; under EDBrakeV1 it fades, down to
+// nothing at EDBrakeV0. a brake of direct current motors, whose force grows with the speed (the voltage they generate
+// into the resistors), fades from 0 to the speed of its whole force; an inverter's only at the stop
+double TMoverParameters::dieselelectric_dynamic_brake_limit() const
+{
+	auto const &brake{DEDynamicBrake};
+	auto limit{brake.max_force};
+	if (brake.max_power > 0.0 && std::abs(V) > 0.0)
+	{
+		limit = std::min(limit, brake.max_power / std::abs(V));
+	}
+	if (brake.fade_high > brake.fade_low)
+	{
+		limit *= std::clamp((Vel - brake.fade_low) / (brake.fade_high - brake.fade_low), 0.0, 1.0);
+	}
+	else if (Vel < brake.fade_low)
+	{
+		limit = 0.0;
+	}
+	return limit;
+}
+
+// the dynamic brake of a diesel-electric vehicle, before the drive's force: the effort follows the demand, the force
+// is the share of the most at the speed. the motors brake while the engine runs (it excites them, or keeps the
+// control of the inverters going), with the direction set, the overload relay closed, no power asked for and the
+// wheels rolling; otherwise there's no brake at once
+void TMoverParameters::update_dieselelectric_dynamic_brake(double const dt)
+{
+	auto &brake{DEDynamicBrake};
+	auto const nopower{brake.source == diesel_electric_dynamic_brake::control::controller ? eimic_real <= 0.0 : IsMainCtrlNoPowerPos()};
+	if (Mains && DirActive != 0 && false == FuseFlag && false == SlippingWheels && nopower)
+	{
+		brake.level += std::clamp(dieselelectric_dynamic_brake_demand() - brake.level, -brake.rate * dt, brake.rate * dt);
+	}
+	else
+	{
+		brake.level = 0.0;
+	}
+	brake.force = brake.level * dieselelectric_dynamic_brake_limit();
+	DynamicBrakeFlag = brake.force > 0.0;
+	if (brake.blending)
+	{
+		// the train brake of the locomotive lets off by the share of the dynamic brake's force (LSt, EStED)
+		Hamulec->SetED(brake.max_force > 0.0 ? brake.force / brake.max_force : 0.0);
+	}
+}
+
+// the force of a diesel-electric vehicle's dynamic brake, against the motion, in place of the drive's one: the motors
+// work as generators into the resistors, the ammeter shows their current, the main generator gives nothing
+void TMoverParameters::apply_dieselelectric_dynamic_brake()
+{
+	Ft = V > 0.0 ? -DEDynamicBrake.force : V < 0.0 ? DEDynamicBrake.force : 0.0;
+	Fw = Ft / NPoweredAxles;
+	Mw = Fw * WheelDiameter / 2.0;
+	Mm = Mw / Transmision.Ratio;
+	Im = dieselelectric_motor_current(Mm);
+	EngineVoltage = 0.0;
+	EnginePower = 0.0;
 }
 
 // *************************************************************************************************
@@ -12021,6 +12112,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 		extract_value(EngineHeatingRPM, "HeatingRPM", Input, "");
 		extract_value(dizel_AIM, "AIM", Input, "1.25");
 		extract_value(dizel_RevolutionsDecreaseRate, "RPMDecRate", Input, "");
+		LoadFIZ_DieselElectricDynamicBrake(Input);
 		break;
 	}
 	case TEngineType::ElectricInductionMotor:
@@ -12227,6 +12319,35 @@ void TMoverParameters::LoadFIZ_RList(std::string const &Input)
 	extract_value(DynamicBrakeRes, "DynBrakeRes", Input, "");
 	extract_value(DynamicBrakeRes1, "DynBrakeRes1", Input, "");
 	extract_value(DynamicBrakeRes2, "DynBrakeRes2", Input, "");
+}
+
+// the dynamic brake of a diesel-electric vehicle, from its Engine section: none without EDBrake
+void TMoverParameters::LoadFIZ_DieselElectricDynamicBrake(std::string const &Input)
+{
+	using enum diesel_electric_dynamic_brake::control;
+	std::map<std::string, diesel_electric_dynamic_brake::control, std::less<>> const sources{{"Controller", controller}, {"Lever", lever}};
+	auto const lookup{sources.find(extract_value("EDBrake", Input))};
+	if (lookup == sources.end())
+	{
+		return;
+	}
+	auto &brake{DEDynamicBrake};
+	brake.source = lookup->second;
+	auto force{0.0}; // [kN]
+	auto power{0.0}; // [kW]
+	extract_value(force, "EDBrakeFmax", Input, "");
+	extract_value(power, "EDBrakePmax", Input, "");
+	brake.max_force = force * 1000.0;
+	brake.max_power = power * 1000.0;
+	extract_value(brake.fade_low, "EDBrakeV0", Input, "");
+	extract_value(brake.fade_high, "EDBrakeV1", Input, "");
+	extract_value(brake.rate, "EDBrakeRate", Input, "");
+	extract_value(brake.blending, "EDBrakeBlending", Input, "");
+	if (brake.source == lever)
+	{
+		// the lever of its own, which the commands of the dynamic brake controller move
+		SplitEDPneumaticBrake = true;
+	}
 }
 
 void TMoverParameters::LoadFIZ_UCList(std::string const &Input)
