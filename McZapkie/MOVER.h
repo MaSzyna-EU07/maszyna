@@ -2468,6 +2468,11 @@ class TMoverParameters
 	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName = nullptr);
 	// height of the centre of gravity above the rail with the load [m]
 	double centre_of_gravity() const;
+	// the vehicle is back on the rails (resetconsist, SetDamage taking dtrain_out off): not derailed any more, and the
+	// criteria of derailment start from scratch, so a later derailment goes the way its model has it
+	void rerail();
+	// what resetconsist does to a vehicle: no damage of any kind, the alarm chain released, back on the rails
+	void repair_damage();
 	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
 	// derailment, which stops it as the legacy model does
 	derailment::outcome Derailed{derailment::outcome::none};
