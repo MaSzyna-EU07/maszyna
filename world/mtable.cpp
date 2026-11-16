@@ -109,6 +109,16 @@ sound_source TTrainParameters::current_stop_sound() const {
         return { sound_placement::engine };
 }
 
+timetable::service_flags const &TTrainParameters::stop_flags() const {
+
+    return TimeTable[ timetable::stop_flags_entry( StationIndex, StationCount ) ].flags;
+}
+
+timetable::service_flags const &TTrainParameters::run_flags() const {
+
+    return TimeTable[ timetable::run_flags_entry( StationIndex, StationCount ) ].flags;
+}
+
 bool TTrainParameters::UpdateMTable( scenario_time const &Time, std::string const &NewName ) {
 
     return UpdateMTable( Time.data().wHour, Time.data().wMinute + Time.data().wSecond * 0.0167, NewName );
@@ -257,21 +267,16 @@ void TTrainParameters::UpdateVelocity(int /*Stationcount*/, double vActual)
 bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double vmax)
 // wczytanie pliku-tabeli z rozkładem przesuniętym o (fPlus); (vMax) nie ma znaczenia
 {
-    std::string lines;
     std::string s;
     std::ifstream fin;
-    bool EndTable;
-    double vActual;
 
     int conversionerror = 0;
-    EndTable = false;
     if (TrainName == "")
     { // jeśli pusty rozkład
         // UpdateVelocity(StationCount,vMax); //ograniczenie do prędkości startowej
     }
     else
     {
-        vActual = -1;
         s = scnpath + TrainName + ".txt";
 		replace_slashes(s);
         // Ra 2014-09: ustalić zasady wyznaczenia pierwotnego pliku przy przesuniętych rozkładach
@@ -293,284 +298,22 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
         }
         else
         { /*analiza rozkładu jazdy*/
-            conversionerror = 0;
-            while (fin.good() && !(conversionerror != 0 || EndTable))
-            {
-                std::getline(fin, lines); /*wczytanie linii*/
-                if (contains( lines, "___________________") ) /*linia pozioma górna*/
-                {
-                    fin >> s;
-                    if (s == "[") /*lewy pion*/
-                    {
-                        fin >> s;
-                        if (s == "Rodzaj") /*"Rodzaj i numer pociagu"*/
-                            do
-                            {
-                                fin >> s;
-                            } while (!(s == "|") || fin.eof()); /*środkowy pion*/
-                    }
-                }
-                else if (lines == "")
-                {
-                    fin.close();
-                    break;
-                }
-                fin >> s; /*nazwa pociągu*/
-                // if LowerCase(s)<>ExtractFileName(TrainName) then {musi być taka sama, jak nazwa
-                // pliku}
-                // ConversionError:=-7 {błąd niezgodności}
-                TrainName = s; // nadanie nazwy z pliku TXT (bez ścieżki do pliku)
-				while (fin >> s || fin.bad())
-				{
-					if (contains( s,"_______|") )
-					{
-						break;
-					}
-					if (s == "Kategoria")
-					{
-						do
-						{
-							fin >> s;
-						} while (!(s == "|" || fin.bad()));
-						fin >> TrainCategory;
-		                        continue;
-					}
-					if (s == "Nazwa")
-			                {
-			                        do
-			                        {
-			                            fin >> s;
-				                } while (!(s == "|" || fin.bad()));
-			                        fin >> TrainLabel;
-			                        continue;
-			                 }
-				} // while (!(s == "Seria"));
-                // else
-                { /*czytaj naglowek*/
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s == "[")
-                            break;
-                    } // while (!() || (fin.eof())); /*pierwsza linia z relacją*/
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s != "|")
-                            break;
-                    } // while (!(() || fin.eof()));
-                    if( s != "|" ) {
-                        Relation1 = s;
-                        win1250_to_ascii( Relation1 );
-                    }
-                    else
-                        conversionerror = -5;
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s == "Relacja")
-                            break;
-                    } // while (
-                    //  !( || (fin.eof()))); /*druga linia z relacją*/
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s == "|")
-                            break;
-                    } // while (!( || (fin.eof())));
-                    fin >> Relation2;
-                    win1250_to_ascii( Relation2 );
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s == "Wymagany")
-                            break;
-                    } // while (!();
-                    while (fin >> s || !fin.bad())
-                    {
-                        if (s == "|" || s == "\n")
-                            break;
-                    } // while (!());
-                    fin >> s;
-                    s = s.substr(0, s.find("%"));
-                    BrakeRatio = atof(s.c_str());
-                    while (fin >> s || fin.bad())
-                    {
-                        if (s == "Seria")
-                            break;
-                    } // while (!(s == "Seria"));
-                    do
-                    {
-                        fin >> s;
-                    } while (!(s == "|" || fin.bad()));
-                    fin >> LocSeries;
-                    fin >> LocLoad; // = s2rE(ReadWord(fin));
-                    do
-                    {
-                        fin >> s;
-                    } while (!(contains( s,"[______________" ) || fin.bad()));
-                    auto activeradiochannel{ -1 };
-                    while (!fin.bad() && !EndTable)
-                    {
-                        ++StationCount;
-                        do
-                        {
-                            fin >> s;
-                        } while (!(s == "[" || fin.bad()));
-                        TMTableLine *record = &TimeTable[StationCount];
-                        {
-                            if (s == "[")
-                                fin >> s;
-                            else
-                                conversionerror = -4;
-                            if (false == contains( s,"|") )
-                            {
-                                record->km = static_cast<float>(atof(s.c_str()));
-                                fin >> s;
-                            }
-                            if (contains( s,"|_____|")) /*zmiana predkosci szlakowej*/
-                                UpdateVelocity(StationCount, vActual);
-                            else
-                            {
-                                fin >> s;
-                                if (false == contains(s,"|"))
-                                    vActual = atof(s.c_str());
-                            }
-                            while (false == contains( s,"|"))
-                                fin >> s;
-                            fin >> record->StationName;
-                            // get rid of non-ascii chars. TODO: run correct version based on locale
-                            win1250_to_ascii( record->StationName ); 
-                            do
-                            {
-                                fin >> s;
-                            } while (!(s == "1" || s == "2" || fin.bad()));
-                            record->TrackNo = atoi(s.c_str());
-                            fin >> s;
-                            if (s != "|")
-                            {
-                                if (contains( s, hrsd) )
-                                {
-                                    record->Ah = atoi( s.substr(0, s.find(hrsd)).c_str()); // godzina przyjazdu
-                                    record->Am = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta przyjazdu
-                                }
-                                else
-                                {
-                                    record->Ah = TimeTable[StationCount - 1].Ah; // godzina z poprzedniej pozycji
-                                    record->Am = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
-                                }
-                            }
-                            do
-                            {
-                                fin >> s;
-                            } while (!(s != "|" || fin.bad()));
-                            if (s != "]")
-                                record->tm = static_cast<float>(atof(s.c_str()));
-                            do
-                            {
-                                fin >> s;
-                            } while (!(s == "[" || fin.bad()));
-                            fin >> s;
-                            if (false == contains(s,"|"))
-                            {
-                                /*tu s moze byc miejscem zmiany predkosci szlakowej*/
-                                fin >> s;
-                            }
-                            if (s.find("|_____|") !=
-                                std::string::npos) /*zmiana predkosci szlakowej*/
-                                UpdateVelocity(StationCount, vActual);
-                            else
-                            {
-                                fin >> s;
-                                if (false == contains(s,"|"))
-                                    vActual = atof(s.c_str());
-                            }
-                            while (false == contains(s,"|"))
-                                fin >> s;
-                            // stationware. added fix for empty entry
-                            fin >> s;
-                            while( false == ( s == "1"
-                                           || s == "2"
-                                           || fin.bad() ) ) {
-                                record->StationWare += s;
-                                fin >> s;
-                            }
-                            // cache relevant station data
-                            record->is_maintenance = contains(s, "pt");
-                            {
-                                auto const stationware { Split( record->StationWare, ',' ) };
-                                for( auto const &entry : stationware ) {
-                                    if( entry.front() != 'R' ) {
-                                        continue;
-                                    }
-                                    auto const [entrytype, entrynumber]{ split_string_and_number( entry ) };
-                                    if( entrytype == "R"
-                                     && entrynumber <= 10 ) {
-                                        auto const radiochannel { entrynumber };
-                                        if( record->radio_channel == -1
-                                         || radiochannel != activeradiochannel ) {
-                                            // if the station has more than one radiochannel listed,
-                                            // it generally means we should switch to the one we weren't using so far
-                                            // TODO: reverse this behaviour (keep the channel used so far) once W28 signs are included in the system
-                                            record->radio_channel = radiochannel;
-                                        }
-                                    }
-                                }
-                                if( record->radio_channel != -1 ) {
-                                    activeradiochannel = record->radio_channel;
-                                }
-                            }
-                            record->TrackNo = atoi(s.c_str());
-                            fin >> s;
-                            if (s != "|")
-                            {
-                                if (contains( s, hrsd) )
-                                {
-                                    record->Dh = atoi(s.substr(0, s.find(hrsd)).c_str()); // godzina odjazdu
-                                    record->Dm = static_cast<float>(atof(s.substr(s.find(hrsd) + 1, s.length()).c_str())); // minuta odjazdu
-                                }
-                                else
-                                {
-                                    record->Dh = TimeTable[StationCount - 1].Dh; // godzina z poprzedniej pozycji
-                                    record->Dm = static_cast<float>(atof(s.c_str())); // bo tylko minuty podane
-                                }
-                            }
-                            else
-                            {
-                                record->Dh = record->Ah; // odjazd o tej samej, co przyjazd (dla ostatniego też)
-                                record->Dm = record->Am; // bo są używane do wyliczenia opóźnienia po dojechaniu
-                            }
-                            do
-                            {
-                                fin >> s;
-                            } while (!(s != "|" || fin.bad()));
-                            if (s != "]")
-                                record->tm = static_cast<float>(atof(s.c_str()));
-                            do
-                            {
-                                fin >> s;
-                            } while (!(contains( s, "[" ) || fin.bad()));
-                            if (false == contains( s, "_|_"))
-                                fin >> s;
-                            if (false == contains( s, "|"))
-                            {
-                                /*tu s moze byc miejscem zmiany predkosci szlakowej*/
-                                fin >> s;
-                            }
-                            if (contains( s, "|_____|") ) /*zmiana predkosci szlakowej*/
-                                UpdateVelocity(StationCount, vActual);
-                            else
-                            {
-                                fin >> s;
-                                if (false == contains( s, "|"))
-                                    vActual = atof(s.c_str());
-                            }
-                            while (false == contains( s, "|" ) )
-                                fin >> s;
-                            while (false == contains(s, "]"))
-                                fin >> s;
-                            if (contains( s,"_|_") )
-                                EndTable = true;
-                        } /*timetableline*/
-                    }
-                }
-            } /*while eof*/
+            timetable_data data;
+            data.TrainName = TrainName;
+            conversionerror = read_timetable( fin, data );
             fin.close();
+            TrainName = data.TrainName;
+            TrainCategory = data.TrainCategory;
+            TrainLabel = data.TrainLabel;
+            Relation1 = data.Relation1;
+            Relation2 = data.Relation2;
+            BrakeRatio = data.BrakeRatio;
+            LocSeries = data.LocSeries;
+            LocLoad = data.LocLoad;
+            StationCount = data.StationCount;
+            for( auto i = 0; i <= MaxTTableSize; ++i ) {
+                static_cast<TMTableEntry &>( TimeTable[ i ] ) = data.TimeTable[ i ];
+            }
         }
     }
     // jeśli nazwa pierwszego zgodna z relacją
