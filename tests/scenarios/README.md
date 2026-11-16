@@ -143,8 +143,9 @@ Python 3.10+, no extra packages. Options:
 - `--slow` runs the cases marked `slow` too. Without it, and with no cases named, they are
   skipped (and listed): each is a whole mission on a big scenery and takes many minutes. A
   slow case named on the command line always runs. Run them one at a time (`-j 1`): each
-  simulator loads a whole scenery, and the ones with physicslog on collect every physicslog
-  written in the game dir meanwhile.
+  simulator loads a whole scenery. A case on a mission of the base scenery with physicslog on
+  (`vehicle` given) removes every physicslog written in the game dir meanwhile, so with `-j N`
+  it runs alone, after the others.
 - `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
   numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
   sometimes: run the case with a few seeds.

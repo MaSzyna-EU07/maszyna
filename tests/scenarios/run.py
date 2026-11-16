@@ -666,6 +666,12 @@ def run_case(name: str, exe: Path, game_dir: Path, timespeed: float, watch: bool
     return "XFAIL"
 
 
+def exclusive_case(case: dict) -> bool:
+    """A case on a mission of the base scenery with the physicslog on: it removes every physicslog written
+    while it ran, those of other cases running at the time too, so it has to run alone."""
+    return "vehicle" in case and case.get("physicslog", True)
+
+
 def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float, watch: bool, say,
               seed: str | None = None) -> bool:
     say(f"\n=== {name}: {case.get('description', '')}")
@@ -719,11 +725,15 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         shutil.move(other, out / other.name)
     # on a mission of the base scenery every train with a driver logs under its own name, the road vehicles
     # too (250 files and 740 MB after 900 s of Wrzosy): the ones written in this run are removed, nothing
-    # checks them (so such a case can't share the game dir with another run at the time)
+    # checks them (so such a case can't share the game dir with another run at the time: main() runs it
+    # alone, see exclusive_case()). a file still held open by another simulator is left where it is
     if own_vehicle and with_physicslog:
         for other in physicslog.parent.glob("*.dat"):
-            if other.stat().st_mtime >= started:
-                other.unlink()
+            try:
+                if other.stat().st_mtime >= started:
+                    other.unlink()
+            except OSError as error:
+                say(f"  left {other.name} in the game dir: {error}")
     # the black box is named after the case scenery too
     if result.blackbox:
         result.blackbox = Path(shutil.move(result.blackbox, out / f"{vehicle}.blackbox"))
@@ -834,6 +844,12 @@ def main() -> int:
         for n in names:
             results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
     else:
+        # a case on a mission of the base scenery removes the physicslogs written while it ran, so it runs
+        # alone, after the others
+        alone = [n for n in names if exclusive_case(load_case(n))]
+        together = [n for n in names if n not in alone]
+        if alone:
+            print(f"run alone after the others, they clear the physicslogs of the game dir: {', '.join(alone)}")
         # each case prints its block when it is done, so parallel output does not interleave
         def job(n):
             lines = []
@@ -843,12 +859,15 @@ def main() -> int:
             status = run_case(n, exe, game_dir, args.timespeed, args.watch, say, args.seed)
             return n, status, lines
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            for n in names:
+            for n in together:
                 print(f"started {n}", flush=True)
-            for fut in as_completed([pool.submit(job, n) for n in names]):
+            for fut in as_completed([pool.submit(job, n) for n in together]):
                 n, status, lines = fut.result()
                 print("\n".join(lines), flush=True)
                 results[n] = status
+        for n in alone:
+            results[n] = run_case(n, exe, game_dir, args.timespeed, args.watch,
+                                  lambda line, progress=False: print(line, flush=True), args.seed)
 
     print(f"\n=== summary ({time.monotonic() - started:.0f}s)")
     for n in names:
