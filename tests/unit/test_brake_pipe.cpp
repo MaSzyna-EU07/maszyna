@@ -53,7 +53,8 @@ double application_time(test::consist &Train, double const Pressure, double cons
 }
 
 // the same train standing a minute, then braked from the locomotive, all of it in steps of Dt
-double application_time(void (*Train)(test::consist &, int), int const Vehicles, double const Pressure, double const Dt) {
+template <typename Builder>
+double application_time(Builder Train, int const Vehicles, double const Pressure, double const Dt) {
 	test::consist train;
 	Train(train, Vehicles);
 	train.run(60.0, {}, Dt);

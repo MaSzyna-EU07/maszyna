@@ -94,7 +94,7 @@ void consist::step(track const &Track, double Dt) {
 	update_brake_pipes(Dt);
 }
 
-void consist::update_brake_pipes(double Dt) {
+void consist::update_brake_pipes(double Dt) const {
 	// vehicle_table::update_brake_pipes()
 	std::vector<TMoverParameters *> movers;
 	for (auto const &vehicle : m_vehicles) {

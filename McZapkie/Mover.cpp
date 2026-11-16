@@ -5137,13 +5137,13 @@ int TMoverParameters::PipeCouplersSubsteps(double const dt) const
 {
 	auto substeps{1};
 	auto const area{Spg / (1.0 + 0.015 / Spg * Dim.L)}; // as in GetDVc()
-	for (auto const &coupler : Couplers)
+	for (auto const &hose : Couplers)
 	{
-		if (coupler.Connected == nullptr || false == TestFlag(coupler.CouplingFlag, ctrain_pneumatic))
+		if (hose.Connected == nullptr || false == TestFlag(hose.CouplingFlag, ctrain_pneumatic))
 		{
 			continue;
 		}
-		auto const &other{*coupler.Connected};
+		auto const &other{*hose.Connected};
 		// the flow per bar of the difference, at small differences, where it's the largest
 		auto const pressure{std::max(PipePress, other.PipePress)};
 		auto const conductance{std::abs(PF(pressure, pressure - 0.01, area)) / 0.01};
