@@ -2,6 +2,7 @@
 #include "widgets/map.h"
 #include "widgets/map_objects.h"
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "vehicle/Train.h"
 #include "vehicle/Camera.h"
 #include "simulation/simulation.h"
@@ -597,7 +598,7 @@ void ui::track_switch_window::render_content()
 ui::obstacle_insert_window::obstacle_insert_window(ui_panel &panel, glm::dvec3 const &pos) : popup(panel), m_position(pos)
 {
 	std::ifstream file;
-	file.open("obstaclebank.txt", std::ios_base::in | std::ios_base::binary);
+	file.open(disk_path("obstaclebank.txt"), std::ios_base::in | std::ios_base::binary);
 
 	if (!file.is_open())
 		return;

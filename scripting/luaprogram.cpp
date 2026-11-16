@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/scriptscreenkernels.h"
 
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
 
@@ -804,7 +805,7 @@ bool lua_program::start()
 	register_api();
 	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
 
-	std::ifstream file{script, std::ios::binary};
+	std::ifstream file{disk_path(script), std::ios::binary};
 	if (false == file.is_open())
 	{
 		ErrorLog(std::format("Lua screen \"{}\": file not found", script));

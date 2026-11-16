@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/TrackRails.h"
 #include "rendering/renderer.h"
+#include "utilities/casedpath.h"
 #include "stb/stb_image.h"
 
 namespace track_rails {
@@ -92,7 +93,7 @@ int dxt_block_size( std::uint32_t const Fourcc ) {
 
 void sample_dds( std::string const &File, glm::vec2 const &Band, colour_mean &Mean ) {
 
-    std::ifstream input( File, std::ios::binary );
+    std::ifstream input( disk_path( File ), std::ios::binary );
     std::array<unsigned char, 128> header {};
     if( !input.read( reinterpret_cast<char *>( header.data() ), header.size() ) || false == std::equal( header.begin(), header.begin() + 4, "DDS " ) ) {
         return;
@@ -132,7 +133,7 @@ void sample_image( std::string const &File, glm::vec2 const &Band, colour_mean &
     int width { 0 };
     int height { 0 };
     int components { 0 };
-    auto *pixels { stbi_load( File.c_str(), &width, &height, &components, 4 ) };
+    auto *pixels { stbi_load( disk_path( File ).c_str(), &width, &height, &components, 4 ) };
     if( pixels == nullptr ) {
         return;
     }

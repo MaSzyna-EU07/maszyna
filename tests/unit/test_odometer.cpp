@@ -3,6 +3,7 @@
 #include "vehicle.h"
 #include "utilities/Globals.h"
 #include "vehicle/odometer.h"
+#include "utilities/casedpath.h"
 
 #include <filesystem>
 #include <fstream>
@@ -531,4 +532,18 @@ TEST_CASE("odometer: the files of both kinds of python screens are read, by the 
 	// neither
 	CHECK_FALSE(odometer::legacy_state(vehicles, "EU07-425", scripts).has_value());
 	CHECK_FALSE(odometer::legacy_state(vehicles, "", scripts).has_value());
+}
+
+TEST_CASE("odometer: the file of the python screens is read when it's named in another case (GE#542)") {
+	cased_path_forget_all();
+	scratch_directory directory{"odometer_legacy_case"};
+	auto const vehicles{directory.path / "dynamic" / "elf_v1"};
+	auto const scripts{directory.path / "scripts"};
+	// made on Windows, where a name is found in any case: the folder and the file in other cases than the game asks for
+	write_file(vehicles / "Kilometry" / "en76-022_Przebieg.txt", "250000.5");
+	CHECK(odometer::legacy_state(vehicles, "EN76-022a", scripts).value_or(0.0) == 250000.5);
+	write_file(scripts / "KILOMETRY" / "eu07-424_PRZEBIEG.TXT", "123456.0");
+	CHECK(odometer::legacy_state(vehicles, "EU07-424", scripts).value_or(0.0) == 123456.0);
+	CHECK_FALSE(odometer::legacy_state(vehicles, "EU07-425", scripts).has_value());
+	cased_path_forget_all();
 }

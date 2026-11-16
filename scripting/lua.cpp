@@ -2,6 +2,7 @@
 #include "scripting/lua.h"
 #include "world/Event.h"
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "world/MemCell.h"
 #include "vehicle/Driver.h"
 #include "simulation/simulation.h"
@@ -56,7 +57,7 @@ std::string lua::get_error() const
 
 void lua::interpret(const std::string& file) const
 {
-	if (luaL_dofile(state, file.c_str())) {
+	if (luaL_dofile(state, disk_path(file).c_str())) {
 		std::string str = lua_tostring(state, -1);
 		ErrorLog("lua: Runtime error: " + str, logtype::lua);
 	}

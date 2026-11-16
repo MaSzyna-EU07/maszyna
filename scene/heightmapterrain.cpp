@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/heightmapterrain.h"
 
 #include "scene/sceneterrain.h"
+#include "utilities/casedpath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -548,7 +549,7 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 {
 	try
 	{
-		auto const document{YAML::LoadFile(Path)};
+		auto const document{YAML::LoadFile(disk_path(Path))};
 		manifest result;
 		result.layers.clear();
 		if (auto const node{document["version"]})
@@ -732,7 +733,7 @@ bool pack_file::open(std::string const &Path, std::string *Error)
 	m_path = Path;
 	for (auto &slices : m_slices)
 		slices.clear();
-	std::ifstream file{Path, std::ios::binary};
+	std::ifstream file{disk_path(Path), std::ios::binary};
 	if (false == file.good())
 		return fail("can't open the file");
 	std::vector<std::uint8_t> header(header_size);
@@ -829,7 +830,7 @@ std::shared_ptr<chunk_data> pack_file::read(chunk_key const &Key, std::string *E
 	if (false == has(Key))
 		return fail("not in the file");
 	auto const &slices{m_slices[static_cast<std::size_t>(Key.second - m_key.second * pack_side) * pack_side + (Key.first - m_key.first * pack_side)]};
-	std::ifstream file{m_path, std::ios::binary};
+	std::ifstream file{disk_path(m_path), std::ios::binary};
 	if (false == file.good())
 		return fail("can't open the file");
 

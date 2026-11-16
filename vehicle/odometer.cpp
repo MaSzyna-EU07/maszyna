@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 
 #include <algorithm>
 #include <chrono>
@@ -184,11 +185,13 @@ std::optional<double> read_legacy(std::istream &Input) {
 
 namespace {
 
-std::optional<double> read_legacy_file(std::filesystem::path const &Path) {
+std::optional<double> read_legacy_file(std::filesystem::path const &File) {
+	// the file of the vehicle's data, named on the disk maybe in another case than asked for
+	auto const path{disk_path(File)};
 	std::error_code error;
-	if (false == std::filesystem::is_regular_file(Path, error))
+	if (false == std::filesystem::is_regular_file(path, error))
 		return std::nullopt;
-	std::ifstream input{Path, std::ios::binary};
+	std::ifstream input{path, std::ios::binary};
 	if (false == input.is_open())
 		return std::nullopt;
 	return read_legacy(input);

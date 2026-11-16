@@ -6,10 +6,13 @@
 #include "utilities/utilities.h"
 
 #include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <set>
 #include <thread>
+#include <type_traits>
 
 // files named in another case than on the disk (utilities/casedpath.h). the index is tested twice: on a file system made
 // up here, which tells the case apart on every system, and on the real one in a scratch folder, which tells it apart on
@@ -705,6 +708,43 @@ TEST_CASE("cased path: FileExists() finds the file in another case under the nam
 	// on Windows the system finds the names in any case: nothing listed, the names to open are the ones given
 	CHECK(cased::path_index().listings() == listings);
 	CHECK(disk_path(root + "SOUNDS/HORN1.OGG") == root + "SOUNDS/HORN1.OGG");
+#else
+	static_cast<void>(listings);
+#endif
+	cased_path_forget_all();
+}
+
+TEST_CASE("cased path: disk_path() of a std::filesystem::path opens the file as the one of a text does") {
+	// the text and the path each get their own disk_path(), neither is taken for the other
+	static_assert(std::is_same_v<decltype(disk_path(std::string{})), std::string>);
+	static_assert(std::is_same_v<decltype(disk_path("name")), std::string>);
+	static_assert(std::is_same_v<decltype(disk_path(std::filesystem::path{})), std::filesystem::path>);
+
+	test::scratch_folder const folder{"cased_fspath"};
+	auto const sensitive{case_matters(folder)};
+	CAPTURE(sensitive);
+	folder.write("Kilometry/EU07-424_Przebieg.txt", "123456.0");
+	auto const listings{cased::path_index().listings()};
+
+	// the file of the python screens, the way odometer::legacy_state() asks for it
+	auto const asked{folder.root() / "kilometry" / "eu07-424_przebieg.txt"};
+	auto const opened{disk_path(asked)};
+	CHECK(opened == (sensitive ? folder.root() / "Kilometry" / "EU07-424_Przebieg.txt" : asked));
+	CHECK(opened.generic_string() == disk_path(asked.generic_string()));
+	std::ifstream input{opened, std::ios::binary};
+	std::string content;
+	std::getline(input, content);
+	CHECK(content == "123456.0");
+	// not there in any case: the path given, for the opening to fail on it as it did
+	auto const missing{folder.root() / "kilometry" / "nothing.txt"};
+	CHECK(disk_path(missing) == missing);
+
+#ifdef _WIN32
+	// on Windows the path is given back as it is: nothing listed, and not turned to text, so a name the code page of the
+	// system can't hold stays as it was
+	auto const wide{folder.root() / L"\u4e2d\u6587" / L"PLIK.txt"};
+	CHECK((disk_path(wide).native() == wide.native()));
+	CHECK(cased::path_index().listings() == listings);
 #else
 	static_cast<void>(listings);
 #endif

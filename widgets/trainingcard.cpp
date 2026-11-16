@@ -2,6 +2,7 @@
 #include "widgets/trainingcard.h"
 #include "simulation/simulation.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 
 #ifdef __linux__
 #include <unistd.h>
@@ -54,7 +55,7 @@ void trainingcard_panel::save_thread_func()
 	std::string to = std::to_string(tm.tm_hour) + ":" + std::to_string(tm.tm_min);
 
 	std::fstream temp("reports/" + recording_timestamp + ".html", std::ios_base::out | std::ios_base::binary);
-	std::fstream input("report_template.html", std::ios_base::in | std::ios_base::binary);
+	std::fstream input(disk_path("report_template.html"), std::ios_base::in | std::ios_base::binary);
 
 	std::string in_line;
 	while (std::getline(input, in_line))

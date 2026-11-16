@@ -170,3 +170,8 @@ picker (`launcher_mode`), not StarterNG.
   something the player turns on, or comes in gradually.
 - When a format really has to change, read both the old and the new form, and say in the PR what changes for the data and for
   the people who make it.
+- The data is made on Windows, where a file is found in any case, and the game asks for nearly every file in lower case. On Linux
+  the case matters, so a data file is checked with `FileExists()` and opened through `disk_path()` (`utilities/casedpath.h`) at the
+  moment it is opened (`std::ifstream`, `stbi_load`, `sf_open`, `luaL_dofile`...), while the name asked for stays the key it is
+  kept under and the name in the log. Files read by `cParser` are found by the parser itself. On Windows both are what they were:
+  `disk_path()` gives the path back without a look at the disk.

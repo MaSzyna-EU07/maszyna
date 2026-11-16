@@ -1,7 +1,10 @@
 #include "stdafx.h"
 #include "doctest.h"
+#include "scratch.h"
 
 #include "scripting/scriptscreenrules.h"
+#include "scripting/scriptscreenprogram.h"
+#include "utilities/casedpath.h"
 #include "utilities/parser.h"
 
 // the parts of the script screens that don't need the runtime: the .mmd entries, the refresh schedule counted in
@@ -100,4 +103,14 @@ TEST_CASE("script screens: a screen reads files only below its own folder") {
 	CHECK_FALSE(script_screens::is_safe_relative_path("/etc/passwd"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("\\windows"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("c:/windows/win.ini"));
+}
+
+TEST_CASE("script screens: a file of the screen's folder named in another case is read (GE#542)") {
+	test::scratch_folder const folder{"screen_file_case"};
+	folder.write("Font/Test.PNG", "png");
+	auto const content{script_screens::read_screen_file(folder.path(), "font/test.png")};
+	REQUIRE(content.has_value());
+	CHECK(*content == "png");
+	CHECK_FALSE(script_screens::read_screen_file(folder.path(), "font/nothing.png").has_value());
+	cased_path_forget_all();
 }

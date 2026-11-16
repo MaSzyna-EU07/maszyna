@@ -15,11 +15,12 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
 #include "utilities/Globals.h"
+#include "utilities/casedpath.h"
 #include "MOVER.h"
 
 void locale::init()
 {
-	std::fstream stream("lang/" + Global.asLang + ".po", std::ios_base::in | std::ios_base::binary);
+	std::fstream stream(disk_path("lang/" + Global.asLang + ".po"), std::ios_base::in | std::ios_base::binary);
 
 	if (!stream.is_open()) {
 		WriteLog("translation: cannot open lang file: lang/" + Global.asLang + ".po");
@@ -31,7 +32,7 @@ void locale::init()
 	while (parse_translation(stream));
 
 	// texts of the scenery editor, kept apart from the translation of the simulator
-	std::fstream editor("lang/editor_" + Global.asLang + ".po", std::ios_base::in | std::ios_base::binary);
+	std::fstream editor(disk_path("lang/editor_" + Global.asLang + ".po"), std::ios_base::in | std::ios_base::binary);
 	if (editor.is_open())
 		while (parse_translation(editor));
 

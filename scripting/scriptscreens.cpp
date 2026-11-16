@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/ITexture.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
 
@@ -99,7 +100,7 @@ std::optional<std::string> read_screen_file(std::string const &Folder, std::stri
 	{
 		return std::nullopt;
 	}
-	std::ifstream file{Folder + std::string{Path}, std::ios::binary};
+	std::ifstream file{disk_path(Folder + std::string{Path}), std::ios::binary};
 	if (false == file.is_open())
 	{
 		return std::nullopt;

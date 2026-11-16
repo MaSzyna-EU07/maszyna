@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/casedpath.h"
 #include "vehicle/Camera.h"
 #include "model/AnimModel.h"
 #include "world/Event.h"
@@ -1185,7 +1186,7 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
         return false;
     }
     // file type and version check
-    std::ifstream input( filename, std::ios::binary );
+    std::ifstream input( disk_path( filename ), std::ios::binary );
 
     uint32_t headermain{ sn_utils::ld_uint32( input ) };
     uint32_t headertype{ sn_utils::ld_uint32( input ) };
@@ -1256,7 +1257,7 @@ basic_region::deserialize( std::string const &Scenariofile ) {
     }
     // region file version 1
     // file type and version check
-    std::ifstream input( filename, std::ios::binary );
+    std::ifstream input( disk_path( filename ), std::ios::binary );
 
     uint32_t headermain { sn_utils::ld_uint32( input ) };
     uint32_t headertype { sn_utils::ld_uint32( input ) };

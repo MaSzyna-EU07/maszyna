@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/nullrenderer.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "utilities/parser.h"
 #include "utilities/utilities.h"
 
@@ -201,7 +202,7 @@ class data_reader
 // loads content of specified file into provided string. returns: true on success, false otherwise
 bool read_file(std::string const &Filename, std::string &Data)
 {
-	std::ifstream input{Filename, std::ios::binary};
+	std::ifstream input{disk_path(Filename), std::ios::binary};
 	if (input.fail())
 	{
 		return false;
@@ -250,7 +251,7 @@ bool read_header(std::istream &Input, file_header &Header)
 
 bool read_header(std::string const &Filename, file_header &Header)
 {
-	std::ifstream input{Filename, std::ios::binary};
+	std::ifstream input{disk_path(Filename), std::ios::binary};
 	return (false == input.fail()) && read_header(input, Header);
 }
 
@@ -672,7 +673,7 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 	auto const binarypresent{read_header(Binaryfile, header)};
 
 	std::error_code error;
-	auto const textsize{std::filesystem::file_size(Textfile, error)};
+	auto const textsize{std::filesystem::file_size(disk_path(Textfile), error)};
 	if (error)
 	{
 		// with no text to check the binary file against it's taken as it is
@@ -709,7 +710,8 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 
 	WriteLog("Terrain file \"" + Textfile + "\": " + (binarypresent ? "binary version doesn't match the text" : "no usable binary version found") + ", converting...");
 	std::string message;
-	if (write(text, Binaryfile, message))
+	// a binary file there in another case is replaced, not joined by a second one next to it
+	if (write(text, disk_path(Binaryfile), message))
 	{
 		WriteLog("Terrain file \"" + Textfile + "\": conversion done, " + message);
 		return state::binary;
@@ -718,14 +720,14 @@ terrain_file::state terrain_file::prepare(std::string const &Textfile, std::stri
 	if (binarypresent)
 	{
 		// the binary file left behind is of no use, and would be taken for the real thing if the text went missing
-		std::filesystem::remove(Binaryfile, error);
+		std::filesystem::remove(disk_path(Binaryfile), error);
 	}
 	return state::text;
 }
 
 std::string terrain_file::extra(std::string const &Binaryfile)
 {
-	std::ifstream input{Binaryfile, std::ios::binary};
+	std::ifstream input{disk_path(Binaryfile), std::ios::binary};
 	file_header header;
 	if (input.fail() || false == read_header(input, header) || header.extrasize == 0)
 	{
@@ -972,7 +974,7 @@ bool terrain_file::read_triangles(terrain_reference const &Reference, triangle_v
 // makes content of specified binary terrain file a part of provided region
 bool terrain_file::attach(std::string const &Binaryfile, basic_region &Region, bool Deferred)
 {
-	std::ifstream input{Binaryfile, std::ios::binary};
+	std::ifstream input{disk_path(Binaryfile), std::ios::binary};
 	file_header header;
 	if (input.fail() || false == read_header(input, header))
 	{
@@ -1044,7 +1046,7 @@ void terrain_file::load(basic_section &Section, terrain_block const &Block)
 
 	std::string data(Block.size, '\0');
 	{
-		std::ifstream input{source.file, std::ios::binary};
+		std::ifstream input{disk_path(source.file), std::ios::binary};
 		input.seekg(static_cast<std::streamoff>(Block.offset));
 		input.read(data.data(), static_cast<std::streamsize>(data.size()));
 		if (input.fail() || static_cast<std::size_t>(std::max<std::streamsize>(0, input.gcount())) != data.size())

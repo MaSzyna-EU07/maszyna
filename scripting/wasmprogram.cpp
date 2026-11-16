@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scripting/scriptscreenkernels.h"
 
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
 
@@ -579,7 +580,7 @@ wasm_module_t wasm_runtime_host::load_module(std::string const &Script)
 	}
 	// a failure is kept as well, so the module isn't tried again for every screen using it
 	auto &entry{m_modules[Script]};
-	std::ifstream file{Script, std::ios::binary};
+	std::ifstream file{disk_path(Script), std::ios::binary};
 	if (false == file.is_open())
 	{
 		ErrorLog(std::format("WASM screen \"{}\": file not found", Script));

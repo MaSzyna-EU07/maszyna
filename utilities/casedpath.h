@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <atomic>
+#include <concepts>
 #include <cstddef>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -118,7 +120,22 @@ std::pair<std::string, std::string> first_existing(std::vector<std::string> cons
 std::string cased_path(std::string_view Path);
 // the path to open a file of the game with, which FileExists() found under the name the game asked for: the path as it is
 // on the disk where it's there in another case, otherwise the path given. on Windows the path given, with no look at the disk
+//
+// a file of the game data (scenery, vehicles, models, textures, sounds, terrain, scripts, lang, shaders...) is opened through
+// disk_path() at the moment it's opened: std::ifstream, fopen, stbi_load, sf_open, luaL_dofile and the like get disk_path(name),
+// not the name itself. the name the game asked for stays what it keeps the file under and what it writes to the log. files the
+// game writes itself and reads back under its own name (the settings, the odometers, the logs) need it not; the cParser
+// reading a file finds it by itself (FileCased()), and so does FileExists()
 std::string disk_path(std::string_view Path);
+// as disk_path(), for a path held as std::filesystem::path; on Windows the path given as it is, not converted to text and back
+template <std::same_as<std::filesystem::path> Path> Path disk_path(Path const &File)
+{
+#ifdef _WIN32
+	return File;
+#else
+	return Path{disk_path(std::string_view{File.native()})};
+#endif
+}
 // the content of the folder changed, see cased::index::forget(); nothing to do on Windows
 void cased_path_forget(std::string_view Directory);
 void cased_path_forget_all();
