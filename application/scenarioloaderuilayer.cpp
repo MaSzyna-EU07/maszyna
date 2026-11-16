@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/scenarioloaderuilayer.h"
 
 #include "utilities/Globals.h"
+#include "utilities/casedpath.h"
 #include "utilities/translation.h"
 #include <nlohmann/json.hpp>
 #include "utilities/Logs.h"
@@ -81,7 +82,7 @@ std::vector<std::string> scenarioloader_ui::get_random_trivia()
 	//std::string lang = Global.asLang;
 	WriteLog("Selected language: " + Global.asLang);
 	// Read file in binary mode to preserve UTF-8 encoding
-	std::ifstream f(triviaFile, std::ios::binary);
+	std::ifstream f(disk_path(triviaFile), std::ios::binary);
 	std::stringstream buffer;
 	buffer << f.rdbuf();
 	std::string fileContent = buffer.str();

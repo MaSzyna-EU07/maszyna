@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 
 #include "utilities/Globals.h"
+#include "utilities/casedpath.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 #include "simulation/simulation.h"
@@ -316,7 +317,7 @@ bool ui_layer::init(GLFWwindow *Window)
 
 	if (FileExists("fonts/dejavusans.ttf")) {
 		// Load basic font first
-		font_default = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusans.ttf", Global.ui_fontsize, &config, &ranges[0]);
+		font_default = m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/dejavusans.ttf").c_str(), Global.ui_fontsize, &config, &ranges[0]);
 		
 		// Add support for Chinese character ranges
 		if (font_default) {
@@ -328,7 +329,7 @@ bool ui_layer::init(GLFWwindow *Window)
 			// Use NotoSansSC-Regular.ttf font file
 			if (FileExists("fonts/NotoSansSC-Regular.ttf")) {
 				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
-				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf", Global.ui_fontsize, &chinese_config, chinese_ranges);
+				m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/NotoSansSC-Regular.ttf").c_str(), Global.ui_fontsize, &chinese_config, chinese_ranges);
 			}
 		}
 	}
@@ -336,7 +337,7 @@ bool ui_layer::init(GLFWwindow *Window)
 	if (FileExists("fonts/dejavusansmono.ttf")) {
 		ImFontConfig mono_config;
 		mono_config.GlyphRanges = &ranges[0]; // Basic Latin characters
-		font_mono = m_imguiio->Fonts->AddFontFromFileTTF("fonts/dejavusansmono.ttf", Global.ui_fontsize, &mono_config, &ranges[0]);
+		font_mono = m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/dejavusansmono.ttf").c_str(), Global.ui_fontsize, &mono_config, &ranges[0]);
 		
 		// Add Chinese character support for monospace font as well
 		if (font_mono) {
@@ -349,7 +350,7 @@ bool ui_layer::init(GLFWwindow *Window)
 			// Use NotoSansSC-Regular.ttf for monospace font as well
 			if (FileExists("fonts/NotoSansSC-Regular.ttf")) {
 				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
-				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansSC-Regular.ttf", Global.ui_fontsize, &chinese_mono_config, chinese_ranges);
+				m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/NotoSansSC-Regular.ttf").c_str(), Global.ui_fontsize, &chinese_mono_config, chinese_ranges);
 			}
 		}
 	}
@@ -358,12 +359,12 @@ bool ui_layer::init(GLFWwindow *Window)
 		if (font_bold == nullptr && FileExists(bold))
 		{
 			ImFontConfig bold_config;
-			font_bold = m_imguiio->Fonts->AddFontFromFileTTF(bold, Global.ui_fontsize * 1.25f, &bold_config, &ranges[0]);
+			font_bold = m_imguiio->Fonts->AddFontFromFileTTF(disk_path(bold).c_str(), Global.ui_fontsize * 1.25f, &bold_config, &ranges[0]);
 		}
 	}
 	if (FileExists("fonts/bahnschrift.ttf")) {
 		ImFontConfig loading_config;
-		font_loading = m_imguiio->Fonts->AddFontFromFileTTF("fonts/bahnschrift.ttf", 48, &loading_config, &ranges[0]);
+		font_loading = m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/bahnschrift.ttf").c_str(), 48, &loading_config, &ranges[0]);
 		
 		// Add Chinese character support for loading font as well
 		if (font_loading) {
@@ -376,7 +377,7 @@ bool ui_layer::init(GLFWwindow *Window)
 			// Use NotoSansMonoCJKsc-Regular.ttf for loading font
 			if (FileExists("fonts/NotoSansMonoCJKsc-Regular.ttf")) {
 				const ImWchar* chinese_ranges = m_imguiio->Fonts->GetGlyphRangesChineseFull();
-				m_imguiio->Fonts->AddFontFromFileTTF("fonts/NotoSansMonoCJKsc-Regular.ttf", 48, &chinese_loading_config, chinese_ranges);
+				m_imguiio->Fonts->AddFontFromFileTTF(disk_path("fonts/NotoSansMonoCJKsc-Regular.ttf").c_str(), 48, &chinese_loading_config, chinese_ranges);
 			}
 		}
 	}

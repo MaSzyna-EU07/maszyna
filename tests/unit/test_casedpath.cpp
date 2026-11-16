@@ -586,3 +586,127 @@ TEST_CASE("cased path: the timetable is found the way the game opens it, through
 	cased_path_forget(folder.path("scenery"));
 	cased_path_forget_all();
 }
+
+// the files of the managers (textures, materials, models, sounds) -------------------------------------------------------
+
+namespace {
+
+// the names a texture is looked for under, as texture_manager::find_on_disk() makes them (model/Texture.cpp)
+std::vector<std::string> texture_names(std::string const &Texturepath, std::string const &Name) {
+	return {Texturepath + Name, Name, "textures/" + Name};
+}
+std::vector<std::string> const texture_extensions{".dds", ".tga", ".ktx", ".png", ".bmp", ".jpg", ".tex"};
+
+} // namespace
+
+TEST_CASE("cased path: of the names and extensions, the first one there is given as it was asked for") {
+	fake_index fake;
+	fake.disk.add("dynamic/PKP/EU07_v1/Skin1.DDS");
+	fake.disk.add("dynamic/PKP/EU07_v1/Tor/Szyna.PNG");
+	fake.disk.add("textures/Tor/Szyna.TGA");
+	fake.disk.add("Models/Lok/EU07.e3d");
+	auto const exists{[&fake](std::string const &Path) { return false == fake.index.resolve(Path).empty(); }};
+
+	// the skin of a vehicle, in the folder of the vehicle: the name and the extension asked for, the key of the texture
+	auto const skin{cased::first_existing(texture_names("dynamic/pkp/eu07_v1/", "skin1"), texture_extensions, exists)};
+	CHECK(skin.first == "dynamic/pkp/eu07_v1/skin1");
+	CHECK(skin.second == ".dds");
+	// the file opened is the one on the disk
+	CHECK(fake.index.path_to_open(skin.first + skin.second) == "dynamic/PKP/EU07_v1/Skin1.DDS");
+
+	// each name with all the extensions before the next name, as on Windows: the .png in the folder of the vehicle comes
+	// before the .tga in textures/, though .tga is earlier on the list of extensions
+	auto const rail{cased::first_existing(texture_names("dynamic/pkp/eu07_v1/", "tor/szyna"), texture_extensions, exists)};
+	CHECK(rail.first == "dynamic/pkp/eu07_v1/tor/szyna");
+	CHECK(rail.second == ".png");
+	CHECK(fake.index.path_to_open(rail.first + rail.second) == "dynamic/PKP/EU07_v1/Tor/Szyna.PNG");
+	auto const common{cased::first_existing(texture_names("", "tor/szyna"), texture_extensions, exists)};
+	CHECK(common.first == "textures/tor/szyna");
+	CHECK(common.second == ".tga");
+	CHECK(fake.index.path_to_open(common.first + common.second) == "textures/Tor/Szyna.TGA");
+
+	// a model, as TModelsManager::find_on_disk() looks for it: the name, then in models/
+	auto const model{cased::first_existing({"lok/eu07", "models/lok/eu07"}, {".e3d", ".t3d"}, exists)};
+	CHECK(model.first == "models/lok/eu07");
+	CHECK(model.second == ".e3d");
+	CHECK(fake.index.path_to_open(model.first + model.second) == "Models/Lok/EU07.e3d");
+
+	// nothing there in any case
+	auto const none{cased::first_existing(texture_names("dynamic/pkp/eu07_v1/", "nothing"), texture_extensions, exists)};
+	CHECK(none.first.empty());
+	CHECK(none.second.empty());
+	CHECK(cased::first_existing({}, texture_extensions, exists).first.empty());
+	CHECK(cased::first_existing({"textures/tor/szyna"}, {}, exists).first.empty());
+	// a file which isn't there is opened as named, for the opening to fail on it as it did
+	CHECK(fake.index.path_to_open("textures/nothing.dds") == "textures/nothing.dds");
+	CHECK(fake.index.path_to_open("").empty());
+
+	// each folder listed once, however many names and extensions were looked for in it
+	CHECK(fake.disk.listed("dynamic/PKP/EU07_v1") == 1);
+	CHECK(fake.disk.listed("textures") == 1);
+	CHECK(fake.disk.listed("textures/Tor") == 1);
+}
+
+TEST_CASE("cased path: a file named as it is on the disk is opened as named, its folders not listed") {
+	fake_index fake;
+	fake.disk.add("textures/tor/szyna.dds");
+	auto const exists{[&fake](std::string const &Path) { return false == fake.index.resolve(Path).empty(); }};
+	auto const rail{cased::first_existing(texture_names("", "tor/szyna"), texture_extensions, exists)};
+	CHECK(rail.first == "textures/tor/szyna");
+	CHECK(rail.second == ".dds");
+	CHECK(fake.index.path_to_open(rail.first + rail.second) == "textures/tor/szyna.dds");
+	// the folder "tor" of the names before isn't in the current folder, which is listed for it, once; the folders of the
+	// file there are not
+	CHECK(fake.disk.listed(".") == 1);
+	CHECK(fake.disk.listed("textures") == 0);
+	CHECK(fake.disk.listed("textures/tor") == 0);
+	CHECK(fake.index.listings() == 1);
+}
+
+TEST_CASE("cased path: FileExists() finds the file in another case under the name asked for, disk_path() opens it") {
+	test::scratch_folder const folder{"cased_assets"};
+	auto const sensitive{case_matters(folder)};
+	CAPTURE(sensitive);
+	auto const root{folder.path()};
+	folder.write("Dynamic/PKP/EU07_v1/Skin1.DDS", "skin");
+	folder.write("Sounds/Horn1.OGG", "horn");
+	folder.write("textures/szyna.dds", "rail");
+	auto const listings{cased::path_index().listings()};
+
+	// the texture, the way texture_manager::find_on_disk() asks: the name asked for, in lower case, is the key of the texture
+	auto const skin{FileExists(texture_names(root + "dynamic/pkp/eu07_v1/", "skin1"), texture_extensions)};
+	CHECK(skin.first == root + "dynamic/pkp/eu07_v1/skin1");
+	CHECK(skin.second == ".dds");
+	// opened at its path on the disk where the case matters, as named where it doesn't
+	auto const skinfile{disk_path(skin.first + skin.second)};
+	CHECK(skinfile == root + (sensitive ? "Dynamic/PKP/EU07_v1/Skin1.DDS" : "dynamic/pkp/eu07_v1/skin1.dds"));
+	std::ifstream skinstream{skinfile, std::ios::binary};
+	std::string content;
+	std::getline(skinstream, content);
+	CHECK(content == "skin");
+
+	// the sound, the way buffer_manager::find_file() asks
+	auto const horn{FileExists(std::vector<std::string>{root + "sounds/horn1"}, std::vector<std::string>{".ogg", ".flac", ".wav"})};
+	CHECK(horn.first == root + "sounds/horn1");
+	CHECK(horn.second == ".ogg");
+	CHECK(FileExists(root + "sounds/horn1.ogg"));
+	CHECK(cased::path_exists(disk_path(root + "sounds/horn1.ogg")));
+
+	// named as it is: the same name to open
+	CHECK(FileExists(root + "textures/szyna.dds"));
+	CHECK(disk_path(root + "textures/szyna.dds") == root + "textures/szyna.dds");
+	// not there in any case: not found, and opened as named, to fail as it did
+	CHECK_FALSE(FileExists(root + "sounds/nothing.ogg"));
+	CHECK(FileExists(std::vector<std::string>{root + "sounds/nothing"}, std::vector<std::string>{".ogg", ".wav"}).first.empty());
+	CHECK(disk_path(root + "sounds/nothing.ogg") == root + "sounds/nothing.ogg");
+	CHECK(disk_path("").empty());
+
+#ifdef _WIN32
+	// on Windows the system finds the names in any case: nothing listed, the names to open are the ones given
+	CHECK(cased::path_index().listings() == listings);
+	CHECK(disk_path(root + "SOUNDS/HORN1.OGG") == root + "SOUNDS/HORN1.OGG");
+#else
+	static_cast<void>(listings);
+#endif
+	cased_path_forget_all();
+}

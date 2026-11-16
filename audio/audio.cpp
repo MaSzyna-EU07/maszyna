@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "model/ResourceManager.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 
 namespace audio {
 
@@ -35,7 +36,8 @@ decoded_sound decode_sound( std::string const &File ) {
 	SF_INFO si;
 	si.format = 0;
 
-	SNDFILE *sf = sf_open(File.c_str(), SFM_READ, &si);
+	// the name is the one asked for, the file may be named on the disk in another case
+	SNDFILE *sf = sf_open(disk_path(File).c_str(), SFM_READ, &si);
 
 	if (sf == nullptr)
 		throw std::runtime_error("sound: sf_open failed");
@@ -218,7 +220,7 @@ openal_buffer::fetch_caption() {
     captionfilename += "-" + Global.asLang + ".txt"; // już może być w różnych językach
     if( true == FileExists( captionfilename ) ) {
         // wczytanie
-        std::ifstream inputfile( captionfilename );
+        std::ifstream inputfile( disk_path( captionfilename ) );
         caption.assign( std::istreambuf_iterator<char>( inputfile ), std::istreambuf_iterator<char>() );
     }
 }

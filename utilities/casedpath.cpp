@@ -162,6 +162,12 @@ std::string index::resolve(std::string_view const Path)
 	return resolve_in_any_case(Path);
 }
 
+std::string index::path_to_open(std::string_view const Path)
+{
+	auto resolved{resolve(Path)};
+	return resolved.empty() ? std::string{Path} : resolved;
+}
+
 std::string index::resolve_in_any_case(std::string_view const Path)
 {
 	if (Path.empty())
@@ -300,6 +306,16 @@ index &path_index()
 	return instance;
 }
 
+std::pair<std::string, std::string> first_existing(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions,
+                                                   path_probe const &Exists)
+{
+	for (auto const &name : Names)
+		for (auto const &extension : Extensions)
+			if (Exists(name + extension))
+				return {name, extension};
+	return {};
+}
+
 } // namespace cased
 
 std::string cased_path(std::string_view const Path)
@@ -309,6 +325,16 @@ std::string cased_path(std::string_view const Path)
 	return (false == path.empty() && cased::path_exists(path)) ? path : std::string{};
 #else
 	return cased::path_index().resolve(Path);
+#endif
+}
+
+std::string disk_path(std::string_view const Path)
+{
+#ifdef _WIN32
+	// the system finds the name in any case itself
+	return std::string{Path};
+#else
+	return cased::path_index().path_to_open(Path);
 #endif
 }
 

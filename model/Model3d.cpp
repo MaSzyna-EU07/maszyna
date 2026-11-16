@@ -18,6 +18,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "simulation/simulation.h"
@@ -2653,7 +2654,8 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	std::unique_ptr<char[]> filedata;
 	std::size_t filesize{0};
 	{
-		std::ifstream input(FileName, std::ios::binary | std::ios::ate);
+		// the name is the one asked for, the file may be named on the disk in another case
+		std::ifstream input(disk_path(FileName), std::ios::binary | std::ios::ate);
 		auto const length{input.tellg()};
 		if (length > 0)
 		{

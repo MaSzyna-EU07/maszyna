@@ -514,7 +514,12 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 
 bool FileExists(std::string const &Filename)
 {
+#ifdef _WIN32
 	return std::filesystem::exists(Filename);
+#else
+	// the folders on the way in another case too (utilities/casedpath.h). the file is then opened through disk_path()
+	return std::filesystem::exists(Filename) || false == cased::path_index().resolve_in_any_case(Filename).empty();
+#endif
 }
 
 std::string FileCased(std::filesystem::path const &Filename)
@@ -534,19 +539,7 @@ std::string FileCased(std::filesystem::path const &Filename)
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
 {
-
-	for (auto const &name : Names)
-	{
-		for (auto const &extension : Extensions)
-		{
-			if (FileExists(name + extension))
-			{
-				return {name, extension};
-			}
-		}
-	}
-	// nothing found
-	return {{}, {}};
+	return cased::first_existing(Names, Extensions, [](std::string const &Path) { return FileExists(Path); });
 }
 
 // returns time of last modification for specified file

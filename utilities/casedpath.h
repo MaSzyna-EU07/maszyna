@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // Files named in another case than they have on the disk.
@@ -66,6 +67,9 @@ class index
 	std::string resolve(std::string_view Path);
 	// as resolve(), when the path as given is known not to be there
 	std::string resolve_in_any_case(std::string_view Path);
+	// the path to open the file with: as resolve(), or the path given when it isn't there in any case, for the opening to
+	// fail on it as it did
+	std::string path_to_open(std::string_view Path);
 
 	// the content of the folder changed (a file written, removed, renamed): it's listed again when needed. the folder is
 	// named in any case, any form normal_path() makes the same
@@ -100,12 +104,21 @@ class index
 // the index of the files of the game, which cased_path() looks in where the case matters
 index &path_index();
 
+// the first name with the first extension which is there, as Exists tells: each name with all the extensions, before the
+// next name. the name and the extension are given back as they were asked for, not as they are on the disk, being the
+// keys the managers of textures, materials, models and sounds keep the files under; a pair of empty texts if none is there
+std::pair<std::string, std::string> first_existing(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions,
+                                                   path_probe const &Exists);
+
 } // namespace cased
 
 // the file or the folder as it is on the disk: the path given if it's there, the path with its names on the disk if it's
 // there in another case, empty if it isn't there at all. on Windows the system finds a name in any case itself, so there
 // it's only the path given if it's there, or empty
 std::string cased_path(std::string_view Path);
+// the path to open a file of the game with, which FileExists() found under the name the game asked for: the path as it is
+// on the disk where it's there in another case, otherwise the path given. on Windows the path given, with no look at the disk
+std::string disk_path(std::string_view Path);
 // the content of the folder changed, see cased::index::forget(); nothing to do on Windows
 void cased_path_forget(std::string_view Directory);
 void cased_path_forget_all();

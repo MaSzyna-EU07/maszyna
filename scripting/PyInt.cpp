@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/casedpath.h"
 #include "utilities/dictionary.h"
 
 #ifdef __GNUC__
@@ -443,7 +444,7 @@ auto python_taskqueue::run_file(std::string const &File, std::string const &Path
 		return false;
 	}
 
-	std::ifstream inputfile{filepath + fileextension};
+	std::ifstream inputfile{disk_path(filepath + fileextension)};
 	std::string input;
 	input.assign(std::istreambuf_iterator<char>(inputfile), std::istreambuf_iterator<char>());
 

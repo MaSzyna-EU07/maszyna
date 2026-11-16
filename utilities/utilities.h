@@ -221,12 +221,15 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
+// whether the file or the folder is there. where the case matters (Linux) also named in another case, files and folders: the
+// file is then to be opened through disk_path() (utilities/casedpath.h), the name given stays the key it's kept under
 bool FileExists(std::string const &Filename);
 // the file as it's named on the disk when only the case of its name, or of the folders it's in, differs, as in the sceneries
 // made on Windows; empty when there's none. on Windows, finding the names in any case itself, the file given or none.
 // see cased_path() in utilities/casedpath.h
 std::string FileCased(std::filesystem::path const &Filename);
 
+// the first name with the first extension which FileExists(), as they were given (see cased::first_existing()); empty if none
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
