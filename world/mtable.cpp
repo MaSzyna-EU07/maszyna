@@ -277,6 +277,16 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
         // Ra 2014-09: ustalić zasady wyznaczenia pierwotnego pliku przy przesuniętych rozkładach
         // (kolejny pociąg dostaje numer +2)
         fin.open(s.c_str()); // otwieranie pliku
+		if (false == fin.is_open())
+		{
+			// the name comes from the scenery lowercased, the file may be named in another case, as the timetables of
+			// galicja2000 are (GE#542); on Windows the file is found in any case already, FileCased() gives nothing new there
+			if (auto const cased{FileCased(s)}; false == cased.empty() && cased != s)
+			{
+				fin.clear();
+				fin.open(cased.c_str());
+			}
+		}
 		replace_slashes(s);
 
         if (!fin.is_open())

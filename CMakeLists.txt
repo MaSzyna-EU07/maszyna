@@ -540,6 +540,7 @@ set(CORE_SOURCES
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
+"utilities/casedpath.cpp"
 "scripting/ladderlogic.cpp"
 "scripting/scriptscreenrules.cpp"
 "scripting/scriptscreenkernels.cpp"

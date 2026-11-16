@@ -27,6 +27,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#endif
 
 #include "utilities/utilities.h"
+#include "utilities/casedpath.h"
 #include "utilities/Globals.h"
 #include "utilities/parser.h"
 #include "utilities/U8.h"
@@ -526,13 +527,8 @@ std::string FileCased(std::filesystem::path const &Filename)
 	// code page to throw on
 	return {};
 #else
-	// only the name of the file itself, a folder named in another case isn't found
-	auto const directory{Filename.has_parent_path() ? Filename.parent_path() : std::filesystem::path{"."}};
-	auto const wanted{ToLower(Filename.filename().string())};
-	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
-		if (ToLower(entry->path().filename().string()) == wanted)
-			return Filename.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
-	return {};
+	// the folders on the way in another case too, each listed once (utilities/casedpath.h)
+	return cased::path_index().resolve_in_any_case(Filename.string());
 #endif
 }
 

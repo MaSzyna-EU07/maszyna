@@ -64,7 +64,7 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 		std::ifstream file(name, std::ios_base::binary);
 		if (file.fail())
 		{
-			// named in another case than it's on the disk
+			// named in another case than it's on the disk, the file or the folders it's in (includes, .fiz, .mmd, .mat, ...)
 			if (auto const cased{FileCased(name.string())}; false == cased.empty())
 			{
 				file.clear();

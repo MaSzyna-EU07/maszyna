@@ -572,6 +572,20 @@ TEST_CASE("parser: a file named in another case than on the disk is found") {
 	CHECK(rest(parser) == "found");
 }
 
+TEST_CASE("parser: a file in folders named in another case than on the disk is found, an included one too") {
+	test::scratch_folder const folder{"parser_folder_case"};
+	folder.write("Braniewo/Base.CTR", "base (p1)");
+	folder.write("Braniewo/Rozklady/Deep/Last.Inc", "last");
+	// read in the case the game gives the names in, lowered
+	cParser file("braniewo/base.ctr", cParser::buffer_FILE, folder.path());
+	CHECK(file.ok());
+	CHECK(rest(file) == "base|(p1)");
+	cParser include("a include braniewo/base.ctr X end b", cParser::buffer_TEXT, folder.path());
+	CHECK(rest(include) == "a|base|x|b");
+	cParser deep("include BRANIEWO\\rozklady\\deep\\last.inc end", cParser::buffer_TEXT, folder.path());
+	CHECK(rest(deep) == "last");
+}
+
 TEST_CASE("parser: a file which isn't there gives a failed parser with nothing to read") {
 	test::scratch_folder const folder{"parser_missing"};
 	cParser parser("nothing.txt", cParser::buffer_FILE, folder.path());
