@@ -419,6 +419,15 @@ opengl_renderer::Render() {
     // add user interface
     setup_units( true, false, false );
     ::glPushClientAttrib( GL_CLIENT_VERTEX_ARRAY_BIT );
+    // the arrays the scene left enabled point into the buffer of whatever was drawn last; the ui sets up
+    // the vertex, colour and texture coordinates of the active unit only, so the driver would go on reading
+    // the rest with the indices of the ui, past the end of that buffer once the ui has more vertices than it
+    for( auto const unit : m_geometry.units().texture ) {
+        ::glClientActiveTexture( GL_TEXTURE0 + unit );
+        ::glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+    }
+    ::glDisableClientState( GL_NORMAL_ARRAY );
+    ::glDisableClientState( GL_COLOR_ARRAY );
     ::glClientActiveTexture( GL_TEXTURE0 + m_diffusetextureunit );
 
     // clear state for ui
