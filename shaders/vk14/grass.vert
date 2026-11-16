@@ -37,22 +37,12 @@ layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 2) uniform sampler
 // grid along a side, grass samples along a side less one)
 layout(set = MATERIAL_SET, binding = MATERIAL_TEXTURE_FIRST + 3) uniform sampler2D grass_kinds;
 
-vec4 grass_base[4];
-vec4 grass_tip[4];
-vec4 grass_shape[4];
-vec4 grass_dry[4];
 vec4 grass_share;
 vec4 grass_chunk;
 
-void read_kinds()
+// what every vertex needs, the blades left out too; the column of the kind is read once the blade is known to be drawn
+void read_chunk()
 {
-	for (int i = 0; i < 4; ++i)
-	{
-		grass_base[i] = texelFetch(grass_kinds, ivec2(i, 0), 0);
-		grass_tip[i] = texelFetch(grass_kinds, ivec2(i, 1), 0);
-		grass_shape[i] = texelFetch(grass_kinds, ivec2(i, 2), 0);
-		grass_dry[i] = texelFetch(grass_kinds, ivec2(i, 3), 0);
-	}
 	grass_share = texelFetch(grass_kinds, ivec2(0, 4), 0);
 	grass_chunk = texelFetch(grass_kinds, ivec2(1, 4), 0);
 }
@@ -128,7 +118,7 @@ void collapse()
 
 void main()
 {
-	read_kinds();
+	read_chunk();
 	int blade = gl_InstanceIndex;
 	// the numbers of the blade, drawn in the same order whatever becomes of them
 	uint state = hash(uint(blade) * 0x9E3779B9U ^ hash(uint(int(grass_part.z)) * 0x85EBCA6BU ^ hash(uint(int(grass_part.w)) + 0x27D4EB2FU)));
@@ -149,6 +139,15 @@ void main()
 	vec2 spot = fract(shift + float(blade) * vec2(0.7548776662466927, 0.5698402909980532));
 	vec2 point = grass_tile.xy + fract(spot + jitter * (0.7 / sqrt(grass_tile.w))) * grass_tile.z;
 	if (any(lessThan(point, vec2(0.0))) || any(greaterThanEqual(point, vec2(grass_chunk.x))))
+	{
+		collapse();
+		return;
+	}
+	// a blade past the share drawn at its distance along the ground is left out before its paint and its ground are read: its
+	// root is no nearer than that, and the share only falls with the distance
+	float rank = (float(blade) + 0.5) / grass_tile.w;
+	float flatdistance = length(point - grass_camera.xz);
+	if (flatdistance > grass_lod.z || rank >= lod_share(flatdistance))
 	{
 		collapse();
 		return;
@@ -180,19 +179,21 @@ void main()
 	vec3 root = vec3(point.x, ground(point, groundnormal), point.y);
 	float distance = length(root - grass_camera.xyz);
 	float share = lod_share(distance);
-	float rank = (float(blade) + 0.5) / grass_tile.w;
 	if (kind < 0 || hole > 0.5 || rank >= share || distance > grass_lod.z)
 	{
 		collapse();
 		return;
 	}
 
-	vec4 shape = grass_shape[kind];
+	vec4 kindbase = texelFetch(grass_kinds, ivec2(kind, 0), 0);
+	vec4 kindtip = texelFetch(grass_kinds, ivec2(kind, 1), 0);
+	vec4 shape = texelFetch(grass_kinds, ivec2(kind, 2), 0);
+	vec4 kinddry = texelFetch(grass_kinds, ivec2(kind, 3), 0);
 	float height = shape.x * (1.0 + shape.y * heightrandom);
 	// the last of the blades drawn at the distance grow in, and the grass fades out at the end of its reach
 	height *= 1.0 - smoothstep(share * 0.8, share, rank);
 	// lower in winter, growing in spring
-	float seasonal = grass_dry[kind].a;
+	float seasonal = kinddry.a;
 	height *= mix(1.0, grass_season.z, seasonal);
 	// where the paint thins out the blades get shorter
 	height *= mix(0.5, 1.0, clamp(density[kind] * 1.5, 0.0, 1.0));
@@ -230,8 +231,8 @@ void main()
 	// the seasons: some blades dry out (and green up) earlier than others, so a field turns gradually; a dry blade takes the
 	// dry colour, darker at its root. in spring the green is fresher
 	float dry = clamp(grass_season.x * seasonal * (0.6 + 0.8 * early), 0.0, 1.0);
-	vec3 bottom = mix(grass_base[kind].rgb, grass_dry[kind].rgb * 0.45, dry);
-	vec3 top = mix(grass_tip[kind].rgb, grass_dry[kind].rgb, dry);
+	vec3 bottom = mix(kindbase.rgb, kinddry.rgb * 0.45, dry);
+	vec3 top = mix(kindtip.rgb, kinddry.rgb, dry);
 	top *= mix(vec3(1.0), vec3(1.08, 1.22, 0.85), grass_season.y * seasonal * (1.0 - dry));
 	vec3 albedo = mix(bottom, top, t) * (0.85 + 0.3 * shade);
 	// the lower part of the blades is shaded by the others

@@ -722,13 +722,14 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			auto const cullface{draw.cullface};
 			draw.cullface = false;
 			apply_draw_state();
-			if (draw.set_dirty)
-			{
-				bind_pass_set();
-			}
 			auto const block{push_draw_block()};
 			if (block != ~0u)
 			{
+				// after the block, which may have opened a new window of the blocks the pass set is bound with
+				if (draw.set_dirty)
+				{
+					bind_pass_set();
+				}
 				if (draw.textures_dirty)
 				{
 					push_textures();
