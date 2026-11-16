@@ -62,6 +62,9 @@ public:
     bindingsetup_sequence&
         bindings() {
             return m_bindingsetups; }
+    bindingsetup_sequence const &
+        bindings() const {
+            return m_bindingsetups; }
     int
         binding( user_command const Command ) const;
     std::string

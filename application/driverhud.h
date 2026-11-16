@@ -25,14 +25,12 @@ class driver_hud
 	// the hud brought up to date with the simulation. Visible, Expanded: as the panel of the driving aid is set (F1).
 	// returns: whether the hud shows the driving aid, in place of the panel of imgui
 	bool update(bool Visible, bool Expanded);
-	// draws it, in the frame of imgui of the user interface of the driver
-	void render() const;
 
   private:
-	struct document;
+	struct state;
 	// the document is loaded the first time RmlUi runs
 	bool open();
 
-	std::unique_ptr<document> m_document;
+	std::unique_ptr<state> m_state;
 	bool m_failed{false}; // the document couldn't be loaded, it isn't tried again
 };

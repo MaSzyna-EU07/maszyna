@@ -209,6 +209,8 @@ set(SOURCES
 "application/driveruipanels.cpp"
 "application/drivingaid.cpp"
 "application/driverhud.cpp"
+"application/pausemenu.cpp"
+"application/inisettings.cpp"
 "application/rmluilayer.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
@@ -992,20 +994,23 @@ if (WITH_RMLUI)
 	target_link_libraries(${PROJECT_NAME} RmlUi::RmlUi)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_RMLUI)
 	# the glfw platform of the backends of RmlUi: the keys of glfw turned into those of RmlUi, the time and the clipboard
-	target_sources(${PROJECT_NAME} PRIVATE "application/rmluirender.cpp" "application/rmluipixels.cpp"
+	target_sources(${PROJECT_NAME} PRIVATE "application/rmluirender.cpp" "application/rmluipixels.cpp" "application/rmluidocument.cpp"
 		"${DEPS_DIR}/RmlUi/Backends/RmlUi_Platform_GLFW.cpp")
 	target_include_directories(${PROJECT_NAME} PRIVATE "${DEPS_DIR}/RmlUi/Backends")
 	set_source_files_properties("${DEPS_DIR}/RmlUi/Backends/RmlUi_Platform_GLFW.cpp" PROPERTIES
 		COMPILE_DEFINITIONS "GLFW_INCLUDE_NONE" SKIP_PRECOMPILE_HEADERS ON)
-	# the hud of the driver is built into the executable, used when the game folder has no ui/driverhud.rml of its own
-	set(DRIVER_HUD_RML "${CMAKE_SOURCE_DIR}/staticFiles/ui/driverhud.rml")
-	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${DRIVER_HUD_RML}")
-	file(SIZE "${DRIVER_HUD_RML}" DRIVER_HUD_RML_SIZE)
-	file(READ "${DRIVER_HUD_RML}" DRIVER_HUD_RML_HEX HEX)
-	string(REGEX REPLACE "(................................)" "\\1\n" DRIVER_HUD_RML_HEX "${DRIVER_HUD_RML_HEX}")
-	string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," DRIVER_HUD_RML_HEX "${DRIVER_HUD_RML_HEX}")
-	file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/driverhud_rml.inc"
-		CONTENT "constexpr std::array<unsigned char, ${DRIVER_HUD_RML_SIZE}> builtin_hud{\n${DRIVER_HUD_RML_HEX}};\n")
+	# the documents are built into the executable, used when the game folder has no ui/<name>.rml of its own: each one is
+	# written out as the bytes of the array <name>_rml in geninc/<name>_rml.inc
+	foreach(RML_NAME driverhud pausemenu)
+		set(RML_FILE "${CMAKE_SOURCE_DIR}/staticFiles/ui/${RML_NAME}.rml")
+		set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RML_FILE}")
+		file(SIZE "${RML_FILE}" RML_SIZE)
+		file(READ "${RML_FILE}" RML_HEX HEX)
+		string(REGEX REPLACE "(................................)" "\\1\n" RML_HEX "${RML_HEX}")
+		string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," RML_HEX "${RML_HEX}")
+		file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/${RML_NAME}_rml.inc"
+			CONTENT "constexpr std::array<unsigned char, ${RML_SIZE}> ${RML_NAME}_rml{\n${RML_HEX}};\n")
+	endforeach()
 endif()
 
 

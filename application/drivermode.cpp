@@ -149,7 +149,7 @@ std::pair<user_command, user_command> driver_mode::drivermode_input::command_fal
 driver_mode::driver_mode()
 {
 
-	m_userinterface = std::make_shared<driver_ui>();
+	m_userinterface = std::make_shared<driver_ui>(m_input.keyboard);
 }
 
 // initializes internal data structures of the mode. returns: true on success, false otherwise

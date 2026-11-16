@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "application/driveruipanels.h"
 #include "application/driverhud.h"
+#include "application/pausemenu.h"
 #include "input/command.h"
 
 #include "widgets/vehiclelist.h"
@@ -26,7 +27,8 @@ class driver_ui : public ui_layer {
 
 public:
 // constructors
-    driver_ui();
+    // Keyboard: the keys of the driver, which the menu of the pause lists
+    explicit driver_ui( keyboard_input const &Keyboard );
 // methods
 	void showDebugUI() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
@@ -71,4 +73,6 @@ private:
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
 	driver_hud m_hud; // the driving aid made with RmlUi, in place of m_aidpanel while RmlUi runs
+	pause_menu m_pausemenu; // the menu of the pause made with RmlUi, in place of the window of imgui while RmlUi runs
+	bool m_pausemenushown { false }; // m_pausemenu shows the pause
 };

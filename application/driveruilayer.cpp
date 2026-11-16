@@ -17,8 +17,9 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "model/AnimModel.h"
 #include "rendering/renderer.h"
+#include "application/rmluilayer.h"
 
-driver_ui::driver_ui()
+driver_ui::driver_ui(keyboard_input const &Keyboard) : m_pausemenu(Keyboard)
 {
 
 	clear_panels();
@@ -100,6 +101,9 @@ void driver_ui::showDebugUI()
 bool driver_ui::on_key(int const Key, int const Action)
 {
 	if (ui_layer::on_key(Key, Action))
+		return true;
+	// escape goes back to the first page of the menu of the pause, before it ends the pause
+	if (m_pausemenu.on_key(Key, Action))
 		return true;
 
 	switch (Key)
@@ -218,6 +222,7 @@ void driver_ui::update()
 
 	// before the panels are updated: the panel of the driving aid isn't, while the hud shows it
 	m_aidpanel.replaced = m_hud.update(m_aidpanel.is_open, m_aidpanel.is_expanded);
+	m_pausemenushown = m_pausemenu.update(m_paused);
 
 	ui_layer::update();
 }
@@ -240,8 +245,8 @@ void driver_ui::set_cursor(bool const Visible)
 // render() subclass details
 void driver_ui::render_()
 {
-	// into the background of imgui, under its windows
-	m_hud.render();
+	// the documents of RmlUi (the hud, the menu of the pause), into the background of imgui, under its windows
+	rmlui::render();
 
 	const std::string *rec_name = m_trainingcardpanel.is_recording();
 	if (rec_name && m_cameraviewpanel.set_state(true))
@@ -270,8 +275,9 @@ void driver_ui::render_()
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
-	else if (m_paused)
+	else if (m_paused && false == m_pausemenushown)
 	{
+		// the menu of RmlUi shows the pause in its place while RmlUi runs
 		ImGui::OpenPopup(popupheader);
 	}
 

@@ -1,0 +1,257 @@
+<rml>
+<!--
+	The menu of the pause drawn with RmlUi (ui.rmlui yes in eu07.ini): Esc pauses the simulation and shows it, Esc on its first
+	page ends the pause, on the other pages it goes back to the first one. A copy of this file is built into the program;
+	ui/pausemenu.rml in the game folder is used in its place.
+
+	The values of the data model pause_menu:
+	shown            the simulation is paused
+	page             the page shown: main, settings, controls or quit
+	ssr, ssr_name    the level of the screen space reflections, 0 to 3, and its name (translated)
+	shadow_ranks     1 to 3
+	shadow_angle     the angle of the sun below which there are no shadows, 0.2 to 1
+	catenary_range   metres to which the overhead wires are drawn as solids, 0 turns them off
+	volume           the main volume, 0 to 2
+	volume_vehicle, volume_positional, volume_ambient, radio   the volumes, 0 to 1
+	radio_shown      there's a vehicle driven, whose radio the volume is of
+	save_status      what became of saving the settings (translated), empty before
+	bindings         the keys of the controls: action (its description) and key
+	The settings take effect as they're changed. The events: resume ends the pause, show('page') shows a page, save writes the
+	settings into eu07.ini, quit ends the simulation.
+
+	The texts of the elements are looked up in the translations of the game (lang/*.po).
+-->
+<head>
+	<title>Pause menu</title>
+	<style>
+		body {
+			display: block;
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			font-family: DejaVu Sans;
+			font-size: 15dp;
+			color: #ffffff;
+		}
+		div, h1, h2 {
+			display: block;
+		}
+		#dim {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background-color: #15171b99;
+		}
+		#menu {
+			width: 520dp;
+			padding: 18dp 22dp 20dp 22dp;
+			background-color: #1e2327f2;
+			border: 1dp #3a424a;
+		}
+		h1 {
+			margin-bottom: 14dp;
+			font-size: 22dp;
+			font-weight: bold;
+		}
+		h2 {
+			margin-top: 14dp;
+			margin-bottom: 4dp;
+			color: #41c400;
+			font-size: 16dp;
+			font-weight: bold;
+		}
+		.button {
+			margin-top: 8dp;
+			padding: 8dp 12dp;
+			border: 1dp #3a424a;
+			background-color: #2a3036;
+			text-align: center;
+		}
+		.button:hover {
+			border-color: #177f00;
+			background-color: #164b0e;
+		}
+		.button:active {
+			background-color: #177f00;
+		}
+		.buttons {
+			display: flex;
+			flex-direction: row;
+			margin-top: 12dp;
+		}
+		.buttons .button {
+			flex: 1;
+			margin-right: 8dp;
+		}
+		.row {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			margin-top: 8dp;
+		}
+		.name {
+			width: 220dp;
+			color: #d0d4d8;
+		}
+		.value {
+			width: 90dp;
+			text-align: right;
+		}
+		input.range {
+			width: 160dp;
+			height: 18dp;
+		}
+		input.range slidertrack {
+			margin-top: 7dp;
+			height: 4dp;
+			background-color: #3a424a;
+		}
+		input.range sliderbar {
+			margin-left: -6dp;
+			margin-right: -6dp;
+			width: 12dp;
+			height: 18dp;
+			background-color: #41c400;
+		}
+		input.range sliderbar:hover, input.range sliderbar:active {
+			background-color: #7be04a;
+		}
+		input.range sliderarrowdec, input.range sliderarrowinc {
+			width: 0;
+			height: 0;
+		}
+		.status {
+			margin-top: 12dp;
+			color: #ffcc33;
+		}
+		#bindings {
+			height: 420dp;
+			overflow-y: auto;
+		}
+		.binding {
+			display: flex;
+			flex-direction: row;
+			padding: 4dp 4dp;
+			border-bottom: 1dp #2a3036;
+		}
+		.binding .action {
+			flex: 1;
+		}
+		.binding .key {
+			width: 160dp;
+			color: #41c400;
+			text-align: right;
+		}
+		scrollbarvertical {
+			width: 10dp;
+		}
+		scrollbarvertical slidertrack {
+			background-color: #15171b;
+		}
+		scrollbarvertical sliderbar {
+			min-height: 30dp;
+			background-color: #3a424a;
+		}
+		scrollbarvertical sliderbar:hover, scrollbarvertical sliderbar:active {
+			background-color: #5a636c;
+		}
+		scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc {
+			width: 0;
+			height: 0;
+		}
+	</style>
+</head>
+<body data-model="pause_menu">
+	<div id="dim" data-if="shown">
+		<div id="menu">
+			<div data-if="page == 'main'">
+				<h1>Simulation Paused</h1>
+				<div class="button" data-event-click="resume">Resume</div>
+				<div class="button" data-event-click="show('settings')">Settings</div>
+				<div class="button" data-event-click="show('controls')">Controls</div>
+				<div class="button" data-event-click="show('quit')">Quit</div>
+			</div>
+			<div data-if="page == 'settings'">
+				<h1>Settings</h1>
+				<h2>Graphics</h2>
+				<div class="row">
+					<span class="name">Reflections</span>
+					<input type="range" min="0" max="3" step="1" data-value="ssr"/>
+					<span class="value">{{ssr_name}}</span>
+				</div>
+				<div class="row">
+					<span class="name">Shadow ranks</span>
+					<input type="range" min="1" max="3" step="1" data-value="shadow_ranks"/>
+					<span class="value">{{shadow_ranks}}</span>
+				</div>
+				<div class="row">
+					<span class="name">Shadow angle cutoff</span>
+					<input type="range" min="0.2" max="1" step="0.05" data-value="shadow_angle"/>
+					<span class="value">{{shadow_angle | format(2)}}</span>
+				</div>
+				<div class="row">
+					<span class="name">3D overhead wires range</span>
+					<input type="range" min="0" max="500" step="10" data-value="catenary_range"/>
+					<span class="value">{{catenary_range | format(0)}} m</span>
+				</div>
+				<h2>Sound</h2>
+				<div class="row">
+					<span class="name">Main audio volume</span>
+					<input type="range" min="0" max="2" step="0.05" data-value="volume"/>
+					<span class="value">{{volume * 100 | format(0)}} %</span>
+				</div>
+				<div class="row">
+					<span class="name">Vehicle sounds</span>
+					<input type="range" min="0" max="1" step="0.05" data-value="volume_vehicle"/>
+					<span class="value">{{volume_vehicle * 100 | format(0)}} %</span>
+				</div>
+				<div class="row">
+					<span class="name">Positional sounds</span>
+					<input type="range" min="0" max="1" step="0.05" data-value="volume_positional"/>
+					<span class="value">{{volume_positional * 100 | format(0)}} %</span>
+				</div>
+				<div class="row">
+					<span class="name">Ambient sounds</span>
+					<input type="range" min="0" max="1" step="0.05" data-value="volume_ambient"/>
+					<span class="value">{{volume_ambient * 100 | format(0)}} %</span>
+				</div>
+				<div class="row" data-if="radio_shown">
+					<span class="name">Vehicle radio volume</span>
+					<input type="range" min="0" max="1" step="0.05" data-value="radio"/>
+					<span class="value">{{radio * 100 | format(0)}} %</span>
+				</div>
+				<div class="status" data-if="save_status != ''">{{save_status}}</div>
+				<div class="buttons">
+					<div class="button" data-event-click="save">Save</div>
+					<div class="button" data-event-click="show('main')">Back</div>
+				</div>
+			</div>
+			<div data-if="page == 'controls'">
+				<h1>Controls</h1>
+				<div id="bindings">
+					<div class="binding" data-for="binding : bindings">
+						<span class="action">{{binding.action}}</span>
+						<span class="key">{{binding.key}}</span>
+					</div>
+				</div>
+				<div class="button" data-event-click="show('main')">Back</div>
+			</div>
+			<div data-if="page == 'quit'">
+				<h1>Quit simulation?</h1>
+				<div class="buttons">
+					<div class="button" data-event-click="quit">Yes</div>
+					<div class="button" data-event-click="show('main')">No</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+</rml>

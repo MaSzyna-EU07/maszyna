@@ -21,20 +21,15 @@ http://mozilla.org/MPL/2.0/.
 #include <RmlUi/Core.h>
 
 #include "application/driveruipanels.h"
+#include "application/rmluidocument.h"
 #include "application/rmluilayer.h"
 #include "input/command.h"
-#include "utilities/Logs.h"
 #include "utilities/translation.h"
-#include "utilities/utilities.h"
 
 namespace
 {
 
-constexpr std::string_view model_name{"driver_hud"};
-// the hud of the game folder, which the one built in stands in for
-constexpr std::string_view hud_file{"ui/driverhud.rml"};
-
-// staticFiles/ui/driverhud.rml of the sources, written out by CMake as the bytes of builtin_hud
+// staticFiles/ui/driverhud.rml of the sources, written out by CMake as the bytes of driverhud_rml
 #include "driverhud_rml.inc"
 
 // the values of the data model of the document, see staticFiles/ui/driverhud.rml
@@ -135,67 +130,30 @@ void toggle_autopilot(bool const Autopilot)
 	relay.post(Autopilot ? user_command::aidriverdisable : user_command::aidriverenable, 0.0, 0.0, GLFW_PRESS, 0);
 }
 
-Rml::ElementDocument *load_document(Rml::Context &Context)
-{
-	Rml::String const file{hud_file};
-	if (FileExists(file))
-	{
-		WriteLog("rmlui: the hud of the driver from " + file);
-		return Context.LoadDocument(file);
-	}
-	// relative paths in the document lead to the folder ui of the game, as they would from the file
-	return Context.LoadDocumentFromMemory(Rml::String(builtin_hud.begin(), builtin_hud.end()), file);
-}
-
 } // namespace
 
-struct driver_hud::document
+struct driver_hud::state
 {
 	hud_values values;
-	Rml::DataModelHandle model;
-	Rml::ElementDocument *element{nullptr};
+	rmlui::document document;
 };
 
 driver_hud::driver_hud() = default;
 
-driver_hud::~driver_hud()
-{
-	// with RmlUi ended, the document went with it
-	auto *context{rmlui::context()};
-	if (m_document == nullptr || context == nullptr)
-		return;
-	m_document->element->Close();
-	// the document is unloaded with the update, the data model can go then
-	context->Update();
-	context->RemoveDataModel(Rml::String{model_name});
-}
+driver_hud::~driver_hud() = default;
 
 bool driver_hud::open()
 {
-	auto *context{rmlui::context()};
-	if (context == nullptr)
+	auto opened{std::make_unique<state>()};
+	auto const bound = [values = &opened->values](Rml::DataModelConstructor &Constructor) {
+		bind(Constructor, *values);
+		Constructor.BindEventCallback("toggle_autopilot", [values](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { toggle_autopilot(values->autopilot); });
+	};
+	if (false == opened->document.open("driver_hud", "ui/driverhud.rml", driverhud_rml, bound))
 		return false;
-	auto opened{std::make_unique<document>()};
-	auto constructor{context->CreateDataModel(Rml::String{model_name})};
-	if (!constructor)
-	{
-		ErrorLog("rmlui: can't make the data model of the hud of the driver, the driving aid stays in the panel of imgui");
-		return false;
-	}
-	bind(constructor, opened->values);
-	constructor.BindEventCallback("toggle_autopilot",
-	                              [values = &opened->values](Rml::DataModelHandle, Rml::Event &, Rml::VariantList const &) { toggle_autopilot(values->autopilot); });
-	opened->model = constructor.GetModelHandle();
-	opened->element = load_document(*context);
-	if (opened->element == nullptr)
-	{
-		ErrorLog("rmlui: can't load the hud of the driver, the driving aid stays in the panel of imgui");
-		context->RemoveDataModel(Rml::String{model_name});
-		return false;
-	}
 	// shown without taking the focus, the keys go on to the simulation
-	opened->element->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
-	m_document = std::move(opened);
+	opened->document.show(false);
+	m_state = std::move(opened);
 	return true;
 }
 
@@ -203,30 +161,24 @@ bool driver_hud::update(bool const Visible, bool const Expanded)
 {
 	if (m_failed || false == rmlui::active())
 		return false;
-	if (m_document == nullptr && false == open())
+	if (m_state == nullptr && false == open())
 	{
 		m_failed = true;
 		return false;
 	}
-	auto &values{m_document->values};
+	auto &values{m_state->values};
 	auto const aid{Visible ? drivingaid_panel::read() : std::nullopt};
 	values.shown = aid.has_value();
 	values.expanded = Expanded;
 	if (aid.has_value())
 		fill(values, *aid);
-	m_document->model.DirtyAllVariables();
+	m_state->document.dirty();
 	return true;
-}
-
-void driver_hud::render() const
-{
-	if (m_document != nullptr)
-		rmlui::render();
 }
 
 #else
 
-struct driver_hud::document
+struct driver_hud::state
 {
 };
 
@@ -242,11 +194,6 @@ bool driver_hud::open()
 bool driver_hud::update(bool, bool)
 {
 	return false;
-}
-
-void driver_hud::render() const
-{
-	// built without RmlUi
 }
 
 #endif

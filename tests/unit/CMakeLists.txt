@@ -34,6 +34,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# the limit ahead the driving aid tells of, and the colours of RmlUi as imgui draws them
 	"${CMAKE_SOURCE_DIR}/application/drivingaid.cpp"
 	"${CMAKE_SOURCE_DIR}/application/rmluipixels.cpp"
+	# the settings of the menu of the pause written into eu07.ini
+	"${CMAKE_SOURCE_DIR}/application/inisettings.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
