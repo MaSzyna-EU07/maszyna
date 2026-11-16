@@ -92,9 +92,21 @@ bool scene_walk::drawn_in_phase(TSubModel const *Submodel, int const Mask)
 	return ((Submodel->iAlpha & Submodel->iFlags & Mask) != 0) && (false == is_fake_glow(Submodel));
 }
 
+void scene_walk::hide_fake_glows(TAnimModel const *Instance)
+{
+	// the lamps are gathered around the camera of the simulation, within the range and the radius of their model
+	auto const reach{Global.gfx_lights_range + Instance->radius()};
+	m_fakeglowsinstance = ((Global.gfx_lights_range > 0.f) && (glm::length(Instance->location() - Global.pCamera.Pos) <= reach)) ? Instance : nullptr;
+}
+
 bool scene_walk::is_fake_glow(TSubModel const *Submodel)
 {
 	if (Global.gfx_lights_hideglow.empty() || (false == Global.gfx_lights_clustered) || (false == Global.gfx_lights_scenery) || (Submodel->m_material <= 0))
+	{
+		return false;
+	}
+	// only the model hide_fake_glows() picked, the one being drawn (not a vehicle, nor a model drawn after it)
+	if ((m_fakeglowsinstance == nullptr) || (TSubModel::iInstance != reinterpret_cast<std::uintptr_t>(m_fakeglowsinstance)))
 	{
 		return false;
 	}
@@ -2155,7 +2167,7 @@ void scene_walk::Render(TSubModel *Submodel)
 		if (Submodel->eType < TP_ROTATOR)
 		{
 			// renderowanie obiektów OpenGL
-			if (drawn_in_phase(Submodel, 0x1F))
+			if (Submodel->iAlpha & Submodel->iFlags & 0x1F)
 			{
 				// rysuj gdy element nieprzezroczysty
 
@@ -2850,6 +2862,7 @@ void scene_walk::Render_Alpha(TAnimModel *Instance)
     }
 
 	gfx::walk_sync::model_hold hold{Instance->pModel};
+	hide_fake_glows(Instance);
 	Instance->RaPrepare();
 	if (Instance->pModel)
 	{
