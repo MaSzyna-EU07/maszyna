@@ -943,11 +943,12 @@ TEST_CASE("collisions: locomotives put down inside each other don't crush, whate
 TEST_CASE("collisions: two coaches (36 t and 41.6 t) at 8 km/h don't crush, nor run into a wall (baltyk_sdm)") {
 	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};
-	auto const light{coach(32.0e3)};
-	auto const heavy{coach(37.6e3)};
+	auto const light{coach(34.3e3)};
+	auto const heavy{coach(39.9e3)};
 	{
 		vehicle check{light};
-		MESSAGE("the coaches: ", check->TotalMass / 1000.0, " t and ", vehicle{heavy}->TotalMass / 1000.0, " t");
+		CHECK(check->TotalMass == doctest::Approx(36.0e3).epsilon(0.01));
+		CHECK(vehicle{heavy}->TotalMass == doctest::Approx(41.6e3).epsilon(0.01));
 	}
 	for (auto const speed : {5.0, 8.0}) {
 		CAPTURE(speed);
@@ -1042,7 +1043,7 @@ TEST_CASE("collisions: vehicles put down with their buffers pressed in don't cru
 		flag_setting const everywhere{Global.coupler_physics_all, physics};
 		for (auto const overlap : {0.1, 0.3, 0.6}) {
 			CAPTURE(overlap);
-			for (auto const &[front, back] : {std::pair{definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d")}, std::pair{coach(32.0e3), coach(37.6e3)},
+			for (auto const &[front, back] : {std::pair{definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d")}, std::pair{coach(34.3e3), coach(39.9e3)},
 			                                  std::pair{definition::fiz("3wl_v2/3wl"), definition::fiz("4e_v1/4e")}}) {
 				auto const result{contact(front, back, 0.0, -overlap, 10.0)};
 				CHECK(result.crush == 0.0);
