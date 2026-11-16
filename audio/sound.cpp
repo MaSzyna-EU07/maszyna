@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 
 #include "audio/sound.h"
+#include "audio/soundvariants.h"
 #include "utilities/parser.h"
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"
@@ -17,6 +18,21 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "simulation/simulation.h"
 #include "audio/audiorenderer_extra.h"
+
+namespace {
+
+// where the listener is, as the soundproofing tables and the inside variants of the sounds see it
+int current_listener_location() {
+
+    auto const *listenervehicle { Global.pCamera.m_owner }; // nullptr in free roam mode
+    return sound_variants::listener_location(
+        Global.CabWindowOpen,
+        FreeFlyModeFlag,
+        listenervehicle != nullptr,
+        listenervehicle != nullptr ? listenervehicle->MoverParameters->CabOccupied : 0 );
+}
+
+} // namespace
 
 // constructors
 sound_source::sound_source( sound_placement const Placement, float const Range ) :
@@ -46,7 +62,7 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
     Input.getTokens( 1, true, "\n\r\t ,;" );
     if( Input.peek() == "{" ) {
         // block type config
-        while( true == deserialize_mapping( Input ) ) {
+        while( true == deserialize_mapping( Input, Chunkrange ) ) {
             // all work done by while()
         }
 
@@ -141,12 +157,22 @@ sound_source::deserialize( cParser &Input, sound_type const Legacytype, int cons
         m_sounds[ end ].buffer = null_handle;
     }
 
+    if( false == m_variants.empty()
+     && m_variants.front().is_combined() != is_combined() ) {
+        // the vehicle drives a sample table differently from a single sample, the variant has to be of the same kind
+        ErrorLog(
+            "Bad sound: inside variant of a " + std::string( is_combined() ? "sample table" : "single sample" )
+            + " sound is a " + ( m_variants.front().is_combined() ? "sample table" : "single sample" )
+            + ", ignored (" + Input.Name() + ")" );
+        m_variants.clear();
+    }
+
     return *this;
 }
 
 // imports member data pair from the config file
 bool
-sound_source::deserialize_mapping( cParser &Input ) {
+sound_source::deserialize_mapping( cParser &Input, int const Chunkrange ) {
     // token can be a key or block end
     std::string const key { Input.getToken<std::string>( true, "\n\r\t  ,;[]" ) };
 
@@ -182,6 +208,11 @@ sound_source::deserialize_mapping( cParser &Input ) {
             }
         }
         m_soundproofing = soundproofing;
+        m_explicit |= explicit_soundproofing;
+    }
+    else if( key == sound_variants::inside_key ) {
+        // optional variant heard instead of this definition by a listener enclosed in a vehicle
+        deserialize_variant( Input, Chunkrange );
     }
     else if( key.starts_with("sound") ) {
         // sound chunks, defined with key soundX where X = activation threshold
@@ -204,12 +235,14 @@ sound_source::deserialize_mapping( cParser &Input ) {
                 0.0f, 1.0f )
             * 100.0f / 2.0f };
         m_pitchvariation = variation == 0.0f ? 1.0f : 0.01f * static_cast<float>(LocalRandom(100.0 - variation, 100.0 + variation));
+        m_explicit |= explicit_pitchvariation;
     }
     else if( key == "startoffset:" ) {
         m_startoffset =
             std::clamp(
                 Input.getToken<float>( false, "\n\r\t ,;" ),
                 0.0f, 1.0f );
+        m_explicit |= explicit_startoffset;
     }
 	else if ( key.starts_with("pitch") ) {
         // sound chunk pitch, defined with key pitchX where X = activation threshold
@@ -244,6 +277,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
         auto lookup{ placements.find( value ) };
         if( lookup != placements.end() ) {
             m_placement = lookup->second;
+            m_explicit |= explicit_placement;
         }
     }
     else if( key == "offset:" ) {
@@ -253,6 +287,7 @@ sound_source::deserialize_mapping( cParser &Input ) {
             >> m_offset.x
             >> m_offset.y
             >> m_offset.z;
+        m_explicit |= explicit_offset;
     }
     else {
         // floating point properties
@@ -267,10 +302,43 @@ sound_source::deserialize_mapping( cParser &Input ) {
         if( lookup != properties.end() ) {
             Input.getTokens( 1, false, "\n\r\t ,;" );
             Input >> lookup->second;
+            if( key == "range:" ) {
+                m_explicit |= explicit_range;
+            }
         }
     }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
+}
+
+// reads the block of the inside variant and adds the variant, if it's usable
+void
+sound_source::deserialize_variant( cParser &Input, int const Chunkrange ) {
+
+    auto const block { sound_variants::capture_block( Input ) };
+    auto const location { Input.Name() + " (line " + std::to_string( Input.Line() ) + ")" };
+    if( true == block.empty() ) {
+        ErrorLog( "Bad sound: inside variant isn't a { } block, ignored (" + location + ")" );
+        return;
+    }
+    if( true == m_isvariant ) {
+        ErrorLog( "Bad sound: inside variant inside of an inside variant, ignored (" + location + ")" );
+        return;
+    }
+    if( false == m_variants.empty() ) {
+        ErrorLog( "Bad sound: more than one inside variant, the first one kept (" + location + ")" );
+        return;
+    }
+    sound_source variant { m_placement, m_range };
+    variant.m_isvariant = true;
+    variant.m_variantchosen = false;
+    cParser blockparser { block };
+    variant.deserialize( blockparser, sound_type::single, 0, Chunkrange );
+    if( true == variant.is_definition_empty() ) {
+        ErrorLog( "Bad sound: inside variant without a sound, ignored (" + location + ")" );
+        return;
+    }
+    m_variants.emplace_back( variant );
 }
 
 // imports values for initial, main and ending sounds from provided data stream
@@ -336,6 +404,10 @@ sound_source::copy_sounds( sound_source const &Source ) {
     for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
         chunkbuffer.playing = 0;
     }
+    m_variants.clear();
+    for( auto const &sourcevariant : Source.m_variants ) {
+        m_variants.emplace_back( sourcevariant ).copy_sounds( sourcevariant );
+    }
     return *this;
 }
 
@@ -343,8 +415,86 @@ sound_source::copy_sounds( sound_source const &Source ) {
 void
 sound_source::play( int const Flags ) {
 
+    if( true == m_variants.empty() ) {
+        play_definition( Flags );
+    }
+    else {
+        play_variants( Flags );
+    }
+}
+
+// plays the definition or its inside variant, whichever suits the listener, crossfading them when that changes
+void
+sound_source::play_variants( int const Flags ) {
+
     if( false == Global.bSoundEnabled
      || true == empty() ) {
+        return;
+    }
+    // the variant takes the emitter-specific pitch variation of the definition, so the pitch stays when they change
+    if( m_pitchvariation == 0.f ) {
+        m_pitchvariation = 0.01f * static_cast<float>( LocalRandom( 97.5, 102.5 ) );
+    }
+    auto &variant { m_variants.front() };
+    auto const insidechosen { sound_variants::select( true, current_listener_location() ) == sound_variants::choice::inside };
+    if( insidechosen != variant.m_variantchosen ) {
+        // the listener moved between the inside and the outside of the vehicles
+        auto &previous { insidechosen ? *this : variant };
+        auto &next { insidechosen ? variant : *this };
+        auto const previousplaying { previous.is_definition_playing() };
+        // crossfade, if there's anything to fade out
+        auto const switchtime { previousplaying ? audio::renderer.time() : -1.0e9 };
+        previous.m_variantchosen = false;
+        previous.m_variantswitchtime = switchtime;
+        next.m_variantchosen = true;
+        next.m_variantswitchtime = switchtime;
+        // what fades in continues a playing sound, without its opening bookend. it can also be an instance which faded out
+        // a moment ago and waits to be stopped, it fades back in instead
+        next.m_stop = false;
+        if( true == previousplaying ) {
+            next.m_playbeginning = false;
+        }
+    }
+    sync_variant( variant );
+    ( insidechosen ? variant : *this ).play_definition( Flags );
+    // the definition keeps the flags also when the variant plays, they re-activate event sounds
+    m_flags = Flags;
+}
+
+// gives the inside variant what it takes from this definition
+void
+sound_source::sync_variant( sound_source &Variant ) const {
+
+    Variant.m_owner = m_owner;
+    Variant.m_name = m_name;
+    Variant.m_properties.gain = m_properties.gain;
+    Variant.m_properties.pitch = m_properties.pitch;
+    if( false == TestFlag( Variant.m_explicit, explicit_offset ) ) {
+        Variant.m_offset = m_offset;
+    }
+    if( false == TestFlag( Variant.m_explicit, explicit_range ) ) {
+        Variant.m_range = m_range;
+    }
+    if( false == TestFlag( Variant.m_explicit, explicit_placement ) ) {
+        Variant.m_placement = m_placement;
+    }
+    if( false == TestFlag( Variant.m_explicit, explicit_soundproofing ) ) {
+        Variant.m_soundproofing = m_soundproofing;
+    }
+    if( false == TestFlag( Variant.m_explicit, explicit_pitchvariation ) ) {
+        Variant.m_pitchvariation = m_pitchvariation;
+    }
+    if( false == TestFlag( Variant.m_explicit, explicit_startoffset ) ) {
+        Variant.m_startoffset = m_startoffset;
+    }
+}
+
+// issues contextual play commands for the audio renderer, for this definition alone
+void
+sound_source::play_definition( int const Flags ) {
+
+    if( false == Global.bSoundEnabled
+     || true == is_definition_empty() ) {
         // if the sound is disabled altogether or nothing can be emitted from this source, no point wasting time
         return;
     }
@@ -390,7 +540,7 @@ sound_source::play( int const Flags ) {
 void
 sound_source::play_basic() {
 
-    if( false == is_playing() ) {
+    if( false == is_definition_playing() ) {
         // dispatch appropriate sound
         if( true == m_playbeginning
          && sound(sound_id::begin).buffer != null_handle) {
@@ -488,12 +638,23 @@ sound_source::play_event() {
 void
 sound_source::stop( bool const Skipend ) {
 
+    // only the definition chosen for the listener ends with its closing bookend
+    for( auto &variant : m_variants ) {
+        variant.stop_definition( Skipend || false == variant.m_variantchosen );
+    }
+    stop_definition( Skipend || false == m_variantchosen );
+}
+
+// stops currently active play commands of this definition alone
+void
+sound_source::stop_definition( bool const Skipend ) {
+
     // if the source was stopped on simulation side, we should play the opening bookend next time it's activated
     m_playbeginning = true;
     // clear the event flags to discern between manual stop and out-of-range/sound-end stop
     m_flags = 0;
 
-    if( false == is_playing() ) { return; }
+    if( false == is_definition_playing() ) { return; }
 
     m_stop = true;
 
@@ -516,6 +677,44 @@ sound_source::update( audio::openal_source &Source ) {
         // TBD, TODO: replace with a listener pattern to receive vehicle removal and cab change events and such?
         m_stop = true;
     }
+
+    if( false == m_isvariant
+     && true == m_variants.empty() ) {
+        update_definition( Source );
+        return;
+    }
+    // a definition with an inside variant, or the variant: both play at their crossfade volume
+    update_variant_fade();
+    auto const basegain { m_properties.gain };
+    m_properties.gain *= m_variantgain;
+    update_definition( Source );
+    m_properties.gain = basegain;
+}
+
+// updates the crossfade volume factor of a definition which has a variant, or is one
+void
+sound_source::update_variant_fade() {
+
+    if( false == TestFlag( m_flags, sound_flags::looping ) ) {
+        // single plays end on their own, in the definition they started in
+        m_variantgain = 1.f;
+        return;
+    }
+    m_variantgain =
+        sound_variants::crossfade_gain(
+            m_variantchosen,
+            audio::renderer.time() - m_variantswitchtime,
+            EU07_SOUND_VARIANTCROSSFADE );
+    if( false == m_variantchosen
+     && m_variantgain <= 0.f ) {
+        // faded out, no longer needed
+        m_stop = true;
+    }
+}
+
+// adjusts parameters of provided implementation-side sound source, for this definition alone
+void
+sound_source::update_definition( audio::openal_source &Source ) {
 
     if( sound( sound_id::main ).buffer != null_handle ) {
         // basic variant: single main sound, with optional bookends
@@ -554,7 +753,7 @@ sound_source::update_basic( audio::openal_source &Source ) {
             // kill the sound if stop was requested, unless it's sound bookend sample
             update_counter( soundhandle, -1 );
             Source.stop();
-            m_stop = is_playing(); // end the stop mode when all active sounds are dead
+            m_stop = is_definition_playing(); // end the stop mode when all active sounds are dead
             return;
         }
 /*
@@ -648,7 +847,7 @@ sound_source::update_combined( audio::openal_source &Source ) {
             // kill the sound if stop was requested, unless it's sound bookend sample
             Source.stop();
             update_counter( soundhandle, -1 );
-            if( false == is_playing() ) {
+            if( false == is_definition_playing() ) {
                 m_stop = false;
             }
             return;
@@ -834,6 +1033,9 @@ sound_source &
 sound_source::gain( float const Gain ) {
 
     m_properties.gain = std::clamp( Gain, 0.f, 2.f );
+    for( auto &variant : m_variants ) {
+        variant.gain( Gain );
+    }
     return *this;
 }
 
@@ -849,11 +1051,21 @@ sound_source &
 sound_source::pitch( float const Pitch ) {
 
     m_properties.pitch = Pitch;
+    for( auto &variant : m_variants ) {
+        variant.pitch( Pitch );
+    }
     return *this;
 }
 
 bool
 sound_source::empty() const {
+
+    return is_definition_empty()
+        && std::ranges::all_of( m_variants, []( sound_source const &Variant ) { return Variant.is_definition_empty(); } );
+}
+
+bool
+sound_source::is_definition_empty() const {
 
     // NOTE: we test only the main sound, won't bother playing potential bookends if this is missing
     return sound(sound_id::main).buffer == null_handle && m_soundchunksempty;
@@ -862,6 +1074,14 @@ sound_source::empty() const {
 // returns true if the source is emitting any sound
 bool
 sound_source::is_playing( bool const /*Includesoundends*/ ) const {
+
+    return is_definition_playing()
+        || std::ranges::any_of( m_variants, []( sound_source const &Variant ) { return Variant.is_definition_playing(); } );
+}
+
+// returns true if this definition alone emits any sound
+bool
+sound_source::is_definition_playing() const {
 
     auto isplaying { sound(sound_id::begin).playing > 0 || sound(sound_id::main).playing > 0 };
     if( false == isplaying
@@ -959,13 +1179,8 @@ sound_source::update_soundproofing() {
     // NOTE, HACK: current cab id can vary from -1 to +1, and we use higher priority values for open cab window and external views
     // we use this as modifier to force re-calculations when moving between compartments or changing window state
     auto const *listenervehicle { Global.pCamera.m_owner }; // nullptr in free roam mode
-    auto const occupiedcab { (
-        Global.CabWindowOpen ? 2 : // window view
-        FreeFlyModeFlag ? (
-            listenervehicle ?
-                3 : // external view
-                4 ) : // free roam view
-        listenervehicle->MoverParameters->CabOccupied ) }; // some internal view so we can be sure listener isn't a nullptr
+    // 2 window view, 3 external view, 4 free roam view, otherwise the occupied cab
+    auto const occupiedcab { current_listener_location() };
     // location-based gain factor:
     std::uintptr_t soundproofingstamp =
         reinterpret_cast<std::uintptr_t>( listenervehicle )
