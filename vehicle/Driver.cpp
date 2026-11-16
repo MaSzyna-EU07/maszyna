@@ -8853,6 +8853,8 @@ void TController::control_uphill_start() {
     }
     if( false == bUphillStart ) {
         if( ( std::abs( velocity ) < EU07_AI_NOMOVEMENT )
+         // the whole train at a stand, not only its head stopped for a moment while the train rolls back
+         && ( fConsistVelocity > -0.5 )
          && ( AccDesired > EU07_AI_NOACCELERATION )
          && ( VelDesired > 0.0 )
          && ( BrakeCtrlPosition > 0.0 ) ) { // only with the train brake still applied to hold the train
