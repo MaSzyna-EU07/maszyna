@@ -266,18 +266,10 @@ class scene_walk
 	virtual void walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges) {}
 	virtual void walk_cull_face(bool const Enabled) = 0;
 	// the glare of a lamp: drawn without the depth test, added to what is there; drawn only where the point of the light was
-	// seen (walk_light_query() of this point drawn just before it, when the backend has it: the opengl renderer uses
-	// the query at once and makes the glare as bright as the part of the point seen, the vulkan renderer uses the result of the
-	// last frame)
+	// seen (walk_light_query() of the last frame, when the backend has it)
 	virtual void walk_glare(bool const Enabled) = 0;
 	virtual void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) = 0;
 	virtual void walk_light_query(TSubModel *Submodel, bool const Begin) = 0;
-	// the point of the light drawn once more right after walk_light_query(), unseen and whole, for the backend which makes the
-	// glare as bright as the part of the point seen (the opengl renderer); by default nothing
-	virtual void walk_light_reference(gfx::geometry_handle const &Geometry)
-	{
-		// a backend which doesn't scale the glare by the part of the point seen has nothing to draw here
-	}
 	// what the backend may draw itself (the gpu culling of the opengl renderer); by default the walk draws everything
 	// the start of the walk of a region
 	virtual void walk_region_begin() {}
@@ -640,8 +632,6 @@ class scene_walk
 
   private:
 	static float editor_ortho_reach();
-	// the glare around a light point drawn just before, Lightcenter in view space
-	void Render_Glare(TSubModel *Submodel, glm::vec4 const &Lightcenter, bool Pointlight);
 };
 
 } // namespace gfx

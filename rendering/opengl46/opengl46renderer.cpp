@@ -5056,61 +5056,109 @@ void opengl46_renderer::walk_glare(bool const Enabled)
 	}
 }
 
+// the frames a result of the glare queries is good for: a point not drawn for longer may have something else in front of it now
+constexpr unsigned int GLARE_RESULT_FRAMES{2};
+// the frames after which the entries of points no longer drawn are dropped
+constexpr unsigned int GLARE_KEEP_FRAMES{600};
+
+opengl46_renderer::glare_visibility *opengl46_renderer::glare_entry(TSubModel const *Submodel, bool const Create)
+{
+	glare_key const key{Submodel, TSubModel::iInstance};
+	if (false == Create)
+	{
+		auto const lookup{m_glares.find(key)};
+		return (lookup != m_glares.end() ? &lookup->second : nullptr);
+	}
+	if (m_framestamp - m_glarepruned > GLARE_KEEP_FRAMES)
+	{
+		m_glarepruned = m_framestamp;
+		auto const framestamp{m_framestamp};
+		// a query whose result nobody reads any more is deleted along
+		std::erase_if(m_glares, [framestamp](auto const &Entry) { return framestamp - Entry.second.frame > GLARE_KEEP_FRAMES; });
+	}
+	return &m_glares.try_emplace(key).first->second;
+}
+
+void opengl46_renderer::glare_read(glare_visibility &Entry)
+{
+	// the results once the gpu has both of them, nothing waits for them
+	auto const seen{Entry.seen.result()};
+	if (false == seen.has_value())
+	{
+		return;
+	}
+	auto const all{Entry.all.result()};
+	if (false == all.has_value())
+	{
+		return;
+	}
+	Entry.pending = false;
+	Entry.share = (*all > 0 ? std::clamp(static_cast<float>(*seen) / static_cast<float>(*all), 0.f, 1.f) : 0.f);
+}
+
 void opengl46_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
 {
-	// billboard.frag scales the glare by the part of the point seen, when the samples were counted for it
-	auto const parameter{model_ubs.param[1].w};
-	model_ubs.param[1].w = (m_glaresamples ? 1.f : 0.f);
-	if (m_glaresamples)
-		m_glaressbo->bind_base();
-	if (Submodel->occlusion_query) {
-		glBeginConditionalRender(*Submodel->occlusion_query, GL_QUERY_WAIT);
+	if (false == gl::vao::use_vao)
+	{
 		draw(Geometry);
-		glEndConditionalRender();
+		return;
 	}
-	else
-		draw(Geometry);
-	model_ubs.param[1].w = parameter;
-	m_glaresamples = false;
+	// as bright as the part of the point seen in the main view, by the results of an earlier frame; none for a point not seen
+	// lately
+	auto const *entry{glare_entry(Submodel, false)};
+	if ((entry == nullptr) || (m_framestamp - entry->frame > GLARE_RESULT_FRAMES) || (entry->share <= 0.f))
+	{
+		return;
+	}
+	auto const opacity{model_ubs.param[0].w};
+	model_ubs.param[0].w = opacity * entry->share;
+	draw(Geometry);
+	model_ubs.param[0].w = opacity;
 }
 
 void opengl46_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 {
-	if (false == gl::vao::use_vao)
+	if ((false == gl::vao::use_vao) || (m_renderpass.draw_mode != rendermode::color) || (m_current_viewport == nullptr) || (false == m_current_viewport->main))
+	{
 		return;
-	if (Begin) {
-		m_glaresamples = false;
-		if (!Submodel->occlusion_query)
-			Submodel->occlusion_query.emplace(gl::query::SAMPLES_PASSED);
-		Submodel->occlusion_query->begin();
-		m_glarequerysubmodel = Submodel;
 	}
-	else
-		Submodel->occlusion_query->end();
-}
-
-void opengl46_renderer::walk_light_reference(gfx::geometry_handle const &Geometry)
-{
-	if ((false == gl::vao::use_vao) || (m_glarequerysubmodel == nullptr) || (false == m_glarequerysubmodel->occlusion_query.has_value()))
+	if (false == Begin)
+	{
+		if (m_glarequery == nullptr)
+		{
+			return;
+		}
+		m_glarequery->seen.end();
+		// the whole point, unseen: what the samples seen are compared with
+		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glDisable(GL_DEPTH_TEST);
+		m_glarequery->all.begin();
+		draw(Submodel->m_geometry.handle);
+		m_glarequery->all.end();
+		glEnable(GL_DEPTH_TEST);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		m_glarequery->pending = true;
+		m_glarequery = nullptr;
 		return;
-	auto const &seen{*m_glarequerysubmodel->occlusion_query};
-	m_glarequerysubmodel = nullptr;
-	if (!m_glarequery)
-		m_glarequery.emplace(gl::query::SAMPLES_PASSED);
-	if (!m_glaressbo)
-		m_glaressbo = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(2 * sizeof(GLuint)), gl::GLARE_SSBO_BINDING);
-	// the whole point, unseen: what the samples seen are compared with
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	glDisable(GL_DEPTH_TEST);
-	m_glarequery->begin();
-	draw(Geometry);
-	m_glarequery->end();
-	glEnable(GL_DEPTH_TEST);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	// the gpu writes the counts when they're done, no wait here
-	glGetQueryBufferObjectuiv(seen, *m_glaressbo, GL_QUERY_RESULT, 0);
-	glGetQueryBufferObjectuiv(*m_glarequery, *m_glaressbo, GL_QUERY_RESULT, static_cast<GLintptr>(sizeof(GLuint)));
-	m_glaresamples = true;
+	}
+	auto &entry{*glare_entry(Submodel, true)};
+	if (m_framestamp - entry.frame > GLARE_RESULT_FRAMES)
+	{
+		// not drawn lately: what it saw then is no good, it starts over unseen
+		entry.share = 0.f;
+		entry.pending = false;
+	}
+	entry.frame = m_framestamp;
+	if (entry.pending)
+	{
+		glare_read(entry);
+	}
+	if (false == entry.pending)
+	{
+		// new queries once the results of the last ones are read
+		entry.seen.begin();
+		m_glarequery = &entry;
+	}
 }
 
 void opengl46_renderer::walk_region_begin()

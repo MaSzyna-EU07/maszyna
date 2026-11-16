@@ -53,6 +53,10 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/temporalaa.h"
 #include "rendering/common/screenreflections.h"
 
+#include <cstdint>
+#include <functional>
+#include <unordered_map>
+
 // bare-bones render controller, in lack of anything better yet
 class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
   public:
@@ -228,7 +232,6 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	void walk_glare(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
-	void walk_light_reference(gfx::geometry_handle const &Geometry) override;
 	// the gpu culling of the instances, models and sleepers, the depth pass of the whole scene
 	void walk_region_begin() override;
 	void walk_editor_cursor() override;
@@ -849,13 +852,37 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	unsigned int m_editor_overlay_revision{0};
 	std::unique_ptr<gl::program> m_freespot_shader;
     std::unique_ptr<gl::program> m_billboard_shader;
-	// the glare of a lamp as bright as the part of its point seen: the submodel of the point whose query is under way
-	// (walk_light_query()), the samples of the point drawn without the depth test (walk_light_reference()), the samples counted
-	// for the point (seen and all) written there by the gpu, and whether they were for the glare which follows
-	TSubModel *m_glarequerysubmodel { nullptr };
-	std::optional<gl::query> m_glarequery;
-	std::unique_ptr<gl::ssbo> m_glaressbo;
-	bool m_glaresamples { false };
+	// the glare of a light point is as bright as the part of its point seen in the main view, counted by a pair of occlusion
+	// queries of its own for each light point of each model (the submodel and the instance drawn, TSubModel::iInstance): the
+	// samples which passed the depth test and all of them. the results are read once the gpu has them, without waiting, so the
+	// glare follows its point a frame or two late
+	struct glare_key
+	{
+		TSubModel const *submodel{nullptr};
+		std::uintptr_t instance{0};
+		bool operator==(glare_key const &) const = default;
+	};
+	struct glare_key_hash
+	{
+		std::size_t operator()(glare_key const &Key) const
+		{
+			return std::hash<void const *>{}(Key.submodel) ^ (std::hash<std::uintptr_t>{}(Key.instance) * 31u);
+		}
+	};
+	struct glare_visibility
+	{
+		gl::query seen{gl::query::SAMPLES_PASSED};
+		gl::query all{gl::query::SAMPLES_PASSED};
+		bool pending{false}; // the queries were issued and their results aren't read yet
+		float share{0.f}; // the part of the point seen, by the last results read
+		unsigned int frame{0}; // the frame the point was last drawn in the main view
+	};
+	// the visibility of the point the walk draws, for the queries around it (walk_light_query())
+	glare_visibility *glare_entry(TSubModel const *Submodel, bool Create);
+	static void glare_read(glare_visibility &Entry);
+	std::unordered_map<glare_key, glare_visibility, glare_key_hash> m_glares;
+	glare_visibility *m_glarequery{nullptr}; // the entry whose queries are under way
+	unsigned int m_glarepruned{0}; // the frame the entries of points no longer drawn were last dropped
     std::unique_ptr<gl::program> m_celestial_shader;
     std::unique_ptr<gl::program> m_hiddenarea_shader;
     std::unique_ptr<gl::program> m_copy_shader;

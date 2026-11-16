@@ -3110,44 +3110,6 @@ void scene_walk::Render_Alpha_text(TSubModel *Submodel)
 	}
 }
 
-void scene_walk::Render_Glare(TSubModel *Submodel, glm::vec4 const &Lightcenter, bool const Pointlight)
-{
-	// luminosity at night is at level of ~0.1, so the overall resulting transparency in clear conditions is ~0.5 at full 'brightness'
-	auto glarelevel{std::clamp(std::max<float>(static_cast<float>(0.6f - Global.fLuminance), // reduce the glare in bright daylight
-		                                  Global.Overcast - 1.f), // ensure some glare in rainy/foggy conditions
-		                  0.f, 1.f)};
-	// view angle attenuation
-	float const anglefactor{Pointlight ? 1.f : std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
-
-	glarelevel *= anglefactor;
-
-	if (glarelevel > 0.0f)
-	{
-		walk_glare(true);
-
-		::glPushMatrix();
-		::glLoadIdentity(); // macierz jedynkowa
-		::glTranslatef(Lightcenter.x, Lightcenter.y, Lightcenter.z); // początek układu zostaje bez zmian
-		::glRotated(std::atan2(Lightcenter.x, Lightcenter.z) * 180.0 / M_PI, 0.0, 1.0, 0.0); // jedynie obracamy w pionie o kąt
-
-		auto const lightcolor = glm::vec3(Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
-		                           Submodel->f4Diffuse :
-		                           Submodel->DiffuseOverride);
-
-		walk_program( walk_shader::billboard );
-		walk_texture(0, m_glaretexture);
-		model_ubs.param[0] = glm::vec4(glm::vec3(lightcolor), Submodel->fVisible * glarelevel);
-
-		// main draw call
-		// drawn where the point of the light was seen just above (an occlusion query of the opengl renderer)
-		walk_glare_draw(Submodel, m_billboardgeometry);
-
-		walk_glare(false);
-
-		::glPopMatrix();
-	}
-}
-
 void scene_walk::Render_Alpha(TSubModel *Submodel)
 {
 	// renderowanie przezroczystych przez DL
@@ -3256,8 +3218,48 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 			// a point light (FalloffAngle 360) is seen all around
 			auto const pointlight{Submodel->fCosFalloffAngle <= -1.f};
 
-			// the glare is drawn after the point, where the occlusion query of this very point (of this instance, in this frame) saw it
-			auto pointdrawn{false};
+			if (Global.fLuminance < Submodel->fLight || Global.Overcast > 1.0f)
+			{
+				if (pointlight || (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle))
+				{
+					// only bother if the viewer is inside the visibility cone
+					// luminosity at night is at level of ~0.1, so the overall resulting transparency in clear conditions is ~0.5 at full 'brightness'
+					auto glarelevel{std::clamp(std::max<float>(0.6f - Global.fLuminance, // reduce the glare in bright daylight
+						                                  Global.Overcast - 1.f), // ensure some glare in rainy/foggy conditions
+						                  0.f, 1.f)};
+					// view angle attenuation
+					float const anglefactor{pointlight ? 1.f : std::clamp((Submodel->fCosViewAngle - Submodel->fCosFalloffAngle) / (Submodel->fCosHotspotAngle - Submodel->fCosFalloffAngle), 0.f, 1.f)};
+
+					glarelevel *= anglefactor;
+
+					if (glarelevel > 0.0f)
+					{
+						walk_glare(true);
+
+						::glPushMatrix();
+						::glLoadIdentity(); // macierz jedynkowa
+						::glTranslatef(lightcenter.x, lightcenter.y, lightcenter.z); // początek układu zostaje bez zmian
+						::glRotated(std::atan2(lightcenter.x, lightcenter.z) * 180.0 / M_PI, 0.0, 1.0, 0.0); // jedynie obracamy w pionie o kąt
+
+						auto const lightcolor = glm::vec3(Submodel->DiffuseOverride.r < 0.f ? // -1 indicates no override
+						                           Submodel->f4Diffuse :
+						                           Submodel->DiffuseOverride);
+
+						walk_program( walk_shader::billboard );
+						walk_texture(0, m_glaretexture);
+						model_ubs.param[0] = glm::vec4(glm::vec3(lightcolor), Submodel->fVisible * glarelevel);
+
+						// main draw call
+						// drawn where the light itself was seen in the last frame (an occlusion query of the opengl renderer)
+						walk_glare_draw(Submodel, m_billboardgeometry);
+
+						walk_glare(false);
+
+						::glPopMatrix();
+					}
+				}
+			}
+
 			if (pointlight || (Submodel->fCosViewAngle > Submodel->fCosFalloffAngle))
 			{
 				// kąt większy niż maksymalny stożek swiatła
@@ -3314,8 +3316,6 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 					walk_draw(Submodel->m_geometry.handle);
 
                     walk_light_query(Submodel, false);
-					walk_light_reference(Submodel->m_geometry.handle);
-					pointdrawn = true;
 
 					// post-draw reset
 					model_ubs.emission = 0.0f;
@@ -3323,11 +3323,6 @@ void scene_walk::Render_Alpha(TSubModel *Submodel)
 
 					::glPopMatrix();
 				}
-			}
-			// the point is drawn only inside its visibility cone, so the glare is too
-			if (pointdrawn && (Global.fLuminance < Submodel->fLight || Global.Overcast > 1.0f))
-			{
-				Render_Glare(Submodel, lightcenter, pointlight);
 			}
 		}
 

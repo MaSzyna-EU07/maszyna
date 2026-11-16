@@ -446,10 +446,6 @@ namespace gl
     };
     // binding point of the opengl renderer, bound with the colour passes
     const GLuint CAB_PROBE_SSBO_BINDING = 17;
-    // layout std430: the samples of the point of a lamp its occlusion queries counted, written there by the gpu (GLSL: glare_ssbo,
-    // read by billboard.frag): seen, which passed the depth test, and all, drawn without it. binding point of the opengl renderer,
-    // bound with the glare of a lamp
-    const GLuint GLARE_SSBO_BINDING = 18;
     // the face of the level of the probe the spherical harmonics are taken from, at most, and the work group of cabprobe_sh.comp
     const size_t CAB_PROBE_SH_SIZE = 16;
     // the face of the level of the probe CAB_PROBE_MASK_TEX is a copy of, at most
