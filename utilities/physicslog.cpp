@@ -40,10 +40,10 @@ void keep_last(std::string &Text, std::size_t const Most) {
 physicslog_writer::physicslog_writer(std::filesystem::path Folder, std::chrono::milliseconds const Interval) : m_folder{std::move(Folder)}, m_interval{Interval} {}
 
 physicslog_writer::~physicslog_writer() {
-	// at the end of the process: what the logs couldn't keep, memory or a file, isn't to end it worse
 	try {
 		stop();
 	} catch (...) {
+		// at the end of the process: what the logs couldn't keep, memory or a file, isn't to end it worse
 	}
 }
 
@@ -81,28 +81,25 @@ bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
 
 void physicslog_writer::stop() {
 	std::jthread thread;
+	bool itself;
 	{
 		std::scoped_lock lock{m_mutex};
 		m_stopped = true;
-		// stopped from the writer itself, by the end of a run which failed in it: the files may be held by it, and
-		// another thread may be joining it already
-		if (m_writer == std::this_thread::get_id()) {
-			if (m_thread.joinable()) {
-				m_thread.request_stop();
-				m_thread.detach();
-			}
-			return;
-		}
 		// taken by the first to stop, so it's joined once
 		thread = std::move(m_thread);
+		itself = m_writer == std::this_thread::get_id();
 	}
-	if (thread.joinable()) {
+	// the stop asked outside the lock, which waking the writer takes
+	if (thread.joinable())
 		thread.request_stop();
-		// the writer waits under the lock: taken once, it's either about to wait, seeing the stop, or waiting already
-		{ std::scoped_lock lock{m_mutex}; }
-		m_wake.notify_all();
-		thread.join();
+	// stopped from the writer itself, by the end of a run which failed in it: the files may be held by it
+	if (itself) {
+		if (thread.joinable())
+			thread.detach();
+		return;
 	}
+	if (thread.joinable())
+		thread.join();
 	flush();
 }
 
@@ -114,6 +111,12 @@ void physicslog_writer::start() {
 }
 
 void physicslog_writer::run(std::stop_token const &Stop) {
+	// woken by every stop asked, by stop() or by the end of the thread itself. the lock taken once first: the writer is
+	// either about to wait, and sees the stop, or waiting already
+	std::stop_callback const wake{Stop, [this] {
+		{ std::scoped_lock lock{m_mutex}; }
+		m_wake.notify_all();
+	}};
 	while (false == Stop.stop_requested()) {
 		{
 			std::unique_lock lock{m_mutex};

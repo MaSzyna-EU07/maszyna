@@ -2334,7 +2334,9 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         iDrivigFlags |= movePrimary; // aktywnie prowadzące pojazd
     }
 
-    SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    if( mvOccupied != nullptr ) {
+        SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    }
     TableClear();
 
     // the logs of all, begun at once as they always were. one of a train only at its first line (update_logs): every
