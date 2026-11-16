@@ -165,6 +165,103 @@ TEST_CASE("derailment: a stopped derailed vehicle stays put on a gradient") {
 	CHECK(still);
 }
 
+TEST_CASE("derailment: a repaired vehicle is back on the rails") {
+	// resetconsist (the debug panel's "Stop and repair consist") clears the damage flags; the state of the criteria
+	// has to go with them, or a vehicle once derailed by the criteria slides on with their friction after a later
+	// derailment of any other kind, and the friction of the ballast keeps holding it once it stops
+	model_setting const physical{global_settings::derailment_model::physical};
+	test::track curve;
+	curve.radius = 300.0;
+	curve.gradient = 0.02;
+	vehicle repaired{definition::fiz("4e_v1/4e"), 150.0};
+	for (int step = 0; step < 2000; ++step) {
+		repaired.step(curve);
+	}
+	REQUIRE(repaired->Derailed == dr::outcome::overturned);
+	REQUIRE(repaired->V == 0.0);
+	repaired->repair_damage();
+	CHECK(repaired->DamageFlag == 0);
+	CHECK(repaired->Derailed == dr::outcome::none);
+	CHECK(repaired->derailment_distance == 0.0);
+	CHECK(repaired->OffsetTrackH == 0.0);
+	CHECK(repaired->OffsetTrackV == 0.0);
+
+	SUBCASE("a derailment of the legacy kind stops it dead, as one never derailed") {
+		test::track straight;
+		vehicle fresh{definition::fiz("4e_v1/4e"), 60.0};
+		repaired->V = fresh->V;
+		repaired->AccS = 0.0;
+		repaired->Derail(TOO_HIGH_SPEED);
+		fresh->Derail(TOO_HIGH_SPEED);
+		REQUIRE(repaired->Derailed == dr::outcome::none);
+		auto const start{fresh->V};
+		REQUIRE(start > 10.0);
+		for (int step = 0; step < 150; ++step) {
+			repaired.step(straight);
+			fresh.step(straight);
+		}
+		// the legacy model takes g off a derailed vehicle and holds it with a friction 1e20 times its own: 1.1 s from
+		// 39 km/h. with the friction of the overturned one (half of g on 80 of 96 t) it would still go at 23 km/h
+		CHECK(fresh->V == doctest::Approx(0.0).epsilon(0.01));
+		CHECK(repaired->V == doctest::Approx(fresh->V).epsilon(0.01));
+	}
+	SUBCASE("the friction of the ballast doesn't hold it any more") {
+		// unbraked on the gradient of 20 per mille it rolls away, at g / 50 less the running resistance
+		test::track straight;
+		straight.gradient = 0.02;
+		for (int step = 0; step < 300; ++step) {
+			repaired.step(straight);
+		}
+		CHECK(std::abs(repaired->V) > 0.4);
+		CHECK(std::abs(repaired->V) < 3.0 * 0.02 * dr::gravity);
+	}
+	SUBCASE("too fast in a curve again it derails again, by the criteria") {
+		repaired->V = 150.0 * kmh;
+		curve.gradient = 0.0;
+		for (int step = 0; step < 20; ++step) {
+			repaired.step(curve);
+		}
+		CHECK(repaired->Derailed == dr::outcome::overturned);
+	}
+}
+
+TEST_CASE("derailment: SetDamage taking the derailment off puts the vehicle back on the rails") {
+	model_setting const physical{global_settings::derailment_model::physical};
+	test::track curve;
+	curve.radius = 300.0;
+	vehicle eu07vehicle{definition::fiz("4e_v1/4e"), 150.0};
+	for (int step = 0; step < 20; ++step) {
+		eu07vehicle.step(curve);
+	}
+	REQUIRE(eu07vehicle->Derailed == dr::outcome::overturned);
+	// another flag taken off leaves it derailed
+	eu07vehicle->RunCommand("SetDamage", dtrain_engine, 1);
+	eu07vehicle->RunCommand("SetDamage", dtrain_engine, -1);
+	CHECK(eu07vehicle->Derailed == dr::outcome::overturned);
+	CHECK(eu07vehicle->RunCommand("SetDamage", dtrain_out, -1));
+	CHECK_FALSE(TestFlag(eu07vehicle->DamageFlag, dtrain_out));
+	CHECK(eu07vehicle->Derailed == dr::outcome::none);
+}
+
+TEST_CASE("derailment: monitor tells again on the same track after a repair") {
+	model_setting const monitor{global_settings::derailment_model::monitor};
+	test::track curve;
+	curve.radius = 300.0;
+	curve.name = "curve_1";
+	auto const critical{dr::overturning_speed(300.0, 0.0, eu07, 1.435) / kmh};
+	vehicle eu07vehicle{definition::fiz("4e_v1/4e"), critical + 2.0};
+	for (int step = 0; step < 100; ++step) {
+		eu07vehicle.step(curve);
+	}
+	REQUIRE(eu07vehicle->derailment_reports == 1);
+	eu07vehicle->repair_damage();
+	CHECK_FALSE(eu07vehicle->derailment_reported.has_value());
+	for (int step = 0; step < 100; ++step) {
+		eu07vehicle.step(curve);
+	}
+	CHECK(eu07vehicle->derailment_reports == 2);
+}
+
 TEST_CASE("derailment: monitor, the legacy draw decides and the log tells what the criteria would do") {
 	model_setting const monitor{global_settings::derailment_model::monitor};
 	test::track curve;

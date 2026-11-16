@@ -1590,6 +1590,31 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 	}
 }
 
+void TMoverParameters::rerail()
+{
+	ClearFlag(DamageFlag, dtrain_out);
+	Derailed = derailment::outcome::none;
+	derailment_monitor.reset();
+	derailment_distance = 0.0;
+	derailment_reported.reset();
+	// back on the axis of the track, which the derailment shifted the vehicle off aside and down (a road vehicle keeps
+	// its place on the road)
+	if (TestFlag(CategoryFlag, 1))
+	{
+		OffsetTrackH = 0.0;
+		OffsetTrackV = 0.0;
+	}
+}
+
+void TMoverParameters::repair_damage()
+{
+	DamageFlag = 0;
+	EngDmgFlag = 0;
+	WheelFlat = 0.0;
+	AlarmChainFlag = false;
+	rerail();
+}
+
 void TMoverParameters::Derail(DerailReason const Reason)
 {
 	if (SetFlag(DamageFlag, dtrain_out))
@@ -13494,7 +13519,13 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 		if (CValue2 == 1)
 			OK = SetFlag(DamageFlag, static_cast<int>(floor(CValue1)));
 		if (CValue2 == -1)
+		{
+			auto const derailed{TestFlag(DamageFlag, dtrain_out)};
 			OK = SetFlag(DamageFlag, static_cast<int>(-floor(CValue1)));
+			// taking the derailment off puts the vehicle back on the rails, with what the criteria of derailment held
+			if (derailed && false == TestFlag(DamageFlag, dtrain_out))
+				rerail();
+		}
 	}
 	else if (Command == "Emergency_brake")
 	{

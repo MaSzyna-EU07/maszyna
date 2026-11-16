@@ -52,19 +52,34 @@ TEST_CASE("trackcheck: the speed limit of a curve") {
 	SUBCASE("over the overturning speed of the EU07") {
 		auto const found{tc::check(curve(300.0, critical + 5.0))};
 		CHECK(has(found, tc::kind::overturning));
-		CHECK_FALSE(has(found, tc::kind::overturning_default));
+		CHECK_FALSE(has(found, tc::kind::unlimited_curve));
+		CHECK(found.defective());
 		CHECK(found.text.find("over the overturning speed of EU07") != std::string::npos);
 		CHECK(found.text.find("speed limit 113 km/h") != std::string::npos);
 	}
 	SUBCASE("the cant raises it") {
 		CHECK(tc::check(curve(300.0, critical + 5.0, 100.0)).empty());
 	}
-	SUBCASE("without a speed limit of its own the default one goes, counted apart") {
+	SUBCASE("without a speed limit of its own it's no defect, the speed it takes is told") {
 		auto const found{tc::check(curve(300.0, -1.0))};
-		CHECK(has(found, tc::kind::overturning_default));
+		CHECK(has(found, tc::kind::unlimited_curve));
 		CHECK_FALSE(has(found, tc::kind::overturning));
-		CHECK(found.text.find("default speed 125 km/h") != std::string::npos);
+		CHECK_FALSE(found.defective());
+		CHECK_FALSE(tc::is_defect(tc::kind::unlimited_curve));
+		CHECK(found.unlimited_speed == doctest::Approx(critical));
+		CHECK(found.text.starts_with("no speed limit set (not a defect): the curve takes at most "));
+		CHECK(found.text.find(" km/h, the overturning speed of EU07") != std::string::npos);
 		CHECK(found.text.find("speed limit none") != std::string::npos);
+	}
+	SUBCASE("nor anything when it takes them at the top speed of the EU07") {
+		CHECK(tc::check(curve(600.0, -1.0)).empty());
+	}
+	SUBCASE("a tram loop of 30 m without a speed limit is no tight curve too fast") {
+		// the tram tracks of Tomaszewo (tramwaj106...): no category of their own, no speed limit
+		auto const found{tc::check(curve(30.0, -1.0))};
+		CHECK(found.kinds == std::vector{tc::kind::unlimited_curve});
+		CHECK(found.unlimited_speed == doctest::Approx(overturning(30.0)));
+		CHECK(found.unlimited_speed < 40.0);
 	}
 	SUBCASE("a closed track (speed 0) is not checked") {
 		CHECK(tc::check(curve(100.0, 0.0)).empty());
@@ -135,23 +150,34 @@ TEST_CASE("trackcheck: the scan of a scenery") {
 	tracks.push_back(curve(0.0, 100.0));
 	tracks.back().name = "fine";
 	tracks.back().damage = 2;
+	tracks.push_back(curve(30.0, -1.0));
+	tracks.back().name = "tram_1";
+	tracks.push_back(curve(150.0, -1.0));
+	tracks.back().name = "siding_1";
 
 	std::vector<std::string> log;
 	auto const summary{tc::scan(tracks, [&](std::string const &Line) { log.push_back(Line); })};
-	CHECK(summary.tracks == 4);
+	CHECK(summary.tracks == 6);
+	// the curves without a speed limit are told apart from the defects
 	CHECK(summary.suspicious == 2);
+	CHECK(summary.unlimited == 2);
+	CHECK(summary.slowest == doctest::Approx(overturning(30.0)));
 	CHECK(summary.count(tc::kind::overturning) == 1);
 	CHECK(summary.count(tc::kind::cant_on_straight) == 1);
 	CHECK(summary.count(tc::kind::tight_curve) == 0);
+	CHECK(summary.count(tc::kind::unlimited_curve) == 2);
 	// the damage flags are counted, not told track by track
 	CHECK(summary.damage.at(31) == 2);
 	CHECK(summary.damage.at(2) == 1);
-	REQUIRE(log.size() == 4);
+	REQUIRE(log.size() == 7);
 	CHECK(log[0].starts_with("trackcheck: fast: speed limit 140 km/h over the overturning speed of EU07"));
 	CHECK(log[1].starts_with("trackcheck: leaning: cant 50 / 50 mm on a straight track"));
 	CHECK(log[1].ends_with("damage 31)"));
-	CHECK(log[2].starts_with("trackcheck: 4 rail tracks checked, 2 suspicious: overturning 1; flange climbing 0;"));
-	CHECK(log[3] == "trackcheck: damage flags: 2 on 1; 31 on 2");
+	CHECK(log[2].starts_with("trackcheck: tram_1: no speed limit set (not a defect): the curve takes at most "));
+	CHECK(log[3].starts_with("trackcheck: siding_1: no speed limit set (not a defect)"));
+	CHECK(log[4] == "trackcheck: 6 rail tracks checked, 2 suspicious: overturning 1; flange climbing 0; cant on a straight 1; cant too high 0; tight curve too fast 0; uneven out of range 0");
+	CHECK(log[5].starts_with("trackcheck: curves without a speed limit: 2 taking the reference vehicles under 125 km/h (not a defect), the slowest at "));
+	CHECK(log[6] == "trackcheck: damage flags: 2 on 1; 31 on 2");
 	for (auto const &line : log) {
 		CHECK(line.starts_with("trackcheck: "));
 	}

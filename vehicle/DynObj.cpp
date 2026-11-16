@@ -1986,6 +1986,9 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
+	// the stretches the criteria of derailment held over were on the track the vehicle left (consistteleport)
+	MoverParameters->derailment_monitor.reset();
+	MoverParameters->derailment_distance = 0.0;
 	// potrzebne do wyliczenia aktualnej pozycji; nie może być zero, bo nie przeliczy pozycji
 	// teraz jeszcze trzeba przypisać pojazdy do nowego toru, bo przesuwanie początkowe osi nie
 	// zrobiło tego
