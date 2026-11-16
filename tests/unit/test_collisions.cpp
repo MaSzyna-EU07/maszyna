@@ -925,6 +925,21 @@ TEST_CASE("collisions: two locomotives (117 t and 84 t) touching at walking spee
 	}
 }
 
+TEST_CASE("collisions: locomotives put down inside each other don't crush, whatever their springs make of them") {
+	// calkowo_v2_kontenera puts an SM42 on an SU45 with their middles 2.7 m apart: the springs at the stops of both
+	// ends and the neighbours found at either end shook them up to 9-13 km/h, past the energy of the buffers
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const speed : {0.0, 10.0, 15.0}) {
+		CAPTURE(speed);
+		auto const result{contact(definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d"), speed, -3.0, 10.0)};
+		CHECK(result.crush == 0.0);
+		CHECK_FALSE(result.derailed);
+	}
+	// a hit from a distance at the same speeds crushes past the energy of the buffers
+	CHECK(contact(definition::fiz("sm42_v1/6d1"), definition::fiz("su45_v2/301d"), 20.0, 0.5).crush > 0.0);
+}
+
 TEST_CASE("collisions: two coaches (36 t and 41.6 t) at 8 km/h don't crush, nor run into a wall (baltyk_sdm)") {
 	model_setting const physical{global_settings::collision_model::physical};
 	flag_setting const crashdamage{Global.crash_damage, true};

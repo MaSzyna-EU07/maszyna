@@ -1597,6 +1597,22 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 		return false;
 	}
 	auto const monitor{Global.collisions == global_settings::collision_model::monitor};
+	// put down by the scenery inside each other: pressed past the stop of the buffers and the crush of the ends by more
+	// than a hit takes them in a step. the legacy collision pushes them apart; their springs, the stops at both ends
+	// and the neighbours found at either end there make up any closing velocity, not a hit
+	auto const stop{std::max(thiscoupler.DmaxB + othercoupler.DmaxB, thiscoupler.physics.buffers.travel + othercoupler.physics.buffers.travel) + thiscoupler.crush + othercoupler.crush};
+	auto const overlap{-static_cast<double>(Neighbours[End].distance)};
+	if (overlap > stop + collision::inside_margin + closing * dt)
+	{
+", Name.c_str(), othervehicle->Name.c_str(), overlap, stop, closing, Neighbours[End].distance, thiscoupler.crush, othercoupler.crush, (int)Derailed, (int)othervehicle->Derailed);
+		if (false == thiscoupler.inside_reported)
+		{
+			thiscoupler.inside_reported = true;
+			othercoupler.inside_reported = true;
+			WriteLog(std::format("Bad scenery: {} and {} are inside each other, their buffers pressed {:.2f} m past their stop, no crush", Name, othervehicle->Name, overlap - stop));
+		}
+		return false;
+	}
 	// a vehicle derailed the legacy way (the end of the track, say) stays where it is, whatever hits it
 	auto const wall{TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
 	auto const otherwall{TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
@@ -1623,9 +1639,11 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	// the monitor takes the whole hit at once, over a second, longer than the crush of any hit lasts
 	input.dt = monitor ? 1.0 : dt;
 	input.start_velocity = thiscoupler.closing;
-	// the crush takes only what the hit brings past what the buffers of EN 15551 of both ends take in
+	// the crush takes only what the hit brings past what the buffers of EN 15551 of both ends take in. an automatic
+	// coupler (or its adapter) has no buffers at the side: its draft gear takes in what its springs of the .fiz do
 	auto const reduced{mass * othermass / (mass + othermass)};
-	auto const capacity{collision::buffer_capacity(thiscoupler.collision, collision_kind()) + collision::buffer_capacity(othercoupler.collision, othervehicle->collision_kind())};
+	auto const central{thiscoupler.type() == TCouplerType::Automatic || othercoupler.type() == TCouplerType::Automatic || thiscoupler.has_adapter() || othercoupler.has_adapter()};
+	auto const capacity{central ? 0.0 : collision::buffer_capacity(thiscoupler.collision, collision_kind()) + collision::buffer_capacity(othercoupler.collision, othervehicle->collision_kind())};
 	auto const hitvelocity{std::max(closing, thiscoupler.closing)};
 	input.budget = thiscoupler.contact.budget(reduced, hitvelocity, capacity);
 	auto const hit{collision::hit({firstcurve, thiscoupler.crush}, {secondcurve, othercoupler.crush}, input)};

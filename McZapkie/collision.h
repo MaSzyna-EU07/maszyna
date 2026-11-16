@@ -112,6 +112,11 @@ buffer_category default_buffers(vehicle_kind Kind);
 // the energy the two buffers of an end take in over their stroke, of the category given or the default of the kind [J]
 double buffer_capacity(end_definition const &Definition, vehicle_kind Kind);
 
+// vehicles pressed onto each other past the stop of their buffers and the crush of their ends by more than this, more
+// than a hit could have taken them in a step, are inside each other: a scenery put them down overlapping. no hit the
+// crush could tell anything of, the legacy collision handles them [m]
+inline constexpr double inside_margin{0.5};
+
 // ---- the energy of a hit, for the crush
 
 // the energy budget of the crush in a contact of two ends. what a hit brings to the stop of the buffers is the kinetic

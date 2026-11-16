@@ -1306,6 +1306,8 @@ struct TCoupling
 	bool crush_monitored{false};
 	// the energy the contact of the pair brought to its buffers, for the budget of the crush
 	collision::contact_energy contact;
+	// the log told of the vehicle at this end being inside this one already
+	bool inside_reported{false};
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
