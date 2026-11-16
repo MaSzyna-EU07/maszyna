@@ -165,6 +165,13 @@ double shape_reach(scene::shape_node &Shape)
 	return (radius > 0.0 ? radius : std::numeric_limits<double>::max());
 }
 
+// the sub-models under the given one which are geometry of the model. the children of a text display are its whole
+// character set, not the characters it shows, and are left out
+TSubModel *geometry_children(TSubModel const *Submodel)
+{
+	return (Submodel->eType == TP_TEXT ? nullptr : Submodel->Child);
+}
+
 } // namespace
 
 sky_occlusion::layout sky_occlusion::layout_of(int const Level)
@@ -848,7 +855,7 @@ void sky_occlusion::gather_submodel(TSubModel *Submodel, std::uint32_t const Alp
 			}
 		}
 		if (part->Child != nullptr)
-			gather_submodel(part->Child, Alpha, transform, Corner, Far, Triangles);
+			gather_submodel(geometry_children(part), Alpha, transform, Corner, Far, Triangles);
 	}
 }
 
