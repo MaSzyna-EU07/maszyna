@@ -238,21 +238,25 @@ void blackbox_recorder::update(double const Deltatime) {
 		// "blackbox yes" or "no" of eu07.ini decides by itself, with no entry it goes with the physics logs
 		if (false == Global.BlackBox.value_or(WriteLogFlag || WriteTrainLogFlag) || Global.editor_session)
 			return;
+		m_taping = true;
 		open();
 	}
-	if (m_writer == nullptr)
+	if (false == m_taping)
 		return;
 
 	std::scoped_lock lock{m_mutex};
 	m_time += Deltatime;
-	if (m_time >= m_cabdue) {
-		write_cab();
-		m_cabdue = std::max(m_cabdue + cabinterval, m_time);
-	}
-	// with the physics logs on, each driver writes its own all the time
+	// with the physics logs on, each driver writes its own all the time. the tapes are files of their own: they go on
+	// after the recording ends in the editor, and with a recording which couldn't be made
 	if (false == WriteLogFlag && m_time >= m_tapedue) {
 		keep_tape_line();
 		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
+	}
+	if (m_writer == nullptr)
+		return;
+	if (m_time >= m_cabdue) {
+		write_cab();
+		m_cabdue = std::max(m_cabdue + cabinterval, m_time);
 	}
 	if (m_time >= m_cameradue) {
 		write_camera();

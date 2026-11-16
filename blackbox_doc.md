@@ -30,7 +30,8 @@ for a while doesn't lose its lines: they are written once it can be, the last 64
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no
-new one starts when driving goes on after that.
+new one starts when driving goes on after that. The `.dat` logs it gives with the physics logs off go on
+then, after the gap of the time in the editor, until the simulator closes: they are files of their own.
 
 It is written as the session goes and flushed once a second, so the file can be read while the simulator
 still writes it, and after a crash all but the last second is there. A file without the `end` record
