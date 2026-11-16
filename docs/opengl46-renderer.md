@@ -430,6 +430,29 @@ isn't met for half a minute.
 All the entries can be changed while the simulator runs, in the **Sky and exposure** debug window (the ray tracing can be
 turned off and on there once it was started).
 
+### Water
+
+With `gfx.water.realistic` the materials of the `water` and `water_specgloss` shaders (`shaders/*/water_surface.glsl`)
+are drawn as water rather than as a painted surface. Three layers of the normal map at different scales go different ways
+(`param_wave_speed`), bent by the dudv map, so the ripples don't slide along as one sheet; far away they flatten. The surface
+reflects with the fresnel of water (2% looking straight down, nearly all of it at a grazing angle): the scenery where the
+reflections above find it, the sky elsewhere, and the sun and the lamps as small sharp highlights. Under the surface the
+water lets the bottom through, less the deeper it lies, tinting it with its colour, and gives back the light it scatters in
+the colour of the material; at the shore it fades out, without a hard edge where it meets the ground. How deep it is comes
+from the depth of the scene drawn before its colour, which the frame has with the contact shadows, the screen space
+reflections or the ambient occlusion in the light of the surfaces (with `gfx.ssr` on, as by default). Without it, and in the
+reflections, the water is as clear as the alpha of its colour says, as before.
+
+The entries of the existing materials keep their meaning: `param_color` rgb is the colour of the water and a how murky it is
+(0: one sees about 12 metres into it, 1: half a metre; 0.7 as shipped is about 4 metres), `param_wave_strength` how steep the
+ripples are (0.05 as shipped) and how much the dudv map bends them, `param_reflection` the share of the reflection,
+`param_specular` the highlights (1 and more: all of them), `param_glossiness` how smooth the surface is between the ripples;
+the diffuse texture adds its detail to the colour of the water. Nothing in the data has to change.
+
+| Entry | Default | Meaning |
+|---|---|---|
+| `gfx.water.realistic yes/no` | `no` | the water drawn as above; `no`: as before |
+
 ### Weather
 
 The clouds, the fog and the stars are drawn from the weather of the simulation (a `weather` section of the scenery, or its

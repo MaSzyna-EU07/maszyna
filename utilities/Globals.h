@@ -552,6 +552,10 @@ struct global_settings {
     // the light of the sun coming in through the windows of the low poly interiors of the vehicles and of the cab without its probe,
     // bounced around them, as a share of the light of the sun on a surface facing it; 0 for none
     float gfx_interior_bounce { 0.1f };
+    // the water of the scenery (the materials of the water shader, opengl 4.6 and vulkan, shaders/*/water_surface.glsl): rippled by
+    // layers of its normal map, reflecting the scene and the sky with the fresnel of water, seen through as deep as it is and fading
+    // out at the shore. off: the water drawn as before
+    bool gfx_water_realistic { false };
     // the occlusion of the sky and of the sun by the scenery around the camera (opengl 4.6 and vulkan, gfx::sky_occlusion, the track T):
     // tunnels, the ground under bridges and roofs, cuttings and the foot of slopes are dark by their geometry, worked out in the
     // background from the scenery seen from above. 0 off (nothing is occluded), 1 low (256 m around the camera, texels of 1 m),

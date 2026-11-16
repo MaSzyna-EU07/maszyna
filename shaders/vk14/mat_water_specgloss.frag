@@ -46,9 +46,20 @@ float move_factor = 0.0;
 #include "light_common.glsl"
 #include "apply_fog.glsl"
 #include "tonemapping.glsl"
+#include "water_surface.glsl"
 
 void main()
 {
+	// the realistic water (gfx.water.realistic, water_surface.glsl), its specular level and smoothness from the specgloss map
+	if (water_realistic())
+	{
+		vec2 flow = water_flow(f_coord);
+		vec2 coords = f_coord + flow;
+		vec4 specgloss_texel = texture(specgloss, coords);
+		water_surface(coords, water_wave_normal(f_coord, flow, length(f_pos.xyz)), specgloss_texel.r, max(1.0 - specgloss_texel.g, water_roughness()));
+		return;
+	}
+
 	//wave distortion
 	move_factor += (param[2].z * time);
 	move_factor = mod(move_factor, 1.0);

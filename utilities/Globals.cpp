@@ -2109,6 +2109,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.cabprobe.reflections" ) { readswitch( gfx_cabprobe_reflections ); }
     else if( Token == "gfx.cabprobe.sun" ) { readvalue( gfx_cabprobe_sun, 0.f, 4.f ); }
     else if( Token == "gfx.interior.bounce" ) { readvalue( gfx_interior_bounce, 0.f, 1.f ); }
+    else if( Token == "gfx.water.realistic" ) { readswitch( gfx_water_realistic ); }
     else if( Token == "gfx.skyvisibility" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2636,6 +2637,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.cabprobe.reflections", gfx_cabprobe_reflections );
     export_as_text( Output, "gfx.cabprobe.sun", gfx_cabprobe_sun );
     export_as_text( Output, "gfx.interior.bounce", gfx_interior_bounce );
+    export_as_text( Output, "gfx.water.realistic", gfx_water_realistic );
     export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );

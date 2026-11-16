@@ -1662,8 +1662,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			}
 		}
 		// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour
-		// pass of the main view only
-		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, Global.gfx_interior_bounce, 0.f};
+		// pass of the main view only. and how the water of the scenery is drawn (gfx.water.realistic, water_surface.glsl)
+		scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, 0.f, Global.gfx_interior_bounce, (Global.gfx_water_realistic ? 1.f : 0.f)};
 		gfx::screen_reflections::clear(scene_ubs);
 		// the occlusion of the sky by the scenery, seen from the camera of the view
 		m_skyocclusion.setup_scene(scene_ubs, m_colorpass.pass_camera.position());

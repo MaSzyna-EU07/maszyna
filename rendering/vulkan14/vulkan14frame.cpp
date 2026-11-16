@@ -1530,8 +1530,8 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	scene_ubs.contact_shadow_lamps = glm::vec4{0.f};
 	scene_ubs.shadow_fit = glm::vec4{0.f};
 	// the reflections: the ground below the horizon of the environment map, and the screen space ones set up for the colour pass of
-	// the main view only
-	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, (m_rtfoliage ? 0.f : 1.f), Global.gfx_interior_bounce, 0.f};
+	// the main view only. and how the water of the scenery is drawn (gfx.water.realistic, water_surface.glsl)
+	scene_ubs.env_params = glm::vec4{Global.gfx_ambient_groundalbedo, (m_rtfoliage ? 0.f : 1.f), Global.gfx_interior_bounce, (Global.gfx_water_realistic ? 1.f : 0.f)};
 	gfx::screen_reflections::clear(scene_ubs);
 
 	if (vp.main)
