@@ -63,7 +63,7 @@ private:
 	std::mutex m_mutex; // the lines kept and the thread
 	std::map<std::string, pending> m_pending;
 	bool m_stopped{false};
-	std::condition_variable_any m_wake;
+	std::condition_variable m_wake;
 	std::jthread m_thread;
 	std::thread::id m_writer; // of the thread, kept after it is taken to be joined: the writer knows itself by it
 	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order

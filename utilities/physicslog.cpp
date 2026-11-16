@@ -40,7 +40,11 @@ void keep_last(std::string &Text, std::size_t const Most) {
 physicslog_writer::physicslog_writer(std::filesystem::path Folder, std::chrono::milliseconds const Interval) : m_folder{std::move(Folder)}, m_interval{Interval} {}
 
 physicslog_writer::~physicslog_writer() {
-	stop();
+	// at the end of the process: what the logs couldn't keep, memory or a file, isn't to end it worse
+	try {
+		stop();
+	} catch (...) {
+	}
 }
 
 void physicslog_writer::begin(std::string const &Name, std::string_view const Header) {
@@ -94,6 +98,9 @@ void physicslog_writer::stop() {
 	}
 	if (thread.joinable()) {
 		thread.request_stop();
+		// the writer waits under the lock: taken once, it's either about to wait, seeing the stop, or waiting already
+		{ std::scoped_lock lock{m_mutex}; }
+		m_wake.notify_all();
 		thread.join();
 	}
 	flush();
@@ -111,7 +118,7 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 		{
 			std::unique_lock lock{m_mutex};
 			// woken early only to stop, which writes the rest itself
-			if (m_wake.wait_for(lock, Stop, m_interval, [] { return false; }) || Stop.stop_requested())
+			if (m_wake.wait_for(lock, m_interval, [&Stop] { return Stop.stop_requested(); }))
 				return;
 		}
 		flush();

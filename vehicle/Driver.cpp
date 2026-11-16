@@ -6372,6 +6372,10 @@ void TController::ControllingSet()
     // problematyczne jest sterowanie z członu biernego, dlatego damy AI silnikowy
     // dzięki temu będzie wirtualna kabina w silnikowym, działająca w rozrządczym
     // w plikach FIZ zostały zgubione ujemne maski sprzęgów, stąd problemy z EZT
+    if( pVehicle == nullptr ) {
+        // a driver of no vehicle has nothing to control
+        return;
+    }
     mvOccupied = pVehicle->MoverParameters; // domyślny skrót do obiektu parametrów
 	BrakeSystem = mvOccupied->BrakeSystem; // domyślny sposób hamowania
     mvControlling = pVehicle->FindPowered()->MoverParameters; // poszukiwanie członu sterowanego
