@@ -34,10 +34,10 @@ constexpr int dg_raise{6};
 
 void move_to(TMoverParameters &Vehicle, int const Position) {
 	while (Vehicle.MainCtrlPos < Position && Vehicle.IncMainCtrl(1)) {
-		;
+		// all the work is done in the condition
 	}
 	while (Vehicle.MainCtrlPos > Position && Vehicle.DecMainCtrl(1)) {
-		;
+		// all the work is done in the condition
 	}
 	REQUIRE(Vehicle.MainCtrlPos == Position);
 }
@@ -158,7 +158,7 @@ TEST_CASE("speed control: the vehicles whose secondary controller is the cruise 
 		scenario.get_going();
 		scenario.act("raise");
 		while (loco.ScndCtrlPos < 3 && loco.IncScndCtrl(1)) {
-			;
+			// all the work is done in the condition
 		}
 		REQUIRE(loco.ScndCtrlPos == 3);
 		scenario.wait(10.0);
@@ -285,7 +285,7 @@ TEST_CASE("speed control apart: the 6Dg's cruise control on its own switch, the 
 	// the shunt goes by itself all the while, by the current of the motors, which the cruise control's demand sets
 	auto shunted{0};
 	auto unshunted{0};
-	auto const run{[&](int const Seconds) {
+	auto const run{[&scenario, &loco, &shunted, &unshunted](int const Seconds) {
 		for (int second = 0; second < Seconds; ++second) {
 			scenario.wait(1.0);
 			++(loco.ScndCtrlPos > 0 ? shunted : unshunted);
