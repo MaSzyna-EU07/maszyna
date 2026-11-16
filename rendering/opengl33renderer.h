@@ -112,6 +112,8 @@ class opengl33_renderer : public gfx_renderer {
         Texture( texture_handle const Texture ) const override;
     void
         Unload_Texture( texture_handle const Texture ) override;
+    void
+        Unload_Material( material_handle const Material ) override;
     // utility methods
     void
         Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) override;

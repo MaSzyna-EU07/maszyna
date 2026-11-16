@@ -748,9 +748,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		struct thumbnail
 		{
 			int texture{0}; // 0: none
+			int material{0}; // the material the texture is the first of, 0: a texture alone
 			double shown{0.0}; // when it was last asked for, ImGui time
 		};
 		std::map<std::string, thumbnail> thumbnails; // texture shown for the item of the name
+		bool refresh{false}; // all the images to be let go of and read again
 		int loads{0}; // textures read in the frame, a few at most so the browser doesn't stall the editor
 		int loadsframe{-1};
 	} m_textures;

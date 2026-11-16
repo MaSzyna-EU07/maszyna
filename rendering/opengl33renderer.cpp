@@ -2575,6 +2575,18 @@ void opengl33_renderer::Unload_Texture(texture_handle const Texture)
 	m_textures.unload(Texture);
 }
 
+void opengl33_renderer::Unload_Material(material_handle const Material)
+{
+	if (Material == null_handle)
+		return;
+	auto const &material{m_materials.material(Material)};
+	for (auto const texture : material.textures)
+		m_textures.unload(texture);
+	for (auto const &variant : material.texture_variants)
+		for (auto const texture : variant)
+			m_textures.unload(texture);
+}
+
 void opengl33_renderer::Update_AnimModel(TAnimModel *model)
 {
 	model->RaAnimate(m_framestamp);
