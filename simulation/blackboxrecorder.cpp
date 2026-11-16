@@ -513,7 +513,7 @@ void blackbox_recorder::keep_tape_line() {
 	auto const &name{driver->physicslog_name()};
 	if (m_tapes.insert(name).second) {
 		PhysicsLogs.begin(name, TController::physicslog_header());
-		WriteLog(std::format("Black box: the physics log \"physicslog/{}.dat\" begun", name));
+		WriteLog(std::format("Black box: the physics log \"{}\" begun", PhysicsLogs.shown(name)));
 	}
 	PhysicsLogs.append(name, driver->physicslog_line());
 }

@@ -16,7 +16,10 @@ recording started at), next to the `.dat` logs of the vehicles when those are on
 
 With the physics logs off it still gives the `.dat` log of each vehicle the user was in, as it goes:
 `physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every 0.05 s as
-`physicslog yes` would write. A log is the driver's, named after the vehicle that driver began in: it
+`physicslog yes` would write. In the name of a file, of these logs and of those of `physicslog yes`, the
+characters no file name may have on Windows, `< > : " / \ | ? *` and the control characters, are `_`, on
+every system: a spawned vehicle, named `<spawn>:<number>`, has its log as `<spawn>_<number>.dat`. A name
+Windows keeps for a device (`con`, `nul`, `com1` and the like) gets a `_` before it. A log is the driver's, named after the vehicle that driver began in: it
 begins the first time the user is with that driver, and goes on while the user looks around outside, or
 moves to another cab of the unit or another vehicle of the same train. Taking a vehicle of another driver
 goes on in that driver's log, begun then if it is the first time. Back with a driver, the log goes on after

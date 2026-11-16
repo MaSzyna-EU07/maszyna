@@ -183,6 +183,29 @@ TEST_CASE("physicslog: a vehicle named in the code page of its scenery has its l
 	CHECK(log_folder::read_file(logs.file(name)) == std::string{header} + "0.0500 0.0000\r\n");
 }
 
+TEST_CASE("physicslog: what no file name may have on Windows is replaced in the name of the file, on every system") {
+	log_folder folder{"filename"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	// a spawned vehicle's name has a ':', which on NTFS would write into a stream of the file "spawn_ezt"
+	CHECK(logs.file("spawn_ezt:12").filename() == "spawn_ezt_12.dat");
+	CHECK(logs.file("a<b>c\"d/e\\f|g?h*i\tj").filename() == "a_b_c_d_e_f_g_h_i_j.dat");
+	CHECK(logs.file("EN57-1001 'a'.2").filename() == "EN57-1001 'a'.2.dat");
+	// the devices of Windows, with an extension too, aren't files
+	CHECK(logs.file("nul").filename() == "_nul.dat");
+	CHECK(logs.file("Com1.2").filename() == "_Com1.2.dat");
+	CHECK(logs.file("con ").filename() == "_con .dat");
+	CHECK(logs.file("console").filename() == "console.dat");
+	CHECK(logs.file("com0").filename() == "com0.dat");
+	CHECK(logs.shown("spawn_ezt:12") == folder.path().generic_string() + "/spawn_ezt_12.dat");
+
+	logs.begin("spawn_ezt:12", header);
+	logs.append("spawn_ezt:12", "0.0500 0.0000\r\n");
+	logs.flush();
+	CHECK(folder.read("spawn_ezt_12") == std::string{header} + "0.0500 0.0000\r\n");
+	CHECK(false == std::filesystem::exists(folder.path() / "spawn_ezt"));
+}
+
 TEST_CASE("physicslog: stopping twice, from two threads at once, writes once and ends") {
 	log_folder folder{"stoptwice"};
 	physicslog_writer logs{folder.path(), std::chrono::milliseconds{20}};

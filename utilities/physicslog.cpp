@@ -12,10 +12,12 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <fstream>
 #include <future>
 #include <memory>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -34,6 +36,26 @@ void keep_last(std::string &Text, std::size_t const Most) {
 		return;
 	auto const cut{Text.find('\n', Text.size() - Most)};
 	Text.erase(0, cut == std::string::npos ? Text.size() : cut + 1);
+}
+
+// the name of the file of the log Name, its extension too. what no file name may have on Windows is replaced, on every
+// system, so the logs are named alike everywhere: a spawned vehicle is named <spawn>:<number>, and on NTFS "a:1.dat"
+// isn't even an error but the stream 1.dat of the file a, which nothing lists
+std::string file_name(std::string const &Name) {
+	std::string name{Name};
+	for (auto &character : name) {
+		if (static_cast<unsigned char>(character) < 0x20 || std::string_view{R"(<>:"/\|?*)"}.find(character) != std::string_view::npos)
+			character = '_';
+	}
+	// a device rather than a file, with any extension: con.dat is the console. told by the name before its first dot
+	auto stem{name.substr(0, name.find('.'))};
+	while (false == stem.empty() && stem.back() == ' ')
+		stem.pop_back();
+	std::ranges::transform(stem, stem.begin(), [](unsigned char const Character) { return static_cast<char>(std::toupper(Character)); });
+	auto const numbered{stem.size() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem[3] >= '1' && stem[3] <= '9'};
+	if (numbered || stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL")
+		name.insert(0, 1, '_');
+	return name + ".dat";
 }
 
 // told in the log of the simulator, if there's the memory for it
@@ -115,7 +137,7 @@ void physicslog_writer::stop() {
 }
 
 std::filesystem::path physicslog_writer::file(std::string const &Name) const {
-	auto const name{Name + ".dat"};
+	auto const name{file_name(Name)};
 #ifdef _WIN32
 	// in the code page of the system, as the standard library would convert it, but with the bytes not of it replaced
 	// instead of an exception thrown: a vehicle of a scenery written in 1250 on a Windows set to UTF-8, say
@@ -130,7 +152,7 @@ std::filesystem::path physicslog_writer::file(std::string const &Name) const {
 }
 
 std::string physicslog_writer::shown(std::string const &Name) const {
-	return m_shownfolder + '/' + Name + ".dat";
+	return m_shownfolder + '/' + file_name(Name);
 }
 
 void physicslog_writer::start() {

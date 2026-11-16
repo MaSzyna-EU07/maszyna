@@ -20,10 +20,11 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 #include <thread>
 
-// the physics logs, <folder>/<name>.dat. the lines given are kept, and written every two seconds by a thread of its
-// own, each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and
-// the simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file
-// can't be written, held by another program say, are kept for the next try: the last 64 MB of them all at most
+// the physics logs, <folder>/<name>.dat, what no file name may have on Windows replaced in the name (a spawned vehicle's
+// has a ':'), the same on every system. the lines given are kept, and written every two seconds by a thread of its own,
+// each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and the
+// simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file can't
+// be written, held by another program say, are kept for the next try: the last 64 MB of them all at most
 class physicslog_writer {
 public:
 	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
@@ -44,9 +45,13 @@ public:
 	bool flush_for(std::chrono::milliseconds Timeout);
 	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
 	void stop();
-	// the file of the log Name, made of its bytes as they are: those of the code page of a scenery (1250) too, on a
-	// Windows set to UTF-8, where the standard library throws making a path of them. there they become U+FFFD
+	// the file of the log Name: <folder>/<name>.dat, with < > : " / \ | ? * and the control characters of the name
+	// replaced by _, and _ before a name Windows keeps for a device (con, nul, com1...). the bytes of the code page of a
+	// scenery (1250) stay as they are, also on a Windows set to UTF-8, where the standard library would throw making a
+	// path of them: there they become U+FFFD
 	std::filesystem::path file(std::string const &Name) const;
+	// the same, for the log of the simulator
+	std::string shown(std::string const &Name) const;
 
 private:
 	struct pending {
@@ -65,8 +70,6 @@ private:
 	void write();
 	// the lines of the log Name written into its file. returns: true if they all were
 	bool write_log(std::string const &Name, pending const &Lines) const;
-	// the file of the log Name, for the log of the simulator
-	std::string shown(std::string const &Name) const;
 
 	std::filesystem::path const m_folder;
 	std::string const m_shownfolder;
