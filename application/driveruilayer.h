@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "application/driveruipanels.h"
+#include "application/driverhud.h"
 #include "input/command.h"
 
 #include "widgets/vehiclelist.h"
@@ -69,4 +70,5 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	driver_hud m_hud; // the driving aid made with RmlUi, in place of m_aidpanel while RmlUi runs
 };

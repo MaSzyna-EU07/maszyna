@@ -40,172 +40,157 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/uart.h"
 #endif
 
-void
-drivingaid_panel::update() {
+namespace {
 
-    if( false == is_open ) { return; }
+// a line of the driving aid printed with a format of the translations, which are in printf syntax, into as many characters as
+// the panel has always had
+template <typename... Args>
+std::string print_line( char const *Format, Args const... Arguments ) {
 
-	text_lines.clear();
+    std::array<char, 256> buffer {};
+    std::snprintf( buffer.data(), buffer.size(), Format, Arguments... ); // NOSONAR: the formats of the translations are in printf syntax
+    return buffer.data();
+}
+
+char direction_mark( TMoverParameters const &Mover ) {
+
+    if( Mover.SpeedCtrlUnit.IsActive ) { return 'T'; }
+    if( Mover.DirActive > 0 ) { return 'D'; }
+    if( Mover.DirActive < 0 ) { return 'R'; }
+    return 'N';
+}
+
+// throttle, velocity, speed limits and grade
+std::string throttle_line( driving_aid::reading const &Aid, bool const Expanded ) {
+
+    std::string expandedtext;
+    if( Expanded ) {
+        std::string gradetext;
+        if( std::abs( Aid.grade ) >= driving_aid::grade_shown ) {
+            gradetext = print_line( STR_C( " Grade: %.1f%%%%" ), Aid.grade );
+        }
+        std::string nextspeedlimittext;
+        if( Aid.ahead.limit != Aid.speed_limit ) {
+            nextspeedlimittext = print_line( STR_C( ", new limit: %d km/h in %.1f km" ), Aid.ahead.limit, Aid.ahead.distance * 0.001 );
+        }
+        expandedtext = print_line( STR_C( " Speed: %d km/h (limit %d km/h%s)%s" ), Aid.speed, Aid.speed_limit, nextspeedlimittext.c_str(), gradetext.c_str() );
+    }
+    return print_line( STR_C( "Throttle: %3d+%d %c%s" ), Aid.throttle, Aid.throttle_secondary, Aid.direction, expandedtext.c_str() );
+}
+
+// brakes, air pressure
+std::string brakes_line( driving_aid::reading const &Aid, bool const Expanded ) {
+
+    std::string expandedtext;
+    if( Expanded ) {
+        expandedtext = print_line( STR_C( " Pressure: %.2f kPa (train pipe: %.2f kPa)" ), Aid.brake_pressure, Aid.pipe_pressure );
+    }
+    return print_line( STR_C( "Brakes: %5.1f+%-2.0f%c%s" ), Aid.brake, Aid.local_brake, Aid.slipping ? '!' : ' ', expandedtext.c_str() );
+}
+
+// alerter, hints
+std::string alerts_line( driving_aid::reading const &Aid, bool const Expanded ) {
+
+    std::string textline = Aid.alerter ? STR( "!ALERTER! " ) : "          ";
+    textline += Aid.cab_signal ? STR( "!SHP!" ) : "     ";
+    return textline + "  " + ( Expanded ? driving_aid_hold_up( Aid ) : std::string {} );
+}
+
+} // namespace
+
+int
+drivingaid_panel::schedule_speed_limit( TController const &Owner ) {
+
+    if( ( Owner.OrderCurrentGet() & ( Obey_train | Bank ) ) == 0 ) { return static_cast<int>( Owner.fShuntVelocity ); }
+    return Owner.TrainParams.TTVmax > 0.0 ? static_cast<int>( Owner.TrainParams.TTVmax ) : -1;
+}
+
+driving_aid::speed_limit_inputs
+drivingaid_panel::speed_limit_inputs_of( TController const &Owner ) {
+
+    driving_aid::speed_limit_inputs inputs;
+    inputs.desired = Owner.VelDesired;
+    inputs.schedule = schedule_speed_limit( Owner );
+    inputs.last_speed = Owner.VelLimitLastDist.first;
+    inputs.last_distance = Owner.VelLimitLastDist.second;
+    inputs.next_speed = Owner.VelNext;
+    inputs.proximity = Owner.ActualProximityDist;
+    inputs.obstacle = std::abs( Owner.TrackObstacle() );
+    inputs.scan_range = EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE;
+    return inputs;
+}
+
+std::optional<driving_aid::reading>
+drivingaid_panel::read() {
 
     auto const *train { simulation::Train };
     auto const *controlled { ( train ? train->Dynamic() : nullptr ) };
 
     if( controlled == nullptr
-     || controlled->Mechanik == nullptr ) { return; }
+     || controlled->Mechanik == nullptr ) { return std::nullopt; }
 
-    auto const *mover = controlled->MoverParameters;
-    auto const *vehicledriver = controlled->Mechanik;
-    auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
+    auto const *mover { controlled->MoverParameters };
+    auto const *vehicledriver { controlled->Mechanik };
+    auto const *owner { controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik };
+    auto const *controlling { vehicledriver->Controlling() };
 
-    { // throttle, velocity, speed limits and grade
-        std::string expandedtext;
-        if( is_expanded ) {
-            // grade
-            std::string gradetext;
-            auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
-            if( auto const grade { controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser }; std::abs( grade ) >= 0.25 ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(" Grade: %.1f%%%%"),
-                    grade );
-                gradetext = m_buffer.data();
-            }
-            // next speed limit
-            auto const speedlimit { static_cast<int>( owner->VelDesired ) };
-            auto nextspeedlimit { speedlimit };
-            auto nextspeedlimitdistance { std::numeric_limits<double>::max() };
-            if( speedlimit != 0 ) { // if we aren't allowed to move then any next speed limit is irrelevant
-                // nie przekraczać rozkladowej
-                auto const schedulespeedlimit { (
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) != 0 && owner->TrainParams.TTVmax > 0.0 ? static_cast<int>( owner->TrainParams.TTVmax ) :
-                    (owner->OrderCurrentGet() & (Obey_train | Bank)) == 0 ? static_cast<int>( owner->fShuntVelocity ) :
-                        -1 ) };
-                // first take note of any speed change which should occur after passing potential current speed limit
-                if( owner->VelLimitLastDist.second > 0 ) {
-                    nextspeedlimit = min_speed( schedulespeedlimit, static_cast<int>( owner->VelLimitLastDist.first ) );
-                    nextspeedlimitdistance = owner->VelLimitLastDist.second;
-                }
-                // then take into account speed change ahead, compare it with speed after potentially clearing last limit
-                // lower of these two takes priority; otherwise limit lasts at least until potential last limit is cleared
-                auto const noactivespeedlimit { owner->VelLimitLastDist.second < 0 };
-                if( auto const speedatproximitydistance { min_speed( schedulespeedlimit, static_cast<int>( owner->VelNext ) ) }; speedatproximitydistance == nextspeedlimit ) {
-                    if( noactivespeedlimit ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( speedatproximitydistance < nextspeedlimit ) {
-                    // if the speed limit ahead is more strict than our current limit, it's important enough to report
-                    if( speedatproximitydistance < owner->VelDesired ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                    // otherwise report it only if it's located after our current (lower) limit ends
-                    else if( owner->ActualProximityDist > nextspeedlimitdistance ) {
-                        nextspeedlimit = speedatproximitydistance;
-                        nextspeedlimitdistance = owner->ActualProximityDist;
-                    }
-                }
-                else if( noactivespeedlimit ) { // implicit proximity > last, report only if last limit isn't present
-                    nextspeedlimit = speedatproximitydistance;
-                    nextspeedlimitdistance = owner->ActualProximityDist;
-                }
-                // HACK: if our current speed limit extends beyond our scan range don't display potentially misleading information about its length
-                if( nextspeedlimitdistance >= EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE ) {
-                    nextspeedlimit = speedlimit;
-                }
-                // HACK: hide next speed limit if the 'limit' is a vehicle in front of us
-                else if( owner->ActualProximityDist == std::abs( owner->TrackObstacle() ) ) {
-                    nextspeedlimit = speedlimit;
-                }
-            }
-            std::string nextspeedlimittext;
-            if( nextspeedlimit != speedlimit ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(", new limit: %d km/h in %.1f km"),
-                    nextspeedlimit,
-                    nextspeedlimitdistance * 0.001 );
-                nextspeedlimittext = m_buffer.data();
-            }
-            // current speed and limit
-            std::snprintf(
-                m_buffer.data(), m_buffer.size(),
-			    STR_C(" Speed: %d km/h (limit %d km/h%s)%s"),
-                static_cast<int>( std::floor( mover->Vel ) ),
-                speedlimit,
-                nextspeedlimittext.c_str(),
-                gradetext.c_str() );
-            expandedtext = m_buffer.data();
-        }
-        // base data and optional bits put together
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
-            mover->SpeedCtrlUnit.IsActive ? 'T' :
-		              mover->DirActive > 0          ? 'D' :
-		              mover->DirActive < 0          ? 'R' :
-		                                              'N',
-            expandedtext.c_str());
+    driving_aid::reading aid;
+    aid.throttle = mover->EIMCtrlType > 0 ? std::max( 0, static_cast<int>( 100.4 * mover->eimic_real ) ) : controlling->MainCtrlPos;
+    aid.throttle_secondary = mover->EIMCtrlType > 0 ? controlling->MainCtrlPos : controlling->ScndCtrlPos;
+    aid.direction = direction_mark( *mover );
+    aid.speed = static_cast<int>( std::floor( mover->Vel ) );
+    aid.speed_limit = static_cast<int>( owner->VelDesired );
+    aid.ahead = driving_aid::next_speed_limit( speed_limit_inputs_of( *owner ) );
+    auto const reverser { ( mover->DirActive > 0 ? 1 : -1 ) };
+    aid.grade = controlled->VectorFront().y * 100 * ( controlled->DirectionGet() == reverser ? 1 : -1 ) * reverser;
+    aid.brake = mover->UniCtrlIntegratedBrakeCtrl ? std::max( 0.0, -100.0 * mover->eimic_real ) : mover->fBrakeCtrlPos;
+    aid.local_brake = mover->LocalBrakePosA * LocalBrakePosNo;
+    aid.slipping = mover->SlippingWheels;
+    aid.brake_pressure = mover->BrakePress * 100;
+    aid.pipe_pressure = mover->PipePress * 100;
+    // the train is there, the vehicle driven is taken from it
+    aid.alerter = mover->SecuritySystem.is_vigilance_blinking() && train->fBlinkTimer > 0;
+    aid.cab_signal = mover->SecuritySystem.is_cabsignal_blinking();
+    aid.stop_time = static_cast<int>( owner->ExchangeTime );
+    aid.obstacle_distance = std::abs( owner->TrackObstacle() );
+    aid.autopilot_allowed = ( false == Global.RealisticControlMode || DebugModeFlag );
+    aid.autopilot = vehicledriver->AIControllFlag;
+    return aid;
+}
 
-        text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
+std::string
+driving_aid_hold_up( driving_aid::reading const &Aid ) {
+
+    if( Aid.stop_time > 0 ) {
+        return print_line( STR_C( " Loading/unloading in progress (%d s left)" ), Aid.stop_time );
     }
-
-    { // brakes, air pressure
-        std::string expandedtext;
-        if( is_expanded ) {
-            std::snprintf (
-                m_buffer.data(), m_buffer.size(),
-			    STR_C(" Pressure: %.2f kPa (train pipe: %.2f kPa)"),
-                mover->BrakePress * 100,
-                mover->PipePress * 100 );
-            expandedtext = m_buffer.data();
-        }
-        auto const basicbraking { mover->fBrakeCtrlPos };
-        auto const eimicbraking { std::max( 0.0, -100.0 * mover->eimic_real ) };
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Brakes: %5.1f+%-2.0f%c%s"),
-//            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
-            mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking,
-            mover->LocalBrakePosA * LocalBrakePosNo,
-            mover->SlippingWheels ? '!' : ' ',
-            expandedtext.c_str() );
-
-        text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
+    if( Aid.obstacle_distance <= driving_aid::obstacle_shown ) {
+        return print_line( STR_C( " Another vehicle ahead (distance: %.1f m)" ), Aid.obstacle_distance );
     }
+    return {};
+}
 
-    { // alerter, hints
-        std::string expandedtext;
-        if( is_expanded ) {
-            auto const stoptime { static_cast<int>( owner->ExchangeTime ) };
-            if( stoptime > 0 ) {
-                std::snprintf(
-                    m_buffer.data(), m_buffer.size(),
-				    STR_C(" Loading/unloading in progress (%d s left)"),
-                    stoptime );
-                expandedtext = m_buffer.data();
-            }
-            else {
-                auto const trackobstacledistance { std::abs( owner->TrackObstacle() ) };
-                if( trackobstacledistance <= 75.0 ) {
-                    std::snprintf(
-                        m_buffer.data(), m_buffer.size(),
-					    STR_C(" Another vehicle ahead (distance: %.1f m)"),
-                        trackobstacledistance );
-                    expandedtext = m_buffer.data();
-                }
-            }
-        }
-        std::string textline =
-		    mover->SecuritySystem.is_vigilance_blinking() && (train != nullptr ? train->fBlinkTimer > 0 : true) ? STR("!ALERTER! ") : "          ";
-        textline +=
-		    mover->SecuritySystem.is_cabsignal_blinking() ? STR("!SHP!") : "     ";
+void
+drivingaid_panel::update() {
 
-        text_lines.emplace_back( textline + "  " + expandedtext, Global.UITextColor );
-    }
+    if( false == is_open || replaced ) { return; }
+
+	text_lines.clear();
+
+    auto const aid { read() };
+    if( false == aid.has_value() ) { return; }
+
+    text_lines.emplace_back( throttle_line( *aid, is_expanded ), Global.UITextColor );
+    text_lines.emplace_back( brakes_line( *aid, is_expanded ), Global.UITextColor );
+    text_lines.emplace_back( alerts_line( *aid, is_expanded ), Global.UITextColor );
+}
+
+void
+drivingaid_panel::render() {
+
+    // the hud of RmlUi shows the driving aid in place of the panel
+    if( replaced ) { return; }
+    ui_expandable_panel::render();
 }
 
 void

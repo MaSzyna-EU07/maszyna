@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/sceneeditor.h"
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
+#include "application/rmluilayer.h"
 #include "utilities/Logs.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
@@ -750,6 +751,13 @@ void eu07_application::exit()
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
+
+	// its textures are images of the renderer
+	if (rmlui::active())
+	{
+		step("rmlui");
+		rmlui::shutdown();
+	}
 
 	step("the renderer");
 	// the screens' post-processing goes with the renderer
@@ -1523,6 +1531,8 @@ int eu07_application::init_ui()
 	{
 		return -1;
 	}
+	// over imgui, when on (ui.rmlui); without it the ui is the one of imgui alone
+	rmlui::init(m_windows.front());
 	init_callbacks();
 	return 0;
 }

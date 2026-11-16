@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/application.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#include "application/rmluilayer.h"
 
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_internal.h"
@@ -111,16 +112,17 @@ ui_layer::ui_layer()
 
 ui_layer::~ui_layer() {}
 
+// what imgui leaves of the input goes to the documents of RmlUi (which take nothing while it doesn't run)
 bool ui_layer::key_callback(int key, int scancode, int action, int mods)
 {
 	ImGui_ImplGlfw_KeyCallback(m_keywindow != nullptr ? m_keywindow : m_window, key, scancode, action, mods);
-	return m_imguiio->WantCaptureKeyboard;
+	return m_imguiio->WantCaptureKeyboard || rmlui::on_key(key, action, mods);
 }
 
 bool ui_layer::char_callback(unsigned int c)
 {
 	ImGui_ImplGlfw_CharCallback(m_window, c);
-	return m_imguiio->WantCaptureKeyboard;
+	return m_imguiio->WantCaptureKeyboard || rmlui::on_char(c);
 }
 
 bool ui_layer::scroll_callback(double xoffset, double yoffset)
@@ -134,13 +136,13 @@ bool ui_layer::scroll_callback(double xoffset, double yoffset)
 		auto const *hovered{ImGui::GetCurrentContext() != nullptr ? ImGui::GetCurrentContext()->HoveredWindow : nullptr};
 		WriteLog("scroll " + std::to_string(xoffset) + " " + std::to_string(yoffset) + ", taken by the ui: " + (m_imguiio->WantCaptureMouse ? "yes" : "no") + ", over: " + (hovered != nullptr ? hovered->Name : "the view"));
 	}
-	return m_imguiio->WantCaptureMouse;
+	return m_imguiio->WantCaptureMouse || rmlui::on_scroll(yoffset);
 }
 
 bool ui_layer::mouse_button_callback(int button, int action, int mods)
 {
 	ImGui_ImplGlfw_MouseButtonCallback(m_window, button, action, mods);
-	return m_imguiio->WantCaptureMouse;
+	return m_imguiio->WantCaptureMouse || rmlui::on_mouse_button(button, action, mods);
 }
 
 // the glfw backend of imgui works with events since 1.87: position, hover and focus of the window are passed to it as they come
@@ -149,6 +151,7 @@ void ui_layer::cursor_pos_callback(double x, double y)
 	if (ImGui::GetCurrentContext() == nullptr)
 		return;
 	ImGui_ImplGlfw_CursorPosCallback(m_window, x, y);
+	rmlui::on_cursor_pos(x, y, m_cursorvisible);
 }
 
 void ui_layer::cursor_enter_callback(int entered)
@@ -156,6 +159,8 @@ void ui_layer::cursor_enter_callback(int entered)
 	if (ImGui::GetCurrentContext() == nullptr)
 		return;
 	ImGui_ImplGlfw_CursorEnterCallback(m_window, entered);
+	if (entered == 0)
+		rmlui::on_cursor_leave();
 }
 
 void ui_layer::focus_callback(int focused)
@@ -642,6 +647,9 @@ void ui_layer::set_cursor(int const Mode)
 {
 	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
 	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
+	// the cursor hidden turns the view, the documents lose it
+	if (false == m_cursorvisible)
+		rmlui::on_cursor_leave();
 }
 
 void ui_layer::set_progress(std::string const &Text)
@@ -734,6 +742,12 @@ void ui_layer::render_menu_contents()
 		if (DebugModeFlag)
 		{
 			ImGui::MenuItem(STR_C("ImGui Demo"), nullptr, &m_imgui_demo);
+			if (rmlui::active())
+			{
+				auto debugger{rmlui::debugger_shown()};
+				if (ImGui::MenuItem(STR_C("RmlUi Debugger"), nullptr, &debugger))
+					rmlui::show_debugger(debugger);
+			}
 			bool ret = ImGui::MenuItem(STR_C("Headlight config"), nullptr, GfxRenderer->Debug_Ui_State(std::nullopt));
 
 			GfxRenderer->Debug_Ui_State(ret);

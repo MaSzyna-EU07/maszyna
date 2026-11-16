@@ -9,9 +9,16 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <optional>
+
 #include "application/uilayer.h"
+#include "application/drivingaid.h"
 #include "utilities/Classes.h"
 #include "rendering/renderer.h"
+
+// what holds the train up, as the driving aid tells it (translated): the exchange of passengers or load, else a vehicle close
+// ahead. starts with a space, empty: nothing
+std::string driving_aid_hold_up( driving_aid::reading const &Aid );
 
 class drivingaid_panel : public ui_expandable_panel {
 
@@ -21,11 +28,19 @@ public:
     {}
 
     void update() override;
+    void render() override;
     void render_contents() override;
 
+    // what the driving aid shows, read from the vehicle driven; none without one. the hud of RmlUi reads it too
+    static std::optional<driving_aid::reading> read();
+
+    // the hud of RmlUi shows the driving aid, the panel stays hidden; is_open and is_expanded still tell what the hud shows
+    bool replaced { false };
+
 private:
-// members
-    std::array<char, 256> m_buffer;
+    // the limit of the timetable or of the shunting the driver keeps to, -1: none
+    static int schedule_speed_limit( TController const &Owner );
+    static driving_aid::speed_limit_inputs speed_limit_inputs_of( TController const &Owner );
 };
 
 class timetable_panel : public ui_expandable_panel {

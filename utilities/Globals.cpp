@@ -968,6 +968,12 @@ bool global_settings::ConfigParseUI(cParser& Parser, const std::string& token)
         return true;
     }
 
+    if (token == "ui.rmlui")
+    {
+        ParseOne(Parser, ui_rmlui, 1);
+        return true;
+    }
+
     if (token == "gui.defaultwindows")
     {
         ParseOne(Parser, gui_defaultwindows, 1);
@@ -2412,6 +2418,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << UITextColor.b * 255 << "\n";
     export_as_text( Output, "ui.bg.opacity", UIBgOpacity );
     export_as_text( Output, "ui.viewports", ui_viewports );
+    export_as_text( Output, "ui.rmlui", ui_rmlui );
     export_as_text( Output, "input.gamepad", InputGamepad );
 #ifdef WITH_UART
     if( uart_conf.enable ) {

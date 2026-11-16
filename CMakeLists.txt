@@ -81,6 +81,7 @@ option(WITH_OPENVR "Compile with OpenVR" OFF)
 option(WITH_ZMQ "Compile with cppzmq" OFF)
 option(WITH_CRASHPAD "Compile with crashpad" OFF)
 option(WITH_DISCORD_RPC "Compile with DISCORD RICH PRESENCE" ON)
+option(WITH_RMLUI "Compile with the user interface of RmlUi (ui.rmlui in eu07.ini); needs the submodules ref/RmlUi and ref/freetype" ON)
 option(USE_LTO "Use link-time optimization" OFF)
 option(WITH_TESTS "Build and run the unit tests with the game, a failing test fails the build" ON)
 option(GENERATE_PDB "Generate executable with program debugging symbols" ON)
@@ -206,6 +207,9 @@ set(SOURCES
 "application/drivermode.cpp"
 "application/driveruilayer.cpp"
 "application/driveruipanels.cpp"
+"application/drivingaid.cpp"
+"application/driverhud.cpp"
+"application/rmluilayer.cpp"
 "input/editorkeyboardinput.cpp"
 "editor/editorSettings.cpp"
 "editor/editorModelSets.cpp"
@@ -958,6 +962,51 @@ endif ()
 # yaml-cpp, for the descriptions of scenery templates edited in the scenery editor and for the heightmap terrain
 add_subdirectory("ref/yaml-cpp" "${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp" EXCLUDE_FROM_ALL)
 target_link_libraries(eu07_settings INTERFACE yaml-cpp)
+
+# RmlUi, the user interface made of documents (rml) and style sheets (rcss), drawn over the simulation beside the one of imgui
+# when ui.rmlui is on in eu07.ini. its fonts are read with FreeType, built here from ref/freetype as RmlUi is from ref/RmlUi:
+# both static, without the optional libraries of FreeType, and a FreeType installed in the system isn't looked for
+if (WITH_RMLUI)
+	block()
+		set(BUILD_SHARED_LIBS OFF)
+		set(FT_DISABLE_ZLIB ON)
+		set(FT_DISABLE_BZIP2 ON)
+		set(FT_DISABLE_PNG ON)
+		set(FT_DISABLE_HARFBUZZ ON)
+		set(FT_DISABLE_BROTLI ON)
+		set(SKIP_INSTALL_ALL ON)
+		add_subdirectory("${DEPS_DIR}/freetype" "${CMAKE_CURRENT_BINARY_DIR}/freetype" EXCLUDE_FROM_ALL)
+		add_library(Freetype::Freetype ALIAS freetype)
+		set(CMAKE_DISABLE_FIND_PACKAGE_Freetype ON)
+		set(RMLUI_FONT_ENGINE "freetype")
+		set(RMLUI_SAMPLES OFF)
+		set(RMLUI_LUA_BINDINGS OFF)
+		set(RMLUI_SVG_PLUGIN OFF)
+		set(RMLUI_LOTTIE_PLUGIN OFF)
+		set(RMLUI_HARFBUZZ_SAMPLE OFF)
+		set(RMLUI_WARNINGS_AS_ERRORS OFF)
+		set(BUILD_TESTING OFF)
+		add_subdirectory("${DEPS_DIR}/RmlUi" "${CMAKE_CURRENT_BINARY_DIR}/RmlUi" EXCLUDE_FROM_ALL)
+	endblock()
+	set_target_properties(freetype rmlui_core rmlui_debugger PROPERTIES FOLDER "libraries")
+	target_link_libraries(${PROJECT_NAME} RmlUi::RmlUi)
+	target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_RMLUI)
+	# the glfw platform of the backends of RmlUi: the keys of glfw turned into those of RmlUi, the time and the clipboard
+	target_sources(${PROJECT_NAME} PRIVATE "application/rmluirender.cpp" "application/rmluipixels.cpp"
+		"${DEPS_DIR}/RmlUi/Backends/RmlUi_Platform_GLFW.cpp")
+	target_include_directories(${PROJECT_NAME} PRIVATE "${DEPS_DIR}/RmlUi/Backends")
+	set_source_files_properties("${DEPS_DIR}/RmlUi/Backends/RmlUi_Platform_GLFW.cpp" PROPERTIES
+		COMPILE_DEFINITIONS "GLFW_INCLUDE_NONE" SKIP_PRECOMPILE_HEADERS ON)
+	# the hud of the driver is built into the executable, used when the game folder has no ui/driverhud.rml of its own
+	set(DRIVER_HUD_RML "${CMAKE_SOURCE_DIR}/staticFiles/ui/driverhud.rml")
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${DRIVER_HUD_RML}")
+	file(SIZE "${DRIVER_HUD_RML}" DRIVER_HUD_RML_SIZE)
+	file(READ "${DRIVER_HUD_RML}" DRIVER_HUD_RML_HEX HEX)
+	string(REGEX REPLACE "(................................)" "\\1\n" DRIVER_HUD_RML_HEX "${DRIVER_HUD_RML_HEX}")
+	string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," DRIVER_HUD_RML_HEX "${DRIVER_HUD_RML_HEX}")
+	file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/driverhud_rml.inc"
+		CONTENT "constexpr std::array<unsigned char, ${DRIVER_HUD_RML_SIZE}> builtin_hud{\n${DRIVER_HUD_RML_HEX}};\n")
+endif()
 
 
 # Enable compiling with debug symbols

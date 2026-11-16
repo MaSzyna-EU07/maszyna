@@ -36,3 +36,9 @@
 	path = ref/wamr
 	url = https://github.com/bytecodealliance/wasm-micro-runtime
 	shallow = true
+[submodule "ref/RmlUi"]
+	path = ref/RmlUi
+	url = https://github.com/mikke89/RmlUi.git
+[submodule "ref/freetype"]
+	path = ref/freetype
+	url = https://github.com/freetype/freetype.git

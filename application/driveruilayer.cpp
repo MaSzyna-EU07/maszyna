@@ -216,6 +216,9 @@ void driver_ui::update()
 	}
 	m_paused = ispaused;
 
+	// before the panels are updated: the panel of the driving aid isn't, while the hud shows it
+	m_aidpanel.replaced = m_hud.update(m_aidpanel.is_open, m_aidpanel.is_expanded);
+
 	ui_layer::update();
 }
 
@@ -237,6 +240,9 @@ void driver_ui::set_cursor(bool const Visible)
 // render() subclass details
 void driver_ui::render_()
 {
+	// into the background of imgui, under its windows
+	m_hud.render();
+
 	const std::string *rec_name = m_trainingcardpanel.is_recording();
 	if (rec_name && m_cameraviewpanel.set_state(true))
 	{

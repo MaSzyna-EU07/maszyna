@@ -1,0 +1,167 @@
+<rml>
+<!--
+	The hud of the driver: the driving aid of F1 drawn with RmlUi (ui.rmlui yes in eu07.ini). F1 shows it, shows it expanded
+	and hides it. A copy of this file is built into the program; ui/driverhud.rml in the game folder is used in its place.
+
+	The values of the data model driver_hud:
+	shown            the hud is shown (F1) and there's a vehicle driven
+	expanded         the hud is expanded (F1 pressed again)
+	speed            km/h, rounded down
+	limit            km/h the driver may go at now
+	next_limit_shown there's a next limit to tell of
+	next_limit       km/h of the next limit
+	next_limit_distance  km to it, with one decimal
+	grade_shown      the grade is worth telling of
+	grade            percent, with the sign: above 0 uphill
+	throttle         the master controller and the field shunting (or the power of an integrated controller and its position)
+	direction        T: speed control, D: forward, R: backward, N: neutral
+	brake            the train brake and the local brake
+	slipping         the wheels slip
+	brake_pressure   kPa in the brake cylinders
+	pipe_pressure    kPa in the train pipe
+	alerter          the alerter calls (blinks)
+	cab_signal       the cab signal (SHP) calls
+	alerter_text, shp_text   their names, translated
+	hold_up_shown    something holds the train up
+	hold_up          what: the exchange of passengers or load, a vehicle close ahead (translated)
+	autopilot_shown  the driver may hand the vehicle to the autopilot here
+	autopilot        the autopilot drives
+	The event toggle_autopilot hands the vehicle to the autopilot or takes it back.
+
+	The texts of the elements are looked up in the translations of the game (lang/*.po).
+-->
+<head>
+	<title>Driver hud</title>
+	<style>
+		body {
+			display: block;
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			font-family: DejaVu Sans;
+			font-size: 14dp;
+			color: #ffffff;
+			pointer-events: none;
+		}
+		div {
+			display: block;
+		}
+		#aid {
+			position: absolute;
+			left: 16dp;
+			bottom: 16dp;
+			min-width: 250dp;
+			padding: 10dp 14dp 12dp 14dp;
+			background-color: #1e2327e0;
+			border: 1dp #3a424a;
+		}
+		.speedrow {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+		}
+		.speed {
+			font-size: 46dp;
+			font-weight: bold;
+		}
+		.unit {
+			margin-left: 4dp;
+			color: #a0a0a2;
+		}
+		.limit {
+			width: 40dp;
+			height: 40dp;
+			line-height: 40dp;
+			margin-left: 16dp;
+			border: 5dp #d42a1e;
+			border-radius: 25dp;
+			background-color: #ffffff;
+			color: #15171b;
+			font-size: 17dp;
+			font-weight: bold;
+			text-align: center;
+		}
+		.next {
+			margin-left: 12dp;
+			color: #ffcc33;
+		}
+		.row {
+			margin-top: 6dp;
+		}
+		.label {
+			margin-right: 4dp;
+			color: #a0a0a2;
+		}
+		.value {
+			margin-right: 14dp;
+		}
+		.mark {
+			color: #ffb020;
+			font-weight: bold;
+		}
+		.alerts {
+			margin-top: 8dp;
+		}
+		.alert {
+			display: inline-block;
+			margin-right: 8dp;
+			padding: 2dp 8dp;
+			background-color: #c0261b;
+			font-weight: bold;
+		}
+		.holdup {
+			margin-top: 6dp;
+			color: #ffcc33;
+		}
+		.button {
+			display: inline-block;
+			margin-top: 8dp;
+			padding: 3dp 10dp;
+			border: 1dp #3a424a;
+			background-color: #2a3036;
+			pointer-events: auto;
+		}
+		.button:hover {
+			background-color: #164b0e;
+		}
+		.button.on {
+			background-color: #177f00;
+		}
+	</style>
+</head>
+<body data-model="driver_hud">
+	<div id="aid" data-if="shown">
+		<div class="speedrow">
+			<span class="speed">{{speed}}</span>
+			<span class="unit">km/h</span>
+			<div class="limit">{{limit}}</div>
+			<div class="next" data-if="expanded && next_limit_shown">→ {{next_limit}} km/h, {{next_limit_distance}} km</div>
+		</div>
+		<div class="row">
+			<span class="label">Throttle</span>
+			<span class="value">{{throttle}} {{direction}}</span>
+			<span class="label">Brakes</span>
+			<span class="value">{{brake}}</span>
+			<span class="mark" data-if="slipping">!</span>
+		</div>
+		<div class="row" data-if="expanded">
+			<span class="label">Brake cylinders</span>
+			<span class="value">{{brake_pressure}} kPa</span>
+			<span class="label">Train pipe</span>
+			<span class="value">{{pipe_pressure}} kPa</span>
+		</div>
+		<div class="row" data-if="expanded && grade_shown">
+			<span class="label">Grade</span>
+			<span class="value">{{grade}} %</span>
+		</div>
+		<div class="alerts" data-if="alerter || cab_signal">
+			<span class="alert" data-if="alerter">{{alerter_text}}</span>
+			<span class="alert" data-if="cab_signal">{{shp_text}}</span>
+		</div>
+		<div class="holdup" data-if="expanded && hold_up_shown">{{hold_up}}</div>
+		<div class="button" data-if="autopilot_shown" data-class-on="autopilot" data-event-click="toggle_autopilot">Autopilot</div>
+	</div>
+</body>
+</rml>

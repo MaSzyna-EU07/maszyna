@@ -31,6 +31,9 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
 	# which textures the shadow maps draw without the alpha test
 	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
+	# the limit ahead the driving aid tells of, and the colours of RmlUi as imgui draws them
+	"${CMAKE_SOURCE_DIR}/application/drivingaid.cpp"
+	"${CMAKE_SOURCE_DIR}/application/rmluipixels.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
