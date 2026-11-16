@@ -1886,6 +1886,52 @@ texture_manager::mark_as_needed( texture_handle const Texture, bool const Near )
     }
 }
 
+void
+texture_manager::unload( texture_handle const Texture ) {
+
+    if( ( Texture <= 0 )
+     || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
+        return;
+    }
+    auto const &record { m_textures[ Texture ] };
+    auto &texture { *record.first };
+    if( ( record.second != resource_timestamp() )
+     || ( texture.id == 0 ) // failed to load
+     || ( true == texture.is_static )
+     || ( true == texture.is_rendertarget )
+     || ( texture.type == "make:" )
+     || ( texture.type == "internalsrc:" ) ) {
+        return;
+    }
+    if( ( texture.data_state == resource_state::loading )
+     && ( texture.request != nullptr ) ) {
+        // read by a worker thread: taken over first, to be dropped with the rest
+        texture.complete_data();
+        if( texture.data_state == resource_state::failed ) {
+            return;
+        }
+    }
+    auto const created { texture.id != opengl_texture::invalid_id };
+    if( ( false == created )
+     && ( texture.data_state != resource_state::good ) ) {
+        // nothing read nor made, e.g. the textures of a material asked for without loading
+        return;
+    }
+    if( true == created ) {
+        // deleted outright: release() would read the texture back from the card with gfx.resource.move, only for it to be dropped
+        ::glDeleteTextures( 1, &texture.id );
+        texture.id = opengl_texture::invalid_id;
+        texture.is_ready = false;
+        // the released gl name can be given to a new texture, the unit cache can't trust it
+        for( auto &unit : opengl_texture::units ) {
+            unit = -1;
+        }
+    }
+    texture.data = std::vector<unsigned char>();
+    texture.data_state = resource_state::none;
+    texture.reload_on_use = true;
+}
+
 // releases gl textures of vehicles not needed nor drawn for a while
 void
 texture_manager::release_unneeded() {

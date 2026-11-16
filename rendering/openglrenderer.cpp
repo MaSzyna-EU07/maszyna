@@ -1932,6 +1932,12 @@ opengl_renderer::Texture( texture_handle const Texture ) const {
 }
 
 void
+opengl_renderer::Unload_Texture( texture_handle const Texture ) {
+
+    m_textures.unload( Texture );
+}
+
+void
 opengl_renderer::Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) {
 
     m_control_pick_requests.emplace_back( Callback );
