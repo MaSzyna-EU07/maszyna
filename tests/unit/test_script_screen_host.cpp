@@ -7,6 +7,7 @@
 // api; what a call may send, log, read or make is capped. the Lua cases need WITH_LUA, the WebAssembly ones WITH_WASM
 
 #include "scripting/scriptscreens.h"
+#include "scripting/scriptscreenprogram.h"
 #include "input/command.h"
 #include "interfaces/ITexture.h"
 #include "utilities/Globals.h"
@@ -1111,6 +1112,256 @@ TEST_CASE("lua screens: a script larger than the limit isn't loaded") {
 	CHECK_FALSE(queue.due(*screen));
 	CHECK(texture.uploads == 0);
 	queue.exit();
+}
+
+namespace {
+
+// white when the script gets no userdata of its own (newproxy), and a table's __gc isn't called: no finalizer of the
+// script's, which LuaJIT would run without the hook
+constexpr std::string_view finalizer_script{R"(
+local collected = false
+setmetatable({}, { __gc = function() collected = true end })
+collectgarbage()
+collectgarbage()
+local good = newproxy == nil and ffi == nil and require == nil and not collected
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// a table whose metatable fails, loops, or gives render: the game reads the table in protected mode
+constexpr std::string_view failing_index_script{R"(
+return setmetatable({}, { __index = function() error("x") end })
+)"};
+
+constexpr std::string_view looping_index_script{R"(
+return setmetatable({}, { __index = function() while true do end end })
+)"};
+
+constexpr std::string_view inherited_render_script{R"(
+local base = { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
+return setmetatable({}, { __index = base })
+)"};
+
+// starts, then fails when render is read for a refresh
+constexpr std::string_view failing_later_script{R"(
+local started = false
+return setmetatable({}, { __index = function(t, key)
+	if key == "init" then return function() started = true end end
+	if key == "render" then
+		if started then error("render can't be read any more") end
+		return function() end
+	end
+end })
+)"};
+
+// white when the pattern functions refuse what may take too long, and do what doesn't
+constexpr std::string_view pattern_script{R"(
+local long = ("a"):rep(1000000)
+local function refused(...)
+	local ok, message = pcall(...)
+	return not ok and message:find("may take too long", 1, true) ~= nil
+end
+local slow = refused(string.find, long, ".-b")
+	and refused(function() return long:find(".-b") end)
+	and refused(string.match, long, "(a*)b")
+	and refused(string.gsub, long, "a-b", "")
+	and refused(function() for x in long:gmatch("a-b") do end end)
+	and refused(string.find, ("a"):rep(1000), "a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab")
+	and refused(string.find, long, ("a"):rep(1000) .. "b", 1, true)
+-- what a screen does: lines of a file, fields of a line, a plain search, short subjects
+local text = ("key=value\n"):rep(10000)
+local lines = 0
+for line in text:gmatch("[^\n]+") do lines = lines + 1 end
+local key, value = ("speed=120"):match("^(%w+)=(%d+)$")
+local spaced = select(2, (("a  b   c "):rep(100)):gsub("%s+", " "))
+local found = long:find("aaab", 1, true) == nil and (long .. "b"):find("ab", 1, true) == 1000000
+local fast = lines == 10000 and key == "speed" and value == "120" and spaced == 300 and found
+	and ("x = 1"):find("=") == 3 and ("abc"):gsub("b", "%0%0") == "abbc"
+return {
+	render = function(state)
+		return eu07.image(1, 1, (slow and fast) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when what makes a large string in one call is refused past the memory of a screen
+constexpr std::string_view large_result_script{R"(
+local mega = ("x"):rep(1024 * 1024)
+local function refused(...)
+	local ok, message = pcall(...)
+	return not ok and message:find("over the memory of a screen", 1, true) ~= nil
+end
+local parts = {}
+for i = 1, 200 do parts[i] = mega end
+local format = refused(string.format, ("%s"):rep(200), unpack(parts))
+local concat = refused(table.concat, parts)
+local gsub = refused(string.gsub, mega, "", ("y"):rep(1000))
+local gsub_table = refused(string.gsub, mega, ".", { x = ("y"):rep(1000) })
+local fits = #table.concat({ mega, mega }, ",") == 2 * 1024 * 1024 + 1 and #string.format("%s%s", mega, mega) == 2 * 1024 * 1024
+	and select(2, mega:gsub("x", "yy")) == 1024 * 1024
+return {
+	render = function(state)
+		return eu07.image(1, 1, (format and concat and gsub and gsub_table and fits) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when the images a screen holds are held to its memory, and the images it dropped don't count
+constexpr std::string_view image_memory_script{R"(
+local kept = {}
+local ok, message = pcall(function()
+	for i = 1, 100 do kept[i] = eu07.image(4096, 4096) end
+end)
+local refused = not ok and message:find("memory limit exceeded", 1, true) ~= nil and #kept < 100
+kept = nil
+local dropped = pcall(function()
+	for i = 1, 20 do local image = eu07.image(4096, 4096) end
+end)
+return {
+	render = function(state)
+		return eu07.image(1, 1, (refused and dropped) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// holds more and more memory, a little at a time
+constexpr std::string_view growing_script{R"(
+local kept = {}
+for i = 1, 10000000 do kept[i] = ("x"):rep(1000) .. i end
+return { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
+)"};
+
+// a concatenation of 320 MB in one operation, from a string of 64 MB: only an allocator of the screen's own refuses
+// it as it is made
+constexpr std::string_view one_concatenation_script{R"(
+local a = ("x"):rep(1024 * 1024)
+for i = 1, 6 do a = a .. a end
+local ok, message = pcall(function() return #(a .. a .. a .. a .. a) end)
+local refused = #a == 64 * 1024 * 1024 and not ok and message:find("not enough memory", 1, true) ~= nil
+a = nil
+return {
+	render = function(state)
+		return eu07.image(1, 1, refused and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when a coroutine yields across xpcall, and xpcall without a handler is an error
+constexpr std::string_view xpcall_yield_script{R"(
+local resume = coroutine.wrap(function()
+	local ok, value = xpcall(function()
+		coroutine.yield(1)
+		return 2
+	end, function(e) return e end)
+	coroutine.yield(ok and value)
+	local caught, handled = xpcall(function()
+		coroutine.yield(3)
+		error("boom")
+	end, function(e) return "handled: " .. e end)
+	coroutine.yield(not caught and handled:find("handled: .*boom") ~= nil)
+end)
+local first, second, third, fourth = resume(), resume(), resume(), resume()
+local missing = not pcall(xpcall, print)
+local good = first == 1 and second == 2 and third == 3 and fourth == true and missing
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// loads the script as a screen next to a working one: the working one draws, the script's screen draws nothing, and
+// nothing hangs or ends the program
+void check_switched_off(script_folder const &Folder, std::string const &Name, std::string_view const Code) {
+	auto const painting{Folder.write("paint.lua", paint_script)};
+	auto const failing{Folder.write(Name, Code)};
+	auto *queue{new script_screen_queue}; // NOSONAR a stuck worker would keep the destructor waiting, see above
+	REQUIRE(queue->init());
+	recording_texture switched_off;
+	recording_texture working;
+	auto const first{queue->acquire(request(script_language::lua, failing, Name, &switched_off))};
+	auto const second{queue->acquire(request(script_language::lua, painting, "paint", &working))};
+	refresh(*queue, first, speed(1.0), 1);
+	refresh(*queue, second, speed(2.0), 1);
+	auto const drawn{run_until(*queue, [&working] { return working.uploads > 0; })};
+	CHECK(drawn);
+	if (false == drawn) {
+		return;
+	}
+	run_frames(*queue);
+	CHECK(switched_off.uploads == 0);
+	CHECK_FALSE(queue->due(*first));
+	queue->exit();
+	delete queue; // NOSONAR see above
+}
+
+} // namespace
+
+TEST_CASE("lua screens: a script makes no finalizer of its own") {
+	script_folder const folder{"lua_finalizer"};
+	CHECK(first_pixel(folder.write("finalizer.lua", finalizer_script), "finalizer") == 255);
+}
+
+TEST_CASE("lua screens: the table of a script is read in protected mode") {
+	log_capture const log;
+	script_folder const folder{"lua_index"};
+	SUBCASE("a metatable that fails") {
+		check_switched_off(folder, "failing.lua", failing_index_script);
+		CHECK_FALSE(log.lines_with("reading render and init failed").empty());
+	}
+	SUBCASE("a metatable that loops") {
+		check_switched_off(folder, "looping.lua", looping_index_script);
+		CHECK_FALSE(log.lines_with("instruction limit exceeded").empty());
+	}
+	SUBCASE("a metatable that fails once the screen runs") {
+		check_switched_off(folder, "later.lua", failing_later_script);
+		CHECK_FALSE(log.lines_with("render can't be read any more").empty());
+	}
+	SUBCASE("a metatable that gives render") {
+		CHECK(first_pixel(folder.write("inherited.lua", inherited_render_script), "inherited") == 255);
+	}
+}
+
+TEST_CASE("lua screens: the pattern functions refuse what may take too long, and do the rest") {
+	script_folder const folder{"lua_patterns"};
+	auto const started{std::chrono::steady_clock::now()};
+	CHECK(first_pixel(folder.write("patterns.lua", pattern_script), "patterns") == 255);
+	// the refused calls take no time, the others little
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
+}
+
+TEST_CASE("lua screens: what makes a large string in one call is held to the memory of a screen") {
+	script_folder const folder{"lua_large_result"};
+	CHECK(first_pixel(folder.write("large.lua", large_result_script), "large") == 255);
+}
+
+TEST_CASE("lua screens: the images a screen holds are held to its memory") {
+	script_folder const folder{"lua_image_memory"};
+	CHECK(first_pixel(folder.write("images.lua", image_memory_script), "images") == 255);
+}
+
+TEST_CASE("lua screens: a screen holding more than its memory is switched off") {
+	log_capture const log;
+	script_folder const folder{"lua_growing"};
+	check_switched_off(folder, "growing.lua", growing_script);
+	CHECK(log.lines_with("memory limit exceeded").size() + log.lines_with("not enough memory").size() > 0);
+}
+
+TEST_CASE("lua screens: with an allocator of the screen's own, a string made over the memory in one operation is refused") {
+	if (false == script_screens::lua_screen_memory_allocator()) {
+		MESSAGE("LuaJIT takes no allocator of the game's here (2.0, or 2.1 without GC64 on x64): not tested");
+		return;
+	}
+	script_folder const folder{"lua_one_concatenation"};
+	CHECK(first_pixel(folder.write("concatenation.lua", one_concatenation_script), "concatenation") == 255);
+}
+
+TEST_CASE("lua screens: a coroutine yields across xpcall") {
+	script_folder const folder{"lua_xpcall_yield"};
+	CHECK(first_pixel(folder.write("yield.lua", xpcall_yield_script), "yield") == 255);
 }
 
 #endif

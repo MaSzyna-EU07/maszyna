@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace script_screens
 {
@@ -132,6 +133,114 @@ std::optional<std::string> screen_script_path(std::string const &Folder, std::st
 		return std::nullopt;
 	}
 	return path;
+}
+
+namespace
+{
+
+// the end of the set that starts at Start ('['), past its ']'; Pattern.size() for a set that doesn't end. as Lua's
+// classEnd: a ']' right after '[' or '[^' is in the set, and '%' escapes the character after it
+std::size_t set_end(std::string_view const Pattern, std::size_t Start)
+{
+	auto idx{Start + 1};
+	if (idx < Pattern.size() && Pattern[idx] == '^')
+	{
+		++idx;
+	}
+	do
+	{
+		if (idx >= Pattern.size())
+		{
+			return Pattern.size();
+		}
+		if (Pattern[idx++] == '%')
+		{
+			++idx;
+		}
+	} while (idx >= Pattern.size() || Pattern[idx] != ']');
+	return idx + 1;
+}
+
+} // namespace
+
+double lua_pattern_cost(std::string_view const Pattern, std::size_t const Subject, bool const Plain, bool const Anchorable)
+{
+	auto const length{static_cast<double>(std::max<std::size_t>(Pattern.size(), 1))};
+	auto const positions{static_cast<double>(Subject) + 1.0};
+	// LuaJIT searches plainly for a pattern without the special characters as well
+	if (Plain || Pattern.find_first_of("^$*+?.([%-") == std::string_view::npos)
+	{
+		return positions * length;
+	}
+	auto const anchored{Anchorable && Pattern.front() == '^'};
+	int repeats{0};
+	int optional{0};
+	// a repetition that ends the pattern doesn't multiply: past it the match is over
+	auto last_repeat{false};
+	std::size_t idx{anchored ? 1U : 0U};
+	while (idx < Pattern.size())
+	{
+		auto const character{Pattern[idx]};
+		if (character == '(' || character == ')')
+		{
+			++idx;
+			// a ')' after the last repetition keeps it last
+			continue;
+		}
+		last_repeat = false;
+		std::size_t end{idx + 1};
+		if (character == '%' && idx + 1 < Pattern.size())
+		{
+			auto const next{Pattern[idx + 1]};
+			if (next == 'b')
+			{
+				// %bxy goes along the subject to the balancing character
+				++repeats;
+				last_repeat = true;
+				idx += 4;
+				continue;
+			}
+			if (next == 'f')
+			{
+				idx = idx + 2 < Pattern.size() && Pattern[idx + 2] == '[' ? set_end(Pattern, idx + 2) : idx + 2;
+				continue;
+			}
+			if (next >= '0' && next <= '9')
+			{
+				// a back reference compares the capture, as long as the subject
+				++repeats;
+				last_repeat = true;
+				idx += 2;
+				continue;
+			}
+			end = idx + 2;
+		}
+		else if (character == '[')
+		{
+			end = set_end(Pattern, idx);
+		}
+		if (end < Pattern.size() && (Pattern[end] == '*' || Pattern[end] == '+' || Pattern[end] == '-'))
+		{
+			++repeats;
+			last_repeat = true;
+			idx = end + 1;
+		}
+		else if (end < Pattern.size() && Pattern[end] == '?')
+		{
+			++optional;
+			idx = end + 1;
+		}
+		else
+		{
+			idx = end;
+		}
+	}
+	if (last_repeat)
+	{
+		--repeats;
+	}
+	auto const starts{anchored ? 1.0 : positions};
+	return starts * std::pow(positions, repeats) * std::pow(2.0, optional) * length;
 }
 
 } // namespace script_screens

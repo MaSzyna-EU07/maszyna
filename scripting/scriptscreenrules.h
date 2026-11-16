@@ -78,4 +78,19 @@ bool is_safe_relative_path(std::string_view Path);
 // reads: absolute, with a drive, or with ".."), since the script's folder is the one the screen then reads files from
 std::optional<std::string> screen_script_path(std::string const &Folder, std::string const &Script);
 
+// the Lua pattern functions (string.find, match, gmatch, gsub) run in C, where the instruction limit doesn't reach, and
+// backtrack: ("a"):rep(1e6):find(".-b") would take hours. a call is refused when the steps it may take at worst, by
+// lua_pattern_cost(), are over this: LuaJIT 2.0 goes through the worst patterns that cost as much (a):rep(5770) and
+// .-b) in about a tenth of a second
+constexpr double max_pattern_cost{1e8};
+
+// the steps a Lua pattern function may take at worst on a subject of Subject bytes, Pattern being m bytes long:
+// - a plain search (string.find with plain set, or a pattern without special characters): Subject x m;
+// - a pattern: tried from every position of the subject (Subject + 1), or from the first only when Anchored (it starts
+//   with '^', and the function anchors: find, match, gsub, not gmatch), times (Subject + 1) for each repetition ('*',
+//   '+', '-', %b, a back reference %1-%9) but a last one (followed by nothing but ')', which ends the match where it
+//   stops), times 2 for each '?', times m for the work of each step (a set is gone through item by item)
+// a malformed pattern costs nothing here: the function raises its error itself
+double lua_pattern_cost(std::string_view Pattern, std::size_t Subject, bool Plain, bool Anchorable);
+
 } // namespace script_screens

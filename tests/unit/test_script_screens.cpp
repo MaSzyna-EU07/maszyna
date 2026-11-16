@@ -117,3 +117,45 @@ TEST_CASE("script screens: the script of a screen is in the vehicle's folder, or
 	CHECK_FALSE(screen_script_path(vehicle, "c:/games/screen.lua").has_value());
 	CHECK_FALSE(screen_script_path("../outside/", "screen.lua").has_value());
 }
+
+TEST_CASE("script screens: the steps a Lua pattern function may take at worst") {
+	using script_screens::lua_pattern_cost;
+	using script_screens::max_pattern_cost;
+	// a plain search: the subject (and one past it) times the pattern
+	CHECK(lua_pattern_cost("abc", 999, true, true) == doctest::Approx(1000.0 * 3));
+	CHECK(lua_pattern_cost(".-b", 999, true, true) == doctest::Approx(1000.0 * 3));
+	// a pattern without special characters is searched plainly as well
+	CHECK(lua_pattern_cost("abc", 999, false, true) == doctest::Approx(1000.0 * 3));
+	CHECK(lua_pattern_cost("", 999, false, true) == doctest::Approx(1000.0));
+	// from every position, times the subject for each repetition but a last one
+	CHECK(lua_pattern_cost(".-b", 999, false, true) == doctest::Approx(1000.0 * 1000 * 3));
+	CHECK(lua_pattern_cost("a*", 999, false, true) == doctest::Approx(1000.0 * 2));
+	CHECK(lua_pattern_cost("(a+)", 999, false, true) == doctest::Approx(1000.0 * 4));
+	CHECK(lua_pattern_cost("a+$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 3));
+	CHECK(lua_pattern_cost("(%d+):(%d+)", 999, false, true) == doctest::Approx(1000.0 * 1000 * 11));
+	CHECK(lua_pattern_cost("[^\n]+", 999, false, false) == doctest::Approx(1000.0 * 5));
+	CHECK(lua_pattern_cost("[%]x]*y", 999, false, true) == doctest::Approx(1000.0 * 1000 * 7));
+	CHECK(lua_pattern_cost("%bxyz", 999, false, true) == doctest::Approx(1000.0 * 1000 * 5));
+	CHECK(lua_pattern_cost("(a)%1x", 999, false, true) == doctest::Approx(1000.0 * 1000 * 6));
+	CHECK(lua_pattern_cost("%f[%w]%w+", 999, false, true) == doctest::Approx(1000.0 * 9));
+	// '?' doubles
+	CHECK(lua_pattern_cost("a?a?b", 999, false, true) == doctest::Approx(1000.0 * 4 * 5));
+	// '^' anchors find, match and gsub to the first position; gmatch takes it as a character
+	CHECK(lua_pattern_cost("^.-b", 999, false, true) == doctest::Approx(1000.0 * 4));
+	CHECK(lua_pattern_cost("^.-b", 999, false, false) == doctest::Approx(1000.0 * 1000 * 4));
+	// a malformed pattern is the library's to refuse
+	CHECK(lua_pattern_cost("[a", 999, false, true) > 0.0);
+	CHECK(lua_pattern_cost("%", 999, false, true) > 0.0);
+	CHECK(lua_pattern_cost("%b", 999, false, true) > 0.0);
+
+	// the review's case, and what a screen does
+	CHECK(lua_pattern_cost(".-b", 1'000'000, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("[^\n]+", 1'000'000, false, false) < max_pattern_cost);
+	CHECK(lua_pattern_cost("^(%w+)=(%d+)$", 1'000, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("%s+$", 4'000, false, true) < max_pattern_cost);
+	std::string optional;
+	for (int idx = 0; idx < 30; ++idx) {
+		optional += "a?";
+	}
+	CHECK(lua_pattern_cost(optional + std::string(30, 'a'), 100, false, true) > max_pattern_cost);
+}
