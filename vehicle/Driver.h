@@ -444,6 +444,7 @@ private:
     bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
     double fUphillStartTime = 0.0; // when the uphill start began
     bool bUphillRelease = false; // starting uphill, the power holds the train and the train brake is being released
+    bool bUphillBrakeTopUp = false; // starting uphill, the train brake is applied further before the locomotive brake comes off
     double fUphillReleaseTime = 0.0; // when the release began
     double fUphillTractiveForce = 0.0; // the tractive force of the consist while starting uphill [N]
     double fUphillHoldingForce = 0.0; // the grade force on the consist while starting uphill [N]

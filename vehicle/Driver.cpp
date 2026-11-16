@@ -8792,6 +8792,8 @@ void TController::control_tractive_force() {
 	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
 	    // speeds the train up, more power only drags the brake and slips the wheels
 	    ( false == bUphillRelease || fUphillTractiveForce < EU07_AI_UPHILLRELEASEFORCE * fUphillHoldingForce ) &&
+	    // nor while the train brake is still being applied further to hold the train
+	    false == bUphillBrakeTopUp &&
 	    velocity < (VelDesired == 1.0 ? // work around for trains getting stuck on tracks with speed limit = 1
 	                    VelDesired :
 	                    VelDesired - fVelMinus) &&
@@ -8884,7 +8886,30 @@ void TController::control_uphill_start() {
         fUphillTractiveForce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) );
     }
     fUphillHoldingForce = fMass * -fAccGravity;
+    bUphillBrakeTopUp = false;
     if( false == bUphillRelease ) {
+        // the locomotive brake comes off only once the brake of the rest of the train holds the train on its own: a
+        // train stopped on a light application stands on the locomotive brake too, and rolls back as soon as it is off
+        auto trainbrakeforce { 0.0 };
+        auto haswagons { false };
+        for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+            if( vehicle->MoverParameters->Power < 0.01 ) {
+                trainbrakeforce += vehicle->MoverParameters->Fb;
+                haswagons = true;
+            }
+        }
+        if( haswagons
+         && ( trainbrakeforce < 1.1 * fUphillHoldingForce )
+         && ( BrakeCtrlPosition < gbh_MAX - 1 ) ) { // short of the emergency application
+            bUphillBrakeTopUp = true;
+            // the time for the power to hold the train starts once the brake does
+            fUphillStartTime = ElapsedTime;
+            // a step at a time, each given the time to fill the cylinders along the train
+            if( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) {
+                BrakeLevelAdd( BrakingLevelIncrease );
+            }
+            return;
+        }
         if( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake )
          && ( mvOccupied->LocalBrakePosA > 0.0 ) ) {
             cue_action( driver_hint::independentbrakerelease );
@@ -8912,6 +8937,7 @@ void TController::end_uphill_start() {
 
     bUphillStart = false;
     bUphillRelease = false;
+    bUphillBrakeTopUp = false;
 }
 
 void TController::increase_tractive_force() {
@@ -8985,10 +9011,11 @@ void TController::control_braking_force() {
     if( TestFlag( iDrivigFlags, movePress ) ) { return; }
 
     auto const velocity { DirectionalVel() };
-    // a train slipping back uphill is braked, also when it is to go on: released now it only rolls back further
+    // a train slipping back uphill is braked, also when it is to go on: released now it only rolls back further.
+    // its head, or the train as a whole: the locomotive may stop for a moment while the rest of the train runs into it
     auto const slippingbackuphill {
         ( fAccGravity < -0.05 )
-     && ( velocity < -0.1 )
+     && ( std::min( velocity, fConsistVelocity ) < -0.1 )
      && ( false == bUphillStart ) };
 
     // jeśli przyspieszamy, to nie hamujemy
