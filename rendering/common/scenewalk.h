@@ -639,7 +639,7 @@ class scene_walk
 	bool drawn_in_phase(TSubModel const *Submodel, int Mask);
 	// the fake glows of the scenery model about to be drawn are left out when the lamps around it light their surroundings: it is
 	// within the reach the lamps are gathered from (gfx::local_lights::gather())
-	void hide_fake_glows(TAnimModel const *Instance);
+	void hide_fake_glows(TAnimModel *Instance);
 
 	std::unordered_map<material_handle, bool> m_fakeglows; // whether the material is one of gfx_lights_hideglow
 	TAnimModel const *m_fakeglowsinstance{nullptr}; // the scenery model drawn whose fake glows are left out, if any

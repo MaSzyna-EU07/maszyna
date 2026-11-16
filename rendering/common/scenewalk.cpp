@@ -92,7 +92,7 @@ bool scene_walk::drawn_in_phase(TSubModel const *Submodel, int const Mask)
 	return ((Submodel->iAlpha & Submodel->iFlags & Mask) != 0) && (false == is_fake_glow(Submodel));
 }
 
-void scene_walk::hide_fake_glows(TAnimModel const *Instance)
+void scene_walk::hide_fake_glows(TAnimModel *Instance)
 {
 	// the lamps are gathered around the camera of the simulation, within the range and the radius of their model
 	auto const reach{Global.gfx_lights_range + Instance->radius()};
