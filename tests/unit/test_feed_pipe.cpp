@@ -44,7 +44,8 @@ void passenger_train(test::consist &Train, int const Cars) {
 // the largest difference [bar] of a main reservoir pipe of the train from Pressure, over Seconds of steps of Dt
 double off_pressure(test::consist &Train, double const Pressure, double const Seconds, double const Dt = 0.01) {
 	auto off{0.0};
-	for (auto time = 0.0; time < Seconds; time += Dt) {
+	auto const steps{static_cast<int>(std::lround(Seconds / Dt))};
+	for (int step = 0; step < steps; ++step) {
 		Train.step({}, Dt);
 		for (std::size_t i = 0; i < Train.size(); ++i) {
 			off = std::max(off, std::abs(Train[i]->ScndPipePress - Pressure));
@@ -75,9 +76,10 @@ evening_out even_out(Builder Train, int const Count, double const Pressure, doub
 		mover.ScndPipePress = pressure;
 	}
 	evening_out result;
-	auto &first{train[0].mover()};
-	auto &last{train[train.size() - 1].mover()};
-	std::vector<double> previous(train.size()), change(train.size());
+	auto const &first{train[0].mover()};
+	auto const &last{train[train.size() - 1].mover()};
+	std::vector<double> previous(train.size());
+	std::vector<double> change(train.size());
 	for (std::size_t i = 0; i < train.size(); ++i) {
 		previous[i] = train[i]->ScndPipePress;
 	}
@@ -116,8 +118,8 @@ double charging_time(Builder Train, int const Count, double const Pressure, doub
 		mover.Pipe2->Act();
 		mover.ScndPipePress = 0.0;
 	}
-	auto &first{train[0].mover()};
-	auto &last{train[train.size() - 1].mover()};
+	auto const &first{train[0].mover()};
+	auto const &last{train[train.size() - 1].mover()};
 	auto time{0.0};
 	while ((last.ScndPipePress < 1.0 || std::abs(last.ScndPipePress - first.ScndPipePress) > 0.2) && time < 60.0) {
 		train.step({}, Dt);
