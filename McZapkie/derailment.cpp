@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 
 namespace derailment {
 
@@ -245,6 +246,40 @@ double sliding_friction(outcome const Outcome) {
 	default:
 		return 0.0;
 	}
+}
+
+std::optional<double> climbing_speed(vehicle_state const &Vehicle, track_state const &Track) {
+	auto const climbs = [&](double const Velocity) { return flange_forces(Vehicle, Track, Velocity).ratio() >= climbing_limit; };
+	// from the speed the cant balances, where the vehicle starts to lean on the outer rail
+	auto const balancing{curved(Track.radius) ? std::sqrt(gravity * std::abs(Track.radius) * std::sin(std::abs(Track.cant))) : 0.0};
+	if (climbs(balancing)) {
+		return balancing;
+	}
+	// in steps of 1 m/s up to the first speed it climbs at, which needn't hold above it, then halving the step
+	constexpr double fastest{200.0};
+	auto const steps{static_cast<int>(std::ceil(fastest - balancing))};
+	for (auto step = 0; step < steps; ++step) {
+		auto low{balancing + step};
+		auto high{std::min(low + 1.0, fastest)};
+		if (false == climbs(high)) {
+			continue;
+		}
+		for (int iteration = 0; iteration < 30; ++iteration) {
+			auto const middle{0.5 * (low + high)};
+			(climbs(middle) ? high : low) = middle;
+		}
+		return high;
+	}
+	return std::nullopt;
+}
+
+std::string report(verdict const &Verdict, vehicle_state const &Vehicle, track_state const &Track, double const Velocity, std::string_view const TrackName) {
+	auto const cant{1000.0 * contact_spacing(Track.gauge) * std::sin(std::abs(Track.cant))};
+	return std::format("{} at {:.0f} km/h on track {}, curve radius {:.0f} m, cant {:.0f} mm: lateral acceleration {:.2f} m/s2, wheel unloading {:.2f}, Y/Q {:.2f}"
+	                   " (mass {:.1f} t, centre of gravity {:.2f} m, couplings pushing {:.0f} / {:.0f} kN, track damage {}, cross level {:.0f} mm)",
+	                   Verdict.result == outcome::overturned ? "overturned" : "derailed, the flange climbed the rail", std::abs(Velocity) * 3.6, TrackName.empty() ? "(none)" : TrackName,
+	                   std::abs(Track.radius), cant, Verdict.acceleration, Verdict.unloading, Verdict.flange_ratio, Vehicle.mass / 1000.0, Vehicle.centre_of_gravity,
+	                   Vehicle.ends[0].compression / 1000.0, Vehicle.ends[1].compression / 1000.0, Track.damage, Track.uneven_cross);
 }
 
 } // namespace derailment

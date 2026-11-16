@@ -539,6 +539,7 @@ set(CORE_SOURCES
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
 "McZapkie/derailment.cpp"
+"world/TrackCheck.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
