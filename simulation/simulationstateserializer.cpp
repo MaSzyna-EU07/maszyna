@@ -1200,6 +1200,8 @@ include_terrain_file( std::string File, std::string &Includes, scene::scratch_da
 
     replace_slashes( File );
     erase_extension( File );
+    // the parser gives the name in lowercase, the files may be named in another case; the binary file is made next to the text
+    File = FileStemOnDisk( Global.asCurrentSceneryPath, File, { ".txtf", ".btf" } );
     if( std::find( binary.terrain_textfiles.begin(), binary.terrain_textfiles.end(), File ) != binary.terrain_textfiles.end() ) {
         WriteLog( "Terrain file: " + File + " is already in use, ignored" );
         return;
