@@ -540,9 +540,18 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    // the physics logs of the trains only, of the drivers of rail vehicles; "physicslog yes" writes them all anyway
+    if (token == "physicslog.trains")
+    {
+        ParseOne(Parser, WriteTrainLogFlag);
+        return true;
+    }
+
     if (token == "blackbox")
     {
-        ParseOne(Parser, BlackBox);
+        bool blackbox{false};
+        ParseOne(Parser, blackbox);
+        BlackBox = blackbox;
         return true;
     }
 
@@ -1737,7 +1746,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
     export_as_text( Output, "physicslog", WriteLogFlag );
-    export_as_text( Output, "blackbox", BlackBox );
+    export_as_text( Output, "physicslog.trains", WriteTrainLogFlag );
+    if( BlackBox ) {
+        export_as_text( Output, "blackbox", *BlackBox );
+    }
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );

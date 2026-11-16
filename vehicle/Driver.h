@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
 #include "MOVER.h"
@@ -197,6 +198,9 @@ static const bool Humandriver = false;
 static const int maxorders = 64; // ilość rozkazów w tabelce
 static const int maxdriverfails = 4; // ile błędów może zrobić AI zanim zmieni nastawienie
 extern bool WriteLogFlag; // logowanie parametrów fizycznych
+// the physics logs of the trains only (physicslog.trains yes): of each driver of rail vehicles who drives them, not
+// of the passengers nor of the vehicles of the roads
+extern bool WriteTrainLogFlag;
 static const int BrakeAccTableSize = 20;
 
 static const int gbh_NP = -2; //odciecie w hamulcu ogolnym
@@ -720,9 +724,12 @@ private:
 
 // logs
 // methods
+    // the line of the log, to PhysicsLogs (utilities/physicslog.h)
     void PhysicsLog();
+    // its log begun anew, its file emptied and given the header
+    void begin_physicslog();
 // members
-    std::ofstream LogFile; // zapis parametrow fizycznych
+    bool PhysicsLogBegun = false; // its log was begun, by this driver
     double LastUpdatedTime = 0.0; // czas od ostatniego logu
     double ElapsedTime = 0.0; // czas od poczatku logu
 
@@ -730,6 +737,17 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line and
+    // a line of it as the vehicle is now, each with its line end. the black box keeps the lines of the vehicle the
+    // user is in, to write its log at the end when the logs of all the vehicles are off
+    std::string const &physicslog_name() const {
+        return VehicleName; }
+    // whether it writes its physics log itself: all with "physicslog yes", with "physicslog.trains yes" one who drives
+    // rail vehicles. a driver made primary later begins its log then
+    bool writes_physicslog() const {
+        return WriteLogFlag || ( WriteTrainLogFlag && is_train() && primary() ); }
+    static std::string_view physicslog_header();
+    std::string physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:
