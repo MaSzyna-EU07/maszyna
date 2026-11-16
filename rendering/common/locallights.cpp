@@ -68,8 +68,8 @@ float light_range(glm::vec3 const &Color)
 	return std::min(std::sqrt(max_component(Color) / LIGHT_THRESHOLD), LIGHT_RANGE_MAX);
 }
 
-// how far from the camera the lamps are gathered from: gfx_lights_range, or gfx_lights_lamps_range when it's farther. none
-// with gfx_lights_range 0
+// how far from the camera the lights are gathered from: gfx_lights_range, or gfx_lights_lamps_range when it's farther, which
+// only the lamps of the scenery go as far as (gather_vehicle()). none with gfx_lights_range 0
 float gather_range()
 {
 	return (Global.gfx_lights_range > 0.f ? std::max(Global.gfx_lights_range, Global.gfx_lights_lamps_range) : 0.f);
@@ -309,6 +309,11 @@ void gfx::local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &
 void gfx::local_lights::gather_vehicle(TDynamicObject *Vehicle, glm::dvec3 const &Camera, gfx::geometrybank_manager const &Geometry, float const Freespotbrightness,
                                            float const Compartmentbrightness)
 {
+	// the vehicles light within gfx_lights_range, only the lamps of the scenery may be gathered from farther
+	if (glm::length(Vehicle->GetPosition() - Camera) > Global.gfx_lights_range + Vehicle->radius())
+	{
+		return;
+	}
 	if ((false == Global.render_cab) && (Global.pCamera.m_owner == Vehicle))
 	{
 		// the render leaves the vehicle out as well

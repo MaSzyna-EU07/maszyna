@@ -71,7 +71,8 @@ class local_lights
 	local_lights(const local_lights &) = delete;
 	local_lights &operator=(const local_lights &) = delete;
 
-	// collects the lights within Global.gfx_lights_range of Camera, for the frame about to be drawn. it sets the state of the
+	// collects the lights within Global.gfx_lights_range of Camera (the lamps of the scenery within Global.gfx_lights_lamps_range,
+	// when it's farther), for the frame about to be drawn. it sets the state of the
 	// shared models of the instances and vehicles it goes through, as the render does before it draws each of them.
 	// Geometry: the geometry the models were loaded to, for the bounds of compartments and cabs; Framestamp: the number of the frame
 	void gather(glm::dvec3 const &Camera, scene::basic_region &Region, gfx::geometrybank_manager const &Geometry, unsigned int const Framestamp);
