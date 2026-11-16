@@ -250,6 +250,29 @@ definition coach(double const Mass) {
 	return definition::load("wagon").set("Param", "M", Mass);
 }
 
+// Y / Q of the leading wheel of the vehicle at the end pressed in by its coupling, as check_pushed_off() takes it
+double pushed_ratio_of(TMoverParameters const &Vehicle, int const End, double const OtherLength, double const Radius) {
+	cl::pushed_vehicle pushed;
+	pushed.mass = Vehicle.TotalMass - Vehicle.Mred;
+	pushed.axles = Vehicle.NAxles > 0 ? Vehicle.NAxles : 4;
+	pushed.length = Vehicle.Dim.L;
+	pushed.pivots = Vehicle.BDist;
+	pushed.axle_base = Vehicle.ADist > 0.0 ? Vehicle.ADist : Vehicle.BDist;
+	cl::pushed_end end;
+	end.force = std::max(0.0, (End == end::front ? -1.0 : 1.0) * Vehicle.Couplers[End].CForce);
+	end.other_length = OtherLength;
+	end.crush = Vehicle.Couplers[End].crush;
+	return cl::pushed_ratio(pushed, end, Radius);
+}
+
+// a loaded 430W coal wagon
+vehicle &add_loaded(consist &Train, int const Coupling, double const Velocity, double const Gap) {
+	auto &wagon{Train.add(definition::fiz("430w_v2/430w"), 0, Coupling, Velocity, Gap)};
+	wagon->AssignLoad("coal", 59.5f);
+	wagon->ComputeMass();
+	return wagon;
+}
+
 } // namespace
 
 // ---- the crush curve
@@ -487,12 +510,167 @@ TEST_CASE("collisions: an empty two-axle wagon between loaded ones in a curve of
 	end.force = 600.0e3;
 	CHECK(cl::pushed_ratio(heavy, end, 150.0) < 0.5);
 
-	// it has to hold for 0.05 s, however long the steps
-	cl::pushed_monitor monitor;
-	CHECK_FALSE(monitor.update(true, 0.03));
-	CHECK_FALSE(monitor.update(false, 0.01));
-	CHECK_FALSE(monitor.update(true, 0.03));
-	CHECK(monitor.update(true, 0.03));
+	// past 3 MN on a straight track the push takes the whole load off its leading wheels: they lift off the rail
+	CHECK_FALSE(cl::pushed_forces(wagon, end, 0.0).lifted());
+	end.force = 3.5e6;
+	CHECK(cl::pushed_forces(wagon, end, 0.0).lifted());
+	CHECK(cl::pushed_ratio(wagon, end, 0.0) > 1e8);
+}
+
+TEST_CASE("collisions: the flange climbs while the wheels roll on, a lifted wheel goes in a short time") {
+	SUBCASE("Y / Q over the limit over 2 m rolled, however long the steps") {
+		cl::pushed_monitor monitor;
+		CHECK_FALSE(monitor.update(true, 0.7, false, 0.03));
+		CHECK_FALSE(monitor.update(true, 0.7, false, 0.03));
+		CHECK(monitor.distance() == doctest::Approx(1.4));
+		CHECK(monitor.update(true, 0.7, false, 0.03));
+	}
+	SUBCASE("a break starts it over") {
+		cl::pushed_monitor monitor;
+		CHECK_FALSE(monitor.update(true, 1.5, false, 0.03));
+		CHECK_FALSE(monitor.update(false, 0.1, false, 0.03));
+		CHECK_FALSE(monitor.update(true, 1.5, false, 0.03));
+		CHECK(monitor.update(true, 0.5, false, 0.03));
+	}
+	SUBCASE("standing, it never climbs, however long the push holds") {
+		cl::pushed_monitor monitor;
+		auto climbed{false};
+		for (int step = 0; step < 100000; ++step) {
+			climbed = climbed || monitor.update(true, 0.0, false, 0.01);
+		}
+		CHECK_FALSE(climbed);
+		CHECK(monitor.distance() == 0.0);
+	}
+	SUBCASE("the wheels lifted off the rail for 0.05 s, standing or not") {
+		cl::pushed_monitor monitor;
+		CHECK_FALSE(monitor.update(true, 0.0, true, 0.03));
+		CHECK_FALSE(monitor.update(false, 0.0, false, 0.01));
+		CHECK_FALSE(monitor.update(true, 0.0, true, 0.03));
+		CHECK(monitor.update(true, 0.0, true, 0.03));
+	}
+	SUBCASE("a reset clears both") {
+		cl::pushed_monitor monitor;
+		monitor.update(true, 1.9, true, 0.04);
+		monitor.reset();
+		CHECK(monitor.distance() == 0.0);
+		CHECK(monitor.time() == 0.0);
+		CHECK_FALSE(monitor.update(true, 0.05, true, 0.005));
+	}
+}
+
+TEST_CASE("collisions: a locomotive at its starting effort against a braked train doesn't push the empty wagon off at a stand") {
+	// the reviewer's case: an ST44 pressing a rake with an empty two-axle wagon right in front of it, in a yard curve.
+	// the push is over the climbing limit of the empty wagon, but nothing rolls: a wheel which doesn't roll doesn't
+	// climb. the time criterion pushed it off in five steps of 0.01 s. the ST44 gives some 390 kN, at the climbing
+	// limit of the empty wagon in a curve of 150 m: the yard curve is one of 120 m, to be past it
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	test::track line;
+	line.radius = 120.0;
+	consist train;
+	constexpr int wagons{4};
+	for (int i = 0; i < wagons; ++i) {
+		add_loaded(train, consist::full_coupling, 0.0, 0.0).hold_brake_pipe(5.0);
+	}
+	auto &empty{train.add(definition::fiz("3wl_v2/3wl"))};
+	empty.hold_brake_pipe(5.0);
+	train.run(90.0, line);
+	for (std::size_t i = 0; i < train.size(); ++i) {
+		train[i].hold_brake_pipe(0.0);
+	}
+	train.run(30.0, line);
+	auto &locomotive{train.add(definition::fiz("st44_v2/m62-1151"), 1, coupling::faux, 0.0, 0.0)};
+	test::driven const driver{locomotive.mover(), locomotive.mover(), locomotive.mover(), [&train](double const Seconds, test::track const &Track) { train.run(Seconds, Track); }};
+	REQUIRE(test::start_up(driver, line));
+	test::release_brakes(locomotive.mover());
+	for (int i = 0; i < 3 && locomotive->DirActive <= 0; ++i) {
+		locomotive->DirectionForward();
+	}
+	test::drive(driver, line, 10.0);
+	auto const start{empty->DistCounter};
+	auto pushed{0.0};
+	auto worst{0.0};
+	auto const watch = [&]() {
+		pushed = std::max(pushed, -locomotive->Couplers[end::front].CForce);
+		worst = std::max(worst, pushed_ratio_of(empty.mover(), end::rear, locomotive->Dim.L, line.radius));
+	};
+	// the line contactors close at the first position, once their delay and the pressure switch let them
+	locomotive->IncMainCtrl(1);
+	for (int i = 0; i < 90 && false == locomotive->StLinFlag; ++i) {
+		test::drive(driver, line, 1.0);
+	}
+	for (int i = 0; i < 60 && false == locomotive->IsMainCtrlMaxPowerPos(); ++i) {
+		locomotive->IncMainCtrl(1);
+		test::drive(driver, line, 1.0);
+		watch();
+	}
+	for (int i = 0; i < 60; ++i) {
+		test::drive(driver, line, 1.0);
+		watch();
+	}
+	auto const rolled{(empty->DistCounter - start) * 1000.0};
+	MESSAGE(std::format("ST44 pushing at up to {:.0f} kN, the empty 3WL at Y/Q {:.2f}, rolled {:.3f} m", pushed / 1000.0, worst, rolled));
+	REQUIRE(worst >= derailment::climbing_limit);
+	CHECK(rolled < 0.5);
+	CHECK_FALSE(derailed(empty.mover()));
+	CHECK(empty->CollisionDerail == NONE);
+}
+
+TEST_CASE("collisions: a locomotive running onto an empty wagon at 9 km/h doesn't push it off with the peak of the springs") {
+	// the reviewer's case: an 80 t locomotive onto a free empty 3WL in a curve of 150 m. the springs of the buffers
+	// press past the climbing limit for some 0.06 s, the wagon rolls a few centimetres meanwhile
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	test::track curve;
+	curve.radius = 150.0;
+	consist train;
+	auto &empty{train.add(definition::fiz("3wl_v2/3wl"))};
+	auto &locomotive{train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 9.0, 0.5)};
+	auto pushed{0.0};
+	auto worst{0.0};
+	auto over{0}; // steps past the climbing limit
+	for (int step = 0; step < 500; ++step) {
+		train.step(curve);
+		pushed = std::max(pushed, empty->Couplers[end::rear].CForce);
+		auto const ratio{pushed_ratio_of(empty.mover(), end::rear, locomotive->Dim.L, curve.radius)};
+		worst = std::max(worst, ratio);
+		over += ratio >= derailment::climbing_limit;
+	}
+	MESSAGE(std::format("EU07 at 9 km/h onto the empty 3WL: up to {:.0f} kN, Y/Q {:.2f}, {} steps of 0.01 s past the limit, the wagon at {:.1f} km/h", pushed / 1000.0, worst, over,
+	                    empty.speed()));
+	REQUIRE(worst >= derailment::climbing_limit);
+	REQUIRE(over >= 5);
+	CHECK_FALSE(derailed(empty.mover()));
+	CHECK_FALSE(derailed(locomotive.mover()));
+}
+
+TEST_CASE("collisions: a train propelling an empty wagon into a braked one in a curve pushes it off as it rolls on") {
+	// the genuine push off: the empty 3WL leading a heavy train at 15 km/h, the train pressing it on into a braked
+	// rake through the curve while it all slides along
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	test::track curve;
+	curve.radius = 150.0;
+	consist train;
+	constexpr int standing{4};
+	for (int i = 0; i < standing; ++i) {
+		add_loaded(train, consist::full_coupling, 0.0, 0.0).hold_brake_pipe(5.0);
+	}
+	train.run(90.0, curve);
+	for (int i = 0; i < standing; ++i) {
+		train[i].hold_brake_pipe(0.0);
+	}
+	train.run(30.0, curve);
+	auto &empty{train.add(definition::fiz("3wl_v2/3wl"), 0, coupling::faux, 15.0, 1.0)};
+	train.add(definition::fiz("4e_v1/4e"), 0, consist::full_coupling, 15.0, 0.0);
+	for (int i = 0; i < 6; ++i) {
+		add_loaded(train, consist::full_coupling, 15.0, 0.0);
+	}
+	auto const start{empty->DistCounter};
+	train.run(10.0, curve);
+	MESSAGE(std::format("the empty 3WL: derailed {}, {}, rolled {:.2f} m", derailed(empty.mover()), empty->CollisionDerail == COLLISION_PUSHED_OFF ? "pushed off" : "not pushed off",
+	                    (empty->DistCounter - start) * 1000.0));
+	CHECK(empty->CollisionDerail == COLLISION_PUSHED_OFF);
 }
 
 // ---- the model of eu07.ini

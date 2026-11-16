@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 
 #include "couplerphysics.h"
+#include "derailment.h"
 
 // what a collision of two vehicles does to them past their buffers (physics.collisions new in eu07.ini, see
 // TMoverParameters::CollisionDetect()), as plain functions of the vehicles and the hit:
@@ -29,9 +30,14 @@ http://mozilla.org/MPL/2.0/.
 //   zone of an end is used up
 // pushed off the track: the force pressing a vehicle's end acts at an angle to it, the more in a curve and the
 //   deeper the end is crushed, which gives a lateral force on its wheels; acting off the height of the centre of the
-//   vehicle it lifts its leading wheels. Y / Q over Nadal's limit for long enough and the flange climbs the rail
-//   (the light wagon between heavy ones goes first, in a curve sooner than on a straight track: EN 15566 takes
-//   250 kN of the pair of buffers in a curve of 150 m as the safe push)
+//   vehicle it lifts its leading wheels. Y / Q over Nadal's limit while the wheels roll on over the window of
+//   EN 14363 and the flange climbs the rail (the light wagon between heavy ones goes first, in a curve sooner than
+//   on a straight track: EN 15566 takes 250 kN of the pair of buffers in a curve of 150 m as the safe push). a wheel
+//   which doesn't roll doesn't climb: Nadal's limit is that of a wheel rolling under its angle of attack, the creep of
+//   the flange contact turning the friction upwards; standing, the friction holds the flange down, and with a flange
+//   of 70 degrees and a friction over 1 / tan 70 = 0.36 no lateral force gets it up. so a train pushing at a stand,
+//   or the short peak of the springs of a hit, never pushes a wheel off. a push that takes the whole load off the
+//   leading wheels lifts them off the rail, rolling or not: that holding for a short time is enough
 namespace collision {
 
 inline constexpr double gravity{9.81}; // [m/s2]
@@ -235,8 +241,12 @@ inline constexpr double straight_angle{0.006};
 inline constexpr double crush_angle{0.1};
 // the height the force acts at off the height it's carried at, the buffers of the pair not at the same height [m]
 inline constexpr double eccentricity{0.10};
-// the time Y / Q has to stay over the limit for the flange to climb the rail [s]
-inline constexpr double pushed_time{0.05};
+// the distance the wheels have to roll with Y / Q over the limit for the flange to climb the rail: the window of the
+// criteria of derailment [m]
+inline constexpr double climb_distance{derailment::window};
+// the time the push has to hold the leading wheels off the rail, without any load on them, to lift them over the
+// rail [s]
+inline constexpr double lift_time{0.05};
 
 struct pushed_vehicle {
 	double mass{0.0}; // with the load, without the rotating masses [kg]
@@ -250,19 +260,32 @@ struct pushed_end {
 	double other_length{0.0}; // of the vehicle at that end [m]
 	double crush{0.0}; // of the end [m]
 };
-// Y / Q of the leading wheel at the end pressed in by the force, in a curve of the radius [m] (0 straight)
+// the forces of the leading wheel at the end pressed in by the force, in a curve of the radius [m] (0 straight): its
+// lateral force, and its vertical one, none or less when the push lifts it off the rail
+struct pushed_wheel {
+	double y{0.0}; // [N]
+	double q{0.0}; // [N]
+	double ratio() const;
+	bool lifted() const { return q <= 0.0 && y > 0.0; }
+};
+pushed_wheel pushed_forces(pushed_vehicle const &Vehicle, pushed_end const &End, double Radius);
+// Y / Q of that wheel
 double pushed_ratio(pushed_vehicle const &Vehicle, pushed_end const &End, double Radius);
 
-// the time the condition held, without a break
+// the push off the track step by step: how far the wheels rolled with Y / Q over the limit without a break, and how
+// long the push held the leading wheels lifted off the rail
 class pushed_monitor {
 public:
-	// true once the condition held for the time it takes the flange to climb, given how long it held in the step [s]
-	bool update(bool Holds, double Duration);
-	void reset() { m_time = 0.0; }
-	double time() const { return m_time; }
+	// true once the flange climbed the rail, given whether Y / Q held over the limit in the step and the distance the
+	// wheels rolled while it held [m], and whether the push lifted the wheels and for how long in the step [s]
+	bool update(bool Climbs, double Distance, bool Lifted, double Duration);
+	void reset();
+	double distance() const { return m_climbing.distance(); }
+	double time() const { return m_lifted; }
 
 private:
-	double m_time{0.0};
+	derailment::stretch m_climbing;
+	double m_lifted{0.0};
 };
 
 } // namespace collision

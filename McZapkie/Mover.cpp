@@ -1780,7 +1780,7 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	return true;
 }
 
-void TMoverParameters::check_pushed_off(double const dt)
+void TMoverParameters::check_pushed_off(double const dt, double const Distance)
 {
 	if (Global.collisions != global_settings::collision_model::physical || false == Global.crash_damage || TestFlag(DamageFlag, dtrain_out) || false == TestFlag(CategoryFlag, 1) ||
 	    DebugModeFlag)
@@ -1795,7 +1795,9 @@ void TMoverParameters::check_pushed_off(double const dt)
 	vehicle.pivots = BDist;
 	vehicle.axle_base = ADist > 0.0 ? ADist : BDist;
 
-	auto holds{false};
+	auto climbs{false};
+	auto distance{0.0};
+	auto lifted{false};
 	auto duration{0.0};
 	auto worst{0.0};
 	auto worstforce{0.0};
@@ -1811,17 +1813,24 @@ void TMoverParameters::check_pushed_off(double const dt)
 		collision::pushed_end pushed;
 		pushed.other_length = other->MoverParameters->Dim.L;
 		pushed.crush = coupler.crush;
-		// the steady push of the springs over the step, or the peak of a hit for as long as it lasted
+		// the steady push of the springs over the step, or the peak of a hit for as long as it lasted: the flange climbs
+		// over the distance the wheels rolled meanwhile, a wheel lifted off the rail goes in a short time, rolling or not
 		for (auto const &[force, time] : {std::pair{compression_at(coupler, end), dt}, std::pair{coupler.hit_force, coupler.hit_duration}})
 		{
 			pushed.force = force;
-			auto const ratio{collision::pushed_ratio(vehicle, pushed, RunningShape.R)};
+			auto const wheel{collision::pushed_forces(vehicle, pushed, RunningShape.R)};
+			auto const ratio{wheel.ratio()};
 			if (ratio < derailment::climbing_limit)
 			{
 				continue;
 			}
-			holds = true;
-			duration = std::max(duration, time);
+			climbs = true;
+			distance = std::max(distance, Distance * std::clamp(time / std::max(dt, 1e-9), 0.0, 1.0));
+			if (wheel.lifted())
+			{
+				lifted = true;
+				duration = std::max(duration, time);
+			}
 			if (ratio > worst)
 			{
 				worst = ratio;
@@ -1830,11 +1839,14 @@ void TMoverParameters::check_pushed_off(double const dt)
 			}
 		}
 	}
-	if (pushed_off_monitor.update(holds, duration))
+	if (pushed_off_monitor.update(climbs, distance, lifted, duration))
 	{
-		derail_in_collision(COLLISION_PUSHED_OFF, std::format("{:.0f} kN pressing its {} end in for {:.3f} s, at {:.0f} km/h, curve radius {:.0f} m: Y/Q {:.2f} ({:.1f} t {}, {} axles, "
+		derail_in_collision(COLLISION_PUSHED_OFF, std::format("{:.0f} kN pressing its {} end in, {}, at {:.0f} km/h, curve radius {:.0f} m: Y/Q {:.2f} ({:.1f} t {}, {} axles, "
 		                                                      "springs {:.0f} / {:.0f} kN, hits {:.0f} / {:.0f} kN, crushed {:.2f} / {:.2f} m)",
-		                                                      worstforce / 1000.0, end_name(worstend), pushed_off_monitor.time(), Vel, std::abs(RunningShape.R), std::min(worst, 99.0),
+		                                                      worstforce / 1000.0, end_name(worstend),
+		                                                      lifted ? std::format("its wheels lifted off the rail for {:.3f} s", pushed_off_monitor.time())
+		                                                             : std::format("the flange climbing over {:.2f} m", pushed_off_monitor.distance()),
+		                                                      Vel, std::abs(RunningShape.R), std::min(worst, 99.0),
 		                                                      vehicle.mass / 1000.0, kind_name(collision_kind()), vehicle.axles, compression_at(Couplers[end::front], end::front) / 1000.0,
 		                                                      compression_at(Couplers[end::rear], end::rear) / 1000.0, Couplers[end::front].hit_force / 1000.0, Couplers[end::rear].hit_force / 1000.0,
 		                                                      Couplers[end::front].crush, Couplers[end::rear].crush));
@@ -2135,7 +2147,7 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		for (int b = 0; b < 2; b++)
 			if (Couplers[b].CheckCollision)
 				CollisionDetect(b, dt); // zmienia niejawnie AccS, V !!!
-		check_pushed_off(dt);
+		check_pushed_off(dt, std::abs(dL));
 
 	} // liczone dL, predkosc i przyspieszenie
 
@@ -2212,7 +2224,7 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		for (int b = 0; b < 2; b++)
 			if (Couplers[b].CheckCollision)
 				CollisionDetect(b, dt); // zmienia niejawnie AccS, V !!!
-		check_pushed_off(dt);
+		check_pushed_off(dt, std::abs(dL));
 	} // liczone dL, predkosc i przyspieszenie
 
 	auto const d{(EngineType == TEngineType::WheelsDriven ? dL * CabActive : // na chwile dla testu

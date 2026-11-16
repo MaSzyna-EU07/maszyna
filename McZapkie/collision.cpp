@@ -341,9 +341,21 @@ override_result override_of(override_input const &Input) {
 	return result;
 }
 
+double pushed_wheel::ratio() const {
+	if (q > 0.0) {
+		return y / q;
+	}
+	return y > 0.0 ? 1e9 : 0.0;
+}
+
 double pushed_ratio(pushed_vehicle const &Vehicle, pushed_end const &End, double const Radius) {
+	return pushed_forces(Vehicle, End, Radius).ratio();
+}
+
+pushed_wheel pushed_forces(pushed_vehicle const &Vehicle, pushed_end const &End, double const Radius) {
+	pushed_wheel result;
 	if (Vehicle.mass <= 0.0 || End.force <= 0.0) {
-		return 0.0;
+		return result;
 	}
 	auto const axles{static_cast<double>(std::max(Vehicle.axles, 1))};
 	// the axles of the half of the vehicle at the end: its bogie, or its axle
@@ -360,17 +372,24 @@ double pushed_ratio(pushed_vehicle const &Vehicle, pushed_end const &End, double
 	auto const lateral{End.force * angle / half + guiding};
 	// the force off the height it's carried at pitches the vehicle: the bogie at the end pressed in takes the load off
 	auto const pivots{Vehicle.pivots > 0.0 ? Vehicle.pivots : halflength};
-	auto const vertical{wheelload - End.force * eccentricity / (2.0 * half * pivots)};
-	return vertical > 0.0 ? lateral / vertical : 1e9;
+	result.y = lateral;
+	result.q = wheelload - End.force * eccentricity / (2.0 * half * pivots);
+	return result;
 }
 
-bool pushed_monitor::update(bool const Holds, double const Duration) {
-	if (false == Holds) {
-		m_time = 0.0;
-		return false;
+bool pushed_monitor::update(bool const Climbs, double const Distance, bool const Lifted, double const Duration) {
+	auto const climbed{m_climbing.update(Climbs, Distance, climb_distance)};
+	if (false == Lifted) {
+		m_lifted = 0.0;
+		return climbed;
 	}
-	m_time += std::max(Duration, 0.0);
-	return m_time >= pushed_time - 1e-9;
+	m_lifted += std::max(Duration, 0.0);
+	return climbed || m_lifted >= lift_time - 1e-9;
+}
+
+void pushed_monitor::reset() {
+	m_climbing.reset();
+	m_lifted = 0.0;
 }
 
 } // namespace collision

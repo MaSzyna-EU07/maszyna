@@ -2491,8 +2491,9 @@ class TMoverParameters
 	// velocities took the hit; the legacy collision takes the rest. physics.collisions monitor: the log tells what the
 	// crush of the whole hit would be, once for a hit, nothing changes, and it returns false
 	bool crush_hit(int End, double dt);
-	// the force pressing the ends pushes the vehicle off the track (physics.collisions new)
-	void check_pushed_off(double dt);
+	// the force pressing the ends pushes the vehicle off the track (physics.collisions new), the step travelled the
+	// Distance [m]: the flange climbs while the wheels roll on
+	void check_pushed_off(double dt, double Distance);
 	// the vehicle leaves the rails in a collision, the reason told in the log, and slides on as the criteria of
 	// derailment.h have it
 	void derail_in_collision(DerailReason Reason, std::string const &Why);
