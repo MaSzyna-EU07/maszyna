@@ -241,7 +241,9 @@ std::optional<double> climbing_speed(vehicle_state const &Vehicle, track_state c
 	}
 	// in steps of 1 m/s up to the first speed it climbs at, which needn't hold above it, then halving the step
 	constexpr double fastest{200.0};
-	for (auto low{balancing}; low < fastest; low += 1.0) {
+	auto const steps{static_cast<int>(std::ceil(fastest - balancing))};
+	for (auto step = 0; step < steps; ++step) {
+		auto low{balancing + step};
 		auto high{std::min(low + 1.0, fastest)};
 		if (false == climbs(high)) {
 			continue;
