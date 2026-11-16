@@ -540,6 +540,9 @@ struct global_settings {
     // the brightness of the light the lamps of the scenery shining downwards (and their glowing points, gfx_lights_stars) light
     // their surroundings with is multiplied by this. lights shining sideways (signals) keep theirs
     float gfx_lights_lamps_gain { 1.f };
+    // the lamps are gathered from this far from the camera when it's above gfx_lights_range, metres, so the lit stations are seen
+    // from afar. 0: from gfx_lights_range
+    float gfx_lights_lamps_range { 0.f };
     // textures of the planes models fake the light of their lamps with (pools of light on the ground, glows), separated with |:
     // they aren't drawn while the light points of scenery models light their surroundings. empty: they're drawn
     std::string gfx_lights_hideglow;

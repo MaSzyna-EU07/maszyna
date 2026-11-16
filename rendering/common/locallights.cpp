@@ -68,6 +68,13 @@ float light_range(glm::vec3 const &Color)
 	return std::min(std::sqrt(max_component(Color) / LIGHT_THRESHOLD), LIGHT_RANGE_MAX);
 }
 
+// how far from the camera the lamps are gathered from: gfx_lights_range, or gfx_lights_lamps_range when it's farther. none
+// with gfx_lights_range 0
+float gather_range()
+{
+	return (Global.gfx_lights_range > 0.f ? std::max(Global.gfx_lights_range, Global.gfx_lights_lamps_range) : 0.f);
+}
+
 // whether Name is one of the names separated with | in List
 bool is_listed(std::string_view const Name, std::string_view const List)
 {
@@ -200,7 +207,7 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 
 		// lamps are lost in the daylight; this also spares the work of gathering them in the middle of the day
 		auto const darkness{1.f - glm::smoothstep(LIGHT_DUSK_LUMINANCE, LIGHT_DAY_LUMINANCE, static_cast<float>(Global.fLuminance))};
-		auto const range{Global.gfx_lights_range};
+		auto const range{gather_range()};
 
 		if ((darkness > 0.f) && (range > 0.f) && Global.gfx_lights_scenery)
 		{
@@ -276,7 +283,7 @@ void gfx::local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &
 		return;
 	}
 	auto const offset{Instance->location() - Camera};
-	if (glm::length(offset) > Global.gfx_lights_range + Instance->radius())
+	if (glm::length(offset) > gather_range() + Instance->radius())
 	{
 		return;
 	}
