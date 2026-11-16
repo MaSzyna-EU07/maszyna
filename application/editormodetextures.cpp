@@ -125,7 +125,7 @@ void editor_mode::thumbnails_trim()
 	for (auto entry{browser.thumbnails.begin()}; entry != browser.thumbnails.end();)
 	{
 		auto const &thumbnail{entry->second};
-		if (false == browser.refresh && (thumbnail.texture == null_handle || now - thumbnail.shown < kept))
+		if (false == browser.refresh && ((thumbnail.texture == null_handle && thumbnail.material == null_handle) || now - thumbnail.shown < kept))
 		{
 			++entry;
 			continue;
