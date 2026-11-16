@@ -1604,7 +1604,6 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	auto const overlap{-static_cast<double>(Neighbours[End].distance)};
 	if (overlap > stop + collision::inside_margin + closing * dt)
 	{
-", Name.c_str(), othervehicle->Name.c_str(), overlap, stop, closing, Neighbours[End].distance, thiscoupler.crush, othercoupler.crush, (int)Derailed, (int)othervehicle->Derailed);
 		if (false == thiscoupler.inside_reported)
 		{
 			thiscoupler.inside_reported = true;
