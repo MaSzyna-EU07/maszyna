@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <unordered_set>
 #include "utilities/Globals.h"
@@ -2369,6 +2370,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     ShakeSpring.Init( 125.0 );
     BaseShake = baseshake_config {};
     ShakeState = shake_state {};
+    ShakeStateBefore = shake_state {};
 
     // McZapkie-250202
 /*
@@ -8236,6 +8238,8 @@ void TDynamicObject::OverheadTrack(float o)
 
 void
 TDynamicObject::update_shake( double const Timedelta ) {
+
+    ShakeStateBefore = ShakeState;
     // Ra: mechanik powinien być telepany niezależnie od pozycji pojazdu
     // Ra: trzeba zrobić model bujania głową i wczepić go do pojazdu
 
@@ -8360,9 +8364,32 @@ TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int con
 std::pair<double, double>
 TDynamicObject::shake_angles() const {
 
+    return shake_angles( ShakeState );
+}
+
+std::pair<double, double>
+TDynamicObject::shake_angles( shake_state const &State ) const {
+
     return {
-        std::atan( ShakeState.velocity.x * BaseShake.angle_scale.x ),
-        std::atan( ShakeState.velocity.z * BaseShake.angle_scale.z ) };
+        std::atan( State.velocity.x * BaseShake.angle_scale.x ),
+        std::atan( State.velocity.z * BaseShake.angle_scale.z ) };
+}
+
+TDynamicObject::shake_state
+TDynamicObject::shake_between( double const Fraction ) const {
+
+    if( Fraction >= 1.0 ) {
+        return ShakeState;
+    }
+    auto const between { []( glm::dvec3 const &Before, glm::dvec3 const &After, double const Part ) {
+        return glm::dvec3 {
+            std::lerp( Before.x, After.x, Part ),
+            std::lerp( Before.y, After.y, Part ),
+            std::lerp( Before.z, After.z, Part ) }; } };
+    auto const part { std::max( Fraction, 0.0 ) };
+    return {
+        between( ShakeStateBefore.velocity, ShakeState.velocity, part ),
+        between( ShakeStateBefore.offset, ShakeState.offset, part ) };
 }
 
 void
