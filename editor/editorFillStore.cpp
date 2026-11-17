@@ -26,7 +26,7 @@ namespace fill_store
 namespace
 {
 
-std::string const kMark{"//$w"};
+std::string const kMark{"//$u"};
 
 std::vector<area> g_areas;
 bool g_loaded{false};
