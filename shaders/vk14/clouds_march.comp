@@ -4,7 +4,12 @@
 // (sky_weather.frag). mode 0: the view of the main camera at a part of the resolution, smoothed over frames by
 // clouds_temporal.comp; mode 1: a panorama around the camera (azimuth across, elevation up), a band of rows per frame, for the
 // environment map and the other views. rgb: the light of the clouds with the fog in front of them, a: what they let through
-// of the sky behind; the depth image gets the distance of the clouds, for the reprojection
+// of the sky behind; the depth image gets the distance of the clouds, for the reprojection.
+// mode 0, gfx.weather.occlusion: the pixels the scenery covered in the last frame, with everything around them, in front of all the
+// clouds of their ray aren't marched (the depth pyramid of the culling of that frame says so); their alpha is -1, which tells
+// clouds_temporal.comp to keep what the history holds for them.
+// mode 0, gfx.clouds.interleave: one pixel of every block of stride x stride is marched a frame, the one at phase, each in its
+// turn; the others keep what they were given in their own turn, and clouds_temporal.comp makes the image of the frame of them
 
 #define LAYOUT_COMPUTE 1
 #include "common.glsl"
@@ -14,20 +19,30 @@ layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, loc
 
 layout(rgba16f, set = COMPUTE_SET, binding = 0) uniform writeonly image2D clouds_color;
 layout(r32f, set = COMPUTE_SET, binding = 1) uniform writeonly image2D clouds_depth;
+// the depth pyramid of the main view of the last frame (hiz_build.comp: the farthest depth of what a texel covers, reversed, 0 the
+// sky); read only with occlusion set
+layout(set = COMPUTE_SET, binding = 2) uniform sampler2D occlusion_depth;
 
 // the parameters of the kernel (push constants)
 layout(push_constant) uniform kernel_constants
 {
 	int mode;
+	// mode 0: the level of the depth pyramid looked at for what the scenery hides, plus 1; 0: nothing is taken for hidden
+	int occlusion;
 	ivec2 size;
 	// mode 0: clip space to view space of the camera, and view space to world axes
 	mat4 inverse_projection;
 	mat4 view_to_world;
 	int frame;
+	// mode 0: the pixels marched in this frame are the ones at phase in the blocks of stride x stride pixels (1: all of them)
+	int stride;
+	ivec2 phase;
 	// x: samples through a layer at most, y: samples towards the sun, z: farthest distance (m), w: 1 with the detail noise
 	vec4 quality;
 	// mode 1: first row of the band and the rows in it
 	ivec2 rows;
+	// world axes to the clip space of the frame the depth pyramid was made in
+	mat4 occlusion_projection_view;
 };
 
 // lowest elevation of the panorama (radians); its rows go with the square of the height, denser at the horizon
@@ -60,6 +75,9 @@ const int CLOUD_SCATTER_OCTAVES = 6;
 // light falls off fastest (about a 30th of the reach at 4 steps) and the steps get close to even when there are many of them
 const float CLOUD_LIGHT_GROWTH = 24.0;
 
+// the phase of the view for each order of the scattering (cloud_sunlight): the same for every sample of a ray, worked out once
+float cloud_scatter_phase[CLOUD_SCATTER_OCTAVES];
+
 float henyey_greenstein(float cosangle, float g)
 {
 	// times 4 pi: 1 for an even scattering
@@ -82,8 +100,12 @@ vec3 cloud_sky_light(float up)
 }
 
 // light of the sun reaching a point inside a layer through the cloud towards it, with the light scattered many times
-// (octaves after Wrenninge), and the phase of the view
-float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float powder, bool detail)
+// (octaves after Wrenninge), and the phase of the view (cloud_scatter_phase). Offset: where in its step each sample is taken
+// (0-1), another place for every sample of the view and every frame. taken always in the middle, a far sample (the last step is
+// some 40% of the reach) came into the cloud at the same place for all the pixels around, and the shaded sides of the clouds
+// were cut into bands of grey along it; moved about, the bands turn into a noise the samples of the ray and the blending over
+// frames (clouds_temporal.comp) smooth out
+float cloud_sunlight(int index, vec3 position, int steps, float powder, bool detail, float offset)
 {
 	vec3 sun = weather_sun_direction.xyz;
 	cloud_layer_s layer = cloud_layers[index];
@@ -97,7 +119,7 @@ float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float 
 	float step = reach * (growth - 1.0) / (pow(growth, float(steps)) - 1.0);
 	for (int s = 0; s < steps; s++)
 	{
-		vec3 point = position + sun * (travelled + 0.5 * step);
+		vec3 point = position + sun * (travelled + offset * step);
 		travelled += step;
 		// the nearest steps with the detail noise: the small billows shade one another, lit on top and grey beneath
 		depth += cloud_layer_density(index, point, cloud_height(point), detail && (s < CLOUD_LIGHT_DETAIL_STEPS)) * step;
@@ -106,29 +128,55 @@ float cloud_sunlight(int index, vec3 position, float cosangle, int steps, float 
 	float light = 0.0;
 	float amount = 1.0;
 	float fade = 1.0;
-	float spread = 1.0;
 	for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
 	{
-		light += amount * exp(-depth * fade) * cloud_phase(cosangle, spread) * (octave == 0 ? powder : 1.0);
+		light += amount * exp(-depth * fade) * cloud_scatter_phase[octave] * (octave == 0 ? powder : 1.0);
 		amount *= 0.5;
 		fade *= 0.5;
-		spread *= 0.5;
 	}
 	return light;
 }
 
 // optical depth of the cloud over a point up to Reach above it, from Samples of the coarse density: under a lump and deep in a
-// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud
-float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples)
+// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud.
+// Offset: where in its part of the reach each sample is taken (0-1), as in cloud_sunlight()
+float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples, float offset)
 {
 	float depth = 0.0;
 	for (int s = 0; s < samples; s++)
 	{
 		// up along the vertical: the height grows by the same distance (cloud_height bends only with the horizontal distance)
-		float up = reach * (float(s) + 0.5) / float(samples);
+		float up = reach * (float(s) + offset) / float(samples);
 		depth += cloud_layer_density(index, position + vec3(0.0, up, 0.0), height + up, false);
 	}
 	return depth * reach / float(samples);
+}
+
+// how far along a ray of the view (world axes) the scenery reached at the farthest in the last frame, in the four texels of the
+// depth pyramid around the ray: some 16 to 48 pixels each way at the level of 32 pixels, so what an edge of the scenery uncovers
+// as the camera moves is marched before it shows. 0: the sky showed there, the ray wasn't in that view, or there's no pyramid.
+// the depth is that of a projection with the far plane at infinity (near / w); longer by a margin for the camera moved since and
+// the angle of the ray to the axis of the view changing over the texels
+float scenery_reach(vec3 direction)
+{
+	if (occlusion <= 0)
+		return 0.0;
+	vec4 clip = occlusion_projection_view * vec4(direction, 0.0);
+	if (clip.w <= 1e-3)
+		return 0.0;
+	vec2 coords = clip.xy / clip.w * 0.5 + 0.5;
+	if (any(lessThan(coords, vec2(0.0))) || any(greaterThan(coords, vec2(1.0))))
+		return 0.0;
+	int level = occlusion - 1;
+	ivec2 levelsize = textureSize(occlusion_depth, level);
+	ivec2 base = ivec2(floor(coords * vec2(levelsize) - 0.5));
+	float farthest = 1.0;
+	for (int y = 0; y < 2; y++)
+		for (int x = 0; x < 2; x++)
+			farthest = min(farthest, texelFetch(occlusion_depth, clamp(base + ivec2(x, y), ivec2(0), levelsize - 1), level).r);
+	if (farthest <= 0.0)
+		return 0.0;
+	return projection[3][2] / farthest / clip.w * 1.1 + 2.0;
 }
 
 float interleaved_noise(vec2 pixel)
@@ -142,6 +190,7 @@ void main()
 	vec3 direction;
 	if (mode == 0)
 	{
+		texel = texel * max(stride, 1) + phase;
 		if (any(greaterThanEqual(texel, size)))
 			return;
 		vec2 ndc = (vec2(texel) + 0.5) / vec2(size) * 2.0 - 1.0;
@@ -169,12 +218,25 @@ void main()
 	int skysteps = (lightsteps >= 4) ? 2 : 1;
 	bool detail = quality.w > 0.5;
 	float jitter = fract(interleaved_noise(vec2(texel)) + float(frame) * 0.618034);
+	// where the samples of the light are taken in their steps: another sequence than the one of the samples of the view
+	float lightjitter = fract(interleaved_noise(vec2(texel) + vec2(37.0, 17.0)) + float(frame) * 0.754878);
+	{
+		float spread = 1.0;
+		for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
+		{
+			cloud_scatter_phase[octave] = cloud_phase(cosangle, spread);
+			spread *= 0.5;
+		}
+	}
 
 	vec3 scattered = vec3(0.0);
 	float transmittance = 1.0;
 	float depthsum = 0.0;
 	float weightsum = 0.0;
 	int layers = int(weather_camera.w);
+	// what the scenery hid of the ray in the last frame: the clouds past it aren't seen
+	float scenery = (mode == 0) ? scenery_reach(direction) : 0.0;
+	bool hidden = scenery > 0.0;
 
 	// the stretches of the volumetric layers along the ray, nearest first
 	vec2 segments[MAX_CLOUD_LAYERS];
@@ -214,6 +276,10 @@ void main()
 		int index = order[k];
 		cloud_layer_s layer = cloud_layers[index];
 		vec2 segment = segments[k];
+		// the scenery in front of the layer, and of the ones past it
+		if (scenery > 0.0 && scenery < segment.x)
+			break;
+		hidden = false;
 		float span = segment.y - segment.x;
 		float thickness = layer.heights.y - layer.heights.x;
 		int steps = clamp(int(float(maxsteps) * span / (thickness * 4.0)), 8, maxsteps);
@@ -227,13 +293,15 @@ void main()
 			if (density <= 0.0)
 				continue;
 			float powder = mix(1.0, 1.0 - exp(-density / max(layer.shape.y, 1e-6) * CLOUD_POWDER), powderview);
-			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, cosangle, lightsteps, powder, detail) : 0.0;
+			// every sample of the view takes the samples of its light at another place of their steps
+			float lightoffset = fract(lightjitter + float(s) * 0.754878);
+			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, lightsteps, powder, detail, lightoffset) : 0.0;
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
 			float top = cloud_layer_bounds(layer).y;
 			float reach = clamp(top - height, 0.0, CLOUD_SKY_REACH);
-			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps, fract(lightoffset + 0.569840)) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
 			float below = column * max(height - layer.heights.x, 0.0);
 			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
 			float through = exp(-density * step);
@@ -260,6 +328,9 @@ void main()
 		float t = crossing.x;
 		if (t > maxdistance * 2.0)
 			continue;
+		if (scenery > 0.0 && scenery < t)
+			continue;
+		hidden = false;
 		vec3 position = direction * t;
 		// the slant of the ray through the sheet where it crosses it, the earth curving away
 		float slope = max(abs(direction.y - (1.0 - direction.y * direction.y) * t / CLOUD_EARTH_RADIUS), 0.03);
@@ -288,6 +359,11 @@ void main()
 	{
 		scattered = vec3(0.0);
 		transmittance = 1.0;
+	}
+	if (hidden)
+	{
+		scattered = vec3(0.0);
+		transmittance = -1.0;
 	}
 	imageStore(clouds_color, texel, vec4(scattered, transmittance));
 	if (mode == 0)

@@ -658,6 +658,13 @@ void vulkan14_renderer::render_instances_indirect()
 		                         static_cast<int>(targets->extent.height)))
 		{
 			occlusion = scene.cull.hiz.occlusion(ctx.sampling.clamp_nearest, projection);
+			// the weather of the next frame asks it what the scenery hid, of the main view
+			auto const mainview{(m_current_viewport != nullptr) && m_current_viewport->main && (m_renderpass.draw_mode == rendermode::color)};
+			scene.cull.hiz.made_in(mainview ? ctx.framecount : vk14::hiz_pyramid::no_frame, projection * glm::mat4{glm::mat3{OpenGLMatrices.data(GL_MODELVIEW)}});
+		}
+		else
+		{
+			scene.cull.hiz.made_in(vk14::hiz_pyramid::no_frame, glm::mat4{1.f});
 		}
 	};
 	auto const useocclusion{Global.gfx_gpucull_occlusion && (false == Global.gfx_skippipeline) && (targets != nullptr) && targets->depth};

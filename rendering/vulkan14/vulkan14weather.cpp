@@ -20,6 +20,9 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "utilities/Globals.h"
 
+#include <array>
+#include <cmath>
+
 namespace
 {
 
@@ -82,16 +85,20 @@ struct shadow_constants
 struct march_constants
 {
 	std::int32_t mode;
-	std::int32_t pad;
+	std::int32_t occlusion;
 	glm::ivec2 size;
 	glm::mat4 inverse_projection;
 	glm::mat4 view_to_world;
 	std::int32_t frame;
-	std::int32_t pad1[3];
+	std::int32_t stride;
+	glm::ivec2 phase;
 	glm::vec4 quality;
 	glm::ivec2 rows;
+	glm::ivec2 pad2;
+	glm::mat4 occlusion_projection_view;
 };
 static_assert(offsetof(march_constants, quality) == 160, "the layout of the constants of clouds_march.comp");
+static_assert(offsetof(march_constants, occlusion_projection_view) == 192, "the layout of the constants of clouds_march.comp");
 struct temporal_constants
 {
 	glm::ivec2 size;
@@ -101,8 +108,12 @@ struct temporal_constants
 	glm::mat4 previous_projection_view;
 	glm::vec3 previous_camera;
 	float blend;
+	std::int32_t stride;
+	std::int32_t pad1;
+	glm::ivec2 phase;
 };
-static_assert(sizeof(temporal_constants) == 224, "the layout of the constants of clouds_temporal.comp");
+static_assert(sizeof(temporal_constants) == 240, "the layout of the constants of clouds_temporal.comp");
+static_assert(offsetof(temporal_constants, phase) == 232, "the layout of the constants of clouds_temporal.comp");
 struct inject_block
 {
 	glm::ivec3 grid;
@@ -118,8 +129,19 @@ struct inject_block
 	std::int32_t pad2;
 	glm::vec2 previous_slicing;
 	glm::vec2 jitter;
+	glm::vec2 pad3;
+	glm::mat4 occlusion_projection_view;
+	glm::vec4 occlusion;
 };
 static_assert(offsetof(inject_block, cablamps) == 256, "the layout of the block of fog_inject.comp");
+static_assert(offsetof(inject_block, occlusion_projection_view) == 288, "the layout of the block of fog_inject.comp");
+
+// the level of the depth pyramid of the clouds left out behind the scenery (clouds_march.comp: texels of 32 pixels of the scene)
+int const CLOUD_OCCLUSION_LEVEL{4};
+// gfx.clouds.interleave: one pixel of every block of this many by this many is marched a frame, and how much of the image a pixel
+// marched in the frame takes from it: more than with all of them marched (0.15), as its turn comes once in a few frames
+int const CLOUD_INTERLEAVE{2};
+float const CLOUD_INTERLEAVE_BLEND{0.3f};
 struct integrate_constants
 {
 	glm::ivec3 grid;
@@ -452,7 +474,11 @@ void vulkan14_renderer::update_weather()
 			constants.quality = glm::vec4{static_cast<float>(std::max(level.steps / 2, 24)), static_cast<float>(std::max(level.light_steps - 1, 2)), Global.gfx_clouds_distance, 0.f};
 			constants.rows = glm::ivec2{first, rows};
 			// the depth isn't written in this mode, but something has to be bound
-			weather.march.dispatch(commands, {vk14::storage_image(weather.panorama->view()), vk14::storage_image(weather.depth_dummy->view())}, constants, groups(weather.panorama_size.x), groups(rows), 1);
+			// nor is the depth pyramid read, the noise of the coverage stands for it
+			weather.march.dispatch(commands,
+			                       {vk14::storage_image(weather.panorama->view()), vk14::storage_image(weather.depth_dummy->view()),
+			                        vk14::image_descriptor(ctx.sampling.clamp_nearest, weather.coverage_noise->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)},
+			                       constants, groups(weather.panorama_size.x), groups(rows), 1);
 			vk14::barriers(commands, {vk14::use_of(*weather.panorama, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access)});
 		}
 	}
@@ -503,20 +529,50 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 	auto const projectionview{Projection * rotation};
 	auto &previousclouds{m_weatherstate.previous_clouds};
 	auto &previousfog{m_weatherstate.previous_fog};
+	// the scenery hid a part of the view in the last frame, which isn't worked out anew (gfx.weather.occlusion): the depth pyramid
+	// the culling of the main view made in that frame tells it, for a perspective projection with the far plane at infinity (its
+	// depth is near / w, as the contact shadows take it). the history is kept in the place of the part left out
+	auto const &pyramid{ctx.scene.cull.hiz};
+	auto const hidden{pyramid.occlusion(ctx.sampling.clamp_nearest, Projection)};
+	auto const occlusion{Global.gfx_weather_occlusion && (hidden.pyramid != VK_NULL_HANDLE) && (hidden.levels > 0) && (pyramid.frame() + 1 == ctx.framecount) && (Projection[2][3] != 0.f) && (Projection[2][2] == 0.f) &&
+	                     (Projection[3][2] > 0.f)};
+	// something has to be bound in its place otherwise
+	auto const pyramiddescriptor{occlusion ? vk14::image_descriptor(hidden.sampler, hidden.pyramid, VK_IMAGE_LAYOUT_GENERAL)
+	                                       : vk14::image_descriptor(ctx.sampling.clamp_nearest, weather.coverage_noise->view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)};
 
 	if (m_weatherstate.clouds_drawn() && weather.clouds_color && weather.clouds_depth && weather.clouds_history[0] && weather.clouds_history[1])
 	{
-		ctx.passes.begin_pass("clouds, fog volume", {vk14::use_of(*weather.clouds_color, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write), vk14::use_of(*weather.clouds_depth, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write)});
+		ctx.passes.begin_pass("clouds", {vk14::use_of(*weather.clouds_color, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write), vk14::use_of(*weather.clouds_depth, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write)});
 		bind_compute_set(weather.march);
+		auto const cloudscontinue{gfx::weather_state::continuity(previousclouds, Camera)};
 		march_constants constants{};
 		constants.mode = 0;
+		// only with a history to keep where the clouds are left out
+		constants.occlusion = ((occlusion && cloudscontinue) ? std::min(CLOUD_OCCLUSION_LEVEL, hidden.levels - 1) + 1 : 0);
+		constants.occlusion_projection_view = pyramid.projection_view();
+		// a part of the pixels a frame, each block in the order which leaves the pixels marched last the farthest apart; all of them
+		// when there's no history to make the image of the frame with
+		// nor when the view turned by a good part of itself since the last frame (a view to the side of the cab, a jump of the free
+		// camera): the middle of the view was then outside the half of the last view around its middle, much of the history is
+		// missing, and the image would be made of a quarter of its pixels for the frames it takes to get sharp again
+		auto const middle{previousclouds.projection_view * glm::vec4{glm::vec3{viewtoworld * glm::vec4{0.f, 0.f, -1.f, 0.f}}, 0.f}};
+		auto const turned{(middle.w <= 0.f) || (std::max(std::abs(middle.x), std::abs(middle.y)) > 0.5f * middle.w)};
+		auto const interleaved{Global.gfx_clouds_interleave && cloudscontinue && (false == turned)};
+		auto const stride{interleaved ? CLOUD_INTERLEAVE : 1};
+		std::array<glm::ivec2, 4> const phases{glm::ivec2{0, 0}, glm::ivec2{1, 1}, glm::ivec2{1, 0}, glm::ivec2{0, 1}};
+		auto const phase{interleaved ? phases[static_cast<std::size_t>(m_weatherstate.frame()) % phases.size()] : glm::ivec2{0}};
+		constants.stride = stride;
+		constants.phase = phase;
 		constants.size = weather.view_size;
 		constants.inverse_projection = inverseprojection;
 		constants.view_to_world = viewtoworld;
-		constants.frame = m_weatherstate.frame();
+		// the turns a pixel had, not the frames: its samples are moved along their steps by the number of its turn, and with a pixel
+		// marched every fourth frame the frames would move them by nearly the same every time
+		constants.frame = m_weatherstate.frame() / (stride * stride);
 		constants.quality = glm::vec4{static_cast<float>(level.steps), static_cast<float>(level.light_steps), Global.gfx_clouds_distance, level.detail ? 1.f : 0.f};
 		constants.rows = glm::ivec2{0, weather.view_size.y};
-		weather.march.dispatch(commands, {vk14::storage_image(weather.clouds_color->view()), vk14::storage_image(weather.clouds_depth->view())}, constants, groups(weather.view_size.x), groups(weather.view_size.y), 1);
+		weather.march.dispatch(commands, {vk14::storage_image(weather.clouds_color->view()), vk14::storage_image(weather.clouds_depth->view()), pyramiddescriptor}, constants,
+		                       groups((weather.view_size.x + stride - 1) / stride), groups((weather.view_size.y + stride - 1) / stride), 1);
 
 		auto const next{1 - weather.clouds_current};
 		auto &history{*weather.clouds_history[weather.clouds_current]};
@@ -530,7 +586,17 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 		blend.view_to_world = viewtoworld;
 		blend.previous_projection_view = previousclouds.projection_view;
 		blend.previous_camera = glm::vec3{previousclouds.camera - Camera};
-		blend.blend = gfx::weather_state::continuity(previousclouds, Camera) ? 0.15f : 1.f;
+		blend.blend = 1.f;
+		if (interleaved)
+		{
+			blend.blend = CLOUD_INTERLEAVE_BLEND;
+		}
+		else if (cloudscontinue)
+		{
+			blend.blend = 0.15f;
+		}
+		blend.stride = stride;
+		blend.phase = phase;
 		auto const &linear{ctx.sampling.clamp_linear};
 		auto const &nearest{ctx.sampling.clamp_nearest};
 		weather.temporal.dispatch(commands,
@@ -544,14 +610,15 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 	}
 	else
 	{
-		ctx.passes.begin_pass("clouds, fog volume");
 		previousclouds.valid = false;
 	}
 
 	if ((Global.gfx_fog == 1) && weather.fog_integrated && weather.fog_scattering[0] && weather.fog_scattering[1])
 	{
+		ctx.passes.begin_pass("fog volume");
 		bind_compute_set(weather.inject);
-		auto const temporal{Global.gfx_fog_temporal && gfx::weather_state::continuity(previousfog, Camera)};
+		auto const fogcontinues{gfx::weather_state::continuity(previousfog, Camera)};
+		auto const temporal{Global.gfx_fog_temporal && fogcontinues};
 		auto const jitter{m_weatherstate.fog_jitter(temporal)};
 		auto const slicing{gfx::weather_state::fog_slicing(weather.fog_grid.z, jitter)};
 		auto const next{1 - weather.fog_current};
@@ -571,12 +638,22 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 		block.cablamps = Cablamps;
 		block.previous_slicing = glm::vec2{previousfog.slicing.x, previousfog.slicing.z};
 		block.jitter = glm::vec2{jitter.x, jitter.y};
+		if (occlusion && fogcontinues)
+		{
+			// the texels of the pyramid looked at reach as far as the cells a pixel takes its fog from: three and a half cells, each some
+			// pixels of the scene wide (fog_inject.comp); a texel of the level n is 2^(n + 1) pixels
+			auto const reach{3.5f * static_cast<float>(Size.x) / static_cast<float>(std::max(weather.fog_grid.x, 1))};
+			auto const level{std::clamp(static_cast<int>(std::ceil(std::log2(std::max(reach, 2.f)))) - 1, 0, hidden.levels - 1)};
+			block.occlusion_projection_view = pyramid.projection_view();
+			block.occlusion = glm::vec4{static_cast<float>(level + 1), Projection[3][2], 0.f, 0.f};
+		}
 		auto const slice{ctx.ring.allocate(sizeof(block), ctx.device.caps().limits.minUniformBufferOffsetAlignment)};
 		if (slice)
 		{
 			std::memcpy(slice.data, &block, sizeof(block));
 			weather.inject.run(commands,
-			                   {vk14::storage_image(result.view()), vk14::image_descriptor(ctx.sampling.clamp_linear, history.view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), vk14::buffer_descriptor(slice.buffer, slice.offset, sizeof(block))},
+			                   {vk14::storage_image(result.view()), vk14::image_descriptor(ctx.sampling.clamp_linear, history.view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), vk14::buffer_descriptor(slice.buffer, slice.offset, sizeof(block)),
+			                    pyramiddescriptor},
 			                   groups(weather.fog_grid.x), groups(weather.fog_grid.y), static_cast<std::uint32_t>(weather.fog_grid.z));
 		}
 		vk14::barriers(commands, {vk14::use_of(result, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sampled_stage, sampled_access), vk14::use_of(*weather.fog_integrated, VK_IMAGE_LAYOUT_GENERAL, compute_stage, storage_write)});

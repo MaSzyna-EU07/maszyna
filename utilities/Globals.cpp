@@ -2246,6 +2246,8 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.fog.shadows" ) { readswitch( gfx_fog_shadows ); }
     else if( Token == "gfx.fog.temporal" ) { readswitch( gfx_fog_temporal ); }
     else if( Token == "gfx.fog.temporal.share" ) { readvalue( gfx_fog_temporal_share, 0.02f, 1.f ); }
+    else if( Token == "gfx.weather.occlusion" ) { readswitch( gfx_weather_occlusion ); }
+    else if( Token == "gfx.clouds.interleave" ) { readswitch( gfx_clouds_interleave ); }
     else if( Token == "gfx.clouds" ) {
         // no, or the quality: low, medium (yes), high, ultra
         Parser.getTokens( 1 );
@@ -2667,6 +2669,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.fog.shadows", gfx_fog_shadows );
     export_as_text( Output, "gfx.fog.temporal", gfx_fog_temporal );
     export_as_text( Output, "gfx.fog.temporal.share", gfx_fog_temporal_share );
+    export_as_text( Output, "gfx.weather.occlusion", gfx_weather_occlusion );
+    export_as_text( Output, "gfx.clouds.interleave", gfx_clouds_interleave );
     export_as_text( Output, "gfx.clouds", std::string{ gfx_clouds == 1 ? "low" : gfx_clouds == 2 ? "medium" : gfx_clouds == 3 ? "high" : gfx_clouds == 4 ? "ultra" : "no" } );
     export_as_text( Output, "gfx.clouds.distance", gfx_clouds_distance );
     export_as_text( Output, "gfx.clouds.shadows", gfx_clouds_shadows );

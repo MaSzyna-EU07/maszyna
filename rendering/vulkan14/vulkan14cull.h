@@ -161,8 +161,27 @@ class hiz_pyramid
 	bool build(command_stream *Commands, VkDevice Device, allocator &Memory, deletion_queue &Deletions, std::uint64_t Value, VkImageView Depth, VkSampler Sampler, int Width, int Height);
 	// the occlusion test of the pass
 	cull_occlusion occlusion(VkSampler Sampler, glm::mat4 const &Projection) const;
+	// the frame the pyramid was made in last from the depth of the main view, and the matrix from the world axes around its camera
+	// to its clip space: the weather of the next frame leaves out what the scenery hid (gfx.weather.occlusion). a pyramid made
+	// from another depth is of no frame
+	void made_in(std::uint64_t const Frame, glm::mat4 const &Projectionview)
+	{
+		m_frame = Frame;
+		m_projectionview = Projectionview;
+	}
+	std::uint64_t frame() const
+	{
+		return m_frame;
+	}
+	glm::mat4 const &projection_view() const
+	{
+		return m_projectionview;
+	}
+	static constexpr std::uint64_t no_frame{~0ull};
 
   private:
+	std::uint64_t m_frame{no_frame};
+	glm::mat4 m_projectionview{1.f};
 	compute_kernel m_kernel;
 	std::shared_ptr<image> m_pyramid;
 	std::vector<VkImageView> m_levels;

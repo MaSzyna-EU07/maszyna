@@ -325,6 +325,8 @@ void weather_state::draw_debug_ui()
 	ImGui::Checkbox("shadows of the sun and headlights in the fog (gfx.fog.shadows)", &Global.gfx_fog_shadows);
 	ImGui::Checkbox("fog blended over frames (gfx.fog.temporal)", &Global.gfx_fog_temporal);
 	ImGui::SliderFloat("share of a new frame in the fog (gfx.fog.temporal.share)", &Global.gfx_fog_temporal_share, 0.02f, 1.f);
+	ImGui::Checkbox("clouds and fog hidden by the scenery left as they were, vulkan (gfx.weather.occlusion)", &Global.gfx_weather_occlusion);
+	ImGui::Checkbox("a quarter of the clouds marched a frame, vulkan (gfx.clouds.interleave)", &Global.gfx_clouds_interleave);
 	char const *cloudlevels[]{"none", "low", "medium", "high", "ultra"};
 	ImGui::Combo("clouds (gfx.clouds)", &Global.gfx_clouds, cloudlevels, IM_ARRAYSIZE(cloudlevels));
 	ImGui::SliderFloat("cloud distance, m (gfx.clouds.distance)", &Global.gfx_clouds_distance, 5000.f, 200000.f, "%.0f", ImGuiSliderFlags_Logarithmic);

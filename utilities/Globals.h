@@ -628,6 +628,10 @@ struct global_settings {
     bool gfx_clouds_shadows { true };
     int gfx_clouds_shadows_size { 512 };
     float gfx_clouds_shadows_range { 16000.f };
+    // the clouds and the cells of the fog volume the scenery hid in the last frame aren't worked out anew (the vulkan renderer)
+    bool gfx_weather_occlusion { true };
+    // a quarter of the pixels of the clouds of the main view is marched a frame, the image made of the last ones (the vulkan renderer)
+    bool gfx_clouds_interleave { true };
     // stars from the catalogue, and their brightness
     bool gfx_stars { true };
     float gfx_stars_brightness { 1.f };

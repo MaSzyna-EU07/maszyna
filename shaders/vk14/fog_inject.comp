@@ -8,7 +8,10 @@
 // the points from a place of its own, so the volume doesn't flicker as a whole, and the blending smooths what a cell holds over
 // its whole size: a beam doesn't swim over the grid of the cells as the camera moves and turns. what the cell takes the lights
 // from doesn't depend on the point (the clusters of the middle of the cell)
-// rgb: light scattered towards the camera per metre, a: extinction per metre
+// rgb: light scattered towards the camera per metre, a: extinction per metre.
+// gfx.weather.occlusion: the cells behind everything the scenery held around them in the last frame (the depth pyramid of the
+// culling of that frame) aren't seen through, nothing reads them: they take what the history holds where they were as it is,
+// without working out the fog anew, so there's something to blend into when the scenery uncovers them
 
 #define LAYOUT_COMPUTE 1
 #include "common.glsl"
@@ -19,6 +22,9 @@ layout(local_size_x = WEATHER_GROUP_SIZE, local_size_y = WEATHER_GROUP_SIZE, loc
 
 layout(rgba16f, set = COMPUTE_SET, binding = 0) uniform writeonly image3D fog_scattering;
 layout(set = COMPUTE_SET, binding = 1) uniform sampler3D fog_history;
+// the depth pyramid of the main view of the last frame (hiz_build.comp: the farthest depth of what a texel covers, reversed, 0 the
+// sky); read only with occlusion.x set
+layout(set = COMPUTE_SET, binding = 3) uniform sampler2D occlusion_depth;
 
 layout(set = PASS_SET, binding = SHADOW_TEX) uniform sampler2DArrayShadow shadowmap;
 layout(set = PASS_SET, binding = HEADLIGHT_TEX) uniform sampler2D headlightmap;
@@ -45,6 +51,11 @@ layout(std140, set = COMPUTE_SET, binding = 2) uniform kernel_block
 	vec2 previous_slicing;
 	// where in its cell the cell is sampled this frame across the view (0-1), as slicing.w is along the depth
 	vec2 jitter;
+	// world axes to the clip space of the frame the depth pyramid was made in
+	mat4 occlusion_projection_view;
+	// x: the level of the depth pyramid looked at for what the scenery hides, plus 1 (0: nothing is taken for hidden), y: the near
+	// plane of the projection the depth is of (a depth d is a surface y / d away along the axis of the view)
+	vec4 occlusion;
 };
 
 // ray of the view space through a point of the view (0-1), one metre of the depth long
@@ -225,11 +236,67 @@ vec3 lamp_segment(light_s lamp, light_s cone, vec3 start, vec3 direction, float 
 	return sum * (0.5 * (last - first) / (reach * max(span, 1e-4)));
 }
 
+// slices past the surfaces of the scenery which are still worked out: the fog of a surface is read between two slices, each
+// holding the cells up to it (fog_integrate.comp, fog_volume.glsl), with one to spare
+const float FOG_HIDDEN_SLICES = 2.0;
+
+// whether all the scenery around the column of a cell was nearer than the cell in the last frame, by the nine texels of the depth
+// pyramid around the column. their level is chosen for the size of the cells (vulkan14_renderer::render_weather_view()): the fog
+// of a pixel is read from the columns two cells around it, each smoothed with the ones next to it, so a column counts for the
+// pixels three and a half cells away, and the texels reach at least that far. the surfaces are taken for farther by a margin, for
+// the camera moved and turned since
+bool cell_hidden(ivec3 cell)
+{
+	if (occlusion.x < 0.5)
+		return false;
+	vec3 direction = mat3(view_to_world) * view_ray((vec2(cell.xy) + 0.5) / vec2(grid.xy));
+	vec4 clip = occlusion_projection_view * vec4(direction, 0.0);
+	if (clip.w <= 1e-3)
+		return false;
+	vec2 coords = clip.xy / clip.w * 0.5 + 0.5;
+	if (any(lessThan(coords, vec2(0.0))) || any(greaterThan(coords, vec2(1.0))))
+		return false;
+	int level = int(occlusion.x) - 1;
+	ivec2 levelsize = textureSize(occlusion_depth, level);
+	ivec2 middle = ivec2(coords * vec2(levelsize));
+	float farthest = 1.0;
+	for (int y = -1; y <= 1; y++)
+		for (int x = -1; x <= 1; x++)
+			farthest = min(farthest, texelFetch(occlusion_depth, clamp(middle + ivec2(x, y), ivec2(0), levelsize - 1), level).r);
+	if (farthest <= 0.0)
+		return false;
+	return slice_depth(float(cell.z) - FOG_HIDDEN_SLICES) > occlusion.y / farthest * 1.1 + 1.0;
+}
+
+// the cell in the fog of the previous frame, where its middle was then (0-1 on each axis); false: it wasn't in that view
+bool cell_history(ivec3 cell, out vec3 previous)
+{
+	vec3 centre = mat3(view_to_world) * (view_ray((vec2(cell.xy) + 0.5) / vec2(grid.xy)) * slice_depth(float(cell.z) + 0.5));
+	vec4 clip = previous_projection_view * vec4(centre - previous_camera, 1.0);
+	previous = vec3(0.0);
+	if (clip.w <= 0.0)
+		return false;
+	float previousslice = log(max((clip.w + FOG_VOLUME_BIAS) / (previous_slicing.x + FOG_VOLUME_BIAS), 1e-6)) * previous_slicing.y;
+	previous = vec3(clip.xy / clip.w * 0.5 + 0.5, previousslice / float(grid.z));
+	return all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0)));
+}
+
 void main()
 {
 	ivec3 cell = ivec3(gl_GlobalInvocationID);
 	if (any(greaterThanEqual(cell, grid)))
 		return;
+	// the previous frame, where the middle of the cell was then: the cells of the history hold what the cells were on the whole,
+	// not at the point they were sampled at
+	float share = options.x;
+	bool hidden = cell_hidden(cell);
+	vec3 previous = vec3(0.0);
+	bool found = ((share < 1.0) || hidden) && cell_history(cell, previous);
+	if (hidden && found)
+	{
+		imageStore(fog_scattering, cell, textureLod(fog_history, previous, 0.0));
+		return;
+	}
 	vec3 offset = cell_offset(cell);
 	vec2 coords = (vec2(cell.xy) + offset.xy) / vec2(grid.xy);
 	float depth = slice_depth(float(cell.z) + offset.z);
@@ -306,21 +373,8 @@ void main()
 		result = vec4(light * fog_haze.w * extinction, extinction);
 	}
 
-	// the previous frame, where the middle of the cell was then: the cells of the history hold what the cells were on the whole,
-	// not at the point they were sampled at
-	float share = options.x;
-	if (share < 1.0)
-	{
-		vec3 centre = mat3(view_to_world) * (view_ray((vec2(cell.xy) + 0.5) / vec2(grid.xy)) * slice_depth(float(cell.z) + 0.5));
-		vec4 clip = previous_projection_view * vec4(centre - previous_camera, 1.0);
-		if (clip.w > 0.0)
-		{
-			float previousslice = log(max((clip.w + FOG_VOLUME_BIAS) / (previous_slicing.x + FOG_VOLUME_BIAS), 1e-6)) * previous_slicing.y;
-			vec3 previous = vec3(clip.xy / clip.w * 0.5 + 0.5, previousslice / float(grid.z));
-			if (all(greaterThanEqual(previous, vec3(0.0))) && all(lessThanEqual(previous, vec3(1.0))))
-				result = mix(textureLod(fog_history, previous, 0.0), result, share);
-		}
-	}
+	if ((share < 1.0) && found)
+		result = mix(textureLod(fog_history, previous, 0.0), result, share);
 	if (any(isnan(result)))
 		result = vec4(0.0);
 	imageStore(fog_scattering, cell, result);
