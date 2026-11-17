@@ -537,6 +537,36 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::generictoggle27, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle28, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle29, &TTrain::OnCommand_generictoggle},
+    {user_command::genericset0, &TTrain::OnCommand_genericset},
+    {user_command::genericset1, &TTrain::OnCommand_genericset},
+    {user_command::genericset2, &TTrain::OnCommand_genericset},
+    {user_command::genericset3, &TTrain::OnCommand_genericset},
+    {user_command::genericset4, &TTrain::OnCommand_genericset},
+    {user_command::genericset5, &TTrain::OnCommand_genericset},
+    {user_command::genericset6, &TTrain::OnCommand_genericset},
+    {user_command::genericset7, &TTrain::OnCommand_genericset},
+    {user_command::genericset8, &TTrain::OnCommand_genericset},
+    {user_command::genericset9, &TTrain::OnCommand_genericset},
+    {user_command::genericset10, &TTrain::OnCommand_genericset},
+    {user_command::genericset11, &TTrain::OnCommand_genericset},
+    {user_command::genericset12, &TTrain::OnCommand_genericset},
+    {user_command::genericset13, &TTrain::OnCommand_genericset},
+    {user_command::genericset14, &TTrain::OnCommand_genericset},
+    {user_command::genericset15, &TTrain::OnCommand_genericset},
+    {user_command::genericset16, &TTrain::OnCommand_genericset},
+    {user_command::genericset17, &TTrain::OnCommand_genericset},
+    {user_command::genericset18, &TTrain::OnCommand_genericset},
+    {user_command::genericset19, &TTrain::OnCommand_genericset},
+    {user_command::genericset20, &TTrain::OnCommand_genericset},
+    {user_command::genericset21, &TTrain::OnCommand_genericset},
+    {user_command::genericset22, &TTrain::OnCommand_genericset},
+    {user_command::genericset23, &TTrain::OnCommand_genericset},
+    {user_command::genericset24, &TTrain::OnCommand_genericset},
+    {user_command::genericset25, &TTrain::OnCommand_genericset},
+    {user_command::genericset26, &TTrain::OnCommand_genericset},
+    {user_command::genericset27, &TTrain::OnCommand_genericset},
+    {user_command::genericset28, &TTrain::OnCommand_genericset},
+    {user_command::genericset29, &TTrain::OnCommand_genericset},
     {user_command::vehiclemoveforwards, &TTrain::OnCommand_vehiclemoveforwards},
     {user_command::vehiclemovebackwards, &TTrain::OnCommand_vehiclemovebackwards},
     {user_command::vehicleboost, &TTrain::OnCommand_vehicleboost},
@@ -6994,19 +7024,9 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		}
 		else
 		{
-			// two-state switch
-			if (item.GetDesiredValue() < 0.5)
-			{
-				// turn on
-				// visual feedback
-				item.UpdateValue(1.0);
-			}
-			else
-			{
-				// turn off
-				// visual feedback
-				item.UpdateValue(0.0);
-			}
+			// two-state switch, or one dragged in between its ends with the mouse: to the end farther from it
+			// visual feedback
+			item.UpdateValue(universal_drag::toggled(item.GetDesiredValue()));
 		}
 	}
 	else if (Command.action == GLFW_RELEASE && item.type() == TGaugeType::push)
@@ -7016,6 +7036,46 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		// visual feedback
 		item.UpdateValue(0.0);
 	}
+}
+
+// sets a universal control to the position given in param1, from 0 to 1 (MaSzyna-EU07/maszyna#62): the mouse drags
+// the ones with drag: in their definition, and it can be bound to an axis of a gamepad. it stays where it is set
+void TTrain::OnCommand_genericset(TTrain *Train, command_data const &Command)
+{
+
+	if (Command.action == GLFW_RELEASE)
+	{
+		return;
+	}
+	auto const itemindex = static_cast<int>(Command.command) - static_cast<int>(user_command::genericset0);
+	auto &item = Train->ggUniversals[itemindex];
+	if (item.is_push())
+	{
+		// an impulse switch springs back, it has no position to be left in
+		return;
+	}
+	// visual feedback
+	item.UpdateValue(universal_drag::clamp(Command.param1));
+}
+
+universal_drag::direction TTrain::universal_drag_direction(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()) || ggUniversals[Index].SubModel == nullptr)
+	{
+		return universal_drag::direction::none;
+	}
+	return ggUniversals[Index].drag();
+}
+
+float TTrain::universal_position(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()))
+	{
+		return 0.f;
+	}
+	return ggUniversals[Index].GetDesiredValue();
 }
 
 void TTrain::OnCommand_springbraketoggle(TTrain *Train, command_data const &Command)
