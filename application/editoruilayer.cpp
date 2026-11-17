@@ -22,7 +22,6 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIcons.hpp"
 
 #include <cstdio>
-#include <format>
 #include <limits>
 
 glm::vec2 editor_ui::m_viewmin{0.0f};
@@ -664,7 +663,6 @@ void editor_ui::render_()
 	autohide_strips();
 	autohide_pins();
 	render_refusal();
-	render_warning();
 }
 
 // updates state of UI elements
@@ -1099,44 +1097,6 @@ void editor_ui::render_refusal()
 	auto *draw{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
 	draw->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), m_refusalnotice ? IM_COL32(45, 32, 0, static_cast<int>(215 * alpha)) : IM_COL32(40, 0, 0, static_cast<int>(210 * alpha)), 4.0f);
 	draw->AddText(ImGui::GetFont(), ImGui::GetFontSize(), at, m_refusalnotice ? IM_COL32(255, 205, 110, static_cast<int>(255 * alpha)) : IM_COL32(255, 150, 130, static_cast<int>(255 * alpha)), m_refusal.c_str(), nullptr, wrap);
-}
-
-void editor_ui::set_warning(std::string_view const Warning, double const Seconds)
-{
-	m_warning = Warning;
-	m_warningseconds = Seconds;
-	m_warningtime = -1.0;
-}
-
-void editor_ui::render_warning()
-{
-	if (m_warning.empty())
-		return;
-	auto const now{ImGui::GetTime()};
-	if (m_warningtime < 0.0)
-		m_warningtime = now;
-	auto const remaining{m_warningseconds - (now - m_warningtime)};
-	if (remaining <= 0.0)
-	{
-		m_warning.clear();
-		return;
-	}
-	auto const &io{ImGui::GetIO()};
-	auto const alpha{static_cast<float>(std::clamp(remaining, 0.0, 1.0))};
-	auto const fontsize{std::round(ImGui::GetFontSize() * 1.5f)};
-	auto const wrap{std::min(std::round(fontsize * 32.0f), io.DisplaySize.x - 80.0f)};
-	auto const countdown{std::format("({} s)", static_cast<int>(std::ceil(remaining)))};
-	auto const size{ImGui::GetFont()->CalcTextSizeA(fontsize, std::numeric_limits<float>::max(), wrap, m_warning.c_str())};
-	auto const countdownsize{ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), std::numeric_limits<float>::max(), 0.0f, countdown.c_str())};
-	auto const pad{fontsize};
-	ImVec2 const at{std::round((io.DisplaySize.x - size.x) * 0.5f), std::round((io.DisplaySize.y - size.y) * 0.5f)};
-	auto *draw{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
-	ImVec2 const from{at.x - pad, at.y - pad};
-	ImVec2 const to{at.x + size.x + pad, at.y + size.y + pad + countdownsize.y};
-	draw->AddRectFilled(from, to, IM_COL32(45, 32, 0, static_cast<int>(230 * alpha)), 6.0f);
-	draw->AddRect(from, to, IM_COL32(255, 205, 60, static_cast<int>(255 * alpha)), 6.0f, 0, 3.0f);
-	draw->AddText(ImGui::GetFont(), fontsize, at, IM_COL32(255, 215, 90, static_cast<int>(255 * alpha)), m_warning.c_str(), nullptr, wrap);
-	draw->AddText(ImVec2(to.x - pad * 0.5f - countdownsize.x, to.y - pad * 0.5f - countdownsize.y), IM_COL32(255, 215, 90, static_cast<int>(200 * alpha)), countdown.c_str());
 }
 
 void editor_ui::render_rotation_controls()

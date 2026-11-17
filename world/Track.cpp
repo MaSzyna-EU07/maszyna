@@ -29,7 +29,6 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
-#include "utilities/asciiname.h"
 #include "rendering/renderer.h"
 
 #include <format>
@@ -1195,10 +1194,10 @@ bool TTrack::AssignEvents() {
      && false == trackname.empty() ) {
         // jeśli podana jest nazwa torów, można szukać eventów skojarzonych przez nazwę
         for( auto &eventsequence : eventsequences ) {
-            auto *found = simulation::Events.FindEventAscii( trackname + ':' + eventsequence.first );
-            if( found != nullptr ) {
+            auto *event = simulation::Events.FindEvent( trackname + ':' + eventsequence.first );
+            if( event != nullptr ) {
                 // HACK: auto-associated events come with empty lookup string, to avoid including them in the text format export
-                eventsequence.second->emplace_back( "", found );
+                eventsequence.second->emplace_back( "", event );
                 m_events = true;
             }
         }
@@ -3945,15 +3944,6 @@ TTrack::copy_adjacent_trackbed_material( TTrack const *Exclude ) {
 }
 
 
-
-TTrack *
-path_table::find( std::string const &Name ) const {
-
-    if( auto *found { basic_table<TTrack>::find( Name ) }; found != nullptr || ascii_name::plain( Name ) ) {
-        return found;
-    }
-    return basic_table<TTrack>::find( ascii_name::fold( Name ) );
-}
 
 path_table::~path_table() {
 

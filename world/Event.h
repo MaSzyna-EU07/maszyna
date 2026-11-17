@@ -683,10 +683,6 @@ public:
     // legacy method, returns pointer to specified event, or null
     basic_event *
         FindEvent( std::string const &Name );
-    // as above; on a miss, an event with letters outside of ASCII in its name is found under the name without them as well.
-    // the events named after a track, <track>:event0, keep the name the track had before the editor gave it one in ASCII
-    basic_event *
-        FindEventAscii( std::string const &Name );
 	inline TEventLauncher* FindEventlauncher(std::string const &Name) {
 		auto ptr = m_inputdrivenlaunchers.find(Name);
 		return ptr ? ptr : m_radiodrivenlaunchers.find(Name);
@@ -736,7 +732,6 @@ private:
     basic_event *QueryRootEvent { nullptr };
     basic_event *m_workevent { nullptr };
     event_map m_eventmap;
-    event_map m_asciimap; // the events with letters outside of ASCII in their names, under the names without them
     basic_table<TEventLauncher> m_inputdrivenlaunchers;
     basic_table<TEventLauncher> m_radiodrivenlaunchers;
     eventlauncher_sequence m_launcherqueue;

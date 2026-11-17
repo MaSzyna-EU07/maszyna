@@ -7,6 +7,9 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
+// the tracks whose names have letters outside of ASCII: listed, nothing renamed. The names the sceneries have go on working as they
+// always did, in the editor and in the game; the editor gives no new name outside of ASCII (editor_track::name_valid)
+
 #include "stdafx.h"
 
 #include "application/editormode.h"
@@ -15,83 +18,105 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
+#include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/asciiname.h"
 #include "utilities/translation.h"
 
 #include <algorithm>
 #include <format>
+#include <map>
 #include <string>
 #include <vector>
 
 namespace
 {
 
-// how long the warning about the names stays in the middle of the screen
-constexpr double kWarningSeconds{20.0};
-
-// the name in ASCII which no other path has yet
-std::string free_name(TTrack const &Track)
+// the tracks listed: the lanes take their names from their road, the removed ones are gone
+bool listed(TTrack const *Track)
 {
-	auto const base{ascii_name::fold(Track.name())};
-	auto name{base};
-	// far more numbers than a scenery has tracks
-	for (int number = 2; number <= 1000000; ++number)
-	{
-		if (auto const *taken{simulation::Paths.find(name)}; taken == nullptr || taken == &Track)
-			return name;
-		name = std::format("{}_{}", base, number);
-	}
-	return name;
+	return Track != nullptr && false == Track->m_editorremoved && (Track->iCategoryFlag & 0x80) == 0 && Track->m_road == nullptr && false == Track->name().empty() &&
+	       false == ascii_name::plain(Track->name());
+}
+
+char const *yes_no(bool const Value)
+{
+	return Value ? STR_C("yes") : STR_C("no");
 }
 
 } // namespace
 
-void editor_mode::ascii_track_names() const
+void editor_mode::check_track_names(bool const Report)
 {
-	struct change
+	m_track_names.clear();
+	std::vector<TTrack const *> found;
+	std::map<std::string, int> folded; // how many of the names listed give each ASCII name
+	for (auto const *track : simulation::Paths.sequence())
 	{
-		std::string from;
-		std::string to;
-	};
-	std::vector<change> changes;
-	int unsaved{0};
-	// collected first: the renaming changes the map the names are looked up in, not the sequence of the paths
-	std::vector<TTrack *> named;
-	for (auto *track : simulation::Paths.sequence())
-	{
-		// the lanes take their names from their road
-		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 0x80) != 0 || track->m_road != nullptr)
+		if (false == listed(track))
 			continue;
-		if (false == ascii_name::plain(track->name()))
-			named.push_back(track);
+		found.push_back(track);
+		++folded[ascii_name::fold(track->name())];
 	}
-	for (auto *track : named)
+	for (auto const *track : found)
 	{
-		// the old name as it reads, taken before the track gets the new one
-		auto const from{ascii_name::readable(track->name())};
-		auto const name{free_name(*track)};
-		// a path of a template is written with its new name only if the name is given to it by a parameter of the include
-		auto const saved{track->from_template() ? editor_track::uses_of_name(*track).includes > 0 : scene::Layers.editable(track)};
-		// the include directives which give the path its name, the memory cells which point to it are changed along with it
-		editor_track::rename(*track, name);
-		if (false == saved)
-			++unsaved;
-		WriteLog(std::format(R"(Editor: track "{}" renamed to "{}", its name had characters outside of ASCII{})", from, name, saved ? "" : "; its file isn't written by the editor"));
-		changes.emplace_back(from, name);
+		track_name_entry entry;
+		entry.name = ascii_name::readable(track->name());
+		entry.ascii = ascii_name::fold(track->name());
+		// another path named so already, or another name listed giving the same
+		auto const *other{simulation::Paths.find(entry.ascii)};
+		entry.clash = (other != nullptr && other != track && false == other->m_editorremoved) || folded[entry.ascii] > 1;
+		entry.include = track->from_template() && editor_track::uses_of_name(*track).includes > 0;
+		entry.written = track->from_template() ? entry.include : scene::Layers.editable(track);
+		m_track_names.push_back(std::move(entry));
 	}
-	if (changes.empty())
+	if (false == Report || m_track_names.empty())
 		return;
-	auto text{format(STR_C("The names of %zu tracks had characters outside of ASCII (Polish letters and the like), they were changed to ASCII:"), changes.size())};
-	constexpr std::size_t shown{6};
-	for (std::size_t i = 0; i < std::min(shown, changes.size()); ++i)
-		text += "\n  " + changes[i].from + "  ->  " + changes[i].to;
-	if (changes.size() > shown)
-		text += "\n  " + format(STR_C("... and %zu more, the whole list is in the log"), changes.size() - shown);
-	text += "\n\n";
-	text += STR_C("The events and the rest still find the tracks by their old names. Save the scenery to write the new names into its files.");
-	if (unsaved > 0)
-		text += "\n" + format(STR_C("%d of them are in files the editor doesn't write; there they stay as they were."), unsaved);
-	ui()->set_warning(text, kWarningSeconds);
-	ui()->set_status(format(STR_C("Track names changed to ASCII: %zu"), changes.size()));
+	for (auto const &entry : m_track_names)
+		WriteLog(std::format(R"(Editor: track "{}" has characters outside of ASCII in its name; in ASCII "{}"{})", entry.name, entry.ascii, entry.clash ? ", a name taken already" : ""));
+	ui()->set_status(format(STR_C("%zu track names have characters outside of ASCII; they work as they are, the list is in Tools"), m_track_names.size()));
+}
+
+void editor_mode::render_track_names_window()
+{
+	if (false == m_track_names_open)
+		return;
+	ImGui::SetNextWindowSize(ImVec2(620.0f * Global.ui_scale, 380.0f * Global.ui_scale), ImGuiCond_FirstUseEver);
+	if (false == ImGui::Begin((std::string(STR_C("Track names outside of ASCII")) + "###tracknamesascii").c_str(), &m_track_names_open))
+	{
+		ImGui::End();
+		return;
+	}
+	ImGui::TextWrapped("%s", STR_C("These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there."));
+	if (ImGui::SmallButton(STR_C("Check again")))
+		check_track_names(false);
+	ImGui::SameLine();
+	ImGui::TextDisabled(STR_C("Tracks: %zu"), m_track_names.size());
+	auto constexpr flags{ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable};
+	if (ImGui::BeginTable("##tracknamesascii", 5, flags))
+	{
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableSetupColumn(STR_C("Name"));
+		ImGui::TableSetupColumn(STR_C("In ASCII"));
+		ImGui::TableSetupColumn(STR_C("Taken"));
+		ImGui::TableSetupColumn(STR_C("From an include"));
+		ImGui::TableSetupColumn(STR_C("In a file the editor writes"));
+		ImGui::TableHeadersRow();
+		for (auto const &entry : m_track_names)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(entry.name.c_str());
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(entry.ascii.c_str());
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(yes_no(entry.clash));
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(yes_no(entry.include));
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(yes_no(entry.written));
+		}
+		ImGui::EndTable();
+	}
+	ImGui::End();
 }
