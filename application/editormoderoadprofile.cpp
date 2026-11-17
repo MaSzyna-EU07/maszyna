@@ -490,6 +490,17 @@ bool end_joined(chain_profile const &Profile, std::size_t const End)
 	return false == editor_road::arms_at(Profile.positions[End]).empty();
 }
 
+// an end node of the run moved up or down where something else meets it keeps its grade: the piece or the arm beyond it keeps the
+// slope of its handle at the joint, so a new grade there would leave a kink
+void keep_joined_ends(chain_profile const &Profile, std::vector<char> const &Selected, std::vector<double> &Grades)
+{
+	auto const last{Grades.size() - 1};
+	if (Selected.front() != 0 && end_joined(Profile, 0))
+		Grades.front() = Profile.grades.front();
+	if (Selected[last] != 0 && end_joined(Profile, last))
+		Grades[last] = Profile.grades[last];
+}
+
 } // namespace
 
 void editor_mode::road_profile_smooth()
@@ -682,6 +693,7 @@ void editor_mode::road_profile_operation()
 			if (view.selected[i] != 0)
 				heights[i] += view.shift;
 		moved_grades(profile, heights, view.selected, grades);
+		keep_joined_ends(profile, view.selected, grades);
 		done = format(STR_C("Selected nodes moved by %+.2f m"), view.shift);
 		break;
 	case 5: // evened out between the first and the last
@@ -1000,6 +1012,7 @@ void editor_mode::render_road_profile_window()
 				if (view.selected[i] != 0)
 					heights[i] += offset;
 			moved_grades(profile, heights, view.selected, grades);
+			keep_joined_ends(profile, view.selected, grades);
 			if (road_profile_commit(view.road, heights, grades))
 			{
 				tool.status = format(STR_C("Nodes moved by %+.2f m. Ctrl+Z takes it back"), offset);
