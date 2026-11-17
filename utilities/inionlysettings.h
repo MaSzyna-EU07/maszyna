@@ -22,7 +22,8 @@ http://mozilla.org/MPL/2.0/.
 // (execonexit, extcam.cmd, extcam.rec), write the screenshots elsewhere (screenshotsdir), open connections and ports
 // (network.server, network.client, zmq.address, motiontelemetry, uart, feedbackmode, feedbackport), switch back on a
 // script runtime the player switched off (python.enabled, luascreens.enabled, wasm.enabled) or take its own scripts
-// out of the sandbox (lua.fulllibraries). they keep what eu07.ini set
+// out of the sandbox (lua.fulllibraries). they keep what eu07.ini set; a scenery may still switch a runtime off, or
+// keep its scripts in the sandbox when eu07.ini didn't, as it always could
 class ini_only_settings
 {
   public:

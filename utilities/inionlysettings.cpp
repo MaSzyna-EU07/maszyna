@@ -23,6 +23,17 @@ template <typename Type_> void keep(Type_ &Current, Type_ const &Kept, std::stri
 	}
 }
 
+// a switch a scenery may turn off but not on: puts Kept back into Current, and adds Key to Changed, only when the
+// scenery turned it on. turned off it stays so, as before these keys were kept
+void keep_off(bool &Current, bool const Kept, std::string_view const Key, std::vector<std::string_view> &Changed)
+{
+	if (Current && false == Kept)
+	{
+		Current = false;
+		Changed.push_back(Key);
+	}
+}
+
 } // namespace
 
 ini_only_settings::ini_only_settings(global_settings const &Settings)
@@ -74,9 +85,10 @@ std::vector<std::string_view> ini_only_settings::restore(global_settings &Settin
 #endif
 	keep(Settings.iFeedbackMode, m_feedback_mode, "feedbackmode", changed);
 	keep(Settings.iFeedbackPort, m_feedback_port, "feedbackport", changed);
-	keep(Settings.python_enabled, m_python_enabled, "python.enabled", changed);
-	keep(Settings.luascreens_enabled, m_luascreens_enabled, "luascreens.enabled", changed);
-	keep(Settings.lua_fulllibraries, m_lua_fulllibraries, "lua.fulllibraries", changed);
-	keep(Settings.wasm_enabled, m_wasm_enabled, "wasm.enabled", changed);
+	// a scenery may switch a runtime off, and keep its scripts in the sandbox
+	keep_off(Settings.python_enabled, m_python_enabled, "python.enabled", changed);
+	keep_off(Settings.luascreens_enabled, m_luascreens_enabled, "luascreens.enabled", changed);
+	keep_off(Settings.lua_fulllibraries, m_lua_fulllibraries, "lua.fulllibraries", changed);
+	keep_off(Settings.wasm_enabled, m_wasm_enabled, "wasm.enabled", changed);
 	return changed;
 }

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <memory>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -32,17 +33,43 @@ TEST_CASE("ini only settings: a scenery's config block doesn't give its scripts 
 	CHECK(changed == std::vector<std::string_view>{"lua.fulllibraries"});
 }
 
-TEST_CASE("ini only settings: what eu07.ini turned on stays on") {
-	auto const settings{std::make_unique<global_settings>()};
-	settings->lua_fulllibraries = true;
-	settings->python_enabled = false;
-	ini_only_settings const ini{*settings};
-	settings->lua_fulllibraries = false;
-	settings->python_enabled = true;
-	auto const changed{ini.restore(*settings)};
-	CHECK(settings->lua_fulllibraries);
-	CHECK_FALSE(settings->python_enabled);
-	CHECK(changed.size() == 2);
+TEST_CASE("ini only settings: a scenery switches a runtime off, but not on") {
+	auto const python{[](global_settings &Settings) -> bool & { return Settings.python_enabled; }};
+	auto const luascreens{[](global_settings &Settings) -> bool & { return Settings.luascreens_enabled; }};
+	auto const wasm{[](global_settings &Settings) -> bool & { return Settings.wasm_enabled; }};
+	auto const fulllibraries{[](global_settings &Settings) -> bool & { return Settings.lua_fulllibraries; }};
+	using setting = bool &(*)(global_settings &);
+	for (auto const &[key, switched] : {std::pair<std::string_view, setting>{"python.enabled", python}, {"luascreens.enabled", luascreens},
+	                                    {"wasm.enabled", wasm}, {"lua.fulllibraries", fulllibraries}}) {
+		CAPTURE(key);
+		{
+			// on in eu07.ini, off in the scenery: off, and nothing in the log
+			auto const settings{std::make_unique<global_settings>()};
+			switched(*settings) = true;
+			ini_only_settings const ini{*settings};
+			// "config python.enabled no endconfig" in the .scn, as the release honoured it
+			switched(*settings) = false;
+			CHECK(ini.restore(*settings).empty());
+			CHECK_FALSE(switched(*settings));
+		}
+		{
+			// off in eu07.ini, on in the scenery: back off, and told
+			auto const settings{std::make_unique<global_settings>()};
+			switched(*settings) = false;
+			ini_only_settings const ini{*settings};
+			switched(*settings) = true;
+			CHECK(ini.restore(*settings) == std::vector<std::string_view>{key});
+			CHECK_FALSE(switched(*settings));
+		}
+		// as eu07.ini set it: kept, nothing told
+		for (auto const value : {false, true}) {
+			auto const settings{std::make_unique<global_settings>()};
+			switched(*settings) = value;
+			ini_only_settings const ini{*settings};
+			CHECK(ini.restore(*settings).empty());
+			CHECK(switched(*settings) == value);
+		}
+	}
 }
 
 TEST_CASE("ini only settings: a scenery runs no program, opens no connection and switches no runtime back on") {
