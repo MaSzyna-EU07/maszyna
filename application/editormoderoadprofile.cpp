@@ -364,10 +364,33 @@ road_class const kRoadClasses[]{
     {"Motorway (A)", 4.0f, 12000.0f, 4500.0f},
 };
 
+// a node of the run whose grade the operation changed: only there the handles of the parts are given the grade
+bool grade_changed(chain_profile const &Profile, std::vector<double> const &Grades, std::size_t const Node)
+{
+	return std::abs(Grades[Node] - Profile.grades[Node]) > 1e-9;
+}
+
 // a node of the run whose height or grade the operation changed: only the parts ending at such a node are written
 bool node_changed(chain_profile const &Profile, std::vector<double> const &Heights, std::vector<double> const &Grades, std::size_t const Node)
 {
-	return std::abs(Heights[Node] - Profile.heights[Node]) > 1e-9 || std::abs(Grades[Node] - Profile.grades[Node]) > 1e-9;
+	return std::abs(Heights[Node] - Profile.heights[Node]) > 1e-9 || grade_changed(Profile, Grades, Node);
+}
+
+// the grades of the selected nodes after they were moved up or down together: a node whose two neighbours moved with it keeps its
+// grade (the road there only went up or down, breaks of grade included), a node at the edge of what moved takes the grade its
+// neighbours give
+void moved_grades(chain_profile const &Profile, std::vector<double> const &Heights, std::vector<char> const &Selected, std::vector<double> &Grades)
+{
+	auto const last{Heights.size() - 1};
+	for (std::size_t i = 0; i <= last; ++i)
+	{
+		if (Selected[i] == 0)
+			continue;
+		auto const before{i == 0 || Selected[i - 1] != 0};
+		auto const after{i == last || Selected[i + 1] != 0};
+		if (false == before || false == after)
+			Grades[i] = neighbour_grade(Profile, Heights, i);
+	}
 }
 
 // a run closed in a loop: its first and last node are one point, at one height and one grade; the end which was changed gives the
@@ -429,9 +452,7 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 	std::vector<char> touched(Profile.order.size(), 0);
 	for (auto const &ref : Profile.refs)
 	{
-		auto const changed0{node_changed(Profile, Heights, Grades, ref.node0)};
-		auto const changed3{node_changed(Profile, Heights, Grades, ref.node3)};
-		if (false == changed0 && false == changed3)
+		if (false == node_changed(Profile, Heights, Grades, ref.node0) && false == node_changed(Profile, Heights, Grades, ref.node3))
 			continue;
 		auto list{parts(Profile.states[ref.entry].axis)};
 		auto &p{*list[ref.part]};
@@ -444,9 +465,10 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 		auto const sign{Profile.order[ref.entry].reversed ? -1.0 : 1.0};
 		p[0].y = Heights[ref.node0];
 		p[3].y = Heights[ref.node3];
-		if (changed0)
+		// a node which only went up or down keeps the slopes of its handles: each piece its own, a break of grade stays a break
+		if (grade_changed(Profile, Grades, ref.node0))
 			p[1].y = sign * Grades[ref.node0] * flat(p[1]);
-		if (changed3)
+		if (grade_changed(Profile, Grades, ref.node3))
 			p[2].y = -sign * Grades[ref.node3] * flat(p[2]);
 		touched[ref.entry] = 1;
 	}
@@ -655,13 +677,11 @@ void editor_mode::road_profile_operation()
 		done = format(STR_C("Nodes put %.2f m over the ground: %zu"), view.offset, found);
 		break;
 	}
-	case 4: // moved up or down, the grades at the moved nodes from their neighbours, as a drag of them gives
+	case 4: // moved up or down, the grades as a drag of the same nodes gives them
 		for (std::size_t i = 0; i < heights.size(); ++i)
 			if (view.selected[i] != 0)
 				heights[i] += view.shift;
-		for (std::size_t i = 0; i < heights.size(); ++i)
-			if (view.selected[i] != 0)
-				grades[i] = neighbour_grade(profile, heights, i);
+		moved_grades(profile, heights, view.selected, grades);
 		done = format(STR_C("Selected nodes moved by %+.2f m"), view.shift);
 		break;
 	case 5: // evened out between the first and the last
@@ -979,9 +999,7 @@ void editor_mode::render_road_profile_window()
 			for (std::size_t i = 0; i < heights.size(); ++i)
 				if (view.selected[i] != 0)
 					heights[i] += offset;
-			for (std::size_t i = 0; i < heights.size(); ++i)
-				if (view.selected[i] != 0)
-					grades[i] = neighbour_grade(profile, heights, i);
+			moved_grades(profile, heights, view.selected, grades);
 			if (road_profile_commit(view.road, heights, grades))
 			{
 				tool.status = format(STR_C("Nodes moved by %+.2f m. Ctrl+Z takes it back"), offset);
