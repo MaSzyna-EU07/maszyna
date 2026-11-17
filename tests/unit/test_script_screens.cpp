@@ -159,3 +159,44 @@ TEST_CASE("script screens: the steps a Lua pattern function may take at worst") 
 	}
 	CHECK(lua_pattern_cost(optional + std::string(30, 'a'), 100, false, true) > max_pattern_cost);
 }
+
+TEST_CASE("script screens: a repetition followed by what always matches doesn't multiply") {
+	using script_screens::lua_pattern_cost;
+	// the first %s* of the trim: past it, (.-)%s*$ matches from wherever it stopped, so it's tried once
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 12));
+	CHECK(lua_pattern_cost("^%s*(.*)", 999, false, true) == doctest::Approx(8.0));
+	CHECK(lua_pattern_cost("a*.-$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 5));
+	// what may not match still multiplies
+	CHECK(lua_pattern_cost("^%s*(.*%S)", 999, false, true) == doctest::Approx(1000.0 * 1000 * 10));
+	CHECK(lua_pattern_cost("^%s*x%s*$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 9));
+	// '$' is the end only at the end of the pattern
+	CHECK(lua_pattern_cost("a*$b", 999, false, true) == doctest::Approx(1000.0 * 1000 * 4));
+}
+
+TEST_CASE("script screens: a repetition right before the final $ counts its longest run in the subject") {
+	using script_screens::lua_pattern_cost;
+	using script_screens::max_pattern_cost;
+	std::string words;
+	while (words.size() < 10'000) {
+		words += "word  next\tone ";
+	}
+	// a line of 10 KB trimmed: the subject times the longest run of spaces (2), where the length alone gives the
+	// subject squared
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * 3 * 12));
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{words}, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", words.size(), false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%s+$", std::string_view{words}, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("%d*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * 1 * 4));
+	CHECK(lua_pattern_cost("x*$", std::string_view{"axxxa"}, false, true) == doctest::Approx(6.0 * 4 * 3));
+	CHECK(lua_pattern_cost("%%*$", std::string_view{"a%%%a"}, false, true) == doctest::Approx(6.0 * 4 * 4));
+	// a long run is still the subject squared: "x", 10 000 spaces, "x" takes the trim about 10^8 steps, and a
+	// megabyte of them hours
+	auto const spaces{"x" + std::string(10'000, ' ') + "x"};
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{spaces}, false, true) > max_pattern_cost);
+	auto const megabyte{"x" + std::string(1'000'000, ' ') + "x"};
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{megabyte}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%s*$", std::string_view{megabyte}, false, true) > max_pattern_cost);
+	// a set or '.' isn't gone through: the whole subject
+	CHECK(lua_pattern_cost("[ ]*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * (words.size() + 1.0) * 5));
+	CHECK(lua_pattern_cost(".-b", std::string(1'000'000, 'a'), false, true) > max_pattern_cost);
+}

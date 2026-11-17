@@ -1209,6 +1209,30 @@ return {
 }
 )"};
 
+// white when gsub takes a table with a metatable as Lua does (the metatable doesn't get to the library as an argument),
+// and a line is trimmed: with the usual idiom on a long line of words, without a pattern on a long run of spaces
+constexpr std::string_view gsub_metatable_trim_script{R"(
+local upper = setmetatable({}, { __index = function(_, k) return k:upper() end })
+local replaced, count = ("one two"):gsub("%w+", upper)
+local line = ("word  next\tone "):rep(700)
+local trimmed = ("  " .. line .. "  "):match("^%s*(.-)%s*$")
+local ok, message = pcall(string.match, "x" .. (" "):rep(1000000) .. "x", "^%s*(.-)%s*$")
+local refused = not ok and message:find("may take too long", 1, true) ~= nil
+local function trim(s)
+	local first = s:find("%S")
+	if not first then return "" end
+	return s:sub(first, #s - s:reverse():find("%S") + 1)
+end
+local spaced = trim("  x" .. (" "):rep(1000000) .. "x  ")
+local good = replaced == "ONE TWO" and count == 2 and trimmed == line:sub(1, -2) and refused
+	and #spaced == 1000002 and trim("   ") == "" and trim(" a b ") == "a b"
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
 // white when the images a screen holds are held to its memory, and the images it dropped don't count
 constexpr std::string_view image_memory_script{R"(
 local kept = {}
@@ -1336,6 +1360,13 @@ TEST_CASE("lua screens: the pattern functions refuse what may take too long, and
 TEST_CASE("lua screens: what makes a large string in one call is held to the memory of a screen") {
 	script_folder const folder{"lua_large_result"};
 	CHECK(first_pixel(folder.write("large.lua", large_result_script), "large") == 255);
+}
+
+TEST_CASE("lua screens: gsub with a table that has a metatable, and the trim of a long line") {
+	script_folder const folder{"lua_gsub_metatable_trim"};
+	auto const started{std::chrono::steady_clock::now()};
+	CHECK(first_pixel(folder.write("trim.lua", gsub_metatable_trim_script), "trim") == 255);
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
 }
 
 TEST_CASE("lua screens: the images a screen holds are held to its memory") {

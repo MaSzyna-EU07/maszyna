@@ -942,8 +942,14 @@ std::optional<double> replacement_length(lua_State *L, int const Index, double c
 		// the matches don't overlap: a capture of each takes at most the subject; a position capture is a number
 		return Matches * static_cast<double>(length) + captures * (Subject + 24.0 * Matches);
 	}
-	if (lua_type(L, Index) == LUA_TTABLE && 0 == lua_getmetatable(L, Index))
+	if (lua_type(L, Index) == LUA_TTABLE)
 	{
+		if (lua_getmetatable(L, Index) != 0)
+		{
+			// pushed: off the stack again, or the library gets it as the 4th argument
+			lua_pop(L, 1);
+			return std::nullopt;
+		}
 		auto longest{0.0};
 		lua_pushnil(L);
 		while (lua_next(L, Index) != 0)
@@ -964,11 +970,11 @@ int api_pattern(lua_State *L)
 	auto const function{static_cast<pattern_function>(lua_tointeger(L, lua_upvalueindex(2)))};
 	auto const *name{pattern_function_names[static_cast<std::size_t>(function)]};
 	std::size_t subject{0};
-	luaL_checklstring(L, 1, &subject);
+	auto const *text{luaL_checklstring(L, 1, &subject)};
 	std::size_t length{0};
 	auto const *pattern{luaL_checklstring(L, 2, &length)};
 	auto const plain{function == pattern_function::find && lua_toboolean(L, 4) != 0};
-	if (lua_pattern_cost({pattern, length}, subject, plain, function != pattern_function::gmatch) > max_pattern_cost)
+	if (lua_pattern_cost(std::string_view{pattern, length}, std::string_view{text, subject}, plain, function != pattern_function::gmatch) > max_pattern_cost)
 	{
 		return luaL_error(L, "%s: the pattern may take too long on a subject of %d bytes", name, static_cast<int>(subject));
 	}

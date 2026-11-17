@@ -13,7 +13,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <vector>
 
 namespace script_screens
 {
@@ -161,55 +163,60 @@ std::size_t set_end(std::string_view const Pattern, std::size_t Start)
 	return idx + 1;
 }
 
-} // namespace
-
-double lua_pattern_cost(std::string_view const Pattern, std::size_t const Subject, bool const Plain, bool const Anchorable)
+// one item of a pattern, as Lua's matcher takes them
+struct pattern_item
 {
-	auto const length{static_cast<double>(std::max<std::size_t>(Pattern.size(), 1))};
-	auto const positions{static_cast<double>(Subject) + 1.0};
-	// LuaJIT searches plainly for a pattern without the special characters as well
-	if (Plain || Pattern.find_first_of("^$*+?.([%-") == std::string_view::npos)
+	enum class kind
 	{
-		return positions * length;
-	}
-	auto const anchored{Anchorable && Pattern.front() == '^'};
-	int repeats{0};
-	int optional{0};
-	// a repetition that ends the pattern doesn't multiply: past it the match is over
-	auto last_repeat{false};
-	std::size_t idx{anchored ? 1U : 0U};
+		single, // a character, '.', a %class or a [set], with its quantifier if any
+		paren, // '(' or ')': a capture costs nothing
+		scan, // %bxy or a back reference %1-%9: goes along the subject
+		frontier, // %f[set]: a test of one position
+		end_anchor // '$' that ends the pattern
+	};
+	kind type{kind::single};
+	std::size_t begin{0}; // of a single, without its quantifier
+	std::size_t end{0};
+	char quantifier{0}; // '*', '+', '-', '?' or none
+};
+
+std::vector<pattern_item> pattern_items(std::string_view const Pattern, std::size_t idx)
+{
+	std::vector<pattern_item> items;
 	while (idx < Pattern.size())
 	{
 		auto const character{Pattern[idx]};
 		if (character == '(' || character == ')')
 		{
+			items.push_back({pattern_item::kind::paren, idx, idx + 1});
 			++idx;
-			// a ')' after the last repetition keeps it last
 			continue;
 		}
-		last_repeat = false;
+		if (character == '$' && idx + 1 == Pattern.size())
+		{
+			items.push_back({pattern_item::kind::end_anchor, idx, idx + 1});
+			break;
+		}
 		std::size_t end{idx + 1};
 		if (character == '%' && idx + 1 < Pattern.size())
 		{
 			auto const next{Pattern[idx + 1]};
 			if (next == 'b')
 			{
-				// %bxy goes along the subject to the balancing character
-				++repeats;
-				last_repeat = true;
+				items.push_back({pattern_item::kind::scan, idx, idx + 4});
 				idx += 4;
 				continue;
 			}
 			if (next == 'f')
 			{
-				idx = idx + 2 < Pattern.size() && Pattern[idx + 2] == '[' ? set_end(Pattern, idx + 2) : idx + 2;
+				auto const after{idx + 2 < Pattern.size() && Pattern[idx + 2] == '[' ? set_end(Pattern, idx + 2) : idx + 2};
+				items.push_back({pattern_item::kind::frontier, idx, after});
+				idx = after;
 				continue;
 			}
 			if (next >= '0' && next <= '9')
 			{
-				// a back reference compares the capture, as long as the subject
-				++repeats;
-				last_repeat = true;
+				items.push_back({pattern_item::kind::scan, idx, idx + 2});
 				idx += 2;
 				continue;
 			}
@@ -219,28 +226,135 @@ double lua_pattern_cost(std::string_view const Pattern, std::size_t const Subjec
 		{
 			end = set_end(Pattern, idx);
 		}
-		if (end < Pattern.size() && (Pattern[end] == '*' || Pattern[end] == '+' || Pattern[end] == '-'))
+		pattern_item item{pattern_item::kind::single, idx, end};
+		if (end < Pattern.size() && (Pattern[end] == '*' || Pattern[end] == '+' || Pattern[end] == '-' || Pattern[end] == '?'))
 		{
-			++repeats;
-			last_repeat = true;
-			idx = end + 1;
+			item.quantifier = Pattern[end];
+			++end;
 		}
-		else if (end < Pattern.size() && Pattern[end] == '?')
-		{
-			++optional;
-			idx = end + 1;
-		}
-		else
-		{
-			idx = end;
-		}
+		items.push_back(item);
+		idx = end;
 	}
-	if (last_repeat)
-	{
-		--repeats;
-	}
-	auto const starts{anchored ? 1.0 : positions};
-	return starts * std::pow(positions, repeats) * std::pow(2.0, optional) * length;
+	return items;
 }
 
+// when the rest of a pattern matches, once the matcher gets to it
+enum class rest_match
+{
+	always, // from any position: whatever comes before it is tried once
+	at_end, // at least at the end of the subject
+	maybe
+};
+
+rest_match match_with(std::string_view const Pattern, pattern_item const &Item, rest_match const Rest)
+{
+	switch (Item.type)
+	{
+	case pattern_item::kind::paren:
+		return Rest;
+	case pattern_item::kind::end_anchor:
+		return rest_match::at_end;
+	case pattern_item::kind::single:
+		if (Item.quantifier == '*' || Item.quantifier == '-' || Item.quantifier == '?')
+		{
+			// matches nothing as well; '.' repeated goes on to the end of the subject
+			auto const dot{Item.quantifier != '?' && Item.end - Item.begin == 1 && Pattern[Item.begin] == '.'};
+			return dot && Rest == rest_match::at_end ? rest_match::always : Rest;
+		}
+		return rest_match::maybe;
+	default:
+		return rest_match::maybe;
+	}
+}
+
+// whether Character is in the %class Class, as Lua's match_class
+bool in_class(unsigned char const Character, unsigned char const Class)
+{
+	bool in{false};
+	switch (std::tolower(Class))
+	{
+	case 'a': in = std::isalpha(Character) != 0; break;
+	case 'c': in = std::iscntrl(Character) != 0; break;
+	case 'd': in = std::isdigit(Character) != 0; break;
+	case 'l': in = std::islower(Character) != 0; break;
+	case 'p': in = std::ispunct(Character) != 0; break;
+	case 's': in = std::isspace(Character) != 0; break;
+	case 'u': in = std::isupper(Character) != 0; break;
+	case 'w': in = std::isalnum(Character) != 0; break;
+	case 'x': in = std::isxdigit(Character) != 0; break;
+	case 'z': in = Character == 0; break;
+	default: return Class == Character;
+	}
+	return std::isupper(Class) != 0 ? !in : in;
+}
+
+// the longest run of the subject that the single item (a character, '.' or a %class) matches; the whole subject for a
+// set, which isn't gone through here
+std::size_t longest_run(std::string_view const Pattern, pattern_item const &Item, std::string_view const Subject)
+{
+	auto const single{Pattern.substr(Item.begin, Item.end - Item.begin)};
+	if (single == "." || single.front() == '[')
+	{
+		return Subject.size();
+	}
+	std::size_t longest{0};
+	std::size_t run{0};
+	for (auto const character : Subject)
+	{
+		auto const c{static_cast<unsigned char>(character)};
+		auto const in{single.size() == 2 ? in_class(c, static_cast<unsigned char>(single[1])) : c == static_cast<unsigned char>(single[0])};
+		run = in ? run + 1 : 0;
+		longest = std::max(longest, run);
+	}
+	return longest;
+}
+
+double pattern_cost(std::string_view const Pattern, std::size_t const Size, std::string_view const *Subject, bool const Plain, bool const Anchorable)
+{
+	auto const length{static_cast<double>(std::max<std::size_t>(Pattern.size(), 1))};
+	auto const positions{static_cast<double>(Size) + 1.0};
+	// LuaJIT searches plainly for a pattern without the special characters as well
+	if (Plain || Pattern.find_first_of("^$*+?.([%-") == std::string_view::npos)
+	{
+		return positions * length;
+	}
+	auto const anchored{Anchorable && Pattern.front() == '^'};
+	auto const items{pattern_items(Pattern, anchored ? 1U : 0U)};
+	auto cost{anchored ? 1.0 : positions};
+	// from the end: what follows each item, and whether that's only the end of the subject
+	auto rest{rest_match::always};
+	auto only_end{true};
+	for (auto item{items.rbegin()}; item != items.rend(); ++item)
+	{
+		if (item->type == pattern_item::kind::single && item->quantifier == '?')
+		{
+			cost *= 2.0;
+		}
+		auto const repeated{item->type == pattern_item::kind::scan
+		                    || (item->type == pattern_item::kind::single && item->quantifier != 0 && item->quantifier != '?')};
+		// a repetition followed by what always matches is tried once (as one that ends the pattern): past it the match
+		// is over. otherwise the rest is tried at each length it takes, as many as the subject has positions; before
+		// '$' alone, as many as its longest run in the subject, past which it stops
+		if (repeated && rest != rest_match::always)
+		{
+			auto const before_end{only_end && rest == rest_match::at_end && item->type == pattern_item::kind::single};
+			cost *= before_end && Subject != nullptr ? static_cast<double>(longest_run(Pattern, *item, *Subject)) + 1.0 : positions;
+		}
+		only_end = only_end && (item->type == pattern_item::kind::paren || item->type == pattern_item::kind::end_anchor);
+		rest = match_with(Pattern, *item, rest);
+	}
+	return cost * length;
+}
+
+} // namespace
+
+double lua_pattern_cost(std::string_view const Pattern, std::size_t const Subject, bool const Plain, bool const Anchorable)
+{
+	return pattern_cost(Pattern, Subject, nullptr, Plain, Anchorable);
+}
+
+double lua_pattern_cost(std::string_view const Pattern, std::string_view const Subject, bool const Plain, bool const Anchorable)
+{
+	return pattern_cost(Pattern, Subject.size(), &Subject, Plain, Anchorable);
+}
 } // namespace script_screens
