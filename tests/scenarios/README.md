@@ -290,9 +290,9 @@ into the game dir. What they add to the scenery:
 A train whose trainset has velocity 0 has a driver that sleeps in `Wait_for_orders` when nobody
 is in the cab: the player would drive it, so the fragment has to give the orders the player's
 hands stand for, with `PutValues` from an event the vehicle itself sets off (`event0` of the
-track it stands on). The first of them must not be the one to couple (`Shunt -2 -3`): a driver
-whose first order is `Connect` never releases the hand brake a cold locomotive starts with. The
-mission trains of velocity 0.1 wait for their signal and need nothing.
+track it stands on). The first of them may be the one to couple (`Shunt -2 -3`): a driver whose
+first order is `Connect` releases the hand brake a cold locomotive starts with
+(`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
 The cases and what they showed on master of 2026-11-11:
 
