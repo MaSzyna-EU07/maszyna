@@ -29,10 +29,8 @@ constexpr std::array<char const *, static_cast<std::size_t>(preset::count)> PRES
 constexpr std::array<float, 12> MONTH_DAYS{31.f, 28.25f, 31.f, 30.f, 31.f, 30.f, 31.f, 31.f, 30.f, 31.f, 30.f, 31.f};
 constexpr std::array<char const *, 4> SEASON_NAMES{"winter", "spring", "summer", "autumn"};
 
-// Lodz-Lublinek, the lowlands in the middle of Poland, away from the sea and the mountains. the lowest and highest temperatures
-// of the day are the 1991-2020 normals; the sums and the days of the precipitation are rounded ones, the humidity, the wind, the
-// snow, the fog, the storms, the cloudiness and the wind roses are typical values of the lowlands of central Poland, to be replaced
-// by the table tools/weather/imgw_normals.py makes of the measurements
+// Lodz-Lublinek, the lowlands in the middle of Poland, away from the sea and the mountains: the 1991-2020 normals
+// tools/weather/imgw_normals.py makes of the monthly data of IMGW-PIB. the wind roses are typical ones of central Poland
 station make_default()
 {
 	station result;
@@ -42,18 +40,18 @@ station make_default()
 	result.elevation = 187.f;
 	constexpr std::array<std::array<float, 11>, 12> months{{
 	    // tmin, tmax, humidity, wind, precipitation, its days, snow days, snow depth, fog days, storm days, cloudiness
-	    {-4.0f, 1.2f, 87.f, 4.2f, 30.f, 8.f, 16.f, 10.f, 5.f, 0.f, 6.3f},
-	    {-3.3f, 2.9f, 84.f, 4.1f, 30.f, 7.f, 14.f, 10.f, 4.f, 0.f, 6.0f},
-	    {-0.7f, 7.4f, 77.f, 4.0f, 35.f, 8.f, 6.f, 6.f, 3.f, 0.3f, 5.5f},
-	    {3.6f, 14.4f, 68.f, 3.5f, 40.f, 7.f, 1.f, 1.f, 2.f, 1.f, 4.9f},
-	    {8.2f, 19.4f, 69.f, 3.2f, 65.f, 10.f, 0.f, 0.f, 2.f, 4.f, 4.9f},
-	    {11.6f, 22.7f, 70.f, 3.0f, 75.f, 9.f, 0.f, 0.f, 1.f, 5.f, 4.9f},
-	    {13.6f, 24.9f, 70.f, 3.0f, 90.f, 11.f, 0.f, 0.f, 1.f, 6.f, 4.8f},
-	    {13.3f, 24.6f, 71.f, 2.8f, 60.f, 8.f, 0.f, 0.f, 2.f, 4.f, 4.5f},
-	    {9.0f, 19.1f, 78.f, 3.1f, 50.f, 8.f, 0.f, 0.f, 4.f, 1.5f, 4.9f},
-	    {5.0f, 13.0f, 83.f, 3.5f, 40.f, 8.f, 0.f, 0.f, 6.f, 0.2f, 5.4f},
-	    {1.3f, 6.8f, 88.f, 3.9f, 35.f, 8.f, 3.f, 3.f, 6.f, 0.f, 6.4f},
-	    {-2.4f, 2.4f, 89.f, 4.1f, 30.f, 8.f, 10.f, 7.f, 5.f, 0.f, 6.5f},
+	    {-4.0f, 1.1f, 88.f, 3.9f, 35.f, 14.2f, 15.3f, 12.1f, 6.1f, 0.2f, 6.1f},
+	    {-3.3f, 2.9f, 84.f, 3.8f, 34.f, 12.2f, 13.3f, 11.8f, 4.5f, 0.1f, 5.9f},
+	    {-0.7f, 7.4f, 77.f, 3.7f, 38.f, 10.8f, 6.2f, 7.5f, 4.5f, 0.3f, 5.3f},
+	    {3.6f, 14.4f, 69.f, 3.4f, 35.f, 10.2f, 0.9f, 2.2f, 2.5f, 1.3f, 4.8f},
+	    {8.2f, 19.4f, 70.f, 3.1f, 61.f, 13.3f, 0.0f, 0.0f, 2.5f, 4.2f, 4.7f},
+	    {11.6f, 22.7f, 70.f, 3.0f, 62.f, 13.4f, 0.0f, 0.0f, 2.1f, 5.0f, 4.8f},
+	    {13.6f, 24.9f, 71.f, 2.8f, 81.f, 13.8f, 0.0f, 0.0f, 1.6f, 6.9f, 4.7f},
+	    {13.3f, 24.6f, 71.f, 2.6f, 54.f, 11.8f, 0.0f, 0.0f, 1.8f, 4.4f, 4.3f},
+	    {9.0f, 19.1f, 79.f, 2.9f, 53.f, 11.7f, 0.0f, 0.0f, 3.5f, 1.3f, 4.7f},
+	    {5.0f, 13.0f, 84.f, 3.2f, 44.f, 12.6f, 0.2f, 0.3f, 6.9f, 0.2f, 5.3f},
+	    {1.3f, 6.8f, 89.f, 3.4f, 39.f, 11.9f, 3.4f, 4.1f, 8.0f, 0.0f, 6.3f},
+	    {-2.4f, 2.4f, 89.f, 3.7f, 41.f, 12.6f, 8.6f, 7.3f, 6.7f, 0.1f, 6.3f},
 	}};
 	for (std::size_t i = 0; i < months.size(); ++i)
 	{
@@ -512,7 +510,8 @@ float weight(station const &Station, int const Month, preset const Preset)
 	case preset::showers:
 		return wet * (mean > 8.f ? 0.4f : 0.1f);
 	case preset::storm:
-		return std::clamp(month.storm_days / days, 0.f, 1.f);
+		// the rare storm of a cold month isn't the summer one this kind of weather is
+		return (mean > 5.f) ? std::clamp(month.storm_days / days, 0.f, 1.f) : 0.f;
 	case preset::fog:
 		return std::clamp(month.fog_days / days, 0.f, 1.f);
 	case preset::frost:

@@ -61,6 +61,7 @@ STATIONS = {
     "TERESPOL": (52.08, 23.62, 133), "TORUN": (53.04, 18.60, 69), "USTKA": (54.59, 16.85, 6),
     "WARSZAWA-OKECIE": (52.16, 20.96, 106), "WIELUN": (51.21, 18.56, 200), "WLODAWA": (51.55, 23.53, 177),
     "WROCLAW-STRACHOWICE": (51.10, 16.88, 120), "ZAKOPANE": (49.29, 19.96, 855), "ZIELONA GORA": (51.93, 15.52, 192),
+    "ZAMOSC": (50.70, 23.21, 212), "HALA GASIENICOWA": (49.24, 20.01, 1520), "GDANSK-PORT POLNOCNY": (54.40, 18.70, 2),
 }
 
 MONTH_DAYS = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -171,7 +172,8 @@ def monthly_archives(first, last):
 
 
 def gather(arguments):
-    """Sums of every element for every station and month: sums[station][month][element] = [sum, count]."""
+    """Sums of every element for every station and month: sums[code][month][element] = [sum, count], and the names each station
+    had: a station keeps its code over the years, its name changes (LODZ in some years, LODZ-LUBLINEK in others)."""
     formats = {}
     for kind in ("d", "t"):
         data = fetch(f"{MONTHLY}s_m_{kind}_format.txt", arguments.cache, arguments.offline)
@@ -181,7 +183,7 @@ def gather(arguments):
     daily = find_columns(formats["d"], DAILY_COLUMNS, "monthly (s_m_d)")
     term = find_columns(formats["t"], TERM_COLUMNS, "monthly (s_m_t)")
     sums = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: [0.0, 0])))
-    codes = {}
+    names = defaultdict(set)
     for url in monthly_archives(arguments.first, arguments.last):
         archive = fetch(url, arguments.cache, arguments.offline)
         if archive is None:
@@ -194,15 +196,29 @@ def gather(arguments):
                 year, month = int(row[2]), int(row[3])
                 if not (arguments.first <= year <= arguments.last and 1 <= month <= 12):
                     continue
-                station = fold(row[1]).upper()
-                codes[station] = row[0].strip()
+                station = row[0].strip()
+                names[station].add(fold(row[1]).upper())
                 for key, column in columns.items():
                     number = value(row, column)
                     if number is not None:
                         cell = sums[station][month][key]
                         cell[0] += number
                         cell[1] += 1
-    return sums, codes
+    return sums, names
+
+
+def place_of(names, places):
+    """The name a station is written under and its place: the fullest of its names with a known place, or a known place whose
+    name starts with one of its names (WARSZAWA: WARSZAWA-OKECIE); (name, None) when none is known."""
+    ordered = sorted(names, key=len, reverse=True)
+    for name in ordered:
+        if name in places:
+            return name, places[name]
+    for name in ordered:
+        longer = sorted(known for known in places if known.startswith(name + "-"))
+        if len(longer) == 1:
+            return longer[0], places[longer[0]]
+    return ordered[0], None
 
 
 def roses(station_code, arguments):
@@ -278,29 +294,31 @@ def main():
                     places[fold(row[0]).upper()] = (float(row[1]), float(row[2]), float(row[3]))
 
     print("monthly data:")
-    sums, codes = gather(arguments)
+    sums, names = gather(arguments)
     if not sums:
         sys.exit("no data: the server can't be reached and the cache is empty")
     least = min(arguments.least, arguments.last - arguments.first + 1)
     lines = ["# climate normals of the synoptic stations of IMGW-PIB, {}-{}, made by tools/weather/imgw_normals.py".format(arguments.first, arguments.last),
              "# source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data were processed"]
     written = 0
-    for name in sorted(sums):
-        place = places.get(name)
+    stations = []
+    for code, name, place in sorted((code, *place_of(names[code], places)) for code in sums):
         if place is None:
             print(f"  {name}: no place known, left out (see --coords)", file=sys.stderr)
             continue
-        rows = station_rows(name, place, sums[name], least)
+        rows = station_rows(name, place, sums[code], least)
         if rows is None:
             print(f"  {name}: fewer than {least} years of temperatures, left out", file=sys.stderr)
             continue
         if arguments.roses:
-            rose = roses(codes[name], arguments)
+            rose = roses(code, arguments)
             if rose:
                 rows.extend("rose {} {}".format(season, " ".join(f"{share:.3f}" for share in shares))
                             for season, shares in zip(("winter", "spring", "summer", "autumn"), rose))
-        lines.extend(rows)
+        stations.append((name, rows))
         written += 1
+    for _, rows in sorted(stations):
+        lines.extend(rows)
     os.makedirs(os.path.dirname(arguments.out) or ".", exist_ok=True)
     with open(arguments.out, "w", encoding="ascii", newline="\n") as file:
         file.write("\n".join(lines) + "\n")

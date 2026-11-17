@@ -67,7 +67,7 @@ TEST_CASE("psychrometry: the temperature of the day is lowest about sunrise and 
 
 TEST_CASE("climate: the months of the default station are the ones of the middle of Poland") {
 	auto const &station{climate::default_station()};
-	CHECK(station.months[0].temperature() == doctest::Approx(-1.4f));
+	CHECK(station.months[0].temperature() == doctest::Approx(-1.45f));
 	CHECK(station.months[6].temperature() == doctest::Approx(19.25f));
 	for (auto const &rose : station.roses) {
 		auto total{0.f};

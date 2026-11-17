@@ -97,8 +97,7 @@ The months are the climate normals of the weather station nearest to the scenery
 `climate/stations.txt` in the folder of the simulator. `tools/weather/imgw_normals.py` makes that file from the public monthly
 measurements of the synoptic stations of IMGW-PIB for 1991-2020 (see the script for how; it needs the network once). Without the
 file, or with no station near, Lodz-Lublinek stands in: the lowlands in the middle of Poland, away from the sea and the mountains.
-Its temperatures built into the simulator are the 1991-2020 normals; its other elements are typical values of central Poland
-until the file is made.
+Its months built into the simulator are the 1991-2020 normals the script makes; its wind roses are typical ones of central Poland.
 
 ```
 weather
