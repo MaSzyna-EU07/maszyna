@@ -535,6 +535,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<double> nmt_terrain_offset(std::vector<glm::dvec2> const &Points, bool &Foreign) const;
 	// the same along the edges the chunk shares with the chunks beside it in memory
 	std::optional<double> nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const;
+	// the offset a chunk made from the model where there's no terrain gets: of the terrain made from the model beside it, empty
+	// (the offset of the scenery) beside terrain made by hand or none
+	std::optional<double> nmt_chunk_offset(heightmap::chunk_key const &Key) const;
 	// the terrain beside the formation of the track is the one made from the model; Waiting: its squares of the model aren't in yet
 	// the tracks changed by hand are told to the terrain: their formations laid anew, of the tracks removed taken away, a
 	// track laid onto the terrain of the model given its own, once the mouse lets go; in the step of the history of the change
@@ -552,6 +555,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// of the modifiers laid
 	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
 	void nmt_update();
+	// the terrain of the scenery made from the model around the camera within the download area, a chunk at a time while nothing
+	// else is done with the model and the frames are quick: edited chunks wait in memory to be saved, so not the whole area at once
+	void nmt_area_terrain();
 	void nmt_grow();
 	void render_nmt_ui();
 	// where the scenery lies: the map to click on, the place typed; true once it's placed
@@ -919,6 +925,25 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	} m_area_drawing;
 	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
+	// the terrain made around the camera within the area: the chunks there, nearest first, the next one looked at, when the next one
+	// may be made, those made (or left: the model has no data there, or the chunk is outside the region) since the scenery opened
+	struct area_terrain
+	{
+		std::vector<heightmap::chunk_key> keys;
+		std::size_t next{0};
+		heightmap::chunk_key centre{0, 0};
+		bool listed{false};
+		double resume{0.0};
+		std::size_t made{0};
+		std::size_t square_made{0}; // of them, in the square around the camera now
+		bool refit{false};     // chunks made since the photos were last laid onto the ground
+		double waiting{-1.0};  // since when the next chunk waits for its model; -1: it doesn't
+		std::string held{"-"}; // what held it last, as logged; empty: nothing
+		double took{0.0};      // s the chunks of the square around the camera took, all and the longest
+		double took_most{0.0};
+		std::set<heightmap::chunk_key> empty;
+		std::optional<bool> run_only; // the selftest turned it on or off for its run, the setting left as it is
+	} m_area_terrain;
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
 	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
 	int m_empty_hint_frame{-10};       // the frame the panel of the empty scenery was last drawn in

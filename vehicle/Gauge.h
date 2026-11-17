@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "audio/sound.h"
 #include "vehicle/gaugescale.h"
+#include "vehicle/universaldrag.h"
 
 enum class TGaugeAnimation {
     // typ ruchu
@@ -86,6 +87,10 @@ public:
     // true if the gauge was given a non-uniform scale (scaletable:)
     bool has_scaletable() const {
         return false == m_scaletable.empty(); }
+    // the direction the mouse drags the control in to any position between its ends (drag:, MaSzyna-EU07/maszyna#62),
+    // none for a control set only to its ends. a push control springs back, so it isn't dragged
+    universal_drag::direction drag() const {
+        return universal_drag::effective( m_drag, is_push() ); }
 // members
     TSubModel *SubModel { nullptr }; // McZapkie-310302: zeby mozna bylo sprawdzac czy zainicjowany poprawnie
     TSubModel *SubModelOn { nullptr }; // optional submodel visible when the state input is set
@@ -96,6 +101,7 @@ private:
         std::optional< std::array<float, 6> > soundproofing;
         bool duplicate { false }; // the definition is a duplicate submodel of the control defined before
         std::vector<gauge_scale::point> scaletable; // as read, in the units of the config
+        universal_drag::direction drag { universal_drag::direction::none };
     };
 // methods
     // imports member data pair from the config file
@@ -127,6 +133,7 @@ private:
     float m_endvalue { -1.f }; // end value of accepted value range
     bool m_interpolatescale { false };
     std::vector<gauge_scale::point> m_scaletable; // optional non-uniform scale, sorted by value; replaces scale and offset
+    universal_drag::direction m_drag { universal_drag::direction::none }; // the mouse drags the control smoothly, drag:
 
     char m_datatype { '\0' }; // typ zmiennej parametru: f-float, d-double, i-int, b-bool; none until one is assigned
     union {

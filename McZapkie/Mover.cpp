@@ -2706,7 +2706,7 @@ bool TMoverParameters::IncMainCtrlByEngine(int const CtrlSpeed)
 		OK = true;
 		if (EIMCtrlType == 0 && ( SpeedCtrlAutoTurnOffFlag & 1 ) == 1 && MainCtrlActualPos != MainCtrlPos)
 		{
-			DecScndCtrl(2);
+			SpeedCtrlSwitch(false);
 			SpeedCtrlUnit.IsActive = false;
 		}
 		break;
@@ -2887,7 +2887,7 @@ bool TMoverParameters::DecMainCtrlByEngine(int const CtrlSpeed)
 			OK = true;
 			if (EIMCtrlType == 0 && (SpeedCtrlAutoTurnOffFlag & 1) == 1 && MainCtrlActualPos != MainCtrlPos)
 			{
-				DecScndCtrl(2);
+				SpeedCtrlSwitch(false);
 				SpeedCtrlUnit.IsActive = false;
 			}
 		}
@@ -8462,7 +8462,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 		}
 		if ((SpeedCtrlAutoTurnOffFlag & 2) == 2 && Hamulec->GetEDBCP() > 0.25)
 		{
-			DecScndCtrl(2);
+			SpeedCtrlSwitch(false);
 			SpeedCtrlUnit.IsActive = false;
 		}
 	}
@@ -8515,9 +8515,47 @@ void TMoverParameters::SpeedCtrlRegulator(double dt, double const accfactor)
 		}
 }
 
+bool TMoverParameters::IsSpeedCtrlSeparate() const
+{
+	// no secondary controller, or one of these engines', which shunts the field of the traction motors (eu07/maszyna#69)
+	return SpeedCtrl && (ScndCtrlPosNo == 0 || EngineType == TEngineType::ElectricSeriesMotor || EngineType == TEngineType::DieselElectric);
+}
+
+bool TMoverParameters::IsSpeedCtrlEngaged() const
+{
+	return IsSpeedCtrlSeparate() ? SpeedCtrlUnit.IsActive : ScndCtrlPos > 0;
+}
+
+bool TMoverParameters::SpeedCtrlSwitch(bool const State)
+{
+	if (false == IsSpeedCtrlSeparate())
+	{
+		return State ? IncScndCtrl(1) : DecScndCtrl(2);
+	}
+	// its own switch, the secondary controller left to the field shunting
+	if (State)
+	{
+		if (CabActive == 0 || SpeedCtrlUnit.IsActive)
+		{
+			return false;
+		}
+		SpeedCtrlValue = static_cast<double>(Round(Vel));
+		SpeedCtrlUnit.IsActive = true;
+		return true;
+	}
+	auto const wasactive{SpeedCtrlUnit.IsActive};
+	SpeedCtrlValue = 0;
+	SpeedCtrlUnit.IsActive = false;
+	if (wasactive && SpeedCtrlUnit.ManualStateOverride)
+	{
+		eimic = 0.0;
+	}
+	return wasactive;
+}
+
 void TMoverParameters::SpeedCtrlButton(int button)
 {
-	if (SpeedCtrl && ScndCtrlPos > 0)
+	if (SpeedCtrl && IsSpeedCtrlEngaged())
 	{
 		SpeedCtrlValue = SpeedCtrlButtons[button];
 	}
@@ -8525,7 +8563,7 @@ void TMoverParameters::SpeedCtrlButton(int button)
 
 void TMoverParameters::SpeedCtrlInc()
 {
-	if (SpeedCtrl && ScndCtrlPos > 0)
+	if (SpeedCtrl && IsSpeedCtrlEngaged())
 	{
 		double x = floor(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) + 1.0;
 		SpeedCtrlValue = std::min(x * SpeedCtrlUnit.VelocityStep, SpeedCtrlUnit.MaxVelocity);
@@ -8534,7 +8572,7 @@ void TMoverParameters::SpeedCtrlInc()
 
 void TMoverParameters::SpeedCtrlDec()
 {
-	if (SpeedCtrl && ScndCtrlPos > 0)
+	if (SpeedCtrl && IsSpeedCtrlEngaged())
 	{
 		double x = ceil(SpeedCtrlValue / SpeedCtrlUnit.VelocityStep) - 1.0;
 		SpeedCtrlValue = std::max(x * SpeedCtrlUnit.VelocityStep, SpeedCtrlUnit.MinVelocity);
@@ -8543,7 +8581,7 @@ void TMoverParameters::SpeedCtrlDec()
 
 bool TMoverParameters::SpeedCtrlPowerInc()
 {
-	if (!(SpeedCtrl && ScndCtrlPos > 0))
+	if (!(SpeedCtrl && IsSpeedCtrlEngaged()))
 		return false;
 
 	if (SpeedCtrlUnit.DesiredPower == SpeedCtrlUnit.MaxPower)
@@ -8555,7 +8593,7 @@ bool TMoverParameters::SpeedCtrlPowerInc()
 
 bool TMoverParameters::SpeedCtrlPowerDec()
 {
-	if (!(SpeedCtrl && ScndCtrlPos > 0))
+	if (!(SpeedCtrl && IsSpeedCtrlEngaged()))
 		return false;
 
 	if (SpeedCtrlUnit.DesiredPower == SpeedCtrlUnit.MinPower)

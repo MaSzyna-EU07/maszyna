@@ -2556,17 +2556,60 @@ void editor_mode::render_orthophoto_ui()
 
     if (ImGui::TreeNode(STR_C("More settings")))
     {
-        if (ImGui::Checkbox(STR_C("Fit to terrain"), &config.drape))
+        // one choice of three, what it means under it: drawn over the view (laid on the ground, where there's none at the height), a
+        // surface of the scene on the ground, or a flat sheet in the scene; flat over the view says nothing more than on the ground
+        enum class look
         {
-            changed = true;
-            persist = true;
+            overlay,
+            ground,
+            sheet
+        };
+        auto const current{false == config.in_scene ? look::overlay : config.drape ? look::ground : look::sheet};
+        auto const choice = [&](char const *Label, look const Look) {
+            // the Better Renderer doesn't pick up geometry added in the editor: in the scene the photos wouldn't show at all
+            auto const disabled{Global.NvRenderer && Look != look::overlay && current != Look};
+            begin_disabled(disabled);
+            if (ImGui::RadioButton(Label, current == Look) && current != Look)
+            {
+                config.in_scene = Look != look::overlay;
+                config.drape = Look != look::sheet;
+                changed = true;
+                persist = true;
+            }
+            end_disabled(disabled);
+        };
+        auto const explain = [](char const *Text) {
+            ImGui::Indent();
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 360.0f);
+            ImGui::TextDisabled("%s", Text);
+            ImGui::PopTextWrapPos();
+            ImGui::Unindent();
+        };
+
+        ImGui::TextUnformatted(STR_C("Show the photos"));
+        choice(STR_C("Over the view"), look::overlay);
+        choice(STR_C("On the terrain, in the scene"), look::ground);
+        choice(STR_C("A flat sheet in the scene"), look::sheet);
+        switch (current)
+        {
+        case look::overlay:
+            explain(STR_C("The photos are drawn over the whole view, over the tracks and models as well: lower the opacity to see "
+                          "what's under them. The quickest way to compare the scenery with the map."));
+            break;
+        case look::ground:
+            explain(STR_C("The photos lie on the terrain as its surface: tracks and models standing on them cover them, the scene lights "
+                          "them, and fully opaque the mouse places objects on them as on the ground."));
+            break;
+        case look::sheet:
+            explain(STR_C("One flat sheet at the height below, in the scene: for a scenery with no terrain yet. Where there is "
+                          "terrain, it cuts through the sheet."));
+            break;
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(STR_C("Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\n"
-                              "Places without any ground use the height below."));
+        if (Global.NvRenderer && current != look::overlay)
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("The Better Renderer doesn't show them in the scene: pick \"Over the view\""));
+
         if (config.drape)
         {
-            ImGui::SameLine();
             if (ImGui::Button(STR_C("Refit")))
             {
                 // the ground was edited: what's kept of it has to go as well
@@ -2577,34 +2620,22 @@ void editor_mode::render_orthophoto_ui()
                     layer->refit();
             }
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(STR_C("Samples the ground again, after it was edited"));
+                ImGui::SetTooltip("%s", STR_C("Samples the ground again, after it was edited"));
+            // the lift only matters where the scene can cover the photos
+            if (config.in_scene)
+            {
+                ImGui::SetNextItemWidth(160.0f);
+                changed |= ImGui::DragFloat(STR_C("Lift above ground (m)"), &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+                persist |= ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", STR_C("Raises the photos above the ground.\n"
+                                                  "Whatever is lower than this, the rails and the sleepers too, ends up under them: keep it small."));
+            }
         }
-
-        begin_disabled(!config.drape);
         ImGui::SetNextItemWidth(160.0f);
-        changed |= ImGui::DragFloat(STR_C("Lift above ground (m)"), &config.lift, 0.01f, 0.0f, 50.0f, "%.2f");
+        changed |= ImGui::DragFloat(config.drape ? STR_C("Height where there's no ground (m)") : STR_C("Height (m)"), &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
         persist |= ImGui::IsItemDeactivatedAfterEdit();
-        end_disabled(!config.drape);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(STR_C("Raises the fitted imagery above the ground. Keep it below the objects you want to see:\n"
-                              "in the scene everything lower than this ends up under the imagery."));
-
-        begin_disabled(config.drape);
-        ImGui::SetNextItemWidth(160.0f);
-        changed |= ImGui::DragFloat(STR_C("Height (m)"), &config.height, 0.1f, -1000.0f, 3000.0f, "%.2f");
-        persist |= ImGui::IsItemDeactivatedAfterEdit();
-        end_disabled(config.drape);
-
-        if (ImGui::Checkbox(STR_C("Covered by objects and terrain"), &config.in_scene))
-        {
-            changed = true;
-            persist = true;
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(STR_C("Draws the imagery as part of the scene, so tracks, models and terrain in front of it hide it.\n"
-                              "It is lit like the scene. Fully opaque, mouse placement lands on it as on any surface;\n"
-                              "translucent, it doesn't catch the mouse.\n"
-                              "Not available with the Better Renderer, which doesn't pick up geometry added in the editor."));
+        ImGui::Spacing();
 
         ImGui::SetNextItemWidth(160.0f);
         changed |= ImGui::SliderFloat(STR_C("Opacity"), &config.opacity, 0.0f, 1.0f, "%.2f");

@@ -3140,8 +3140,16 @@ void opengl33_renderer::Render(scene::shape_node const &Shape, bool const Ignore
 		break;
 	}
 	// render
-
+	// a decal comes nearer the camera: the depth is reversed (GL_GEQUAL), so a positive offset. not in the shadows, it casts none
+	auto const decal{data.decal && m_renderpass.draw_mode != rendermode::shadows};
+	if (decal)
+	{
+		::glEnable(GL_POLYGON_OFFSET_FILL);
+		::glPolygonOffset(2.f, 8.f);
+	}
 	draw(data.geometry);
+	if (decal)
+		::glDisable(GL_POLYGON_OFFSET_FILL);
 	// debug data
 	++m_renderpass.draw_stats.shapes;
 	++m_renderpass.draw_stats.drawcalls;

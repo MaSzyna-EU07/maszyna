@@ -172,6 +172,11 @@ class TTrain {
     inline
     std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
+    // the direction the mouse drags universal control Index in to any position between its ends, none if the control
+    // is only set to its ends (MaSzyna-EU07/maszyna#62)
+    universal_drag::direction universal_drag_direction( int const Index ) const;
+    // the position universal control Index is set to, from 0 to 1
+    float universal_position( int const Index ) const;
     void UpdateCab();
     bool Update( double const Deltatime );
 	void UpdateDirectionRelays();
@@ -518,6 +523,7 @@ class TTrain {
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_genericset( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
