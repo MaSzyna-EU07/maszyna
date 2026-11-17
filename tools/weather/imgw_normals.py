@@ -67,17 +67,21 @@ MONTH_DAYS = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 # what a month of the lowlands of central Poland has, where a station lacks an element
 FALLBACK = {"humidity": 80.0, "wind": 3.5, "precipitation": 45.0, "wet_days": 9.0, "snow_days": 0.0, "snow_depth": 0.0,
             "fog_days": 3.0, "storm_days": 1.0, "cloud": 5.5}
-# the columns: our name, the words its name in the format file has to hold (folded to ascii, lower case)
+# the columns: our name, the code the format file of IMGW gives the column, and the words its name has to hold where the code
+# isn't there (folded to ascii, lower case)
 DAILY_COLUMNS = {
-    "tmax": ("srednia temperatura maksymalna",), "tmin": ("srednia temperatura minimalna",),
-    "precipitation": ("miesieczna suma opad",), "snow_depth": ("maksymalna wysokosc pokrywy",),
-    "snow_days": ("liczba dni z pokrywa",), "rain_days": ("liczba dni z opadem deszczu",),
-    "snowfall_days": ("liczba dni z opadem sniegu",), "fog_days": ("liczba dni z mgla",),
-    "storm_days": ("liczba dni z burza",),
+    "tmax": ("TMXS", ("srednia maksymalna temperatura",)), "tmin": ("TMNS", ("srednia minimalna temperatura",)),
+    "precipitation": ("SUMM", ("miesieczna suma opad",)), "snow_depth": ("PKSN", ("maksymalna wysokosc pokrywy",)),
+    "snow_days": ("PSDN", ("liczba dni z pokrywa",)), "rain_days": ("DESD", ("liczba dni z opadem deszczu",)),
+    "snowfall_days": ("SNID", ("liczba dni z opadem sniegu",)), "fog_days": ("MGLD", ("liczba dni z mgla",)),
+    "storm_days": ("BURD", ("liczba dni z burza",)),
 }
-TERM_COLUMNS = {"cloud": ("zachmurzenie",), "wind": ("predkosc wiatru",), "humidity": ("wilgotnosc",)}
-HOURLY_COLUMNS = {"direction": ("kierunek wiatru",), "speed": ("predkosc wiatru",)}
+TERM_COLUMNS = {"cloud": ("NOS", ("zachmurzenie",)), "wind": ("FWS", ("predkosc wiatru",)), "humidity": ("WLGS", ("wilgotnosc",))}
+HOURLY_COLUMNS = {"direction": ("", ("kierunek wiatru",)), "speed": ("", ("predkosc wiatru",))}
+# the statuses of a value: not measured; no such phenomenon (a zero), which for the counts of days means the station doesn't
+# observe the phenomenon at all
 NO_MEASUREMENT = "8"
+NO_PHENOMENON = "9"
 
 
 def fold(text):
@@ -107,24 +111,28 @@ def fetch(url, cache, offline):
 
 
 def format_names(text):
-    """The names of the columns a format file of IMGW lists, in their order: each line a name, then its width."""
+    """The columns a format file of IMGW lists, in their order, each (code, name): a line is the code of the column in capitals,
+    then its name."""
     names = []
     for line in text.splitlines():
-        match = re.match(r"^(.*\S)\s+\d+(/\d+)?\s*$", line)
+        match = re.match(r"^\s*([A-Z][A-Z0-9]*)\s+(\S.*?)\s*$", line)
         if match:
-            names.append(fold(match.group(1)))
+            names.append((match.group(1), fold(match.group(2))))
     return names
 
 
 def find_columns(names, wanted, what):
-    """The index of each wanted column, and of the column of its status after it (or None)."""
+    """Of each wanted column: its index, the index of the column of its status after it (or None), and whether it counts days."""
     found = {}
-    for key, words in wanted.items():
-        index = next((i for i, name in enumerate(names) if all(word in name for word in words)), None)
+    for key, (code, words) in wanted.items():
+        index = next((i for i, (column, _) in enumerate(names) if code and column == code), None)
         if index is None:
-            sys.exit(f"the format of the {what} data has no column for {key} ({' '.join(words)}); it has:\n  " + "\n  ".join(names))
-        status = index + 1 if index + 1 < len(names) and names[index + 1].startswith("status") else None
-        found[key] = (index, status)
+            index = next((i for i, (_, name) in enumerate(names) if all(word in name for word in words)), None)
+        if index is None:
+            sys.exit(f"the format of the {what} data has no column for {key} ({code} {' '.join(words)}); it has:\n  " +
+                     "\n  ".join(f"{column} {name}" for column, name in names))
+        status = index + 1 if index + 1 < len(names) and names[index + 1][1].startswith("status") else None
+        found[key] = (index, status, names[index][1].startswith("liczba dni"))
     return found
 
 
@@ -140,8 +148,11 @@ def read_rows(archive, prefix):
 
 def value(row, column):
     """The number of a column of a row, None where it wasn't measured."""
-    index, status = column
-    if index >= len(row) or (status is not None and status < len(row) and row[status].strip() == NO_MEASUREMENT):
+    index, status, days = column
+    if index >= len(row):
+        return None
+    flag = row[status].strip() if status is not None and status < len(row) else ""
+    if flag == NO_MEASUREMENT or (days and flag == NO_PHENOMENON):
         return None
     try:
         return float(row[index].strip().replace(",", "."))
