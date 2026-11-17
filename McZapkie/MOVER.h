@@ -2591,7 +2591,7 @@ class TMoverParameters
 	void update_dieselelectric_dynamic_brake(double dt);
 	double dieselelectric_dynamic_brake_demand() const; // 0..1, the effort the driver asks for
 	double dieselelectric_dynamic_brake_limit() const; // [N] the force at full effort at the speed
-	void apply_dieselelectric_dynamic_brake(); // the force in place of the drive's one
+	void apply_dieselelectric_dynamic_brake(double dt); // the force in place of the drive's one, over the step dt
 	double dieselelectric_motor_current(double Moment) const; // the current of the motors giving the moment
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity) const;

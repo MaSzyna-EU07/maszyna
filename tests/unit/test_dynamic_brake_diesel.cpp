@@ -232,3 +232,33 @@ TEST_CASE("diesel-electric dynamic brake: blended with the locomotive's air brak
 		scenario.check();
 	}
 }
+
+TEST_CASE("diesel-electric dynamic brake: without a fade it brings the vehicle to rest") {
+	// EDBrakeV0 = EDBrakeV1 = 0 (the defaults): the whole force down to the stop. near it no more than what stops the
+	// vehicle within the step, or the force turned round each time the speed crossed zero and the vehicle never
+	// came to rest, the air brake being off
+	scenario scenario{"dynamic brake/diesel electric/br285 no fade", motion() + traction() + brakes() + dynamic_brake()};
+	scenario.train().add(definition::fiz("br285_v1/br285").set("Engine", "EDBrake", "Controller").set("Engine", "EDBrakeFmax", 150), 1);
+	auto &locomotive{scenario.cab()};
+	REQUIRE(locomotive.DEDynamicBrake.fade_low == doctest::Approx(0.0));
+	REQUIRE(locomotive.DEDynamicBrake.fade_high == doctest::Approx(0.0));
+	REQUIRE(scenario.start_up());
+	scenario.get_going();
+	scenario.full_power(30.0);
+	REQUIRE(locomotive.Vel > 10.0);
+
+	scenario.act("EB+ to the stop");
+	controller_to(locomotive, 0);
+	for (int i = 0; i < 120 && locomotive.V != 0.0; ++i) {
+		scenario.wait(1.0);
+	}
+	CHECK(locomotive.BrakePress < 0.1);
+	// at rest, and staying there: no speed either way, no force
+	for (int i = 0; i < 5; ++i) {
+		scenario.wait(1.0);
+		CHECK(locomotive.V == 0.0);
+		CHECK(locomotive.Ft == doctest::Approx(0.0));
+	}
+	CHECK(locomotive.DEDynamicBrake.level == doctest::Approx(1.0));
+	scenario.check();
+}

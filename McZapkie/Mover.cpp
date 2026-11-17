@@ -6615,7 +6615,7 @@ double TMoverParameters::TractionForce(double dt)
 			if (DEDynamicBrake.level > 0.0)
 			{
 				// braking: no power asked for, so the drive above gave no force
-				apply_dieselelectric_dynamic_brake();
+				apply_dieselelectric_dynamic_brake(dt);
 			}
 			break;
 		} // DieselElectric
@@ -7019,10 +7019,13 @@ void TMoverParameters::update_dieselelectric_dynamic_brake(double const dt)
 }
 
 // the force of a diesel-electric vehicle's dynamic brake, against the motion, in place of the drive's one: the motors
-// work as generators into the resistors, the ammeter shows their current, the main generator gives nothing
-void TMoverParameters::apply_dieselelectric_dynamic_brake()
+// work as generators into the resistors, the ammeter shows their current, the main generator gives nothing. near the
+// stop no more than what stops the vehicle within the step dt: with no fade (EDBrakeV0 = EDBrakeV1 = 0) the whole force
+// would turn round each time the speed crosses zero, and in FTrain it never lets the stop of ComputeMovement() catch it
+void TMoverParameters::apply_dieselelectric_dynamic_brake(double const dt)
 {
-	Ft = V > 0.0 ? -DEDynamicBrake.force : V < 0.0 ? DEDynamicBrake.force : 0.0;
+	auto const force{dt > 0.0 ? std::min(DEDynamicBrake.force, TotalMass * std::abs(V) / dt) : DEDynamicBrake.force};
+	Ft = V > 0.0 ? -force : V < 0.0 ? force : 0.0;
 	Fw = Ft / NPoweredAxles;
 	Mw = Fw * WheelDiameter / 2.0;
 	Mm = Mw / Transmision.Ratio;
