@@ -1,0 +1,39 @@
+// added by tests/scenarios/run.py to wrzosy_pxe336080.scn, which keeps its own trainsets: the mission of
+// eu07/maszyna#524. EU07-234 runs light from final_2t839 through the Wolica depot to the rake of 12 coaches
+// pxe_1 .. pxe_12 (linia053_wrzosy/pxe336080_dekoracje.scm, "trainset none woa_odst009 304 0"), has to
+// couple to it and take it out of the depot.
+//
+// the scenery gives the locomotive no order at all: its trainset has velocity 0, so with nobody in the cab
+// its driver sleeps in Wait_for_orders, and nothing in the scenery tells it to couple, the player does that
+// by hand. the two orders the player's hands stand for are given here.
+//
+// 1. a minute after the start (the scenery sets the way and the shunting signals at 50-55 s): shunt, as
+// the signals say (Shunt -1 0). PutValues goes to the vehicle that set the event off, so it hangs on
+// event0 of the track the locomotive stands on (the three its 16 m may reach); event0 comes again and
+// again while it stands there, the cell lets the order through once.
+// the first order is not the one to couple, on purpose: a driver whose first order is Connect never
+// releases the hand brake the locomotive starts with, and pulls against it for good (CheckVehicles()
+// leaves AutoRewident() out for Connect).
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event final_2t838:event0 multiple 60 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event final_2t839:event0 multiple 60 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event final_2t840:event0 multiple 60 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event autotest_order PutValues 0 none 0 0 0 Shunt -1 0 endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 1 * endevent
+
+// 2. on the last track before the rake, in the direction the locomotive comes from (event2 of
+// woa_lokom007, some 35-45 m short of the first coach): couple to the consist standing ahead with the
+// coupler and the brake hose (3), turn round and wait for the shunting signal. it is the order these
+// sceneries give their AI shunters (dos_sm42_przypnij).
+event woa_lokom007:event2 PutValues 0 none 0 0 0 Shunt -2 -3 endevent
+
+// 330 s after the locomotive ran over lok_woa005 towards the rake the scenery sets the way out
+// (lok_woa005:event2 -> PXE_gotowy -> pxe_manewry_ruszaj), coupled or not. it leads back over lok_woa005,
+// towards its point 1. every vehicle going that way is counted (eventall1); the locomotive alone makes 1,
+// so the second vehicle is a coach of the rake, coupled and pulled. the test ends there, with the train
+// still moving (test.no_movement_before_pass no).
+node -1 0 autotest_left memcell 0 0 0 left 0 0 none endmemcell
+event lok_woa005:eventall1 multiple 0 none autotest_count autotest_judge endevent
+event autotest_count AddValues 0 autotest_left * 1 0 endevent
+event autotest_judge multiple 0 autotest_left autotest_pass condition memcompare * 2 * endevent
+event autotest_pass UpdateValues 0 __test.result the_rake_left_the_depot_behind_the_locomotive 1 * endevent
