@@ -225,6 +225,16 @@ struct global_settings {
     int audio_max_sources = 30;
     std::string AudioRenderer;
     bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
+    // OpenAL Soft device and mixing options; the defaults leave the choice to the library, as before they existed
+    std::string AudioOutputMode{ "auto" }; // sound.outputmode: auto, mono, stereo, stereo-basic, uhj, headphones, quad, 5.1, 6.1, 7.1
+    std::string AudioHrtf{ "auto" }; // sound.hrtf: auto, on, off
+    std::string AudioHrtfProfile; // sound.hrtf.profile: name of the HRTF data set, empty for the library's choice
+    std::string AudioResampler; // sound.resampler: name of the resampler, empty for the library's default
+    std::string AudioLimiter{ "auto" }; // sound.limiter: auto, on, off
+    int AudioFrequency{ 0 }; // sound.frequency: mixing rate in Hz, 0 for the device's
+    float AudioDoppler{ 0.25f }; // sound.doppler: strength of the Doppler effect
+    bool AudioLowpass{ false }; // sound.efx.lowpass: soundproofing also muffles the high frequencies
+    float AudioAirAbsorption{ 0.f }; // sound.efx.airabsorption: 0-10, high frequencies fade with distance
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };
@@ -405,6 +415,7 @@ struct global_settings {
 	void ConfigParse(cParser &parser);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
 	bool ConfigParseAudio(cParser& Parser, const std::string& token);
+	bool ConfigParseAudioDevice(cParser& Parser, const std::string& token);
 	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
 	bool ConfigParseInput(cParser& Parser, const std::string& token);
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);

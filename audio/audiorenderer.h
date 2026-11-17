@@ -122,6 +122,20 @@ public:
     void erase( sound_source const *Controller );
     void update( double const Deltatime );
 
+    // choices the library offers, for the settings
+    std::vector<std::string> output_devices() const;
+    std::vector<std::string> hrtf_profiles() const;
+    std::vector<std::string> resamplers() const;
+    // what the device ended up with: device, mixing rate, output mode, HRTF, resampler
+    std::string device_status() const;
+    // applies changed device options (sound.openal.renderer, outputmode, hrtf, limiter, frequency)
+    // without a restart. returns: false if the library can't do it
+    bool apply_device_settings();
+    // applies changed source options (sound.resampler, doppler, efx.*) to every source
+    void apply_source_settings();
+    // sets the EFX low-pass filter of a source for given soundproofing (sound.efx.lowpass)
+    void soundproofing_filter( ALuint const Source, float const Soundproofing ) const;
+
     glm::dvec3 cached_camerapos;
 
 private:
@@ -129,6 +143,11 @@ private:
     using source_sequence = std::stack<ALuint>;
 
     bool init_caps();
+    void init_extensions();
+    std::vector<ALCint> device_attributes() const;
+    int hrtf_index( std::string const &Name ) const;
+    ALint resampler_index() const;
+    void configure_source( ALuint const Source ) const;
     audio::openal_source fetch_source();
 
     ALCdevice *m_device { nullptr };
@@ -149,10 +168,24 @@ private:
     LPALCDEVICEPAUSESOFT m_alcDevicePauseSOFT { nullptr };
     LPALCDEVICERESUMESOFT m_alcDeviceResumeSOFT { nullptr };
     LPALCREOPENDEVICESOFT m_alcReopenDeviceSOFT { nullptr };
+    LPALCRESETDEVICESOFT m_alcResetDeviceSOFT { nullptr };
+    LPALCGETSTRINGISOFT m_alcGetStringiSOFT { nullptr };
+    LPALGETSTRINGISOFT m_alGetStringiSOFT { nullptr };
+    LPALGENFILTERS m_alGenFilters { nullptr };
+    LPALDELETEFILTERS m_alDeleteFilters { nullptr };
+    LPALFILTERI m_alFilteri { nullptr };
+    LPALFILTERF m_alFilterf { nullptr };
+
+    bool m_hasoutputmode { false }; // ALC_SOFT_output_mode
+    bool m_haslimiter { false }; // ALC_SOFT_output_limiter
+    bool m_hasefx { false }; // ALC_EXT_EFX, with its filter entry points
+    ALuint m_lowpassfilter { 0 }; // shared low-pass filter, its parameters are copied to a source when attached
+    ALint m_resampler { -1 }; // index of the resampler set on the sources, or -1 to leave the library's default
 
     bool m_candetectdisconnect { false };
-    ALCint m_contextattributes[3] { 0, 0, 0 };
+    std::vector<ALCint> m_contextattributes; // cached for device reopen
     double m_devicechecktime { 0.0 };
+    bool m_reopenfailed { false }; // a failed reopen is retried each second, but logged once
 
     // ALC_SOFT_system_events: event-driven following of output-device / default-output changes.
     // Preferred over polling because it reliably catches both device removal and default changes
