@@ -814,8 +814,16 @@ void scene_walk::Render(scene::shape_node const &Shape, bool const Ignorerange)
 		break;
 	}
 	// render
-
+	auto const decal{data.decal && (m_renderpass.draw_mode != rendermode::shadows)};
+	if (decal)
+	{
+		walk_decal(true);
+	}
 	walk_draw(data.geometry);
+	if (decal)
+	{
+		walk_decal(false);
+	}
 	// debug data
 	++m_renderpass.draw_stats.shapes;
 	++m_renderpass.draw_stats.drawcalls;

@@ -431,12 +431,16 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 	std::uint32_t waiting{0};
 	VkDeviceSize scratchsize{0};
 	auto const scratchalignment{static_cast<VkDeviceSize>(m_scratchalignment)};
-	for (auto const &draw : Draws)
+	// the structure of each draw, looked up once (null: none, the draw is left out); the map keeps its entries in place
+	std::vector<bottom const *> found(Draws.size(), nullptr);
+	for (std::size_t drawindex = 0; drawindex < Draws.size(); ++drawindex)
 	{
+		auto const &draw{Draws[drawindex]};
 		auto lookup{m_bottoms.find(draw.key)};
 		if ((lookup != m_bottoms.end()) && (lookup->second.generation == draw.source.generation))
 		{
 			lookup->second.used = Frame;
+			found[drawindex] = &lookup->second;
 			continue;
 		}
 		if ((builds.size() >= builds_per_frame) || (triangles >= triangles_per_frame))
@@ -533,6 +537,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		entry.index_address = (generated ? generated->address() : 0);
 		entry.indices = std::move(generated);
 		m_bottombytes += entry.bytes;
+		found[drawindex] = &entry;
 		build.info.dstAccelerationStructure = structure;
 		build.scratch = scratchsize;
 		scratchsize += (sizes.buildScratchSize + scratchalignment - 1) / scratchalignment * scratchalignment;
@@ -555,6 +560,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 					{
 						m_bottombytes -= it->second.bytes;
 						m_deletions->push(Value, [handle, old = it->second.handle, oldstorage = it->second.storage, oldindices = it->second.indices]() { destroy_structure(handle, old); });
+						std::ranges::replace(found, static_cast<bottom const *>(&it->second), static_cast<bottom const *>(nullptr));
 						m_bottoms.erase(it);
 						break;
 					}
@@ -584,15 +590,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 	}
 
 	// the records and the instances of the draws with their structures
-	std::size_t instancecount{0};
-	for (auto const &draw : Draws)
-	{
-		auto const lookup{m_bottoms.find(draw.key)};
-		if ((lookup != m_bottoms.end()) && (lookup->second.generation == draw.source.generation))
-		{
-			++instancecount;
-		}
-	}
+	auto instancecount{static_cast<std::size_t>(std::ranges::count_if(found, [](bottom const *Built) { return Built != nullptr; }))};
 	instancecount = std::min<std::size_t>(instancecount, max_instances);
 	if ((false == ensure(frame.records, sizeof(record) * std::max<std::size_t>(instancecount, 1), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, memory_kind::upload, "ray tracing records", Value)) ||
 	    (false == ensure(frame.instances, sizeof(VkAccelerationStructureInstanceKHR) * std::max<std::size_t>(instancecount, 1),
@@ -621,17 +619,18 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		return (layersentry != nullptr) && ((terrainlayers == 0) || (terrainlayers == Id));
 	};
 	std::uint32_t written{0};
-	for (auto const &draw : Draws)
+	if ((records == nullptr) || (instances == nullptr))
 	{
-		if ((written >= instancecount) || (records == nullptr) || (instances == nullptr))
-		{
-			break;
-		}
-		auto const lookup{m_bottoms.find(draw.key)};
-		if ((lookup == m_bottoms.end()) || (lookup->second.generation != draw.source.generation))
+		instancecount = 0;
+	}
+	for (std::size_t drawindex = 0; (drawindex < Draws.size()) && (written < instancecount); ++drawindex)
+	{
+		auto const *built{found[drawindex]};
+		if (built == nullptr)
 		{
 			continue;
 		}
+		auto const &draw{Draws[drawindex]};
 		auto const &source{draw.source};
 		auto const terrain{draw.terrain_table != 0};
 		auto const texture{texture_index(terrain ? draw.terrain_weights[0] : draw.texture, Frame)};
@@ -639,9 +638,11 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		{
 			usedtextures.push_back(texture);
 		}
-		auto &entry{records[written]};
+		// made here and copied whole: the buffers are write-combined memory of the upload heap, where setting the bit fields of
+		// an instance in place reads the memory back, which takes a few microseconds for each draw
+		record entry{};
 		entry.vertices = source.vertex_address + vertex_stride * source.vertexfirst;
-		entry.indices = (lookup->second.index_address != 0 ? lookup->second.index_address : source.indices != VK_NULL_HANDLE ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
+		entry.indices = (built->index_address != 0 ? built->index_address : source.indices != VK_NULL_HANDLE ? source.index_address + sizeof(std::uint32_t) * source.first : 0);
 		entry.texture = texture;
 		auto const alpha{(false == terrain) && (texture != 0) && (draw.cutoff > 0.f)};
 		entry.flags = (alpha ? record_alpha : 0);
@@ -673,7 +674,7 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 				entry.texture = 0;
 			}
 		}
-		auto &instance{instances[written]};
+		VkAccelerationStructureInstanceKHR instance{};
 		// the rows of the transform, which glm keeps by the columns
 		for (int row = 0; row < 3; ++row)
 		{
@@ -688,7 +689,9 @@ void ray_tracing::build(command_stream *Commands, std::uint32_t const Slot, std:
 		instance.instanceShaderBindingTableRecordOffset = 0;
 		// the models have faces of one side, seen from both in the reflections; an alpha tested texture leaves holes in its faces
 		instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR | (alpha ? VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR : VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR);
-		instance.accelerationStructureReference = lookup->second.address;
+		instance.accelerationStructureReference = built->address;
+		records[written] = entry;
+		instances[written] = instance;
 		++written;
 	}
 	if (written > 0)

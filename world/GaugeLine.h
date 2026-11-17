@@ -46,8 +46,9 @@ struct gauge_line {
 
     void at( double const Distance, glm::dvec3 &Point, glm::dvec3 &Tangent ) const {
         auto const length { segment->GetLength() };
-        auto const local = [&]( double const D ) {
-            glm::dvec3 point, across;
+        auto const local = [ this ]( double const D ) {
+            glm::dvec3 point;
+            glm::dvec3 across;
             segment->plan_frame( D, point, across );
             return point + across * offset; };
         auto const inside { std::clamp( Distance, 0.0, length ) };
@@ -59,7 +60,8 @@ struct gauge_line {
         Point = local( inside ) + Tangent * ( Distance - inside );
     }
     glm::dvec3 normal( double const Distance, int const Side ) const {
-        glm::dvec3 point, across;
+        glm::dvec3 point;
+        glm::dvec3 across;
         segment->plan_frame( std::clamp( Distance, 0.0, segment->GetLength() ), point, across );
         return across * static_cast<double>( -Side );
     }

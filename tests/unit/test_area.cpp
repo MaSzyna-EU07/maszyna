@@ -64,3 +64,25 @@ TEST_CASE("download area: a point inside or outside, a square of no size") {
 	// fewer than three points: no area
 	CHECK(geometry::squares_in({{0.0, 0.0}, {100.0, 100.0}}, 256.0).empty());
 }
+
+TEST_CASE("download area: its size, whichever way round it's drawn") {
+	std::vector<glm::dvec2> square{{0.0, 0.0}, {2000.0, 0.0}, {2000.0, 2000.0}, {0.0, 2000.0}};
+	CHECK(geometry::polygon_area(square) == doctest::Approx(4.0e6));
+	std::reverse(square.begin(), square.end());
+	CHECK(geometry::polygon_area(square) == doctest::Approx(4.0e6));
+	// the L of 300 m, its arms 1000 m long
+	CHECK(geometry::polygon_area({{0.0, 0.0}, {1000.0, 0.0}, {1000.0, 300.0}, {300.0, 300.0}, {300.0, 1000.0}, {0.0, 1000.0}}) == doctest::Approx(510000.0));
+	CHECK(geometry::polygon_area({{0.0, 0.0}, {100.0, 100.0}}) == 0.0);
+}
+
+TEST_CASE("download area: edges crossing each other, as when the corners are clicked out of order") {
+	// the corners of a square clicked across: a bow tie
+	CHECK(geometry::polygon_crosses_itself({{0.0, 0.0}, {1000.0, 1000.0}, {1000.0, 0.0}, {0.0, 1000.0}}));
+	CHECK_FALSE(geometry::polygon_crosses_itself({{0.0, 0.0}, {1000.0, 0.0}, {1000.0, 1000.0}, {0.0, 1000.0}}));
+	// a concave polygon isn't a crossing one
+	CHECK_FALSE(geometry::polygon_crosses_itself({{0.0, 0.0}, {1000.0, 0.0}, {1000.0, 300.0}, {300.0, 300.0}, {300.0, 1000.0}, {0.0, 1000.0}}));
+	// a triangle can't cross itself
+	CHECK_FALSE(geometry::polygon_crosses_itself({{0.0, 0.0}, {1000.0, 0.0}, {0.0, 1000.0}}));
+	// the last edge, back to the first point, across the first one
+	CHECK(geometry::polygon_crosses_itself({{0.0, 0.0}, {1000.0, 0.0}, {1000.0, 1000.0}, {500.0, -500.0}}));
+}

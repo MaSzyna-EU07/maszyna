@@ -443,7 +443,7 @@ auto python_taskqueue::run_file(std::string const &File, std::string const &Path
 		return false;
 	}
 
-	std::ifstream inputfile{filepath + fileextension};
+	std::ifstream inputfile{FileOnDisk(filepath + fileextension)};
 	std::string input;
 	input.assign(std::istreambuf_iterator<char>(inputfile), std::istreambuf_iterator<char>());
 

@@ -722,13 +722,14 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			auto const cullface{draw.cullface};
 			draw.cullface = false;
 			apply_draw_state();
-			if (draw.set_dirty)
-			{
-				bind_pass_set();
-			}
 			auto const block{push_draw_block()};
 			if (block != ~0u)
 			{
+				// after the block, which may have opened a new window of the blocks the pass set is bound with
+				if (draw.set_dirty)
+				{
+					bind_pass_set();
+				}
 				if (draw.textures_dirty)
 				{
 					push_textures();
@@ -1769,6 +1770,31 @@ void vulkan14_renderer::walk_cull_face(bool const Enabled)
 	m_draw->cullface = Enabled;
 }
 
+void vulkan14_renderer::walk_decal(bool const Enabled)
+{
+	auto &draw{*m_draw};
+	if ((false == draw.rendering) || (draw.commands == nullptr) || draw.shadows)
+	{
+		return;
+	}
+	// the depth is reversed (VK_COMPARE_OP_GREATER_OR_EQUAL): a positive bias comes nearer the camera, as glPolygonOffset(2, 8) of
+	// the opengl renderer (slope 2, constant 8). the depth pass of the scene draws everything a little farther (-1, -1,
+	// render_scene_depth()), the decal goes as much nearer from there
+	if (draw.depthpass)
+	{
+		if (Enabled)
+			draw.commands->set_depth_bias(-1.f + 8.f, 0.f, -1.f + 2.f);
+		else
+			draw.commands->set_depth_bias(-1.f, 0.f, -1.f);
+		return;
+	}
+	draw.commands->set_depth_bias_enable(Enabled ? VK_TRUE : VK_FALSE);
+	if (Enabled)
+	{
+		draw.commands->set_depth_bias(8.f, 0.f, 2.f);
+	}
+}
+
 void vulkan14_renderer::walk_glare(bool const Enabled)
 {
 	// without the depth test, added to what is there
@@ -2690,4 +2716,14 @@ ITexture const &vulkan14_renderer::Texture(texture_handle const Texture) const
 		return *ITexture::null_texture();
 	}
 	return m_context->textures->texture(Texture);
+}
+
+void vulkan14_renderer::Unload_Texture(texture_handle const Texture)
+{
+	if ((Texture == null_handle) || !m_context || !m_context->textures)
+	{
+		return;
+	}
+	// the image goes once the gpu is done with it (vulkan14_texture::release())
+	m_context->textures->unload(Texture);
 }

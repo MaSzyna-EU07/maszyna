@@ -69,11 +69,10 @@ class terrain_streamer
 	editor_terrain *terrain_at(double X, double Z) const;
 	// height of the terrain at (X,Z); false where there's no chunk in memory
 	bool height_at(double X, double Z, double &Height) const;
+	// the first point of the ground along the ray from the origin, within the reach; false if it meets none
+	bool raycast(glm::dvec3 const &Origin, glm::dvec3 const &Direction, double Reach, glm::dvec3 &Hit) const;
 	// triangles of the full grid of the chunks in memory overlapping the rectangle (x, z)
 	void gather_triangles(glm::dvec2 const &Min, glm::dvec2 const &Max, std::vector<std::array<glm::dvec3, 3>> &Out) const;
-	// the first point where a ray from Origin along Direction (normalized) meets the ground of the chunks in memory, within
-	// Reach metres; the holes are taken for ground. returns: false if it meets none
-	bool raycast(glm::dvec3 const &Origin, glm::dvec3 const &Direction, double Reach, glm::dvec3 &Hit) const;
 	// true if the geometry belongs to the terrain (or its water)
 	bool owns(gfx::geometry_handle const &Geometry) const;
 	std::size_t resident() const { return m_chunks.size(); }
@@ -174,6 +173,8 @@ class terrain_streamer
 	// the modifiers whose names start so are forgotten, the chunks keep their heights till they're made anew; returns how many
 	std::size_t drop_modifiers(std::string const &Prefix);
 	bool remove_modifier(std::string const &Name);
+	// many at once, as the formations of tracks gone: each chunk they reach is led anew once; returns how many
+	std::size_t remove_modifiers(std::vector<std::string> const &Names);
 	// the ground takes the shape the modifier gives it for good, and the modifier is removed: from then on the
 	// terrain there is shaped by hand like anywhere else
 	bool bake_modifier(std::string const &Name);

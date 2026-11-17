@@ -1384,6 +1384,24 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		}
 	}
 
+	// the lines read from the letters the marks had before go to the mark they have now, also those the editor didn't change
+	for (auto const &[markedlayer, lines] : m_marked)
+	{
+		auto const target{resolve(markedlayer)};
+		if (layer(markedlayer).dead || false == is_output(target) || false == writable(markedlayer))
+		{
+			continue;
+		}
+		for (auto const &line : lines)
+		{
+			if (line.moved && m_marking.count({markedlayer, line.mark}) == 0)
+			{
+				push_edit(markedlayer, line.span, {}, nullptr);
+				markedtext[target].push_back(line.mark + ' ' + line.text);
+			}
+		}
+	}
+
 	// node definitions written anew as a whole: the old ones go, the new ones are added to the file like new definitions
 	std::map<layer_handle, std::vector<std::string>> blocktext;
 	if (Blocks != nullptr)
@@ -1598,7 +1616,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		if (layer(output).created)
 		{
 			// NOTE: the parser treats an empty file as a missing one
-			text.text = "// scenery layer created in the editor" + eol;
+			text.text = (layer(output).header.empty() ? std::string{"// scenery layer created in the editor"} : layer(output).header) + eol;
 		}
 		composition body;
 		if (false == compose(state, output, body, 0))
@@ -1896,13 +1914,11 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 		stat(output);
 		scan(output);
 	}
-	for (auto const &marking : m_marking)
+	// the lines of the merged layers are now in the files of their targets, read again with them: all of them, the ones the
+	// editor didn't change too, or the next save would write the lines moved off the letters of the starters twice
+	for (auto marked{m_marked.begin()}; marked != m_marked.end();)
 	{
-		if (resolve(marking.first.first) != marking.first.first)
-		{
-			// the lines of the merged layer are now in the file of its target
-			m_marked.erase(marking.first.first);
-		}
+		marked = (resolve(marked->first) != marked->first ? m_marked.erase(marked) : std::next(marked));
 	}
 	m_marking.clear();
 	for (auto &included : m_instances)

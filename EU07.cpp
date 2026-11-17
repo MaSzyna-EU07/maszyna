@@ -23,11 +23,17 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/crashdump.h"
+#include "utilities/physicslog.h"
 #include <cstdlib>
 #include <exception>
 #include <string_view>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
+#include <cstdio>
+#else
+#include <sys/resource.h>
+#endif
 
 #ifdef _MSC_VER
 #ifdef EU07_CPU_PREFLIGHT
@@ -72,6 +78,8 @@ void finish_log()
 [[noreturn]] void end_test_run(std::string_view const Reason)
 {
 	simulation::test().conclude(simulation::test_result::error, Reason);
+	// the last two seconds of the physics logs, which the runner of the tests reads
+	PhysicsLogs.stop();
 	finish_log();
 	fflush(stdout);
 	fflush(stderr);
@@ -101,10 +109,29 @@ void finish_log()
 	end_test_run("the simulator stopped before the test ended");
 }
 
+// the physics logs used to keep a file open for every vehicle with a driver, and on a scenery with some five hundred
+// of them they took all the files the C library of Windows lets a process have open by default (512): the files
+// opened after them, the shaders of the map among them, couldn't be read. they keep none open now (physicslog.h),
+// but the limit is raised to the most either system allows still, for whatever else opens many files at once
+void raise_open_files_limit()
+{
+#ifdef _WIN32
+	_setmaxstdio(8192);
+#else
+	rlimit limit{};
+	if (getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur < limit.rlim_max)
+	{
+		limit.rlim_cur = limit.rlim_max;
+		setrlimit(RLIMIT_NOFILE, &limit);
+	}
+#endif
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
+	raise_open_files_limit();
 	crashdump_install();
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
@@ -182,6 +209,9 @@ int main(int argc, char *argv[])
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 		}
 #endif
+		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
+		// otherwise, and a second stop only writes what came since
+		PhysicsLogs.stop();
 	}
 	stop_log_service();
 #ifndef _WIN32

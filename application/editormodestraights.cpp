@@ -869,20 +869,20 @@ void editor_mode::straight_reshape(editor_track::straight const &Line, double co
 	auto end{To};
 	if (last + 1 >= static_cast<int>(spans.size()))
 	{
-		auto const final{spans.back()};
-		if (final.track->eType != tt_Normal)
+		auto const tail{spans.back()};
+		if (tail.track->eType != tt_Normal)
 			return;
-		auto const length{final.to - final.from};
-		auto const cut{To < final.to - 1.0 ? std::max(To, final.from + std::min(1.0, length * 0.5)) : final.from + length * 0.7};
-		splitstates.emplace_back(final.track, editor_track::capture(*final.track));
+		auto const length{tail.to - tail.from};
+		auto const cut{To < tail.to - 1.0 ? std::max(To, tail.from + std::min(1.0, length * 0.5)) : tail.from + length * 0.7};
+		splitstates.emplace_back(tail.track, editor_track::capture(*tail.track));
 		editor_track::chain split;
-		split.tracks = {final.track};
-		split.forward = {final.forward};
+		split.tracks = {tail.track};
+		split.forward = {tail.forward};
 		std::vector<segment_data> pieces(2);
-		pieces[0].points[segment_data::point::start] = point(final.from);
+		pieces[0].points[segment_data::point::start] = point(tail.from);
 		pieces[0].points[segment_data::point::end] = point(cut);
 		pieces[1].points[segment_data::point::start] = point(cut);
-		pieces[1].points[segment_data::point::end] = point(final.to);
+		pieces[1].points[segment_data::point::end] = point(tail.to);
 		splitcreated = editor_track::relay(split, pieces);
 		line = editor_track::find_straight(*line.tracks.front(), state.tolerance);
 		collect();

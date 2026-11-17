@@ -235,6 +235,7 @@ class editor_ui : public ui_layer
 	double m_refusaltime{-100.0};
 	bool m_refusalnotice{false}; // a warning rather than a refusal
 	double m_statustime{-100.0};
+	int m_savequeued{0}; // the frame of a save asked for from a field being typed in
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};

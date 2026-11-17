@@ -17,10 +17,12 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
+#include "simulation/blackboxrecorder.h"
 #include "world/Event.h"
 #include "simulation/simulationtime.h"
 #include "vehicle/Camera.h"
@@ -822,7 +824,8 @@ std::shared_ptr<dictionary_source> TTrain::GetTrainState(dictionary_source const
 	dict->insert("tractionforce", std::abs(mvOccupied->Ft));
 	dict->insert("slipping_wheels", mvOccupied->SlippingWheels);
 	dict->insert("sanding", mvOccupied->SandDose);
-	dict->insert("odometer", mvOccupied->DistCounter);
+	dict->insert("odometer", mvOccupied->DistCounter); // distance run in the session, km
+	dict->insert("odometer_total", mvOccupied->Odometer.km); // the vehicle's odometer, kept between the sessions
 	// electric current data
 	dict->insert("traction_voltage", std::abs(mvPantographUnit->PantographVoltage));
 	dict->insert("voltage", std::abs(mvControlled->EngineVoltage));
@@ -2140,6 +2143,8 @@ void TTrain::OnCommand_trainbrakeoperationtoggle(TTrain *Train, command_data con
 		}
 
 		vehicle->MoverParameters->Hamulec->SetBrakeStatus(vehicle->MoverParameters->Hamulec->GetBrakeStatus() ^ b_dmg);
+		// the brake is the player's now, the wagon inspector won't put it back on its own
+		vehicle->MoverParameters->BrakeCutOutByInspector = false;
 	}
 }
 
@@ -8865,6 +8870,7 @@ bool TTrain::Update(double const Deltatime)
 	command_data commanddata;
 	while (simulation::Commands.pop(commanddata, static_cast<std::size_t>(command_target::vehicle) | id()))
 	{
+		simulation::Blackbox.command(DynamicObject, commanddata.command, commanddata.action, commanddata.param1, commanddata.param2);
 
 		auto lookup = m_commandhandlers.find(commanddata.command);
 		if (lookup != m_commandhandlers.end())
@@ -9385,6 +9391,7 @@ bool TTrain::Update(double const Deltatime)
 
 		btLampkaPrzetw.Turn(mvOccupied->Power110vIsAvailable);
 		btLampkaPrzetwOff.Turn(!mvOccupied->Power110vIsAvailable);
+		btLampkaPrzetwAOff.Turn(!mvControlled->ConverterFlag);
 		btLampkaNadmPrzetw.Turn(Dynamic()->Mechanik ? Dynamic()->Mechanik->IsAnyConverterOverloadRelayOpen : mvControlled->ConvOvldFlag);
 
 		btLampkaOpory.Turn(mvControlled->StLinFlag && mvControlled->ResistorsFlagCheck());
@@ -9532,6 +9539,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaEngineOverheat.Turn(mvControlled->dizel_heat.engine_is_hot);
 		btLampkaMotorBlowers.Turn(mvControlled->MotorBlowers[end::front].is_active && mvControlled->MotorBlowers[end::rear].is_active);
 		btLampkaCoolingFans.Turn(mvControlled->RventRot > 1.0);
+		btLampkaLouvresClosed.Turn(mvControlled->LouvresClosed());
 		btLampkaTempomat.Turn(mvOccupied->SpeedCtrlUnit.IsActive);
 		btLampkaDistanceCounter.Turn(m_distancecounter >= 0.f);
 		// universal devices state indicators
@@ -9568,6 +9576,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaNapNastHam.Turn(false);
 		btLampkaPrzetw.Turn(false);
 		btLampkaPrzetwOff.Turn(false);
+		btLampkaPrzetwAOff.Turn(false);
 		btLampkaNadmPrzetw.Turn(false);
 		btLampkaSprezarka.Turn(false);
 		btLampkaSprezarkaOff.Turn(false);
@@ -9618,6 +9627,7 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaMalfunction.Turn(false);
 		btLampkaMotorBlowers.Turn(false);
 		btLampkaCoolingFans.Turn(false);
+		btLampkaLouvresClosed.Turn(false);
 		btLampkaTempomat.Turn(false);
 		btLampkaDistanceCounter.Turn(false);
 		// universal devices state indicators
@@ -11309,7 +11319,12 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	}
 
 	if (DynamicObject->mdKabina)
+	{
 		DynamicObject->mdKabina->Init(); // obrócenie modelu oraz optymalizacja, również zapisanie binarnego
+		// the vehicle has a cab, a player is in it: the odometer store keeps the vehicle also when its type has no
+		// driver's brake valve (eu07/maszyna#72)
+		DynamicObject->MoverParameters->Odometer.shown = true;
+	}
 
 	set_cab_controls(NewCabNo < 0 ? 2 : NewCabNo);
 
@@ -11755,6 +11770,7 @@ void TTrain::clear_cab_controls()
 	btLampkaPrzetw.Clear();
 	btLampkaPrzetwB.Clear();
 	btLampkaPrzetwBOff.Clear();
+	btLampkaPrzetwAOff.Clear();
 	btLampkaPrzekRozn.Clear();
 	btLampkaPrzekRoznPom.Clear();
 	btLampkaUkrotnienie.Clear();
@@ -11835,6 +11851,7 @@ void TTrain::clear_cab_controls()
 	btLampkaMalfunctionB.Clear();
 	btLampkaMotorBlowers.Clear();
 	btLampkaCoolingFans.Clear();
+	btLampkaLouvresClosed.Clear();
 	btLampkaTempomat.Clear();
 	btLampkaDistanceCounter.Clear();
 
@@ -12188,6 +12205,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-conv_ovld:", btLampkaNadmPrzetw},
 	    {"i-converter:", btLampkaPrzetw},
 	    {"i-converteroff:", btLampkaPrzetwOff},
+	    {"i-converteraoff:", btLampkaPrzetwAOff},
 	    {"i-converterb:", btLampkaPrzetwB},
 	    {"i-converterboff:", btLampkaPrzetwBOff},
 	    {"i-diff_relay:", btLampkaPrzekRozn},
@@ -12215,6 +12233,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-vent_trim:", btLampkaWentZaluzje},
 	    {"i-motorblowers:", btLampkaMotorBlowers},
 	    {"i-coolingfans:", btLampkaCoolingFans},
+	    {"i-louvresclosed:", btLampkaLouvresClosed},
 	    {"i-tempomat:", btLampkaTempomat},
 	    {"i-distancecounter:", btLampkaDistanceCounter},
 	    {"i-trainheating:", btLampkaOgrzewanieSkladu},
@@ -12956,7 +12975,15 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 		// Ra 2014-07: licznik kilometrów
 		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
 		gauge.Load(Parser, DynamicObject);
-		gauge.AssignDouble(&mvControlled->DistCounter);
+		// the counter shows the odometer of the vehicle, kept between the sessions (eu07/maszyna#72). its offset
+		// was the state it started each session with, now it is that only for a vehicle with no known state
+		if (auto const seed{odometer::counter_seed(gauge.offset(), gauge.scale())}; seed.has_value())
+			mvControlled->Odometer.seed(*seed);
+		gauge.offset(0.f);
+		gauge.AssignDouble(&mvControlled->Odometer.km);
+		// the vehicle the counter counts for is one the odometer store keeps, also in the sessions the counter seeds
+		// nothing (its state is a saved one by then) and when it's the motor car of the unit the cab is in
+		mvControlled->Odometer.shown = true;
 	}
 	else if (Label == "shuntmodepower:")
 	{

@@ -610,6 +610,7 @@ void km_tool::read_posts()
 
 void km_tool::render_options()
 {
+	ImGui::TextWrapped("%s", STR_C("One point of a known km is enough: the hectometre posts, the stations and the block signals of the line count from it"));
 	ImGui::TextDisabled("%s", STR_C("The km of a railway line: the points where the km is known, from a post or a document, and where it jumps. The km of the rest go from them along the axis of the line: between the tracks of a double-track one, along the longer track where the tracks run on formations of their own, the shorter one getting an irregular hectometre"));
 	ImGui::Spacing();
 	gesture_rows({{"LMB on a track", "a point of the km there, or the one standing by it"}});

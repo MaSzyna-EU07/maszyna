@@ -74,30 +74,6 @@ bool is_utf8(std::string const &Text, bool &HasExtended)
 	return true;
 }
 
-// counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
-std::string utf8_to_win1250(std::string const &Text)
-{
-	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
-	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
-	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
-	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
-	std::string output;
-	for (std::size_t idx = 0; idx < Text.size();)
-	{
-		auto const lead{static_cast<unsigned char>(Text[idx])};
-		if (lead < 0x80)
-		{
-			output += Text[idx++];
-			continue;
-		}
-		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
-		auto const lookup{charmap.find(Text.substr(idx, length))};
-		output += (lookup != charmap.end() ? lookup->second : '?');
-		idx += length;
-	}
-	return output;
-}
-
 // reads template File from the file at specified location. runs in the background as well, so it leaves the messages to
 // the callers
 bool read_file(std::filesystem::path const &Path, std::string const &File, template_text &Text)
@@ -252,6 +228,88 @@ std::vector<std::string> tokenize(std::string const &Text)
 	return tokens;
 }
 
+// a name with its event, in the order written: a value that isn't one is left out
+void read_pairs(YAML::Node const &Map, std::vector<std::pair<std::string, std::string>> &Pairs)
+{
+	if (false == Map.IsDefined() || false == Map.IsMap())
+		return;
+	for (auto const &entry : Map)
+	{
+		auto const name{entry.first.as<std::string>("")};
+		auto const called{entry.second.IsScalar() ? entry.second.as<std::string>("") : std::string{}};
+		if (false == name.empty() && false == called.empty())
+			Pairs.emplace_back(name, called);
+	}
+}
+
+// the drive of a switch, as its description gives it
+void read_switch(YAML::Node const &Drive, include_info &Info)
+{
+	if (false == Drive.IsDefined() || false == Drive.IsMap())
+		return;
+	Info.switch_hand = Drive["hand"].as<std::string>("");
+	Info.switch_drive = Drive["drive"].as<std::string>("");
+	Info.switch_default = Drive["default"].as<bool>(false);
+	Info.switch_height = Drive["height"].as<double>(0.0);
+}
+
+// what a signal is, with the events of its aspects and of the speeds it repeats
+void read_signal(YAML::Node const &Signal, include_info &Info)
+{
+	if (false == Signal.IsDefined() || false == Signal.IsMap())
+		return;
+	Info.signal_kind = Signal["kind"].as<std::string>("");
+	Info.signal_mount = Signal["mount"].as<std::string>("");
+	Info.signal_lamps = Signal["lamps"].as<std::string>("");
+	Info.signal_lean = Signal["lean"].as<std::string>("");
+	Info.signal_read = Signal["read"].as<std::string>("");
+	Info.signal_arms = Signal["arms"].as<int>(0);
+	Info.signal_height = Signal["height"].as<double>(0.0);
+	if (Signal["depth"].IsDefined())
+		Info.signal_depth = Signal["depth"].as<double>(0.0);
+	read_pairs(Signal["aspects"], Info.signal_aspects);
+	read_pairs(Signal["repeats"], Info.signal_repeats);
+}
+
+// an indicator of a signal, with the events it is shown by
+void read_indicator(YAML::Node const &Indicator, include_info &Info)
+{
+	if (false == Indicator.IsDefined() || false == Indicator.IsMap())
+		return;
+	Info.indicator_sign = Indicator["sign"].as<std::string>("");
+	Info.indicator_place = Indicator["place"].as<std::string>("");
+	read_pairs(Indicator["events"], Info.indicator_events);
+}
+
+// the size of a turntable and the places it stops at
+void read_turntable(YAML::Node const &Table, include_info &Info)
+{
+	if (false == Table.IsDefined() || false == Table.IsMap())
+		return;
+	Info.turntable_length = Table["length"].as<double>(0.0);
+	Info.turntable_angles = Table["angles"].as<int>(0);
+	Info.turntable_positions = Table["positions"].as<int>(0);
+}
+
+// the parameters by their numbers, an entry with no number left out
+void read_parameters(YAML::Node const &Parameters, include_info &Info)
+{
+	if (false == Parameters.IsDefined() || false == Parameters.IsSequence())
+		return;
+	for (auto const &entry : Parameters)
+	{
+		auto const id{entry.IsMap() ? entry["id"].as<int>(0) : 0};
+		if (id <= 0)
+		{
+			continue;
+		}
+		auto &parameter{Info.parameter(id)};
+		parameter.role = entry["role"].as<std::string>("free");
+		parameter.label = entry["label"].as<std::string>("");
+		parameter.value = entry["default"].as<std::string>("");
+	}
+}
+
 // reads description held by specified template text
 bool parse(template_text const &Text, include_info &Info, std::string &Error)
 {
@@ -272,42 +330,11 @@ bool parse(template_text const &Text, include_info &Info, std::string &Error)
 		Info.name = document["name"].as<std::string>("");
 		Info.category = document["category"].as<std::string>("");
 		Info.description = document["description"].as<std::string>("");
-		if (auto const drive{document["switch"]}; drive.IsDefined() && drive.IsMap())
-		{
-			Info.switch_hand = drive["hand"].as<std::string>("");
-			Info.switch_drive = drive["drive"].as<std::string>("");
-			Info.switch_default = drive["default"].as<bool>(false);
-			Info.switch_height = drive["height"].as<double>(0.0);
-		}
-		if (auto const signal{document["signal"]}; signal.IsDefined() && signal.IsMap())
-		{
-			Info.signal_kind = signal["kind"].as<std::string>("");
-			Info.signal_mount = signal["mount"].as<std::string>("");
-			Info.signal_lamps = signal["lamps"].as<std::string>("");
-			Info.signal_lean = signal["lean"].as<std::string>("");
-			Info.signal_read = signal["read"].as<std::string>("");
-		}
-		if (auto const table{document["turntable"]}; table.IsDefined() && table.IsMap())
-		{
-			Info.turntable_length = table["length"].as<double>(0.0);
-			Info.turntable_angles = table["angles"].as<int>(0);
-			Info.turntable_positions = table["positions"].as<int>(0);
-		}
-		if (auto const parameters{document["params"]}; parameters.IsDefined() && parameters.IsSequence())
-		{
-			for (auto const &entry : parameters)
-			{
-				auto const id{entry.IsMap() ? entry["id"].as<int>(0) : 0};
-				if (id <= 0)
-				{
-					continue;
-				}
-				auto &parameter{Info.parameter(id)};
-				parameter.role = entry["role"].as<std::string>("free");
-				parameter.label = entry["label"].as<std::string>("");
-				parameter.value = entry["default"].as<std::string>("");
-			}
-		}
+		read_switch(document["switch"], Info);
+		read_signal(document["signal"], Info);
+		read_indicator(document["indicator"], Info);
+		read_turntable(document["turntable"], Info);
+		read_parameters(document["params"], Info);
 	}
 	catch (YAML::Exception const &exception)
 	{
@@ -351,7 +378,7 @@ include_parameter &include_info::parameter(int const Id)
 namespace editor_includes
 {
 
-std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text"};
+std::vector<std::string> const roles{"free", "name", "pos.x", "pos.y", "pos.z", "rot.x", "rot.y", "rot.z", "track", "memcell", "event", "model", "texture", "number", "text", "link"};
 
 bool load(std::string const &File, include_info &Info, std::string &Error)
 {
@@ -499,6 +526,26 @@ int parameter_count(std::string const &File)
 	template_text text;
 	std::string error;
 	return read_template(File, text, error) ? count_parameters(text) : 0;
+}
+
+bool event_names(std::string const &File, std::vector<std::string> &Names)
+{
+	Names.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx + 1 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] == "event" && std::find(Names.begin(), Names.end(), tokens[idx + 1]) == Names.end())
+		{
+			Names.push_back(tokens[idx + 1]);
+		}
+	}
+	return true;
 }
 
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds)

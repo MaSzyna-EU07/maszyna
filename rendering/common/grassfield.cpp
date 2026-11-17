@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Timer.h"
 
+#include <algorithm>
+
 namespace gfx
 {
 
@@ -246,6 +248,7 @@ bool grass_field::prepare(glm::dvec3 const &Camera, std::function<bool(scene::bo
 					draw.share = share;
 					draw.dry = dry;
 					draw.first = m_tiledraws.size();
+					draw.nearest = distance;
 					m_chunkdraws.push_back(draw);
 				}
 				// fewer segments further away
@@ -258,11 +261,20 @@ bool grass_field::prepare(glm::dvec3 const &Camera, std::function<bool(scene::bo
 				draw.part = glm::vec4{fill, static_cast<float>(segments), seedx, seedz};
 				draw.count = count;
 				draw.segments = segments;
+				draw.distance = distance;
 				m_tiledraws.push_back(draw);
 				++m_chunkdraws.back().count;
+				m_chunkdraws.back().nearest = std::min(m_chunkdraws.back().nearest, distance);
 				m_triangles += static_cast<std::size_t>(count) * (segments * 2 - 1);
 			}
 	}
+	// from the nearest: the blades in front are drawn first, and those they hide fail the depth test before they're shaded
+	for (auto const &chunk : m_chunkdraws)
+	{
+		auto const first{m_tiledraws.begin() + static_cast<std::ptrdiff_t>(chunk.first)};
+		std::ranges::sort(first, first + static_cast<std::ptrdiff_t>(chunk.count), {}, &tile_draw::distance);
+	}
+	std::ranges::sort(m_chunkdraws, {}, &chunk_draw::nearest);
 	return true;
 }
 

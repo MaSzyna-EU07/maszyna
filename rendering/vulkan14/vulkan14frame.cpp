@@ -2819,10 +2819,6 @@ void vulkan14_renderer::render_grass(glm::mat4 const &Future)
 	auto const cullface{draw.cullface};
 	draw.cullface = false;
 	apply_draw_state();
-	if (draw.set_dirty)
-	{
-		bind_pass_set();
-	}
 	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
 	auto const &frame{grass.frame()};
 	auto const &tiles{grass.tile_draws()};
@@ -2839,6 +2835,12 @@ void vulkan14_renderer::render_grass(glm::mat4 const &Future)
 		if (block == ~0u)
 		{
 			break;
+		}
+		// the block may have opened a new window of the blocks, which the pass set is bound with: without binding it again the
+		// chunk (and those after it) would read the blocks of other draws, and the grass would flicker
+		if (draw.set_dirty)
+		{
+			bind_pass_set();
 		}
 		std::array<VkDescriptorImageInfo, gl::MAX_TEXTURES> descriptors;
 		for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)

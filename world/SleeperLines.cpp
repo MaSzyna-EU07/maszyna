@@ -71,10 +71,60 @@ void find_crossings( sampled_path const &Path, glm::dvec3 const &Point, glm::dve
             }
             auto const unit { glm::normalize( direction ) };
             auto const at { glm::mix( other.distances[ index ], other.distances[ index + 1 ], share ) };
-            Crossings.push_back( { &other, point, unit, at, across, std::abs( glm::dot( unit, Along ) ), false } );
+            Crossings.emplace_back( &other, point, unit, at, across, std::abs( glm::dot( unit, Along ) ), false );
         }
     }
 }
+
+namespace {
+
+// a path whose rails the line of the beam takes, by where it crosses the line
+struct carried_path {
+    double across { 0.0 };
+    double half { 0.0 };
+    double rails { 0.0 };
+    double sine { 0.0 };
+};
+
+// whether the plain sleepers of the path crossing the line would meet the sleepers of a path the line takes already
+bool meets( crossing const &Crossing, std::vector<carried_path> const &Taken, bool const Tight ) {
+
+    return std::ranges::any_of( Taken, [ &Crossing, Tight ]( carried_path const &Carried ) {
+        auto const reach { Tight ? Crossing.path->rails + Carried.rails + 2.0 * beam_overhang_min + end_gap : Crossing.path->half + Carried.half + end_gap };
+        return std::abs( Crossing.across - Carried.across ) * std::min( Crossing.sine, Carried.sine ) < reach; } );
+}
+
+// whether the line takes the rails of the crossing: at a narrow angle, meeting a path it takes, coplanar or too close to be parted
+bool takes( sampled_path const &Path, glm::dvec2 const &Forward, crossing const &Crossing, std::vector<carried_path> const &Taken, bool const Tight, bool const Count ) {
+
+    if( Crossing.carried || Crossing.sine < crossing_sine_min || angle_between( Crossing.direction, Forward ) >= grid_angle ) {
+        return false;
+    }
+    if( false == meets( Crossing, Taken, Tight ) ) {
+        return false;
+    }
+    if( off_plane( *Crossing.path, Crossing.point, Path ) > coplanar_tolerance ) {
+        if( std::abs( Crossing.across ) * Crossing.sine >= shared_spacing( *Crossing.path, Path ) ) {
+            return false;
+        }
+        // too close to the path to be parted, out of the plane of its rails
+        if( Count ) {
+            ++faults().offplane;
+        }
+    }
+    return true;
+}
+
+// whether the rails of the crossing lie past those of a track the line could take but doesn't, on the same side of the path
+bool blocked( crossing const &Crossing, std::vector<crossing> const &Crossings, glm::dvec2 const &Forward ) {
+
+    auto const blocks = [ &Forward ]( crossing const &Other ) {
+        return false == Other.carried && Other.sine >= crossing_sine_min && angle_between( Other.direction, Forward ) < grid_angle; };
+    return std::ranges::any_of( Crossings, [ &blocks, &Crossing ]( crossing const &Other ) {
+        return blocks( Other ) && Other.across * Crossing.across > 0.0 && std::abs( Other.across ) < std::abs( Crossing.across ); } );
+}
+
+} // namespace
 
 // the paths whose rails the line of the beam through the point of the path takes, marked among the paths of its cluster crossing
 // the line: those whose plain sleepers would meet the sleepers of the path or of any the line takes already, at a narrow enough
@@ -83,50 +133,26 @@ void find_crossings( sampled_path const &Path, glm::dvec3 const &Point, glm::dve
 // close that their sleepers couldn't be laid apart even cut short
 void carry( sampled_path const &Path, glm::dvec2 const &Forward, glm::dvec2 const &Along, std::vector<crossing> &Crossings, bool const Tight, bool const Count ) {
 
-    struct carried_path {
-        double across;
-        double half;
-        double rails;
-        double sine;
-    };
     std::vector<carried_path> carried { { 0.0, Path.half, Path.rails, std::max( crossing_sine_min, std::abs( glm::dot( Forward, Along ) ) ) } };
     for( auto added { true }; added; ) {
         added = false;
         for( auto &crossing : Crossings ) {
-            if( crossing.carried || crossing.sine < crossing_sine_min || angle_between( crossing.direction, Forward ) >= grid_angle ) {
+            if( false == takes( Path, Forward, crossing, carried, Tight, Count ) ) {
                 continue;
-            }
-            auto const close { std::any_of( carried.begin(), carried.end(), [&]( carried_path const &Carried ) {
-                auto const reach { Tight ? crossing.path->rails + Carried.rails + 2.0 * overhang_min + end_gap : crossing.path->half + Carried.half + end_gap };
-                return std::abs( crossing.across - Carried.across ) * std::min( crossing.sine, Carried.sine ) < reach; } ) };
-            if( false == close ) {
-                continue;
-            }
-            if( off_plane( *crossing.path, crossing.point, Path ) > coplanar_tolerance ) {
-                if( std::abs( crossing.across ) * crossing.sine >= shared_spacing( *crossing.path, Path ) ) {
-                    continue;
-                }
-                // too close to the path to be parted, out of the plane of its rails
-                if( Count ) {
-                    ++faults().offplane;
-                }
             }
             crossing.carried = true;
             added = true;
-            carried.push_back( { crossing.across, crossing.path->half, crossing.path->rails, crossing.sine } );
+            carried.emplace_back( crossing.across, crossing.path->half, crossing.path->rails, crossing.sine );
         }
     }
     // the line doesn't carry the rails of a track past those of one it doesn't, that one lays its own beams there
-    auto const blocks = [&]( crossing const &Other ) {
-        return false == Other.carried && Other.sine >= crossing_sine_min && angle_between( Other.direction, Forward ) < grid_angle; };
     for( auto demoted { true }; demoted; ) {
         demoted = false;
         for( auto &crossing : Crossings ) {
             if( false == crossing.carried ) {
                 continue;
             }
-            if( std::any_of( Crossings.begin(), Crossings.end(), [&]( struct crossing const &Other ) {
-                    return blocks( Other ) && Other.across * crossing.across > 0.0 && std::abs( Other.across ) < std::abs( crossing.across ); } ) ) {
+            if( blocked( crossing, Crossings, Forward ) ) {
                 crossing.carried = false;
                 demoted = true;
             }
@@ -136,31 +162,55 @@ void carry( sampled_path const &Path, glm::dvec2 const &Forward, glm::dvec2 cons
 
 band band_of( sampled_path const &Path, double const Across, double const Sine, glm::dvec2 const &Direction, bool const Carried ) {
 
-    return { Across - Path.rails / Sine, Across + Path.rails / Sine, overhang / Sine, overhang_min / Sine, Carried, &Path, Across, Direction, Sine };
+    return { Across - Path.rails / Sine, Across + Path.rails / Sine, beam_overhang / Sine, beam_overhang_min / Sine, Carried, &Path, Across, Direction, Sine };
 }
+
+namespace {
+
+// the end of the timber kept clear of the rails of the next track the line doesn't carry, and of the sleepers under them
+void end_short( piece &Current, band const &Next, double const End, double const Endoverhang, double const Endoverhangmin ) {
+
+    auto const kept { std::max( 0.0, std::clamp( Next.from - Next.overhang - End - end_gap, std::min( Endoverhangmin, Next.from - End - end_gap ), Endoverhang ) ) };
+    Current.clipped = Current.clipped || kept < Endoverhang;
+    if( kept < Endoverhangmin ) {
+        ++faults().clipped;
+    }
+    Current.to = End + kept;
+    Current.coreto = End;
+}
+
+// the overhang the timber starts with, clear of the rails of the last track the line doesn't carry and of the sleepers under them
+double start_short( piece &Current, band const &Next, double const Fencerails, double const Fencereach ) {
+
+    auto const startoverhang { std::max( 0.0, std::clamp( Next.from - Fencereach - end_gap, std::min( Next.overhangmin, Next.from - Fencerails - end_gap ), Next.overhang ) ) };
+    Current.clipped = startoverhang < Next.overhang;
+    if( startoverhang < Next.overhangmin ) {
+        ++faults().clipped;
+    }
+    return startoverhang;
+}
+
+} // namespace
 
 // the beams on the line through the point: one timber under all the rails it carries, the ends keeping clear of the rails of the
 // tracks the line doesn't carry and of the sleepers under them. the timber is parted between the rails of two tracks where each
 // keeps at least its least overhang past its rails, unless it's whole: about a crossing of the tracks, as in a scissors crossing
 void emit_line( std::vector<band> &Bands, std::vector<piece> &Pieces, bool const Whole ) {
 
-    std::sort( Bands.begin(), Bands.end(), []( band const &Left, band const &Right ) { return Left.from < Right.from; } );
+    std::ranges::sort( Bands, []( band const &Left, band const &Right ) { return Left.from < Right.from; } );
     auto open { false };
     piece current;
-    auto end { 0.0 }, endoverhang { 0.0 }, endoverhangmin { 0.0 };
+    auto end { 0.0 };
+    auto endoverhang { 0.0 };
+    auto endoverhangmin { 0.0 };
     // the far side of the last rails not carried, and of the sleepers under them
     auto fenced { false };
-    auto fencerails { 0.0 }, fencereach { 0.0 };
+    auto fencerails { 0.0 };
+    auto fencereach { 0.0 };
     for( auto const &next : Bands ) {
         if( false == next.carried ) {
             if( open ) {
-                auto const kept { std::max( 0.0, std::clamp( next.from - next.overhang - end - end_gap, std::min( endoverhangmin, next.from - end - end_gap ), endoverhang ) ) };
-                current.clipped = current.clipped || kept < endoverhang;
-                if( kept < endoverhangmin ) {
-                    ++faults().clipped;
-                }
-                current.to = end + kept;
-                current.coreto = end;
+                end_short( current, next, end, endoverhang, endoverhangmin );
                 Pieces.push_back( current );
                 open = false;
             }
@@ -175,11 +225,7 @@ void emit_line( std::vector<band> &Bands, std::vector<piece> &Pieces, bool const
             current = piece();
             auto startoverhang { next.overhang };
             if( fenced ) {
-                startoverhang = std::max( 0.0, std::clamp( next.from - fencereach - end_gap, std::min( next.overhangmin, next.from - fencerails - end_gap ), next.overhang ) );
-                current.clipped = startoverhang < next.overhang;
-                if( startoverhang < next.overhangmin ) {
-                    ++faults().clipped;
-                }
+                startoverhang = start_short( current, next, fencerails, fencereach );
             }
             current.from = next.from - startoverhang;
             current.corefrom = next.from;

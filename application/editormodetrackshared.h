@@ -333,17 +333,4 @@ inline void compound_from(editor_track::curve const &Curve, alignment::vertex &V
 		Vertex.arcs.push_back({value(Curve.arcs[i].radius), value(Curve.arcs[i].transition), Curve.arcs[i].turn});
 }
 
-inline char const *type_name(TTrack const &Track)
-{
-	switch (Track.eType)
-	{
-	case tt_Normal: return "normal";
-	case tt_Switch: return "switch";
-	case tt_Cross: return "cross";
-	case tt_Table: return "turntable";
-	case tt_Tributary: return "tributary";
-	default: return "unknown type";
-	}
-}
-
 } // namespace track_mode

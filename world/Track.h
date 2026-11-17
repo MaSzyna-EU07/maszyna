@@ -217,10 +217,10 @@ public:
 
     std::vector<segment_data> m_paths; // source data for owned paths
     bool m_editorremoved { false };
+    bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
     std::vector<TTrack *> m_crossings; // tracks whose rails cross the rails of this one, found when its geometry was made
     track_rails::rail_plan m_railplans[ 2 ][ 2 ]; // the cuts of its rails, by path and right side, as its geometry was made
     std::vector<glm::dvec2> m_railguards[ 2 ][ 2 ]; // the guard rails inside its rails at the crossings at wide angles, from and to along the path, as its geometry was made
-    bool m_tributary { false }; // loaded as a tributary: a river of its first path, the second one kept to be written back
     scene::basic_node *m_road { nullptr }; // road or road junction which generated this path. such path is one-way, and isn't saved nor edited on its own
     std::array<float, 3> m_routeweights { 0.f, 0.f, 0.f }; // odds of each route through a crossroads being picked by a driver, by the number of the route. all zero: even odds
 	int iterate_stamp = 0;
@@ -323,7 +323,6 @@ public:
     inline TTrack *CurrentPrev() const {
         return trPrev; };
     TTrack *Connected(int s, double &d, int const Path = -1) const; // Path: of a switch, the one to leave by whichever way it is set
-    double trailing_point( int const Path ) const; // where along the path the wheels coming from the frog end push the blades over
     int nose_set() const; // the path the movable nose of the frog lies for, following the blades
     double nose_throw() const; // how far the movable nose of the frog went over to the second path, following the blades
     material_handle rail_material( int const Path ) const;
@@ -331,7 +330,7 @@ public:
     bool SetConnections(int i);
     // joins the free ends of the switch to the free ends of other switches in the same points, which the plain tracks joined to switches
     // leave out: a switch right after another one, at the end of either path of it, two facing at their starts or meeting at their ends
-    void join_switches();
+    std::vector<TTrack const *> join_switches(); // the switches the free ends were joined to, one for each joint
     bool Switch(int i, float const t = -1.f, float const d = -1.f);
     bool SwitchForced(int i, TDynamicObject *o);
     int CrossSegment(int from, int into);
@@ -347,13 +346,15 @@ public:
     int RouteDraw() const;
     void Load(cParser *parser, glm::dvec3 const &pOrigin);
     void init_segments( bool const Initial );
+    // whether a path is drawn as a straight, told by its first control vector alone
+    static bool straightened( glm::dvec3 const &P1, glm::dvec3 const &Cp1, glm::dvec3 const &P2 );
     track_rails::switch_frog frog() const;
     track_rails::switch_blade const &blade( int const Path ) const;
     double blades_throw() const; // how far the tips of the blades move over between the two paths
     std::vector<track_rails::rail_crossing> rail_crossings( bool const Joined = true );
     track_rails::rail_size rail_dimensions() const;
     // the check rails beside the rails of each path, kept clear of the blades and the rails of other paths running inside them
-    track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings );
+    track_rails::check_rail_set check_rails( std::vector<track_rails::rail_crossing> const &Crossings ) const;
     // Carve: the parts of the rails at crossings carved out of what lies around them, false: only their design
     track_rails::rail_layout plan_rails( bool const Crossings, bool const Carve = true );
     void update_location();
@@ -443,7 +444,7 @@ private:
     using profiles_map = std::unordered_map<std::string, int>;
 // methods
     // radius() subclass details, calculates node's bounding radius
-    float radius_();
+    float radius_() const override;
     // serialize() subclass details, sends content of the subclass to provided stream
     void serialize_( std::ostream &Output ) const;
     // deserialize() subclass details, restores content of the subclass from provided stream
@@ -462,7 +463,7 @@ private:
     float texture_length( material_handle const Material );
     // creates profile for a part of current path
     void create_switch_trackbed( gfx::vertex_array &Output );
-    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr );
+    void create_track_rail_profile( gfx::vertex_array &Right, gfx::vertex_array &Left, gfx::vertex_array const *Shape = nullptr ) const;
     void create_track_blade_profile( gfx::vertex_array &Right, gfx::vertex_array &Left );
     void profile_rolls( float &Roll1, float &Roll2 ) const;
     void create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previous, TTrack const *Next );
@@ -505,14 +506,14 @@ private:
         gfx::geometrybank_handle bank;
         track_rails::rail_size size;
         float halfwidth { 0.f };
-        gfx::vertex_array checkshapes[ 2 ];
-        gfx::vertex_array plates[ 2 ];
-        gfx::vertex_array fillers[ 2 ];
+        std::array<gfx::vertex_array, 2> checkshapes;
+        std::array<gfx::vertex_array, 2> plates;
+        std::array<gfx::vertex_array, 2> fillers;
         float platetexture { 0.f };
     };
-    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank );
+    rail_drawing make_rail_drawing( gfx::geometrybank_handle const &Bank ) const;
     // a rail along a path from a distance on, in parts where other rails cross it, and the check rails beside it. false: no crossing, the rail is laid whole as before
-    bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, int const Path, gfx::vertex_array const &Profile, int const Side, float const Texturelength, double const From, bool const Openstart, bool const Openend, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
+    bool lay_rail( track_rails::rail_layout const &Layout, rail_drawing const &Drawing, gfx::vertex_array const &Profile, track_rails::rail_course const &Course, geometryhandle_sequence &Geometry, geometryhandle_sequence &Cuts );
     class rail_layer;
     class rail_planner;
     int blade_side( int const Path ) const;

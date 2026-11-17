@@ -265,6 +265,9 @@ class scene_walk
 	// the runs written to the instance buffer of the frame, each as the modelview of its origin times its transforms
 	virtual void walk_timbers_expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges) {}
 	virtual void walk_cull_face(bool const Enabled) = 0;
+	// a decal (shapenode_data::decal) drawn pulled towards the camera in the depth buffer, over the surface it lies on; on top of the
+	// bias the pass draws everything with. not in the shadows, which it casts none of
+	virtual void walk_decal(bool const Enabled) {}
 	// the glare of a lamp: drawn without the depth test, added to what is there; drawn only where the point of the light was
 	// seen (walk_light_query() of the last frame, when the backend has it)
 	virtual void walk_glare(bool const Enabled) = 0;

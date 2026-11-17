@@ -22,12 +22,27 @@ http://mozilla.org/MPL/2.0/.
 #include <utility>
 #include <vector>
 
-// the signalling of a station (SRK): the station found from a switch of it, its schematic, its name and code
+// the joints of the track circuits a station has by hand, as a step of the history keeps them
+struct srk_hand_joints
+{
+	TTrack const *anchor{nullptr}; // the switch the record of the station is found by
+	std::vector<glm::dvec3> added;
+	std::vector<glm::dvec3> removed;
+};
+
+// the signalling of a station (SRK): the station found from a switch of it, its schematic, its name and code. Three tools of the
+// toolbar share it, each showing a part of it
 class srk_tool final : public editor_tool
 {
   public:
-	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals)
-	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}
+	enum class part
+	{
+		station, // its name, code, line and km, the numbers of the switches, the track circuits
+		signals, // the signals of the station placed at once, and what they lack
+		lines // the block of the lines out of it
+	};
+	srk_tool(editor_selection &Selection, editor_view &View, editor_history &History, editor_templates &Templates, editor_signals &Signals, editor_guide &Guide)
+	    : m_selection{Selection}, m_view{View}, m_history{History}, m_templates{Templates}, m_signals{Signals}, m_guide{Guide}
 	{
 	}
 	void update() override;
@@ -36,15 +51,31 @@ class srk_tool final : public editor_tool
 	void render_windows() override;
 	void forget(scene::basic_node const *Node) override;
 	editor_selftest_result selftest(std::string const &Command, std::istringstream &Words) override;
-	void set_open(bool const Open) { m_open = Open; }
+	void set_open(bool const Open, part const Part)
+	{
+		m_open = Open;
+		if (Open)
+			m_part = Part;
+	}
 	// the block boundaries drawn by hand on the lines out of the open station
-	bool drawing() const { return m_open && m_drawing && m_layout.has_value(); }
+	bool drawing() const { return m_open && m_part == part::lines && m_drawing && m_layout.has_value(); }
 	// what a click at the point of a track does while the block boundaries are drawn, for the label at the mouse; Valid: it does
 	// something
 	std::string boundary_hover(glm::dvec3 const &Point, bool &Valid);
 	void boundary_click();
 	// the stations described go to the files of their layers, as "//$s" lines
 	void store();
+	// what the last action of the tool came to, once, to be told by the mouse: Refused when it did nothing for want of something
+	bool told(std::string &Status, bool &Refused);
+	// the joints of the track circuits of the open station put, moved and taken away by hand in the scenery
+	bool editing_joints() const { return m_open && m_part == part::station && m_joint_editing && m_layout.has_value(); }
+	// what a click at the point does while the joints are edited, for the label at the mouse; Valid: it does something
+	std::string joint_hover(glm::dvec3 const &Point, bool &Valid);
+	void joint_click();
+	// the joints a station had by hand before the edit just made, for the step of the history it goes into; none once taken
+	std::optional<srk_hand_joints> take_joint_change();
+	// the joints of the station set back as the step of the history had them; the ones it had, for the opposite step
+	srk_hand_joints restore_joints(srk_hand_joints const &Joints);
 
   private:
 	editor_selection &m_selection;
@@ -52,6 +83,7 @@ class srk_tool final : public editor_tool
 	editor_history &m_history;
 	editor_templates &m_templates;
 	editor_signals &m_signals;
+	editor_guide &m_guide;
 	// the block of a line out of the station
 	enum class block_kind
 	{
@@ -81,6 +113,8 @@ class srk_tool final : public editor_tool
 		int braking{0}; // m, the braking distance of the line set by hand, 0: after its speed
 		std::map<std::string, block_kind> blocks; // of the lines by their entry signals, as set by hand
 		std::map<std::string, bool> ways; // the automatic block of the lines by their entry signals both ways, as set by hand
+		std::vector<glm::dvec3> joints_added; // the joints of the track circuits put by hand, on plain tracks
+		std::vector<glm::dvec3> joints_removed; // where the planned joints were taken away by hand
 	};
 	// the schematic: the chainage across, the offsets upwards, exaggerated
 	struct view
@@ -91,6 +125,7 @@ class srk_tool final : public editor_tool
 		float exaggeration{0.0f}; // 0: fit at the next draw
 	};
 	bool m_open{false};
+	part m_part{part::station};
 	bool m_strip{true}; // the schematic shown, off for the screenshots of the self-tests
 	bool m_loaded{false};
 	bool m_changed{false};
@@ -164,6 +199,8 @@ class srk_tool final : public editor_tool
 		glm::dvec2 travel{0.0, 1.0};
 		std::string file; // of its template
 		std::string lamps;
+		int arms{0}; // of a semaphore described with its arms: its aspects checked by name, not by lights
+		std::vector<std::string> aspect_names; // of its template, from its description
 		std::vector<int> own; // the speeds of its template
 		bool station{false}; // stands by the station, not out on a line
 		std::vector<station::route> routes;
@@ -173,6 +210,8 @@ class srk_tool final : public editor_tool
 		bool white{false}; // it must give the substitute signal
 		int shortened{0}; // km/h, it slows the trains to, the next signal nearer than the braking distance: Ie-4 § 8 ust. 5
 		bool indicator{false}; // a W21 "14" beside it, for 140 km/h so
+		bool told{false}; // a shaped warning disc before a semaphore described: the events it repeats checked
+		bool unsaid{false}; // of those, its template doesn't say what it repeats: the one described offered, the fitting leaves it be
 		bool fits{true}; // its template shows all of it
 		bool more{false}; // its template has more than it needs
 		std::string fit; // the template that fits best, empty for none
@@ -286,6 +325,61 @@ class srk_tool final : public editor_tool
 		bool remove{false}; // the block signals standing there taken away, else placed
 	};
 	std::string m_status;
+	bool m_joint_editing{false}; // the joints of the track circuits edited by hand
+	std::optional<glm::dvec3> m_joint_held; // a joint picked up, to be put elsewhere or taken away
+	// what a click does while the joints are edited
+	struct joint_target
+	{
+		enum class kind
+		{
+			none,
+			add, // a new joint at the point
+			pick, // the joint there picked up
+			move, // the joint held put at the point
+			remove, // the joint held taken away
+			drop // the joint held let go, left as it stands
+		};
+		kind what{kind::none};
+		glm::dvec3 point{0.0};
+	};
+	joint_target m_joint_target;
+	std::optional<srk_hand_joints> m_joint_change;
+	// a joint of the track circuits put by hand near the point: on the plain station track nearest, none with Why
+	std::optional<station::joint> hand_joint(glm::dvec3 const &Point, std::string &Why) const;
+	// the joint of the circuits standing nearest the point, within reach
+	std::optional<glm::dvec3> joint_near(glm::dvec3 const &Point) const;
+	// the joint parts the station from a line out of it: it stays
+	bool joint_outer(glm::dvec3 const &Joint) const;
+	// the joints of the open station changed by hand, the circuits set again so; one step of the history
+	void change_joints(std::optional<glm::dvec3> const &Remove, std::optional<glm::dvec3> const &Add);
+	// the hand joints of the open station changed from Before: the circuits set again, the change one step of the history with them
+	// Forget: they were all forgotten, and the ones that changed nothing go too
+	void joints_changed(srk_hand_joints const &Before, bool const Forget = false);
+	// the track circuits of the open station set, known again after each change and for its code
+	bool circuits_set();
+	std::size_t m_circuits_revision{static_cast<std::size_t>(-1)};
+	std::string m_circuits_stem;
+	bool m_circuits_known{false};
+	bool m_status_refused{false}; // the status tells why an action did nothing
+	std::size_t m_status_count{0}; // of the actions begun, so the same status of the next one is told again
+	std::size_t m_told_count{0};
+	std::string m_told;
+	// an action begun: its status in place of the last one
+	void begin_status()
+	{
+		m_status.clear();
+		m_status_refused = false;
+		++m_status_count;
+	}
+	// the action does nothing: why
+	void refuse(std::string const &Why)
+	{
+		m_status = Why;
+		m_status_refused = true;
+	}
+	// the renames Number the switches was clicked for while events aim at the switches by their old names: a second click with
+	// the same ones renames anyway
+	std::string m_numbering_confirm;
 
 	void load();
 	void open(TTrack &Track);
@@ -293,6 +387,13 @@ class srk_tool final : public editor_tool
 	record &record_of_open();
 	std::string title() const;
 	void render_found();
+	// the station as the Station tool set it, for the other tools; Line: the line and the km needed
+	void render_summary(bool const Line);
+	void render_station();
+	void render_switches();
+	void render_station_signals();
+	void render_line_block();
+	void render_check();
 	void render_canvas(float const Height);
 	void fit_view(float const Width, float const Height);
 	void find_all();
@@ -318,6 +419,9 @@ class srk_tool final : public editor_tool
 	// the lights of the signals checked against the routes of their trains and the places of the signals they tell of
 	void check_heads(std::vector<standing_signal> const &Standing);
 	void render_heads();
+	// of a signal in the list: in its tooltip how its template fits, in its row its aspects or its lights
+	static void render_head_fit(head_check const &Head);
+	static void render_head_aspects(head_check const &Head);
 	// the signals given the templates whose lights fit their routes; one step of the history
 	void fit_heads();
 	// the lengths of the station tracks as the list of the tracks gives them, the useful ones each way

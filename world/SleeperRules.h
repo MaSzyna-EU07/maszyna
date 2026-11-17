@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 
 // the rules the sleepers and timbers are laid by, and the record of where the layout had to break them
@@ -24,8 +25,8 @@ double constexpr rail_reach { 0.1115 };
 double constexpr rail_web { 0.0365 };
 double constexpr rail_head { 0.0735 };
 // how far a beam reaches out past the foot of the rail, 2.6 m sleepers under the standard gauge, and how far at least
-double constexpr overhang { 0.471 };
-double constexpr overhang_min { 0.25 };
+double constexpr beam_overhang { 0.471 };
+double constexpr beam_overhang_min { 0.25 };
 // how far the feet of the rails a timber carries may stand off one plane
 double constexpr coplanar_tolerance { 0.01 };
 // the gap left between the ends of two beams on one line
@@ -104,14 +105,31 @@ std::size_t constexpr cluster_cap { 256 };
 double constexpr timber_turn { 0.0175 }; // a degree
 double constexpr sleeper_turn { 0.06 }; // three and a half degrees
 
-// what was wrong with the beams laid since the counts were taken last
+// what was wrong with the beams laid since the counts were taken last; counted by the thread laying them in the background as well
 struct fault_counts {
-    std::size_t offplane { 0 }; // timbers shared by rails out of one plane, where the tracks run too close to part them
-    std::size_t clipped { 0 }; // beam ends cut shorter than the least overhang, to keep clear of the beams of other tracks
-    std::size_t dropped { 0 }; // beams left out where they'd lie over one laid before
-    double slowest { 0.0 }; // the longest a cluster took to lay, in ms
-    std::size_t biggest { 0 }; // the most tracks in a cluster
+    std::atomic<std::size_t> offplane { 0 }; // timbers shared by rails out of one plane, where the tracks run too close to part them
+    std::atomic<std::size_t> clipped { 0 }; // beam ends cut shorter than the least overhang, to keep clear of the beams of other tracks
+    std::atomic<std::size_t> dropped { 0 }; // beams left out where they'd lie over one laid before
+    std::atomic<double> slowest { 0.0 }; // the longest a cluster took to lay, in ms
+    std::atomic<std::size_t> biggest { 0 }; // the most tracks in a cluster
+
+    void reset() {
+        offplane = 0;
+        clipped = 0;
+        dropped = 0;
+        slowest = 0.0;
+        biggest = 0;
+    }
 };
+
+// the value raised to the given one, where it's lower
+template <typename Type_>
+void raise_to( std::atomic<Type_> &Value, Type_ const Other ) {
+    auto current { Value.load() };
+    while( current < Other && false == Value.compare_exchange_weak( current, Other ) ) {
+        // another thread changed it first: the exchange gave back what it holds now, tried again against that
+    }
+}
 
 inline fault_counts &faults() {
     static fault_counts counts;

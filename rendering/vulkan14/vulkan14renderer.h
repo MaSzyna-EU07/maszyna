@@ -84,6 +84,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	gfx::vertex_array const &Vertices(gfx::geometry_handle const &Geometry) const override;
 	gfx::userdata_array const &UserData(gfx::geometry_handle const &Geometry) const override;
 	int Primitive(gfx::geometry_handle const &Geometry) const override;
+	// the sleepers and timbers are drawn by the walk of the scene (gfx::scene_walk), as in the opengl renderer
+	bool Draws_Timbers() const override { return true; }
 	// materials
 	material_handle Fetch_Material(std::string const &Filename, bool const Loadnow = true) override;
 	material_handle Matte_Material(material_handle const Material) override;
@@ -105,6 +107,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void Bind_Texture(std::size_t const Unit, texture_handle const Texture) override;
 	ITexture &Texture(texture_handle const Texture) override;
 	ITexture const &Texture(texture_handle const Texture) const override;
+	void Unload_Texture(texture_handle const Texture) override;
 	// picking
 	void Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 const)> Callback) override;
 	void Pick_Node_Callback(std::function<void(scene::basic_node *)> Callback) override;
@@ -191,6 +194,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last) override;
 	std::uint32_t walk_instances(glm::mat4 const *Modelviews, std::size_t const Count) override;
 	void walk_cull_face(bool const Enabled) override;
+	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;

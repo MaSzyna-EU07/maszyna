@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "utilities/utilities.h"
 
@@ -73,6 +74,20 @@ double angle_value(std::vector<std::string> const &Values, std::size_t const Ind
 	if (Index < Values.size())
 		std::sscanf(Values[Index].c_str(), "%lf", &value);
 	return value;
+}
+
+// the first line of the file of the keys by the movable noses, which tells it from the files of the scenery made by hand
+char const *const kNoseHeader{"// made by the scenery editor on each save: T and Shift+T by the movable nose throw its switch, as by its drive"};
+
+// true if the file is one of the keys by the movable noses the editor writes
+bool nose_file(std::string const &Path)
+{
+	std::ifstream input{Path, std::ios_base::binary};
+	std::string first;
+	std::getline(input, first);
+	if (false == first.empty() && first.back() == '\r')
+		first.pop_back();
+	return first == kNoseHeader;
 }
 
 } // namespace
@@ -143,21 +158,25 @@ void editor_mode::switch_drives_committed(std::vector<TTrack *> const &Tracks)
 {
 	if (m_infra_suspended)
 		return;
+	// a copy: each directive set below empties the drives kept
+	std::optional<std::map<std::string, switch_drive>> drives;
 	for (auto const *track : Tracks)
 	{
 		if (track == nullptr || track->m_editorremoved || track->eType != tt_Switch)
 			continue;
-		auto const found{find_switch_drive(*track)};
+		if (false == drives.has_value())
+			drives = switch_drives_standing();
+		auto const found{drives->find(drive_file(track->name()))};
 		auto const spot{editor_track::drive_spot_of(*track)};
-		if (false == found.has_value() || false == spot.has_value())
+		if (found == drives->end() || false == spot.has_value())
 			continue;
-		auto const &drive{found->standing};
+		auto const &drive{found->second.standing};
 		auto const &included{scene::Layers.instance(drive.instance)};
 		include_info info;
 		std::string error;
 		if (included.file == nullptr || false == editor_includes::load(*included.file, info, error))
 			continue;
-		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->family].heights[found->index], 0.0} - included.context.offset};
+		auto const local{spot->location + glm::dvec3{0.0, m_switch.drives[found->second.family].heights[found->second.index], 0.0} - included.context.offset};
 		auto values{drive.values};
 		for (auto const &parameter : info.parameters)
 		{
@@ -215,20 +234,43 @@ bool editor_mode::place_switch_drive(TTrack &Switch)
 
 std::optional<editor_mode::switch_drive> editor_mode::find_switch_drive(TTrack const &Switch, bool const Wait)
 {
+	auto const &drives{switch_drives_standing(Wait)};
+	auto const found{drives.find(drive_file(Switch.name()))};
+	if (found == drives.end())
+		return std::nullopt;
+	return found->second;
+}
+
+// each include is read from its scenery file, so the drives of all the switches are read at once: done for each switch, the start of a
+// scenery of a few hundred took a quarter of a minute. Kept for the frame, while no include comes or goes; the first drive of a switch counts
+std::map<std::string, editor_mode::switch_drive> const &editor_mode::switch_drives_standing(bool const Wait)
+{
 	auto const &tool{m_switch};
 	scan_switch_drives(Wait);
+	auto &kept{m_drives_standing};
+	auto const instances{static_cast<std::size_t>(scene::Layers.instance_count())};
+	if (kept.has_value() && kept->frame == ImGui::GetFrameCount() && kept->revision == tool.drives_revision && kept->instances == instances &&
+	    std::none_of(kept->by_switch.begin(), kept->by_switch.end(), [](auto const &Drive) {
+		    auto const &included{scene::Layers.instance(Drive.second.standing.instance)};
+		    return included.removed || included.dead;
+	    }))
+		return kept->by_switch;
 	std::map<std::string, std::pair<int, int>, std::less<>> variants;
 	for (int family = 0; family < static_cast<int>(tool.drives.size()); ++family)
 		for (int index = 0; index < 4; ++index)
 			if (false == tool.drives[family].files[index].empty())
 				variants[drive_file(tool.drives[family].files[index])] = {family, index};
-	auto const name{drive_file(Switch.name())};
-	auto const standing{standing_templates([&](std::string const &File) { return variants.contains(File); })};
-	auto const found{std::find_if(standing.begin(), standing.end(), [&](standing_template const &Standing) { return drive_file(Standing.values[0]) == name; })};
-	if (found == standing.end())
-		return std::nullopt;
-	auto const &[family, index]{variants[found->file]};
-	return switch_drive{*found, family, index};
+	kept.emplace();
+	kept->frame = ImGui::GetFrameCount();
+	kept->revision = tool.drives_revision;
+	kept->instances = instances;
+	for (auto &standing : standing_templates([&](std::string const &File) { return variants.contains(File); }))
+	{
+		auto const &[family, index]{variants[standing.file]};
+		auto name{drive_file(standing.values[0])};
+		kept->by_switch.try_emplace(std::move(name), switch_drive{std::move(standing), family, index});
+	}
+	return kept->by_switch;
 }
 
 void editor_mode::apply_switch_drive_choice(TTrack &Switch)
@@ -395,7 +437,7 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	auto const exists{std::filesystem::exists(path, error)};
 	if (noses == 0 && false == exists)
 		return false;
-	auto const content{"// made by the scenery editor on each save: T and Shift+T by the movable nose throw its switch, as by its drive\r\n" + text.str()};
+	auto const content{std::string{kNoseHeader} + "\r\n" + text.str()};
 	std::string current;
 	{
 		std::ifstream input{path, std::ios_base::binary};
@@ -405,6 +447,21 @@ bool editor_mode::nose_controls(std::vector<std::string> &Rootstatements)
 	{
 		std::ofstream output{path, std::ios_base::binary | std::ios_base::trunc};
 		output << content;
+	}
+	// the keys written for this scenery under another name, the file it was copied from, give way to these: with both included
+	// each key would stand twice. their files stay on the disk, for the scenery they were made for
+	for (std::size_t handle = 1; handle <= scene::Layers.size(); ++handle)
+	{
+		auto const layer{static_cast<scene::layer_handle>(handle)};
+		if (false == scene::Layers.listed(layer) || scene::Layers.layer(layer).removed)
+			continue;
+		auto name{scene::Layers.layer(layer).name};
+		std::replace(name.begin(), name.end(), '\\', '/');
+		auto const lower{ToLower(name)};
+		if (lower == ToLower(file) || lower.ends_with("/" + ToLower(file)) || false == lower.ends_with("_dzioby.scm"))
+			continue;
+		if (nose_file(Global.asCurrentSceneryPath + scene::Layers.layer(layer).name) && scene::Layers.remove(layer))
+			WriteLog("Editor: " + name + " left out of the scenery, the keys by the movable noses are in " + file + " now");
 	}
 	auto included{m_nose_included};
 	for (std::size_t handle = 1; handle <= scene::Layers.size() && false == included; ++handle)

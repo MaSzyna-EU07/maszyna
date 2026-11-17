@@ -1467,7 +1467,7 @@ double TESt4R::GetPF(double const PP, double const dt, double const Vel)
 
 	result = dv - dV1;
 
-	RapidStatus = BrakeDelayFlag == bdelay_R && ((Vel > 55 && RapidStatus == true) || Vel > 70);
+	RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && ((Vel > 55 && RapidStatus == true) || Vel > 70);
 
 	RapidTemp = RapidTemp + (0.9 * int(RapidStatus) - RapidTemp) * dt / 2;
 	temp = 1.9 - RapidTemp;
@@ -1770,7 +1770,7 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 	//  if Vel>55 then temp:=0.72 else
 	//    temp:=1;{R}
 	// cisnienie PP
-	RapidTemp = RapidTemp + (RM * int(Vel > 55 && BrakeDelayFlag == bdelay_R) - RapidTemp) * dt / 2;
+	RapidTemp = RapidTemp + (RM * int(Vel > 55 && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
 	temp = 1 - RapidTemp;
 	if (EDFlag > 0.2)
 		temp = 10000;
@@ -1989,7 +1989,7 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 		dv = dv + PF(MPP, VVP, 0.02);
 	Miedzypoj->Flow(dv * dt * 0.15);
 
-	RapidTemp = RapidTemp + (RM * int(Vel > RV && BrakeDelayFlag == bdelay_R) - RapidTemp) * dt / 2;
+	RapidTemp = RapidTemp + (RM * int(Vel > RV && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
 	temp = std::max(1 - RapidTemp, 0.001);
 	//  if EDFlag then temp:=1000;
 	//  temp:=temp/(1-);

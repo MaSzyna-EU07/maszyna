@@ -74,6 +74,65 @@ void add_unique(std::vector<TTrack *> &Tracks, TTrack *Track)
 		Tracks.emplace_back(Track);
 }
 
+// how much longer than a third of the chord a first control vector is made to keep the bend of the second one, past the 2 cm the
+// simulator takes for a straight
+double const kBentOff{0.025};
+
+// whether the simulator draws the path bent: it takes one with its first control vector within 2 cm of a third of the chord for a
+// straight
+bool drawn_bent(segment_data const &Path)
+{
+	auto const &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	return (control1 != glm::dvec3{} || control2 != glm::dvec3{}) && false == TTrack::straightened(Path.points[segment_data::point::start], control1, Path.points[segment_data::point::end]);
+}
+
+// how far a second control vector stands off the chord of the path, sideways and in height; off by this much it bends the path
+double off_chord(segment_data const &Path, glm::dvec3 const &Control2)
+{
+	auto const chord{Path.points[segment_data::point::end] - Path.points[segment_data::point::start]};
+	auto const length{glm::length(chord)};
+	if (length < 1e-6)
+		return 0.0;
+	auto const axis{chord / length};
+	return glm::length(Control2 - axis * glm::dot(Control2, axis));
+}
+double const kOffChord{0.02};
+
+// whether an edit at the end of a path, which set its second vector, is what took that vector off the chord: a path drawn straight is
+// kept bent only then, one whose second vector was off the chord already is left to the simulator as it is
+bool took_off_chord(double const Before, segment_data const &Path)
+{
+	return Before < kOffChord && off_chord(Path, Path.points[segment_data::point::control2]) >= kOffChord;
+}
+
+// a path the simulator would draw straight, its first control vector lying along the chord, though the second one is off it: the
+// first one made longer by just past the tolerance, so the bend is drawn, saved and read back as one. Its direction is kept, so is
+// the tangent at the start and the joint there; the path moves along itself by under a centimetre. Called where an edit sets the
+// second vector, or keeps a path drawn bent so. Undo: the second one back along the chord, a first one made longer here goes back to
+// a third of the chord, its direction kept too
+void keep_bent(TTrack const &Track, segment_data &Path, bool const Undo)
+{
+	if (Track.eType == tt_Cross)
+		return;
+	auto const &start{Path.points[segment_data::point::start]};
+	auto const &end{Path.points[segment_data::point::end]};
+	auto &control1{Path.points[segment_data::point::control1]};
+	auto const &control2{Path.points[segment_data::point::control2]};
+	auto const length{glm::distance(start, end)};
+	if (length < 1e-6 || control1 == glm::dvec3{} || control2 == glm::dvec3{})
+		return;
+	if (off_chord(Path, control2) < kOffChord)
+	{
+		auto const third{glm::normalize(control1) * (length / 3.0)};
+		if (Undo && std::abs(glm::length(control1) - (length / 3.0 + kBentOff)) < 0.005 && TTrack::straightened(start, third, end))
+			control1 = third;
+		return;
+	}
+	if (TTrack::straightened(start, control1, end))
+		control1 = glm::normalize(control1) * (length / 3.0 + kBentOff);
+}
+
 glm::dvec3 path_tangent(segment_data const &Path, bool const Atend)
 {
 	auto const &start{Path.points[segment_data::point::start]};
@@ -485,6 +544,8 @@ void editor_track::rename(TTrack &Track, std::string const &Name, std::vector<sc
 			cell->asTrackName = Name;
 			cell->mark_dirty();
 		}
+	if (s_observer != nullptr)
+		s_observer->track_renamed(Track, old);
 	if (old.empty() || old == "none")
 		return;
 	for (scene::instance_handle handle = 1; handle <= scene::Layers.instance_count(); ++handle)
@@ -636,6 +697,11 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 	case point_kind::start:
 	case point_kind::end:
 	{
+		// the paths drawn bent are kept so, a new chord can bring a first control vector back within the tolerance; the ones drawn
+		// straight are left to the simulator as they are
+		std::vector<bool> bent;
+		for (auto const &each : Track.m_paths)
+			bent.push_back(drawn_bent(each));
 		auto &point{path.points[point_index(Point.kind)]};
 		auto const oldposition{point};
 		point = Position;
@@ -647,18 +713,23 @@ void editor_track::move_point(TTrack &Track, point_ref const &Point, glm::dvec3 
 				if (glm::distance(otherpath.points[index], oldposition) < kSamePoint)
 					otherpath.points[index] = Position;
 		}
+		for (std::size_t index = 0; index < Track.m_paths.size(); ++index)
+			if (bent[index])
+				keep_bent(Track, Track.m_paths[index], false);
 		break;
 	}
 	case point_kind::control1:
 	{
 		auto control{Position - path.points[segment_data::point::start]};
 		path.points[segment_data::point::control1] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
+		keep_bent(Track, path, false);
 		break;
 	}
 	case point_kind::control2:
 	{
 		auto control{Position - path.points[segment_data::point::end]};
 		path.points[segment_data::point::control2] = (glm::length(control) < 0.01 ? glm::dvec3{} : control);
+		keep_bent(Track, path, true);
 		break;
 	}
 	}
@@ -765,6 +836,8 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		auto &path{joint.other->m_paths[joint.theirs.path]};
 		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 		bool const straight{path.points[segment_data::point::control1] == glm::dvec3{} && path.points[segment_data::point::control2] == glm::dvec3{}};
+		bool const bent{drawn_bent(path)};
+		auto const wasoff{off_chord(path, path.points[segment_data::point::control2])};
 		auto const fixed{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::end : segment_data::point::start]};
 		auto const before{plan_of(path.points[point_index(joint.theirs.kind)] - fixed)};
 		auto const target{point_position(Track, joint.own)};
@@ -779,6 +852,10 @@ void editor_track::follow(TTrack const &Track, std::vector<joint> const &Joints)
 		}
 		auto const moved{turned(plan_of(joint.control), angle)};
 		control = {moved.x, joint.control.y, moved.y};
+		// a path drawn bent is kept bent, and so is one drawn straight whose second vector the turn took off the chord; a neighbour
+		// whose second vector was off the chord already is left as the simulator draws it
+		if (bent || (joint.theirs.kind == point_kind::end && took_off_chord(wasoff, path)))
+			keep_bent(*joint.other, path, false);
 	}
 }
 
@@ -790,8 +867,14 @@ void editor_track::follow_grade(TTrack const &Track, std::vector<joint> const &J
 			continue;
 		geometry::bezier const own{Track.m_paths[joint.own.path]};
 		auto const outward{joint.own.kind == point_kind::start ? -own.first(0.0) : own.first(1.0)};
-		auto &control{joint.other->m_paths[joint.theirs.path].points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto &path{joint.other->m_paths[joint.theirs.path]};
+		bool const bent{drawn_bent(path)};
+		auto &control{path.points[joint.theirs.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
+		auto const wasoff{off_chord(path, path.points[segment_data::point::control2])};
 		control.y = geometry::grade_of(outward) * glm::length(geometry::plan_of(control));
+		// as in follow: a path drawn straight only where the grade took its second vector off the chord
+		if (bent || (joint.theirs.kind == point_kind::end && took_off_chord(wasoff, path)))
+			keep_bent(*joint.other, path, false);
 	}
 }
 
@@ -1003,7 +1086,10 @@ void editor_track::align_controls(TTrack const &Track, point_ref const &Control,
 		auto &control{path.points[start ? segment_data::point::control1 : segment_data::point::control2]};
 		auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) / 3.0};
 		auto const same{partner.first == &Track && partner.second.kind == end_of(Control).kind};
+		bool const bent{drawn_bent(path)};
 		control = (same ? direction : -direction) * length;
+		if (bent || false == start)
+			keep_bent(*partner.first, path, false);
 	}
 }
 
@@ -1085,9 +1171,10 @@ std::vector<editor_track::snap_target> editor_track::free_ends(TTrack const *Sel
 
 void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target const &Target, bool const Aligntangent)
 {
-	if (Target.track == nullptr || false == editor_track::is_end(Point.kind))
+	if (Target.track == nullptr || false == editor_track::is_end(Point.kind) || Point.path < 0 || Point.path >= static_cast<int>(Track.m_paths.size()))
 		return;
 
+	bool const bent{drawn_bent(Track.m_paths[Point.path])};
 	move_point(Track, Point, Target.position);
 	if (false == Aligntangent)
 		return;
@@ -1098,6 +1185,9 @@ void editor_track::snap_point(TTrack &Track, point_ref const &Point, snap_target
 	auto &control{path.points[Point.kind == point_kind::start ? segment_data::point::control1 : segment_data::point::control2]};
 	auto const length{control != glm::dvec3{} ? glm::length(control) : glm::distance(start, end) / 3.0};
 	control = -Target.direction * length;
+	// the end turned to the neighbour's tangent, or a path drawn bent: kept bent
+	if (bent || Point.kind == point_kind::end)
+		keep_bent(Track, path, false);
 }
 
 std::string editor_track::material_name(material_handle const Material)
@@ -2332,6 +2422,82 @@ bool editor_track::find_route(TTrack *From, TTrack *To, route &Route, std::strin
 	std::reverse(Route.spans.begin(), Route.spans.end());
 	Error.clear();
 	return true;
+}
+
+bool editor_track::find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route)
+{
+	Route = {};
+	if (From == nullptr || To == nullptr || From == To || false == is_supported(*From) || false == is_supported(*To))
+		return false;
+	// depth first, a way given up as it gets longer than the route, or passes the half of it away from the middle; a line of some
+	// thousand paths is walked without the depth of calls
+	double constexpr kSlack{1.0}; // m
+	double constexpr kMiddle{2.0}; // m, the length along a path being measured on its curve only roughly
+	std::size_t constexpr kMost{200000}; // paths walked
+	std::size_t walked{0};
+	auto const half{Length * 0.5};
+	// how long the way is past the path, below 0 when the way can't go on along it
+	auto const along = [&](route_node const &Node, double const Before) {
+		bezier const curve{std::get<0>(Node)->m_paths[std::get<1>(Node)]};
+		auto const own{curve.plan_length(16)};
+		auto const after{Before + own};
+		if (after > Length + kSlack)
+			return -1.0;
+		if (Before <= half && after >= half && own > 1e-6)
+		{
+			auto const share{(half - Before) / own};
+			if (geometry::plan_distance(curve.point(std::get<2>(Node) ? share : 1.0 - share), Middle) > kMiddle + own * 0.02)
+				return -1.0;
+		}
+		return after;
+	};
+	struct step
+	{
+		route_node node;
+		double after;
+		std::vector<route_node> next;
+		std::size_t index{0};
+	};
+	for (int i = 0; i < static_cast<int>(From->m_paths.size()); ++i)
+		for (auto const forward : {true, false})
+		{
+			route_node const first{From, i, forward};
+			auto const length{along(first, 0.0)};
+			if (length < 0.0)
+				continue;
+			std::vector<step> way{{first, length, route_next(first)}};
+			std::unordered_set<TTrack const *> on_way{From};
+			while (false == way.empty() && walked < kMost)
+			{
+				auto &top{way.back()};
+				if (top.index >= top.next.size())
+				{
+					on_way.erase(std::get<0>(top.node));
+					way.pop_back();
+					continue;
+				}
+				auto const node{top.next[top.index++]};
+				auto *track{std::get<0>(node)};
+				if (on_way.contains(track))
+					continue;
+				++walked;
+				auto const after{along(node, top.after)};
+				if (after < 0.0)
+					continue;
+				if (track == To)
+				{
+					if (std::abs(after - Length) > kSlack)
+						continue;
+					for (auto const &done : way)
+						Route.spans.push_back({std::get<0>(done.node), std::get<1>(done.node), std::get<2>(done.node)});
+					Route.spans.push_back({track, std::get<1>(node), std::get<2>(node)});
+					return true;
+				}
+				on_way.insert(track);
+				way.push_back({node, after, route_next(node)});
+			}
+		}
+	return false;
 }
 
 editor_track::route editor_track::run_route(TTrack &Track, double const Maximum, int const Path)
@@ -3700,6 +3866,38 @@ TTrack *editor_track::split_path(TTrack &Track, double const T, std::string cons
 			if (false == event.first.empty())
 				events(*created, index).push_back(event);
 		own.erase(std::remove_if(own.begin(), own.end(), [](auto const &Event) { return false == Event.first.empty(); }), own.end());
+	}
+	// a read the trains scan for (a passive event: a signal, a stop, a speed) in event1 or event2 goes to the piece by the point it
+	// is read at: a train measures the way to that point along a few paths only, so the read has to stay by it.
+	// one read far off the path, at the station building or nowhere, keeps the piece of its list; the trains don't scan the eventall lists
+	double constexpr reach{50.0};
+	auto const gap = [](TTrack const &Piece, glm::dvec3 const &Point) { return geometry::plan_distance(point_at(Piece, nearest_parameter(Piece, Point)), Point); };
+	auto const scanned = [](std::pair<std::string, basic_event *> const &Event) {
+		return false == Event.first.empty() && Event.second != nullptr && Event.second->m_passive && false == Event.second->m_ignored;
+	};
+	// the piece nearer to the point the event reads, when it reads one by the path: 0 the original, 1 the new one, -1 neither
+	auto const nearer = [&](std::pair<std::string, basic_event *> const &Event) {
+		if (false == scanned(Event))
+			return -1;
+		auto const point{Event.second->input_location()};
+		auto const first{gap(Track, point)};
+		auto const second{gap(*created, point)};
+		if (std::min(first, second) > reach)
+			return -1;
+		return second < first ? 1 : 0;
+	};
+	for (auto const index : {1, 2})
+	{
+		auto &own{events(Track, index)};
+		auto &theirs{events(*created, index)};
+		std::vector<std::pair<std::string, basic_event *>> kept;
+		std::vector<std::pair<std::string, basic_event *>> given;
+		for (auto const &event : own)
+			(nearer(event) == 1 ? given : kept).push_back(event);
+		for (auto const &event : theirs)
+			(nearer(event) == 0 ? kept : given).push_back(event);
+		own = std::move(kept);
+		theirs = std::move(given);
 	}
 	std::string missing;
 	bind_events(Track, missing);

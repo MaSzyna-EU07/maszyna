@@ -3526,6 +3526,11 @@ ITexture const &opengl46_renderer::Texture(texture_handle const Texture) const
 	return m_textures.texture(Texture);
 }
 
+void opengl46_renderer::Unload_Texture(texture_handle const Texture)
+{
+	m_textures.unload(Texture);
+}
+
 void opengl46_renderer::Update_AnimModel(TAnimModel *model)
 {
 	model->RaAnimate(m_framestamp);
@@ -5040,6 +5045,29 @@ void opengl46_renderer::walk_cull_face(bool const Enabled)
 		::glEnable(GL_CULL_FACE);
 	else
 		glDisable(GL_CULL_FACE);
+}
+
+void opengl46_renderer::walk_decal(bool const Enabled)
+{
+	// the depth is reversed (GL_GEQUAL): a positive offset comes nearer the camera. the depth pass of the scene draws everything a
+	// little farther (glPolygonOffset(-1, -1), Render_Scene_Depth()), the decal goes as much nearer from there
+	if (m_scenedepthpass)
+	{
+		if (Enabled)
+			::glPolygonOffset(-1.f + 2.f, -1.f + 8.f);
+		else
+			::glPolygonOffset(-1.f, -1.f);
+		return;
+	}
+	if (Enabled)
+	{
+		::glEnable(GL_POLYGON_OFFSET_FILL);
+		::glPolygonOffset(2.f, 8.f);
+	}
+	else
+	{
+		::glDisable(GL_POLYGON_OFFSET_FILL);
+	}
 }
 
 void opengl46_renderer::walk_glare(bool const Enabled)

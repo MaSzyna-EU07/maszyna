@@ -56,6 +56,15 @@ void modifiers(int const Mods)
 
 } // namespace
 
+char const *selftest_script(char const *Variable)
+{
+#if WITH_EDITOR_SELFTESTS
+	return std::getenv(Variable);
+#else
+	return nullptr;
+#endif
+}
+
 void scripted_input::queue(std::function<void()> Event)
 {
 	s_driving = true;
@@ -182,7 +191,7 @@ void input_script::step()
 	if (false == m_loaded)
 	{
 		m_loaded = true;
-		auto const *file{std::getenv(m_variable)};
+		auto const *file{selftest_script(m_variable)};
 		if (file == nullptr)
 			return;
 		std::ifstream stream(file);

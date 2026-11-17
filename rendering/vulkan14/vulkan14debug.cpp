@@ -184,7 +184,7 @@ std::string vulkan14_renderer::scene_info()
 	}
 	if (scene.raytracing && m_raytracingon)
 	{
-		text += scene.raytracing->info() + "\n";
+		text += scene.raytracing->info() + "; processor: walk " + to_string(m_rtwalkms, 2) + " ms, build " + to_string(m_rtbuildms, 2) + " ms, " + std::to_string(m_rtdraws.size()) + " draws\n";
 	}
 	return text;
 }
