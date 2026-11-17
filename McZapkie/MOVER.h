@@ -2498,6 +2498,7 @@ class TMoverParameters
 	// ScndCtrlResistiveLock: the shunt controller drops to 0 once the master controller is at zero or on a resistive position, so it
 	// can't stay engaged there, locked in place (eu07/maszyna#402)
 	void ScndCtrlResistiveLockCheck();
+	// NOTE: with the cruise control, either end of the secondary controller, as before the split of the two (eu07/maszyna#69)
 	bool IsScndCtrlNoPowerPos() const;
 	bool IsScndCtrlMaxPowerPos() const;
 
@@ -2743,6 +2744,14 @@ class TMoverParameters
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
 	void CheckSpeedCtrl(double dt);
+	// whether the cruise control has a switch of its own: the secondary controller doubles as its switch unless it
+	// shunts the field of the traction motors already, or there's none (the 6Dg, the ST45; eu07/maszyna#69)
+	bool IsSpeedCtrlSeparate() const;
+	// whether the cruise control is switched on: by its own switch, or by the secondary controller off its zero position
+	bool IsSpeedCtrlEngaged() const;
+	// the driver's switch of the cruise control: on, to hold the speed of the moment, or off. its own switch, or the
+	// secondary controller doubling as one (first position on, back to zero off); returns whether it did anything
+	bool SpeedCtrlSwitch(bool State);
 	void SpeedCtrlButton(int button);
 	void SpeedCtrlInc();
 	void SpeedCtrlDec();
