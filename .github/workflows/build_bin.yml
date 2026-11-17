@@ -164,6 +164,46 @@ jobs:
             -Recurse `
             -Force
 
+      # The game loads OpenAL32.dll and libsndfile-1.dll from its own folder, and the depot had OpenAL Soft 1.18.1 and
+      # libsndfile 1.0.28 (2017) there. OpenAL Soft 1.18 lacks ALC_SOFT_reopen_device and ALC_SOFT_system_events, so on
+      # Windows the sound didn't follow a change of the output device; libsndfile 1.0.28 reads no Opus and no MP3, which
+      # the Linux build (libsndfile 1.2) does. The official release binaries of both are taken, pinned by SHA-256. They
+      # need nothing beyond the system DLLs and msvcrt.dll (soft_oal.dll) or KERNEL32.dll (sndfile.dll), and are built
+      # without AVX2, so the same files go with both variants. The exe links them by name: soft_oal.dll is shipped as
+      # OpenAL32.dll (as its readme says, without the router), sndfile.dll as libsndfile-1.dll.
+      - name: Add the OpenAL Soft and libsndfile DLLs
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $output = "build/bin/$env:CONFIG_WIN"
+          $work = Join-Path $env:RUNNER_TEMP 'audio-dlls'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+          $packages = @(
+            @{ Url = 'https://github.com/kcat/openal-soft/releases/download/1.25.2/openal-soft-1.25.2-bin.zip'
+               Sha256 = '67a0c4b800bd860c93c04f38caf8cbe4875f9c84700ac430efc451f70e265434'
+               Dll = 'openal-soft-1.25.2-bin/bin/Win64/soft_oal.dll'
+               As = 'OpenAL32.dll' },
+            @{ Url = 'https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2-win64.zip'
+               Sha256 = '2173935c0c1ed13cf627951d34483f9d405ead2eb473190461c42ba220643a3f'
+               Dll = 'libsndfile-1.2.2-win64/bin/sndfile.dll'
+               As = 'libsndfile-1.dll' }
+          )
+          foreach ($package in $packages) {
+            $zip = Join-Path $work (Split-Path $package.Url -Leaf)
+            Invoke-WebRequest -Uri $package.Url -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 10 -TimeoutSec 120
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLowerInvariant()
+            if ($hash -ne $package.Sha256) {
+              throw "$($package.Url): SHA-256 $hash, expected $($package.Sha256)"
+            }
+            $unpacked = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($zip))
+            Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+            Copy-Item -Path (Join-Path $unpacked $package.Dll) -Destination (Join-Path $output $package.As) -Force
+            Write-Host "$($package.As) <- $($package.Url)"
+          }
+
       - name: Upload Windows build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
