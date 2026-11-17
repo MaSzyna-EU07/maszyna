@@ -93,11 +93,15 @@ wind rose of the season, the clouds, the visibility, what falls and the snow lyi
 The winter kinds come only in the months cold enough for them, the storms and the heat in the warm ones. `seed` before `climate`
 makes the same day each time; without it it is another day each time.
 
-The months are the climate normals of the weather station nearest to the scenery (within 150 km), read from
-`climate/stations.txt` in the folder of the simulator. `tools/weather/imgw_normals.py` makes that file from the public monthly
-measurements of the synoptic stations of IMGW-PIB for 1991-2020 (see the script for how; it needs the network once). Without the
-file, or with no station near, Lodz-Lublinek stands in: the lowlands in the middle of Poland, away from the sea and the mountains.
-Its months built into the simulator are the 1991-2020 normals the script makes; its wind roses are typical ones of central Poland.
+The months are the climate normals of the weather station nearest to the scenery (within 150 km; the summit stations, Sniezka
+and Kasprowy Wierch, are given to no scenery): 1991-2020 of 57 synoptic stations of IMGW-PIB, built into the simulator
+(`environment/climatestations.cpp`). `tools/weather/imgw_normals.py --cpp environment/climatestations.cpp` makes that file again from
+the public monthly measurements (it needs the network once). A `climate/stations.txt` in the folder of the simulator, which the
+script writes too, takes the place of the table built in: for other normals, other stations, or wind roses of the stations
+(`--roses`; the stations built in share typical roses of central Poland). With no station near, Lodz-Lublinek stands in: the
+lowlands in the middle of Poland, away from the sea and the mountains.
+
+Source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data of IMGW-PIB were processed.
 
 ```
 weather

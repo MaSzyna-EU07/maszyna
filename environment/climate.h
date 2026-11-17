@@ -23,9 +23,9 @@ struct weather_conditions;
 // the climate of a place, month by month, and the weather made of it: kinds of weather a month there typically has (a preset), each
 // with the temperatures of the day, the moisture of the air, the wind at the ground with its gusts, the clouds, the visibility, what
 // falls and the snow lying, and how often each comes, so the weather of a scenery can be drawn as the place and the month have it.
-// the months are the climate normals of a weather station (1991-2020 of the synoptic stations of IMGW-PIB, made into a table by
-// tools/weather/imgw_normals.py); without the table, and for a place the table has no station near, a station of the lowlands in
-// the middle of Poland stands in (Lodz-Lublinek)
+// the months are the climate normals of a weather station: 1991-2020 of the synoptic stations of IMGW-PIB, built into the
+// simulator (environment/climatestations.cpp, made by tools/weather/imgw_normals.py of the public data). for a place with no
+// station near a station of the lowlands in the middle of Poland stands in (Lodz-Lublinek)
 namespace climate
 {
 
@@ -92,6 +92,8 @@ station const &default_station();
 class table
 {
   public:
+	// the stations built into the simulator
+	void builtin();
 	// reads the stations of a file made by tools/weather/imgw_normals.py; false when it isn't there or holds none
 	bool load(std::string const &Path);
 	// reads them from a text
@@ -100,14 +102,14 @@ class table
 	{
 		return m_stations;
 	}
-	// the station nearest to a place (degrees) within Reach km, or the default one
+	// the station nearest to a place (degrees) within Reach km, the summits left out, or the default one
 	station const &nearest(float const Latitude, float const Longitude, float const Reach = 150.f) const;
 
   private:
 	std::vector<station> m_stations;
 };
 
-// the table of the game (climate/stations.txt in its folder), read at the first use
+// the table of the simulator: the one built in, or climate/stations.txt in its folder when there is one, read at the first use
 table const &stations();
 
 // how often a kind of weather comes in a month (0..11) at a station; not normalised, 0 for one which doesn't come then

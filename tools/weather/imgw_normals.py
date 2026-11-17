@@ -3,6 +3,7 @@
 weather of a place and a month from (environment/climate.h), out of the public measurements of IMGW-PIB.
 
     python tools/weather/imgw_normals.py --out climate/stations.txt
+    python tools/weather/imgw_normals.py --cpp environment/climatestations.cpp      (the table built into the simulator)
 
 It downloads the monthly data of the synoptic stations for the years of the normal (1991-2020 by default)
 from danepubliczne.imgw.pl, averages them month by month for every station and writes a row a month:
@@ -274,6 +275,32 @@ def station_rows(name, place, months, least):
     return rows
 
 
+def write_cpp(path, stations, first, last):
+    """The table as the source file the simulator is built with (environment/climatestations.cpp)."""
+    lines = [
+        "/*", "This Source Code Form is subject to the", "terms of the Mozilla Public License, v.", "2.0. If a copy of the MPL was not",
+        "distributed with this file, You can", "obtain one at", "http://mozilla.org/MPL/2.0/.", "*/", "",
+        f"// climate normals of the synoptic stations of IMGW-PIB, {first}-{last}. made by tools/weather/imgw_normals.py --cpp of the",
+        "// public monthly data of the stations: not to be edited by hand, made again when the normals change.",
+        "// source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data were processed",
+        "", '#include "stdafx.h"', '#include "environment/climatestations.h"', "", "namespace climate", "{", "",
+        "std::span<station_record const> builtin_stations()", "{",
+        "\t// name, latitude, longitude, elevation; a row a month: tmin, tmax, humidity, wind, precipitation, its days, snow days, snow depth,",
+        "\t// fog days, storm days, cloudiness",
+        f"\tstatic constexpr std::array<station_record, {len(stations)}> records{{{{",
+    ]
+    for _, rows in sorted(stations):
+        _, name, latitude, longitude, elevation = rows[0].split()
+        lines.append(f'\t    {{"{name}", {latitude}f, {longitude}f, {elevation}.f, {{{{')
+        for row in rows[1:13]:
+            values = ", ".join((number if "." in number else number + ".") + "f" for number in row.split()[2:])
+            lines.append(f"\t        {{{values}}},")
+        lines.append("\t    }}},")
+    lines += ["\t}};", "\treturn records;", "}", "", "} // namespace climate"]
+    with open(path, "w", encoding="ascii", newline="\n") as file:
+        file.write("\n".join(lines) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", default="climate/stations.txt", help="the table to write")
@@ -283,6 +310,7 @@ def main():
     parser.add_argument("--last", type=int, default=2020, help="last year of the normal")
     parser.add_argument("--least", type=int, default=20, help="years a month needs to count")
     parser.add_argument("--roses", action="store_true", help="wind roses of the hourly data of the last ten years (a large download)")
+    parser.add_argument("--cpp", help="also write the table as the source file of the simulator (environment/climatestations.cpp)")
     parser.add_argument("--coords", help='file of "name;latitude;longitude;elevation" rows of stations')
     arguments = parser.parse_args()
 
@@ -323,6 +351,9 @@ def main():
     with open(arguments.out, "w", encoding="ascii", newline="\n") as file:
         file.write("\n".join(lines) + "\n")
     print(f"{written} stations written to {arguments.out}")
+    if arguments.cpp:
+        write_cpp(arguments.cpp, [(name, [row for row in rows if not row.startswith("rose")]) for name, rows in stations], arguments.first, arguments.last)
+        print(f"and to {arguments.cpp}")
 
 
 if __name__ == "__main__":

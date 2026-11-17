@@ -173,6 +173,7 @@ set(SOURCES
 "environment/weather.cpp"
 "environment/snowcover.cpp"
 "environment/climate.cpp"
+"environment/climatestations.cpp"
 "rendering/lightarray.cpp"
 "environment/skydome.cpp"
 "audio/sound.cpp"

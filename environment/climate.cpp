@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <sstream>
 
+#include "environment/climatestations.h"
 #include "environment/psychrometry.h"
 #include "environment/weather.h"
 
@@ -29,33 +30,31 @@ constexpr std::array<char const *, static_cast<std::size_t>(preset::count)> PRES
 constexpr std::array<float, 12> MONTH_DAYS{31.f, 28.25f, 31.f, 30.f, 31.f, 30.f, 31.f, 31.f, 30.f, 31.f, 30.f, 31.f};
 constexpr std::array<char const *, 4> SEASON_NAMES{"winter", "spring", "summer", "autumn"};
 
-// Lodz-Lublinek, the lowlands in the middle of Poland, away from the sea and the mountains: the 1991-2020 normals
-// tools/weather/imgw_normals.py makes of the monthly data of IMGW-PIB. the wind roses are typical ones of central Poland
-station make_default()
+// the wind roses of the stations, typical ones of the lowlands of central Poland (the table of the stations has none): from N,
+// NE, E, SE, S, SW, W, NW in winter, spring, summer and autumn
+constexpr std::array<wind_rose, 4> TYPICAL_ROSES{{
+    {0.06f, 0.06f, 0.11f, 0.12f, 0.12f, 0.19f, 0.24f, 0.10f},
+    {0.10f, 0.10f, 0.13f, 0.11f, 0.09f, 0.13f, 0.20f, 0.14f},
+    {0.10f, 0.07f, 0.08f, 0.08f, 0.08f, 0.15f, 0.27f, 0.17f},
+    {0.05f, 0.05f, 0.11f, 0.14f, 0.14f, 0.20f, 0.22f, 0.09f},
+}};
+// the station standing in for a place without one near: the lowlands in the middle of Poland, away from the sea and the mountains
+constexpr std::string_view DEFAULT_STATION{"Lodz-Lublinek"};
+// stations higher than this are summits (Sniezka, Kasprowy Wierch), whose climate isn't that of the valleys around them: a
+// scenery gets one only when it names no nearer station
+constexpr float SUMMIT{1000.f};
+
+// a station of the table built into the simulator
+station from_record(station_record const &Record)
 {
 	station result;
-	result.name = "Lodz-Lublinek";
-	result.latitude = 51.72f;
-	result.longitude = 19.40f;
-	result.elevation = 187.f;
-	constexpr std::array<std::array<float, 11>, 12> months{{
-	    // tmin, tmax, humidity, wind, precipitation, its days, snow days, snow depth, fog days, storm days, cloudiness
-	    {-4.0f, 1.1f, 88.f, 3.9f, 35.f, 14.2f, 15.3f, 12.1f, 6.1f, 0.2f, 6.1f},
-	    {-3.3f, 2.9f, 84.f, 3.8f, 34.f, 12.2f, 13.3f, 11.8f, 4.5f, 0.1f, 5.9f},
-	    {-0.7f, 7.4f, 77.f, 3.7f, 38.f, 10.8f, 6.2f, 7.5f, 4.5f, 0.3f, 5.3f},
-	    {3.6f, 14.4f, 69.f, 3.4f, 35.f, 10.2f, 0.9f, 2.2f, 2.5f, 1.3f, 4.8f},
-	    {8.2f, 19.4f, 70.f, 3.1f, 61.f, 13.3f, 0.0f, 0.0f, 2.5f, 4.2f, 4.7f},
-	    {11.6f, 22.7f, 70.f, 3.0f, 62.f, 13.4f, 0.0f, 0.0f, 2.1f, 5.0f, 4.8f},
-	    {13.6f, 24.9f, 71.f, 2.8f, 81.f, 13.8f, 0.0f, 0.0f, 1.6f, 6.9f, 4.7f},
-	    {13.3f, 24.6f, 71.f, 2.6f, 54.f, 11.8f, 0.0f, 0.0f, 1.8f, 4.4f, 4.3f},
-	    {9.0f, 19.1f, 79.f, 2.9f, 53.f, 11.7f, 0.0f, 0.0f, 3.5f, 1.3f, 4.7f},
-	    {5.0f, 13.0f, 84.f, 3.2f, 44.f, 12.6f, 0.2f, 0.3f, 6.9f, 0.2f, 5.3f},
-	    {1.3f, 6.8f, 89.f, 3.4f, 39.f, 11.9f, 3.4f, 4.1f, 8.0f, 0.0f, 6.3f},
-	    {-2.4f, 2.4f, 89.f, 3.7f, 41.f, 12.6f, 8.6f, 7.3f, 6.7f, 0.1f, 6.3f},
-	}};
-	for (std::size_t i = 0; i < months.size(); ++i)
+	result.name = Record.name;
+	result.latitude = Record.latitude;
+	result.longitude = Record.longitude;
+	result.elevation = Record.elevation;
+	for (std::size_t i = 0; i < Record.months.size(); ++i)
 	{
-		auto const &source{months[i]};
+		auto const &source{Record.months[i]};
 		auto &target{result.months[i]};
 		target.temperature_min = source[0];
 		target.temperature_max = source[1];
@@ -69,14 +68,15 @@ station make_default()
 		target.storm_days = source[9];
 		target.cloudiness = source[10];
 	}
-	// from N, NE, E, SE, S, SW, W, NW
-	result.roses = {{
-	    {0.06f, 0.06f, 0.11f, 0.12f, 0.12f, 0.19f, 0.24f, 0.10f},
-	    {0.10f, 0.10f, 0.13f, 0.11f, 0.09f, 0.13f, 0.20f, 0.14f},
-	    {0.10f, 0.07f, 0.08f, 0.08f, 0.08f, 0.15f, 0.27f, 0.17f},
-	    {0.05f, 0.05f, 0.11f, 0.14f, 0.14f, 0.20f, 0.22f, 0.09f},
-	}};
+	result.roses = TYPICAL_ROSES;
 	return result;
+}
+
+station make_default()
+{
+	auto const records{builtin_stations()};
+	auto const found{std::ranges::find_if(records, [](station_record const &Record) { return DEFAULT_STATION == Record.name; })};
+	return from_record(found != records.end() ? *found : records.front());
 }
 
 int month_index(int const Month)
@@ -465,6 +465,8 @@ station const &table::nearest(float const Latitude, float const Longitude, float
 	auto bestdistance{Reach};
 	for (auto const &candidate : m_stations)
 	{
+		if (candidate.elevation > SUMMIT)
+			continue;
 		// km, flat enough over a country
 		auto const north{(candidate.latitude - Latitude) * 111.2f};
 		auto const east{(candidate.longitude - Longitude) * 111.2f * std::cos(glm::radians(Latitude))};
@@ -478,11 +480,20 @@ station const &table::nearest(float const Latitude, float const Longitude, float
 	return (best != nullptr) ? *best : default_station();
 }
 
+void table::builtin()
+{
+	m_stations.clear();
+	for (auto const &record : builtin_stations())
+		m_stations.push_back(from_record(record));
+}
+
 table const &stations()
 {
 	static table const result{[]() {
 		table loaded;
-		loaded.load("climate/stations.txt");
+		// a table beside the simulator (other normals, other stations, wind roses) takes the place of the one built in
+		if (false == loaded.load("climate/stations.txt"))
+			loaded.builtin();
 		return loaded;
 	}()};
 	return result;

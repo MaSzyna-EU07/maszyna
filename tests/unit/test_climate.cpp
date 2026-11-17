@@ -182,3 +182,25 @@ TEST_CASE("climate: the table of the stations is read and the nearest station fo
 	CHECK_FALSE(empty.parse("# nothing\n"));
 	CHECK(empty.nearest(52.f, 19.f).name == climate::default_station().name);
 }
+
+TEST_CASE("climate: the stations built in cover Poland, the summits given to nobody") {
+	climate::table table;
+	table.builtin();
+	CHECK(table.stations().size() >= 50);
+	CHECK(table.nearest(52.23f, 21.01f).name == "Warszawa-Okecie");
+	CHECK(table.nearest(54.35f, 18.65f).name == "Gdansk-Port_Polnocny");
+	CHECK(table.nearest(51.76f, 19.46f).name == "Lodz-Lublinek");
+	// Karpacz lies under Sniezka, Kuznice under Kasprowy Wierch: the stations of the valleys
+	CHECK(table.nearest(50.78f, 15.74f).name == "Jelenia_Gora");
+	CHECK(table.nearest(49.27f, 19.98f).name == "Zakopane");
+	// colder in the north-east than in the south-west in January
+	CHECK(table.nearest(54.1f, 22.9f).months[0].temperature() < table.nearest(51.1f, 17.0f).months[0].temperature() - 2.f);
+	for (auto const &station : table.stations()) {
+		CAPTURE(station.name);
+		for (auto const &month : station.months) {
+			CHECK(month.temperature_min < month.temperature_max);
+			CHECK(month.humidity > 50.f);
+			CHECK(month.humidity <= 100.f);
+		}
+	}
+}
