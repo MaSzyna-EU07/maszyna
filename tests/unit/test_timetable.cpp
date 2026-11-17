@@ -229,6 +229,24 @@ TEST_CASE("timetable: a timetable longer than the table is an error") {
 	CHECK(data.StationCount == Mtable::MaxTTableSize);
 }
 
+TEST_CASE("timetable: the reader starts from an empty table, whatever the data held before") {
+	auto const text{timetable_with("", "R2,H", "po", "R3")};
+	auto const [error, fresh]{read(text)};
+	REQUIRE(error == 0);
+	// a count past the table, a negative one, a stale one: the reader used to go on from it and index out of the table
+	for (auto const count : {Mtable::MaxTTableSize, Mtable::MaxTTableSize + 7, -3, 2}) {
+		CAPTURE(count);
+		std::istringstream input{text};
+		Mtable::timetable_data data;
+		data.TrainName = "file";
+		data.StationCount = count;
+		data.TimeTable[fresh.StationCount + 1].StationName = "stale";
+		CHECK(Mtable::read_timetable(input, data) == 0);
+		CHECK(contents(data) == contents(fresh));
+		CHECK(data.TimeTable[fresh.StationCount + 1].StationName == "nowhere");
+	}
+}
+
 TEST_CASE("timetable: the entry whose flags hold at the stop and on the way") {
 	// before the timetable is loaded, and with none
 	CHECK(timetable::stop_flags_entry(0, 0) == 0);

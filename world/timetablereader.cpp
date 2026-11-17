@@ -58,6 +58,9 @@ int read_timetable(std::istream &fin, timetable_data &Data) {
 	int conversionerror{0};
 	auto &TimeTable{Data.TimeTable};
 	auto &StationCount{Data.StationCount};
+	// the table is read from its start, whatever Data held before
+	StationCount = 0;
+	TimeTable.fill(TMTableEntry{});
 	// zapisywanie prędkości maksymalnej do wcześniejszych odcinków
 	auto const UpdateVelocity{[&TimeTable, &StationCount](double const Velocity) {
 		int i = StationCount;
@@ -164,12 +167,12 @@ int read_timetable(std::istream &fin, timetable_data &Data) {
 			TimeTable[0].flags = Data.Flags;
 			auto activeradiochannel{-1};
 			while (!fin.fail() && !EndTable) {
-				++StationCount;
-				if (StationCount > MaxTTableSize) {
-					--StationCount;
+				// both bounds, so TimeTable[StationCount] and TimeTable[StationCount - 1] below stay in the table
+				if (StationCount < 0 || StationCount >= MaxTTableSize) {
 					conversionerror = timetable_too_long;
 					break;
 				}
+				++StationCount;
 				do {
 					fin >> s;
 				} while (!(s == "[" || fin.fail()));
