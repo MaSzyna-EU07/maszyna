@@ -872,6 +872,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.trackbuckling")
+    {
+        // off, scenery: the buckles of the scenery and its events, auto: also by the temperature of the rails
+        std::string mode;
+        ParseOne(Parser, mode, 1);
+        if (mode == "off" || mode == "no")
+            track_buckling = track_buckling_mode::off;
+        else if (mode == "auto")
+            track_buckling = track_buckling_mode::automatic;
+        else
+            track_buckling = track_buckling_mode::scenery;
+        return true;
+    }
+
     if (token == "couplerphysics")
     {
         // yes: the player's train and the trains it closes in on, all: every train
@@ -1785,6 +1799,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.time.offset", ScenarioTimeOffset );
     export_as_text( Output, "scenario.time.current", ScenarioTimeCurrent );
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
+    export_as_text( Output, "physics.trackbuckling", std::string{
+        track_buckling == track_buckling_mode::off ? "off" :
+        track_buckling == track_buckling_mode::automatic ? "auto" :
+        "scenery" } );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
     std::string couplerphysics { coupler_physics ? "yes" : "no" };

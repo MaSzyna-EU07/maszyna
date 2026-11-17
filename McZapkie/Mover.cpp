@@ -1545,6 +1545,7 @@ void TMoverParameters::check_derailment(TTrackShape const &Shape, TTrackParam co
 	track.gauge = TrackW;
 	track.uneven_curvature = Shape.uneven_curvature;
 	track.uneven_cross = Shape.uneven_cross;
+	track.buckle_curvature = Shape.buckle_curvature;
 	track.damage = Track.DamageFlag;
 
 	auto const verdict{derailment_monitor.update(vehicle, track, V, Distance)};
@@ -1582,6 +1583,11 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 		AlarmChainFlag = true;
 	}
 	ErrorLog("Bad driving: " + Name + " " + derailment::report(Verdict, Vehicle, Track, V, TrackName != nullptr ? *TrackName : std::string{}));
+	if (Track.buckle_curvature != 0.0)
+	{
+		ErrorLog(std::format("Bad driving: {} derailed on buckled track, the buckle bending the line by 1/{:.0f} m {} the curve", Name, 1.0 / std::abs(Track.buckle_curvature),
+		                     Track.buckle_curvature > 0.0 ? "with" : "against"));
+	}
 }
 
 void TMoverParameters::rerail()

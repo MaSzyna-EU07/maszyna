@@ -127,6 +127,9 @@ struct track_state {
 	double gauge{1.435}; // [m]
 	double uneven_curvature{0.0}; // the lateral curvature of the unevenness under the vehicle [1/m]
 	double uneven_cross{0.0}; // the cross level unevenness of the track [mm]
+	// the curvature a buckle of the track adds under the vehicle [1/m], see world/TrackBuckle.h: positive bending with
+	// the curve, on a straight track either way
+	double buckle_curvature{0.0};
 	int damage{0}; // dtrack_* flags
 };
 
@@ -138,6 +141,14 @@ struct track_condition {
 track_condition condition_of(track_state const &Track);
 // share of the vehicle that follows the short waves of an uneven track: the wheelsets and the bogies, the body not
 inline constexpr double uneven_share{0.3};
+// and the long wave of a buckle, which the body follows whole, as it does the curve
+inline constexpr double buckle_share{1.0};
+// the curvature of the line under the vehicle [1/m], positive towards the centre of the curve: the curve, and a
+// buckle on it. negative where a buckle bends the line the other way more than the curve does
+double line_curvature(track_state const &Track);
+// the lateral acceleration [m/s2] the cant doesn't balance on that line, positive out of the curve:
+// unbalanced_acceleration() with a buckle
+double line_acceleration(track_state const &Track, double Velocity);
 
 // the angle [rad] between the vehicle and the line of the force of the coupling at the end, in a curve: half the
 // angle between the two vehicles, whose middles are half their lengths apart along the curve

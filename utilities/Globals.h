@@ -284,6 +284,10 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	// the buckling of welded track in the heat (physics.trackbuckling in eu07.ini, see world/TrackBuckle.h): off, none; scenery, the
+	// buckles the scenery enters and its trackbuckle events; automatic, also by the temperature of the rails at the weak places
+	enum class track_buckling_mode { off, scenery, automatic };
+	track_buckling_mode track_buckling = track_buckling_mode::scenery;
 	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
 	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
 	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every

@@ -695,6 +695,8 @@ struct TTrackShape
 	double uneven_curvature = 0.0;
 	/// <summary>Cross level unevenness of the track [mm].</summary>
 	double uneven_cross = 0.0;
+	/// <summary>Curvature a buckle of the track adds under the body [1/m], positive with the curve, see world/TrackBuckle.h.</summary>
+	double buckle_curvature = 0.0;
 };
 
 /// <summary>Per-segment track parameters: gauge, friction, category, load capacity, damage.</summary>

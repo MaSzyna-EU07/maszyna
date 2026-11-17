@@ -757,6 +757,20 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
                 m_uneven = track_uneven::read_attribute( values, eType == tt_Switch );
             }
         }
+        else if( str == "buckle" ) {
+            // buckle <mm>;<m>;<m>[;<side>]: the track buckled by the heat, see TrackBuckle.h
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_buckledeclared = track_buckle::read_buckle( values );
+            }
+        }
+        else if( str == "cwr" ) {
+            // cwr <C>;<grade>[;<worked>]: the welded rail, for the buckling by the temperature
+            auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
+            if( eType == tt_Normal && iCategoryFlag == 1 ) {
+                m_cwr = track_buckle::read_cwr( values );
+            }
+        }
         else if( str == "friction" ) {
             // memory cell holding friction value modifiers
             m_friction.first = parser->getToken<std::string>();
@@ -819,8 +833,15 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
     // from the scenery is put back after it
     auto const velocity { fVelocity };
     init_segments( true );
+    // the buckle goes along the path made
+    if( Global.track_buckling != global_settings::track_buckling_mode::off && track_buckle::given( m_buckledeclared ) ) {
+        m_buckle = resolve_buckle( m_buckledeclared, 0 );
+        if( false == is_buckled() ) {
+            ErrorLog( "Bad track: \"" + m_name + "\" too short for its buckle" );
+        }
+    }
     // made with no unevenness, which is read with the attributes and goes onto them by making them again
-    if( is_uneven() ) {
+    if( is_uneven() || is_buckled() ) {
         init_segments( false );
     }
     if( SwitchExtension ) {
@@ -876,6 +897,7 @@ void TTrack::init_segments( bool const Initial ) {
     }
     else if( Segment ) {
         Segment->set_uneven( is_uneven() );
+        Segment->set_buckled( is_buckled() );
     }
 
     switch (eType) {
@@ -1267,6 +1289,10 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
+    if( Dynamics.empty() ) {
+        // a train comes onto the track, which can buckle under it in the heat
+        buckle_pass_enter( *Dynamic );
+    }
     Dynamics.emplace_back( Dynamic );
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
@@ -1313,6 +1339,10 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
+    }
+    if( result ) {
+        // the head of a train leaving the track the pass was drawn to buckle
+        buckle_pass_leave();
     }
     if( Global.iMultiplayer ) {
         // jeśli multiplayer
@@ -2869,6 +2899,9 @@ TTrack::export_as_text_( std::ostream &Output ) const {
         Output << "railprofile " << m_profile1.first << ' ';
     }
     Output << track_uneven::write_attribute( m_uneven, eType == tt_Switch );
+    if( eType == tt_Normal && iCategoryFlag == 1 ) {
+        Output << track_buckle::write_buckle( m_buckledeclared ) << track_buckle::write_cwr( m_cwr );
+    }
     if( false == m_friction.first.empty() ) {
         Output << "friction " << m_friction.first << ' ';
     }
