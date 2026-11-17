@@ -132,6 +132,11 @@ TDynamicObject *consist_views::pick(std::vector<TDynamicObject *> const &Train, 
 		index = cameraviews::step_index(index, static_cast<int>(Train.size()), m_step);
 		m_step = 0;
 	}
+	if (Train[index] != m_vehicle) {
+		// m_lastposition is of the vehicle before: the way the train goes is set again from the way the user drives,
+		// or the step between the two vehicles would be taken for a move
+		m_moved = false;
+	}
 	m_vehicle = Train[index];
 	return m_vehicle;
 }
