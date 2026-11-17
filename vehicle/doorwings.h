@@ -137,8 +137,17 @@ inline std::string parse_spec(std::vector<std::string> const &Tokens, wing_spec 
 	return {};
 }
 
+// whether the token is one of the keys of an animdoor block, in any letter case
+inline bool is_spec_key(std::string const &Token) {
+	std::string key{Token};
+	std::transform(key.begin(), key.end(), key.begin(), [](unsigned char const Character) { return static_cast<char>(std::tolower(Character)); });
+	return key == "type:" || key == "range:" || key == "rangeout:";
+}
+
 // reads an animdoor entry after its key: the wing number and the block in braces, into the spec filled with the values
-// of the .fiz. returns what is wrong with the entry, or an empty text when nothing is. the parser is a cParser
+// of the .fiz. returns what is wrong with the entry, or an empty text when nothing is. the parser is a cParser. a block
+// without its } ends at the first token that is neither a key nor the value right after one (or at endmodels): that
+// token is left for the caller, so the entries after a faulty one are read as ever
 template <typename Parser_>
 std::string read_spec(Parser_ &Parser, wing_spec &Spec) {
 	Parser.getTokens(1, false);
@@ -150,6 +159,7 @@ std::string read_spec(Parser_ &Parser, wing_spec &Spec) {
 		return "no { after the wing number";
 	}
 	std::vector<std::string> block;
+	auto value{false}; // the token is the value of the key before it
 	while (true) {
 		token.clear();
 		Parser.getTokens(1, false);
@@ -160,6 +170,11 @@ std::string read_spec(Parser_ &Parser, wing_spec &Spec) {
 		if (token == "}") {
 			break;
 		}
+		if (token == "endmodels" || (false == value && false == is_spec_key(token))) {
+			Parser.injectString(token);
+			return "no } after the keys, \"" + token + "\" is none of them";
+		}
+		value = false == value;
 		block.emplace_back(token);
 	}
 	return parse_spec(block, Spec);

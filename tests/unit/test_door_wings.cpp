@@ -125,9 +125,45 @@ TEST_CASE("door wings: a faulty animdoor entry says what is wrong with it") {
 	CHECK(read("3 { type: Roll range: 0.65 }", spec) == "unknown door type \"Roll\"");
 	CHECK(read("3 { type: Shift range: 0,65 }", spec) == "bad number \"0,65\" for \"range:\"");
 	CHECK(read("3 { type: Shift range: wide }", spec) == "bad number \"wide\" for \"range:\"");
-	CHECK(read("3 { kind: Shift }", spec) == "unknown key \"kind:\"");
+	CHECK(read("3 { kind: Shift }", spec) == "no } after the keys, \"kind:\" is none of them");
 	CHECK(read("3 { type: Shift range: }", spec) == "no value for \"range:\"");
 	CHECK(read("3 { type: Shift range: 0.65", spec) == "no } after the keys");
+}
+
+TEST_CASE("door wings: an animdoor entry without its } leaves the entries after it to the .mmd") {
+	// the first token that is neither a key nor the value of one ends the entry, and is read next by the caller
+	auto const next{[](std::string const &Text) {
+		door_wings::wing_spec spec{fizdoors};
+		cParser parser(Text, cParser::buffer_TEXT);
+		auto const error{door_wings::read_spec(parser, spec)};
+		std::vector<std::string> rest;
+		std::string token;
+		do {
+			token.clear();
+			parser.getTokens(1, false);
+			parser >> token;
+			if (false == token.empty()) {
+				rest.emplace_back(token);
+			}
+		} while (false == token.empty());
+		return std::pair{error, rest};
+	}};
+	{
+		auto const [error, rest]{next("3 { type: Plug range: 0.9\nsounds: horn.wav\nlights: 1\nendmodels")};
+		CHECK(error == "no } after the keys, \"sounds:\" is none of them");
+		CHECK(rest == std::vector<std::string>{"sounds:", "horn.wav", "lights:", "1", "endmodels"});
+	}
+	{
+		auto const [error, rest]{next("3 { type: Plug range: endmodels")};
+		CHECK(error == "no } after the keys, \"endmodels\" is none of them");
+		CHECK(rest == std::vector<std::string>{"endmodels"});
+	}
+	{
+		// a whole entry leaves the rest as it is
+		auto const [error, rest]{next("3 { type: Plug range: 0.9 } sounds: horn.wav endmodels")};
+		CHECK(error.empty());
+		CHECK(rest == std::vector<std::string>{"sounds:", "horn.wav", "endmodels"});
+	}
 }
 
 TEST_CASE("door wings: the parsed keys go into the spec, pairs of a key and its value") {
