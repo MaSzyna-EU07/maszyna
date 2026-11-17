@@ -232,6 +232,7 @@ struct global_settings {
     int iFeedbackPort{ 0 }; // dodatkowy adres dla informacji zwrotnych
     bool InputGamepad{ true }; // whether gamepad support is enabled
     bool InputMouse{ true }; // whether control pick mode can be activated
+    bool ConsistViews{ true }; // whether [Shift]+[F4] goes on to the orbit, shunting, coupling and trackside views of the train (eu07/maszyna#551)
     double fBrakeStep { 1.0 }; // krok zmiany hamulca innych niż FV4a dla klawiszy [Num3] i [Num9]
     double brake_speed { 3.0 }; // prędkość przesuwu hamulca dla FV4a
     // parametry kalibracyjne wejść z pulpitu

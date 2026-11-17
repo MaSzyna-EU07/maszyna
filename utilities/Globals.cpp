@@ -443,6 +443,13 @@ bool global_settings::ConfigParseInput(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "consistviews")
+    {
+        // no: [Shift]+[F4] cycles through the four views of the train it had before the views of its vehicles
+        ParseOne(Parser, ConsistViews);
+        return true;
+    }
+
     if (token == "input.gamepad")
     {
         ParseOne(Parser, InputGamepad);
@@ -1746,6 +1753,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         << fMouseXScale << " "
         << fMouseYScale << "\n";
     export_as_text( Output, "mousecontrol", InputMouse );
+    export_as_text( Output, "consistviews", ConsistViews );
     export_as_text( Output, "enabletraction", bEnableTraction );
     export_as_text( Output, "loadtraction", bLoadTraction );
     export_as_text( Output, "friction", fFriction );
