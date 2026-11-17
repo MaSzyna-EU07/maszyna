@@ -25,8 +25,10 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "world/mtable.h"
 #include "scene/sn_utils.h"
 #include "utilities/wholefile.h"
+#include "model/geometrypack.h"
 
 #include <bit>
+#include <sstream>
 
 //---------------------------------------------------------------------------
 
@@ -1825,7 +1827,7 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 		s.put(0);
 }
 
-void TModel3d::SaveToBinFile(std::string const &FileName)
+void TModel3d::SaveToBinFile(std::string const &FileName, std::string const &Pack)
 {
 	WriteLog("saving e3d model..");
 
@@ -1840,7 +1842,8 @@ void TModel3d::SaveToBinFile(std::string const &FileName)
 	textures.push_back("");
 	std::vector<float4x4> transforms;
 
-	std::ofstream s(FileName, std::ios::binary);
+	// the model is put together in memory, then written as it is (E3D0) or with its geometry split off (E3D1)
+	std::stringstream s(std::ios::in | std::ios::out | std::ios::binary);
 
 	sn_utils::ls_uint32(s, MAKE_ID4('E', '3', 'D', '0'));
 	auto const e3d_spos = s.tellp();
@@ -1942,7 +1945,37 @@ void TModel3d::SaveToBinFile(std::string const &FileName)
 	auto const end = s.tellp();
 	s.seekp(e3d_spos);
 	sn_utils::ls_uint32(s, (uint32_t)(4 + end - e3d_spos));
-	s.close();
+
+	auto const data{s.str()};
+	if (Global.iConvertModels & 32)
+	{
+		// E3D1: the geometry blocks go to the pack of the folder, the small ones stay in the file
+		e3d::e3d1_content content;
+		std::string error;
+		if (false == e3d::split_e3d0(reinterpret_cast<unsigned char const *>(data.data()), data.size(), content, error))
+		{
+			ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + error, logtype::model);
+			return;
+		}
+		e3d::writer_options options;
+		auto const file{std::filesystem::u8path(FileName)};
+		options.pack = Pack.empty() ? file.parent_path() / "geometry.e3dpack" : std::filesystem::u8path(Pack);
+		try
+		{
+			e3d::write_e3d1(file, content, options);
+			e3d::flush_pack_writers();
+		}
+		catch (std::exception const &exception)
+		{
+			ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + exception.what(), logtype::model);
+			return;
+		}
+	}
+	else
+	{
+		std::ofstream output(FileName, std::ios::binary);
+		output.write(data.data(), static_cast<std::streamsize>(data.size()));
+	}
 
 	WriteLog("..done.");
 }
@@ -2042,70 +2075,6 @@ class e3d_memorybuffer : public std::streambuf
   private:
 	off_type m_beyondend{0};
 };
-
-// little endian values taken from memory the same way the sn_utils functions read them from a stream
-std::uint16_t e3d_uint16(unsigned char const *&Data)
-{
-	std::uint16_t const value = static_cast<std::uint16_t>(Data[1] << 8 | Data[0]);
-	Data += 2;
-	return value;
-}
-std::uint32_t e3d_uint32(unsigned char const *&Data)
-{
-	std::uint32_t const value = std::uint32_t{Data[3]} << 24 | std::uint32_t{Data[2]} << 16 | std::uint32_t{Data[1]} << 8 | std::uint32_t{Data[0]};
-	Data += 4;
-	return value;
-}
-std::uint64_t e3d_uint64(unsigned char const *&Data)
-{
-	std::uint64_t const low{e3d_uint32(Data)};
-	std::uint64_t const high{e3d_uint32(Data)};
-	return high << 32 | low;
-}
-float e3d_float32(unsigned char const *&Data)
-{
-	return std::bit_cast<float>(e3d_uint32(Data));
-}
-glm::vec3 e3d_vec3(unsigned char const *&Data)
-{
-	glm::vec3 value;
-	value.x = e3d_float32(Data);
-	value.y = e3d_float32(Data);
-	value.z = e3d_float32(Data);
-	return value;
-}
-glm::vec4 e3d_vec4(unsigned char const *&Data)
-{
-	glm::vec4 value;
-	value.x = e3d_float32(Data);
-	value.y = e3d_float32(Data);
-	value.z = e3d_float32(Data);
-	value.w = e3d_float32(Data);
-	return value;
-}
-// counterparts of basic_vertex::deserialize() and basic_vertex::deserialize_packed()
-void e3d_vertex(unsigned char const *&Data, gfx::basic_vertex &Vertex, bool const Tangent)
-{
-	Vertex.position = e3d_vec3(Data);
-	Vertex.normal = e3d_vec3(Data);
-	Vertex.texture.x = e3d_float32(Data);
-	Vertex.texture.y = e3d_float32(Data);
-	if (Tangent)
-	{
-		Vertex.tangent = e3d_vec4(Data);
-	}
-}
-void e3d_vertex_packed(unsigned char const *&Data, gfx::basic_vertex &Vertex, bool const Tangent)
-{
-	Vertex.position = glm::unpackHalf4x16(e3d_uint64(Data));
-	Vertex.normal = glm::unpackSnorm3x10_1x2(e3d_uint32(Data));
-	Vertex.texture.x = glm::unpackHalf1x16(e3d_uint16(Data));
-	Vertex.texture.y = glm::unpackHalf1x16(e3d_uint16(Data));
-	if (Tangent)
-	{
-		Vertex.tangent = glm::unpackSnorm3x10_1x2(e3d_uint32(Data));
-	}
-}
 } // namespace
 
 void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
@@ -2122,6 +2091,9 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	std::streampos end = s.tellg() + (std::streampos)size;
 	bool hastangents{false};
 	bool hasuserdata{false};
+	// E3D1: the chunks with the geometry records and the geometry kept in the file
+	std::pair<unsigned char const *, std::size_t> geometryrecords{nullptr, 0};
+	std::pair<unsigned char const *, std::size_t> geometryinline{nullptr, 0};
 
 	while (s.tellg() < end)
 	{
@@ -2208,55 +2180,13 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 					{
 						ErrorLog("Bad model: vertex data of sub-model " + std::to_string(submodeloffset.second) + " lies past the end of the file", logtype::model);
 					}
-					auto *data{memory->cursor()};
-					switch (vertextype & 3)
+					// the same decoding as the geometry blocks of E3D1 get
+					if (e3d::decode_vertices(memory->cursor(), vertexcount, static_cast<int>(vertextype), submodel.Vertices.data(), (hasuserdata ? submodel.Userdata.data() : nullptr),
+					                         (submodel.eType < TP_ROTATOR && false == submodel.m_normalizenormals)))
 					{
-					case 0:
-					{
-						// legacy vnt0 format
-						for (std::size_t i = 0; i < vertexcount; ++i)
-						{
-							e3d_vertex(data, submodel.Vertices[i], hastangents);
-							if (hasuserdata)
-								submodel.Userdata[i].data = e3d_vec4(data);
-							if (submodel.eType < TP_ROTATOR)
-							{
-								// normal vectors debug routine
-								if (false == submodel.m_normalizenormals && std::abs(glm::length2(submodel.Vertices[i].normal) - 1.0f) > 0.01f)
-								{
-									submodel.m_normalizenormals = TSubModel::normalize; // we don't know if uniform scaling would suffice
-									WriteLog("Bad model: non-unit normal vector(s) encountered during sub-model geometry deserialization", logtype::model);
-								}
-							}
-						}
-						break;
-					}
-					case 1:
-					{
-						// expanded chunk formats
-						for (std::size_t i = 0; i < vertexcount; ++i)
-						{
-							e3d_vertex_packed(data, submodel.Vertices[i], hastangents);
-							if (hasuserdata)
-								submodel.Userdata[i].data = glm::unpackHalf4x16(e3d_uint64(data));
-						}
-						break;
-					}
-					case 2:
-					{
-						// expanded chunk formats
-						for (std::size_t i = 0; i < vertexcount; ++i)
-						{
-							e3d_vertex(data, submodel.Vertices[i], hastangents);
-							if (hasuserdata)
-								submodel.Userdata[i].data = e3d_vec4(data);
-						}
-						break;
-					}
-					default:
-					{
-						break;
-					}
+						// normal vectors debug routine
+						submodel.m_normalizenormals = TSubModel::normalize; // we don't know if uniform scaling would suffice
+						WriteLog("Bad model: non-unit normal vector(s) encountered during sub-model geometry deserialization", logtype::model);
 					}
 					continue;
 				}
@@ -2348,38 +2278,7 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 					{
 						ErrorLog("Bad model: index data of sub-model " + std::to_string(submodeloffset.second) + " lies past the end of the file", logtype::model);
 					}
-					auto *data{memory->cursor()};
-					switch (indexsize)
-					{
-					case 1:
-					{
-						for (std::size_t i = 0; i < indexcount; ++i)
-						{
-							submodel.Indices[i] = *data++;
-						}
-						break;
-					}
-					case 2:
-					{
-						for (std::size_t i = 0; i < indexcount; ++i)
-						{
-							submodel.Indices[i] = e3d_uint16(data);
-						}
-						break;
-					}
-					case 4:
-					{
-						for (std::size_t i = 0; i < indexcount; ++i)
-						{
-							submodel.Indices[i] = e3d_uint32(data);
-						}
-						break;
-					}
-					default:
-					{
-						break;
-					}
-					}
+					e3d::decode_indices(memory->cursor(), indexcount, static_cast<int>(indexsize), submodel.Indices.data());
 					continue;
 				}
 				switch (indexsize)
@@ -2414,6 +2313,15 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 				}
 				}
 			}
+		}
+		else if (type == MAKE_ID4('G', 'R', 'F', '0') || type == MAKE_ID4('G', 'R', 'I', '0')) // E3D1 geometry records and inline geometry
+		{
+			if (memory == nullptr)
+				throw std::runtime_error("e3d: E3D1 geometry can be read only from memory");
+			auto &chunk{type == MAKE_ID4('G', 'R', 'F', '0') ? geometryrecords : geometryinline};
+			if (chunk.first != nullptr)
+				throw std::runtime_error("e3d: duplicated GRF/GRI chunk");
+			chunk = {memory->cursor(), std::min<std::size_t>(size, memory->available())};
 		}
 		else if (type == MAKE_ID4('T', 'R', 'A', '0'))
 		{
@@ -2460,6 +2368,17 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 	if (!Root)
 		throw std::runtime_error("e3d: no submodels");
 
+	// whether the vertex data of each sub-model came with tangents; the same for the whole E3D0 file
+	std::vector<char> submodeltangents(static_cast<std::size_t>(iSubModelsCount), hastangents ? 1 : 0);
+	if (m_e3d1)
+	{
+		deserialize_e3d1_geometry(geometryrecords.first, geometryrecords.second, geometryinline.first, geometryinline.second, submodeltangents);
+	}
+	else if (geometryrecords.first != nullptr)
+	{
+		ErrorLog("Bad model: E3D1 geometry records in an E3D0 file \"" + m_filename + "\" ignored", logtype::model);
+	}
+
 	for (size_t i = 0; (int)i < iSubModelsCount; ++i)
 	{
 		Root[i].BinInit(Root, Matrices.data(), &Textures, &Names, dynamic);
@@ -2485,11 +2404,66 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 			break;
 		}
 		}
-		if (false == hastangents)
+		if (false == submodeltangents[i])
 		{
 			gfx::calculate_tangents(Root[i].Vertices, Root[i].Indices, type);
 		}
 		Root[i].m_geometry.handle = GfxRenderer->Insert(Root[i].Indices, Root[i].Vertices, Root[i].Userdata, m_geometrybank, type);
+	}
+}
+
+void TModel3d::deserialize_e3d1_geometry(unsigned char const *Records, std::size_t Recordssize, unsigned char const *Inline, std::size_t Inlinesize, std::vector<char> &Tangents)
+{
+	if (Records == nullptr)
+		throw std::runtime_error("e3d: E3D1 model without GRF chunk");
+	e3d::e3d1_geometry geometry;
+	std::string error;
+	if (false == e3d::parse_grf0(Records, Recordssize, geometry, error))
+		throw std::runtime_error("e3d: " + error);
+	if (geometry.records.size() != static_cast<std::size_t>(iSubModelsCount))
+		throw std::runtime_error("e3d: GRF chunk doesn't match the SUB chunk");
+	geometry.inline_data = Inline;
+	geometry.inline_size = Inlinesize;
+	e3d::resolved_geometry resolved;
+	e3d::resolve_geometry(geometry, std::filesystem::u8path(m_binaryfolder), resolved);
+	for (auto const &message : resolved.errors)
+	{
+		ErrorLog("Bad model: " + message + " (\"" + m_filename + "\")", logtype::model);
+	}
+	for (std::size_t i = 0; i < geometry.records.size(); ++i)
+	{
+		auto const &record{geometry.records[i]};
+		auto &submodel{Root[i]};
+		auto const *block{resolved.blocks[i]};
+		if (record.empty() || block == nullptr)
+		{
+			// no geometry, or the geometry is missing: the sub-model is left without it
+			submodel.m_geometry.vertex_count = 0;
+			submodel.m_geometry.index_count = 0;
+			continue;
+		}
+		if (submodel.m_geometry.vertex_count != static_cast<int>(record.vertex_count) || submodel.m_geometry.index_count != static_cast<int>(record.index_count))
+		{
+			ErrorLog("Bad model: geometry record of sub-model " + std::to_string(i) + " doesn't match its counts (\"" + m_filename + "\")", logtype::model);
+			submodel.m_geometry.vertex_count = static_cast<int>(record.vertex_count);
+			submodel.m_geometry.index_count = static_cast<int>(record.index_count);
+		}
+		Tangents[i] = e3d::has_tangents(record.vertex_format) ? 1 : 0;
+		// the same decoding as the VNT and IDX chunks of E3D0 get
+		bool const userdata{e3d::has_userdata(record.vertex_format)};
+		submodel.Vertices.resize(record.vertex_count);
+		if (userdata)
+			submodel.Userdata.resize(record.vertex_count);
+		m_vertexcount += static_cast<int>(record.vertex_count);
+		if (e3d::decode_vertices(block, record.vertex_count, record.vertex_format, submodel.Vertices.data(), (userdata ? submodel.Userdata.data() : nullptr),
+		                         (submodel.eType < TP_ROTATOR && false == submodel.m_normalizenormals)))
+		{
+			submodel.m_normalizenormals = TSubModel::normalize; // we don't know if uniform scaling would suffice
+			WriteLog("Bad model: non-unit normal vector(s) encountered during sub-model geometry deserialization", logtype::model);
+		}
+		submodel.Indices.resize(record.index_count);
+		m_indexcount += static_cast<int>(record.index_count);
+		e3d::decode_indices(block + record.vertex_bytes(), record.index_count, record.index_size, submodel.Indices.data());
 	}
 }
 
@@ -2661,8 +2635,12 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	uint32_t type = sn_utils::ld_uint32(file);
 	uint32_t size = sn_utils::ld_uint32(file) - 8;
 
-	if (type == MAKE_ID4('E', '3', 'D', '0'))
+	if (type == MAKE_ID4('E', '3', 'D', '0') || type == MAKE_ID4('E', '3', 'D', '1'))
 	{
+		// the geometry of E3D1 is looked for in the pack named relative to the folder of the model file
+		m_e3d1 = (type == MAKE_ID4('E', '3', 'D', '1'));
+		auto const folder{std::filesystem::u8path(FileName).parent_path().u8string()};
+		m_binaryfolder.assign(folder.begin(), folder.end());
 		deserialize(file, size, dynamic);
 
 		WriteLog("Finished loading 3d model data from \"" + FileName + "\"", logtype::model);

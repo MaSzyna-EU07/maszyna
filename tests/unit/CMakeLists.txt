@@ -38,6 +38,17 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDrives.cpp"
 	# the camera, for the order of its rotations (test_camera.cpp)
 	"${CMAKE_SOURCE_DIR}/vehicle/Camera.cpp"
+	# the E3D1 model format: geometry blocks, the pack they are shared through
+	"${CMAKE_SOURCE_DIR}/model/geometrypack.cpp"
+	# and TModel3d, loading and saving models with it, the geometry kept by a stand-in renderer (test_e3d1_model.cpp)
+	"${CMAKE_SOURCE_DIR}/model/Model3d.cpp"
+	"${CMAKE_SOURCE_DIR}/model/vertex.cpp"
+	"${CMAKE_SOURCE_DIR}/rendering/geometrybank.cpp"
+	"${CMAKE_SOURCE_DIR}/rendering/renderer.cpp"
+	"${CMAKE_SOURCE_DIR}/simulation/simulationtime.cpp"
+	"${CMAKE_SOURCE_DIR}/utilities/Float3d.cpp"
+	"${CMAKE_SOURCE_DIR}/rendering/openglmatrixstack.cpp"
+	model_stubs.cpp
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
