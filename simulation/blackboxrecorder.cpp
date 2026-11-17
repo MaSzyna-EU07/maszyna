@@ -246,9 +246,10 @@ void blackbox_recorder::update(double const Deltatime) {
 
 	std::scoped_lock lock{m_mutex};
 	m_time += Deltatime;
-	// with the physics logs on, each driver writes its own all the time. the tapes are files of their own: they go on
-	// after the recording ends in the editor, and with a recording which couldn't be made
-	if (false == WriteLogFlag && m_time >= m_tapedue) {
+	// the tape of the driver the user is with, unless it writes its own: with "physicslog yes" each driver but one of a
+	// road vehicle does. the tapes are files of their own: they go on after the recording ends in the editor, and with
+	// a recording which couldn't be made
+	if (m_time >= m_tapedue) {
 		keep_tape_line();
 		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
 	}

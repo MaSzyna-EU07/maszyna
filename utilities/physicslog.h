@@ -19,12 +19,50 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
+
+// a line of a driver's physics log as its values, taken as the simulation goes and made into text by the thread which
+// writes the logs: the text, a stream of 26 values, is what a line costs, and the drivers of a big scenery give twenty
+// lines a second each. the columns as physicslog_header of the driver names them
+struct physicslog_values {
+	double time{0.0};
+	double wheelspeed{0.0};
+	double acceleration{0.0};
+	double couplerdistance{0.0};
+	double couplerforce{0.0};
+	double tractionforce{0.0};
+	double frictionforce{0.0};
+	double brakeforce{0.0};
+	double brakepressure{0.0};
+	double pipepressure{0.0};
+	double motorcurrent{0.0};
+	int mainctrl{0};
+	int scndctrl{0};
+	double brakectrl{0.0};
+	double localbrake{0.0};
+	int direction{0};
+	std::string command;
+	double value1{0.0};
+	double value2{0.0};
+	int security{0};
+	int wheelslip{0};
+	double enginetemperature{0.0};
+	double oiltemperature{0.0};
+	double watertemperature{0.0};
+	double wateraux{0.0};
+	double vehiclespeed{0.0};
+
+	// the line, as the logs always had it, at the end of Text
+	void append_to(std::string &Text) const;
+};
 
 // the physics logs, <folder>/<name>.dat, what no file name may have on Windows replaced in the name (a spawned vehicle's
 // has a ':'), the same on every system. the lines given are kept, and written every two seconds by a thread of its own,
 // each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and the
 // simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file can't
-// be written, held by another program say, are kept for the next try: the last 64 MB of them all at most
+// be written, held by another program say, are kept for the next try: the last 64 MB of them all at most. the thread's
+// disk work goes after everyone else's, and a disk slower than the logs need (a hard disk, hundreds of them) gets them
+// less often, so the simulation reading from it doesn't wait behind them
 class physicslog_writer {
 public:
 	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
@@ -38,6 +76,8 @@ public:
 	void begin(std::string const &Name, std::string_view Header);
 	// Line at the end of the log Name. a log not begun is added to as its file stands
 	void append(std::string const &Name, std::string_view Line);
+	// the same, a line of the values, made into text by the writer's thread when it writes the log
+	void append(std::string const &Name, physicslog_values Values);
 	// writes what is kept, now
 	void flush();
 	// as flush, waited for no longer than Timeout: then false, and the writing goes on by itself, on a thread left
@@ -52,22 +92,32 @@ public:
 	std::filesystem::path file(std::string const &Name) const;
 	// the same, for the log of the simulator
 	std::string shown(std::string const &Name) const;
+	// the wait of the thread before its next writing, after one which took Took: the interval, or three times as long
+	// as the writing was when that's longer. a disk which can't keep up is then busy with the logs a quarter of the
+	// time at most rather than all of it, and their lines wait in memory the longer
+	static std::chrono::steady_clock::duration wait_after(std::chrono::milliseconds Interval, std::chrono::steady_clock::duration Took);
 
 private:
 	struct pending {
 		bool fresh{false}; // its file is to be emptied first, and the header written into it
 		std::string header;
 		std::string text;
+		// the lines given as values since, after the text: made into text when written
+		std::vector<physicslog_values> values;
+
+		// the lines of the values at the end of the text
+		void to_text();
 	};
 
 	// the thread, on the first line given, unless stopped. called with m_mutex held
 	void start();
 	void run(std::stop_token const &Stop);
 	// as flush, letting nothing out: on the writer's thread, or at the end of the process, an exception would end the
-	// simulator. what was taken for a writing which failed as a whole is lost, the next one goes on with what came since
-	void flush_safely() noexcept;
-	// called with m_filemutex held
-	void write();
+	// simulator. what was taken for a writing which failed as a whole is lost, the next one goes on with what came since.
+	// returns: the number of logs there were to write
+	std::size_t flush_safely() noexcept;
+	// called with m_filemutex held. returns: the number of logs there were to write
+	std::size_t write();
 	// the lines of the log Name written into its file. returns: true if they all were
 	bool write_log(std::string const &Name, pending const &Lines) const;
 
@@ -82,6 +132,7 @@ private:
 	std::thread::id m_writer; // of the thread, kept after it is taken to be joined: the writer knows itself by it
 	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
 	std::set<std::string> m_failed; // the logs whose file couldn't be written, told once
+	bool m_slowtold{false}; // the writings were told to take longer than the interval allows, once; the thread's own
 };
 
 // the physics logs of the drivers (physicslog yes), and those the black box writes of the user's vehicles

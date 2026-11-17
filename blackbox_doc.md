@@ -9,8 +9,9 @@ starter, a viewer) can replay the session on the map, or set the user's driving 
 
 `blackbox yes` in `eu07.ini` writes it, with the physics logs on or off; `blackbox no` never does. With no
 `blackbox` entry it is written along with the physics logs, `physicslog yes` or `physicslog.trains yes`.
-The latter writes the `.dat` logs of the trains only: of each driver who drives rail vehicles, not of the
-passengers nor of the vehicles of the roads, so a big scenery gives far fewer of them. It is never written in an
+The former writes the `.dat` log of every driver but those of the road vehicles, which on a big scenery are
+hundreds and nobody reads. The latter writes the `.dat` logs of the trains only: of each driver who drives rail
+vehicles, not of the passengers either, so a big scenery gives far fewer of them still. It is never written in an
 editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
 recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
 
@@ -26,10 +27,14 @@ goes on in that driver's log, begun then if it is the first time. Back with a dr
 the gap in its time. A vehicle with no driver of its own, or whose own driver is passive, takes the log of
 the driver of its train. So the speed recorder's tape can be read from them as before, also while the
 simulator runs, without a log of every vehicle. A driver who writes a log of its own, with
-`physicslog.trains yes`, isn't written twice. Like those of `physicslog yes`, they are written every
+`physicslog.trains yes` or `physicslog yes`, isn't written twice; with `physicslog yes` it is a road vehicle the
+user drives whose log the black box writes. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
 of real time of them (at a higher time speed, more of the simulated time). A file another program holds
 for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
+The writing of all the logs goes after the simulator's own reading of the disk. When it takes over a third of
+those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, the disk
+busy with them a quarter of the time at most, and the simulator's log tells it once.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

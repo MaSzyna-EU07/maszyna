@@ -2339,10 +2339,10 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     }
     TableClear();
 
-    // the logs of all, begun at once as they always were. one of a train only at its first line (update_logs): every
-    // crew is made primary here, and the drivers but one of a train with crews in more vehicles are made passive
-    // before it starts, so they get no file with only the header
-    if( WriteLogFlag ) {
+    // the logs of all but the road vehicles, begun at once as they always were. one of a train only at its first line
+    // (update_logs): every crew is made primary here, and the drivers but one of a train with crews in more vehicles
+    // are made passive before it starts, so they get no file with only the header
+    if( WriteLogFlag && false == drives_road_vehicle() ) {
         begin_physicslog();
     }
 
@@ -5364,38 +5364,38 @@ std::string_view TController::physicslog_header() {
            "\r\n";
 }
 
-std::string TController::physicslog_line() const {
-    std::ostringstream line;
-    line << std::fixed << std::setprecision( 4 )
-        << ElapsedTime << " "
-        << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
-        << mvControlling->AccS << " "
-        << mvOccupied->Couplers[1].Dist << " "
-        << mvOccupied->Couplers[1].CForce << " "
-        << mvOccupied->Ft << " "
-        << mvOccupied->Ff << " "
-        << mvOccupied->Fb << " "
-        << mvOccupied->BrakePress << " "
-        << mvOccupied->PipePress << " "
-        << mvControlling->Im << " "
-        << int(mvControlling->MainCtrlPos) << " "
-        << int(mvControlling->ScndCtrlPos) << " "
-        << mvOccupied->fBrakeCtrlPos << " "
-        << mvOccupied->LocalBrakePosA << " "
-        << int(mvControlling->DirActive) << " "
-        << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
-        << mvOccupied->CommandIn.Value1 << " "
-        << mvOccupied->CommandIn.Value2 << " "
-        << int(mvControlling->SecuritySystem.is_blinking()) << " "
-        << int(mvControlling->SlippingWheels) << " "
-        << mvControlling->dizel_heat.Ts << " "
-        << mvControlling->dizel_heat.To << " "
-        << mvControlling->dizel_heat.temperatura1 << " "
-        << mvControlling->dizel_heat.temperatura2 << " "
-        // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-        << mvOccupied->V * 3.6
-        << "\r\n";
-    return line.str();
+physicslog_values TController::physicslog_line() const {
+    // the values only: the writer of the logs makes them into text on its own thread
+    physicslog_values line;
+    line.time = ElapsedTime;
+    line.wheelspeed = fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot);
+    line.acceleration = mvControlling->AccS;
+    line.couplerdistance = mvOccupied->Couplers[1].Dist;
+    line.couplerforce = mvOccupied->Couplers[1].CForce;
+    line.tractionforce = mvOccupied->Ft;
+    line.frictionforce = mvOccupied->Ff;
+    line.brakeforce = mvOccupied->Fb;
+    line.brakepressure = mvOccupied->BrakePress;
+    line.pipepressure = mvOccupied->PipePress;
+    line.motorcurrent = mvControlling->Im;
+    line.mainctrl = static_cast<int>(mvControlling->MainCtrlPos);
+    line.scndctrl = static_cast<int>(mvControlling->ScndCtrlPos);
+    line.brakectrl = mvOccupied->fBrakeCtrlPos;
+    line.localbrake = mvOccupied->LocalBrakePosA;
+    line.direction = static_cast<int>(mvControlling->DirActive);
+    line.command = ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() );
+    line.value1 = mvOccupied->CommandIn.Value1;
+    line.value2 = mvOccupied->CommandIn.Value2;
+    line.security = static_cast<int>(mvControlling->SecuritySystem.is_blinking());
+    line.wheelslip = static_cast<int>(mvControlling->SlippingWheels);
+    // floats, as the stream wrote them: widened to double
+    line.enginetemperature = mvControlling->dizel_heat.Ts;
+    line.oiltemperature = mvControlling->dizel_heat.To;
+    line.watertemperature = mvControlling->dizel_heat.temperatura1;
+    line.wateraux = mvControlling->dizel_heat.temperatura2;
+    // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+    line.vehiclespeed = mvOccupied->V * 3.6;
+    return line;
 }
 
 void TController::begin_physicslog()
