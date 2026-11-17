@@ -79,11 +79,7 @@ void snow_cover::update(double const Deltatime, snow_weather const &Weather)
 {
 	if (Deltatime <= 0.0)
 		return;
-	m_time += Deltatime;
-	// the wind at the ground comes in gusts
-	auto const t{static_cast<float>(m_time)};
-	auto const gust{1.f + 0.25f * std::sin(t * 0.37f) * std::sin(t * 0.13f + 1.f) + 0.12f * std::sin(t * 1.7f + 0.4f)};
-	m_wind = Weather.wind * std::max(gust, 0.4f);
+	m_wind = Weather.wind;
 
 	auto const step{Deltatime * static_cast<double>(std::max(time_scale, 0.f))};
 	if (step <= 0.0)
@@ -102,7 +98,8 @@ void snow_cover::fall(double const Deltatime, snow_weather const &Weather)
 		return;
 	// the water of the snow fallen in the step, m, and the depth it makes
 	auto const water{static_cast<float>(HEAVIEST_PRECIPITATION / HOUR * Deltatime) * Weather.snowfall};
-	auto const density{new_snow_density(Weather.temperature)};
+	// the flakes are as dense as the air they fell through made them: by its wet-bulb temperature
+	auto const density{new_snow_density(Weather.wet_bulb)};
 	auto const added{water * WATER_DENSITY / density};
 	auto const before{m_depth};
 	auto const depth{std::min(before + added, DEEPEST_SNOW)};
@@ -123,7 +120,9 @@ void snow_cover::melt(double const Deltatime, snow_weather const &Weather)
 	auto const temperature{Weather.temperature};
 	auto const warm{smoothstep(-4.f, 1.f, temperature)};
 	// the wetness follows the warmth and the rain, and freezes into a crust in a frost
-	auto const wet{std::max(std::clamp((temperature + 0.5f) / 2.f, 0.f, 1.f), (temperature > -1.f ? Weather.rainfall : 0.f))};
+	// (wet snow falling, above a wet-bulb temperature of zero, wets it too)
+	auto const wetfall{(Weather.snowfall > 0.f) ? std::clamp(Weather.wet_bulb, 0.f, 1.f) : 0.f};
+	auto const wet{std::max({std::clamp((temperature + 0.5f) / 2.f, 0.f, 1.f), (temperature > -1.f ? Weather.rainfall : 0.f), wetfall})};
 	if (wet > m_wetness)
 		m_wetness = approach(m_wetness, wet, Deltatime, 0.5 * HOUR);
 	else
@@ -144,6 +143,9 @@ void snow_cover::melt(double const Deltatime, snow_weather const &Weather)
 	auto const looseness{(3.0 + 21.0 * std::clamp(-temperature / 15.f, 0.f, 1.f)) * HOUR};
 	m_fresh = approach(m_fresh, 0.f, Deltatime, looseness);
 	m_fresh = approach(m_fresh, 0.f, Deltatime, 0.5 * HOUR / std::max(m_wetness, 1e-3f));
+	// dry air and wind take a little of it straight off (a few tenths of a millimetre of water a day)
+	auto const sublimated{0.4e-3 * (1.0 - Weather.humidity) * (0.3 + std::min(glm::length(m_wind), 10.f) / 10.0) / 86400.0 * Deltatime};
+	m_depth = std::max(0.f, m_depth - static_cast<float>(sublimated) * WATER_DENSITY / m_density);
 	// melting by the degree-day: 3 mm of water a degree and a day, and the rain falling on it
 	if (temperature <= 0.f)
 		return;
@@ -178,8 +180,8 @@ void snow_cover::stick(double const Deltatime, snow_weather const &Weather)
 {
 	auto const temperature{Weather.temperature};
 	auto const speed{glm::length(m_wind)};
-	// wet snow near zero sticks best; the dry snow of a frost sticks a little
-	auto const stickiness{std::clamp(1.f - std::abs(temperature + 0.5f) / 2.5f, 0.15f, 1.f)};
+	// wet snow, at a wet-bulb temperature about zero, sticks best; the dry snow of a frost sticks a little
+	auto const stickiness{std::clamp(1.f - std::abs(Weather.wet_bulb - 0.3f) / 2.5f, 0.15f, 1.f)};
 	auto const rate{m_falling * smoothstep(2.f, 10.f, speed) * stickiness};
 	if (rate > 0.f)
 	{
@@ -187,8 +189,8 @@ void snow_cover::stick(double const Deltatime, snow_weather const &Weather)
 		m_plaster += (1.f - m_plaster) * share;
 		m_plasterwind = m_plasterwind + (Weather.wind - m_plasterwind) * std::clamp(share * 3.f, 0.f, 1.f);
 	}
-	// it falls off in the warmth and the rain, and slowly dries off in the wind
-	auto loss{1.0 / (24.0 * HOUR)};
+	// it falls off in the warmth and the rain, and slowly goes in dry air and wind
+	auto loss{(0.5 + 3.0 * (1.0 - Weather.humidity)) * (0.5 + std::min(speed, 10.f) / 10.0) / (24.0 * HOUR)};
 	if (temperature > 0.5f)
 		loss += temperature / HOUR;
 	loss += Weather.rainfall * 2.0 / HOUR;
@@ -203,9 +205,11 @@ void snow_cover::ice(double const Deltatime, snow_weather const &Weather)
 	// glaze: rain or drizzle freezing on the wires, about a third of the precipitation for a cylinder
 	auto const glaze{((temperature <= 0.f) && (temperature > -8.f)) ? Weather.rainfall * 1.3e-3f / 3600.f : 0.f};
 	// rime: the droplets of a freezing fog caught by the wire in the wind
-	auto const rime{(temperature < -1.f) ? Weather.fog * std::min(speed, 10.f) / 10.f * 0.3e-3f / 3600.f : 0.f};
+	// (or of air saturated without one: hoarfrost)
+	auto const moist{std::max(Weather.fog, std::clamp((Weather.humidity - 0.95f) / 0.05f, 0.f, 1.f) * 0.4f)};
+	auto const rime{(temperature < -1.f) ? moist * std::min(speed, 10.f) / 10.f * 0.3e-3f / 3600.f : 0.f};
 	// a sleeve of wet snow turning round the wire
-	auto const sleeve{((temperature > -1.f) && (temperature < 1.5f)) ? m_falling * 2.0e-3f / 3600.f : 0.f};
+	auto const sleeve{((Weather.wet_bulb > -1.f) && (Weather.wet_bulb < 1.2f) && (Weather.snowfall > 0.f)) ? m_falling * 2.0e-3f / 3600.f : 0.f};
 	auto const growth{(glaze + rime + sleeve) * static_cast<float>(Deltatime)};
 	if (growth > 0.f)
 	{
@@ -214,8 +218,8 @@ void snow_cover::ice(double const Deltatime, snow_weather const &Weather)
 		m_wireicedensity = (m_wireice * m_wireicedensity + growth * density) / total;
 		m_wireice = std::min(total, THICKEST_WIRE_ICE);
 	}
-	// it melts in the warmth and sublimates slowly in a dry wind
-	auto loss{0.05e-3 / HOUR};
+	// it melts in the warmth and sublimates slowly in dry air
+	auto loss{0.15e-3 * (1.0 - Weather.humidity) / HOUR + 0.02e-3 / HOUR};
 	if (temperature > 0.f)
 		loss += 1.0e-3 * temperature / HOUR;
 	m_wireice = std::max(0.f, m_wireice - static_cast<float>(loss * Deltatime));

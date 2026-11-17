@@ -17,8 +17,10 @@ struct snow_weather
 	float temperature{0.f}; // air temperature, degrees C
 	float snowfall{0.f}; // how heavily the snow falls, 0..1 (the intensity of the precipitation)
 	float rainfall{0.f}; // how heavily the rain falls, 0..1
-	glm::vec2 wind{0.f}; // the wind at the ground, world x and z of where it blows to, m/s
+	glm::vec2 wind{0.f}; // the wind at the ground as it blows, gusts included, world x and z of where it blows to, m/s
 	float fog{0.f}; // how thick the fog at the ground is, 0..1 (rime grows in it below zero)
+	float humidity{0.85f}; // relative humidity of the air, 0..1
+	float wet_bulb{0.f}; // its wet-bulb temperature, degrees C: what the falling snow is like
 };
 
 // the snow lying on the ground and on the scenery, and the ice on the wires, as the weather lays it, the wind blows it about and
@@ -124,5 +126,4 @@ class snow_cover
 	glm::vec2 m_plasterwind{0.f, 6.f};
 	float m_wireice{0.f};
 	float m_wireicedensity{900.f};
-	double m_time{0.0}; // for the gusts
 };

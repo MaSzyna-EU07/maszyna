@@ -81,14 +81,10 @@ world_environment::compute_weather() const {
 	                 Global.Overcast <= 0.90 ? "broken:" :
 	                 Global.Overcast <= 1.00 ? "overcast:" :
 
-	                 Global.AirTemperature > 1 ? "rain:" :
-	                                             "snow:";
-    if( Global.Overcast > 1.f ) {
-        // a described weather may say what falls, whatever the temperature
-        if( auto const kind { m_weather.precipitation_override() } ) {
-            Global.Weather = ( *kind == precipitation_type::snow ? "snow:" : "rain:" );
-        }
-    }
+	                 // what falls: by the air temperature, by its wet-bulb temperature where the weather describes the moisture of
+	                 // the air, or as a described weather says whatever the temperature
+	                 psychrometry::is_snow( m_weather.falling() ) ? "snow:" :
+	                                                                "rain:";
 
     Global.fTurbidity = turbidity_of( Global.Overcast );
 }
@@ -259,6 +255,12 @@ world_environment::update_wind() {
 
     auto const timedelta{ static_cast<float>( Timer::GetDeltaTime() ) };
 
+    if( m_weather.conditions().wind_described ) {
+        // the wind the weather describes, with its gusts and lulls
+        update_described_wind( timedelta );
+        return;
+    }
+
     m_wind.change_time -= timedelta;
     if( m_wind.change_time < 0 ) {
         m_wind.change_time = static_cast<float>(Random( 5, 15 ));
@@ -287,6 +289,35 @@ world_environment::update_wind() {
             std::sin( polarangle ) * std::sin( azimuthalangle ) * -1,
             std::cos( polarangle ),
             std::sin( polarangle ) * std::cos( azimuthalangle ) );
+    m_weather.surface_wind( glm::vec2{ m_wind.vector.x, m_wind.vector.z } );
+}
+
+// the wind at the ground a described weather gives: it wanders about the mean speed and direction, every few seconds towards a lull,
+// a breeze or, now and then, a gust (half as strong again as the mean where the description gives none)
+void
+world_environment::update_described_wind( float const Timedelta ) {
+
+    auto const &conditions { m_weather.conditions() };
+    auto const mean { conditions.wind_speed };
+    auto const gust { std::max( conditions.wind_gust, mean * 1.5f ) };
+    // where it blows to, as the azimuth of the wind has it
+    auto const heading { conditions.wind_direction + 180.f };
+
+    m_wind.change_time -= Timedelta;
+    if( m_wind.change_time < 0 ) {
+        m_wind.change_time = static_cast<float>( Random( 3, 9 ) );
+        auto const gusting { Random() < 0.25 };
+        auto const target { static_cast<float>( gusting ? Random( mean, gust ) : Random( 0.65 * mean, 1.1 * mean ) ) };
+        m_wind.velocity_change = ( target - m_wind.velocity ) / static_cast<float>( Random( 1.5, 4.0 ) );
+        auto turn { heading + static_cast<float>( Random( -12, 12 ) ) - m_wind.azimuth };
+        turn -= 360.f * std::round( turn / 360.f );
+        m_wind.azimuth_change = turn / m_wind.change_time;
+    }
+    m_wind.azimuth = clamp_circular( m_wind.azimuth + m_wind.azimuth_change * Timedelta );
+    m_wind.velocity = std::clamp( m_wind.velocity + m_wind.velocity_change * Timedelta, 0.f, std::max( gust, 0.5f ) * 1.1f );
+    auto const azimuth { glm::radians( m_wind.azimuth ) };
+    m_wind.vector = m_wind.velocity * glm::vec3( -std::sin( azimuth ), 0.f, std::cos( azimuth ) );
+    m_weather.surface_wind( glm::vec2{ m_wind.vector.x, m_wind.vector.z } );
 }
 
 void

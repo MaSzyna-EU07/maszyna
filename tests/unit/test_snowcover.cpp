@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "doctest.h"
+#include "environment/psychrometry.h"
 #include "environment/snowcover.h"
 
 namespace {
@@ -14,6 +15,7 @@ void run(snow_cover &Snow, snow_weather const &Weather, double const Hours) {
 snow_weather frost(float const Snowfall, glm::vec2 const &Wind) {
 	snow_weather weather;
 	weather.temperature = -5.f;
+	weather.wet_bulb = psychrometry::wet_bulb(-5.f, weather.humidity);
 	weather.snowfall = Snowfall;
 	weather.wind = Wind;
 	return weather;
@@ -67,6 +69,7 @@ TEST_CASE("snow cover: a thaw melts the snow and wets it, a frost lets it be") {
 	thaw.set(0.2f, 0.f, {0.f, 1.f}, 0.f);
 	snow_weather warm;
 	warm.temperature = 5.f;
+	warm.wet_bulb = psychrometry::wet_bulb(5.f, warm.humidity);
 	run(thaw, warm, 24.0);
 	CAPTURE(thaw.depth());
 	CHECK(thaw.depth() < 0.2f);
@@ -83,7 +86,9 @@ TEST_CASE("snow cover: a thaw melts the snow and wets it, a frost lets it be") {
 TEST_CASE("snow cover: wet snow in a wind sticks to the faces turned to it") {
 	snow_cover snow;
 	snow_weather weather;
-	weather.temperature = -0.5f;
+	weather.temperature = 0.3f;
+	weather.humidity = 0.98f;
+	weather.wet_bulb = psychrometry::wet_bulb(0.3f, weather.humidity);
 	weather.snowfall = 0.8f;
 	weather.wind = {0.f, 10.f};
 	run(snow, weather, 2.0);
@@ -96,6 +101,7 @@ TEST_CASE("snow cover: freezing rain glazes the wires, a thaw takes the ice off"
 	snow_cover snow;
 	snow_weather rain;
 	rain.temperature = -2.f;
+	rain.wet_bulb = psychrometry::wet_bulb(-2.f, rain.humidity);
 	rain.rainfall = 1.f;
 	run(snow, rain, 3.0);
 	CAPTURE(snow.wire_ice());
@@ -105,6 +111,7 @@ TEST_CASE("snow cover: freezing rain glazes the wires, a thaw takes the ice off"
 	CHECK(snow.wire_ice_density() == doctest::Approx(900.f));
 	snow_weather warm;
 	warm.temperature = 4.f;
+	warm.wet_bulb = psychrometry::wet_bulb(4.f, warm.humidity);
 	run(snow, warm, 2.0);
 	CHECK(snow.wire_ice() == 0.f);
 }
@@ -123,4 +130,22 @@ TEST_CASE("snow cover: the time of the snow can go faster than the simulation") 
 	fast.reset();
 	CHECK(fast.depth() == 0.f);
 	CHECK(fast.time_scale == doctest::Approx(60.f));
+}
+
+TEST_CASE("snow cover: dry air takes the snow stuck to the windward faces sooner than moist air") {
+	snow_cover dry;
+	snow_cover moist;
+	snow_weather sticking;
+	sticking.temperature = -0.5f;
+	sticking.wet_bulb = -0.5f;
+	sticking.snowfall = 0.8f;
+	sticking.wind = {0.f, 10.f};
+	run(dry, sticking, 2.0);
+	run(moist, sticking, 2.0);
+	auto after{frost(0.f, {0.f, 6.f})};
+	after.humidity = 0.4f;
+	run(dry, after, 12.0);
+	after.humidity = 0.98f;
+	run(moist, after, 12.0);
+	CHECK(dry.plaster() < moist.plaster() * 0.8f);
 }
