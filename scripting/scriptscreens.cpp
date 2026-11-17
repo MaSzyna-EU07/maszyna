@@ -99,7 +99,7 @@ std::optional<std::string> read_screen_file(std::string const &Folder, std::stri
 	{
 		return std::nullopt;
 	}
-	std::ifstream file{Folder + std::string{Path}, std::ios::binary};
+	std::ifstream file{FileOnDisk(Folder + std::string{Path}), std::ios::binary};
 	if (false == file.is_open())
 	{
 		return std::nullopt;

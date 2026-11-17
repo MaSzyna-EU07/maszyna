@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "widgets/map_objects.h"
 
 void
@@ -1735,7 +1736,7 @@ animation_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     { // animacja z pliku VMD
         {
             m_animationfilename = token;
-            std::ifstream file( paths::models + m_animationfilename, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+            std::ifstream file( FileOnDisk( paths::models + m_animationfilename ), std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
             auto size = file.tellg();   // ios::ate already positioned us at the end of the file
             file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
             // animation size, previously held in param 7

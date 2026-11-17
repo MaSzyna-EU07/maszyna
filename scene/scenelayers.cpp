@@ -542,9 +542,8 @@ bool node_layers::is_descendant(layer_handle Layer, layer_handle const Ancestor)
 
 std::string node_layers::path(layer_handle const Layer) const
 {
-	auto const named{Global.asCurrentSceneryPath + layer(Layer).name};
-	auto const cased{FileCased(named)};
-	return cased.empty() ? named : cased;
+	// read and written as it's named on the disk; a new file is made in the folders as they're named there
+	return FileOnDiskToWrite(Global.asCurrentSceneryPath + layer(Layer).name);
 }
 
 // stores current state of the layer file, to detect later whether it was changed behind our back

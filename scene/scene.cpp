@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/EvLaunch.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 #include "scene/sn_utils.h"
 #include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
@@ -1180,6 +1181,8 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
     erase_extension( filename );
     filename = Global.asCurrentSceneryPath + filename;
     filename += EU07_FILEEXTENSION_REGION;
+    // the file as it's named on the disk, the names the scenery includes come in lowercase
+    filename = FileOnDisk( filename );
 
     if( false == FileExists( filename ) ) {
         return false;
@@ -1210,6 +1213,8 @@ basic_region::serialize( std::string const &Scenariofile ) const {
     erase_extension( filename );
     filename = Global.asCurrentSceneryPath + filename;
     filename += EU07_FILEEXTENSION_REGION;
+    // a file there in another case is written over, not joined by a second one next to it
+    filename = FileOnDiskToWrite( filename );
 
     std::ofstream output { filename, std::ios::binary };
 
@@ -1249,6 +1254,8 @@ basic_region::deserialize( std::string const &Scenariofile ) {
     erase_extension( filename );
     filename = Global.asCurrentSceneryPath + filename;
     filename += EU07_FILEEXTENSION_REGION;
+    // the file as it's named on the disk, the names the scenery includes come in lowercase
+    filename = FileOnDisk( filename );
 
     if( false == FileExists( filename ) ) {
 		Global.file_binary_terrain_state = false;

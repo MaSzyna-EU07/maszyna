@@ -628,6 +628,32 @@ TEST_CASE("utilities: a terrain file is found in another case, by its text or by
 	CHECK(FileStemOnDisk(scenery, "nmt/nowhere_ter", extensions) == "nmt/nowhere_ter");
 }
 
+TEST_CASE("utilities: a file is written over in another case, or made in its folders as they're named on the disk") {
+	test::scratch_folder const folder{"utilities_cased_write"};
+	folder.write("Scenery/Braniewo/Base.scm", "x");
+
+	// a file there in another case: written under its name on the disk, not joined by a second one next to it
+	auto const existing{FileOnDiskToWrite(folder.path("scenery/braniewo/base.scm"))};
+	CHECK(ToLower(existing) == ToLower(folder.path("Scenery/Braniewo/Base.scm")));
+	CHECK(std::filesystem::exists(existing));
+	// a new file: the name given, in the folders as they're on the disk, so no second folder is made next to the one there
+	auto const added{FileOnDiskToWrite(folder.path("scenery/braniewo/nowa.scm"))};
+	CHECK(ToLower(added) == ToLower(folder.path("Scenery/Braniewo/nowa.scm")));
+	CHECK(added.ends_with("/nowa.scm"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{added}.parent_path()));
+	// folders missing in any case: named as given, to be made in the nearest one there is
+	auto const deeper{FileOnDiskToWrite(folder.path("scenery/braniewo/teren/nowy/x.btf"))};
+	CHECK(ToLower(deeper) == ToLower(folder.path("Scenery/Braniewo/teren/nowy/x.btf")));
+	CHECK(deeper.ends_with("/teren/nowy/x.btf"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{deeper}.parent_path().parent_path().parent_path()));
+	// the folders written the Windows way as well
+	auto const backslashed{FileOnDiskToWrite(folder.path() + "scenery\\braniewo\\nowa.scm")};
+	CHECK(backslashed.ends_with("/nowa.scm"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{backslashed}.parent_path()));
+	// a name with no folder, and none there
+	CHECK(FileOnDiskToWrite("eu07_unit_test_no_such_file.xyz") == "eu07_unit_test_no_such_file.xyz");
+}
+
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {
 	test::scratch_folder const folder{"utilities_modified"};
 	auto const name{folder.write("fresh.txt", "x")};

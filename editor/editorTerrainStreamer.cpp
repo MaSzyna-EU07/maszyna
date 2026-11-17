@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 #include <algorithm>
 #include <chrono>
@@ -105,7 +106,8 @@ bool terrain_streamer::open(std::string const &Name)
 {
 	close();
 	m_name = Name;
-	m_directory = "terrain/" + Name + "/";
+	// the folder as it's named on the disk, the editor writes the files of the terrain into it
+	m_directory = FileOnDiskToWrite("terrain/" + Name) + "/";
 	m_manifest = heightmap::manifest();
 	m_manifestchanged = false;
 	auto const manifestpath{m_directory + "terrain.yaml"};

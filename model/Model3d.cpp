@@ -1705,6 +1705,11 @@ bool TModel3d::LoadFromFile(std::string const &FileName, bool dynamic)
 	// the files as they're named on the disk, the name given is in lowercase
 	auto const textfile{FileCased(name + ".t3d")};
 	auto const binaryfile{FileCased(asBinary)};
+	// the binary file made of the text one: written over where it's there in another case, made next to the text otherwise
+	if (false == binaryfile.empty())
+		asBinary = binaryfile;
+	else if (false == textfile.empty())
+		asBinary = textfile.substr(0, textfile.size() - 4) + ".e3d";
 
 	// Hirek: Jesli mamy ustawione priorityLoadText3D na yes to wpierw ladujemy t3d
 	if (Global.priorityLoadText3D && (false == textfile.empty()))

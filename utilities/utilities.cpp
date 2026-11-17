@@ -18,6 +18,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include <charconv>
 #include <ranges>
 #include <format>
+#include <unordered_set>
 //#ifndef WIN32
 //#include <unistd.h>
 //#endif
@@ -542,6 +543,8 @@ struct cased_path
 	std::chrono::steady_clock::time_point checked{};
 };
 std::unordered_map<std::string, cased_path> cased_paths;
+// the files found only in another case than asked for, written to the log once each
+std::unordered_set<std::string> cased_reported;
 
 // the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
 // function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
@@ -681,6 +684,8 @@ std::string FileCased(std::filesystem::path const &Filename)
 	if (file.empty())
 		return {};
 	std::string cased;
+	auto const asked{folder + file};
+	bool report{false};
 	{
 		std::scoped_lock const lock{cased_mutex};
 		if (false == cased_folder_path(folder, cased))
@@ -689,8 +694,16 @@ std::string FileCased(std::filesystem::path const &Filename)
 		if (name.empty())
 			return {};
 		cased += name;
+		report = (cased != asked) && cased_reported.insert(asked).second;
 	}
-	return std::filesystem::exists(cased, error) ? cased : std::string{};
+	if (false == std::filesystem::exists(cased, error))
+		return {};
+	if (report)
+	{
+		// the list for the authors of the data, to name the files as the sceneries and the vehicles ask for them
+		WriteLog("File \"" + asked + "\" found as \"" + cased + "\", named in another case", logtype::file);
+	}
+	return cased;
 #endif
 }
 
@@ -698,6 +711,17 @@ std::string FileOnDisk(std::string const &Filename)
 {
 	auto cased{FileCased(Filename)};
 	return cased.empty() ? Filename : cased;
+}
+
+std::string FileOnDiskToWrite(std::string const &Filename)
+{
+	if (auto const cased{FileCased(Filename)}; false == cased.empty())
+		return cased;
+	// a new file: its folder as it's named on the disk, or the nearest one on the way to it which is there, the rest as given
+	auto const split{Filename.find_last_of("/\\")};
+	if ((split == std::string::npos) || (split == 0))
+		return Filename;
+	return FileOnDiskToWrite(Filename.substr(0, split)) + '/' + Filename.substr(split + 1);
 }
 
 std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)

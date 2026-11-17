@@ -804,7 +804,7 @@ bool lua_program::start()
 	register_api();
 	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
 
-	std::ifstream file{script, std::ios::binary};
+	std::ifstream file{FileOnDisk(script), std::ios::binary};
 	if (false == file.is_open())
 	{
 		ErrorLog(std::format("Lua screen \"{}\": file not found", script));
