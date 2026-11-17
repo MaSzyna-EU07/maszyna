@@ -92,6 +92,9 @@ public:
 	// keeps the main reservoir at the given pressure [bar], as a running compressor or a coupled vehicle
 	// feeding it would; a negative value leaves it alone
 	void hold_main_reservoir(double Pressure) { m_reservoirpressure = Pressure; }
+	// the track under this vehicle alone has the damage flags (dtrack_*) from now on: dtrack_norail runs it off the
+	// end of the track in its next step, as the legacy derailment has it
+	void damage_track(int Flags) { m_trackdamage = Flags; }
 
 	// advances the physics by one frame of Track.iterations steps of Dt, the way the simulation loop does
 	void step(track const &Track = {}, double Dt = 0.01);
@@ -116,6 +119,7 @@ private:
 	int m_cab{0};
 	double m_pipepressure{-1.0};
 	double m_reservoirpressure{-1.0};
+	int m_trackdamage{0};
 	trace *m_trace{nullptr};
 	double m_time{0.0}; // of the simulation, since the vehicle got created
 };

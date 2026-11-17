@@ -748,10 +748,11 @@ TEST_CASE("collisions: the legacy rule with physics.collisions old, the crush wi
 	};
 	// the legacy rule: over 15 km/h weighed by the ratio of the masses. the crush: the light wagon is crushed deep and
 	// climbs onto the locomotive at 60 km/h; two locomotives at 25 km/h crush their ends 0.1-0.3 m and stay on the rails
-	// the monitor tells of each hit once: the wagon derailed by the legacy rule is a wall, which the locomotive behind
-	// it hits once more; the locomotives derailed both stay where they are
+	// the monitor tells of each hit once: the wagon derailed by the legacy rule is a wall the locomotive presses on into
+	// until it springs back, the same hit (the wall slowing down took the pair from parting at the start of a step to
+	// closing in at 0.3 km/h, which was told of as a second hit); the locomotives derailed both stay where they are
 	for (auto const &[name, front, back, speed, frontout_old, backout_old, frontout_new, backout_new, monitored] : {
-	         collision{"locomotive into a wagon at 60", "3wl_v2/3wl", "4e_v1/4e", 60.0, true, false, true, false, 2},
+	         collision{"locomotive into a wagon at 60", "3wl_v2/3wl", "4e_v1/4e", 60.0, true, false, true, false, 1},
 	         collision{"locomotive into a locomotive at 25", "4e_v1/4e", "4e_v1/4e", 25.0, true, true, false, false, 1},
 	         collision{"locomotive into a locomotive at 50", "4e_v1/4e", "4e_v1/4e", 50.0, true, true, true, true, 1},
 	     }) {
@@ -1307,4 +1308,199 @@ TEST_CASE("collisions: the monitor goes by the energy of the hit as well") {
 	train.add(definition::fiz("4e_v1/4e"), 0, coupling::faux, 25.0, 20.0);
 	train.run(10.0);
 	CHECK(train[0]->crush_reports + train[1]->crush_reports == 1);
+}
+
+// ---- the legacy derailment (physics.derailment old or monitor) in a train, with physics.collisions new
+
+namespace {
+
+// what the vehicles of the train did to each other
+struct train_damage {
+	double crush{0.0}; // the deepest crush of an end [m]
+	double energy{0.0}; // the crush of all the ends took [J]
+	int derailed{0}; // in a collision
+	int broken{0}; // couplings torn off
+	std::string list; // which vehicle, for the messages
+};
+
+train_damage damage_of(consist &Train) {
+	train_damage result;
+	for (std::size_t i = 0; i < Train.size(); ++i) {
+		auto const &vehicle{Train[i].mover()};
+		result.crush = std::max(result.crush, crush_of(vehicle));
+		for (auto const end : {end::front, end::rear}) {
+			result.energy += vehicle.crush_curve_at(end).energy(0.0, vehicle.Couplers[end].crush);
+		}
+		result.derailed += vehicle.CollisionDerail != NONE;
+		if (i + 1 < Train.size()) {
+			result.broken += vehicle.Couplers[end::rear].broken;
+		}
+		if (crush_of(vehicle) > 0.0 || vehicle.CollisionDerail != NONE) {
+			result.list += std::format("{} crushed {:.2f} m{}; ", i, crush_of(vehicle), vehicle.CollisionDerail != NONE ? ", derailed" : "");
+		}
+	}
+	return result;
+}
+
+// the kinetic energy of the vehicles of the train [J]
+double kinetic_of(consist &Train) {
+	auto energy{0.0};
+	for (std::size_t i = 0; i < Train.size(); ++i) {
+		energy += 0.5 * Train[i]->TotalMass * Train[i]->V * Train[i]->V;
+	}
+	return energy;
+}
+
+} // namespace
+
+TEST_CASE("collisions: the cut of the speed of the legacy derailment is no hit inside the train (moczniki_eu06_eu07, tomaszewo_raj49843)") {
+	// the legacy derailment takes 35 % of the speed of the vehicle off in a step: the coaches coupled behind it, at the
+	// speed they had, ran into it at a third of the speed of the train, crushed their ends and rode up onto it
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const physics : {false, true}) {
+		CAPTURE(physics);
+		flag_setting const couplerphysics{Global.coupler_physics, physics};
+		flag_setting const everywhere{Global.coupler_physics_all, physics};
+		// an SU46 with its coaches at 95 km/h, as in moczniki_eu06_eu07; an electric locomotive at 48 km/h, as in
+		// tomaszewo_raj49843
+		for (auto const &[path, speed] : {std::pair{"su46_v2/303d", 95.0}, std::pair{"4e_v1/4e", 48.0}}) {
+			CAPTURE(path);
+			// too fast in a curve, the draw in the movement of the vehicle; off the end of the track, in its next step
+			for (auto const reason : {TOO_HIGH_SPEED, END_OF_TRACK}) {
+				CAPTURE(reason);
+				consist train;
+				auto &locomotive{train.add(definition::fiz(path), 0, coupling::faux, speed)};
+				for (int i = 0; i < 3; ++i) {
+					train.add(coach(41.0e3), 0, consist::full_coupling, speed);
+				}
+				train.run(2.0);
+				if (reason == END_OF_TRACK) {
+					locomotive.damage_track(dtrack_norail);
+				}
+				else {
+					locomotive->Derail(reason);
+				}
+				train.step();
+				REQUIRE(derailed(locomotive.mover()));
+				// the train loses the speed with it
+				for (std::size_t i = 1; i < train.size(); ++i) {
+					CAPTURE(i);
+					CHECK(train[i].speed() == doctest::Approx(locomotive.speed()).epsilon(0.03));
+				}
+				train.run(15.0);
+				auto const damage{damage_of(train)};
+				INFO(damage.list);
+				CHECK(damage.crush < cl::crush_mark);
+				CHECK(damage.derailed == 0);
+				CHECK(damage.broken == 0);
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: the train behind a vehicle that ran off the end of the track doesn't crush into it (l053-sluzba-2-night, l053_calkowo-sluzba-tlk-1, linia61_osobowy3)") {
+	// the vehicle derailed the legacy way at the end of the track stopped as a wall the train behind it ran into: the
+	// vehicles behind it pressed into each other past their stops, and crushed by more than the energy of the train
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const physics : {false, true}) {
+		CAPTURE(physics);
+		flag_setting const couplerphysics{Global.coupler_physics, physics};
+		flag_setting const everywhere{Global.coupler_physics_all, physics};
+		// pulled: an M62 leading wagons of 22 t at 30 km/h (l053_calkowo-sluzba-tlk-1, linia61_osobowy3); pushed: an SM42
+		// at the back of wagons of 35 t at 33 km/h, the leading wagon goes off (l053-sluzba-2-night)
+		for (auto const pushed : {false, true}) {
+			CAPTURE(pushed);
+			auto const speed{pushed ? 33.0 : 30.0};
+			consist train;
+			if (false == pushed) {
+				train.add(definition::fiz("st44_v2/m62-1151"), 0, coupling::faux, speed);
+			}
+			constexpr int wagons{6};
+			for (int i = 0; i < wagons; ++i) {
+				auto &wagon{train.add(definition::fiz("430w_v2/430w"), 0, consist::full_coupling, speed)};
+				if (pushed) {
+					wagon->AssignLoad("coal", 12.0f);
+					wagon->ComputeMass();
+				}
+			}
+			if (pushed) {
+				train.add(definition::fiz("sm42_v1/6d1"), 0, consist::full_coupling, speed);
+			}
+			train.run(2.0);
+			auto const kinetic{kinetic_of(train)};
+			train[0].damage_track(dtrack_norail);
+			train.run(20.0);
+			REQUIRE(derailed(train[0].mover()));
+			auto const damage{damage_of(train)};
+			INFO(damage.list);
+			MESSAGE(std::format("{}: crush {:.3f} m, {:.0f} kJ of the {:.0f} kJ of the train", pushed ? "pushed" : "pulled", damage.crush, damage.energy / 1000.0, kinetic / 1000.0));
+			CHECK(damage.crush < cl::crush_mark);
+			CHECK(damage.energy <= kinetic);
+			CHECK(damage.derailed == 0);
+			CHECK(damage.broken == 0);
+			for (std::size_t i = 1; i < train.size(); ++i) {
+				CAPTURE(i);
+				CHECK_FALSE(derailed(train[i].mover()));
+			}
+		}
+	}
+}
+
+TEST_CASE("collisions: the buffers of vehicles found inside each other take in nothing for the budget of the crush") {
+	cl::contact_energy contact;
+	// pressed in at 2 m/s under 1 MN for 0.1 s: 200 kJ, past the 120 kJ the buffers of both ends take
+	contact.update(true, false, 2.0, 1.0e6, 0.1, 0.1);
+	REQUIRE(contact.absorbed() == doctest::Approx(200.0e3));
+	CHECK(contact.budget(11.0e3, 1.7, 120.0e3) > 0.0);
+	// found inside each other: what their springs made of it is no hit (l053_calkowo-sluzba-tlk-1: 163 kJ "in the
+	// buffers" let a pair crush with 15 kJ of motion)
+	contact.inside();
+	CHECK(contact.absorbed() == 0.0);
+	contact.update(true, false, 2.0, 1.0e6, 0.1, 0.1);
+	CHECK(contact.absorbed() == 0.0);
+	CHECK(contact.budget(11.0e3, 1.7, 120.0e3) < 0.0);
+	// the buffers apart, the next contact is a hit again
+	contact.update(false, false, 0.0, 0.0, 0.0, 0.01);
+	contact.update(true, false, 2.0, 1.0e6, 0.1, 0.1);
+	CHECK(contact.absorbed() == doctest::Approx(200.0e3));
+}
+
+TEST_CASE("collisions: a pair parting at the start of the step isn't crushed (l053_calkowo-sluzba-tlk-1, linia61_osobowy3)") {
+	// the log had "closing at -7.1 km/h at the start of the step" on a crush of a pair knocked back onto each other in
+	// the step: the legacy collision takes such a knock, a pair still closing in at the start of a step is a hit
+	model_setting const physical{global_settings::collision_model::physical};
+	flag_setting const crashdamage{Global.crash_damage, true};
+	for (auto const parting : {true, false}) {
+		CAPTURE(parting);
+		consist train;
+		auto &front{train.add(definition::fiz("430w_v2/430w"))};
+		// behind it with the buffers pressed to their stop, moving back away from it, or standing
+		auto &back{train.add(definition::fiz("430w_v2/430w"), 0, coupling::faux, parting ? -3.0 : 0.0, -0.3)};
+		// one step, the way the consist steps it, with the vehicle behind knocked forwards onto the front one between
+		// the forces and the movement, as a hit of another vehicle in the step does
+		constexpr double dt{0.01};
+		for (auto *vehicle : {&front, &back}) {
+			vehicle->begin_step();
+		}
+		for (auto *vehicle : {&front, &back}) {
+			vehicle->forces(dt);
+		}
+		REQUIRE((front->Couplers[end::rear].closing < 0.0) == parting);
+		back->V = 25.0 * kmh;
+		for (auto *vehicle : {&front, &back}) {
+			vehicle->move({}, dt, (*vehicle)->Loc, 5.0);
+		}
+		auto const crush{front->Couplers[end::rear].crush + back->Couplers[end::front].crush};
+		if (parting) {
+			CHECK(crush == 0.0);
+			// the legacy collision pushed them apart
+			CHECK(back->V < 25.0 * kmh);
+		}
+		else {
+			// closing in from a stand, the knock is a hit past the energy of the buffers
+			CHECK(crush > 0.0);
+		}
+	}
 }

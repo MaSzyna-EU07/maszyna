@@ -171,8 +171,8 @@ void contact_energy::update(bool const Pressed, bool const Solid, double const C
 		reset();
 		return;
 	}
-	if (Solid) {
-		// pressed all the way, the buffers take in nothing more
+	if (Solid || m_inside) {
+		// pressed all the way, the buffers take in nothing more; nor do those of vehicles inside each other
 		return;
 	}
 	auto const force{std::max(Force, 0.0)};
@@ -183,6 +183,11 @@ void contact_energy::update(bool const Pressed, bool const Solid, double const C
 		// springing back, they hold no more than their springs pressed in so far
 		m_absorbed = std::min(m_absorbed, 0.5 * force * std::max(Compression, 0.0));
 	}
+}
+
+void contact_energy::inside() {
+	m_absorbed = 0.0;
+	m_inside = true;
 }
 
 void contact_energy::crushed(double const Work) {
@@ -199,6 +204,7 @@ double contact_energy::budget(double const Mass, double const Closing, double co
 void contact_energy::reset() {
 	m_absorbed = 0.0;
 	m_crushed = 0.0;
+	m_inside = false;
 }
 
 hit_result hit(end_state const &First, end_state const &Second, hit_input const &Input) {

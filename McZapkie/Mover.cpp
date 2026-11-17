@@ -69,6 +69,21 @@ int DirPatch(int Coupler1, int Coupler2)
 	return Coupler1 != Coupler2 ? 1 : -1;
 }
 
+namespace
+{
+
+// physics.collisions new: a rail vehicle derailed the legacy way keeps the deceleration of the legacy model, g, as the
+// friction of its weight, and the forces of the vehicles coupled to it act on it as on any other: the train behind it
+// pushes it on, and it holds the train back. alone it stops as the legacy model has it. the legacy model stops it
+// whatever pushes it, and the train behind it stopped at once against it, in a hit no train had
+bool legacy_derailed_slides(TMoverParameters const &Vehicle)
+{
+	return Global.collisions == global_settings::collision_model::physical && TestFlag(Vehicle.CategoryFlag, 1) && TestFlag(Vehicle.DamageFlag, dtrain_out) &&
+	       Vehicle.Derailed == derailment::outcome::none;
+}
+
+} // namespace
+
 int DirF(int CouplerN)
 {
 	switch (CouplerN)
@@ -1423,8 +1438,12 @@ void TMoverParameters::CollisionDetect(int const End, double const dt)
 	// integration of the next step (ComputeMovement()) would carry a quarter of an acceleration spike over into the
 	// velocity once more, and the vehicles would bounce off the stop faster than they hit it
 	auto const accelerationspike{physical ? 0.0 : 1.0};
-	// derailed the legacy way a vehicle is a wall, off the rails by the new criteria it slides on and takes the hit
-	auto const wall = [crushing](TMoverParameters const &Vehicle) { return TestFlag(Vehicle.DamageFlag, dtrain_out) && (false == crushing || Vehicle.Derailed == derailment::outcome::none); };
+	// derailed the legacy way a vehicle is a wall, off the rails by the new criteria it slides on and takes the hit. with
+	// the crush, the vehicles coupled to the wall push it on (crush_hit())
+	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const wall = [crushing, coupled](TMoverParameters const &Vehicle) {
+		return TestFlag(Vehicle.DamageFlag, dtrain_out) && (false == crushing || (Vehicle.Derailed == derailment::outcome::none && false == coupled));
+	};
 	if (false == wall(*this))
 	{
 		auto const accelerationchange{(velocity - V) / dt};
@@ -1604,6 +1623,9 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 	auto const overlap{-static_cast<double>(Neighbours[End].distance)};
 	if (overlap > stop + collision::inside_margin + closing * dt)
 	{
+		// nor is what their springs took in pressed past the stop and back a hit, for as long as the buffers touch
+		thiscoupler.contact.inside();
+		othercoupler.contact.inside();
 		if (false == thiscoupler.inside_reported)
 		{
 			thiscoupler.inside_reported = true;
@@ -1612,9 +1634,19 @@ bool TMoverParameters::crush_hit(int const End, double const dt)
 		}
 		return false;
 	}
-	// a vehicle derailed the legacy way (the end of the track, say) stays where it is, whatever hits it
-	auto const wall{TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
-	auto const otherwall{TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
+	// parting at the start of the step: what closes the pair in now is the knock of a hit of either vehicle in the step,
+	// or of the vehicles inside each other next to it, not a hit of this pair. the legacy collision takes it; a pair
+	// still closing in at the start of the next step is a hit
+	if (thiscoupler.closing < 0.0)
+	{
+		return false;
+	}
+	// a vehicle derailed the legacy way (the end of the track, say) stays where it is, whatever hits it from outside its
+	// train. the vehicles coupled to it push it on, as the train behind a derailed vehicle does: a wall to them, it
+	// stopped the whole train at once, and the vehicles behind it crushed by the energy of the train
+	auto const coupled{thiscoupler.CouplingFlag != coupling::faux};
+	auto const wall{false == coupled && TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none};
+	auto const otherwall{false == coupled && TestFlag(othervehicle->DamageFlag, dtrain_out) && othervehicle->Derailed == derailment::outcome::none};
 	if (wall && otherwall)
 	{
 		return false;
@@ -2031,8 +2063,16 @@ void TMoverParameters::Derail(DerailReason const Reason)
 		EventFlag = true;
 		MainSwitch(false, range_t::local);
 
+		auto const velocity{V};
 		AccS *= 0.65;
 		V *= 0.65;
+		// physics.collisions new: the vehicles coupled to it lose the speed with it. the cut in a step stands for the
+		// train coming to a stop with the vehicle; the coupled ones keeping their speed would run into it at a third of
+		// the speed of the train, and crush their ends and ride up onto it for a hit no train had
+		if (Global.collisions == global_settings::collision_model::physical && TestFlag(CategoryFlag, 1))
+		{
+			change_train_velocity(V - velocity);
+		}
 		RunningShape.R = 0;
 		if (Vel < 5.0)
 		{
@@ -2054,6 +2094,28 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			WriteLog("Bad driving: " + Name + " derailed"); // This reason also generates its own message in `TMoverParameters::CollisionDetect()`
 		else if (Reason == TRAILED_SWITCH)
 			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
+	}
+}
+
+void TMoverParameters::change_train_velocity(double const Change)
+{
+	// the vehicles coupled to this one in a line, each with the direction of its axis to the axis of this one
+	std::vector<std::pair<TMoverParameters *, int>> train{{this, 1}};
+	for (std::size_t i = 0; i < train.size(); ++i)
+	{
+		auto const [vehicle, direction] = train[i];
+		for (int end = end::front; end <= end::rear; ++end)
+		{
+			auto const &coupler{vehicle->Couplers[end]};
+			auto *other{coupler.Connected};
+			if (other == nullptr || coupler.CouplingFlag == coupling::faux || std::any_of(train.begin(), train.end(), [other](auto const &Entry) { return Entry.first == other; }))
+			{
+				continue;
+			}
+			auto const otherdirection{direction * DirPatch(end, coupler.ConnectedNr)};
+			other->V += Change * otherdirection;
+			train.emplace_back(other, otherdirection);
+		}
 	}
 }
 
@@ -2099,11 +2161,12 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
-		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce()
-		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
+		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce(), and so does one
+		// derailed the legacy way with physics.collisions new
+		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
 			AccS = -Sign(V) * g * 1; // random(0.0, 0.1)
 		// stuck in the ballast: the friction holds a derailed vehicle once it stopped, until the forces on it are larger
-		auto const stuck{Derailed != derailment::outcome::none && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
+		auto const stuck{(Derailed != derailment::outcome::none || legacy_derailed_slides(*this)) && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
 		if (stuck)
 			AccS = 0.0;
 
@@ -2212,9 +2275,9 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		AccS = std::lerp(AccSprev, FTotal / TotalMass, 0.5);
 		// std::clamp( dt * 3.0, 0.0, 1.0 ) ); // prawo Newtona ale z wygladzaniem (średnia z poprzednim)
 
-		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none)
+		if (TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this))
 			AccS = -Sign(V) * g * 1; // * random(0.0, 0.1)
-		auto const stuck{Derailed != derailment::outcome::none && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
+		auto const stuck{(Derailed != derailment::outcome::none || legacy_derailed_slides(*this)) && V == 0.0 && std::abs(FTrain) <= std::abs(FStand)};
 		if (stuck)
 			AccS = 0.0;
 
@@ -2237,8 +2300,9 @@ double TMoverParameters::FastComputeMovement(double dt, const TTrackShape & /*Sh
 		// simple mode skips calculation of vertical acceleration
 		AccVert = 0.0;
 
-		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce()
-		if (true == TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && Vel < 1.0)
+		// a vehicle derailed by the physical criteria slides on with the friction of ComputeTotalForce(), and so does one
+		// derailed the legacy way with physics.collisions new
+		if (true == TestFlag(DamageFlag, dtrain_out) && Derailed == derailment::outcome::none && false == legacy_derailed_slides(*this) && Vel < 1.0)
 		{
 			V = 0.0;
 			AccS = 0.0;
@@ -5802,6 +5866,11 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		{
 			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side
 			FStand = derailment::sliding_friction(Derailed) * (TotalMass - Mred) * g;
+		}
+		else if (legacy_derailed_slides(*this))
+		{
+			// derailed the legacy way with physics.collisions new: the deceleration of g of the legacy model, as a friction
+			FStand = TotalMass * g;
 		}
 		else
 		{

@@ -2463,6 +2463,9 @@ class TMoverParameters
 	// was a broken coupler to repair
 	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
+	// the velocity of the vehicles coupled to this one changes by the Change along the axis of this one [m/s], as the
+	// legacy derailment changes the velocity of this one (physics.collisions new)
+	void change_train_velocity(double Change);
 	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]; monitor: what
 	// they would do, to the log
 	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
@@ -2476,7 +2479,8 @@ class TMoverParameters
 	// what resetconsist does to a vehicle: no damage of any kind, the alarm chain released, back on the rails
 	void repair_damage();
 	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
-	// derailment, which stops it as the legacy model does
+	// derailment, which stops it as the legacy model does (with physics.collisions new by a friction of its weight, the
+	// forces of the vehicles coupled to it acting on it)
 	derailment::outcome Derailed{derailment::outcome::none};
 	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
 	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit

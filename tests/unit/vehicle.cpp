@@ -195,6 +195,7 @@ TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 double vehicle::fast_move(track const &Track, double Dt, TLocation const &Location) {
 	// TDynamicObject::FastUpdate(), the iterations of a frame before the last one
 	auto param{parameters_of(Track, *m_mover)};
+	param.DamageFlag = m_trackdamage;
 	return m_mover->FastComputeMovement(Dt, shape_of(Track), param, Location, TRotation{0.0, 0.0, 0.0});
 }
 
@@ -217,7 +218,8 @@ void vehicle::forces(double Dt) {
 
 double vehicle::move(track const &Track, double Dt, TLocation const &Location, double Trainpipe) {
 	auto const shape{shape_of(Track)};
-	auto const param{parameters_of(Track, *m_mover)};
+	auto param{parameters_of(Track, *m_mover)};
+	param.DamageFlag = m_trackdamage;
 	TRotation const rotation{0.0, 0.0, 0.0};
 
 	// what TDynamicObject::Update() does before the movement. a raised pantograph touches the wire at once,

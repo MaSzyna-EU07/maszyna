@@ -136,12 +136,17 @@ inline constexpr double inside_margin{0.5};
 // buffers pressed and the pair closing in. springing back they keep what they still hold, so a train pushing at a
 // stand never builds up what it feeds into their damping. the buffers pressed all the way from the start of the
 // contact took in nothing: vehicles put down inside each other, or knocked onto each other by a hit elsewhere, bring
-// in only the kinetic energy they close in with
+// in only the kinetic energy they close in with. nor do the buffers of vehicles found inside each other in the
+// contact (inside_margin) take in anything until they part: their springs pressed past the stop and back throw the
+// pair about, which is no hit
 class contact_energy {
 public:
 	// the step of the pair: whether its buffers press, and all the way; the closing velocity [m/s] and the force
 	// pressing the buffers [N] at the start of the step; how far they're pressed in [m]; the length of the step [s]
 	void update(bool Pressed, bool Solid, double Closing, double Force, double Compression, double Dt);
+	// the vehicles of the pair are inside each other: what the buffers took in is gone, and they take in nothing more
+	// until the contact is over
+	void inside();
 	// the crush of the hit took the energy [J]
 	void crushed(double Work);
 	// the energy the crush may take now, closing in at the velocity [m/s] with the reduced mass [kg], the buffers of
@@ -155,6 +160,7 @@ public:
 private:
 	double m_absorbed{0.0};
 	double m_crushed{0.0};
+	bool m_inside{false};
 };
 
 // ---- the hit past the buffers
