@@ -28,13 +28,14 @@ the gap in its time. A vehicle with no driver of its own, or whose own driver is
 the driver of its train. So the speed recorder's tape can be read from them as before, also while the
 simulator runs, without a log of every vehicle. A driver who writes a log of its own, with
 `physicslog.trains yes` or `physicslog yes`, isn't written twice; with `physicslog yes` it is a road vehicle the
-user drives whose log the black box writes. Like those of `physicslog yes`, they are written every
+user drives whose log the black box writes, so with the black box off (`blackbox no`, or in the editor) a car the
+user drives has no log. Like those of `physicslog yes`, they are written every
 two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
-of real time of them (at a higher time speed, more of the simulated time). A file another program holds
+of real time of them (at a higher time speed, more of the simulated time), up to ten on a disk which can't keep up. A file another program holds
 for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
 The writing of all the logs goes after the simulator's own reading of the disk. When it takes over a third of
-those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, the disk
-busy with them a quarter of the time at most, and the simulator's log tells it once.
+those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, three times as
+long after a writing as it took and every ten seconds at most, and the simulator's log tells it once.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

@@ -59,10 +59,11 @@ struct physicslog_values {
 // the physics logs, <folder>/<name>.dat, what no file name may have on Windows replaced in the name (a spawned vehicle's
 // has a ':'), the same on every system. the lines given are kept, and written every two seconds by a thread of its own,
 // each file opened only for the moment it is written to: the logs of hundreds of vehicles hold no files open, and the
-// simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them. lines whose file can't
-// be written, held by another program say, are kept for the next try: the last 64 MB of them all at most. the thread's
-// disk work goes after everyone else's, and a disk slower than the logs need (a hard disk, hundreds of them) gets them
-// less often, so the simulation reading from it doesn't wait behind them
+// simulation doesn't wait for the disk. a crash loses the last two seconds of real time of them, up to ten on a disk
+// which can't keep up (below). lines whose file can't be written, held by another program say, are kept for the next
+// try: the last 64 MB of them all at most. the thread's disk work goes after everyone else's, and a disk slower than the
+// logs need (a hard disk, hundreds of them) gets them less often, so the simulation reading from it doesn't wait behind
+// them
 class physicslog_writer {
 public:
 	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
@@ -93,8 +94,8 @@ public:
 	// the same, for the log of the simulator
 	std::string shown(std::string const &Name) const;
 	// the wait of the thread before its next writing, after one which took Took: the interval, or three times as long
-	// as the writing was when that's longer. a disk which can't keep up is then busy with the logs a quarter of the
-	// time at most rather than all of it, and their lines wait in memory the longer
+	// as the writing was when that's longer, five intervals at most. a disk which can't keep up is then busy with the
+	// logs a quarter of the time rather than all of it, and their lines wait in memory the longer
 	static std::chrono::steady_clock::duration wait_after(std::chrono::milliseconds Interval, std::chrono::steady_clock::duration Took);
 
 private:

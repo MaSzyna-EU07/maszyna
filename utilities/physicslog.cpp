@@ -77,10 +77,13 @@ void tell(std::string const &Text) noexcept {
 
 // the disk work of the calling thread after everyone else's: the simulation reading its textures and sounds, and the
 // pages of its memory, from the same disk doesn't wait behind the logs, which on a hard disk are seconds of seeking
-// when there are hundreds of them. what the thread does otherwise is the same
+// when there are hundreds of them
 void lower_disk_priority() noexcept {
 #ifdef _WIN32
-	// a thread which can't have it writes as it did before
+	// the background mode: the thread's disk work at the very low priority, its memory pages the first to be let go of
+	// and, the documentation doesn't say, maybe its processor time lower too. a disk the simulation keeps busy without a
+	// pause serves the logs slowly then, the more lines waiting in memory meanwhile; a game reads in bursts, not without
+	// end. a thread which can't have it writes as it did before
 	static_cast<void>(::SetThreadPriority(::GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN));
 #elif defined(__linux__) && defined(SYS_ioprio_set)
 	// the lowest of the best effort class rather than the idle one, which a disk always busy would never serve: the
@@ -106,8 +109,13 @@ void physicslog_values::append_to(std::string &Text) const {
 }
 
 void physicslog_writer::pending::to_text() {
+	if (values.empty())
+		return;
+	// made aside and added at once: a text which can't be made, out of memory, leaves the log as it was
+	std::string lines;
 	for (auto const &line : values)
-		line.append_to(text);
+		line.append_to(lines);
+	text.append(lines);
 	values.clear();
 }
 
@@ -208,7 +216,9 @@ std::string physicslog_writer::shown(std::string const &Name) const {
 }
 
 std::chrono::steady_clock::duration physicslog_writer::wait_after(std::chrono::milliseconds const Interval, std::chrono::steady_clock::duration const Took) {
-	return std::max<std::chrono::steady_clock::duration>(Interval, Took * 3);
+	// no longer than five intervals: the lines of a longer wait would make the next writing take the longer still, the
+	// waits growing with no end, and a crash would lose more of them
+	return std::clamp<std::chrono::steady_clock::duration>(Took * 3, Interval, Interval * 5);
 }
 
 void physicslog_writer::start() {
@@ -243,8 +253,8 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 			using seconds = std::chrono::duration<double>;
 			try {
 				WriteLog(std::format("Physics logs: writing {} of them took {:.1f} s, over a third of the {:.1f} s between writings; they're "
-				                     "written less often from now on, the disk busy with them a quarter of the time at most",
-				    logs, seconds{took}.count(), seconds{m_interval}.count()));
+				                     "written less often from now on, every {:.1f} s at most",
+				    logs, seconds{took}.count(), seconds{m_interval}.count(), seconds{m_interval * 5}.count()));
 			} catch (...) {
 				// out of memory for a line of the log: the logs are written all the same
 			}
@@ -277,15 +287,15 @@ std::size_t physicslog_writer::write() {
 	std::filesystem::create_directories(m_folder, error);
 	std::map<std::string, pending> failed;
 	for (auto &[name, lines] : taken) {
-		// the text of the lines given as values, here on the writer's thread rather than the simulation's
-		lines.to_text();
-		if (lines.text.empty() && false == lines.fresh)
-			continue;
 		// a log going wrong otherwise, out of memory say, is kept for the next try as one whose file can't be written:
 		// the others are written still, and the writer goes on
 		auto written{false};
 		std::string problem{"can't write"};
 		try {
+			// the text of the lines given as values, here on the writer's thread rather than the simulation's
+			lines.to_text();
+			if (lines.text.empty() && false == lines.fresh)
+				continue;
 			written = write_log(name, lines);
 		} catch (std::exception const &Error) {
 			problem = std::string{"failed ("} + Error.what() + ") to write";

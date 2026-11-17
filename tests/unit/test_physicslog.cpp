@@ -265,7 +265,10 @@ TEST_CASE("physicslog: the writings go on every interval while they're quick, an
 	CHECK(physicslog_writer::wait_after(2100ms, duration{700ms}) == duration{2100ms});
 	// longer: three times the writing, the disk busy with the logs a quarter of the time
 	CHECK(physicslog_writer::wait_after(2000ms, duration{1s}) == duration{3s});
-	CHECK(physicslog_writer::wait_after(2000ms, duration{10s}) == duration{30s});
+	CHECK(physicslog_writer::wait_after(2000ms, duration{3s}) == duration{9s});
+	// five intervals at most, however long the writing took: the lines of a longer wait would make it longer still
+	CHECK(physicslog_writer::wait_after(2000ms, duration{4s}) == duration{10s});
+	CHECK(physicslog_writer::wait_after(2000ms, duration{60s}) == duration{10s});
 }
 
 TEST_CASE("physicslog: a line given as its values is written as the stream of them always wrote it") {
