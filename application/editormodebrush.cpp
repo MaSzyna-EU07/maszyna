@@ -56,7 +56,7 @@ double editor_mode::brush_height(glm::dvec2 const &Point, double const Around)
 	return placement_on_ground({Point.x, Around, Point.y}).y;
 }
 
-TAnimModel *editor_mode::place_brush_model(glm::dvec3 const &At)
+TAnimModel *editor_mode::place_brush_model(glm::dvec3 const &At, float const Scale)
 {
 	auto const *source{ui()->get_active_node_template()};
 	// the scenery templates are put one at a time with the insert mode
@@ -69,7 +69,7 @@ TAnimModel *editor_mode::place_brush_model(glm::dvec3 const &At)
 		return nullptr;
 	auto const look{scatter::pick(ui()->brush().look, m_brush_random)};
 	m_editor.rotate(model, look.angles, 0.0f);
-	model->Scale(model->Scale() * look.scale);
+	model->Scale(model->Scale() * look.scale * Scale);
 	add_to_hierarchy(model);
 	return model;
 }
@@ -79,7 +79,14 @@ void editor_mode::brush_press()
 	mouseHold = true;
 	m_brush_has_last = false;
 	m_brush_taken.clear();
-	if (ui()->brush().way != brush_object_list::kind::single)
+	auto const &settings{ui()->brush()};
+	if (settings.way != brush_object_list::kind::single && settings.stroke == brush_object_list::shape::line)
+	{
+		// a point of the line, read once the renderer has the depth under the cursor
+		GfxRenderer->Pick_Node_Callback([this](scene::basic_node * /*node*/) { brush_line_point(); });
+		return;
+	}
+	if (settings.way != brush_object_list::kind::single)
 	{
 		// one step of the history for the whole stroke, the models added to it as they're put
 		trim_history();
@@ -131,7 +138,10 @@ void editor_mode::brush_dab()
 	oldPos = centre;
 	m_brush_has_last = true;
 	auto &stroke{m_history.back()};
-	for (auto const &point : scatter::dab({centre.x, centre.z}, settings, m_brush_taken, m_brush_random))
+	auto const points{scatter::dab({centre.x, centre.z}, settings, m_brush_taken, m_brush_random)};
+	if (static_cast<int>(points.size()) >= scatter::dab_most)
+		ui()->set_status(format(STR_C("Brush: a dab puts %d models at most; widen the spacing or narrow the circle for the rest"), scatter::dab_most));
+	for (auto const &point : points)
 	{
 		auto *model{place_brush_model({point.x, brush_height(point, centre.y), point.y})};
 		// the place is taken either way, so a model which failed isn't tried there on every move
@@ -163,17 +173,106 @@ void editor_mode::end_brush_stroke()
 	ui()->set_status(format(STR_C("Brush: %zu models put; Ctrl+Z takes the whole stroke back"), count));
 }
 
-void editor_mode::draw_brush_cursor()
+void editor_mode::brush_line_point()
 {
-	glm::dvec3 centre;
-	if (false == brush_ground(centre))
+	if (false == viewport_click())
+		return;
+	glm::dvec3 at;
+	if (brush_ground(at))
+		m_brush_line.push_back(at);
+}
+
+void editor_mode::brush_line_finish()
+{
+	if (m_brush_line.size() < 2)
+	{
+		ui()->set_status(STR_C("Brush: a line needs two points at least"));
+		return;
+	}
+	auto const &settings{ui()->brush()};
+	auto const places{scatter::along(m_brush_line, settings.line, m_brush_random)};
+	// the whole line one step of the history, as a stroke is
+	EditorSnapshot step;
+	step.action = EditorSnapshot::Action::Array;
+	for (auto const &place : places)
+	{
+		auto *model{place_brush_model({place.point.x, brush_height(place.point, place.height), place.point.y}, scatter::side_scale(settings.line, place.side))};
+		if (model == nullptr)
+			continue;
+		EditorSnapshot::array_copy copy;
+		copy.model = model;
+		copy.uuid = model->uuid;
+		step.layer = model->layer();
+		step.copies.push_back(std::move(copy));
+	}
+	m_brush_line.clear();
+	auto const count{step.copies.size()};
+	if (count == 0)
+	{
+		ui()->set_status(STR_C("Brush: no models put along the line"));
+		return;
+	}
+	trim_history();
+	m_history.push_back(std::move(step));
+	g_redo.clear();
+	if (static_cast<int>(places.size()) >= scatter::line_most)
+		ui()->set_status(format(STR_C("Brush: %zu models put along the line, the most one line puts; Ctrl+Z takes them back"), count));
+	else
+		ui()->set_status(format(STR_C("Brush: %zu models put along the line; Ctrl+Z takes them back"), count));
+}
+
+void editor_mode::draw_brush_line(glm::dvec3 const *Cursor)
+{
+	if (m_brush_line.empty())
 		return;
 	screen_projection const view;
 	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	auto const width{std::max(0.0, ui()->brush().line.width)};
+	auto const lifted = [](glm::dvec3 const &Point) { return Point + glm::dvec3{0.0, 0.05, 0.0}; };
+	auto const side = [this, &lifted](glm::dvec3 const &Point, glm::dvec2 const &Offset) {
+		glm::dvec2 const at{Point.x + Offset.x, Point.z + Offset.y};
+		return lifted({at.x, brush_height(at, Point.y), at.y});
+	};
+	for (std::size_t i = 1; i < m_brush_line.size(); ++i)
+	{
+		auto const &a{m_brush_line[i - 1]};
+		auto const &b{m_brush_line[i]};
+		view.line(drawlist, lifted(a), lifted(b), kShadowColour, 4.0f);
+		view.line(drawlist, lifted(a), lifted(b), kCrossColour, 2.0f);
+		// the edges of the band, piece by piece
+		glm::dvec2 const run{b.x - a.x, b.z - a.z};
+		auto const length{glm::length(run)};
+		if (width <= 0.0 || length <= 0.0)
+			continue;
+		auto const normal{glm::dvec2{-run.y, run.x} * (width / length)};
+		view.line(drawlist, side(a, normal), side(b, normal), kCircleColour, 1.5f);
+		view.line(drawlist, side(a, -normal), side(b, -normal), kCircleColour, 1.5f);
+	}
+	// the piece the next click would add
+	if (Cursor != nullptr)
+		view.line(drawlist, lifted(m_brush_line.back()), lifted(*Cursor), kCircleColour, 1.5f);
+	for (auto const &point : m_brush_line)
+	{
+		if (ImVec2 screen; view.project(lifted(point), screen))
+			drawlist->AddCircleFilled(screen, 4.0f, kCrossColour);
+	}
+}
+
+void editor_mode::draw_brush_cursor()
+{
 	auto const &settings{ui()->brush()};
 	auto const many{settings.way == brush_object_list::kind::multi};
+	auto const on_line{many && settings.stroke == brush_object_list::shape::line};
+	glm::dvec3 centre;
+	auto const on_ground{brush_ground(centre)};
+	if (on_line)
+		draw_brush_line(on_ground ? &centre : nullptr);
+	if (false == on_ground)
+		return;
+	screen_projection const view;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	// the cross on the ground, as large as a tenth of the circle (a metre for the single model), between 0.5 and 3 m
-	auto const arm{std::clamp(many ? 0.1 * settings.dab.radius : 1.0, 0.5, 3.0)};
+	auto const arm{std::clamp(many && false == on_line ? 0.1 * settings.dab.radius : 1.0, 0.5, 3.0)};
 	auto const ground = [&](double const X, double const Z) { return glm::dvec3{X, brush_height({X, Z}, centre.y) + 0.05, Z}; };
 	std::array<std::pair<glm::dvec3, glm::dvec3>, 2> const arms{std::make_pair(ground(centre.x - arm, centre.z), ground(centre.x + arm, centre.z)),
 	                                                             std::make_pair(ground(centre.x, centre.z - arm), ground(centre.x, centre.z + arm))};
@@ -182,7 +281,7 @@ void editor_mode::draw_brush_cursor()
 		view.line(drawlist, a, b, kShadowColour, 4.0f);
 		view.line(drawlist, a, b, kCrossColour, 2.0f);
 	}
-	if (false == many)
+	if (false == many || on_line)
 		return;
 	// the circle, laid on the ground
 	int constexpr pieces{64};

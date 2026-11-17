@@ -124,14 +124,25 @@ class brush_object_list
 	std::string *GetRandomObject();
 	bool useRandom = {false};
 	model_set_ref source;
+	// the many put in the circle along the path of the cursor, or along a line clicked on the ground point by point
+	enum class shape
+	{
+		circle,
+		line,
+	};
+
 	kind way{kind::multi};
+	shape stroke{shape::circle};
 	scatter::dab_settings dab; // the circle of the many and how they fill it
+	scatter::line_settings line; // the band along the line and how it's filled
 	scatter::look_settings look; // the turn and the scale of each model
 
   private:
 	void render_look();
 	// the settings of the stroke of many models
 	void render_dab();
+	// the settings of the many along a line
+	void render_line();
 };
 
 class nodebank_panel : public ui_panel

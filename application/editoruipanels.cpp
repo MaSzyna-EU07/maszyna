@@ -623,6 +623,17 @@ void brush_object_list::render_options(nodebank_panel &Bank)
 
 void brush_object_list::render_dab()
 {
+	auto on_line{stroke == shape::line};
+	if (ImGui::RadioButton(STR_C("In a circle##brushshape"), false == on_line))
+		stroke = shape::circle;
+	ImGui::SameLine();
+	if (ImGui::RadioButton(STR_C("Along a line##brushshape"), on_line))
+		stroke = shape::line;
+	if (stroke == shape::line)
+	{
+		render_line();
+		return;
+	}
 	ImGui::TextDisabled("%s", STR_C("Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"));
 	if (auto radius{static_cast<float>(dab.radius)}; ImGui::SliderFloat(STR_C("Radius##brush"), &radius, 0.5f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
 		dab.radius = radius;
@@ -640,6 +651,41 @@ void brush_object_list::render_dab()
 		dab.density = density;
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("How many models a 100 m² the circle gets, as many as the spacing lets in"));
+}
+
+void brush_object_list::render_line()
+{
+	ImGui::TextDisabled("%s", STR_C("LMB: the points of the line; Enter puts the models, Backspace takes the last point back, Esc drops the line"));
+	if (auto width{static_cast<float>(line.width)}; ImGui::SliderFloat(STR_C("Width each side##brushline"), &width, 0.0f, 100.0f, "%.1f m"))
+		line.width = width;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("How far to each side of the line the models go; 0: one row on the line itself"));
+	std::array<char const *, 2> const fills{STR_C("Regular, in rows"), STR_C("Irregular, anywhere in the band")};
+	ImGui::SetNextItemWidth(220.0f);
+	if (int fillmode{static_cast<int>(line.mode)}; ImGui::Combo(STR_C("Fill##brushline"), &fillmode, fills.data(), static_cast<int>(fills.size())))
+		line.mode = static_cast<scatter::line_fill>(fillmode);
+	auto const regular{line.mode == scatter::line_fill::regular};
+	if (auto spacing{static_cast<float>(line.spacing)}; ImGui::SliderFloat(STR_C("Spacing##brushline"), &spacing, 0.1f, 50.0f, "%.1f m", ImGuiSliderFlags_Logarithmic))
+		line.spacing = spacing;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", regular ? STR_C("The step along the line and between the rows") : STR_C("The least distance between two models"));
+	if (regular)
+	{
+		if (auto jitter{static_cast<float>(line.jitter * 100.0)}; ImGui::SliderFloat(STR_C("Irregularity##brushline"), &jitter, 0.0f, 50.0f, "%.0f%%"))
+			line.jitter = jitter / 100.0;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", STR_C("Each model moved off its place in the rows by up to this share of the spacing each way; 0: exactly in rows"));
+	}
+	else
+	{
+		if (auto density{static_cast<float>(line.density)}; ImGui::SliderFloat(STR_C("Density##brushline"), &density, 0.1f, 200.0f, STR_C("%.1f per 100 m²"), ImGuiSliderFlags_Logarithmic))
+			line.density = density;
+		ImGui::Checkbox(STR_C("Fewer towards the edges##brushline"), &line.thin_out);
+	}
+	if (auto edge{static_cast<float>(line.edge_scale)}; ImGui::SliderFloat(STR_C("Size at the edges##brushline"), &edge, 1.0f, 200.0f, "%.0f%%"))
+		line.edge_scale = edge;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The size of the models at the edges of the band, as a share of their size on the line; between, it goes evenly from one to the other"));
 }
 
 void brush_object_list::render_look()

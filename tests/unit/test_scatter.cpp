@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace
 {
@@ -132,4 +133,105 @@ TEST_CASE("scatter: the turn and the scale of a model")
 		CHECK(drawn.scale.y >= 0.01f - 1e-6f);
 		CHECK(drawn.scale.z >= 0.01f - 1e-6f);
 	}
+}
+
+TEST_CASE("scatter: a uniform dab too wide for its spacing stops at the limit at once")
+{
+	std::mt19937 random{2}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::dab_settings settings;
+	settings.mode = scatter::fill::uniform;
+	settings.radius = 100.0;
+	settings.spacing = 0.1;
+	// some 3.6 million points of the grid in the circle: cut short at the limit, not gone through
+	auto const points{scatter::dab({0.0, 0.0}, settings, {}, random)};
+	CHECK(static_cast<int>(points.size()) == scatter::dab_most);
+}
+
+TEST_CASE("scatter: the regular fill along a line, in rows, the height of the line followed")
+{
+	std::mt19937 random{4}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::line_settings settings;
+	settings.mode = scatter::line_fill::regular;
+	settings.spacing = 5.0;
+	// one row on a line of no width, a model every 5 m of 100 m, the ends included
+	std::vector<glm::dvec3> const line{{0.0, 10.0, 0.0}, {100.0, 20.0, 0.0}};
+	auto const one{scatter::along(line, settings, random)};
+	CHECK(one.size() == 21);
+	for (auto const &place : one)
+	{
+		CHECK(place.point.y == doctest::Approx(0.0));
+		CHECK(place.side == doctest::Approx(0.0));
+		CHECK(place.height == doctest::Approx(10.0 + place.point.x / 10.0));
+	}
+	// 10 m each way: the rows at 0, ±5 and ±10 m, the ones beyond the edge of the band left out
+	settings.width = 10.0;
+	auto const band{scatter::along(line, settings, random)};
+	for (auto const &place : band)
+	{
+		CHECK(std::abs(place.point.y) <= 10.0 + 1e-9);
+		CHECK(place.side == doctest::Approx(std::abs(place.point.y) / 10.0));
+	}
+	std::set<long long> rows;
+	for (auto const &place : band)
+		rows.insert(std::lround(place.point.y));
+	CHECK(rows == std::set<long long>{-10, -5, 0, 5, 10});
+}
+
+TEST_CASE("scatter: a line bent back on itself puts no two models on one place")
+{
+	std::mt19937 random{9}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::line_settings settings;
+	settings.spacing = 2.0;
+	settings.width = 6.0;
+	std::vector<glm::dvec3> const line{{0.0, 0.0, 0.0}, {40.0, 0.0, 0.0}, {40.0, 0.0, 3.0}, {0.0, 0.0, 3.0}};
+	auto const places{scatter::along(line, settings, random)};
+	std::vector<glm::dvec2> points;
+	for (auto const &place : places)
+		points.push_back(place.point);
+	CHECK(false == points.empty());
+	CHECK(closest_pair(points) >= 1.0 - 1e-9);
+}
+
+TEST_CASE("scatter: the irregular fill along a line keeps to the band and the spacing, thinner at the edges")
+{
+	std::mt19937 random{13}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::line_settings settings;
+	settings.mode = scatter::line_fill::irregular;
+	settings.width = 20.0;
+	settings.spacing = 0.5;
+	settings.density = 20.0;
+	settings.thin_out = true;
+	std::vector<glm::dvec3> const line{{0.0, 0.0, 0.0}, {0.0, 0.0, 200.0}};
+	auto const places{scatter::along(line, settings, random)};
+	CHECK(places.size() > 500);
+	int inner{0};
+	int outer{0};
+	std::vector<glm::dvec2> points;
+	for (auto const &place : places)
+	{
+		CHECK(std::abs(place.point.x) <= 20.0 + 1e-9);
+		CHECK(place.point.y >= -1e-9);
+		CHECK(place.point.y <= 200.0 + 1e-9);
+		if (place.side < 0.5)
+			++inner;
+		else
+			++outer;
+		points.push_back(place.point);
+	}
+	CHECK(inner > 2 * outer);
+	CHECK(closest_pair(points) >= 0.5 - 1e-9);
+}
+
+TEST_CASE("scatter: the size of a model across the band, full on the line, as set at the edge")
+{
+	scatter::line_settings settings;
+	settings.edge_scale = 40.0;
+	CHECK(scatter::side_scale(settings, 0.0) == doctest::Approx(1.0f));
+	CHECK(scatter::side_scale(settings, 0.5) == doctest::Approx(0.7f));
+	CHECK(scatter::side_scale(settings, 1.0) == doctest::Approx(0.4f));
+	settings.edge_scale = 150.0;
+	CHECK(scatter::side_scale(settings, 1.0) == doctest::Approx(1.5f));
+	// one point is no line
+	std::mt19937 random{1}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	CHECK(scatter::along({{0.0, 0.0, 0.0}}, settings, random).empty());
 }

@@ -14330,3 +14330,66 @@ msgstr "Każdy model przeskalowany losowo o tyle procent w obie strony od własn
 
 msgid "Brush: %zu models put; Ctrl+Z takes the whole stroke back"
 msgstr "Pędzel: postawiono %zu modeli; Ctrl+Z cofa całe pociągnięcie"
+
+msgid "Brush: a dab puts %d models at most; widen the spacing or narrow the circle for the rest"
+msgstr "Pędzel: jedno dotknięcie stawia najwyżej %d modeli; zwiększ odstęp albo zmniejsz koło, by objąć resztę"
+
+msgid "In a circle##brushshape"
+msgstr "W kole##brushshape"
+
+msgid "Along a line##brushshape"
+msgstr "Wzdłuż linii##brushshape"
+
+msgid "LMB: the points of the line; Enter puts the models, Backspace takes the last point back, Esc drops the line"
+msgstr "LPM: punkty linii; Enter stawia modele, Backspace cofa ostatni punkt, Esc porzuca linię"
+
+msgid "Width each side##brushline"
+msgstr "Szerokość w każdą stronę##brushline"
+
+msgid "How far to each side of the line the models go; 0: one row on the line itself"
+msgstr "Jak daleko w każdą stronę od linii sięgają modele; 0: jeden rząd na samej linii"
+
+msgid "Regular, in rows"
+msgstr "Regularnie, w rzędach"
+
+msgid "Irregular, anywhere in the band"
+msgstr "Nieregularnie, gdziekolwiek w pasie"
+
+msgid "Fill##brushline"
+msgstr "Wypełnienie##brushline"
+
+msgid "Spacing##brushline"
+msgstr "Odstęp##brushline"
+
+msgid "The step along the line and between the rows"
+msgstr "Krok wzdłuż linii i odstęp między rzędami"
+
+msgid "Irregularity##brushline"
+msgstr "Nieregularność##brushline"
+
+msgid "Each model moved off its place in the rows by up to this share of the spacing each way; 0: exactly in rows"
+msgstr "Każdy model przesunięty ze swojego miejsca w rzędzie o najwyżej taką część odstępu w każdą stronę; 0: dokładnie w rzędach"
+
+msgid "Density##brushline"
+msgstr "Gęstość##brushline"
+
+msgid "Fewer towards the edges##brushline"
+msgstr "Rzadziej ku krawędziom##brushline"
+
+msgid "Size at the edges##brushline"
+msgstr "Rozmiar na krawędziach##brushline"
+
+msgid "The size of the models at the edges of the band, as a share of their size on the line; between, it goes evenly from one to the other"
+msgstr "Rozmiar modeli na krawędziach pasa jako część ich rozmiaru na linii; pomiędzy zmienia się równomiernie od jednego do drugiego"
+
+msgid "Brush: a line needs two points at least"
+msgstr "Pędzel: linia potrzebuje co najmniej dwóch punktów"
+
+msgid "Brush: no models put along the line"
+msgstr "Pędzel: wzdłuż linii nie postawiono żadnego modelu"
+
+msgid "Brush: %zu models put along the line, the most one line puts; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii, najwięcej, ile stawia jedna linia; Ctrl+Z je cofa"
+
+msgid "Brush: %zu models put along the line; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii; Ctrl+Z je cofa"

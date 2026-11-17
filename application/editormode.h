@@ -221,7 +221,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	double brush_height(glm::dvec2 const &Point, double Around);
 	// one dab of the stroke of many models, at the cursor on the ground
 	void brush_dab();
-	TAnimModel *place_brush_model(glm::dvec3 const &At);
+	// the many along a line: a point of it at the cursor, the models put along it, the line and its band drawn on the ground
+	void brush_line_point();
+	void brush_line_finish();
+	void draw_brush_line(glm::dvec3 const *Cursor);
+	TAnimModel *place_brush_model(glm::dvec3 const &At, float Scale = 1.0f);
 	void apply_rotation_for_new_node(scene::basic_node *node, int rotation_mode, float fixed_rotation_value);
 	// members
 	state_backup m_statebackup; // helper, cached variables to be restored on mode exit
@@ -254,6 +258,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first dab ignores the step
 	bool m_brush_stroke{false}; // a stroke of the brush of many models is on: the last step of the history takes its models
 	std::vector<glm::dvec2> m_brush_taken; // the places the stroke put models on (x, z)
+	std::vector<glm::dvec3> m_brush_line; // the points of the line the brush of many puts models along, in the order clicked
 	std::mt19937 m_brush_random{std::random_device{}()}; // NOSONAR(cpp:S2245) where the brush puts models, not security
 	bool m_draw_cursor{false}; // the cursor drawn into the picture (View menu), on only while the editor is
 	bool mouseHold{false};
