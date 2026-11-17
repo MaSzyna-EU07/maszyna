@@ -58,7 +58,7 @@ void main()
 	// pixel between two of them reaches as far both ways). their range holds the history, and the nearest stands for a pixel of
 	// another frame which has no history
 	// the share of the pixels of this frame next to a pixel of another frame, of the share of a pixel of this frame
-	const float BESIDE_SHARE = 0.35;
+	const float BESIDE_SHARE = 0.65;
 	int spacing = max(stride, 1);
 	ivec2 past = (texel + spacing - phase) % spacing;
 	bool fresh = all(equal(past, ivec2(0)));

@@ -217,9 +217,15 @@ void main()
 	int lightsteps = int(quality.y);
 	int skysteps = (lightsteps >= 4) ? 2 : 1;
 	bool detail = quality.w > 0.5;
-	float jitter = fract(interleaved_noise(vec2(texel)) + float(frame) * 0.618034);
+	// with a part of the pixels marched a frame (stride over 1) the pixels of a block share the place of their samples along the
+	// steps: the block gets one of its pixels marched every frame, and clouds_temporal.comp gives it to all of them, so the samples
+	// a pixel takes in over the frames go on from frame to frame as with all the pixels marched, evenly spread along the step.
+	// a place of its own for each pixel would leave every pixel with a few samples spread by chance, and the far clouds, whose steps
+	// are the longest, grainy
+	vec2 cell = vec2((mode == 0) ? texel / max(stride, 1) : texel);
+	float jitter = fract(interleaved_noise(cell) + float(frame) * 0.618034);
 	// where the samples of the light are taken in their steps: another sequence than the one of the samples of the view
-	float lightjitter = fract(interleaved_noise(vec2(texel) + vec2(37.0, 17.0)) + float(frame) * 0.754878);
+	float lightjitter = fract(interleaved_noise(cell + vec2(37.0, 17.0)) + float(frame) * 0.618034);
 	{
 		float spread = 1.0;
 		for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
@@ -294,14 +300,16 @@ void main()
 				continue;
 			float powder = mix(1.0, 1.0 - exp(-density / max(layer.shape.y, 1e-6) * CLOUD_POWDER), powderview);
 			// every sample of the view takes the samples of its light at another place of their steps
-			float lightoffset = fract(lightjitter + float(s) * 0.754878);
+			// (kept off the ends of the steps: the whole of a step is enough to smooth the bands out, and the less the samples move
+			// the less the light of a pixel changes from frame to frame)
+			float lightoffset = 0.15 + 0.7 * fract(lightjitter + float(s) * 0.414214);
 			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, lightsteps, powder, detail, lightoffset) : 0.0;
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
 			float top = cloud_layer_bounds(layer).y;
 			float reach = clamp(top - height, 0.0, CLOUD_SKY_REACH);
-			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps, fract(lightoffset + 0.569840)) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps, 0.15 + 0.7 * fract(lightoffset + 0.569840)) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
 			float below = column * max(height - layer.heights.x, 0.0);
 			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
 			float through = exp(-density * step);

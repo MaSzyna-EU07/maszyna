@@ -139,9 +139,10 @@ static_assert(offsetof(inject_block, occlusion_projection_view) == 288, "the lay
 // the level of the depth pyramid of the clouds left out behind the scenery (clouds_march.comp: texels of 32 pixels of the scene)
 int const CLOUD_OCCLUSION_LEVEL{4};
 // gfx.clouds.interleave: one pixel of every block of this many by this many is marched a frame, and how much of the image a pixel
-// marched in the frame takes from it: more than with all of them marched (0.15), as its turn comes once in a few frames
+// marched in the frame takes from it: less than with all of them marched (0.15), as there's a quarter of the samples a frame to
+// even out the grain of the far clouds with, whose steps are the longest
 int const CLOUD_INTERLEAVE{2};
-float const CLOUD_INTERLEAVE_BLEND{0.3f};
+float const CLOUD_INTERLEAVE_BLEND{0.08f};
 struct integrate_constants
 {
 	glm::ivec3 grid;
@@ -566,9 +567,7 @@ void vulkan14_renderer::render_weather_view(glm::mat4 const &Projection, glm::ma
 		constants.size = weather.view_size;
 		constants.inverse_projection = inverseprojection;
 		constants.view_to_world = viewtoworld;
-		// the turns a pixel had, not the frames: its samples are moved along their steps by the number of its turn, and with a pixel
-		// marched every fourth frame the frames would move them by nearly the same every time
-		constants.frame = m_weatherstate.frame() / (stride * stride);
+		constants.frame = m_weatherstate.frame();
 		constants.quality = glm::vec4{static_cast<float>(level.steps), static_cast<float>(level.light_steps), Global.gfx_clouds_distance, level.detail ? 1.f : 0.f};
 		constants.rows = glm::ivec2{0, weather.view_size.y};
 		weather.march.dispatch(commands, {vk14::storage_image(weather.clouds_color->view()), vk14::storage_image(weather.clouds_depth->view()), pyramiddescriptor}, constants,
