@@ -364,25 +364,75 @@ road_class const kRoadClasses[]{
     {"Motorway (A)", 4.0f, 12000.0f, 4500.0f},
 };
 
-// the heights and the grades given to the nodes written into the pieces: the ends of every part at the heights, its handles
-// rising with the grades; a straight gets its handles made so it can bend up and down. The arms of the junctions at the two
-// ends of the run go with them
-void write_profile(chain_profile &Profile, std::vector<double> const &Given, std::vector<double> const &Grades,
+// a node of the run whose height or grade the operation changed: only the parts ending at such a node are written
+bool node_changed(chain_profile const &Profile, std::vector<double> const &Heights, std::vector<double> const &Grades, std::size_t const Node)
+{
+	return std::abs(Heights[Node] - Profile.heights[Node]) > 1e-9 || std::abs(Grades[Node] - Profile.grades[Node]) > 1e-9;
+}
+
+// a run closed in a loop: its first and last node are one point, at one height and one grade; the end which was changed gives the
+// height, and the two grades (the one out of the seam, the one into it) meet in their mean, so the seam has no kink
+void close_loop(chain_profile const &Profile, std::vector<double> &Heights, std::vector<double> &Grades)
+{
+	auto const last{Heights.size() - 1};
+	if (false == node_changed(Profile, Heights, Grades, 0) && false == node_changed(Profile, Heights, Grades, last))
+		return;
+	if (std::abs(Heights.back() - Profile.heights.back()) > 1e-9 && std::abs(Heights.front() - Profile.heights.front()) <= 1e-9)
+		Heights.front() = Heights.back();
+	else
+		Heights.back() = Heights.front();
+	auto const grade{0.5 * (Grades.front() + Grades.back())};
+	Grades.front() = grade;
+	Grades.back() = grade;
+}
+
+// the end of the run at node End moved: the other pieces ending there (a change of lanes, three or more meeting with no junction)
+// and the arms of the junctions there go with it, as the Raise of the road tool takes them, so the road isn't pulled apart
+void write_run_end(chain_profile const &Profile, std::size_t const End, double const Height, std::vector<std::pair<road_node *, road_node::state>> &Changes,
+                   std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
+{
+	for (auto const &other : editor_road::ends_at(Profile.positions[End]))
+	{
+		if (std::ranges::any_of(Profile.order, [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
+			continue;
+		auto listed{std::ranges::find_if(Changes, [&other](auto const &Change) { return Change.first == other.road; })};
+		if (listed == Changes.end())
+		{
+			Changes.emplace_back(other.road, other.road->definition());
+			listed = std::prev(Changes.end());
+		}
+		listed->second.axis.points[other.atend ? segment_data::point::end : segment_data::point::start].y = Height;
+	}
+	for (auto const &arm : editor_road::arms_at(Profile.positions[End]))
+	{
+		auto entry{std::ranges::find_if(Junctions, [&arm](auto const &Listed) { return Listed.first == arm.first; })};
+		if (entry == Junctions.end())
+		{
+			Junctions.emplace_back(arm.first, arm.first->definition());
+			entry = std::prev(Junctions.end());
+		}
+		entry->second.arms[arm.second].position.y = Height;
+	}
+}
+
+// the heights and the grades given to the nodes written into the pieces, only where the operation changed a node: the ends of a
+// part at the heights, the handle at a changed node rising with its grade, the handle at an unchanged one left with the slope it
+// had. A straight gets its handles made, so it can bend up and down, only when one of its ends changes; the pieces and the
+// junctions nothing changed in aren't touched, recorded or saved anew
+void write_profile(chain_profile &Profile, std::vector<double> const &Given, std::vector<double> const &GivenGrades,
                    std::vector<std::pair<road_node *, road_node::state>> &Changes, std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
 {
-	// a run closed in a loop: its first and last node are one point, at one height
 	auto Heights{Given};
-	auto const closed{Profile.positions.size() > 2 && glm::distance(Profile.positions.front(), Profile.positions.back()) < 0.25};
-	if (closed)
-	{
-		// the one which was changed gives it
-		if (std::abs(Heights.back() - Profile.heights.back()) > 1e-9 && std::abs(Heights.front() - Profile.heights.front()) <= 1e-9)
-			Heights.front() = Heights.back();
-		else
-			Heights.back() = Heights.front();
-	}
+	auto Grades{GivenGrades};
+	if (Profile.positions.size() > 2 && glm::distance(Profile.positions.front(), Profile.positions.back()) < 0.25)
+		close_loop(Profile, Heights, Grades);
+	std::vector<char> touched(Profile.order.size(), 0);
 	for (auto const &ref : Profile.refs)
 	{
+		auto const changed0{node_changed(Profile, Heights, Grades, ref.node0)};
+		auto const changed3{node_changed(Profile, Heights, Grades, ref.node3)};
+		if (false == changed0 && false == changed3)
+			continue;
 		auto list{parts(Profile.states[ref.entry].axis)};
 		auto &p{*list[ref.part]};
 		auto const a{absolute(p)};
@@ -394,38 +444,18 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 		auto const sign{Profile.order[ref.entry].reversed ? -1.0 : 1.0};
 		p[0].y = Heights[ref.node0];
 		p[3].y = Heights[ref.node3];
-		p[1].y = sign * Grades[ref.node0] * flat(p[1]);
-		p[2].y = -sign * Grades[ref.node3] * flat(p[2]);
+		if (changed0)
+			p[1].y = sign * Grades[ref.node0] * flat(p[1]);
+		if (changed3)
+			p[2].y = -sign * Grades[ref.node3] * flat(p[2]);
+		touched[ref.entry] = 1;
 	}
 	for (std::size_t n = 0; n < Profile.order.size(); ++n)
-		Changes.emplace_back(Profile.order[n].road, Profile.states[n]);
+		if (touched[n] != 0)
+			Changes.emplace_back(Profile.order[n].road, Profile.states[n]);
 	for (auto const end : {std::size_t{0}, Profile.positions.size() - 1})
-	{
-		// the other pieces ending there (a change of lanes, three or more meeting with no junction) go with the end of the run,
-		// as the Raise of the road tool takes them, so the road isn't pulled apart
-		for (auto const &other : editor_road::ends_at(Profile.positions[end]))
-		{
-			if (std::any_of(Profile.order.begin(), Profile.order.end(), [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
-				continue;
-			auto listed{std::find_if(Changes.begin(), Changes.end(), [&other](auto const &Change) { return Change.first == other.road; })};
-			if (listed == Changes.end())
-			{
-				Changes.emplace_back(other.road, other.road->definition());
-				listed = std::prev(Changes.end());
-			}
-			listed->second.axis.points[other.atend ? segment_data::point::end : segment_data::point::start].y = Heights[end];
-		}
-		for (auto const &arm : editor_road::arms_at(Profile.positions[end]))
-		{
-			auto entry{std::find_if(Junctions.begin(), Junctions.end(), [&arm](auto const &Listed) { return Listed.first == arm.first; })};
-			if (entry == Junctions.end())
-			{
-				Junctions.emplace_back(arm.first, arm.first->definition());
-				entry = std::prev(Junctions.end());
-			}
-			entry->second.arms[arm.second].position.y = Heights[end];
-		}
-	}
+		if (std::abs(Heights[end] - Profile.heights[end]) > 1e-9)
+			write_run_end(Profile, end, Heights[end], Changes, Junctions);
 }
 
 // whether something else meets the run at that end node (another piece or a junction arm): only there the end keeps its grade,
@@ -602,25 +632,36 @@ void editor_mode::road_profile_operation()
 	case 3: // over the ground
 	{
 		std::size_t found{0};
+		std::vector<char> grounded(heights.size(), 0);
 		for (std::size_t i = first; i <= last; ++i)
 		{
 			double ground{0.0};
 			if (view.selected[i] != 0 && m_streamer.height_at(profile.positions[i].x, profile.positions[i].z, ground))
 			{
 				heights[i] = ground + view.offset;
+				grounded[i] = 1;
 				++found;
 			}
 		}
+		if (found == 0)
+		{
+			tool.status = STR_C("No terrain under the selected nodes");
+			return;
+		}
+		// the grades of the nodes put on the ground only, the others are as they were
 		for (std::size_t i = first; i <= last; ++i)
-			if (view.selected[i] != 0)
+			if (grounded[i] != 0)
 				grades[i] = neighbour_grade(profile, heights, i);
 		done = format(STR_C("Nodes put %.2f m over the ground: %zu"), view.offset, found);
 		break;
 	}
-	case 4: // moved up or down
+	case 4: // moved up or down, the grades at the moved nodes from their neighbours, as a drag of them gives
 		for (std::size_t i = 0; i < heights.size(); ++i)
 			if (view.selected[i] != 0)
 				heights[i] += view.shift;
+		for (std::size_t i = 0; i < heights.size(); ++i)
+			if (view.selected[i] != 0)
+				grades[i] = neighbour_grade(profile, heights, i);
 		done = format(STR_C("Selected nodes moved by %+.2f m"), view.shift);
 		break;
 	case 5: // evened out between the first and the last

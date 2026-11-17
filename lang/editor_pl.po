@@ -14462,3 +14462,6 @@ msgstr "ich średnia"
 
 msgid "The vertical profile of the selected road in a window of its own: its nodes dragged, levelled, given a grade or a vertical curve"
 msgstr "Profil pionowy zaznaczonej drogi w osobnym oknie: przeciąganie węzłów, poziomowanie, pochylenie, łuk pionowy"
+
+msgid "No terrain under the selected nodes"
+msgstr "Pod zaznaczonymi węzłami nie ma terenu"
