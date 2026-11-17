@@ -80,12 +80,8 @@ vec3 cloud_sky_light(float up)
 }
 
 // light of the sun reaching a point inside a layer through the cloud towards it, with the light scattered many times
-// (octaves after Wrenninge), and the phase of the view (cloud_scatter_phase). Offset: where in its step each sample is taken
-// (0-1), another place for every sample of the view and every frame. taken always in the middle, a far sample (the last step is
-// some 40% of the reach) came into the cloud at the same place for all the pixels around, and the shaded sides of the clouds
-// were cut into bands of grey along it; moved about, the bands turn into a noise the samples of the ray and the blending over
-// frames (clouds_temporal.comp) smooth out
-float cloud_sunlight(int index, vec3 position, int steps, float powder, bool detail, float offset)
+// (octaves after Wrenninge), and the phase of the view (cloud_scatter_phase)
+float cloud_sunlight(int index, vec3 position, int steps, float powder, bool detail)
 {
 	vec3 sun = weather_sun_direction.xyz;
 	cloud_layer_s layer = cloud_layers[index];
@@ -99,7 +95,7 @@ float cloud_sunlight(int index, vec3 position, int steps, float powder, bool det
 	float step = reach * (growth - 1.0) / (pow(growth, float(steps)) - 1.0);
 	for (int s = 0; s < steps; s++)
 	{
-		vec3 point = position + sun * (travelled + offset * step);
+		vec3 point = position + sun * (travelled + 0.5 * step);
 		travelled += step;
 		// the nearest steps with the detail noise: the small billows shade one another, lit on top and grey beneath
 		depth += cloud_layer_density(index, point, cloud_height(point), detail && (s < CLOUD_LIGHT_DETAIL_STEPS)) * step;
@@ -117,16 +113,26 @@ float cloud_sunlight(int index, vec3 position, int steps, float powder, bool det
 	return light;
 }
 
+// the height the cloud of a layer reaches at a place: the top of its area there (cloud_layer_density(): the clouds deeper in their
+// area are the taller), without the lumps its shape cuts off it and without the anvil
+float cloud_local_top(int index, vec3 position)
+{
+	cloud_layer_s layer = cloud_layers[index];
+	vec2 shift;
+	vec2 coverage = cloud_coverage(layer, position.xz, shift);
+	float bottom = layer.heights.x + shift.x;
+	return bottom + mix(1.0 - layer.profile.z, 1.0, coverage.y) * max(layer.heights.y + shift.y - bottom, 1.0);
+}
+
 // optical depth of the cloud over a point up to Reach above it, from Samples of the coarse density: under a lump and deep in a
-// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud.
-// Offset: where in its part of the reach each sample is taken (0-1), as in cloud_sunlight()
-float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples, float offset)
+// thick cloud the sky light is held back, at the tops and the thin edges it is not, so the shaded sides take the form of the cloud
+float cloud_sky_depth(int index, vec3 position, float height, float reach, int samples)
 {
 	float depth = 0.0;
 	for (int s = 0; s < samples; s++)
 	{
 		// up along the vertical: the height grows by the same distance (cloud_height bends only with the horizontal distance)
-		float up = reach * (float(s) + offset) / float(samples);
+		float up = reach * (float(s) + 0.5) / float(samples);
 		depth += cloud_layer_density(index, position + vec3(0.0, up, 0.0), height + up, false);
 	}
 	return depth * reach / float(samples);
@@ -170,8 +176,6 @@ void main()
 	int skysteps = (lightsteps >= 4) ? 2 : 1;
 	bool detail = quality.w > 0.5;
 	float jitter = fract(interleaved_noise(vec2(texel)) + float(frame) * 0.618034);
-	// where the samples of the light are taken in their steps: another sequence than the one of the samples of the view
-	float lightjitter = fract(interleaved_noise(vec2(texel) + vec2(37.0, 17.0)) + float(frame) * 0.618034);
 	{
 		float spread = 1.0;
 		for (int octave = 0; octave < CLOUD_SCATTER_OCTAVES; octave++)
@@ -238,17 +242,18 @@ void main()
 			if (density <= 0.0)
 				continue;
 			float powder = mix(1.0, 1.0 - exp(-density / max(layer.shape.y, 1e-6) * CLOUD_POWDER), powderview);
-			// every sample of the view takes the samples of its light at another place of their steps
-			// (kept off the ends of the steps: the whole of a step is enough to smooth the bands out, and the less the samples move
-			// the less the light of a pixel changes from frame to frame)
-			float lightoffset = 0.15 + 0.7 * fract(lightjitter + float(s) * 0.414214);
-			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, lightsteps, powder, detail, lightoffset) : 0.0;
+			float sunshare = (sunup > 0.0) ? cloud_sunlight(index, position, lightsteps, powder, detail) : 0.0;
 			// the light of the sky reaches inside through the cloud above, that of the ground through the cloud below: the base of a
 			// thick cloud is darker than its top, and greyer, lit only by the ground and the sky at its sides
 			float column = layer.shape.y * layer.shape.x;
 			float top = cloud_layer_bounds(layer).y;
 			float reach = clamp(top - height, 0.0, CLOUD_SKY_REACH);
-			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, reach, skysteps, 0.15 + 0.7 * fract(lightoffset + 0.569840)) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
+			// the samples of the cloud over the point are kept under the top of the cloud there. spread over the whole reach, the
+			// upper one left the cloud all at once as the point came nearer the top, and the sky light went up by a step there: a
+			// band of grey along the top of every cloud, and another deeper in for the lower sample. (moved about along the reach
+			// from frame to frame instead, they made the clouds flicker, or drew stripes where they went with the samples of the view)
+			float under = clamp(cloud_local_top(index, position) - height, 0.0, reach);
+			float sky = exp(-CLOUD_SKY_FADE * cloud_sky_depth(index, position, height, under, skysteps) - CLOUD_AMBIENT_FADE * column * max(top - height - reach, 0.0));
 			float below = column * max(height - layer.heights.x, 0.0);
 			vec3 light = sunlight * sunshare + (ambienttop * mix(CLOUD_SKY_FLOOR, 1.0, sky) + ambientbottom * exp(-CLOUD_AMBIENT_FADE * below));
 			float through = exp(-density * step);
