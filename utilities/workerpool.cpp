@@ -112,7 +112,7 @@ void worker_pool::work(std::function<void(std::size_t)> const &Work, std::size_t
 void worker_pool::worker(thread_data &Data)
 {
 	// draws of Random() in this thread go to an engine of its own: the one of the simulation can't be shared between threads
-	std::mt19937 randomengine(static_cast<std::mt19937::result_type>(true_random_seed()));
+	std::mt19937 randomengine(static_cast<std::mt19937::result_type>(true_random_seed())); // NOSONAR: randomness of the simulation, not of anything security-relevant
 	set_thread_random_engine(&randomengine);
 
 	while (true)

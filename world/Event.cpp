@@ -733,6 +733,10 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         m_input.command_type = TCommandType::cm_SectionVelocity;
         m_passive = true;
     }
+    else if( token == "PointVelocity" ) {
+        m_input.command_type = TCommandType::cm_PointVelocity;
+        m_passive = true;
+    }
     else if( token == "ShuntVelocity" ) {
         m_input.command_type = TCommandType::cm_ShuntVelocity;
         m_passive = true;
@@ -743,6 +747,11 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
     }
     else if( token == "CabSignal" ) {
         m_input.command_type = TCommandType::cm_SecuritySystemMagnet;
+        m_passive = true;
+    }
+    else if( token == "SignalAreaEnd" ) {
+        // scanned, so the train sees where the interlocking area of the signal it passed ends
+        m_input.command_type = TCommandType::cm_SignalAreaEnd;
         m_passive = true;
     }
     else {
@@ -1025,13 +1034,42 @@ whois_event::run_() {
         auto *targetcell { static_cast<TMemCell *>( std::get<scene::basic_node *>( target ) ) };
         if( targetcell == nullptr ) { continue; }
         // event effect code
+        // +48: station after the next one, unused, stop there or passthrough
         // +40: next station name, unused, stop at next station (duplicate of +0 2nd numeric value)
         // +32: vehicle name
         // +24: vehicle type, consist brake level, obstacle distance
         // +16: load type, load amount, max load amount
         // +8: destination, direction, engine power
         // +0: train name, station count, stop on next station
-        if( m_input.flags & flags::whois_name ) {
+        if( ( m_input.flags & ( flags::whois_name | flags::whois_load | flags::mode_alt ) )
+            == ( flags::whois_name | flags::whois_load ) ) {
+            // +48 (the whois_name | whois_load combination was unused; +56, same with mode_alt
+            // set, stays free for a future mode)
+            // the timetable entry one past the next stop, and whether the train stops there
+            auto const *owner { (
+                m_activator->Mechanik != nullptr && m_activator->Mechanik->primary() ?
+                    m_activator->Mechanik :
+                    m_activator->ctOwner ) };
+            auto const *entry { (
+                owner != nullptr ?
+                    &owner->TrainTimetable().TimeTableEntryAhead( 1 ) :
+                    nullptr ) };
+            auto const aheadname { ( entry != nullptr ? entry->StationName : "none" ) };
+            auto const aheadstop { ( entry != nullptr && entry->Ah >= 0 ? 1 : 0 ) };
+
+            targetcell->UpdateValues(
+                aheadname, // station after the next one
+                0, // unused
+                aheadstop, // stop there or passthrough
+                m_input.flags & ( flags::text | flags::value1 | flags::value2 ) );
+
+            WriteLog(
+                "Type: WhoIs (" + std::to_string( m_input.flags ) + ") - "
+                + "[station after next: " + aheadname + "], "
+                + "[X], "
+                + "[stop there: " + ( aheadstop != 0 ? "yes" : "no" ) + "]" );
+        }
+        else if( m_input.flags & flags::whois_name ) {
             // +32 or +40
             // next station name
             if( m_input.flags & flags::mode_alt ) {
@@ -1248,6 +1286,17 @@ std::vector<basic_event *> multi_event::children() const {
     for (auto const &childevent : m_children) {
         if (std::get<basic_event *>(childevent) != nullptr) {
             result.push_back(std::get<basic_event *>(childevent));
+        }
+    }
+    return result;
+}
+
+std::vector<std::pair<basic_event *, bool>> multi_event::branches() const {
+    std::vector<std::pair<basic_event *, bool>> result;
+    for (auto const &childevent : m_children) {
+        if (std::get<basic_event *>(childevent) != nullptr) {
+            // the flag is set for the ones before "else"
+            result.emplace_back(std::get<basic_event *>(childevent), false == std::get<bool>(childevent));
         }
     }
     return result;
@@ -1744,6 +1793,16 @@ animation_event::run_() {
 		}
 		return false;
 	});
+}
+
+void
+animation_event::finish() const {
+
+    for (auto const &container : m_animationcontainers) {
+        if (auto const target = container.lock()) {
+            target->Finish();
+        }
+    }
 }
 
 // export_as_text() subclass details

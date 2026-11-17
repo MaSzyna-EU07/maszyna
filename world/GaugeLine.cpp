@@ -20,8 +20,9 @@ gauge_line make_gauge_line( TSegment const &Segment, double const Offset, double
     line.offset = Offset;
     line.from = From;
     auto const length { Segment.GetLength() };
-    auto const add = [&]( double const Distance ) {
-        glm::dvec3 point, tangent;
+    auto const add = [ &line ]( double const Distance ) {
+        glm::dvec3 point;
+        glm::dvec3 tangent;
         line.at( Distance, point, tangent );
         line.points.push_back( point );
         line.distances.push_back( Distance ); };
@@ -29,7 +30,8 @@ gauge_line make_gauge_line( TSegment const &Segment, double const Offset, double
     for( int i = 0; i <= count; ++i ) {
         add( From + ( length - From ) * i / count );
     }
-    line.low = line.high = plan( line.points.front() );
+    line.low = plan( line.points.front() );
+    line.high = line.low;
     for( auto const &point : line.points ) {
         line.low = glm::min( line.low, plan( point ) );
         line.high = glm::max( line.high, plan( point ) );
@@ -39,7 +41,8 @@ gauge_line make_gauge_line( TSegment const &Segment, double const Offset, double
 
 double lateral( gauge_line const &Line, int const Side, glm::dvec3 const &Point, double &Distance ) {
 
-    glm::dvec3 point, tangent;
+    glm::dvec3 point;
+    glm::dvec3 tangent;
     for( int step = 0; step < 8; ++step ) {
         Line.at( Distance, point, tangent );
         Distance += glm::dot( plan( Point - point ), glm::normalize( plan( tangent ) ) );

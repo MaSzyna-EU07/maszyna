@@ -32,3 +32,7 @@
 [submodule "ref/glslang"]
 	path = ref/glslang
 	url = https://github.com/KhronosGroup/glslang.git
+[submodule "ref/wamr"]
+	path = ref/wamr
+	url = https://github.com/bytecodealliance/wasm-micro-runtime
+	shallow = true

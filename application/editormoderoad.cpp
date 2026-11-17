@@ -28,7 +28,9 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
+#include <limits>
+#include <map>
+#include <set>
 
 namespace
 {
@@ -126,8 +128,8 @@ bool is_curved(segment_data const &Path)
 
 void copy_text(char *Buffer, std::size_t const Size, std::string const &Text)
 {
-	std::strncpy(Buffer, Text.c_str(), Size - 1);
-	Buffer[Size - 1] = 0;
+	// as much of the text as fits, always terminated
+	Buffer[Text.copy(Buffer, Size - 1)] = 0;
 }
 
 std::string lower_case(std::string Text)
@@ -229,6 +231,13 @@ glm::dvec3 path_direction(segment_data const &Path, double const T)
 
 void editor_mode::update_road_tool()
 {
+	{
+		// an Alt+drag of the heights is dropped once the window, the tool or the work area isn't its own any more, or its
+		// release went elsewhere
+		auto &lift{m_roadtool};
+		if (lift.lifting && (false == lift.window || lift.tool != 0 || ui()->mode() == nodebank_panel::TRACK || false == ImGui::IsMouseDown(ImGuiMouseButton_Left)))
+			lift.lifting = false;
+	}
 	auto &tool{m_roadtool};
 	if (tool.selected != nullptr && tool.selected->m_editorremoved)
 		tool.selected = nullptr;
@@ -320,12 +329,6 @@ void editor_mode::road_select(road_node *Road)
 		tool.settings.missing = {};
 	}
 	tool.varied = tool.settings.changing();
-	copy_text(tool.surface, sizeof(tool.surface), tool.settings.surface);
-	for (int side = 0; side < 2; ++side)
-		copy_text(tool.sides[side], sizeof(tool.sides[side]), tool.settings.sides[side].material);
-	copy_text(tool.kerbtext, sizeof(tool.kerbtext), tool.settings.kerbmaterial);
-	copy_text(tool.mediantext, sizeof(tool.mediantext), tool.settings.median.material);
-	copy_text(tool.banktext, sizeof(tool.banktext), tool.settings.bankmaterial);
 }
 
 void editor_mode::junction_select(junction_node *Junction)
@@ -339,12 +342,6 @@ void editor_mode::junction_select(junction_node *Junction)
 	tool.status = format(STR_C("Selected: %s"), Junction->name().c_str());
 	if (false == editor_road::can_edit(*Junction, &reason))
 		tool.status += ". " + format(STR_C("It can't be changed: %s"), STR(reason).c_str());
-	// the fields for the names of materials are shared with the roads
-	copy_text(tool.surface, sizeof(tool.surface), Junction->definition().surface);
-	copy_text(tool.sides[0], sizeof(tool.sides[0]), Junction->definition().side.material);
-	copy_text(tool.kerbtext, sizeof(tool.kerbtext), Junction->definition().kerbmaterial);
-	copy_text(tool.banktext, sizeof(tool.banktext), Junction->definition().bankmaterial);
-	copy_text(tool.mediantext, sizeof(tool.mediantext), Junction->definition().medianmaterial);
 }
 
 void editor_mode::roadpoint_select(roadpoint_node *Point)
@@ -752,7 +749,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		state.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (render_road_material("Surface", tool.surface, sizeof(tool.surface), state.surface))
+	if (render_road_material("Surface", state.surface))
 		changed = true;
 	if (number(STR_C("Texture length [m]"), state.texturelength, 0.5f, "%.2f"))
 	{
@@ -771,7 +768,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.kerbwidth = std::clamp(state.kerbwidth, 0.05f, 2.0f);
 			changed = true;
 		}
-		if (render_road_material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), state.kerbmaterial))
+		if (render_road_material("Kerb material", state.kerbmaterial))
 			changed = true;
 		if (state.side.type != road_node::side_type::sidewalk && number(STR_C("Kerb height [m]"), state.kerbheight, 0.01f, "%.2f"))
 		{
@@ -798,7 +795,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 			state.side.width = std::clamp(state.side.width, 0.1f, 20.0f);
 			changed = true;
 		}
-		if (render_road_material("Material", tool.sides[0], sizeof(tool.sides[0]), state.side.material))
+		if (render_road_material("Material", state.side.material))
 			changed = true;
 		if (state.side.material.empty() || state.side.material == "none")
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the sides drawn"));
@@ -829,7 +826,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 	// banks leading from the corners to the ground
 	if (ImGui::CollapsingHeader(STR_C("Banks to the ground##banks")))
 	{
-		if (render_road_material("Bank material", tool.banktext, sizeof(tool.banktext), state.bankmaterial))
+		if (render_road_material("Bank material", state.bankmaterial))
 			changed = true;
 		item_tooltip("What the banks are covered with next to a sidewalk, a kerb or the bare edge.\nA bank of a shoulder is covered with the material of the shoulder");
 		ImGui::SetNextItemWidth(120.0f);
@@ -873,7 +870,7 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 		}
 		item_tooltip("Shows where a road which keeps its two directions apart meets this stretch:\n"
 		             "what's between the directions is led on to the other road, where it closes or carries on");
-		if (state.median == road_node::median_type::island && render_road_material("Island material", tool.mediantext, sizeof(tool.mediantext), state.medianmaterial))
+		if (state.median == road_node::median_type::island && render_road_material("Island material", state.medianmaterial))
 			changed = true;
 	}
 
@@ -954,6 +951,8 @@ void editor_mode::render_junction_layout(junction_node &Junction)
 void editor_mode::road_cancel()
 {
 	auto &tool{m_roadtool};
+	// Esc in the middle of Alt+drag: the heights stay as they were
+	tool.lifting = false;
 	tool.chain = false;
 	tool.branchroad = nullptr;
 	tool.branchjunction = nullptr;
@@ -1157,6 +1156,90 @@ void editor_mode::road_profile(std::vector<segment_data> &Pieces, double const *
 	}
 }
 
+bool editor_mode::road_joint_on_screen(glm::dvec3 &Joint) const
+{
+	screen_projection const projection;
+	auto const mouse{ImGui::GetIO().MousePos};
+	glm::dvec3 const camera{Global.pCamera.Pos};
+	// no farther than what is under the cursor and a bit beyond it (a point in a cutting, under an embankment), so nothing far
+	// behind the ground or a model shown there is picked through it
+	auto reach{kReach};
+	if (GfxRenderer->Mouse_Hit())
+		reach = std::min(reach, glm::length(GfxRenderer->Mouse_Position()) * 1.1 + 15.0);
+	// the nearest on the screen, by whole pixels; of those as near, the one nearer to the camera
+	auto best_pixels{std::numeric_limits<int>::max()};
+	auto best_range{std::numeric_limits<double>::max()};
+	bool found{false};
+	editor_road::each_joint([&](glm::dvec3 const &Point) {
+		auto const range{glm::distance(Point, camera)};
+		ImVec2 screen;
+		if (range > reach || false == projection.project(Point, screen))
+			return;
+		auto const dx{screen.x - mouse.x};
+		auto const dy{screen.y - mouse.y};
+		auto const pixels{static_cast<int>(std::sqrt(dx * dx + dy * dy))};
+		if (pixels > 12 || pixels > best_pixels || (pixels == best_pixels && range >= best_range))
+			return;
+		best_pixels = pixels;
+		best_range = range;
+		Joint = Point;
+		found = true;
+	});
+	return found;
+}
+
+bool editor_mode::road_lift_start()
+{
+	auto &tool{m_roadtool};
+	glm::dvec3 joint;
+	if (tool.tool != 0 || false == road_joint_on_screen(joint))
+		return false;
+	auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
+	if (listed == tool.points.end())
+		tool.points.assign(1, joint);
+	tool.selected = nullptr;
+	tool.junction = nullptr;
+	tool.marker = nullptr;
+	auto const &io{ImGui::GetIO()};
+	auto const height{std::max(1.0f, io.DisplaySize.y)};
+	if (Global.EditorOrtho)
+		tool.lift_scale = 2.0 * static_cast<double>(Global.EditorOrthoExtent) / height;
+	else
+		tool.lift_scale = glm::distance(joint, glm::dvec3{Global.pCamera.Pos}) * 2.0 * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / height;
+	tool.lift_mouse = io.MousePos.y;
+	tool.lift_from.clear();
+	for (auto const &point : tool.points)
+		tool.lift_from.push_back(point.y);
+	tool.lifting = true;
+	tool.status = STR_C("Drag up or down, let go to set the heights. Ctrl while dragging: by centimetres");
+	return true;
+}
+
+double editor_mode::road_lift_offset() const
+{
+	auto const &tool{m_roadtool};
+	auto offset{(tool.lift_mouse - ImGui::GetIO().MousePos.y) * tool.lift_scale};
+	// with Ctrl it's slower, for the fine part
+	if (Global.ctrlState)
+		offset *= 0.1;
+	return std::round(offset * 100.0) / 100.0;
+}
+
+void editor_mode::road_lift_finish()
+{
+	auto &tool{m_roadtool};
+	if (false == tool.lifting)
+		return;
+	tool.lifting = false;
+	auto const offset{road_lift_offset()};
+	if (std::abs(offset) < 0.005 || tool.lift_from.size() != tool.points.size())
+		return;
+	std::vector<double> heights;
+	for (auto const height : tool.lift_from)
+		heights.push_back(height + offset);
+	road_point_heights(heights);
+}
+
 void editor_mode::road_click()
 {
 	auto &tool{m_roadtool};
@@ -1186,7 +1269,11 @@ void editor_mode::road_click()
 		}
 		tool.marker = nullptr;
 		glm::dvec3 joint;
-		if (editor_road::nearest_joint(ground, kPointRadius, joint))
+		// the point by the ground clicked first, then the piece or the junction under the cursor; the point nearest on the screen
+		// only when there's none of them (a point under the terrain, in a cutting, can't be got near by the ground clicked)
+		auto *under{editor_road::nearest(ground, 1.5)};
+		auto *junction_under{under == nullptr ? editor_road::nearest_junction(ground) : nullptr};
+		if (editor_road::nearest_joint(ground, kPointRadius, joint) || (under == nullptr && junction_under == nullptr && road_joint_on_screen(joint)))
 		{
 			// a point where pieces meet or end. with Shift it's added to the selected ones, or taken out of them
 			auto const listed{std::find_if(tool.points.begin(), tool.points.end(), [&joint](glm::dvec3 const &Point) { return glm::distance(Point, joint) < 0.25; })};
@@ -1202,12 +1289,10 @@ void editor_mode::road_click()
 			return;
 		}
 		tool.points.clear();
-		auto *road{editor_road::nearest(ground, 1.5)};
-		auto *junction{road == nullptr ? editor_road::nearest_junction(ground) : nullptr};
-		if (road == nullptr && junction == nullptr)
+		if (under == nullptr && junction_under == nullptr)
 			tool.status = STR_C("No road here");
-		road_select(road);
-		junction_select(junction);
+		road_select(under);
+		junction_select(junction_under);
 		return;
 	}
 
@@ -1928,60 +2013,42 @@ void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vec
 	tool.aimedkind = -1;
 }
 
-// a field for the name of a material, with a list of the ones in the texture folder to pick from. returns: true if the material was changed
-bool editor_mode::render_road_material(char const *Label, char *Buffer, std::size_t const Size, std::string &Value)
+// a field of the material of a part of a road or of a junction. returns: true if the material was changed
+bool editor_mode::render_road_material(char const *Label, std::string &Value)
 {
-	auto &tool{m_roadtool};
-	bool picked{false};
 	ImGui::PushID(Label);
-	ImGui::SetNextItemWidth(200.0f);
-	if (ImGui::InputText("##name", Buffer, Size, ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit())
-	{
-		auto const name{lower_case(Buffer)};
-		if (name != Value && name.find(' ') == std::string::npos)
-		{
-			Value = name.empty() ? std::string{"none"} : name;
-			picked = true;
-		}
-		copy_text(Buffer, Size, Value);
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("..."))
-		ImGui::OpenPopup("pick");
-	item_tooltip("Pick from the materials in the texture folder");
-	ImGui::SameLine();
-	ImGui::TextUnformatted(STR_C(Label));
-	if (ImGui::BeginPopup("pick"))
-	{
-		ImGui::TextDisabled("%s", STR_C("Materials and images found in the texture folder"));
-		ImGui::SetNextItemWidth(200.0f);
-		ImGui::InputText(STR_C("Filter"), tool.filter, sizeof(tool.filter));
-		auto const filter{lower_case(tool.filter)};
-		std::vector<std::string const *> listed;
-		for (auto const &name : editor_road::materials())
-			if (filter.empty() || name.find(filter) != std::string::npos)
-				listed.emplace_back(&name);
-		ImGui::BeginChild("list", ImVec2(340.0f, 280.0f), true);
-		ImGuiListClipper clipper;
-		clipper.Begin(static_cast<int>(listed.size()));
-		while (clipper.Step())
-		{
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-			{
-				if (ImGui::Selectable(listed[i]->c_str(), *listed[i] == Value))
-				{
-					Value = *listed[i];
-					copy_text(Buffer, Size, Value);
-					picked = true;
-					ImGui::CloseCurrentPopup();
-				}
-			}
-		}
-		ImGui::EndChild();
-		ImGui::EndPopup();
-	}
+	auto const picked{texture_field(STR_C(Label), 200.0f, Value, {STR_C("On the roads of this scenery:"), [this]() { return road_textures_used(); }, STR_C("No texture"), "none"})};
 	ImGui::PopID();
+	if (picked)
+		Value = lower_case(Value);
 	return picked;
+}
+
+std::vector<editor_mode::texture_use> editor_mode::road_textures_used() const
+{
+	std::map<std::string, int> counted;
+	auto const count = [&](std::set<std::string> const &Names) {
+		for (auto const &name : Names)
+			if (false == name.empty() && name != "none")
+				++counted[name];
+	};
+	for (auto const *road : simulation::Roads.sequence())
+		if (road != nullptr && false == road->m_editorremoved)
+		{
+			auto const &state{road->definition()};
+			count({state.surface, state.sides[0].material, state.sides[1].material, state.kerbmaterial, state.bankmaterial, state.median.material});
+		}
+	for (auto const *junction : simulation::Junctions.sequence())
+		if (junction != nullptr && false == junction->m_editorremoved)
+		{
+			auto const &state{junction->definition()};
+			count({state.surface, state.side.material, state.kerbmaterial, state.bankmaterial, state.medianmaterial});
+		}
+	std::vector<texture_use> list;
+	for (auto const &[name, number] : counted)
+		list.push_back({null_handle, name, number, format(STR_P("On %d road or junction", "On %d roads or junctions", static_cast<long long>(number)), number)});
+	std::stable_sort(list.begin(), list.end(), [](auto const &Left, auto const &Right) { return Left.count > Right.count; });
+	return list;
 }
 
 // draws controls for the layout of a road. returns: true if the layout was changed in a way which calls for the road to be made anew
@@ -1994,7 +2061,6 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		ImGui::SetNextItemWidth(120.0f);
 		return ImGui::InputFloat(Label, &Value, Step, Step * 4.0f, Format, ImGuiInputTextFlags_EnterReturnsTrue);
 	};
-	auto const material = [this](char const *Label, char *Buffer, std::size_t const Size, std::string &Value) { return render_road_material(Label, Buffer, Size, Value); };
 
 	// lanes. a piece of a road which is there already can end with other lanes than it starts with
 	{
@@ -2071,7 +2137,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		State.markings = (colour == 1 ? road_node::marking_colour::white : colour == 2 ? road_node::marking_colour::orange : road_node::marking_colour::none);
 		changed = true;
 	}
-	if (material("Surface", tool.surface, sizeof(tool.surface), State.surface))
+	if (render_road_material("Surface", State.surface))
 		changed = true;
 	char const *sidenames[]{STR_C("Left side"), STR_C("Right side")};
 	char const *sidetypes[]{STR_C("no side"), STR_C("shoulder"), STR_C("sidewalk")};
@@ -2096,7 +2162,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 				data.width = std::clamp(data.width, 0.1f, 20.0f);
 				changed = true;
 			}
-			if (material("Material", tool.sides[side], sizeof(tool.sides[side]), data.material))
+			if (render_road_material("Material", data.material))
 				changed = true;
 			if (data.material.empty() || data.material == "none")
 				ImGui::TextDisabled("%s", STR_C("Pick a material to have the side drawn"));
@@ -2114,7 +2180,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 	if (State.kerbs[0] || State.kerbs[1] || island)
 	{
 		ImGui::Indent();
-		if (material("Kerb material", tool.kerbtext, sizeof(tool.kerbtext), State.kerbmaterial))
+		if (render_road_material("Kerb material", State.kerbmaterial))
 			changed = true;
 		if ((State.kerbs[0] || State.kerbs[1]) && (State.kerbmaterial.empty() || State.kerbmaterial == "none"))
 			ImGui::TextDisabled("%s", STR_C("Pick a material to have the kerbs drawn"));
@@ -2169,7 +2235,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 			}
 			ImGui::PopID();
 		}
-		if (material("Bank material", tool.banktext, sizeof(tool.banktext), State.bankmaterial))
+		if (render_road_material("Bank material", State.bankmaterial))
 			changed = true;
 		item_tooltip("What a bank is covered with next to a sidewalk, a kerb or the bare edge of the road.\nA bank of a shoulder is covered with the material of the shoulder");
 		if (tool.selected != nullptr)
@@ -2213,7 +2279,7 @@ bool editor_mode::render_road_layout(road_node::state &State)
 		item_tooltip(apart);
 		if (State.median.type == road_node::median_type::island)
 		{
-			if (material("Island material", tool.mediantext, sizeof(tool.mediantext), State.median.material))
+			if (render_road_material("Island material", State.median.material))
 				changed = true;
 			item_tooltip("The island is as high as the kerbs; with a kerb material set it gets kerbs of its own");
 			char const *rounded{"Length of the rounded end of the island at that end of the piece; half of the width of the island makes it a half circle.\n"
@@ -2353,8 +2419,8 @@ void editor_mode::render_road_tool_options()
 			if (ImGui::InputFloat(STR_C("Radius [m]##ring"), &tool.ringradius, 1.0f, 5.0f, "%.1f"))
 				tool.ringradius = std::clamp(tool.ringradius, 8.0f, 200.0f);
 			item_tooltip("Radius of the middle of the road going around");
-			render_road_material("Island in the middle", tool.islandtext, sizeof(tool.islandtext), tool.island);
-			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nnone: the middle is left as it is");
+			render_road_material("Island in the middle", tool.island);
+			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nNo texture: the middle is left as it is");
 		}
 		else
 		{
@@ -2863,8 +2929,26 @@ void editor_mode::draw_road_overlay() const
 			drawpoint(point, kSelectedColor, 6.0f, true);
 			drawpoint(point, kSelectedColor, 11.0f, false);
 		}
-		hint = tool.marker != nullptr       ? STR_C("LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo") :
-		       false == tool.points.empty() ? STR_C("LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo") :
+		if (tool.lifting)
+		{
+			// where the points go: a line up or down to each, and the change by the cursor
+			auto const offset{road_lift_offset()};
+			ImU32 const lifted{IM_COL32(255, 210, 60, 255)};
+			for (auto const &point : tool.points)
+			{
+				glm::dvec3 const target{point.x, point.y + offset, point.z};
+				projection.line(drawlist, point, target, lifted, 2.0f);
+				drawpoint(target, lifted, 6.0f, true);
+			}
+			auto const mouse{ImGui::GetIO().MousePos};
+			char label[64];
+			std::snprintf(label, sizeof(label), STR_C("%+.2f m, to %.2f m"), offset, tool.points.empty() ? 0.0 : tool.points.front().y + offset);
+			drawlist->AddRectFilled(ImVec2(mouse.x + 14.0f, mouse.y - 4.0f), ImVec2(mouse.x + 22.0f + ImGui::CalcTextSize(label).x, mouse.y + 18.0f), IM_COL32(0, 0, 0, 170), 3.0f);
+			drawlist->AddText(ImVec2(mouse.x + 18.0f, mouse.y - 2.0f), lifted, label);
+		}
+		hint = tool.lifting                 ? STR_C("Drag up or down: the height of the selected points   Ctrl: finer   let go: set") :
+		       tool.marker != nullptr       ? STR_C("LMB: select a piece, a junction, a point or a marker   Del: delete   Ctrl+Z: undo") :
+		       false == tool.points.empty() ? STR_C("LMB: select a point (under the terrain too)   Shift+LMB: add a point or take it out   Alt+LMB drag: the height   Del: delete the points   Ctrl+Z: undo") :
 		       tool.selected != nullptr     ? STR_C("LMB: select a piece, a junction or a point (white dot)   K: split at the cursor   Del: delete   Ctrl+Z: undo") :
 		       tool.junction != nullptr     ? STR_C("LMB: select a piece, a junction or a point (white dot)   Del: delete   Ctrl+Z: undo") :
 		                                      STR_C("LMB: select a piece, a junction, a point (white dot) or a marker");

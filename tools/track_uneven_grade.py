@@ -43,7 +43,7 @@ STRAY_PER_MM, DIP_SHARE, DIP_REACH = 0.00145, 0.4, 3.0
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
 UP_WAVES = [(2 * math.pi / length * math.cos(GOLDEN * i), 2 * math.pi / length * math.sin(GOLDEN * i), GOLDEN * (i + 1), share) for i, (length, share) in enumerate(zip((8.3, 11.9, 16.7, 23.9, 37.1, 47.3, 61.9, 83.3), (.14, .19, .22, .22, .23, .23, .23, .23)))]
 TOKEN = re.compile(r"//[^\n]*|\S+")
-NUMBER = re.compile(r"^[-+]?\d*\.?\d+([eE][-+]?\d+)?$")
+NUMBER = re.compile(r"^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$")
 
 
 def limit(speed):
@@ -79,38 +79,9 @@ class Scenery:
 
     def read(self, path, offset=(0.0, 0.0, 0.0)):
         path = path.resolve()
-        if path in self.seen:
-            return
-        self.seen.add(path)
-        text = path.read_bytes().decode("latin-1")
-        self.texts[path] = text
-        matches = [m for m in TOKEN.finditer(text) if not m.group(0).startswith("//")]
-        words = [m.group(0) for m in matches]
-        lower = [w.lower() for w in words]
-        origins = [offset]
-        i = 0
-        while i < len(words):
-            word = lower[i]
-            if word == "include" and i + 1 < len(words):
-                end = i + 1
-                while end < len(words) and lower[end] != "end":
-                    end += 1
-                self.include(words[i + 1], words[i + 2:end], origins[-1])
-                i = end
-            elif word == "origin" and i + 3 < len(words) and all(NUMBER.match(w) for w in words[i + 1:i + 4]):
-                origins.append(tuple(o + float(w) for o, w in zip(origins[-1], words[i + 1:i + 4])))
-                i += 3
-            elif word == "endorigin" and len(origins) > 1:
-                origins.pop()
-            elif word == "rotate" and i + 3 < len(words) and any(w.strip("0.-") for w in words[i + 1:i + 4]):
-                self.notes["rotate"] += 1
-            elif word == "node" and i + 4 < len(words):
-                kind = lower[i + 4]
-                if kind == "track":
-                    i = self.track(path, matches, words, lower, i, origins[-1])
-                elif kind == "model" and i + 9 < len(words) and GRASS.search(lower[i + 9]) and all(NUMBER.match(w) for w in words[i + 5:i + 8]):
-                    self.plant(float(words[i + 5]) + origins[-1][0], float(words[i + 7]) + origins[-1][2])
-            i += 1
+        if path not in self.seen:
+            self.seen.add(path)
+            FileReader(self, path, offset).run()
 
     def include(self, name, params, origin):
         path = self.root / name.replace("\\", "/")
@@ -118,21 +89,90 @@ class Scenery:
         numbers = [float(w) for w in params if NUMBER.match(w)]
         if GRASS.search(name.lower()) and len(numbers) >= 3:
             self.plant(numbers[0] + origin[0], numbers[2] + origin[2])
-            return
-        if not path.is_file():
+        elif not path.is_file():
             self.notes["brak pliku " + name] += 1
-            return
-        if params:
+        elif not params:
+            self.read(path, origin)
+        elif path.stat().st_size < 4000000 and re.search(rb"\btrack\s+(normal|switch)\b", path.read_bytes(), re.I):
             # the same file can come many times with other parameters: its tracks can't be told apart in one copy
-            if path.stat().st_size < 4000000 and re.search(rb"\btrack\s+(normal|switch)\b", path.read_bytes(), re.I):
-                self.notes["pliki z parametrami, tory pominiete"] += 1
-            return
-        self.read(path, origin)
+            self.notes["pliki z parametrami, tory pominiete"] += 1
 
     def plant(self, x, z):
         self.plants[(round(x / 10), round(z / 10))].append((x, z))
 
-    def track(self, path, matches, words, lower, i, origin):
+
+class FileReader:
+    """Goes through the words of one file. Each handler takes the place of its word and gives the place of the last word it used."""
+
+    def __init__(self, scenery, path, offset):
+        self.scenery, self.path = scenery, path
+        text = path.read_bytes().decode("latin-1")
+        scenery.texts[path] = text
+        self.matches = [m for m in TOKEN.finditer(text) if not m.group(0).startswith("//")]
+        self.words = [m.group(0) for m in self.matches]
+        self.lower = [w.lower() for w in self.words]
+        self.origins = [offset]
+        self.handlers = {"include": self.include, "origin": self.origin, "endorigin": self.endorigin, "rotate": self.rotate, "node": self.node}
+
+    def run(self):
+        i = 0
+        while i < len(self.words):
+            handler = self.handlers.get(self.lower[i])
+            i = (handler(i) if handler else i) + 1
+
+    def include(self, i):
+        if i + 1 >= len(self.words):
+            return i
+        end = i + 1
+        while end < len(self.words) and self.lower[end] != "end":
+            end += 1
+        self.scenery.include(self.words[i + 1], self.words[i + 2:end], self.origins[-1])
+        return end
+
+    def origin(self, i):
+        values = self.words[i + 1:i + 4]
+        if len(values) < 3 or not all(NUMBER.match(w) for w in values):
+            return i
+        self.origins.append(tuple(o + float(w) for o, w in zip(self.origins[-1], values)))
+        return i + 3
+
+    def endorigin(self, i):
+        if len(self.origins) > 1:
+            self.origins.pop()
+        return i
+
+    def rotate(self, i):
+        if i + 3 < len(self.words) and any(w.strip("0.-") for w in self.words[i + 1:i + 4]):
+            self.scenery.notes["rotate"] += 1
+        return i
+
+    def node(self, i):
+        if i + 4 >= len(self.words):
+            return i
+        kind = self.lower[i + 4]
+        if kind == "track":
+            return self.track(i)
+        if kind == "model" and i + 9 < len(self.words) and GRASS.search(self.lower[i + 9]) and all(NUMBER.match(w) for w in self.words[i + 5:i + 8]):
+            self.scenery.plant(float(self.words[i + 5]) + self.origins[-1][0], float(self.words[i + 7]) + self.origins[-1][2])
+        return i
+
+    def paths_from(self, cursor, count):
+        paths = []
+        origin = self.origins[-1]
+        for _ in range(count):
+            values = self.words[cursor:cursor + 15]
+            if len(values) < 15 or not all(NUMBER.match(v) for v in values):
+                return None
+            n = [float(v) for v in values]
+            part = {"p1": [n[j] + origin[j] for j in range(3)], "c1": n[4:7], "c2": n[7:10], "p2": [n[10 + j] + origin[j] for j in range(3)], "radius": abs(n[14])}
+            part["line"] = line_of(part)
+            part["length"] = sum(math.dist(a, b) for a, b in zip(part["line"], part["line"][1:]))
+            paths.append(part)
+            cursor += 15
+        return paths
+
+    def track(self, i):
+        words, lower = self.words, self.lower
         at = i + 4
         end = at
         while end < len(words) and lower[end] != "endtrack":
@@ -142,32 +182,29 @@ class Scenery:
         kind = lower[at + 1]
         if kind not in ("normal", "switch", "road"):
             return end
-        cursor = at + 10
-        rail = ballast = None
-        if lower[at + 9] == "vis":
-            rail, ballast = lower[cursor], lower[cursor + 2]
-            cursor += 6
-        paths = []
-        for _ in range(2 if kind == "switch" else 1):
-            values = words[cursor:cursor + 15]
-            if len(values) < 15 or not all(NUMBER.match(v) for v in values):
-                self.notes["tory z parametrami, pominiete"] += 1
-                return end
-            n = [float(v) for v in values]
-            part = dict(p1=[n[j] + origin[j] for j in range(3)], c1=n[4:7], c2=n[7:10], p2=[n[10 + j] + origin[j] for j in range(3)], radius=abs(n[14]))
-            part["line"] = line_of(part)
-            part["length"] = sum(math.dist(a, b) for a, b in zip(part["line"], part["line"][1:]))
-            paths.append(part)
-            cursor += 15
-        if kind == "road":
-            self.roads.append(paths[0])
-            return end
-        block = lower[at:end]
-        taken = any(w in block for w in ("uneven", "unevenup", "unevenside", "unevencross", "jointdip"))
-        velocity = float(words[at + block.index("velocity") + 1]) if "velocity" in block and NUMBER.match(words[at + block.index("velocity") + 1]) else 0.0
-        sound = float(words[at + 5]) if NUMBER.match(words[at + 5]) else -1.0
-        self.tracks.append(dict(name=words[i + 3], kind=kind, rail=rail, ballast=ballast, sound=sound, paths=paths, speed=velocity if velocity > 0 else None, source="wpis" if velocity > 0 else None, file=path, offset=matches[end].start(), taken=taken))
+        visible = lower[at + 9] == "vis"
+        paths = self.paths_from(at + (16 if visible else 10), 2 if kind == "switch" else 1)
+        if paths is None:
+            self.scenery.notes["tory z parametrami, pominiete"] += 1
+        elif kind == "road":
+            self.scenery.roads.append(paths[0])
+        else:
+            self.add_track(i, at, end, kind, visible, paths)
         return end
+
+    def add_track(self, i, at, end, kind, visible, paths):
+        words = self.words
+        block = self.lower[at:end]
+        velocity = 0.0
+        if "velocity" in block and NUMBER.match(words[at + block.index("velocity") + 1]):
+            velocity = float(words[at + block.index("velocity") + 1])
+        self.scenery.tracks.append({
+            "name": words[i + 3], "kind": kind,
+            "rail": self.lower[at + 10] if visible else None, "ballast": self.lower[at + 12] if visible else None,
+            "sound": float(words[at + 5]) if NUMBER.match(words[at + 5]) else -1.0,
+            "paths": paths, "speed": velocity if velocity > 0 else None, "source": "wpis" if velocity > 0 else None,
+            "file": self.path, "offset": self.matches[end].start(),
+            "taken": any(w in block for w in ("uneven", "unevenup", "unevenside", "unevencross", "jointdip"))})
 
 
 def bezier(part, t):
@@ -220,50 +257,76 @@ class Joints:
         return found
 
 
+def plain_neighbours(t, joints):
+    return [other for key in ("p1", "p2") for other, _, _ in joints.at(t["paths"][0][key]) if other is not t and other["kind"] == "normal"]
+
+
+def joined_at(t, point, joints, seen):
+    # the plain tracks joined at a point, and the far ends of the straight paths of the switches joined there
+    plain, further = [], []
+    for other, part, side in joints.at(point):
+        if other is t or id(part) in seen:
+            continue
+        seen.add(id(part))
+        if other["kind"] != "switch":
+            plain.append(other)
+        elif other["paths"].index(part) != other["bent"]:
+            further.append(part["p2" if side == "p1" else "p1"])
+    return plain, further
+
+
+def plain_past_switches(t, point, joints):
+    # the plain tracks reached from a point of a track along the straight paths of switches
+    points, seen, found = [point], set(), []
+    for _ in range(6):
+        onward = []
+        for reached in points:
+            plain, further = joined_at(t, reached, joints, seen)
+            found += plain
+            onward += further
+        points = onward
+    return found
+
+
+def short_pieces_past_switches(t, joints):
+    return [o for key in ("p1", "p2") for o in plain_past_switches(t, t["paths"][0][key], joints) if o["paths"][0]["length"] < PIECE]
+
+
+def spread_speed(tracks, joints, reached):
+    heads = collections.deque(t for t in tracks if t["kind"] == "normal" and t["speed"])
+    while heads:
+        t = heads.popleft()
+        for other in reached(t, joints):
+            if other["speed"] is None:
+                other["speed"], other["source"] = t["speed"], "sasiad"
+                heads.append(other)
+
+
 def settle_speeds(tracks, joints):
     # from the nearest track on the stretch between switches, a short piece also along the straight path of a switch
-    heads = collections.deque(t for t in tracks if t["kind"] == "normal" and t["speed"])
-    while heads:
-        t = heads.popleft()
-        for key in ("p1", "p2"):
-            for other, _, _ in joints.at(t["paths"][0][key]):
-                if other is not t and other["kind"] == "normal" and other["speed"] is None:
-                    other["speed"], other["source"] = t["speed"], "sasiad"
-                    heads.append(other)
-    heads = collections.deque(t for t in tracks if t["kind"] == "normal" and t["speed"])
-    while heads:
-        t = heads.popleft()
-        for key in ("p1", "p2"):
-            points, seen = [t["paths"][0][key]], set()
-            for _ in range(6):
-                onward = []
-                for point in points:
-                    for other, part, side in joints.at(point):
-                        if other is t or id(part) in seen:
-                            continue
-                        seen.add(id(part))
-                        if other["kind"] == "switch":
-                            if other["paths"].index(part) != other["bent"]:
-                                onward.append(part["p2" if side == "p1" else "p1"])
-                        elif other["speed"] is None and other["paths"][0]["length"] < PIECE:
-                            other["speed"], other["source"] = t["speed"], "sasiad"
-                            heads.append(other)
-                points = onward
+    spread_speed(tracks, joints, plain_neighbours)
+    spread_speed(tracks, joints, short_pieces_past_switches)
     for t in tracks:
         if t["speed"] is None:
             t["speed"], t["source"] = NO_SPEED, "brak"
 
 
+def plain_ends(tracks):
+    for t in tracks:
+        if t["kind"] == "normal":
+            for part in t["paths"]:
+                yield part["p1"]
+                yield part["p2"]
+
+
 def distances(tracks, joints, station):
     best, heap = {}, []
-    for t in tracks:
-        for part in t["paths"]:
-            for key in ("p1", "p2"):
-                gap = math.dist((part[key][0], part[key][2]), station)
-                node = (round(part[key][0], 1), round(part[key][2], 1))
-                if gap < 300 and t["kind"] == "normal" and gap < best.get(node, math.inf):
-                    best[node] = gap
-                    heapq.heappush(heap, (gap, node, part[key]))
+    for point in plain_ends(tracks):
+        gap = math.dist((point[0], point[2]), station)
+        node = (round(point[0], 1), round(point[2], 1))
+        if gap < 300 and gap < best.get(node, math.inf):
+            best[node] = gap
+            heapq.heappush(heap, (gap, node, point))
     while heap:
         distance, node, point = heapq.heappop(heap)
         if distance > best.get(node, math.inf):
@@ -293,30 +356,34 @@ def grass_on(part, plants):
     return len(near) * 100.0 / max(part["length"], 5.0)
 
 
+def cells_under(a, b):
+    for x in range(math.floor(min(a[0], b[0]) / 50), math.floor(max(a[0], b[0]) / 50) + 1):
+        for z in range(math.floor(min(a[2], b[2]) / 50), math.floor(max(a[2], b[2]) / 50) + 1):
+            yield x, z
+
+
 def road_cells(roads):
     cells = collections.defaultdict(list)
     for road in roads:
         for a, b in zip(road["line"], road["line"][1:]):
-            for x in range(math.floor(min(a[0], b[0]) / 50), math.floor(max(a[0], b[0]) / 50) + 1):
-                for z in range(math.floor(min(a[2], b[2]) / 50), math.floor(max(a[2], b[2]) / 50) + 1):
-                    cells[(x, z)].append((a, b))
+            for cell in cells_under(a, b):
+                cells[cell].append((a, b))
     return cells
 
 
+def cross_in_plan(a, b, c, d):
+    rx, rz, sx, sz = b[0] - a[0], b[2] - a[2], d[0] - c[0], d[2] - c[2]
+    k = rx * sz - rz * sx
+    if abs(k) < 1e-9:
+        return False
+    t = ((c[0] - a[0]) * sz - (c[2] - a[2]) * sx) / k
+    u = ((c[0] - a[0]) * rz - (c[2] - a[2]) * rx) / k
+    return 0 <= t <= 1 and 0 <= u <= 1
+
+
 def hits_road(part, cells):
-    for a, b in zip(part["line"], part["line"][1:]):
-        for x in range(math.floor(min(a[0], b[0]) / 50), math.floor(max(a[0], b[0]) / 50) + 1):
-            for z in range(math.floor(min(a[2], b[2]) / 50), math.floor(max(a[2], b[2]) / 50) + 1):
-                for c, d in cells.get((x, z), ()):
-                    rx, rz, sx, sz = b[0] - a[0], b[2] - a[2], d[0] - c[0], d[2] - c[2]
-                    k = rx * sz - rz * sx
-                    if abs(k) < 1e-9:
-                        continue
-                    t = ((c[0] - a[0]) * sz - (c[2] - a[2]) * sx) / k
-                    u = ((c[0] - a[0]) * rz - (c[2] - a[2]) * rx) / k
-                    if 0 <= t <= 1 and 0 <= u <= 1:
-                        return True
-    return False
+    line = part["line"]
+    return any(cross_in_plan(a, b, c, d) for a, b in zip(line, line[1:]) for cell in cells_under(a, b) for c, d in cells.get(cell, ()))
 
 
 def heights_per_mm(t):
@@ -423,17 +490,19 @@ def fit_under_pantograph(normal):
     return low
 
 
+def joint_curve_changes(t, part, key, joints):
+    own = end_curve(part, key)
+    for other, theirs, side in joints.at(part[key]):
+        if other is not t and other["kind"] == "normal":
+            their = end_curve(theirs, side)
+            if abs(own - (-their if side == key else their)) > CURVE_STEP:
+                return True
+    return False
+
+
 def curve_changes(t, joints):
     part = t["paths"][0]
-    if abs(end_curve(part, "p1") - end_curve(part, "p2")) > CURVE_STEP:
-        return True
-    for key in ("p1", "p2"):
-        for other, theirs, side in joints.at(part[key]):
-            if other is not t and other["kind"] == "normal":
-                their = end_curve(theirs, side)
-                if abs(end_curve(part, key) - (-their if side == key else their)) > CURVE_STEP:
-                    return True
-    return False
+    return abs(end_curve(part, "p1") - end_curve(part, "p2")) > CURVE_STEP or any(joint_curve_changes(t, part, key, joints) for key in ("p1", "p2"))
 
 
 def move_near_limit(normal, joints, share):
@@ -458,24 +527,32 @@ def move_near_limit(normal, joints, share):
     return chosen
 
 
+def value_from_plain(t, index, part, joints, product):
+    found = [o for key in ("p1", "p2") for o, theirs, _ in joints.at(part[key]) if o["kind"] == "normal" and theirs["length"] >= SHORT]
+    if not found:
+        return None
+    speed = max(o["speed"] for o in found)
+    if index == t["bent"]:
+        speed = min(speed, DIVERGING)
+    return min(limit(speed) * max(o["state"] for o in found), SWITCH_MOST, product / speed)
+
+
+def value_from_switches(t, part, joints):
+    found = []
+    for key in ("p1", "p2"):
+        for other, theirs, _ in joints.at(part[key]):
+            if other["kind"] == "switch" and other is not t:
+                found += [other["values"][i] for i, q in enumerate(other["paths"]) if q is theirs and other["values"][i] is not None]
+    return max(found) if found else None
+
+
 def grade_switches(switches, joints, product):
     # each path by the plain tracks it leads to, the worst of them; those only among switches from their neighbours
     for t in switches:
-        t["values"] = [None] * len(t["paths"])
-        for index, part in enumerate(t["paths"]):
-            found = [o for key in ("p1", "p2") for o, theirs, _ in joints.at(part[key]) if o["kind"] == "normal" and theirs["length"] >= SHORT]
-            if found:
-                speed = max(o["speed"] for o in found)
-                if index == t["bent"]:
-                    speed = min(speed, DIVERGING)
-                t["values"][index] = min(limit(speed) * max(o["state"] for o in found), SWITCH_MOST, product / speed)
+        t["values"] = [value_from_plain(t, index, part, joints, product) for index, part in enumerate(t["paths"])]
     for _ in range(5):
         for t in switches:
-            for index, part in enumerate(t["paths"]):
-                if t["values"][index] is None:
-                    found = [o["values"][i] for key in ("p1", "p2") for o, theirs, _ in joints.at(part[key]) if o["kind"] == "switch" and o is not t for i, q in enumerate(o["paths"]) if q is theirs and o["values"][i] is not None]
-                    if found:
-                        t["values"][index] = max(found)
+            t["values"] = [value_from_switches(t, part, joints) if value is None else value for value, part in zip(t["values"], t["paths"])]
     for t in switches:
         t["values"] = [min(SWITCH_MOST, product / NO_SPEED) if v is None else v for v in t["values"]]
 

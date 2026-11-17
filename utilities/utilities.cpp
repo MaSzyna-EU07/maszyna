@@ -145,15 +145,15 @@ bool ClearFlag(int &Flag, int const Value)
 
 namespace
 {
-thread_local std::mt19937 *t_random_engine{nullptr};
+thread_local std::mt19937 *t_random_engine{nullptr}; // NOSONAR: randomness of the simulation, not of anything security-relevant
 
-std::mt19937 &random_engine()
+std::mt19937 &random_engine() // NOSONAR: randomness of the simulation, not of anything security-relevant
 {
 	return t_random_engine != nullptr ? *t_random_engine : Global.random_engine;
 }
 } // namespace
 
-void set_thread_random_engine(std::mt19937 *Engine)
+void set_thread_random_engine(std::mt19937 *Engine) // NOSONAR: randomness of the simulation, not of anything security-relevant
 {
 	t_random_engine = Engine;
 }
@@ -350,8 +350,11 @@ void win1250_to_ascii(std::string &Input)
 
 std::string win1250_to_utf8(const std::string &Input)
 {
-	std::unordered_map<char, std::string> const charmap{{165, "Ą"}, {198, "Ć"}, {202, "Ę"}, {163, "Ł"}, {209, "Ń"}, {211, "Ó"}, {140, "Ś"}, {143, "Ź"}, {175, "Ż"},
-	                                                    {185, "ą"}, {230, "ć"}, {234, "ę"}, {179, "ł"}, {241, "ń"}, {243, "ó"}, {156, "ś"}, {159, "ź"}, {191, "ż"}};
+	// the utf-8 sequences written as bytes: the file has a byte order mark and the build doesn't give the compiler /utf-8, so letters
+	// written as letters would end up in the program in windows-1250, the same as the input
+	static std::unordered_map<char, std::string> const charmap{{'\xA5', "\xC4\x84"}, {'\xC6', "\xC4\x86"}, {'\xCA', "\xC4\x98"}, {'\xA3', "\xC5\x81"}, {'\xD1', "\xC5\x83"}, {'\xD3', "\xC3\x93"},
+	                                                           {'\x8C', "\xC5\x9A"}, {'\x8F', "\xC5\xB9"}, {'\xAF', "\xC5\xBB"}, {'\xB9', "\xC4\x85"}, {'\xE6', "\xC4\x87"}, {'\xEA', "\xC4\x99"},
+	                                                           {'\xB3', "\xC5\x82"}, {'\xF1', "\xC5\x84"}, {'\xF3', "\xC3\xB3"}, {'\x9C', "\xC5\x9B"}, {'\x9F', "\xC5\xBA"}, {'\xBF', "\xC5\xBC"}};
 	std::string output;
 	std::unordered_map<char, std::string>::const_iterator lookup;
 	for (auto &input : Input)
@@ -360,6 +363,30 @@ std::string win1250_to_utf8(const std::string &Input)
 			output += lookup->second;
 		else
 			output += input;
+	}
+	return output;
+}
+
+// counterpart of win1250_to_utf8(). characters outside of the supported set are replaced with question marks
+std::string utf8_to_win1250(std::string const &Text)
+{
+	// polish letters, as utf-8 sequences; the same set win1250_to_utf8() handles
+	static std::unordered_map<std::string, char> const charmap{{"\xC4\x84", '\xA5'}, {"\xC4\x86", '\xC6'}, {"\xC4\x98", '\xCA'}, {"\xC5\x81", '\xA3'}, {"\xC5\x83", '\xD1'}, {"\xC3\x93", '\xD3'},
+	                                                           {"\xC5\x9A", '\x8C'}, {"\xC5\xB9", '\x8F'}, {"\xC5\xBB", '\xAF'}, {"\xC4\x85", '\xB9'}, {"\xC4\x87", '\xE6'}, {"\xC4\x99", '\xEA'},
+	                                                           {"\xC5\x82", '\xB3'}, {"\xC5\x84", '\xF1'}, {"\xC3\xB3", '\xF3'}, {"\xC5\x9B", '\x9C'}, {"\xC5\xBA", '\x9F'}, {"\xC5\xBC", '\xBF'}};
+	std::string output;
+	for (std::size_t idx = 0; idx < Text.size();)
+	{
+		auto const lead{static_cast<unsigned char>(Text[idx])};
+		if (lead < 0x80)
+		{
+			output += Text[idx++];
+			continue;
+		}
+		auto const length{std::min<std::size_t>((lead & 0xE0) == 0xC0 ? 2 : (lead & 0xF0) == 0xE0 ? 3 : (lead & 0xF8) == 0xF0 ? 4 : 1, Text.size() - idx)};
+		auto const lookup{charmap.find(Text.substr(idx, length))};
+		output += (lookup != charmap.end() ? lookup->second : '?');
+		idx += length;
 	}
 	return output;
 }
@@ -504,18 +531,201 @@ bool FileExists(std::string const &Filename)
 	return std::filesystem::exists(Filename);
 }
 
-std::string FileCased(std::string const &Filename)
+#ifndef _WIN32
+namespace
+{
+
+// the names in a folder by their lowercase, the time the folder was changed and the time they were read
+struct cased_folder
+{
+	bool read{false};
+	std::filesystem::file_time_type changed{};
+	std::filesystem::file_time_type listed{};
+	// when the time of the change was last looked at
+	std::chrono::steady_clock::time_point checked{};
+	std::unordered_map<std::string, std::string> names;
+};
+
+std::mutex cased_mutex;
+std::unordered_map<std::string, cased_folder> cased_folders;
+// a folder by the name it's given with (parts split by '/', a '/' at the end): as it's named on the disk, or missing in any case
+// since the time given
+struct cased_path
+{
+	std::string name;
+	bool missing{false};
+	std::chrono::steady_clock::time_point checked{};
+};
+std::unordered_map<std::string, cased_path> cased_paths;
+
+// the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
+// function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
+void read_cased_folder(cased_folder &Cached, std::filesystem::path const &Folder, std::filesystem::file_time_type const Changed)
+{
+	Cached.names.clear();
+	Cached.changed = Changed;
+	Cached.listed = std::filesystem::file_time_type::clock::now();
+	std::error_code error;
+	for (std::filesystem::directory_iterator entry{Folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
+	{
+		auto const name{entry->path().filename().string()};
+		Cached.names.try_emplace(ToLower(name), name);
+	}
+	// a listing cut short isn't kept
+	Cached.read = (false == bool(error));
+}
+
+// the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
+// changed, as the editor writes files while it runs, the time of the change looked at once a second at most, which keeps a
+// missing file as cheap as a single check; a name missing from a folder changed shortly before it was read is looked for again,
+// the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
+std::string cased_name(std::string const &Folder, std::string const &Name)
+{
+	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
+	std::error_code error;
+	auto &cached{cased_folders[Folder]};
+	auto const now{std::chrono::steady_clock::now()};
+	auto changed{cached.changed};
+	if ((false == cached.read) || (now - cached.checked >= std::chrono::seconds{1}))
+	{
+		changed = std::filesystem::last_write_time(folder, error);
+		if (error)
+		{
+			// a folder found before may have been renamed or removed since
+			cased_folders.erase(Folder);
+			cased_paths.clear();
+			return {};
+		}
+		cached.checked = now;
+	}
+	auto const wanted{ToLower(Name)};
+	if ((false == cached.read) || (cached.changed != changed))
+		read_cased_folder(cached, folder, changed);
+	auto found{cached.names.find(wanted)};
+	// a folder changed in the future, as from another clock, isn't read again on every miss
+	if (auto const age{cached.listed - cached.changed}; (found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
+	{
+		read_cased_folder(cached, folder, changed);
+		found = cached.names.find(wanted);
+	}
+	return found != cached.names.end() ? found->second : std::string{};
+}
+
+// keeps the folder by the name it's given with as Name, or as missing since the time given when Name is empty, and puts Name into
+// Cased; false when it's missing
+bool keep_cased_path(std::string const &Folder, std::string const &Name, std::chrono::steady_clock::time_point const Now, std::string &Cased)
+{
+	auto &path{cased_paths[Folder]};
+	path.name = Name;
+	path.missing = Name.empty();
+	path.checked = Now;
+	Cased = Name;
+	return false == Name.empty();
+}
+
+// the folder as it's named on the disk into Cased, from the one given with '/' between its parts and at its end ("" the current
+// folder); false when it's missing in any case. the folders found are kept, and the missing ones for a second, so a file missing
+// costs a check of its folder alone. to be called with cased_mutex held
+bool cased_folder_path(std::string const &Folder, std::string &Cased)
+{
+	if (Folder.empty() || (Folder == "/"))
+	{
+		Cased = Folder;
+		return true;
+	}
+	auto const now{std::chrono::steady_clock::now()};
+	if (auto const found{cased_paths.find(Folder)}; found != cased_paths.end())
+	{
+		if (false == found->second.missing)
+		{
+			Cased = found->second.name;
+			return true;
+		}
+		if (now - found->second.checked < std::chrono::seconds{1})
+			return false;
+	}
+	std::error_code error;
+	if (std::filesystem::is_directory(Folder, error))
+	{
+		// named as it is on the disk
+		return keep_cased_path(Folder, Folder, now, Cased);
+	}
+	// the parent, then the last part among the names in it
+	auto const last{Folder.size() - 1};
+	auto const split{Folder.rfind('/', last - 1)};
+	auto const parent{split == std::string::npos ? std::string{} : Folder.substr(0, split + 1)};
+	auto const part{Folder.substr(parent.size(), last - parent.size())};
+	std::string casedparent;
+	if (false == cased_folder_path(parent, casedparent))
+		return keep_cased_path(Folder, {}, now, Cased);
+	auto const name{((part == ".") || (part == "..")) ? part : cased_name(casedparent, part)};
+	return keep_cased_path(Folder, name.empty() ? std::string{} : casedparent + name + '/', now, Cased);
+}
+
+} // namespace
+#endif
+
+std::string FileCased(std::filesystem::path const &Filename)
 {
 	std::error_code error;
 	if (std::filesystem::exists(Filename, error))
-		return Filename;
-	std::filesystem::path const path{Filename};
-	auto const directory{path.has_parent_path() ? path.parent_path() : std::filesystem::path{"."}};
-	auto const wanted{ToLower(path.filename().string())};
-	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
-		if (ToLower(entry->path().filename().string()) == wanted)
-			return path.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
+		return Filename.string();
+#ifdef _WIN32
+	// the names there are found in any case already: no folder to go through for every file missing, nor names outside of the
+	// code page to throw on
 	return {};
+#else
+	// the folder, then the file in it: the folders can be named in another case as well as the file
+	auto text{Filename.string()};
+	std::replace(text.begin(), text.end(), '\\', '/');
+	std::string folder{(false == text.empty()) && (text.front() == '/') ? "/" : ""};
+	std::string file;
+	for (std::size_t start{0}; start < text.size();)
+	{
+		auto end{text.find('/', start)};
+		if (end == std::string::npos)
+			end = text.size();
+		if (end > start)
+		{
+			if (false == file.empty())
+				folder += file + '/';
+			file = text.substr(start, end - start);
+		}
+		start = end + 1;
+	}
+	if (file.empty())
+		return {};
+	std::string cased;
+	{
+		std::scoped_lock const lock{cased_mutex};
+		if (false == cased_folder_path(folder, cased))
+			return {};
+		auto const name{((file == ".") || (file == "..")) ? file : cased_name(cased, file)};
+		if (name.empty())
+			return {};
+		cased += name;
+	}
+	return std::filesystem::exists(cased, error) ? cased : std::string{};
+#endif
+}
+
+std::string FileOnDisk(std::string const &Filename)
+{
+	auto cased{FileCased(Filename)};
+	return cased.empty() ? Filename : cased;
+}
+
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)
+{
+	for (auto const &extension : Extensions)
+	{
+		auto const cased{FileCased(Folder + Name + extension)};
+		if (cased.size() > Folder.size() + extension.size() && cased.starts_with(Folder) && cased.ends_with(extension))
+		{
+			return cased.substr(Folder.size(), cased.size() - Folder.size() - extension.size());
+		}
+	}
+	return Name;
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
@@ -525,7 +735,8 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	{
 		for (auto const &extension : Extensions)
 		{
-			if (FileExists(name + extension))
+			// found in any case, given back as named here: the name stays the key of the banks, the file is opened by FileOnDisk()
+			if (false == FileCased(name + extension).empty())
 			{
 				return {name, extension};
 			}

@@ -1,0 +1,11 @@
+{
+  "description": "Test mode, real time limit: EU07 on td.scn, with a limit of 2 s of real time (the case's timeout, which the runner passes as --test-wall-timeout). The scenery takes longer to load, so the simulator's watchdog ends the run while it loads, with the timeout code and a verdict saying it was the real time.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "wall_timeout",
+  "timeout": 2
+}

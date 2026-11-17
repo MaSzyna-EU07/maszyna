@@ -86,6 +86,39 @@ struct shape
 	double tip2{0.0};
 };
 shape build(design const &Design, std::string &Error);
+// what makes the difference between the tangents of a switch and the tangent of its arc
+enum class tangent_fit
+{
+	straights, // a straight before the arc and after it, or the blade meeting the stock rail at an angle where a is too short
+	transition, // a transition curve on the side of the longer tangent, a straight on the other one
+	two_arcs, // a flatter arc on the side of the longer tangent
+	arc_straight_arc // an arc, a straight, an arc: as far as it turns on the first one, as long as the straight, tell the tangents
+};
+// the diverging track of the design fitted to the tangents a and b, from the start of the switch to their meeting and on from there to
+// its end, at the angle 1:Ratio with the sharpest radius Radius, 0 for a tangent: the tangent of the arc. False with the reason in Error
+// when that doesn't make them. First: the radius of the first arc of an arc, a straight and an arc, 0: Radius
+bool fit_tangents(design &Design, double Radius, double Ratio, double A, double B, tangent_fit Kind, std::string &Error, double First = 0.0);
+// a switch measured from points clicked in the plan: its start, the end of its main track, the end of its diverging track, a point
+// further on that track for its way on, then any number of points on the arc, of which three at least tell its radius
+struct measured
+{
+	double a{0.0};
+	double b{0.0}; // along the diverging track
+	double main{0.0}; // the length of the main track, from the start to its end clicked
+	double past{0.0}; // how far past the end of the main track the end of the diverging one lies along it
+	double ratio{0.0};
+	double radius{0.0}; // 0: not told
+};
+bool measure_clicks(std::vector<glm::dvec2> const &Clicks, measured &Result, std::string &Error);
+// the design fitted to the points clicked: the tangents and the angle measured, of the shapes and radii the one keeping closest to the
+// points along the diverging track, of those about as close the shape Kind. The radius the first arc of the shape has its own with First
+struct clicks_fit
+{
+	tangent_fit kind{tangent_fit::straights};
+	double radius{0.0};
+	double worst{0.0}; // m, of the points from the track
+};
+bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_fit Kind, double First, clicks_fit &Result, std::string &Error);
 
 std::vector<design> catalogue();
 // templates of the user, kept in eu07_switch_templates.txt in the configuration directory

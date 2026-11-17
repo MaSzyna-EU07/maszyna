@@ -16,10 +16,22 @@ http://mozilla.org/MPL/2.0/.
 #include <curl/curl.h>
 #endif
 
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
+#include <string>
 
 namespace editor_http
 {
+
+#if defined(_WIN32) || defined(EU07_WITH_CURL)
+namespace
+{
+// the most a response is read into memory: a map or tiles of a service the user typed may be any size
+std::size_t constexpr kLargest{64u * 1024u * 1024u};
+char const *const kTooLarge{"the response is over 64 MB"};
+} // namespace
+#endif
 
 struct client::platform
 {
@@ -61,14 +73,20 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		return false;
 	}
 
-	std::wstring const url(Url.begin(), Url.end()); // the requests are plain ascii
+	// the address as the user typed or pasted it, in utf-8
+	std::wstring url;
+	if (auto const size{::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Url.data(), static_cast<int>(Url.size()), nullptr, 0)}; size > 0)
+	{
+		url.resize(static_cast<std::size_t>(size));
+		::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Url.data(), static_cast<int>(Url.size()), url.data(), size);
+	}
 	URL_COMPONENTS parts{};
 	parts.dwStructSize = sizeof(parts);
 	parts.dwSchemeLength = static_cast<DWORD>(-1);
 	parts.dwHostNameLength = static_cast<DWORD>(-1);
 	parts.dwUrlPathLength = static_cast<DWORD>(-1);
 	parts.dwExtraInfoLength = static_cast<DWORD>(-1);
-	if (!::WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
+	if (url.empty() || !::WinHttpCrackUrl(url.c_str(), 0, 0, &parts))
 	{
 		Error = "invalid url";
 		return false;
@@ -115,6 +133,13 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		}
 		if (available == 0)
 			break;
+		if (Out.size() + available > kLargest)
+		{
+			Error = kTooLarge;
+			close();
+			Out.clear();
+			return false;
+		}
 		std::size_t const offset = Out.size();
 		Out.resize(offset + available);
 		DWORD received{0};
@@ -137,6 +162,37 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 }
 
 #elif defined(EU07_WITH_CURL)
+
+namespace
+{
+// the file of the certificates https is checked with. the libcurl bundled with the game knows only the one of the system it
+// was built on (/etc/ssl/certs/ca-certificates.crt of Debian and Ubuntu), which Fedora, RHEL and openSUSE don't have: there
+// every download failed. the file named by the user first, then the ones the distributions keep; empty leaves libcurl's own
+std::string const &certificates_file()
+{
+	static std::string const file{[]() {
+		std::error_code error;
+		for (char const *variable : {"SSL_CERT_FILE", "CURL_CA_BUNDLE"})
+		{
+			if (char const *value{std::getenv(variable)}; (value != nullptr) && (*value != '\0') && std::filesystem::is_regular_file(value, error))
+				return std::string{value};
+		}
+		for (char const *candidate : {
+				 "/etc/ssl/certs/ca-certificates.crt", // Debian, Ubuntu, Arch, SteamOS, Gentoo, NixOS
+				 "/etc/pki/tls/certs/ca-bundle.crt", // Fedora, RHEL
+				 "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // Fedora, RHEL
+				 "/etc/ssl/ca-bundle.pem", // openSUSE
+				 "/etc/ssl/cert.pem", // Alpine, the BSDs, macOS
+			 })
+		{
+			if (std::filesystem::is_regular_file(candidate, error))
+				return std::string{candidate};
+		}
+		return std::string{};
+	}()};
+	return file;
+}
+} // namespace
 
 client::client() :
 	m_platform(std::make_unique<platform>())
@@ -161,9 +217,20 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 		return false;
 	}
 
+	struct sink
+	{
+		std::vector<std::uint8_t> *out;
+		bool over{false};
+	} received{&Out};
 	auto const write = +[](char *Data, std::size_t Size, std::size_t Count, void *User) -> std::size_t {
-		auto *out = static_cast<std::vector<std::uint8_t> *>(User);
-		out->insert(out->end(), Data, Data + Size * Count);
+		auto *into = static_cast<sink *>(User);
+		if (into->out->size() + Size * Count > kLargest)
+		{
+			// fewer bytes taken than given stops the transfer
+			into->over = true;
+			return 0;
+		}
+		into->out->insert(into->out->end(), Data, Data + Size * Count);
 		return Size * Count;
 	};
 	auto const progress = +[](void *User, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int { return (*static_cast<stop_check const *>(User))() ? 1 : 0; };
@@ -171,13 +238,31 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	::curl_easy_reset(m_platform->curl);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_URL, Url.c_str());
 	::curl_easy_setopt(m_platform->curl, CURLOPT_USERAGENT, "MaSzyna-editor");
+	if (auto const &certificates{certificates_file()}; false == certificates.empty())
+	{
+		::curl_easy_setopt(m_platform->curl, CURLOPT_CAINFO, certificates.c_str());
+#if LIBCURL_VERSION_NUM >= 0x073400
+		// an https proxy is checked with the same file
+		::curl_easy_setopt(m_platform->curl, CURLOPT_PROXY_CAINFO, certificates.c_str());
+#endif
+	}
 	::curl_easy_setopt(m_platform->curl, CURLOPT_FOLLOWLOCATION, 1L);
+	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXREDIRS, 10L);
+	// http kept for the services the user types; nothing else, also where a redirect leads
+#if LIBCURL_VERSION_NUM >= 0x075500
+	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS_STR, "https,http");
+	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS_STR, "https,http");
+#else
+	::curl_easy_setopt(m_platform->curl, CURLOPT_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+	::curl_easy_setopt(m_platform->curl, CURLOPT_REDIR_PROTOCOLS, static_cast<long>(CURLPROTO_HTTPS | CURLPROTO_HTTP));
+#endif
+	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(kLargest));
 	::curl_easy_setopt(m_platform->curl, CURLOPT_NOSIGNAL, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_CONNECTTIMEOUT, 10L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_LOW_SPEED_TIME, 20L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEFUNCTION, write);
-	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEDATA, &Out);
+	::curl_easy_setopt(m_platform->curl, CURLOPT_WRITEDATA, &received);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_NOPROGRESS, 0L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFOFUNCTION, progress);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_XFERINFODATA, const_cast<stop_check *>(&Stop));
@@ -185,7 +270,8 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	CURLcode const code = ::curl_easy_perform(m_platform->curl);
 	if (code != CURLE_OK)
 	{
-		Error = ::curl_easy_strerror(code);
+		Error = (received.over || code == CURLE_FILESIZE_EXCEEDED ? kTooLarge : ::curl_easy_strerror(code));
+		Out.clear();
 		return false;
 	}
 	long status{0};

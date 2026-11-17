@@ -74,9 +74,9 @@ void driver_ui::render_menu_contents()
 	if (ImGui::BeginMenu(STR_C("Mode windows")))
 	{
 		ImGui::MenuItem(m_aidpanel.title.c_str(), "F1", &m_aidpanel.is_open);
-		ImGui::MenuItem(m_scenariopanel.title.c_str(), "F1", &m_aidpanel.is_open);
 		ImGui::MenuItem(STR_C("Timetable"), "F2", &m_timetablepanel.is_open);
-		ImGui::MenuItem(m_debugpanel.name().c_str(), "F12", &m_debugpanel.is_open);
+		ImGui::MenuItem(m_scenariopanel.title.c_str(), "F3", &m_scenariopanel.is_open);
+		ImGui::MenuItem(m_debugpanel.name().c_str(), "Shift+F12", &m_debugpanel.is_open);
 		ImGui::MenuItem(m_mappanel.name().c_str(), "Tab", &m_mappanel.is_open);
 		ImGui::MenuItem(m_vehiclelist.name().c_str(), nullptr, &m_vehiclelist.is_open);
 		ImGui::MenuItem(m_trainingcardpanel.name().c_str(), nullptr, &m_trainingcardpanel.is_open);

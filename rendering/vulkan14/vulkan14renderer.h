@@ -84,6 +84,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	gfx::vertex_array const &Vertices(gfx::geometry_handle const &Geometry) const override;
 	gfx::userdata_array const &UserData(gfx::geometry_handle const &Geometry) const override;
 	int Primitive(gfx::geometry_handle const &Geometry) const override;
+	// the sleepers and timbers are drawn by the walk of the scene (gfx::scene_walk), as in the opengl renderer
+	bool Draws_Timbers() const override { return true; }
 	// materials
 	material_handle Fetch_Material(std::string const &Filename, bool const Loadnow = true) override;
 	material_handle Matte_Material(material_handle const Material) override;
@@ -105,6 +107,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void Bind_Texture(std::size_t const Unit, texture_handle const Texture) override;
 	ITexture &Texture(texture_handle const Texture) override;
 	ITexture const &Texture(texture_handle const Texture) const override;
+	void Unload_Texture(texture_handle const Texture) override;
 	// picking
 	void Pick_Control_Callback(std::function<void(TSubModel const *, glm::vec2 const)> Callback) override;
 	void Pick_Node_Callback(std::function<void(scene::basic_node *)> Callback) override;
@@ -173,6 +176,9 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// the draws of the shared walk of the scene, recorded
 	void walk_material(material_handle const Material, TSubModel const *Submodel = nullptr, lighting_data const *Lighting = nullptr) override;
 	void walk_shadow_material(material_handle const Material) override;
+	// none for a texture made from a file of which every texel passes the alpha test (vk14::vulkan14_texture::passes_alpha_test()):
+	// the program without the test draws the same depth, without reading the texture and with the early depth test
+	texture_handle Indirect_Shadow_Texture(material_handle const Material) const override;
 	opengl_material const &walk_material_data(material_handle const Material) const override;
 	opengl_material const &walk_material_data(TSubModel const *Submodel) const override;
 	void walk_program(walk_shader const Program) override;
@@ -188,6 +194,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void walk_draw(std::vector<gfx::geometrybank_handle>::iterator First, std::vector<gfx::geometrybank_handle>::iterator Last) override;
 	std::uint32_t walk_instances(glm::mat4 const *Modelviews, std::size_t const Count) override;
 	void walk_cull_face(bool const Enabled) override;
+	void walk_decal(bool const Enabled) override;
 	void walk_glare(bool const Enabled) override;
 	void walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry) override;
 	void walk_light_query(TSubModel *Submodel, bool const Begin) override;
@@ -410,6 +417,17 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// the depth of the whole opaque scene of the colour pass of the main viewport before its colour, for the contact shadows
 	// (Contactonly: with them alone) or for itself (gfx.depthprepass.scene), and the contact shadows set up to read it
 	void render_scene_depth(std::size_t const Viewport, glm::mat4 const &Future);
+	// the colour pass doesn't write the depth the prepass of the scene drew with the alpha test (draw_state::keepdepth); off in the debug
+	// window, to compare. what the prepass of the frame left out: a draw it had no pipeline or geometry for yet (the colour pass writes
+	// all of its depth then), the textures of the alpha test it found not loaded yet (their draws write it)
+	bool m_keepprepassdepth{true};
+	// the shadows of the textures which pass the alpha test everywhere drawn without it (Indirect_Shadow_Texture()), read from the
+	// main renderer by the walkers
+	bool m_shadowskipalphatest{true};
+	bool m_prepassincomplete{false};
+	std::vector<texture_handle> m_prepassunready;
+	// whether the prepass drew the depth of the draw of the material of the colour pass with the alpha test (walk_material())
+	bool prepassed_alpha(material_handle const Material, texture_handle const Texture);
 	bool contact_shadows_wanted(viewport_config const &Viewport) const;
 	void setup_contact_shadows(std::size_t const Viewport);
 	bool m_contactshadows{false};
@@ -493,7 +511,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// its own, for the gpu times). Repeated: a bit for each input read texel by texel and repeated (the noise of the ssao)
 	void post_pass(char const *Fragment, vk14::image &Target, std::vector<vk14::image *> const &Inputs, vk14::draw_constants const &Constants, char const *Pass = nullptr, unsigned const Repeated = 0);
 	bool bind_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, int const Topology);
-	void apply_draw_state();
+	// Triangles: the draw is of triangles, which the prepass draws (keepdepth)
+	void apply_draw_state(bool const Triangles = false);
 	void push_textures();
 	bool texture_ready(texture_source &Texture);
 	texture_source &used_texture(texture_handle const Texture);

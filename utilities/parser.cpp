@@ -59,13 +59,13 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	{
 	case buffer_FILE:
 	{
-		Path.append(Stream);
 		// the file is read in one go, tokens are then extracted straight from the memory
-		std::ifstream file(Path, std::ios_base::binary);
+		std::filesystem::path const name{Path + Stream};
+		std::ifstream file(name, std::ios_base::binary);
 		if (file.fail())
 		{
 			// named in another case than it's on the disk
-			if (auto const cased{FileCased(Path)}; false == cased.empty())
+			if (auto const cased{FileCased(name.string())}; false == cased.empty())
 			{
 				file.clear();
 				file.open(cased, std::ios_base::binary);
@@ -112,7 +112,8 @@ cParser::cParser(std::string const &Stream, buffertype const Type, std::string P
 	// calculate stream size
 	if (true == mFailBit)
 	{
-		ErrorLog("Failed to open file \"" + Path + "\"");
+		// only a file fails to open, named by the folder and its name
+		ErrorLog("Failed to open file \"" + Path + Stream + "\"");
 	}
 	else
 	{

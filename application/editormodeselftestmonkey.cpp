@@ -47,7 +47,7 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 		unsigned int seed{1};
 		int steps{100};
 		words >> seed >> steps;
-		std::mt19937 random{seed};
+		std::mt19937 random{seed}; // NOSONAR: seeded on purpose, so that a run of the test can be repeated; nothing secret is drawn
 		auto const pick = [&](int const Count) { return std::uniform_int_distribution<int>(0, Count - 1)(random); };
 		auto const within = [&](float const Low, float const High) { return std::uniform_real_distribution<float>(Low, std::max(Low + 1.0f, High))(random); };
 		struct area
@@ -220,7 +220,7 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 	{
 		unsigned int seed{1};
 		words >> seed;
-		std::mt19937 random{seed};
+		std::mt19937 random{seed}; // NOSONAR: seeded on purpose, so that a run of the test can be repeated; nothing secret is drawn
 		std::vector<TTrack *> tracks;
 		for (auto *track : simulation::Paths.sequence())
 			if (track != nullptr && false == track->m_editorremoved && false == track->m_paths.empty())
@@ -258,7 +258,7 @@ editor_mode::selftest_result editor_mode::selftest_monkey(std::string const &com
 		screen_projection const projection;
 		auto const low{editor_ui::view_min()};
 		auto const high{editor_ui::view_max()};
-		std::shuffle(tracks.begin(), tracks.end(), random);
+		std::shuffle(tracks.begin(), tracks.end(), random); // NOSONAR: the seeded generator of the test, so the order can be repeated
 		for (auto const *track : tracks)
 		{
 			ImVec2 at;

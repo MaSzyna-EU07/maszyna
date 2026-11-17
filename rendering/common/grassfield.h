@@ -63,6 +63,7 @@ class grass_field
 		glm::vec4 share{0.f};
 		std::size_t first{0}; // tiles drawn, in tile_draws()
 		std::size_t count{0};
+		float nearest{0.f}; // distance to the nearest of its tiles; the chunks are drawn from the nearest one
 	};
 	// a tile drawn: Count instances of a strip of 2 * Segments + 1 vertices
 	struct tile_draw
@@ -71,6 +72,7 @@ class grass_field
 		glm::vec4 part{0.f}; // grass_part
 		int count{0};
 		int segments{0};
+		float distance{0.f}; // to the box of the tile; the tiles of a chunk are drawn from the nearest one
 	};
 	// the draws of the grass seen from Camera: false when there is nothing to draw (grass off, no chunks or kinds), the draws of
 	// the last call are left then. Visible: whether the bounds of a tile are seen

@@ -1,0 +1,11 @@
+{
+  "_source": "pkp/3wl_v2/3wl.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "10500", "Vmax": "100"},
+  "Load": {"MaxLoad": "30", "LoadQ": "tonns", "LoadAccepted": "Coal,Sand,sand2,ruda,tluczen,scrap,scrap2", "LoadSpeed": "1", "UnLoadSpeed": "0.1"},
+  "Dimensions": {"L": "9.87", "H": "3", "W": "3", "Cx": "0.1"},
+  "Wheels": {"D": "1", "Tw": "1.435", "AIM": "300", "Axle": "1'1'", "Bd": "6", "Rmin": "30", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "ESt3", "Size": "12", "MBF": "72", "MaxBP": "3.8", "BCN": "1", "BCR": "0.1524", "BCD": "0.14", "BCMlo": "3.05", "BCMHi": "10.67", "NBpA": "4", "BM": "P10-Bg", "BCS": "2.7", "BSA": "8.00", "BVV": "50", "BRE": "0.8"},
+  "BuffCoupl": {"CType": "Screw", "kB": "9000", "DmaxB": "0.12", "FmaxB": "350", "kC": "4500", "DmaxC": "0.15", "FmaxC": "780", "beta": "0.52", "AllowedFlag": "3"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "LocalBrake": "ManualBrake", "BrakeDelays": "GP", "rows": []}
+}

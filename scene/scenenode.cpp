@@ -794,11 +794,21 @@ basic_node::radius() {
     return m_area.radius;
 }
 
+// the radius as worked out already, or worked out anew and not kept
+float
+basic_node::radius() const {
+
+    if( m_area.radius == -1.0 ) {
+        return radius_();
+    }
+    return m_area.radius;
+}
+
 // radius() subclass details, calculates node's bounding radius
 // by default nodes are 'virtual don't extend from their center point
 float
-basic_node::radius_() {
-    
+basic_node::radius_() const {
+
     return 0.f;
 }
 

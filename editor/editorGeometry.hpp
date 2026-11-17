@@ -302,6 +302,39 @@ inline bool square_touches(std::vector<glm::dvec2> const &Polygon, double const 
 	return false;
 }
 
+// the area of the polygon, by the shoelace formula, whichever way round it goes
+inline double polygon_area(std::vector<glm::dvec2> const &Polygon)
+{
+	if (Polygon.size() < 3)
+		return 0.0;
+	double twice{0.0};
+	for (std::size_t i = 0, j = Polygon.size() - 1; i < Polygon.size(); j = i++)
+		twice += (Polygon[j].x - Polygon[i].x) * (Polygon[j].y + Polygon[i].y);
+	return std::abs(twice) * 0.5;
+}
+
+// two edges of the closed polygon cross each other, the ones next to each other left out, as they meet at their vertex
+inline bool polygon_crosses_itself(std::vector<glm::dvec2> const &Polygon)
+{
+	auto const count{Polygon.size()};
+	if (count < 4)
+		return false;
+	auto const side = [](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &P) { return (B.x - A.x) * (P.y - A.y) - (B.y - A.y) * (P.x - A.x); };
+	auto const crossing = [&](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C, glm::dvec2 const &D) {
+		return ((side(A, B, C) > 0.0) != (side(A, B, D) > 0.0)) && ((side(C, D, A) > 0.0) != (side(C, D, B) > 0.0));
+	};
+	for (std::size_t i = 0; i < count; ++i)
+		for (std::size_t j = i + 2; j < count; ++j)
+		{
+			// the last edge and the first share the first vertex
+			if (i == 0 && j + 1 == count)
+				continue;
+			if (crossing(Polygon[i], Polygon[i + 1], Polygon[j], Polygon[(j + 1) % count]))
+				return true;
+		}
+	return false;
+}
+
 // the squares of a grid of the size, from 0 along both axes, the polygon touches, by their indices along the axes
 inline std::vector<std::pair<int, int>> squares_in(std::vector<glm::dvec2> const &Polygon, double const Size)
 {

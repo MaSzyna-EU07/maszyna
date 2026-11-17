@@ -255,6 +255,11 @@ void compute_queue_scope(VkPipelineStageFlags2 &Stage, VkAccessFlags2 &Access)
 
 template <typename Barrier_> void compute_queue_barriers(Barrier_ *Barriers, std::uint32_t const Count)
 {
+	// none of the kind: the stream holds no data for them
+	if (Barriers == nullptr)
+	{
+		return;
+	}
 	for (std::uint32_t i = 0; i < Count; ++i)
 	{
 		compute_queue_scope(Barriers[i].srcStageMask, Barriers[i].srcAccessMask);

@@ -24,6 +24,11 @@ namespace gfx
 class shader_program;
 }
 
+namespace script_screens
+{
+class post_processor;
+}
+
 namespace gfx
 {
 // material painted over the heightmap terrain, and the size (metres) its textures are repeated at; 0: the size given by the material, or 8 m
@@ -96,7 +101,10 @@ public:
     virtual auto Replace_Indexed( gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry ) -> bool { return false; }
     // adds supplied vertex data at the end of specified chunk
     virtual auto Append(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometry_handle const &Geometry, int const Type) -> bool = 0;
-    virtual void Erase( gfx::geometry_handle const &Geometry ) {}
+    // empties specified chunk, its handle stays valid to be filled again
+    virtual void Erase( gfx::geometry_handle const & /*Geometry*/ ) {
+        // a renderer which keeps no chunks of its own has none to empty
+    }
     // provides direct access to index data of specfied chunk
     virtual auto Indices( gfx::geometry_handle const &Geometry ) const->gfx::index_array const & = 0;
 	// provides direct access to vertex data of specfied chunk
@@ -105,12 +113,15 @@ public:
 	virtual auto UserData( gfx::geometry_handle const &Geometry ) const ->gfx::userdata_array const & = 0;
 	// kind of geometry of specified chunk, -1 when the renderer doesn't tell
 	virtual auto Primitive( gfx::geometry_handle const &Geometry ) const -> int { return -1; }
+	// whether the 3D sleepers and switch timbers are drawn; where they aren't, the tracks keep their ballast as without them
+	virtual auto Draws_Timbers() const -> bool { return false; }
     // material methods
     virtual auto Fetch_Material( std::string const &Filename, bool const Loadnow = true ) -> material_handle = 0;
     virtual void Bind_Material( material_handle const Material, TSubModel const *sm = nullptr, lighting_data const *lighting = nullptr ) = 0;
     virtual auto Material( material_handle const Material ) const -> IMaterial const * = 0;
     // the same material with its highlights damped, for faces which aren't polished like the surfaces they are cut from. backends which can't make one give back the material itself
     virtual auto Matte_Material( material_handle const Material ) -> material_handle { return Material; }
+    // the same material with its texture tinted by the colour, as far as the userdata of the vertices says. backends which can't make one give back the material itself
     virtual auto Tinted_Material( material_handle const Material, glm::vec3 const &Colour ) -> material_handle { return Material; }
     // the material of a track blending its texture with those of up to three others (null: none) by the weights in y, z and w of the user data
     // of the vertices (world/TrackBlend.h). backends which can't make one give back the material itself
@@ -142,15 +153,25 @@ public:
     virtual void Bind_Texture( std::size_t const Unit, texture_handle const Texture ) = 0;
     virtual auto Texture( texture_handle const Texture ) -> ITexture & = 0;
     virtual auto Texture( texture_handle const Texture ) const -> ITexture const & = 0;
+    // a texture the scene has never drawn taken out of the gfx card and the memory, read again when it's used: the image of a
+    // texture picker scrolled past. backends which keep their textures otherwise leave it
+    virtual void Unload_Texture( texture_handle const Texture ) {}
+    // the same for all the textures of a material, those of its variants with them
+    void Unload_Material( material_handle const Material );
     // utility methods
     virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
     virtual auto Pick_Control() const -> TSubModel const * = 0;
     virtual auto Pick_Node() const -> scene::basic_node const * = 0;
-    virtual void Forget_Node( scene::basic_node const *Node ) {}
+    // a node deleted from the scene is no longer given as picked
+    virtual void Forget_Node( scene::basic_node const * /*Node*/ ) {
+        // a renderer which keeps no node picked has none to forget
+    }
 
     virtual auto Mouse_Position() const -> glm::dvec3 = 0;
-    virtual auto Mouse_Hit() const -> bool { return true; }
+    // whether the cursor was over something drawn when Mouse_Position() was read; a renderer which doesn't read it says no,
+    // so a caller never takes a stale or empty position for a hit
+    virtual auto Mouse_Hit() const -> bool { return false; }
     // editor helpers: matrices/position of the most recent color pass camera.
     // the view matrix is camera-relative (rotation only, camera at origin), matching the
     // camera-relative rendering used by the engine; build object matrices relative to Camera_Position().
@@ -186,6 +207,9 @@ public:
     // seen in perspective from the front, side and above and filling the image less Margin pixels at each edge.
     // Image receives rgb rows, top row first. returns false if the backend can't make previews or there's nothing to draw
     virtual auto Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) -> bool { return false; }
+    // runs the post-processing of the script screens (image:led_post, image:resize) on the gpu. nullptr when the backend
+    // can't; the screens then do it on the cpu
+    virtual auto Screen_post_processor() -> script_screens::post_processor * { return nullptr; }
 };
 
 // what the application has to know about a backend before its renderer exists: whether it can run here at all, and how its
@@ -221,6 +245,7 @@ public:
     // the description of the backend registered by the name, null if there's none (e.g. not built in)
     gfx_backend_desc const *backend(const std::string &name) const;
     std::unique_ptr<gfx_renderer> create(const std::string &name);
+    bool has_backend(const std::string &name) const;
 
     static gfx_renderer_factory* get_instance();
 

@@ -30,19 +30,18 @@ class TSubModel;
 // check, put on the timbers where the rails lie on them, and the rails sit on the plate.
 namespace track_sleepers {
 
-// the parts of the model a beam is put together from, by the names of the submodels
-enum part : int {
-    part_begin, // the end of the beam on its +x side
-    part_main, // the piece between the ends
-    part_end, // the end on the -x side
-    part_plate, // the fastening of a rail, its origin under the middle of the foot of the rail
-    part_chair, // the brace of the slide chair of a stock rail with the blade beside it, its origin under the stock rail, on its +x side
-    part_check, // the fastening of a rail with another one close beside it, as a check rail or a rail of the frog, its origin under the
-                // rail, the other one on its +x side
-    part_slide, // the slide plate of the chair, apart from it on its -x side, from the edge of the foot of the stock rail on, shortened
-                // toward it where another rail lies close
-    part_count
-};
+// the parts of the model a beam is put together from, by the names of the submodels, as the indices of what's kept of each
+int constexpr part_begin { 0 }; // the end of the beam on its +x side
+int constexpr part_main { 1 }; // the piece between the ends
+int constexpr part_end { 2 }; // the end on the -x side
+int constexpr part_plate { 3 }; // the fastening of a rail, its origin under the middle of the foot of the rail
+int constexpr part_chair { 4 }; // the brace of the slide chair of a stock rail with the blade beside it, its origin under the stock rail, on
+                                // its +x side
+int constexpr part_check { 5 }; // the fastening of a rail with another one close beside it, as a check rail or a rail of the frog, its
+                                // origin under the rail, the other one on its +x side
+int constexpr part_slide { 6 }; // the slide plate of the chair, apart from it on its -x side, from the edge of the foot of the stock rail
+                                // on, shortened toward it where another rail lies close
+int constexpr part_count { 7 };
 // the names of the submodels of the parts
 inline constexpr std::array<char const *, part_count> part_names { "begin", "main", "end", "plate", "chair", "check", "slide" };
 // the parts a timber is put together from, the fastenings after them
@@ -70,6 +69,7 @@ struct beam_model {
     // model without these is drawn whole, a plain sleeper at its own length and a timber stretched to its length
     bool stretchable { false };
     std::array<TSubModel *, part_count> parts {};
+    std::vector<TSubModel *> others; // the submodels of the top level besides the parts, not drawn
     std::array<glm::vec2, part_count> spans {}; // from and to along x, of the parts
     glm::vec2 span { -1.3f, 1.3f }; // from and to along x, of the most detailed submodels of the whole model
     float seat { 0.f }; // the height in the model the feet of the rails go to
@@ -124,6 +124,9 @@ beam_model const *plain_model( TTrack const &Track );
 // the model the track lays the timbers of the beams of: its own, else that of the tracks most of its timbers carry with one of their
 // own, as a switch it shares its timbers with, else the one of eu07.ini
 beam_model const *timber_model( TTrack const &Track, std::vector<beam> const &Beams );
+// whether the models not loaded yet are loaded by the thread asking for them; the thread laying the beams in the background loads
+// none, finding only those loaded for it already, as the renderer runs in the thread loading them
+void models_loaded( bool const Loaded );
 // how long the plain sleepers of the track are, of the model it lays them of; 2.6 m at the standard gauge where there's none
 double plain_length( TTrack const &Track );
 // whether the track has the ballast the simulator makes, which the beams are laid on when there's a model of them
@@ -160,7 +163,7 @@ void lay( TTrack &Track, bool const Fastened = true );
 // the fastenings left out laid on the beams of the track
 void fasten( TTrack &Track );
 // the beams of the tracks around the track to be placed again, as they depend on where it runs
-void unsettle_around( TTrack &Track );
+void unsettle_around( TTrack const &Track );
 // the rails of the track kept for the fastenings of the tracks around let go, as they're laid anew or the track goes far
 void forget_rails( TTrack const &Track );
 // the beams worked out in a thread of their own as the tracks come near, while the simulation runs; off in the editor, where the
@@ -197,6 +200,6 @@ layout_check check();
 // the beams laid with the track: the tracks whose plain sleepers would meet make a cluster laid together, lines of timbers
 // across all of their rails turned to the bisectors of frogs and crossings, and the plain sleepers square to each track where no
 // timber carries it, in step with the timbers. every beam is laid with one track of the cluster
-std::vector<beam> place( TTrack &Track );
+std::vector<beam> place( TTrack const &Track );
 
 } // namespace track_sleepers

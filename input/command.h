@@ -151,6 +151,9 @@ enum class user_command
 	radiovolumeincrease,
 	radiovolumedecrease,
 	radiovolumeset,
+	radiofusetoggle,
+	radiofuseenable,
+	radiofusedisable,
 	cabchangeforward,
 	cabchangebackward,
 
@@ -410,6 +413,14 @@ enum class user_command
 	fmradiotuneincrease,
 	fmradiotunedecrease,
 	fmradiotuneset,
+	oilfuelpumptoggle,
+	linebreakertoggleb,
+	linebreakeropenb,
+	linebreakercloseb,
+	linebreakertogglec,
+	linebreakeropenc,
+	linebreakerclosec,
+	repaircoupler, // the broken coupler of the vehicle (payload) at the end (param1)
 	none = -1
 };
 

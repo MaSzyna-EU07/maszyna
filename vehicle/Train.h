@@ -14,10 +14,12 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
+#include "vehicle/enginestart.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
 #include "scripting/pythonscreenviewer.h"
+#include "scripting/scriptscreens.h"
 #include "utilities/dictionary.h"
 
 #undef snprintf // pyint.h->python
@@ -144,6 +146,14 @@ class TTrain {
 
 	using screenentry_sequence = std::vector<screen_entry>;
 
+    // a screen of the cab drawn by a script (luascreen:, wasmscreen: in the .mmd)
+    struct script_screen_entry {
+        script_screens::screen_config config;
+        dictionary_source parameters; // the config's parameters, pre-processed
+        std::shared_ptr<script_screen> screen;
+        std::shared_ptr<std::vector<glm::vec2>> touch_list;
+    };
+
 // methods
     bool CabChange(int iDirection);
     bool ShowNextCurrent{false}; // pokaz przd w podlaczonej lokomotywie (ET41)
@@ -189,12 +199,17 @@ class TTrain {
     // sets cabin controls based on current state of the vehicle
     // NOTE: we can get rid of this function once we have per-cab persistent state
     void set_cab_controls( int const Cab );
+    // sets the cab interior light as the selected light preset says, if it says anything (eu07/maszyna#529)
+    void set_cab_light_from_lights_preset();
     // initializes a gauge matching provided label. returns: true if the label was found, false otherwise
     bool initialize_gauge(cParser &Parser, std::string const &Label, int const Cabindex);
     // initializes a button matching provided label. returns: true if the label was found, false otherwise
     bool initialize_button(cParser &Parser, std::string const &Label, int const Cabindex);
     // helper, returns true for EMU with oerlikon brake
     bool is_eztoer() const;
+    // helper, returns true if both horn tones are operated with the same lever, without separate low and high tone buttons
+    bool has_single_horn_lever() const {
+        return ggHornButton.SubModel != nullptr && ggHornLowButton.SubModel == nullptr && ggHornHighButton.SubModel == nullptr; }
     // locates nearest vehicle belonging to the consist
 	TDynamicObject *find_nearest_consist_vehicle(bool freefly, glm::vec3 pos) const;
     // mover master controller to specified position
@@ -211,6 +226,10 @@ class TTrain {
     void change_pantograph_selection( int const Change );
     // helper, common part of pantograh valves state update methods
     void update_pantograph_valves();
+    // the Index-th other vehicle in multiple whose engine the cab starts with its own switches (0: mainb_*, 1: mainc_*)
+    TMoverParameters *remote_engine( std::size_t const Index ) const;
+    // the switches starting the engines of the other vehicles in multiple, for Deltatime seconds
+    void update_remote_linebreakers( double const Deltatime );
     // update function subroutines
     void update_sounds( double const Deltatime );
     void update_sounds_runningnoise( sound_source &Sound );
@@ -224,6 +243,10 @@ class TTrain {
     end cab_to_end() const {
         return cab_to_end( iCabn ); }
 	void update_screens(double dt);
+	void update_script_screens();
+	// finds the submodel and the texture a cab screen is drawn on. returns false when the screen is to be ignored
+	bool find_screen_surface(std::string const &Target, std::string_view Kind, TSubModel *&Submodel, ITexture *&Texture) const;
+	void load_script_screen(cParser &Parser, script_language Language);
 
     // command handlers
     // NOTE: we're currently using universal handlers and static handler map but it may be beneficial to have these implemented on individual class instance basis
@@ -336,10 +359,14 @@ class TTrain {
     static void OnCommand_linebreakertoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_linebreakeropen( TTrain *Train, command_data const &Command );
     static void OnCommand_linebreakerclose( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakertoggleremote( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakeropenremote( TTrain *Train, command_data const &Command );
+    static void OnCommand_linebreakercloseremote( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_fuelpumpdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumptoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_oilfuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakertoggle( TTrain *Train, command_data const &Command );
@@ -493,6 +520,9 @@ class TTrain {
 	static void OnCommand_fmradiotuneincrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_fmradiotunedecrease(TTrain *Train, command_data const &Command);
 	static void OnCommand_fmradiotuneset(TTrain *Train, command_data const &Command);
+	static void OnCommand_radiofusetoggle(TTrain *Train, command_data const &Command);
+	static void OnCommand_radiofuseenable(TTrain *Train, command_data const &Command);
+	static void OnCommand_radiofusedisable(TTrain *Train, command_data const &Command);
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
@@ -574,6 +604,15 @@ public: // reszta może by?publiczna
     TGauge ggMainOffButton;
     TGauge ggMainOnButton;
     TGauge ggMainButton; // EZT
+    // the line breaker / engine start switches of the second and the third vehicle in multiple (mainb_*, mainc_*)
+    struct remote_linebreaker {
+        TGauge main_switch; // mainb_sw:
+        TGauge on_button; // mainb_on_bt:
+        TGauge off_button; // mainb_off_bt:
+        bool held_without_switch{ false }; // closed by a command, in a cab without a switch for it
+        engine_start::remote_switch state;
+    };
+    std::array<remote_linebreaker, 2> m_remotelinebreakers;
     TGauge ggSecurityResetButton;
     TGauge ggSHPResetButton;
     TGauge ggReleaserButton;
@@ -599,6 +638,10 @@ public: // reszta może by?publiczna
 	TGauge ggRadioVolumeSelector;
 	TGauge ggRadioVolumePrevious;
 	TGauge ggRadioVolumeNext;
+	TGauge ggRadioOnButton;
+	TGauge ggRadioOffButton;
+	TGauge ggRadioFuseOnButton;
+	TGauge ggRadioFuseOffButton;
     TGauge ggUpperLightButton;
     TGauge ggLeftLightButton;
     TGauge ggRightLightButton;
@@ -700,7 +743,8 @@ public: // reszta może by?publiczna
     TGauge ggWaterHeaterButton; // water heater switch
     TGauge ggWaterCircuitsLinkButton;
     TGauge ggFuelPumpButton; // fuel pump switch
-    TGauge ggOilPumpButton; // fuel pump switch
+    TGauge ggOilPumpButton; // oil pump switch
+    TGauge ggOilFuelPumpButton; // joint oil and fuel pump switch
     TGauge ggMotorBlowersFrontButton; // front traction motor fan switch
     TGauge ggMotorBlowersRearButton; // rear traction motor fan switch
     TGauge ggMotorBlowersAllOffButton; // motor fans shutdown switch
@@ -712,6 +756,7 @@ public: // reszta może by?publiczna
     TButton btLampkaNadmPrzetw;
     TButton btLampkaPrzetw;
     TButton btLampkaPrzetwOff;
+    TButton btLampkaPrzetwAOff; // the converter of this very unit off, where the trainset shares its 110 V (ET42 section fans)
     TButton btLampkaPrzekRozn; // TODO: implement
     TButton btLampkaPrzekRoznPom; // TODO: implement
     TButton btLampkaNadmSil;
@@ -763,6 +808,7 @@ public: // reszta może by?publiczna
     TButton btLampkaSprezarkaOff;
     TButton btLampkaSprezarkaBOff;
     TButton btLampkaFuelPumpOff;
+    TButton btLampkaOilPump;
     TButton btLampkaBocznik1;
     TButton btLampkaBocznik2;
     TButton btLampkaBocznik3;
@@ -817,6 +863,7 @@ public: // reszta może by?publiczna
     TButton btLampkaMalfunctionB;
     TButton btLampkaMotorBlowers;
     TButton btLampkaCoolingFans;
+    TButton btLampkaLouvresClosed; // ET22, the pneumatic louvres of the motor fans not open yet
     TButton btLampkaTempomat;
     TButton btLampkaDistanceCounter;
 
@@ -911,6 +958,7 @@ private:
     bool m_mastercontrollerinuse { false };
     float m_mastercontrollerreturndelay { 0.f };
 	screenentry_sequence m_screens;
+	std::vector<script_screen_entry> m_scriptscreens;
 	uint16_t vid { 0 }; // train network recipient id
     float m_distancecounter { -1.f }; // distance traveled since meter was activated or -1 if inactive
     double m_brakehandlecp{ 0.0 };

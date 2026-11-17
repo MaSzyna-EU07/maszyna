@@ -2,6 +2,8 @@
 #include "scenery_scanner.h"
 #include "utilities/Logs.h"
 
+#include <system_error>
+
 scenery_scanner::scenery_scanner(ui::vehicles_bank &bank)
     : bank(bank)
 {
@@ -17,7 +19,8 @@ void scenery_scanner::scan()
 		try {
 			name = path.string();
 		}
-		catch (std::exception const &) {
+		catch (std::system_error const &) {
+			// a name outside of the code page, which the path can't give as a string on Windows
 			continue;
 		}
 

@@ -134,15 +134,19 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
 //                                        panel and its checkbox change them, kept with the editor, and logged with the origin of the scenery
-//   nmtsettings [band|around|shape|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
+//   nmtsettings [band|around|shape|common|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
 //                                        panel changes them, and logged with the offset of the model to the scenery
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined
+//   laymonkey <seed> <count> [case]      random lines laid to and from the free ends of the scenery, as the preview shows them: gaps and
+//                                        angles at the joints, loops, the turning wasted and the sharpest curve logged; case: that one alone
 //   layspeed <km/h> <own 0|1>            the speed set for the laying, and whether it goes also on from a track with its own
-//   laymode <straights|curve>, layradius <R from> <R to>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
+//   laymode <straights|curve>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
 //   endcurves                            logs every free end of the rails: where, the way out and the curvature its track goes on with
 //   curvejoint <x> <z>                   logs the paths meeting at the end nearest the point, the curvature of each and its jump from the ones before to the ones after
+//   cantcheck <label>                    logs each jump of the cant at a joint of plain tracks, and the steepest ramp of the cant on a path
+//   fitcheck <label>                     logs the steps and grade breaks at the joints, the switches off their plane, the rails against the ground
 //   laywalk <from|into> <x> <z> <spacing> <noise> <k0> <k1> <L>...   a line of known curves on from the free end nearest the point,
 //                                        the points along it clicked in the mode of a curve, from the end or towards it (see the command)
 //   laybends <x> <z> <distance> <degrees> ... <distance>   the bends of straights clicked from the free end nearest the point
@@ -166,8 +170,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
 //   deletetrack <name>, deletekind <kind>   the path deleted as Del does it, or the first path over an element of the kind
 //   tracksel <name>...                   the tracks selected together, as Shift+clicks select them; none: nothing selected
-//   trackprop <key> [value]              the value given to the selected tracks, as typed into the inspector; trackprops logs their values
-//   trackstyle copy [name] | groups <n>... | paste | panel   the properties of a track copied, the groups chosen, pasted on the selected tracks
+//   trackprop <key> [value]              the value given to the selected tracks, as typed into the inspector; trackprops logs their values,
+//                                        the lines shown under the rows and how many tracks aren't saved
+//   trackstyle copy [name] | groups <n>... | tick <key> <0|1> | paste | panel | list   the properties of a track taken, the groups ticked
+//                                        or a property by itself, set on the selected tracks; list logs what they'd change
 //   tracksimilar <key>                   the tracks of the scenery with the value of the property of the selected ones selected
 //   btfcheck <terrain file>              the .txtf converted to .btf, the editor lines the binary file keeps logged
 //   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it
@@ -178,6 +184,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   type <text>                          the characters typed into the text field with the focus
 //   screenshot
 //   save
+//   layermerge <file> <file>             the layer of the first file merged into the layer of the second, as the layers panel does
 //   log <text>
 //   perf <label>                         the frames drawn since the last perf and the time per frame logged, the longest frame and those over 33 ms,
 //                                        with the timings and counts of the renderer
@@ -186,7 +193,13 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   nmtauto [unfitted]                   the tracks put onto the terrain model, all or the ones whose grade line isn't fitted yet
 //   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
 //                                        to it out along their lines from the rim, against the model there
-//   fittedstate [reload]                 logs how many tracks have their grade line fitted, and which; reload: read again from the //$f lines
+//   nmtstate                             logs how far the tracks going onto the terrain model are
+//   gradelines <file>                    the grade line each track shares written to the file, for a map of them
+//   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
+//   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
+//   trackheights <file>                  the heights of the ends of all the paths and how each track stands to the terrain model
+//   profiledump <file>                   the route open in the profile tool to the file: its heights and the points of its grade line
+//   fittedstate [reload]                logs how many tracks have their grade line fitted, and which; reload: read again from the //$t lines
 //   trackterrain <pull|restore> <track>...   the terrain drawn to the tracks, or their formations taken out of it, as the panel of the tracks
 //   terrainhash                          a hash of the heights of the terrain chunks in memory, to compare the ground two builds made
 //   rebuildall                           the geometry of every path in the sections made already laid anew, the time it took logged,
@@ -194,6 +207,13 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   sleepercheck                         the 3d sleepers of all the tracks checked for beams over each other and rails without enough under them
 //   beams <track> <z from> <z to>        the beams the track lays with their middles between the two z
 //   sharedzones <track>                  where the timbers shared with other tracks reach along the paths of the track and past its ends
+//   ride <track> [path] [s]              the camera riding along the track from the distance on the path, looking towards the growing distance
+//   ridewalk <metres> [choice]           the ride moved ahead (negative: back) as far, the switches from their blades left by the path of the
+//                                        choice (0 straighter, 1 the other); logs the place and whether any switch was thrown on the way
+//   ridejump <-1|1>                      the ride over to the track alongside on the left or the right of the way ahead
+//   rideahead, rideprobe, rideleave      logs the switch ahead from its blades / logs the place of the ride / ends the ride
+//   minimap <0|1|2>, stations            the minimap shown or hidden (2: the whole scenery in it) / logs the stations the W4 name with their stops
+//   station <text>, minimapclick <x> <z> the camera to the next stop of the station whose name holds the text / as a click on the map there
 //   quit
 void editor_mode::selftest_step()
 {
@@ -201,7 +221,7 @@ void editor_mode::selftest_step()
 	if (false == test.loaded)
 	{
 		test.loaded = true;
-		auto const *file{std::getenv("EU07_EDITOR_SELFTEST")};
+		auto const *file{selftest_script("EU07_EDITOR_SELFTEST")};
 		if (file == nullptr)
 			return;
 		std::ifstream stream(file);

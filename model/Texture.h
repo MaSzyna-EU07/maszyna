@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <istream>
 #include <chrono>
 #include <limits>
+#include <optional>
 #include "winheaders.h"
 #include "utilities/memorystats.h"
 #include <string>
@@ -91,6 +92,11 @@ struct texture_source : public ITexture {
     // the object of the renderer goes, with the bank of the textures
     virtual void
         destroy() = 0;
+    // the object of the renderer let go of with no copy of its data kept, the texture read from its file again when it's used
+    // (texture_bank::unload())
+    virtual void
+        unload_object() {
+            release(); }
     // another thread of the renderer works on the texture (makes its object from the data, which it reads too): what it holds isn't for
     // the other threads to read until it's done
     virtual bool
@@ -133,6 +139,9 @@ public:
     bool is_rendertarget = false; // is used as postfx rendertarget, without loaded data
     bool is_texstub = false; // for make_from_memory internal_src: functionality
     std::vector<unsigned char> data; // texture data (stored GL-style, bottom-left origin)
+    // whether every texel of the data passes the alpha test of the shadow maps (gfx::texels_pass_alpha_test()), when the worker
+    // thread which read it checked that; unknown otherwise
+    std::optional<bool> data_alphakept;
     resource_state data_state{ resource_state::none }; // current state of texture data
     unsigned int data_width{ 0 },
         data_height{ 0 },
@@ -171,6 +180,9 @@ struct opengl_texture : public texture_source {
         alloc_rendertarget( GLint format, GLint components, int width, int height, int layers = 1, int samples = 1, GLint wrap = GL_CLAMP_TO_EDGE );
     static void
         reset_unit_cache();
+    // with gfx.resource.move, copies the gl texture back into the data before it's released. requires the texture bound
+    bool read_back_compressed();
+    void read_back_uncompressed();
     virtual
     size_t
         get_id() const override {
@@ -181,6 +193,8 @@ struct opengl_texture : public texture_source {
             return id != invalid_id; }
     void
         destroy() override;
+    void
+        unload_object() override;
 
 // members
     static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
@@ -238,6 +252,10 @@ public:
     // releases gl textures of vehicles not needed nor drawn for a while
     void
         release_unneeded();
+    // takes a texture the scene has never drawn out of both the gfx card and the memory, e.g. the image of a picker scrolled
+    // past, or one read and not made yet; it's read again when it's used. textures the scene draws are left to the resource sweep
+    void
+        unload( texture_handle const Texture );
     // debug performance string
     std::string
         info() const;

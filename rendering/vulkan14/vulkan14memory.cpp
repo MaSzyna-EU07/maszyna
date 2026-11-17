@@ -53,20 +53,29 @@ void add(std::uint64_t const Handle, entry &&Entry)
 	g_live[Handle] = std::move(Entry);
 }
 
-void remove(std::uint64_t const Handle)
+// called by the destructors of buffers and images, so it lets no exception out: the registry only serves the report after
+// a device loss, and a resource it fails to move to the freed ones mustn't stop the resource from being released
+void remove(std::uint64_t const Handle) noexcept
 {
-	std::lock_guard<std::mutex> lock(g_mutex);
-	auto const lookup{g_live.find(Handle)};
-	if (lookup == g_live.end())
+	try
 	{
-		return;
+		std::scoped_lock lock(g_mutex);
+		auto const lookup{g_live.find(Handle)};
+		if (lookup == g_live.end())
+		{
+			return;
+		}
+		lookup->second.freed = std::chrono::steady_clock::now();
+		g_freed.push_back(std::move(lookup->second));
+		g_live.erase(lookup);
+		if (g_freed.size() > freed_kept)
+		{
+			g_freed.pop_front();
+		}
 	}
-	lookup->second.freed = std::chrono::steady_clock::now();
-	g_freed.push_back(std::move(lookup->second));
-	g_live.erase(lookup);
-	if (g_freed.size() > freed_kept)
+	catch (std::exception const &)
 	{
-		g_freed.pop_front();
+		// the entry stays among the live ones, which the report can live with
 	}
 }
 

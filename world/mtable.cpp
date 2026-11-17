@@ -77,6 +77,15 @@ bool TTrainParameters::IsLastStop() const {
     return StationIndex >= StationCount;
 }
 
+TMTableLine const &TTrainParameters::TimeTableEntryAhead( int Offset ) const
+{ // wpis rozkladu Offset pozycji za aktualnym (bez pomijania przelotow);
+  // poza zakresem 1..StationCount zwraca techniczny wpis zerowy
+    int const idx { StationIndex + Offset };
+    if( ( idx < 1 ) || ( idx > StationCount ) )
+        return TimeTable[0];
+    return TimeTable[idx];
+}
+
 
 bool TTrainParameters::IsMaintenance() const {
     if( StationIndex <= StationCount )
@@ -268,6 +277,15 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
         // Ra 2014-09: ustalić zasady wyznaczenia pierwotnego pliku przy przesuniętych rozkładach
         // (kolejny pociąg dostaje numer +2)
         fin.open(s.c_str()); // otwieranie pliku
+        if (false == fin.is_open())
+        {
+            // the name of the train comes in lowercase, the file can be named in another case
+            if (auto const cased{FileCased(s)}; false == cased.empty())
+            {
+                fin.clear();
+                fin.open(cased);
+            }
+        }
 		replace_slashes(s);
 
         if (!fin.is_open())

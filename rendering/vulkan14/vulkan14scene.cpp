@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/color.h"
 #include "utilities/utilities.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <unordered_set>
@@ -721,13 +722,14 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 			auto const cullface{draw.cullface};
 			draw.cullface = false;
 			apply_draw_state();
-			if (draw.set_dirty)
-			{
-				bind_pass_set();
-			}
 			auto const block{push_draw_block()};
 			if (block != ~0u)
 			{
+				// after the block, which may have opened a new window of the blocks the pass set is bound with
+				if (draw.set_dirty)
+				{
+					bind_pass_set();
+				}
 				if (draw.textures_dirty)
 				{
 					push_textures();
@@ -1313,7 +1315,8 @@ gfx::userdata_array const &vulkan14_renderer::UserData(gfx::geometry_handle cons
 
 int vulkan14_renderer::Primitive(gfx::geometry_handle const &Geometry) const
 {
-	return static_cast<int>(m_geometry.type(Geometry));
+	auto const primitive{m_geometry.primitive(Geometry)};
+	return primitive == gfx::geometry_bank::no_primitive ? -1 : static_cast<int>(primitive);
 }
 
 // materials and their programs: the materials are read as for the opengl renderer, their programs are made of vertex.vert and
@@ -1455,6 +1458,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 	{
 		return;
 	}
+	m_draw->prepassed = false;
 	if (Material == null_handle)
 	{
 		if (Material != m_invalid_material)
@@ -1599,6 +1603,11 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 			auto &texture{m_context->textures->mark_as_used(materialtextures[0])};
 			if ((false == texture_ready(texture)) || (m_context->images.find(texture.get_id()) == nullptr))
 			{
+				// the colour pass writes the depth of the draws of the texture itself (prepassed_alpha())
+				if (std::ranges::find(m_prepassunready, materialtextures[0]) == m_prepassunready.end())
+				{
+					m_prepassunready.emplace_back(materialtextures[0]);
+				}
 				return;
 			}
 			walk_texture(0, materialtextures[0]);
@@ -1611,6 +1620,7 @@ void vulkan14_renderer::walk_material(material_handle const Material, TSubModel 
 		draw.depthskip = false;
 		return;
 	}
+	draw.prepassed = draw.keepdepth && prepassed_alpha(Material, materialtextures[0]);
 	for (std::size_t unit = 0; unit < gl::MAX_TEXTURES; ++unit)
 	{
 		if (draw.textures[unit] != materialtextures[unit])
@@ -1634,15 +1644,28 @@ void vulkan14_renderer::walk_shadow_material(material_handle const Material)
 	auto &draw{*m_draw};
 	auto &scene{m_context->scene};
 	// the cube maps of the lamps with programs of their own (the faces drawn by multiview)
-	if ((Material != null_handle) && (m_materials.material(Material).textures[0] != null_handle))
+	if (auto const texture{Indirect_Shadow_Texture(Material)}; texture != null_handle)
 	{
-		walk_texture(0, m_materials.material(Material).textures[0]);
+		walk_texture(0, texture);
 		draw.program = (m_cubeshadows ? scene.cube_alpha_shadow.get() : scene.alpha_shadow.get());
 	}
 	else
 	{
 		draw.program = (m_cubeshadows ? scene.cube_shadow.get() : scene.shadow.get());
 	}
+}
+
+texture_handle vulkan14_renderer::Indirect_Shadow_Texture(material_handle const Material) const
+{
+	auto const texture{gfx::scene_walk::Indirect_Shadow_Texture(Material)};
+	auto const &main{m_main != nullptr ? *m_main : *this};
+	if ((texture == null_handle) || (false == main.m_shadowskipalphatest))
+	{
+		return texture;
+	}
+	// a texture not made yet keeps the test: what it holds isn't known
+	auto const &source{static_cast<vk14::vulkan14_texture const &>(m_context->textures->texture(texture))};
+	return ((source.resident() && source.passes_alpha_test()) ? null_handle : texture);
 }
 
 opengl_material const &vulkan14_renderer::walk_material_data(material_handle const Material) const
@@ -1745,6 +1768,31 @@ bool vulkan14_renderer::walk_blending_enabled() const
 void vulkan14_renderer::walk_cull_face(bool const Enabled)
 {
 	m_draw->cullface = Enabled;
+}
+
+void vulkan14_renderer::walk_decal(bool const Enabled)
+{
+	auto &draw{*m_draw};
+	if ((false == draw.rendering) || (draw.commands == nullptr) || draw.shadows)
+	{
+		return;
+	}
+	// the depth is reversed (VK_COMPARE_OP_GREATER_OR_EQUAL): a positive bias comes nearer the camera, as glPolygonOffset(2, 8) of
+	// the opengl renderer (slope 2, constant 8). the depth pass of the scene draws everything a little farther (-1, -1,
+	// render_scene_depth()), the decal goes as much nearer from there
+	if (draw.depthpass)
+	{
+		if (Enabled)
+			draw.commands->set_depth_bias(-1.f + 8.f, 0.f, -1.f + 2.f);
+		else
+			draw.commands->set_depth_bias(-1.f, 0.f, -1.f);
+		return;
+	}
+	draw.commands->set_depth_bias_enable(Enabled ? VK_TRUE : VK_FALSE);
+	if (Enabled)
+	{
+		draw.commands->set_depth_bias(8.f, 0.f, 2.f);
+	}
 }
 
 void vulkan14_renderer::walk_glare(bool const Enabled)
@@ -2002,10 +2050,13 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	vk14::chunk_source chunk;
 	if (false == chunk_of(Geometry, chunk))
 	{
+		// what the prepass of the scene leaves out has its depth written by the colour pass (keepdepth)
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
 
-	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (topology_class(chunk.topology) != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)))
+	auto const triangles{topology_class(chunk.topology) == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (false == triangles)))
 	{
 		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
 		return;
@@ -2017,14 +2068,16 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	auto const blend{draw.glare ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
 	if (false == bind_scene_pipeline(*draw.program, *draw.targets, blend, static_cast<int>(chunk.topology)))
 	{
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
-	apply_draw_state();
+	apply_draw_state(triangles);
 	if (Newblock || (draw.block == ~0u))
 	{
 		draw.block = push_draw_block();
 		if (draw.block == ~0u)
 		{
+			m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 			return;
 		}
 	}
@@ -2506,7 +2559,7 @@ void vulkan14_renderer::context::save_scene_pipelines()
 }
 
 // the dynamic state of the draws for the state of the walk: the faces culled, the depth tested and written
-void vulkan14_renderer::apply_draw_state()
+void vulkan14_renderer::apply_draw_state(bool const Triangles)
 {
 	auto &draw{*m_draw};
 	auto const cull{draw.cullface ? (draw.shadows ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_BACK_BIT) : VK_CULL_MODE_NONE};
@@ -2521,7 +2574,9 @@ void vulkan14_renderer::apply_draw_state()
 		draw.commands->set_depth_test_enable(depthtest ? VK_TRUE : VK_FALSE);
 		draw.depthtest = depthtest;
 	}
-	auto const depthwrite{(draw.blending || draw.depthmask_off) ? 0 : 1};
+	// the depth the prepass of the scene drew already isn't written again (draw_state::keepdepth)
+	auto const kept{draw.keepdepth && draw.prepassed && Triangles};
+	auto const depthwrite{(draw.blending || draw.depthmask_off || kept) ? 0 : 1};
 	if (depthwrite != draw.depthwrite)
 	{
 		draw.commands->set_depth_write_enable(depthwrite ? VK_TRUE : VK_FALSE);
@@ -2608,6 +2663,17 @@ int vulkan14_renderer::prepass_class(material_handle const Material)
 	return prepassclass;
 }
 
+// what the prepass draws with the alpha test, as walk_material() and draw_indirect_depth() choose it: not blended, the alpha test of
+// the opaque pass, the program of the prepass with the test, the diffuse texture there and found loaded by the prepass
+bool vulkan14_renderer::prepassed_alpha(material_handle const Material, texture_handle const Texture)
+{
+	if (m_draw->blending || (model_ubs.opacity < 0.f) || (Texture == null_handle) || (prepass_class(Material) != 2))
+	{
+		return false;
+	}
+	return std::ranges::find(m_prepassunready, Texture) == m_prepassunready.end();
+}
+
 // textures: the files read and decoded as for the opengl renderer, made into images when they are first used
 
 texture_handle vulkan14_renderer::Fetch_Texture(std::string const &Filename, bool const Loadnow, GLint format_hint)
@@ -2650,4 +2716,14 @@ ITexture const &vulkan14_renderer::Texture(texture_handle const Texture) const
 		return *ITexture::null_texture();
 	}
 	return m_context->textures->texture(Texture);
+}
+
+void vulkan14_renderer::Unload_Texture(texture_handle const Texture)
+{
+	if ((Texture == null_handle) || !m_context || !m_context->textures)
+	{
+		return;
+	}
+	// the image goes once the gpu is done with it (vulkan14_texture::release())
+	m_context->textures->unload(Texture);
 }

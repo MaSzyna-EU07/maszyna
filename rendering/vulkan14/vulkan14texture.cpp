@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/vulkan14/vulkan14texture.h"
+#include "rendering/common/texturealpha.h"
 #include "rendering/vulkan14/vulkan14commands.h"
 #include "rendering/vulkan14/vulkan14device.h"
 #include "rendering/vulkan14/vulkan14tasks.h"
@@ -16,9 +17,73 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <cstring>
+#include <optional>
+#include <span>
 
 namespace vk14
 {
+
+namespace
+{
+
+// the data a texture is made of, for the alpha test of the shadow maps
+struct alpha_source
+{
+	std::uint8_t const *data{nullptr};
+	VkDeviceSize size{0};
+	// what the worker thread which read the data found (texture_source::data_alphakept)
+	std::optional<bool> known;
+	// the texels may be checked here: a background thread makes the texture. the thread of the renderer doesn't wait for that, the
+	// texture keeps the test
+	bool scan{false};
+};
+
+// whether the alpha test of the shadow maps keeps every texel of the data of the levels: the alpha the material reads is one, or
+// that of each texel passes the test (the mipmaps the gpu makes of a single level only mix its texels)
+bool texels_pass_alpha_test(texture_format const &Format, alpha_source const &Source)
+{
+	if ((Format.components.a == VK_COMPONENT_SWIZZLE_ONE) || Format.expand_rgb)
+	{
+		return true;
+	}
+	if (Format.components.a != VK_COMPONENT_SWIZZLE_IDENTITY)
+	{
+		return false;
+	}
+	if (Source.known.has_value())
+	{
+		return *Source.known;
+	}
+	if (false == Source.scan)
+	{
+		return false;
+	}
+	std::span const data{Source.data, static_cast<std::size_t>(Source.size)};
+	switch (Format.format)
+	{
+	case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+	case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+		return gfx::texels_pass_alpha_test(gfx::alpha_layout::bc1, data);
+	case VK_FORMAT_BC2_SRGB_BLOCK:
+	case VK_FORMAT_BC2_UNORM_BLOCK:
+		return gfx::texels_pass_alpha_test(gfx::alpha_layout::bc2, data);
+	case VK_FORMAT_BC3_SRGB_BLOCK:
+	case VK_FORMAT_BC3_UNORM_BLOCK:
+		return gfx::texels_pass_alpha_test(gfx::alpha_layout::bc3, data);
+	case VK_FORMAT_BC7_SRGB_BLOCK:
+	case VK_FORMAT_BC7_UNORM_BLOCK:
+		return gfx::texels_pass_alpha_test(gfx::alpha_layout::bc7, data);
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_UNORM:
+		return gfx::texels_pass_alpha_test(gfx::alpha_layout::rgba8, data);
+	default:
+		return false;
+	}
+}
+
+} // namespace
 
 // uploader
 
@@ -751,6 +816,9 @@ vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 		return failed();
 	}
 
+	// published by m_made (made now, or by publish() of the thread of the renderer)
+	m_passesalphatest = texels_pass_alpha_test(format, alpha_source{source, size, data_alphakept, Background});
+
 	// a single level is made into the whole chain on the gpu, as glGenerateMipmap() does for the opengl renderer
 	auto const generate{(levels.size() == 1) && (false == format.compressed) && m_resources.uploads->can_blit(format.format)};
 	// the levels the file gives are filled by the host where it can, by a background thread (what the gpu makes goes through the
@@ -878,6 +946,7 @@ void vulkan14_texture::release()
 	m_image.reset();
 	m_id = 0;
 	m_made = false;
+	m_passesalphatest = false;
 	is_ready = false;
 }
 
@@ -904,6 +973,7 @@ void vulkan14_texture::destroy()
 	m_image.reset();
 	m_id = 0;
 	m_made = false;
+	m_passesalphatest = false;
 }
 
 void vulkan14_texture::on_failed()
@@ -915,6 +985,7 @@ void vulkan14_texture::on_failed()
 	}
 	m_image.reset();
 	m_id = 0;
+	m_passesalphatest = false;
 	m_made = true;
 }
 
@@ -972,6 +1043,8 @@ void vulkan14_texture::adopt(std::shared_ptr<image> const &Image, VkSampler cons
 		m_id = m_resources.images->add(Image, Sampler);
 	}
 	m_image = Image;
+	// filled by the renderer, not from a file
+	m_passesalphatest = false;
 	m_made = true;
 	if (Image)
 	{
@@ -1027,6 +1100,8 @@ void vulkan14_texture::upload_rgba(std::uint8_t const *Data, std::size_t Width, 
 	data_height = height;
 	data_format = GL_SRGB8_ALPHA8;
 	data_components = GL_RGBA;
+	// content given from memory, not checked
+	m_passesalphatest = false;
 	m_made = true;
 	// the content given straight to the gpu can't be read again: released by the garbage sweep, the texture would come back as
 	// the grey stub

@@ -19,67 +19,37 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "stdafx.h"
 
 #include "application/application.h"
+#include "simulation/simulationtest.h"
+#include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/crashdump.h"
+#include "utilities/physicslog.h"
 #include <cstdlib>
-#ifdef WITHDUMPGEN
+#include <exception>
+#include <string_view>
+#include <thread>
+#include <vector>
 #ifdef _WIN32
-#include <Windows.h>
-#include <DbgHelp.h>
-#endif
+#include <cstdio>
+#else
+#include <sys/resource.h>
 #endif
 
 #ifdef _MSC_VER
+#ifdef EU07_CPU_PREFLIGHT
+// checks the processor before the C runtime starts, see utilities/cpu_preflight.cpp
+#pragma comment(linker, "/subsystem:windows /ENTRY:eu07_preflight_entry")
+#else
 #pragma comment(linker, "/subsystem:windows /ENTRY:mainCRTStartup")
+#endif
 #endif
 
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
 int generate_nodebank_previews(int Argc, char *Argv[]);
 
-#include <ctime>
 #include <string>
-#include <sstream>
-#include <iomanip>
 #include <utilities/Globals.h>
-
-#ifdef _WIN32
-#pragma comment(lib, "Dbghelp.lib")
-
-LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
-{
-	// Get current local time
-	SYSTEMTIME st;
-	GetLocalTime(&st);
-
-	// Format: crash_YYYY-MM-DD_HH-MM-SS.dmp
-	std::ostringstream oss;
-	oss << "crash_" << std::setw(4) << std::setfill('0') << st.wYear << "-" << std::setw(2) << std::setfill('0') << st.wMonth << "-" << std::setw(2) << std::setfill('0') << st.wDay << "_"
-	    << std::setw(2) << std::setfill('0') << st.wHour << "-" << std::setw(2) << std::setfill('0') << st.wMinute << "-" << std::setw(2) << std::setfill('0') << st.wSecond << ".dmp";
-
-	std::string filename = oss.str();
-
-	HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (hFile != INVALID_HANDLE_VALUE)
-	{
-		MINIDUMP_EXCEPTION_INFORMATION dumpInfo;
-		dumpInfo.ThreadId = GetCurrentThreadId();
-		dumpInfo.ExceptionPointers = ExceptionInfo;
-		dumpInfo.ClientPointers = FALSE;
-
-		// Wybrana kombinacja flag
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
-		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
-
-		MessageBoxA(nullptr, "Simulator crash occured :(\n", "Simulator crashed :(", MB_ICONERROR);
-		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, dumpType, &dumpInfo, nullptr, nullptr);
-
-		CloseHandle(hFile);
-	}
-
-	return EXCEPTION_EXECUTE_HANDLER;
-}
-
-#endif
 
 // lets the log service write what is still queued and stops it; does nothing once Application.exit() has done that
 static void stop_log_service()
@@ -90,13 +60,79 @@ static void stop_log_service()
 		it->second.join();
 }
 
+namespace
+{
+
+// the log is written by a thread of its own, which the closing of the application stops and waits for. on the ways
+// out that skip the closing (a failed start, an exception) what was logged last would be lost with the process
+void finish_log()
+{
+	StopLogService();
+	if (auto const logservice{Global.threads.find("LogService")};
+	    logservice != Global.threads.end() && logservice->second.joinable() && logservice->second.get_id() != std::this_thread::get_id())
+		logservice->second.join();
+}
+
+// ends a test run with its verdict on the standard output and in the exit code. a test the simulator didn't end
+// (a failed start, an exception) ends with the error and Reason
+[[noreturn]] void end_test_run(std::string_view const Reason)
+{
+	simulation::test().conclude(simulation::test_result::error, Reason);
+	// the last two seconds of the physics logs, which the runner of the tests reads
+	PhysicsLogs.stop();
+	finish_log();
+	fflush(stdout);
+	fflush(stderr);
+	// skip destructors, there are ordering errors which causes segfaults
+	std::_Exit(simulation::test().exit_code());
+}
+
+// a test run (--test): whatever stops it, it ends with its verdict. any other run never gets here and ends as
+// it always has
+[[noreturn]] void run_test(int argc, char *argv[])
+{
+	// for what doesn't reach the catch below: an exception leaving a noexcept function, or on Linux one leaving
+	// a thread (on Windows the handler is the main thread's only)
+	std::set_terminate([] { end_test_run(simulation::describe_exception(std::current_exception())); });
+	try
+	{
+		if (Application.init(argc, argv) == 0)
+		{
+			Application.run();
+			Application.exit();
+		}
+	}
+	catch (...)
+	{
+		end_test_run(simulation::describe_exception(std::current_exception()));
+	}
+	end_test_run("the simulator stopped before the test ended");
+}
+
+// the physics logs used to keep a file open for every vehicle with a driver, and on a scenery with some five hundred
+// of them they took all the files the C library of Windows lets a process have open by default (512): the files
+// opened after them, the shaders of the map among them, couldn't be read. they keep none open now (physicslog.h),
+// but the limit is raised to the most either system allows still, for whatever else opens many files at once
+void raise_open_files_limit()
+{
+#ifdef _WIN32
+	_setmaxstdio(8192);
+#else
+	rlimit limit{};
+	if (getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur < limit.rlim_max)
+	{
+		limit.rlim_cur = limit.rlim_max;
+		setrlimit(RLIMIT_NOFILE, &limit);
+	}
+#endif
+}
+
+} // namespace
+
 int main(int argc, char *argv[])
 {
-#ifdef WITHDUMPGEN
-#ifdef _WIN32
-	SetUnhandledExceptionFilter(CrashHandler);
-#endif
-#endif
+	raise_open_files_limit();
+	crashdump_install();
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
@@ -141,6 +177,11 @@ int main(int argc, char *argv[])
 		fflush(stderr);
 		std::_Exit(result);
 	}
+	// unattended test run of a scenery, which says its result in the exit code (eu07/maszyna#541)
+	else if (simulation::parse_test_command_line(std::vector<char const *>(argv, argv + argc)).enabled)
+	{
+		run_test(argc, argv);
+	}
 	else
 	{
 		try
@@ -168,6 +209,9 @@ int main(int argc, char *argv[])
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 		}
 #endif
+		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
+		// otherwise, and a second stop only writes what came since
+		PhysicsLogs.stop();
 	}
 	stop_log_service();
 #ifndef _WIN32

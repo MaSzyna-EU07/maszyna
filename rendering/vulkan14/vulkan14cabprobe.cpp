@@ -108,7 +108,14 @@ namespace vk14
 
 cab_probe_maps::~cab_probe_maps()
 {
-	destroy();
+	try
+	{
+		destroy();
+	}
+	catch (std::exception const &)
+	{
+		// out of memory while letting the maps go: what's left is released with the device, which beats terminating
+	}
 }
 
 void cab_probe_maps::init(VkDevice const Device, allocator &Memory, deletion_queue &Deletions)
@@ -351,7 +358,8 @@ void vulkan14_renderer::render_cab_probe()
 	// the lights of the cab light the probe when they're lights of the frame
 	std::vector<gfx::local_lights::cab_light> const nolights;
 	auto const &lights{(vehicle != nullptr) && (m_locallights.cab_lamp_vehicle() == vehicle) ? m_locallights.cab_lights() : nolights};
-	if (false == probe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lights, m_framestamp))
+	// update_wanted() wants no update without a vehicle, but is called anyway to forget the probe
+	if ((false == probe.update_wanted(vehicle, (vehicle != nullptr ? vehicle->mdKabina : nullptr), center, extent, lights, m_framestamp)) || (vehicle == nullptr))
 	{
 		return;
 	}

@@ -21,8 +21,14 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/ITexture.h"
 #include "audio/sound.h"
 #include "world/Spring.h"
+#include "vehicle/mirrors.h"
+#include "scripting/scriptscreenrules.h"
 
 #include <vector>
+#include <memory>
+
+class script_screen; // scripting/scriptscreens.h
+enum class script_language; // scripting/scriptscreens.h
 
 #define EU07_SOUND_BOGIESOUNDS
 
@@ -156,6 +162,9 @@ public:
     float fMaxDist; // do jakiej odległości wykonywana jest animacja NOTE: square of actual distance
     float fSpeed; // parametr szybkości animacji
     int iNumber; // numer kolejny obiektu
+    // door wings only: the submodel of the same name in the low poly interior, if it has one, posed along with
+    // smAnimated, so the inside of the door can be part of the interior and lit with it
+    TSubModel *smInterior { nullptr };
 
     TUpdate yUpdate; // metoda TDynamicObject aktualizująca animację
 /*
@@ -246,6 +255,11 @@ public:
         int update_rate { 0 }; // -1: per stop, 0: none, >0: fps // TBD, TODO: implement?
         std::string instancing; // potential method to generate more than one texture per timetable
         std::string parameters; // potential extra parameters supplied by mmd file
+        script_screens::screen_config lua; // potential Lua sign (luadestinationsign:), used in place of the python one while the Lua screens are on
+        script_screens::screen_config wasm; // potential WebAssembly sign (wasmdestinationsign:), likewise, when there's no Lua one
+        std::shared_ptr<script_screen> script_sign; // the script screen drawing the current destination
+        std::string script_request; // its input: the key=value pairs a python sign gets for its texture
+        std::shared_ptr<script_screen> background_sign; // the script screen which drew the blank sign, when a script draws it
     // methods
         void deserialize( cParser &Input );
     private:
@@ -314,6 +328,16 @@ private:
     TSubModel *sm_summer_variant {}; // submodel letniego wariantu
     TSubModel *sm_autumn_variant {}; // submodel jesiennego wariantu
     double fWahaczeAmp;
+    // levers with a slot, turned by a pin on the coupling rod sliding in the slot (e.g. speedometer drive of 401Da)
+    struct slottedlever_data {
+        TSubModel *submodel { nullptr }; // lever, turned around its local X axis like the wheels
+        int axle { 0 }; // index of the axle animation, whose crank drives the coupling rod
+        glm::dvec2 pin { 0.0 }; // pin position relative to the lever axis for wheel angle 0, in local (Y, Z) plane [m]
+        glm::dvec2 crank { 0.0 }; // crank vector for wheel angle 0, in local (Y, Z) plane [m]
+    };
+    std::vector<slottedlever_data> m_slottedlevers;
+    static double slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle );
+    void update_slottedlevers();
     // Winger 160204 - pantografy
     double pantspeedfactor;
     // animacje typu przesuw
@@ -392,6 +416,13 @@ private:
         side placement {};
     };
 
+    struct mirror_sounds {
+        sound_source unfold { sound_placement::general };
+        sound_source fold { sound_placement::general };
+        side placement {};
+        int end {}; // of the vehicle, the mirror moves with the cab at this end occupied
+    };
+
     struct exchange_sounds {
         sound_source loading { sound_placement::general };
         sound_source unloading { sound_placement::general };
@@ -404,7 +435,7 @@ private:
         bool atjoints { false }; // distance comes from TTrack::rail_phase
     };
     // whether the axle has just passed a rail joint. On a track with dipping joints it goes by them, elsewhere the axle counts a rail off itself
-    bool axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction );
+    bool axle_passed_joint( axle_sounds &Axle, double const Move, int const Direction ) const;
 
     struct powertrain_sounds {
         sound_source inverter { sound_placement::engine };
@@ -569,6 +600,8 @@ private:
     std::vector<pantograph_sounds> m_pantographsounds; // typically 2 but can be less (or more?)
     std::vector<door_sounds> m_doorsounds; // can expect symmetrical arrangement, but don't count on it
     bool m_doorlocks { false }; // sound helper, current state of door locks
+    std::vector<mirror_sounds> m_mirrorsounds;
+    std::array<mirror_moves::motion, 2> m_mirrormotion; // indexed by side: right, left
     sound_source sHorn1 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn2 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
     sound_source sHorn3 { sound_placement::external, 5 * EU07_SOUND_RUNNINGNOISECUTOFFRANGE };
@@ -685,6 +718,8 @@ private:
         float Load, std::string LoadType, bool Reversed, std::string);
     int init_sections( TModel3d const *Model, std::string const &Nameprefix, bool const Overrideselfillum );
     bool init_destination( TModel3d *Model );
+    // pairs the animated door wings with their namesakes in the low poly interior
+    void init_interior_doors();
     void create_controller( std::string const Type, bool const Trainset );
     void AttachNext(TDynamicObject *Object, int iType = 1);
     bool UpdateForce(double dt);
@@ -702,11 +737,15 @@ private:
     void update_load_offset();
     void shuffle_load_order();
     void update_destinations();
+    // feeds the script destination sign with fresh data, when it is shown and due
+    void update_script_destination();
     bool Update(double dt, double dt1);
     bool FastUpdate(double dt);
     void Move(double fDistance);
     void FastMove(double fDistance);
     void RenderSounds();
+    // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
+    void play_mirror_sounds( side const Side, mirror_moves::event const Event );
     inline glm::dvec3 GetPosition() const {
         return vPosition; };
     // converts location from vehicle coordinates frame to world frame
@@ -819,8 +858,18 @@ private:
     void ParamSet(int what, int into);
     // zapytanie do AI, po którym segmencie skrzyżowania jechać
     int RouteWish(TTrack *tr);
-    void DestinationSet(std::string to, std::string numer);
+    void DestinationSet(std::string const &to, std::string const &numer);
+    // blanks electronic destination sign at the end of the service; physical signs stay until changed
+    void DestinationClear();
     material_handle DestinationFind( std::string Destination );
+    // the name of a generated destination sign texture: the script, the timetable, the instancing and the parameters
+    std::string destination_request( std::string const &Script, std::string const &Instancing, std::string const &Parameters ) const;
+    // the script sign of the vehicle the game can run: the Lua one, else the WebAssembly one; nullptr for none
+    script_screens::screen_config const *script_destination( script_language &Language ) const;
+    // makes the destination sign a script screen, when the vehicle has one the game can run. returns true when it did
+    bool destination_set_script( std::string const &Numer );
+    // draws a texture named make:<script>.lua?<parameters> (or .wasm) once with its script; nullptr for other textures
+    std::shared_ptr<script_screen> draw_script_texture( std::string const &Name, material_handle Material );
     void OverheadTrack(float o);
     glm::dvec3 get_future_movement() const;
 	void move_set(double distance);
@@ -891,6 +940,9 @@ public:
     // legacy method, sends list of vehicles over network
     void
         DynamicList( bool const Onlycontrolled = false ) const;
+    // records the odometer states of the vehicles and saves them for the next sessions
+    void
+        save_odometers();
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
@@ -903,6 +955,13 @@ private:
     std::vector<std::vector<std::uint32_t>> m_groups;
     std::vector<std::uint32_t> m_threadgroups;
     std::vector<std::uint32_t> m_maingroups;
+
+    // marks the vehicles the physical coupler model covers (couplerphysics yes in eu07.ini): the player's train and
+    // the trains it closes in on
+    void
+        update_coupler_physics() const;
+
+    double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
 };
 
 

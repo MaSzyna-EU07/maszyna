@@ -296,6 +296,11 @@ bool ui_layer::init(GLFWwindow *Window)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     m_imguiio = &ImGui::GetIO();
+	if (Global.test.enabled)
+	{
+		// a test leaves the player's window layout alone (imgui.ini in the game folder), runs in parallel included
+		m_imguiio->IniFilename = nullptr;
+	}
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = ImGuiKey_None;
 	ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = ImGuiKey_None;
 	// imgui.ini is read with the first frame, which may be of another mode than the editor
@@ -407,14 +412,23 @@ bool ui_layer::init(GLFWwindow *Window)
 	  }
 
 	// panels can be docked together, and dragged out of the simulator window into windows of their own (e.g. on another monitor)
-	// when both backends can do it. glfw can't place windows under wayland. both flags have to be set before the first frame
+	// when both backends can do it. glfw can't place windows under wayland. gamescope does not work well with popup windows.
+	// both flags have to be set before the first frame
 	m_imguiio->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+	const char* gamepadui = std::getenv("SteamGamepadUI");
+	if (!desktop) desktop = "";
+	if (!gamepadui) gamepadui = "";
 	auto const viewportsupport{(m_imguiio->BackendFlags & ImGuiBackendFlags_PlatformHasViewports) && (m_imguiio->BackendFlags & ImGuiBackendFlags_RendererHasViewports) &&
-	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND};
+	                           glfwGetPlatform() != GLFW_PLATFORM_WAYLAND && std::string_view{desktop} != "gamescope" && std::string_view{gamepadui} != "1"};
+	// a tooltip as long as a paragraph is wrapped: in one line it can run past the screen
+	m_imguiio->ConfigTooltipsWrapWidth = std::round(Global.ui_fontsize * 40.0f);
 	if (Global.ui_viewports && viewportsupport)
 	{
 		m_imguiio->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 		m_imguiio->ConfigViewportsNoTaskBarIcon = true;
+		// only dragging a panel with the cursor past the main window takes it out, not resizing it or placing it at the edge
+		m_imguiio->ConfigViewportsNoAutoDetach = true;
 		auto &platformio{ImGui::GetPlatformIO()};
 		imgui_create_window = platformio.Platform_CreateWindow;
 		platformio.Platform_CreateWindow = create_viewport_window;
@@ -626,8 +640,18 @@ void ui_layer::render_hierarchy(){
  
 void ui_layer::set_cursor(int const Mode)
 {
-	glfwSetInputMode(m_window, GLFW_CURSOR, Mode);
+	// the cursor drawn into the picture: the one of the system hidden, so only that one shows, also in a capture of the window
+	auto const hidden{Mode == GLFW_CURSOR_NORMAL && m_drawcursor};
+	glfwSetInputMode(m_window, GLFW_CURSOR, hidden ? GLFW_CURSOR_HIDDEN : Mode);
 	m_cursorvisible = Mode != GLFW_CURSOR_DISABLED;
+	if (m_imguiio != nullptr)
+		m_imguiio->MouseDrawCursor = m_drawcursor && m_cursorvisible;
+}
+
+void ui_layer::draw_cursor(bool const Draw)
+{
+	m_drawcursor = Draw;
+	set_cursor(m_cursorvisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 }
 
 void ui_layer::set_progress(std::string const &Text)

@@ -326,6 +326,24 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		save();
 		return selftest_result::handled;
 	}
+	if (command == "layermerge")
+	{
+		// the layer of the first file merged into the layer of the second, as the Merge button of the layers panel does
+		std::string source, target;
+		words >> source >> target;
+		auto const find = [](std::string const &Name) -> scene::layer_handle {
+			for (std::size_t idx = 1; idx <= scene::Layers.size(); ++idx)
+				if (scene::Layers.layer(static_cast<scene::layer_handle>(idx)).name == Name)
+					return static_cast<scene::layer_handle>(idx);
+			return null_handle;
+		};
+		auto const from{find(source)};
+		auto const into{find(target)};
+		std::string reason;
+		auto const merged{from != null_handle && into != null_handle && scene::Layers.can_merge(from, into, reason) && scene::Layers.merge(from, into)};
+		WriteLog("SELFTEST layermerge " + source + " " + target + ": " + (merged ? std::string{"merged"} : "not merged " + reason));
+		return selftest_result::handled;
+	}
 	if (command == "ortho")
 	{
 		float extent{0.0f};
@@ -539,7 +557,7 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 			m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT, action == "press" ? GLFW_PRESS : GLFW_RELEASE);
 		else
 		{
-			auto const code{key == "S" ? GLFW_KEY_S : key == "W" ? GLFW_KEY_W : key == "CTRL" ? GLFW_KEY_LEFT_CONTROL : 0};
+			auto const code{key == "CTRL" ? GLFW_KEY_LEFT_CONTROL : key == "F10" ? GLFW_KEY_F10 : key.size() == 1 && key[0] >= 'A' && key[0] <= 'Z' ? GLFW_KEY_A + (key[0] - 'A') : 0};
 			on_key(code, 0, action == "press" ? GLFW_PRESS : GLFW_RELEASE, mods == "ctrl" ? GLFW_MOD_CONTROL : 0);
 		}
 		WriteLog(format("SELFTEST key %s %s %s: camera %.2f %.2f %.2f, key S %d, right button %d", key.c_str(), action.c_str(), mods.c_str(), Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, static_cast<int>(input::keys[GLFW_KEY_S]), m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT)));
@@ -584,7 +602,17 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 	if (command == "undo")
 	{
 		undo_last();
-		WriteLog("SELFTEST undo");
+		// undo <name>: the record of that name as it is after it, a slip laid again back of its template
+		std::string name;
+		words >> name;
+		std::string what;
+		if (false == name.empty())
+		{
+			auto const &records{switch_store::records()};
+			auto const known{std::find_if(records.begin(), records.end(), [&](switch_store::record const &Entry) { return Entry.name == name; })};
+			what = known != records.end() ? format(": %s %s, %zu parts", known->kind.c_str(), switch_store::label(*known).c_str(), known->parts.size()) : ": no record " + name;
+		}
+		WriteLog("SELFTEST undo" + what);
 		return selftest_result::handled;
 	}
 	if (command == "redo")

@@ -340,7 +340,14 @@ std::string shader_library::info() const
 
 pipeline_library::~pipeline_library()
 {
-	shutdown();
+	try
+	{
+		shutdown();
+	}
+	catch (std::exception const &)
+	{
+		// writing the pipeline cache failed on the way out: the cache is only rebuilt next time, which beats terminating
+	}
 }
 
 bool pipeline_library::init(device const &Device, std::string &Reason)

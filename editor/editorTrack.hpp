@@ -107,7 +107,8 @@ class editor_track
 	static bool can_edit_geometry(TTrack const &Track, std::string &Reason);
 	static bool is_supported(TTrack const &Track);
 
-	static void commit(std::vector<TTrack *> const &Tracks);
+	// Dragging: on the way, what follows them from further off waits for the commit at the end of it
+	static void commit(std::vector<TTrack *> const &Tracks, bool const Dragging = false);
 	static void commit_parameters(TTrack &Track);
 
 	static glm::dvec3 point_position(TTrack const &Track, point_ref const &Point);
@@ -392,6 +393,9 @@ class editor_track
 		double length{0.0};
 	};
 	static bool find_route(TTrack *From, TTrack *To, route &Route, std::string &Error);
+	// the route from one to the other as long as given, within a metre, passing the middle given: not the one of the fewest paths,
+	// which a route laid along the main tracks of a station needn't be
+	static bool find_route_along(TTrack *From, TTrack *To, double const Length, glm::dvec3 const &Middle, route &Route);
 	// continues both ways from the path, through switches along their path 0; Path: the path of the track to start along, -1 for its
 	// main one
 	static route run_route(TTrack &Track, double const Maximum, int const Path = -1);
@@ -554,6 +558,8 @@ class editor_track
 		virtual void track_retired(TTrack &Track) = 0;
 		// called before the commit; Original keeps the beginning of the path, given in First
 		virtual void track_split(TTrack &Original, TTrack &Created, segment_data const &First) = 0;
+		// under the new name already, Old the one it had
+		virtual void track_renamed(TTrack const &Track, std::string const &Old) = 0;
 	};
 	static void observe(observer *Observer) { s_observer = Observer; }
 
@@ -568,6 +574,8 @@ class editor_track
 	static void bind_switch_path(TTrack &Switch, int const Path);
 	static void store_switch_path(TTrack &Switch, int const Path);
 	static void rebuild_geometry(TTrack &Track);
+	// adds the tracks whose shape goes by a change of the given from further off: by the switches they meet, and by rail joints running on through them
+	static void add_followers(std::vector<TTrack *> &Tracks);
 	static TTrack *clone(TTrack const &Template, std::string const &Name = {});
 	static TTrack *load_text(std::string const &Text, TTrack const *Template, std::string const &Name);
 	static void move_straight(straight const &Line, glm::dvec3 const &Start, glm::dvec3 const &End, std::function<bool(TTrack const *)> const &Member);

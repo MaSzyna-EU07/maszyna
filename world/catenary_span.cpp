@@ -90,8 +90,11 @@ y_at( TTraction const &Traction, int const End ) {
     auto const neighbourend { Traction.iNext[ End ] };
     if( neighbour->hvNext[ neighbourend ] != &Traction ) { return false; }
     if( std::abs( y_length( *neighbour ) - ylength ) > 0.01 ) { return false; }
-    auto const &type { definition( Traction )->type };
-    auto const &neighbourtype { definition( *neighbour )->type };
+    auto const *own { definition( Traction ) };
+    auto const *neighbourdefinition { definition( *neighbour ) };
+    if( own == nullptr || neighbourdefinition == nullptr ) { return false; }
+    auto const &type { own->type };
+    auto const &neighbourtype { neighbourdefinition->type };
     if( type.y_tension != neighbourtype.y_tension
      || type.y_mass != neighbourtype.y_mass
      || type.messenger_count != neighbourtype.messenger_count ) {

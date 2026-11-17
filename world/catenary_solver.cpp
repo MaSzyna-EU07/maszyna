@@ -246,7 +246,10 @@ span_result solve_span( network_type const &Type, span_input const &Input, doubl
     {
         auto nodes { messenger.nodes() };
         auto const step { std::max( 0.1, Samplestep ) };
-        for( double x = step; x < length; x += step ) { nodes.push_back( x ); }
+        {
+            double x { step };
+            while( x < length ) { nodes.push_back( x ); x += step; }
+        }
         std::sort( nodes.begin(), nodes.end() );
         nodes.erase( std::unique( nodes.begin(), nodes.end(), []( double L, double R ) { return std::abs( L - R ) < 1e-6; } ), nodes.end() );
         for( auto const x : nodes ) {

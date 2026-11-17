@@ -124,7 +124,7 @@ public:
         for( auto x { low.first }; x <= high.first; ++x ) {
             for( auto z { low.second }; z <= high.second; ++z ) {
                 auto const found { m_cells.find( { x, z } ) };
-                if( found != m_cells.end() && false == std::all_of( found->second.begin(), found->second.end(), Holds ) ) {
+                if( found != m_cells.end() && false == std::ranges::all_of( found->second, Holds ) ) {
                     return false;
                 }
             }

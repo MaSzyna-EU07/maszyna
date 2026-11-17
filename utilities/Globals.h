@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
 #include <map>
+#include <optional>
 
 #ifdef WITH_UART
 #include "utilities/uart.h"
@@ -80,6 +81,7 @@ struct global_settings {
     bool bSmoothTraction{ true };
     bool CatenaryProcedural{ true }; // przęsła z dopiskiem "type" rysowane wg typu sieci (lina nośna, wieszaki i Y liczone)
     bool CreateSwitchTrackbeds{ true };
+    bool Frogs{ false }; // whether the rails are cut where they cross other rails into frogs, wing rails and check rails; off, they're laid whole as before
     std::string szTexturesTGA{ ".tga" }; // lista tekstur od TGA
     std::string szTexturesDDS{ ".dds" }; // lista tekstur od DDS
     std::string szDefaultExt{ szTexturesDDS };
@@ -87,6 +89,20 @@ struct global_settings {
     std::string local_start_vehicle{ "EU07-424" };
     std::string editor_enter_vehicle; // vehicle placed in the editor, to be entered when the driving goes on
     bool editor_session{ false }; // scenery was opened for editing (-edit): loader keeps track of scenery layers and hands over to the editor
+    // integration test mode (--test, eu07/maszyna#541); the limits can be set in the scenery's config block (test.*)
+    struct test_settings {
+        bool enabled{ false };
+        double timeout{ 3600.0 }; // [s] of simulation time; no result by then fails the test
+        double standstill{ 300.0 }; // [s] the tested trains standing still this long ends the test; 0 = never
+        bool pass_on_standstill{ false }; // the standstill end passes the test instead of failing it
+        bool fail_if_stop_overran{ true }; // a train passing a signal at stop ends the test as failed; with false it's only logged
+        bool no_movement_before_pass{ true }; // a pass waits until the tested trains stand still; with false it ends the test at once
+        std::vector<std::string> vehicles; // test.vehicle: the trains under test are the consists of these; none = every vehicle
+        bool timeout_from_command_line{ false }; // --test-timeout given, the scenery doesn't override it
+        std::optional<double> wall_timeout; // [s] of real time since the start; none = test.timeout + time for the loading, 0 = no limit
+        bool wall_timeout_from_command_line{ false }; // --test-wall-timeout given, the scenery doesn't override it
+    };
+    test_settings test;
     bool editor_tracks{ false }; // F3 track workspace: draw and pick tracks without the scenery draw-range cap
     int iConvertModels{ 0 }; // tworzenie plików binarnych
     int iConvertIndexRange{ 1000 }; // range of duplicate vertex scan
@@ -98,6 +114,10 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
+    bool crashdump_full{ false }; // crash dump with the whole memory of the process instead of the small one
+    // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
+    // never, and with no entry it is written along with the physics logs
+    std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -136,6 +156,7 @@ struct global_settings {
     bool bJoinEvents{ false }; // czy grupować eventy o tych samych nazwach
     int iHiddenEvents{ 1 }; // czy łączyć eventy z torami poprzez nazwę toru
     bool AITrainman{ true }; // virtual assistant performing consist coupling/decoupling and other maintenance tasks
+    bool AIBrakeSettingCw1{ true }; // ai.brakesetting.cw1: the AI wagon inspector sets the brakes (G/P/R/Mg) by the instruction Cw-1, no: as before eu07/maszyna#350
     // ui
     int PythonScreenUpdateRate{ 200 }; // delay between python-based screen updates, in milliseconds
     int iTextMode{ 0 }; // tryb pracy wyświetlacza tekstowego
@@ -305,6 +326,13 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
+	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
+	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
+	// train with coupler_physics_all
+	bool coupler_physics = false;
+	bool coupler_physics_all = false;
+	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
@@ -325,6 +353,11 @@ struct global_settings {
 	bool python_sharectx = true;
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
+	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
+	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
+	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
+	bool screens_gpupost{true}; // the post-processing of the script screens (image:led_post, image:resize) on the gpu, when the renderer can
 
     bool gfx_skiprendering = false;
     // the size of the image the scene of the main window is drawn to: -1 until the renderer works it out from the window and
@@ -669,9 +702,11 @@ struct global_settings {
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
 	bool ConfigParseUI(cParser& Parser, const std::string& token);
 	bool ConfigParsePython(cParser& Parser, const std::string& token);
+	bool ConfigParseScriptScreens(cParser& Parser, std::string_view token);
 	bool ConfigParseNetwork(cParser& Parser, const std::string& token);
 	bool ConfigParseHardware(cParser& Parser, const std::string& token);
 	bool ConfigParseDebug(cParser& Parser, const std::string& token);
+	bool ConfigParseTest(cParser& Parser, std::string_view Token);
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
 	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.whitebalance*, gfx.postfx.ao*)
 	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );

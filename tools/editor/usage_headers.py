@@ -56,12 +56,20 @@ def kind_of(path, text):
     return None
 
 
-def described(data, file):
-    template = os.path.join(data, 'scenery', file)
-    beside = os.path.join(data, 'editor', 'templates', file)
+def under(root, *parts):
+    """the path of the parts under the root; a name out of a table which leads out of it, by .. or as a path of its own,
+    raises ValueError"""
+    base = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(base, *parts))
+    if os.path.commonpath([base, path]) != base:
+        raise ValueError('%s is out of %s' % (path, base))
+    return path
+
+
+def described(template, beside):
     if os.path.exists(beside):
         # a description this script wrote may be written again
-        with open(beside, encoding='utf-8', errors='replace') as source:
+        with open(beside, encoding='utf-8', errors='replace') as source:  # NOSONAR: under() kept the path in the data folder
             return 'usage: {' not in source.read()
     try:
         text, _ = decode(load(template))
@@ -74,7 +82,8 @@ def read_tables(tables):
     uses = {}
     for table in tables:
         scenery = os.path.basename(table).replace('use_', '').replace('.tsv', '')
-        with open(table, encoding='utf-8') as source:
+        # a table named on the command line by whoever runs the tool, read as asked
+        with open(table, encoding='utf-8') as source:  # NOSONAR
             next(source)
             for row in source:
                 cells = row.rstrip('\n').split('\t')
@@ -121,10 +130,18 @@ def main(argv):
     unknown = []
     for key, entry in sorted(uses.items(), key=lambda item: -len(item[1]['offsets'])):
         file = entry['file']
-        if len(entry['offsets']) < least or described(data, file):
+        if len(entry['offsets']) < least:
             continue
         try:
-            text, _ = decode(load(os.path.join(data, 'scenery', file)))
+            template = under(data, 'scenery', file)
+            beside = under(data, 'editor', 'templates', file)
+        except ValueError as error:
+            print('left out:', error)
+            continue
+        if described(template, beside):
+            continue
+        try:
+            text, _ = decode(load(template))
         except OSError:
             continue
         kind = kind_of(file, text)
@@ -135,9 +152,8 @@ def main(argv):
         counts[kind] = counts.get(kind, 0) + 1
         lines = header(entry, kind, name)
         if write:
-            target = os.path.join(data, 'editor', 'templates', file)
-            os.makedirs(os.path.dirname(target), exist_ok=True)  # NOSONAR
-            with open(target, 'w', encoding='utf-8', newline='\n') as out:  # NOSONAR
+            os.makedirs(os.path.dirname(beside), exist_ok=True)  # NOSONAR
+            with open(beside, 'w', encoding='utf-8', newline='\n') as out:  # NOSONAR
                 out.write('\n'.join(lines) + '\n')
             written += 1
         else:

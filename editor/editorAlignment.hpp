@@ -398,7 +398,7 @@ bool meets_norms(curve_report const &Curve, design const &Design);
 // High where they'd be too short for the speed; where they don't fit, an arc with the transitions and the cant of the norms
 struct corner_radii
 {
-	double low{3000.0};
+	double low{2000.0};
 	double high{6000.0};
 };
 // a stretch of the line traced on the photo: the points clicked along the middle of the track, from the straight Base starts on to

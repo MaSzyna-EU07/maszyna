@@ -1,0 +1,22 @@
+{
+  "description": "Test mode, signal passed at danger: EU07 on td.scn with no route set starts at 60 km/h about 150 m before the exit signal stacja1_j at stop. Its AI driver is still preparing the engine and doesn't brake, and the run ends when the train passes the signal.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_red_signal_moving.scn",
+  "vars": {
+    "velocity": "60",
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "expect": "signal_passed_at_danger",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "max_speed",
+      "limit": 61
+    },
+    {
+      "type": "distance",
+      "min": 140
+    }
+  ]
+}

@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
 #include "MOVER.h"
@@ -18,12 +19,14 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
 auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
+auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -144,7 +147,10 @@ enum TSpeedPosFlag
     spSemaphor = 0x4000, // semafor pociągowy
     spRoadVel = 0x8000, // zadanie prędkości drogowej
     spSectionVel = 0x20000, // odcinek z ograniczeniem
-    spProximityVelocity = 0x40000 // odcinek z ograniczeniem i podaną jego długościa
+    spProximityVelocity = 0x40000, // odcinek z ograniczeniem i podaną jego długościa
+    spPointVelocity = 0x80000, // ograniczenie dla czoła w punkcie fPointDist za wpisem (PointVelocity)
+    spRoadVelHeld = 0x100000, // a road speed sign passed by the head, handled, kept until the rear is past it
+    spSignalAreaEnd = 0x200000 // end of the interlocking area of the signal passed last
 //    spDontApplySpeedLimit = 0x10000 // this point won't apply its speed limit. potentially set by the scanning vehicle
 };
 
@@ -154,6 +160,7 @@ class TSpeedPos
     double fDist{ 0.0 }; // aktualna odległość (ujemna gdy minięte)
     double fVelNext{ -1.0 }; // prędkość obowiązująca od tego miejsca
     double fSectionVelocityDist{ 0.0 }; // długość ograniczenia prędkości
+    double fPointDist{ 0.0 }; // PointVelocity: o ile dalej od wpisu leży punkt, w którym czoło ma mieć fVelNext
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
@@ -191,6 +198,9 @@ static const bool Humandriver = false;
 static const int maxorders = 64; // ilość rozkazów w tabelce
 static const int maxdriverfails = 4; // ile błędów może zrobić AI zanim zmieni nastawienie
 extern bool WriteLogFlag; // logowanie parametrów fizycznych
+// the physics logs of the trains only (physicslog.trains yes): of each driver of rail vehicles who drives them, not
+// of the passengers nor of the vehicles of the roads
+extern bool WriteTrainLogFlag;
 static const int BrakeAccTableSize = 20;
 
 static const int gbh_NP = -2; //odciecie w hamulcu ogolnym
@@ -266,7 +276,18 @@ public:
         return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;
     }
     TBrakeSystem consist_brake_system() const;
+    // the next change of the speed limit ahead, as the driving aid tells it: the speed and the distance to it.
+    // the speed is the present limit (VelDesired) when nothing worth telling changes within the scan range
+    std::pair<int, double> next_speed_limit() const;
+    // what the AI would do at this place and speed, worked out also while a human drives, for the black box
+    blackbox::ai_reference ai_reference() const;
+    // the light pattern the timetable or the scenery asks for at an end of the train, -1 the usual one
+    int light_hint( int const End ) const { return m_lighthints[ End ]; }
+    // the order the driver goes by now: a train run, shunting and the like
+    TOrders order_current() const { return OrderCurrentGet(); }
 private:
+    // tells the black box of the train at the station of its timetable it makes for, at the stop point given
+    void record_station( TSpeedPos const &Point, std::uint8_t Kind ) const;
     void Activation(); // umieszczenie obsady w odpowiednim członie
     void ControllingSet(); // znajduje człon do sterowania
     void SetDriverPsyche();
@@ -311,6 +332,12 @@ private:
         double DirectionalVel() const {
             return mvOccupied->Vel * sign( iDirection * mvOccupied->V ); }
 
+    double brake_increase_margin() const;
+    bool uphill_stop_hold() const;
+    bool uphill_brake_committed( double const Velocity ) const;
+    void control_uphill_start();
+    std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
+
     void update_timers( double const dt );
     void update_logs( double const dt );
     void determine_consist_state();
@@ -320,6 +347,7 @@ private:
     void scan_obstacles( double const Range );
     void control_wheelslip();
     void control_pantographs();
+    void control_pantographs_setup( int const Setup );
     void control_horns( double const Timedelta );
     void control_security_system( double const Timedelta );
     void control_handles();
@@ -344,6 +372,11 @@ private:
     void pick_optimal_speed( double const Range );
     void adjust_desired_speed_for_obstacles();
     void adjust_desired_speed_for_limits();
+    void set_velocity_for_uncoupling();
+    bool increase_train_brake();
+    void hold_train_coming_to_stand_uphill();
+    void adjust_desired_speed_for_final_approach( double const Vel );
+    void adjust_desired_speed_for_braking_curve( double const Vel );
     void adjust_desired_speed_for_target_speed( double const Range );
     void adjust_desired_speed_for_current_speed();
     void adjust_desired_speed_for_braking_test();
@@ -358,7 +391,14 @@ private:
     void control_motor_connectors();
     void control_tractive_force();
     void increase_tractive_force();
+    bool is_too_fast_uphill() const;
     void control_braking_force();
+    // how far short of a stop the AI aims: in train running the middle of the 8-15 m window before a signal,
+    // otherwise (a W4 stop point, shunting, coupling) half the minimum proximity distance, as before
+    double stopping_margin() const {
+        return ( ( OrderCurrentGet() & Obey_train ) != 0 ) && !IsAtPassengerStop ?
+            fMinProximityDist + 3.5 :
+            0.5 * fMinProximityDist; }
     void apply_independent_brake_only();
     void check_route_ahead( double const Range );
     void check_route_behind( double const Range );
@@ -393,6 +433,14 @@ private:
     double AccDesired = 0.0; // przyspieszenie, jakie ma utrzymywać (<0:nie przyspieszaj,<-0.1:hamuj)
     double VelDesired = 0.0; // predkość, z jaką ma jechać, wynikająca z analizy tableki; <=VelSignal
     double fAccDesiredAv = 0.0; // uśrednione przyspieszenie z kolejnych przebłysków świadomości, żeby ograniczyć migotanie
+    double fBrakeHeldTime = 0.0; // czas od ostatniego przestawienia kranu hamulca zasadniczego
+    bool bStopTargetIsPassengerStop = false; // the point the train is to stop at, found by the last scan of the route, is a passenger stop
+    double fShortfall = 0.0; // how far the train fell short of the braking demand at the last check [m/s2]
+    double fShortfallTime = 0.0; // when that was checked
+    int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
+    bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    double fUphillStartTime = 0.0; // when the uphill start began
+    double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie
     double VelLimit = -1.0; // predkość zadawana przez event jednokierunkowego ograniczenia prędkości // -1: brak ograniczenia prędkości
@@ -406,6 +454,7 @@ private:
     double ActualProximityDist = 1.0; // odległość brana pod uwagę przy wyliczaniu prędkości i przyspieszenia
     std::pair<double, double> VelLimitLastDist { 0.0, 0.0 }; // distance to velocity change point
     double SwitchClearDist { 0.0 }; // distance to point after farthest detected switch
+    double SignalAreaEndDist { -1.0 }; // distance the train has to go to be past the nearest end of an interlocking area, -1 when none is in the scan
     int iDirection = 0; // kierunek jazdy względem sprzęgów pojazdu, w którym siedzi AI (1=przód,-1=tył)
     int iDirectionOrder = 0; //żadany kierunek jazdy (służy do zmiany kierunku)
     std::optional<int> iDirectionBackup; // consist direction to be restored after coupling/uncoupling and similar direction-changing operations
@@ -519,9 +568,31 @@ private:
     bool TableNotFound( basic_event const *Event, double const Distance ) const;
     void TableTraceRoute( double fDistance, TDynamicObject *pVehicle );
     void TableCheck( double fDistance );
+    // called after TSpeedPos::Update() of a position of the speed table, with its spElapsed flag from before it:
+    // reports the head of the train going past it, if it's a signal: to the black box, and to the test mode if it showed stop
+    void CheckSignalPassed( TSpeedPos const &Point, bool Passedbefore ) const;
     TCommandType TableUpdate( double &fVelDes, double &fDist, double &fNext, double &fAcc );
     bool TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, double const Signaldistance );
     bool TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPos &Point, double &Signaldistance, int const Pointindex );
+    bool TableUpdateRoadVelocity( TSpeedPos &Point );
+    double held_road_velocity_beyond( TSpeedPos const &Point ) const;
+    bool is_road_velocity_held( TSpeedPos const &Point ) const;
+    void TableDropPassedEvent( TSpeedPos &Point ) const;
+    void TableUpdateSignalAreaEnd( TSpeedPos &Point );
+    // keeps the PointVelocity limit of a speed table entry whose cell the head has just passed
+    void latch_point_limit( TSpeedPos const &Point );
+    // moves the latched point limits by the movement of the consist, drops those passed and those read anew
+    void update_point_limits();
+    // the latched point limits ahead in the direction of travel, taken as the points of the speed table are
+    void apply_point_limits( double &Velocity, double &Distance, double &Next, double &Acceleration );
+    // the way the consist runs, along the track under the vehicle whose movement is measured; zero when it isn't known
+    glm::dvec3 travel_direction() const;
+    // how far the end of the consist lying the farthest along the heading is ahead of the measured vehicle
+    double point_limit_end( glm::dvec3 const &Heading ) const;
+    // whether the state of the cell is latched already
+    bool point_limit_latched( basic_event const *Cell ) const;
+    // how far before a point limit the speed is held down to it
+    double point_limit_approach() const;
     // returns most recently calculated distance to potential obstacle ahead
     double TrackObstacle() const;
     void TablePurger();
@@ -556,6 +627,23 @@ private:
     std::size_t SemNextIndex{ npos };
     std::size_t SemNextStopIndex{ npos };
     double dMoveLen = 0.0; // odległość przejechana od ostatniego sprawdzenia tabelki
+    // a PointVelocity limit latched when the head passed its cell. kept apart from the speed table, which is built
+    // anew on a change of direction, a change of the consist or a takeover, and measured by the movement in the world,
+    // so stopping, backing up and going on between the cell and the point keeps it
+    struct point_limit {
+        basic_event const *source { nullptr }; // the cell, as the head passed it
+        double velocity { -1.0 }; // what the cell said then
+        double distance { 0.0 }; // left for the head to the point, along the line
+        double celldistance { 0.0 }; // from the cell to the point; the head farther than that from the point is behind the cell
+        glm::dvec3 heading { 0.0 }; // the way towards the point, in the world
+        double end { 0.0 }; // point_limit_end() at the last update, to follow vehicles coupled or uncoupled at that end
+        bool endknown { false };
+    };
+    std::vector<point_limit> m_pointlimits;
+    TDynamicObject const *m_pointlimitsvehicle { nullptr }; // the vehicle whose movement moves the points
+    glm::dvec3 m_pointlimitsposition { 0.0 }; // where it was at the last update
+    TDynamicObject const *m_pointlimitsends[ 2 ] { nullptr, nullptr }; // the end vehicles of the consist at the last update
+    double m_pointlimitslength { 0.0 }; // and its length
     basic_event *eSignNext = nullptr; // sygnał zmieniający prędkość, do pokazania na [F2]
     neighbour_data Obstacle; // nearest vehicle detected ahead on current route
 
@@ -592,12 +680,15 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );
     // returns true if any vehicle in the consist has an open door
     bool doors_open() const;
     bool doors_permit_active() const;
     void AutoRewident(); // ustawia hamulce w składzie
+    void reinspect_brakes(); // AutoRewident() again once the train stands, when it left a brake to cut out on the run
+    bool BrakeReinspectionPending{ false }; // AutoRewident() left a brake to cut out (Cw-1 §19.9) for the next standstill
     void announce( announcement_t const Announcement );
 // members
     double fLength = 0.0; // długość składu (do wyciągania z ograniczeń)
@@ -618,6 +709,7 @@ private:
     bool IsAnyDoorOpen[ 2 ]; // state of door in the consist
 	bool IsAnyDoorOnlyOpen[ 2 ]; // state of door in the consist regardless of step
     bool IsAnyDoorPermitActive[ 2 ]; // state of door permit in the consist
+    door_closure_t DoorClosure{ door_closure_t::none }; // state of the door closure signalling (SOD) of the consist
     bool IsAnyLineBreakerOpen{ false }; // state of line breaker in all powered vehicles under control
     bool IsAnyConverterOverloadRelayOpen{ false }; // state of converter overload relays in all vehicles under control
     bool IsAnyMotorOverloadRelayOpen{ false }; // state of motor overload relays in all vehicles under control
@@ -632,9 +724,12 @@ private:
 
 // logs
 // methods
+    // the line of the log, to PhysicsLogs (utilities/physicslog.h)
     void PhysicsLog();
+    // its log begun anew, its file emptied and given the header
+    void begin_physicslog();
 // members
-    std::ofstream LogFile; // zapis parametrow fizycznych
+    bool PhysicsLogBegun = false; // its log was begun, by this driver
     double LastUpdatedTime = 0.0; // czas od ostatniego logu
     double ElapsedTime = 0.0; // czas od poczatku logu
 
@@ -642,6 +737,17 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line and
+    // a line of it as the vehicle is now, each with its line end. the black box keeps the lines of the vehicle the
+    // user is in, to write its log at the end when the logs of all the vehicles are off
+    std::string const &physicslog_name() const {
+        return VehicleName; }
+    // whether it writes its physics log itself: all with "physicslog yes", with "physicslog.trains yes" one who drives
+    // rail vehicles. a driver made primary later begins its log then
+    bool writes_physicslog() const {
+        return WriteLogFlag || ( WriteTrainLogFlag && is_train() && primary() ); }
+    static std::string_view physicslog_header();
+    std::string physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:

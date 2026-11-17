@@ -121,8 +121,8 @@ std::vector<unit> numbering(layout const &Layout, bool const Reversed);
 std::string prefix(std::string const &Code);
 // <code>_<number>, each part of a unit of several with a letter of its own: bpd_15a
 std::string switch_name(std::string const &Code, int const Number, std::size_t const Part, std::size_t const Parts);
-// the joints of the track circuits: 1.5 m before the start of a switch, beyond the fouling points of its branches where the axes
-// are 4 m apart, in the middle of the links between switches too short for both, and so where the lines leave the station
+// the joints of the track circuits: 1.5 m before the start of a switch, 4.2 m beyond the fouling points of its branches, where the
+// axes are 3.5 m apart, in the middle of the links between switches too short for both, and so where the lines leave the station
 std::vector<joint> joints(layout const &Layout, std::vector<unit> const &Units, options const &Options = {});
 // the track circuits the joints part the station into; the tracks of the lines beyond the joints belong to none
 std::vector<circuit> circuits(layout const &Layout, std::vector<unit> const &Units, std::vector<glm::dvec3> const &Joints);
@@ -236,7 +236,7 @@ struct stand
 	double length{0.0};
 };
 // the lengths of a station track, as the list of the tracks of a station gives them: the rozporządzenie of the minister of
-// infrastructure on the railway structures (Dz.U. 2026 poz. 1225) § 2
+// infrastructure of 17 September 2026 on the railway structures and their location (Dz.U. 2026 poz. 1225) § 2
 struct lengths
 {
 	std::string number;

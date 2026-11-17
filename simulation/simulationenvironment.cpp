@@ -20,6 +20,22 @@ world_environment Environment;
 
 } // simulation
 
+namespace {
+
+// turbidity of the sky under the given cloud cover
+float
+turbidity_of( float const Overcast ) {
+
+    if( Overcast <= 0.20 ) { return 4.f; }
+    if( Overcast <= 0.40 ) { return 5.f; }
+    if( Overcast <= 0.60 ) { return 6.f; }
+    if( Overcast <= 0.70 ) { return 7.f; }
+    if( Overcast <= 0.80 ) { return 8.f; }
+    return 9.f;
+}
+
+} // namespace
+
 void
 world_environment::on_daylight_change() {
 
@@ -74,16 +90,7 @@ world_environment::compute_weather() const {
         }
     }
 
-    Global.fTurbidity = Global.Overcast <= 0.10 ? 3 :
-	                    Global.Overcast <= 0.20 ? 4 :
-	                    Global.Overcast <= 0.30 ? 5 :
-	                    Global.Overcast <= 0.40 ? 5 :
-	                    Global.Overcast <= 0.50 ? 5 :
-	                    Global.Overcast <= 0.60 ? 5 :
-	                    Global.Overcast <= 0.70 ? 6 :
-	                    Global.Overcast <= 0.80 ? 7 :
-	                    Global.Overcast <= 0.90 ? 8 :
-	                                              9;
+    Global.fTurbidity = turbidity_of( Global.Overcast );
 }
 
 void
@@ -188,9 +195,8 @@ world_environment::update() {
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.
-    keylightcolor = keylightcolor * diffuselevel;
-    Global.DayLight.diffuse = glm::vec4( keylightcolor, Global.DayLight.diffuse.a );
-    Global.DayLight.specular = glm::vec4( keylightcolor * 0.85f, diffuselevel );
+    Global.DayLight.diffuse = glm::vec4( keylightcolor * diffuselevel, Global.DayLight.diffuse.a );
+    Global.DayLight.specular = glm::vec4( keylightcolor * diffuselevel * 0.85f, diffuselevel );
 
     // tonal impact of skydome color is inversely proportional to how high the sun is above the horizon
     // (this is pure conjecture, aimed more to 'look right' than be accurate)

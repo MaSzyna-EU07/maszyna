@@ -128,6 +128,8 @@ class editor_road
 	static junction_node *nearest_junction(glm::dvec3 const &Point);
 	// the point where pieces meet or end which is nearest to specified one, within specified distance from it. returns: false if there's none
 	static bool nearest_joint(glm::dvec3 const &Point, double const Radius, glm::dvec3 &Joint);
+	// Visit called for the ends of every piece, a point where several meet as many times (no search for the repeated ones)
+	static void each_joint(std::function<void(glm::dvec3 const &)> const &Visit);
 	// ends of the pieces which meet at specified point
 	static std::vector<piece_end> ends_at(glm::dvec3 const &Point);
 	// junctions with an arm at specified point, each with the number of that arm
@@ -171,8 +173,6 @@ class editor_road
 	// Radius: of the axis of that road; Layout: what the road is like. the lanes it has along its axis are the ones the roundabout gets.
 	// Island: what the middle is covered with, "none" to leave the ground showing
 	static std::vector<road_node::state> roundabout(glm::dvec3 const &Centre, double const Radius, road_node::state const &Layout, std::string const &Island);
-	// names of materials and images present in the texture folder, to pick from
-	static std::vector<std::string> const &materials();
 
   private:
 	// takes down what depends on the listed pieces and junctions, lets the caller change them, then builds it all again

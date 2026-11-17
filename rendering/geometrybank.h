@@ -170,6 +170,9 @@ public:
     // what the chunks keep in the process (a copy of what went to the gpu), added to the counts: chunks and vertex bytes, index bytes,
     // user data bytes
     void count_memory( memory_count &Vertices, memory_count &Indices, memory_count &Userdata ) const;
+	// kind of geometry of specified chunk, GL_TRIANGLES, GL_TRIANGLE_STRIP...; no_primitive for a handle to no chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
+	static constexpr unsigned int no_primitive { ~0u };
 
 protected:
 // types:
@@ -302,6 +305,8 @@ public:
 	auto userdata( gfx::geometry_handle const &Geometry ) const -> gfx::userdata_array const &;
     // primitive type of specified chunk, 0 if there's no such chunk
     auto type( gfx::geometry_handle const &Geometry ) const -> unsigned int;
+	// kind of geometry of specified chunk
+	auto primitive( gfx::geometry_handle const &Geometry ) const -> unsigned int;
     // sets target texture unit for the texture data stream
     auto units() -> gfx::stream_units & { return m_units; }
     // provides access to primitives count

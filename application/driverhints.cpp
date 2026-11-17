@@ -138,6 +138,16 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     return mvOccupied->Radio == true; } );
             break;
         }
+        case driver_hint::radiofuseon: {
+            if( AIControllFlag ) {
+                mvOccupied->RadioFuse = true;
+            }
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->RadioFuse == true; } );
+            break;
+        }
         case driver_hint::radiochannel: {
             if( AIControllFlag ) {
                 iRadioChannel = static_cast<int>( Actionparameter );
@@ -316,6 +326,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
         case driver_hint::converteron: {
             if( AIControllFlag ) {
                 mvOccupied->ConverterSwitch( true );
+                // the local switch of the converter too, where the line contactors wait for the vehicle's own converter
+                // (LineContactorsInterlock): left off by the human driver, that vehicle would never take power
+                pVehicle->for_each(
+                    coupling::control,
+                    []( TDynamicObject * Vehicle ) {
+                        auto *vehicle { Vehicle->MoverParameters };
+                        if( vehicle->LineContactorsHeldByLocalConverterSwitch() ) {
+                            vehicle->ConverterAllowLocal = true; } } );
             }
             remove_hint( driver_hint::converteroff );
             hint(

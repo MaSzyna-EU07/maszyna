@@ -1,0 +1,20 @@
+{
+  "_source": "pkp/impuls_v1/31we-c_pr.fiz",
+  "_comment": "converted by test_fiz.cpp from the game's definition with the files it includes, keeping what the game's loader reads",
+  "Param": {"Category": "train", "M": "38700", "Vmax": "160", "PWR": "2", "SandCap": "0", "Type": "ezt"},
+  "Load": {"MaxLoad": "46", "LoadQ": "pieces", "LoadAccepted": "Passengers", "OverLoadFactor": "2", "LoadSpeed": "1", "UnLoadSpeed": "2"},
+  "Dimensions": {"L": "15.92", "H": "4.12", "W": "2.96", "Cx": "0.1"},
+  "Wheels": {"D": "0.84", "AIM": "500", "Tw": "1.435", "Axle": "1'2'", "Ad": "2.75", "Bd": "15.92", "Rmin": "80", "BearingType": "Roll"},
+  "Brake": {"BrakeValve": "EStED", "NBpA": "2", "MBF": "85.0", "MaxBP": "4.06", "MaxLBP": "4.06", "BCN": "6", "BCR": "0.127", "BCD": "0.05", "BCM": "1.9075", "HiPP": "5", "LoPP": "3.5", "Vv": "0.01", "MinCP": "10.0", "MaxCP": "12.0", "CompressorSpeed": "0.0000001", "BVV": "187", "BM": "Cosid", "BCS": "1", "BSA": "0.00", "BRE": "0.95", "TareMaxBP": "3.09", "CompressorPower": "Converter"},
+  "SpringBrake": {"Volume": "10", "MBF": "2.9", "MaxSP": "5.5", "ResetP": "4.0", "MinFP": "3.5", "PressOff": "4.8", "PressOn": "4.5", "ValveOnArea": "0.0005", "ValveOffArea": "0.0005", "ValvePNBArea": "0.002", "MTC": "4"},
+  "Doors": {"OpenCtrl": "Mixed", "CloseCtrl": "DriverCtrl", "OpenSpeed": "0.21", "CloseSpeed": "0.19", "DoorCloseDelay": "2.1", "DoorOpenWithPermit": "1", "DoorMaxShiftL": "0.7", "DoorMaxShiftR": "0.7", "DoorOpenMethod": "Plug", "DoorMaxShiftPlug": "0.028", "DoorStayOpen": "5.0", "DoorClosureWarningAuto": "Yes", "DoorBlocked": "Yes", "DoorAutoCloseRemote": "Yes", "PlatformMaxShift": "0.270", "PlatformSpeed": "0.4", "PlatformOpenMethod": "Shift", "MirrorMaxShift": "45", "DoorNeedPermit": "Yes"},
+  "BuffCoupl": {"CType": "Articulated", "AllowedFlag": "-255", "ControlType": "impuls"},
+  "Cntrl": {"BrakeSystem": "Pneumatic", "LocBrakeHandle": "FD1", "MaxBPMass": "53", "BCPN": "2", "BDelay1": "15", "BDelay2": "4", "LocalBrake": "PneumaticBrake", "DynamicBrake": "Passive", "MCPN": "10", "SCPN": "0", "AutoRelay": "Yes", "IniCDelay": "0.0", "SCDelay": "0.8", "CoupledCtrl": "Yes", "ASB": "Yes", "CompartmentLightsStart": "Manual", "HAO": "Yes", "OMP": "0.8", "PantEPValveStart": "Automatic", "PantEPValveSpring": "No", "PantCompressorStart": "Automatic", "PantAutoValve": "Yes", "rows": [
+    ["-1","0.5","0.0","6","ElectroPneumatic"],
+    ["0","-1","-1","0","ElectroPneumatic"],
+    ["1","-1","0.35","4","ElectroPneumatic"],
+    ["2","-1","-1","0","ElectroPneumatic"]
+  ]},
+  "Light": {"Light": "Generator", "LGeneratorEngine": "ElectricSeriesMotor", "LMaxVoltage": "24", "LMaxCurrent": "300"},
+  "Power": {"EnginePower": "CurrentCollector", "CollectorsNo": "1", "MaxVoltage": "3900", "MinV": "2100", "MaxCurrent": "1200", "MinH": "0.38", "MaxH": "2.4", "CSW": "1.4", "PhysicalLayout": "2"}
+}

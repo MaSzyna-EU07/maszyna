@@ -29,16 +29,39 @@ class scenerywizard_panel : public ui_panel
 	void render_contents() override;
 
   private:
+	// how the range of the aerial photos is given: a square around the centre, or an area of the user's clicked on the map
+	enum class range_shape
+	{
+		square,
+		drawn
+	};
+
 	void render_form();
+	void render_place();
+	void render_range();
 	void pick(glm::dvec2 const &Point);
+	// the range as it's written to the scenery, PUWG (east, north); empty while there's none
+	std::vector<glm::dvec2> range() const;
+	// why the scenery can't be created yet, as the user reads it; empty when it can
+	std::string missing(bool const Named, bool const Exists) const;
+	void show_range();
+	// the corners of an area of the user's clicked on the map from now on; ended kept (with three corners at least) or given up,
+	// the area there was before back then
+	void start_drawing();
+	void stop_drawing(bool const Keep);
 	bool create_scenery();
 
 	editor_map m_map;
 	bool m_realistic{true};
 	char m_filename[64]{};
 	char m_title[128]{};
-	char m_latlon[64]{};
+	char m_place[64]{};
 	std::string m_status;
+	range_shape m_shape{range_shape::square};
+	int m_side{2}; // km, the side of the square
+	std::vector<glm::dvec2> m_drawn; // the area of the user's
+	bool m_drawing{false};           // its corners are being clicked
+	std::vector<glm::dvec2> m_before; // the area there was before the drawing began, back with Cancel
 };
 
 } // namespace ui

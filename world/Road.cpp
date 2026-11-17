@@ -3922,7 +3922,7 @@ TTrack *junction_node::create_track(std::string const &Definition, std::size_t c
 	return track;
 }
 
-float junction_node::radius_()
+float junction_node::radius_() const
 {
 	float radius{0.f};
 	for (std::size_t arm = 0; arm < m_state.arms.size(); ++arm)
@@ -4061,7 +4061,7 @@ TTrack *road_node::create_track(std::string const &Name, std::string const &Defi
 }
 
 // radius() subclass details, calculates node's bounding radius
-float road_node::radius_()
+float road_node::radius_() const
 {
 	auto reach{static_cast<double>(m_state.slope.x)};
 	for (auto const &bank : m_state.banks)

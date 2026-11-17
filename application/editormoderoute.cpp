@@ -735,7 +735,7 @@ void editor_mode::route_lay()
 				{
 					TTrack *first{nullptr};
 					TTrack *second{nullptr};
-					lifted = lifted || std::abs(crossover->record.lift) > 0.002;
+					lifted = lifted || crossover->record.lifted();
 					take_out_crossover(*crossover, states, created, removed, first, second);
 				}
 			switch_store::follow();

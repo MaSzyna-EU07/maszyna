@@ -68,19 +68,6 @@ bool rail(TTrack const &Track)
 	return (Track.iCategoryFlag & 15) == kRailCategory && false == Track.m_editorremoved && Track.visible();
 }
 
-char const *type_of(TTrack const &Track)
-{
-	switch (Track.eType)
-	{
-	case tt_Normal: return "normal";
-	case tt_Switch: return "switch";
-	case tt_Cross: return "cross";
-	case tt_Table: return "turntable";
-	case tt_Tributary: return "tributary";
-	default: return "unknown type";
-	}
-}
-
 double ortho_metres_per_pixel()
 {
 	auto const height{ImGui::GetIO().DisplaySize.y};
@@ -131,7 +118,21 @@ double segment_distance2(glm::vec2 const &Point, glm::vec2 const &A, glm::vec2 c
 
 } // namespace
 
-editor_mode::track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixels) const
+// the type of a track in words, a tributary kept as a river told by its own name
+char const *track_type_name(TTrack const &Track)
+{
+	switch (Track.eType)
+	{
+	case tt_Normal: return Track.m_tributary ? "tributary" : "normal";
+	case tt_Switch: return "switch";
+	case tt_Cross: return "cross";
+	case tt_Table: return "turntable";
+	case tt_Tributary: return "tributary";
+	default: return "unknown type";
+	}
+}
+
+track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixels) const
 {
 	track_hover result;
 	auto const &io{ImGui::GetIO()};
@@ -435,21 +436,25 @@ void editor_mode::draw_track_labels() const
 		}
 		if (length < 0.5)
 			continue;
-		// the label in the middle of the row
-		glm::dvec3 middle{first.point(0.5)};
-		auto left{length * 0.5};
-		for (auto const &[member, forward] : run)
-		{
-			bezier const piece{member->m_paths.front()};
-			auto const span{piece.plan_length()};
-			if (left <= span || &member == &run.back().first)
+		// the point of the row so far along it; the label in its middle
+		auto const along_row = [&](double const Distance) {
+			glm::dvec3 point{first.point(0.5)};
+			auto left{Distance};
+			for (auto const &[member, forward] : run)
 			{
-				auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
-				middle = piece.point(forward ? share : 1.0 - share);
-				break;
+				bezier const piece{member->m_paths.front()};
+				auto const span{piece.plan_length()};
+				if (left <= span || &member == &run.back().first)
+				{
+					auto const share{std::clamp(span > 1e-6 ? left / span : 0.5, 0.0, 1.0)};
+					point = piece.point(forward ? share : 1.0 - share);
+					break;
+				}
+				left -= span;
 			}
-			left -= span;
-		}
+			return point;
+		};
+		auto const middle{along_row(length * 0.5)};
 		if (straight)
 		{
 			labels.push_back({2, -length, middle, format(STR_C("straight %.0f m"), length), IM_COL32(200, 215, 230, 225)});
@@ -458,7 +463,14 @@ void editor_mode::draw_track_labels() const
 		// a track bent by hand, as an S between two points dragged, has no radius to read: its length alone
 		editor_track::curve shape;
 		if (editor_track::analyse_curve(run, m_route.design.norms.gauge, shape) && shape.radius >= 0.5 && shape.radius <= 50000.0)
+		{
 			labels.push_back({1, shape.radius, middle, curve_text(shape), IM_COL32(235, 235, 235, 240)});
+			// the tracks of the transition curves told apart from the arc, each transition by a label of its own in its middle; two
+			// meeting at the radius are both of the curve
+			for (auto const &[transition, at] : {std::pair{shape.transition_in, shape.transition_in * 0.5}, std::pair{shape.transition_out, length - shape.transition_out * 0.5}})
+				if (transition >= 0.5 && transition < length)
+					labels.push_back({2, -transition, along_row(at), format(STR_C("transition L %.0f m"), transition), IM_COL32(150, 205, 255, 235)});
+		}
 		else
 			labels.push_back({2, -length, middle, format("L %.0f m", length), IM_COL32(235, 235, 235, 240)});
 	}
@@ -467,9 +479,11 @@ void editor_mode::draw_track_labels() const
 	std::vector<std::pair<ImVec2, ImVec2>> taken;
 	auto const tracks_under = [&](ImVec2 const &From, ImVec2 const &To) {
 		int count{0};
-		for (auto y = From.y; y <= To.y + cell * 0.5f; y += cell)
-			for (auto x = From.x; x <= To.x + cell * 0.5f; x += cell)
+		for (int down = 0; From.y + cell * static_cast<float>(down) <= To.y + cell * 0.5f; ++down)
+			for (int across = 0; From.x + cell * static_cast<float>(across) <= To.x + cell * 0.5f; ++across)
 			{
+				auto const y{From.y + cell * static_cast<float>(down)};
+				auto const x{From.x + cell * static_cast<float>(across)};
 				int column, row;
 				if (cell_of(std::min(x, To.x), std::min(y, To.y), column, row))
 					count += covered[static_cast<std::size_t>(row) * columns + column];
@@ -596,7 +610,8 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 {
 	using kind = track_intent::kind;
 	track_intent intent;
-	if (ImGui::GetIO().WantCaptureMouse)
+	// a switch being clicked off the view for the template editor takes the mouse: no tool offers anything meanwhile
+	if (ImGui::GetIO().WantCaptureMouse || (m_switch_designer.open && m_switch_designer.picking))
 		return intent;
 	glm::dvec3 const ground{cursor_ground()};
 	intent.position = ground;
@@ -647,7 +662,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		catenary_intent(intent);
 		return intent;
 	}
-	if (m_track_tab == track_tab::srk && m_srk.drawing())
+	if (m_track_tab == track_tab::line_block && m_srk.drawing())
 	{
 		bool valid{false};
 		intent.track = m_hover.track;
@@ -657,8 +672,44 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.what = kind::srk_boundary;
 		return intent;
 	}
-	if (m_track_tab == track_tab::srk)
+	if (m_track_tab == track_tab::station && m_srk.editing_joints())
 	{
+		bool valid{false};
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.track != nullptr ? m_hover.point : ground;
+		intent.action = m_srk.joint_hover(intent.position, valid);
+		intent.what = kind::srk_joint;
+		return intent;
+	}
+	// a tool of the station: a track selected opens its station
+	if (srk_tab() && m_hover.track != nullptr)
+	{
+		intent.track = m_hover.track;
+		intent.path = m_hover.path;
+		intent.position = m_hover.point;
+		return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+	}
+	if (m_track_tab == track_tab::signals)
+	{
+		// the path to read the selected signal picked
+		if (m_signal.picking_read)
+		{
+			if (signal_standing_of(m_signal.selected) == nullptr)
+				m_signal.picking_read = false;
+			else
+			{
+				intent.track = m_hover.track;
+				intent.path = m_hover.path;
+				intent.index = shift ? 1 : 0;
+				if (m_hover.track == nullptr)
+					return make(kind::signal_read, "Click a track to read the signal, Esc: done");
+				intent.position = m_hover.point;
+				intent.action = signal_read_label(*m_hover.track, m_hover.path, shift);
+				intent.what = kind::signal_read;
+				return intent;
+			}
+		}
 		if (auto const hit{signal_hit()}; hit >= 0)
 		{
 			auto const &standing{m_signal.standing[hit]};
@@ -673,6 +724,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			signal_spot spot;
 			if (m_hover.track != nullptr && signal_spot_at(*m_hover.track, m_hover.path, m_hover.point, cursor_level(m_hover.point.y), 0, 0, *armed, spot))
 			{
+				signal_snap(spot, *armed);
 				intent.track = m_hover.track;
 				intent.path = m_hover.path;
 				intent.position = spot.position;
@@ -686,7 +738,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.track = m_hover.track;
 			intent.path = m_hover.path;
 			intent.position = m_hover.point;
-			return make(kind::select, m_hover.track->eType != tt_Normal ? "Click: the station of this switch" : "Click: the station of the switch nearest along this track");
+			return make(kind::select, "Click: select");
 		}
 		return intent;
 	}
@@ -749,6 +801,21 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 			intent.track = m_hover.track;
 			return make(kind::box, track_selected(m_hover.track) ? "Click: take out of the selection" : "Click: add to the selection");
 		}
+	}
+	if (m_track_tab == track_tab::profile && m_profile.picking && false == m_profile.route.spans.empty())
+	{
+		intent.track = m_hover.track;
+		intent.index = shift ? 1 : 0;
+		if (m_hover.track == nullptr)
+			return make(kind::grade_line_pick, "Click a track: onto the common grade line of the route or off it; Esc: done");
+		intent.position = m_hover.point;
+		auto const number{route_grade_line()};
+		auto const found{m_nmt_state.grade_lines.find(grade_line_key(*m_hover.track))};
+		auto const on{number >= 0 && found != m_nmt_state.grade_lines.end() && found->second == number};
+		if (shift)
+			return make(kind::grade_line_pick, on ? "Click: this track off the common grade line" : "Click: this track onto the common grade line");
+		return make(kind::grade_line_pick, on ? "Click: the stretch from switch to switch off the common grade line, Shift: the track only"
+		                                      : "Click: the stretch from switch to switch onto the common grade line, Shift: the track only");
 	}
 	if (m_track_tab == track_tab::profile && shift && false == gizmo_frame::over())
 	{
@@ -858,14 +925,13 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		intent.position = m_hover.point;
 		return make(kind::switch_at, "Press and drag: a switch on this track, along sets its direction, sideways its side. Click: select the track");
 	}
-	// a press on the ground lays a switch with no track there, going on from a free end within reach
+	// a press on the ground by a free end within reach lays a switch going on from it; with no track near, none
 	if (m_hover.track == nullptr && free_switch_offered())
-	{
-		auto const end{free_switch_end(ground)};
-		intent.position = end.track != nullptr ? end.position : ground;
-		return make(kind::switch_free, end.track != nullptr ? "Press and drag: a switch going on from this free end, sideways its side"
-		                                                    : "Press and drag: a switch with no track, along the direction of its main track, then sideways its side");
-	}
+		if (auto const end{free_switch_end(ground)}; end.track != nullptr)
+		{
+			intent.position = end.position;
+			return make(kind::switch_free, "Press and drag: a switch going on from this free end, sideways its side");
+		}
 	if (m_track_tab == track_tab::lineside && m_fouling.tab().open)
 		if (auto const hit{m_fouling.hit()}; hit.has_value())
 		{
@@ -885,7 +951,7 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 		case track_tab::route: return make(kind::select, m_hover.track->eType != tt_Switch && editor_track::is_straight(*m_hover.track, m_straights.tolerance) ? "Click: the whole straight through this track" : "Click: the curve of this track with its straights");
 		case track_tab::turnout: return make(kind::select, m_hover.track->eType == tt_Switch ? "Click: edit this switch" : m_switch.armed < 0 ? "Click: choose this track, then the type of the switch" : "Click: choose this track, then press and drag on it for the switch");
 		case track_tab::profile: return make(kind::select, "Click: the grade line of the whole line through this track; Shift: the route between the tracks");
-		case track_tab::lineside: return make(kind::select, "Click: the line the objects go along");
+		case track_tab::lineside: return make(kind::select, "Click: the line the posts go along");
 		case track_tab::parallel: return make(kind::select, "Click: the straight the new track goes beside");
 		default: return make(kind::select, "Click: select");
 		}
@@ -1015,11 +1081,11 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::box: start_track_box(Intent.index == 1); return;
 	case kind::pick_style:
 		if (Intent.track != nullptr)
-		{
 			copy_track_style(*Intent.track);
-			m_track_style.picking = false;
-			m_track_style.open = true;
-		}
+		return;
+	case kind::grade_line_pick:
+		if (Intent.track != nullptr)
+			grade_line_pick(*Intent.track, Intent.index == 1);
 		return;
 	case kind::spread:
 		if (Intent.track != nullptr)
@@ -1081,6 +1147,7 @@ void editor_mode::track_press(track_intent const &Intent)
 			m_km.pick(*Intent.track, Intent.position);
 		return;
 	case kind::srk_boundary: m_srk.boundary_click(); return;
+	case kind::srk_joint: m_srk.joint_click(); return;
 	case kind::fouling:
 		if (Intent.path == 1)
 			m_fouling.fix(Intent.index);
@@ -1097,6 +1164,10 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::signal_place:
 	case kind::signal_move: signal_press(Intent); return;
 	case kind::catenary: catenary_press(Intent); return;
+	case kind::signal_read:
+		if (Intent.track != nullptr)
+			signal_read_pick(*Intent.track, Intent.path, Intent.index == 1);
+		return;
 	case kind::switch_slide:
 		if (Intent.track != nullptr)
 		{
@@ -1175,7 +1246,7 @@ void editor_mode::draw_track_intent() const
 	{
 		auto const &path{track->m_paths[std::min<std::size_t>(m_hover.path, track->m_paths.size() - 1)]};
 		details = name_of(*track);
-		details += "\n" + std::string{STR_C(type_of(*track))};
+		details += "\n" + std::string{STR_C(track_type_name(*track))};
 		if (track->eType == tt_Switch)
 			details += m_hover.path == 0 ? STR(" (main)") : STR(" (branch)");
 		bezier const curve{path};
@@ -1301,17 +1372,19 @@ void editor_mode::render_track_context()
 	bool const normal{track->eType == tt_Normal && editor_track::is_supported(*track)};
 	auto const tracks{selected_tracks()};
 	auto const many{tracks.size() >= 2};
-	ImGui::TextDisabled("%s  (%s, %.1f m)", name_of(*track).c_str(), STR_C(type_of(*track)), track->Length());
+	ImGui::TextDisabled("%s  (%s, %.1f m)", name_of(*track).c_str(), STR_C(track_type_name(*track)), track->Length());
 	if (many)
 		ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), STR_P("one of %d selected tracks", "one of %d selected tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size()));
 	ImGui::Separator();
-	if (ImGui::MenuItem(STR_C("Copy its properties"), "Ctrl+Shift+C"))
+	if (ImGui::MenuItem(STR_C("Take its properties"), "Ctrl+Shift+C"))
 		copy_track_style(*track);
-	auto const paste{many ? format(STR_P("Paste the properties on %d track", "Paste the properties on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Paste the properties")}};
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The inspector lists what they change on the selected tracks, From another track or a preset"));
+	auto const paste{many ? format(STR_P("Set the properties taken on %d track", "Set the properties taken on %d tracks", static_cast<long long>(tracks.size())), static_cast<int>(tracks.size())) : std::string{STR_C("Set the properties taken")}};
 	if (ImGui::MenuItem(paste.c_str(), "Ctrl+Shift+V", false, false == m_track_style.values.empty()))
 		paste_track_style(tracks);
 	if (false == m_track_style.values.empty() && ImGui::IsItemHovered())
-		ImGui::SetTooltip(STR_C("Properties of %s"), m_track_style.from.c_str());
+		ImGui::SetTooltip(STR_C("Taken from %s: what's ticked in the inspector"), m_track_style.from.c_str());
 	if (ImGui::BeginMenu(STR_C("Select alike")))
 	{
 		char const *const keys[] = {"rails", "trackbed", "speed", "environment", "circuits"};
@@ -1370,6 +1443,8 @@ void editor_mode::render_track_context()
 		track_set_toggle(*track);
 	if (ImGui::MenuItem(STR_C("Look at it")))
 		focus_track(*track, context.target.path, point);
+	if (ImGui::MenuItem(STR_C("Ride along it"), "Y"))
+		m_ride.enter(track, context.target.path, point, camera_look(), true);
 	if (ImGui::MenuItem(STR_C("Copy the name"), nullptr, false, false == track->name().empty()))
 		ImGui::SetClipboardText(track->name().c_str());
 	ImGui::Separator();
@@ -1437,7 +1512,7 @@ void editor_mode::render_track_search()
 			focus_track(*track, 0, bezier{track->m_paths.front()}.point(0.5));
 		}
 		ImGui::SameLine(ImGui::GetWindowContentRegionMax().x * 0.6f);
-		ImGui::TextDisabled("%s, %.1f m", STR_C(type_of(*track)), track->Length());
+		ImGui::TextDisabled("%s, %.1f m", STR_C(track_type_name(*track)), track->Length());
 	}
 	ImGui::EndChild();
 }
@@ -2038,7 +2113,7 @@ void editor_mode::render_lineside_ui()
 	    {"Trainset", &m_vehicle.tab().open, &m_vehicle.tab().expand, [this]() { m_vehicle.render_options(); }},
 	}};
 	if (selected_track() == nullptr)
-		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: the line the objects go along"));
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("LMB on a track: the line the posts go along"));
 	if (false == ImGui::BeginTabBar("##lineside"))
 		return;
 	for (int i = 0; i < static_cast<int>(tabs.size()); ++i)

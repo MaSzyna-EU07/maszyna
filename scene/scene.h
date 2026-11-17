@@ -305,6 +305,12 @@ public:
     linesnode_sequence m_lines;
     path_sequence m_paths; // path pieces
     instance_sequence m_instancesopaque;
+    // the instances of m_instancesopaque drawn each on its own (TAnimModel::m_instanceable false), in the same order: the walks
+    // go through these instead of reading every instance of the cell in each pass. made by the walks for the version of the
+    // instance records they go by and the count of the instances they were made from (gfx::scene_walk::Single_Instances())
+    mutable instance_sequence m_instancessingle;
+    mutable unsigned int m_instancessingleversion { 0 };
+    mutable std::size_t m_instancessinglesource { 0 };
     instance_sequence m_instancetranslucent;
     // batched instance buckets keyed by shared TModel3d*; populated alongside
     // m_instancesopaque for nodes whose TAnimModel::m_instanceable == true.
@@ -547,6 +553,10 @@ public:
     // finds sections inside specified sphere. returns: list of sections
     std::vector<basic_section *> const &
         sections( glm::dvec3 const &Point, float const Radius );
+    // finds sections inside specified sphere, put in the list given in place of what it held. unlike the one above it shares no list
+    // of its own, so it's safe while other threads look for sections too
+    void
+        sections( glm::dvec3 const &Point, float const Radius, std::vector<basic_section *> &Sections ) const;
 	void
 	    create_map_geometry();
 	void

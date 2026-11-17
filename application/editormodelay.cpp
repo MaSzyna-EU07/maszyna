@@ -102,9 +102,11 @@ alignment::trace_stretch turned_round(alignment::trace_stretch const &Fit)
 	return result;
 }
 
+// only a curve traced next to a free end goes on from its curve; the bends of straights begin with a straight there, out of the curve
+// of a plain track by a transition, not as a compound curve of its radius and the one of the bend
 bool goes_on_curved(editor_track::snap_target const &End, bool const Traced)
 {
-	return End.track != nullptr && (End.track->eType == tt_Normal || (End.track->eType == tt_Switch && Traced));
+	return End.track != nullptr && Traced && (End.track->eType == tt_Normal || End.track->eType == tt_Switch);
 }
 
 // the curve of the track of a free end the line laid goes on from at its start, or into at its end: its radius, the side it turns to
@@ -156,6 +158,7 @@ void editor_mode::update_build_tools()
 	if (m_switch.placing)
 	{
 		m_switch.mouse = cursor_level(m_switch.point.y);
+		recognise_connection();
 		// a switch with no track takes the direction of its main track once the drag is long enough, dragged sideways after that it
 		// takes the side; back by its start the direction is free again
 		if (auto &tool{m_switch}; tool.free && tool.free_end.track == nullptr)
@@ -199,11 +202,26 @@ void editor_mode::update_build_tools()
 	lay_trim();
 	lay.plan = {};
 	if (lay.points.empty())
+	{
+		lay.shown.reset();
+		lay.settling.reset();
 		return;
+	}
+	// the line worked out last stays shown as long as the points clicked go on from its ones; one through a point taken back doesn't
+	if (lay.shown.has_value() && (lay.shown->points.size() > lay.points.size() || false == std::equal(lay.shown->points.begin(), lay.shown->points.end(), lay.points.begin())))
+		lay.shown.reset();
+	// the line is worked out for the cursor where it was when its fits were asked for, till the thread has done them all, frame after
+	// frame: then for where the cursor is by then. Another point clicked, or a track changed, the cursor is taken where it is
+	if (auto const &settling{lay.settling};
+	    false == lay.whole || (settling.has_value() && (settling->points != lay.points || settling->modes != lay.modes || settling->mode != lay.mode || settling->edits != m_track_edits)))
+		lay.settling.reset();
+	if (false == lay.settling.has_value())
+		lay.settling = lay_tool::settling_cursor{lay.mouse, lay.mouse_snap, lay.points, lay.modes, lay.mode, m_track_edits};
+	auto const &mouse{lay.settling->mouse};
 	// the cursor is the next point, in the mode it would be clicked in
 	auto points{lay.points};
 	auto modes{lay.modes};
-	auto end{lay.mouse_snap};
+	auto end{lay.settling->snap};
 	if (end.track != nullptr && glm::distance(end.position, points.front()) > 1.0)
 	{
 		points.push_back(end.position);
@@ -212,15 +230,32 @@ void editor_mode::update_build_tools()
 	else
 	{
 		end = {};
-		if (plan_distance(lay.mouse, points.back()) > 1.0)
+		if (plan_distance(mouse, points.back()) > 1.0)
 		{
-			points.push_back(lay.mouse);
+			points.push_back(mouse);
 			modes.push_back(lay.mode);
 		}
 	}
+	m_fits_waiting = false;
 	m_follow_preview = true;
 	lay.preview = lay_pieces(points, modes, end, lay.preview_length, lay.preview_error, &lay.plan);
 	m_follow_preview = false;
+	if (false == m_fits_waiting || false == lay.whole)
+	{
+		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_eased_last, m_join_last, lay.points};
+		lay.settling.reset();
+	}
+	else if (lay.shown.has_value())
+	{
+		// all of what the line shown was worked out with: the readout tells of it too
+		auto const &shown{*lay.shown};
+		lay.preview = shown.preview;
+		lay.preview_error = shown.error;
+		lay.preview_length = shown.length;
+		lay.plan = shown.plan;
+		m_eased_last = shown.eased;
+		m_join_last = shown.join;
+	}
 	auto const planning{lap()};
 	if (oncursor + snapping + bedding + planning > 30.0)
 	{
@@ -363,6 +398,26 @@ std::vector<glm::dvec3> const &editor_mode::free_end_points(glm::dvec3 const &Ce
 			cache.points.push_back(end.position);
 	}
 	return cache.points;
+}
+
+// the cursor as a ring on the ground, of about the width of the track, to be laid over it on the photo
+void editor_mode::draw_cursor_ring(glm::dvec3 const &Point) const
+{
+	screen_projection const projection;
+	ImVec2 centre;
+	if (ImGui::GetIO().WantCaptureMouse || false == projection.project(Point, centre))
+		return;
+	auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	double constexpr kCursorRadius{0.75}; // m
+	int constexpr kCursorSteps{36};
+	auto const on_ring = [&](int const Step) {
+		auto const angle{2.0 * glm::pi<double>() * Step / kCursorSteps};
+		return Point + glm::dvec3{std::cos(angle) * kCursorRadius, 0.0, std::sin(angle) * kCursorRadius};
+	};
+	for (int i = 0; i < kCursorSteps; ++i)
+		projection.line(drawlist, on_ring(i), on_ring(i + 1), IM_COL32(255, 255, 255, 240), 1.5f);
+	drawlist->AddCircleFilled(centre, 1.5f, IM_COL32(255, 255, 255, 240));
+	ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
 void editor_mode::draw_free_ends(TTrack const *Self, int const Category, std::vector<TTrack const *> const &Exclude) const
@@ -589,6 +644,43 @@ std::optional<alignment::lay_result> editor_mode::eased_layout(TTrack const *Fro
 	return m_eased_last;
 }
 
+namespace
+{
+
+// the cant of a track joined goes on into the track laid, whatever shape that one has: its difference fades along the pieces from the
+// joint, over as many of them as the cant takes at the ramp a transition curve has at the least, or over all of them where they're shorter
+void lead_cant(std::vector<segment_data> &Pieces, double const Roll, double const Gauge, bool const From_start)
+{
+	double constexpr ramp_slope{1.5}; // mm of the cant to a metre
+	if (Pieces.empty())
+		return;
+	auto const here{From_start ? Pieces.front().rolls[0] : Pieces.back().rolls[1]};
+	auto const difference{Roll - static_cast<double>(here)};
+	if (std::abs(difference) < 1e-3)
+		return;
+	auto const wanted{Gauge * std::abs(std::sin(glm::radians(difference))) / ramp_slope};
+	std::vector<double> lengths;
+	auto reach{0.0};
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		lengths.push_back(geometry::bezier{Pieces[From_start ? i : Pieces.size() - 1 - i]}.plan_length());
+		if (reach < wanted)
+			reach += lengths.back();
+	}
+	auto along{0.0};
+	for (std::size_t i = 0; i < Pieces.size() && along < reach; ++i)
+	{
+		auto &piece{Pieces[From_start ? i : Pieces.size() - 1 - i]};
+		auto const nearer{difference * (1.0 - along / reach)};
+		along += lengths[i];
+		auto const further{difference * (1.0 - std::min(along / reach, 1.0))};
+		piece.rolls[From_start ? 0 : 1] += static_cast<float>(nearer);
+		piece.rolls[From_start ? 1 : 0] += static_cast<float>(further);
+	}
+}
+
+} // namespace
+
 std::vector<segment_data> editor_mode::extend_pieces() const
 {
 	m_eased_last.reset();
@@ -637,6 +729,8 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto const eased{eased_layout(tool.track, tool.point, tool.direction, tool.mouse, radius)};
 	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
 	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
+	if (tool.track != nullptr)
+		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), laying_norms().gauge, true);
 	return pieces;
 }
 
@@ -826,12 +920,23 @@ void editor_mode::finish_extend()
 		if (false == place_switch_on_straight(plan.target, plan.shape, origin, plan.along, plan.direction, plan.side, false, states, created, removed, switch_name_for_new()))
 			return;
 		auto *placed{*std::find_if(created.begin(), created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; })};
-		if (glm::distance(plan.insert.points[segment_data::point::start], plan.insert.points[segment_data::point::end]) > 0.01)
+		std::vector<TTrack *> inserts;
+		for (auto piece : plan.inserts)
 		{
-			auto *insert{editor_track::create_path(*origin, plan.insert)};
-			editor_track::commit({insert});
-			created.push_back(insert);
+			if (glm::distance(piece.points[segment_data::point::start], piece.points[segment_data::point::end]) <= 0.01)
+				continue;
+			// meeting the two switches at the heights they're at
+			for (auto const index : {segment_data::point::start, segment_data::point::end})
+				for (auto const *track : {origin, placed})
+					if (auto const &end{track->m_paths.back().points[segment_data::point::end]}; geometry::plan_distance(piece.points[index], end) < 0.05)
+						piece.points[index].y = end.y;
+			if (auto *insert{editor_track::create_path(*origin, piece)})
+				inserts.push_back(insert);
 		}
+		editor_track::commit(inserts);
+		created.insert(created.end(), inserts.begin(), inserts.end());
+		// kept as a crossover, so it's taken out, slid and followed as one
+		record_connection(connection::kind::crossover, {origin, placed}, plan.connection, editor_track::template_of_switch(origin).value_or(plan.shape));
 		push_track_snapshot(std::move(states), std::move(created), std::move(removed));
 		straight_refresh();
 		if (place_switch_drive(*placed))
@@ -969,8 +1074,12 @@ bool editor_mode::track_wheel(double const Offset)
 		int const step{wheel_step(Offset, false == io.KeyCtrl)};
 		if (step == 0)
 			return true;
+		// the kind of a connection a switch dragged makes comes from where it's let go
 		if (io.KeyShift)
-			tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		{
+			if (false == tool.recognised)
+				tool.connection = (tool.connection + step + connection::kind_count) % connection::kind_count;
+		}
 		else if (io.KeyCtrl)
 		{
 			static double const radii[]{0.0, 150.0, 190.0, 250.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0, 3000.0};
@@ -980,7 +1089,7 @@ bool editor_mode::track_wheel(double const Offset)
 					index = i;
 			tool.connection_radius = radii[std::clamp(index + step, 0, static_cast<int>(std::size(radii)) - 1)];
 		}
-		else
+		else if (false == tool.recognised)
 			tool.connection_together = false == tool.connection_together;
 		return true;
 	}
@@ -1080,6 +1189,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			Length += bezier{piece}.plan_length();
 		if (pieces.empty())
 			Error = STR_C("The track can't be laid through these points");
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), laying_norms().gauge, false);
 		return pieces;
 	}
 	m_join_last = {};
@@ -1143,7 +1253,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			easeddesign.vertices.front().offset = std::max(0.1, glm::dot(shape.vertices.front() - plan_of(easeddesign.start), glm::normalize(easeddesign.start_direction)));
 			easeddesign.vertices.back().offset = std::max(0.1, glm::dot(plan_of(easeddesign.end) - shape.vertices.back(), glm::normalize(easeddesign.end_direction)));
 		}
-		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit())};
+		auto const easedshape{alignment::ease_corners(easeddesign, plan.corners, {}, bends_fit())};
 		if (easedshape.valid)
 		{
 			Length = editor_track::eased_length(in, easedshape.length, out);
@@ -1174,6 +1284,10 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 		follow_ground(pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
 		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
+	if (tool.start.track != nullptr)
+		lead_cant(pieces, -editor_track::joint_roll(*tool.start.track, tool.start.point), design.norms.gauge, true);
+	if (End.track != nullptr)
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), design.norms.gauge, false);
 	if (Plan != nullptr)
 		*Plan = std::move(plan);
 	return pieces;
@@ -1200,7 +1314,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	// from a free end on a curve, or to one, the curve laid next to it turning its way goes on from its curvature: it begins right at the
 	// end, not on a straight, its transition going from that curvature. A line which doesn't turn its way begins from a straight there: out
 	// of the curve of a plain track by the transition lay_pieces lays, right at the end of the diverging track of a switch, as the switch
-	// goes on with a straight. At a switch the curve goes on only with a curve traced from it, the bends of straights begin with a straight
+	// goes on with a straight. The curve goes on only with a curve traced from it, the bends of straights begin with a straight
 	if (Adjoining)
 	{
 		if (tool.start.track != nullptr && glm::length(plan_of(tool.start.direction)) > 1e-6)
@@ -1532,6 +1646,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 				// the last two points clicked on the straight after the curve, as the mode asks for: the straight goes through them, the curve
 				// fitted with their heading ending before them; before the last one alone, where the last three points show a line much
 				// flatter than the end of the curve. Only points showing the curve going on draw it on to the last one
+				// a fit of the straight clicked after the curve is still on the thread
+				bool straight_waiting{false};
 				auto const clicked_straight = [&]() -> std::optional<std::pair<alignment::trace_stretch, glm::dvec2>> {
 					constexpr double kFlatter{4.0};
 					auto const count{fitted_points.size()};
@@ -1543,15 +1659,14 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					auto const fitted_heading = [&](glm::dvec2 const &Heading) -> std::optional<alignment::trace_stretch> {
 						bool again{true};
 						auto const fit{fit_to(Heading, false, again)};
+						if (false == fit.has_value())
+							straight_waiting = true;
 						if (false == fit.has_value() || false == fit->valid || fit->vertices.empty())
 							return std::nullopt;
 						return fit;
 					};
 					auto const chorded{glm::normalize(chord)};
 					auto heading{chorded};
-					auto fit{fitted_heading(heading)};
-					if (false == fit.has_value())
-						return std::nullopt;
 					// the heading of two points clicked a little off is a little off too: turned a bit either way, and to where the closeness
 					// to all the points says the bottom is, the heading the curve keeps closest to them with. A few fits more, done on the
 					// thread from frame to frame while the cursor moves
@@ -1559,6 +1674,17 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					// none for points clicked as closely as this: their heading is good as it is
 					constexpr double kClose{0.05};
 					auto const step{std::clamp(0.5 / glm::length(chord), 0.002, 0.03)};
+					auto fit{fitted_heading(heading)};
+					if (false == fit.has_value())
+					{
+						// the two turned either way asked for with it, the thread fitting them one after another, not a frame after
+						if (straight_waiting && tool.whole)
+						{
+							fitted_heading(rotated(-step));
+							fitted_heading(rotated(step));
+						}
+						return std::nullopt;
+					}
 					auto const minus{fit->rms > kClose ? fitted_heading(rotated(-step)) : std::nullopt};
 					auto const plus{fit->rms > kClose ? fitted_heading(rotated(step)) : std::nullopt};
 					if (minus.has_value() && plus.has_value())
@@ -1616,6 +1742,10 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					leaving = straight->second;
 					base.end_direction = leaving;
 				}
+				else if (straight_waiting && tool.whole)
+				{
+					// the line waits for the straight: no more turns asked for meanwhile, the thread fitting them before it
+				}
 				else if (first.has_value() && *first > 0.5)
 				{
 					auto low{0.0};
@@ -1626,12 +1756,19 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 					// by 15 degrees at most: more is no longer the heading the points show
 					constexpr double kMost{0.26};
 					auto angle{std::min(kMost, lowshort / ending)};
+					// the turn the line before was given first: the cursor has moved on a little since, it's near enough most often
+					if (tool.whole && m_turned_last > 0.0)
+						angle = std::min(kMost, m_turned_last);
+					auto waited{false};
 					for (int i = 0; i < 8; ++i)
 					{
 						bool again{true};
 						auto const trial{fit_to(turned(angle), false, again)};
 						if (false == trial.has_value())
+						{
+							waited = true;
 							break;
+						}
 						if (auto const left{short_of(*trial, turned(angle))}; left.has_value() && *left >= 0.0)
 						{
 							low = angle;
@@ -1647,6 +1784,8 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 							break;
 						angle = high.has_value() ? 0.5 * (low + *high) : std::min(kMost, low + lowshort / ending);
 					}
+					if (false == waited)
+						m_turned_last = bestangle;
 					fitted = best;
 					leaving = turned(bestangle);
 					base.end_direction = leaving;
@@ -1738,6 +1877,13 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		std::tie(design.end, design.end_direction) = *easedend;
 		end = design.end;
 	}
+	// the last bend goes onto the line of the free end, as far before it as it was clicked: one clicked past it would come into the end
+	// the wrong way, the joint turned round
+	if (joined && false == bends.empty() && bends.back().corner && glm::dot(plan_of(end - bends.back().position), design.end_direction) <= 0.0)
+	{
+		Error = STR_C("The last point clicked lies past the free end: the track can't come into it from there");
+		return false;
+	}
 	for (auto const &bend : bends)
 	{
 		auto vertex{bend.corner ? alignment::vertex{} : bend.vertex};
@@ -1750,7 +1896,7 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 		design.vertices.front().offset = glm::dot(plan_of(bends.front().position - design.start), design.start_direction);
 		design.vertices.back().offset = glm::dot(plan_of(end - bends.back().position), design.end_direction);
 	}
-	Plan.shape = alignment::ease_corners(design, Plan.corners, {EditorSettings.corner_low(), EditorSettings.corner_high()}, bends_fit());
+	Plan.shape = alignment::ease_corners(design, Plan.corners, {}, bends_fit());
 	if (false == Plan.shape.valid)
 	{
 		Error = Plan.shape.errors.empty() ? std::string{STR_C("The track can't be laid through these points")} : Plan.shape.errors.front();
@@ -1814,6 +1960,7 @@ std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::d
 		keep(fit);
 		return fit;
 	}
+	m_fits_waiting = true;
 	m_stretch_fitter.ask({key, Base, Points, Radii, Straights, Going});
 	std::vector<double> last;
 	auto const header{std::size_t{19}};
@@ -1969,6 +2116,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
+	nmt_check_buried(tool.history);
 	WriteLog("Editor: " + tool.status, logtype::generic);
 	tool.points.clear();
 	tool.modes.clear();
@@ -2148,7 +2296,7 @@ TTrack const *editor_mode::skew_reference(glm::dvec3 const &From, glm::dvec3 con
 	return nearest;
 }
 
-editor_mode::track_hover editor_mode::split_spot() const
+track_hover editor_mode::split_spot() const
 {
 	auto const *selected{selected_track()};
 	if (selected == nullptr || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
@@ -2195,44 +2343,17 @@ void editor_mode::render_lay_ui()
 	ImGui::PushItemWidth(120.0f);
 	if (tool.mode == lay_mode::straights)
 	{
-		double low{EditorSettings.corner_low()};
-		double high{EditorSettings.corner_high()};
 		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
-		auto changed{ImGui::DragScalar(STR_C("from (m)"), ImGuiDataType_Double, &low, 10.0f, nullptr, nullptr, "%.0f")};
-		// the settings file written when a drag ends, not at each frame of it
-		auto release{ImGui::IsItemDeactivatedAfterEdit()};
-		item_tooltip("The radius the two transition curves of a bend meet at, at least; where they don't fit at it, an arc of the norms as large as fits");
-		changed |= ImGui::DragScalar(STR_C("to (m)"), ImGuiDataType_Double, &high, 10.0f, nullptr, nullptr, "%.0f");
-		release |= ImGui::IsItemDeactivatedAfterEdit();
-		item_tooltip("The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one");
-		ImGui::PushID("bends");
-		auto first{true};
-		for (auto const &[from, to] : {std::pair{1000.0, 2000.0}, std::pair{2000.0, 4000.0}, std::pair{3000.0, 6000.0}, std::pair{4000.0, 8000.0}})
+		ImGui::SameLine();
+		if (ImGui::SmallButton("?##corners"))
 		{
-			if (false == first)
-				ImGui::SameLine();
-			first = false;
-			auto const chosen{std::abs(low - from) < 0.5 && std::abs(high - to) < 0.5};
-			if (chosen)
-				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-			if (ImGui::SmallButton(format("%.0f-%.0f", from, to).c_str()))
-			{
-				low = from;
-				high = to;
-				changed = true;
-				release = true;
-			}
-			if (chosen)
-				ImGui::PopStyleColor();
+			m_first_steps_open = true;
+			m_tutorial_goto = "Radius of the curves at the bends";
 		}
-		ImGui::PopID();
-		if (changed)
-		{
-			low = std::max(10.0, low);
-			EditorSettings.corners(low, std::max(low, high));
-		}
-		if (release)
-			EditorSettings.save();
+		item_tooltip("What it is: the lesson of the tutorial");
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
+		ImGui::PopTextWrapPos();
 	}
 	else
 	{
@@ -2280,6 +2401,7 @@ void editor_mode::render_lay_ui()
 	if (auto const &plan{tool.plan}; tool.active && plan.shape.valid && false == plan.shape.curves.empty())
 	{
 		ImGui::SeparatorText(STR_C("Curves of the track laid"));
+		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
 		for (auto const &curve : plan.shape.curves)
 		{
 			auto const meets{alignment::meets_norms(curve, plan.design)};
@@ -2330,7 +2452,6 @@ void editor_mode::render_lay_ui()
 		tool.copy_selected = source == 1;
 	if (false == tool.copy_selected)
 	{
-		m_textures.loads = 0;
 		auto const column{std::round(ImGui::GetCursorPosX() + std::max(ImGui::CalcTextSize(STR_C("Rails")).x, ImGui::CalcTextSize(STR_C("Trackbed")).x) + ImGui::GetStyle().ItemSpacing.x)};
 		auto const texture_row = [&](int const Kind, char const *Label, std::string &Value) {
 			ImGui::PushID(Kind);

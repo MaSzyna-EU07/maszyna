@@ -81,10 +81,8 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     // poprawienie przechyłki
     fRoll1 = static_cast<float>(glm::radians(fNewRoll1)); // Ra: przeliczone jest bardziej przydatne do obliczeń
     fRoll2 = static_cast<float>(glm::radians(fNewRoll2));
-    m_designrolls[ 0 ] = fRoll1;
-    m_designrolls[ 1 ] = fRoll2;
-    m_joints[ 0 ].reset();
-    m_joints[ 1 ].reset();
+    m_setting.designrolls = { fRoll1, fRoll2 };
+    m_setting.joints = {};
     bCurve = bIsCurve;
     if (Global.bRollFix)
     { // Ra: poprawianie przechyłki
@@ -139,7 +137,7 @@ bool TSegment::Init(glm::dvec3 &NewPoint1, glm::dvec3 NewCPointOut, glm::dvec3 N
     fStoop = std::atan2(Point2.y - Point1.y, fLength); // pochylenie toru prostego, żeby nie liczyć wielokrotnie
 
     fStep = ( fNewStep > 0.0 && std::isfinite( fNewStep ) ) ? fNewStep : fLength;
-    if( m_uneven && pOwner->eType != tt_Switch ) {
+    if( m_setting.uneven && pOwner->eType != tt_Switch ) {
         // dense enough for the waves; a switch keeps its division, the blades depend on it
         fStep = std::min( fStep, 2.0 );
     }
@@ -179,8 +177,8 @@ bool TSegment::InitChain(std::vector<std::shared_ptr<TSegment>> Pieces)
     Point2 = last.Point2;
     fRoll1 = first.fRoll1;
     fRoll2 = last.fRoll2;
-    m_designrolls[ 0 ] = first.m_designrolls[ 0 ];
-    m_designrolls[ 1 ] = last.m_designrolls[ 1 ];
+    m_setting.designrolls[ 0 ] = first.m_setting.designrolls[ 0 ];
+    m_setting.designrolls[ 1 ] = last.m_setting.designrolls[ 1 ];
     bCurve = true;
     fDirection = -std::atan2(Point2.x - Point1.x, Point2.z - Point1.z);
     fStoop = std::atan2(Point2.y - Point1.y, fLength);
@@ -195,7 +193,7 @@ bool TSegment::InitChain(std::vector<std::shared_ptr<TSegment>> Pieces)
 
 std::size_t TSegment::piece_at(double const s) const
 {
-    auto const next { std::upper_bound( std::begin( m_starts ), std::end( m_starts ), s ) };
+    auto const next { std::ranges::upper_bound( m_starts, s ) };
     return next == std::begin( m_starts ) ? 0 : static_cast<std::size_t>( std::distance( std::begin( m_starts ), next ) - 1 );
 }
 
@@ -435,21 +433,6 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 };
 */
 
-void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
-    design_position( fDistance, position, rotation );
-    if( false == m_uneven ) {
-        return;
-    }
-    // direction and slope stay as designed: the physics takes the curve radius and the grade from them
-    auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
-    glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
-    auto const amount { pOwner->uneven_at( fDistance, m_path ) };
-    rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
-        amount.up * track_uneven::roll( position, across, gauge )
-      + amount.cross * track_uneven::level( position, across ) / gauge ) );
-    position += track_uneven::across_only( stray( position, amount, fDistance ), across );
-}
-
 glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const {
     auto const field { track_uneven::field( Point ) };
     glm::dvec3 result { field.x * Amount.side, field.y * Amount.up, field.z * Amount.side };
@@ -459,30 +442,25 @@ glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const
 }
 
 glm::dvec3 TSegment::uneven_bend( double const Distance ) const {
-    if( false == m_uneven ) {
+    if( false == m_setting.uneven ) {
         return glm::dvec3 { 0.0 };
     }
     // over about a bogie
     auto const reach { 1.5 };
-    auto const strayed = [&]( double const At ) {
-        return stray( point_extended( At ), pOwner->uneven_at( At, m_path ), At ); };
+    auto const strayed = [ this ]( double const At ) {
+        // past the ends of the path straight on: the polynomial would run off on a short curved one
+        auto const on { std::clamp( At, 0.0, fLength ) };
+        auto const t { FastGetTFromS( on ) };
+        auto point { FastGetPoint( t ) };
+        if( auto const direction { FastGetDirection( t, 0.1 / fLength ) }; on != At && glm::length( direction ) > 0.0 ) {
+            point += direction * ( ( At - on ) / glm::length( direction ) );
+        }
+        return stray( point, pOwner->uneven_at( At, m_setting.path ), At ); };
     return ( strayed( Distance + reach ) - 2.0 * strayed( Distance ) + strayed( Distance - reach ) ) / ( reach * reach );
 }
 
-glm::dvec3 TSegment::point_extended( double const Distance ) const {
-    auto const on { std::clamp( Distance, 0.0, fLength ) };
-    auto const t { FastGetTFromS( on ) };
-    auto const point { FastGetPoint( t ) };
-    if( on == Distance ) {
-        return point;
-    }
-    auto const direction { FastGetDirection( t, 0.1 / fLength ) };
-    auto const size { glm::length( direction ) };
-    return size > 0.0 ? point + direction * ( ( Distance - on ) / size ) : point;
-}
-
 void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const {
-    if( false == m_uneven ) {
+    if( false == m_setting.uneven ) {
         return;
     }
     // the rails settling apart turn about the middle of the track, what's outside them follows the rail; the foot of the ballast stays
@@ -492,12 +470,12 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
     if( share <= 0.0 ) {
         return;
     }
-    auto const amount { pOwner->uneven_at( Distance, m_path ) };
+    auto const amount { pOwner->uneven_at( Distance, m_setting.path ) };
     Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
     Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance ) };
 }
 
-void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
+void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
     if( false == m_pieces.empty() ) {
         // the pieces keep to their design, the unevenness is the one of the whole path
         auto const piece { piece_at( fDistance ) };
@@ -525,7 +503,30 @@ void TSegment::design_position(double const fDistance, glm::dvec3 &position, glm
         rotation.y = static_cast<float>(fStoop); // pochylenie toru prostego
         rotation.z = static_cast<float>(fDirection); // kierunek toru w planie
     }
+    if( false == m_setting.uneven ) {
+        return;
+    }
+    // direction and slope stay as designed: the physics takes the curve radius and the grade from them
+    auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
+    glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
+    auto const amount { pOwner->uneven_at( fDistance, m_setting.path ) };
+    rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
+        amount.up * track_uneven::roll( position, across, gauge )
+      + amount.cross * track_uneven::level( position, across ) / gauge ) );
+    position += track_uneven::across_only( stray( position, amount, fDistance ), across );
 };
+
+void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {
+    if( fTsBuffer.empty() ) {
+        // never made into a path: tt_Cross and the like
+        Point = Point1;
+        Across = glm::dvec3 { 0.0 };
+        return;
+    }
+    auto const t { FastGetTFromS( std::clamp( Distance, 0.0, fLength ) ) };
+    Point = FastGetPoint( t );
+    Across = track_uneven::across_of( FastGetDirection( t, 0.1 / fLength ), FastGetPoint_1() - FastGetPoint_0() );
+}
 
 glm::dvec3 TSegment::FastGetPoint(double const t) const
 {
@@ -584,9 +585,9 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
         parallel1 = glm::vec3{ glm::dvec3{ FastGetPoint_1() - FastGetPoint_0() } };
     }
     parallel1 = glm::normalize( parallel1 );
-    if( iSkip == 0 && m_joints[ 0 ] ) {
-        pos1 = glm::vec3{ m_joints[ 0 ]->first - Origin };
-        parallel1 = glm::vec3{ m_joints[ 0 ]->second };
+    if( iSkip == 0 && m_setting.joints[ 0 ] ) {
+        pos1 = glm::vec3{ m_setting.joints[ 0 ]->first - Origin };
+        parallel1 = glm::vec3{ m_setting.joints[ 0 ]->second };
     }
     if( iEnd == 0 )
         iEnd = iSegCount;
@@ -633,9 +634,9 @@ bool TSegment::RenderLoft( gfx::vertex_array &Output, glm::dvec3 const &Origin, 
             parallel2 = glm::vec3{ glm::dvec3{ FastGetPoint_1() - FastGetPoint_0() } };
         }
         parallel2 = glm::normalize( parallel2 );
-        if( i == iSegCount && m_joints[ 1 ] ) {
-            pos2 = glm::vec3{ m_joints[ 1 ]->first - Origin };
-            parallel2 = glm::vec3{ m_joints[ 1 ]->second };
+        if( i == iSegCount && m_setting.joints[ 1 ] ) {
+            pos2 = glm::vec3{ m_setting.joints[ 1 ]->first - Origin };
+            parallel2 = glm::vec3{ m_setting.joints[ 1 ]->second };
         }
 
         // TODO: refactor the loop, there's no need to calculate starting points for each segment when we can copy the end points of the previous one
@@ -747,17 +748,22 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
     auto const texturelength { static_cast<float>( fTextureLength ) };
     auto const step { static_cast<float>( fLength / Steps ) };
     auto const offset { 0.1 / fLength };
+    // the curve parameter at the k-th of the Steps stations
+    auto const parameter = [ this, Steps ]( int const k ) {
+        if( k == 0 ) {
+            return 0.0; }
+        return k == Steps ? 1.0 : FastGetTFromS( fLength * k / Steps ); };
     // point and the unit vector across the path at the k-th of the Steps stations
     auto const station = [&]( int const k, glm::vec3 &Position, glm::vec3 &Parallel ) {
-        if( k == 0 && m_joints[ 0 ] ) {
-            Position = glm::vec3{ m_joints[ 0 ]->first - Origin };
-            Parallel = glm::vec3{ m_joints[ 0 ]->second };
+        if( k == 0 && m_setting.joints[ 0 ] ) {
+            Position = glm::vec3{ m_setting.joints[ 0 ]->first - Origin };
+            Parallel = glm::vec3{ m_setting.joints[ 0 ]->second };
             return; }
-        if( k == Steps && m_joints[ 1 ] ) {
-            Position = glm::vec3{ m_joints[ 1 ]->first - Origin };
-            Parallel = glm::vec3{ m_joints[ 1 ]->second };
+        if( k == Steps && m_setting.joints[ 1 ] ) {
+            Position = glm::vec3{ m_setting.joints[ 1 ]->first - Origin };
+            Parallel = glm::vec3{ m_setting.joints[ 1 ]->second };
             return; }
-        auto const t { k == 0 ? 0.0 : k == Steps ? 1.0 : FastGetTFromS( fLength * k / Steps ) };
+        auto const t { parameter( k ) };
         Position = glm::vec3{ FastGetPoint( t ) - Origin };
         auto const dir { FastGetDirection( t, offset ) };
         Parallel = glm::vec3{ -dir.z, 0.0, dir.x };
@@ -779,7 +785,10 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
         roll_vertex( Output.back(), Position, Parallel, Share * fLength );
         settle_vertex( Output.back(), Origin, Position, Parallel, Share * fLength ); };
 
-    glm::vec3 pos1, pos2, parallel1, parallel2;
+    glm::vec3 pos1;
+    glm::vec3 pos2;
+    glm::vec3 parallel1;
+    glm::vec3 parallel2;
     station( 0, pos1, parallel1 );
     auto tv1 { 1.f };
     for( int k = 1; k <= Steps; ++k ) {
@@ -799,38 +808,70 @@ bool TSegment::RenderLoftSteps( gfx::vertex_array &Output, glm::dvec3 const &Ori
     return true;
 }
 
-void TSegment::plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const {
-    if( fTsBuffer.empty() ) {
-        // never made into a path: tt_Cross and the like
-        Point = Point1;
-        Across = glm::dvec3 { 0.0 };
-        return;
-    }
-    auto const t { FastGetTFromS( std::clamp( Distance, 0.0, fLength ) ) };
-    Point = FastGetPoint( t );
-    Across = track_uneven::across_of( FastGetDirection( t, 0.1 / fLength ), FastGetPoint_1() - FastGetPoint_0() );
+namespace {
+
+// how far ahead of and behind a distance along the path the direction of the path and of the limits of a span are taken
+double constexpr chord_reach { 0.001 };
+
+// how far out from the gauge line a point of the profile lofted along a span reaches
+double reach_of( loft_span const &Span, gfx::basic_vertex const &Point ) {
+
+    return static_cast<double>( static_cast<float>( Span.side ) * Point.position.x - Span.halfwidth );
 }
 
-bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const {
+// how high a point of the profile is with its foot raised by Rise, the web below the head (head.x) shortened by as much; the profile
+// reaches down to Bottom
+float raised( loft_span const &Span, float const Bottom, float const Height, double const Rise ) {
 
-    if( fTsBuffer.empty() || Span.to - Span.from < 0.001 || ShapePoints.empty() )
-        return false;
+    if( Rise <= 0.0 || Height >= Span.head.x || Span.head.x <= Bottom ) {
+        return Height;
+    }
+    return static_cast<float>( Height + Rise * ( Span.head.x - Height ) / ( Span.head.x - Bottom ) );
+}
 
-    std::vector<double> stations { Span.from, Span.to };
-    auto const step { std::max( fStep, 0.2 ) };
-    for( auto distance { std::ceil( Span.from / step ) * step }; distance < Span.to; distance += step ) {
-        stations.push_back( distance );
+// stations at the steps of the path along a span, and at the denser ones up to Dense
+void step_stations( std::vector<double> &Stations, loft_span const &Span, double const Step, double const Dense ) {
+
+    auto distance { std::ceil( Span.from / Step ) * Step };
+    while( distance < Span.to ) {
+        Stations.push_back( distance );
+        distance += Step;
     }
-    for( auto distance { std::ceil( Span.from / 0.5 ) * 0.5 }; distance < std::min( Span.to, m_dense ); distance += 0.5 ) {
-        stations.push_back( distance );
+    auto dense { std::ceil( Span.from / 0.5 ) * 0.5 };
+    while( dense < std::min( Span.to, Dense ) ) {
+        Stations.push_back( dense );
+        dense += 0.5;
     }
+}
+
+// stations at the knots of the lines of a span, inside it
+void knot_stations( std::vector<double> &Stations, loft_span const &Span ) {
+
     for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises, &Span.lows } ) {
         for( auto const &knot : *line ) {
             if( knot.x > Span.from && knot.x < Span.to ) {
-                stations.push_back( knot.x );
+                Stations.push_back( knot.x );
             }
         }
     }
+}
+
+// stations where the points of the profile meet the piece of a limit of a span from knot A to knot B, inside the span
+void crossing_stations( std::vector<double> &Stations, loft_span const &Span, gfx::vertex_array const &ShapePoints, glm::dvec2 const &A, glm::dvec2 const &B ) {
+
+    for( auto const &point : ShapePoints ) {
+        auto const reach { reach_of( Span, point ) };
+        auto const t { ( reach - A.y ) / ( B.y - A.y ) };
+        auto const distance { glm::mix( A.x, B.x, t ) };
+        if( t > 0.0 && t < 1.0 && distance > Span.from && distance < Span.to ) {
+            Stations.push_back( distance );
+        }
+    }
+}
+
+// stations where the points of the profile meet the limits of a span it's cut to
+void cut_stations( std::vector<double> &Stations, loft_span const &Span, gfx::vertex_array const &ShapePoints ) {
+
     for( auto const *line : { &Span.extents, &Span.inner } ) {
         for( std::size_t i = 1; i < line->size(); ++i ) {
             auto const &a { ( *line )[ i - 1 ] };
@@ -838,297 +879,563 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             if( std::abs( b.y - a.y ) < 1e-9 ) {
                 continue;
             }
-            for( auto const &point : ShapePoints ) {
-                auto const reach { static_cast<double>( Span.side * point.position.x - Span.halfwidth ) };
-                auto const t { ( reach - a.y ) / ( b.y - a.y ) };
-                auto const distance { glm::mix( a.x, b.x, t ) };
-                if( t > 0.0 && t < 1.0 && distance > Span.from && distance < Span.to ) {
-                    stations.push_back( distance );
-                }
-            }
+            crossing_stations( Stations, Span, ShapePoints, a, b );
         }
     }
-    std::sort( stations.begin(), stations.end() );
-    stations.erase( std::unique( stations.begin(), stations.end(), []( double const A, double const B ) { return B - A < 0.001; } ), stations.end() );
-    if( Span.fromend.bend != 0.0 || Span.toend.bend != 0.0 ) {
-        auto widest { 0.0 };
-        for( auto const &point : ShapePoints ) {
-            widest = std::max( widest, std::abs( static_cast<double>( Span.side * point.position.x - Span.halfwidth ) ) );
-        }
-        auto const frommargin { std::abs( Span.fromend.bend ) * widest + 0.001 };
-        auto const tomargin { std::abs( Span.toend.bend ) * widest + 0.001 };
-        stations.erase( std::remove_if( stations.begin(), stations.end(), [&]( double const Distance ) {
-            return ( Distance > Span.from && Distance < Span.to )
-                && ( Distance < Span.from + frommargin || Distance > Span.to - tomargin ); } ), stations.end() );
-    }
+}
 
-    auto bottom { ShapePoints.front().position.y };
+// no stations of a span with an end cut aslant so near that end that the cut reaches past them
+void trim_bent_ends( std::vector<double> &Stations, loft_span const &Span, gfx::vertex_array const &ShapePoints ) {
+
+    if( Span.fromend.bend == 0.0 && Span.toend.bend == 0.0 ) {
+        return;
+    }
+    auto widest { 0.0 };
     for( auto const &point : ShapePoints ) {
-        bottom = std::min( bottom, point.position.y );
+        widest = std::max( widest, std::abs( reach_of( Span, point ) ) );
     }
-    auto const raised = [&]( float const Height, double const Rise ) {
-        if( Rise <= 0.0 || Height >= Span.head.x || Span.head.x <= bottom ) {
-            return Height;
-        }
-        return static_cast<float>( Height + Rise * ( Span.head.x - Height ) / ( Span.head.x - bottom ) ); };
-    // the profile below its head as drawn, about the middle of its foot: how far the foot reaches inwards and outwards, how thick the web
-    // is, how wide the head, where its underside is, how high the top of the edges of the foot and the root of the web are
-    struct {
-        double middle { 0.0 }, inward { 0.0 }, outward { 0.0 }, web { 1e6 }, head { 0.0 }, underside { 1e6 }, edge { 0.0 }, root { 1e6 };
-    } drawn;
-    auto const across = [&]( gfx::basic_vertex const &Point ) {
-        return static_cast<double>( Span.side * Point.position.x - Span.halfwidth ); };
-    auto low { false == Span.lows.empty() && Span.head.x > bottom };
-    if( low ) {
-        glm::dvec2 foot { 1e6, -1e6 };
-        for( auto const &point : ShapePoints ) {
-            if( point.position.y < bottom + 0.0005f ) {
-                foot = { std::min( foot.x, across( point ) ), std::max( foot.y, across( point ) ) };
-            }
-        }
-        drawn.middle = 0.5 * ( foot.x + foot.y );
-        drawn.inward = drawn.middle - foot.x;
-        drawn.outward = foot.y - drawn.middle;
-        for( auto const &point : ShapePoints ) {
-            auto const off { std::abs( across( point ) - drawn.middle ) };
-            if( point.position.y >= Span.head.x ) {
-                drawn.head = std::max( drawn.head, off );
-            }
-            else if( point.position.y > bottom + 0.25 * ( Span.head.x - bottom ) ) {
-                drawn.web = std::min( drawn.web, off );
-            }
-        }
-        for( auto const &point : ShapePoints ) {
-            auto const off { std::abs( across( point ) - drawn.middle ) };
-            auto const height { static_cast<double>( point.position.y - bottom ) };
-            if( point.position.y >= Span.head.x && off >= drawn.head - 0.001 ) {
-                drawn.underside = std::min( drawn.underside, static_cast<double>( point.position.y ) );
-            }
-            if( point.position.y < Span.head.x && off <= drawn.web + 0.0005 ) {
-                drawn.root = std::min( drawn.root, height );
-            }
-            if( off >= 0.9 * std::min( drawn.inward, drawn.outward ) ) {
-                drawn.edge = std::max( drawn.edge, height );
-            }
-        }
-        low = ( drawn.web < std::min( drawn.inward, drawn.outward ) && drawn.web < drawn.head && drawn.edge > 0.0 && drawn.edge < drawn.root && drawn.root < Span.head.x - bottom && drawn.underside < 1e6 );
-    }
-    // the profile with its foot raised by Rise made over into the low section by Share of it: below the head the web thickened, the foot
-    // reshaped, the web shortened; with none of it, only raised
-    std::vector<gfx::basic_vertex> lowpoints;
-    auto const lowered = [&]( double const Rise, double const Share ) -> gfx::vertex_array const & {
-        auto const share { std::clamp( Share, 0.0, 1.0 ) };
-        auto const web { drawn.web * glm::mix( 1.0, Span.low.web, share ) };
-        auto const inward { drawn.inward * glm::mix( 1.0, Span.low.inward, share ) };
-        auto const outward { drawn.outward * glm::mix( 1.0, Span.low.outward, share ) };
-        auto const edge { drawn.edge * glm::mix( 1.0, Span.low.edge, share ) };
-        auto const root { drawn.root * glm::mix( 1.0, Span.low.root, share ) };
-        auto const below { Span.head.x - bottom };
-        auto const top { std::max( below - Rise, root + 0.001 ) };
-        lowpoints = ShapePoints;
-        for( auto &point : lowpoints ) {
-            if( point.position.y >= drawn.underside ) {
-                continue;
-            }
-            auto const off { across( point ) - drawn.middle };
-            auto const distance { std::abs( off ) };
-            auto moved { distance };
-            if( point.position.y >= Span.head.x ) {
-                moved = web + ( std::max( distance, drawn.web ) - drawn.web ) * ( drawn.head - web ) / std::max( drawn.head - drawn.web, 1e-6 );
-            }
-            else {
-                auto const was { off < 0.0 ? drawn.inward : drawn.outward };
-                auto const reach { off < 0.0 ? inward : outward };
-                moved = ( distance <= drawn.web ?
-                    distance * web / drawn.web :
-                    web + ( distance - drawn.web ) * ( reach - web ) / std::max( was - drawn.web, 1e-6 ) );
-                auto const height { static_cast<double>( point.position.y - bottom ) };
-                auto const made {
-                    height <= drawn.edge ? height * edge / drawn.edge :
-                    height <= drawn.root ? edge + ( height - drawn.edge ) * ( root - edge ) / ( drawn.root - drawn.edge ) :
-                    root + ( height - drawn.root ) * ( top - root ) / ( below - drawn.root ) };
-                point.position.y = static_cast<float>( glm::mix( static_cast<double>( raised( point.position.y, Rise ) ), bottom + below - top + made, share ) );
-            }
-            point.position.x = static_cast<float>( Span.side * ( Span.halfwidth + drawn.middle + std::copysign( moved, off ) ) );
-        }
-        return lowpoints; };
+    auto const frommargin { std::abs( Span.fromend.bend ) * widest + 0.001 };
+    auto const tomargin { std::abs( Span.toend.bend ) * widest + 0.001 };
+    std::erase_if( Stations, [ &Span, frommargin, tomargin ]( double const Distance ) {
+        return ( Distance > Span.from && Distance < Span.to )
+            && ( Distance < Span.from + frommargin || Distance > Span.to - tomargin ); } );
+}
 
-    auto const ring = [&]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+// the distances along a span the profile is lofted at, in order: the steps of the path, the knots of the lines of the span and where
+// the points of the profile meet its limits
+std::vector<double> loft_stations( loft_span const &Span, gfx::vertex_array const &ShapePoints, double const Step, double const Dense ) {
+
+    std::vector stations { Span.from, Span.to };
+    step_stations( stations, Span, Step, Dense );
+    knot_stations( stations, Span );
+    cut_stations( stations, Span, ShapePoints );
+    std::ranges::sort( stations );
+    auto const duplicates { std::ranges::unique( stations, []( double const A, double const B ) { return B - A < 0.001; } ) };
+    stations.erase( duplicates.begin(), duplicates.end() );
+    trim_bent_ends( stations, Span, ShapePoints );
+    return stations;
+}
+
+// a station of a span: the frame of the path there, and how the profile is moved and cut there
+struct span_station {
+    glm::vec3 position { 0.f }; // the point of the path, from the origin
+    glm::vec3 sideways { 0.f }; // the vector across the path, towards the right rail profile
+    double offset { 0.0 }; // how far the profile is moved outwards
+    double extent { 0.0 }; // how far out from the gauge line the profile is cut, taken a bit towards the middle of the step
+    double innerextent { 0.0 }; // how far in it's cut, likewise
+    double middleextent { 0.0 }; // how far out it's cut at the middle of the step
+    double middleinner { 0.0 }; // how far in it's cut there
+    glm::vec3 outerwall { 0.f }; // the normal of the face the profile is cut to on its outer side, none where it isn't cut to walls
+    glm::vec3 innerwall { 0.f }; // the same on its inner side
+    double worn { 0.0 }; // from how far out from the gauge line the wear of the head ramps
+    double drop { 0.0 }; // how far the head is lowered
+    glm::vec3 along { 0.f }; // how far along the path a point goes for each metre out, at an end cut aslant
+    double rise { 0.0 }; // how far the foot of the profile is raised
+};
+
+// the normals of the faces the profile is cut to on its outer and its inner side, none where it isn't cut to walls
+struct cut_wall_normals {
+    glm::vec3 outer { 0.f };
+    glm::vec3 inner { 0.f };
+};
+
+// the difference between the points of the path a bit ahead of and behind a distance along it, in the plan
+glm::dvec3 plan_chord( TSegment const &Segment, double const Distance ) {
+
+    glm::dvec3 ahead;
+    glm::dvec3 behind;
+    glm::dvec3 unused;
+    Segment.plan_frame( std::min( Distance + chord_reach, Segment.GetLength() ), ahead, unused );
+    Segment.plan_frame( std::max( Distance - chord_reach, 0.0 ), behind, unused );
+    return glm::dvec3 { ahead.x - behind.x, 0.0, ahead.z - behind.z };
+}
+
+// the faces the profile is cut to at a distance along a span: across the path, turned as the limits run along it
+cut_wall_normals cut_walls( TSegment const &Segment, loft_span const &Span, double const Distance, glm::dvec3 const &Across ) {
+
+    if( false == Span.walls ) {
+        return {};
+    }
+    auto tangent { plan_chord( Segment, Distance ) };
+    tangent = ( glm::length2( tangent ) > 0.0 ? glm::normalize( tangent ) : glm::dvec3{ 0.0 } );
+    auto const outward { Across * static_cast<double>( Span.side ) };
+    auto const slope = [ &Span, Distance ]( knots::line const &Knots, double const Default ) {
+        return ( knots::sample( Knots, Distance + chord_reach, Default ) - knots::sample( Knots, Distance - chord_reach, Default ) + knots::sample( Span.offsets, Distance + chord_reach, 0.0 ) - knots::sample( Span.offsets, Distance - chord_reach, 0.0 ) ) / ( 2.0 * chord_reach ); };
+    return { glm::vec3{ glm::normalize( outward - tangent * slope( Span.extents, 1e6 ) ) }, glm::vec3{ glm::normalize( tangent * slope( Span.inner, -1e6 ) - outward ) } };
+}
+
+// the end of a span a distance along it is at, a plain one between the ends
+loft_end const &end_at( loft_span const &Span, double const Distance ) {
+
+    static loft_end const unshaped;
+    if( Distance <= Span.from ) {
+        return Span.fromend;
+    }
+    if( Distance >= Span.to ) {
+        return Span.toend;
+    }
+    return unshaped;
+}
+
+// how far along the path a point of the profile goes for each metre out, at an end of a span cut aslant; nothing elsewhere
+glm::vec3 bend_along( TSegment const &Segment, loft_span const &Span, double const Distance ) {
+
+    auto const bend { end_at( Span, Distance ).bend };
+    if( bend == 0.0 ) {
+        return glm::vec3 { 0.f };
+    }
+    if( auto const tangent { plan_chord( Segment, Distance ) }; glm::length2( tangent ) > 0.0 ) {
+        return glm::vec3 { glm::normalize( tangent ) } * static_cast<float>( bend );
+    }
+    return glm::vec3 { 0.f };
+}
+
+// the station of a span at a distance along it, from the point of the path there and the vector across it, in the step with its middle at Middle
+span_station make_station( TSegment const &Segment, loft_span const &Span, glm::vec3 const &Position, glm::dvec3 const &Across, double const Distance, double const Middle ) {
+
+    span_station station;
+    station.position = Position;
+    station.sideways = glm::vec3{ Across };
+    station.offset = knots::sample( Span.offsets, Distance, 0.0 );
+    auto const inward { Distance + std::copysign( 1e-6, Middle - Distance ) };
+    station.extent = knots::sample( Span.extents, inward, 1e6 );
+    station.innerextent = knots::sample( Span.inner, inward, -1e6 );
+    station.middleextent = knots::sample( Span.extents, Middle, 1e6 );
+    station.middleinner = knots::sample( Span.inner, Middle, -1e6 );
+    auto const walls { cut_walls( Segment, Span, Distance, Across ) };
+    station.outerwall = walls.outer;
+    station.innerwall = walls.inner;
+    station.worn = knots::sample( Span.ramp, Distance, -1e6 );
+    station.drop = knots::sample( Span.drops, Distance, 0.0 );
+    station.along = bend_along( Segment, Span, Distance );
+    station.rise = ( Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) );
+    return station;
+}
+
+// the profile lofted along a span as it's cut to the limits at one of its stations
+struct profile_cut {
+    gfx::vertex_array const &points;
+    loft_span const &span;
+    span_station const &station;
+    float bottom { 0.f }; // how low the profile as drawn reaches, its foot raised from there
+    // how far out from the gauge line a point of the profile reaches
+    double reach( std::size_t const Index ) const {
+        return reach_of( span, points[ Index ] ); }
+    // two points of the profile at the same place: a corner of it
+    bool twin( std::size_t const A, std::size_t const B ) const {
+        return points[ A ].position.x == points[ B ].position.x && points[ A ].position.y == points[ B ].position.y; }
+    // which limit at the middle of the step a point of the profile is beyond: 1 the outer one, -1 the inner one, 0 neither
+    int clamped( std::size_t const Index ) const {
+        auto const outside { reach( Index ) };
+        if( outside > station.middleextent ) {
+            return 1; }
+        if( outside < station.middleinner ) {
+            return -1; }
+        return 0; }
+    // a point of the profile within the limit of the Side at the middle of the step, 1 the outer one, -1 the inner one
+    bool open( std::size_t const Index, int const Side ) const {
+        return Index < points.size() && ( Side > 0 ? reach( Index ) <= station.middleextent : reach( Index ) >= station.middleinner ); }
+};
+
+// a point of the profile beyond a limit at a station of a span
+struct beyond_limit {
+    std::size_t index { 0 };
+    int side { 0 }; // 1 beyond the outer limit, -1 beyond the inner one
+    double limit { 0.0 }; // how far out from the gauge line the limit is there
+    double outside { 0.0 }; // how far out from the gauge line the point reaches
+};
+
+// the first and the last of the points of the profile at the same place as the one at Index, the corner of a wall the profile is cut to;
+// that one alone where it isn't cut to walls
+std::pair<std::size_t, std::size_t> twin_run( profile_cut const &Cut, std::size_t const Index ) {
+
+    auto first { Index };
+    auto last { Index };
+    if( false == Cut.span.walls ) {
+        return { first, last };
+    }
+    while( first > 0 && Cut.twin( first - 1, Index ) ) {
+        --first;
+    }
+    while( last + 1 < Cut.points.size() && Cut.twin( last + 1, Index ) ) {
+        ++last;
+    }
+    return { first, last };
+}
+
+// a point of the profile beyond a limit takes the height, the texture and the normal of the profile where it crosses the limit towards
+// the first of the Neighbours within it; which one that is, the count of the points of the profile if neither is
+std::size_t slide_to_neighbour( profile_cut const &Cut, beyond_limit const &Point, std::array<std::size_t, 2> const &Neighbours, gfx::basic_vertex &Shape ) {
+
+    for( auto const neighbour : Neighbours ) {
+        if( false == Cut.open( neighbour, Point.side ) ) {
+            continue;
+        }
+        auto const &other { Cut.points[ neighbour ] };
+        auto const t { std::clamp( static_cast<float>( ( Point.limit - Cut.reach( neighbour ) ) / ( Point.side > 0 ? std::max( Point.outside - Cut.reach( neighbour ), 1e-6 ) : std::min( Point.outside - Cut.reach( neighbour ), -1e-6 ) ) ), 0.f, 1.f ) };
+        Shape.position.y = glm::mix( other.position.y, Shape.position.y, t );
+        Shape.texture.x = glm::mix( other.texture.x, Shape.texture.x, t );
+        auto const blend { glm::mix( other.normal, Shape.normal, t ) };
+        Shape.normal = ( glm::length2( blend ) > 1e-6f ? blend : other.normal );
+        return neighbour;
+    }
+    return Cut.points.size();
+}
+
+// a point of the profile beyond a limit with no neighbour within it to slide to keeps between the heights the profile crosses the limit at,
+// on either side of the run of points beyond it
+void cap_height( profile_cut const &Cut, beyond_limit const &Point, gfx::basic_vertex &Shape ) {
+
+    auto const count { static_cast<std::ptrdiff_t>( Cut.points.size() ) };
+    auto top { -1e6f };
+    auto bottom { 1e6f };
+    auto ends { 0 };
+    for( auto const way : { -1, 1 } ) {
+        auto index { static_cast<std::ptrdiff_t>( Point.index ) };
+        while( index + way >= 0 && index + way < count && Cut.clamped( static_cast<std::size_t>( index + way ) ) == Point.side ) {
+            index += way;
+        }
+        auto const neighbour { index + way };
+        if( neighbour < 0 || false == Cut.open( static_cast<std::size_t>( neighbour ), Point.side ) ) {
+            continue;
+        }
+        auto const t { static_cast<float>( ( Point.limit - Cut.reach( static_cast<std::size_t>( neighbour ) ) ) / ( Cut.reach( static_cast<std::size_t>( index ) ) - Cut.reach( static_cast<std::size_t>( neighbour ) ) ) ) };
+        auto const height { glm::mix( Cut.points[ static_cast<std::size_t>( neighbour ) ].position.y, Cut.points[ static_cast<std::size_t>( index ) ].position.y, t ) };
+        top = std::max( top, height );
+        bottom = std::min( bottom, height );
+        ++ends;
+    }
+    if( ends > 0 ) {
+        Shape.position.y = std::min( Shape.position.y, top );
+    }
+    if( ends > 1 ) {
+        Shape.position.y = std::max( Shape.position.y, bottom );
+    }
+}
+
+// a point of the profile beyond a limit at a station pulled in to it, taking the height of the profile where that crosses the limit;
+// the normal of the wall it then lies on, none if it doesn't lie on one
+glm::vec3 pull_in( profile_cut const &Cut, beyond_limit const &Point, gfx::basic_vertex &Shape, double &Outside ) {
+
+    auto const count { Cut.points.size() };
+    auto const [ first, last ] { twin_run( Cut, Point.index ) };
+    auto const paired { last > first && first > 0 && last + 1 < count };
+    auto const before { paired ? first - 1 : Point.index - 1 };
+    auto const after { paired ? last + 1 : Point.index + 1 };
+    auto const partner { Point.index == last ? after : before };
+    auto const opposite { partner == before ? after : before };
+    auto const moved { slide_to_neighbour( Cut, Point, { paired ? partner : before, paired ? opposite : after }, Shape ) };
+    if( moved == count ) {
+        cap_height( Cut, Point, Shape );
+    }
+    Outside = ( Point.side > 0 ? std::min( Outside, Point.limit ) : std::max( Outside, Point.limit ) );
+    if( auto const onwall { paired ? ( false == Cut.open( partner, Point.side ) && Cut.clamped( partner ) == Point.side ) : moved == count }; false == onwall ) {
+        return glm::vec3 { 0.f };
+    }
+    auto wall { Point.side > 0 ? Cut.station.outerwall : Cut.station.innerwall };
+    // a face of the profile squeezed onto the wall from the other side of the rail keeps facing that side: the thin plate a
+    // planed blade gets to near its tip is lit from the middle of the track as its face there, not as the one against the stock rail
+    if( static_cast<float>( Cut.span.side * Point.side ) * Cut.points[ Point.index ].normal.x < 0.f ) {
+        wall = -wall;
+    }
+    return wall;
+}
+
+// how much of the wear of the head a point of the profile takes, from how far out it reaches past where the wear ramps from
+float head_wear( loft_span const &Span, double const Outside, double const Worn ) {
+
+    if( Span.rampwidth == 0.0 ) {
+        return 1.f;
+    }
+    auto const beyond { Span.rampwidth > 0.0 ? Outside - Worn : Worn - Outside };
+    return static_cast<float>( std::clamp( beyond / std::abs( Span.rampwidth ) + 1.0, 0.0, 1.0 ) );
+}
+
+// a point of the profile at a station of a span onto the ring there: pulled in to the limits, the head lowered where it drops
+void ring_point( profile_cut const &Cut, std::size_t const Index, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+
+    auto const &span { Cut.span };
+    auto const &station { Cut.station };
+    auto shape { Cut.points[ Index ] };
+    auto outside { Cut.reach( Index ) };
+    auto wall { glm::vec3{ 0.f } };
+    if( auto const side { Cut.clamped( Index ) }; side != 0 ) {
+        beyond_limit const beyond { Index, side, side > 0 ? station.extent : station.innerextent, outside };
+        wall = pull_in( Cut, beyond, shape, outside );
+    }
+    if( station.drop > 0.0 && shape.position.y > span.head.x && span.head.y > span.head.x ) {
+        shape.position.y -= static_cast<float>( station.drop * ( shape.position.y - span.head.x ) / ( span.head.y - span.head.x ) );
+    }
+    shape.position.y = raised( span, Cut.bottom, shape.position.y, station.rise );
+    auto pt { station.sideways * static_cast<float>( span.side * ( span.halfwidth + outside + station.offset ) ) + station.position + station.along * static_cast<float>( outside + station.offset ) };
+    pt.y += shape.position.y + span.lift;
+    auto norm { shape.normal.x * station.sideways };
+    norm.y += shape.normal.y;
+    if( glm::length2( wall ) > 0.f ) {
+        norm = wall;
+        if( span.wallu >= 0.f ) {
+            shape.texture.x = span.wallu;
+        }
+    }
+    Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
+    Wear.push_back( head_wear( span, outside, station.worn ) );
+}
+
+// the ring of a span where nothing of the profile is between the limits: all its points at one, so the step draws nothing
+void shrunk_ring( profile_cut const &Cut, double const Nearest, double const Farthest, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+
+    auto const &span { Cut.span };
+    auto const &station { Cut.station };
+    auto const outside { std::clamp( 0.5 * ( std::min( station.extent, Farthest ) + std::max( station.innerextent, Nearest ) ), Nearest, Farthest ) };
+    auto pt { station.sideways * static_cast<float>( span.side * ( span.halfwidth + outside + station.offset ) ) + station.position };
+    pt.y += raised( span, Cut.bottom, Cut.points.front().position.y, station.rise ) + span.lift;
+    for( auto const &point : Cut.points ) {
+        Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ point.texture.x, 0.f } );
+        Wear.push_back( 1.f );
+    }
+}
+
+// the ring of points of the profile at a station of a span, cut to the limits there, and how worn each one is; false where it shrinks to
+// one point, which is left as it is, neither rolled nor settled
+bool lay_ring( gfx::vertex_array const &ShapePoints, loft_span const &Span, span_station const &Station, float const Bottom, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+
+    Ring.clear();
+    Wear.clear();
+    profile_cut const cut { ShapePoints, Span, Station, Bottom };
+    auto const count { ShapePoints.size() };
+    auto nearest { 1e6 };
+    auto farthest { -1e6 };
+    for( std::size_t j = 0; j < count; ++j ) {
+        nearest = std::min( nearest, cut.reach( j ) );
+        farthest = std::max( farthest, cut.reach( j ) );
+    }
+    if( Station.middleextent <= Station.middleinner || Station.middleextent < nearest || Station.middleinner > farthest ) {
+        // nothing of the profile between the limits there: the ring shrinks to one point, the step draws nothing
+        shrunk_ring( cut, nearest, farthest, Ring, Wear );
+        return false;
+    }
+    for( std::size_t j = 0; j < count; ++j ) {
+        ring_point( cut, j, Ring, Wear );
+    }
+    return true;
+}
+
+// the measures of a rail profile below its head as made over into the low section
+struct made_over {
+    double web { 0.0 };
+    double inward { 0.0 };
+    double outward { 0.0 };
+    double edge { 0.0 };
+    double root { 0.0 };
+    double below { 0.0 }; // how far below the head the profile reaches
+    double top { 0.0 }; // how high the root of the web is let to reach with the foot raised
+};
+
+// a rail profile below its head as drawn, about the middle of its foot, made over into the low section of a wing rail along a span: how
+// far the foot reaches inwards and outwards, how thick the web is, how wide the head, where its underside is, how high the top of the
+// edges of the foot and the root of the web are
+struct low_section {
+
+    low_section( gfx::vertex_array const &ShapePoints, loft_span const &Span );
+    // the profile at a distance along the span: made over into the low section as far as the span has it there, its foot raised by
+    // Rise with it, and kept in Points; as drawn where the span doesn't make it over. Rise is left at how far the foot is still to be
+    // raised as the ring is laid
+    gfx::vertex_array const &profile_at( gfx::vertex_array const &ShapePoints, double const Distance, double &Rise, std::vector<gfx::basic_vertex> &Points ) const;
+
+    loft_span const &span;
+    float bottom { 0.f }; // how low the profile reaches
+    bool low { false }; // whether the profile is made over along the span, which it can be only with a foot, a web and a head
+    double middle { 0.0 };
+    double inward { 0.0 };
+    double outward { 0.0 };
+    double web { 1e6 };
+    double head { 0.0 };
+    double underside { 1e6 };
+    double edge { 0.0 };
+    double root { 1e6 };
+
+private:
+    void measure_foot( gfx::vertex_array const &ShapePoints );
+    void measure_web( gfx::vertex_array const &ShapePoints );
+    void measure_heights( gfx::vertex_array const &ShapePoints );
+    double moved_across( gfx::basic_vertex const &Point, double const Off, made_over const &Made ) const;
+    double made_height( double const Height, made_over const &Made ) const;
+    gfx::vertex_array const &lowered( gfx::vertex_array const &ShapePoints, double const Rise, double const Share, std::vector<gfx::basic_vertex> &Points ) const;
+};
+
+// how low a profile reaches
+float lowest( gfx::vertex_array const &ShapePoints ) {
+
+    return std::ranges::min_element( ShapePoints, {}, []( gfx::basic_vertex const &Point ) { return Point.position.y; } )->position.y;
+}
+
+low_section::low_section( gfx::vertex_array const &ShapePoints, loft_span const &Span ) :
+    span { Span },
+    bottom { lowest( ShapePoints ) },
+    low { false == Span.lows.empty() && Span.head.x > bottom } {
+
+    if( false == low ) {
+        return;
+    }
+    measure_foot( ShapePoints );
+    measure_web( ShapePoints );
+    measure_heights( ShapePoints );
+    low = ( web < std::min( inward, outward ) && web < head && edge > 0.0 && edge < root && root < span.head.x - bottom && underside < 1e6 );
+}
+
+// the middle of the foot and how far the foot reaches inwards and outwards from there
+void low_section::measure_foot( gfx::vertex_array const &ShapePoints ) {
+
+    glm::dvec2 foot { 1e6, -1e6 };
+    for( auto const &point : ShapePoints ) {
+        if( point.position.y < bottom + 0.0005f ) {
+            foot = { std::min( foot.x, reach_of( span, point ) ), std::max( foot.y, reach_of( span, point ) ) };
+        }
+    }
+    middle = 0.5 * ( foot.x + foot.y );
+    inward = middle - foot.x;
+    outward = foot.y - middle;
+}
+
+// how wide the head is and how thick the web
+void low_section::measure_web( gfx::vertex_array const &ShapePoints ) {
+
+    for( auto const &point : ShapePoints ) {
+        auto const off { std::abs( reach_of( span, point ) - middle ) };
+        if( point.position.y >= span.head.x ) {
+            head = std::max( head, off );
+        }
+        else if( point.position.y > bottom + 0.25 * ( span.head.x - bottom ) ) {
+            web = std::min( web, off );
+        }
+    }
+}
+
+// where the underside of the head is, how high the top of the edges of the foot and the root of the web are
+void low_section::measure_heights( gfx::vertex_array const &ShapePoints ) {
+
+    for( auto const &point : ShapePoints ) {
+        auto const off { std::abs( reach_of( span, point ) - middle ) };
+        auto const height { static_cast<double>( point.position.y - bottom ) };
+        if( point.position.y >= span.head.x && off >= head - 0.001 ) {
+            underside = std::min( underside, static_cast<double>( point.position.y ) );
+        }
+        if( point.position.y < span.head.x && off <= web + 0.0005 ) {
+            root = std::min( root, height );
+        }
+        if( off >= 0.9 * std::min( inward, outward ) ) {
+            edge = std::max( edge, height );
+        }
+    }
+}
+
+// how far from the middle of the foot a point of the profile below the underside of its head is made over to, Off from there as drawn
+double low_section::moved_across( gfx::basic_vertex const &Point, double const Off, made_over const &Made ) const {
+
+    auto const distance { std::abs( Off ) };
+    if( Point.position.y >= span.head.x ) {
+        return Made.web + ( std::max( distance, web ) - web ) * ( head - Made.web ) / std::max( head - web, 1e-6 );
+    }
+    if( distance <= web ) {
+        return distance * Made.web / web;
+    }
+    auto const was { Off < 0.0 ? inward : outward };
+    auto const reach { Off < 0.0 ? Made.inward : Made.outward };
+    return Made.web + ( distance - web ) * ( reach - Made.web ) / std::max( was - web, 1e-6 );
+}
+
+// how high above the bottom a point of the foot or the web is made over to, Height above it as drawn
+double low_section::made_height( double const Height, made_over const &Made ) const {
+
+    if( Height <= edge ) {
+        return Height * Made.edge / edge;
+    }
+    if( Height <= root ) {
+        return Made.edge + ( Height - edge ) * ( Made.root - Made.edge ) / ( root - edge );
+    }
+    return Made.root + ( Height - root ) * ( Made.top - Made.root ) / ( Made.below - root );
+}
+
+// the profile with its foot raised by Rise made over into the low section by Share of it: below the head the web thickened, the foot
+// reshaped, the web shortened; with none of it, only raised
+gfx::vertex_array const &low_section::lowered( gfx::vertex_array const &ShapePoints, double const Rise, double const Share, std::vector<gfx::basic_vertex> &Points ) const {
+
+    auto const share { std::clamp( Share, 0.0, 1.0 ) };
+    made_over made;
+    made.web = web * glm::mix( 1.0, span.low.web, share );
+    made.inward = inward * glm::mix( 1.0, span.low.inward, share );
+    made.outward = outward * glm::mix( 1.0, span.low.outward, share );
+    made.edge = edge * glm::mix( 1.0, span.low.edge, share );
+    made.root = root * glm::mix( 1.0, span.low.root, share );
+    made.below = span.head.x - bottom;
+    made.top = std::max( made.below - Rise, made.root + 0.001 );
+    Points = ShapePoints;
+    for( auto &point : Points ) {
+        if( point.position.y >= underside ) {
+            continue;
+        }
+        auto const off { reach_of( span, point ) - middle };
+        auto const moved { moved_across( point, off, made ) };
+        if( point.position.y < span.head.x ) {
+            auto const height { static_cast<double>( point.position.y - bottom ) };
+            point.position.y = static_cast<float>( glm::mix( static_cast<double>( raised( span, bottom, point.position.y, Rise ) ), bottom + made.below - made.top + made_height( height, made ), share ) );
+        }
+        point.position.x = static_cast<float>( span.side * ( span.halfwidth + middle + std::copysign( moved, off ) ) );
+    }
+    return Points;
+}
+
+gfx::vertex_array const &low_section::profile_at( gfx::vertex_array const &ShapePoints, double const Distance, double &Rise, std::vector<gfx::basic_vertex> &Points ) const {
+
+    if( false == low ) {
+        return ShapePoints;
+    }
+    auto const share { knots::sample( span.lows, Distance, 0.0 ) };
+    auto const sampled { Rise };
+    Rise = 0.0;
+    if( sampled > 0.0 || share > 0.0 ) {
+        return lowered( ShapePoints, sampled, share, Points );
+    }
+    return ShapePoints;
+}
+
+} // namespace
+
+bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const {
+
+    if( fTsBuffer.empty() || Span.to - Span.from < 0.001 || ShapePoints.empty() )
+        return false;
+
+    auto const stations { loft_stations( Span, ShapePoints, std::max( fStep, 0.2 ), m_dense ) };
+    low_section const low { ShapePoints, Span };
+    // the profile made over into the low section at a station, kept for the ring laid there
+    std::vector<gfx::basic_vertex> lowpoints;
+
+    // the ring of the profile at a station, cut to the limits there, turned with the roll of the path and settled with its unevenness
+    auto const ring = [ this, &Origin, &ShapePoints, &Span, &low, &lowpoints ]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
         glm::dvec3 point;
         glm::dvec3 across;
         plan_frame( Distance, point, across );
-        if( auto const &joint { m_joints[ Distance < 0.001 ? 0 : 1 ] }; joint && ( Distance < 0.001 || Distance > fLength - 0.001 ) ) {
+        if( auto const &joint { m_setting.joints[ Distance < 0.001 ? 0 : 1 ] }; joint && ( Distance < 0.001 || Distance > fLength - 0.001 ) ) {
             point = joint->first;
             across = joint->second;
         }
-        auto const position { glm::vec3{ point - Origin } };
-        auto const parallel { glm::vec3{ across } };
-        auto const offset { knots::sample( Span.offsets, Distance, 0.0 ) };
-        auto const inward { Distance + std::copysign( 1e-6, Middle - Distance ) };
-        auto const extent { knots::sample( Span.extents, inward, 1e6 ) };
-        auto const innerextent { knots::sample( Span.inner, inward, -1e6 ) };
-        auto const middleextent { knots::sample( Span.extents, Middle, 1e6 ) };
-        auto const middleinner { knots::sample( Span.inner, Middle, -1e6 ) };
-        glm::vec3 outerwall { 0.f }, innerwall { 0.f };
-        if( Span.walls ) {
-            auto const delta { 0.001 };
-            glm::dvec3 ahead, behind, unused;
-            plan_frame( std::min( Distance + delta, static_cast<double>( fLength ) ), ahead, unused );
-            plan_frame( std::max( Distance - delta, 0.0 ), behind, unused );
-            auto tangent { glm::dvec3{ ahead.x - behind.x, 0.0, ahead.z - behind.z } };
-            tangent = ( glm::length2( tangent ) > 0.0 ? glm::normalize( tangent ) : glm::dvec3{ 0.0 } );
-            auto const outward { glm::dvec3{ across } * static_cast<double>( Span.side ) };
-            auto const slope = [&]( knots::line const &Knots, double const Default ) {
-                return ( knots::sample( Knots, Distance + delta, Default ) - knots::sample( Knots, Distance - delta, Default ) + knots::sample( Span.offsets, Distance + delta, 0.0 ) - knots::sample( Span.offsets, Distance - delta, 0.0 ) ) / ( 2.0 * delta ); };
-            outerwall = glm::vec3{ glm::normalize( outward - tangent * slope( Span.extents, 1e6 ) ) };
-            innerwall = glm::vec3{ glm::normalize( tangent * slope( Span.inner, -1e6 ) - outward ) };
-        }
-        auto const worn { knots::sample( Span.ramp, Distance, -1e6 ) };
-        auto const drop { knots::sample( Span.drops, Distance, 0.0 ) };
-        auto const sampled { Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) };
-        auto const share { low ? knots::sample( Span.lows, Distance, 0.0 ) : 0.0 };
-        auto const &points { low && ( sampled > 0.0 || share > 0.0 ) ? lowered( sampled, share ) : ShapePoints };
-        auto const rise { low ? 0.0 : sampled };
-        static loft_end const unshaped;
-        auto const &shaped { Distance <= Span.from ? Span.fromend : Distance >= Span.to ? Span.toend : unshaped };
-        auto const bend { shaped.bend };
-        auto along { glm::vec3 { 0.f } };
-        if( bend != 0.0 ) {
-            glm::dvec3 ahead, behind, unused;
-            plan_frame( std::min( Distance + 0.001, static_cast<double>( fLength ) ), ahead, unused );
-            plan_frame( std::max( Distance - 0.001, 0.0 ), behind, unused );
-            auto const tangent { glm::dvec3 { ahead.x - behind.x, 0.0, ahead.z - behind.z } };
-            if( glm::length2( tangent ) > 0.0 ) {
-                along = glm::vec3 { glm::normalize( tangent ) } * static_cast<float>( bend );
-            }
-        }
-        Ring.clear();
-        Wear.clear();
-        auto const count { points.size() };
-        auto const reach = [&]( std::size_t const Index ) {
-            return static_cast<double>( Span.side * points[ Index ].position.x - Span.halfwidth ); };
-        auto const twin = [&]( std::size_t const A, std::size_t const B ) {
-            return points[ A ].position.x == points[ B ].position.x && points[ A ].position.y == points[ B ].position.y; };
-        auto const clamped = [&]( std::size_t const Index ) {
-            auto const outside { reach( Index ) };
-            return ( outside > middleextent ? 1 : outside < middleinner ? -1 : 0 ); };
-        auto nearest { 1e6 };
-        auto farthest { -1e6 };
-        for( std::size_t j = 0; j < count; ++j ) {
-            nearest = std::min( nearest, reach( j ) );
-            farthest = std::max( farthest, reach( j ) );
-        }
-        if( middleextent <= middleinner || middleextent < nearest || middleinner > farthest ) {
-            // nothing of the profile between the limits there: the ring shrinks to one point, the step draws nothing
-            auto const outside { std::clamp( 0.5 * ( std::min( extent, farthest ) + std::max( innerextent, nearest ) ), nearest, farthest ) };
-            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position };
-            pt.y += raised( points.front().position.y, rise ) + Span.lift;
-            for( std::size_t j = 0; j < count; ++j ) {
-                Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ points[ j ].texture.x, 0.f } );
-                Wear.push_back( 1.f );
-            }
+        auto station { make_station( *this, Span, glm::vec3{ point - Origin }, across, Distance, Middle ) };
+        auto const &points { low.profile_at( ShapePoints, Distance, station.rise, lowpoints ) };
+        if( false == lay_ring( points, Span, station, low.bottom, Ring, Wear ) ) {
             return;
         }
-        for( std::size_t j = 0; j < count; ++j ) {
-            auto shape { points[ j ] };
-            auto outside { reach( j ) };
-            auto wall { glm::vec3{ 0.f } };
-            auto const side { clamped( j ) };
-            if( side != 0 ) {
-                auto const limit { side > 0 ? extent : innerextent };
-                auto const open = [&]( std::size_t const Index ) {
-                    return Index < count && ( side > 0 ? reach( Index ) <= middleextent : reach( Index ) >= middleinner ); };
-                auto first { j };
-                auto last { j };
-                if( Span.walls ) {
-                    while( first > 0 && twin( first - 1, j ) ) {
-                        --first;
-                    }
-                    while( last + 1 < count && twin( last + 1, j ) ) {
-                        ++last;
-                    }
-                }
-                auto const paired { last > first && first > 0 && last + 1 < count };
-                auto const before { paired ? first - 1 : j - 1 };
-                auto const after { paired ? last + 1 : j + 1 };
-                auto const partner { j == last ? after : before };
-                auto moved { count };
-                for( auto const neighbour : { paired ? partner : before, paired ? ( partner == before ? after : before ) : after } ) {
-                    if( false == open( neighbour ) ) {
-                        continue;
-                    }
-                    auto const &other { points[ neighbour ] };
-                    auto const t { std::clamp( static_cast<float>( ( limit - reach( neighbour ) ) / ( side > 0 ? std::max( outside - reach( neighbour ), 1e-6 ) : std::min( outside - reach( neighbour ), -1e-6 ) ) ), 0.f, 1.f ) };
-                    shape.position.y = glm::mix( other.position.y, shape.position.y, t );
-                    shape.texture.x = glm::mix( other.texture.x, shape.texture.x, t );
-                    auto const blend { glm::mix( other.normal, shape.normal, t ) };
-                    shape.normal = ( glm::length2( blend ) > 1e-6f ? blend : other.normal );
-                    moved = neighbour;
-                    break;
-                }
-                if( moved == count ) {
-                    auto top { -1e6f };
-                    auto bottom { 1e6f };
-                    auto ends { 0 };
-                    for( auto const step : { -1, 1 } ) {
-                        auto index { static_cast<std::ptrdiff_t>( j ) };
-                        while( index + step >= 0 && index + step < static_cast<std::ptrdiff_t>( count ) && clamped( static_cast<std::size_t>( index + step ) ) == side ) {
-                            index += step;
-                        }
-                        auto const neighbour { index + step };
-                        if( neighbour < 0 || false == open( static_cast<std::size_t>( neighbour ) ) ) {
-                            continue;
-                        }
-                        auto const t { static_cast<float>( ( limit - reach( static_cast<std::size_t>( neighbour ) ) ) / ( reach( static_cast<std::size_t>( index ) ) - reach( static_cast<std::size_t>( neighbour ) ) ) ) };
-                        auto const height { glm::mix( points[ neighbour ].position.y, points[ index ].position.y, t ) };
-                        top = std::max( top, height );
-                        bottom = std::min( bottom, height );
-                        ++ends;
-                    }
-                    if( ends > 0 ) {
-                        shape.position.y = std::min( shape.position.y, top );
-                    }
-                    if( ends > 1 ) {
-                        shape.position.y = std::max( shape.position.y, bottom );
-                    }
-                }
-                outside = ( side > 0 ? std::min( outside, limit ) : std::max( outside, limit ) );
-                auto const onwall { paired ? ( false == open( partner ) && clamped( partner ) == side ) : moved == count };
-                if( onwall ) {
-                    wall = ( side > 0 ? outerwall : innerwall );
-                    // a face of the profile squeezed onto the wall from the other side of the rail keeps facing that side: the thin plate a
-                    // planed blade gets to near its tip is lit from the middle of the track as its face there, not as the one against the stock rail
-                    if( static_cast<float>( Span.side * side ) * ShapePoints[ j ].normal.x < 0.f ) {
-                        wall = -wall;
-                    }
-                }
-            }
-            if( drop > 0.0 && shape.position.y > Span.head.x && Span.head.y > Span.head.x ) {
-                shape.position.y -= static_cast<float>( drop * ( shape.position.y - Span.head.x ) / ( Span.head.y - Span.head.x ) );
-            }
-            shape.position.y = raised( shape.position.y, rise );
-            auto pt { parallel * static_cast<float>( Span.side * ( Span.halfwidth + outside + offset ) ) + position + along * static_cast<float>( outside + offset ) };
-            pt.y += shape.position.y + Span.lift;
-            auto norm { shape.normal.x * parallel };
-            norm.y += shape.normal.y;
-            if( glm::length2( wall ) > 0.f ) {
-                norm = wall;
-                if( Span.wallu >= 0.f ) {
-                    shape.texture.x = Span.wallu;
-                }
-            }
-            Ring.emplace_back( pt, glm::normalize( norm ), glm::vec2{ shape.texture.x, 0.f } );
-            Wear.push_back( Span.rampwidth != 0.0 ? static_cast<float>( std::clamp( ( Span.rampwidth > 0.0 ? outside - worn : worn - outside ) / std::abs( Span.rampwidth ) + 1.0, 0.0, 1.0 ) ) : 1.f );
-        }
         for( auto &vertex : Ring ) {
-            roll_vertex( vertex, position, parallel, Distance );
-            settle_vertex( vertex, Origin, position, parallel, Distance );
+            roll_vertex( vertex, station.position, station.sideways, Distance );
+            settle_vertex( vertex, Origin, station.position, station.sideways, Distance );
         }
     };
 
     auto const texturelength { static_cast<float>( Span.texturelength ) };
-    std::vector<gfx::basic_vertex> ring1, ring2;
-    std::vector<float> wear1, wear2;
+    std::vector<gfx::basic_vertex> ring1;
+    std::vector<gfx::basic_vertex> ring2;
+    std::vector<float> wear1;
+    std::vector<float> wear2;
     float tv1 { clamp_circular( 1.f - static_cast<float>( std::fmod( Span.from, Span.texturelength ) / Span.texturelength ), 1.0f ) };
     for( std::size_t i = 1; i < stations.size(); ++i ) {
         auto const middle { 0.5 * ( stations[ i - 1 ] + stations[ i ] ) };

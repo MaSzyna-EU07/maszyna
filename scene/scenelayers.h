@@ -96,6 +96,7 @@ struct basic_layer
 	bool created{false}; // layer was created in the editor, its file doesn't exist yet
 	bool editormade{false}; // the file was made by the editor during this session, there's no original content to keep a backup of
 	layer_handle anchor{null_handle}; // for created layer: sibling its include directive goes after
+	std::string header; // for created layer: the comment line its file starts with, in place of the general one
 	bool removed{false}; // layer is to be dropped from the scenery
 	layer_handle merged{null_handle}; // layer which took over the content of this one
 	bool dead{false}; // removal or merge of the layer was saved, it's no longer a part of the scenery
@@ -302,8 +303,9 @@ class node_layers
 	void mark(layer_handle Layer, std::string const &Mark, std::vector<std::string> Lines);
 
 	// layer management. changes are applied to the scenery files by save()
-	// creates empty layer, included from specified one, made active unless told otherwise. returns: handle to the new layer, or null_handle with the explanation in Reason
-	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate = true);
+	// creates empty layer, included from specified one, made active unless told otherwise. its file starts with the comment
+	// line given, else with the general one. returns: handle to the new layer, or null_handle with the explanation in Reason
+	layer_handle create(std::string Name, layer_handle Parent, std::string &Reason, bool const Activate = true, std::string Header = {});
 	bool can_remove(layer_handle Layer, std::string &Reason) const;
 	// marks specified layer and the layers it includes as dropped from the scenery. their files are left on the disk
 	bool remove(layer_handle Layer);
@@ -372,6 +374,7 @@ class node_layers
 		std::string mark;
 		source_span span; // whole line, its end included
 		std::string text;
+		bool moved{false}; // read from the letter its mark had before; the save writes it again with the mark it has now
 	};
 	// methods
 	std::string path(layer_handle const Layer) const;

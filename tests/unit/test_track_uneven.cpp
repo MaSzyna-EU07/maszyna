@@ -2,6 +2,8 @@
 #include "doctest.h"
 #include "world/TrackUneven.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -12,19 +14,20 @@ double deviation(std::vector<double> const &Values)
 	auto mean{0.0};
 	for (auto const value : Values)
 		mean += value;
-	mean /= Values.size();
+	auto const count{static_cast<double>(Values.size())};
+	mean /= count;
 	auto sum{0.0};
 	for (auto const value : Values)
 		sum += (value - mean) * (value - mean);
-	return std::sqrt(sum / Values.size());
+	return std::sqrt(sum / count);
 }
 
 double peak(std::vector<double> Values)
 {
 	for (auto &value : Values)
 		value = std::abs(value);
-	std::sort(Values.begin(), Values.end());
-	return Values[static_cast<std::size_t>(0.999 * Values.size())];
+	std::ranges::sort(Values);
+	return Values[Values.size() * 999 / 1000];
 }
 
 void add_chord(std::vector<double> &Output, std::vector<double> const &Line, int const Half)
@@ -35,6 +38,28 @@ void add_chord(std::vector<double> &Output, std::vector<double> const &Line, int
 
 } // namespace
 
+TEST_CASE("uneven track: the cab keeps what the ride on the track doesn't stand in for")
+{
+	auto const replaced = [](double const Up, double const Side, double const Cross) {
+		return track_uneven::replaced_shake({Up, Side, Cross});
+	};
+	// all of it, as "uneven 18"
+	CHECK(replaced(18.0, 18.0, 18.0).sway);
+	CHECK(replaced(18.0, 18.0, 18.0).jolts);
+	// nothing at all, as on a track with dips at its joints alone
+	CHECK_FALSE(replaced(0.0, 0.0, 0.0).sway);
+	CHECK_FALSE(replaced(0.0, 0.0, 0.0).jolts);
+	// up and down only: there is nothing to sway with
+	CHECK_FALSE(replaced(18.0, 0.0, 0.0).sway);
+	CHECK(replaced(18.0, 0.0, 0.0).jolts);
+	// sideways only
+	CHECK(replaced(0.0, 18.0, 0.0).sway);
+	CHECK(replaced(0.0, 18.0, 0.0).jolts);
+	// cross level only turns the body
+	CHECK_FALSE(replaced(0.0, 0.0, 18.0).sway);
+	CHECK_FALSE(replaced(0.0, 0.0, 18.0).jolts);
+}
+
 TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 {
 	// appendix 1, class C at 80 km/h: 18 mm vertically, 17 mm sideways, 16 mm of twist on 5 m, gauge +10/-8 mm, 20 mm of cross level, J = 5.3
@@ -44,14 +69,22 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 	int const steps{4000};
 	int const base{10}; // 5 m
 	int const lines{36};
-	double vertical{0.0}, horizontal{0.0}, twist{0.0}, wander{0.0}, level{0.0}, j{0.0}, away{0.0};
+	double vertical{0.0};
+	double horizontal{0.0};
+	double twist{0.0};
+	double wander{0.0};
+	double level{0.0};
+	double j{0.0};
+	double away{0.0};
 	for (int line = 0; line < lines; ++line)
 	{
 		auto const heading{glm::pi<double>() * (line + 0.37) / lines};
 		glm::dvec3 const start{7919.0 * std::sin(line * 1.7), 0.0, 6577.0 * std::cos(line * 2.3)};
 		glm::dvec3 const along{std::cos(heading), 0.0, std::sin(heading)};
 		glm::dvec3 const across{-along.z, 0.0, along.x};
-		std::vector<double> up[2], side[2], middle;
+		std::array<std::vector<double>, 2> up;
+		std::array<std::vector<double>, 2> side;
+		std::vector<double> middle;
 		for (int i = 0; i < steps; ++i)
 		{
 			auto const point{start + along * (i * step)};
@@ -64,7 +97,11 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 			}
 			middle.push_back(track_uneven::field(point).y * amplitude);
 		}
-		std::vector<double> verticals, horizontals, twists, gauges, levels;
+		std::vector<double> verticals;
+		std::vector<double> horizontals;
+		std::vector<double> twists;
+		std::vector<double> gauges;
+		std::vector<double> levels;
 		for (int rail = 0; rail < 2; ++rail)
 		{
 			add_chord(verticals, up[rail], base);
@@ -269,9 +306,9 @@ TEST_CASE("uneven track: the value along a track meets its neighbours exactly")
 	CHECK(track_uneven::along(18.0, 35.0, 35.0, 0.25, 0.5) == doctest::Approx(35.0).epsilon(0.01));
 	// no jump anywhere
 	auto last{track_uneven::along(18.0, 35.0, 0.0, 0.0, length)};
-	for (auto distance{0.25}; distance <= length; distance += 0.25)
+	for (int step = 1; step <= 2000; ++step)
 	{
-		auto const value{track_uneven::along(18.0, 35.0, 0.0, distance, length)};
+		auto const value{track_uneven::along(18.0, 35.0, 0.0, step * 0.25, length)};
 		REQUIRE(std::abs(value - last) < 0.5);
 		last = value;
 	}

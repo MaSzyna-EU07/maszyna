@@ -22,8 +22,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
-#include <set>
 
 namespace
 {
@@ -1617,6 +1615,17 @@ bool editor_road::nearest_joint(glm::dvec3 const &Point, double const Radius, gl
 	return found;
 }
 
+void editor_road::each_joint(std::function<void(glm::dvec3 const &)> const &Visit)
+{
+	for (auto const *road : simulation::Roads.sequence())
+	{
+		if (road == nullptr || road->m_editorremoved)
+			continue;
+		Visit(axis_end(road->definition(), false));
+		Visit(axis_end(road->definition(), true));
+	}
+}
+
 std::vector<editor_road::piece_end> editor_road::ends_at(glm::dvec3 const &Point)
 {
 	std::vector<piece_end> result;
@@ -2048,41 +2057,4 @@ std::vector<road_node::state> editor_road::roundabout(glm::dvec3 const &Centre, 
 	// the last piece ends exactly where the first one starts
 	pieces.back().axis.points[segment_data::point::end] = pieces.front().axis.points[segment_data::point::start];
 	return pieces;
-}
-
-std::vector<std::string> const &editor_road::materials()
-{
-	static std::vector<std::string> names;
-	static bool scanned{false};
-	if (scanned)
-		return names;
-	scanned = true;
-	std::set<std::string> found;
-	std::error_code error;
-	for (std::filesystem::directory_iterator file{Global.asCurrentTexturePath, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
-	{
-		if (error || false == file->is_regular_file(error))
-			continue;
-		std::string extension;
-		std::string name;
-		try
-		{
-			extension = file->path().extension().string();
-			name = file->path().stem().string();
-		}
-		catch (std::exception const &)
-		{
-			continue;
-		}
-		std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		if (extension != ".mat" && extension != ".dds" && extension != ".tga" && extension != ".png" && extension != ".bmp" && extension != ".jpg" && extension != ".ktx" && extension != ".tex")
-			continue;
-		std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		// names with spaces can't be put in a scenery file
-		if (name.empty() || name.find(' ') != std::string::npos)
-			continue;
-		found.emplace(name);
-	}
-	names.assign(found.begin(), found.end());
-	return names;
 }

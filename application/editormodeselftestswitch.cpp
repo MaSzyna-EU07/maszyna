@@ -122,11 +122,48 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 	{
 		std::string list;
 		int index{0};
-		words >> list >> index;
 		auto &designer{m_switch_designer};
+		designer.pointed_test = -1;
+		words >> list >> index >> designer.pointed_test;
 		designer.open = list != "close";
 		designer.from_catalogue = list != "own";
 		designer.selected = index;
+		switch_designs_load();
+		auto const &list_of{designer.from_catalogue ? designer.catalogue : designer.own};
+		if (designer.open && index >= 0 && index < static_cast<int>(list_of.size()))
+		{
+			std::string problem;
+			auto const shape{switch_design::build(list_of[index], problem)};
+			auto text{format("SELFTEST designer %s: a %.3f b %.3f 1:%.3f sharpest R %.1f, %.3f m beside the main one, %.3f m long, end %.3f; parts", list_of[index].name.c_str(), shape.a, shape.b, shape.ratio, shape.radius, shape.offset, shape.length, shape.paths.size() > 1 ? shape.paths[1].points[segment_data::point::end].z : 0.0)};
+			for (auto const &part : list_of[index].parts)
+				text += format(" %.3f/R%.1f", part.length, part.radius1);
+			WriteLog(text + " " + problem);
+		}
+		return selftest_result::handled;
+	}
+	if (command == "designerpick")
+	{
+		// the points of a switch clicked off the view for the template editor, by x z; finish: the template made of them
+		auto &designer{m_switch_designer};
+		designer.open = true;
+		designer.picking = true;
+		for (glm::dvec2 point; words >> point.x >> point.y;)
+			switch_designer_click({point.x, 0.0, point.y});
+		words.clear();
+		std::string finish;
+		words >> finish;
+		if (finish == "finish")
+		{
+			switch_designer_finish();
+			WriteLog("SELFTEST designerpick: " + designer.status);
+			if (false == designer.from_catalogue && designer.selected >= 0 && designer.selected < static_cast<int>(designer.own.size()))
+			{
+				auto text{std::string{"SELFTEST designerpick parts"}};
+				for (auto const &part : designer.own[designer.selected].parts)
+					text += format(" %.3f/R%.1f..%.1f", part.length, part.radius1, part.radius2);
+				WriteLog(text + format(", lead %.3f", designer.own[designer.selected].lead));
+			}
+		}
 		return selftest_result::handled;
 	}
 	if (command == "release")
@@ -192,7 +229,9 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		glm::dvec3 toward{0.0};
 		words >> kindword >> at.x >> at.z >> toward.x >> toward.z >> label >> second;
 		connection::kind kind{connection::kind::crossover};
-		if (kindword != "single" && false == connection::parse(kindword, kind))
+		// drag: a switch let go there as the mouse lets it go, the connection told by where
+		auto const drag{kindword == "drag"};
+		if (kindword != "single" && false == drag && false == connection::parse(kindword, kind))
 		{
 			WriteLog("SELFTEST connection: unknown kind " + kindword);
 			return selftest_result::handled;
@@ -232,9 +271,17 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		tool.armed = first;
 		tool.connection_second = find(second);
-		tool.connection = kindword == "single" ? -1 : static_cast<int>(kind);
+		tool.connection = kindword == "single" || drag ? -1 : static_cast<int>(kind);
 		auto const line{straight_near(at, {}, 3.0)};
-		TTrack *start{line.tracks.empty() ? nullptr : line.tracks.front()};
+		// the track of the straight under the press
+		TTrack *start{nullptr};
+		auto closest{3.0};
+		for (auto *track : line.tracks)
+			if (auto const distance{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, at)), at)}; distance < closest)
+			{
+				closest = distance;
+				start = track;
+			}
 		if (start == nullptr)
 		{
 			// along a curve: the track nearest to the press
@@ -263,10 +310,47 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		m_cursor_override.reset();
 		if (false == started)
 		{
-			WriteLog("SELFTEST connection: not started, " + tool.status);
+			auto const *selected{selected_track()};
+			WriteLog(format("SELFTEST connection: not started at %s (%d), armed %d, tab %d, straight of %zu tracks, %s", selected != nullptr ? selected->name().c_str() : "nothing", selected != nullptr ? static_cast<int>(selected->eType) : -1, tool.armed,
+			                static_cast<int>(m_track_tab), current_straight().tracks.size(), tool.status.c_str()));
 			return selftest_result::handled;
 		}
 		tool.mouse = glm::dvec3{toward.x, tool.point.y, toward.z};
+		auto const log_records = [&]() {
+			for (auto const &entry : switch_store::records())
+				if (entry.kind == "connection")
+				{
+					std::string parts;
+					for (auto const &part : entry.parts)
+						parts += ' ' + part;
+					WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
+				}
+		};
+		if (drag)
+		{
+			recognise_connection();
+			WriteLog(std::string{"SELFTEST connection drag: "} + (tool.connection < 0 ? "a switch" : connection::word(static_cast<connection::kind>(tool.connection))) + (tool.partner != nullptr ? " with " + tool.partner->name() : std::string{}) +
+			         (tool.connection == static_cast<int>(connection::kind::double_crossover) ? format(", gap %.2f, together %d", tool.connection_gap, tool.connection_together ? 1 : 0) : std::string{}));
+			if (tool.connection >= 0 && false == tool.curved)
+			{
+				connection::request request;
+				connection::result plan;
+				auto const valid{tool.partner != nullptr ? plan_partner_connection(request, plan) : plan_connection(request, plan)};
+				WriteLog("SELFTEST connection drag plan: " + (valid ? connection_readout(plan) : "invalid, " + plan.error));
+				for (auto const &entry : plan.switches)
+				{
+					auto const &start{entry.paths[0].points[segment_data::point::start]};
+					auto const &end{entry.paths[0].points[segment_data::point::end]};
+					WriteLog(format("SELFTEST connection switch on %d at %.3f, forward %d side %d: %.3f %.3f -> %.3f %.3f", entry.line, entry.along, entry.forward, entry.side, start.x, start.z, end.x, end.z));
+				}
+				for (auto const &line : request.to)
+					WriteLog(format("SELFTEST connection to the line from %.3f %.3f, %.1f m", line.start.x, line.start.z, line.length));
+			}
+			finish_switch_placement();
+			WriteLog("SELFTEST connection built: " + tool.status);
+			log_records();
+			return selftest_result::handled;
+		}
 		if (tool.curved)
 		{
 			finish_switch_placement();
@@ -303,14 +387,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		}
 		insert_connection();
 		WriteLog("SELFTEST connection built: " + tool.status);
-		for (auto const &entry : switch_store::records())
-			if (entry.kind == "connection")
-			{
-				std::string parts;
-				for (auto const &part : entry.parts)
-					parts += ' ' + part;
-				WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
-			}
+		log_records();
 		return selftest_result::handled;
 	}
 	if (command == "conecheck")
@@ -551,7 +628,7 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		m_cursor_override.reset();
 		if (false == tool.placing)
 		{
-			WriteLog("SELFTEST switchfree: not started, no template " + label);
+			WriteLog("SELFTEST switchfree: not started, no template " + label + " or no free end near");
 			return selftest_result::handled;
 		}
 		if (tool.free_end.track == nullptr)
@@ -579,6 +656,41 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 				WriteLog(format("SELFTEST switchfree path %s/%zu: %.3f %.3f %.3f -> %.3f %.3f %.3f, R %.1f, turning R %.1f", track->name().c_str(), i, a.x, a.y, a.z, b.x, b.y, b.z, static_cast<double>(track->m_paths[i].radius),
 				                std::abs(turn) > 1e-6 ? curve.plan_length() / turn : 0.0));
 			}
+		return selftest_result::handled;
+	}
+	if (command == "switchproblem")
+	{
+		// switchproblem <label> x z <direction>: what a switch dragged on the straight there runs into, blinking as it does
+		std::string label;
+		glm::dvec3 point{0.0};
+		int direction{1};
+		words >> label >> point.x >> point.z >> direction;
+		std::replace(label.begin(), label.end(), '_', ' ');
+		auto const templates{editor_track::standard_switch_templates()};
+		auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		TTrack *nearest{nullptr};
+		double distance{1e9};
+		for (auto *track : simulation::Paths.sequence())
+			if (track != nullptr && false == track->m_editorremoved && track->eType == tt_Normal && false == track->m_paths.empty())
+				if (auto const d{geometry::plan_distance(editor_track::point_at(*track, editor_track::nearest_parameter(*track, point)), point)}; d < distance)
+				{
+					distance = d;
+					nearest = track;
+				}
+		if (found == templates.end() || nearest == nullptr)
+		{
+			WriteLog("SELFTEST switchproblem: no template " + label + " or no track");
+			return selftest_result::handled;
+		}
+		auto const line{editor_track::find_straight(*nearest, m_straights.tolerance)};
+		auto const problem{straight_switch_problem(line, found->length, line.along(point), direction)};
+		std::string marks;
+		if (problem.has_value())
+			for (auto const &[at, text] : problem->marks)
+				marks += format(" | %.2f %.2f: %s", at.x, at.z, text.c_str());
+		WriteLog(format("SELFTEST switchproblem %s on %s, %.1f m of %.1f m: %s%s", found->title().c_str(), nearest->name().c_str(), line.along(point), line.length, problem.has_value() ? problem->text.c_str() : "none", marks.c_str()));
+		if (problem.has_value())
+			flash_switch_problem(*problem);
 		return selftest_result::handled;
 	}
 	if (command == "switchplace" || command == "switchcurve" || command == "slipplace")
@@ -680,7 +792,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			if (command == "slipplace")
 			{
 				WriteLog(format("SELFTEST slipplace: straight from %s, %zu paths, start %.3f %.3f, %.3f m", nearest->name().c_str(), line.tracks.size(), line.start.x, line.start.z, line.length));
-				insert_double_slip(line, point, tool.templates[tool.armed]);
+				// with no track crossing there it brings its crossing track along to the side
+				insert_double_slip(line, point, tool.templates[tool.armed], side);
 			}
 			else
 				insert_switch(line, std::clamp(line.along(point), 0.0, line.length), direction, side);
@@ -785,14 +898,22 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 		finish_extend();
 		WriteLog(format("SELFTEST branchlink: switch now %.3f %.3f -> %.3f %.3f", own->m_paths[0].points[segment_data::point::start].x, own->m_paths[0].points[segment_data::point::start].z, own->m_paths[0].points[segment_data::point::end].x,
 		                own->m_paths[0].points[segment_data::point::end].z));
+		// a crossover made by letting the end go on the track beside
+		for (auto const &entry : switch_store::records())
+			if (entry.kind == "connection" && false == entry.parts.empty() && entry.parts.front() == own->name())
+				WriteLog(format("SELFTEST branchlink: crossover %s %s, spacing %.3f, insert %.3f", entry.parts.front().c_str(), entry.parts.back().c_str(), entry.a, entry.b));
 		return selftest_result::handled;
 	}
 	if (command == "switchslide" || command == "switchreplace")
 	{
 		std::string name;
 		words >> name;
-		auto *track{simulation::Paths.find(name)};
-		if (track == nullptr || track->eType != tt_Switch || track->m_paths.size() < 2)
+		// the one selected: the switch laid last, say
+		auto *track{name == "selected" ? selected_track() : simulation::Paths.find(name)};
+		if (track != nullptr)
+			name = track->name();
+		// a crossing is plain tracks
+		if (track == nullptr || (command == "switchslide" && (track->eType != tt_Switch || track->m_paths.size() < 2)))
 		{
 			WriteLog("SELFTEST " + command + ": no switch " + name);
 			return selftest_result::handled;
@@ -834,41 +955,47 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			}
 			return selftest_result::handled;
 		}
+		// the template by the start of its label, as the user picks it: the switch keeps its side, a slip or a crossover is laid again
 		std::string label;
-		int side{1};
-		words >> label >> side;
+		words >> label;
 		std::replace(label.begin(), label.end(), '_', ' ');
-		auto const templates{editor_track::standard_switch_templates()};
-		auto const found{std::find_if(templates.begin(), templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
-		if (found == templates.end())
+		auto &tool{m_switch};
+		if (false == tool.collected)
+		{
+			tool.templates = editor_track::standard_switch_templates();
+			tool.collected = true;
+		}
+		auto const found{std::find_if(tool.templates.begin(), tool.templates.end(), [&](editor_track::switch_template const &Template) { return Template.label.rfind(label, 0) == 0; })};
+		if (found == tool.templates.end())
 		{
 			WriteLog("SELFTEST switchreplace: no template " + label);
 			return selftest_result::handled;
 		}
-		auto const set{double_of(*track)};
-		if (set.has_value())
-			track = set->first;
-		auto const &main{track->m_paths[0]};
-		auto const origin{main.points[segment_data::point::start]};
-		auto const chord{geometry::plan_of(main.points[segment_data::point::end] - origin)};
-		auto const length{glm::length(chord)};
-		auto paths{editor_track::place_switch(*found, origin, chord / length, side, (main.points[segment_data::point::end].y - origin.y) / length)};
-		std::string status;
-		auto const done{set.has_value() ? found->twofold() && paths.size() >= 5 && move_double_paths(*set, paths, status) : paths.size() >= 2 && move_switch_paths(*track, paths, status)};
-		if (done && set.has_value())
-		{
-			record_double(*set->first, *set->second, *found);
-			switch_store::follow();
-			records_to_history();
-			straight_refresh();
-		}
-		else if (done)
-		{
-			record_switch(*track, *found);
-			records_to_history();
-			straight_refresh();
-		}
-		WriteLog(format("SELFTEST switchreplace %s %s: done %d, %s", name.c_str(), found->label.c_str(), done ? 1 : 0, status.c_str()));
+		// the template as the inspector shows it: of the record of a slip or a crossing, of the switch
+		auto const current = [&](TTrack const &Track) {
+			if (auto const slip{slip_of(Track)})
+				return slip_template_index(slip->record, editor_track::rail_of(&Track));
+			if (auto const crossing{crossing_record(Track)})
+				return slip_template_index(*crossing, editor_track::rail_of(&Track));
+			return switch_template_index(Track);
+		};
+		auto const before{current(*track)};
+		auto const done{change_switch_template(*track, static_cast<int>(found - tool.templates.begin()))};
+		// a slip laid again is of new parts, the first of them selected; a part of a crossing may be left beside it a plain track
+		auto *again{selected_track()};
+		if (again == nullptr)
+			again = simulation::Paths.find(name);
+		auto const after{again != nullptr ? current(*again) : -1};
+		auto const of = [&](int const Index) { return Index >= 0 ? tool.templates[Index].title() : std::string{"-"}; };
+		std::string record;
+		if (again != nullptr)
+			if (auto const slip{slip_of(*again)}; slip.has_value() || crossing_record(*again).has_value())
+			{
+				auto const known{slip.has_value() ? slip->record : *crossing_record(*again)};
+				record = format(", record %s %s R %.1f 1:%.3f, rail %s", known.kind.c_str(), known.type.c_str(), known.radius, known.ratio, editor_track::rail_of(again).c_str());
+			}
+		WriteLog(format("SELFTEST switchreplace %s %s: done %d, template %s -> %s (%s%s), %s", name.c_str(), found->title().c_str(), done ? 1 : 0, of(before).c_str(), of(after).c_str(), again != nullptr ? again->name().c_str() : "-", record.c_str(),
+		                tool.status.c_str()));
 		return selftest_result::handled;
 	}
 	if (command == "switchpieces" || command == "switchbreak")
