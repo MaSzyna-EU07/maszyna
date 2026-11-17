@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "hamulce.h"
 #include "couplerphysics.h"
 #include "derailment.h"
+#include "collision.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/odometerreading.h"
 
@@ -176,6 +177,10 @@ enum DerailReason
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
 	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
 	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
+	/// <summary>Climbed onto the vehicle it hit, its end crushed (physics.collisions new).</summary>
+	COLLISION_OVERRIDE = 7, // najechanie
+	/// <summary>Pushed off the track by the force pressing its end (physics.collisions new).</summary>
+	COLLISION_PUSHED_OFF = 8, // wyciśnięcie z toru
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -1292,6 +1297,21 @@ struct TCoupling
 	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
 	coupler_physics::end_parameters physics;
 	coupler_physics::pair_state physics_state;
+	// the collisions past the buffers (physics.collisions new), see collision.h: the optional keys of this end, the depth
+	// it's crushed to for good [m], and the hit of the pair in the step: whether either vehicle handled it already, its
+	// peak force [N] and how long that acted [s]
+	collision::end_definition collision;
+	double crush{0.0};
+	double closing{0.0}; // the velocity the buffers of the pair closed in at, at the start of the step [m/s]
+	bool hit_handled{false};
+	double hit_force{0.0};
+	double hit_duration{0.0};
+	// physics.collisions monitor: the log told of the crush of this hit of the pair already
+	bool crush_monitored{false};
+	// the energy the contact of the pair brought to its buffers, for the budget of the crush
+	collision::contact_energy contact;
+	// the log told of the vehicle at this end being inside this one already
+	bool inside_reported{false};
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
@@ -2458,6 +2478,27 @@ class TMoverParameters
 	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
 	// derailment, which stops it as the legacy model does
 	derailment::outcome Derailed{derailment::outcome::none};
+	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
+	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit
+	collision::vehicle_kind collision_kind() const;
+	collision::crush_curve crush_curve_at(int End) const;
+	double buffer_height_at(int End) const;
+	collision::pushed_monitor pushed_off_monitor;
+	// how the vehicle left the rails in a collision (physics.collisions new): overriding or pushed off, NONE otherwise
+	DerailReason CollisionDerail{NONE};
+	// physics.collisions monitor: how many crushes the log told of, of the hits of this vehicle on the others
+	int crush_reports{0};
+	// physics.collisions new: the hit of the end on the stop of its buffers, harder than the steel takes, crushes the
+	// weaker end and may let one vehicle climb onto the other one, see collision.h. returns: whether it did, and the
+	// velocities took the hit; the legacy collision takes the rest. physics.collisions monitor: the log tells what the
+	// crush of the whole hit would be, once for a hit, nothing changes, and it returns false
+	bool crush_hit(int End, double dt);
+	// the force pressing the ends pushes the vehicle off the track (physics.collisions new), the step travelled the
+	// Distance [m]: the flange climbs while the wheels roll on
+	void check_pushed_off(double dt, double Distance);
+	// the vehicle leaves the rails in a collision, the reason told in the log, and slides on as the criteria of
+	// derailment.h have it
+	void derail_in_collision(DerailReason Reason, std::string const &Why);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;

@@ -301,6 +301,12 @@ struct global_settings {
 	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was
 	enum class derailment_model { off, old, physical, monitor };
 	derailment_model derailment = derailment_model::physical;
+	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
+	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
+	// closing speed weighed by the masses; monitor, the legacy rule decides and the log tells what the crush would be
+	// (collision monitor:, once for a hit). the road vehicles of the traffic keep the legacy rule with any
+	enum class collision_model { old, physical, monitor };
+	collision_model collisions = collision_model::physical;
 	// physics.trackcheck: the geometry of the rail tracks the criteria of derailment find suspicious, to the log once the
 	// scenery loaded (trackcheck:, see world/TrackCheck.h)
 	bool track_check = false;
@@ -453,6 +459,20 @@ template <>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, bool const &Value ) const;
 
+// the models of physics.collisions by their names in eu07.ini: new (the default, also for a name it doesn't know), old,
+// monitor
+inline global_settings::collision_model collision_model_of( std::string_view const Name ) {
+    if( Name == "old" ) { return global_settings::collision_model::old; }
+    if( Name == "monitor" ) { return global_settings::collision_model::monitor; }
+    return global_settings::collision_model::physical;
+}
+inline std::string_view name_of( global_settings::collision_model const Model ) {
+    switch( Model ) {
+        case global_settings::collision_model::old: { return "old"; }
+        case global_settings::collision_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
 // the models of physics.derailment by their names in eu07.ini: new (the default, also for a name it doesn't know), old, off
 // or no, monitor
 inline global_settings::derailment_model derailment_model_of(std::string_view const Name) {

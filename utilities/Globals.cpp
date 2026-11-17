@@ -912,6 +912,16 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.collisions")
+    {
+        // new: the crush of the ends past the buffers (McZapkie/collision.h), old: the legacy rule, monitor: the legacy
+        // rule, and the crush to the log
+        std::string model;
+        ParseOne(Parser, model, 1);
+        collisions = collision_model_of(model);
+        return true;
+    }
+
     if (token == "controlcoupling.enginecheck")
     {
         ParseOne(Parser, control_coupling_engine_check, 1);
@@ -1812,6 +1822,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "couplerphysics", couplerphysics );
     export_as_text( Output, "physics.derailment", std::string{ name_of( derailment ) } );
     export_as_text( Output, "physics.trackcheck", track_check );
+    export_as_text( Output, "physics.collisions", std::string{ name_of( collisions ) } );
     export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
