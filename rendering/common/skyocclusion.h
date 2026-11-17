@@ -109,6 +109,20 @@ class sky_occlusion
 	{
 		return m_side > 0;
 	}
+	// m of a texel of the maps, and how far the square reaches from the camera it follows on every side at least
+	float map_texel() const
+	{
+		return m_layout.texel();
+	}
+	float map_reach() const
+	{
+		return m_layout.tile * static_cast<float>(m_layout.tiles / 2 - 1);
+	}
+	// m across the maps
+	float map_size() const
+	{
+		return m_layout.tile * static_cast<float>(m_layout.tiles);
+	}
 	// the maps of the renderer in use, nullptr when there are none
 	static sky_occlusion const *current();
 	// a scenery is being loaded or let go: the tiles and the signatures go
@@ -128,6 +142,21 @@ class sky_occlusion
 	// copies a square of Size x Size texels at X, Y of the textures: Heights four floats per texel, Occlusion four halves per texel,
 	// rows along x, one after another along z
 	virtual void gpu_upload(int const X, int const Y, int const Size, float const *Heights, std::uint16_t const *Occlusion) = 0;
+	// the surface of the scenery for the snow (Global.gfx_snow), as gpu_upload() lays it out, four floats per texel: the top and the
+	// ceiling everywhere, not only around the tunnels, the height the snow is kept below over the tracks and the roads (the trains
+	// and the ploughs clear it; NONE_CAP elsewhere) and zero. a backend which draws no snow leaves it
+	virtual void gpu_upload_surface(int const X, int const Y, int const Size, float const *Surface)
+	{
+		static_cast<void>(X);
+		static_cast<void>(Y);
+		static_cast<void>(Size);
+		static_cast<void>(Surface);
+	}
+	// whether the surface for the snow is worked out
+	bool snow_surface() const
+	{
+		return m_snowsurface;
+	}
 
 	int m_side{0};
 
@@ -146,6 +175,9 @@ class sky_occlusion
 		std::vector<triangle> triangles;
 		// points along the tracks with the tunnel flag over the tile and around it, x and z relative to the corner of the tile
 		std::vector<glm::vec2> tunnels;
+		// points along the tracks and the roads over the tile and around it, for the snow: x and z relative to the corner of the tile,
+		// the height of the top of the rails or of the road, and half the width cleared of the snow (negative for a road)
+		std::vector<glm::vec4> tracks;
 	};
 	// what it gives back: the heights (four per texel) and the occlusion of the texels of a tile
 	struct tile_result
@@ -154,6 +186,7 @@ class sky_occlusion
 		std::uint32_t generation{0};
 		std::vector<float> heights;
 		std::vector<std::uint16_t> occlusion;
+		std::vector<float> surface; // four per texel, gpu_upload_surface()
 		double milliseconds{0.0};
 	};
 	enum class slot_state
@@ -181,6 +214,10 @@ class sky_occlusion
 	void gather_submodel(TSubModel *Submodel, std::uint32_t const Alpha, glm::dmat4 const &Transform, glm::dvec2 const &Corner, glm::dvec2 const &Far, std::vector<triangle> &Triangles);
 	// the points along the tracks with the tunnel flag within the reach of the mask of the tunnels of a tile (gfx_skyvisibility_tunnels)
 	void gather_tunnels(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec2> &Points);
+	// the points along the tracks and the roads over a tile and around it, which keep the snow down (raster_job::tracks)
+	void gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points);
+	// the heights the snow is kept below by the tracks and the roads of a job, into m_cap
+	void stamp_tracks(raster_job const &Job);
 	// what the scenery over a tile is made of, cheap to work out: a change of it means the tile is gathered again
 	std::uint64_t signature(scene::basic_region *Region, glm::ivec2 const &Tile);
 	// the part of the signature made of the opaque instances of a cell: their places and whether they're shown
@@ -201,6 +238,8 @@ class sky_occlusion
 	bool m_sun{true};
 	// the occlusion only around the tracks with the tunnel flag, as at the start (Global.gfx_skyvisibility_tunnels)
 	bool m_tunnels{true};
+	// the surface for the snow is worked out (Global.gfx_snow)
+	bool m_snowsurface{false};
 	std::vector<slot> m_slots;
 	glm::ivec2 m_cameratile{0};
 	glm::dvec3 m_camera{0.0};
@@ -211,6 +250,7 @@ class sky_occlusion
 	// neutral tiles, uploaded when a tile comes into the square
 	std::vector<glm::vec4> m_neutralheights;
 	std::vector<std::uint16_t> m_neutralocclusion;
+	std::vector<float> m_neutralsurface;
 	std::size_t m_checkslot{0}; // the slot whose signature is checked next
 	// the part of the signatures made of the instances of a cell, worked out for a scene::node_state_version and a count of its
 	// instances. outside the editor an instance is shown or hidden only with the version changing, and isn't moved; reading every
@@ -240,6 +280,8 @@ class sky_occlusion
 	std::thread m_thread;
 	// the maps of the thread: the top and the ceiling as rasterized, and opened
 	std::vector<float> m_rawtop, m_rawceiling, m_top, m_ceiling;
+	// the height the snow is kept below by the tracks and the roads (NONE_CAP: nothing)
+	std::vector<float> m_cap;
 	// how much of the occlusion a texel keeps, 0..1, by its distance from the tracks with the tunnel flag (1 everywhere without
 	// m_tunnels)
 	std::vector<float> m_mask;

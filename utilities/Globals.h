@@ -582,6 +582,9 @@ struct global_settings {
     // 2 medium (512 m, 1 m), 3 high (512 m, 0.5 m, searched farther); whether the sun (the moon) is held back too, and the light of
     // the volumetric fog
     int gfx_skyvisibility { 2 };
+    // the snow lying on the scenery (environment/snowcover.h): 0 none, 1 on the surfaces only, 2 with the drifts as a surface of their own
+    // over the ground around the camera, worked out from the maps of gfx_skyvisibility (none without them); in the opengl 4.6 renderer
+    int gfx_snow { 2 };
     bool gfx_skyvisibility_sun { true };
     bool gfx_skyvisibility_fog { true };
     // the occlusion only around the tracks with the tunnel flag (the geometry there makes the tunnel dark, the portals, the passage at

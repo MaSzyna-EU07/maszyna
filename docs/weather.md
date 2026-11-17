@@ -49,6 +49,7 @@ reference (see `elevation`).
 | `temperature degrees` | the air temperature, applied with the weather |
 | `elevation m` | world height (y) of the ground the heights of the weather are counted from. By default the ground under the camera where the simulation starts; give it for hilly sceneries, so the clouds and the valley fog stay at the same height whichever place the simulation starts at |
 | `seed n` | another arrangement of the clouds |
+| `snowcover depth [drift [loose]]` | snow lying from the start: its depth over open flat ground in metres, how far the wind has worked it into drifts (0..1, by default 0.5, the drifts turned to the wind at the ground of the section) and how much of it the wind can still carry (0..1, by default 0.5). Applied once: a later change of the weather keeps the snow as it lies then |
 
 What each genus looks like:
 
@@ -60,6 +61,40 @@ What each genus looks like:
 | stratus, nimbostratus | even, grey sheets; nimbostratus thick and dark, the rain cloud |
 | altostratus | a thin, even veil the sun shines through dimly |
 | cirrus, cirrostratus, cirrocumulus | thin sheets of ice high up: strands drawn out along the wind, an even veil, small ripples |
+
+## Snow lying
+
+The snow falls, lies, drifts and melts with the weather (`environment/snowcover.h`, kept by the simulation):
+
+- it piles up while it snows, about 7 cm an hour in the heaviest snowfall of a frost, less near zero, where the new snow is
+  denser; it settles as it lies, faster in the warmth, and melts above zero (3 mm of water a degree and a day, more in the rain);
+- the wind at the ground (the wind of the report, or the wind at the clouds over 1.5) carries the loose snow along the ground once
+  it is over about 4 m/s for new dry snow, more for old, crusted or wet snow, and the more the stronger it is (the cube of the wind
+  over the threshold). As long as it carries it, the drifts grow and turn to it; new snow falling in a calm evens them out;
+- in a wind, the falling snow sticks to the faces turned to it (poles, signals, the fronts of the vehicles), best when it is wet,
+  near zero, and falls off in the warmth;
+- the ice on the wires grows too: the glaze of freezing rain, the rime of a freezing fog in the wind and a sleeve of wet snow, with
+  its thickness and density. Nothing reads it yet; it is there for the look of the catenary and the contact of the pantographs.
+
+The OpenGL 4.6 renderer draws the snow (`gfx.snow`, by default `drifts`):
+
+- on every surface lit in the open, by how much it faces the sky and how deep the snow is: thin snow lies in patches on flat ground
+  only, deeper snow on steeper slopes too. Nothing lies under a roof, a bridge or in a tunnel, inside the cabs and the interiors,
+  on the water and on the grass, whose blades stick out of it;
+- around the camera (as far as the maps of `gfx.skyvisibility` reach: 192 m at the medium level), from the shape of the scenery
+  seen from above, how the wind worked the snow: the drifts in the lee of what stands in its way (as long as about 10 to 15 times
+  the height of the obstacle, never higher than it), less in front of it with a gap swept at its foot, the hollows, ditches and
+  cuttings filled, the crests and the slopes facing the wind blown bare; over the tracks the snow is kept 3 cm under the top of the
+  rails, whose heads stay clean, the ploughs leave slopes beside them, and a road keeps a packed layer. Where the snow is deeper than
+  a few centimetres it is a surface of its own over the ground, which buries what is lower than it (the foot of the poles, the
+  sleepers, the grass, low fences);
+- the snow is whiter when new and dry, greyer when old and wet, soiled over the tracks and roads; its crystals glint in the sun up
+  close, the wind leaves ripples on the drifts and blows streaks along it in a strong wind.
+
+`gfx.snow surfaces` leaves out the surface of the drifts, `gfx.snow no` all of it. Without `gfx.skyvisibility` the snow lies evenly
+on the surfaces turned up, and there are no drifts. In the **Weather** window (and in the editor, **Weather and time**) the depth,
+the drifts and the looseness of the snow can be set by hand, and the snow made to go faster than the simulation, to watch it pile up,
+drift and melt.
 
 ## Changing the weather while the simulation runs
 

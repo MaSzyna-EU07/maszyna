@@ -34,6 +34,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# which textures the shadow maps draw without the alpha test
 	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
+	# the snow lying, as the weather lays it, drifts and melts it
+	"${CMAKE_SOURCE_DIR}/environment/snowcover.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

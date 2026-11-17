@@ -867,10 +867,40 @@ vec3 cab_probe_reflection(vec3 surroundings, vec3 fragnormal, float roughness, v
 // reflectance of 4% at normal incidence), Reflectivity how much of the reflected surroundings is the cubemap rather than the
 // ambient light, Shadowtone the share of the sun left in its shadow (1 for the materials which take no shadows).
 // a Sunless surface (the interior of a cab) gets no light of the sun, where the sun falls it brightens the ambient light
+// the snow lying on the scenery (snow.glsl): every surface lit in the open takes it, apart from the ones which set this false
+// before they're lit (the grass, which the surface of the drifts buries, the water, the glass of the windscreens, the surface of the
+// drifts itself)
+bool snow_receiver = true;
+
+#include "snow.glsl"
+
+// the snow over the surface of the fragment: its colour, normal (view space) and gloss
+void apply_snow(inout vec3 fragnormal, inout vec3 texturecolor, inout float reflectivity, inout float specularity)
+{
+    mat3 toworld = mat3(inv_view);
+    vec3 world = toworld * f_pos.xyz;
+    vec3 worldnormal = normalize(toworld * fragnormal);
+    float depth;
+    float exposure;
+    float tracked;
+    float cover = snow_coverage(world, worldnormal, depth, exposure, tracked);
+    if (cover <= 0.0)
+        return;
+    vec3 stable = vec3(world.x + sky_occlusion_origin.x, world.y + sky_occlusion_origin.z, world.z + sky_occlusion_origin.y);
+    float pixel = length(fwidth(world));
+    snow_material(cover, stable, exposure, tracked, pixel, worldnormal, texturecolor, reflectivity, specularity);
+    fragnormal = normalize(transpose(toworld) * worldnormal);
+}
+
 vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone, bool sunless)
 {
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
     texturecolor *= material_diffuse();
+#ifndef NO_SNOW
+    // not inside the cabs and the interiors of the vehicles, under their roofs
+    if ((false == sunless) && snow_receiver && (cab_interior < 0.5) && snow_present())
+        apply_snow(fragnormal, texturecolor, reflectivity, specularity);
+#endif
     float polished = 0.0;
     if (sunless)
     {

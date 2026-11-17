@@ -53,6 +53,14 @@ layout(std140, binding = WEATHER_UBO_BINDING) uniform weather_ubo
 	// xy: world x and z of the direction the wind at the clouds blows to (unit), z: its speed, m/s, w: scale of the erosion of the
 	// edges of the clouds by the detail noise
 	vec4 cloud_wind;
+	// the snow cover (gl::weather_ubs, snow.glsl): x the depth over open flat ground, m, y the share of it the wind can carry, z how
+	// wet it is, w how heavily the snow falls now
+	vec4 snow_cover;
+	// xy: world x and z of where the wind which made the drifts blew to (unit), z: how far the drifts are made, w: its speed, m/s
+	vec4 snow_drift;
+	// xy: world x and z of the wind at the ground now, m/s, z: the snow it carries along the ground, w: the snow stuck to the faces
+	// turned to the wind
+	vec4 snow_wind;
 	cloud_layer_s cloud_layers[MAX_CLOUD_LAYERS];
 	// colour of the fog towards the horizon by the angle from the azimuth of the sun, 0 to 180 degrees, in the units of the
 	// scene. filled on the gpu from the sky-view table of the atmosphere

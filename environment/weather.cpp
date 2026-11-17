@@ -258,6 +258,17 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 			if (next_number(seed))
 				Conditions.seed = static_cast<std::uint32_t>(std::max(seed, 0.f));
 		}
+		else if (keyword == "snowcover")
+		{
+			// snowcover depth [drift [fresh]]: the snow lying, m, how far it is worked into drifts and how loose it is, 0..1
+			float depth{0.f};
+			if (next_number(depth))
+			{
+				Conditions.snow_depth = std::max(depth, 0.f);
+				next_number(Conditions.snow_drift);
+				next_number(Conditions.snow_fresh);
+			}
+		}
 		else if (keyword == "transition")
 		{
 			float transition{0.f};
@@ -272,7 +283,7 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 
 bool is_section_keyword(std::string const &Token)
 {
-	static std::array<char const *, 14> const keywords{"metar", "visibility", "haze", "groundfog", "fognoise", "noclouds", "clear", "clouds", "precipitation", "cloudwind", "temperature", "elevation", "seed", "transition"};
+	static std::array<char const *, 15> const keywords{"metar", "visibility", "haze", "groundfog", "fognoise", "noclouds", "clear", "clouds", "precipitation", "cloudwind", "temperature", "elevation", "seed", "transition", "snowcover"};
 	auto const token{lower(Token)};
 	return std::any_of(keywords.begin(), keywords.end(), [&](char const *Keyword) { return token == Keyword; });
 }
@@ -708,6 +719,7 @@ void world_weather::reset()
 	m_ground_set = false;
 	m_ground = 0.f;
 	m_cloud_offset = glm::dvec2{0.0};
+	m_snow.reset();
 	m_time = 0.0;
 }
 
@@ -749,6 +761,7 @@ void world_weather::init()
 		m_current = m_target;
 	}
 	m_from = m_current;
+	apply_snow();
 	if (m_elevation)
 	{
 		m_ground = *m_elevation;
@@ -901,6 +914,42 @@ void world_weather::update(double const Deltatime, glm::dvec3 const &Camera)
 	// kept small, the shaders take it in single precision; the noise of the clouds repeats long before this
 	auto const period{1024.0 * 1024.0};
 	m_cloud_offset = glm::mod(m_cloud_offset, glm::dvec2{period});
+
+	update_snow(Deltatime);
+}
+
+glm::vec2 world_weather::ground_wind() const
+{
+	// the reports give the wind at the ground, the clouds go 1.5 times faster (parse_metar())
+	return cloud_velocity() / 1.5f;
+}
+
+void world_weather::apply_snow()
+{
+	if (!m_target.snow_depth)
+		return;
+	m_snow.set(*m_target.snow_depth, m_target.snow_drift, ground_wind(), m_target.snow_fresh);
+	WriteLog("Weather: snow cover " + std::to_string(*m_target.snow_depth) + " m");
+	// applied once; a later change of the weather keeps the snow as it lies then
+	m_target.snow_depth.reset();
+	m_current.snow_depth.reset();
+}
+
+void world_weather::update_snow(double const Deltatime)
+{
+	snow_weather weather;
+	weather.temperature = Global.AirTemperature;
+	weather.wind = ground_wind();
+	// what falls: the overcast past 1 is the precipitation (weather_conditions::overcast()), rain or snow as compute_weather() tells
+	auto const intensity{std::clamp(Global.Overcast - 1.f, 0.f, 1.f)};
+	auto snow{Global.AirTemperature <= 1.f};
+	if (auto const kind{precipitation_override()})
+		snow = (*kind == precipitation_type::snow);
+	weather.snowfall = (snow ? intensity : 0.f);
+	weather.rainfall = (snow ? 0.f : intensity);
+	// a fog thick enough to leave rime on the wires
+	weather.fog = std::clamp(1.f - m_current.visibility / 1000.f, 0.f, 1.f);
+	m_snow.update(Deltatime, weather);
 }
 
 glm::vec2 world_weather::cloud_velocity() const
@@ -932,6 +981,7 @@ void world_weather::apply(weather_conditions const &Conditions, float const Tran
 	m_transition_time = 0.0;
 	if (m_transition <= 0.0)
 		m_current = m_target;
+	apply_snow();
 	write_globals();
 	if (false == Quiet)
 		WriteLog("Weather: changed to " + to_metar(m_target) + (m_transition > 0.0 ? " over " + std::to_string(static_cast<int>(m_transition)) + " s" : ""));

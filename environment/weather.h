@@ -18,6 +18,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/glm.hpp>
 
+#include "environment/snowcover.h"
+
 class cParser;
 
 // cloud genera as aviation reports them (WMO), each drawn in its own way. the order is that of the names in cloud_genus_info()
@@ -96,6 +98,11 @@ struct weather_conditions
 	float cloud_wind_speed{8.f}; // m/s
 	std::uint32_t seed{0}; // changes the shapes of the clouds
 	std::optional<float> temperature; // air temperature a report gave, degrees C; applied with the weather
+	// snow lying on the ground (the snowcover entry), applied with the weather: the depth over open flat ground, m, and how far
+	// the wind has worked it into drifts, 0..1, and how loose it still is, 0..1
+	std::optional<float> snow_depth;
+	float snow_drift{0.5f};
+	float snow_fresh{0.5f};
 
 	// share of the sky the clouds hold back, 0-1, and the precipitation past it: the overcast the rest of the simulation goes by
 	float overcast() const;
@@ -170,6 +177,17 @@ class world_weather
 	glm::vec2 cloud_velocity() const;
 	// precipitation the description sets, or nullopt when the air temperature decides
 	std::optional<precipitation_type> precipitation_override() const;
+	// the snow lying on the ground and stuck to the scenery, and the ice on the wires
+	snow_cover const &snow() const
+	{
+		return m_snow;
+	}
+	snow_cover &snow()
+	{
+		return m_snow;
+	}
+	// the wind at the ground, world x and z of where it blows to, m/s: the wind of the report, weaker than the one of the clouds
+	glm::vec2 ground_wind() const;
 
   private:
 	// the clouds and the visibility of the old global state
@@ -177,12 +195,16 @@ class world_weather
 	void follow_fog_range();
 	// the old global state of the weather described
 	void write_globals();
+	// the snow of a description applied, and the snow cover moved on by a step
+	void apply_snow();
+	void update_snow(double const Deltatime);
 
 	std::optional<weather_conditions> m_scenery; // read from the scenery
 	std::optional<float> m_elevation; // ground reference the scenery gives
 	weather_conditions m_from; // weather a change started at
 	weather_conditions m_target;
 	weather_conditions m_current;
+	snow_cover m_snow;
 	double m_transition{0.0}; // length of the change in progress, seconds
 	double m_transition_time{0.0}; // how far it got
 	bool m_described_clouds{false};

@@ -91,5 +91,33 @@ bool ui::weather_controls(world_weather &Weather)
 		Weather.apply(conditions, 0.f, true);
 		changed = true;
 	}
+	snow_controls(Weather.snow(), Weather.ground_wind());
 	return changed;
+}
+
+void ui::snow_controls(snow_cover &Snow, glm::vec2 const &Wind)
+{
+	ImGui::Separator();
+	ImGui::TextUnformatted("snow lying");
+	auto depth{Snow.depth()};
+	auto drift{Snow.drift()};
+	auto fresh{Snow.fresh()};
+	auto edited{false};
+	edited |= ImGui::SliderFloat("depth, m##snowdepth", &depth, 0.f, 1.5f, "%.2f");
+	edited |= ImGui::SliderFloat("drifts##snowdrift", &drift, 0.f, 1.f, "%.2f");
+	edited |= ImGui::SliderFloat("loose##snowfresh", &fresh, 0.f, 1.f, "%.2f");
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("how much of it the wind can still carry: new dry snow 1, old, crusted or wet 0");
+	if (edited)
+	{
+		// the drifts made by the wind blowing now, as long as it blows
+		Snow.set(depth, drift, glm::length(Wind) > 0.5f ? Wind : Snow.drift_wind(), fresh);
+	}
+	ImGui::SliderFloat("time of the snow, x##snowtime", &Snow.time_scale, 0.f, 600.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("the snow falls, drifts and melts this many times faster than the simulation goes");
+	auto const &driftwind{Snow.drift_wind()};
+	ImGui::Text("drifts made by %.1f m/s from %.0f deg; wet %.0f%%, blowing %.0f%%, stuck to the windward faces %.0f%%", glm::length(driftwind),
+	            std::fmod(glm::degrees(std::atan2(-driftwind.x, driftwind.y)) + 180.f + 360.f, 360.f), Snow.wetness() * 100.f, Snow.blowing() * 100.f, Snow.plaster() * 100.f);
+	ImGui::Text("ice on the wires %.1f mm, %.0f kg/m3", Snow.wire_ice() * 1000.f, Snow.wire_ice_density());
 }

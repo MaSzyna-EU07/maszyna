@@ -2124,6 +2124,14 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             ( level == "high" || level == "3" ) ? 3 :
             0; }
     else if( Token == "gfx.skyvisibility.sun" ) { readswitch( gfx_skyvisibility_sun ); }
+    else if( Token == "gfx.snow" ) {
+        // no/surfaces/drifts, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        if( ( level == "no" ) || ( level == "false" ) || ( level == "0" ) ) { gfx_snow = 0; }
+        else if( ( level == "surfaces" ) || ( level == "1" ) ) { gfx_snow = 1; }
+        else { gfx_snow = 2; } }
     else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
     else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
@@ -2677,6 +2685,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.water.realistic", gfx_water_realistic );
     export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
+    {
+        std::array<char const *, 3> const snowlevels { "no", "surfaces", "drifts" };
+        export_as_text( Output, "gfx.snow", std::string{ snowlevels[ static_cast<std::size_t>( std::clamp( gfx_snow, 0, 2 ) ) ] } );
+    }
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
     export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );

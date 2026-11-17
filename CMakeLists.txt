@@ -171,6 +171,7 @@ set(SOURCES
 "environment/stars.cpp"
 "environment/starcatalog.cpp"
 "environment/weather.cpp"
+"environment/snowcover.cpp"
 "rendering/lightarray.cpp"
 "environment/skydome.cpp"
 "audio/sound.cpp"
@@ -473,6 +474,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46water.cpp"
             "rendering/opengl46/opengl46terrain.cpp"
             "rendering/opengl46/opengl46grass.cpp"
+            "rendering/opengl46/opengl46snow.cpp"
             "rendering/opengl46/opengl46backend.cpp"
             "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
