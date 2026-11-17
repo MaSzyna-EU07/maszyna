@@ -173,8 +173,11 @@ struct regular_line
 		auto const shift{(Row % 2 == 0) ? 0.0 : 0.5 * spacing};
 		auto const jitter{std::clamp(settings.jitter, 0.0, 0.5) * spacing};
 		std::uniform_real_distribution each_way{-1.0, 1.0};
-		for (auto at = shift; at <= line.length() + 1e-9 && static_cast<int>(Made.size()) < line_most; at += spacing)
+		// the places of the row counted in whole steps: no error added up along a long line
+		auto const steps{static_cast<long long>(std::floor((line.length() + 1e-9 - shift) / spacing))};
+		for (long long step = 0; step <= steps && static_cast<int>(Made.size()) < line_most; ++step)
 		{
+			auto const at{shift + static_cast<double>(step) * spacing};
 			auto const along_off{jitter > 0.0 ? jitter * each_way(random) : 0.0};
 			auto const side_off{jitter > 0.0 ? jitter * each_way(random) : 0.0};
 			auto place{line.at(std::clamp(at + along_off, 0.0, line.length()), offset + side_off, settings.width)};
