@@ -28,6 +28,8 @@ void
 mouse_slider::bind( user_command const &Command ) {
 
     m_command = Command;
+    m_universal.reset();
+    m_universaldrag.reset();
 
     auto const *train { simulation::Train };
     TMoverParameters const *vehicle { nullptr };
@@ -125,17 +127,46 @@ mouse_slider::bind( user_command const &Command ) {
 }
 
 void
+mouse_slider::bind_universal( int const Index, universal_drag::direction const Drag, float const Position ) {
+
+    m_command = static_cast<user_command>( static_cast<int>( user_command::genericset0 ) + Index );
+    m_universal = Index;
+    m_universaldrag.emplace( Drag, Position );
+    m_value = m_universaldrag->position();
+    m_valuerange = 1.0;
+    m_analogue = true;
+    m_invertrange = false;
+    // the cursor is hidden for the drag and put back where it was when the drag ends; the drag follows its moves
+    // from wherever it is, so it isn't placed anywhere
+    m_cursorposition = glm::dvec2( Global.cursor_pos );
+    Application.set_cursor( GLFW_CURSOR_DISABLED );
+}
+
+void
 mouse_slider::release() {
 
     m_command = user_command::none;
+    m_universal.reset();
+    m_universaldrag.reset();
     Application.set_cursor_pos( m_cursorposition.x, m_cursorposition.y );
     Application.set_cursor( GLFW_CURSOR_NORMAL );
 }
 
-void
-mouse_slider::on_move( double const /*Mousex*/, double const Mousey ) {
+bool
+mouse_slider::on_move( double const Mousex, double const Mousey ) {
 
     auto const controlsize { Global.window_size.y * EU07_CONTROLLER_MOUSESLIDERSIZE };
+
+    if( m_universaldrag ) {
+        // a universal control, dragged the same way as the controllers: the move of the cursor over the size of the
+        // slider takes it from one end to the other
+        if( false == m_universaldrag->move( Mousex, Mousey, controlsize ) ) {
+            return false;
+        }
+        m_value = m_universaldrag->position();
+        return true;
+    }
+
     auto const controledge { Global.window_size.y * 0.5 + controlsize * 0.5 };
     auto const stepsize { controlsize / m_valuerange };
 
@@ -143,6 +174,7 @@ mouse_slider::on_move( double const /*Mousex*/, double const Mousey ) {
     m_value = m_analogue ? (controledge - mousey) / controlsize : std::floor((controledge - mousey) / stepsize);
     if( m_invertrange ) {
         m_value = ( m_analogue ? 1.0 : m_valuerange ) - m_value; }
+    return true;
 }
 
 
@@ -246,8 +278,8 @@ drivermouse_input::move( double Mousex, double Mousey ) {
     }
     else {
         // control picking mode
-        if( m_slider.command() != user_command::none ) {
-            m_slider.on_move( Mousex, Mousey );
+        if( m_slider.command() != user_command::none
+         && true == m_slider.on_move( Mousex, Mousey ) ) {
             m_relay.post(
                 m_slider.command(),
                 m_slider.value(),
@@ -341,7 +373,14 @@ drivermouse_input::button( int const Button, int const Action ) {
             else {
                 m_pickwaiting = false;
                 if (Button == GLFW_MOUSE_BUTTON_LEFT && m_slider.command() != user_command::none) {
-                    m_relay.post( m_slider.command(), 0, 0, Action, 0 );
+                    if( auto const universal { m_slider.universal() };
+                        universal && m_slider.is_click() ) {
+                        // a universal control clicked rather than dragged goes to its end, as a click on any universal does
+                        toggle_universal( *universal );
+                    }
+                    else {
+                        m_relay.post( m_slider.command(), 0, 0, Action, 0 );
+                    }
                     m_slider.release();
                 }
                 // if it's the right mouse button that got released and we had no command active, we were potentially in view panning mode; stop it
@@ -390,6 +429,25 @@ drivermouse_input::button( int const Button, int const Action ) {
                             case independentbrakeincrease: { mousecommand = independentbrakeincreasefast; break; }
                             case independentbrakedecrease: { mousecommand = independentbrakedecreasefast; break; }
                             default: { break; }
+                        }
+                    }
+                    // a universal control with drag: in its definition is dragged to any position between its ends,
+                    // and a click without dragging toggles it as before (MaSzyna-EU07/maszyna#62)
+                    if( Button == GLFW_MOUSE_BUTTON_LEFT ) {
+                        auto const universal { universal_index( mousecommand ) };
+                        auto const drag {
+                            universal ?
+                                simulation::Train->universal_drag_direction( *universal ) :
+                                universal_drag::direction::none };
+                        if( drag != universal_drag::direction::none ) {
+                            mousecommand = none;
+                            if( false == pickwaiting ) {
+                                // the button was let go before the control was found under the cursor: a click
+                                toggle_universal( *universal );
+                                return;
+                            }
+                            m_slider.bind_universal( *universal, drag, simulation::Train->universal_position( *universal ) );
+                            return;
                         }
                     }
 
@@ -1160,6 +1218,25 @@ drivermouse_input::adjust_command( user_command Command ) const {
     }
 
     return Command;
+}
+
+std::optional<int>
+drivermouse_input::universal_index( user_command const Command ) {
+
+    auto const index { static_cast<int>( Command ) - static_cast<int>( user_command::generictoggle0 ) };
+    if( index < 0
+     || index > static_cast<int>( user_command::generictoggle29 ) - static_cast<int>( user_command::generictoggle0 ) ) {
+        return std::nullopt;
+    }
+    return index;
+}
+
+void
+drivermouse_input::toggle_universal( int const Index ) const {
+
+    auto const toggle { static_cast<user_command>( static_cast<int>( user_command::generictoggle0 ) + Index ) };
+    m_relay.post( toggle, 0, 0, GLFW_PRESS, 0 );
+    m_relay.post( toggle, 0, 0, GLFW_RELEASE, 0 );
 }
 
 //---------------------------------------------------------------------------
