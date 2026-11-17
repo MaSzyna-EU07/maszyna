@@ -4246,13 +4246,13 @@ void editor_mode::render_view_menu()
                 m_track_colouring = static_cast<track_colouring>(i);
         ImGui::EndMenu();
     }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"));
     if (ImGui::BeginMenu(STR_C("Camera speed")))
     {
         render_camera_settings();
         ImGui::EndMenu();
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", STR_C("The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"));
     ImGui::MenuItem(STR_C("Track labels in the top view"), nullptr, &m_track_labels);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"));
@@ -8171,7 +8171,8 @@ void editor_mode::orthophoto_hurry()
     auto const camera{GfxRenderer->Camera_Position()};
     // the level of the ground under the camera: the terrain, else the scenery; with neither the rays go as far as the reach
     std::optional<double> level;
-    if (double ground{0.0}; m_streamer.active() && m_streamer.height_at(camera.x, camera.z, ground))
+    // only a level below the camera: one above it (in a tunnel, or flown under the terrain) would put the hits behind it
+    if (double ground{0.0}; m_streamer.active() && m_streamer.height_at(camera.x, camera.z, ground) && ground < camera.y)
         level = ground;
     else if (std::vector<char> found; Global.EditorOrtho == false)
     {

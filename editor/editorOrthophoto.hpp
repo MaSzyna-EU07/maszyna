@@ -16,7 +16,6 @@ http://mozilla.org/MPL/2.0/.
 #include <deque>
 #include <functional>
 #include <map>
-#include <set>
 #include <mutex>
 #include <set>
 #include <string>
@@ -249,6 +248,12 @@ class editor_orthophoto
 	};
 
 	static int level_for(int Distance, bool Hires);
+	// the level a tile is asked for at first: a tile showing nothing yet takes the standard image before the 4K one
+	static int first_level(tile const &Tile, int Level);
+	// the tile is outside the download area set, which then has no imagery asked for it
+	bool outside_area(tile_key const &Key) const;
+	// a tile of the view hurried: put at the front of the queue unless it's shown as it should be. true: counted among the hurried
+	bool hurry_tile(tile_key const &Key, int Distance);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
 	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
 	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha);

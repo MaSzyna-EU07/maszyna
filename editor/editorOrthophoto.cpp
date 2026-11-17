@@ -1032,6 +1032,20 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 	return out;
 }
 
+int editor_orthophoto::first_level(tile const &Tile, int const Level)
+{
+	// a tile showing nothing yet takes the standard image first, from the disk cache at once mostly: the 4K one comes from a slow
+	// service a few at a time, the tiles around the camera stayed blank meanwhile though their standard images lay on the disk
+	if (Level > standard_pixels && Tile.level < standard_pixels)
+		return standard_pixels;
+	return Level;
+}
+
+bool editor_orthophoto::outside_area(tile_key const &Key) const
+{
+	return false == m_area.empty() && 0 == m_area_tiles.count(Key);
+}
+
 int editor_orthophoto::level_for(int Distance, bool Hires)
 {
 	// coarser imagery further away keeps the memory use of large radii in check
@@ -1630,7 +1644,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		{
 			tile_key const key{centre.first + dx, centre.second + dy};
 			// outside the download area: nothing asked for, nothing shown
-			if (false == m_area.empty() && 0 == m_area_tiles.count(key))
+			if (outside_area(key))
 			{
 				if (auto const found{m_tiles.find(key)}; found != m_tiles.end())
 				{
@@ -1642,11 +1656,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int level = level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires);
-			// a tile showing nothing yet takes the standard image first, from the disk cache at once mostly: the 4K one comes from a slow
-			// service a few at a time, the tiles around the camera stayed blank meanwhile though their standard images lay on the disk
-			if (level > standard_pixels && t.level < standard_pixels)
-				level = standard_pixels;
+			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires));
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
@@ -1960,6 +1970,26 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 	}
 }
 
+bool editor_orthophoto::hurry_tile(tile_key const &Key, int const Distance)
+{
+	// as update() does: nothing asked for outside the download area, nor outside the area the service covers, where the requests
+	// can't be answered
+	if (outside_area(Key))
+		return false;
+	auto &t{m_tiles[Key]};
+	if (false == in_service_area(Key.first, Key.second))
+		t.empty = true;
+	if (t.empty)
+		return false;
+	auto const level{first_level(t, level_for(Distance, m_config.hires))};
+	t.retry_at = 0.0;
+	if (t.level == level && t.alpha == m_alpha)
+		return false; // already shown as it should be
+	if (false == (t.requested == level && t.requested_alpha == m_alpha))
+		schedule(Key, t, level, m_alpha);
+	return true;
+}
+
 std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera)
 {
 	if (false == m_enabled)
@@ -1976,27 +2006,16 @@ std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Ma
 	tile_key const last{std::max(a.first, b.first), std::max(a.second, b.second)};
 	auto const centre{m_camera_tile};
 	int const radius = m_config.radius;
-	std::size_t count{0};
 	std::vector<tile_key> keys;
 	for (int y = first.second; y <= last.second; ++y)
 		for (int x = first.first; x <= last.first; ++x)
 		{
 			tile_key const key{x, y};
 			auto const distance{std::max(std::abs(x - centre.first), std::abs(y - centre.second))};
-			if (distance > radius)
-				continue;
-			auto &t{m_tiles[key]};
-			if (t.empty)
-				continue;
-			auto const level{level_for(distance, m_config.hires)};
-			t.retry_at = 0.0;
-			if (t.level == level && t.alpha == m_alpha)
-				continue; // already shown as it should be
-			keys.push_back(key);
-			if (false == (t.requested == level && t.requested_alpha == m_alpha))
-				schedule(key, t, level, m_alpha);
-			++count;
+			if (distance <= radius && hurry_tile(key, distance))
+				keys.push_back(key);
 		}
+	auto const count{keys.size()};
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_urgent.clear();
