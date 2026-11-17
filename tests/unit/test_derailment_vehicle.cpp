@@ -314,9 +314,11 @@ TEST_CASE("derailment: the names of the models in eu07.ini") {
 	CHECK(derailment_model_of("off") == model::off);
 	CHECK(derailment_model_of("no") == model::off);
 	CHECK(derailment_model_of("monitor") == model::monitor);
-	// a name it doesn't know is the default
-	CHECK(derailment_model_of("physical") == model::physical);
-	CHECK(global_settings{}.derailment == model::physical);
+	// a name it doesn't know is the default: monitor, the legacy draw decides and the criteria go to the log, until the
+	// speed limits of the bundled sceneries are checked against them
+	CHECK(derailment_model_of("physical") == model::monitor);
+	CHECK(derailment_model_of("") == model::monitor);
+	CHECK(global_settings{}.derailment == model::monitor);
 	CHECK_FALSE(global_settings{}.track_check);
 	// written back the way it's read
 	for (auto const value : {model::off, model::old, model::physical, model::monitor}) {

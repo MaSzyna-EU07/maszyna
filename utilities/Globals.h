@@ -298,9 +298,11 @@ struct global_settings {
 	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
 	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
 	// it; off, it stays on the rails at any speed; monitor, the legacy draw decides and the log tells where the criteria
-	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was
+	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was.
+	// monitor is the default until the speed limits of the bundled sceneries are checked against the criteria (some
+	// tracks allow more than the reference vehicle survives there): new is opt-in until then
 	enum class derailment_model { off, old, physical, monitor };
-	derailment_model derailment = derailment_model::physical;
+	derailment_model derailment = derailment_model::monitor;
 	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
 	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
 	// closing speed weighed by the masses; monitor, the legacy rule decides and the log tells what the crush would be
@@ -473,13 +475,13 @@ inline std::string_view name_of( global_settings::collision_model const Model ) 
         default: { return "new"; }
     }
 }
-// the models of physics.derailment by their names in eu07.ini: new (the default, also for a name it doesn't know), old, off
-// or no, monitor
+// the models of physics.derailment by their names in eu07.ini: new, old, off or no, monitor (the default, also for a
+// name it doesn't know)
 inline global_settings::derailment_model derailment_model_of(std::string_view const Name) {
+    if( Name == "new" ) { return global_settings::derailment_model::physical; }
     if( Name == "old" ) { return global_settings::derailment_model::old; }
     if( Name == "off" || Name == "no" ) { return global_settings::derailment_model::off; }
-    if( Name == "monitor" ) { return global_settings::derailment_model::monitor; }
-    return global_settings::derailment_model::physical;
+    return global_settings::derailment_model::monitor;
 }
 inline std::string_view name_of( global_settings::derailment_model const Model ) {
     switch( Model ) {
