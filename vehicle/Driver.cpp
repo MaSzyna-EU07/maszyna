@@ -6678,7 +6678,8 @@ TController::determine_consist_state() {
     }
     // the same test without the hold of an uphill start
     IsConsistReleased = released || ( fAccGravity < -0.05 && mostapplied < 0.8 );
-    fConsistVelocity = 3.6 * momentum / std::max( 1.0, fMass );
+    // the frame of the vehicle the AI drives from, as for fAccGravity and AbsAccS
+    fConsistVelocity = 3.6 * momentum / std::max( 1.0, fMass ) * ( iDirection >= 0 ? 1 : -1 );
     auto const departblocked {
         AIControllFlag
      && mvOccupied->Vel < EU07_AI_NOMOVEMENT
@@ -8882,8 +8883,8 @@ void TController::control_uphill_start() {
     }
     fUphillTractiveForce = 0.0;
     for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
-        // Ft is signed in the vehicle's own frame
-        fUphillTractiveForce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) );
+        // Ft is signed in the vehicle's own frame, and turned into the direction of travel as AbsAccS is
+        fUphillTractiveForce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) * ( iDirection >= 0 ? 1 : -1 ) );
     }
     fUphillHoldingForce = fMass * -fAccGravity;
     bUphillBrakeTopUp = false;
