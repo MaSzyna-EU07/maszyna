@@ -9048,13 +9048,14 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     }
 }
 
-// the air exchange through the brake hoses of the vehicles which stepped their physics, after all of them did
+// the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
 void
 vehicle_table::update_brake_pipes( double const Deltatime ) {
 
     m_brakepipes.clear();
     for( auto *vehicle : m_items ) {
-        if( true == vehicle->MoverParameters->PipeCouplersPending ) {
+        if( ( true == vehicle->MoverParameters->PipeCouplersPending )
+         || ( true == vehicle->MoverParameters->ScndPipeCouplersPending ) ) {
             m_brakepipes.push_back( vehicle->MoverParameters );
         }
     }

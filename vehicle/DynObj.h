@@ -948,7 +948,7 @@ private:
     // the trains it closes in on
     void
         update_coupler_physics() const;
-    // the air exchange through the brake hoses of the vehicles which stepped their physics, after all of them did
+    // the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
     void
         update_brake_pipes( double const Deltatime );
 
