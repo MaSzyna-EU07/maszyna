@@ -173,6 +173,12 @@ void editor_mode::end_brush_stroke()
 	ui()->set_status(format(STR_C("Brush: %zu models put; Ctrl+Z takes the whole stroke back"), count));
 }
 
+bool editor_mode::brush_on_line()
+{
+	auto const &settings{ui()->brush()};
+	return ui()->mode() == nodebank_panel::BRUSH && settings.way == brush_object_list::kind::multi && settings.stroke == brush_object_list::shape::line;
+}
+
 void editor_mode::brush_line_point()
 {
 	if (false == viewport_click())

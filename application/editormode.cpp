@@ -7394,7 +7394,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             break;
         }
         // the line of the brush being clicked given up
-        if (is_press(Action) && ui()->mode() == nodebank_panel::BRUSH && false == m_brush_line.empty())
+        if (is_press(Action) && brush_on_line() && false == m_brush_line.empty())
         {
             m_brush_line.clear();
             break;
@@ -7472,7 +7472,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && ui()->mode() == nodebank_panel::FILL && !m_fill_points.empty())
             m_fill_points.pop_back();
         // the line of the brush: the last point taken back
-        if (is_press(Action) && ui()->mode() == nodebank_panel::BRUSH && false == m_brush_line.empty())
+        if (is_press(Action) && brush_on_line() && false == m_brush_line.empty())
             m_brush_line.pop_back();
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active && !m_lay.points.empty())
             lay_back();
@@ -7495,7 +7495,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK && m_lay.active)
             lay_enter();
         // the models of the brush put along the line clicked
-        if (is_press(Action) && ui()->mode() == nodebank_panel::BRUSH && false == m_brush_line.empty())
+        if (is_press(Action) && brush_on_line() && false == m_brush_line.empty())
             brush_line_finish();
         if (is_press(Action) && m_route.trace.active && route_active())
             route_trace_end(true);

@@ -222,6 +222,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// one dab of the stroke of many models, at the cursor on the ground
 	void brush_dab();
 	// the many along a line: a point of it at the cursor, the models put along it, the line and its band drawn on the ground
+	// the brush is the one of many models along a line: the keys of the line (Enter, Backspace, Esc) are its
+	bool brush_on_line();
 	void brush_line_point();
 	void brush_line_finish();
 	void draw_brush_line(glm::dvec3 const *Cursor);
