@@ -231,7 +231,14 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::terrain:
 	{
 		// what the left button does on the terrain
-		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
+		// another tool than the fields: the field picked with "Outline it again" no longer waits for its outline, which the fill can use up
+		auto const choose = [this](terrain_tool const Tool) {
+			return [this, Tool]() {
+				if (Tool != terrain_tool::fields)
+					m_patch_reoutline.clear();
+				m_terrain_tool = Tool;
+			};
+		};
 		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
 		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
 		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});

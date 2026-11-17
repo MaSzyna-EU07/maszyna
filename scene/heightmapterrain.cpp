@@ -11,14 +11,17 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/heightmapterrain.h"
 
 #include "scene/sceneterrain.h"
+#include "utilities/Logs.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <string_view>
 #include <cstdio>
 #include <cstdlib>
 
@@ -615,6 +618,18 @@ std::pair<glm::dvec2, glm::dvec2> modifier::bounds() const
 
 namespace
 {
+// the file of the patches a manifest names: a plain file name in the folder of the terrain. A path with folders, "..", or a root
+// would have the patches read from any file the user can read, and written over any file the user can write as the terrain is
+// saved, so it is taken as the default name instead
+std::string patches_file_name(std::string_view const Name)
+{
+	std::filesystem::path const name{Name};
+	if (false == Name.empty() && name.filename() == name && Name != "." && Name != "..")
+		return std::string{Name};
+	ErrorLog(std::format("Bad terrain: patches_file \"{}\" isn't a plain file name, patches.txt used instead", Name), logtype::file);
+	return "patches.txt";
+}
+
 std::uint64_t grid_key(int const X, int const Z)
 {
 	return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(X)) << 32) | static_cast<std::uint32_t>(Z);
@@ -851,7 +866,7 @@ bool load_manifest(std::string const &Path, manifest &Manifest, std::string *Err
 			}
 		if (auto const node{document["patches_file"]})
 		{
-			result.patches_file = node.as<std::string>();
+			result.patches_file = patches_file_name(node.as<std::string>());
 			auto const folder{std::filesystem::path(Path).parent_path()};
 			load_patches((folder / result.patches_file).string(), result.patches);
 		}

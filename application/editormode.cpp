@@ -3838,7 +3838,11 @@ void editor_mode::fill_terrain_area()
     auto const filled = m_streamer.fill(outline, m_paint_feather, layer);
     m_terrain_status = filled ? format(STR_C("Area filled with %s"), chosen.material.c_str()) : std::string(STR_C("Nothing filled: no chunk under the outline, or no room for another material"));
     if (filled)
+    {
+        // the outline used up: the field picked with "Outline it again" doesn't take the next outline drawn
         m_paint_outline.clear();
+        m_patch_reoutline.clear();
+    }
 }
 
 void editor_mode::remove_selected_chunks()

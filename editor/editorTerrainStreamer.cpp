@@ -616,12 +616,8 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 	auto const target{Camera + ahead};
 
 	// the pieces cut out near the camera: made anew as it moves on, and for the ones waiting for their ground, now and then
-	if (false == m_manifest.patches.empty() && false == m_waterchanged)
-	{
-		auto const moved{glm::distance(glm::dvec2{Camera.x, Camera.z}, m_patchcentre)};
-		if (moved > patch_move || (m_patchpending && m_patchloaded && now - m_patchtried > 1.0))
-			m_waterchanged = true;
-	}
+	if (false == m_waterchanged && patches_due(Camera, now))
+		m_waterchanged = true;
 	if (m_waterchanged)
 	{
 		m_patchtried = now;
@@ -1650,8 +1646,10 @@ bool terrain_streamer::cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bo
 			for (int ix = xs.first; ix <= xs.second; ++ix)
 			{
 				auto &sample{data->hole_mask[static_cast<std::size_t>(iz) * (data->holes + 1) + ix]};
-				// a marked cut leaves the holes there are as they are, a marked close closes its own only
-				auto const kept{marked && (Cut ? sample != 0 : sample != Mark)};
+				// a marked cut leaves the holes there are as they are, a marked close closes its own only; the holes cut by hand (the
+				// Holes tool, the Fill section) leave the holes of the fields as they are both ways: a field is closed only by giving
+				// it back, and its mesh never stands over closed ground
+				auto const kept{marked ? (Cut ? sample != 0 : sample != Mark) : sample == kFieldHole};
 				if (sample == value || kept || false == Inside(low.x + ix * step, low.y + iz * step))
 					continue;
 				sample = value;
@@ -2508,6 +2506,48 @@ gfx::geometry_handle terrain_streamer::water_geometry(gfx::vertex_array Vertices
 	return GfxRenderer->Insert(Vertices, nouserdata, m_waterbank, GL_TRIANGLES);
 }
 
+double terrain_streamer::reach_of_patches()
+{
+	// as far as the chunks are drawn, their holes with them: never a hole without the surface over it
+	return std::max(patch_reach, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)) + heightmap::chunk_size);
+}
+
+std::vector<std::size_t> terrain_streamer::patches_in_reach(glm::dvec2 const &Centre) const
+{
+	std::vector<std::size_t> within;
+	auto const reach{reach_of_patches()};
+	for (std::size_t index = 0; index < m_manifest.patches.size(); ++index)
+	{
+		auto const &patch{m_manifest.patches[index]};
+		if (patch.paint)
+			continue; // laid into the paint of the chunks, no mesh of its own
+		glm::dvec2 boxlow;
+		glm::dvec2 boxhigh;
+		patch.bounds(boxlow, boxhigh);
+		if (m_hascamera && glm::distance(glm::clamp(Centre, boxlow, boxhigh), Centre) > reach)
+			continue;
+		within.push_back(index);
+	}
+	return within;
+}
+
+bool terrain_streamer::patches_due(glm::dvec3 const &Camera, double const Now)
+{
+	if (m_manifest.patches.empty())
+		return false;
+	if (m_patchpending && m_patchloaded && Now - m_patchtried > 1.0)
+		return true;
+	glm::dvec2 const centre{Camera.x, Camera.z};
+	if (glm::distance(centre, m_patchcentre) <= patch_move)
+		return false;
+	// the painted fields (tens of thousands of them cut along the tracks) have no mesh, and the water doesn't move: made again only
+	// when the separate pieces within the reach change
+	if (patches_in_reach(centre) != m_patchesbuilt)
+		return true;
+	m_patchcentre = centre;
+	return false;
+}
+
 void terrain_streamer::build_water()
 {
 	m_waterchanged = false;
@@ -2585,19 +2625,10 @@ void terrain_streamer::build_water()
 	// ground not loaded yet waits for it
 	m_patchcentre = glm::dvec2{m_camera.x, m_camera.z};
 	m_patchpending = false;
-	// as far as the chunks are drawn, their holes with them: never a hole without the surface over it
-	auto const reach_of_patches{std::max(patch_reach, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)) +
-	                                                      heightmap::chunk_size)};
-	for (auto const &patch : m_manifest.patches)
+	m_patchesbuilt = patches_in_reach(m_patchcentre);
+	for (auto const index : m_patchesbuilt)
 	{
-		if (patch.paint)
-			continue; // laid into the paint of the chunks, no mesh of its own
-		glm::dvec2 boxlow;
-		glm::dvec2 boxhigh;
-		patch.bounds(boxlow, boxhigh);
-		auto const nearest{glm::clamp(m_patchcentre, boxlow, boxhigh)};
-		if (m_hascamera && glm::distance(nearest, m_patchcentre) > reach_of_patches)
-			continue;
+		auto const &patch{m_manifest.patches[index]};
 		auto const surface = [&](double const X, double const Z, double &Height) {
 			if (false == patch.follow)
 			{

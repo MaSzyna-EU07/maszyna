@@ -291,7 +291,8 @@ class terrain_streamer
 	// cuts (Cut true) or closes the holes at the hole samples within the rectangle where Inside says so. Load: chunks not in
 	// memory are loaded
 	// Mark: the value of a hole sample, 255 of the holes cut by hand, kFieldHole of the fields; with Mark other than 255 only
-	// the samples of that mark are closed, and a hole already there isn't marked over
+	// the samples of that mark are closed, and a hole already there isn't marked over; with 255 the holes of the fields are left
+	// as they are
 	bool cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool Cut, bool Load, std::function<bool(double X, double Z)> const &Inside,
 	              std::uint8_t Mark = 255);
 	static std::uint8_t constexpr kFieldHole{254};
@@ -359,6 +360,14 @@ class terrain_streamer
 	bool m_patchpending{false}; // some waited for chunks not loaded
 	bool m_patchloaded{false}; // a chunk came since they were made
 	double m_patchtried{0.0};
+	std::vector<std::size_t> m_patchesbuilt; // the separate pieces (not laid into the paint) within the reach of m_patchcentre, made
+	// how far around the camera the pieces are made: as far as the chunks are drawn, patch_reach at least
+	static double reach_of_patches();
+	// the separate pieces within the reach of Centre, in the order of the manifest
+	std::vector<std::size_t> patches_in_reach(glm::dvec2 const &Centre) const;
+	// the pieces to be made anew: some wait for their ground and a chunk came, or the camera moved on so far that a separate piece
+	// came within the reach or left it. A move that changes nothing only moves the centre the next move is measured from
+	bool patches_due(glm::dvec3 const &Camera, double Now);
 	std::vector<chunk_key> m_ring; // offsets of the chunks around a point, the nearest first
 	int m_ringradius{-1};
 	double m_pixel{0.0}; // metres a pixel of the top view spans; none in the 3D view
