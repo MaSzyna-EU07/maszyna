@@ -237,6 +237,7 @@ bool physicslog_writer::close_aside(std::jthread &Thread, closing_time const Clo
 	// the thread ended and the rest written on a thread of its own, left behind if it isn't done in time: a disk which
 	// doesn't answer holds up the writing of a file, which no time given cuts short. the simulator ends with _Exit then,
 	// the writing with it
+	auto started{false};
 	try {
 		auto done{std::make_shared<std::promise<void>>()};
 		std::shared_future<void> const closing{done->get_future()};
@@ -251,14 +252,16 @@ bool physicslog_writer::close_aside(std::jthread &Thread, closing_time const Clo
 			flush_safely(true);
 			done->set_value();
 		}).detach();
+		started = true;
 		// told by the stop which gave the time, not again by one after it
 		if (closing.wait_until(Closeby.by) != std::future_status::ready && Closeby.fresh)
 			tell(std::format("Bad physics log: the closing doesn't wait for the writing longer than {:.1f} s, the logs not written by then are lost",
 			    std::chrono::duration<double>{m_closingwait}.count()));
 		return true;
 	} catch (...) {
-		// out of memory, or no thread to be had: the writer, if it wasn't moved, is ended by the caller
-		return false;
+		// out of memory, or no thread to be had: the writer, if it wasn't moved, is ended by the caller. a thread begun
+		// already, the line of the log failing after it, does the writing: not the caller as well, which would wait for it
+		return started;
 	}
 }
 
