@@ -332,6 +332,8 @@ void pair::step(track const &Track, double Dt) {
 		auto const &mover{placed.owner->mover()};
 		placed.position += placed.heading * placed.owner->move(Track, Dt, TLocation{placed.position, 0.0, 0.0}, mover.PipePress);
 	}
+	// vehicle_table::update_brake_pipes()
+	TMoverParameters::UpdatePipeCouplers({&m_vehicles[0].owner->mover(), &m_vehicles[1].owner->mover()}, Dt);
 }
 
 void pair::run(double Seconds, track const &Track, double Dt) {
