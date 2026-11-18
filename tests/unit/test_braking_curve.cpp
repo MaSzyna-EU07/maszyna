@@ -125,7 +125,7 @@ TEST_CASE("braking curve: a shunting engine braking to a point gets down to walk
 	CHECK(run.speed <= 10.0);
 }
 
-TEST_CASE("braking curve: a train with a worked out brake table follows the shape of its brake") {
+TEST_CASE("braking curve: a train with a worked out brake table plans along the shape of its brake") {
 	flat_table const train;
 	auto const table{train.table()};
 	auto approach{stop_at(80.0, 600.0)};
@@ -152,4 +152,44 @@ TEST_CASE("braking curve: a train with a worked out brake table follows the shap
 		auto const demand{braking_curve::demand(approach, &table)};
 		CHECK(demand == doctest::Approx(braking_curve::shaped_demand(reached, 0.0, distance - 20.0 + 0.1 / 25.92, 0.0, table)));
 	}
+}
+
+TEST_CASE("braking curve: a train gets the demand it got before the curve moved out of the AI") {
+	// a table that grips harder as the train slows, on a gradient; the demands were worked out with the
+	// code of TController::adjust_desired_speed_for_braking_curve before the move (origin/master 80fd5aad)
+	brake_values a0{};
+	brake_values a1{};
+	for (auto i{1}; i <= tablesize; ++i) {
+		a0[i] = 0.12 - 0.003 * i;
+		a1[i] = 0.06 - 0.001 * i;
+	}
+	braking_curve::brake_table const table{a0.data(), a1.data(), tablesize, 120.0};
+	REQUIRE(table.full_braking(80.0) == doctest::Approx(0.645));
+	REQUIRE(table.full_braking(10.0) == doctest::Approx(0.825));
+
+	auto approach{stop_at(80.0, 600.0)};
+	approach.offset = 20.0;
+	approach.gravity = 0.1;
+	approach.speedup_horizon = 5.0;
+	approach.fill_horizon = 6.0;
+	auto expected{0.0};
+	SUBCASE("downhill, coasting, the brake still to be applied") { expected = -0.4926656801067293; }
+	SUBCASE("downhill, the brake applied") {
+		approach.brake_applied = true;
+		expected = -0.37739905908238147;
+	}
+	SUBCASE("downhill, still speeding up") {
+		approach.acceleration = 0.3;
+		expected = -0.5330117415264249;
+	}
+	SUBCASE("uphill, down to 40 km/h") {
+		approach = stop_at(100.0, 900.0);
+		approach.target = 40.0;
+		approach.gravity = -0.08;
+		approach.speedup_horizon = 5.0;
+		approach.fill_horizon = 6.0;
+		expected = -0.40930710539221765;
+	}
+
+	CHECK(braking_curve::demand(approach, &table) == doctest::Approx(expected).epsilon(1e-7));
 }
