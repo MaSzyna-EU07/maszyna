@@ -700,6 +700,62 @@ void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
     }
 }
 
+// a wing animated in its own way (animdoor: of the .mmd): as far along its own range as the door of its side is
+void TDynamicObject::UpdateDoorWing( TAnim *pAnim, door_wings::wing_spec const &Spec ) {
+
+    if( pAnim->smAnimated == nullptr ) { return; }
+
+    auto const position { door_wings::wing_position( door_position( *MoverParameters, pAnim ), MoverParameters->Doors.range, Spec.range ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        if( wing == nullptr ) { continue; }
+        switch( Spec.type ) {
+            case door_wings::shift_type: {
+                wing->SetTranslate( door_wings::slide( position ) );
+                break;
+            }
+            case door_wings::rotate_type: {
+                wing->SetRotate( float3( 1, 0, 0 ), position );
+                break;
+            }
+            case door_wings::fold_type: {
+                fold_wing( wing, door_wings::fold( position ) );
+                break;
+            }
+            case door_wings::plug_type: {
+                wing->SetTranslate( door_wings::plug( position, Spec.range_out ) );
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+    }
+}
+
+void TDynamicObject::bind_door_animation( TAnim &Animation ) {
+
+    if( auto const *spec { door_wings::find( m_doorwings, Animation.iNumber ) } ) {
+        Animation.yUpdate = [ this, spec = *spec ]( TAnim *pAnim ) { UpdateDoorWing( pAnim, spec ); };
+        return;
+    }
+    switch( MoverParameters->Doors.type ) { // od razu zapinamy potrzebny typ animacji
+        case 1:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorTranslate, this, std::placeholders::_1 );
+            break;
+        case 2:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorRotate, this, std::placeholders::_1 );
+            break;
+        case 3:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorFold, this, std::placeholders::_1 );
+            break; // obrót 3 kolejnych submodeli
+        case 4:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorPlug, this, std::placeholders::_1 );
+            break;
+        default:
+            break;
+    }
+}
+
 void TDynamicObject::UpdatePant(TAnim *pAnim)
 { // animacja pantografu - 4 obracane ramiona, ślizg piąty
 	float a, b, c;
@@ -5882,30 +5938,42 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                         if (pAnimations[i + j].smAnimated)
                         { //++iAnimatedDoors;
                             pAnimations[i + j].smAnimated->WillBeAnimated(); // wyłączenie optymalizacji transformu
-                            switch( MoverParameters->Doors.type )
-                            { // od razu zapinamy potrzebny typ animacji
-                            case 1:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorTranslate, this, std::placeholders::_1 );
-                                break;
-                            case 2:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorRotate, this, std::placeholders::_1 );
-                                break;
-                            case 3:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorFold, this, std::placeholders::_1 );
-                                break; // obrót 3 kolejnych submodeli
-							case 4:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorPlug, this, std::placeholders::_1 );
-								break;
-							default:
-								break;
-							}
                             pAnimations[i + j].iNumber = i + 1; // parzyste działają inaczej niż nieparzyste
+                            bind_door_animation( pAnimations[ i + j ] ); // od razu zapinamy potrzebny typ animacji
                             pAnimations[i + j].fMaxDist = 300 * 300; // drzwi to z daleka widać
 /*
                             // NOTE: no longer used
                             pAnimations[i + j].fSpeed = Random(150); // oryginalny koncept z DoorSpeedFactor
                             pAnimations[i + j].fSpeed = (pAnimations[i + j].fSpeed + 100) / 100;
 */
+                        }
+                    }
+                }
+
+                else if( token == "animdoor:" ) {
+                    // own kind of animation of one door wing, in place of the one of the .fiz (eu07/maszyna#70):
+                    // animdoor: <wing number> { type: <Shift|Rotate|Fold|Plug> range: <shift or angle> rangeout: <plug shift out> }
+                    // the keys left out keep the values of the .fiz. the wing still follows the door of its side
+                    door_wings::wing_spec spec {
+                        0,
+                        MoverParameters->Doors.type,
+                        MoverParameters->Doors.range,
+                        MoverParameters->Doors.range_out };
+                    auto error { door_wings::read_spec( parser, spec ) };
+                    if( error.empty()
+                     && ( spec.number < 1 || spec.number > iAnimType[ ANIM_DOORS ] ) ) {
+                        error = "no door wing " + std::to_string( spec.number ) + " among the door animations";
+                    }
+                    if( false == error.empty() ) {
+                        ErrorLog( "Bad model: " + asFileName + " - animdoor: " + error, logtype::model );
+                    }
+                    else {
+                        door_wings::store( m_doorwings, spec );
+                        // a wing animdoorprefix has found already gets the new kind of animation now; the ones it
+                        // finds later get it then
+                        auto const index { static_cast<std::size_t>( std::accumulate( std::begin( iAnimType ), std::begin( iAnimType ) + ANIM_DOORS, 0 ) + spec.number - 1 ) };
+                        if( index < pAnimations.size() && pAnimations[ index ].yUpdate ) {
+                            bind_door_animation( pAnimations[ index ] );
                         }
                     }
                 }
