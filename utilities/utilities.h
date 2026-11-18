@@ -64,7 +64,9 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int Random(int min, int max);
+// whole numbers from min to max, both included. not an overload of Random(): with one, a call with whole-number bounds
+// (the wind, the wheel flats, the truck hunting, the tachometer) gave whole numbers instead of a real number in between
+int RandomInt(int min, int max);
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
