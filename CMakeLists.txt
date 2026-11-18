@@ -554,6 +554,7 @@ set(CORE_SOURCES
 "utilities/physicslog.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
+"vehicle/brakingcurve.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
