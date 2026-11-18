@@ -64,8 +64,9 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-// whole numbers from min to max, both included. not an overload of Random(): with one, a call with whole-number bounds
-// (the wind, the wheel flats, the truck hunting, the tachometer) gave whole numbers instead of a real number in between
+// whole numbers from min to max, both included. a name of its own keeps the calls of Random() with whole-number
+// bounds (the wind, the wheel flats, the truck hunting, the tachometer) on Random(double, double), which draws the
+// real number in between that they expect
 int RandomInt(int min, int max);
 
 /// @author lxvia
