@@ -458,8 +458,11 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 }
 
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
+// NOTE: the entry of 0xB1 (the plus-minus sign of windows-1250, left as it is) is written as its byte. written as the
+// character it took two bytes in the builds which keep the texts of the sources in utf-8 (GCC, Clang, MSVC with /utf-8),
+// and every entry after it was off by one
 char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
-                                " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
+                                " ^^L$A|S^CS<--RZo\xB1,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
 
