@@ -416,11 +416,16 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
+// how far behind the head an event found in the scan may lie and still count as one the head had ahead [m]
+constexpr double SeenAheadTolerance { 5.0 };
+
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
-    // an event already behind the head when found (under a train set across a signal) wasn't passed by it
-    bSeenAhead = ( dist >= 0.0 );
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
+    // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
+    // may come out a few metres behind it: those still count as seen ahead
+    bSeenAhead = ( dist >= -SeenAheadTolerance );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
