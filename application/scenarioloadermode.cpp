@@ -40,6 +40,20 @@ bool scenarioloader_mode::update() {
 		// waiting for network connection
 		return true;
 
+	if (m_closing > 0) {
+		// the programs of the materials made ready a few at a frame, the loading screen with its bar kept on the screen and the
+		// window answering meanwhile; then on to the simulation
+		auto const [done, total] { GfxRenderer->Prewarm_Shaders( 50.0 ) };
+		if( done < total ) {
+			m_userinterface->set_progress( static_cast<float>( done ) * 100.f / static_cast<float>( total ), 0.f );
+			return true;
+		}
+		m_closing = 0;
+		Application.pop_mode();
+		Application.push_mode( eu07_application::mode::driver );
+		return true;
+	}
+
 	if (!state) {
 		WriteLog("using simulation seed: " + std::to_string(Global.random_seed), logtype::generic);
         WriteLog("using simulation starting timestamp: " + std::to_string(Global.starting_timestamp), logtype::generic);
@@ -98,8 +112,9 @@ bool scenarioloader_mode::update() {
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
 
-	Application.pop_mode();
-	Application.push_mode( eu07_application::mode::driver );
+	// the loading screen stays, saying the graphics are being prepared, until the programs are ready (above)
+	m_userinterface->set_progress(STR("Preparing the graphics (takes longer at the first start of a new version)"));
+	m_closing = 1;
 
     return true;
 }

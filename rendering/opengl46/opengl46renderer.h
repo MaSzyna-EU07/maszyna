@@ -183,6 +183,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
     std::vector<info_section> const &
         info_sections() const override;
 	  void MakeScreenshot() override;
+	  std::pair<std::size_t, std::size_t> Prewarm_Shaders( double const Milliseconds ) override;
     bool Render_Preview( TAnimModel *Instance, int const Size, int const Margin, bool const Shadows, std::vector<std::uint8_t> &Image ) override;
 
 
@@ -650,6 +651,23 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// programs of the multi draws: the vertex shader of the materials, variants of the material programs, of the depth prepass
 	std::unique_ptr<gl::shader> m_vertex_multidraw_shader;
 	std::unordered_map<gl::program const *, std::unique_ptr<gl::program>> m_multidrawprograms;
+	// Prewarm_Shaders(): the programs to draw with, the next one, and a small target of the formats of the colour pass with a
+	// triangle of no area to draw
+	struct shader_prewarm
+	{
+		bool started{ false };
+		std::vector<gl::program *> programs;
+		std::size_t next{ 0 };
+		std::size_t water{ 0 }; // programs of the windscreen water made ahead
+		bool water_done{ false };
+		std::unique_ptr<gl::renderbuffer> color;
+		std::unique_ptr<gl::renderbuffer> depth;
+		std::unique_ptr<gl::renderbuffer> motion;
+		std::unique_ptr<gl::framebuffer> target;
+		gfx::geometrybank_handle bank{};
+		gfx::geometry_handle triangle{};
+	};
+	shader_prewarm m_prewarm;
 	std::unique_ptr<gl::program> m_prepass_multidraw_shader;
 	std::unique_ptr<gl::program> m_prepass_alpha_multidraw_shader;
 	std::unique_ptr<gl::program> m_shadow_multidraw_shader; // and of the sun shadows

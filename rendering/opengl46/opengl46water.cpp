@@ -13,6 +13,10 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 
+#include <algorithm>
+#include <array>
+#include <iterator>
+
 namespace
 {
 
@@ -23,15 +27,44 @@ GLuint groups(std::size_t const Count)
 
 } // namespace
 
+namespace
+{
+// the programs of the passes, in their order (opengl46_windscreen_water::pass)
+constexpr std::array<char const *, 9> PROGRAM_NAMES{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
+                                                    "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp"};
+} // namespace
+
+bool opengl46_windscreen_water::prepare_next()
+{
+	static_assert(PROGRAM_NAMES.size() == pass::count, "a name for every pass of the water");
+	auto const missing{std::ranges::find(m_programs, nullptr)};
+	if (missing == m_programs.end())
+		return false;
+	auto const index{static_cast<std::size_t>(std::distance(m_programs.begin(), missing))};
+	try
+	{
+		gl::shader shader(PROGRAM_NAMES[index]);
+		*missing = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// left to gpu_init(), which tells of it and goes without the simulation
+		ErrorLog("windscreen water: " + std::string(PROGRAM_NAMES[index]) + " not made ahead: " + std::string(e.what()));
+		return false;
+	}
+	return true;
+}
+
 bool opengl46_windscreen_water::gpu_init()
 {
 	try
 	{
-		std::array<char const *, pass::count> const names{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp"};
-		for (std::size_t i = 0; i < names.size(); ++i)
+		// the ones made ahead (prepare_next()) are kept
+		for (std::size_t i = 0; i < PROGRAM_NAMES.size(); ++i)
 		{
-			gl::shader shader(names[i]);
+			if (m_programs[i])
+				continue;
+			gl::shader shader(PROGRAM_NAMES[i]);
 			m_programs[i] = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 		}
 	}
