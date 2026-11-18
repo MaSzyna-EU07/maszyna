@@ -788,27 +788,31 @@ void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8
 	}
 }
 
-void opengl_texture::commit_thread_upload()
+bool opengl_texture::commit_thread_upload()
 {
-	std::optional<texture_thread_upload> upload;
+	texture_thread_upload upload;
 	{
 		std::scoped_lock lock{m_threaduploadmutex};
-		upload = std::exchange(m_threadupload, std::nullopt);
+		if (false == m_threadupload.has_value())
+			return true;
+		// asked without waiting. the image goes in place only once the upload is done, so every context binding it after
+		// has it whole: the extra viewports and the windows of python.displaywindows draw in contexts of their own
+		if (m_threadupload->fence != nullptr)
+		{
+			// a failed query (GL_WAIT_FAILED) isn't asked again: the image would never go in place
+			if (glClientWaitSync(m_threadupload->fence, 0, 0) == GL_TIMEOUT_EXPIRED)
+				return false;
+			glDeleteSync(m_threadupload->fence);
+		}
+		upload = *m_threadupload;
+		m_threadupload.reset();
 	}
-	if (false == upload.has_value())
-		return;
 
-	if (upload->fence != nullptr)
-	{
-		// the commands that follow wait on the gpu for the upload to be done, the cpu goes on
-		glWaitSync(upload->fence, 0, GL_TIMEOUT_IGNORED);
-		glDeleteSync(upload->fence);
-	}
 	if (id != invalid_id)
 		glDeleteTextures(1, &id);
-	id = upload->id;
-	data_width = static_cast<unsigned int>(upload->width);
-	data_height = static_cast<unsigned int>(upload->height);
+	id = upload.id;
+	data_width = static_cast<unsigned int>(upload.width);
+	data_height = static_cast<unsigned int>(upload.height);
 	data_format = GL_SRGB8_ALPHA8;
 	data_components = GL_RGBA;
 	if (type == "internalsrc:")
@@ -819,6 +823,7 @@ void opengl_texture::commit_thread_upload()
 	// the name deleted may come back for another texture, and a deleted texture isn't bound any more
 	for (auto &unit : units)
 		unit = -1;
+	return true;
 }
 
 void

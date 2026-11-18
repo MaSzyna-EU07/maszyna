@@ -85,10 +85,11 @@ class render_task
 	void run();
 	// uploads the image on the drawing thread
 	void upload() const;
-	// uploads the image on a worker with a gl context of its own (python.threadedupload); commit_upload() puts it in place
-	void upload_from_thread() const;
-	// puts the image of upload_from_thread() in place, on the drawing thread
-	void commit_upload() const;
+	// uploads the image on a worker with a gl context of its own (python.threadedupload); finish_upload() puts it in place
+	void upload_from_thread();
+	// on the drawing thread: uploads the image, or puts in place the one a worker uploaded. false while the gpu hasn't got
+	// the latter yet, to be called again
+	bool finish_upload() const;
 	void cancel() const;
 	auto target() const -> std::shared_ptr<python_rt>
 	{
@@ -100,6 +101,8 @@ class render_task
 	PyObject *m_renderer{nullptr};
 	std::shared_ptr<dictionary_source> m_input{nullptr};
 	std::shared_ptr<python_rt> m_target{nullptr};
+	// set by upload_from_thread(); read by the drawing thread after the task was handed over under the lock of the queue
+	bool m_uploadedbyworker{false};
 };
 
 class python_taskqueue

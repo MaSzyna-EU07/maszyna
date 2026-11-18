@@ -98,7 +98,7 @@ struct opengl_texture : public ITexture {
 	// the image goes into a texture of its own, and the drawing thread swaps it in after the gpu has it (commit_thread_upload).
 	// the texture drawn from is never written by the uploading thread
 	void upload_from_thread(size_t width, size_t height, const uint8_t *data) override;
-	void commit_thread_upload() override;
+	bool commit_thread_upload() override;
 
 // members
     static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource

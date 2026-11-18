@@ -30,7 +30,7 @@ void texture_window_cursor_pos(GLFWwindow *win, double x, double y)
 }
 
 python_screen_viewer::python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &surfacename)
-    : m_rt(rt), m_touchlist(touchlist)
+    : m_rt(rt), m_touchlist(touchlist), m_initialtexture(rt->shared_tex->get_id())
 {
 
 	for (const auto &viewport : Global.python_viewports) {
@@ -90,8 +90,7 @@ void python_screen_viewer::threadfunc()
 		glActiveTexture(GL_TEXTURE0);
 
 		if (Global.python_sharectx) {
-			window->shared_texture = m_rt->shared_tex->get_id();
-			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(window->shared_texture));
+			bind_shared_texture();
 		}
 		else {
 			GLuint tex;
@@ -148,7 +147,7 @@ void python_screen_viewer::threadfunc()
 
 			glfwMakeContextCurrent(window->window);
 			if (Global.python_sharectx)
-				bind_shared_texture(*window);
+				bind_shared_texture();
 			gl::program::unbind();
 			gl::buffer::unbind();
 
@@ -191,18 +190,16 @@ void python_screen_viewer::threadfunc()
 	}
 }
 
-void python_screen_viewer::bind_shared_texture(window_state &Window) const
+void python_screen_viewer::bind_shared_texture() const
 {
 	size_t texture;
 	{
 		std::scoped_lock guard(m_rt->mutex);
 		texture = m_rt->texture_id;
 	}
-	// each image uploaded by a worker comes in a texture of its own
-	if (texture == 0 || texture == Window.shared_texture)
-		return;
-	Window.shared_texture = texture;
-	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+	// bound each frame: each image uploaded by a worker comes in a texture of its own, and a name deleted comes back for
+	// a later one, so a name seen before may be another texture already
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture != 0 ? texture : m_initialtexture));
 }
 
 void python_screen_viewer::notify_window_fb_size(GLFWwindow const *window, int w, int h) const

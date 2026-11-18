@@ -27,8 +27,13 @@ struct ITexture
 	{
 		update_from_memory(width, height, data);
 	}
-	// puts in place the image of the last upload_from_thread(), once the gpu has it. called on the drawing thread
-	virtual void commit_thread_upload() { /* the image went in place right away */ }
+	// puts in place the image of the last upload_from_thread() once the gpu has it, without waiting for it. called on the
+	// drawing thread; false while the upload isn't done yet, to be asked again later
+	virtual bool commit_thread_upload()
+	{
+		// the image went in place right away
+		return true;
+	}
 	static ITexture *null_texture()
 	{
 		struct NullTexture : public ITexture

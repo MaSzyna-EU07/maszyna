@@ -232,22 +232,31 @@ void render_task::upload() const
 	}
 }
 
-void render_task::upload_from_thread() const
+void render_task::upload_from_thread()
 {
+	m_uploadedbyworker = true;
 	if (Global.python_uploadmain && m_target && m_target->shared_tex)
 	{
 		m_target->shared_tex->upload_from_thread(m_target->width, m_target->height, reinterpret_cast<const uint8_t *>(m_target->image.data()));
 	}
 }
 
-void render_task::commit_upload() const
+bool render_task::finish_upload() const
 {
-	if (Global.python_uploadmain && m_target && m_target->shared_tex)
+	if (false == Global.python_uploadmain || nullptr == m_target || nullptr == m_target->shared_tex)
+		return true;
+	if (m_uploadedbyworker)
 	{
-		m_target->shared_tex->commit_thread_upload();
-		std::scoped_lock lock(m_target->mutex);
-		m_target->texture_id = m_target->shared_tex->get_id();
+		if (false == m_target->shared_tex->commit_thread_upload())
+			return false;
 	}
+	else
+	{
+		upload();
+	}
+	std::scoped_lock lock(m_target->mutex);
+	m_target->texture_id = m_target->shared_tex->get_id();
+	return true;
 }
 
 void render_task::cancel() const { /* nothing to do */ }
@@ -629,15 +638,8 @@ void python_taskqueue::update()
 {
 	std::scoped_lock lock(m_uploadtasks.mutex);
 
-	for (auto const &task : m_uploadtasks.data)
-	{
-		if (Global.python_threadedupload)
-			task->commit_upload();
-		else
-			task->upload();
-	}
-
-	m_uploadtasks.data.clear();
+	// a task whose image a worker uploaded stays until the gpu has the image
+	std::erase_if(m_uploadtasks.data, [](std::shared_ptr<render_task> const &Task) { return Task->finish_upload(); });
 }
 
 void python_taskqueue::error()
