@@ -641,9 +641,9 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     	const float transitionontime = std::min(0.25f, std::min(ontime, offtime) * 0.95f);
     	const float transitionofftime = std::min(0.45f, std::min(ontime, offtime) * 0.95f);
     	if (on)
-    		opacity += transition ? timedelta / transitionontime : 1.f; // increase to max value
+    		opacity = static_cast<float>( opacity + ( transition ? timedelta / transitionontime : 1.0 ) ); // increase to max value
     	else
-    		opacity -= transition ? timedelta / transitionofftime : 1.f; // reduce to zero
+    		opacity = static_cast<float>( opacity - ( transition ? timedelta / transitionofftime : 1.0 ) ); // reduce to zero
     	// Clamp the opacity
 		opacity = std::clamp(opacity, 0.f, 1.f);
     }
