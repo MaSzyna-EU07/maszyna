@@ -25,7 +25,11 @@ static int const MaxTTableSize = 100; // można by to robić dynamicznie
 struct TMTableEntry {
 	float km{0.f}; // kilometraz linii
 	float vmax{-1.f}; // predkosc rozkladowa przed przystankiem
-	std::string StationName{"nowhere"}; // nazwa stacji ('_' zamiast spacji)
+	// nazwa stacji ('_' zamiast spacji), bez ogonków: the form the station is matched, looked up and handed over by
+	// (the W4 stop points, the announcement files, the scenery events, the scripts)
+	std::string StationName{"nowhere"};
+	// the name as the timetable spells it, in windows-1250 with its letters: for showing (timetable::station_caption())
+	std::string StationLabel{"nowhere"};
 	std::string StationWare; // typ i wyposazenie stacji, oddz. przecinkami, bez flag obsługi
 	int TrackNo{1}; // ilosc torow szlakowych
 	int Ah{-1};
@@ -45,8 +49,11 @@ struct timetable_data {
 	std::string TrainName; // the name the file is looked up by, then the one the file gives
 	std::string TrainCategory;
 	std::string TrainLabel;
+	// the first and the last station, in the two forms a station name has (see TMTableEntry)
 	std::string Relation1;
 	std::string Relation2;
+	std::string RelationLabel1;
+	std::string RelationLabel2;
 	double BrakeRatio{0.0};
 	std::string LocSeries;
 	double LocLoad{0.0};

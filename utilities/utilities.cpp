@@ -323,7 +323,7 @@ std::string ToUpper(std::string const &text)
 void win1250_to_ascii(std::string &Input)
 {
 
-	std::unordered_map<char, char> const charmap{{165, 'A'}, {198, 'C'}, {202, 'E'}, {163, 'L'}, {209, 'N'}, {211, 'O'}, {140, 'S'}, {143, 'Z'}, {175, 'Z'},
+	static std::unordered_map<char, char> const charmap{{165, 'A'}, {198, 'C'}, {202, 'E'}, {163, 'L'}, {209, 'N'}, {211, 'O'}, {140, 'S'}, {143, 'Z'}, {175, 'Z'},
 	                                             {185, 'a'}, {230, 'c'}, {234, 'e'}, {179, 'l'}, {241, 'n'}, {243, 'o'}, {156, 's'}, {159, 'z'}, {191, 'z'}};
 	std::unordered_map<char, char>::const_iterator lookup;
 	for (auto &input : Input)
