@@ -549,6 +549,7 @@ set(CORE_SOURCES
 "vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
+"vehicle/drivingaid.cpp"
 "vehicle/handover.cpp"
 "vehicle/horn.cpp"
 "vehicle/cameraviews.cpp"
