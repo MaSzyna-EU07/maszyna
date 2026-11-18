@@ -424,7 +424,9 @@ bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders orde
     fDist = dist;
     // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
     // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
-    // may come out a few metres behind it: those still count as seen ahead
+    // may come out a few metres behind it: those still count as seen ahead. the price is that a train set less than
+    // the tolerance past a signal at stop is still reported to pass it; a train standing that close to a signal can't
+    // be told from one stopped just short of it, which really passes the signal if it goes on
     bSeenAhead = ( dist >= -SeenAheadTolerance );
     iFlags = spEvent;
     evEvent = event;
