@@ -211,6 +211,7 @@ void TSpeedPos::Clear()
 	fSectionVelocityDist = 0.0; //brak długości
     fPointDist = 0.0;
     fDist = 0.0;
+    bSeenAhead = false;
     vPos = glm::dvec3(0, 0, 0);
     trTrack = nullptr; // brak wskaźnika
 };
@@ -327,6 +328,9 @@ bool TSpeedPos::Update()
         // trzeba zazanaczyć, że minięty
         iFlags |= spElapsed;
     }
+    else {
+        bSeenAhead = true;
+    }
     if (iFlags & spTrack) {
         // road/track
         if (trTrack) {
@@ -415,6 +419,8 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it
+    bSeenAhead = ( dist >= 0.0 );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
@@ -909,6 +915,7 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
 {
     if( Passedbefore
      || false == TestFlag( Point.iFlags, spElapsed )
+     || false == Point.bSeenAhead // found already behind the head: the train stood across it, it didn't pass it
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
