@@ -11390,8 +11390,11 @@ glm::dvec3 TTrain::clamp_inside(glm::dvec3 const &Point) const
 		return Point;
 	}
 
-	return {std::clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), std::clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
-	        std::clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
+	// the bounds come from the .mmd as written, and some cabs have them reversed (the B cars of SA134 and 21xM,
+	// ET40, 754...); std::clamp is undefined for those and on MSVC makes the camera jump between the two bounds
+	// every frame, as its result is fed back here. safe_clamp keeps the camera on the upper bound, as 26.05 did
+	return {safe_clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), safe_clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
+	        safe_clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
 }
 
 const TTrain::screenentry_sequence &TTrain::get_screens()

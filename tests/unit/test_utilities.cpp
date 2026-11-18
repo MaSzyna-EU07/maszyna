@@ -681,12 +681,19 @@ TEST_CASE("utilities: the sign of a number, and a number rounded to a whole one"
 	CHECK(Round(-2.5) == -2);
 }
 
-TEST_CASE("utilities: a value is kept within bounds, given in any order") {
+TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the upper one, as the old clamp did") {
 	CHECK(safe_clamp(5, 0, 3) == 3);
-	CHECK(safe_clamp(5, 3, 0) == 3);
-	CHECK(safe_clamp(-1, 3, 0) == 0);
-	CHECK(safe_clamp(2.0, 3.0, 1.0) == 2.0);
+	CHECK(safe_clamp(-1, 0, 3) == 0);
+	CHECK(safe_clamp(2, 0, 3) == 2);
 	CHECK(safe_clamp(2.0, 2.0, 2.0) == 2.0);
+	// inverted bounds: always the upper bound, whatever the value
+	CHECK(safe_clamp(5, 3, 0) == 0);
+	CHECK(safe_clamp(-1, 3, 0) == 0);
+	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
+	// the AI braking test of 26.05: the demand was always the stronger of the two (negative) bounds
+	double const threshold{-0.45};
+	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {
