@@ -94,7 +94,9 @@ bool scene_walk::drawn_in_phase(TSubModel const *Submodel, int const Mask)
 
 bool scene_walk::is_fake_glow(TSubModel const *Submodel)
 {
-	if (Global.gfx_lights_hideglow.empty() || (false == Global.gfx_lights_clustered) || (false == Global.gfx_lights_scenery) || (Submodel->m_material <= 0))
+	// kept when no lamp lights in their place: the local lights off, or gathered from nowhere (gfx_lights_range 0)
+	if (Global.gfx_lights_hideglow.empty() || (false == Global.gfx_lights_clustered) || (false == Global.gfx_lights_scenery) || (Global.gfx_lights_range <= 0.f) ||
+	    (Submodel->m_material <= 0))
 	{
 		return false;
 	}
