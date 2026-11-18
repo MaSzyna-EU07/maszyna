@@ -8792,7 +8792,7 @@ void TController::control_tractive_force() {
 	    false == TestFlag(iDrivigFlags, movePress) &&
 	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
 	    // speeds the train up, more power only drags the brake and slips the wheels
-	    ( false == bUphillRelease || fUphillTractiveForce < EU07_AI_UPHILLRELEASEFORCE * fUphillHoldingForce ) &&
+	    ( false == bUphillRelease || fUphillTractiveForce < EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce ) &&
 	    // nor while the train brake is still being applied further to hold the train
 	    false == bUphillBrakeTopUp &&
 	    velocity < (VelDesired == 1.0 ? // work around for trains getting stuck on tracks with speed limit = 1
@@ -8819,7 +8819,10 @@ void TController::control_tractive_force() {
         }
         else if( velocity > VelDesired + SpeedCtrlMargin
               || ( fAccGravity < -0.01 ? is_too_fast_uphill() : AbsAccS > AccDesired + 10.05 )
-               || IsAnyCouplerStretched ) {
+               || IsAnyCouplerStretched
+               // starting uphill against the releasing brake, a notch that went past the bound is taken back: between
+               // the two bounds the power neither goes up nor down, so a coarse notch doesn't swing round them
+               || ( bUphillRelease && ( fUphillTractiveForce > EU07_AI_UPHILLRELEASEFORCE * fUphillHoldingForce ) ) ) {
                 // jak za bardzo przyspiesza albo prędkość przekroczona
 				// dodany wyjatek na "pelna w przod"
                 cue_action( driver_hint::tractiveforcedecrease );
@@ -8863,6 +8866,8 @@ void TController::control_uphill_start() {
          && ( BrakeCtrlPosition > 0.0 ) ) { // only with the train brake still applied to hold the train
             bUphillStart = true;
             bUphillRelease = false;
+            bUphillTopUpDone = false;
+            fUphillTopUpForce = -1.0;
             fUphillStartTime = ElapsedTime;
         }
         else {
@@ -8889,26 +8894,8 @@ void TController::control_uphill_start() {
     fUphillHoldingForce = fMass * -fAccGravity;
     bUphillBrakeTopUp = false;
     if( false == bUphillRelease ) {
-        // the locomotive brake comes off only once the brake of the rest of the train holds the train on its own: a
-        // train stopped on a light application stands on the locomotive brake too, and rolls back as soon as it is off
-        auto trainbrakeforce { 0.0 };
-        auto haswagons { false };
-        for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
-            if( vehicle->MoverParameters->Power < 0.01 ) {
-                trainbrakeforce += vehicle->MoverParameters->Fb;
-                haswagons = true;
-            }
-        }
-        if( haswagons
-         && ( trainbrakeforce < 1.1 * fUphillHoldingForce )
-         && ( BrakeCtrlPosition < gbh_MAX - 1 ) ) { // short of the emergency application
-            bUphillBrakeTopUp = true;
-            // the time for the power to hold the train starts once the brake does
-            fUphillStartTime = ElapsedTime;
-            // a step at a time, each given the time to fill the cylinders along the train
-            if( fBrakeHeldTime > brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fBrake_a0[ 0 ] ) ) {
-                BrakeLevelAdd( BrakingLevelIncrease );
-            }
+        bUphillBrakeTopUp = uphill_brake_top_up();
+        if( bUphillBrakeTopUp ) {
             return;
         }
         if( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake )
@@ -8916,7 +8903,7 @@ void TController::control_uphill_start() {
             cue_action( driver_hint::independentbrakerelease );
         }
         if( ( velocity > 1.0 )
-         || ( fUphillTractiveForce > 1.1 * fUphillHoldingForce )
+         || ( fUphillTractiveForce > EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce )
          // a locomotive that can't hold the train on its own power gets the brake off in the end all the same
          || ( ElapsedTime - fUphillStartTime > 45.0 ) ) {
             // the power holds the train: the train brake can be released
@@ -8932,6 +8919,43 @@ void TController::control_uphill_start() {
      || ( ElapsedTime - fUphillReleaseTime > EU07_AI_UPHILLRELEASETIME ) ) {
         end_uphill_start();
     }
+}
+
+// the locomotive brake comes off only once the brake of the rest of the train holds the train on its own: a train
+// stopped on a light application stands on the locomotive brake too, and rolls back as soon as it is off. until then
+// the train brake is applied further, a step at a time; true while it is
+bool TController::uphill_brake_top_up() {
+
+    auto trainbrakeforce { 0.0 };
+    auto haswagons { false };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        if( vehicle->MoverParameters->Power < 0.01 ) {
+            trainbrakeforce += vehicle->MoverParameters->Fb;
+            haswagons = true;
+        }
+    }
+    if( ( false == haswagons )
+     || bUphillTopUpDone
+     || ( trainbrakeforce >= EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce )
+     || ( BrakeCtrlPosition >= EU07_AI_UPHILLTOPUPPOSITION ) ) {
+        return false;
+    }
+    // the time for the power to hold the train starts once the brake does
+    fUphillStartTime = ElapsedTime;
+    // each step is given the full application time of the train brake, for the cylinders along the train to fill
+    if( fBrakeHeldTime < mvOccupied->BrakeDelay[ mvOccupied->BrakeDelayFlag > bdelay_G ? 1 : 3 ] ) {
+        return true;
+    }
+    if( ( fUphillTopUpForce >= 0.0 )
+     && ( trainbrakeforce - fUphillTopUpForce < EU07_AI_UPHILLTOPUPGAIN * fUphillHoldingForce ) ) {
+        // the last step added next to nothing: the brake of this train can't hold it (brakes cut out, a load setting
+        // too low), and the start goes on without
+        bUphillTopUpDone = true;
+        return false;
+    }
+    fUphillTopUpForce = trainbrakeforce;
+    BrakeLevelAdd( BrakingLevelIncrease );
+    return true;
 }
 
 void TController::end_uphill_start() {
