@@ -1171,6 +1171,11 @@ local slow = refused(string.find, long, ".-b")
 	and refused(function() for x in long:gmatch("a-b") do end end)
 	and refused(string.find, ("a"):rep(1000), "a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab")
 	and refused(string.find, long, ("a"):rep(1000) .. "b", 1, true)
+-- %b walks to the end of the subject from each opening character that nothing closes
+local open = ("("):rep(1000000)
+slow = slow and refused(string.find, open, '%b()')
+	and refused(string.gsub, open, '%b()', "")
+	and refused(function() for x in open:gmatch('%b()') do end end)
 -- what a screen does: lines of a file, fields of a line, a plain search, short subjects
 local text = ("key=value\n"):rep(10000)
 local lines = 0
@@ -1178,7 +1183,8 @@ for line in text:gmatch("[^\n]+") do lines = lines + 1 end
 local key, value = ("speed=120"):match("^(%w+)=(%d+)$")
 local spaced = select(2, (("a  b   c "):rep(100)):gsub("%s+", " "))
 local found = long:find("aaab", 1, true) == nil and (long .. "b"):find("ab", 1, true) == 1000000
-local fast = lines == 10000 and key == "speed" and value == "120" and spaced == 300 and found
+local calls = select(2, (("call(a, b) "):rep(10000)):gsub('%b()', ""))
+local fast = lines == 10000 and key == "speed" and value == "120" and spaced == 300 and found and calls == 10000
 	and ("x = 1"):find("=") == 3 and ("abc"):gsub("b", "%0%0") == "abbc"
 return {
 	render = function(state)

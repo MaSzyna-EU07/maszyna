@@ -309,6 +309,84 @@ std::size_t longest_run(std::string_view const Pattern, pattern_item const &Item
 	return longest;
 }
 
+// the characters Lua's matchbalance goes along for a %bxy tried in the subject: from each opening character to the one
+// that closes it, or to the end of the subject when nothing does
+struct balance_walks
+{
+	double longest{0.0}; // of one try
+	double total{0.0}; // of a try at every opening character
+};
+
+// the openings held while their closing characters are looked for; a subject nested deeper counts as never closed
+constexpr std::size_t max_balance_depth{65536};
+
+balance_walks balance_walks_of(char const Open, char const Close, std::string_view const Subject)
+{
+	balance_walks walks;
+	auto const size{Subject.size()};
+	auto const add{[&walks](std::size_t const Walk) {
+		walks.longest = std::max(walks.longest, static_cast<double>(Walk));
+		walks.total += static_cast<double>(Walk);
+	}};
+	if (Open == Close)
+	{
+		// the next one closes it, and opens the try that starts there
+		auto previous{Subject.find(Open)};
+		while (previous != std::string_view::npos)
+		{
+			auto const next{Subject.find(Open, previous + 1)};
+			add((next != std::string_view::npos ? next : size) - previous);
+			previous = next;
+		}
+		return walks;
+	}
+	std::vector<std::size_t> open;
+	for (std::size_t idx{0}; idx < size; ++idx)
+	{
+		if (Subject[idx] == Close)
+		{
+			if (false == open.empty())
+			{
+				add(idx - open.back());
+				open.pop_back();
+			}
+		}
+		else if (Subject[idx] == Open)
+		{
+			if (open.size() >= max_balance_depth)
+			{
+				auto const openings{static_cast<double>(std::count(Subject.begin(), Subject.end(), Open))};
+				return {static_cast<double>(size), openings * static_cast<double>(size)};
+			}
+			open.push_back(idx);
+		}
+	}
+	for (auto const idx : open)
+	{
+		add(size - idx);
+	}
+	return walks;
+}
+
+// how many times over a %bxy counts: it goes along the subject on its own, whatever follows it, so it counts where it
+// ends the pattern as well. without the subject, as many times as the subject has positions. with it: the longest walk
+// of one try (plus one); or, when nothing but captures is before it in a pattern tried from every position, each
+// opening character is tried once, and it's the walks of all of them over the positions (plus one)
+double balance_cost(std::string_view const Pattern, pattern_item const &Item, std::string_view const *Subject, double const Positions, bool const Once)
+{
+	if (Subject == nullptr)
+	{
+		return Positions;
+	}
+	if (Item.begin + 3 >= Pattern.size())
+	{
+		// malformed: the function raises its error
+		return 1.0;
+	}
+	auto const walks{balance_walks_of(Pattern[Item.begin + 2], Pattern[Item.begin + 3], *Subject)};
+	return Once ? 1.0 + walks.total / Positions : 1.0 + walks.longest;
+}
+
 double pattern_cost(std::string_view const Pattern, std::size_t const Size, std::string_view const *Subject, bool const Plain, bool const Anchorable)
 {
 	auto const length{static_cast<double>(std::max<std::size_t>(Pattern.size(), 1))};
@@ -324,11 +402,20 @@ double pattern_cost(std::string_view const Pattern, std::size_t const Size, std:
 	// from the end: what follows each item, and whether that's only the end of the subject
 	auto rest{rest_match::always};
 	auto only_end{true};
+	// the first item that isn't a capture: a %bxy there is tried once from each position
+	auto const first{std::find_if(items.begin(), items.end(), [](pattern_item const &Item) { return Item.type != pattern_item::kind::paren; })};
 	for (auto item{items.rbegin()}; item != items.rend(); ++item)
 	{
 		if (item->type == pattern_item::kind::single && item->quantifier == '?')
 		{
 			cost *= 2.0;
+		}
+		if (item->type == pattern_item::kind::scan && Pattern[item->begin + 1] == 'b')
+		{
+			cost *= balance_cost(Pattern, *item, Subject, positions, false == anchored && first != items.end() && &*item == &*first);
+			only_end = false;
+			rest = rest_match::maybe;
+			continue;
 		}
 		auto const repeated{item->type == pattern_item::kind::scan
 		                    || (item->type == pattern_item::kind::single && item->quantifier != 0 && item->quantifier != '?')};

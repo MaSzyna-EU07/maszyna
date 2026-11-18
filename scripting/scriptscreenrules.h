@@ -92,11 +92,17 @@ constexpr double max_pattern_cost{1e8};
 //   or '-' or a '?' of what always matches, '.*' / '.-' before '$'), where the match is over: so neither the last
 //   repetition nor the first %s* of "^%s*(.-)%s*$" multiplies. times 2 for each '?', times m for the work of each step
 //   (a set is gone through item by item)
+// - a %bxy goes along the subject on its own, whatever follows it, so it counts where it ends the pattern as well:
+//   ("("):rep(1e6):find("%b()") walks to the end of the subject from each of its characters
 // a malformed pattern costs nothing here: the function raises its error itself
 double lua_pattern_cost(std::string_view Pattern, std::size_t Subject, bool Plain, bool Anchorable);
 // as above, on the subject itself: a repetition of a character or a %class right before the final '$' ("%s*$") counts
 // as many times as the longest run of it in the subject (plus one), not the whole subject: past that run it fails or
 // gets to the end, so the trim "^%s*(.-)%s*$" costs about the subject times its longest run of spaces
+// a %bxy counts as many times as the longest way from an opening character to the one that closes it (to the end of
+// the subject when nothing does), plus one; when only captures are before it in a pattern tried from every position,
+// each opening character is tried once, and it's the ways from all of them over the positions of the subject. so
+// "%b()" on a long text of short balanced pairs is cheap, and on one that doesn't balance it's the subject squared
 double lua_pattern_cost(std::string_view Pattern, std::string_view Subject, bool Plain, bool Anchorable);
 
 } // namespace script_screens
