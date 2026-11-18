@@ -871,6 +871,9 @@ vec3 cab_probe_reflection(vec3 surroundings, vec3 fragnormal, float roughness, v
 // before they're lit (the grass, which the surface of the drifts buries, the water, the glass of the windscreens, the surface of the
 // drifts itself)
 bool snow_receiver = true;
+// the snow caught by leaves drawn on planes (the trees of crossed planes, the bushes): how much of it a fragment of an alpha
+// tested material holds, 0..1, set by snow_foliage_from() before it's lit; -1 for the rest
+float snow_foliage = -1.0;
 
 #include "snow.glsl"
 
@@ -884,12 +887,61 @@ void apply_snow(inout vec3 fragnormal, inout vec3 texturecolor, inout float refl
     float exposure;
     float tracked;
     float cover = snow_coverage(world, worldnormal, depth, exposure, tracked);
+    vec3 stable = vec3(world.x + sky_occlusion_origin.x, world.y + sky_occlusion_origin.z, world.z + sky_occlusion_origin.y);
+    if (snow_foliage > 0.0)
+    {
+        // the leaves hold what fell on them: as much as on open flat ground, a few centimetres of it whiten them
+        float fallen = smoothstep(0.0, 0.04, snow_cover.x) * (1.0 - snow_cover.z * 0.6);
+        cover = max(cover, snow_foliage * fallen);
+    }
     if (cover <= 0.0)
         return;
-    vec3 stable = vec3(world.x + sky_occlusion_origin.x, world.y + sky_occlusion_origin.z, world.z + sky_occlusion_origin.y);
     float pixel = length(fwidth(world));
     snow_material(cover, stable, exposure, tracked, pixel, worldnormal, texturecolor, reflectivity, specularity);
     fragnormal = normalize(transpose(toworld) * worldnormal);
+}
+
+// the snow on the leaves of an alpha tested material at Uv of Tex: their normals lie flat on planes standing upright, the snow
+// can't be laid on them by the slope. it lies on the upper edges of the clumps of leaves instead, where the texture is clear a
+// little above the fragment (up in the world, as the texture runs across the plane), and in flakes over the rest
+void snow_foliage_from(sampler2D tex, vec2 uv)
+{
+#ifndef NO_SNOW
+    if ((cab_interior > 0.5) || (false == snow_present()))
+        return;
+    mat3 toworld = mat3(inv_view);
+    vec3 world = toworld * f_pos.xyz;
+    vec3 dpx = dFdx(world);
+    vec3 dpy = dFdy(world);
+    vec2 dux = dFdx(uv);
+    vec2 duy = dFdy(uv);
+    vec3 normal = cross(dpx, dpy);
+    if (dot(normal, normal) < 1e-12)
+        return;
+    normal = normalize(normal);
+    // the world up laid on the plane, made of the steps of a pixel across and down the screen (least squares)
+    vec3 up = vec3(0.0, 1.0, 0.0) - normal * normal.y;
+    float a = dot(dpx, dpx);
+    float b = dot(dpx, dpy);
+    float c = dot(dpy, dpy);
+    float det = a * c - b * b;
+    if ((abs(det) < 1e-12) || (dot(up, up) < 0.04))
+        return;
+    vec2 steps = vec2(c * dot(dpx, up) - b * dot(dpy, up), a * dot(dpy, up) - b * dot(dpx, up)) / det;
+    vec2 uvup = steps.x * dux + steps.y * duy;
+    // clear 12 cm over the fragment: the top of a clump, and the snow cap on it. a texture with no holes around (a wall, a
+    // sign, a vehicle with the alpha test set) isn't leaves
+    vec2 uvside = vec2(-uvup.y, uvup.x);
+    float above = texture(tex, uv + uvup * 0.12).a;
+    float threshold = max(opacity, 0.5);
+    float around = min(min(above, texture(tex, uv - uvup * 0.12).a), min(texture(tex, uv + uvside * 0.12).a, texture(tex, uv - uvside * 0.12).a));
+    if (around >= threshold)
+        return;
+    float cap = (above < threshold) ? 1.0 : 0.0;
+    vec3 stable = vec3(world.x + sky_occlusion_origin.x, world.y + sky_occlusion_origin.z, world.z + sky_occlusion_origin.y);
+    float flakes = smoothstep(0.62, 0.78, snow_fbm(stable.xz * 9.0 + stable.y * 7.0));
+    snow_foliage = clamp(cap * (0.7 + 0.3 * snow_fbm(stable.xy * 5.0)) + flakes * 0.55, 0.0, 1.0);
+#endif
 }
 
 vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone, bool sunless)
@@ -898,7 +950,8 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     texturecolor *= material_diffuse();
 #ifndef NO_SNOW
     // not inside the cabs and the interiors of the vehicles, under their roofs
-    if ((false == sunless) && snow_receiver && (cab_interior < 0.5) && snow_present())
+    // a sunless surface takes none, but the leaves of the trees drawn so (no sun on their crossed planes), never in a cab
+    if (((false == sunless) || (snow_foliage > 0.0)) && snow_receiver && (cab_interior < 0.5) && snow_present())
         apply_snow(fragnormal, texturecolor, reflectivity, specularity);
 #endif
     float polished = 0.0;
