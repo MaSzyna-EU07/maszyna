@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include "hamulce.h"
 #include "couplerphysics.h"
+#include "derailment.h"
+#include "collision.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/odometerreading.h"
 
@@ -175,6 +177,10 @@ enum DerailReason
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
 	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
 	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
+	/// <summary>Climbed onto the vehicle it hit, its end crushed (physics.collisions new).</summary>
+	COLLISION_OVERRIDE = 7, // najechanie
+	/// <summary>Pushed off the track by the force pressing its end (physics.collisions new).</summary>
+	COLLISION_PUSHED_OFF = 8, // wyciśnięcie z toru
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -690,6 +696,12 @@ struct TTrackShape
 	double dHtrack = 0.0; // nachylenie
 	/// <summary>Track cant / superelevation.</summary>
 	double dHrail = 0.0; // przechylka
+	/// <summary>Lateral curvature of the track unevenness under the vehicle [1/m], see world/TrackUneven.h.</summary>
+	double uneven_curvature = 0.0;
+	/// <summary>Cross level unevenness of the track [mm].</summary>
+	double uneven_cross = 0.0;
+	/// <summary>Curvature a buckle of the track adds under the body [1/m], positive with the curve, see world/TrackBuckle.h.</summary>
+	double buckle_curvature = 0.0;
 };
 
 /// <summary>Per-segment track parameters: gauge, friction, category, load capacity, damage.</summary>
@@ -707,6 +719,8 @@ struct TTrackParam
 	int DamageFlag = 0;
 	/// <summary>Maximum allowed velocity on this segment (used by AI driver).</summary>
 	double Velmax; /*dla uzytku maszynisty w ai_driver*/
+	/// <summary>Name of the track, for the log; nullptr where there is none.</summary>
+	std::string const *Name = nullptr;
 };
 
 /// <summary>Traction-supply parameters at the vehicle's current location.</summary>
@@ -1283,6 +1297,21 @@ struct TCoupling
 	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
 	coupler_physics::end_parameters physics;
 	coupler_physics::pair_state physics_state;
+	// the collisions past the buffers (physics.collisions new), see collision.h: the optional keys of this end, the depth
+	// it's crushed to for good [m], and the hit of the pair in the step: whether either vehicle handled it already, its
+	// peak force [N] and how long that acted [s]
+	collision::end_definition collision;
+	double crush{0.0};
+	double closing{0.0}; // the velocity the buffers of the pair closed in at, at the start of the step [m/s]
+	bool hit_handled{false};
+	double hit_force{0.0};
+	double hit_duration{0.0};
+	// physics.collisions monitor: the log told of the crush of this hit of the pair already
+	bool crush_monitored{false};
+	// the energy the contact of the pair brought to its buffers, for the budget of the crush
+	collision::contact_energy contact;
+	// the log told of the vehicle at this end being inside this one already
+	bool inside_reported{false};
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
@@ -1654,6 +1683,9 @@ class TMoverParameters
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
 	float Floor = 0.96f; // poziom podłogi dla ładunków
+	// height of the centre of gravity of the empty vehicle above the rail [m] (CoGH in the Dimensions of the .fiz),
+	// negative when the definition gives none: derailment::default_centre_of_gravity() then
+	double CentreOfGravity = -1.0;
 	float WheelDiameter = 1.f; /*srednica kol napednych*/
 	float WheelDiameterL = 0.9f; // Ra: srednica kol tocznych przednich
 	float WheelDiameterT = 0.9f; // Ra: srednica kol tocznych tylnych
@@ -2061,6 +2093,13 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	// the criteria of derailment (physics.derailment new), and the distance travelled since they were checked [m]
+	derailment::monitor derailment_monitor;
+	double derailment_distance = 0.0;
+	// physics.derailment monitor: the name of the track the criteria were last reported on (one report on a track), and
+	// how many reports there were
+	std::optional<std::string const *> derailment_reported;
+	int derailment_reports = 0;
 	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
@@ -2449,6 +2488,46 @@ class TMoverParameters
 	// was a broken coupler to repair
 	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
+	// the velocity of the vehicles coupled to this one changes by the Change along the axis of this one [m/s], as the
+	// legacy derailment changes the velocity of this one (physics.collisions new)
+	void change_train_velocity(double Change);
+	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]; monitor: what
+	// they would do, to the log
+	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
+	// the vehicle leaves the rails, as the criteria of derailment.h found
+	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName = nullptr);
+	// height of the centre of gravity above the rail with the load [m]
+	double centre_of_gravity() const;
+	// the vehicle is back on the rails (resetconsist, SetDamage taking dtrain_out off): not derailed any more, and the
+	// criteria of derailment start from scratch, so a later derailment goes the way its model has it
+	void rerail();
+	// what resetconsist does to a vehicle: no damage of any kind, the alarm chain released, back on the rails
+	void repair_damage();
+	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
+	// derailment, which stops it as the legacy model does (with physics.collisions new by a friction of its weight, the
+	// forces of the vehicles coupled to it acting on it)
+	derailment::outcome Derailed{derailment::outcome::none};
+	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
+	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit
+	collision::vehicle_kind collision_kind() const;
+	collision::crush_curve crush_curve_at(int End) const;
+	double buffer_height_at(int End) const;
+	collision::pushed_monitor pushed_off_monitor;
+	// how the vehicle left the rails in a collision (physics.collisions new): overriding or pushed off, NONE otherwise
+	DerailReason CollisionDerail{NONE};
+	// physics.collisions monitor: how many crushes the log told of, of the hits of this vehicle on the others
+	int crush_reports{0};
+	// physics.collisions new: the hit of the end on the stop of its buffers, harder than the steel takes, crushes the
+	// weaker end and may let one vehicle climb onto the other one, see collision.h. returns: whether it did, and the
+	// velocities took the hit; the legacy collision takes the rest. physics.collisions monitor: the log tells what the
+	// crush of the whole hit would be, once for a hit, nothing changes, and it returns false
+	bool crush_hit(int End, double dt);
+	// the force pressing the ends pushes the vehicle off the track (physics.collisions new), the step travelled the
+	// Distance [m]: the flange climbs while the wheels roll on
+	void check_pushed_off(double dt, double Distance);
+	// the vehicle leaves the rails in a collision, the reason told in the log, and slides on as the criteria of
+	// derailment.h have it
+	void derail_in_collision(DerailReason Reason, std::string const &Why);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;

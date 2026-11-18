@@ -2042,6 +2042,9 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
+	// the stretches the criteria of derailment held over were on the track the vehicle left (consistteleport)
+	MoverParameters->derailment_monitor.reset();
+	MoverParameters->derailment_distance = 0.0;
 	// potrzebne do wyliczenia aktualnej pozycji; nie może być zero, bo nie przeliczy pozycji
 	// teraz jeszcze trzeba przypisać pojazdy do nowego toru, bo przesuwanie początkowe osi nie
 	// zrobiło tego
@@ -3283,6 +3286,11 @@ bool TDynamicObject::Update(double dt, double dt1)
     // między skrajnymi osiami
     // (!!!odwrotny)
     ts.dHrail = (Axle1.GetRoll() + Axle0.GetRoll()) * 0.5; //średnia przechyłka pudła
+    // the uneven track under the outer axles, for the criteria of derailment: its lateral curvature, and its cross level
+    ts.uneven_curvature = glm::dot( 0.5 * ( Axle0.UnevenBend() + Axle1.UnevenBend() ), vLeft );
+    ts.uneven_cross = MyTrack->uneven_underway().cross;
+    // a buckle of the track under the body: the mean of the curvatures at the outer axles, each over the wheelbase of its bogie
+    ts.buckle_curvature = 0.5 * ( Axle0.BuckleCurvature( MoverParameters->ADist ) + Axle1.BuckleCurvature( MoverParameters->ADist ) );
     // TTrackParam tp;
     tp.Width = MyTrack->fTrackWidth;
     // McZapkie-250202
@@ -3290,6 +3298,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     tp.CategoryFlag = MyTrack->iCategoryFlag & 15;
     tp.DamageFlag = MyTrack->iDamageFlag;
     tp.QualityFlag = MyTrack->iQualityFlag;
+    tp.Name = &MyTrack->name();
 
     // couplers
     if( MoverParameters->Couplers[0].CouplingFlag != coupling::faux

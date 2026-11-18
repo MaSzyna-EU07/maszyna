@@ -879,6 +879,20 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.trackbuckling")
+    {
+        // off, scenery: the buckles of the scenery and its events, auto: also by the temperature of the rails
+        std::string mode;
+        ParseOne(Parser, mode, 1);
+        if (mode == "off" || mode == "no")
+            track_buckling = track_buckling_mode::off;
+        else if (mode == "auto")
+            track_buckling = track_buckling_mode::automatic;
+        else
+            track_buckling = track_buckling_mode::scenery;
+        return true;
+    }
+
     if (token == "couplerphysics")
     {
         // yes: the player's train and the trains it closes in on, all: every train
@@ -886,6 +900,32 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         ParseOne(Parser, scope, 1);
         coupler_physics_all = scope == "all";
         coupler_physics = coupler_physics_all || scope == "yes" || scope == "true" || scope == "1";
+        return true;
+    }
+
+    if (token == "physics.derailment")
+    {
+        // new: the physical criteria (McZapkie/derailment.h), old: the legacy draw, off: no derailment from the speed,
+        // monitor: the legacy draw, and the criteria to the log
+        std::string model;
+        ParseOne(Parser, model, 1);
+        derailment = derailment_model_of(model);
+        return true;
+    }
+
+    if (token == "physics.trackcheck")
+    {
+        ParseOne(Parser, track_check, 1);
+        return true;
+    }
+
+    if (token == "physics.collisions")
+    {
+        // new: the crush of the ends past the buffers (McZapkie/collision.h), old: the legacy rule, monitor: the legacy
+        // rule, and the crush to the log
+        std::string model;
+        ParseOne(Parser, model, 1);
+        collisions = collision_model_of(model);
         return true;
     }
 
@@ -1777,6 +1817,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "scenario.time.offset", ScenarioTimeOffset );
     export_as_text( Output, "scenario.time.current", ScenarioTimeCurrent );
     export_as_text( Output, "scenario.weather.temperature", AirTemperature );
+    export_as_text( Output, "physics.trackbuckling", std::string{
+        track_buckling == track_buckling_mode::off ? "off" :
+        track_buckling == track_buckling_mode::automatic ? "auto" :
+        "scenery" } );
     export_as_text( Output, "ai.trainman", AITrainman );
     export_as_text( Output, "controlcoupling.enginecheck", control_coupling_engine_check );
     std::string couplerphysics { coupler_physics ? "yes" : "no" };
@@ -1784,6 +1828,9 @@ global_settings::export_as_text( std::ostream &Output ) const {
         couplerphysics = "all";
     }
     export_as_text( Output, "couplerphysics", couplerphysics );
+    export_as_text( Output, "physics.derailment", std::string{ name_of( derailment ) } );
+    export_as_text( Output, "physics.trackcheck", track_check );
+    export_as_text( Output, "physics.collisions", std::string{ name_of( collisions ) } );
     export_as_text( Output, "ai.brakesetting.cw1", AIBrakeSettingCw1 );
     export_as_text( Output, "scalespeculars", ScaleSpecularValues );
     export_as_text( Output, "gfxrenderer", GfxRenderer );
