@@ -386,7 +386,8 @@ endif()
 
 if (WITH_LUA)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_LUA")
-	set(SOURCES ${SOURCES} "scripting/lua.cpp")
+	# the scenery scripts (lua.cpp) and the Lua screens (luaprogram.cpp) share the sandbox of luasandbox.cpp
+	set(SOURCES ${SOURCES} "scripting/lua.cpp" "scripting/luasandbox.cpp")
 endif()
 
 # the script screens (scripting/scriptscreens.cpp), with the Lua and the WebAssembly runtime when they're built
@@ -545,6 +546,7 @@ set(CORE_SOURCES
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
+"utilities/inionlysettings.cpp"
 "scripting/ladderlogic.cpp"
 "scripting/scriptscreenrules.cpp"
 "scripting/scriptscreenkernels.cpp"

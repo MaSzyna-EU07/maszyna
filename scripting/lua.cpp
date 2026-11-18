@@ -5,6 +5,8 @@
 #include "world/MemCell.h"
 #include "vehicle/Driver.h"
 #include "simulation/simulation.h"
+#include "scripting/luasandbox.h"
+#include "utilities/utilities.h"
 
 lua::lua()
 {
@@ -12,7 +14,13 @@ lua::lua()
     if (!state)
         throw std::runtime_error("cannot create lua state");
     lua_atpanic(state, atpanic);
-    luaL_openlibs(state);
+    // sandboxed as the script screens are: no io, ffi, debug, require or load*, and of os only the clock.
+    // lua.fulllibraries in eu07.ini opens the rest when the scenery loads its first script (interpret())
+    lua_sandbox::open_safe_libraries(state);
+    lua_sandbox::open_clock_library(state);
+    // the events, tracks, isolated circuits, vehicles and memcells a script holds: a userdata of a metatable of each
+    // kind, which the functions check
+    lua_sandbox::open_handles(state);
 
 	static constexpr luaL_Reg api[] =
 	{
@@ -41,6 +49,9 @@ lua::lua()
 		{nullptr, nullptr}
 	};
 	luaL_register(state, "eu07.events", api);
+	lua_pop(state, 1);
+	// eu07.read_file, eu07.write_file and eu07.read_data_file, the files of the scenery in place of io
+	lua_sandbox::open_file_library(state, &files);
 }
 
 lua::~lua()
@@ -51,21 +62,38 @@ lua::~lua()
 
 std::string lua::get_error() const
 {
-	return lua_tostring(state, -1);
+	auto const *error = lua_tostring(state, -1);
+	return error ? error : "unknown error";
 }
 
-void lua::interpret(const std::string& file) const
+void lua::interpret(const std::string &folder, const std::string &file)
 {
-	if (luaL_dofile(state, file.c_str())) {
-		std::string str = lua_tostring(state, -1);
-		ErrorLog("lua: Runtime error: " + str, logtype::lua);
+	if (Global.lua_fulllibraries && !full_libraries) {
+		// all of LuaJIT's libraries, as before the sandbox: the scripts may then reach files, programs and ffi
+		luaL_openlibs(state);
+		full_libraries = true;
+		WriteLog("lua: lua.fulllibraries is on, the scenery scripts run with all libraries (io, os, ffi, require...)", logtype::lua);
+	}
+	// the scripts read the files of the scenery folder, and write theirs into a folder of the scenery among the
+	// player's files (%APPDATA%/MaSzyna, ~/.config/MaSzyna), never into the game
+	files.scenery = folder;
+	if (auto data = lua_sandbox::scenery_data_folder(user_config_path("scenery_data"), Global.SceneryFile); data != files.data) {
+		files.data = std::move(data);
+		auto const name = files.data.u8string();
+		if (!name.empty())
+			WriteLog("lua: the scenery scripts write their files (eu07.write_file) to \"" + std::string(name.begin(), name.end()) + "\"", logtype::lua);
+	}
+	// a relative path inside the scenery folder, a file of text, run in protected mode: a script that fails stops
+	// there, and the scenery goes on loading
+	if (auto const error = lua_sandbox::run_script_file(state, folder, file)) {
+		ErrorLog("lua: " + *error, logtype::lua);
 	}
 }
 
 int lua::atpanic(lua_State *s)
 {
-	std::string err = lua_tostring(s, -1);
-	ErrorLog("lua: Runtime error: " + err, logtype::lua);
+	auto const *err = lua_tostring(s, -1);
+	ErrorLog(std::string("lua: Runtime error: ") + (err ? err : "unknown error"), logtype::lua);
     return 0;
 }
 
@@ -75,13 +103,37 @@ void lua::unref(lua_State *L, const int ref)
 	luaL_unref(L, LUA_REGISTRYINDEX, ref);
 }
 
+namespace {
+
+struct event_call {
+	int handler;
+	basic_event *event;
+	TDynamicObject *activator;
+};
+
+// calls the handler of the event (event_call) with the handles of the event and its activator (nil when there is none)
+int call_handler(lua_State *L)
+{
+	auto const &call = *static_cast<event_call const *>(lua_touserdata(L, 1));
+	lua_rawgeti(L, LUA_REGISTRYINDEX, call.handler);
+	lua_sandbox::push_handle(L, lua_sandbox::handle_kind::event, call.event);
+	lua_sandbox::push_handle(L, lua_sandbox::handle_kind::vehicle, call.activator);
+	lua_call(L, 2, 0);
+	return 0;
+}
+
+} // namespace
+
 /// Executes the callback function of an event created with `scriptapi_event_create`.
 void lua::dispatch_event(lua_State *L, const int handler, basic_event *event, const TDynamicObject *activator)
 {
-	lua_rawgeti(L, LUA_REGISTRYINDEX, handler);
-	lua_pushlightuserdata(L, event);
-	lua_pushlightuserdata(L, const_cast<TDynamicObject *>(activator));
-	lua_call(L, 2, 0);
+	event_call call{handler, event, const_cast<TDynamicObject *>(activator)};
+	// in protected mode, the handles made as well: a handler that fails is logged, and the simulation goes on
+	if (lua_cpcall(L, call_handler, &call) != 0) {
+		auto const *error = lua_tostring(L, -1);
+		ErrorLog("lua: event " + (event ? event->m_name : std::string("?")) + ": " + (error ? error : "unknown error"), logtype::lua);
+		lua_pop(L, 1);
+	}
 }
 
 void lua::push_memcell_values(lua_State *L, const TMemCell *mc)
@@ -103,11 +155,17 @@ memcell_values lua::get_memcell_values(lua_State *L, int idx)
 	// For negative indices, we need to account for the extra item that is the key name/value extracted from the table.
 	if (idx < 0)
 		idx--;
-	memcell_values mc{nullptr, 0.0, 0.0};
+	luaL_checktype(L, idx, LUA_TTABLE);
+	// no text in the table is an empty one: the memcell and the vehicle take the text as a string. copied: the text of
+	// a number is made on the stack, and gone with it
+	memcell_values mc{"", 0.0, 0.0};
 	lua_pushstring(L, "str");
 	lua_gettable(L, idx);
-	if (lua_isstring(L, -1))
-		mc.str = lua_tostring(L, -1);
+	if (lua_isstring(L, -1)) {
+		std::size_t length = 0;
+		auto const *text = lua_tolstring(L, -1, &length);
+		mc.str.assign(text, length);
+	}
 	lua_pop(L, 1);
 	lua_pushstring(L, "num1");
 	lua_gettable(L, idx);
@@ -124,7 +182,7 @@ memcell_values lua::get_memcell_values(lua_State *L, int idx)
 
 int lua::scriptapi_event_create(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	double delay = lua_tonumber(L, 2);
 	double randomdelay = lua_tonumber(L, 3);
 	lua_pushvalue(L, 4);
@@ -136,7 +194,7 @@ int lua::scriptapi_event_create(lua_State *L)
 	event->m_delayrandom = randomdelay;
 	if (simulation::Events.insert(event))
 	{
-		lua_pushlightuserdata(L, event);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::event, event);
 		return 1;
 	}
 	return 0;
@@ -144,11 +202,11 @@ int lua::scriptapi_event_create(lua_State *L)
 
 int lua::scriptapi_event_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	basic_event *foundevent = simulation::Events.FindEvent(name);
 	if (foundevent)
 	{
-		lua_pushlightuserdata(L, foundevent);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::event, foundevent);
 		return 1;
 	}
 	ErrorLog("lua: missing event: " + name);
@@ -157,7 +215,7 @@ int lua::scriptapi_event_find(lua_State *L)
 
 int lua::scriptapi_event_exists(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	basic_event *foundevent = simulation::Events.FindEvent(name);
 	lua_pushboolean(L, foundevent != nullptr);
 	return 1;
@@ -165,7 +223,7 @@ int lua::scriptapi_event_exists(lua_State *L)
 
 int lua::scriptapi_event_getname(lua_State *L)
 {
-	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
+	auto *event = lua_sandbox::check_handle<basic_event>(L, 1, lua_sandbox::handle_kind::event);
 	if (event)
 	{
 		lua_pushstring(L, event->m_name.c_str());
@@ -176,8 +234,8 @@ int lua::scriptapi_event_getname(lua_State *L)
 
 int lua::scriptapi_event_dispatch(lua_State *L)
 {
-	auto *event = static_cast<basic_event *>(lua_touserdata(L, 1));
-	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	auto *event = lua_sandbox::check_handle<basic_event>(L, 1, lua_sandbox::handle_kind::event);
+	auto *activator = lua_sandbox::check_handle<TDynamicObject>(L, 2, lua_sandbox::handle_kind::vehicle);
 	double delay = lua_tonumber(L, 3);
 	if (event)
 		simulation::Events.AddToQuery(event, activator, delay);
@@ -186,8 +244,8 @@ int lua::scriptapi_event_dispatch(lua_State *L)
 
 int lua::scriptapi_event_dispatch_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
-	auto *activator = static_cast<TDynamicObject *>(lua_touserdata(L, 2));
+	std::string name = luaL_checkstring(L, 1);
+	auto *activator = lua_sandbox::check_handle<TDynamicObject>(L, 2, lua_sandbox::handle_kind::vehicle);
 	double delay = lua_tonumber(L, 3);
 	basic_event *foundevent = simulation::Events.FindEvent(name);
 	if (foundevent)
@@ -199,11 +257,11 @@ int lua::scriptapi_event_dispatch_n(lua_State *L)
 
 int lua::scriptapi_track_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	TTrack *track = simulation::Paths.find(name);
 	if (track)
 	{
-		lua_pushlightuserdata(L, track);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::track, track);
 		return 1;
 	}
 	ErrorLog("lua: missing track: " + name);
@@ -212,7 +270,7 @@ int lua::scriptapi_track_find(lua_State *L)
 
 int lua::scriptapi_track_isoccupied(lua_State *L)
 {
-	auto *track = static_cast<TTrack *>(lua_touserdata(L, 1));
+	auto *track = lua_sandbox::check_handle<TTrack>(L, 1, lua_sandbox::handle_kind::track);
 	if (track)
 	{
 		lua_pushboolean(L, !track->IsEmpty());
@@ -223,7 +281,7 @@ int lua::scriptapi_track_isoccupied(lua_State *L)
 
 int lua::scriptapi_track_isoccupied_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	TTrack *track = simulation::Paths.find(name);
 	if (track)
 	{
@@ -236,11 +294,11 @@ int lua::scriptapi_track_isoccupied_n(lua_State *L)
 
 int lua::scriptapi_isolated_find(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	TIsolated *isolated = TIsolated::Find(name);
 	if (isolated)
 	{
-		lua_pushlightuserdata(L, isolated);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::isolated, isolated);
 		return 1;
 	}
 	ErrorLog("lua: missing isolated: " + name);
@@ -249,7 +307,7 @@ int lua::scriptapi_isolated_find(lua_State *L)
 
 int lua::scriptapi_isolated_isoccupied(lua_State *L)
 {
-	auto *isolated = static_cast<TIsolated *>(lua_touserdata(L, 1));
+	auto *isolated = lua_sandbox::check_handle<TIsolated>(L, 1, lua_sandbox::handle_kind::isolated);
 	if (isolated)
 	{
 		lua_pushboolean(L, isolated->Busy());
@@ -260,7 +318,7 @@ int lua::scriptapi_isolated_isoccupied(lua_State *L)
 
 int lua::scriptapi_isolated_isoccupied_n(lua_State *L)
 {
-	std::string name = lua_tostring(L, 1);
+	std::string name = luaL_checkstring(L, 1);
 	TIsolated *isolated = TIsolated::Find(name);
 	if (isolated)
 	{
@@ -273,7 +331,7 @@ int lua::scriptapi_isolated_isoccupied_n(lua_State *L)
 
 int lua::scriptapi_train_getname(lua_State *L)
 {
-	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	auto *dyn = lua_sandbox::check_handle<TDynamicObject>(L, 1, lua_sandbox::handle_kind::vehicle);
 	if (dyn && dyn->Mechanik)
 	{
 		lua_pushstring(L, dyn->Mechanik->TrainName().c_str());
@@ -284,7 +342,7 @@ int lua::scriptapi_train_getname(lua_State *L)
 
 int lua::scriptapi_dynobj_putvalues(lua_State *L)
 {
-	auto *dyn = static_cast<TDynamicObject *>(lua_touserdata(L, 1));
+	auto *dyn = lua_sandbox::check_handle<TDynamicObject>(L, 1, lua_sandbox::handle_kind::vehicle);
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	if (!dyn)
 		return 0;
@@ -298,11 +356,11 @@ int lua::scriptapi_dynobj_putvalues(lua_State *L)
 
 int lua::scriptapi_memcell_find(lua_State *L)
 {
-	std::string str = lua_tostring(L, 1);
+	std::string str = luaL_checkstring(L, 1);
 	TMemCell *mc = simulation::Memory.find(str);
 	if (mc)
 	{
-		lua_pushlightuserdata(L, mc);
+		lua_sandbox::push_handle(L, lua_sandbox::handle_kind::memcell, mc);
 		return 1;
 	}
 	ErrorLog("lua: missing memcell: " + str);
@@ -311,14 +369,14 @@ int lua::scriptapi_memcell_find(lua_State *L)
 
 int lua::scriptapi_memcell_read(lua_State *L)
 {
-	auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
+	auto *mc = lua_sandbox::check_handle<TMemCell>(L, 1, lua_sandbox::handle_kind::memcell);
 	push_memcell_values(L, mc);
 	return 1;
 }
 
 int lua::scriptapi_memcell_read_n(lua_State *L)
 {
-	std::string str = lua_tostring(L, 1);
+	std::string str = luaL_checkstring(L, 1);
 	TMemCell *mc = simulation::Memory.find(str);
 	push_memcell_values(L, mc);
 	if (!mc)
@@ -328,7 +386,7 @@ int lua::scriptapi_memcell_read_n(lua_State *L)
 
 int lua::scriptapi_memcell_update(lua_State *L)
 {
-	auto *mc = static_cast<TMemCell *>(lua_touserdata(L, 1));
+	auto *mc = lua_sandbox::check_handle<TMemCell>(L, 1, lua_sandbox::handle_kind::memcell);
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	if (mc)
 		mc->UpdateValues(str, num1, num2,
@@ -338,7 +396,7 @@ int lua::scriptapi_memcell_update(lua_State *L)
 
 int lua::scriptapi_memcell_update_n(lua_State *L)
 {
-	std::string mstr = lua_tostring(L, 1);
+	std::string mstr = luaL_checkstring(L, 1);
 	auto [str, num1, num2] = get_memcell_values(L, 2);
 	TMemCell *mc = simulation::Memory.find(mstr);
 	if (mc)
@@ -359,14 +417,14 @@ int lua::scriptapi_random(lua_State *L)
 
 int lua::scriptapi_writelog(lua_State *L)
 {
-	std::string txt = lua_tostring(L, 1);
+	std::string txt = luaL_checkstring(L, 1);
 	WriteLog("lua: log: " + txt, logtype::lua);
 	return 0;
 }
 
 int lua::scriptapi_writeerrorlog(lua_State *L)
 {
-	std::string txt = lua_tostring(L, 1);
+	std::string txt = luaL_checkstring(L, 1);
 	ErrorLog("lua: log: " + txt, logtype::lua);
 	return 0;
 }

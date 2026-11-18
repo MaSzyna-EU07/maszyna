@@ -362,8 +362,9 @@ state_serializer::deserialize_camera( cParser &Input, scene::scratch_data &Scrat
 void
 state_serializer::deserialize_config( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    // config parameters (re)definition
-    Global.ConfigParse( Input );
+    // config parameters (re)definition, but for what only eu07.ini sets: programs to run, connections, the sandbox of
+    // the scripts (utilities/inionlysettings.h)
+    Global.ConfigParse( Input, config_source::scenery );
     if( Global.test.enabled ) {
         // a scenery doesn't get to turn on what a test keeps off
         simulation::apply_test_mode_settings();
@@ -405,7 +406,8 @@ void state_serializer::deserialize_lua( cParser &Input, scene::scratch_data &Scr
        std::string file;
        Input >> file;
 #ifdef WITH_LUA
-       simulation::Lua.interpret(Global.asCurrentSceneryPath + file);
+       // the file is relative to the scenery folder, and stays inside it
+       simulation::Lua.interpret(Global.asCurrentSceneryPath, file);
 #else
        ErrorLog(file + ": lua scripts not supported in this build.");
 #endif

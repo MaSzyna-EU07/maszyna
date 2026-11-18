@@ -25,6 +25,12 @@ http://mozilla.org/MPL/2.0/.
 #include "input/zmq_input.h"
 #endif
 
+// where the keys global_settings::ConfigParse reads come from
+enum class config_source {
+	ini, // eu07.ini, and the file given with -ini
+	scenery // a config block of a scenery (.scn, .inc), read as it loads
+};
+
 struct global_settings {
 // members
     // data items
@@ -335,6 +341,7 @@ struct global_settings {
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
 	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool lua_fulllibraries{false}; // the scenery scripts (lua in the .scn) get all of LuaJIT's libraries (io, os, ffi, require...), not only the sandboxed ones
 	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
 	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
 	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
@@ -425,7 +432,9 @@ struct global_settings {
 	// methods
 	void LoadIniFile( std::string asFileName );
 	void FinalizeConfig();
-	void ConfigParse(cParser &parser);
+	// the keys of eu07.ini. Source: where they come from, eu07.ini or a config block of a scenery, which doesn't change
+	// the settings only eu07.ini sets (utilities/inionlysettings.h)
+	void ConfigParse(cParser &parser, config_source Source = config_source::ini);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
 	bool ConfigParseAudio(cParser& Parser, const std::string& token);
 	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
