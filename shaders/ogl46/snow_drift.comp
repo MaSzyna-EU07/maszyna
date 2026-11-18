@@ -183,11 +183,20 @@ void main()
 	// under a roof or a bridge only what blows in under its edge
 	if ((here.y < NO_CEILING) && (here.y - height < 25.0))
 		depth *= opening(texel, here.y) * 0.5;
-	// a track or a road keeps it down
+	// a track or a road keeps it down. the snow on a track (w, m over the ground: what came since the trains last cleared it,
+	// TTrack::snow_at(); negative where it isn't known) lies over that as it comes, the drift of the place at most; once it's
+	// over the rails they're buried, and the track is the snow like the rest
 	if (here.z < NO_CAP)
 	{
-		depth = clamp(here.z - height, 0.0, depth);
-		exposure += 4.0;
+		// the track lies lower than the snow around: what the wind carries fills it up to that at least, also where the open
+		// ground is blown off (TTrack::snow_at() counts what it brought in)
+		// the snow on the track lies from the bed by the sleepers, 17 cm under the heads of the rails (TMoverParameters::SnowForce()),
+		// which the map doesn't hold (the top of a track there is the ground under it, the embankment): the cap is 3 cm under the heads
+		// (no more than lies around it, TTrack::snow_at() sees to that)
+		float kept = here.z - height;
+		depth = (here.w >= 0.0) ? max(clamp(kept, 0.0, depth), kept - 0.14 + here.w) : clamp(kept, 0.0, depth);
+		if (here.w <= 0.17)
+			exposure += 4.0;
 	}
 	imageStore(drifted, texel, vec4(max(depth, 0.0), exposure, 0.0, 0.0));
 }

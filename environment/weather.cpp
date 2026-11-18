@@ -377,13 +377,15 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 		}
 		else if (keyword == "snowcover")
 		{
-			// snowcover depth [drift [fresh]]: the snow lying, m, how far it is worked into drifts and how loose it is, 0..1
+			// snowcover depth [drift [fresh [tracks]]]: the snow lying, m, how far it is worked into drifts and how loose it is, 0..1,
+			// and the share of it lying on the tracks too, as before the first train went (without it the tracks are cleared)
 			float depth{0.f};
 			if (next_number(depth))
 			{
 				Conditions.snow_depth = std::max(depth, 0.f);
 				next_number(Conditions.snow_drift);
 				next_number(Conditions.snow_fresh);
+				next_number(Conditions.snow_tracks);
 			}
 		}
 		else if (keyword == "transition")
@@ -1180,7 +1182,7 @@ void world_weather::apply_snow()
 {
 	if (!m_target.snow_depth)
 		return;
-	m_snow.set(*m_target.snow_depth, m_target.snow_drift, ground_wind(), m_target.snow_fresh);
+	m_snow.set(*m_target.snow_depth, m_target.snow_drift, ground_wind(), m_target.snow_fresh, m_target.snow_tracks);
 	WriteLog("Weather: snow cover " + std::to_string(*m_target.snow_depth) + " m");
 	// applied once; a later change of the weather keeps the snow as it lies then
 	m_target.snow_depth.reset();

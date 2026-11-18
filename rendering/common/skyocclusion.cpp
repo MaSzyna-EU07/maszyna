@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "utilities/Timer.h"
 #include "vehicle/DynObj.h"
 #include "world/Track.h"
 
@@ -34,6 +35,8 @@ float const NONE_TOP{-1.0e4f};
 float const NONE_CEILING{1.0e4f};
 // no track or road keeps the snow down there
 float const NONE_CAP{1.0e4f};
+// no snow on a track known at a texel (gpu_upload_surface()): the snow kept below the cap as before
+float const NO_TRACK_SNOW{-1.f};
 // the snow over the tracks: below the top of the rails between them and just outside them, rising from there along the slopes
 // the ploughs leave, m from the axis and m of rise for a metre further; over the roads: a packed layer over the whole width
 float const CAP_RAIL_BELOW{0.03f};
@@ -205,7 +208,7 @@ std::vector<TTrack const *> paths_near(scene::basic_region *Region, glm::dvec2 c
 }
 
 // the points every Step m along a path within the square of Tilesize at Corner and Reach around it, x and z relative to the corner
-void along_path(TTrack const &Path, double const Step, glm::dvec2 const &Corner, double const Tilesize, double const Reach, std::function<void(glm::dvec3 const &)> const &Point)
+void along_path(TTrack const &Path, double const Step, glm::dvec2 const &Corner, double const Tilesize, double const Reach, std::function<void(glm::dvec3 const &, double)> const &Point)
 {
 	glm::dvec2 const low{Corner - glm::dvec2{Reach}};
 	glm::dvec2 const high{Corner + glm::dvec2{Tilesize + Reach}};
@@ -216,7 +219,7 @@ void along_path(TTrack const &Path, double const Step, glm::dvec2 const &Corner,
 		auto const point{segment.FastGetPoint(static_cast<double>(step) / steps)};
 		if ((point.x < low.x) || (point.x > high.x) || (point.z < low.y) || (point.z > high.y))
 			continue;
-		Point(glm::dvec3{point.x - Corner.x, point.y, point.z - Corner.y});
+		Point(glm::dvec3{point.x - Corner.x, point.y, point.z - Corner.y}, segment.GetLength() * static_cast<double>(step) / steps);
 	}
 }
 
@@ -320,7 +323,7 @@ void sky_occlusion::start(int const Level)
 		m_neutralsurface[i * 4 + 0] = NONE_TOP;
 		m_neutralsurface[i * 4 + 1] = NONE_CEILING;
 		m_neutralsurface[i * 4 + 2] = NONE_CAP;
-		m_neutralsurface[i * 4 + 3] = 0.f;
+		m_neutralsurface[i * 4 + 3] = NO_TRACK_SNOW;
 	}
 	for (int index = 0; index < static_cast<int>(count); ++index)
 	{
@@ -334,6 +337,12 @@ void sky_occlusion::start(int const Level)
 	m_top.assign(texels, NONE_TOP);
 	m_ceiling.assign(texels, NONE_CEILING);
 	m_cap.assign(texels, NONE_CAP);
+	m_workerrefs.assign(texels, track_ref{});
+	m_workerrefdistance.assign(texels, std::numeric_limits<float>::max());
+	m_surfaces.assign(count * tiletexels * 4, 0.f);
+	for (std::size_t slot = 0; slot < count; ++slot)
+		std::copy(m_neutralsurface.begin(), m_neutralsurface.end(), m_surfaces.begin() + slot * tiletexels * 4);
+	m_trackrefs.assign(count * tiletexels, track_ref{});
 	m_mask.assign(texels, m_tunnels ? 0.f : 1.f);
 	m_workertiles.assign(count, glm::ivec2{std::numeric_limits<int>::min()});
 	m_workergenerations.assign(count, 0);
@@ -411,6 +420,12 @@ void sky_occlusion::neutral(int const Slot)
 	}
 	gpu_upload(x0, z0, px, glm::value_ptr(m_neutralheights.front()), m_neutralocclusion.data());
 	gpu_upload_surface(x0, z0, px, m_neutralsurface.data());
+	auto const tiletexels{static_cast<std::size_t>(px) * px};
+	if (m_surfaces.size() >= (static_cast<std::size_t>(Slot) + 1) * tiletexels * 4)
+	{
+		std::copy(m_neutralsurface.begin(), m_neutralsurface.end(), m_surfaces.begin() + static_cast<std::size_t>(Slot) * tiletexels * 4);
+		std::fill_n(m_trackrefs.begin() + static_cast<std::size_t>(Slot) * tiletexels, tiletexels, track_ref{});
+	}
 	++m_uploaded;
 }
 
@@ -436,8 +451,52 @@ void sky_occlusion::apply(tile_result &Result)
 	}
 	gpu_upload(x0, z0, px, Result.heights.data(), Result.occlusion.data());
 	if (false == Result.surface.empty())
+	{
 		gpu_upload_surface(x0, z0, px, Result.surface.data());
+		// kept for the snow on the tracks written into it as it changes
+		auto const tiletexels{static_cast<std::size_t>(px) * px};
+		std::copy(Result.surface.begin(), Result.surface.end(), m_surfaces.begin() + static_cast<std::size_t>(Result.slot) * tiletexels * 4);
+		if (Result.trackrefs.size() == tiletexels)
+			std::copy(Result.trackrefs.begin(), Result.trackrefs.end(), m_trackrefs.begin() + static_cast<std::size_t>(Result.slot) * tiletexels);
+	}
 	++m_uploaded;
+}
+
+void sky_occlusion::update_track_snow()
+{
+	// the editor moves and removes the tracks; there the snow is kept down as before
+	if ((false == m_snowsurface) || (false == Global.physics_snow) || EditorModeFlag || m_surfaces.empty())
+		return;
+	auto const now{Timer::GetTime()};
+	if (now - m_tracksnowtime < 1.0)
+		return;
+	m_tracksnowtime = now;
+	auto const px{m_layout.tile_texels};
+	auto const tiletexels{static_cast<std::size_t>(px) * px};
+	for (std::size_t slot = 0; slot < m_slots.size(); ++slot)
+	{
+		if (m_slots[slot].state != slot_state::ready)
+			continue;
+		auto changed{false};
+		auto *surface{m_surfaces.data() + slot * tiletexels * 4};
+		auto const *refs{m_trackrefs.data() + slot * tiletexels};
+		for (std::size_t texel = 0; texel < tiletexels; ++texel)
+		{
+			if (refs[texel].track == nullptr)
+				continue;
+			// the snow lying on the track there, as the trains go through it (5 mm steps)
+			auto const snow{static_cast<float>(refs[texel].track->snow_at(refs[texel].distance))};
+			if (std::abs(snow - surface[texel * 4 + 3]) < 0.005f)
+				continue;
+			surface[texel * 4 + 3] = snow;
+			changed = true;
+		}
+		if (changed)
+		{
+			auto const index{static_cast<int>(slot)};
+			gpu_upload_surface((index % m_layout.tiles) * px, (index / m_layout.tiles) * px, px, surface);
+		}
+	}
 }
 
 void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera, glm::vec3 const &Keylight)
@@ -472,6 +531,7 @@ void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera
 			apply(result);
 		}
 	}
+	update_track_snow();
 
 	auto const tiles{m_layout.tiles};
 	auto const tilesize{static_cast<double>(m_layout.tile)};
@@ -541,7 +601,7 @@ void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera
 		if (m_tunnels)
 			gather_tunnels(Region, target.tile, job.tunnels);
 		if (m_snowsurface)
-			gather_tracks(Region, target.tile, job.tracks);
+			gather_tracks(Region, target.tile, job.tracks, job.trackrefs);
 		m_gathertime += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - gatherstart).count();
 		m_triangles = static_cast<std::uint32_t>(job.triangles.size());
 		if (target.regather)
@@ -843,11 +903,11 @@ void sky_occlusion::gather_tunnels(scene::basic_region *Region, glm::ivec2 const
 	{
 		if (path->eEnvironment != e_tunnel)
 			continue;
-		along_path(*path, TUNNEL_MASK_STEP, corner, tilesize, reach, [&Points](glm::dvec3 const &Point) { Points.emplace_back(static_cast<float>(Point.x), static_cast<float>(Point.z)); });
+		along_path(*path, TUNNEL_MASK_STEP, corner, tilesize, reach, [&Points](glm::dvec3 const &Point, double) { Points.emplace_back(static_cast<float>(Point.x), static_cast<float>(Point.z)); });
 	}
 }
 
-void sky_occlusion::gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points)
+void sky_occlusion::gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points, std::vector<track_ref> &Refs)
 {
 	auto const tilesize{static_cast<double>(m_layout.tile)};
 	// the widest road cleared and its slopes
@@ -860,8 +920,10 @@ void sky_occlusion::gather_tracks(scene::basic_region *Region, glm::ivec2 const 
 		// a road: its whole width, given negative; a track: between the rails and a little outside them
 		auto const road{(path->iCategoryFlag & 1) == 0};
 		auto const flat{road ? -0.5f * std::max(path->fTrackWidth, path->fTrackWidth2) : CAP_RAIL_FLAT};
-		along_path(*path, CAP_STEP, corner, tilesize, reach, [&Points, flat](glm::dvec3 const &Point) {
+		auto const *track{road ? nullptr : path};
+		along_path(*path, CAP_STEP, corner, tilesize, reach, [&Points, &Refs, flat, track](glm::dvec3 const &Point, double const Distance) {
 			Points.emplace_back(static_cast<float>(Point.x), static_cast<float>(Point.z), static_cast<float>(Point.y), flat);
+			Refs.push_back({track, static_cast<float>(Distance)});
 		});
 	}
 }
@@ -1111,9 +1173,16 @@ void sky_occlusion::stamp_tracks(raster_job const &Job)
 	auto const x0{(Job.slot % m_layout.tiles) * px};
 	auto const z0{(Job.slot / m_layout.tiles) * px};
 	for (int z = 0; z < px; ++z)
-		std::fill_n(m_cap.begin() + static_cast<std::size_t>(z0 + z) * m_side + x0, px, NONE_CAP);
-	for (auto const &point : Job.tracks)
 	{
+		auto const row{static_cast<std::size_t>(z0 + z) * m_side + x0};
+		std::fill_n(m_cap.begin() + row, px, NONE_CAP);
+		std::fill_n(m_workerrefs.begin() + row, px, track_ref{});
+		std::fill_n(m_workerrefdistance.begin() + row, px, std::numeric_limits<float>::max());
+	}
+	for (std::size_t p = 0; p < Job.tracks.size(); ++p)
+	{
+		auto const &point{Job.tracks[p]};
+		auto const *ref{p < Job.trackrefs.size() ? &Job.trackrefs[p] : nullptr};
 		auto const road{point.w < 0.f};
 		auto const flat{std::abs(point.w)};
 		auto const reach{flat + CAP_SLOPE_REACH};
@@ -1134,6 +1203,12 @@ void sky_occlusion::stamp_tracks(raster_job const &Job)
 					continue;
 				auto &cap{m_cap[row + x]};
 				cap = std::min(cap, level + std::max(0.f, distance - flat) * slope);
+				// between the rails and just outside them: the place on the track whose snow lies there
+				if ((ref != nullptr) && (ref->track != nullptr) && (distance <= flat) && (distance < m_workerrefdistance[row + x]))
+				{
+					m_workerrefdistance[row + x] = distance;
+					m_workerrefs[row + x] = *ref;
+				}
 			}
 		}
 	}
@@ -1330,6 +1405,7 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 	Result.occlusion.resize(static_cast<std::size_t>(px) * px * 4);
 	if (m_snowsurface)
 		Result.surface.resize(static_cast<std::size_t>(px) * px * 4);
+		Result.trackrefs.resize(static_cast<std::size_t>(px) * px);
 	for (int z = 0; z < px; ++z)
 	{
 		for (int x = 0; x < px; ++x)
@@ -1444,8 +1520,10 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 				// the surface for the snow everywhere, the mask of the tunnels left out
 				Result.surface[target * 4 + 0] = t0;
 				Result.surface[target * 4 + 1] = c0;
-				Result.surface[target * 4 + 2] = m_cap[static_cast<std::size_t>(wrap(tile.y * px + z, m_side)) * m_side + wrap(tile.x * px + x, m_side)];
-				Result.surface[target * 4 + 3] = 0.f;
+				auto const source{static_cast<std::size_t>(wrap(tile.y * px + z, m_side)) * m_side + wrap(tile.x * px + x, m_side)};
+				Result.surface[target * 4 + 2] = m_cap[source];
+				Result.surface[target * 4 + 3] = NO_TRACK_SNOW;
+				Result.trackrefs[target] = m_workerrefs[source];
 			}
 		}
 	}

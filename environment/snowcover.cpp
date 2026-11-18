@@ -66,9 +66,12 @@ void snow_cover::reset()
 	time_scale = scale;
 }
 
-void snow_cover::set(float const Depth, float const Drift, glm::vec2 const &Wind, float const Fresh)
+void snow_cover::set(float const Depth, float const Drift, glm::vec2 const &Wind, float const Fresh, float const Tracks)
 {
 	m_depth = std::clamp(Depth, 0.f, DEEPEST_SNOW);
+	// the tracks hold what was brought since they were cleared (TTrack::snow_at()), which none of them was yet at the start
+	if (Tracks >= 0.f)
+		m_brought = static_cast<double>(m_depth * std::clamp(Tracks, 0.f, 1.f));
 	m_drift = std::clamp(Drift, 0.f, 1.f);
 	if (glm::length(Wind) > 1e-3f)
 		m_driftwind = Wind;

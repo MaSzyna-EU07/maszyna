@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 
 class TDynamicObject;
+class TTrack;
 class TModel3d;
 class TSubModel;
 
@@ -167,6 +168,12 @@ class sky_occlusion
 		glm::vec3 a, b, c;
 		bool down;
 	};
+	// a place on a track (TTrack::snow_at())
+	struct track_ref
+	{
+		TTrack const *track{nullptr};
+		float distance{0.f};
+	};
 	// what the thread is asked to do
 	struct raster_job
 	{
@@ -178,6 +185,8 @@ class sky_occlusion
 		// points along the tracks and the roads over the tile and around it, for the snow: x and z relative to the corner of the tile,
 		// the height of the top of the rails or of the road, and half the width cleared of the snow (negative for a road)
 		std::vector<glm::vec4> tracks;
+		// for each of the points the track it lies on and its distance from the start of the track (nullptr for a road)
+		std::vector<track_ref> trackrefs;
 	};
 	// what it gives back: the heights (four per texel) and the occlusion of the texels of a tile
 	struct tile_result
@@ -187,6 +196,7 @@ class sky_occlusion
 		std::vector<float> heights;
 		std::vector<std::uint16_t> occlusion;
 		std::vector<float> surface; // four per texel, gpu_upload_surface()
+		std::vector<track_ref> trackrefs; // a texel between the rails: its track and the place on it, for the snow on it
 		double milliseconds{0.0};
 	};
 	enum class slot_state
@@ -215,7 +225,7 @@ class sky_occlusion
 	// the points along the tracks with the tunnel flag within the reach of the mask of the tunnels of a tile (gfx_skyvisibility_tunnels)
 	void gather_tunnels(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec2> &Points);
 	// the points along the tracks and the roads over a tile and around it, which keep the snow down (raster_job::tracks)
-	void gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points);
+	void gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points, std::vector<track_ref> &Refs);
 	// the heights the snow is kept below by the tracks and the roads of a job, into m_cap
 	void stamp_tracks(raster_job const &Job);
 	// what the scenery over a tile is made of, cheap to work out: a change of it means the tile is gathered again
@@ -251,6 +261,13 @@ class sky_occlusion
 	std::vector<glm::vec4> m_neutralheights;
 	std::vector<std::uint16_t> m_neutralocclusion;
 	std::vector<float> m_neutralsurface;
+	// the surface for the snow of every slot as uploaded, and the places on the tracks under its texels: the snow lying on the
+	// tracks is written into the fourth float of the texels between the rails (-1: none, the snow kept down as before) as it
+	// comes and as the trains clear it, every second (update_track_snow())
+	std::vector<float> m_surfaces;
+	std::vector<track_ref> m_trackrefs;
+	double m_tracksnowtime{0.0};
+	void update_track_snow();
 	std::size_t m_checkslot{0}; // the slot whose signature is checked next
 	// the part of the signatures made of the instances of a cell, worked out for a scene::node_state_version and a count of its
 	// instances. outside the editor an instance is shown or hidden only with the version changing, and isn't moved; reading every
@@ -282,6 +299,9 @@ class sky_occlusion
 	std::vector<float> m_rawtop, m_rawceiling, m_top, m_ceiling;
 	// the height the snow is kept below by the tracks and the roads (NONE_CAP: nothing)
 	std::vector<float> m_cap;
+	// the track under a texel between the rails, the nearest point of it, and how far that point is (for the nearest)
+	std::vector<track_ref> m_workerrefs;
+	std::vector<float> m_workerrefdistance;
 	// how much of the occlusion a texel keeps, 0..1, by its distance from the tracks with the tunnel flag (1 everywhere without
 	// m_tunnels)
 	std::vector<float> m_mask;

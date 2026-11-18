@@ -119,6 +119,9 @@ struct weather_conditions
 	std::optional<float> snow_depth;
 	float snow_drift{0.5f};
 	float snow_fresh{0.5f};
+	// the share of the snow lying on the tracks too, as before the first train cleared them, 0..1 (0: cleared); negative: the
+	// snow on the tracks left as it is (without the fourth number of the snowcover entry, and when the snow is set by hand)
+	float snow_tracks{-1.f};
 
 	// share of the sky the clouds hold back, 0-1, and the precipitation past it: the overcast the rest of the simulation goes by
 	float overcast() const;

@@ -38,7 +38,9 @@ class snow_cover
 	void reset();
 	// snow lying from the start, or set by hand: Depth over open flat ground, m; Drift: how far the wind has worked it into drifts,
 	// 0..1; Wind: the wind that did it, world x and z of where it blew to, m/s; Fresh: share of it the wind can still carry, 0..1
-	void set(float const Depth, float const Drift, glm::vec2 const &Wind, float const Fresh);
+	// Tracks: the share of it lying on the tracks too, as before the first train cleared them (0: cleared; negative: the snow on
+	// the tracks left as it is)
+	void set(float const Depth, float const Drift, glm::vec2 const &Wind, float const Fresh, float const Tracks = -1.f);
 	// a step of Deltatime seconds of the simulation in the weather given
 	void update(double const Deltatime, snow_weather const &Weather);
 
