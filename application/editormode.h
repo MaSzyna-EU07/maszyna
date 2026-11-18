@@ -469,6 +469,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool offered{false}; // the terrain was offered to the scenery begun without it
 		bool prompt{false}; // the offer is shown
 		bool moving{false}; // the place being picked again
+		bool chosen{false}; // a place was clicked on the map or typed in this panel, not just the old one shown
 		char place[96]{}; // typed: degrees or PUWG 1992
 		int shown{-1}; // the frame the terrain panel showed how far the work got
 	};
@@ -835,6 +836,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	glm::dvec2 m_georeference_origin{0.0}; // northing, easting
 	std::string m_georeference_line;
 	void read_georeference();
+	void read_georeference(std::vector<std::filesystem::path> &Files, std::size_t Index);
 	void draw_orthophoto();
 	void draw_ortho_compass() const;
 	// picks up the stored settings and the origin of the current scenery, and the offset of the terrain model the scenery has
