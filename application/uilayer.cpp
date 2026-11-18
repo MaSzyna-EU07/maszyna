@@ -33,6 +33,7 @@ int ui_layer::m_palette{0};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
+ImFont *ui_layer::font_hud{nullptr};
 ImFont *ui_layer::font_bold{nullptr};
 
 ui_panel::ui_panel(std::string Identifier, bool const Isopen) : is_open(Isopen), m_name(std::move(Identifier)) {}
@@ -361,6 +362,11 @@ bool ui_layer::init(GLFWwindow *Window)
 			}
 		}
 	}
+	// HUD: LCD font for the big speed readout (lcdd.ttf); falls back to font_default
+	if (FileExists("fonts/lcdd.ttf")) {
+		ImFontConfig hud_config;
+		font_hud = m_imguiio->Fonts->AddFontFromFileTTF("fonts/lcdd.ttf", Global.ui_fontsize * 5.0f, &hud_config, &ranges[0]);
+	}
 	for (auto const *bold : {"fonts/dejavusans-bold.ttf", "fonts/DejaVuSans-Bold.ttf"})
 	{
 		if (font_bold == nullptr && FileExists(bold))
@@ -397,6 +403,8 @@ bool ui_layer::init(GLFWwindow *Window)
 		font_mono = font_default;
 	if (!font_loading)
 		font_loading = font_default;
+	if (!font_hud)
+		font_hud = font_default;
 
 	imgui_style();
 
