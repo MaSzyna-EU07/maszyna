@@ -457,6 +457,120 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 	}
 }
 
+namespace
+{
+void append_utf8(std::string &Output, char32_t const Codepoint)
+{
+	if (Codepoint < 0x80)
+	{
+		Output += static_cast<char>(Codepoint);
+	}
+	else if (Codepoint < 0x800)
+	{
+		Output += static_cast<char>(0xC0 | (Codepoint >> 6));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+	else if (Codepoint < 0x10000)
+	{
+		Output += static_cast<char>(0xE0 | (Codepoint >> 12));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 6) & 0x3F));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+	else
+	{
+		Output += static_cast<char>(0xF0 | (Codepoint >> 18));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 12) & 0x3F));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 6) & 0x3F));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+}
+} // namespace
+
+std::string data_text_to_utf8(std::string const &Text)
+{
+	if (std::ranges::all_of(Text, [](char const Character) { return static_cast<unsigned char>(Character) < 0x80; }))
+	{
+		return Text;
+	}
+	std::u32string codepoints;
+	// a text in windows-1250 can happen to be valid utf-8 as well: two capital letters with marks in a row, as the bytes
+	// D3 A3 of "WOLKA" with its marks, make a sequence of two bytes. such a pair decodes to a letter between U+0180 and
+	// U+07FF (cyrillic, greek and the like), which the texts of the data files, when they are in utf-8, don't have
+	if (utf8_to_utf32(Text, codepoints) && std::ranges::none_of(codepoints, [](char32_t const Codepoint) { return Codepoint >= 0x180 && Codepoint < 0x800; }))
+	{
+		return Text;
+	}
+	// the code page the data files are written in
+	win1250_to_utf32(Text, codepoints);
+	std::string output;
+	output.reserve(Text.size() + 8);
+	for (auto const codepoint : codepoints)
+	{
+		// the bytes the code page has no character for come as 0
+		append_utf8(output, codepoint != 0 ? codepoint : U'?');
+	}
+	return output;
+}
+
+std::string data_name_to_utf8(std::string const &Name, bool const Underscorestospaces)
+{
+	auto name{data_text_to_utf8(Name)};
+	// in utf-8 the bytes below 0x80 are characters of their own, never a part of another one
+	for (auto &character : name)
+	{
+		if (static_cast<unsigned char>(character) < 0x20 || (Underscorestospaces && character == '_'))
+		{
+			character = ' ';
+		}
+	}
+	return name;
+}
+
+namespace
+{
+// number of bytes of the character of a text in utf-8 which starts at given position; 1 for a byte which starts no valid sequence
+std::size_t utf8_character_size(std::string_view const Text, std::size_t const Position)
+{
+	auto const length{utf8_sequence_length(static_cast<std::byte>(Text[Position]))};
+	if (length < 2 || Position + length > Text.size())
+	{
+		return 1;
+	}
+	for (std::size_t offset = 1; offset < length; ++offset)
+	{
+		if ((static_cast<std::byte>(Text[Position + offset]) & std::byte{0xC0}) != std::byte{0x80})
+		{
+			return 1;
+		}
+	}
+	return length;
+}
+} // namespace
+
+std::size_t utf8_length(std::string_view const Text)
+{
+	std::size_t length{0};
+	for (std::size_t position = 0; position < Text.size(); position += utf8_character_size(Text, position))
+	{
+		++length;
+	}
+	return length;
+}
+
+std::string utf8_fit(std::string_view const Text, std::size_t const Width)
+{
+	std::size_t length{0};
+	std::size_t position{0};
+	while (position < Text.size() && length < Width)
+	{
+		position += utf8_character_size(Text, position);
+		++length;
+	}
+	std::string output{Text.substr(0, position)};
+	output.append(Width - length, ' ');
+	return output;
+}
+
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
 // NOTE: the entry of 0xB1 (the plus-minus sign of windows-1250, left as it is) is written as its byte. written as the
 // character it took two bytes in the builds which keep the texts of the sources in utf-8 (GCC, Clang, MSVC with /utf-8),
