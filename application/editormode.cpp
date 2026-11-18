@@ -600,6 +600,12 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
+	// with the heightmap terrain, the imagery only on its chunks once they're in memory; a scenery without it as before
+	Layer.cover_source([](glm::dvec2 const &Min, glm::dvec2 const &Max) -> std::optional<bool> {
+		if (false == EditorTerrain.active())
+			return true;
+		return EditorTerrain.ground_under(Min, Max);
+	});
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))

@@ -937,21 +937,55 @@ void editor_orthophoto::ground_arrived()
 {
 	if (!m_height)
 		return;
-	for (auto &entry : m_tiles)
+	for (auto &[key, t] : m_tiles)
 	{
-		auto &t{entry.second};
-		if (!t.grounded || !t.guessed)
-			continue;
-		// the middle and the corners: a chunk of the terrain is much larger than a tile, it covers some of these when it comes. A tile
-		// lying flat, with nothing to go by, also goes onto the model once it's in
-		glm::dvec2 const corner = tile_corner(entry.first);
-		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
-			if (double y; m_height(corner.x - u * tile_size, corner.y - v * tile_size, y) || (t.heights.empty() && m_guess && m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y)))
-			{
-				t.grounded = false;
-				break;
-			}
+		if (t.grounded && ground_came(key, t))
+			t.grounded = false;
 	}
+}
+
+bool editor_orthophoto::on_ground(tile_key const &Key)
+{
+	if (!m_cover)
+		return true;
+	glm::dvec2 const corner = tile_corner(Key);
+	auto const ground{m_cover(corner - glm::dvec2{tile_size}, corner)};
+	auto const found{m_tiles.find(Key)};
+	if (false == ground.has_value())
+		return found != m_tiles.end(); // the ground still coming: a tile laid out already stays, a new one waits for it
+	if (*ground)
+		return true;
+	if (found != m_tiles.end())
+	{
+		release_tile(found->second);
+		m_tiles.erase(found);
+	}
+	return false;
+}
+
+bool editor_orthophoto::ground_came(tile_key const &Key, tile const &Tile) const
+{
+	glm::dvec2 const corner = tile_corner(Key);
+	// a tile lying flat, with nothing to go by, also goes onto the model once it's in: the middle and the corners
+	if (Tile.guessed && Tile.heights.empty() && m_guess)
+		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
+			if (double y; m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y))
+				return true;
+	// the points the ground didn't answer, every second one of the grid (16 m) and the edges: a chunk of the terrain is about as
+	// large as a tile and comes over a part of it, often a band along a side; partly answered tiles count too, not only the guessed
+	static_assert(ground_grid % 2 == 0, "the edges of the grid are among its even points");
+	int constexpr samples{ground_grid + 1};
+	double constexpr step{tile_size / ground_grid};
+	for (auto const index : Tile.unanswered)
+	{
+		int const i{index % samples};
+		int const j{index / samples};
+		if (i % 2 != 0 || j % 2 != 0)
+			continue;
+		if (double y; m_height(corner.x - i * step, corner.y - j * step, y))
+			return true;
+	}
+	return false;
 }
 
 void editor_orthophoto::detach_scene()
@@ -1233,6 +1267,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
+	Tile.unanswered.clear();
 
 	glm::dvec2 const corner = tile_corner(Key);
 	glm::dvec2 const min(corner.x - tile_size, corner.y - tile_size);
@@ -1304,8 +1339,15 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 			}
 	}
 
+	// the points the ground didn't answer: the ground coming there later (the terrain loaded after the imagery, which comes from the
+	// disk cache at once) has the tile sampled again, rather than left at the heights filled in or guessed now
+	Tile.unanswered.clear();
+	for (std::size_t index = 0; index < heights.size(); ++index)
+		if (heights[index] == no_height)
+			Tile.unanswered.push_back(static_cast<std::uint16_t>(index));
+
 	// holes (places without ground) take the average of their neighbours, spreading inwards
-	std::size_t missing = std::count(heights.begin(), heights.end(), no_height);
+	std::size_t missing = Tile.unanswered.size();
 	if (missing == heights.size())
 	{
 		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
@@ -1639,6 +1681,8 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				}
 				continue;
 			}
+			if (false == on_ground(key))
+				continue;
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;

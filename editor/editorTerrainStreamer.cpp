@@ -907,6 +907,32 @@ bool terrain_streamer::owns(gfx::geometry_handle const &Geometry) const
 	return false;
 }
 
+std::optional<bool> terrain_streamer::ground_under(glm::dvec2 const &Low, glm::dvec2 const &High) const
+{
+	auto const first{heightmap::chunk_at(Low.x, Low.y)};
+	auto const last{heightmap::chunk_at(High.x, High.y)};
+	bool any{false};
+	for (auto z{std::min(first.second, last.second)}; z <= std::max(first.second, last.second); ++z)
+		for (auto x{std::min(first.first, last.first)}; x <= std::max(first.first, last.first); ++x)
+		{
+			chunk_key const key{x, z};
+			if (m_chunks.contains(key))
+			{
+				any = true;
+				continue;
+			}
+			if (m_removed.contains(key))
+				continue;
+			// still to come while its pack isn't read yet, or it's in its pack; not there where the pack is read without it
+			auto const pack{m_packs.find(heightmap::pack_of(key))};
+			if (pack == m_packs.end() || pack->second.status == pack_state::state::unknown || pack->second.status == pack_state::state::loading)
+				return std::nullopt;
+			if (pack->second.status == pack_state::state::ready && pack->second.file->has(key))
+				return std::nullopt;
+		}
+	return any;
+}
+
 bool terrain_streamer::exists(chunk_key const &Key) const
 {
 	if (m_chunks.count(Key) > 0)

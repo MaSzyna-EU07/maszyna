@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -81,6 +82,9 @@ class terrain_streamer
 	std::string stats() const;
 	// chunks in the pack files and in memory, less the removed ones; the files known so far
 	bool exists(chunk_key const &Key) const;
+	// the chunks over an XZ rectangle (Low/High are x,z): true where some are and all of them are in memory, false where none is
+	// nor will be, empty while one is still to come (in memory not yet, or its pack not read yet)
+	std::optional<bool> ground_under(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 
 	// editing; the chunks changed are written to the files by save()
 	heightmap::manifest const &manifest() const { return m_manifest; }
