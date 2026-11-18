@@ -888,10 +888,20 @@ void world_weather::init()
 {
 	m_transition = 0.0;
 	m_transition_time = 0.0;
-	if (false == m_scenerytokens.empty())
+	// the weather of the settings over the one of the scenery (weather.mode): what they say is read after the section of the
+	// scenery, so it wins where both say something, and a preset of the climate replaces it all but the place and the ground
+	auto tokens{m_scenerytokens};
+	if (Global.WeatherMode == global_settings::weather_mode::manual)
+		tokens.insert(tokens.end(), Global.WeatherManual.begin(), Global.WeatherManual.end());
+	else if (Global.WeatherMode == global_settings::weather_mode::automatic)
+	{
+		tokens.emplace_back("climate");
+		tokens.emplace_back("random");
+	}
+	if (false == tokens.empty())
 	{
 		weather_conditions conditions;
-		parse_section(m_scenerytokens, conditions, &m_elevation, nullptr);
+		parse_section(tokens, conditions, &m_elevation, nullptr);
 		m_scenery = conditions;
 	}
 	if (m_scenery)

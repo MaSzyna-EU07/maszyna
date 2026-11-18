@@ -68,6 +68,10 @@ world_environment::compute_season( int const Yearday ) {
             {}, &dayseasonpair::first );
     
     Global.Season = lookup->second;
+    if( ( false == Global.WinterTextures ) && ( Global.Season == "winter:" ) ) {
+        // no winter textures: the winter is the autumn with the snow on it till the end of January, the spring from February
+        Global.Season = ( ( Yearday > 31 ) && ( Yearday <= 65 ) ? "spring:" : "autumn:" );
+    }
     // season can affect the weather so if it changes, re-calculate weather as well
     compute_weather();
 }

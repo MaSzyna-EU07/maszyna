@@ -25,6 +25,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vao.h"
 
+#include <array>
+#include <optional>
+#include <string_view>
+
 void global_settings::LoadIniFile(std::string asFileName)
 {
 	// initialize season data in case the main config file doesn't
@@ -43,6 +47,37 @@ static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert =
     parser.getTokens(tokenCount, convert);
     parser >> out;
 }
+
+namespace
+{
+// the day of the year of a date DD.MM (a year of 365 days); 0 for today, nullopt for a date which isn't one
+std::optional<int> year_day_of(std::string_view const Date)
+{
+	if (Date == "today" || Date == "0")
+		return 0;
+	auto const dot{Date.find('.')};
+	if (dot == std::string_view::npos)
+		return std::nullopt;
+	int day{0};
+	int month{0};
+	try
+	{
+		day = std::stoi(std::string{Date.substr(0, dot)});
+		month = std::stoi(std::string{Date.substr(dot + 1)});
+	}
+	catch (std::exception const &)
+	{
+		return std::nullopt;
+	}
+	static constexpr std::array<int, 12> lengths{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	if (month < 1 || month > 12 || day < 1 || day > lengths[static_cast<std::size_t>(month - 1)])
+		return std::nullopt;
+	auto yearday{day};
+	for (int i = 0; i < month - 1; ++i)
+		yearday += lengths[static_cast<std::size_t>(i)];
+	return yearday;
+}
+} // namespace
 
 template <typename T>
 static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, int tokenCount = 1, bool convert = false)
@@ -659,6 +694,57 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         }
 
         simulation::Environment.compute_season(fMoveLight);
+        return true;
+    }
+
+    if (token == "scenario.date")
+    {
+        // the day the simulation goes on, DD.MM, or today: as movelight, given as a date
+        std::string date;
+        ParseOne(Parser, date, 1, false);
+        if (auto const yearday{year_day_of(date)}; yearday.has_value())
+        {
+            ScenarioDate = date;
+            fMoveLight = (*yearday > 0 ? static_cast<float>(*yearday) : static_cast<float>(local_tm(std::time(nullptr)).tm_yday + 1));
+            simulation::Environment.compute_season(fMoveLight);
+        }
+        else
+            ErrorLog("Bad config: scenario.date \"" + date + "\" isn't a date DD.MM, nor today");
+        return true;
+    }
+
+    if (token == "seasons.wintertextures")
+    {
+        ParseOne(Parser, WinterTextures, 1, false);
+        simulation::Environment.compute_season(fMoveLight);
+        return true;
+    }
+
+    if (token == "weather.mode")
+    {
+        std::string mode;
+        ParseOne(Parser, mode, 1, false);
+        WeatherMode = weather_mode::scenery;
+        if (mode == "manual")
+            WeatherMode = weather_mode::manual;
+        else if (mode == "auto")
+            WeatherMode = weather_mode::automatic;
+        return true;
+    }
+
+    if (token == "weather.manual")
+    {
+        // the body of a weather section, as a scenery has it, up to endweather
+        WeatherManual.clear();
+        for (;;)
+        {
+            Parser.getTokens(1, false);
+            std::string entry;
+            Parser >> entry;
+            if (entry.empty() || entry == "endweather")
+                break;
+            WeatherManual.emplace_back(entry);
+        }
         return true;
     }
 
@@ -2387,6 +2473,21 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "maxtexturesize", iMaxTextureSize );
     export_as_text( Output, "maxcabtexturesize", iMaxCabTextureSize );
     export_as_text( Output, "movelight", fMoveLight );
+    if( false == ScenarioDate.empty() ) {
+        export_as_text( Output, "scenario.date", ScenarioDate );
+    }
+    export_as_text( Output, "seasons.wintertextures", WinterTextures );
+    {
+        std::array<char const *, 3> const weathermodes { "scenery", "manual", "auto" };
+        export_as_text( Output, "weather.mode", std::string{ weathermodes[ static_cast<std::size_t>( WeatherMode ) ] } );
+    }
+    if( false == WeatherManual.empty() ) {
+        std::string manual;
+        for( auto const &entry : WeatherManual ) {
+            manual += entry + " ";
+        }
+        export_as_text( Output, "weather.manual", manual + "endweather" );
+    }
     export_as_text( Output, "dynamiclights", DynamicLightCount );
     if( std::isnormal( ScenarioTimeOverride ) ) {
         export_as_text( Output, "scenario.time.override", ScenarioTimeOverride );
