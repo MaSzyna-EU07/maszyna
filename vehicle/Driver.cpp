@@ -2881,7 +2881,7 @@ bool TController::CheckVehicles(TOrders user)
             = 0;
 		}
 
-        if( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) {
+        if( brake_setting::inspects_train( OrderCurrentGet(), user == Connect ) ) {
             // nastawianie hamulca do jazdy pociągowej
             AutoRewident();
 /*

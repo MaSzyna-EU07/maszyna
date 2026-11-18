@@ -256,6 +256,15 @@ couple and neither shows up: the black box has to have the last car of the stand
 writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
 test timeout.
 
+`eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
+(`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
+so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
+until `event0` of its track gives it, once, `Shunt -1 3`: start the engine, couple to the consist
+ahead (Connect, the first order it drives under), go on shunting. It passes when the first coach,
+pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the black box has the
+locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
+hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -281,9 +290,9 @@ into the game dir. What they add to the scenery:
 A train whose trainset has velocity 0 has a driver that sleeps in `Wait_for_orders` when nobody
 is in the cab: the player would drive it, so the fragment has to give the orders the player's
 hands stand for, with `PutValues` from an event the vehicle itself sets off (`event0` of the
-track it stands on). The first of them must not be the one to couple (`Shunt -2 -3`): a driver
-whose first order is `Connect` never releases the hand brake a cold locomotive starts with. The
-mission trains of velocity 0.1 wait for their signal and need nothing.
+track it stands on). The first of them may be the one to couple (`Shunt -2 -3`): a driver whose
+first order is `Connect` releases the hand brake a cold locomotive starts with
+(`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
 The cases and what they showed on master of 2026-11-11:
 
