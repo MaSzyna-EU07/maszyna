@@ -383,7 +383,10 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
         update_on_weather_change |= is_weather( key );
         update_on_season_change  |= is_season( key );
 
-        if( key == Global.Weather ) {
+        // without the winter textures (seasons.wintertextures no) the snow lies as the weather has it, not as a texture of the
+        // snowfall: a snow: block is skipped like any other which doesn't apply
+        auto const weatherapplies { ( key == Global.Weather ) && ( Global.WinterTextures || ( key != "snow:" ) ) };
+        if( weatherapplies ) {
             // weather textures override generic (pri 0) and seasonal (pri 1) textures
             // seasonal weather textures (pri 1+2=3) override generic weather (pri 2) textures
             // skip the opening bracket

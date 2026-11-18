@@ -64,7 +64,10 @@ void main()
 	float away = length(place);
 	float edge = 1.0 - smoothstep(sky_occlusion_params.z * 0.85, sky_occlusion_params.z, max(abs(place.x - sky_occlusion_center.x), abs(place.y - sky_occlusion_center.y)));
 	float least = 0.04 + away * 0.0006;
-	float drawn = ((cell.x > SNOW_NONE) && (cell.y * edge > least)) ? 1.0 : 0.0;
+	// -1 where nothing is known (the triangle is left out), else 1 with enough snow and 0 without, interpolated across a triangle:
+	// the fragments cut the surface where it falls under a half, so its edge runs across the texels (along a track at any angle)
+	// instead of going in steps of whole triangles
+	float drawn = (cell.x > SNOW_NONE) ? ((cell.y * edge > least) ? 1.0 : 0.0) : -1.0;
 	float height = ground + cell.y * edge;
 
 	// the normal from the heights around

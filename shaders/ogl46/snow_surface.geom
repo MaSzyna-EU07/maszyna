@@ -31,7 +31,11 @@ const float RISE = 0.35;
 
 void main()
 {
-	if ((g_snow[0].z < 0.5) || (g_snow[1].z < 0.5) || (g_snow[2].z < 0.5))
+	// nothing known under a corner, or no snow at any of them: none of it is drawn. a triangle partly over the snow is kept, the
+	// fragments cut it where its corners say (snow_surface.frag)
+	if ((g_snow[0].z < -0.5) || (g_snow[1].z < -0.5) || (g_snow[2].z < -0.5))
+		return;
+	if ((g_snow[0].z < 0.5) && (g_snow[1].z < 0.5) && (g_snow[2].z < 0.5))
 		return;
 	float low = min(g_snow[0].w, min(g_snow[1].w, g_snow[2].w));
 	float high = max(g_snow[0].w, max(g_snow[1].w, g_snow[2].w));

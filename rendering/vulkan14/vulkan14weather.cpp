@@ -422,7 +422,7 @@ void vulkan14_renderer::update_weather()
 	if (m_weatherstate.horizon_on_gpu())
 	{
 		horizon_constants constants{};
-		constants.params = glm::vec4{m_skylight.atmosphere_weight(), m_skylight.sky_scale(), 0.5f * m_skylight.overcast(), 64.f};
+		constants.params = glm::vec4{m_skylight.atmosphere_weight(), m_skylight.sky_scale(), m_skylight.greyness(), 64.f};
 		constants.white_balance = m_skylight.white_balance();
 		constants.old_color = m_fogcolor;
 		vk14::memory_barrier(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, compute_stage, storage_write);

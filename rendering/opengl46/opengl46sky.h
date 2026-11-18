@@ -70,6 +70,10 @@ class opengl46_sky
 	{
 		return m_light.sky_scale();
 	}
+	float greyness() const
+	{
+		return m_light.greyness();
+	}
 	float overcast() const
 	{
 		return m_light.overcast();

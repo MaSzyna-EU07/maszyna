@@ -26,7 +26,8 @@ void main()
 	// the thin edges of the drifts break up into patches
 	float depth = f_snow.x;
 	float edge = snow_fbm(stable.xz * 1.3);
-	if (depth < 0.05 + 0.08 * edge)
+	// the edge across a triangle partly over the snow (snow_surface.vert), broken up a little like the thin edges
+	if ((f_snow.z < 0.35 + 0.3 * edge) || (depth < 0.05 + 0.08 * edge))
 		discard;
 
 	float exposure = f_snow.y;

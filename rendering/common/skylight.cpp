@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "environment/skydome.h"
 #include "utilities/Globals.h"
+#include "simulation/simulationenvironment.h"
 
 namespace
 {
@@ -158,6 +159,9 @@ sky_light::sh_coefficients sky_light::dome_directional(CSkyDome const &Skydome, 
 void sky_light::begin_update()
 {
 	m_overcast = std::clamp(Global.Overcast, 0.f, 1.f);
+	auto const described{simulation::Environment.weather().described()};
+	m_greyness = (described ? 0.95f : 0.5f) * m_overcast;
+	m_falling_share = described ? 1.f - 0.4f * std::clamp(Global.Overcast - 1.f, 0.f, 1.f) : 1.f;
 	m_weight = 0.f;
 }
 
@@ -221,10 +225,10 @@ void sky_light::end_update(basic_light &Sunlight, glm::vec3 &Fogcolor, CSkyDome 
 		// with the shadows of the clouds the sun is held back where they are, not everywhere
 		auto const overcastsun{m_cloud_shadows ? 1.f : (1.f - 0.65f * m_overcast)};
 		auto const sun{glm::vec3{result.sun_transmittance} * m_white_balance * (ATMOSPHERE_SUN_SCALE * Global.gfx_atmosphere_sun) * overcastsun};
-		auto const ambientscale{ATMOSPHERE_AMBIENT_SCALE * Global.gfx_atmosphere_ambient};
-		auto const ambient{desaturate(glm::vec3{result.radiance_sh[0]} * SH_Y00 * m_white_balance * ambientscale, 0.5f * m_overcast)};
-		m_sky_scale = ATMOSPHERE_SKY_SCALE * Global.gfx_atmosphere_sky;
-		auto const fog{desaturate(glm::vec3{result.horizon} * m_white_balance * m_sky_scale, 0.5f * m_overcast)};
+		auto const ambientscale{ATMOSPHERE_AMBIENT_SCALE * Global.gfx_atmosphere_ambient * m_falling_share};
+		auto const ambient{desaturate(glm::vec3{result.radiance_sh[0]} * SH_Y00 * m_white_balance * ambientscale, m_greyness)};
+		m_sky_scale = ATMOSPHERE_SKY_SCALE * Global.gfx_atmosphere_sky * m_falling_share;
+		auto const fog{desaturate(glm::vec3{result.horizon} * m_white_balance * m_sky_scale, m_greyness)};
 		m_sky_flat_luminance = luminance(glm::vec3{result.average} * m_white_balance * m_sky_scale);
 
 		m_sunlight = glm::mix(olddiffuse, sun, m_weight);
@@ -238,7 +242,7 @@ void sky_light::end_update(basic_light &Sunlight, glm::vec3 &Fogcolor, CSkyDome 
 			auto const evenness{1.f - 0.75f * m_overcast};
 			for (std::size_t c = 1; c < directional.size(); ++c)
 			{
-				auto const atmosphere{desaturate(glm::vec3{result.radiance_sh[c]} * m_white_balance * (SH_IRRADIANCE_BAND[SH_BAND[c]] * ambientscale * evenness), 0.5f * m_overcast)};
+				auto const atmosphere{desaturate(glm::vec3{result.radiance_sh[c]} * m_white_balance * (SH_IRRADIANCE_BAND[SH_BAND[c]] * ambientscale * evenness), m_greyness)};
 				directional[c] = glm::mix(directional[c], atmosphere, m_weight);
 			}
 		}

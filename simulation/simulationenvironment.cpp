@@ -34,6 +34,26 @@ turbidity_of( float const Overcast ) {
     return 9.f;
 }
 
+// the colour of the light under the clouds: the colour of the sun (a low one golden) goes into the grey of the diffuse light of
+// a sky covered over, Overcast as Global.Overcast (past 1 something falls)
+glm::vec3 overcast_light_colour( glm::vec3 const &Sun, float const Overcast ) {
+
+    glm::vec3 const diffuse { 0.90f, 0.92f, 0.96f };
+    return glm::mix( Sun, diffuse, 0.9f * std::clamp( Overcast, 0.f, 1.f ) );
+}
+
+// the share of the light of the sun what falls lets through: half of it in the heaviest
+float overcast_light_share( float const Overcast ) {
+
+    return 1.f - 0.5f * std::clamp( Overcast - 1.f, 0.f, 1.f );
+}
+
+// the share of the light of the sky under what falls: a third less in the heaviest
+float overcast_sky_share( float const Overcast ) {
+
+    return 1.f - 0.35f * std::clamp( Overcast - 1.f, 0.f, 1.f );
+}
+
 } // namespace
 
 void
@@ -187,11 +207,18 @@ world_environment::update() {
     auto const skydomehsv = colors::RGBtoHSV( skydomecolour );
     // sun strength is reduced by overcast level
     keylightintensity *= 1.0f - std::min(1.f, Global.Overcast) * 0.65f;
+    if( m_weather.described() ) {
+        // under a described weather the light under the clouds is what they let through: grey, without the colour of a low sun,
+        // and the precipitation falling through it takes more of it away (a blizzard is dark, a drizzle hardly)
+        keylightcolor = overcast_light_colour( keylightcolor, Global.Overcast );
+        keylightintensity *= overcast_light_share( Global.Overcast );
+    }
 
     // intensity combines intensity of the sun and the light reflected by the sky dome
     // it'd be more technically correct to have just the intensity of the sun here,
     // but whether it'd _look_ better is something to be tested
-    auto const intensity = std::min( 1.15f * ( lightfloor + keylightintensity + skydomehsv.z ), 1.25f );
+    auto const intensity = std::min( 1.15f * ( lightfloor + keylightintensity + skydomehsv.z ), 1.25f )
+                         * ( m_weather.described() ? overcast_sky_share( Global.Overcast ) : 1.f );
     // the impact of sun component is reduced proportionally to overcast level, as overcast increases role of ambient light
     auto const diffuselevel = std::lerp( keylightintensity, intensity * ( 1.0f - twilightfactor ), 1.0f - std::min( 1.f, Global.Overcast ) * 0.75f );
     // ...update light colours and intensity.

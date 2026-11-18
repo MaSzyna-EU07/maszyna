@@ -81,6 +81,11 @@ class sky_light
 	{
 		return m_overcast;
 	}
+	// how much the colours of the sky and of the fog are greyed by the overcast, 0..1
+	float greyness() const
+	{
+		return m_greyness;
+	}
 	// the volumetric clouds are drawn over the sky (it doesn't take the overcast look then), and their shadows hold back the
 	// sunlight (it isn't dimmed by the overcast then)
 	void set_clouds(bool const Clouds, bool const Shadows)
@@ -115,6 +120,11 @@ class sky_light
 	glm::vec3 m_white_balance{1.f};
 	float m_sky_scale{0.f};
 	float m_overcast{0.f};
+	// how much the overcast greys the light of the sky and the fog, 0..1: half of it as always, all of it under a described
+	// weather (a low sun doesn't colour the light under a sky covered over); and the share of the light of the sky what falls
+	// lets through, 1 but under a described weather
+	float m_greyness{0.f};
+	float m_falling_share{1.f};
 	bool m_clouds{false};
 	bool m_cloud_shadows{false};
 	float m_sky_flat_luminance{0.f};
