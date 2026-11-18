@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 namespace
 {
@@ -393,8 +394,10 @@ void moved_grades(chain_profile const &Profile, std::vector<double> const &Heigh
 	}
 }
 
-// a run closed in a loop: its first and last node are one point, at one height and one grade; the end which was changed gives the
-// height, and the two grades (the one out of the seam, the one into it) meet in their mean, so the seam has no kink
+// a run closed in a loop: its first and last node are one point, at one height; the end which was changed gives the height. The
+// grades (the one out of the seam, the one into it) are left as they were when the operation changed neither, so a seam moved only
+// up or down keeps its break of grade. A grade the operation set at one end is given to the other one too, and two set at once
+// meet in their mean, so the seam gets no kink
 void close_loop(chain_profile const &Profile, std::vector<double> &Heights, std::vector<double> &Grades)
 {
 	auto const last{Heights.size() - 1};
@@ -404,16 +407,46 @@ void close_loop(chain_profile const &Profile, std::vector<double> &Heights, std:
 		Heights.front() = Heights.back();
 	else
 		Heights.back() = Heights.front();
-	auto const grade{0.5 * (Grades.front() + Grades.back())};
-	Grades.front() = grade;
-	Grades.back() = grade;
+	auto const front{grade_changed(Profile, Grades, 0)};
+	auto const back{grade_changed(Profile, Grades, last)};
+	if (front && back)
+	{
+		auto const grade{0.5 * (Grades.front() + Grades.back())};
+		Grades.front() = grade;
+		Grades.back() = grade;
+	}
+	else if (front)
+		Grades.back() = Grades.front();
+	else if (back)
+		Grades.front() = Grades.back();
 }
 
-// the end of the run at node End moved: the other pieces ending there (a change of lanes, three or more meeting with no junction)
-// and the arms of the junctions there go with it, as the Raise of the road tool takes them, so the road isn't pulled apart
-void write_run_end(chain_profile const &Profile, std::size_t const End, double const Height, std::vector<std::pair<road_node *, road_node::state>> &Changes,
-                   std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
+// the handle of another piece at its joint with an end of the run, made to rise with the grade the run has there (Grade: metres up
+// for a metre away from the joint, into that piece); a straight gets its handles made first, so it can bend up and down
+void join_handle(std::array<glm::dvec3, 4> &P, bool const AtEnd, double const Grade)
 {
+	if (P[1] == glm::dvec3{0.0} && P[2] == glm::dvec3{0.0})
+	{
+		auto const a{absolute(P)};
+		P[1] = a[1] - a[0];
+		P[2] = a[2] - a[3];
+	}
+	auto &handle{AtEnd ? P[2] : P[1]};
+	handle.y = Grade * flat(handle);
+}
+
+// the end of the run at node End changed: the other pieces ending there (a change of lanes, three or more meeting with no junction)
+// and the arms of the junctions there go with its height, as the Raise of the road tool takes them, so the road isn't pulled apart.
+// Where the operation gave the end a new grade (Grade: metres up for a metre along the run), the handles of those pieces at the
+// joint take it as well, so the joint gets no kink; an arm of a junction has no grade of its own to take
+void write_run_end(chain_profile const &Profile, std::size_t const End, double const Height, std::optional<double> const Grade,
+                   std::vector<std::pair<road_node *, road_node::state>> &Changes, std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
+{
+	auto const moved{std::abs(Height - Profile.heights[End]) > 1e-9};
+	if (false == moved && false == Grade.has_value())
+		return;
+	// the pieces beyond the first node lie before the run: away from the joint into them is down the run
+	auto const away{End == 0 ? -1.0 : 1.0};
 	for (auto const &other : editor_road::ends_at(Profile.positions[End]))
 	{
 		if (std::ranges::any_of(Profile.order, [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
@@ -424,8 +457,13 @@ void write_run_end(chain_profile const &Profile, std::size_t const End, double c
 			Changes.emplace_back(other.road, other.road->definition());
 			listed = std::prev(Changes.end());
 		}
-		listed->second.axis.points[other.atend ? segment_data::point::end : segment_data::point::start].y = Height;
+		auto &points{listed->second.axis.points};
+		points[other.atend ? segment_data::point::end : segment_data::point::start].y = Height;
+		if (Grade.has_value())
+			join_handle(points, other.atend, away * *Grade);
 	}
+	if (false == moved)
+		return;
 	for (auto const &arm : editor_road::arms_at(Profile.positions[End]))
 	{
 		auto entry{std::ranges::find_if(Junctions, [&arm](auto const &Listed) { return Listed.first == arm.first; })};
@@ -476,8 +514,12 @@ void write_profile(chain_profile &Profile, std::vector<double> const &Given, std
 		if (touched[n] != 0)
 			Changes.emplace_back(Profile.order[n].road, Profile.states[n]);
 	for (auto const end : {std::size_t{0}, Profile.positions.size() - 1})
-		if (std::abs(Heights[end] - Profile.heights[end]) > 1e-9)
-			write_run_end(Profile, end, Heights[end], Changes, Junctions);
+	{
+		std::optional<double> grade;
+		if (grade_changed(Profile, Grades, end))
+			grade = Grades[end];
+		write_run_end(Profile, end, Heights[end], grade, Changes, Junctions);
+	}
 }
 
 // whether something else meets the run at that end node (another piece or a junction arm): only there the end keeps its grade,
@@ -685,6 +727,8 @@ void editor_mode::road_profile_operation()
 		for (std::size_t i = first; i <= last; ++i)
 			if (grounded[i] != 0)
 				grades[i] = neighbour_grade(profile, heights, i);
+		// it's about heights: an end something meets keeps its grade, as a move up or down keeps it
+		keep_joined_ends(profile, grounded, grades);
 		done = format(STR_C("Nodes put %.2f m over the ground: %zu"), view.offset, found);
 		break;
 	}
