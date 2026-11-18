@@ -2110,6 +2110,7 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 	{
 		auto const degrees{editor_geo::to_degrees(map.point())};
 		std::snprintf(state.place, sizeof(state.place), "%.6f, %.6f", degrees.x, degrees.y);
+		state.chosen = true;
 	}
 	ImGui::EndChild();
 	ImGui::SetNextItemWidth(-FLT_MIN);
@@ -2119,6 +2120,7 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 	{
 		map.pick(typed);
 		map.show(typed, 8.0);
+		state.chosen = true;
 	}
 	item_tooltip("Degrees as the online maps copy them (latitude, longitude), or the X and Y of PUWG 1992, the coordinates of the Polish maps of geoportal.gov.pl");
 	if (state.place[0] != '\0' && false == understood)
@@ -2151,8 +2153,9 @@ bool editor_mode::render_nmt_place(bool const Moving, bool const Button)
 	}
 	// the other way round: the place clicked is where the camera stands now, the middle of the scenery follows from it. It puts
 	// the scenery back where it belongs after "The scenery is here" moved it: fly the camera to a place known on the map (a
-	// station, a crossing), click that place on the map, and assign
-	ImGui::BeginDisabled(false == map.picked());
+	// station, a crossing), click that place on the map, and assign. Not the place "Change..." shows at first: that's the middle
+	// already set, and taking it for the camera's place would move the scenery by where the camera stands
+	ImGui::BeginDisabled(false == map.picked() || false == state.chosen);
 	if (ImGui::Button(STR_C("Assign from the camera"), ImVec2(-FLT_MIN, 0.0f)))
 	{
 		auto const point{map.point()};
@@ -2209,6 +2212,7 @@ void editor_mode::render_nmt_ui()
 			m_nmt_map.pick(point);
 			m_nmt_map.show(point, 8.0);
 			std::snprintf(state.place, sizeof(state.place), "%.6f, %.6f", degrees.x, degrees.y);
+			state.chosen = false;
 			state.moving = true;
 		}
 		ImGui::EndDisabled();

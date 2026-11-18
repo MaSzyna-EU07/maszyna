@@ -3762,15 +3762,15 @@ void editor_mode::drop_model_instances()
 namespace
 {
 
-// the file of that name, or the one in its folder named so but for the case of the letters, as the game finds it; the path
-// given when there's none
-std::filesystem::path file_whatever_case(std::filesystem::path const &Path)
+// the entry of that name in the folder, or the one named so but for the case of the letters; the path as given when there's none
+std::filesystem::path entry_whatever_case(std::filesystem::path const &Folder, std::filesystem::path const &Name)
 {
+    auto const path{Folder / Name};
     std::error_code error;
-    if (std::filesystem::exists(Path, error))
-        return Path;
-    auto const wanted{ToLower(Path.filename().string())};
-    for (std::filesystem::directory_iterator entry{Path.parent_path(), error}, end; entry != end; entry.increment(error))
+    if (std::filesystem::exists(path, error))
+        return path;
+    auto const wanted{ToLower(Name.string())};
+    for (std::filesystem::directory_iterator entry{Folder, error}, end; entry != end; entry.increment(error))
     {
         try
         {
@@ -3783,7 +3783,24 @@ std::filesystem::path file_whatever_case(std::filesystem::path const &Path)
             continue;
         }
     }
-    return Path;
+    return path;
+}
+
+// the file of that name under the folder, as the game finds it: each folder on the way and the file itself named so but for
+// the case of the letters; the path as given when there's none
+std::filesystem::path file_whatever_case(std::filesystem::path const &Folder, std::filesystem::path const &Name)
+{
+    std::error_code error;
+    if (auto const path{Folder / Name}; std::filesystem::exists(path, error))
+        return path;
+    auto cased{Folder};
+    for (auto const &part : Name)
+    {
+        if (part.empty() || part == ".")
+            continue;
+        cased = entry_whatever_case(cased, part);
+    }
+    return cased;
 }
 
 // the file a line of a scenery includes: include <file> ... end, the keyword in any case and after any whitespace, as the
@@ -3824,7 +3841,7 @@ void editor_mode::read_georeference()
     m_georeference_line.clear();
     // the scenery file first, then the files it includes near its top: a scenery made of an include (the IRT one) keeps its
     // origin in the included file. The name of the scenery is kept in lower case, the file may have capitals in its name
-    std::vector<std::filesystem::path> files{file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath + Global.SceneryFile})};
+    std::vector<std::filesystem::path> files{file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath}, std::filesystem::path{Global.SceneryFile})};
     for (std::size_t index = 0; index < files.size() && false == m_georeference; ++index)
         read_georeference(files, index);
 }
@@ -3841,7 +3858,7 @@ void editor_mode::read_georeference(std::vector<std::filesystem::path> &Files, s
         if (mark == std::string::npos)
         {
             if (auto const name{included_file(line)}; Index == 0 && Files.size() < 8 && false == name.empty())
-                Files.emplace_back(file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath} / name));
+                Files.emplace_back(file_whatever_case(std::filesystem::path{Global.asCurrentSceneryPath}, std::filesystem::path{name}));
             continue;
         }
         auto const origin{georeference_origin(line.substr(mark + 4))};
