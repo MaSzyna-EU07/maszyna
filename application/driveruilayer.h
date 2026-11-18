@@ -28,6 +28,9 @@ public:
     driver_ui();
 // methods
 	void showDebugUI() override;
+    // cycles the old driving aid panel (Shift+F1): closed -> compact -> expanded -> closed
+    void
+        toggle_driving_aid() override;
     // potentially processes provided input key. returns: true if the input was processed, false otherwise
     bool
         on_key( int const Key, int const Action ) override;
@@ -69,4 +72,7 @@ private:
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
 	ui::cameraview_panel m_cameraviewpanel;
+	hud_panel m_hudpanel { "HUD", true };
+	// the signal strip is gone too: its readouts live inside the main panel now
+	hud_custom_panel m_hudcustompanel { "HUD customisation", false };
 };
