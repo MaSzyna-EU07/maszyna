@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "winheaders.h"
 
 #include <bit>
+#include <utility>
 
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 
@@ -730,6 +731,92 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		is_ready = true;
 	}
 	// the name may be a new one, and the unit active took the texture past the unit cache
+	for (auto &unit : units)
+		unit = -1;
+}
+
+namespace
+{
+// gl objects of an image uploaded by another thread that was never put in place
+void delete_thread_upload(GLuint const Texture, GLsync const Fence)
+{
+	if (Fence != nullptr)
+		glDeleteSync(Fence);
+	glDeleteTextures(1, &Texture);
+}
+} // namespace
+
+void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8_t *raw)
+{
+	// a texture of its own each time: the one drawn from may be in use by the gpu for the drawing context, and writing it from
+	// here, with nothing to order the two contexts, could leave it incomplete or half written for a frame
+	texture_thread_upload upload;
+	upload.width = width;
+	upload.height = height;
+	glGenTextures(1, &upload.id);
+	glBindTexture(target, upload.id);
+	set_filtering();
+	glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
+	glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
+	if (!glGenerateMipmap)
+		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
+	glTexImage2D(target, 0, GL_SRGB8_ALPHA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, raw);
+	if (glGenerateMipmap)
+		glGenerateMipmap(target);
+	glBindTexture(target, 0);
+	if (glFenceSync)
+	{
+		upload.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	}
+	else
+	{
+		// no sync objects: the drawing context can only be sure of the image once the upload is done
+		glFinish();
+	}
+	// the drawing context waits on the fence, which it can do only once the fence is on its way to the gpu
+	glFlush();
+
+	std::optional<texture_thread_upload> superseded;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		superseded = std::exchange(m_threadupload, upload);
+	}
+	if (superseded.has_value())
+	{
+		// the drawing thread didn't take it, so nothing drew from it
+		delete_thread_upload(superseded->id, superseded->fence);
+	}
+}
+
+void opengl_texture::commit_thread_upload()
+{
+	std::optional<texture_thread_upload> upload;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		upload = std::exchange(m_threadupload, std::nullopt);
+	}
+	if (false == upload.has_value())
+		return;
+
+	if (upload->fence != nullptr)
+	{
+		// the commands that follow wait on the gpu for the upload to be done, the cpu goes on
+		glWaitSync(upload->fence, 0, GL_TIMEOUT_IGNORED);
+		glDeleteSync(upload->fence);
+	}
+	if (id != invalid_id)
+		glDeleteTextures(1, &id);
+	id = upload->id;
+	data_width = static_cast<unsigned int>(upload->width);
+	data_height = static_cast<unsigned int>(upload->height);
+	data_format = GL_SRGB8_ALPHA8;
+	data_components = GL_RGBA;
+	if (type == "internalsrc:")
+	{
+		is_static = true;
+		is_ready = true;
+	}
+	// the name deleted may come back for another texture, and a deleted texture isn't bound any more
 	for (auto &unit : units)
 		unit = -1;
 }

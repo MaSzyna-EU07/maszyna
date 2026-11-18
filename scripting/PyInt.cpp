@@ -232,6 +232,24 @@ void render_task::upload() const
 	}
 }
 
+void render_task::upload_from_thread() const
+{
+	if (Global.python_uploadmain && m_target && m_target->shared_tex)
+	{
+		m_target->shared_tex->upload_from_thread(m_target->width, m_target->height, reinterpret_cast<const uint8_t *>(m_target->image.data()));
+	}
+}
+
+void render_task::commit_upload() const
+{
+	if (Global.python_uploadmain && m_target && m_target->shared_tex)
+	{
+		m_target->shared_tex->commit_thread_upload();
+		std::scoped_lock lock(m_target->mutex);
+		m_target->texture_id = m_target->shared_tex->get_id();
+	}
+}
+
 void render_task::cancel() const { /* nothing to do */ }
 
 // initializes the module. returns true on success
@@ -569,9 +587,11 @@ void python_taskqueue::run(GLFWwindow *Context, rendertask_sequence &Tasks, uplo
 					// execute python code
 					task->run();
 					if (Context)
-						task->upload();
-					else
 					{
+						task->upload_from_thread();
+					}
+					{
+						// the drawing thread uploads the image, or puts in place the one uploaded here
 						std::scoped_lock lock(Upload_Tasks.mutex);
 						Upload_Tasks.data.push_back(task);
 					}
@@ -610,7 +630,12 @@ void python_taskqueue::update()
 	std::scoped_lock lock(m_uploadtasks.mutex);
 
 	for (auto const &task : m_uploadtasks.data)
-		task->upload();
+	{
+		if (Global.python_threadedupload)
+			task->commit_upload();
+		else
+			task->upload();
+	}
 
 	m_uploadtasks.data.clear();
 }

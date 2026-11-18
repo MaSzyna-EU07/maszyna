@@ -18,6 +18,7 @@ class python_screen_viewer
 		std::unique_ptr<gl::program> shader;
 
 		std::chrono::high_resolution_clock::time_point timestamp;
+		size_t shared_texture{0}; // with python.sharectx, the texture of the screen bound in this window's context
 
 		window_state() = default;
 		~window_state();
@@ -33,6 +34,8 @@ class python_screen_viewer
 	std::atomic_bool m_exit = false;
 
 	void threadfunc();
+	// with python.sharectx, binds the texture with the last image of the screen, in the context of the window made current
+	void bind_shared_texture(window_state &Window) const;
 
 public:
     python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &name);

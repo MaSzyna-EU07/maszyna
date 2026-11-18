@@ -90,7 +90,8 @@ void python_screen_viewer::threadfunc()
 		glActiveTexture(GL_TEXTURE0);
 
 		if (Global.python_sharectx) {
-			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(m_rt->shared_tex->get_id()));
+			window->shared_texture = m_rt->shared_tex->get_id();
+			glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(window->shared_texture));
 		}
 		else {
 			GLuint tex;
@@ -146,6 +147,8 @@ void python_screen_viewer::threadfunc()
 			}
 
 			glfwMakeContextCurrent(window->window);
+			if (Global.python_sharectx)
+				bind_shared_texture(*window);
 			gl::program::unbind();
 			gl::buffer::unbind();
 
@@ -186,6 +189,20 @@ void python_screen_viewer::threadfunc()
 		if ((Global.python_minframetime - frametime).count() > 0.0f)
 			std::this_thread::sleep_for(Global.python_minframetime - frametime);
 	}
+}
+
+void python_screen_viewer::bind_shared_texture(window_state &Window) const
+{
+	size_t texture;
+	{
+		std::scoped_lock guard(m_rt->mutex);
+		texture = m_rt->texture_id;
+	}
+	// each image uploaded by a worker comes in a texture of its own
+	if (texture == 0 || texture == Window.shared_texture)
+		return;
+	Window.shared_texture = texture;
+	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
 }
 
 void python_screen_viewer::notify_window_fb_size(GLFWwindow const *window, int w, int h) const
