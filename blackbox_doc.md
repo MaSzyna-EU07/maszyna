@@ -36,6 +36,8 @@ for a while doesn't lose its lines: they are written once it can be, the last 64
 The writing of all the logs goes after the simulator's own reading of the disk. When it takes over a third of
 those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, three times as
 long after a writing as it took and every ten seconds at most, and the simulator's log tells it once.
+Closing the simulator waits for the logs' last lines a second at most: what isn't written by then is lost,
+and the simulator's log tells how many logs were left unwritten.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no

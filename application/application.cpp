@@ -747,7 +747,7 @@ void eu07_application::exit()
 	step("the black box");
 	simulation::Blackbox.close();
 	step("the physics logs");
-	// what is kept of them, the black box's written last
+	// what is kept of them, the black box's written last, waited for a second at most: the rest is dropped
 	PhysicsLogs.stop();
 	step("the modes");
 	for (auto &mode : m_modes)

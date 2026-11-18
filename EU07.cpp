@@ -113,7 +113,7 @@ void finish_log()
 [[noreturn]] void end_test_run(std::string_view const Reason)
 {
 	simulation::test().conclude(simulation::test_result::error, Reason);
-	// the last two seconds of the physics logs, which the runner of the tests reads
+	// the last seconds of the physics logs, which the runner of the tests reads: a second at most is waited for them
 	PhysicsLogs.stop();
 	finish_log();
 	fflush(stdout);
@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
 		}
 #endif
-		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
+		// the last seconds of the physics logs, a second at most, also after an error caught above; Application.exit() stops them
 		// otherwise, and a second stop only writes what came since
 		PhysicsLogs.stop();
 	}

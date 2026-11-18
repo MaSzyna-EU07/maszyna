@@ -122,6 +122,18 @@ TEST_CASE("physicslog: stopping writes what is kept at once, and what comes afte
 	CHECK(folder.read("EN57-1001") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.0000\r\n");
 }
 
+TEST_CASE("physicslog: stopping drops the logs past the time it waits for them") {
+	log_folder folder{"closingwait"};
+	{
+		physicslog_writer logs{folder.path(), std::chrono::hours{1}, std::chrono::milliseconds{0}};
+		logs.begin("EU07-005", header);
+		logs.append("EU07-005", "0.0500 0.0000\r\n");
+		logs.stop();
+		// the writing of the stop, left behind, is waited for by the writer going
+	}
+	CHECK_FALSE(std::filesystem::exists(folder.path() / "EU07-005.dat"));
+}
+
 TEST_CASE("physicslog: the lines of a log whose file can't be written are kept, with its header, for the next try") {
 	log_folder folder{"failed"};
 	physicslog_writer logs{folder.path(), std::chrono::hours{1}};

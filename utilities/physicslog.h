@@ -9,9 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <mutex>
 #include <set>
@@ -63,13 +65,15 @@ struct physicslog_values {
 // which can't keep up (below). lines whose file can't be written, held by another program say, are kept for the next
 // try: the last 64 MB of them all at most. the thread's disk work goes after everyone else's, and a disk slower than the
 // logs need (a hard disk, hundreds of them) gets them less often, so the simulation reading from it doesn't wait behind
-// them
+// them. the closing waits for the writing a second at most (below)
 class physicslog_writer {
 public:
-	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2});
+	explicit physicslog_writer(std::filesystem::path Folder = "physicslog", std::chrono::milliseconds Interval = std::chrono::seconds{2},
+	    std::chrono::milliseconds ClosingWait = std::chrono::seconds{1});
 	physicslog_writer(physicslog_writer const &) = delete;
 	physicslog_writer &operator=(physicslog_writer const &) = delete;
-	// stops, writing what is kept
+	// stops, writing what is kept, and waits for the writings a stop left behind: the object goes. the simulator's,
+	// global, never goes this way: the process ends with _Exit
 	~physicslog_writer();
 
 	// starts the log Name anew: its file is emptied and Header written into it, the next time the logs are written.
@@ -84,7 +88,9 @@ public:
 	// as flush, waited for no longer than Timeout: then false, and the writing goes on by itself, on a thread left
 	// behind. for the end of the process, the files held up or the disk not answering
 	bool flush_for(std::chrono::milliseconds Timeout);
-	// writes what is kept and ends the thread. what is given after is written by a flush, or at the end
+	// writes what is kept and ends the thread, waiting for it ClosingWait at most: the logs whose turn hasn't come by
+	// then are dropped, and the writing of the one at hand (a disk not answering) is left behind, going on by itself.
+	// what is given after is written by a flush, or by the next stop
 	void stop();
 	// the file of the log Name: <folder>/<name>.dat, with < > : " / \ | ? * and the control characters of the name
 	// replaced by _, and _ before a name Windows keeps for a device (con, nul, com1...). the bytes of the code page of a
@@ -116,21 +122,31 @@ private:
 	// as flush, letting nothing out: on the writer's thread, or at the end of the process, an exception would end the
 	// simulator. what was taken for a writing which failed as a whole is lost, the next one goes on with what came since.
 	// returns: the number of logs there were to write
-	std::size_t flush_safely() noexcept;
+	// Closing: the writing of the thread or of a stop, which a stop cuts short at the time it gives
+	std::size_t flush_safely(bool Closing) noexcept;
 	// called with m_filemutex held. returns: the number of logs there were to write
-	std::size_t write();
+	std::size_t write(bool Closing);
+	// whether the log at hand is dropped, the time a stop gave the writing over. Raised: the disk priority of the
+	// thread was put back for the closing already, in this writing
+	bool dropped_at_closing(bool Closing, bool &Raised) const;
+	// the logs whose file couldn't be written kept for the next try, before what came since
+	void keep_failed(std::map<std::string, pending> &Failed);
 	// the lines of the log Name written into its file. returns: true if they all were
 	bool write_log(std::string const &Name, pending const &Lines) const;
 
 	std::filesystem::path const m_folder;
 	std::string const m_shownfolder;
 	std::chrono::milliseconds const m_interval;
+	std::chrono::milliseconds const m_closingwait;
+	// the end of the time the last stop gave the writing, of the steady clock; 0 before the first stop
+	std::atomic<std::chrono::steady_clock::rep> m_closeby{0};
 	std::mutex m_mutex; // the lines kept and the thread
 	std::map<std::string, pending> m_pending;
 	bool m_stopped{false};
 	std::condition_variable m_wake;
 	std::jthread m_thread;
 	std::thread::id m_writer; // of the thread, kept after it is taken to be joined: the writer knows itself by it
+	std::vector<std::shared_future<void>> m_closings; // the writings of the stops, which may outlast them
 	std::mutex m_filemutex; // the files are written one batch at a time, so the lines of a log stay in order
 	std::set<std::string> m_failed; // the logs whose file couldn't be written, told once
 	bool m_slowtold{false}; // the writings were told to take longer than the interval allows, once; the thread's own
