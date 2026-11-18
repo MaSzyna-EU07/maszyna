@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TractionPower.h"
 #include "vehicle/Camera.h"
 #include "world/mtable.h"
+#include "world/stationnames.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
 #include "vehicle/drivingaid.h"
@@ -350,9 +351,10 @@ timetable_panel::update() {
 
     // destination
     {
-        auto textline = Bezogonkow( owner->Relation(), true );
+        // the names with the letters their files have, in utf-8 as the user interface takes it
+        auto textline = table.relation_caption();
         if( false == textline.empty() ) {
-            textline += " (" + Bezogonkow( owner->TrainName(), true ) + ")";
+            textline += " (" + data_name_to_utf8( owner->TrainName(), true ) + ")";
         }
         text_lines.emplace_back( textline, Global.UITextColor );
     }
@@ -419,10 +421,9 @@ timetable_panel::update() {
                     vmax += to_string( tableline->vmax, 0 );
                     vmax = vmax.substr( vmax.size() - 3, 3 ); // z wyrównaniem do prawej
                 }
-                auto const station { (
-                    Bezogonkow( tableline->StationName, true )
-                    + "                                  " )
-                    .substr( 0, 34 ) };
+                // the name as the timetable spells it; in utf-8 a letter can take more than one byte, the column is
+                // 34 characters wide
+                auto const station { utf8_fit( timetable::station_caption( tableline->StationLabel ), 34 ) };
                 auto const location { (
                     ( tableline->km > 0.0 ?
                         to_string( tableline->km, 2 ) :
@@ -1164,7 +1165,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
     if( mechanik.VelNext == 0.0
      && mechanik.eSignNext ) {
         // jeśli ma zapamiętany event semafora, nazwa eventu semafora
-        Output.emplace_back( "Current signal: " + Bezogonkow( mechanik.eSignNext->m_name ), Global.UITextColor );
+        Output.emplace_back( "Current signal: " + data_name_to_utf8( mechanik.eSignNext->m_name ), Global.UITextColor );
     }
 
     // distances
@@ -1275,7 +1276,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 	do {
 		auto const scanline = mechanik.TableText( i );
 		if( scanline.empty() ) { break; }
-		Output.emplace_back( Bezogonkow( scanline ), Global.UITextColor );
+		Output.emplace_back( data_name_to_utf8( scanline ), Global.UITextColor );
 		++i;
 	} while( i < speedtablesize );
 	if( Output.size() == 1 ) {
