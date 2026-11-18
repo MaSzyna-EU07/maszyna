@@ -195,16 +195,16 @@ bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
 void physicslog_writer::stop() {
 	std::jthread thread;
 	bool itself;
+	closing_time closeby;
 	{
 		std::scoped_lock lock{m_mutex};
 		m_stopped = true;
 		// taken by the first to stop, so it's joined once
 		thread = std::move(m_thread);
 		itself = m_writer == std::this_thread::get_id();
+		// the time the writing has, also for a batch the thread has begun already: the logs not written by then are dropped
+		closeby = closing_begun();
 	}
-	// the time the writing has, also for a batch the thread has begun already: the logs not written by then are dropped
-	auto const closeby{std::chrono::steady_clock::now() + m_closingwait};
-	m_closeby = closeby.time_since_epoch().count();
 	// the stop asked outside the lock, which waking the writer takes
 	if (thread.joinable())
 		thread.request_stop();
@@ -214,25 +214,51 @@ void physicslog_writer::stop() {
 			thread.detach();
 		return;
 	}
+	if (close_aside(thread, closeby))
+		return;
+	// no thread for it, out of memory say: written here, the logs past the time dropped all the same
+	if (thread.joinable())
+		thread.join();
+	flush_safely(true);
+}
+
+physicslog_writer::closing_time physicslog_writer::closing_begun() {
+	std::erase_if(m_closings, [](std::shared_future<void> const &Closing) { return Closing.wait_for(std::chrono::seconds{0}) == std::future_status::ready; });
+	// a closing not done yet keeps its time: a stop after it (the simulator stops the logs twice) doesn't wait the
+	// longer, nor give the writing of the first more of it
+	if (auto const before{m_closeby.load()}; before != 0 && false == m_closings.empty())
+		return {std::chrono::steady_clock::time_point{std::chrono::steady_clock::duration{before}}, false};
+	auto const closeby{std::chrono::steady_clock::now() + m_closingwait};
+	m_closeby = closeby.time_since_epoch().count();
+	return {closeby, true};
+}
+
+bool physicslog_writer::close_aside(std::jthread &Thread, closing_time const Closeby) noexcept {
 	// the thread ended and the rest written on a thread of its own, left behind if it isn't done in time: a disk which
 	// doesn't answer holds up the writing of a file, which no time given cuts short. the simulator ends with _Exit then,
 	// the writing with it
-	auto done{std::make_shared<std::promise<void>>()};
-	std::shared_future<void> const closing{done->get_future()};
-	{
-		std::scoped_lock lock{m_mutex};
-		m_closings.push_back(closing);
-	}
-	std::thread([this, done, writer = std::move(thread)]() mutable {
-		if (writer.joinable())
-			writer.join();
-		flush_safely(true);
-		done->set_value();
-	}).detach();
-	if (closing.wait_until(closeby) != std::future_status::ready) {
-		using seconds = std::chrono::duration<double>;
-		tell(std::format("Bad physics log: the closing doesn't wait for the writing longer than {:.1f} s, the logs not written by then are lost",
-		    seconds{m_closingwait}.count()));
+	try {
+		auto done{std::make_shared<std::promise<void>>()};
+		std::shared_future<void> const closing{done->get_future()};
+		{
+			std::scoped_lock lock{m_mutex};
+			m_closings.push_back(closing);
+		}
+		// the writer moved into the lambda: if its thread can't be started, the writer is ended (joined) with it
+		std::thread([this, done, writer = std::move(Thread)]() mutable {
+			if (writer.joinable())
+				writer.join();
+			flush_safely(true);
+			done->set_value();
+		}).detach();
+		// told by the stop which gave the time, not again by one after it
+		if (closing.wait_until(Closeby.by) != std::future_status::ready && Closeby.fresh)
+			tell(std::format("Bad physics log: the closing doesn't wait for the writing longer than {:.1f} s, the logs not written by then are lost",
+			    std::chrono::duration<double>{m_closingwait}.count()));
+		return true;
+	} catch (...) {
+		// out of memory, or no thread to be had: the writer, if it wasn't moved, is ended by the caller
+		return false;
 	}
 }
 

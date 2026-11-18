@@ -105,6 +105,12 @@ public:
 	static std::chrono::steady_clock::duration wait_after(std::chrono::milliseconds Interval, std::chrono::steady_clock::duration Took);
 
 private:
+	// the end of the time a stop gives the writing. fresh: given by this stop, not by one before it still under way
+	struct closing_time {
+		std::chrono::steady_clock::time_point by;
+		bool fresh{true};
+	};
+
 	struct pending {
 		bool fresh{false}; // its file is to be emptied first, and the header written into it
 		std::string header;
@@ -116,6 +122,11 @@ private:
 		void to_text();
 	};
 
+	// the time of a stop: the one of a closing still under way, if there's one. called with m_mutex held
+	closing_time closing_begun();
+	// the writer ended and the rest written by a thread of its own, waited for until Closeby. returns: false if no
+	// thread could be had for it, out of memory say; Thread may be the writer still then
+	bool close_aside(std::jthread &Thread, closing_time Closeby) noexcept;
 	// the thread, on the first line given, unless stopped. called with m_mutex held
 	void start();
 	void run(std::stop_token const &Stop);
