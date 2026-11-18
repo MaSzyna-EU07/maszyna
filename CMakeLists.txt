@@ -553,6 +553,9 @@ set(CORE_SOURCES
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
 "vehicle/odometer.cpp"
+"vehicle/timetableservice.cpp"
+"world/timetableflags.cpp"
+"world/timetablereader.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
