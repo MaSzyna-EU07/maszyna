@@ -690,10 +690,15 @@ TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the up
 	CHECK(safe_clamp(5, 3, 0) == 0);
 	CHECK(safe_clamp(-1, 3, 0) == 0);
 	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
-	// the AI braking test of 26.05: the demand was always the stronger of the two (negative) bounds
+	// the AI braking test up to 26.05.1: the demand was always the stronger of the two (negative) bounds
 	double const threshold{-0.45};
 	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
 	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	// the bump at a rail joint keeps the argument order it had up to 26.05.1, 0 as the value: the figure is
+	// capped from above only, and above 68% of the top speed it is negative
+	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
+	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
+	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {

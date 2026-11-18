@@ -282,13 +282,14 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return Left == Right;
 }
 
-// Tolerant clamp, the old custom clamp() of the project (26.05 and before). Unlike
+// Tolerant clamp, the old custom clamp() of the project (up to 26.05.1). Unlike
 // std::clamp, this does NOT invoke undefined behaviour when the bounds are inverted
 // (Lo > Hi): the lower bound is applied first and the upper one last, so inverted
-// bounds give the upper bound, as the old clamp() did. For code paths where the bounds
-// come from data or are computed at runtime and can cross (cab boundaries of a .mmd,
-// AI acceleration/braking limits, controller tables), where std::clamp's UB produced
-// wrong results. Swapping the bounds instead would not give the old result.
+// bounds give the upper bound, as the old clamp() did. Every call of the old clamp()
+// whose bounds can cross (they come from the .fiz, the .mmd or the window, or are
+// computed from such values) uses it, so it gives what it gave before the move to
+// std::clamp. Where the code keeps the bounds in order, std::clamp gives the same.
+// New code uses std::clamp.
 template <typename Type_>
 constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
 {
