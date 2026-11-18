@@ -707,6 +707,9 @@ struct TTrackParam
 	int DamageFlag = 0;
 	/// <summary>Maximum allowed velocity on this segment (used by AI driver).</summary>
 	double Velmax; /*dla uzytku maszynisty w ai_driver*/
+	/// <summary>Snow lying on the track where the vehicle meets it [m over the ground] (TTrack::snow_at()), and its density [kg/m3].</summary>
+	double snow = 0.0;
+	double snow_density = 0.0;
 };
 
 /// <summary>Traction-supply parameters at the vehicle's current location.</summary>
@@ -2581,6 +2584,9 @@ class TMoverParameters
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
 	double FrictionForce() const;
+	// the force the snow lying on the track holds the vehicle back with [N]: the snow over the heads of the rails pushed aside, the
+	// snow between them cut by the flanges
+	double SnowForce() const;
 	double BrakeForceR(double ratio, double velocity) const;
 	double BrakeForceP(double press, double velocity) const;
 	double BrakeForce(const TTrackParam &Track);

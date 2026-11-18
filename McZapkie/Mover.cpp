@@ -5273,6 +5273,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 
 	// juz zoptymalizowane:
 	FStand = FrictionForce(); // siła oporów ruchu
+	FStand += SnowForce();
 	if (true == TestFlag(DamageFlag, dtrain_out))
 	{
 		// HACK: crude way to reduce speed after derailment
@@ -5508,6 +5509,22 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 // Q: 20160713
 // Obliczanie siły tarcia
 // *************************************************************************************************
+double TMoverParameters::SnowForce() const
+{
+	if (RunningTrack.snow <= 0.0)
+		return 0.0;
+	// m the heads of the rails stand over the snow lying beside the sleepers; m the snow is pushed aside over (the width of the
+	// front of a vehicle), and m the flanges cut through the snow between the rails
+	double constexpr railhead{0.17};
+	double constexpr width{3.0};
+	double constexpr flanges{0.15};
+	double const over{std::max(RunningTrack.snow - railhead, 0.0)};
+	double const between{std::min(RunningTrack.snow, railhead)};
+	// the snow set moving at the speed of the vehicle, and what it takes to break it up and press it when it hardly moves
+	double const moving{V * V + 10.0};
+	return RunningTrack.snow_density * (width * over + flanges * between) * moving;
+}
+
 double TMoverParameters::FrictionForce() const
 {
 	double FF = 0;

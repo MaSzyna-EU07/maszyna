@@ -648,6 +648,9 @@ private:
   private:
     TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const;
     void ABuCheckMyTrack();
+    // the snow on the track under the axles into Track (the more of the two: the leading one meets it), the places the moving
+    // vehicle goes over pushed clear of it (TTrack::snow_at(), physics.snow)
+    void snow_on_track( TTrackParam &Track );
 
     std::string rTypeName; // nazwa typu pojazdu
 	std::string rReplacableSkin; // nazwa tekstury pojazdu

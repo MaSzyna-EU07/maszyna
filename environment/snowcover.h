@@ -52,6 +52,18 @@ class snow_cover
 	{
 		return m_fresh;
 	}
+	// the density of the snow lying, kg/m3
+	float density() const
+	{
+		return m_density;
+	}
+	// the snow brought onto a place cleared of it since the start, m: what fell, and what the wind carried along the ground into
+	// it (a track cleared by the trains fills up again from the snow around). the snow on a track is what came since it was last
+	// cleared (TTrack::snow_at())
+	double brought() const
+	{
+		return m_brought;
+	}
 	// how wet the snow is, 0..1: dry and powdery 0, slush 1
 	float wetness() const
 	{
@@ -115,6 +127,7 @@ class snow_cover
 
 	float m_depth{0.f};
 	float m_density{100.f}; // kg/m3 of the snow lying
+	double m_brought{0.0};
 	float m_fresh{0.f};
 	float m_wetness{0.f};
 	float m_drift{0.f};

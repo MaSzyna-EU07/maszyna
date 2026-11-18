@@ -149,3 +149,21 @@ TEST_CASE("snow cover: dry air takes the snow stuck to the windward faces sooner
 	run(moist, after, 12.0);
 	CHECK(dry.plaster() < moist.plaster() * 0.8f);
 }
+
+TEST_CASE("snow cover: a cleared place gets what falls, and what the wind carries along the ground on top") {
+	snow_cover calm;
+	run(calm, frost(1.f, {0.f, 0.f}), 1.0);
+	CAPTURE(calm.brought());
+	CAPTURE(calm.depth());
+	// in a calm the snow brought is what fell: as deep as on the open ground
+	CHECK(calm.brought() == doctest::Approx(calm.depth()).epsilon(0.02));
+
+	snow_cover windy;
+	windy.set(0.2f, 0.f, {0.f, 0.f}, 1.f);
+	auto const before{windy.brought()};
+	run(windy, frost(0.f, {0.f, 14.f}), 1.0);
+	CAPTURE(windy.brought() - before);
+	// no snowfall, a strong wind: the loose snow around is carried into the place, some 10 to 30 cm an hour
+	CHECK(windy.brought() - before > 0.1);
+	CHECK(windy.brought() - before < 0.31);
+}

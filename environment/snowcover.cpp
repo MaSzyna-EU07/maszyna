@@ -28,6 +28,9 @@ constexpr float DEEPEST_SNOW{3.f};
 constexpr float THICKEST_WIRE_ICE{0.04f};
 // time over which the wind carrying the snow works it into drifts, s
 constexpr double DRIFT_TIME{1.5 * HOUR};
+// m an hour the wind fills a place cleared of the snow (a track the trains keep clear, sunk in the snow around) at the most it
+// carries
+constexpr double CLEARED_FILL{0.3};
 
 float smoothstep(float const Edge0, float const Edge1, float const Value)
 {
@@ -109,6 +112,7 @@ void snow_cover::fall(double const Deltatime, snow_weather const &Weather)
 	m_density = std::clamp(mass / (before + added), 50.f, DENSEST_SNOW);
 	m_fresh = (m_fresh * before + added) / (before + added);
 	m_depth = depth;
+	m_brought += added;
 	// new snow falling in a calm evens out the drifts below it; in a wind it is carried into them at once
 	auto const calm{1.f - smoothstep(4.f, 10.f, glm::length(m_wind))};
 	auto const evened{added / (before + added + 0.01f)};
@@ -167,6 +171,8 @@ void snow_cover::carry(double const Deltatime, snow_weather const &Weather)
 	m_blowing = approach(m_blowing, blowing, Deltatime, 5.0);
 	if (carriage <= 0.f)
 		return;
+	// what it carries fills the places cleared of the snow too
+	m_brought += static_cast<double>(carriage) * CLEARED_FILL / HOUR * Deltatime;
 	auto const share{static_cast<float>(1.0 - std::exp(-carriage * Deltatime / DRIFT_TIME))};
 	m_drift += (1.f - m_drift) * share;
 	// the drifts turn to the wind which works them now, the faster the less they are made yet
