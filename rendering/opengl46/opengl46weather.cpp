@@ -195,6 +195,8 @@ void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight
 		auto const &balance{Sky.white_balance()};
 		glProgramUniform3f(*m_horizon_program, 2, balance.r, balance.g, balance.b);
 		glProgramUniform3f(*m_horizon_program, 3, Fogcolor.r, Fogcolor.g, Fogcolor.b);
+		auto const overcastfog{Sky.overcast_fog()};
+		glProgramUniform4f(*m_horizon_program, 4, overcastfog.r, overcastfog.g, overcastfog.b, overcastfog.a);
 		m_horizon_program->dispatch(1);
 		glMemoryBarrier(GL_UNIFORM_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, gl::WEATHER_SCRATCH_SSBO_BINDING, 0);

@@ -162,6 +162,7 @@ void sky_light::begin_update()
 	auto const described{simulation::Environment.weather().described()};
 	m_greyness = (described ? 0.95f : 0.5f) * m_overcast;
 	m_falling_share = described ? 1.f - 0.4f * std::clamp(Global.Overcast - 1.f, 0.f, 1.f) : 1.f;
+	m_overcast_fog = described ? m_overcast : 0.f;
 	m_weight = 0.f;
 }
 
@@ -223,7 +224,11 @@ void sky_light::end_update(basic_light &Sunlight, glm::vec3 &Fogcolor, CSkyDome 
 
 		// the atmosphere has no clouds: the overcast takes away the sunlight, greys the sky and evens out its light
 		// with the shadows of the clouds the sun is held back where they are, not everywhere
-		auto const overcastsun{m_cloud_shadows ? 1.f : (1.f - 0.65f * m_overcast)};
+		// a described weather: what its clouds let through on average goes everywhere, the fog of the view and the far scenery
+		// beyond the map of the shadows of the clouds too (a low sun under a sky covered over coloured them orange)
+		auto overcastsun{m_cloud_shadows ? 1.f : (1.f - 0.65f * m_overcast)};
+		if (m_overcast_fog > 0.f)
+			overcastsun = 1.f - 0.95f * m_overcast;
 		auto const sun{glm::vec3{result.sun_transmittance} * m_white_balance * (ATMOSPHERE_SUN_SCALE * Global.gfx_atmosphere_sun) * overcastsun};
 		auto const ambientscale{ATMOSPHERE_AMBIENT_SCALE * Global.gfx_atmosphere_ambient * m_falling_share};
 		auto const ambient{desaturate(glm::vec3{result.radiance_sh[0]} * SH_Y00 * m_white_balance * ambientscale, m_greyness)};

@@ -19,6 +19,8 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "simulation/simulationtime.h"
 
+#include <algorithm>
+
 namespace
 {
 
@@ -895,8 +897,17 @@ void world_weather::init()
 		tokens.insert(tokens.end(), Global.WeatherManual.begin(), Global.WeatherManual.end());
 	else if (Global.WeatherMode == global_settings::weather_mode::automatic)
 	{
-		tokens.emplace_back("climate");
-		tokens.emplace_back("random");
+		// the climate only where the place of the scenery is known (its location entry, or the place the editor keeps for it);
+		// elsewhere the weather the starter set (atmo, the temperature and the date of the config of the scenery) stands, as
+		// without the setting, rather than the climate of a stand-in station
+		auto const located{std::ranges::any_of(m_scenerytokens, [](std::string const &Token) { return lower(Token) == "location"; })};
+		if (located || editor_location().has_value())
+		{
+			tokens.emplace_back("climate");
+			tokens.emplace_back("random");
+		}
+		else
+			WriteLog("Weather: the place of the scenery isn't known, the weather of the starter stands (weather.mode auto)");
 	}
 	if (false == tokens.empty())
 	{

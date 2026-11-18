@@ -27,6 +27,8 @@ layout(push_constant) uniform kernel_constants
 	vec3 white_balance;
 	// the colour of the old fog, which the atmosphere replaces by its share
 	vec3 old_color;
+	// rgb: the colour of a fog lit by the light under the clouds, a: how far the colour goes to it (a sky covered over)
+	vec4 overcast_fog;
 };
 
 void main()
@@ -43,6 +45,7 @@ void main()
 	color = min(color, vec3(params.w));
 	float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
 	color = mix(color, vec3(luminance), params.z);
+	color = mix(color, overcast_fog.rgb, clamp(overcast_fog.a, 0.0, 1.0));
 	if (any(isnan(color)))
 		color = old_color;
 	weather_words[offset + int(index)] = vec4(mix(old_color, color, params.x), 1.0);

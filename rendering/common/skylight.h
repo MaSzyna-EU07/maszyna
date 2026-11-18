@@ -86,6 +86,13 @@ class sky_light
 	{
 		return m_greyness;
 	}
+	// the colour the fog towards the horizon goes to under the clouds (rgb), and how far (a): a fog under a sky covered over is lit
+	// by the light under the clouds, about as bright as a white surface there, not like the haze of a clear horizon. a is 0 but
+	// under a described weather
+	glm::vec4 overcast_fog() const
+	{
+		return glm::vec4{m_ambient * 0.95f, m_overcast_fog};
+	}
 	// the volumetric clouds are drawn over the sky (it doesn't take the overcast look then), and their shadows hold back the
 	// sunlight (it isn't dimmed by the overcast then)
 	void set_clouds(bool const Clouds, bool const Shadows)
@@ -125,6 +132,7 @@ class sky_light
 	// lets through, 1 but under a described weather
 	float m_greyness{0.f};
 	float m_falling_share{1.f};
+	float m_overcast_fog{0.f};
 	bool m_clouds{false};
 	bool m_cloud_shadows{false};
 	float m_sky_flat_luminance{0.f};

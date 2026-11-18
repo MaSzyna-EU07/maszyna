@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 #include "rendering/common/skyocclusion.h"
 #include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
@@ -135,10 +136,23 @@ glm::vec4 exposure_settings::bloom_params(std::size_t const Level)
 	return glm::vec4{(Level == 0 ? 1.f : 0.f), Global.gfx_postfx_bloom_threshold, BLOOM_KNEE, 0.f};
 }
 
+namespace
+{
+// EV the exposure goes down by under a described weather: a dull day isn't seen as bright as a fair one, as the adaptation alone
+// would make it (the sky and the fog under the clouds came out white). none under the old weather
+float weather_compensation()
+{
+	if (false == simulation::Environment.weather().described())
+		return 0.f;
+	return -0.6f * std::clamp(Global.Overcast, 0.f, 1.f) - 0.6f * std::clamp(Global.Overcast - 1.f, 0.f, 1.f);
+}
+} // namespace
+
 glm::vec4 exposure_settings::tonemap_params(std::size_t const Bloomlevels)
 {
 	auto const bloom{(Global.gfx_postfx_bloom && Bloomlevels > 0) ? Global.gfx_postfx_bloom_intensity : 0.f};
-	return glm::vec4{bloom, Global.gfx_postfx_autoexposure ? 1.f : 0.f, std::exp2(Global.gfx_postfx_autoexposure_compensation), Bloomlevels > 0 ? 1.f / static_cast<float>(Bloomlevels) : 0.f};
+	auto const compensation{Global.gfx_postfx_autoexposure_compensation + weather_compensation()};
+	return glm::vec4{bloom, Global.gfx_postfx_autoexposure ? 1.f : 0.f, std::exp2(compensation), Bloomlevels > 0 ? 1.f / static_cast<float>(Bloomlevels) : 0.f};
 }
 
 glm::vec3 exposure_settings::white_balance()
