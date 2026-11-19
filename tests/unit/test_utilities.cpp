@@ -5,6 +5,9 @@
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
+#include <cmath>
+#include <limits>
+
 // the helpers of utilities/utilities.cpp and utilities.h as they behave now: the numbers and texts they give, their
 // oddities included. the ones which look like mistakes are listed in COVERAGE.md. the helpers which read from a
 // parser (LoadPoint, the sets, the map) are in test_parser.cpp
@@ -690,12 +693,18 @@ TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the up
 	CHECK(safe_clamp(5, 3, 0) == 0);
 	CHECK(safe_clamp(-1, 3, 0) == 0);
 	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
-	// the AI braking test up to 26.05.1: the demand was always the stronger of the two (negative) bounds
+	// NaN as the old clamp had it: a NaN value stays NaN, a NaN bound doesn't clamp
+	auto const notanumber{std::numeric_limits<double>::quiet_NaN()};
+	CHECK(std::isnan(safe_clamp(notanumber, 0.0, 1.0)));
+	CHECK(safe_clamp(2.0, 0.0, notanumber) == 2.0);
+	CHECK(safe_clamp(-1.0, notanumber, 1.0) == -1.0);
+	// what the helper gives for arguments in the order and of the signs of two calls (these checks don't call
+	// them): the AI braking test, whose demand is the stronger of the two (negative) bounds, as up to 26.05.1
 	double const threshold{-0.45};
 	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
 	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
-	// the bump at a rail joint keeps the argument order it had up to 26.05.1, 0 as the value: the figure is
-	// capped from above only, and above 68% of the top speed it is negative
+	// and the bump at a rail joint, 0 in place of the value as up to 26.05.1: the figure is capped from above
+	// only, and above 68% of the top speed it is negative
 	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
 	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
 	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
