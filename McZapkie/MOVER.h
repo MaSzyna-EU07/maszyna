@@ -2258,6 +2258,9 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
+	// pullee mode ("jazda ciągniona", MaSzyna-EU07/maszyna#64): the vehicle is prepared for being hauled dead in a
+	// train, see PulleeModeSwitch()
+	bool PulleeMode{false};
 	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
@@ -2622,6 +2625,7 @@ class TMoverParameters
 	bool SpringBrakeActivate(bool State);
 	bool SpringBrakeShutOff(bool State);
 	bool SpringBrakeRelease();
+	bool PulleeModeSwitch(bool const State);
 
 	/*! stopnie hamowania - hamulec zasadniczy*/
 	bool IncBrakeLevelOld(void);
