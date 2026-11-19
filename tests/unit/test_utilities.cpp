@@ -172,17 +172,37 @@ TEST_CASE("utilities: random numbers are within the bounds given in any order") 
 }
 
 TEST_CASE("utilities: the same seed gives the same random numbers") {
-	std::vector<int> first;
+	std::vector<double> first;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		first.push_back(RandomInt(0, 1000000));
+		first.push_back(Random(0.0, 1000000.0));
 	}
-	std::vector<int> second;
+	std::vector<double> second;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		second.push_back(RandomInt(0, 1000000));
+		second.push_back(Random(0.0, 1000000.0));
 	}
 	CHECK(first == second);
+	std::vector<int> localfirst;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localfirst.push_back(RandomInt(0, 1000000));
+	}
+	std::vector<int> localsecond;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localsecond.push_back(RandomInt(0, 1000000));
+	}
+	CHECK(localfirst == localsecond);
+}
+
+TEST_CASE("utilities: the whole numbers are drawn from the local engine, not from that of the run's seed") {
+	// the trivia of the loading screen is drawn before a network client gets the seed of the session
+	Global.random_engine.seed(5);
+	auto const first{Random()};
+	Global.random_engine.seed(5);
+	RandomInt(0, 9);
+	CHECK(Random() == first);
 }
 
 TEST_CASE("utilities: the local random numbers have an engine of their own") {

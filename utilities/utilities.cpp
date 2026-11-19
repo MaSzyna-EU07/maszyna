@@ -154,7 +154,7 @@ int RandomInt(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
 	std::uniform_int_distribution dist(min, max);
-	return dist(Global.random_engine);
+	return dist(Global.local_random_engine);
 }
 
 std::uint64_t true_random_seed()

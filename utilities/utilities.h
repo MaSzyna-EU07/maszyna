@@ -66,7 +66,9 @@ inline long Round(double const f)
 double Random(double a, double b);
 // whole numbers from min to max, both included. a name of its own keeps the calls of Random() with whole-number
 // bounds (the wind, the wheel flats, the truck hunting, the tachometer) on Random(double, double), which draws the
-// real number in between that they expect
+// real number in between that they expect. drawn from the local engine, as up to 26.05.1 from an engine of its own: it
+// picks what one machine shows (the trivia of the loading screen), and a draw from the engine of the run's seed would
+// put that engine out of step with the other machines of a network session
 int RandomInt(int min, int max);
 
 /// @author lxvia
