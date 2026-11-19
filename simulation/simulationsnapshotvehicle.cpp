@@ -96,6 +96,100 @@ void save_coupler(snapshot::record &Entry, int const Index, TCoupling const &Cou
 	Entry.set(indexed("coupler", Index, "flags"), coupled ? Coupler.CouplingFlag : 0);
 }
 
+// what the vehicle keeps of its machinery beside its physics: the pantographs as they stand, the passengers getting on and off
+void save_machinery(snapshot::record &Entry, TDynamicObject const &Vehicle)
+{
+	Entry.set("overheadmask", Vehicle.iOverheadMask);
+	Entry.set("novolttime", Vehicle.NoVoltTime);
+	for (auto index{0}; index < Vehicle.iAnimType[ANIM_PANTS] && Vehicle.pants != nullptr; ++index)
+	{
+		auto const *pantograph{Vehicle.pants[index].fParamPants};
+		if (pantograph == nullptr)
+			continue;
+		Entry.set(indexed("pant", index, "anglel"), pantograph->fAngleL);
+		Entry.set(indexed("pant", index, "angleu"), pantograph->fAngleU);
+		Entry.set(indexed("pant", index, "height"), pantograph->PantWys);
+		Entry.set(indexed("pant", index, "wire"), pantograph->PantTraction);
+		Entry.set(indexed("pant", index, "novolttime"), pantograph->NoVoltTime);
+	}
+	auto const &exchange{Vehicle.m_exchange};
+	if (exchange.unload_count != 0.f || exchange.load_count != 0.f)
+	{
+		Entry.set("exchangeunload", exchange.unload_count).set("exchangeload", exchange.load_count);
+		Entry.set("exchangeplatforms", exchange.platforms).set("exchangetime", exchange.time);
+	}
+	// the rails under the wheel sets: the length of a rail, and for each wheel set how far along its rail it is and
+	// whether that's by the joints of the track. a joint of a worn track jolts the vehicle
+	Entry.set("raillength", Vehicle.dRailLength);
+	if (false == Vehicle.m_axlesounds.empty())
+	{
+		std::vector<double> joints;
+		for (auto const &axle : Vehicle.m_axlesounds)
+		{
+			joints.emplace_back(axle.distance);
+			joints.emplace_back(axle.atjoints ? 1.0 : 0.0);
+		}
+		Entry.set("railjoints", snapshot::numbers_text(joints));
+	}
+	// the lighting of the compartments: which of them are lit is drawn at random when it comes on
+	Entry.set("sectionlights", Vehicle.SectionLightsActive);
+	if (false == Vehicle.Sections.empty())
+	{
+		std::vector<double> levels;
+		for (auto const &section : Vehicle.Sections)
+			levels.emplace_back(section.light_level);
+		Entry.set("sectionlightlevels", snapshot::numbers_text(levels));
+	}
+	Entry.set("dimheadlights", Vehicle.DimHeadlights).set("highbeamlights", Vehicle.HighBeamLights);
+	Entry.set("headlightsaoff", Vehicle.HeadlightsAoff).set("headlightsboff", Vehicle.HeadlightsBoff);
+	// the force the electrodynamic brake of a unit was asked for in the step before, which the next one is held to
+	if (Vehicle.MED_oldFED != 0.0)
+		Entry.set("medoldfed", Vehicle.MED_oldFED);
+}
+
+void load_machinery(TDynamicObject &Vehicle, snapshot::record const &Entry)
+{
+	Entry.get("overheadmask", Vehicle.iOverheadMask);
+	Entry.get("novolttime", Vehicle.NoVoltTime);
+	for (auto index{0}; index < Vehicle.iAnimType[ANIM_PANTS] && Vehicle.pants != nullptr; ++index)
+	{
+		auto *pantograph{Vehicle.pants[index].fParamPants};
+		if (pantograph == nullptr)
+			continue;
+		Entry.get(indexed("pant", index, "anglel"), pantograph->fAngleL);
+		Entry.get(indexed("pant", index, "angleu"), pantograph->fAngleU);
+		Entry.get(indexed("pant", index, "height"), pantograph->PantWys);
+		Entry.get(indexed("pant", index, "wire"), pantograph->PantTraction);
+		Entry.get(indexed("pant", index, "novolttime"), pantograph->NoVoltTime);
+	}
+	auto &exchange{Vehicle.m_exchange};
+	exchange = {};
+	Entry.get("exchangeunload", exchange.unload_count);
+	Entry.get("exchangeload", exchange.load_count);
+	Entry.get("exchangeplatforms", exchange.platforms);
+	Entry.get("exchangetime", exchange.time);
+	Entry.get("raillength", Vehicle.dRailLength);
+	if (auto const joints{snapshot::text_numbers(Entry.text("railjoints"))}; joints.size() == 2 * Vehicle.m_axlesounds.size())
+	{
+		for (std::size_t index{0}; index < Vehicle.m_axlesounds.size(); ++index)
+		{
+			Vehicle.m_axlesounds[index].distance = joints[2 * index];
+			Vehicle.m_axlesounds[index].atjoints = joints[2 * index + 1] != 0.0;
+		}
+	}
+	Entry.get("sectionlights", Vehicle.SectionLightsActive);
+	if (auto const levels{snapshot::text_numbers(Entry.text("sectionlightlevels"))}; levels.size() == Vehicle.Sections.size())
+	{
+		for (std::size_t index{0}; index < levels.size(); ++index)
+			Vehicle.Sections[index].light_level = static_cast<float>(levels[index]);
+	}
+	Entry.get("dimheadlights", Vehicle.DimHeadlights);
+	Entry.get("highbeamlights", Vehicle.HighBeamLights);
+	Entry.get("headlightsaoff", Vehicle.HeadlightsAoff);
+	Entry.get("headlightsboff", Vehicle.HeadlightsBoff);
+	Vehicle.MED_oldFED = Entry.value("medoldfed", 0.0);
+}
+
 } // namespace
 
 void TDynamicObject::snapshot_save(simulation::snapshot::record &Entry) const
@@ -121,6 +215,7 @@ void TDynamicObject::snapshot_save(simulation::snapshot::record &Entry) const
 	Entry.set("destination", asDestination);
 	// the physics
 	snapshot::capture_mover(Entry, *MoverParameters);
+	save_machinery(Entry, *this);
 }
 
 bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
@@ -177,4 +272,5 @@ void TDynamicObject::snapshot_load(simulation::snapshot::record const &Entry)
 		LoadUpdate();
 	update_load_visibility();
 
+	load_machinery(*this, Entry);
 }
