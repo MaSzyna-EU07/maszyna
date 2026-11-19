@@ -286,6 +286,11 @@ set off by event launchers, at an hour or with a delay; `vars.trainsets` are the
 - `eu07_td_crew_swap`: the driver waiting at Stacja1 is taken off after 20 s, which leaves the
   locomotive braked, and a new one put in 20 s later, who gets the order to go, releases the
   brakes and leaves.
+- `golf_td_crew_swap`: a car running along the road `d3` at 50 km/h loses its driver, which
+  leaves it with its own brake applied in full: it stands 3 s and 17 m later. A road vehicle has
+  no cab to tell by and takes a driver all the same: the new one, put in 40 s later, drives on
+  along the road, at up to 100 km/h, having no timetable to cap the speed as the first one had
+  (the trainset's `50`).
 - `eu07_td_crew_refused`: the run of `eu07_td_timetable` with crew events which must be refused,
   at the start and again on the run: a second driver for the locomotive, a driver for a coach
   (no cab), a cab which is none of 1, -1, 0, a driver taken off a coach which has none, and a
@@ -383,8 +388,8 @@ the row instead, logged by builds from this branch on.
 - `stops_driverless` `vehicle`, `min_speed`, `within`, optional `stop_speed` (0.5), `max_creep`
   (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
   stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
-  the recording, at least `hold` seconds. The physicslog can't tell: the driver writes it, so it
-  ends when the driver goes.
+  the recording, or until it gets a driver again, at least `hold` seconds. The physicslog can't
+  tell: the driver writes it, so it ends when the driver goes.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 

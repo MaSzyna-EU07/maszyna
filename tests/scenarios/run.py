@@ -675,7 +675,8 @@ def check_driver_changes(box, vehicle, to, after=0.0, before=None):
 
 
 def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0):
-    """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it stopped."""
+    """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it
+    stopped, to the end of the recording or until it gets a driver again."""
     states, why = _vehicle_states(box, vehicle)
     if states is None:
         return False, why
@@ -689,16 +690,21 @@ def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_
     if stop is None or stop.time - left.time > within:
         took = "never" if stop is None else f"after {stop.time - left.time:.0f}s"
         return False, f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h and stood {took} (limit {within}s)"
-    if box.end_time - stop.time < hold:
-        return False, f"{vehicle} stood at t={stop.time:.1f}s, the recording ends {box.end_time - stop.time:.0f}s later (hold {hold}s)"
+    # left alone until the recording ends, or a driver comes again
+    crewed = next((s for s in after if s.time > stop.time and s.driver != BLACKBOX_DRIVERS["none"]), None)
+    until = crewed.time if crewed else box.end_time
+    alone = "until a driver came" if crewed else "to the end"
+    if until - stop.time < hold:
+        return False, f"{vehicle} stood at t={stop.time:.1f}s, with no driver for {until - stop.time:.0f}s more {alone} (hold {hold}s)"
     # a standing vehicle is listed again only in the keyframes, or when it moves
-    fastest = max(abs(s.speed) for s in after if s.time >= stop.time)
-    creep = max(math.dist(s.position, stop.position) for s in after if s.time >= stop.time)
+    standing = [s for s in after if stop.time <= s.time <= until]
+    fastest = max(abs(s.speed) for s in standing)
+    creep = max(math.dist(s.position, stop.position) for s in standing)
     if fastest > stop_speed or creep > max_creep:
-        return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h"
+        return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h with no driver"
     way = sum(math.dist(a.position, b.position) for a, b in zip(after, after[1:]) if b.time <= stop.time)
     return True, (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
-                  f"and {way:.0f} m later, moved {creep:.2f} m in the {box.end_time - stop.time:.0f}s after")
+                  f"and {way:.0f} m later, moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}")
 
 
 def check_moves(box, vehicle, min_speed, direction="front"):
