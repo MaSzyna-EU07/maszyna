@@ -164,6 +164,7 @@ class TSpeedPos
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
+    bool bSeenAhead{ false }; // the head of the train had it ahead once: only such a point can be passed by the train
     glm::dvec3 vPos; // współrzędne XYZ do liczenia odległości
     struct
     {
