@@ -78,11 +78,12 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		dumpInfo.ExceptionPointers = ExceptionInfo;
 		dumpInfo.ClientPointers = FALSE;
 
-		// a small dump by default: the stacks with the memory they point to, the threads, the modules, the handles and
-		// the modules' data (Global among them). all the memory of the simulator, as large as the memory it took, only
-		// with "crashdump.full yes" in eu07.ini
+		// a small dump by default: the stacks with the memory they point to, the threads with their process and thread
+		// blocks (the command line with the scenery and the vehicle), the modules, the handles and the modules' data
+		// (Global among them). all the memory of the simulator, as large as the memory it took, only with
+		// "crashdump.full yes" in eu07.ini
 		auto const dumpflags{Global.CrashDumpFull ? MiniDumpWithFullMemory : MiniDumpWithDataSegs};
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(dumpflags | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
+		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(dumpflags | MiniDumpWithProcessThreadData | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
 		// in test mode nobody is there to close the box, and the run would wait for it until killed
