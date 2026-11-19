@@ -37,6 +37,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
+#include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 #include "utilities/translation.h"
 
@@ -139,6 +142,28 @@ void char_callback(GLFWwindow *window, unsigned int c)
 		return;
 	Application.on_char(c);
 }
+
+namespace
+{
+
+// what glfw says went wrong, such as why the window or its context couldn't be made (no OpenGL driver, no pixel
+// format that fits). each message once, so one repeated every frame doesn't fill the log. glfw may call this from
+// any thread that uses it
+void glfw_error_callback(int const Code, char const *Description)
+{
+	auto message{std::format("GLFW error 0x{:08X}: {}", static_cast<unsigned int>(Code), Description != nullptr ? Description : "(no description)")};
+
+	static std::mutex reportedmutex;
+	static std::set<std::string> reported;
+	{
+		std::scoped_lock lock(reportedmutex);
+		if (false == reported.insert(message).second)
+			return;
+	}
+	ErrorLog(message);
+}
+
+} // namespace
 
 // public:
 
@@ -1355,6 +1380,9 @@ int eu07_application::init_locale()
 
 int eu07_application::init_glfw()
 {
+	// set before glfwInit(), so a failure of the start itself is told too
+	glfwSetErrorCallback(glfw_error_callback);
+
 	{
 		int glfw_major, glfw_minor, glfw_rev;
 		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);

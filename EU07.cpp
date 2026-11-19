@@ -175,6 +175,10 @@ int main(int argc, char *argv[])
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
+	// a start that failed ends with an error code, so whoever started the simulator (the starter) can tell it
+	// from a closing; how the simulator ends after a start that worked stays as it was
+	int exitcode{0};
+
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")
 	{
@@ -229,6 +233,10 @@ int main(int argc, char *argv[])
 				result = Application.run();
 				Application.exit();
 			}
+			else
+			{
+				exitcode = 1;
+			}
 		}
 		catch (std::bad_alloc const &Error)
 		{
@@ -245,10 +253,13 @@ int main(int argc, char *argv[])
 		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
 		// otherwise, and a second stop only writes what came since
 		PhysicsLogs.stop();
+		// after a failed start or an error caught above the log thread still runs, and what it hasn't written yet
+		// (why the start failed) would go with the process. after Application.exit() it has stopped already
+		finish_log();
 	}
 #ifndef _WIN32
 	fflush(stdout);
 	fflush(stderr);
 #endif
-	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
+	std::_Exit(exitcode); // skip destructors, there are ordering errors which causes segfaults
 }
