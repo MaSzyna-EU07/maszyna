@@ -876,7 +876,8 @@ void
 openal_renderer::soundproofing_filter( ALuint const Source, float const Soundproofing ) const {
 
     if( m_lowpassfilter == 0 ) { return; }
-    if( false == Global.AudioLowpass || Soundproofing >= 1.f ) {
+    // a soundproofing left undefined by the data (-1, which OpenAL doesn't take as the gain either) isn't muffled
+    if( false == Global.AudioLowpass || Soundproofing < 0.f || Soundproofing >= 1.f ) {
         ::alSourcei( Source, AL_DIRECT_FILTER, AL_FILTER_NULL );
         return;
     }
