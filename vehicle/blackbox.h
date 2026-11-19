@@ -301,7 +301,7 @@ struct station_event {
 struct camera_state {
 	double time{0.0};
 	std::uint8_t mode{camera_modes::free};
-	std::uint8_t view{0}; // of an outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by
+	std::uint8_t view{0}; // of an outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by, 4 orbit, 5 shunting, 6 coupling, 7 trackside
 	std::uint32_t vehicle{no_vehicle}; // the vehicle the camera goes with, no_vehicle for none
 	glm::dvec3 position{0.0};
 	float heading{0.0f}; // [rad] of where it looks, from +z towards +x, as the heading of a vehicle

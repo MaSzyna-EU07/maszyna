@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/handover.h"
+#include "vehicle/timetableservice.h"
 #include "world/mtable.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
@@ -1345,6 +1346,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 if (TrainParams.UpdateMTable( simulation::Time, asNextStop) ) {
                     // to się wykona tylko raz po zatrzymaniu na W4
                     record_station( Point, blackbox::station_kinds::stopped );
+                    // the service flags of this stop hold for its doors and departure
+                    m_stopflags = TrainParams.stop_flags();
                     if( TrainParams.StationIndex < TrainParams.StationCount ) {
                         // jeśli są dalsze stacje, bez trąbienia przed odjazdem
                         // also ignore any horn cue that may be potentially set below 1 km/h and before the actual full stop
@@ -1443,7 +1446,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         if( Command == TCommandType::cm_Unknown ) { // jeśli nie było komendy wcześniej
                             Command = TCommandType::cm_Ready; // gotów do odjazdu z W4 (semafor może zatrzymać)
                         }
-                        if( false == tsGuardSignal.empty() ) {
+                        if( false == tsGuardSignal.empty()
+                         && true == timetable::has_conductor( m_stopflags ) ) {
                             // jeśli mamy głos kierownika, to odegrać
                             iDrivigFlags |= moveGuardSignal;
                         }
@@ -1451,7 +1455,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     } // koniec startu z zatrzymania
 					else {
 						cue_action(driver_hint::waitdeparturetime);
-						if (TrainParams.IsTimeToGo(simulation::Time.data().wHour, simulation::Time.data().wMinute + simulation::Time.data().wSecond*0.0167 + 0.1)) { //if is less than 6 sec to departure
+						if (timetable::has_conductor(m_stopflags) // no conductor, no door kept open for him
+						 && TrainParams.IsTimeToGo(simulation::Time.data().wHour, simulation::Time.data().wMinute + simulation::Time.data().wSecond*0.0167 + 0.1)) { //if is less than 6 sec to departure
 							iDrivigFlags |= moveGuardOpenDoor;
 							GuardOpenDoor();
 						}
@@ -2876,7 +2881,7 @@ bool TController::CheckVehicles(TOrders user)
             = 0;
 		}
 
-        if( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) {
+        if( brake_setting::inspects_train( OrderCurrentGet(), user == Connect ) ) {
             // nastawianie hamulca do jazdy pociągowej
             AutoRewident();
 /*
@@ -4474,7 +4479,16 @@ void TController::SpeedCntrl(double DesiredSpeed)
 {
     if( false == mvControlling->SpeedCtrl ) { return; }
 
-	if (mvControlling->EngineType == TEngineType::DieselEngine)
+	if (mvControlling->IsSpeedCtrlSeparate())
+	{
+		// a switch of its own, the secondary controller left to the field shunting (eu07/maszyna#69)
+		if (DesiredSpeed < 0.1) {
+			DesiredSpeed = 0;
+		}
+		mvControlling->SpeedCtrlSwitch(DesiredSpeed > 0);
+		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+	}
+	else if (mvControlling->EngineType == TEngineType::DieselEngine)
 	{
 		if (DesiredSpeed < 0.1) {
 			mvControlling->DecScndCtrl(2);
@@ -4498,7 +4512,7 @@ void TController::SpeedCntrl(double DesiredSpeed)
         while( mvControlling->ScndCtrlPos < DesiredPos && true == mvControlling->IncScndCtrl(1) ) { ; } // all work is done in the condition loop
 	}
 
-    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->ScndCtrlPos > 0 ) {
+    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->IsSpeedCtrlEngaged() ) {
 		while (mvControlling->SpeedCtrlUnit.DesiredPower < mvControlling->SpeedCtrlUnit.MaxPower)
 		{
 			mvControlling->SpeedCtrlPowerInc();
@@ -4790,6 +4804,11 @@ void TController::Doors( bool const Open, int const Side ) {
 
         auto const lewe = pVehicle->DirectionGet() > 0 ? 1 : 2;
         auto const prawe = 3 - lewe;
+        // doorsteps as the timetable asks, before the doors open (eu07/maszyna#95)
+        if( auto const doorstep { timetable::doorstep( m_stopflags ) };
+            doorstep.has_value() && mvOccupied->Doors.step_enabled != *doorstep ) {
+            cue_action( *doorstep ? driver_hint::doorstepon : driver_hint::doorstepoff );
+        }
         // grant door control permission if it's not automatic
         // TBD: stricter requirements?
         if( true == pVehicle->MoverParameters->Doors.permit_needed ) {
@@ -4801,10 +4820,9 @@ void TController::Doors( bool const Open, int const Side ) {
             }
         }
         // consist-wide remote signals to open doors doors
-        if( pVehicle->MoverParameters->Doors.open_control == control_t::conductor
-         || pVehicle->MoverParameters->Doors.open_control == control_t::driver
-            // NOTE: disabled for mixed controls, leave it up to passengers to open doors by themselves
-/*         || ( pVehicle->MoverParameters->Doors.open_control == control_t::mixed ) */ ) {
+        // NOTE: mixed controls are left up to passengers to open doors by themselves, unless the timetable has
+        // the driver open all the doors
+        if( true == timetable::opens_doors( *pVehicle->MoverParameters, m_stopflags ) ) {
             if( Side & prawe ) {
                 cue_action( driver_hint::doorrightopen );
             }
@@ -4954,6 +4972,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         TrainParams = TTrainParameters(NewCommand); // rozkład jazdy
         tsGuardSignal = sound_source { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // wywalenie kierownika
         m_lastexchangestop.clear();
+        m_stopflags = {};
         if (NewCommand != "none")
         {
             if (false == TrainParams.LoadTTfile(
@@ -4988,6 +5007,8 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 TrainParams.StationIndexInc(); // przejście do następnej
                 TrainParams.StationStart = TrainParams.StationIndex;
                 asNextStop = TrainParams.NextStop();
+                // the flags of the first station until the train stops there
+                m_stopflags = TrainParams.stop_flags();
                 m_lastannouncement = announcement_t::idle;
                 iDrivigFlags |= movePrimary; // skoro dostał rozkład, to jest teraz głównym
 //                NewCommand = Global.asCurrentSceneryPath + NewCommand;
@@ -8588,6 +8609,8 @@ TController::adjust_desired_speed_for_braking_test() {
 
 //    if( false == Global.DynamicBrakeTest ) { return; }
     if( DynamicBrakeTest >= 5 ) { return; } // all done
+    if( ( DynamicBrakeTest == 0 )
+     && ( false == timetable::makes_brake_test( TrainParams.run_flags() ) ) ) { return; } // the timetable says there's none (eu07/maszyna#95)
     if( false == is_train() ) { return; } // not applicable
     if( mvOccupied->BrakeHandle == TBrakeHandle::FVel6 ) { return; } // leads to bugs in DecBrake, disable for now
     if( false == TestFlag( OrderCurrentGet(), Obey_train ) ) { return; } // not applicable
