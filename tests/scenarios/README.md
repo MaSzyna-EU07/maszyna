@@ -347,10 +347,22 @@ the row instead, logged by builds from this branch on.
   filled in as in the fragment, e.g. `{{vehicle}}_rb`. Fails when the two were coupled from the
   start, came apart again, or the run left no black box. The black box is looked at once a
   second, so the time given is that of the first look after the couplers caught.
+- `driver_changes` `vehicle`, `to`, optional `after`, `before`: the black box has the vehicle get
+  the driver `to` (`none`, `ai` or `user`) at a time of the recording between the two, having had
+  another one before, and keep it to the end.
+- `stops_driverless` `vehicle`, `min_speed`, `within`, optional `stop_speed` (0.5), `max_creep`
+  (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
+  stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
+  the recording, at least `hold` seconds. The physicslog can't tell: the driver writes it, so it
+  ends when the driver goes.
+- `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
+  vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
 text of `log.txt` instead of the rows. Checks on the black box (`blackbox_doc.md` in the root of
 the repo; the simulator writes it along with the physicslogs) go in `BLACKBOX_CHECKS` and get
-what `read_blackbox()` read of it: the names of the vehicles and the coupling records. A check
+what `read_blackbox()` read of it: the names of the vehicles, the coupling records, and the
+states of each vehicle from the `vehicles` records (position, speed, driver; a vehicle is listed
+when it moved, changed speed or got another driver, and all of them every 60 s). A check
 on another kind of record has to add it there.
