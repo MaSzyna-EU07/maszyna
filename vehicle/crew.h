@@ -43,7 +43,7 @@ request parse(std::string_view Text, double Cab, double Flags);
 
 // what the command finds in the vehicle
 struct vehicle_state {
-	bool has_cab{false}; // the type of the vehicle has a driver's cab
+	bool has_cab{false}; // the type of the vehicle has a driver's cab; a road vehicle or a boat counts as having one
 	bool has_driver{false};
 	bool driver_is_ai{false}; // the driver it has is the AI, not a user
 	bool occupied{false}; // a user sits in the vehicle, whoever drives it

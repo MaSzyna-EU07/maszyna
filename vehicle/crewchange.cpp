@@ -21,6 +21,8 @@ namespace crew {
 
 namespace {
 
+// TMoverParameters::CategoryFlag of the rail vehicles
+constexpr int rail_category{1};
 // more vehicles than a consist has, for a walk along one whose couplers form a loop
 constexpr int consist_walk_limit{300};
 
@@ -52,7 +54,9 @@ bool is_consist_driven(TDynamicObject &Vehicle) {
 
 vehicle_state state_of(TDynamicObject &Vehicle) {
 	vehicle_state state;
-	state.has_cab = Vehicle.MoverParameters->HasDriverCab();
+	// a rail vehicle has a cab when it has the driver's brake valve. the others (cars, boats) have no such valve
+	// to tell by, and each of them is driven from its own seat
+	state.has_cab = Vehicle.MoverParameters->HasDriverCab() || Vehicle.MoverParameters->CategoryFlag != rail_category;
 	state.has_driver = Vehicle.Mechanik != nullptr;
 	state.driver_is_ai = state.has_driver && Vehicle.Mechanik->AIControllFlag;
 	// a cab of the game is bound to the vehicle: the user's own, or another user's in a network game. the cab
