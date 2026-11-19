@@ -32,6 +32,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
+	# which textures the shadow maps draw without the alpha test
+	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

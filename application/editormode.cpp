@@ -36,6 +36,7 @@ extern char **environ;
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "world/catenary_scene.h"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIcons.hpp"
 #include "utilities/translation.h"
@@ -44,6 +45,7 @@ extern char **environ;
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
+#include "widgets/weatherpanel.h"
 #include "simulation/blackboxrecorder.h"
 #include "utilities/Timer.h"
 #include "Console.h"
@@ -577,6 +579,7 @@ editor_mode::editor_mode() {
 	ui()->set_file_actions([this]() { save(); }, [this]() { export_scenery(); });
 	ui()->set_new_scenery([this]() { m_newscenery_asked = true; });
 	ui()->set_open_scenery([this]() { m_openscenery_asked = true; });
+	ui()->set_memcell_focus([this](scene::basic_node *Node) { start_focus(Node); });
 	ui()->set_edit_menu([this]() { render_edit_menu(); });
 	ui()->set_tools_menu([this]() { render_track_presets_menu(); });
 	ui()->set_menu_options([this]() {
@@ -1395,6 +1398,7 @@ void editor_mode::redo_one()
 bool editor_mode::update()
 {
     frame_steps steps;
+    // the catenary doesn't need the far tracks drawn (50 km of them cost a lot in a big scenery)
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
     steps.step("selftest");
@@ -1632,6 +1636,11 @@ bool editor_mode::update()
             signal_move_update();
             draw_signal_overlay();
         }
+        if (m_track_tab == track_tab::catenary)
+        {
+            catenary_drag_update();
+            draw_catenary_overlay();
+        }
         m_parallel.draw_overlay();
         if (m_track_tab == track_tab::lineside)
         {
@@ -1718,6 +1727,10 @@ bool editor_mode::update()
     render_outside_area_hint();
     render_switch_designer();
     render_environment_window();
+    if (m_terrain_open)
+        render_terrain_chunks_window();
+    else
+        m_chunklist.scanned = false; // the files are read again when the terrain is the field of work again
     draw_selection_overlay();
     render_context_menu();
     steps.step("windows");
@@ -1842,6 +1855,11 @@ void editor_mode::render_terrain_ui()
             add_chunks_around(m_terrain_add_count);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Makes the chunks missing around the camera, shaped as the ground under them"));
+        if (ImGui::Button(STR_C("List of the chunks...")))
+            m_chunklist.open = true;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("All the chunks of the terrain with the files they're kept in and their triangles;\n"
+                                    "a double click on a chunk takes the camera to it"));
         render_ground_conversion();
         if (dynamic_cast<TAnimModel *>(m_node) != nullptr)
         {
@@ -1994,6 +2012,17 @@ void editor_mode::render_terrain_ui()
         ImGui::TextDisabled("%s", STR_C("A chunk holds up to 8 materials"));
     }
 
+    if (ImGui::CollapsingHeader(STR_C("Grass"), m_terrain_tool == terrain_tool::grass ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+        render_grass_ui();
+
+    if (ImGui::CollapsingHeader(STR_C("Holes"), m_terrain_tool == terrain_tool::holes ? ImGuiTreeNodeFlags_DefaultOpen : 0))
+    {
+        ImGui::TextWrapped("%s", STR_C("Openings in the ground for the portals of tunnels, cuttings under bridges and the like. "
+                                       "With the Holes tool LMB cuts the ground under the brush and Shift+LMB closes it; "
+                                       "the brush stays on the ground also over an opening. An area outlined with the Fill tool can be cut or closed in the Fill section."));
+        ImGui::TextDisabled("%s", STR_C("The holes follow the ground every metre (every grid point of finer chunks), whatever the drawn grid"));
+    }
+
     if (ImGui::CollapsingHeader(STR_C("Fill"), m_terrain_tool == terrain_tool::fill ? ImGuiTreeNodeFlags_DefaultOpen : 0))
     {
         auto const &layers{m_streamer.manifest().layers};
@@ -2021,6 +2050,49 @@ void editor_mode::render_terrain_ui()
         ImGui::SameLine();
         if (ImGui::Button(STR_C("Clear the outline##fill")))
             m_paint_outline.clear();
+        // the same outline for the holes and the grass
+        std::vector<glm::dvec2> outline;
+        for (auto const &point : m_paint_outline)
+            outline.emplace_back(point.x, point.z);
+        ImGui::BeginDisabled(outline.size() < 3);
+        if (ImGui::Button(STR_C("Cut a hole")))
+        {
+            auto const cut = m_streamer.cut(outline, true);
+            m_terrain_status = cut ? std::string(STR_C("Hole cut in the outlined area")) : std::string(STR_C("Nothing cut: no chunk under the outline"));
+            if (cut)
+            {
+                ground_tiles.clear();
+                forget_ground_shapes();
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Cuts the ground within the outline away, e.g. for the portal of a tunnel"));
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Close the hole")))
+        {
+            auto const closed = m_streamer.cut(outline, false);
+            m_terrain_status = closed ? std::string(STR_C("Hole closed in the outlined area")) : std::string(STR_C("No hole under the outline"));
+            if (closed)
+            {
+                ground_tiles.clear();
+                forget_ground_shapes();
+            }
+        }
+        auto const &grasskinds = m_streamer.grass_kinds();
+        ImGui::BeginDisabled(grasskinds.empty());
+        if (ImGui::Button(STR_C("Grow grass")))
+        {
+            auto const kind = static_cast<std::uint16_t>(std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(grasskinds.size()) - 1)));
+            m_terrain_status = m_streamer.grass(outline, kind, false) ? format(STR_C("Grass grown: %s"), grasskinds[kind].name.c_str())
+                                                                    : std::string(STR_C("Nothing grown: no chunk under the outline, or no room for another kind of grass"));
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Grows the kind of grass chosen in the Grass section within the outline"));
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button(STR_C("Clear the grass")))
+            m_terrain_status = m_streamer.grass(outline, 0, true) ? std::string(STR_C("Grass taken away from the outlined area")) : std::string(STR_C("No grass under the outline"));
+        ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader(STR_C("Water"), m_terrain_tool == terrain_tool::water ? ImGuiTreeNodeFlags_DefaultOpen : 0))
@@ -2236,6 +2308,8 @@ void editor_mode::draw_terrain_overlay()
             circle.emplace_back(x, ground(x, z, cursor.y) + 0.1, z);
         }
         auto const color = m_terrain_tool == terrain_tool::paint     ? IM_COL32(120, 230, 120, 220)
+                           : m_terrain_tool == terrain_tool::grass   ? IM_COL32(170, 255, 90, 220)
+                           : m_terrain_tool == terrain_tool::holes   ? IM_COL32(255, 90, 90, 230)
                            : m_terrain_tool == terrain_tool::smooth  ? IM_COL32(120, 200, 255, 220)
                            : m_terrain_tool == terrain_tool::restore ? IM_COL32(230, 120, 230, 220)
                                                                      : IM_COL32(255, 180, 80, 220);
@@ -2286,6 +2360,9 @@ void editor_mode::draw_terrain_overlay()
     if (m_terrain_tool == terrain_tool::spacing)
         for (auto const &key : m_terrain_selection)
             chunk_outline(key, cursor.y, IM_COL32(90, 220, 255, 230), 3.0f);
+    // the chunk chosen in the list of the chunks
+    if (m_chunklist.open && m_chunklist.chosen)
+        chunk_outline(*m_chunklist.chosen, cursor.y, IM_COL32(255, 150, 40, 230), 3.0f);
     if ((m_terrain_tool == terrain_tool::chunks || m_terrain_tool == terrain_tool::spacing) && hovering)
     {
         auto const key = heightmap::chunk_at(cursor.x, cursor.z);
@@ -2567,9 +2644,6 @@ void editor_mode::render_orthophoto_ui()
         };
         auto const current{false == config.in_scene ? look::overlay : config.drape ? look::ground : look::sheet};
         auto const choice = [&](char const *Label, look const Look) {
-            // the Better Renderer doesn't pick up geometry added in the editor: in the scene the photos wouldn't show at all
-            auto const disabled{Global.NvRenderer && Look != look::overlay && current != Look};
-            begin_disabled(disabled);
             if (ImGui::RadioButton(Label, current == Look) && current != Look)
             {
                 config.in_scene = Look != look::overlay;
@@ -2577,7 +2651,6 @@ void editor_mode::render_orthophoto_ui()
                 changed = true;
                 persist = true;
             }
-            end_disabled(disabled);
         };
         auto const explain = [](char const *Text) {
             ImGui::Indent();
@@ -2606,8 +2679,6 @@ void editor_mode::render_orthophoto_ui()
                           "terrain, it cuts through the sheet."));
             break;
         }
-        if (Global.NvRenderer && current != look::overlay)
-            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("The Better Renderer doesn't show them in the scene: pick \"Over the view\""));
 
         if (config.drape)
         {
@@ -3242,11 +3313,65 @@ bool editor_mode::save()
         }
     }
 
+    auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
     if (m_profile.changed)
         profile_store();
     switch_store::tidy();
     switch_store::settle();
     infra_store();
+    // the catenary (cantilevers on the poles) lives in files of its own; a file made in the editor needs the directive, in the file
+    // of the layer it was made on (the scenario file when that layer can't take it)
+    std::vector<std::string> catenarynew;
+    auto const same_file = [](std::string const &A, std::string const &B) {
+        auto a{std::filesystem::path(A).lexically_normal().generic_string()}, b{std::filesystem::path(B).lexically_normal().generic_string()};
+        std::transform(a.begin(), a.end(), a.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+        std::transform(b.begin(), b.end(), b.begin(), [](unsigned char const C) { return static_cast<char>(std::tolower(C)); });
+        return a == b;
+    };
+    // the catenary straight in the scenery files: the node entries of the changed ones go into the files of their layers anew
+    scene::node_blocks catenaryblocks;
+    catenaryblocks.kinds = {"suspension", "chain", "gantry", "anchor"};
+    std::vector<std::string> catenaryinline;
+    for (auto const &file : catenary_scene_files())
+    {
+        if (false == catenary_scene_file_inline(file) || false == catenary_scene_file_changed(file))
+            continue;
+        scene::layer_handle target{null_handle};
+        for (std::size_t layer = 1; layer <= scene::Layers.size() && target == null_handle; ++layer)
+            if (scene::Layers.listed(static_cast<scene::layer_handle>(layer)) && same_file(scene::Layers.layer(static_cast<scene::layer_handle>(layer)).name, file))
+                target = static_cast<scene::layer_handle>(layer);
+        std::string reason;
+        if (target == null_handle)
+            reason = STR("it isn't in a scenery file the editor can rewrite (an include template)");
+        else
+            scene::Layers.accepts(target, &reason);
+        if (target == null_handle || false == scene::Layers.accepts(target))
+        {
+            ui()->set_status(format(STR_C("The catenary in \"%s\" couldn't be saved: %s"), file.c_str(), reason.c_str()), true);
+            return false;
+        }
+        catenaryblocks.lines[target] = catenary_scene_entries(file);
+        catenaryinline.push_back(file);
+    }
+    if (catenary_scene_changed())
+    {
+        std::string message;
+        if (false == catenary_scene_save(message))
+        {
+            ui()->set_status(format(STR_C("The catenary couldn't be saved: %s"), message.c_str()), true);
+            return false;
+        }
+        WriteLog("Editor: catenary written: " + message, logtype::generic);
+    }
+    for (auto const &file : catenary_scene_new_files())
+    {
+        auto const layer{static_cast<scene::layer_handle>(catenary_scene_file_layer(file))};
+        if (layer > 1 && scene::Layers.accepts(layer))
+            statements[scene::Layers.resolve(layer)].emplace_back("catenary " + file + " endcatenary");
+        else
+            rootstatements.emplace_back("catenary " + file + " endcatenary");
+        catenarynew.push_back(file);
+    }
     m_srk.store();
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
@@ -3263,14 +3388,16 @@ bool editor_mode::save()
         m_orthophoto_area_mark = area;
         scene::Layers.mark(scene::layer_handle{1}, "//$z", area);
     }
-    auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
     auto const controls{turntable_controls(rootstatements)};
     auto const noses{nose_controls(rootstatements)};
     std::vector<std::string> trailing;
     auto const placed{m_vehicle.trainset_lines(trailing)};
     if (placed == 0)
         starter_trainset(trailing);
-    auto const result = scene::Layers.save(rootstatements, trailing, statements);
+    auto const result = scene::Layers.save(rootstatements, trailing, statements, &catenaryblocks);
+    if (result.success)
+        for (auto const &file : catenaryinline)
+            catenary_scene_file_saved(file);
     if (result.success && controls)
         m_turntable_included = true;
     if (result.success && noses)
@@ -3292,6 +3419,9 @@ bool editor_mode::save()
     {
         scene::Layers.terrain_directive(true);
     }
+    if (result.success)
+        for (auto const &file : catenarynew)
+            catenary_scene_file_included(file);
     ui()->set_status(result.message, false == result.success);
     WriteLog("Editor: " + result.message, logtype::generic);
     return result.success;
@@ -3608,6 +3738,22 @@ void editor_mode::handle_terrain_brush(double Deltatime)
     case terrain_tool::restore:
         shaped = m_streamer.restore_stitching(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.5));
         break;
+    case terrain_tool::holes:
+        // the ground there is no longer ground for the tools which ask about it
+        shaped = m_streamer.cut(world.x, world.z, m_terrain_brush_radius, false == Global.shiftState);
+        break;
+    case terrain_tool::grass:
+    {
+        if (m_streamer.grass_kinds().empty() && false == Global.shiftState)
+        {
+            // the first kind of the presets, so the brush grows something
+            m_streamer.add_grass_kind(heightmap::grass_presets().front());
+            m_grass_kind = 0;
+        }
+        m_grass_kind = std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(m_streamer.grass_kinds().size()) - 1));
+        m_streamer.grass(world.x, world.z, m_terrain_brush_radius, std::min(1.0, rate * 0.25), static_cast<std::uint16_t>(m_grass_kind), Global.shiftState);
+        break;
+    }
     default:
         break;
     }
@@ -3651,6 +3797,104 @@ bool editor_mode::terrain_cursor(glm::dvec3 &World) const
     auto const back{Global.EditorOrtho ? 10000.0 : 0.0};
     auto const along{glm::normalize(direction)};
     return m_streamer.raycast(GfxRenderer->Camera_Position() + point(0.0f) - along * back, along, 5000.0 + back, World);
+}
+
+void editor_mode::render_grass_ui()
+{
+    auto const &kinds = m_streamer.grass_kinds();
+    if (kinds.empty())
+        ImGui::TextWrapped("%s", STR_C("No kinds of grass yet. Add one of the presets below; the first stroke of the brush adds a meadow."));
+    m_grass_kind = std::clamp(m_grass_kind, 0, std::max(0, static_cast<int>(kinds.size()) - 1));
+    for (std::size_t i = 0; i < kinds.size(); ++i)
+    {
+        ImGui::PushID(static_cast<int>(i));
+        // a swatch of the colours of the kind, from the root to the tip
+        auto *drawlist = ImGui::GetWindowDrawList();
+        auto const corner = ImGui::GetCursorScreenPos();
+        auto const height = ImGui::GetTextLineHeight();
+        auto const colour = [](glm::vec3 const &Colour) { return ImGui::ColorConvertFloat4ToU32(ImVec4(Colour.r, Colour.g, Colour.b, 1.0f)); };
+        drawlist->AddRectFilledMultiColor(corner, ImVec2(corner.x + height, corner.y + height), colour(kinds[i].tip), colour(kinds[i].tip), colour(kinds[i].base), colour(kinds[i].base));
+        ImGui::Dummy(ImVec2(height, height));
+        ImGui::SameLine();
+        if (ImGui::Selectable(format(STR_C("%zu: %s, %.2f m, %.0f blades/m2"), i, kinds[i].name.c_str(), kinds[i].height, kinds[i].density).c_str(), static_cast<int>(i) == m_grass_kind))
+            m_grass_kind = static_cast<int>(i);
+        ImGui::PopID();
+    }
+    if (false == kinds.empty())
+    {
+        // the chosen kind, given to the palette once a field is left
+        if (m_grass_edit_of != m_grass_kind || false == m_grass_edit_active)
+        {
+            m_grass_edit = kinds[m_grass_kind];
+            m_grass_edit_of = m_grass_kind;
+        }
+        auto &kind = m_grass_edit;
+        bool changed = false, active = false;
+        auto const field = [&](bool const Edited) {
+            changed |= ImGui::IsItemDeactivatedAfterEdit() || (Edited && false == ImGui::IsItemActive());
+            active |= ImGui::IsItemActive();
+        };
+        char name[64];
+        std::snprintf(name, sizeof(name), "%s", kind.name.c_str());
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::InputText(STR_C("Name##grass"), name, sizeof(name)))
+            kind.name = name;
+        field(false);
+        ImGui::SetNextItemWidth(200.0f);
+        field(ImGui::ColorEdit3(STR_C("Root colour"), &kind.base.r, ImGuiColorEditFlags_NoInputs));
+        ImGui::SameLine();
+        field(ImGui::ColorEdit3(STR_C("Tip colour"), &kind.tip.r, ImGuiColorEditFlags_NoInputs));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Height (m)##grass"), &kind.height, 0.005f, 0.02f, 2.0f, "%.2f"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Height varies by"), &kind.variation, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Share of the height the blades differ by, either way"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Blade width (m)"), &kind.width, 0.0002f, 0.002f, 0.05f, "%.3f m"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::DragFloat(STR_C("Density (blades/m2)"), &kind.density, 0.5f, 1.0f, 300.0f, "%.0f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Blades on a square metre painted fully. The renderer draws fewer further away, and wider;\n"
+                                          "gfx.grass.distance, gfx.grass.fadedistance and gfx.grass.density in eu07.ini set how far and how many"));
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Lean"), &kind.bend, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("How far the tips of the blades lean over, share of their height; the wind adds to it"));
+        ImGui::SetNextItemWidth(200.0f);
+        field(ImGui::ColorEdit3(STR_C("Dried out"), &kind.dry.r, ImGuiColorEditFlags_NoInputs));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("Colour the tips take as the grass dries out, in late summer, autumn and winter"));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        field(ImGui::SliderFloat(STR_C("Follows the seasons"), &kind.seasonal, 0.0f, 1.0f, "%.2f"));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("How much the colour and the height change through the year with the date of the scenario:\n"
+                                          "dry and low in winter, greening up in spring, fresh in May, drying out from August.\n"
+                                          "0: the same all year (e.g. a watered lawn), 1: fully"));
+        m_grass_edit_active = active;
+        if (changed)
+        {
+            kind.height = std::max(0.02f, kind.height);
+            kind.width = std::max(0.002f, kind.width);
+            kind.density = std::max(1.0f, kind.density);
+            m_streamer.grass_kind(static_cast<std::uint16_t>(m_grass_kind), kind);
+        }
+    }
+    // the presets, added to the palette
+    ImGui::TextUnformatted(STR_C("Add:"));
+    for (auto const &preset : heightmap::grass_presets())
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(STR(preset.name.c_str()).c_str()))
+        {
+            m_grass_kind = m_streamer.add_grass_kind(preset);
+            m_grass_edit_of = -1;
+        }
+    }
+    ImGui::TextDisabled("%s", STR_C("A chunk holds up to 4 kinds of grass. LMB grows the chosen kind, Shift+LMB takes all grass away"));
+    if (false == Global.gfx_grass)
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", STR_C("The grass isn't drawn: gfx.grass is off"));
 }
 
 void editor_mode::fill_terrain_area()
@@ -4330,7 +4574,11 @@ void editor_mode::render_environment_window()
         {
             Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
             simulation::Environment.compute_weather();
+            catenary_scene_temperature(); // ciężary kotwień idą za temperaturą
         }
+        // the layers of clouds, the fog and a weather report, as the weather section of a scenery describes them
+        if (ImGui::CollapsingHeader(STR_C("Clouds, fog and weather report")))
+            ui::weather_controls(simulation::Environment.weather());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", STR_C("Seen in the editor only; the scenery keeps its own time and weather"));
         ImGui::PopStyleColor();
@@ -5203,7 +5451,7 @@ editor_mode::work_area editor_mode::current_work_area() const
 	if (m_terrain_open)
 		return work_area::terrain;
 	if (m_track_window_open)
-		return work_area::tracks;
+		return m_track_tab == track_tab::catenary ? work_area::catenary : work_area::tracks;
 	if (m_roadtool.window)
 		return work_area::roads;
 	return work_area::surroundings;
@@ -5219,7 +5467,11 @@ void editor_mode::choose_work_area(work_area const Area)
 		break;
 	case work_area::tracks:
 		terrain_workspace(false);
-		show_track_tab(m_track_tab);
+		show_track_tab(m_track_tab == track_tab::catenary ? track_tab::path : m_track_tab);
+		break;
+	case work_area::catenary:
+		terrain_workspace(false);
+		show_track_tab(track_tab::catenary);
 		break;
 	case work_area::roads:
 		m_track_window_open = false;
@@ -5248,8 +5500,9 @@ void editor_mode::render_workspaces()
 	    {STR_C("Tracks"), work_area::tracks, editor_icons::icon::work_tracks, STR_C("Tracks and switches, signals, kilometrage and posts along the track, checks of the line")},
 	    {STR_C("Roads"), work_area::roads, editor_icons::icon::work_roads, STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
 	    {STR_C("Terrain"), work_area::terrain, editor_icons::icon::work_terrain, STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
+	    {STR_C("Catenary"), work_area::catenary, editor_icons::icon::work_catenary, STR_C("The overhead catenary: poles with cantilevers, gantries, the wires of the chains")},
 	};
-	char const *const keys[] = {"F2", "F3", "F4", "F5"};
+	char const *const keys[] = {"F2", "F3", "F4", "F5", "F6"};
 	auto const current{current_work_area()};
 	auto const &style{ImGui::GetStyle()};
 	auto *list{ImGui::GetWindowDrawList()};
@@ -6292,7 +6545,7 @@ void editor_mode::render_shortcuts_window()
 	      {"Ctrl+Shift+F11", "Export scenery dump"},
 	      {"F11", "Leave the editor"},
 	      {"F10", "Quit the simulator"}}},
-	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}}},
+	    {"Fields of work", {{"F2", "Surroundings"}, {"F3", "Tracks"}, {"F4", "Roads"}, {"F5", "Terrain"}, {"F6", "Catenary"}}},
 	    {"Camera",
 	     {{"RMB held, mouse", "Look around"},
 	      {"RMB held, W S A D", "Fly forwards, back, left, right (arrows in the legacy scheme)"},
@@ -7159,6 +7412,8 @@ void editor_mode::delete_selected()
     // what's selected: a road piece or point, a signal, an include of a scenery template, a model, tracks
     if (road_delete())
         return;
+    if (m_track_tab == track_tab::catenary && ui()->mode() == nodebank_panel::TRACK && catenary_delete_selected())
+        return;
     if (m_instance != 0 && signal_delete(m_instance))
         return;
     if (m_instance != 0)
@@ -7247,6 +7502,10 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
     if (ui()->mode() == nodebank_panel::TRACK && is_press(Action) && (Mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT)) == 0 && typed_key(Key))
         return;
 
+    // the catenary tool may have keys of its own
+    if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::catenary && catenary_on_key(Key, Action, Mods))
+        return;
+
     // gizmo transform shortcuts (Q/W/E/R) — only when the camera isn't being flown (RMB up).
     // handled before the camera keyboard step because Q/W/E are also the fly-mode movement keys,
     // which would otherwise consume them.
@@ -7271,6 +7530,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         case GLFW_KEY_F3: choose_work_area(work_area::tracks); break;
         case GLFW_KEY_F4: choose_work_area(work_area::roads); break;
         case GLFW_KEY_F5: choose_work_area(work_area::terrain); break;
+        case GLFW_KEY_F6: choose_work_area(work_area::catenary); break;
         // the edit modes in the order of the toolbar; in the track mode the digits typed as a value were taken already
         case GLFW_KEY_1: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::MODIFY); break;
         case GLFW_KEY_2: handled = ui()->mode() != nodebank_panel::TRACK; if (handled) choose_edit_mode(nodebank_panel::ADD); break;
@@ -7371,6 +7631,9 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         return;
     if (Global.ctrlState && Key == GLFW_KEY_Z && is_press(Action))
     {
+        // in the catenary tool its own changes are taken back first
+        if (ui()->mode() == nodebank_panel::TRACK && m_track_tab == track_tab::catenary && catenary_undo())
+            return;
         undo_last();
         return;
     }
@@ -7715,6 +7978,14 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     // in a scenery opened for editing selection has its limits. nodes of locked layers are off limits.
                     // nodes defined by a scenery template can't be rewritten one by one on save, so a click on one
                     // selects the include of the template as a whole
+                    // a part of the catenary: the catenary tool takes what it belongs to (moved or deleted as a node it would part
+                    // from the catenary which keeps it)
+                    if (node && node->m_catenary && mode == nodebank_panel::MODIFY)
+                    {
+                        if (false == catenary_pick_part(node))
+                            ui()->set_status(STR("A part of the catenary: it's changed with the Catenary tool (F6)"), true);
+                        return;
+                    }
                     if (node && mode == nodebank_panel::MODIFY)
                     {
                         std::string reason;
@@ -7830,6 +8101,8 @@ void editor_mode::on_mouse_button(int const Button, int const Action, int const 
                     signal_release();
                 if (m_switch.slide.active)
                     switch_slide_finish();
+                if (catenary_dragging())
+                    catenary_release();
             }
 
             m_dragging = false;

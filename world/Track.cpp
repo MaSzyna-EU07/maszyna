@@ -749,6 +749,23 @@ void TTrack::Load(cParser *parser, glm::dvec3 const &pOrigin)
             m_timber_model_name = modelpath;
             m_timber_skin_name = ( skinpath == "none" ? std::string{} : skinpath );
         }
+        else if( str == "blendrails" || str == "blendballast" || str == "blend" ) {
+            // blendrails/blendballast <end> <length>: how far from the end 1 (p1), 2 (p2) or 3 (p4 of a switch) the rails or the ballast
+            // blend into those of the track joined there, where their textures differ; 0: not at all. blend: both of them
+            auto const end { parser->getToken<int>() };
+            auto const length { static_cast<float>( std::max( 0.0, parser->getToken<double>() ) ) };
+            if( end >= 1 && end <= static_cast<int>( m_blend[ 0 ].size() ) ) {
+                if( str != "blendballast" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::rails ) ][ end - 1 ] = length;
+                }
+                if( str != "blendrails" ) {
+                    m_blend[ static_cast<int>( track_blend::kind::ballast ) ][ end - 1 ] = length;
+                }
+            }
+            else {
+                ErrorLog( "Bad track: " + str + " at end " + std::to_string( end ) + " of track \"" + m_name + "\" which has no such end" );
+            }
+        }
         else if( str == "uneven" ) {
             // uneven <mm>[;<mm>...]: see TrackUneven.h. The semicolons stay in the token
             auto const values { parser->getToken<std::string>( false, "\n\r\t " ) };
@@ -1600,8 +1617,27 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
     }
     // bake per-instance sleeper transforms now that the owning cell has assigned m_origin.
     // safe to call here even if the track has no sleepermodel (early-outs internally).
-    if( m_sleeper_enabled && m_sleeper_local_transforms.empty() ) {
+    // a track laying the 3D sleepers draws its sleeper model with them, the transforms of the model alone wouldn't be drawn
+    if( m_sleeper_enabled && false == m_sleepers3d.active && m_sleeper_local_transforms.empty() ) {
         build_sleeper_transforms();
+    }
+    // the rails and the ballast blended into those of the tracks joined at the ends, where their textures differ. the weights go with
+    // the geometry as it's made, so the materials change only with it; not where the chunks are laid again as a movable nose moves
+    track_blend::blending railsblend;
+    track_blend::blending ballastblend;
+    if( Bank != null_handle && false == movable ) {
+        if( Geometry1.empty() ) {
+            railsblend = track_blend::setup( *this, track_blend::kind::rails );
+            m_blendmaterial1 = railsblend.material;
+        }
+        if( eType == tt_Switch ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial3 = ballastblend.material;
+        }
+        else if( Geometry2.empty() ) {
+            ballastblend = track_blend::setup( *this, track_blend::kind::ballast );
+            m_blendmaterial2 = ballastblend.material;
+        }
     }
     switch (iCategoryFlag & 15)
     {
@@ -1618,6 +1654,16 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
         auto const layout { plan_rails( Bank != 0 ) };
         if( Bank != 0 ) {
             m_crossings = layout.crossed;
+            for( int path = 0; path < 2; ++path ) {
+                for( int side = 0; side < 2; ++side ) {
+                    m_railplans[ path ][ side ] = layout.plans[ path ][ side ];
+                    m_railguards[ path ][ side ].clear();
+                    for( auto const &guard : layout.guards[ path ][ side ] ) {
+                        m_railguards[ path ][ side ].emplace_back( guard.from, guard.to );
+                    }
+                }
+            }
+            track_sleepers::forget_rails( *this );
         }
         switch (eType) // dalej zależnie od typu
         {
@@ -1639,6 +1685,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 Segment->RenderLoft(vertices, m_origin, bpts1, iTrapezoid > 0, texturelength);
                 if( Bank != 0 && true == Geometry2.empty() ) {
+                    track_blend::weighing const weighing { &ballastblend };
                     Geometry2.emplace_back(track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP));
                 }
                 if( Bank == 0 && false == Geometry2.empty() ) {
@@ -1653,6 +1700,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
                 gfx::vertex_array vertices;
                 auto const open { eType == tt_Normal && ( trPrev == nullptr || trNext == nullptr ) };
                 if( Bank != 0 && true == Geometry1.empty() ) {
+                    track_blend::weighing const weighing { &railsblend };
                     for( auto const side : { 1, -1 } ) {
                         auto const &profile { side > 0 ? rpts1 : rpts2 };
                         if( eType == tt_Normal && iTrapezoid == 0 && lay_rail( layout, drawing, profile, { .path = 0, .side = side, .texturelength = texturelength, .from = track_rails::blade_runon( *this, side ), .openstart = ( trPrev == nullptr ), .openend = ( trNext == nullptr ) }, Geometry1, GeometryCut1 ) ) {
@@ -1752,6 +1800,7 @@ void TTrack::create_geometry( gfx::geometrybank_handle const &Bank ) {
             if( true == Global.CreateSwitchTrackbeds ) {
                 gfx::vertex_array vertices;
                 create_switch_trackbed( vertices );
+                track_blend::weighing const weighing { &ballastblend };
                 SwitchExtension->Geometry3 = track_rails::insert_chunk(vertices, empty_userdata, Bank, GL_TRIANGLE_STRIP);
                 vertices.clear();
             }
@@ -2375,8 +2424,9 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
             offsets.emplace_back( bend.x, -thrown * bend.y );
         }
         auto const size { rail_dimensions() };
+        auto const rise { track_sleepers::blade_rise( *this ) };
         auto const length { SwitchExtension->Segments[ Path ]->GetLength() };
-        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest } } );
+        SwitchExtension->Segments[ Path ]->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = shape.tip, .to = std::min( shape.heel, length ), .offsets = offsets, .extents = shape.extents, .walls = true, .drops = shape.drops, .head = { size.neck, size.crest }, .rise = rise } );
         // the blade running on past the end of the path goes on along the plain track joined there, whose rail starts behind the heel
         if( auto const *next { track_rails::runon_track( *this, Path ) }; next != nullptr && shape.heel > length + 1e-3 ) {
             auto const along = [&]( std::vector<glm::dvec2> const &Knots ) {
@@ -2385,7 +2435,7 @@ void TTrack::loft_blade( int const Path, gfx::vertex_array const &Rail, gfx::ver
                     result.emplace_back( knot.x - length, knot.y );
                 }
                 return result; };
-            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest } } );
+            next->Segment->RenderLoftSpan( Vertices, m_origin, Rail, { .side = blade_side( Path ), .halfwidth = 0.5f * std::abs( fTrackWidth ), .texturelength = Texturelength, .from = 0.0, .to = shape.heel - length, .offsets = along( offsets ), .extents = along( shape.extents ), .walls = true, .drops = along( shape.drops ), .head = { size.neck, size.crest }, .rise = rise } );
         }
         return;
     }
@@ -2887,6 +2937,14 @@ TTrack::export_as_text_( std::ostream &Output ) const {
             << "timbermodel "
             << m_timber_model_name << ' '
             << ( m_timber_skin_name.empty() ? std::string{ "none" } : m_timber_skin_name ) << ' ';
+    }
+    for( auto const kind : { track_blend::kind::rails, track_blend::kind::ballast } ) {
+        auto const &lengths { m_blend[ static_cast<int>( kind ) ] };
+        for( std::size_t end = 0; end < lengths.size(); ++end ) {
+            if( lengths[ end ] != track_blend::default_length ) {
+                Output << ( kind == track_blend::kind::rails ? "blendrails " : "blendballast " ) << end + 1 << ' ' << lengths[ end ] << ' ';
+            }
+        }
     }
     // footer
     Output
@@ -3579,8 +3637,9 @@ TTrack::create_track_bed_profile( gfx::vertex_array &Output, TTrack const *Previ
                 {0.5f + map12, 0.f} }; // prawy skos
         }
     }
-    if( m_sleepers3d.active ) {
-        // the ballast lowered under the sleepers laid on it, so they stick out of it
+    if( m_sleepers3d.active && false == ( m_sleeper_enabled && false == m_sleeper_model_name.empty() ) ) {
+        // the ballast lowered under the sleepers laid on it, so they stick out of it; the ballast under the sleepers of
+        // the model of the track itself is moved by its own trackbed shift, as without the 3D sleepers
         for( auto &point : Output ) {
             point.position.y -= static_cast<float>( track_sleepers::bed_drop );
         }

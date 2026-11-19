@@ -71,6 +71,8 @@ class TAnimModel;
 struct editor_tool_button;
 class TTrack;
 
+struct catenary_editor; // application/editormodecatenary.h
+
 class editor_mode : public application_mode, private editor_track::observer, private editor_services
 {
 
@@ -675,17 +677,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		spacing, // selects chunks (Ctrl: adds or takes away one), whose point spacing is then converted
 		water, // outlines a body of water
 		restore, // takes the touch-ups over the modifiers back
-		fill // outlines an area filled with a material
+		fill, // outlines an area filled with a material
+		holes, // cuts holes in the ground (portals of tunnels), Shift: closes them
+		grass // grows the chosen kind of grass, Shift: takes the grass away
 	};
 	terrain_tool m_terrain_tool{terrain_tool::none};
 	bool terrain_brush() const
 	{
 		return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint ||
-		       m_terrain_tool == terrain_tool::restore;
+		       m_terrain_tool == terrain_tool::restore || m_terrain_tool == terrain_tool::holes || m_terrain_tool == terrain_tool::grass;
 	}
 	// the point of the ground of the terrain under the cursor, found along the ray through the cursor, so it's found also over
 	// a hole and behind the grass. returns: false if the ray meets no terrain
 	bool terrain_cursor(glm::dvec3 &World) const;
+	// the grass of the terrain: the palette, the kind grown, presets
+	void render_grass_ui();
 	// the point of the ground under the cursor in this frame, for the points put on the ground (outlines, areas, brushes): along the ray
 	// through the cursor to the terrain; the depth read back (a frame late, and stopped by the models over the ground) only where
 	// there's none. false: nothing under the cursor
@@ -813,6 +819,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_terrain_stroke{false}; // a stroke of the brush is under way
 	bool m_terrain_picking{false}; // the next click picks the target height
 	int m_terrain_layer{0};               // entry of the palette painted
+	int m_grass_kind{0};                  // entry of the grass palette grown
+	heightmap::grass_def m_grass_edit;    // the chosen kind of grass while it's edited
+	int m_grass_edit_of{-1};              // the kind in m_grass_edit, -1: none
+	bool m_grass_edit_active{false};      // a field of the chosen kind is being dragged
 	char m_terrain_material[128]{"grass"}; // material added to the palette
 	float m_terrain_material_size{0.0f};   // metres its textures repeat at, 0: given by the material
 	float m_terrain_layer_size{0.0f};      // repeat of the chosen palette entry, while it's dragged
@@ -836,6 +846,33 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	float m_water_selected_level{0.0f}; // level of the chosen water, while it's edited
 	bool m_water_level_dragged{false};
 	std::string m_terrain_status;
+	// the window listing the chunks of the terrain, the files they're kept in and their triangles (editormodeterrainchunks.cpp)
+	void render_terrain_chunks_window();
+	// the camera brought over the chunk, to look at the whole of it
+	void go_to_terrain_chunk(heightmap::chunk_key const &Key);
+	struct terrain_chunk_row
+	{
+		heightmap::chunk_key key{0, 0};
+		int cells{0}; // quads along a side; 0: unknown
+		bool stored{false}; // in a pack file as it's on the disk
+	};
+	struct terrain_chunk_list
+	{
+		bool open{true};
+		bool scanned{false}; // the pack files were read
+		bool modified{false}; // the terrain had unsaved changes when last seen: once it hasn't, it was saved and the files are read again
+		std::vector<std::pair<heightmap::chunk_key, int>> stored; // the chunks of the pack files, as read last
+		std::vector<terrain_chunk_row> rows; // the chunks listed: of the files and of the memory, filtered and sorted
+		std::size_t chunks{0}; // listed before the filter
+		std::size_t files{0};
+		std::size_t triangles{0}; // of the full grids of all the chunks
+		double built{-1.0}; // when the rows were made
+		bool resort{true};
+		int sortcolumn{0};
+		bool descending{false};
+		char filter[64]{};
+		std::optional<heightmap::chunk_key> chosen; // outlined in the view
+	} m_chunklist;
 
 	// the heightmap terrain, shared with the scenery loader so it shows in every mode
 	terrain_streamer &m_streamer{EditorTerrain};
@@ -1056,7 +1093,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		surroundings,
 		tracks,
 		roads,
-		terrain
+		terrain,
+		catenary // the catenary tool of the tracks, as a field of work of its own
 	};
 	work_area current_work_area() const;
 	void choose_work_area(work_area const Area);
@@ -2193,7 +2231,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 15> const &track_modes();
+	static std::array<track_mode, 16> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	// a tool of the station: they share its schematic
 	bool srk_tab() const { return m_track_tab == track_tab::station || m_track_tab == track_tab::station_signals || m_track_tab == track_tab::line_block; }
@@ -2306,7 +2344,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void draw_track_hover() const;
 	struct track_intent
 	{
-		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary, srk_joint };
+		enum class kind { none, gizmo, select, point, box, straight_set, straight_break, detour, straight_tool, straight_handle, route_vertex, route_grip, switch_at, switch_free, lay, lay_end, sweep, turntable_place, turntable_exit, turntable_fit, spread, extend_end, signal_place, signal_move, signal_read, switch_slide, pick_style, grade_line_pick, fouling, measure, route_trace, kilometrage, srk_boundary, srk_joint, catenary };
 		kind what{kind::none};
 		TTrack *track{nullptr};
 		int path{0};
@@ -2315,6 +2353,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		glm::dvec3 position{0.0};
 		editor_track::snap_target snap;
 		std::string action;
+		int detail{0}; // what the tool of the intent means by it (catenary: what was hit)
 	};
 	track_intent m_intent;
 	// the measure between two points (M): on the ground, at a free end or on the axis of the track under the cursor
@@ -2526,7 +2565,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void copy_track_style(TTrack const &Track);
 	std::size_t paste_track_style(std::vector<TTrack *> const &Tracks);
 	// which groups of the properties are pasted or put on the tracks by a preset, in the order of the groups of editormodetrackprops.cpp
-	using track_groups = std::array<bool, 11>;
+	using track_groups = std::array<bool, 12>;
 	// the values of the properties of the chosen groups put on the tracks, in one step of the undo. returns: the number of the
 	// tracks changed, none when no value is of the chosen groups
 	std::optional<std::size_t> apply_track_values(std::vector<std::pair<std::string, std::string>> const &Values, track_groups const &Groups, std::vector<TTrack *> const &Tracks, char const *What);
@@ -2601,8 +2640,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string from;
 		std::vector<std::pair<std::string, std::string>> values;
 		// ticked at first by their groups: speed, environment, overhead line, track circuits, rails, trackbed, its shape, sleepers, ride and
-		// sound, frogs, sleeper placement
-		track_groups groups{false, false, false, false, true, true, true, true, false, true, true};
+		// sound, frogs, sleeper placement, texture blending
+		track_groups groups{false, false, false, false, true, true, true, true, false, true, true, true};
 		std::map<std::string, bool> ticks; // changed by hand, by the keys of the properties
 		bool picking{false}; // the next click on a track in the view takes its properties
 		bool reveal{false};  // its section of the inspector opens, a track having been taken
@@ -2932,6 +2971,33 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void orphans_register(std::vector<TTrack *> const &Removed, std::vector<TTrack *> const &Kept);
 	// Created: made by the step, their circuits the ones of the tracks they were made from; Changed: the others it changed
 	void orphans_take_over(std::vector<TTrack *> const &Created, std::vector<TTrack *> const &Changed);
+
+	// catenary (sieć trakcyjna): the whole tool, its state and its workings are in application/editormodecatenary.h/.cpp;
+	// here only the fixed hooks the rest of the editor calls, so changes of the tool rebuild only its own file
+	friend struct catenary_editor;
+	std::shared_ptr<catenary_editor> m_catenary_editor;
+	catenary_editor &catenary_tool();
+	void catenary_scan();
+	bool catenary_intent(track_intent &Intent); // in the catenary tab: what a click would do; false: nothing
+	void catenary_press(track_intent const &Intent);
+	void catenary_release();
+	bool catenary_dragging() const;
+	void catenary_drag_update();
+	void draw_catenary_overlay() const;
+	void render_catenary_ui();
+	bool catenary_delete_selected();
+	bool catenary_undo(); // false: nothing of its own to take back
+	bool catenary_on_key(int const Key, int const Action, int const Mods); // true: the key was used by the tool
+	std::string catenary_mode_name() const;
+	void catenary_key_hints(std::vector<key_hint> &Hints) const;
+	// the digits typed are the span of the next pole from the last one
+	bool catenary_takes_typed() const;
+	// a part of the catenary picked as a node: the catenary tool takes what it belongs to (the pole, the gantry, the anchor).
+	// false when it belongs to none of them
+	bool catenary_pick_part(scene::basic_node const *Node);
+	// the page of the catenary field of work: 0 poles, 1 gantries, 2 wires
+	int catenary_page();
+	void catenary_choose_page(int const Page);
 
 	// a model laid along the track: bent to follow it, or repeated along it
 	struct sweep_tool

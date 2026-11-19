@@ -78,6 +78,8 @@ private:
     state_serializer m_serializer;
     struct {
         std::shared_ptr<TMemCell> weather, time, date;
+        // the weather report last written to __simulation.metar, to tell when something else changed it
+        std::string metar;
     } m_scriptinginterface;
 };
 

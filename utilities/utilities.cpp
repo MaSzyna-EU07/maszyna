@@ -143,18 +143,33 @@ bool ClearFlag(int &Flag, int const Value)
 	}
 }
 
+namespace
+{
+thread_local std::mt19937 *t_random_engine{nullptr}; // NOSONAR: randomness of the simulation, not of anything security-relevant
+
+std::mt19937 &random_engine() // NOSONAR: randomness of the simulation, not of anything security-relevant
+{
+	return t_random_engine != nullptr ? *t_random_engine : Global.random_engine;
+}
+} // namespace
+
+void set_thread_random_engine(std::mt19937 *Engine) // NOSONAR: randomness of the simulation, not of anything security-relevant
+{
+	t_random_engine = Engine;
+}
+
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)
 	std::uniform_real_distribution dist(min, max);
-	return dist(Global.random_engine);
+	return dist(random_engine());
 }
 
 int Random(int min, int max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_int_distribution requires min <= max (inverted bounds are UB)
 	std::uniform_int_distribution dist(min, max);
-	return dist(Global.random_engine);
+	return dist(random_engine());
 }
 
 std::uint64_t true_random_seed()

@@ -1,0 +1,58 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+#define LAYOUT_COMPUTE 1
+#include "common.glsl"
+// smooths the ambient occlusion of gtao_main.comp: the average of the 4x4 pixels around each one, which takes out the
+// repeating 4x4 pattern of the slices, with the pixels at a clearly different distance left out so the occlusion does
+// not leak across the edges of objects. one invocation per pixel of the half size target
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = COMPUTE_SET, binding = 0) uniform sampler2D depth_tex;
+layout(set = COMPUTE_SET, binding = 1) uniform sampler2D ao_tex;
+layout(set = COMPUTE_SET, binding = 2, r8) writeonly uniform image2D ao_target;
+
+// the parameters of the kernel (push constants)
+layout(push_constant) uniform kernel_constants
+{
+	mat4 inv_projection;
+};
+
+// relative difference of the distance at which a neighbour stops counting
+const float DEPTH_TOLERANCE = 0.05;
+
+float view_distance(ivec2 texel)
+{
+	ivec2 full_size = textureSize(depth_tex, 0);
+	float depth = texelFetch(depth_tex, min(texel * 2, full_size - 1), 0).r;
+	if (depth <= 0.0)
+		return 1e30;
+	vec2 uv = (vec2(texel * 2) + 0.5) / vec2(full_size);
+	vec4 position = inv_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+	return length(position.xyz / position.w);
+}
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(ao_target);
+	if (texel.x >= size.x || texel.y >= size.y)
+		return;
+
+	float distance = view_distance(texel);
+	float sum = 0.0;
+	float weights = 0.0;
+	for (int y = -2; y < 2; ++y)
+	{
+		for (int x = -2; x < 2; ++x)
+		{
+			ivec2 sampletexel = clamp(texel + ivec2(x, y), ivec2(0), size - 1);
+			float sampledistance = view_distance(sampletexel);
+			float weight = clamp(1.0 - abs(sampledistance - distance) / (DEPTH_TOLERANCE * distance), 0.0, 1.0);
+			sum += texelFetch(ao_tex, sampletexel, 0).r * weight;
+			weights += weight;
+		}
+	}
+	// the pixel itself is in the window with the full weight, so weights >= 1
+	imageStore(ao_target, texel, vec4(sum / weights));
+}

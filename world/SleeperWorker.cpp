@@ -259,6 +259,12 @@ void settle_background() {
     worker().settle();
 }
 
+void forget_layout( TTrack const &Track ) {
+
+    std::scoped_lock lock { clusters_mutex() };
+    known_clusters().erase( &Track );
+}
+
 void stop_background() {
 
     worker().shut_down();
