@@ -65,6 +65,12 @@ void ui::weatherphysics_panel::render_rails()
 	ImGui::Text(STR_C("Adhesion of a rail no wheels went over: %.0f%% of the dry one"), adhesion * 100.0);
 	ImGui::Text(STR_C("The ai drivers and the roads go by: %.0f%%"), Global.FrictionWeatherFactor * 100.f);
 	ImGui::Text(STR_C("Ice on the wires: %.1f mm"), weather.snow().wire_ice() * 1000.f);
+	// a span of 65 m square across the wind as it blows now
+	auto const wind{simulation::Environment.wind()};
+	auto const across{std::hypot(wind.x, wind.z)};
+	auto const density{Global.physics_weather.air_density ? weather_physics::air_density(Global.AirTemperature) : 1.0};
+	auto const sway{Global.physics_weather.enabled && Global.physics_weather.wire_wind ? weather_physics::wire_sway(Global.physics_weather, 65.0, across, weather.snow().wire_ice(), density) : 0.0};
+	ImGui::Text(STR_C("Wind %.1f m/s blows a span of 65 m across it %.2f m aside"), across, sway);
 }
 
 void ui::weatherphysics_panel::render_vehicle()

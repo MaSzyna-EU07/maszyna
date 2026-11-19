@@ -149,6 +149,18 @@ double aerodynamic_force(double const Drag, double const V, double const Along, 
 	return -Drag * Density * std::sqrt(speed2) * along * yawed;
 }
 
+double wire_sway(settings const &Settings, double const Length, double const Across, double const Wireice, double const Density)
+{
+	// the drag of the wind on a metre of the wire (a cylinder, a drag coefficient of 1.2, air of 1.225 kg/m3 at 15 degrees), and the
+	// sideways deflection of the middle of a taut string under it: q L^2 / 8 T
+	constexpr double drag_coefficient{1.2};
+	constexpr double air{1.225};
+	auto const diameter{std::max(static_cast<double>(Settings.wire_diameter), 0.0) + 2.0 * std::max(Wireice, 0.0)};
+	auto const load{0.5 * air * Density * drag_coefficient * diameter * Across * std::abs(Across)};
+	auto const deflection{load * Length * Length / (8.0 * std::max(static_cast<double>(Settings.wire_tension), 1000.0))};
+	return std::clamp(deflection, -1.5, 1.5);
+}
+
 double break_rate(settings const &Settings, double const Wireice, double const Plaster, double const Speed, bool const Leading)
 {
 	auto const ice{Wireice * 1000.0}; // mm

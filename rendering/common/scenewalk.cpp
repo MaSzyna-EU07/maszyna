@@ -2913,6 +2913,9 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 
 	// McZapkie-261102: kolor zalezy od materialu i zasniedzenia
 	model_ubs.param[0] = glm::vec4(Traction->wire_color(), glm::min(1.0f, linealpha));
+	// the wind blowing the span aside (traction.vert), as the pantographs meet the wire
+	auto const swayaxis{Traction->sway_axis()};
+	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), 0.f);
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
 		walk_shadow_material(null_handle);
@@ -2947,6 +2950,9 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 		if (m_renderpass.draw_mode != rendermode::shadows)
 			walk_blending(blending);
 	}
+
+	// the other lines drawn with the program aren't blown aside
+	model_ubs.param[1] = glm::vec4(0.f);
 
 	// debug data
 	++m_renderpass.draw_stats.traction;

@@ -16358,3 +16358,15 @@ msgstr "Hamulce: woda %.2f, lód %.2f, tarcie %.0f%%"
 
 msgid "Breaks of the contact of the pantographs: %d"
 msgstr "Przerwy styku pantografów: %d"
+
+msgid "Wires blown aside by the wind, pantographs torn off"
+msgstr "Druty odchylane przez wiatr, zrywanie pantografów"
+
+msgid "Tension of a contact wire, N"
+msgstr "Naciąg przewodu jezdnego, N"
+
+msgid "Diameter of a contact wire, m"
+msgstr "Średnica przewodu jezdnego, m"
+
+msgid "Wind %.1f m/s blows a span of 65 m across it %.2f m aside"
+msgstr "Wiatr %.1f m/s odchyla przęsło 65 m w poprzek o %.2f m"

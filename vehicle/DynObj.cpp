@@ -9487,7 +9487,8 @@ vehicle_table::update_traction( TDynamicObject *Vehicle ) {
                     }
                     // jeśli t jest w przedziale, wyznaczyć odległość wzdłuż wektorów vUp i vLeft
                     // punkt styku płaszczyzny z drutem (dla generatora łuku el.)
-                    auto const vStyk { pantograph->hvPowerWire->pPoint1 + fRaParam * pantograph->hvPowerWire->vParametric };
+                    // where the wind blows the wire to (TTraction::sway_at(), drawn so by traction.vert)
+                    auto const vStyk { pantograph->hvPowerWire->pPoint1 + fRaParam * pantograph->hvPowerWire->vParametric + pantograph->hvPowerWire->sway_at( fRaParam ) };
                     auto const vGdzie { vStyk - pant0 }; // wektor
                     // odległość w pionie musi być w zasięgu ruchu "pionowego" pantografu
                     // musi się mieścić w przedziale ruchu pantografu

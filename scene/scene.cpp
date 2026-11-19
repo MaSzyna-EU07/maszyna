@@ -69,7 +69,8 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
          || fRaParam > 1.001 ) { continue; }
         // jeśli tylko jest w przedziale, wyznaczyć odległość wzdłuż wektorów vUp i vLeft
         // punkt styku płaszczyzny z drutem (dla generatora łuku el.)
-        auto const vStyk = traction->pPoint1 + fRaParam * traction->vParametric;
+        // where the wind blows the wire to (TTraction::sway_at(), drawn so by traction.vert)
+        auto const vStyk = traction->pPoint1 + fRaParam * traction->vParametric + traction->sway_at( fRaParam );
         // wektor musi się mieścić w przedziale ruchu pantografu
         auto const vGdzie = vStyk - pantographposition;
         auto fVertical = glm::dot( vGdzie, vUp );

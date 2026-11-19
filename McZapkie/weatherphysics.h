@@ -33,6 +33,7 @@ struct settings
 	bool wind{true}; // the wind in the drag
 	bool air_density{true}; // the drag by the density of the air at its temperature
 	bool pantographs{true}; // the ice on the wires breaking the contact of the pantographs
+	bool wire_wind{true}; // the wind blowing the wires aside: drawn so, and the pantographs meet them so (and lose them)
 
 	// the adhesion of a rail, shares of the dry clean one
 	float wet{0.75f}; // wet through
@@ -62,6 +63,10 @@ struct settings
 	float wire_ice_breaks{1.f};
 	float break_time{0.08f};
 	float trailing_share{0.3f};
+
+	// the wires blown aside by the wind: the tension of a contact wire, N, and its diameter, m
+	float wire_tension{10000.f};
+	float wire_diameter{0.012f};
 };
 
 // the entries of eu07.ini, the window and the export of the settings take them from here: the key, the label, the member, the range
@@ -81,16 +86,17 @@ struct float_parameter
 	char const *format;
 };
 
-inline constexpr std::array<bool_parameter, 6> bool_parameters{{
+inline constexpr std::array<bool_parameter, 7> bool_parameters{{
     {"physics.weather", "Weather in the physics", &settings::enabled},
     {"physics.weather.adhesion", "Heads of the rails", &settings::adhesion},
     {"physics.weather.brakes", "Wet and iced brakes", &settings::brakes},
     {"physics.weather.wind", "Wind in the drag", &settings::wind},
     {"physics.weather.airdensity", "Density of the air in the drag", &settings::air_density},
     {"physics.weather.pantographs", "Ice on the wires and the pantographs", &settings::pantographs},
+    {"physics.weather.wirewind", "Wires blown aside by the wind, pantographs torn off", &settings::wire_wind},
 }};
 
-inline constexpr std::array<float_parameter, 20> float_parameters{{
+inline constexpr std::array<float_parameter, 22> float_parameters{{
     {"physics.weather.wet", "Adhesion, wet rail", &settings::wet, 0.3f, 1.f, "%.2f"},
     {"physics.weather.emulsion", "Adhesion, first water on a dirty rail", &settings::emulsion, 0.3f, 1.f, "%.2f"},
     {"physics.weather.ice", "Adhesion, ice on the rail", &settings::ice, 0.1f, 1.f, "%.2f"},
@@ -111,6 +117,8 @@ inline constexpr std::array<float_parameter, 20> float_parameters{{
     {"physics.weather.wireicebreaks", "Breaks of the contact by the ice", &settings::wire_ice_breaks, 0.f, 4.f, "%.2f"},
     {"physics.weather.breaktime", "Break of the contact at 1 mm of ice, s", &settings::break_time, 0.01f, 0.5f, "%.3f"},
     {"physics.weather.trailingshare", "Breaks of a pantograph behind another", &settings::trailing_share, 0.f, 1.f, "%.2f"},
+    {"physics.weather.wiretension", "Tension of a contact wire, N", &settings::wire_tension, 3000.f, 30000.f, "%.0f"},
+    {"physics.weather.wirediameter", "Diameter of a contact wire, m", &settings::wire_diameter, 0.008f, 0.02f, "%.4f"},
 }};
 
 // what lies on the head of a rail in the open, 0..1 each: the water, the dirt of a dry spell (rust, oil, the dust of the brakes),
@@ -171,6 +179,18 @@ double air_density(double Temperature);
 // velocity of the vehicle towards its front, m/s, Along the wind towards its front and Across it, m/s, Density a share of the air at
 // 15 degrees, Yaw settings::wind_yaw. without a wind and at 15 degrees it is -Drag |V| V, the drag of the calm air
 double aerodynamic_force(double Drag, double V, double Along, double Across, double Density, double Yaw);
+
+// how far the wind blows the middle of a span of the catenary aside, m, towards where it blows: a wire of a span Length long (m,
+// horizontally) pulled taut by settings::wire_tension, in a wind Across the span (m/s, signed), thickened by Wireice (radial, m), in
+// air of Density (a share of the one at 15 degrees). a span of 65 m goes some 20 cm aside in 20 m/s and 45 cm in 30 m/s; with the
+// stagger of the wire and half the width of the strip of a pantograph (0.5..0.6 m) a gale takes the wire off the strip
+double wire_sway(settings const &Settings, double Length, double Across, double Wireice, double Density);
+// the share of that a point of the span gets, Parameter 0..1 along it: none at the supports, all of it in the middle
+inline double sway_profile(double const Parameter)
+{
+	auto const u{Parameter < 0.0 ? 0.0 : (Parameter > 1.0 ? 1.0 : Parameter)};
+	return 4.0 * u * (1.0 - u);
+}
 
 // how many times a second the ice on the wire breaks the contact of a pantograph: Wireice the radial thickness of the ice, m, Plaster
 // the snow stuck to the vehicle, 0..1 (on the pantograph, it presses it less), Speed m/s, Leading the first pantograph on the wire

@@ -174,3 +174,24 @@ TEST_CASE("weather physics: the ice on the wires breaks the contact more at spee
 	CHECK(behind == doctest::Approx(fast * defaults.trailing_share));
 	CHECK(weather_physics::break_length(defaults, 0.004, 0.5) == doctest::Approx(defaults.break_time * 2.0));
 }
+
+TEST_CASE("weather physics: a gale blows a span of the catenary off the strip of a pantograph, a breeze doesn't") {
+	// a span of 65 m square across the wind, a wire of 12 mm at 10 kN
+	auto const breeze{weather_physics::wire_sway(defaults, 65.0, 10.0, 0.0, 1.0)};
+	auto const strong{weather_physics::wire_sway(defaults, 65.0, 20.0, 0.0, 1.0)};
+	auto const gale{weather_physics::wire_sway(defaults, 65.0, 30.0, 0.0, 1.0)};
+	CAPTURE(strong);
+	CAPTURE(gale);
+	CHECK(breeze < 0.05);
+	CHECK(strong == doctest::Approx(0.186).epsilon(0.05));
+	CHECK(gale == doctest::Approx(0.419).epsilon(0.05));
+	// with the stagger of 0.3 m the gale takes the wire past half the strip of an AKP-4E (0.635 m)
+	CHECK(gale + 0.3 > 0.635);
+	// towards where the wind blows, more with the ice on the wire
+	CHECK(weather_physics::wire_sway(defaults, 65.0, -30.0, 0.0, 1.0) == doctest::Approx(-gale));
+	CHECK(weather_physics::wire_sway(defaults, 65.0, 30.0, 0.005, 1.0) > gale * 1.5);
+	// none at the supports, all of it in the middle
+	CHECK(weather_physics::sway_profile(0.0) == 0.0);
+	CHECK(weather_physics::sway_profile(0.5) == 1.0);
+	CHECK(weather_physics::sway_profile(1.0) == 0.0);
+}
