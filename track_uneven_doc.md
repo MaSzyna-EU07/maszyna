@@ -46,15 +46,17 @@ A track with `uneven 18` measures as follows (`tests/unit/test_track_uneven.cpp`
 | parameter                | result | Id-14     |
 |--------------------------|--------|-----------|
 | vertical irregularities  | 18 mm  | 18 mm     |
-| horizontal irregularities | 19 mm | 17 mm     |
+| horizontal irregularities | 17 mm | 17 mm     |
 | twist on a 5 m base      | 15 mm  | 16 mm     |
 | gauge                    | ±10 mm | +10/-8 mm |
-| cross level              | 20 mm  | 20 mm     |
-| J index                  | 6.1    | 5.3       |
+| cross level              | 21 mm  | 20 mm     |
+| J index                  | 5.7    | 5.3       |
+
+Id-14 only gives the scale of the value: how a track at that value measures. What the waves look like follows the track spectra of the literature, see "How it works".
 
 ## How it works
 
-Unevenness is a displacement field that depends on the position on the map, made of waves 5-42 m long. Vertically there are fewer short waves, so the rails come near the peak value more often, and there are also waves of 47-83 m: they hardly count on the 10 m chord, the body rises and falls on them, and a pantograph keeps up with them. Nothing in it is random: one place bends the same way on every run. A track that is moved gets the waves of its new place.
+Unevenness is a displacement field that depends on the position on the map, made of waves 7-90 m long sideways and 8-110 m long vertically, about the bands D1-D3 of EN 13848. Their heights follow the shape of the track spectra of the US FRA and of ORE B176 (the German spectrum): a power spectral density of `Wc² / (W² (W² + Wc²))`, `Wc = 0.8245 rad/m`, so the longer a wave, the higher it is. Most of the height is in the long waves: they hardly count on the 10 m chord, the body rises and falls on them slowly, and the cab hardly feels them. At `uneven 18` a rail goes up to about 5 cm off its design over the long waves, and the short ones of 7-10 m, the ones the cab shakes on, are a few millimetres. Nothing in it is random: one place bends the same way on every run. A track that is moved gets the waves of its new place.
 
 Each component joins separately:
 
@@ -83,7 +85,7 @@ On a track with unevenness the track itself shakes the cab, in place of two of t
 
 This is about the cab only. The physics, derailment included, and the noise of the wheels still use the lateral acceleration.
 
-A pantograph rises at the rate set by the pressure, about 0.14 m/s, and a gap to the wire over 1 cm cuts the voltage and trips the main breaker. Unevenness adds to this at high speed. On the tracks of Bałtyk a simulation gives a gap of 0.6 cm when the vertical value times the speed in km/h is 925, for example 8 mm at 120 km/h, 13 mm at 70 km/h and 23 mm at 40 km/h. The values in the Id-14 table are higher than that. The wire alone can do it too: at `tor0290` on Bałtyk it rises by about 1%, so a pantograph keeps up to about 46 km/h there, and above that the breaker trips on a straight track as well.
+A pantograph rises at the rate set by the pressure, about 0.14 m/s, and a gap to the wire over 1 cm cuts the voltage and trips the main breaker. Unevenness adds to this at high speed. On the tracks of Bałtyk a simulation gives a gap of 0.6 cm when the vertical value times the speed in km/h is 1150, for example 9.6 mm at 120 km/h, 16 mm at 70 km/h and 29 mm at 40 km/h. The values in the Id-14 table are higher than that. The wire alone can do it too: at `tor0290` on Bałtyk it rises by about 1%, so a pantograph keeps up to about 46 km/h there, and above that the breaker trips on a straight track as well.
 
 The physics takes the curve radius and the grade from the design, so unevenness doesn't change them. It adds only the cross level towards derailment, about 0.06 m/s² at `uneven 18` against a threshold of about 3.2 m/s².
 
