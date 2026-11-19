@@ -2,11 +2,11 @@
 #include "doctest.h"
 #include "scratch.h"
 
-#include "utilities/Globals.h"
-#include "utilities/utilities.h"
-
 #include <cmath>
 #include <limits>
+
+#include "utilities/Globals.h"
+#include "utilities/utilities.h"
 
 // the helpers of utilities/utilities.cpp and utilities.h as they behave now: the numbers and texts they give, their
 // oddities included. the ones which look like mistakes are listed in COVERAGE.md. the helpers which read from a
