@@ -673,6 +673,75 @@ void apply_vehicles(document const &Document, apply_summary &Summary)
 		Summary.notes.emplace_back(std::format("{} vehicles of the scenery aren't in the snapshot, they stay as the scenery made them", unknown));
 }
 
+void capture_drivers(document &Document)
+{
+	for (auto const *vehicle : Vehicles.sequence())
+	{
+		if (vehicle != nullptr && vehicle->bEnabled && vehicle->Mechanik != nullptr)
+			vehicle->Mechanik->snapshot_save(Document.add("driver", vehicle_reference(vehicle)));
+	}
+}
+
+// a driver of the consist of the vehicle whom the snapshot doesn't have where the scenery put them: the one to move
+// to the vehicle, where the snapshot has a driver and the scenery none (a driver changes ends of a train)
+TController *spare_driver(TDynamicObject *Vehicle, std::unordered_set<TDynamicObject const *> const &Taken)
+{
+	TController *found{nullptr};
+	Vehicle->for_each(coupling::coupler, [&found, &Taken](TDynamicObject const *Coupled) {
+		if (found == nullptr && Coupled->Mechanik != nullptr && false == Taken.contains(Coupled))
+			found = Coupled->Mechanik;
+	});
+	return found;
+}
+
+void apply_drivers(document const &Document, apply_summary &Summary)
+{
+	auto const entries{Document.of("driver")};
+	if (entries.empty())
+		return;
+	// the vehicles the snapshot has drivers in
+	std::unordered_set<TDynamicObject const *> taken;
+	for (auto const *entry : entries)
+		taken.emplace(find_vehicle(entry->name));
+	auto missing{0};
+	for (auto const *entry : entries)
+	{
+		auto *vehicle{find_vehicle(entry->name)};
+		if (vehicle == nullptr)
+		{
+			++Summary.skipped;
+			++missing;
+			continue;
+		}
+		if (vehicle->Mechanik == nullptr)
+		{
+			if (auto *driver{spare_driver(vehicle, taken)}; driver != nullptr)
+				driver->MoveTo(vehicle);
+		}
+		if (vehicle->Mechanik == nullptr)
+		{
+			++Summary.skipped;
+			++missing;
+			continue;
+		}
+		vehicle->Mechanik->snapshot_load(*entry);
+		++Summary.entries;
+	}
+	if (missing != 0)
+		Summary.notes.emplace_back(std::format("{} drivers of the snapshot have no driver in the scenery to become", missing));
+	// the drivers of the scenery the snapshot has no word of, in vehicles it does know, were gone when it was taken
+	std::unordered_set<TDynamicObject const *> known;
+	for (auto const *entry : Document.of("vehicle"))
+		known.emplace(find_vehicle(entry->name));
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->Mechanik == nullptr || taken.contains(vehicle) || false == known.contains(vehicle))
+			continue;
+		if (vehicle->Mechanik->AIControllFlag)
+			SafeDelete(vehicle->Mechanik);
+	}
+}
+
 // the driver in charge of each vehicle; after the drivers are where the snapshot has them
 void apply_owners(document const &Document)
 {
@@ -684,6 +753,15 @@ void apply_owners(document const &Document)
 		auto const *owner{find_vehicle(entry->text("owner"))};
 		vehicle->ctOwner = (owner != nullptr ? owner->Mechanik : nullptr);
 	}
+}
+
+void capture_player(document &Document)
+{
+	if (Train == nullptr || Train->Dynamic() == nullptr)
+		return;
+	auto const *vehicle{Train->Dynamic()};
+	// by its name, which is what the simulator is started in a vehicle with
+	Document.add("player", vehicle->name()).set("cab", vehicle->MoverParameters->CabOccupied);
 }
 
 // tells whether the snapshot was taken in the scenery it's being put over
@@ -799,6 +877,8 @@ document capture()
 	capture_launchers(result);
 	capture_lights(result);
 	capture_vehicles(result);
+	capture_drivers(result);
+	capture_player(result);
 	// the long one last, out of the way of whoever reads the file
 	capture_random(result);
 	return result;
@@ -837,6 +917,7 @@ apply_summary apply(document const &Document)
 	apply_each(Document, "madetrack", summary, apply_made_track);
 	apply_each(Document, "powersource", summary, apply_power);
 	apply_vehicles(Document, summary);
+	apply_drivers(Document, summary);
 	apply_owners(Document);
 	// the cells after the vehicles, whose sections write to their cells as they're taken and freed
 	apply_each(Document, "memcell", summary, apply_memcell);

@@ -181,6 +181,7 @@ set(SOURCES
 "simulation/simulationtest.cpp"
 "simulation/simulationsnapshotworld.cpp"
 "simulation/simulationsnapshotvehicle.cpp"
+"simulation/simulationsnapshotdriver.cpp"
 "scene/sceneeditor.cpp"
 "rendering/screenshot.cpp"
 "input/driverkeyboardinput.cpp"
