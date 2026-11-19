@@ -122,16 +122,19 @@ void minimap_tool::gather_stations()
 	if (false == stale(m_stations_seen))
 		return;
 	std::map<std::string, station> found;
-	// the texts are in windows-1250; the ones of the events lost their polish letters as they were read
-	auto const add = [&](std::string const &Text, bool const Letters, glm::dvec3 const &Point, TTrack *Track) {
+	// the texts are in windows-1250; the stop points of a station can spell it with or without its polish letters
+	std::unordered_set<std::string> lettered;
+	auto const add = [&](std::string const &Text, glm::dvec3 const &Point, TTrack *Track) {
 		auto const name{stop_name(Text)};
 		if (name.empty())
 			return;
 		auto const key{folded(name)};
 		auto &entry{found[key]};
 		entry.key = key;
+		// the station is shown by a spelling with the letters, when any of its stop points has one
+		auto const letters{std::ranges::any_of(name, [](char const Character) { return static_cast<unsigned char>(Character) >= 0x80; })};
 		// the timetables join the words with underscores
-		if (entry.name.empty() || Letters)
+		if (entry.name.empty() || (letters && lettered.insert(key).second))
 		{
 			entry.name = win1250_to_utf8(name);
 			std::replace(entry.name.begin(), entry.name.end(), '_', ' ');
@@ -145,10 +148,10 @@ void minimap_tool::gather_stations()
 	};
 	for (auto *cell : simulation::Memory.sequence())
 		if (cell != nullptr && cell->Text().starts_with(stop_prefix))
-			add(cell->Text(), true, cell->location(), cell->Track);
+			add(cell->Text(), cell->location(), cell->Track);
 	for (auto *event : simulation::Events.sequence())
 		if (auto const *values{dynamic_cast<putvalues_event const *>(event)}; values != nullptr && values->input_command() == TCommandType::cm_PassengerStopPoint)
-			add(values->input_text(), false, values->input_location(), nullptr);
+			add(values->input_text(), values->input_location(), nullptr);
 	std::vector<station> stations;
 	for (auto &entry : found)
 		stations.push_back(std::move(entry.second));
