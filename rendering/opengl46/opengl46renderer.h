@@ -882,6 +882,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	glm::vec3                        m_ssao_kernel[32];
 
 	std::unique_ptr<gl::program> m_shadow_shader;
+	std::unique_ptr<gl::program> m_wire_shadow_shader; // the shadows of the wires blown aside by the wind (wireshadow.vert)
 	std::unique_ptr<gl::program> m_alpha_shadow_shader;
 
 	std::unique_ptr<gl::framebuffer> m_pick_fb;

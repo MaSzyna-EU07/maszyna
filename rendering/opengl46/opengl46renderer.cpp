@@ -126,6 +126,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_line_shader = make_shader("traction.vert", "traction.frag");
 		m_freespot_shader = make_shader("freespot.vert", "freespot.frag");
 		m_shadow_shader = make_shader("simpleuv.vert", "shadowmap.frag");
+		m_wire_shadow_shader = make_shader("wireshadow.vert", "shadowmap.frag");
 		m_alpha_shadow_shader = make_shader("simpleuv.vert", "alphashadowmap.frag");
         m_pick_shader = make_shader("vertexonly.vert", "pick.frag");
         m_pick_surface_shader = make_shader("simpleuv.vert", "pick_surface.frag");
@@ -4958,6 +4959,12 @@ void opengl46_renderer::walk_program(walk_shader const Program)
 		break;
 	case walk_shader::line:
 		m_line_shader->bind();
+		break;
+	case walk_shader::line_shadow:
+		if (m_cubeshadows)
+			m_localshadows.wire_program().bind();
+		else
+			m_wire_shadow_shader->bind();
 		break;
 	case walk_shader::billboard:
 		m_billboard_shader->bind();

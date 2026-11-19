@@ -41,6 +41,11 @@ class opengl46_local_shadows : public gfx::local_shadows
 	{
 		return Alpha ? *m_alpha_program : *m_program;
 	}
+	// shadow program of the cube maps for the wires of the traction, blown aside by the wind as they're drawn (wireshadowcube.vert)
+	gl::program &wire_program()
+	{
+		return *m_wire_program;
+	}
 	// the same for the multi draws of the instances drawn from the gpu culling, which read the model block of a draw by its
 	// number (MODEL_DRAWS). nullptr when they couldn't be made: the draws are made one by one with program() then
 	gl::program *multidraw_program(bool const Alpha)
@@ -72,6 +77,7 @@ class opengl46_local_shadows : public gfx::local_shadows
 
 	std::unique_ptr<gl::program> m_program;
 	std::unique_ptr<gl::program> m_alpha_program;
+	std::unique_ptr<gl::program> m_wire_program;
 	std::unique_ptr<gl::program> m_multidraw_program;
 	std::unique_ptr<gl::program> m_alpha_multidraw_program;
 	GLuint m_empty{0}; // stand-in: a cube map array of 1x1 faces with the farthest depth

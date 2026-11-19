@@ -127,6 +127,7 @@ class scene_walk
 		pick, // a colour for the picking of the scenery or the controls
 		pick_surface, // the gradient of a touch screen for the picking of the controls
 		line, // the wires of the traction and the lines
+		line_shadow, // the shadows of the wires of the traction, blown aside by the wind as the wires are drawn (wire_sway.glsl)
 		billboard, // the glare of a lamp
 		freespot // the point of light of a lamp
 	};

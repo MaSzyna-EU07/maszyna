@@ -2918,7 +2918,13 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), 0.f);
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
-		walk_shadow_material(null_handle);
+	{
+		// the shadows go with the wires blown aside (physics.weather.wireshadows), or stay as the wires stand still
+		if (Global.physics_weather.wire_shadows)
+			walk_program(walk_shader::line_shadow);
+		else
+			walk_shadow_material(null_handle);
+	}
 	else
 		walk_program( walk_shader::line );
 

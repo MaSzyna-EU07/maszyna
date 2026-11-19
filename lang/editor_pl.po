@@ -16370,3 +16370,6 @@ msgstr "Średnica przewodu jezdnego, m"
 
 msgid "Wind %.1f m/s blows a span of 65 m across it %.2f m aside"
 msgstr "Wiatr %.1f m/s odchyla przęsło 65 m w poprzek o %.2f m"
+
+msgid "Shadows of the wires blown aside with them"
+msgstr "Cienie drutów odchylane razem z nimi"

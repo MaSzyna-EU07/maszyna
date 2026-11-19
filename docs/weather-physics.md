@@ -29,8 +29,9 @@ i mgła pogody.
 - `traction.frag` (gl46 i vk14): druty bieleją od lodu, który przerywa styk pantografów.
 - `traction.vert` (gl46 i vk14): druty i ich bryły z bliska odchylają się o to samo `TTraction::sway()`, z którym liczy fizyka
   (`model_ubs.param[1]`: oś w poprzek przęsła i wychylenie środka; `v_coord.x` wierzchołka: miejsce w przęśle). Linie przęsła są
-  dzielone na odcinki nie dłuższe niż 1/8 przęsła (`TTraction::sway_vertices()`). Cienie drutów się nie kołyszą. Stary renderer
-  (gl33) nie rysuje odchylenia.
+  dzielone na odcinki nie dłuższe niż 1/8 przęsła (`TTraction::sway_vertices()`). Wzór jest w jednym miejscu, `wire_sway.glsl`.
+  Cienie drutów kołyszą się razem z nimi (`physics.weather.wireshadows`): własne programy cieni, `wireshadow.vert` dla kaskad
+  słońca i `wireshadowcube.vert` dla map lamp (`walk_shader::line_shadow`). Stary renderer (gl33) nie rysuje odchylenia.
 - vk14 nie rysuje (tak jak śniegu) mokrej nawierzchni, ma tylko pole w bloku i lód na drutach.
 
 ## Ustawienia (eu07.ini)
@@ -44,6 +45,7 @@ do ustawienia ręcznie, przyspieszenie czasu i podgląd prowadzonego pojazdu.
 | `physics.weather` | yes | całość; `no` = stare 0.85 deszcz / 0.75 śnieg |
 | `physics.weather.adhesion` / `.brakes` / `.wind` / `.airdensity` / `.pantographs` | yes | poszczególne części |
 | `physics.weather.wirewind` | yes | wiatr odchyla druty (rysowanie i fizyka razem) i zrywa pantografy |
+| `physics.weather.wireshadows` | yes | cienie drutów odchylane razem z drutami; `no` = cienie jak dawniej, nieruchome |
 | `physics.weather.wiretension` / `.wirediameter` | 10000 N / 0.012 m | naciąg i średnica przewodu jezdnego |
 | `physics.weather.wet` | 0.75 | przyczepność mokrej szyny (udział suchej) |
 | `physics.weather.emulsion` | 0.6 | dodatkowo: pierwsza woda na brudzie (razem ok. 0.45) |

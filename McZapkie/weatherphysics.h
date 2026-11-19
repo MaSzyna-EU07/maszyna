@@ -34,6 +34,7 @@ struct settings
 	bool air_density{true}; // the drag by the density of the air at its temperature
 	bool pantographs{true}; // the ice on the wires breaking the contact of the pantographs
 	bool wire_wind{true}; // the wind blowing the wires aside: drawn so, and the pantographs meet them so (and lose them)
+	bool wire_shadows{true}; // and their shadows blown aside with them (a program of the shadows of their own)
 
 	// the adhesion of a rail, shares of the dry clean one
 	float wet{0.75f}; // wet through
@@ -86,7 +87,7 @@ struct float_parameter
 	char const *format;
 };
 
-inline constexpr std::array<bool_parameter, 7> bool_parameters{{
+inline constexpr std::array<bool_parameter, 8> bool_parameters{{
     {"physics.weather", "Weather in the physics", &settings::enabled},
     {"physics.weather.adhesion", "Heads of the rails", &settings::adhesion},
     {"physics.weather.brakes", "Wet and iced brakes", &settings::brakes},
@@ -94,6 +95,7 @@ inline constexpr std::array<bool_parameter, 7> bool_parameters{{
     {"physics.weather.airdensity", "Density of the air in the drag", &settings::air_density},
     {"physics.weather.pantographs", "Ice on the wires and the pantographs", &settings::pantographs},
     {"physics.weather.wirewind", "Wires blown aside by the wind, pantographs torn off", &settings::wire_wind},
+    {"physics.weather.wireshadows", "Shadows of the wires blown aside with them", &settings::wire_shadows},
 }};
 
 inline constexpr std::array<float_parameter, 22> float_parameters{{
