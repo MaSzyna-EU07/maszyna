@@ -768,9 +768,9 @@ void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8
 	{
 		upload.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 	}
-	else
+	if (upload.fence == nullptr)
 	{
-		// no sync objects: the drawing context can only be sure of the image once the upload is done
+		// no sync objects, or no fence made: the drawing context can only be sure of the image once the upload is done
 		glFinish();
 	}
 	// the drawing context waits on the fence, which it can do only once the fence is on its way to the gpu

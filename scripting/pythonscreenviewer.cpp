@@ -192,13 +192,11 @@ void python_screen_viewer::threadfunc()
 
 void python_screen_viewer::bind_shared_texture() const
 {
-	size_t texture;
-	{
-		std::scoped_lock guard(m_rt->mutex);
-		texture = m_rt->texture_id;
-	}
 	// bound each frame: each image uploaded by a worker comes in a texture of its own, and a name deleted comes back for
-	// a later one, so a name seen before may be another texture already
+	// a later one, so a name seen before may be another texture already. bound under the lock the drawing thread deletes
+	// the old texture under, so the name read here is never one already gone
+	std::scoped_lock guard(m_rt->mutex);
+	size_t const texture = m_rt->texture_id;
 	glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture != 0 ? texture : m_initialtexture));
 }
 

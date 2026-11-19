@@ -245,6 +245,9 @@ bool render_task::finish_upload() const
 {
 	if (false == Global.python_uploadmain || nullptr == m_target || nullptr == m_target->shared_tex)
 		return true;
+	// the old texture is deleted and the new name published under the lock the windows of python.displaywindows bind under,
+	// so none of them binds the old name once it is gone: a name bound before stays alive in its context while bound there
+	std::scoped_lock lock(m_target->mutex);
 	if (m_uploadedbyworker)
 	{
 		if (false == m_target->shared_tex->commit_thread_upload())
@@ -254,7 +257,6 @@ bool render_task::finish_upload() const
 	{
 		upload();
 	}
-	std::scoped_lock lock(m_target->mutex);
 	m_target->texture_id = m_target->shared_tex->get_id();
 	return true;
 }
