@@ -190,9 +190,12 @@ void TCamera::Update()
 
 bool TCamera::SetMatrix( glm::dmat4 &Matrix ) const {
 
+    // the roll (z) is multiplied in first, so it acts last, about the line of sight: the sway of the cab tilts the view
+    // the same way wherever the head is turned, as it did in 26.05. the order matters only with a roll (the cab shake,
+    // or the angles of a camera entry of the scenery)
+    Matrix = glm::rotate(Matrix, -(double)Angle.z, glm::dvec3(0, 0, 1)); // po wyłączeniu tego kręci się pojazd, a sceneria nie
     Matrix = glm::rotate(Matrix, -(double)Angle.x, glm::dvec3(1, 0, 0));
 	Matrix = glm::rotate(Matrix, -(double)Angle.y, glm::dvec3(0, 1, 0)); // w zewnętrznym widoku: kierunek patrzenia
-	Matrix = glm::rotate(Matrix, -(double)Angle.z, glm::dvec3(0, 0, 1)); // po wyłączeniu tego kręci się pojazd, a sceneria nie
 
     if( m_owner != nullptr && false == DebugCameraFlag ) {
 

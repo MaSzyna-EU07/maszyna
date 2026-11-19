@@ -137,15 +137,19 @@ TModelsManager::find_in_databank( std::string const &Name ) {
 }
 
 // checks whether specified file exists. returns name of the located file, or empty string.
+// the file is found in any case, as the scenery made on Windows names it, but the name is given back as asked for: it's the key of
+// the bank, and TModel3d::LoadFromFile() opens the file as it's named on the disk
 std::string
 TModelsManager::find_on_disk( std::string const &Name ) {
 
     std::vector<std::string> extensions { { ".e3d" }, { ".t3d" } };
     for( auto const &extension : extensions ) {
 
-        auto lookup = FileExists(Name + extension) ? Name : FileExists(paths::models + Name + extension) ? paths::models + Name : "";
-        if( false == lookup.empty() ) {
-            return lookup;
+        if( false == FileCased( Name + extension ).empty() ) {
+            return Name;
+        }
+        if( false == FileCased( paths::models + Name + extension ).empty() ) {
+            return paths::models + Name;
         }
     }
 

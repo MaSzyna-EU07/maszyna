@@ -222,10 +222,17 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
-// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
-// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+// the file as it's named on the disk when only the case of its name or of its folders differs, as in the sceneries made on Windows;
+// empty when there's none. on Windows, finding the names in any case itself, the file given or none
 std::string FileCased(std::filesystem::path const &Filename);
+// the file to open: as it's named on the disk, the name given when there's none
+std::string FileOnDisk(std::string const &Filename);
+// the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
+// found in any case; the name given when there's none
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);
 
+// the first name with one of the extensions which has a file in any case, in the order given; given back as named here, the file
+// is opened by FileOnDisk()
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
