@@ -37,7 +37,7 @@ constexpr std::array<char const *, 9> PROGRAM_NAMES{"water_trail.comp", "water_s
 bool opengl46_windscreen_water::prepare_next()
 {
 	static_assert(PROGRAM_NAMES.size() == pass::count, "a name for every pass of the water");
-	auto const missing{std::ranges::find(m_programs, nullptr)};
+	auto const missing{std::ranges::find_if(m_programs, [](std::unique_ptr<gl::program> const &Program) { return Program == nullptr; })};
 	if (missing == m_programs.end())
 		return false;
 	auto const index{static_cast<std::size_t>(std::distance(m_programs.begin(), missing))};
