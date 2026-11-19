@@ -35,6 +35,13 @@ struct settings
 	bool pantographs{true}; // the ice on the wires breaking the contact of the pantographs
 	bool wire_wind{true}; // the wind blowing the wires aside: drawn so, and the pantographs meet them so (and lose them)
 	bool wire_shadows{true}; // and their shadows blown aside with them (a program of the shadows of their own)
+	bool arcs{true}; // the breaks of the contact under a current strike an arc: its flash, its light and its crackle
+	// the kinds of what freezes on the wires (environment/snowcover.h): the glaze (gołoledź), the hard rime (szadź twarda), the soft
+	// rime and the hoarfrost (szadź miękka, sadź, szron), the sleeve of wet snow
+	bool glaze{true};
+	bool rime_hard{true};
+	bool rime_soft{true};
+	bool wet_snow{true};
 
 	// the adhesion of a rail, shares of the dry clean one
 	float wet{0.75f}; // wet through
@@ -68,6 +75,15 @@ struct settings
 	// the wires blown aside by the wind: the tension of a contact wire, N, and its diameter, m
 	float wire_tension{10000.f};
 	float wire_diameter{0.012f};
+
+	// how much each kind breaks the contact, a share of the glaze: the glaze is hard and smooth and holds the strip off the wire,
+	// the rime is scraped off, the soft rime crumbles, the wet snow slides
+	float break_glaze{1.f};
+	float break_rime_hard{0.6f};
+	float break_rime_soft{0.25f};
+	float break_wet_snow{0.5f};
+	// how bright the arcs are, 1 as measured
+	float arc_brightness{1.f};
 };
 
 // the entries of eu07.ini, the window and the export of the settings take them from here: the key, the label, the member, the range
@@ -87,7 +103,7 @@ struct float_parameter
 	char const *format;
 };
 
-inline constexpr std::array<bool_parameter, 8> bool_parameters{{
+inline constexpr std::array<bool_parameter, 13> bool_parameters{{
     {"physics.weather", "Weather in the physics", &settings::enabled},
     {"physics.weather.adhesion", "Heads of the rails", &settings::adhesion},
     {"physics.weather.brakes", "Wet and iced brakes", &settings::brakes},
@@ -96,9 +112,14 @@ inline constexpr std::array<bool_parameter, 8> bool_parameters{{
     {"physics.weather.pantographs", "Ice on the wires and the pantographs", &settings::pantographs},
     {"physics.weather.wirewind", "Wires blown aside by the wind, pantographs torn off", &settings::wire_wind},
     {"physics.weather.wireshadows", "Shadows of the wires blown aside with them", &settings::wire_shadows},
+    {"physics.weather.arcs", "Arcs at the breaks of the contact", &settings::arcs},
+    {"physics.weather.glaze", "Glaze on the wires (icing)", &settings::glaze},
+    {"physics.weather.rimehard", "Hard rime on the wires", &settings::rime_hard},
+    {"physics.weather.rimesoft", "Soft rime and hoarfrost on the wires", &settings::rime_soft},
+    {"physics.weather.wetsnow", "Wet snow on the wires", &settings::wet_snow},
 }};
 
-inline constexpr std::array<float_parameter, 22> float_parameters{{
+inline constexpr std::array<float_parameter, 27> float_parameters{{
     {"physics.weather.wet", "Adhesion, wet rail", &settings::wet, 0.3f, 1.f, "%.2f"},
     {"physics.weather.emulsion", "Adhesion, first water on a dirty rail", &settings::emulsion, 0.3f, 1.f, "%.2f"},
     {"physics.weather.ice", "Adhesion, ice on the rail", &settings::ice, 0.1f, 1.f, "%.2f"},
@@ -121,6 +142,11 @@ inline constexpr std::array<float_parameter, 22> float_parameters{{
     {"physics.weather.trailingshare", "Breaks of a pantograph behind another", &settings::trailing_share, 0.f, 1.f, "%.2f"},
     {"physics.weather.wiretension", "Tension of a contact wire, N", &settings::wire_tension, 3000.f, 30000.f, "%.0f"},
     {"physics.weather.wirediameter", "Diameter of a contact wire, m", &settings::wire_diameter, 0.008f, 0.02f, "%.4f"},
+    {"physics.weather.breakglaze", "Breaks of the contact by the glaze", &settings::break_glaze, 0.f, 2.f, "%.2f"},
+    {"physics.weather.breakrimehard", "Breaks of the contact by the hard rime", &settings::break_rime_hard, 0.f, 2.f, "%.2f"},
+    {"physics.weather.breakrimesoft", "Breaks of the contact by the soft rime", &settings::break_rime_soft, 0.f, 2.f, "%.2f"},
+    {"physics.weather.breakwetsnow", "Breaks of the contact by the wet snow", &settings::break_wet_snow, 0.f, 2.f, "%.2f"},
+    {"physics.weather.arcbrightness", "Brightness of the arcs", &settings::arc_brightness, 0.f, 4.f, "%.2f"},
 }};
 
 // what lies on the head of a rail in the open, 0..1 each: the water, the dirt of a dry spell (rust, oil, the dust of the brakes),
@@ -193,6 +219,13 @@ inline double sway_profile(double const Parameter)
 	auto const u{Parameter < 0.0 ? 0.0 : (Parameter > 1.0 ? 1.0 : Parameter)};
 	return 4.0 * u * (1.0 - u);
 }
+
+// the ice on a wire as the contact of a pantograph meets it, m: the thickness of each kind (glaze, hard rime, soft rime, wet snow)
+// weighed by how much it breaks the contact (settings::break_*)
+double contact_ice(settings const &Settings, double Glaze, double Rimehard, double Rimesoft, double Wetsnow);
+// how strong the arc struck by a break of the contact is, 0..1, by the current the pantograph carried, A: none on a coast, a full one
+// from some 600 A
+double arc_strength(double Current);
 
 // how many times a second the ice on the wire breaks the contact of a pantograph: Wireice the radial thickness of the ice, m, Plaster
 // the snow stuck to the vehicle, 0..1 (on the pantograph, it presses it less), Speed m/s, Leading the first pantograph on the wire

@@ -1225,6 +1225,12 @@ float world_weather::rails_leaves()
 void world_weather::update_snow(double const Deltatime)
 {
 	auto const weather{surface_weather()};
+	// the kinds of the ice on the wires the settings let the weather lay (physics.weather.glaze, .rimehard, .rimesoft, .wetsnow)
+	auto const &settings{Global.physics_weather};
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::glaze)] = settings.glaze;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::rime_hard)] = settings.rime_hard;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::rime_soft)] = settings.rime_soft;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::wet_snow)] = settings.wet_snow;
 	m_snow.update(Deltatime, weather);
 	m_rails.time_scale = m_snow.time_scale;
 	m_rails.update(Deltatime, weather, rails_daylight(), rails_leaves());

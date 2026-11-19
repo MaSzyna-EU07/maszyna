@@ -161,6 +161,17 @@ double wire_sway(settings const &Settings, double const Length, double const Acr
 	return std::clamp(deflection, -1.5, 1.5);
 }
 
+double contact_ice(settings const &Settings, double const Glaze, double const Rimehard, double const Rimesoft, double const Wetsnow)
+{
+	return std::max(0.0, Glaze) * Settings.break_glaze + std::max(0.0, Rimehard) * Settings.break_rime_hard + std::max(0.0, Rimesoft) * Settings.break_rime_soft +
+	       std::max(0.0, Wetsnow) * Settings.break_wet_snow;
+}
+
+double arc_strength(double const Current)
+{
+	return smoothstep(20.0, 600.0, std::abs(Current));
+}
+
 double break_rate(settings const &Settings, double const Wireice, double const Plaster, double const Speed, bool const Leading)
 {
 	auto const ice{Wireice * 1000.0}; // mm

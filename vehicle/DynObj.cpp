@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <random>
 #include <iterator>
 #include <unordered_set>
 #include "utilities/Globals.h"
@@ -37,6 +38,7 @@ http://mozilla.org/MPL/2.0/.
 #include "Console.h"
 #include "world/Traction.h"
 #include "audio/sound.h"
+#include "audio/audiorenderer.h"
 #include "model/MdlMngr.h"
 #include "model/Model3d.h"
 #include "vehicle/doorwings.h"
@@ -1578,6 +1580,39 @@ void TDynamicObject::snow_on_track( TTrackParam &Track ) {
     }
 }
 
+namespace {
+
+// the crackle of an arc struck between the strip of a pantograph and an iced wire, made where the data has no sound for it: a hiss
+// fluttering with the burning arc, with sharp cracks, coming on at once and dying away in a few tenths of a second
+std::vector<std::int16_t> arc_crackle( unsigned int const Rate ) {
+
+    std::mt19937 random { 0x5ea7u };
+    std::uniform_real_distribution<double> signed_unit { -1.0, 1.0 };
+    std::uniform_real_distribution<double> unit { 0.0, 1.0 };
+    auto const count { static_cast<std::size_t>( 0.35 * Rate ) };
+    std::vector<std::int16_t> samples( count );
+    auto const crackdecay { std::exp( -1.0 / ( 0.0015 * Rate ) ) };
+    auto crack { 0.0 };
+    auto hiss { 0.0 };
+    for( std::size_t i = 0; i < count; ++i ) {
+        auto const t { static_cast<double>( i ) / Rate };
+        auto const envelope { t < 0.004 ? t / 0.004 : std::exp( -( t - 0.004 ) / 0.12 ) };
+        // the hiss, a little brighter than white noise
+        auto const noise { signed_unit( random ) };
+        hiss = noise - 0.35 * hiss;
+        if( unit( random ) < 0.004 ) {
+            crack = ( signed_unit( random ) > 0.0 ? 1.0 : -1.0 ) * ( 0.6 + 0.4 * unit( random ) );
+        }
+        crack *= crackdecay;
+        auto const flutter { 0.6 + 0.4 * std::sin( 2.0 * M_PI * 97.0 * t ) };
+        auto const value { envelope * ( 0.45 * hiss * flutter + 0.8 * crack ) };
+        samples[ i ] = static_cast<std::int16_t>( std::clamp( value, -1.0, 1.0 ) * 0.8 * 32767.0 );
+    }
+    return samples;
+}
+
+} // namespace
+
 void TDynamicObject::rails_on_track( TTrackParam &Track ) {
 
     Track.friction_dry = MyTrack->Friction() * Global.fFriction;
@@ -1641,27 +1676,56 @@ void TDynamicObject::weather_on_vehicle( TTrackParam const &Track ) {
     }
 }
 
-bool TDynamicObject::wire_ice_break( TAnimPant &Pantograph, int const Activepantographs, double const Deltatime ) {
+bool TDynamicObject::wire_ice_break( TAnimPant &Pantograph, int const Index, int const Activepantographs, double const Current, double const Deltatime ) {
 
     auto const &settings { Global.physics_weather };
     if( ( false == settings.enabled ) || ( false == settings.pantographs )
      || ( Pantograph.hvPowerWire == nullptr ) || ( MyTrack->eEnvironment == e_tunnel ) ) {
         Pantograph.contact_break = 0.0;
+        Pantograph.arc = 0.f;
         return false;
     }
     if( Pantograph.contact_break > 0.0 ) {
         Pantograph.contact_break -= Deltatime;
+        if( Pantograph.contact_break <= 0.0 ) {
+            Pantograph.arc = 0.f;
+        }
+        else if( Pantograph.arc > 0.f ) {
+            // the arc goes with the pantograph
+            Pantograph.arc_position = pantograph_head( Pantograph );
+        }
         return true;
     }
     auto const &snow { simulation::Environment.weather().snow() };
+    using kind = snow_cover::ice_kind;
+    auto const ice {
+        weather_physics::contact_ice(
+            settings, snow.wire_ice( kind::glaze ), snow.wire_ice( kind::rime_hard ), snow.wire_ice( kind::rime_soft ), snow.wire_ice( kind::wet_snow ) ) };
     // the first pantograph on the wire in the direction of the travel scrapes the ice off for the ones behind it
     auto const leading { ( Activepantographs < 2 ) || ( Pantograph.vPos.x * MoverParameters->V >= 0.0 ) };
-    auto const rate { weather_physics::break_rate( settings, snow.wire_ice(), snow.plaster(), MoverParameters->V, leading ) };
+    auto const rate { weather_physics::break_rate( settings, ice, snow.plaster(), MoverParameters->V, leading ) };
     if( ( rate <= 0.0 ) || ( Random() >= rate * Deltatime ) ) { return false; }
-    Pantograph.contact_break = weather_physics::break_length( settings, snow.wire_ice(), Random() );
+    Pantograph.contact_break = weather_physics::break_length( settings, ice, Random() );
     Pantograph.contact_broken = true;
     ++contact_breaks;
+    // a break under a current strikes an arc
+    Pantograph.arc = ( settings.arcs ? static_cast<float>( weather_physics::arc_strength( Current ) ) : 0.f );
+    if( Pantograph.arc > 0.f ) {
+        Pantograph.arc_position = pantograph_head( Pantograph );
+        if( Index < static_cast<int>( m_pantographsounds.size() ) ) {
+            auto &sound { m_pantographsounds[ Index ].arc };
+            if( false == sound.empty() ) {
+                sound.gain( 0.4f + 0.6f * Pantograph.arc );
+                sound.play();
+            }
+        }
+    }
     return true;
+}
+
+glm::dvec3 TDynamicObject::pantograph_head( TAnimPant const &Pantograph ) const {
+    // where the strip meets the wire: the base of the pantograph and the height of the wire over it (vehicle_table::update_traction())
+    return GetPosition() + VectorLeft() * Pantograph.vPos.z + VectorUp() * ( Pantograph.vPos.y + Pantograph.PantTraction ) + VectorFront() * Pantograph.vPos.x;
 }
 
 void TDynamicObject::ABuCheckMyTrack()
@@ -4011,7 +4075,7 @@ bool TDynamicObject::Update(double dt, double dt1)
             }
             PantDiff = p->PantTraction - p->PantWys; // docelowy-aktualny
             // the ice on the wire breaks the contact of a pantograph touching it now and then
-            auto const icebreak { ( PantDiff < 0.01 ) && wire_ice_break( *p, activepantographs, dt1 ) };
+            auto const icebreak { ( PantDiff < 0.01 ) && wire_ice_break( *p, i, activepantographs, fPantCurrent, dt1 ) };
             switch (i) // numer pantografu
             { // trzeba usunąć to rozróżnienie
             case 0:
@@ -6502,6 +6566,16 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     }
                 }
 
+				else if( token == "pantographarc:" ) {
+					// the crackle of an arc at a break of the contact (physics.weather.arcs)
+                    sound_source pantographarc { sound_placement::external, 250.f };
+                    pantographarc.deserialize( parser, sound_type::single );
+                    pantographarc.owner( this );
+                    for( auto &pantograph : m_pantographsounds ) {
+                        pantograph.arc = pantographarc;
+                    }
+                }
+
 				else if( token == "pantographdown:" ) {
 					// pliki dzwiekow pantografow
                     sound_source pantographdown { sound_placement::external };
@@ -7394,6 +7468,14 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     -pants[ pantographindex ].fParamPants->vPos.x ) };
             pantographsounds.sPantUp.offset( pantographoffset );
             pantographsounds.sPantDown.offset( pantographoffset );
+            if( pantographsounds.arc.empty() ) {
+                // no sound of the arc in the .mmd: the one the simulator makes (or sounds/pantograph_arc of the data)
+                unsigned int constexpr rate { 22050 };
+                audio::renderer.generated_buffer( "pantograph_arc", arc_crackle( rate ), rate );
+                pantographsounds.arc.deserialize( std::string { "pantograph_arc" }, sound_type::single );
+                pantographsounds.arc.owner( this );
+            }
+            pantographsounds.arc.offset( pantographoffset );
             ++pantographindex;
         }
     }

@@ -254,6 +254,37 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 			}
 		}
 
+		// the arcs at the pantographs (physics.weather.arcs): a blue-white light flickering at the wire, by day as well
+		if ((range > 0.f) && Global.physics_weather.arcs)
+		{
+			for (auto *vehicle : simulation::Vehicles.sequence())
+			{
+				if ((vehicle->pants == nullptr) || (glm::length(vehicle->GetPosition() - Camera) > range + vehicle->radius()))
+				{
+					continue;
+				}
+				for (int index = 0; index < vehicle->iAnimType[ANIM_PANTS]; ++index)
+				{
+					auto const *pantograph{vehicle->pants[index].fParamPants};
+					if ((pantograph == nullptr) || (pantograph->arc <= 0.f))
+					{
+						continue;
+					}
+					light arc;
+					arc.position = pantograph->arc_position;
+					// the arc flickers from frame to frame
+					auto const flicker{0.55f + 0.45f * static_cast<float>(Random())};
+					arc.color = glm::vec3{0.70f, 0.82f, 1.00f} * (60.f * Global.physics_weather.arc_brightness * pantograph->arc * flicker);
+					arc.range = std::min(light_range(arc.color), 60.f);
+					arc.radius = 0.05f;
+					arc.soft_falloff = true;
+					arc.cast_shadows = false;
+					m_lights.emplace_back(arc);
+					++m_vehiclecount;
+				}
+			}
+		}
+
 		// the most important lights first: when the light buffer or the list of a cluster fills up, the others are left out
 		std::sort(std::begin(m_lights), std::end(m_lights), [&Camera](light const &Left, light const &Right) {
 			return glm::length2(Left.position - Camera) / std::max(max_component(Left.color), 1e-6f) < glm::length2(Right.position - Camera) / std::max(max_component(Right.color), 1e-6f);

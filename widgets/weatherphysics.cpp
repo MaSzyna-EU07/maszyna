@@ -64,7 +64,12 @@ void ui::weatherphysics_panel::render_rails()
 	auto const adhesion{weather_physics::adhesion_factor(Global.physics_weather, rails, 0.0, -1.0)};
 	ImGui::Text(STR_C("Adhesion of a rail no wheels went over: %.0f%% of the dry one"), adhesion * 100.0);
 	ImGui::Text(STR_C("The ai drivers and the roads go by: %.0f%%"), Global.FrictionWeatherFactor * 100.f);
-	ImGui::Text(STR_C("Ice on the wires: %.1f mm"), weather.snow().wire_ice() * 1000.f);
+	auto const &snow{weather.snow()};
+	using icekind = snow_cover::ice_kind;
+	ImGui::Text(STR_C("Ice on the wires: %.1f mm"), snow.wire_ice() * 1000.f);
+	ImGui::Text(
+	    STR_C("glaze %.1f, hard rime %.1f, soft rime %.1f, wet snow %.1f mm"), snow.wire_ice(icekind::glaze) * 1000.f, snow.wire_ice(icekind::rime_hard) * 1000.f,
+	    snow.wire_ice(icekind::rime_soft) * 1000.f, snow.wire_ice(icekind::wet_snow) * 1000.f);
 	// a span of 65 m square across the wind as it blows now
 	auto const wind{simulation::Environment.wind()};
 	auto const across{std::hypot(wind.x, wind.z)};
@@ -94,4 +99,8 @@ void ui::weatherphysics_panel::render_vehicle()
 	if (mover.Hamulec != nullptr)
 		ImGui::Text(STR_C("Brakes: water %.2f, ice %.2f, friction %.0f%%"), mover.BrakeWeather.water, mover.BrakeWeather.ice, mover.Hamulec->weather_factor() * 100.0);
 	ImGui::Text(STR_C("Breaks of the contact of the pantographs: %d"), vehicle->contact_breaks);
+	if (vehicle->pants != nullptr)
+		for (int index = 0; index < vehicle->iAnimType[ANIM_PANTS]; ++index)
+			if (auto const *pantograph{vehicle->pants[index].fParamPants}; (pantograph != nullptr) && (pantograph->arc > 0.f))
+				ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.f, 1.f), STR_C("Arc at the pantograph %d: %.0f%%"), index + 1, pantograph->arc * 100.f);
 }

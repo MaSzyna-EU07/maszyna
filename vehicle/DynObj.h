@@ -115,6 +115,10 @@ class TAnimPant
     // since the contact last held (the contact coming back after it isn't the pantograph coming up to the wire)
     double contact_break{0.0};
     bool contact_broken{false};
+    // the arc a break under a current strikes (physics.weather.arcs): how strong it is now, 0..1, and where, world space (the head of
+    // the pantograph at the wire)
+    float arc{0.f};
+    glm::dvec3 arc_position{0.0};
     // double fHorizontal; //Ra 2015-01: położenie drutu względem osi pantografu
 
     // factory ktore mozna nadpisac z fiza
@@ -407,6 +411,8 @@ private:
         // TODO: split pantograph sound into one for contact of arm with the wire, and electric arc sound
         sound_source sPantUp { sound_placement::external };
         sound_source sPantDown { sound_placement::external };
+        // the crackle of an arc at a break of the contact ("pantographarc:" of the .mmd, else made by the simulator)
+        sound_source arc { sound_placement::external, 250.f };
     };
 
     struct door_sounds {
@@ -662,7 +668,11 @@ private:
     // the weather the vehicle runs in (TMoverParameters::RunningWeather): what falls, the snow around, the wind, the air
     void weather_on_vehicle( TTrackParam const &Track );
     // whether the ice on the wire breaks the contact of a pantograph in this step (physics.weather.pantographs)
-    bool wire_ice_break( TAnimPant &Pantograph, int const Activepantographs, double const Deltatime );
+    bool wire_ice_break( TAnimPant &Pantograph, int const Index, int const Activepantographs, double const Current, double const Deltatime );
+  public:
+    // where the strip of a pantograph meets the wire, world space
+    glm::dvec3 pantograph_head( TAnimPant const &Pantograph ) const;
+  private:
 
     std::string rTypeName; // nazwa typu pojazdu
 	std::string rReplacableSkin; // nazwa tekstury pojazdu

@@ -187,6 +187,8 @@ class scene_walk
 	void Render_Alpha(TTraction *Traction);
 	void Render_Alpha(scene::lines_node const &Lines);
 	bool Render_Alpha(TDynamicObject *Dynamic);
+	// the flashes of the arcs at the pantographs of a vehicle (physics.weather.arcs), where gfx::local_lights puts their light
+	void Render_arcs(TDynamicObject const *Dynamic);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);

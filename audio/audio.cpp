@@ -287,6 +287,30 @@ buffer_manager::create( std::string const &Filename ) {
     return null_handle;
 }
 
+audio::buffer_handle
+buffer_manager::create_generated( std::string const &Name, std::vector<std::int16_t> const &Samples, unsigned int const Rate ) {
+
+    auto const key { paths::sounds + ToLower( Name ) };
+    if( auto const lookup { find_buffer( key ) }; lookup != null_handle ) {
+        return lookup;
+    }
+    if( auto const file { find_file( key ) }; false == file.empty() ) {
+        return emplace( file );
+    }
+    openal_buffer buffer;
+    buffer.name = key;
+    buffer.rate = Rate;
+    decoded_sound sound;
+    sound.samples = Samples;
+    sound.rate = Rate;
+    buffer.id = upload_sound( sound );
+    buffer_handle const handle { m_buffers.size() };
+    m_buffers.emplace_back( std::move( buffer ) );
+    m_buffermappings.emplace( key, handle );
+    WriteLog( "sound: made \"" + key + "\"" );
+    return handle;
+}
+
 // provides direct access to a specified buffer
 audio::openal_buffer const &
 buffer_manager::buffer( audio::buffer_handle const Buffer ) const {

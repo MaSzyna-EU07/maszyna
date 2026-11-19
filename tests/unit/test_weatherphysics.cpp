@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "environment/railsurface.h"
+#include "environment/psychrometry.h"
 #include "McZapkie/MOVER.h"
 #include "McZapkie/weatherphysics.h"
 #include "utilities/Globals.h"
@@ -194,4 +195,63 @@ TEST_CASE("weather physics: a gale blows a span of the catenary off the strip of
 	CHECK(weather_physics::sway_profile(0.0) == 0.0);
 	CHECK(weather_physics::sway_profile(0.5) == 1.0);
 	CHECK(weather_physics::sway_profile(1.0) == 0.0);
+}
+
+namespace {
+
+// a freezing fog of the given frost and wind, Hours of it in steps of a minute
+snow_cover fog(float const Temperature, float const Wind, double const Hours) {
+	snow_cover snow;
+	snow_weather weather;
+	weather.temperature = Temperature;
+	weather.humidity = 1.f;
+	weather.wet_bulb = Temperature;
+	weather.fog = 1.f;
+	weather.wind = {Wind, 0.f};
+	for (int step = 0; step < static_cast<int>(Hours * 60.0); ++step)
+		snow.update(60.0, weather);
+	return snow;
+}
+
+} // namespace
+
+TEST_CASE("weather physics: a freezing fog in a wind lays hard rime on the wires, in a calm the soft one") {
+	using kind = snow_cover::ice_kind;
+	auto const windy{fog(-5.f, 6.f, 8.0)};
+	auto const calm{fog(-5.f, 0.5f, 6.0)};
+	CAPTURE(windy.wire_ice(kind::rime_hard));
+	CAPTURE(calm.wire_ice(kind::rime_soft));
+	CHECK(windy.wire_ice(kind::rime_hard) > 0.001f);
+	CHECK(windy.wire_ice(kind::rime_hard) > windy.wire_ice(kind::rime_soft) * 3.f);
+	CHECK(calm.wire_ice(kind::rime_soft) > 0.0005f);
+	CHECK(calm.wire_ice(kind::rime_hard) == 0.f);
+	CHECK(calm.wire_ice(kind::glaze) == 0.f);
+	// the soft rime is light, the hard rime denser
+	CHECK(calm.wire_ice_density() < 200.f);
+	CHECK(windy.wire_ice_density() > 300.f);
+}
+
+TEST_CASE("weather physics: a kind of the ice left out by the settings doesn't grow") {
+	using kind = snow_cover::ice_kind;
+	snow_cover snow;
+	snow.wire_ice_kinds[static_cast<int>(kind::glaze)] = false;
+	snow_weather rain;
+	rain.temperature = -2.f;
+	rain.wet_bulb = psychrometry::wet_bulb(-2.f, rain.humidity);
+	rain.rainfall = 1.f;
+	for (int step = 0; step < 180; ++step)
+		snow.update(60.0, rain);
+	CHECK(snow.wire_ice() == 0.f);
+}
+
+TEST_CASE("weather physics: the glaze breaks the contact most, the soft rime least; an arc needs a current") {
+	auto const glaze{weather_physics::contact_ice(defaults, 0.002, 0.0, 0.0, 0.0)};
+	auto const soft{weather_physics::contact_ice(defaults, 0.0, 0.0, 0.002, 0.0)};
+	CHECK(glaze == doctest::Approx(0.002));
+	CHECK(soft == doctest::Approx(0.002 * defaults.break_rime_soft));
+	CHECK(weather_physics::break_rate(defaults, soft, 0.0, 25.0, true) < weather_physics::break_rate(defaults, glaze, 0.0, 25.0, true));
+	CHECK(weather_physics::arc_strength(0.0) == 0.0);
+	CHECK(weather_physics::arc_strength(-800.0) == 1.0);
+	CHECK(weather_physics::arc_strength(300.0) > 0.3);
+	CHECK(weather_physics::arc_strength(300.0) < 0.7);
 }

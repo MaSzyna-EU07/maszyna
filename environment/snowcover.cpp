@@ -206,30 +206,86 @@ void snow_cover::stick(double const Deltatime, snow_weather const &Weather)
 	m_plaster *= static_cast<float>(std::exp(-loss * Deltatime));
 }
 
+float snow_cover::wire_ice() const
+{
+	auto total{0.f};
+	for (auto const ice : m_wireice)
+		total += ice;
+	return total;
+}
+
+float snow_cover::wire_ice_density() const
+{
+	// the densities of the kinds, in the order of ice_kind
+	constexpr float densities[]{900.f, 450.f, 120.f, 550.f};
+	auto mass{0.f};
+	auto total{0.f};
+	for (int kind = 0; kind < static_cast<int>(ice_kind::count); ++kind)
+	{
+		mass += m_wireice[kind] * densities[kind];
+		total += m_wireice[kind];
+	}
+	return total > 0.f ? mass / total : 900.f;
+}
+
 void snow_cover::ice(double const Deltatime, snow_weather const &Weather)
 {
 	auto const temperature{Weather.temperature};
 	auto const speed{glm::length(m_wind)};
-	// the radial growth of each kind, m/s, and its density
+	auto const step{static_cast<float>(Deltatime)};
+	auto &glaze{m_wireice[static_cast<int>(ice_kind::glaze)]};
+	auto &hard{m_wireice[static_cast<int>(ice_kind::rime_hard)]};
+	auto &soft{m_wireice[static_cast<int>(ice_kind::rime_soft)]};
+	auto &sleeve{m_wireice[static_cast<int>(ice_kind::wet_snow)]};
+	auto const allowed = [this](ice_kind const Kind) { return wire_ice_kinds[static_cast<int>(Kind)]; };
+
+	// the growth of each kind, the radial thickness, m/s
 	// glaze: rain or drizzle freezing on the wires, about a third of the precipitation for a cylinder
-	auto const glaze{((temperature <= 0.f) && (temperature > -8.f)) ? Weather.rainfall * 1.3e-3f / 3600.f : 0.f};
-	// rime: the droplets of a freezing fog caught by the wire in the wind
-	// (or of air saturated without one: hoarfrost)
-	auto const moist{std::max(Weather.fog, std::clamp((Weather.humidity - 0.95f) / 0.05f, 0.f, 1.f) * 0.4f)};
-	auto const rime{(temperature < -1.f) ? moist * std::min(speed, 10.f) / 10.f * 0.3e-3f / 3600.f : 0.f};
-	// a sleeve of wet snow turning round the wire
-	auto const sleeve{((Weather.wet_bulb > -1.f) && (Weather.wet_bulb < 1.2f) && (Weather.snowfall > 0.f)) ? m_falling * 2.0e-3f / 3600.f : 0.f};
-	auto const growth{(glaze + rime + sleeve) * static_cast<float>(Deltatime)};
-	if (growth > 0.f)
+	if (allowed(ice_kind::glaze) && (temperature <= 0.f) && (temperature > -8.f))
+		glaze += Weather.rainfall * 1.3e-3f / 3600.f * step;
+	// rime: the droplets of a freezing fog caught by the wire. in a wind and a moderate frost they freeze on as they hit, into a
+	// dense hard rime; in a calm or a hard frost they make the feathery soft rime, and the saturated air without a fog the
+	// hoarfrost
+	auto const fog{std::clamp(Weather.fog, 0.f, 1.f)};
+	auto const saturated{std::clamp((Weather.humidity - 0.95f) / 0.05f, 0.f, 1.f)};
+	if (temperature < -1.f)
 	{
-		auto const density{(glaze * 900.f + rime * 300.f + sleeve * 500.f) / (glaze + rime + sleeve)};
-		auto const total{m_wireice + growth};
-		m_wireicedensity = (m_wireice * m_wireicedensity + growth * density) / total;
-		m_wireice = std::min(total, THICKEST_WIRE_ICE);
+		// the share of the hard rime: 1 in a wind of 4 m/s and more and a frost down to -10, none in a calm or past -14
+		auto const hardshare{smoothstep(2.f, 4.f, speed) * smoothstep(-14.f, -10.f, temperature)};
+		if (allowed(ice_kind::rime_hard))
+			hard += fog * hardshare * std::min(speed, 10.f) / 10.f * 0.3e-3f / 3600.f * step;
+		if (allowed(ice_kind::rime_soft))
+			soft += (fog * (1.f - hardshare) * 0.25e-3f + saturated * 0.4f * 0.1e-3f) / 3600.f * step;
 	}
-	// it melts in the warmth and sublimates slowly in dry air
-	auto loss{0.15e-3 * (1.0 - Weather.humidity) / HOUR + 0.02e-3 / HOUR};
-	if (temperature > 0.f)
-		loss += 1.0e-3 * temperature / HOUR;
-	m_wireice = std::max(0.f, m_wireice - static_cast<float>(loss * Deltatime));
+	// a sleeve of wet snow turning round the wire
+	if (allowed(ice_kind::wet_snow) && (Weather.wet_bulb > -1.f) && (Weather.wet_bulb < 1.2f) && (Weather.snowfall > 0.f))
+		sleeve += m_falling * 2.0e-3f / 3600.f * step;
+
+	// what goes: a kind left out melts away at once
+	for (int kind = 0; kind < static_cast<int>(ice_kind::count); ++kind)
+		if (false == wire_ice_kinds[kind])
+			m_wireice[kind] = 0.f;
+	auto const dry{0.15e-3f * (1.f - Weather.humidity) / 3600.f};
+	auto const thaw{(temperature > 0.f) ? 1.0e-3f * temperature / 3600.f : 0.f};
+	// the glaze melts in the warmth and sublimates slowly in dry air
+	glaze = std::max(0.f, glaze - (dry + 0.02e-3f / 3600.f + thaw) * step);
+	// the hard rime the same, and a gale breaks it off
+	hard = std::max(0.f, hard - (dry + 0.02e-3f / 3600.f + thaw) * step);
+	if (speed > 15.f)
+		hard *= static_cast<float>(std::exp(-Deltatime * (speed - 15.f) / 3600.f));
+	// the soft rime sublimates three times as fast, melts at once and a wind of 8 m/s shakes it off
+	soft = std::max(0.f, soft - (3.f * dry + 0.05e-3f / 3600.f + 3.f * thaw) * step);
+	if (speed > 8.f)
+		soft *= static_cast<float>(std::exp(-Deltatime * (speed - 8.f) / 600.f));
+	// the wet snow slides off in a thaw and in the rain, and the wind tears it off
+	sleeve = std::max(0.f, sleeve - (dry + thaw) * step);
+	if ((temperature > 0.5f) || (Weather.rainfall > 0.f))
+		sleeve *= static_cast<float>(std::exp(-Deltatime / 1800.0));
+	if (speed > 12.f)
+		sleeve *= static_cast<float>(std::exp(-Deltatime * (speed - 12.f) / 1800.0));
+	// heavier sleeves break off
+	auto const total{wire_ice()};
+	if (total > THICKEST_WIRE_ICE)
+		for (auto &ice : m_wireice)
+			ice *= THICKEST_WIRE_ICE / total;
 }

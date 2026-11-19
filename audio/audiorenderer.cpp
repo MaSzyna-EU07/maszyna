@@ -300,6 +300,12 @@ openal_renderer::fetch_buffer( std::string const &Filename ) {
     return m_buffers.create( Filename );
 }
 
+audio::buffer_handle
+openal_renderer::generated_buffer( std::string const &Name, std::vector<std::int16_t> const &Samples, unsigned int const Rate ) {
+
+    return m_buffers.create_generated( Name, Samples, Rate );
+}
+
 // provides direct access to a specified buffer
 audio::openal_buffer const &
 openal_renderer::buffer( audio::buffer_handle const Buffer ) const {

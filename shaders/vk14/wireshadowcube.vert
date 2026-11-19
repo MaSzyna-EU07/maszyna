@@ -11,6 +11,7 @@
 // shadows
 #include "common.glsl"
 layout(location = 0) in vec3 v_vert;
+layout(location = 1) in vec3 v_normal;
 layout(location = 2) in vec2 v_coord;
 
 layout(location = 2) out vec2 f_coord;
@@ -24,7 +25,7 @@ const vec3 face_forward[6] = vec3[](vec3(1.0, 0.0, 0.0), vec3(-1.0, 0.0, 0.0), v
 
 void main()
 {
-	vec3 position = (effective_modelview() * vec4(wire_sway(v_vert, v_coord), 1.0f)).xyz;
+	vec3 position = (effective_modelview() * vec4(wire_sway(v_vert, v_normal, v_coord), 1.0f)).xyz;
 	int face = int(gl_ViewIndex);
 	float nearplane = (shadow_fit.y > 0.0) ? shadow_fit.y : LOCAL_SHADOW_NEAR;
 	gl_Position = vec4(dot(position, face_right[face]), dot(position, face_up[face]), nearplane, dot(position, face_forward[face]));

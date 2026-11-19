@@ -15,7 +15,7 @@ layout(location = 3) out vec4 f_pos;
 void main()
 {
 	// the wind blowing the span aside
-	vec3 vertex = wire_sway(v_vert, v_coord);
+	vec3 vertex = wire_sway(v_vert, v_normal, v_coord);
 	f_pos = modelview * vec4(vertex, 1.0f);
 	f_clip_pos = (projection * modelview) * vec4(vertex, 1.0f);
 	f_clip_future_pos = (projection * future * modelview) * vec4(vertex, 1.0f);

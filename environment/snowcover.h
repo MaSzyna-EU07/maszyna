@@ -106,17 +106,29 @@ class snow_cover
 	{
 		return m_plasterwind;
 	}
-	// the ice on the wires of the catenary and of the lines, the radial thickness, m: the glaze of freezing rain and drizzle, the
-	// rime of a freezing fog and a sleeve of wet snow; and its density, kg/m3 (glaze about 900, rime 200..600, wet snow 400..700),
-	// for the weight on the wires and the contact of the pantograph to be made of later
-	float wire_ice() const
+	// what freezes on the wires of the catenary and of the lines, each kind by its radial thickness, m:
+	// - the glaze (gołoledź, the icing of the wires): freezing rain and drizzle, clear, smooth and hard, about 900 kg/m3
+	// - the hard rime (szadź twarda): the droplets of a freezing fog caught in a wind, -1..-12 degrees, white and dense, 300..600
+	// - the soft rime and the hoarfrost (szadź miękka, sadź; szron): a fog or a saturated air in a calm or a hard frost, feathery
+	//   and light, 50..200, the wind shakes it off
+	// - the sleeve of wet snow turned round the wire, 400..700, falling off in a thaw
+	enum class ice_kind
 	{
-		return m_wireice;
-	}
-	float wire_ice_density() const
+		glaze,
+		rime_hard,
+		rime_soft,
+		wet_snow,
+		count
+	};
+	float wire_ice(ice_kind const Kind) const
 	{
-		return m_wireicedensity;
+		return m_wireice[static_cast<int>(Kind)];
 	}
+	// all of it, m, and its density, kg/m3
+	float wire_ice() const;
+	float wire_ice_density() const;
+	// the kinds the weather lays on the wires (physics.weather.glaze, .rimehard, .rimesoft, .wetsnow); a kind left out melts away
+	bool wire_ice_kinds[static_cast<int>(ice_kind::count)]{true, true, true, true};
 	// the snow goes this many times faster than the time of the simulation (to see it pile up and drift, from the debug window)
 	float time_scale{1.f};
 
@@ -139,6 +151,5 @@ class snow_cover
 	float m_falling{0.f};
 	float m_plaster{0.f};
 	glm::vec2 m_plasterwind{0.f, 6.f};
-	float m_wireice{0.f};
-	float m_wireicedensity{900.f};
+	float m_wireice[static_cast<int>(ice_kind::count)]{0.f, 0.f, 0.f, 0.f};
 };
