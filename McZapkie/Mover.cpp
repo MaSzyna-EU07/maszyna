@@ -8831,6 +8831,19 @@ void TMoverParameters::CheckEIMIC(double dt)
 	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
+bool TMoverParameters::UpdateStopBrakeRelease(double const Demand, double const Dt)
+{
+	if (Demand <= 0.0)
+	{
+		StopBrakeReleaseTimer = 0.0;
+		return false;
+	}
+	// the step the demand rises above 0 is time 0 of it, so without the delay the brake lets go at once, as it always did
+	auto const released{StopBrakeReleaseTimer >= StopBrakeReleaseDelay};
+	StopBrakeReleaseTimer += Dt;
+	return released;
+}
+
 void TMoverParameters::CheckSpeedCtrl(double dt)
 {
 	if (EIMCtrlType == 0)
@@ -12584,6 +12597,7 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 	extract_value(InactiveCabFlag, "InactiveCabFlag", line, "");
 
 	extract_value(StopBrakeDecc, "SBD", line, "");
+	extract_value(StopBrakeReleaseDelay, "SBDReleaseDelay", line, ""); // the holding brake waits for the power demand this long, s
 	extract_value(ReleaseParkingBySpringBrake, "ReleaseParkingBySpringBrake", line, "");
 	extract_value(ReleaseParkingBySpringBrakeWhenDoorIsOpen, "ReleaseParkingBySpringBrakeWhenDoorIsOpen", line, "");
 	extract_value(SpringBrakeCutsOffDrive, "SpringBrakeCutsOffDrive", line, "");
