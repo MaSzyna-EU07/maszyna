@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/glm.hpp>
 
 #include "environment/psychrometry.h"
+#include "environment/railsurface.h"
 #include "environment/snowcover.h"
 
 class cParser;
@@ -205,6 +206,15 @@ class world_weather
 	{
 		return m_snow;
 	}
+	// what lies on the heads of the rails and the surfaces in the open: the water, the dirt, the ice, the leaves
+	rail_surface const &rails() const
+	{
+		return m_rails;
+	}
+	rail_surface &rails()
+	{
+		return m_rails;
+	}
 	// the mean wind at the ground the weather describes, world x and z of where it blows to, m/s; without a described wind the one
 	// the clouds go with, slowed down as it is near the ground
 	glm::vec2 ground_wind() const;
@@ -238,6 +248,11 @@ class world_weather
 	// the snow of a description applied, and the snow cover moved on by a step
 	void apply_snow();
 	void update_snow(double const Deltatime);
+	// the weather at the ground the snow cover and the rails go by
+	snow_weather surface_weather() const;
+	// how light the day is for the rails, 0..1, and how many leaves fall now
+	static float rails_daylight();
+	static float rails_leaves();
 	// the air temperature of the time of the day, where the weather gives its range, and the weather name after what falls now
 	void update_air();
 
@@ -247,6 +262,7 @@ class world_weather
 	weather_conditions m_target;
 	weather_conditions m_current;
 	snow_cover m_snow;
+	rail_surface m_rails;
 	glm::vec2 m_surfacewind{0.f};
 	std::vector<std::string> m_scenerytokens; // the weather sections of the scenery, read once its date is known (init())
 	bool m_snowing{false}; // what the weather name was made for

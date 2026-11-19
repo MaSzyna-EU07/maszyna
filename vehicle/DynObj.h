@@ -111,6 +111,10 @@ class TAnimPant
     TTraction *hvPowerWire; // aktualnie podczepione druty, na razie tu
     float fWidthExtra; // dodatkowy rozmiar poziomy poza część roboczą (fWidth)
     float fHeightExtra[5]; //łamana symulująca kształt nabieżnika
+    // the ice on the wire (physics.weather.pantographs): seconds left of a break of the contact, and a break having been there
+    // since the contact last held (the contact coming back after it isn't the pantograph coming up to the wire)
+    double contact_break{0.0};
+    bool contact_broken{false};
     // double fHorizontal; //Ra 2015-01: położenie drutu względem osi pantografu
 
     // factory ktore mozna nadpisac z fiza
@@ -641,6 +645,7 @@ private:
   public:
     int iHornWarning; // numer syreny do użycia po otrzymaniu sygnału do jazdy
     bool bEnabled; // Ra: wyjechał na portal i ma być usunięty
+    int contact_breaks{0}; // breaks of the contact of its pantographs by the ice on the wires (physics.weather.pantographs)
   protected:
     int iNumAxles; // ilość osi
     std::string asModel;
@@ -651,6 +656,13 @@ private:
     // the snow on the track under the axles into Track (the more of the two: the leading one meets it), the places the moving
     // vehicle goes over pushed clear of it (TTrack::snow_at(), physics.snow)
     void snow_on_track( TTrackParam &Track );
+    // the friction of the heads of the rails under the vehicle, as the weather (McZapkie/weatherphysics.h) and the wheels gone over
+    // them left them; the wheels of a moving vehicle go over them now
+    void rails_on_track( TTrackParam &Track );
+    // the weather the vehicle runs in (TMoverParameters::RunningWeather): what falls, the snow around, the wind, the air
+    void weather_on_vehicle( TTrackParam const &Track );
+    // whether the ice on the wire breaks the contact of a pantograph in this step (physics.weather.pantographs)
+    bool wire_ice_break( TAnimPant &Pantograph, int const Activepantographs, double const Deltatime );
 
     std::string rTypeName; // nazwa typu pojazdu
 	std::string rReplacableSkin; // nazwa tekstury pojazdu

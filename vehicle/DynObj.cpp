@@ -1578,6 +1578,92 @@ void TDynamicObject::snow_on_track( TTrackParam &Track ) {
     }
 }
 
+void TDynamicObject::rails_on_track( TTrackParam &Track ) {
+
+    Track.friction_dry = MyTrack->Friction() * Global.fFriction;
+    auto const &settings { Global.physics_weather };
+    if( ( false == settings.enabled ) || ( false == settings.adhesion ) || ( ( MyTrack->iCategoryFlag & 1 ) == 0 ) ) {
+        // as before: the weather name takes a share off, the roads always so
+        Track.friction = Track.friction_dry * Global.FrictionWeatherFactor;
+        return;
+    }
+    auto const &rails { simulation::Environment.weather().rails().state() };
+    auto factor { 1.0 };
+    for( auto *axle : { &Axle0, &Axle1 } ) {
+        auto const *track { axle->GetTrack() };
+        if( ( track == nullptr ) || ( ( track->iCategoryFlag & 1 ) == 0 ) ) { continue; }
+        auto const distance { axle->GetTranslation() };
+        // a tunnel keeps its rails dry and clean
+        auto const open { track->eEnvironment != e_tunnel };
+        auto const snow { open ? track->snow_at( distance ) : 0.0 };
+        // the worse of the two: the leading axle, on the rail no wheels went over lately
+        factor = std::min(
+            factor,
+            weather_physics::adhesion_factor( settings, open ? rails : weather_physics::railhead{}, snow, track->since_wheels( distance ) ) );
+    }
+    Track.friction = Track.friction_dry * factor;
+    if( std::abs( MoverParameters->V ) > 0.05 ) {
+        for( auto *axle : { &Axle0, &Axle1 } ) {
+            if( auto *track { axle->GetTrack() }; ( track != nullptr ) && ( ( track->iCategoryFlag & 1 ) != 0 ) ) {
+                track->wheels_passed( axle->GetTranslation() );
+            }
+        }
+    }
+}
+
+void TDynamicObject::weather_on_vehicle( TTrackParam const &Track ) {
+
+    auto &weather { MoverParameters->RunningWeather };
+    weather = TWeatherParam{};
+    weather.temperature = Global.AirTemperature;
+    weather.air_density = weather_physics::air_density( weather.temperature );
+    if( false == Global.physics_weather.enabled ) { return; }
+    // in a tunnel no rain, no snow and no wind
+    if( MyTrack->eEnvironment == e_tunnel ) { return; }
+    // what falls, as the renderers draw it and the snow cover and the rails take it (world_weather::surface_weather())
+    auto const &environment { simulation::Environment.weather() };
+    auto const intensity { static_cast<double>( std::clamp( Global.Overcast - 1.f, 0.f, 1.f ) ) };
+    auto const snowing { psychrometry::is_snow( environment.falling() ) };
+    weather.rain = ( snowing ? 0.0 : intensity );
+    // the snow around the running gear: falling, blown along the ground, thrown up from the track
+    auto const lying { std::clamp( Track.snow / 0.05, 0.0, 1.0 ) };
+    weather.snow = std::max( { ( snowing ? intensity : 0.0 ), static_cast<double>( environment.snow().blowing() ), lying } );
+    // the wind of the simulation, the one the rain on the windscreens and the particles drift with
+    auto const wind { simulation::Environment.wind() };
+    auto const front3 { VectorFront() };
+    glm::dvec2 front { front3.x, front3.z };
+    auto const length { glm::length( front ) };
+    if( length > 1e-3 ) {
+        front /= length;
+        glm::dvec2 const air { wind.x, wind.z };
+        weather.wind_along = glm::dot( air, front );
+        weather.wind_across = std::abs( air.x * front.y - air.y * front.x );
+    }
+}
+
+bool TDynamicObject::wire_ice_break( TAnimPant &Pantograph, int const Activepantographs, double const Deltatime ) {
+
+    auto const &settings { Global.physics_weather };
+    if( ( false == settings.enabled ) || ( false == settings.pantographs )
+     || ( Pantograph.hvPowerWire == nullptr ) || ( MyTrack->eEnvironment == e_tunnel ) ) {
+        Pantograph.contact_break = 0.0;
+        return false;
+    }
+    if( Pantograph.contact_break > 0.0 ) {
+        Pantograph.contact_break -= Deltatime;
+        return true;
+    }
+    auto const &snow { simulation::Environment.weather().snow() };
+    // the first pantograph on the wire in the direction of the travel scrapes the ice off for the ones behind it
+    auto const leading { ( Activepantographs < 2 ) || ( Pantograph.vPos.x * MoverParameters->V >= 0.0 ) };
+    auto const rate { weather_physics::break_rate( settings, snow.wire_ice(), snow.plaster(), MoverParameters->V, leading ) };
+    if( ( rate <= 0.0 ) || ( Random() >= rate * Deltatime ) ) { return false; }
+    Pantograph.contact_break = weather_physics::break_length( settings, snow.wire_ice(), Random() );
+    Pantograph.contact_broken = true;
+    ++contact_breaks;
+    return true;
+}
+
 void TDynamicObject::ABuCheckMyTrack()
 { // Funkcja przypisujaca obiekt
     // prawidlowej tablicy Dynamics,
@@ -3264,11 +3350,13 @@ bool TDynamicObject::Update(double dt, double dt1)
     // TTrackParam tp;
     tp.Width = MyTrack->fTrackWidth;
     // McZapkie-250202
-    tp.friction = MyTrack->Friction() * Global.fFriction * Global.FrictionWeatherFactor;
+    // the rails are read before the snow is pushed off them, as the axles meet them (rails_on_track())
+    rails_on_track( tp );
     tp.CategoryFlag = MyTrack->iCategoryFlag & 15;
     tp.DamageFlag = MyTrack->iDamageFlag;
     tp.QualityFlag = MyTrack->iQualityFlag;
     snow_on_track( tp );
+    weather_on_vehicle( tp );
 
     // couplers
     if( MoverParameters->Couplers[0].CouplingFlag != coupling::faux
@@ -3922,6 +4010,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 continue; // reszta wtedy nie jest wykonywana
             }
             PantDiff = p->PantTraction - p->PantWys; // docelowy-aktualny
+            // the ice on the wire breaks the contact of a pantograph touching it now and then
+            auto const icebreak { ( PantDiff < 0.01 ) && wire_ice_break( *p, activepantographs, dt1 ) };
             switch (i) // numer pantografu
             { // trzeba usunąć to rozróżnienie
             case 0:
@@ -3936,7 +4026,11 @@ bool TDynamicObject::Update(double dt, double dt1)
                 else if( true == MoverParameters->Pantographs[end::front].is_active
                       && PantDiff < 0.01 ) // tolerancja niedolegania
                 {
-                    if (p->hvPowerWire) {
+                    if( true == icebreak ) {
+                        // no contact while the break lasts
+                        MoverParameters->PantFrontVolt = 0.0;
+                    }
+                    else if (p->hvPowerWire) {
                         auto const lastvoltage { MoverParameters->PantFrontVolt };
                         // TODO: wyliczyć trzeba prąd przypadający na pantograf i wstawić do GetVoltage()
                         if( lastvoltage == 0.0 ) {
@@ -3949,8 +4043,14 @@ bool TDynamicObject::Update(double dt, double dt1)
                                 fCurrent -= fPantCurrent; // taki prąd płynie przez powyższy pantograf (unless it doesn't)
                             }
                         }
+                        // the contact back after a break of the ice isn't the pantograph coming up to the wire
+                        auto const broken { p->contact_broken };
+                        if( MoverParameters->PantFrontVolt > 0.0 ) {
+                            p->contact_broken = false;
+                        }
                         // TODO: refactor reaction to voltage change to mover as sound event for specific pantograph
                         if( lastvoltage == 0.0
+                         && false == broken
                          && MoverParameters->PantFrontVolt > 0.0 ) {
                             for( auto &pantograph : m_pantographsounds ) {
                                 if( pantograph.sPantUp.offset().z > 0 ) {
@@ -3979,7 +4079,11 @@ bool TDynamicObject::Update(double dt, double dt1)
                 else if ( true == MoverParameters->Pantographs[end::rear].is_active
                        && PantDiff < 0.01 )
                 {
-                    if (p->hvPowerWire) {
+                    if( true == icebreak ) {
+                        // no contact while the break lasts
+                        MoverParameters->PantRearVolt = 0.0;
+                    }
+                    else if (p->hvPowerWire) {
                         auto const lastvoltage { MoverParameters->PantRearVolt };
                         // TODO: wyliczyć trzeba prąd przypadający na pantograf i wstawić do GetVoltage()
                         if( lastvoltage == 0.0 ) {
@@ -3992,8 +4096,14 @@ bool TDynamicObject::Update(double dt, double dt1)
                                 fCurrent -= fPantCurrent; // taki prąd płynie przez powyższy pantograf (unless it doesn't)
                             }
                         }
+                        // the contact back after a break of the ice isn't the pantograph coming up to the wire
+                        auto const broken { p->contact_broken };
+                        if( MoverParameters->PantRearVolt > 0.0 ) {
+                            p->contact_broken = false;
+                        }
                         // TODO: refactor reaction to voltage change to mover as sound event for specific pantograph
                         if( lastvoltage == 0.0
+                         && false == broken
                          && MoverParameters->PantRearVolt > 0.0 ) {
                             for( auto &pantograph : m_pantographsounds ) {
                                 if( pantograph.sPantUp.offset().z < 0 ) {

@@ -585,14 +585,17 @@ namespace gl
         // xy world x and z of the wind at the ground now, m/s, z how much snow it carries along the ground, 0..1, w how much snow is
         // stuck to the faces turned to the wind (the wind of the drifts), 0..1
         glm::vec4 snow_wind;
+        // what lies on the heads of the rails and the surfaces in the open (environment/railsurface.h, the same state the adhesion of
+        // the rails comes from): x the water, y the ice, z the leaves, 0..1, w the ice on the wires of the catenary, mm
+        glm::vec4 surface_state;
         cloud_layer_ubs cloud_layers[MAX_CLOUD_LAYERS];
         // filled on the gpu (fog_horizon.comp) while the atmosphere is used, by the cpu otherwise
         glm::vec4 fog_horizon[FOG_HORIZON_SAMPLES];
     };
 
-    static_assert(offsetof(weather_ubs, cloud_layers) == 240, "bad layout of weather_ubs");
-    static_assert(offsetof(weather_ubs, fog_horizon) == 240 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
-    static_assert(sizeof(weather_ubs) == 240 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
+    static_assert(offsetof(weather_ubs, cloud_layers) == 256, "bad layout of weather_ubs");
+    static_assert(offsetof(weather_ubs, fog_horizon) == 256 + 80 * MAX_CLOUD_LAYERS, "bad layout of weather_ubs");
+    static_assert(sizeof(weather_ubs) == 256 + 80 * MAX_CLOUD_LAYERS + 16 * FOG_HORIZON_SAMPLES, "bad size of weather_ubs");
 
     // the weather buffer is written by fog_horizon.comp as a storage block bound here for the pass. the point is one of the
     // instance culling, which binds its buffers before every use

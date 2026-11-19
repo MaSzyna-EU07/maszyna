@@ -877,8 +877,8 @@ float snow_foliage = -1.0;
 
 #include "snow.glsl"
 
-// the snow over the surface of the fragment: its colour, normal (view space) and gloss
-void apply_snow(inout vec3 fragnormal, inout vec3 texturecolor, inout float reflectivity, inout float specularity)
+// the snow over the surface of the fragment: its colour, normal (view space) and gloss. how much of it covers the surface, 0..1
+float apply_snow(inout vec3 fragnormal, inout vec3 texturecolor, inout float reflectivity, inout float specularity)
 {
     mat3 toworld = mat3(inv_view);
     vec3 world = toworld * f_pos.xyz;
@@ -895,10 +895,42 @@ void apply_snow(inout vec3 fragnormal, inout vec3 texturecolor, inout float refl
         cover = max(cover, snow_foliage * fallen);
     }
     if (cover <= 0.0)
-        return;
+        return 0.0;
     float pixel = length(fwidth(world));
     snow_material(cover, stable, exposure, tracked, pixel, worldnormal, texturecolor, reflectivity, specularity);
     fragnormal = normalize(transpose(toworld) * worldnormal);
+    return cover;
+}
+
+// the water and the ice the weather left on the surfaces in the open (surface_state: the state of environment/railsurface.h the
+// adhesion of the rails comes from, so the rails look as wet or as iced as the wheels find them): darker and glossier where wet,
+// glassy where glazed. none under a roof, a bridge, in a tunnel (where the rain doesn't fall, sky_occlusion_cover()), none under
+// the snow lying (Snow: how much of it covers the surface)
+void apply_wet(vec3 fragnormal, float snow, inout vec3 texturecolor, inout float reflectivity, inout float specularity)
+{
+    mat3 toworld = mat3(inv_view);
+    vec3 worldnormal = normalize(toworld * fragnormal);
+    vec3 world = toworld * f_pos.xyz + worldnormal * 0.05;
+    float open = (1.0 - sky_occlusion_cover(world)) * (1.0 - clamp(snow, 0.0, 1.0));
+    if (open <= 0.0)
+        return;
+    // the faces turned up hold the water, the walls let it run off
+    float up = smoothstep(-0.2, 0.6, worldnormal.y);
+    float wet = clamp(surface_state.x, 0.0, 1.0) * open * mix(0.35, 1.0, up);
+    float ice = clamp(surface_state.y, 0.0, 1.0) * open * mix(0.5, 1.0, up);
+    float covered = max(wet, ice);
+    if (covered <= 0.001)
+        return;
+    // the water soaks into what isn't metal and darkens it; a glaze lightens it a little
+    float porous = 1.0 - clamp(metalic, 0.0, 1.0);
+    texturecolor *= mix(1.0, 0.62, wet * porous * 0.8);
+    texturecolor = mix(texturecolor, texturecolor * 0.85 + vec3(0.06, 0.07, 0.08), ice * 0.5);
+    // a film of water or ice: smooth and glossy
+    float roughness = clamp(1.0 - glossiness / max(abs(param[1].w), 1.0), 0.04, 1.0);
+    roughness = mix(roughness, min(roughness, 0.12), max(wet * 0.85, ice * 0.95));
+    glossiness = (1.0 - roughness) * max(abs(param[1].w), 1.0);
+    specularity = mix(specularity, max(specularity, 0.5), covered);
+    reflectivity = mix(reflectivity, max(reflectivity, 0.25), covered * 0.8);
 }
 
 // the snow on the leaves of an alpha tested material at Uv of Tex: their normals lie flat on planes standing upright, the snow
@@ -951,8 +983,12 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
 #ifndef NO_SNOW
     // not inside the cabs and the interiors of the vehicles, under their roofs
     // a sunless surface takes none, but the leaves of the trees drawn so (no sun on their crossed planes), never in a cab
+    float snowcover = 0.0;
     if (((false == sunless) || (snow_foliage > 0.0)) && snow_receiver && (cab_interior < 0.5) && snow_present())
-        apply_snow(fragnormal, texturecolor, reflectivity, specularity);
+        snowcover = apply_snow(fragnormal, texturecolor, reflectivity, specularity);
+    // the water and the ice on the surfaces in the open: the ones the snow is laid on (not the water, the glass, the drifts)
+    if ((false == sunless) && snow_receiver && (cab_interior < 0.5) && (surface_state.x + surface_state.y > 0.01))
+        apply_wet(fragnormal, snowcover, texturecolor, reflectivity, specularity);
 #endif
     float polished = 0.0;
     if (sunless)

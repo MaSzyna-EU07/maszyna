@@ -16220,3 +16220,141 @@ msgstr "%s obrysowane na nowo, Ctrl+Z cofa"
 
 msgid "Puts the outline of the field back as the outline being drawn; cut out again, it changes this field"
 msgstr "Wstawia obrys pola z powrotem jako rysowany obrys; wycięcie go zmienia to pole"
+
+msgid "Weather physics"
+msgstr "Fizyka pogody"
+
+msgid "Settings (physics.weather in eu07.ini)"
+msgstr "Ustawienia (physics.weather w eu07.ini)"
+
+msgid "Rails in the open"
+msgstr "Szyny pod gołym niebem"
+
+msgid "Vehicle driven"
+msgstr "Prowadzony pojazd"
+
+msgid "Weather in the physics"
+msgstr "Pogoda w fizyce"
+
+msgid "Heads of the rails"
+msgstr "Główki szyn"
+
+msgid "Wet and iced brakes"
+msgstr "Mokre i oblodzone hamulce"
+
+msgid "Wind in the drag"
+msgstr "Wiatr w oporze powietrza"
+
+msgid "Density of the air in the drag"
+msgstr "Gęstość powietrza w oporze"
+
+msgid "Ice on the wires and the pantographs"
+msgstr "Lód na drutach i pantografy"
+
+msgid "Adhesion, wet rail"
+msgstr "Przyczepność, mokra szyna"
+
+msgid "Adhesion, first water on a dirty rail"
+msgstr "Przyczepność, pierwsza woda na brudnej szynie"
+
+msgid "Adhesion, ice on the rail"
+msgstr "Przyczepność, lód na szynie"
+
+msgid "Adhesion, snow on the rail"
+msgstr "Przyczepność, śnieg na szynie"
+
+msgid "Adhesion, leaves, dry"
+msgstr "Przyczepność, liście, suche"
+
+msgid "Adhesion, leaves, wet"
+msgstr "Przyczepność, liście, mokre"
+
+msgid "Adhesion, the least"
+msgstr "Przyczepność, najmniejsza"
+
+msgid "Leaves falling in the autumn"
+msgstr "Opadanie liści jesienią"
+
+msgid "Rail cleaned by the wheels, s"
+msgstr "Szyna oczyszczona przez koła, s"
+
+msgid "Sand restores, share of the dry rail"
+msgstr "Piasek przywraca, część suchej szyny"
+
+msgid "Brake friction wet, cast iron"
+msgstr "Tarcie hamulca mokrego, żeliwo"
+
+msgid "Brake friction wet, composite"
+msgstr "Tarcie hamulca mokrego, kompozyt"
+
+msgid "Brake friction wet, disc"
+msgstr "Tarcie hamulca mokrego, tarcza"
+
+msgid "Brake friction iced, cast iron"
+msgstr "Tarcie hamulca oblodzonego, żeliwo"
+
+msgid "Brake friction iced, composite"
+msgstr "Tarcie hamulca oblodzonego, kompozyt"
+
+msgid "Brake friction iced, disc"
+msgstr "Tarcie hamulca oblodzonego, tarcza"
+
+msgid "Drag growing with the wind across"
+msgstr "Wzrost oporu przy wietrze bocznym"
+
+msgid "Breaks of the contact by the ice"
+msgstr "Przerwy styku przez lód"
+
+msgid "Break of the contact at 1 mm of ice, s"
+msgstr "Przerwa styku przy 1 mm lodu, s"
+
+msgid "Breaks of a pantograph behind another"
+msgstr "Przerwy pantografu za innym"
+
+msgid "Defaults"
+msgstr "Domyślne"
+
+msgid "kept in eu07.ini, not by this window"
+msgstr "zapisuje się w eu07.ini, nie w tym oknie"
+
+msgid "Dirt of a dry spell"
+msgstr "Brud po suchych dniach"
+
+msgid "Ice"
+msgstr "Lód"
+
+msgid "Leaves"
+msgstr "Liście"
+
+msgid "Time faster"
+msgstr "Przyspieszenie czasu"
+
+msgid "Adhesion of a rail no wheels went over: %.0f%% of the dry one"
+msgstr "Przyczepność szyny, po której nie przejechały koła: %.0f%% suchej"
+
+msgid "The ai drivers and the roads go by: %.0f%%"
+msgstr "AI i drogi liczą z: %.0f%%"
+
+msgid "Ice on the wires: %.1f mm"
+msgstr "Lód na drutach: %.1f mm"
+
+msgid "no vehicle driven"
+msgstr "brak prowadzonego pojazdu"
+
+msgid "Adhesion of the rails under it: %.0f%% of the dry one"
+msgstr "Przyczepność szyn pod nim: %.0f%% suchej"
+
+msgid "Rain %.2f, snow around the running gear %.2f, %.1f deg C"
+msgstr "Deszcz %.2f, śnieg przy podwoziu %.2f, %.1f °C"
+
+msgid "Wind %.1f m/s from the front, %.1f m/s across, air %.0f%%"
+msgstr "Wiatr %.1f m/s z przodu, %.1f m/s z boku, powietrze %.0f%%"
+
+msgid "Drag of the weather: %.2f kN"
+msgstr "Opór od pogody: %.2f kN"
+
+msgid "Brakes: water %.2f, ice %.2f, friction %.0f%%"
+msgstr "Hamulce: woda %.2f, lód %.2f, tarcie %.0f%%"
+
+msgid "Breaks of the contact of the pantographs: %d"
+msgstr "Przerwy styku pantografów: %d"

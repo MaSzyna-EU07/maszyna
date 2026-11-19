@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/light.h"
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
+#include "McZapkie/weatherphysics.h"
 #include <map>
 #include <optional>
 
@@ -137,6 +138,7 @@ struct global_settings {
     bool FullPhysics{ true }; // full calculations performed for each simulation step
     bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
     bool physics_snow{ true }; // physics.snow: the snow lying on the tracks holds the vehicles back (TTrack::snow_at()); off as before
+    weather_physics::settings physics_weather; // physics.weather.*: the weather in the physics of the vehicles (McZapkie/weatherphysics.h)
     bool physics_roadlod{ true }; // road vehicles far from the camera go by one step of the physics in a frame, see vehicle_table::update()
     float physics_pipewake{ 0.001f }; // bar: air flowing along a pipe wakes the physics of a vehicle when it changes its pressure by more than this. 0: any flow does
     bool performance_multithreading{ true }; // work split over the logical cores of the machine (worker_pool), as many as each job is worth

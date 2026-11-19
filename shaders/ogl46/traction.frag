@@ -14,7 +14,10 @@ layout(location = 1) out vec4 out_motion;
 
 void main()
 {
-	vec4 color = vec4(apply_fog(pow(param[0].rgb, vec3(2.2))), param[0].a);
+	vec3 wire = pow(param[0].rgb, vec3(2.2));
+	// the ice on the wires (surface_state.w, mm: the ice the pantographs meet, environment/snowcover.h) whitens them
+	wire = mix(wire, vec3(0.62, 0.66, 0.70), smoothstep(0.5, 8.0, surface_state.w));
+	vec4 color = vec4(apply_fog(wire), param[0].a);
     if (POSTFX_ENABLED)
     {
         out_color = color;

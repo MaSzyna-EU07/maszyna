@@ -640,6 +640,25 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    for (auto const &parameter : weather_physics::bool_parameters)
+    {
+        if (token == parameter.key)
+        {
+            ParseOne(Parser, physics_weather.*parameter.member);
+            return true;
+        }
+    }
+    for (auto const &parameter : weather_physics::float_parameters)
+    {
+        if (token == parameter.key)
+        {
+            auto &value{physics_weather.*parameter.member};
+            ParseOne(Parser, value);
+            value = std::clamp(value, parameter.minimum, parameter.maximum);
+            return true;
+        }
+    }
+
     if (token == "physics.roadlod")
     {
         ParseOne(Parser, physics_roadlod);
@@ -2451,6 +2470,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "physics.sleepheld", physics_sleepheld );
     export_as_text( Output, "physics.snow", physics_snow );
+    for( auto const &parameter : weather_physics::bool_parameters ) {
+        export_as_text( Output, std::string{ parameter.key }, physics_weather.*parameter.member );
+    }
+    for( auto const &parameter : weather_physics::float_parameters ) {
+        export_as_text( Output, std::string{ parameter.key }, physics_weather.*parameter.member );
+    }
     export_as_text( Output, "physics.roadlod", physics_roadlod );
     export_as_text( Output, "physics.pipewake", physics_pipewake );
     export_as_text( Output, "performance.multithreading", performance_multithreading );

@@ -63,6 +63,9 @@ layout(std140, set = PASS_SET, binding = WEATHER_UBO) uniform weather_ubo
 	// xy: world x and z of the wind at the ground now, m/s, z: the snow it carries along the ground, w: the snow stuck to the faces
 	// turned to the wind
 	vec4 snow_wind;
+	// what lies on the heads of the rails and the surfaces in the open (environment/railsurface.h, the state the adhesion of the
+	// rails comes from): x the water, y the ice, z the leaves, 0..1, w the ice on the wires of the catenary, mm
+	vec4 surface_state;
 	cloud_layer_s cloud_layers[MAX_CLOUD_LAYERS];
 };
 

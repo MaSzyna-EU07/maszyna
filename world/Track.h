@@ -415,6 +415,11 @@ public:
     double snow_at( double const Distance ) const;
     // a vehicle goes over the place at Distance: it pushes the snow lying there away
     void snow_cleared( double const Distance );
+    // the wheels of a vehicle go over the place at Distance: they take off a part of what lies on the heads of the rails
+    // (McZapkie/weatherphysics.h)
+    void wheels_passed( double const Distance );
+    // seconds since wheels last went over the place at Distance, negative when none did since the start
+    double since_wheels( double const Distance ) const;
     // a switch has two paths, any other track the one
     int path_count() const;
     TSegment *path_segment( int const Path ) const;
@@ -457,6 +462,15 @@ private:
         double touched { -1.0e9 }; // s of the time of the simulation
     };
     snow_state m_snow;
+    // the wheels over the track (since_wheels()): when they last went all along it, and when the passage going on went over the
+    // stretch from..to of it, s of the time of the simulation (negative: never)
+    struct wheels_state {
+        double whole { -1.0 };
+        double from { 1.0 };
+        double to { 0.0 };
+        double touched { -1.0 };
+    };
+    wheels_state m_wheels;
 // methods
     // radius() subclass details, calculates node's bounding radius
     float radius_() const override;

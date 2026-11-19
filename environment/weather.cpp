@@ -871,6 +871,7 @@ void world_weather::reset()
 	m_ground = 0.f;
 	m_cloud_offset = glm::dvec2{0.0};
 	m_snow.reset();
+	m_rails.reset();
 	m_time = 0.0;
 }
 
@@ -942,6 +943,9 @@ void world_weather::init()
 		m_ground = *m_elevation;
 		m_ground_set = true;
 	}
+	// the rails as the weather of the start left them: wet in the rain, iced in a freezing rain, with the leaves of the autumn
+	m_rails.reset();
+	m_rails.settle(surface_weather(), rails_daylight(), rails_leaves());
 	WriteLog("Weather: " + to_metar(m_current) + (m_scenery ? " (described)" : " (from the overcast and the fog range)"));
 }
 
@@ -1189,21 +1193,41 @@ void world_weather::apply_snow()
 	m_current.snow_depth.reset();
 }
 
-void world_weather::update_snow(double const Deltatime)
+snow_weather world_weather::surface_weather() const
 {
 	snow_weather weather;
 	weather.temperature = Global.AirTemperature;
 	weather.humidity = humidity();
 	weather.wet_bulb = psychrometry::wet_bulb(weather.temperature, weather.humidity);
 	weather.wind = m_surfacewind;
-	// what falls: the overcast past 1 is the precipitation (weather_conditions::overcast())
+	// what falls: the overcast past 1 is the precipitation (weather_conditions::overcast()), as the renderers draw it
 	auto const intensity{std::clamp(Global.Overcast - 1.f, 0.f, 1.f)};
 	auto const snow{psychrometry::is_snow(falling())};
 	weather.snowfall = (snow ? intensity : 0.f);
 	weather.rainfall = (snow ? 0.f : intensity);
 	// a fog thick enough to leave rime on the wires
 	weather.fog = std::clamp(1.f - m_current.visibility / 1000.f, 0.f, 1.f);
+	return weather;
+}
+
+float world_weather::rails_daylight()
+{
+	// the height of the sun, degrees: dark at the end of the civil twilight, full day a little over the horizon
+	auto const angle{simulation::Environment.sun().getAngle()};
+	return std::clamp((angle + 6.f) / 16.f, 0.f, 1.f);
+}
+
+float world_weather::rails_leaves()
+{
+	return rail_surface::leaf_season(simulation::Time.year_day()) * std::max(Global.physics_weather.leaves, 0.f);
+}
+
+void world_weather::update_snow(double const Deltatime)
+{
+	auto const weather{surface_weather()};
 	m_snow.update(Deltatime, weather);
+	m_rails.time_scale = m_snow.time_scale;
+	m_rails.update(Deltatime, weather, rails_daylight(), rails_leaves());
 }
 
 glm::vec2 world_weather::cloud_velocity() const

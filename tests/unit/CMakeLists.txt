@@ -29,6 +29,7 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
 	# and the switches laid into the curves
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	"${CMAKE_SOURCE_DIR}/environment/railsurface.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"

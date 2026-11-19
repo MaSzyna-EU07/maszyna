@@ -3176,6 +3176,39 @@ void TTrack::snow_cleared( double const Distance ) {
     }
 }
 
+void TTrack::wheels_passed( double const Distance ) {
+
+    auto const time { Timer::GetTime() };
+    if( ( m_wheels.from > m_wheels.to ) || ( time - m_wheels.touched > SNOW_PASSAGE_GAP ) ) {
+        // a passage begins
+        m_wheels.from = Distance;
+        m_wheels.to = Distance;
+    }
+    else {
+        m_wheels.from = std::min( m_wheels.from, Distance );
+        m_wheels.to = std::max( m_wheels.to, Distance );
+    }
+    m_wheels.touched = time;
+    if( ( Segment != nullptr ) && ( m_wheels.from <= 1.0 ) && ( m_wheels.to >= Segment->GetLength() - 1.0 ) ) {
+        // gone along all of it
+        m_wheels.whole = time;
+        m_wheels.from = 1.0;
+        m_wheels.to = 0.0;
+    }
+}
+
+double TTrack::since_wheels( double const Distance ) const {
+
+    auto const inside {
+        ( m_wheels.from <= m_wheels.to )
+     && ( Distance >= m_wheels.from - 1.0 )
+     && ( Distance <= m_wheels.to + 1.0 ) };
+    // the stretch of the passage going on, else the last one which went all along the track
+    auto const when { inside ? std::max( m_wheels.touched, m_wheels.whole ) : m_wheels.whole };
+    if( when < 0.0 ) { return -1.0; }
+    return std::max( 0.0, Timer::GetTime() - when );
+}
+
 float TTrack::Friction() const {
 
     if( m_friction.second == nullptr ) {

@@ -33,6 +33,7 @@ driver_ui::driver_ui()
 	add_external_panel(&m_trainingcardpanel);
 	add_external_panel(&m_vehiclelist);
 	add_external_panel(&m_timepanel);
+	add_external_panel(&m_weatherphysicspanel);
 	add_external_panel(&m_mappanel);
 	add_external_panel(&m_logpanel);
 	add_external_panel(&m_perfgraphpanel);
@@ -86,6 +87,7 @@ void driver_ui::render_menu_contents()
 
 		if (ImGui::MenuItem(m_timepanel.name().c_str()))
 			m_timepanel.open();
+		ImGui::MenuItem(m_weatherphysicspanel.name().c_str(), nullptr, &m_weatherphysicspanel.is_open);
 
 		ImGui::EndMenu();
 	}

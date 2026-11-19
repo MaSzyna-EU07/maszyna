@@ -249,7 +249,15 @@ world_environment::update() {
 	
 
     // weather-related simulation factors
-    Global.FrictionWeatherFactor = Global.Weather == "rain:" ? 0.85f : Global.Weather == "snow:" ? 0.75f : 1.0f;
+    if( Global.physics_weather.enabled && Global.physics_weather.adhesion ) {
+        // the rails in the open as the weather left them, before any wheels go over them (McZapkie/weatherphysics.h): what the
+        // ai drivers expect, and the roads get
+        auto const factor { weather_physics::adhesion_factor( Global.physics_weather, m_weather.rails().state(), 0.0, -1.0 ) };
+        Global.FrictionWeatherFactor = ( factor > 0.98 ? 1.f : std::clamp( static_cast<float>( factor ), 0.5f, 1.f ) );
+    }
+    else {
+        Global.FrictionWeatherFactor = Global.Weather == "rain:" ? 0.85f : Global.Weather == "snow:" ? 0.75f : 1.0f;
+    }
 
     Global.Period = m_sun.getAngle() > -12.0f ? "day:" : "night:";
 
