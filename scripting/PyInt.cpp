@@ -142,18 +142,24 @@ void render_task::run()
 			}
 			else
 			{
-				std::lock_guard guard(m_target->mutex);
+				// the lock may be held by the drawing thread for a whole upload: waited for without the gil. the bytes stay
+				// valid without it, the object is immutable and held by its reference here
+				Py_BEGIN_ALLOW_THREADS
+				{
+					std::scoped_lock guard(m_target->mutex);
 
-				if (m_target->image.size() != expectedBytes)
-					m_target->image.resize(expectedBytes);
+					if (m_target->image.size() != expectedBytes)
+						m_target->image.resize(expectedBytes);
 
-				std::memcpy(m_target->image.data(), pythonBufferPtr, expectedBytes);
+					std::memcpy(m_target->image.data(), pythonBufferPtr, expectedBytes);
 
-				m_target->width = screenWidth;
-				m_target->height = screenHeight;
-				m_target->components = glComponents;
-				m_target->format = glFormat;
-				m_target->timestamp = std::chrono::high_resolution_clock::now();
+					m_target->width = screenWidth;
+					m_target->height = screenHeight;
+					m_target->components = glComponents;
+					m_target->format = glFormat;
+					m_target->timestamp = std::chrono::high_resolution_clock::now();
+				}
+				Py_END_ALLOW_THREADS
 			}
 		}
 
