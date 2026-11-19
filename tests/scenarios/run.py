@@ -40,6 +40,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# the reader of the simulation snapshots lives next to this script, which an isolated Python (-I) doesn't look into
+sys.path.insert(0, str(HERE))
+import snapshots  # noqa: E402
 REPO = HERE.parents[1]
 CASES_DIR = HERE / "cases"
 OUT_DIR = HERE / "out"
@@ -333,9 +336,11 @@ class RunResult:
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
-                  duration: float | None, timeout: float, watch: bool, say, expect_rows: bool = True) -> RunResult:
+                  duration: float | None, timeout: float, watch: bool, say, expect_rows: bool = True,
+                  extra_args: tuple[str, ...] = ()) -> RunResult:
     """Runs the simulator on the scenery. In test mode it quits by itself and the exit code
-    is the result; with watch it runs in a window and gets closed after `duration`."""
+    is the result; with watch it runs in a window and gets closed after `duration`.
+    extra_args are added to the command line of the test mode (the snapshots to load and take)."""
     physicslog.unlink(missing_ok=True)
     if watch:
         cmd = [str(exe), "-s", scenery, "-v", "ghostview", "-ini", str(ini)]
@@ -344,6 +349,7 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
         cmd = [str(exe), "--test", "-s", scenery, "-ini", str(ini), "--test-wall-timeout", f"{timeout:g}"]
         if duration is not None:
             cmd += ["--test-timeout", f"{duration:g}"]
+        cmd += extra_args
     say("  $ " + " ".join(f'"{c}"' if " " in c else c for c in cmd), progress=True)
     since = time.time() - 1
     started = time.monotonic()
@@ -672,12 +678,123 @@ def exclusive_case(case: dict) -> bool:
     return "vehicle" in case and case.get("physicslog", True)
 
 
+# ---------------------------------------------------------------- snapshot cases
+
+# how far the simulation continued from a snapshot may be from the one which ran on, by default; a case sets its own
+SNAPSHOT_TOLERANCES = {"position": 1.0, "speed": 1.0, "pipe": 0.1, "cylinder": 0.1}
+
+
+def check_snapshot_round_trip(first: Path, resaved: Path, allow: int = 0):
+    """A snapshot saved right after it was loaded holds what the loaded one held."""
+    different = snapshots.exact_differences(snapshots.load(first), snapshots.load(resaved))
+    shown = "; ".join(different[:6]) + (f"; ... ({len(different)} in all)" if len(different) > 6 else "")
+    if len(different) > allow:
+        return False, f"{len(different)} value(s) changed between loading and saving again: {shown}"
+    return True, "saved again right after loading it's the same" + (f", but for: {shown}" if different else "")
+
+
+def check_snapshot_continues(reference: Path, continued: Path, tolerances: dict):
+    """The simulation loaded from the snapshot is, at the later time, where the one which ran on is."""
+    result = snapshots.compare(snapshots.load(reference), snapshots.load(continued))
+    limits = {**SNAPSHOT_TOLERANCES, **tolerances}
+    problems = []
+    for what, measured, unit in (("position", result.position, "m"), ("speed", result.velocity * 3.6, "km/h"),
+                                 ("pipe", result.pipe, "bar"), ("cylinder", result.cylinder, "bar")):
+        if measured > limits[what]:
+            problems.append(f"{what} {measured:.3f} {unit} > {limits[what]}")
+    for what, items in (("vehicles in one only", result.missing), ("tracks", result.tracks), ("couplings", result.couplings),
+                        ("memcells", result.memcells), ("switches", result.switches), ("drivers", result.drivers)):
+        if len(items) > limits.get(what, 0):
+            problems.append(f"{what}: {', '.join(items[:4])}{' ...' if len(items) > 4 else ''}")
+    summary = (f"{result.vehicles} vehicles, position {result.position:.3f} m ({result.position_vehicle}), "
+               f"speed {result.velocity * 3.6:.3f} km/h, pipe {result.pipe:.3f} bar, cylinders {result.cylinder:.3f} bar, "
+               f"{len(result.memcells)} memcells, {len(result.switches)} switches, {len(result.couplings)} couplings, "
+               f"{len(result.drivers)} drivers, {len(result.events)} queued events differ")
+    if problems:
+        return False, summary + " -- " + "; ".join(problems)
+    return True, summary
+
+
+def _run_snapshot_case(name: str, case: dict, exe: Path, game_dir: Path, out: Path, say, seed: str | None) -> bool:
+    """A case with a "snapshot" section: the simulation runs to `until` taking a snapshot at `at` on the way, then
+    again from that snapshot to `until`; the two ends are compared, and so are the snapshot and itself saved again
+    right after loading."""
+    spec = case["snapshot"]
+    at, until = float(spec["at"]), float(spec["until"])
+    vehicle = case.get("vehicle", f"autotest_{name}")
+    scenery = build_scenery(case, game_dir, name, vehicle)
+    ini = out / "autotest.ini"
+    # nothing but the snapshots is written: no physicslogs, no models converted in the game dir
+    settings = ["convertmodels 0", *case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
+    ini.write_text(TEST_INI.format(timespeed=1.0, physicslog="no") + "".join(line + "\n" for line in settings),
+                   encoding="ascii")
+    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
+    files = {key: out / f"{key}.snapshot" for key in ("first", "reference", "resaved", "continued")}
+    runs = (
+        ("from the start", until + 1.0,
+         ("--snapshot-at", f"{at:g}", str(files["first"]), "--snapshot-at", f"{until:g}", str(files["reference"]))),
+        ("from the snapshot", until - at + 1.0,
+         ("--load-snapshot", str(files["first"]), "--snapshot-at", f"{at:g}", str(files["resaved"]),
+          "--snapshot-at", f"{until:g}", str(files["continued"]))),
+    )
+    expect = case.get("expect", "timeout")
+    ok = True
+    for index, (label, duration, extra) in enumerate(runs, 1):
+        result = run_simulator(exe, game_dir, scenery, ini, physicslog, duration, float(case.get("timeout", 600)),
+                               False, say, expect_rows=False, extra_args=extra)
+        for kind, path in result.logs.items():
+            shutil.move(path, out / f"{kind}_{index}.txt")
+        if result.blackbox:
+            result.blackbox.unlink(missing_ok=True)
+        got = EXIT_RESULTS.get(result.exit_code) if result.exit_code is not None else None
+        passed = got == expect and not result.failure
+        say(f"  {'PASS' if passed else 'FAIL'}  run {label}: {result.wall_seconds:.0f}s wall, exit code "
+            f"{describe_exit(result.exit_code)}, expected {expect}. {result.verdict or result.failure}")
+        if got in (None, "error") or result.failure:
+            scenery_cache(game_dir, name).unlink(missing_ok=True)
+        if not passed:
+            return False
+    if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
+        scenery_cache(game_dir, name).unlink(missing_ok=True)
+
+    missing = [key for key, path in files.items() if not path.exists()]
+    if missing:
+        say(f"  FAIL  snapshot(s) not written: {', '.join(missing)}")
+        return False
+    checks = (
+        ("snapshot_round_trip", lambda: check_snapshot_round_trip(files["first"], files["resaved"],
+                                                                  int(spec.get("round_trip_differences", 0)))),
+        ("snapshot_continues", lambda: check_snapshot_continues(files["reference"], files["continued"],
+                                                                spec.get("tolerances", {}))),
+    )
+    for kind, check in checks:
+        try:
+            passed, detail = check()
+        except ValueError as error:
+            passed, detail = False, str(error)
+        say(f"  {'PASS' if passed else 'FAIL'}  {kind}: {detail}")
+        ok &= passed
+    log = read_text(out / "log_2.txt")
+    for check in case.get("checks", []):
+        if check["type"] not in LOG_CHECKS:
+            sys.exit(f"{name}: a snapshot case can have log checks only ({', '.join(LOG_CHECKS)}), on its second run")
+        params = {k: v for k, v in check.items() if k != "type"}
+        passed, detail = LOG_CHECKS[check["type"]](log, **params) if log.strip() else (False, "log_2.txt is missing or empty")
+        say(f"  {'PASS' if passed else 'FAIL'}  {check['type']}: {detail}")
+        ok &= passed
+    return ok
+
+
 def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float, watch: bool, say,
               seed: str | None = None) -> bool:
     say(f"\n=== {name}: {case.get('description', '')}")
     out = OUT_DIR / name
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
+    if "snapshot" in case:
+        if watch:
+            sys.exit(f"{name}: a snapshot case can't run with --watch")
+        return _run_snapshot_case(name, case, exe, game_dir, out, say, seed)
 
     # the lead vehicle is named after the case, so parallel runs never share a physicslog. a case on a
     # mission of the base scenery (strip_trainsets false) names one of the scenery's own vehicles instead

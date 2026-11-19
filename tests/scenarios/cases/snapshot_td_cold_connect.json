@@ -1,0 +1,24 @@
+{
+  "description": "Simulation snapshot of a train made up during the run: on td.scn a cold EU07 couples to two coaches the scenery put on the track as another trainset (the eu07_td_cold_connect case) and pushes them on. The snapshot is taken at 100 s, after the coupling; loaded, the three vehicles the scenery made as two trainsets have to be one train again. Compared at 220 s with the run that went on.",
+  "base_scenery": "td.scn",
+  "fragment": "td_cold_connect.scn",
+  "vars": {
+    "locomotive": "pkp\\4e_v1 4E-ZEZ-234 4E-ZEZ_GREY",
+    "rake": [
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "track_events": {
+    "tdo_n1725": "event0 autotest_wake"
+  },
+  "test_config": [
+    "test.standstill 0",
+    "test.fail_if_stop_overran no"
+  ],
+  "snapshot": { "at": 100, "until": 220 },
+  "timeout": 900,
+  "checks": [
+    { "type": "log_contains", "pattern": "couplings: 0 parted, 1 joined" }
+  ]
+}
