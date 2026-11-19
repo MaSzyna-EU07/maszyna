@@ -1078,7 +1078,12 @@ void driver_mode::OnKeyDown(int cKey)
 	case GLFW_KEY_F6:
 	{
 		// przyspieszenie symulacji do testowania scenerii... uwaga na FPS!
-		if (DebugModeFlag)
+		if (DebugModeFlag && Global.TimeSpeedLocked)
+		{
+			// the live weather keeps the clock of the system (weather.live.locktime)
+			ui::Transcripts.AddLine(STR("The time can't go faster with the live weather (weather.live.locktime)"), 0.0, 5.0, false);
+		}
+		else if (DebugModeFlag)
 		{
 
 			if (Global.ctrlState)

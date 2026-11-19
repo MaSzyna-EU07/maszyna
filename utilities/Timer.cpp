@@ -101,7 +101,7 @@ void UpdateTimers(bool pause)
     fRenderTime += DeltaRenderTime;
     if (!pause)
     {
-        DeltaTime = (fixedstep > 0.0 ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
+        DeltaTime = (fixedstep > 0.0 || Global.TimeSpeedLocked ? 1.0 : Global.fTimeSpeed) * DeltaRenderTime;
         fSoundTimer += DeltaTime;
         if (fSoundTimer > 0.1)
             fSoundTimer = 0.0;

@@ -717,8 +717,11 @@ debug_panel::render_section_scenario() {
                     GLFW_PRESS, 0 );
             }
         }
-        // time acceleration
-        {
+        // time acceleration, but for the live weather keeping the clock of the system
+        if( Global.TimeSpeedLocked ) {
+            ImGui::TextDisabled( "%s", STR_C( "Time acceleration: locked by the live weather (weather.live.locktime)" ) );
+        }
+        else {
             auto timerate { ( Global.fTimeSpeed == 60 ? 4 : Global.fTimeSpeed == 20 ? 3 : Global.fTimeSpeed == 5 ? 2 : 1 ) };
             if( ImGui::SliderInt( ( "x " + to_string( Global.fTimeSpeed, 0 ) + "###timeacceleration" ).c_str(), &timerate, 1, 4, "Time acceleration" ) ) {
                 Global.fTimeSpeed = timerate == 4 ? 60 : timerate == 3 ? 20 : timerate == 2 ? 5 : 1;

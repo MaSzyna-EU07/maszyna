@@ -767,6 +767,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "weather.live.locktime")
+    {
+        ParseOne(Parser, WeatherLiveLockTime);
+        return true;
+    }
+
     if (token == "weather.live.interval")
     {
         ParseOne(Parser, WeatherLiveInterval);
@@ -2532,6 +2538,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     }
     export_as_text( Output, "weather.preset", WeatherPreset );
     export_as_text( Output, "weather.live.interval", WeatherLiveInterval );
+    export_as_text( Output, "weather.live.locktime", WeatherLiveLockTime );
     if( false == WeatherManual.empty() ) {
         std::string manual;
         for( auto const &entry : WeatherManual ) {

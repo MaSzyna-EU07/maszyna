@@ -16415,3 +16415,9 @@ msgstr "z presetu klimatu (weather.mode preset)"
 
 msgid "now at the vehicle driven, Open-Meteo (weather.mode live)"
 msgstr "bieżąca przy prowadzonym pojeździe, Open-Meteo (weather.mode live)"
+
+msgid "The time can't go faster with the live weather (weather.live.locktime)"
+msgstr "Przy pogodzie na żywo czasu nie można przyspieszyć (weather.live.locktime)"
+
+msgid "Time acceleration: locked by the live weather (weather.live.locktime)"
+msgstr "Przyspieszenie czasu: zablokowane przez pogodę na żywo (weather.live.locktime)"

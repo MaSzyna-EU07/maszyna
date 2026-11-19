@@ -157,9 +157,11 @@ struct global_settings {
     std::vector<std::string> WeatherManual; // weather.manual: the body of a weather section, up to endweather
     std::string WeatherPreset{ "random" }; // weather.preset: a preset of environment/climate.h by its name, or random
     float WeatherLiveInterval{ 300.f }; // weather.live.interval: seconds between the fetches of the live weather, 60..300
+    bool WeatherLiveLockTime{ true }; // weather.live.locktime: with the live weather the time can't go faster, it keeps the clock of the system
     std::string ScenarioDate; // scenario.date as given (DD.MM or today), for the settings in the log; the day itself is fMoveLight
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
     double fTimeSpeed{ 1.0 }; // przyspieszenie czasu, zmienna do testów
+    bool TimeSpeedLocked{ false }; // the time goes as fast as the one of the system, whatever fTimeSpeed says: the live weather with weather.live.locktime
 	double default_timespeed { 1.0 }; // timescale loaded from config
     double fLatitudeDeg{ 52.0 }; // szerokość geograficzna
     float ScenarioTimeOverride{ std::numeric_limits<float>::quiet_NaN() }; // requested scenario start time
