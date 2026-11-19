@@ -63,8 +63,8 @@ scenario_time::init(std::time_t timestamp) {
 
     m_yearday = year_day( m_time.wDay, m_time.wMonth, m_time.wYear );
     // the clock kept with the one of the system: the time can't go faster (weather.live.locktime)
-    Global.TimeSpeedLocked = live && Global.WeatherLiveLockTime;
-    if( Global.TimeSpeedLocked ) {
+    Global.ClockLocked = live && Global.WeatherLiveLockTime;
+    if( Global.ClockLocked ) {
         Global.fTimeSpeed = 1.0;
     }
     if( live ) {
@@ -74,7 +74,7 @@ scenario_time::init(std::time_t timestamp) {
         WriteLog( "Time: the date and the clock of the system, for the live weather (weather.mode live): "
             + std::to_string( m_time.wDay ) + "." + std::to_string( m_time.wMonth ) + "." + std::to_string( m_time.wYear ) + " "
             + std::to_string( m_time.wHour ) + ":" + ( m_time.wMinute < 10 ? "0" : "" ) + std::to_string( m_time.wMinute )
-            + ( Global.TimeSpeedLocked ? ", the time can't go faster (weather.live.locktime)" : "" ) );
+            + ( Global.ClockLocked ? ", the time can't go faster (weather.live.locktime)" : "" ) );
     }
 
     // calculate time zone bias

@@ -679,8 +679,11 @@ debug_panel::render_section_scenario() {
                 GLFW_PRESS, 0 );
         }
     }
-    // day of year slider
-    {
+    // day of year slider, but for the live weather keeping the date of the system
+    if( Global.ClockLocked ) {
+        ImGui::TextDisabled( "%s", STR_C( "Date and time: the ones of the system, for the live weather (weather.live.locktime)" ) );
+    }
+    else {
         if( ImGui::SliderFloat(
             ( to_string( Global.fMoveLight, 0, 5 ) + " (" + Global.Season + ")###movelight" ).c_str(), &Global.fMoveLight, 0.0f, 364.0f, "Day of year" ) ) {
             command_relay commandrelay;
@@ -698,8 +701,8 @@ debug_panel::render_section_scenario() {
     }
     // advanced options, only visible in debug mode
     if( DebugModeFlag ) {
-        // time of day slider
-        {
+        // time of day slider, not with the clock kept with the one of the system
+        if( false == Global.ClockLocked ) {
             ImGui::PushStyleColor( ImGuiCol_Text, { Global.UITextColor.r, Global.UITextColor.g, Global.UITextColor.b, Global.UITextColor.a } );
             ImGui::TextUnformatted( "CAUTION: time change will affect simulation state" );
             ImGui::PopStyleColor();
@@ -718,7 +721,7 @@ debug_panel::render_section_scenario() {
             }
         }
         // time acceleration, but for the live weather keeping the clock of the system
-        if( Global.TimeSpeedLocked ) {
+        if( Global.ClockLocked ) {
             ImGui::TextDisabled( "%s", STR_C( "Time acceleration: locked by the live weather (weather.live.locktime)" ) );
         }
         else {

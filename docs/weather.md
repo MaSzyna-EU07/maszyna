@@ -125,8 +125,9 @@ The live weather is the weather now, so with it the simulation goes by the date 
 and the starter set (`live_weather::active()`): the day of the year and its season are today's, and the clock is shifted to the one
 of the system as `scenario.time.current` shifts it, the timetables with it. On a scenery off the map, or without the network, the
 live weather doesn't start, and the date and the clock of the starter stand as in the other modes. With `weather.live.locktime yes` (the default)
-the time can't go faster while the live weather goes (F6, the slider of the debug panel and `timespeed` are left without effect), so
-the clock of the simulation stays the one of the system; `no` lets it go faster, the weather staying the one of now. The answer of Open-Meteo goes into the simulation as a
+the time can't go faster while the live weather goes (F6, the slider of the debug panel and `timespeed` are left without effect) nor
+be set by hand (the window Time and environment, the sliders of the day and the time of the debug panel, the command `setdatetime`),
+so the clock of the simulation stays the one of the system; `no` lets it go faster, the weather staying the one of now. The answer of Open-Meteo goes into the simulation as a
 weather report (`environment/liveweather.h`, `environment/liveweatherreport.cpp`): the wind at 10 m with its gusts, the visibility,
 what falls by the weather code of the WMO (the freezing rain and drizzle and the fog leaving rime too), the low clouds with a base the
 spread of the temperature and the dew point gives, the middle and the high ones, the temperature and the dew point. The window

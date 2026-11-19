@@ -16421,3 +16421,6 @@ msgstr "Przy pogodzie na żywo czasu nie można przyspieszyć (weather.live.lock
 
 msgid "Time acceleration: locked by the live weather (weather.live.locktime)"
 msgstr "Przyspieszenie czasu: zablokowane przez pogodę na żywo (weather.live.locktime)"
+
+msgid "Date and time: the ones of the system, for the live weather (weather.live.locktime)"
+msgstr "Data i godzina: systemowe, dla pogody na żywo (weather.live.locktime)"

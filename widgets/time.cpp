@@ -73,7 +73,11 @@ ui::time_panel::time_panel() : ui_panel(STR_C("Time and environment"), false)
 
 void ui::time_panel::render_contents()
 {
-	render_time();
+	// the live weather keeps the clock and the date of the system (weather.live.locktime)
+	if (Global.ClockLocked)
+		ImGui::TextDisabled("%s", STR_C("Date and time: the ones of the system, for the live weather (weather.live.locktime)"));
+	else
+		render_time();
 	ImGui::Separator();
 	render_weather();
 	ImGui::Separator();
@@ -82,7 +86,8 @@ void ui::time_panel::render_contents()
 	if (ImGui::Button(STR_C("Apply")))
 	{
 		auto const year{static_cast<int>(simulation::Time.data().wYear)};
-		m_relay.post(user_command::setdatetime, static_cast<double>(year_day(day, month, year)), static_cast<double>(minute), 1, 0);
+		if (false == Global.ClockLocked)
+			m_relay.post(user_command::setdatetime, static_cast<double>(year_day(day, month, year)), static_cast<double>(minute), 1, 0);
 		if (weather_edited || snow_edited || kind > 0)
 			apply_weather();
 	}
