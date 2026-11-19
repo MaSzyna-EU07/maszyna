@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/glm.hpp>
 
 #include "environment/psychrometry.h"
+#include "environment/liveweather.h"
 #include "environment/railsurface.h"
 #include "environment/snowcover.h"
 
@@ -235,6 +236,11 @@ class world_weather
 	float wet_bulb() const;
 	// what falls now
 	psychrometry::falling falling() const;
+	// what the live weather (weather.mode live) is doing, for the user interface; empty in the other modes
+	std::string const &live_status() const
+	{
+		return m_livestatus;
+	}
 	// where the scenery lies, degrees of latitude and longitude: the location entry of the weather section, or the place the editor
 	// keeps for the scenery; nullopt when neither is there
 	std::optional<glm::vec2> location() const;
@@ -248,6 +254,10 @@ class world_weather
 	// the snow of a description applied, and the snow cover moved on by a step
 	void apply_snow();
 	void update_snow(double const Deltatime);
+	// the live weather: a fetch started when it's due, a report taken in when it comes (weather.mode live)
+	void update_live(glm::dvec3 const &Camera);
+	// where the live weather is fetched for: the vehicle driven, else the camera, on a scenery laid on the map; nullopt off it
+	static std::optional<glm::dvec2> live_place(glm::dvec3 const &Camera);
 	// the weather at the ground the snow cover and the rails go by
 	snow_weather surface_weather() const;
 	// how light the day is for the rails, 0..1, and how many leaves fall now
@@ -263,6 +273,10 @@ class world_weather
 	weather_conditions m_current;
 	snow_cover m_snow;
 	rail_surface m_rails;
+	live_weather m_live;
+	double m_livenext{0.0}; // the time of the simulation the next fetch is due at (m_time)
+	bool m_liveapplied{false}; // the first report came and was applied with the snow it gives
+	std::string m_livestatus;
 	glm::vec2 m_surfacewind{0.f};
 	std::vector<std::string> m_scenerytokens; // the weather sections of the scenery, read once its date is known (init())
 	bool m_snowing{false}; // what the weather name was made for

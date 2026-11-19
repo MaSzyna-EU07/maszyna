@@ -754,6 +754,23 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
             WeatherMode = weather_mode::manual;
         else if (mode == "auto")
             WeatherMode = weather_mode::automatic;
+        else if (mode == "preset")
+            WeatherMode = weather_mode::preset;
+        else if (mode == "live")
+            WeatherMode = weather_mode::live;
+        return true;
+    }
+
+    if (token == "weather.preset")
+    {
+        ParseOne(Parser, WeatherPreset, 1, false);
+        return true;
+    }
+
+    if (token == "weather.live.interval")
+    {
+        ParseOne(Parser, WeatherLiveInterval);
+        WeatherLiveInterval = std::clamp(WeatherLiveInterval, 60.f, 300.f);
         return true;
     }
 
@@ -2510,9 +2527,11 @@ global_settings::export_as_text( std::ostream &Output ) const {
     }
     export_as_text( Output, "seasons.wintertextures", WinterTextures );
     {
-        std::array<char const *, 3> const weathermodes { "scenery", "manual", "auto" };
+        std::array<char const *, 5> const weathermodes { "scenery", "manual", "auto", "preset", "live" };
         export_as_text( Output, "weather.mode", std::string{ weathermodes[ static_cast<std::size_t>( WeatherMode ) ] } );
     }
+    export_as_text( Output, "weather.preset", WeatherPreset );
+    export_as_text( Output, "weather.live.interval", WeatherLiveInterval );
     if( false == WeatherManual.empty() ) {
         std::string manual;
         for( auto const &entry : WeatherManual ) {

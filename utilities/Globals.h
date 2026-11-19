@@ -148,11 +148,15 @@ struct global_settings {
     // seasons.wintertextures: the winter variants of the textures and models (winter:) in winter, as always; off, the winter is the
     // autumn till the end of January and the spring from February, the snow lying on it as the weather has it
     bool WinterTextures{ true };
-    // weather.mode: the weather of the scenery as it describes it (scenery), with weather.manual over it (manual: a preset of the
-    // climate or the values of a weather section), or the weather the climate of the place has in the month (auto)
-    enum class weather_mode : int { scenery = 0, manual, automatic };
+    // weather.mode: the weather of the scenery and the starter as they set it (scenery), with weather.manual over it (manual: the
+    // values of a weather section), the weather the climate of the place has in the month (auto, as preset random), a preset of the
+    // climate or one drawn as often as each comes (preset, weather.preset), or the weather now at the vehicle driven, from Open-Meteo,
+    // on a scenery laid on the map (live, environment/liveweather.h; the weather of the scenery elsewhere)
+    enum class weather_mode : int { scenery = 0, manual, automatic, preset, live };
     weather_mode WeatherMode{ weather_mode::scenery };
     std::vector<std::string> WeatherManual; // weather.manual: the body of a weather section, up to endweather
+    std::string WeatherPreset{ "random" }; // weather.preset: a preset of environment/climate.h by its name, or random
+    float WeatherLiveInterval{ 300.f }; // weather.live.interval: seconds between the fetches of the live weather, 60..300
     std::string ScenarioDate; // scenario.date as given (DD.MM or today), for the settings in the log; the day itself is fMoveLight
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
     double fTimeSpeed{ 1.0 }; // przyspieszenie czasu, zmienna do testów

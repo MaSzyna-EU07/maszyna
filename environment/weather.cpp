@@ -18,6 +18,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulationenvironment.h"
 #include "simulation/simulationtime.h"
+#include "simulation/simulation.h"
+#include "environment/georeference.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Train.h"
 
 #include <algorithm>
 
@@ -872,6 +876,10 @@ void world_weather::reset()
 	m_cloud_offset = glm::dvec2{0.0};
 	m_snow.reset();
 	m_rails.reset();
+	m_live.reset();
+	m_livenext = 0.0;
+	m_liveapplied = false;
+	m_livestatus.clear();
 	m_time = 0.0;
 }
 
@@ -912,6 +920,19 @@ void world_weather::init()
 		else
 			WriteLog("Weather: the place of the scenery isn't known, the weather of the starter stands (weather.mode auto)");
 	}
+	else if (Global.WeatherMode == global_settings::weather_mode::preset)
+	{
+		// a preset of the climate by its name, or one drawn as often as each comes in the month; the climate of the place where it's
+		// known, of the stand-in station elsewhere
+		auto preset{lower(Global.WeatherPreset)};
+		if ((preset != "random") && (false == climate::preset_from_name(preset).has_value()))
+		{
+			WriteLog("Weather: unknown preset \"" + Global.WeatherPreset + "\" of weather.preset, one drawn instead");
+			preset = "random";
+		}
+		tokens.emplace_back("climate");
+		tokens.emplace_back(preset);
+	}
 	if (false == tokens.empty())
 	{
 		weather_conditions conditions;
@@ -942,6 +963,26 @@ void world_weather::init()
 	{
 		m_ground = *m_elevation;
 		m_ground_set = true;
+	}
+	// the live weather: the weather of the scenery stands until the first report comes, fetched at once
+	m_live.reset();
+	m_livenext = 0.0;
+	m_liveapplied = false;
+	m_livestatus.clear();
+	if (Global.WeatherMode == global_settings::weather_mode::live)
+	{
+		if (false == georeference::scenery_origin().has_value())
+		{
+			m_livestatus = "the scenery isn't laid on the map: the weather of the scenery";
+			WriteLog("Weather: the scenery isn't laid on the map (no //$g line, no place in the editor), the weather of the scenery stands (weather.mode live)");
+		}
+		else if (false == live_weather::available())
+		{
+			m_livestatus = "this build can't fetch anything: the weather of the scenery";
+			WriteLog("Weather: no https in this build, the weather of the scenery stands (weather.mode live)");
+		}
+		else
+			m_livestatus = "waiting for the first report";
 	}
 	// the rails as the weather of the start left them: wet in the rain, iced in a freezing rain, with the leaves of the autumn
 	m_rails.reset();
@@ -999,6 +1040,7 @@ void world_weather::write_globals()
 
 void world_weather::update(double const Deltatime, glm::dvec3 const &Camera)
 {
+	update_live(Camera);
 	if (!m_ground_set)
 	{
 		// the ground below the place the simulation starts at, for want of anything better: the camera is in the cab
@@ -1191,6 +1233,62 @@ void world_weather::apply_snow()
 	// applied once; a later change of the weather keeps the snow as it lies then
 	m_target.snow_depth.reset();
 	m_current.snow_depth.reset();
+}
+
+std::optional<glm::dvec2> world_weather::live_place(glm::dvec3 const &Camera)
+{
+	auto const origin{georeference::scenery_origin()};
+	if (false == origin.has_value())
+		return std::nullopt;
+	// the vehicle driven, else the camera
+	auto const *vehicle{(simulation::Train != nullptr) ? simulation::Train->Dynamic() : nullptr};
+	return georeference::to_degrees(*origin, vehicle != nullptr ? vehicle->GetPosition() : Camera);
+}
+
+void world_weather::update_live(glm::dvec3 const &Camera)
+{
+	if ((Global.WeatherMode != global_settings::weather_mode::live) || EditorModeFlag || (false == live_weather::available()))
+		return;
+	if (auto const report{m_live.take()})
+	{
+		if (false == report->error.empty())
+		{
+			m_livestatus = "the fetch failed: " + report->error;
+			WriteLog("Weather: live weather of " + std::to_string(report->place.x) + ", " + std::to_string(report->place.y) + " not fetched: " + report->error);
+			// tried again in a minute
+			m_livenext = std::min(m_livenext, m_time + 60.0);
+		}
+		else
+		{
+			// the report read as any other; the place kept for the climate and the sun
+			auto conditions{m_target};
+			auto const place{conditions.location};
+			conditions = weather_conditions{};
+			conditions.location = place;
+			if (parse_metar(report->metar, conditions))
+			{
+				// the first report comes with the snow lying there and goes at once; the next ones change the weather over two minutes
+				// and leave the snow as the simulation keeps it
+				if (false == m_liveapplied)
+					conditions.snow_depth = report->snow_depth;
+				apply(conditions, m_liveapplied ? 120.f : 0.f, m_liveapplied);
+				m_liveapplied = true;
+				char place_text[64];
+				std::snprintf(place_text, sizeof(place_text), "%.4f, %.4f", report->place.x, report->place.y);
+				m_livestatus = std::string{"Open-Meteo at "} + place_text + ": " + report->metar;
+				WriteLog("Weather: live weather of " + std::string{place_text} + " (Open-Meteo): " + report->metar);
+			}
+			else
+				m_livestatus = "the report wasn't understood: " + report->metar;
+		}
+	}
+	if ((m_time < m_livenext) || m_live.busy())
+		return;
+	auto const place{live_place(Camera)};
+	if (false == place.has_value())
+		return;
+	m_live.request(*place);
+	m_livenext = m_time + std::clamp(static_cast<double>(Global.WeatherLiveInterval), 60.0, 300.0);
 }
 
 snow_weather world_weather::surface_weather() const

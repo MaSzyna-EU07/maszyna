@@ -112,6 +112,21 @@ weather
 endweather
 ```
 
+## Where the weather comes from (weather.mode)
+
+| `weather.mode` | Weather |
+|---|---|
+| `scenery` (the default) | as the scenery and the starter set it, and nothing else: the weather section, the old `atmo`, the temperature and the date of the starter |
+| `preset` | a kind of the climate of the place (the table above) set by `weather.preset <kind>`, or `weather.preset random` (the default): one drawn as often as each comes in the month. Where the place of the scenery isn't known, the climate of the stand-in station |
+| `live` | the weather now at the vehicle driven (the camera without one), from [Open-Meteo](https://open-meteo.com) (free, no key), on a scenery laid on the map: a `//$g` line of Rainsted in the scenery file or a file it includes near its top (the IRT sceneries), or the place the editor keeps for the scenery. Fetched when the scenery starts (the first report goes at once, with the snow lying there), then every `weather.live.interval` seconds (60..300, 300 by default) for the place the vehicle is at, the change going over two minutes. A failed fetch is tried again in a minute; until the first report comes, and on a scenery off the map or without the network, the weather of the scenery stands |
+| `manual`, `auto` | the body of a weather section of `weather.manual` over the one of the scenery; `auto` as `preset` with `random`, but only where the place of the scenery is known |
+
+The live weather is the weather now, whatever the date of the scenario. The answer of Open-Meteo goes into the simulation as a
+weather report (`environment/liveweather.h`, `environment/liveweatherreport.cpp`): the wind at 10 m with its gusts, the visibility,
+what falls by the weather code of the WMO (the freezing rain and drizzle and the fog leaving rime too), the low clouds with a base the
+spread of the temperature and the dew point gives, the middle and the high ones, the temperature and the dew point. The window
+**Time and environment** shows the last report and the place it is of.
+
 ## Snow lying
 
 The snow falls, lies, drifts and melts with the weather (`environment/snowcover.h`, kept by the simulation):

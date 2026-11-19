@@ -55,6 +55,10 @@ char const *weather_mode_name()
 		return STR_C("set in eu07.ini (weather.manual)");
 	case global_settings::weather_mode::automatic:
 		return STR_C("of the climate of the place (weather.mode auto)");
+	case global_settings::weather_mode::preset:
+		return STR_C("of a preset of the climate (weather.mode preset)");
+	case global_settings::weather_mode::live:
+		return STR_C("now at the vehicle driven, Open-Meteo (weather.mode live)");
 	default:
 		return STR_C("of the scenery");
 	}
@@ -101,6 +105,8 @@ void ui::time_panel::render_weather()
 {
 	auto const &weather{simulation::Environment.weather()};
 	ImGui::Text(STR_C("Weather %s, climate of %s"), weather_mode_name(), scenery_station(weather).name.c_str());
+	if (false == weather.live_status().empty())
+		ImGui::TextWrapped("%s", weather.live_status().c_str());
 
 	std::array<char const *, static_cast<std::size_t>(climate::preset::count) + 2> kinds{};
 	kinds[0] = STR_C("set by hand");

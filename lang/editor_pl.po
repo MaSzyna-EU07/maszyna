@@ -16409,3 +16409,9 @@ msgstr "gołoledź %.1f, szadź twarda %.1f, szadź miękka %.1f, mokry śnieg %
 
 msgid "Arc at the pantograph %d: %.0f%%"
 msgstr "Łuk na pantografie %d: %.0f%%"
+
+msgid "of a preset of the climate (weather.mode preset)"
+msgstr "z presetu klimatu (weather.mode preset)"
+
+msgid "now at the vehicle driven, Open-Meteo (weather.mode live)"
+msgstr "bieżąca przy prowadzonym pojeździe, Open-Meteo (weather.mode live)"

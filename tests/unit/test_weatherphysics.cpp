@@ -2,6 +2,7 @@
 #include "doctest.h"
 #include "environment/railsurface.h"
 #include "environment/psychrometry.h"
+#include "environment/liveweather.h"
 #include "McZapkie/MOVER.h"
 #include "McZapkie/weatherphysics.h"
 #include "utilities/Globals.h"
@@ -254,4 +255,36 @@ TEST_CASE("weather physics: the glaze breaks the contact most, the soft rime lea
 	CHECK(weather_physics::arc_strength(-800.0) == 1.0);
 	CHECK(weather_physics::arc_strength(300.0) > 0.3);
 	CHECK(weather_physics::arc_strength(300.0) < 0.7);
+}
+
+TEST_CASE("live weather: the answer of Open-Meteo read into a weather report") {
+	auto const answer{R"({"latitude":52.2,"longitude":21.0,"current":{"time":"2026-11-19T22:00","interval":900,"temperature_2m":-2.4,
+		"relative_humidity_2m":93,"dew_point_2m":-3.3,"weather_code":66,"cloud_cover":100,"cloud_cover_low":100,"cloud_cover_mid":40,
+		"cloud_cover_high":0,"wind_speed_10m":6.2,"wind_direction_10m":274,"wind_gusts_10m":13.0,"visibility":2400,"snow_depth":0.05}})"};
+	auto const report{live_weather::read(answer, {52.2, 21.0})};
+	CAPTURE(report.metar);
+	CHECK(report.error.empty());
+	// the wind from 270 at 6 m/s gusting 13, the view 2.4 km, a light freezing rain, a low overcast with a base the spread of the
+	// temperature and the dew point gives, the middle clouds scattered, the temperature and the dew point below zero
+	CHECK(report.metar == "27006G13MPS 2400 -FZRA OVC004 SCT115 M02/M03");
+	REQUIRE(report.snow_depth.has_value());
+	CHECK(*report.snow_depth == doctest::Approx(0.05f));
+}
+
+TEST_CASE("live weather: a calm clear night, a storm, and an answer with an error") {
+	auto const clear{live_weather::read(R"({"current":{"temperature_2m":4.0,"dew_point_2m":1.0,"weather_code":0,"cloud_cover":0,
+		"cloud_cover_low":0,"cloud_cover_mid":0,"cloud_cover_high":0,"wind_speed_10m":0.2,"wind_direction_10m":0,"wind_gusts_10m":1.0,
+		"visibility":24000}})",
+	                                    {50.0, 20.0})};
+	CHECK(clear.metar == "00000MPS 9999 NSC 04/01");
+	auto const storm{live_weather::read(R"({"current":{"temperature_2m":24.0,"dew_point_2m":18.0,"weather_code":95,"cloud_cover_low":70,
+		"wind_speed_10m":9.0,"wind_direction_10m":225,"wind_gusts_10m":21.0,"visibility":6000}})",
+	                                    {50.0, 20.0})};
+	CAPTURE(storm.metar);
+	CHECK(storm.metar.find("TSRA") != std::string::npos);
+	CHECK(storm.metar.find("CB") != std::string::npos);
+	auto const failed{live_weather::read(R"({"error":true,"reason":"Latitude must be in range of -90 to 90°."})", {200.0, 20.0})};
+	CHECK(failed.metar.empty());
+	CHECK(failed.error.find("Latitude") != std::string::npos);
+	CHECK(live_weather::url({52.25, 21.0}).find("latitude=52.2500&longitude=21.0000") != std::string::npos);
 }
