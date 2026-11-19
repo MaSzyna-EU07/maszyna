@@ -164,6 +164,16 @@ jobs:
             -Recurse `
             -Force
 
+      # The downloads of the next step, kept between the runs: a release or raw.githubusercontent.com out of reach then
+      # doesn't fail the build. The key is this file, which pins them; a cache of an older one is taken too, as the next
+      # step checks every file by its SHA-256 and downloads only those it doesn't have.
+      - name: Restore the audio library downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/audio-dlls-downloads
+          key: audio-dlls-${{ hashFiles('.github/workflows/build_bin.yml') }}
+          restore-keys: audio-dlls-
+
       # The game loads OpenAL32.dll and libsndfile-1.dll from its own folder, and the depot had OpenAL Soft 1.18.1 and
       # libsndfile 1.0.28 (2017) there. OpenAL Soft 1.18 lacks ALC_SOFT_reopen_device and ALC_SOFT_system_events, so on
       # Windows the sound didn't follow a change of the output device; libsndfile 1.0.28 reads no Opus and no MP3, which
@@ -182,13 +192,24 @@ jobs:
           $output = "build/bin/$env:CONFIG_WIN"
           $licenses = Join-Path $output 'licenses'
           $work = Join-Path $env:RUNNER_TEMP 'audio-dlls'
-          New-Item -ItemType Directory -Force -Path $work, $licenses | Out-Null
+          $downloads = Join-Path $env:RUNNER_TEMP 'audio-dlls-downloads'
+          New-Item -ItemType Directory -Force -Path $work, $licenses, $downloads | Out-Null
+          $pinned = [System.Collections.Generic.List[string]]::new()
 
+          # the file of the URL with the given SHA-256: the one kept by a run before, else downloaded. named by its
+          # SHA-256, as several license texts are named the same
           function Get-Pinned([string] $Url, [string] $Sha256) {
-            $file = Join-Path $work (Split-Path $Url -Leaf)
+            $name = "$Sha256-$(Split-Path $Url -Leaf)"
+            $pinned.Add($name)
+            $file = Join-Path $downloads $name
+            if ((Test-Path -Path $file) -and (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant() -eq $Sha256) {
+              Write-Host "$Url kept by a run before"
+              return $file
+            }
             Invoke-WebRequest -Uri $Url -OutFile $file -MaximumRetryCount 3 -RetryIntervalSec 10 -TimeoutSec 120
             $hash = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant()
             if ($hash -ne $Sha256) {
+              Remove-Item -Path $file -Force
               throw "${Url}: SHA-256 $hash, expected $Sha256"
             }
             return $file
@@ -227,6 +248,9 @@ jobs:
             'libsndfile-1.dll: libsndfile 1.2.2, unmodified sndfile.dll of the official binaries, GNU LGPL 2.1 or later'
             '  (libsndfile-COPYING.txt). Source: https://github.com/libsndfile/libsndfile/releases/tag/1.2.2'
           ) | Set-Content -Path (Join-Path $licenses 'audio-libraries.txt') -Encoding utf8
+
+          # the files no pin names any more aren't kept for the next run
+          Get-ChildItem -Path $downloads -File | Where-Object { $pinned -notcontains $_.Name } | Remove-Item -Force
 
       - name: Upload Windows build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
