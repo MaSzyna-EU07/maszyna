@@ -8791,7 +8791,8 @@ void TController::control_tractive_force() {
 	    && (AbsAccS < AccDesired /*- std::min( 0.05, 0.01 * iDriverFailCount )*/ || mvOccupied->SpeedCtrlUnit.IsActive && velocity < mvOccupied->SpeedCtrlUnit.FullPowerVelocity) &&
 	    false == TestFlag(iDrivigFlags, movePress) &&
 	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
-	    // speeds the train up, more power only drags the brake and slips the wheels
+	    // speeds the train up, more power only drags the brake and slips the wheels. nor is a notch past that taken
+	    // back: the power got there in one notch from below, and the notch below doesn't hold the train
 	    ( false == bUphillRelease || fUphillTractiveForce < EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce ) &&
 	    // nor while the train brake is still being applied further to hold the train
 	    false == bUphillBrakeTopUp &&
@@ -8819,10 +8820,7 @@ void TController::control_tractive_force() {
         }
         else if( velocity > VelDesired + SpeedCtrlMargin
               || ( fAccGravity < -0.01 ? is_too_fast_uphill() : AbsAccS > AccDesired + 10.05 )
-               || IsAnyCouplerStretched
-               // starting uphill against the releasing brake, a notch that went past the bound is taken back: between
-               // the two bounds the power neither goes up nor down, so a coarse notch doesn't swing round them
-               || ( bUphillRelease && ( fUphillTractiveForce > EU07_AI_UPHILLRELEASEFORCE * fUphillHoldingForce ) ) ) {
+               || IsAnyCouplerStretched ) {
                 // jak za bardzo przyspiesza albo prędkość przekroczona
 				// dodany wyjatek na "pelna w przod"
                 cue_action( driver_hint::tractiveforcedecrease );
