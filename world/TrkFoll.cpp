@@ -267,6 +267,46 @@ bool TTrackFollower::Move(double fDistance, bool bPrimary)
     }
 };
 
+int TTrackFollower::Path() const {
+
+    if( pCurrentTrack == nullptr || pCurrentTrack->SwitchExtension == nullptr ) { return 0; }
+    if( pCurrentTrack->eType == tt_Cross ) { return iSegment; }
+    if( pCurrentTrack->eType == tt_Switch ) { return pCurrentSegment == pCurrentTrack->SwitchExtension->Segments[ 1 ] ? 1 : 0; }
+    return 0;
+}
+
+bool TTrackFollower::Place( TTrack *Track, int const Path, double const Distance, double const Direction, int const Eventflags, int const Eventallflags ) {
+
+    if( Track == nullptr ) { return false; }
+    // the path of a switch the axle stands on may be other than the one the switch is set to, a crossing has several
+    auto segment { Track->CurrentSegment() };
+    auto crossingsegment { 0 };
+    if( Track->SwitchExtension != nullptr && ( Track->eType == tt_Switch || Track->eType == tt_Cross ) ) {
+        auto const index { Track->eType == tt_Switch ? ( Path & 1 ) : std::abs( Path ) - 1 };
+        if( index >= 0 && index < 6 && Track->SwitchExtension->Segments[ index ] != nullptr ) {
+            segment = Track->SwitchExtension->Segments[ index ];
+            crossingsegment = ( Track->eType == tt_Cross ? Path : 0 );
+        }
+    }
+    if( segment == nullptr ) { return false; }
+
+    if( Track != pCurrentTrack ) {
+        // najpierw +1, później -1, as in SetCurrentTrack()
+        Track->AxleCounter( +1, Owner );
+        if( pCurrentTrack != nullptr ) {
+            pCurrentTrack->AxleCounter( -1, Owner );
+        }
+    }
+    pCurrentTrack = Track;
+    pCurrentSegment = segment;
+    iSegment = crossingsegment;
+    fDirection = ( Direction < 0.0 ? -1.0 : 1.0 );
+    fCurrentDistance = std::clamp( Distance, 0.0, pCurrentSegment->GetLength() );
+    iEventFlag = Eventflags;
+    iEventallFlag = Eventallflags;
+    return ComputatePosition();
+}
+
 double TTrackFollower::RailPhase( double const Offset ) const {
 
     return pCurrentTrack != nullptr ? pCurrentTrack->rail_phase( fCurrentDistance + fDirection * Offset ) : -1.0;

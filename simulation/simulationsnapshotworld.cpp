@@ -502,6 +502,190 @@ bool apply_lights(record const &Entry)
 	return true;
 }
 
+void capture_vehicles(document &Document)
+{
+	for (auto const *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+		vehicle->snapshot_save(Document.add("vehicle", vehicle_reference(vehicle)));
+	}
+}
+
+// the couplings as the vehicles have them now
+std::vector<coupling_link> current_couplings(std::unordered_map<TMoverParameters const *, TDynamicObject *> const &Owners)
+{
+	std::vector<coupling_link> links;
+	for (auto const *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+		for (auto const side : {end::front, end::rear})
+		{
+			auto const &coupler{vehicle->MoverParameters->Couplers[side]};
+			auto const owner{coupler.Connected != nullptr ? Owners.find(coupler.Connected) : Owners.end()};
+			if (owner == Owners.end() || coupler.CouplingFlag == coupling::faux)
+				continue;
+			links.emplace_back(vehicle_reference(vehicle), side, vehicle_reference(owner->second), coupler.ConnectedNr, coupler.CouplingFlag);
+		}
+	}
+	return links;
+}
+
+// the couplings the snapshot has, for the vehicles it has
+std::vector<coupling_link> wanted_couplings(std::vector<record const *> const &Entries)
+{
+	std::vector<coupling_link> links;
+	for (auto const *entry : Entries)
+	{
+		for (auto const side : {end::front, end::rear})
+		{
+			auto const key{std::format("coupler{}", static_cast<int>(side))};
+			if (false == entry->has(key + "flags"))
+				continue;
+			links.emplace_back(entry->name, side, entry->text(key), entry->value(key + "end", 0), entry->value(key + "flags", 0));
+		}
+	}
+	return links;
+}
+
+void part(TDynamicObject &Vehicle, int const End)
+{
+	auto &coupler{Vehicle.MoverParameters->Couplers[End]};
+	if (coupler.Connected != nullptr && coupler.ConnectedNr >= 0 && coupler.ConnectedNr < 2)
+	{
+		auto &other{coupler.Connected->Couplers[coupler.ConnectedNr]};
+		other.Connected = nullptr;
+		other.ConnectedNr = -1;
+		other.CouplingFlag = coupling::faux;
+	}
+	coupler.Connected = nullptr;
+	coupler.ConnectedNr = -1;
+	coupler.CouplingFlag = coupling::faux;
+}
+
+// parts and joins the vehicles of the scenery until they're coupled the way the snapshot has them
+void apply_couplings(std::vector<record const *> const &Entries, apply_summary &Summary)
+{
+	std::unordered_map<TMoverParameters const *, TDynamicObject *> owners;
+	std::vector<std::string> present;
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+		owners.emplace(vehicle->MoverParameters, vehicle);
+		present.emplace_back(vehicle_reference(vehicle));
+	}
+	auto const plan{plan_couplings(current_couplings(owners), wanted_couplings(Entries), present)};
+
+	for (auto const &link : plan.part)
+	{
+		if (auto *vehicle{find_vehicle(link.vehicle)}; vehicle != nullptr)
+			part(*vehicle, link.end);
+	}
+	for (auto const &link : plan.change)
+	{
+		auto const *vehicle{find_vehicle(link.vehicle)};
+		auto const *other{find_vehicle(link.other)};
+		if (vehicle == nullptr || other == nullptr)
+			continue;
+		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
+		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
+	}
+	auto failed{0};
+	for (auto const &link : plan.join)
+	{
+		auto *vehicle{find_vehicle(link.vehicle)};
+		auto *other{find_vehicle(link.other)};
+		if (vehicle == nullptr || other == nullptr || false == vehicle->MoverParameters->Attach(link.end, link.otherend, other->MoverParameters, link.flags, true, false))
+		{
+			++failed;
+			continue;
+		}
+		// the vehicles joined in the snapshot, whatever the scenery made of their couplers
+		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
+		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
+	}
+	if (false == plan.part.empty() || false == plan.join.empty() || false == plan.change.empty())
+		Summary.remarks.emplace_back(std::format("couplings: {} parted, {} joined, {} changed", plan.part.size(), static_cast<int>(plan.join.size()) - failed, plan.change.size()));
+	if (failed != 0 || false == plan.missing.empty())
+		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot couldn't be made, {} are to vehicles the scenery doesn't have", failed, plan.missing.size()));
+
+	// each vehicle knows the one coupled to it as its neighbour at that end
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+		for (auto const side : {end::front, end::rear})
+		{
+			auto const &coupler{vehicle->MoverParameters->Couplers[side]};
+			auto &neighbour{vehicle->MoverParameters->Neighbours[side]};
+			neighbour = neighbour_data();
+			if (auto const owner{coupler.Connected != nullptr ? owners.find(coupler.Connected) : owners.end()}; owner != owners.end())
+			{
+				neighbour.vehicle = owner->second;
+				neighbour.vehicle_end = coupler.ConnectedNr;
+			}
+		}
+	}
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle != nullptr && vehicle->MoverParameters != nullptr && vehicle->bEnabled)
+			vehicle->update_neighbours();
+	}
+}
+
+void apply_vehicles(document const &Document, apply_summary &Summary)
+{
+	auto const entries{Document.of("vehicle")};
+	std::vector<std::pair<TDynamicObject *, record const *>> known;
+	std::unordered_set<TDynamicObject const *> listed;
+	for (auto const *entry : entries)
+	{
+		auto *vehicle{find_vehicle(entry->name)};
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+		{
+			++Summary.skipped;
+			Summary.notes.emplace_back(std::format("vehicle {} of the snapshot isn't in the scenery", entry->name));
+			continue;
+		}
+		known.emplace_back(vehicle, entry);
+		listed.emplace(vehicle);
+	}
+	// where the vehicles are, then what they're coupled to, then what they're doing
+	auto misplaced{0};
+	for (auto const &[vehicle, entry] : known)
+	{
+		if (false == vehicle->snapshot_place(*entry))
+			++misplaced;
+	}
+	if (misplaced != 0)
+		Summary.notes.emplace_back(std::format("{} vehicles of the snapshot couldn't be put where it has them, they stay where the scenery put them", misplaced));
+	apply_couplings(entries, Summary);
+	for (auto const &[vehicle, entry] : known)
+	{
+		vehicle->snapshot_load(*entry);
+		++Summary.entries;
+	}
+	// the vehicles the snapshot doesn't know stay as the scenery made them
+	if (auto const unknown{std::ranges::count_if(Vehicles.sequence(), [&](TDynamicObject const *Vehicle) { return Vehicle != nullptr && false == listed.contains(Vehicle); })};
+	    unknown != 0)
+		Summary.notes.emplace_back(std::format("{} vehicles of the scenery aren't in the snapshot, they stay as the scenery made them", unknown));
+}
+
+// the driver in charge of each vehicle; after the drivers are where the snapshot has them
+void apply_owners(document const &Document)
+{
+	for (auto const *entry : Document.of("vehicle"))
+	{
+		auto *vehicle{find_vehicle(entry->name)};
+		if (vehicle == nullptr || false == entry->has("first"))
+			continue;
+		auto const *owner{find_vehicle(entry->text("owner"))};
+		vehicle->ctOwner = (owner != nullptr ? owner->Mechanik : nullptr);
+	}
+}
+
 // tells whether the snapshot was taken in the scenery it's being put over
 void check_scenery(record const &Header, apply_summary &Summary)
 {
@@ -614,6 +798,7 @@ document capture()
 	capture_events(result);
 	capture_launchers(result);
 	capture_lights(result);
+	capture_vehicles(result);
 	// the long one last, out of the way of whoever reads the file
 	capture_random(result);
 	return result;
@@ -651,6 +836,8 @@ apply_summary apply(document const &Document)
 	apply_each(Document, "crossing", summary, apply_crossing);
 	apply_each(Document, "madetrack", summary, apply_made_track);
 	apply_each(Document, "powersource", summary, apply_power);
+	apply_vehicles(Document, summary);
+	apply_owners(Document);
 	// the cells after the vehicles, whose sections write to their cells as they're taken and freed
 	apply_each(Document, "memcell", summary, apply_memcell);
 	auto const launchers{Events.launchers()};
