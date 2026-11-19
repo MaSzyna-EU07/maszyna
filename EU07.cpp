@@ -225,17 +225,15 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
+		// stays below 0 when init() throws, so a start that ends with an exception counts as failed too
+		int initresult{-1};
 		try
 		{
-			auto result{Application.init(argc, argv)};
-			if (result == 0)
+			initresult = Application.init(argc, argv);
+			if (initresult == 0)
 			{
-				result = Application.run();
+				Application.run();
 				Application.exit();
-			}
-			else
-			{
-				exitcode = 1;
 			}
 		}
 		catch (std::bad_alloc const &Error)
@@ -256,6 +254,8 @@ int main(int argc, char *argv[])
 		// after a failed start or an error caught above the log thread still runs, and what it hasn't written yet
 		// (why the start failed) would go with the process. after Application.exit() it has stopped already
 		finish_log();
+		if (initresult < 0)
+			exitcode = 1;
 	}
 #ifndef _WIN32
 	fflush(stdout);
