@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 #include "environment/liveweather.h"
 
 #include "editor/editorHttp.hpp"
+#include "environment/georeference.h"
+#include "utilities/Globals.h"
 
 #include <chrono>
 #include <vector>
@@ -24,6 +26,11 @@ live_weather::~live_weather()
 bool live_weather::available()
 {
 	return editor_http::available();
+}
+
+bool live_weather::active()
+{
+	return (Global.WeatherMode == global_settings::weather_mode::live) && georeference::scenery_origin().has_value() && available();
 }
 
 void live_weather::request(glm::dvec2 const &Place)

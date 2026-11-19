@@ -38,6 +38,9 @@ class live_weather
 
 	// whether this build can fetch anything
 	static bool available();
+	// whether the weather of the scenery loaded goes live: weather.mode live, the scenery laid on the map, a build which fetches. the
+	// clock and the date of the simulation are the ones of the system then (the weather is the one of now)
+	static bool active();
 	// starts a fetch of the weather now at Place (latitude, longitude), unless one goes on
 	void request(glm::dvec2 const &Place);
 	bool busy() const;

@@ -121,7 +121,10 @@ endweather
 | `live` | the weather now at the vehicle driven (the camera without one), from [Open-Meteo](https://open-meteo.com) (free, no key), on a scenery laid on the map: a `//$g` line of Rainsted in the scenery file or a file it includes near its top (the IRT sceneries), or the place the editor keeps for the scenery. Fetched when the scenery starts (the first report goes at once, with the snow lying there), then every `weather.live.interval` seconds (60..300, 300 by default) for the place the vehicle is at, the change going over two minutes. A failed fetch is tried again in a minute; until the first report comes, and on a scenery off the map or without the network, the weather of the scenery stands |
 | `manual`, `auto` | the body of a weather section of `weather.manual` over the one of the scenery; `auto` as `preset` with `random`, but only where the place of the scenery is known |
 
-The live weather is the weather now, whatever the date of the scenario. The answer of Open-Meteo goes into the simulation as a
+The live weather is the weather now, so with it the simulation goes by the date and the clock of the system, whatever the scenario
+and the starter set (`live_weather::active()`): the day of the year and its season are today's, and the clock is shifted to the one
+of the system as `scenario.time.current` shifts it, the timetables with it. On a scenery off the map, or without the network, the
+live weather doesn't start, and the date and the clock of the starter stand as in the other modes. The answer of Open-Meteo goes into the simulation as a
 weather report (`environment/liveweather.h`, `environment/liveweatherreport.cpp`): the wind at 10 m with its gusts, the visibility,
 what falls by the weather code of the WMO (the freezing rain and drizzle and the fog leaving rime too), the low clouds with a base the
 spread of the temperature and the dew point gives, the middle and the high ones, the temperature and the dew point. The window

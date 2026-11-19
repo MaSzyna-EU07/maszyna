@@ -12,6 +12,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "environment/liveweather.h"
+#include "simulation/simulationenvironment.h"
+#include "utilities/Logs.h"
 
 namespace simulation {
 
@@ -43,7 +46,9 @@ scenario_time::init(std::time_t timestamp) {
 	m_time.wSecond = static_cast<uint16_t>(tms->tm_sec);
 	m_time.wMilliseconds = 0;
 
-    if( Global.fMoveLight > 0.0 ) {
+    // the live weather is the weather of now: the date of the system stands, whatever the scenario sets
+    auto const live { live_weather::active() };
+    if( ( Global.fMoveLight > 0.0 ) && ( false == live ) ) {
         // day and month of the year can be overriden by scenario setup
         daymonth( m_time.wDay, m_time.wMonth, m_time.wYear, static_cast<WORD>( Global.fMoveLight ) );
     }
@@ -57,6 +62,14 @@ scenario_time::init(std::time_t timestamp) {
 	}
 
     m_yearday = year_day( m_time.wDay, m_time.wMonth, m_time.wYear );
+    if( live ) {
+        // the season of today as well
+        Global.fMoveLight = static_cast<float>( m_yearday );
+        simulation::Environment.compute_season( m_yearday );
+        WriteLog( "Time: the date and the clock of the system, for the live weather (weather.mode live): "
+            + std::to_string( m_time.wDay ) + "." + std::to_string( m_time.wMonth ) + "." + std::to_string( m_time.wYear ) + " "
+            + std::to_string( m_time.wHour ) + ":" + ( m_time.wMinute < 10 ? "0" : "" ) + std::to_string( m_time.wMinute ) );
+    }
 
     // calculate time zone bias
     // retrieve relevant time zone info from system registry (or fall back on supplied default)
