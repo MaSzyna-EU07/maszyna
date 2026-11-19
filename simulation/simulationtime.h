@@ -47,6 +47,14 @@ public:
             return m_timezonebias; }
 	void
 	    set_time(int yearday, int minute);
+    // the part of the running second gone by [ms], with its fraction
+    inline
+    double
+        milliseconds() const {
+            return m_milliseconds; }
+    // sets the clock to a saved moment: the date and time of Time, Milliseconds into its second (simulation snapshot)
+    void
+        restore( SYSTEMTIME const &Time, double const Milliseconds );
 
     /** Returns std::string in format: `"mm:ss"`. */
     operator std::string();

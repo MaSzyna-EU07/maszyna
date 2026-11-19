@@ -114,6 +114,27 @@ bool TTractionPowerSource::Update(double dt)
     return true;
 };
 
+std::vector<double> TTractionPowerSource::state() const {
+
+    return { NominalVoltage, TotalCurrent, TotalAdmitance, TotalPreviousAdmitance, OutputVoltage,
+             FastFuse ? 1.0 : 0.0, SlowFuse ? 1.0 : 0.0, FuseTimer, static_cast<double>( FuseCounter ) };
+}
+
+void TTractionPowerSource::state( std::vector<double> const &State ) {
+
+    // a list of another length comes from a build which keeps other things
+    if( State.size() != 9 ) { return; }
+    NominalVoltage = State[ 0 ];
+    TotalCurrent = State[ 1 ];
+    TotalAdmitance = State[ 2 ];
+    TotalPreviousAdmitance = State[ 3 ];
+    OutputVoltage = State[ 4 ];
+    FastFuse = State[ 5 ] != 0.0;
+    SlowFuse = State[ 6 ] != 0.0;
+    FuseTimer = State[ 7 ];
+    FuseCounter = static_cast<int>( State[ 8 ] );
+}
+
 double TTractionPowerSource::CurrentGet(double res)
 { // pobranie wartości prądu przypadającego na rezystancję (res)
     // niech pamięta poprzednią admitancję i wg niej przydziela prąd

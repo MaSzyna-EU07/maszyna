@@ -401,6 +401,12 @@ public:
     void MovedUp1(float const dh);
     void VelocitySet(float v);
     double VelocityGet();
+    // the speed limit as the track keeps it, which VelocityGet() doesn't give for a damaged track, and setting it
+    // past what VelocitySet() makes of it on a switch: for a simulation snapshot, which puts back what it read
+    double velocity_limit() const {
+        return fVelocity; }
+    void velocity_limit( double const Velocity ) {
+        fVelocity = Velocity; }
     float Friction() const;
     // a switch has two paths, any other track the one
     int path_count() const;
