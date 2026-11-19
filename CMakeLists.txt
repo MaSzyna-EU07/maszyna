@@ -126,6 +126,7 @@ set(SOURCES
 "vehicle/Button.cpp"
 "vehicle/Camera.cpp"
 "vehicle/Driver.cpp"
+"vehicle/crewchange.cpp"
 "application/driverhints.cpp"
 "vehicle/DynObj.cpp"
 "EU07.cpp"

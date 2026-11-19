@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
+#include "vehicle/crewchange.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
@@ -781,6 +782,12 @@ putvalues_event::run_() {
         + to_string( m_input.data_value_1, 2 ) + "] ["
         + to_string( m_input.data_value_2, 2 ) + "]" );
 
+    if( crew::is_command( m_input.data_text ) ) {
+        // a driver for the vehicle named in the command, or none (eu07/maszyna#510). not a command for a driver or
+        // a vehicle to take, and it works with nothing setting the event off too (a key, an event launcher)
+        crew::change( crew::parse( m_input.data_text, m_input.data_value_1, m_input.data_value_2 ), m_activator );
+        return;
+    }
     if( m_activator == nullptr ) { return; }
     // zamiana, bo fizyka ma inaczej niż sceneria
     // NOTE: y & z swap, negative x
