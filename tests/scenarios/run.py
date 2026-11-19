@@ -77,12 +77,14 @@ width 1280
 height 720
 inactivepause no
 soundenabled no
+convertmodels 0
 physicslog {physicslog}
 multiplelogs yes
 timespeed {timespeed}
 """
 # multiplelogs: log and errors go to logs/log (<scenery>) <date>.txt instead of the shared
 # log.txt, so runs of different cases can go in parallel
+# convertmodels 0: a test run writes no converted models (.e3d) into the game dir
 
 
 # ---------------------------------------------------------------- scenery
