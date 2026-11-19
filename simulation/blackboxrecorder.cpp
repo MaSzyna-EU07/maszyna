@@ -508,10 +508,13 @@ void blackbox_recorder::keep_tape_line() {
 	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
 	if (driver == nullptr)
 		return;
+	auto const &name{driver->physicslog_name()};
+	// its log, the driver's own or written here, before the logs of the other drivers: the closing drops those it has
+	// no time for, on a hard disk with hundreds of them
+	PhysicsLogs.put_first(name);
 	// a driver writing its own, of a train with "physicslog.trains yes", isn't written twice
 	if (driver->writes_physicslog())
 		return;
-	auto const &name{driver->physicslog_name()};
 	if (m_tapes.insert(name).second) {
 		PhysicsLogs.begin(name, TController::physicslog_header());
 		WriteLog(std::format("Black box: the physics log \"{}\" begun", PhysicsLogs.shown(name)));

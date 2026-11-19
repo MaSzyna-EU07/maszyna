@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <future>
 #include <iomanip>
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string_view>
@@ -96,18 +97,6 @@ void lower_disk_priority() noexcept {
 #endif
 }
 
-// the disk work of the calling thread back at the priority everyone's has: at the closing, which waits for it. a thread
-// whose priority wasn't lowered is left as it is
-void normal_disk_priority() noexcept {
-#ifdef _WIN32
-	static_cast<void>(::SetThreadPriority(::GetCurrentThread(), THREAD_MODE_BACKGROUND_END));
-#elif defined(__linux__) && defined(SYS_ioprio_set)
-	// the class none: the priority following the thread's processor priority, as with no class set
-	constexpr int whothread{1};
-	static_cast<void>(::syscall(SYS_ioprio_set, whothread, 0, 0));
-#endif
-}
-
 } // namespace
 
 void physicslog_values::append_to(std::string &Text) const {
@@ -175,9 +164,14 @@ void physicslog_writer::append(std::string const &Name, physicslog_values Values
 	start();
 }
 
+void physicslog_writer::put_first(std::string const &Name) {
+	std::scoped_lock lock{m_mutex};
+	m_first.insert(Name);
+}
+
 void physicslog_writer::flush() {
 	std::scoped_lock files{m_filemutex};
-	write(false);
+	write(writing::flush);
 }
 
 bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
@@ -186,7 +180,7 @@ bool physicslog_writer::flush_for(std::chrono::milliseconds const Timeout) {
 	auto done{std::make_shared<std::promise<void>>()};
 	auto ended{done->get_future()};
 	std::thread([this, done] {
-		flush_safely(false);
+		flush_safely(writing::flush);
 		done->set_value();
 	}).detach();
 	return ended.wait_for(Timeout) == std::future_status::ready;
@@ -202,7 +196,8 @@ void physicslog_writer::stop() {
 		// taken by the first to stop, so it's joined once
 		thread = std::move(m_thread);
 		itself = m_writer == std::this_thread::get_id();
-		// the time the writing has, also for a batch the thread has begun already: the logs not written by then are dropped
+		// the time the closing's writing has: the logs not written by then are dropped. a writing the thread has begun
+		// ends at the log at hand, leaving the others to it
 		closeby = closing_begun();
 	}
 	// the stop asked outside the lock, which waking the writer takes
@@ -219,7 +214,7 @@ void physicslog_writer::stop() {
 	// no thread for it, out of memory say: written here, the logs past the time dropped all the same
 	if (thread.joinable())
 		thread.join();
-	flush_safely(true);
+	flush_safely(writing::closing);
 }
 
 physicslog_writer::closing_time physicslog_writer::closing_begun() {
@@ -249,7 +244,7 @@ bool physicslog_writer::close_aside(std::jthread &Thread, closing_time const Clo
 		std::thread([this, done, writer = std::move(Thread)]() mutable {
 			if (writer.joinable())
 				writer.join();
-			flush_safely(true);
+			flush_safely(writing::closing);
 			done->set_value();
 		}).detach();
 		started = true;
@@ -314,8 +309,8 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 				return;
 		}
 		auto const start{std::chrono::steady_clock::now()};
-		// a stop come meanwhile cuts the writing short at the time it gives
-		auto const logs{flush_safely(true)};
+		// a stop come meanwhile ends the writing at the log at hand, the others left to the closing's
+		auto const logs{flush_safely(writing::thread)};
 		auto const took{std::chrono::steady_clock::now() - start};
 		wait = wait_after(m_interval, took);
 		if (wait > m_interval && false == m_slowtold) {
@@ -332,10 +327,10 @@ void physicslog_writer::run(std::stop_token const &Stop) {
 	}
 }
 
-std::size_t physicslog_writer::flush_safely(bool const Closing) noexcept {
+std::size_t physicslog_writer::flush_safely(writing const Mode) noexcept {
 	try {
 		std::scoped_lock files{m_filemutex};
-		return write(Closing);
+		return write(Mode);
 	} catch (std::exception const &Error) {
 		tell(std::string{"Bad physics log: the writing failed ("} + Error.what() + "), the lines taken for it are lost");
 	} catch (...) {
@@ -344,84 +339,128 @@ std::size_t physicslog_writer::flush_safely(bool const Closing) noexcept {
 	return 0;
 }
 
-bool physicslog_writer::dropped_at_closing(bool const Closing, bool &Raised) const {
+bool physicslog_writer::past_closing() const {
 	auto const closeby{m_closeby.load()};
-	if (false == Closing || closeby == 0)
-		return false;
-	// the closing waits for the writing: the thread's disk work no longer after everyone else's
-	if (false == Raised) {
-		Raised = true;
-		normal_disk_priority();
-	}
-	return std::chrono::steady_clock::now().time_since_epoch().count() >= closeby;
+	return closeby != 0 && std::chrono::steady_clock::now().time_since_epoch().count() >= closeby;
 }
 
-void physicslog_writer::keep_failed(std::map<std::string, pending> &Failed) {
+void physicslog_writer::keep(std::map<std::string, pending> &Failed, std::vector<std::pair<std::string const, pending> *> const &Left) {
 	// cut before the lock, which the simulation waits on to give its lines: only what came since is added under it
-	auto const most{std::max(keptwhilefailingleast, keptwhilefailing / Failed.size())};
-	for (auto &[name, lines] : Failed)
-		keep_last(lines.text, most);
-	// tried again the next time, before what came since; a file held by another program for a while doesn't lose
-	// them, nor its header. a log begun anew since drops them
-	std::scoped_lock lock{m_mutex};
+	auto const most{std::max(keptwhilefailingleast, keptwhilefailing / std::max<std::size_t>(Failed.size(), 1))};
 	for (auto &[name, lines] : Failed) {
-		auto &now{m_pending[name]};
-		if (now.fresh)
-			continue;
-		lines.text.append(now.text);
-		lines.values = std::move(now.values);
-		now = std::move(lines);
+		// the values the writing failed to make into text, out of memory say, made into it again, before the lock: as
+		// text they go before what came since
+		try {
+			lines.to_text();
+		} catch (std::exception const &) {
+			// kept as values, below
+		}
+		keep_last(lines.text, most);
 	}
+	// tried again the next time, before what came since; a file held by another program for a while doesn't lose
+	// them, nor its header
+	std::scoped_lock lock{m_mutex};
+	for (auto &[name, lines] : Failed)
+		put_back(name, lines);
+	for (auto *log : Left)
+		put_back(log->first, log->second);
 }
 
-std::size_t physicslog_writer::write(bool const Closing) {
+void physicslog_writer::put_back(std::string const &Name, pending &Lines) {
+	auto &now{m_pending[Name]};
+	// a log begun anew since drops them
+	if (now.fresh)
+		return;
+	// the lines in the order given: those kept, then those come since, as text and as values. values kept before text
+	// come since are made into text first, as those before a line given as text are; values which can't be, out of
+	// memory, are dropped then, as the order can't be kept otherwise
+	if (false == now.text.empty() && false == Lines.values.empty()) {
+		try {
+			Lines.to_text();
+		} catch (std::exception const &) {
+			Lines.values.clear();
+		}
+	}
+	Lines.text.append(now.text);
+	// added at once, allocated first: one failing moves none of them
+	if (Lines.values.empty())
+		Lines.values = std::move(now.values);
+	else
+		Lines.values.insert(Lines.values.end(), std::make_move_iterator(now.values.begin()), std::make_move_iterator(now.values.end()));
+	now = std::move(Lines);
+}
+
+std::size_t physicslog_writer::write(writing const Mode) {
 	std::map<std::string, pending> taken;
+	std::set<std::string> first;
+	std::vector<std::pair<std::string const, pending> *> order;
 	{
 		std::scoped_lock lock{m_mutex};
+		if (m_pending.empty())
+			return 0;
+		// a stop come before the thread's writing: the lines are all the closing's, left as they are
+		if (Mode == writing::thread && m_closeby.load() != 0)
+			return 0;
+		// had before the lines are taken: without the memory for it they're left for the next writing
+		first = m_first;
+		order.reserve(m_pending.size());
 		taken.swap(m_pending);
 	}
-	if (taken.empty())
-		return 0;
 	auto const logs{taken.size()};
 	std::error_code error;
 	std::filesystem::create_directories(m_folder, error);
+	std::ranges::transform(taken, std::back_inserter(order), [](auto &Log) { return &Log; });
+	writing_order(order, first);
 	std::map<std::string, pending> failed;
 	std::size_t dropped{0};
-	auto raised{false};
-	for (auto &[name, lines] : taken) {
+	std::size_t reached{0};
+	for (auto *log : order) {
+		// a stop come while the thread writes: the logs it hasn't come to are left to the closing's writing, which has
+		// them with the lines given since, those put first first
+		if (Mode == writing::thread && m_closeby.load() != 0)
+			break;
+		++reached;
+		auto &[name, lines]{*log};
 		// past the time the closing gives the writing: dropped, as the closing doesn't wait for it any longer
-		if (dropped_at_closing(Closing, raised)) {
+		if (Mode == writing::closing && past_closing()) {
 			++dropped;
 			continue;
 		}
-		// a log going wrong otherwise, out of memory say, is kept for the next try as one whose file can't be written:
-		// the others are written still, and the writer goes on
-		auto written{false};
-		std::string problem{"can't write"};
-		try {
-			// the text of the lines given as values, here on the writer's thread rather than the simulation's
-			lines.to_text();
-			if (lines.text.empty() && false == lines.fresh)
-				continue;
-			written = write_log(name, lines);
-		} catch (std::exception const &Error) {
-			problem = std::string{"failed ("} + Error.what() + ") to write";
-		}
-		if (written) {
-			if (m_failed.erase(name) > 0)
-				WriteLog("Physics log: " + shown(name) + " written again");
-			continue;
-		}
-		if (m_failed.insert(name).second)
-			ErrorLog("Bad physics log: " + problem + " " + shown(name) + ", its last lines are kept for the next try");
-		failed.emplace(name, std::move(lines));
+		if (false == write_taken(name, lines))
+			failed.emplace(name, std::move(lines));
 	}
 	if (dropped > 0)
 		tell(std::format("Bad physics log: {} of them not written, past the {:.1f} s the closing waits for them", dropped,
 		    std::chrono::duration<double>{m_closingwait}.count()));
-	if (false == failed.empty())
-		keep_failed(failed);
+	// what is left of the order: the logs the thread hasn't come to
+	order.erase(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(reached));
+	if (false == failed.empty() || false == order.empty())
+		keep(failed, order);
 	return logs;
+}
+
+bool physicslog_writer::write_taken(std::string const &Name, pending &Lines) {
+	// a log going wrong otherwise, out of memory say, is kept for the next try as one whose file can't be written:
+	// the others are written still, and the writer goes on
+	auto written{false};
+	std::string problem{"can't write"};
+	try {
+		// the text of the lines given as values, here on the writer's thread rather than the simulation's
+		Lines.to_text();
+		if (Lines.text.empty() && false == Lines.fresh)
+			return true;
+		written = write_log(Name, Lines);
+	} catch (std::exception const &Error) {
+		problem = std::string{"failed ("} + Error.what() + ") to write";
+	}
+	if (written) {
+		if (m_failed.erase(Name) > 0)
+			WriteLog("Physics log: " + shown(Name) + " written again");
+		return true;
+	}
+	if (m_failed.insert(Name).second)
+		ErrorLog("Bad physics log: " + problem + " " + shown(Name) + ", its last lines are kept for the next try");
+	return false;
 }
 
 bool physicslog_writer::write_log(std::string const &Name, pending const &Lines) const {

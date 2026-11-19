@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -21,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 // a line of a driver's physics log as its values, taken as the simulation goes and made into text by the thread which
@@ -83,14 +85,18 @@ public:
 	void append(std::string const &Name, std::string_view Line);
 	// the same, a line of the values, made into text by the writer's thread when it writes the log
 	void append(std::string const &Name, physicslog_values Values);
+	// the log Name written before the others, at each writing: the logs of the vehicles the user was in, and of the
+	// tested trains, which a closing short of time would otherwise drop by the order of their names
+	void put_first(std::string const &Name);
 	// writes what is kept, now
 	void flush();
 	// as flush, waited for no longer than Timeout: then false, and the writing goes on by itself, on a thread left
 	// behind. for the end of the process, the files held up or the disk not answering
 	bool flush_for(std::chrono::milliseconds Timeout);
 	// writes what is kept and ends the thread, waiting for it ClosingWait at most: the logs whose turn hasn't come by
-	// then are dropped, and the writing of the one at hand (a disk not answering) is left behind, going on by itself.
-	// what is given after is written by a flush, or by the next stop
+	// then are dropped, and the writing of the one at hand (a disk not answering) is left behind, going on by itself. a
+	// writing of the thread under way ends at the log at hand, leaving the others to the closing's, which has them with
+	// the lines given since, those put first first. what is given after is written by a flush, or by the next stop
 	void stop();
 	// the file of the log Name: <folder>/<name>.dat, with < > : " / \ | ? * and the control characters of the name
 	// replaced by _, and _ before a name Windows keeps for a device (con, nul, com1...). the bytes of the code page of a
@@ -103,8 +109,17 @@ public:
 	// as the writing was when that's longer, five intervals at most. a disk which can't keep up is then busy with the
 	// logs a quarter of the time rather than all of it, and their lines wait in memory the longer
 	static std::chrono::steady_clock::duration wait_after(std::chrono::milliseconds Interval, std::chrono::steady_clock::duration Took);
+	// the logs taken for a writing, pointers to the entries of a map by their names, put in the order they're written:
+	// those put first (First) before the others, each in the order they were
+	template <typename Log> static void writing_order(std::vector<Log *> &Logs, std::set<std::string> const &First) {
+		std::ranges::stable_partition(Logs, [&First](Log const *Each) { return First.contains(Each->first); });
+	}
 
 private:
+	// a writing: a flush; the thread's, which a stop ends at the log at hand, leaving the others to the closing's; or the
+	// closing's, which drops the logs past the time the stop gives it
+	enum class writing { flush, thread, closing };
+
 	// the end of the time a stop gives the writing. fresh: given by this stop, not by one before it still under way
 	struct closing_time {
 		std::chrono::steady_clock::time_point by;
@@ -133,15 +148,21 @@ private:
 	// as flush, letting nothing out: on the writer's thread, or at the end of the process, an exception would end the
 	// simulator. what was taken for a writing which failed as a whole is lost, the next one goes on with what came since.
 	// returns: the number of logs there were to write
-	// Closing: the writing of the thread or of a stop, which a stop cuts short at the time it gives
-	std::size_t flush_safely(bool Closing) noexcept;
+	std::size_t flush_safely(writing Mode) noexcept;
 	// called with m_filemutex held. returns: the number of logs there were to write
-	std::size_t write(bool Closing);
-	// whether the log at hand is dropped, the time a stop gave the writing over. Raised: the disk priority of the
-	// thread was put back for the closing already, in this writing
-	bool dropped_at_closing(bool Closing, bool &Raised) const;
-	// the logs whose file couldn't be written kept for the next try, before what came since
-	void keep_failed(std::map<std::string, pending> &Failed);
+	std::size_t write(writing Mode);
+	// the log Name taken for a writing written into its file, the problem told once if it can't be. returns: false if
+	// it wasn't, its lines to be kept for the next try
+	bool write_taken(std::string const &Name, pending &Lines);
+	// whether the time a stop gave the writing is over
+	bool past_closing() const;
+	// the logs taken for a writing and not written kept for the next, before what came since, their values too: Failed,
+	// whose file couldn't be written, cut to their last lines, and Left, which a stop left to the closing's writing, as
+	// they were taken: their values are made into text by that writing, which drops them past its time, not on the way
+	// unless text was given since
+	void keep(std::map<std::string, pending> &Failed, std::vector<std::pair<std::string const, pending> *> const &Left);
+	// Lines of the log Name, taken for a writing, put back before the lines given since. called with m_mutex held
+	void put_back(std::string const &Name, pending &Lines);
 	// the lines of the log Name written into its file. returns: true if they all were
 	bool write_log(std::string const &Name, pending const &Lines) const;
 
@@ -153,6 +174,7 @@ private:
 	std::atomic<std::chrono::steady_clock::rep> m_closeby{0};
 	std::mutex m_mutex; // the lines kept and the thread
 	std::map<std::string, pending> m_pending;
+	std::set<std::string> m_first; // the logs put first
 	bool m_stopped{false};
 	std::condition_variable m_wake;
 	std::jthread m_thread;

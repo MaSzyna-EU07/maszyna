@@ -7,10 +7,14 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
+#include <vector>
 
 // the physics logs are kept and written by a thread of their own every so often, each file opened only to be written to
 
@@ -151,6 +155,63 @@ TEST_CASE("physicslog: the lines of a log whose file can't be written are kept, 
 	logs.append("EU07-005", "0.1500 1.0000\r\n");
 	logs.flush();
 	CHECK(folder.read("EU07-005") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.5000\r\n0.1500 1.0000\r\n");
+}
+
+TEST_CASE("physicslog: a log whose file can't be written keeps the lines given as values too, in the order given with the text") {
+	log_folder folder{"failedvalues"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	physicslog_values first;
+	first.time = 0.05;
+	physicslog_values second;
+	second.time = 0.10;
+	physicslog_values last;
+	last.time = 0.20;
+	std::filesystem::create_directories(folder.path() / "EU07-008.dat");
+	logs.begin("EU07-008", header);
+	logs.append("EU07-008", first);
+	logs.flush();
+	// given while the file can't be written: after the lines kept, as text and as values
+	logs.append("EU07-008", second);
+	logs.append("EU07-008", "text\r\n");
+	logs.append("EU07-008", last);
+	logs.flush();
+	CHECK(std::filesystem::is_directory(folder.path() / "EU07-008.dat"));
+
+	std::filesystem::remove(folder.path() / "EU07-008.dat");
+	logs.flush();
+	auto const text{folder.read("EU07-008")};
+	CHECK(text.starts_with(std::string{header} + "0.0500 "));
+	CHECK(text.find("\r\n0.1000 ") != std::string::npos);
+	CHECK(text.find("\r\ntext\r\n0.2000 ") != std::string::npos);
+	CHECK(text.find("0.1000 ") < text.find("\r\ntext\r\n"));
+}
+
+TEST_CASE("physicslog: the logs put first are written before the others, each in the order of the names") {
+	// the logs of a writing as the writer has them, by their names
+	std::map<std::string, int> taken{{"EN57-1001", 0}, {"EU07-005", 0}, {"SM42-002", 0}, {"ST44-001", 0}, {"ET22-001", 0}};
+	std::vector<std::pair<std::string const, int> *> order;
+	for (auto &log : taken)
+		order.push_back(&log);
+	physicslog_writer::writing_order(order, {"ST44-001", "SM42-002", "SP42-001"});
+	std::vector<std::string> names;
+	for (auto const *log : order)
+		names.push_back(log->first);
+	CHECK(names == std::vector<std::string>{"SM42-002", "ST44-001", "EN57-1001", "ET22-001", "EU07-005"});
+}
+
+TEST_CASE("physicslog: a log put first is written as the others are") {
+	log_folder folder{"first"};
+	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
+
+	logs.put_first("SM42-002");
+	logs.begin("EU07-005", header);
+	logs.append("EU07-005", "0.0500 0.0000\r\n");
+	logs.begin("SM42-002", header);
+	logs.append("SM42-002", "0.0500 1.0000\r\n");
+	logs.flush();
+	CHECK(folder.read("EU07-005") == std::string{header} + "0.0500 0.0000\r\n");
+	CHECK(folder.read("SM42-002") == std::string{header} + "0.0500 1.0000\r\n");
 }
 
 TEST_CASE("physicslog: a log begun anew while its file can't be written drops what was kept for it") {
