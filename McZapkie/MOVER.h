@@ -2251,6 +2251,15 @@ class TMoverParameters
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
+	// config, .fiz Engine:PressureSwitchBrakeCylinder. whether the pressure switch watches the brake cylinders (it cuts the
+	// start off above 2 bar there) as well as the brake pipe (below 3.6 bar). off, it's left with the brake pipe alone,
+	// and the vehicle takes current whatever the pressure in its brake cylinders (EP05)
+	bool PressureSwitchBrakeCylinder{true};
+	// config, .fiz Cntrl.EmergencyBrakeMainOff. the brake pipe pressure [bar] taken for an emergency brake application:
+	// below it, with the master controller on a power position, the line breaker opens and doesn't close again. where
+	// the pantographs stay up only through the closed line breaker (PantographsRequireMains) they drop with it (EP05).
+	// 0: an emergency application leaves the line breaker alone
+	double EmergencyBrakeMainOffPressure{0.0};
 	bool ReleaserEnabledOnlyAtNoPowerPos{false};
 	int MainCtrlPos = 0; /*polozenie glownego nastawnika*/
 	int ScndCtrlPos = 0; /*polozenie dodatkowego nastawnika*/
@@ -2727,6 +2736,12 @@ class TMoverParameters
 	bool MainCircuitLampsEnabled() const
 	{
 		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+	}
+	// whether an emergency brake application holds the line breaker open: the brake pipe below the pressure taken for one
+	// (EmergencyBrakeMainOffPressure) while the master controller is on a power position
+	bool EmergencyBrakeHoldsMainOff() const
+	{
+		return EmergencyBrakeMainOffPressure > 0.0 && PipePress < EmergencyBrakeMainOffPressure && false == IsMainCtrlNoPowerPos();
 	}
 	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
 	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the

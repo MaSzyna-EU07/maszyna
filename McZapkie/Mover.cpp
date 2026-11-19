@@ -2510,6 +2510,12 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 		// no power supply
 		MainsInitTimeCountdown = MainsInitTime;
 	}
+
+	// an emergency brake application made under power opens the line breaker, where the vehicle has such an interlock
+	if (Mains && EmergencyBrakeHoldsMainOff())
+	{
+		MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
+	}
 }
 
 void TMoverParameters::LowVoltagePowerCheck(double const /*Deltatime*/)
@@ -4502,7 +4508,7 @@ bool TMoverParameters::MainSwitchCheck() const
 	       (HasCamshaft                       ? IsMainCtrlActualNoPowerPos() :
 	        LineBreakerClosesOnlyAtNoPowerPos ? IsMainCtrlNoPowerPos() :
 	                                            true) &&
-	       false == TestFlag(DamageFlag, dtrain_out) && false == TestFlag(EngDmgFlag, 1);
+	       false == TestFlag(DamageFlag, dtrain_out) && false == TestFlag(EngDmgFlag, 1) && false == EmergencyBrakeHoldsMainOff();
 }
 
 // *************************************************************************************************
@@ -8398,7 +8404,8 @@ bool TMoverParameters::MotorConnectorsCheck()
 {
 
 	// hunter-111211: wylacznik cisnieniowy
-	ControlPressureSwitch = HasControlPressureSwitch && (BrakePress > 2.0 || PipePress < 3.6);
+	// (on some vehicles it watches the brake pipe alone)
+	ControlPressureSwitch = HasControlPressureSwitch && ((PressureSwitchBrakeCylinder && BrakePress > 2.0) || PipePress < 3.6);
 
 	if (true == ControlPressureSwitch)
 	{
@@ -12622,6 +12629,9 @@ void TMoverParameters::LoadFIZ_Cntrl(std::string const &line)
 		MainsStart = lookup != starts.end() ? lookup->second : start_t::manual;
 	}
 	extract_value(PantographsRequireMains, "PantRequiresMain", line, "");
+	// the brake pipe pressure of an emergency brake application, which opens the line breaker under power
+	extract_value(EmergencyBrakeMainOffPressure, "EmergencyBrakeMainOff", line, "");
+	EmergencyBrakeMainOffPressure = std::max(0.0, EmergencyBrakeMainOffPressure);
 	// battery
 	{
 		auto lookup = starts.find(extract_value("BatteryStart", line));
@@ -13103,6 +13113,8 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 	MotorBlowers[end::rear] = MotorBlowers[end::front];
 	// pressure switch
 	extract_value(HasControlPressureSwitch, "PressureSwitch", Input, TrainType != dt_EZT ? "yes" : "no");
+	// its brake cylinder half; the brake pipe one stays
+	extract_value(PressureSwitchBrakeCylinder, "PressureSwitchBrakeCylinder", Input, "");
 }
 
 void TMoverParameters::LoadFIZ_Switches(std::string const &Input)
