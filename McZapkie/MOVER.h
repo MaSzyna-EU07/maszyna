@@ -1806,6 +1806,10 @@ class TMoverParameters
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
 	double StopBrakeDecc = 0.0;
+	// the holding brake (StopBrakeDecc) of a unit with the MED lets go only once power has been demanded for this long (SBDReleaseDelay, s);
+	// 0 lets it go at the first demand
+	double StopBrakeReleaseDelay = 0.0;
+	double StopBrakeReleaseTimer = 0.0; // how long power has been demanded without a break, s
 	bool ReleaseParkingBySpringBrake{false};
 	bool ReleaseParkingBySpringBrakeWhenDoorIsOpen{false};
 	bool SpringBrakeCutsOffDrive{true};
@@ -2858,6 +2862,9 @@ class TMoverParameters
 	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
+	// whether the holding brake (StopBrakeDecc) lets go at the power demand (eimic, above 0 when power is demanded) of this step of
+	// Dt seconds: once the demand has stayed above 0 for StopBrakeReleaseDelay. a demand of 0 or less starts the count again
+	bool UpdateStopBrakeRelease(double Demand, double Dt);
 	void CheckSpeedCtrl(double dt);
 	// whether the cruise control has a switch of its own: the secondary controller doubles as its switch unless it
 	// shunts the field of the traction motors already, or there's none (the 6Dg, the ST45; eu07/maszyna#69)

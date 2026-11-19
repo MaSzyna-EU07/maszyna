@@ -3495,7 +3495,9 @@ bool TDynamicObject::Update(double dt, double dt1)
             {
                 Fzad = std::min(LBR * FmaxED, FfulED);
             }
-            if (MoverParameters->ShuntMode && eimic <= 0 || doorisopen /*||
+            // the holding brake lets go once power has been demanded for its delay (SBDReleaseDelay, none by default)
+            auto const holdingbrakereleased { MoverParameters->UpdateStopBrakeRelease( eimic, dt1 ) };
+            if (MoverParameters->ShuntMode && false == holdingbrakereleased || doorisopen /*||
                 (MoverParameters->V * MoverParameters->DirAbsolute < -0.2)*/)
             {
                 auto const sbd { ( MoverParameters->SpringBrake.IsActive && MoverParameters->ReleaseParkingBySpringBrake ? 0.0 : MoverParameters->StopBrakeDecc ) };
