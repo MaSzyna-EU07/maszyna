@@ -35,6 +35,9 @@ Knorr/West EP - żeby był
 
 #include "friction.h" // Pascal unit
 
+#include <memory>
+#include <vector>
+
 /// <summary>Number of positions of the local (auxiliary/manual) brake handle.</summary>
 static int const LocalBrakePosNo = 10; /*ilosc nastaw hamulca recznego lub pomocniczego*/
 /// <summary>Maximum number of positions of the main (train) brake handle.</summary>
@@ -251,6 +254,16 @@ class TReservoir
 	void CreatePress(double Press);
 	/// <summary>Returns reservoir capacity in liters.</summary>
 	double GetCap() const { return Cap; }
+	/// <summary>Returns the air volume contained; with the capacity it gives the pressure.</summary>
+	double GetVol() const { return Vol; }
+	/// <summary>Returns the flow accumulated since the last <see cref="Act"/>, which isn't in the volume yet.</summary>
+	double GetPendingFlow() const { return dVol; }
+	/// <summary>Sets the air volume contained and the flow still to be applied to it, for a restored state.</summary>
+	void SetVol(double const Volume, double const Pendingflow = 0.0)
+	{
+		Vol = Volume;
+		dVol = Pendingflow;
+	}
 	/// <summary>
 	/// Returns absolute (atmospheric) pressure inside the reservoir.
 	/// </summary>
@@ -423,6 +436,18 @@ class TBrake
 	double GetVRP() const; // cisnienie komory wstepnej rozdzielacza
 	/// <summary>Returns control reservoir (ZS) pressure [bar]; defaults to the auxiliary reservoir for valves without a dedicated ZS.</summary>
 	virtual double GetCRP(); // cisnienie zbiornika sterujacego
+	/// <summary>
+	/// The reservoirs of the valve: brake cylinder, auxiliary reservoir, pre-chamber, then the ones the kind of valve adds,
+	/// always in the same order for a kind. For a snapshot of the simulation, which keeps the air in them.
+	/// </summary>
+	virtual std::vector<TReservoir *> reservoirs() const;
+	/// <summary>
+	/// What the valve keeps from one step to the next beside the air in its reservoirs: the latches of its inner valves, the
+	/// step of its rapid relay, the pressures it was last told. Always in the same order for a kind of valve. For a snapshot of
+	/// the simulation, which puts them back with the other overload; a list too short for the kind of valve is left alone.
+	/// </summary>
+	virtual std::vector<double> latches() const;
+	virtual void latches(std::vector<double> const &State);
 	/// <summary>Share of the full cylinder pressure the distributor settles at for the given share
 	/// of the full service pipe drop. Used only to predict the brake force; the default is proportional.</summary>
 	/// <param name="Ratio">Share of the full service brake pipe drop.</param>
@@ -544,6 +569,9 @@ class TWest : public TBrake
 	double LoadC = 0.0; // wspolczynnik przystawki wazacej
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises pressures: PP into ValveRes, BP into BrakeCyl, average of PP/HPP into BrakeRes.</summary>
 	/// <param name="PP">Brake pipe pressure.</param>
 	/// <param name="HPP">High pressure.</param>
@@ -589,6 +617,7 @@ class TESt : public TBrake
   public:
 	/// <summary>Initialises the ESt distributor; sizes the control reservoir (15 l) and computes BVM.</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for the ESt baseline.</summary>
 	/// <returns>Net flow exchanged with the brake pipe.</returns>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
@@ -679,8 +708,12 @@ class TESt3AL2 : public TESt3
 	double LoadC = 0.0;
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the impulse chamber on top of the ESt initialisation.</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for ESt3/AL2 with load-weighing relay.</summary>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Recomputes LoadC for the current vehicle mass.</summary>
@@ -714,8 +747,12 @@ class TESt4R : public TESt
 	double RapidTemp = 0.0; // aktualne, zmienne przelozenie
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the ESt4R; sizes the impulse chamber and selects the R delay.</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for ESt4R (rapid step active above velocity threshold).</summary>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 
@@ -744,6 +781,9 @@ class TLSt : public TESt4R
 	double EDFlag = 0.0; // luzowanie hamulca z powodu zalaczonego ED
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the LSt; resizes the valve and impulse reservoirs and presets pressures.</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
 	/// <summary>Sets the auxiliary brake target pressure for the DCV.</summary>
@@ -792,8 +832,12 @@ class TEStED : public TLSt
 	double LoadC = 0.0;
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the EStED — sets up Miedzypoj, ImplsRes and the nozzle characteristics.</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for EStED (full EP09 logic with intermediate reservoir).</summary>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Returns ED-brake reference pressure (ImplsRes pressure scaled by load coefficient).</summary>
@@ -830,6 +874,9 @@ class TEStEP2 : public TLSt
 	double EPS = 0.0;
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the EP2-equipped distributor (impulse chamber, P delay).</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override; // inicjalizacja
 	/// <summary>One-step distributor advance with EP2 EP brake logic.</summary>
@@ -885,6 +932,7 @@ class TCV1 : public TBrake
   public:
 	/// <summary>Initialises the CV1 distributor (sizes ZS, sets pressures, computes BVM).</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for the CV1 baseline.</summary>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Returns the control reservoir (ZS) pressure.</summary>
@@ -938,8 +986,12 @@ class TCV1L_TR : public TCV1
 	double LBP = 0.0; // cisnienie hamulca pomocniczego
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the CV1-L-TR (sizes the impulse chamber on top of CV1::Init).</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>One-step distributor advance for CV1-L-TR (impulse chamber + DCV).</summary>
 	double GetPF(double const PP, double const dt, double const Vel) override; // przeplyw miedzy komora wstepna i PG
 	/// <summary>Sets the auxiliary brake target pressure for the DCV.</summary>
@@ -987,8 +1039,12 @@ class TKE : public TBrake
 	double LBP = 0.0; // cisnienie hamulca pomocniczego
 
   public:
+	/// <summary>What the valve keeps from one step to the next beside the air in its reservoirs (see TBrake::latches()).</summary>
+	std::vector<double> latches() const override;
+	void latches(std::vector<double> const &State) override;
 	/// <summary>Initialises the KE distributor (control / impulse / auxiliary reservoirs and BVM).</summary>
 	void Init(double const PP, double const HPP, double const LPP, double const BP, int const BDF) override;
+	std::vector<TReservoir *> reservoirs() const override;
 	/// <summary>Sets the rapid step ratio (RM = 1 - RMR).</summary>
 	void SetRM(double const RMR) override; // ustalenie przelozenia rapida
 	/// <summary>One-step distributor advance for the KE distributor.</summary>
@@ -1066,6 +1122,11 @@ class TDriverHandle
 	/// <summary>Initialises internal pressures from the supplied reference.</summary>
 	/// <param name="Press">Initial pressure [bar].</param>
 	virtual void Init(double Press);
+	/// <summary>
+	/// The pressures the valve keeps from one step to the next, in an order of its own kind.
+	/// For a snapshot of the simulation, which reads them and puts them back.
+	/// </summary>
+	virtual std::vector<double *> pressures();
 	/// <summary>Returns the control-reservoir / equalising pressure displayed on the cab gauge.</summary>
 	virtual double GetCP();
 	/// <summary>Returns the EP brake intensity reported by the handle (0 by default).</summary>
@@ -1128,6 +1189,7 @@ class TFV4a : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and RP to the supplied pressure.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 
 	/// <summary>Default constructor.</summary>
 	using TDriverHandle::TDriverHandle;
@@ -1170,6 +1232,7 @@ class TFV4aM : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and RP.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
@@ -1220,6 +1283,7 @@ class TMHZ_EN57 : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
@@ -1272,6 +1336,7 @@ class TMHZ_K5P : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
@@ -1323,6 +1388,7 @@ class TMHZ_6P : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns Sounds[i] (or 0 if i &gt; 4).</summary>
@@ -1388,6 +1454,7 @@ class TM394 : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chamber.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns CP.</summary>
@@ -1427,6 +1494,7 @@ class TH14K1 : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP and enables the time chambers.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Sets the reductor adjustment offset.</summary>
 	void SetReductor(double nAdj) override;
 	/// <summary>Returns CP.</summary>
@@ -1474,6 +1542,7 @@ class TSt113 : public TH14K1
 	double GetPos(int i) override;
 	/// <summary>Enables the time chambers (no pressure init).</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 
 	/// <summary>Default constructor.</summary>
 	using TH14K1::TH14K1;};
@@ -1494,6 +1563,7 @@ class Ttest : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises CP.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 
 	/// <summary>Default constructor.</summary>
 	using TDriverHandle::TDriverHandle;};
@@ -1519,6 +1589,7 @@ class TFD1 : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises MaxBP and the action speed.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Returns the currently commanded cylinder pressure (BP).</summary>
 	double GetCP() override;
 	/// <summary>Sets the action speed multiplier.</summary>
@@ -1545,6 +1616,7 @@ class TH1405 : public TDriverHandle
 	double GetPF(double i_bcp, double PP, double HP, double dt, double ep) override;
 	/// <summary>Initialises MaxBP and enables the time chamber.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 	/// <summary>Returns the currently commanded cylinder pressure (BP).</summary>
 	double GetCP() override;
 	//        procedure Init(press: real; MaxBP: real); overload;
@@ -1581,6 +1653,7 @@ class TFVel6 : public TDriverHandle
 	double GetSound(int i) override;
 	/// <summary>Enables the time chambers.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 
 	/// <summary>Default constructor.</summary>
 	using TDriverHandle::TDriverHandle;};
@@ -1615,6 +1688,7 @@ class TFVE408 : public TDriverHandle
 	double GetSound(int i) override;
 	/// <summary>Enables the time chamber, disables the EP-time chamber.</summary>
 	void Init(double Press) override;
+	std::vector<double *> pressures() override;
 
 	/// <summary>Default constructor.</summary>
 	using TDriverHandle::TDriverHandle;};

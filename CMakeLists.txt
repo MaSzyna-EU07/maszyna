@@ -554,6 +554,7 @@ set(CORE_SOURCES
 "scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
 "simulation/simulationsnapshot.cpp"
+"simulation/simulationsnapshotmover.cpp"
 "vehicle/blackbox.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"

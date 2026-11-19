@@ -480,6 +480,229 @@ double TBrake::GetCRP()
 }
 
 /// <summary>
+/// The reservoirs every valve has. The kinds of valve with more reservoirs add theirs after these.
+/// </summary>
+std::vector<TReservoir *> TBrake::reservoirs() const
+{
+	return {BrakeCyl.get(), BrakeRes.get(), ValveRes.get()};
+}
+
+/// <summary>
+/// What every valve keeps: whether the double check valve is over to the auxiliary brake, the anti-slip pressure.
+/// </summary>
+std::vector<double> TBrake::latches() const
+{
+	return {DCV ? 1.0 : 0.0, ASBP};
+}
+
+void TBrake::latches(std::vector<double> const &State)
+{
+	if (State.size() < 2)
+		return;
+	DCV = State[0] != 0.0;
+	ASBP = State[1];
+}
+
+std::vector<double> TWest::latches() const
+{
+	auto state{TBrake::latches()};
+	state.emplace_back(LBP);
+	state.emplace_back(dVP);
+	state.emplace_back(EPS);
+	state.emplace_back(LoadC);
+	return state;
+}
+
+void TWest::latches(std::vector<double> const &State)
+{
+	auto const first{TBrake::latches().size()};
+	if (State.size() < first + 4)
+		return;
+	TBrake::latches(State);
+	LBP = State[first + 0];
+	dVP = State[first + 1];
+	EPS = State[first + 2];
+	LoadC = State[first + 3];
+}
+
+std::vector<double> TESt3AL2::latches() const
+{
+	auto state{TESt3::latches()};
+	state.emplace_back(LoadC);
+	return state;
+}
+
+void TESt3AL2::latches(std::vector<double> const &State)
+{
+	auto const first{TESt3::latches().size()};
+	if (State.size() < first + 1)
+		return;
+	TESt3::latches(State);
+	LoadC = State[first + 0];
+}
+
+std::vector<double> TESt4R::latches() const
+{
+	auto state{TESt::latches()};
+	state.emplace_back(RapidStatus ? 1.0 : 0.0);
+	state.emplace_back(RapidTemp);
+	return state;
+}
+
+void TESt4R::latches(std::vector<double> const &State)
+{
+	auto const first{TESt::latches().size()};
+	if (State.size() < first + 2)
+		return;
+	TESt::latches(State);
+	RapidStatus = State[first + 0] != 0.0;
+	RapidTemp = State[first + 1];
+}
+
+std::vector<double> TLSt::latches() const
+{
+	auto state{TESt4R::latches()};
+	state.emplace_back(LBP);
+	state.emplace_back(EDFlag);
+	return state;
+}
+
+void TLSt::latches(std::vector<double> const &State)
+{
+	auto const first{TESt4R::latches().size()};
+	if (State.size() < first + 2)
+		return;
+	TESt4R::latches(State);
+	LBP = State[first + 0];
+	EDFlag = State[first + 1];
+}
+
+std::vector<double> TEStED::latches() const
+{
+	auto state{TLSt::latches()};
+	state.emplace_back(Zamykajacy ? 1.0 : 0.0);
+	state.emplace_back(Przys_blok ? 1.0 : 0.0);
+	state.emplace_back(LoadC);
+	return state;
+}
+
+void TEStED::latches(std::vector<double> const &State)
+{
+	auto const first{TLSt::latches().size()};
+	if (State.size() < first + 3)
+		return;
+	TLSt::latches(State);
+	Zamykajacy = State[first + 0] != 0.0;
+	Przys_blok = State[first + 1] != 0.0;
+	LoadC = State[first + 2];
+}
+
+std::vector<double> TEStEP2::latches() const
+{
+	auto state{TLSt::latches()};
+	state.emplace_back(LoadC);
+	state.emplace_back(EPS);
+	return state;
+}
+
+void TEStEP2::latches(std::vector<double> const &State)
+{
+	auto const first{TLSt::latches().size()};
+	if (State.size() < first + 2)
+		return;
+	TLSt::latches(State);
+	LoadC = State[first + 0];
+	EPS = State[first + 1];
+}
+
+std::vector<double> TCV1L_TR::latches() const
+{
+	auto state{TCV1::latches()};
+	state.emplace_back(LBP);
+	return state;
+}
+
+void TCV1L_TR::latches(std::vector<double> const &State)
+{
+	auto const first{TCV1::latches().size()};
+	if (State.size() < first + 1)
+		return;
+	TCV1::latches(State);
+	LBP = State[first + 0];
+}
+
+std::vector<double> TKE::latches() const
+{
+	auto state{TBrake::latches()};
+	state.emplace_back(RapidStatus ? 1.0 : 0.0);
+	state.emplace_back(LoadC);
+	state.emplace_back(LBP);
+	return state;
+}
+
+void TKE::latches(std::vector<double> const &State)
+{
+	auto const first{TBrake::latches().size()};
+	if (State.size() < first + 3)
+		return;
+	TBrake::latches(State);
+	RapidStatus = State[first + 0] != 0.0;
+	LoadC = State[first + 1];
+	LBP = State[first + 2];
+}
+
+std::vector<TReservoir *> TESt::reservoirs() const
+{
+	auto list{TBrake::reservoirs()};
+	list.emplace_back(CntrlRes.get());
+	return list;
+}
+
+std::vector<TReservoir *> TESt3AL2::reservoirs() const
+{
+	auto list{TESt::reservoirs()};
+	list.emplace_back(ImplsRes.get());
+	return list;
+}
+
+std::vector<TReservoir *> TESt4R::reservoirs() const
+{
+	auto list{TESt::reservoirs()};
+	list.emplace_back(ImplsRes.get());
+	return list;
+}
+
+std::vector<TReservoir *> TEStED::reservoirs() const
+{
+	auto list{TLSt::reservoirs()};
+	list.emplace_back(Miedzypoj.get());
+	return list;
+}
+
+std::vector<TReservoir *> TCV1::reservoirs() const
+{
+	auto list{TBrake::reservoirs()};
+	list.emplace_back(CntrlRes.get());
+	return list;
+}
+
+std::vector<TReservoir *> TCV1L_TR::reservoirs() const
+{
+	auto list{TCV1::reservoirs()};
+	list.emplace_back(ImplsRes.get());
+	return list;
+}
+
+std::vector<TReservoir *> TKE::reservoirs() const
+{
+	auto list{TBrake::reservoirs()};
+	list.emplace_back(CntrlRes.get());
+	list.emplace_back(ImplsRes.get());
+	list.emplace_back(Brak2Res.get());
+	return list;
+}
+
+/// <summary>
 /// Default per-step distributor advance — commits any pending flows on the
 /// reservoirs and reports zero brake-pipe exchange. Concrete distributors override.
 /// </summary>
@@ -2867,6 +3090,80 @@ void TDriverHandle::SetReductor(double nAdj) { /* no effect for this device type
 double TDriverHandle::GetCP()
 {
 	return 0;
+}
+
+/// <summary>A valve with no pressures of its own.</summary>
+std::vector<double *> TDriverHandle::pressures()
+{
+	return {};
+}
+
+std::vector<double *> TFV4a::pressures()
+{
+	return {&CP, &TP, &RP};
+}
+
+std::vector<double *> TFV4aM::pressures()
+{
+	return {&CP, &TP, &RP, &XP, &RedAdj};
+}
+
+std::vector<double *> TMHZ_EN57::pressures()
+{
+	return {&CP, &TP, &RP, &RedAdj, &UnbrakeOverPressure};
+}
+
+std::vector<double *> TMHZ_K5P::pressures()
+{
+	return {&CP, &TP, &RedAdj, &UnbrakeOverPressure};
+}
+
+std::vector<double *> TMHZ_6P::pressures()
+{
+	return {&CP, &TP, &RedAdj, &UnbrakeOverPressure};
+}
+
+std::vector<double *> TM394::pressures()
+{
+	return {&CP, &RedAdj};
+}
+
+std::vector<double *> TH14K1::pressures()
+{
+	return {&CP, &RedAdj};
+}
+
+std::vector<double *> TSt113::pressures()
+{
+	auto list{TH14K1::pressures()};
+	list.emplace_back(&CP);
+	list.emplace_back(&EPS);
+	return list;
+}
+
+std::vector<double *> Ttest::pressures()
+{
+	return {&CP};
+}
+
+std::vector<double *> TFD1::pressures()
+{
+	return {&BP};
+}
+
+std::vector<double *> TH1405::pressures()
+{
+	return {&BP};
+}
+
+std::vector<double *> TFVel6::pressures()
+{
+	return {&CP, &EPS};
+}
+
+std::vector<double *> TFVE408::pressures()
+{
+	return {&CP, &EPS};
 }
 
 /// <summary>Default EP intensity — 0.</summary>
