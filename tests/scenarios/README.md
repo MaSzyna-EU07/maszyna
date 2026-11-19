@@ -265,6 +265,36 @@ pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the bl
 locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
 hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
 
+The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
+`putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
+the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are
+set off by event launchers, at an hour or with a delay; `vars.trainsets` are the vehicles and
+`vars.crew` the events of the case:
+
+- `eu07_td_crew_add`: an EU07 standing cold with nobody in it gets a driver in cab A 20 s after
+  the start. A driver put in a standing vehicle waits for orders, as the one of a standing
+  trainset does, so `event0` of its track gives the order to go (`Shunt -1 0`), once: the driver
+  starts the locomotive and leaves through the exit signal, whose aspect makes it a train run.
+  `eu07_td_crew_add_rear` is the same with cab B: the locomotive leaves the other way, its rear
+  end leading (`moves`, from the black box).
+- `eu07_td_crew_remove`: the EU07 of `eu07_td_timetable` loses its driver at 10:36, on the run at
+  59 km/h. It is left with the power off and the brake valve in the emergency position: it
+  stands 16 s and 168 m later and doesn't move in the 164 s to the end (`stops_driverless`; the
+  physicslog ends when the driver goes). `en57_td_crew_remove` (driven from the head car, the
+  motors in the middle one), `vectron_td_crew_remove` (induction motors and an integrated handle)
+  and `sm42_td_crew_remove` (diesel) are the same with other vehicles.
+- `eu07_td_crew_swap`: the driver waiting at Stacja1 is taken off after 20 s, which leaves the
+  locomotive braked, and a new one put in 20 s later, who gets the order to go, releases the
+  brakes and leaves.
+- `eu07_td_crew_refused`: the run of `eu07_td_timetable` with crew events which must be refused,
+  at the start and again on the run: a second driver for the locomotive, a driver for a coach
+  (no cab), a cab which is none of 1, -1, 0, a driver taken off a coach which has none, and a
+  vehicle the scenery lacks. Each leaves its line in the log and the train runs its timetable to
+  the stop at Przystanek as it does without them.
+
+A vehicle with a user in it is left alone by the command, which the test mode can't show: nobody
+sits in a vehicle there.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission

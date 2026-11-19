@@ -1,0 +1,29 @@
+{
+  "description": "Crew event, the driver disappears (eu07/maszyna#510): as eu07_td_crew_remove, with an EN57 unit of three cars, driven from its head car while the motors are in the middle one, which loses its AI driver on the run at 10:36, stops and stays where it stopped.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset td/rozklad tdo_n1734 0.0 0.1",
+      "node -1 0 {{vehicle}} dynamic pkp\\en57_v2 EN57-1000ra EN57RA_GSO_WKM1_KM_NS_N 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_s dynamic pkp\\en57_v2 EN57-1000s EN57S_WKM1_KM_NS_S 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_rb dynamic pkp\\en57_v2 EN57-1000rb EN57RB_GSO_WKM1_KM_NS 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_off putvalues 0 none 0 0 0 Crew:{{vehicle}} 0 0 endevent",
+      "node -1 0 autotest_crew_off_launcher eventlauncher 0 0 0 -1 none 1036 autotest_crew_off end"
+    ]
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_en57_td_crew_remove\\] the AI driver leaves" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "none", "after": 115, "before": 130 },
+    { "type": "stops_driverless", "vehicle": "{{vehicle}}", "min_speed": 20, "within": 60, "hold": 100 },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}
