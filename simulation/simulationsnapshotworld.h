@@ -41,6 +41,9 @@ apply_summary apply(document const &Document);
 
 // writes a snapshot of the simulation to the file. returns: true on success
 bool save(std::string const &File);
+// writes one to the snapshots folder of the game, named after the scenery and the time of the simulation; for the
+// player, who asks for it with a key (the snapshotsave command). returns: the file written, empty if it couldn't be
+std::string save_now();
 
 // the snapshots asked for on the command line (parse_command_line()): one to load when the simulation starts, and the
 // ones to write when its time comes

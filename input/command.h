@@ -445,6 +445,7 @@ enum class user_command
 	genericset27,
 	genericset28,
 	genericset29,
+	snapshotsave, // writes a snapshot of the simulation to the snapshots folder (simulation/simulationsnapshotworld.h)
 	none = -1
 };
 

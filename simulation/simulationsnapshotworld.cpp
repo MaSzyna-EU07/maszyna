@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TractionPower.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <map>
@@ -955,6 +956,20 @@ bool save(std::string const &File)
 	}
 	WriteLog(std::format("snapshot: the simulation at {:.2f} s saved to \"{}\", {} entries", Timer::GetTime(), File, document.records.size()));
 	return true;
+}
+
+std::string save_now()
+{
+	auto const &time{Time.data()};
+	auto scenery{Global.SceneryFile};
+	if (auto const extension{scenery.rfind('.')}; extension != std::string::npos)
+		scenery.erase(extension);
+	std::ranges::replace_if(scenery, [](char const Character) { return Character == '/' || Character == '\\' || Character == ':'; }, '_');
+	std::error_code error;
+	std::filesystem::create_directories("snapshots", error);
+	auto const file{std::format("snapshots/{}_{:04}-{:02}-{:02}_{:02}-{:02}-{:02}.snapshot", scenery, time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute,
+	                            time.wSecond)};
+	return save(file) ? file : std::string{};
 }
 
 void request(command_line const &Requests)
