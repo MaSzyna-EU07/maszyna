@@ -266,7 +266,7 @@ openal_source::sync_with( sound_properties const &State ) {
                 sound_range :
                 5 ) }; // range of -1 means sound of unlimited range, positioned at the listener
         ::alSourcef( id, AL_REFERENCE_DISTANCE, range * ( 1.f / 16.f ) * State.soundproofing );
-        renderer.soundproofing_filter( id, State.soundproofing );
+        renderer.soundproofing_filter( id, State.soundproofing_hf );
     }
     if( sound_range != -1 ) {
         auto const rangesquared { sound_range * sound_range };

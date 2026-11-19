@@ -48,6 +48,9 @@ struct sound_properties {
     sound_category category { sound_category::unknown };
     float gain { 1.f };
     float soundproofing { 1.f };
+    // the soundproofing of what stands between the sound and the listener, without the volume trim of the sounds placed
+    // on top of the listener: what the low-pass filter muffles the sound by (sound.efx.lowpass)
+    float soundproofing_hf { 1.f };
     std::uintptr_t soundproofing_stamp { ~std::uintptr_t{0} };
 };
 
