@@ -3707,6 +3707,11 @@ bool TMoverParameters::CabActivisation(bool const Enforce)
 	bool OK = false;
 
 	OK = Enforce || CabActive == 0; // numer kabiny, z której jest sterowanie
+	if (PulleeMode)
+	{
+		// nobody drives from a vehicle prepared for hauling
+		OK = false;
+	}
 	if (OK)
 	{
 		CabActive = CabOccupied; // sterowanie jest z kabiny z obsadą
@@ -3967,6 +3972,11 @@ void TMoverParameters::SecuritySystemCheck(double dt)
 bool TMoverParameters::BatterySwitch(bool State, range_t const Notify)
 {
 	using enum range_t;
+	if (PulleeMode && State)
+	{
+		// the battery of a vehicle prepared for hauling stays off
+		return false;
+	}
 	auto const initialstate{Battery};
 
 	// Ra: ukrotnienie załączania baterii jest jakąś fikcją...
@@ -4049,6 +4059,35 @@ bool TMoverParameters::SpringBrakeRelease()
 	}
 	else
 		return false;
+}
+
+// *************************************************************************************************
+// pullee mode ("jazda ciągniona", MaSzyna-EU07/maszyna#64): prepares the vehicle for being hauled dead in a
+// train, or puts it back in service. while in the mode the vehicle:
+// - vents the brake pipe for nothing of its own (inactive cab, vigilance, radio-stop, spring brake), only when
+//   the train parts (UpdatePipePressure()),
+// - gets no force from its spring brake, whatever air its cylinder has (BrakeForce()),
+// - has its driver's valve cut out and its local brake released, whatever the handles show; the distributor
+//   stays on the brake pipe, so it brakes and releases with the train,
+// - keeps its battery off and takes no cab (BatterySwitch(), CabActivisation() and their commands).
+// entering it also lets go of the hand brake and of the spring brake switch.
+// returns whether the mode changed; a vehicle driven from can't enter it
+// *************************************************************************************************
+bool TMoverParameters::PulleeModeSwitch(bool const State)
+{
+	if (PulleeMode == State || (State && CabActive != 0))
+	{
+		return false;
+	}
+	PulleeMode = State;
+	if (PulleeMode)
+	{
+		DecManualBrakeLevel(ManualBrakePosNo);
+		SpringBrake.Activate = false;
+		SecuritySystem.set_enabled(false);
+		Battery = false;
+	}
+	return true;
 }
 
 // *************************************************************************************************
@@ -5319,6 +5358,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 	if (BrakeCtrlPosNo > 1)
 	{
 
+		// the local brake of a vehicle prepared for hauling (PulleeMode) is held released, whatever asks for it
 		if (EngineType != TEngineType::ElectricInductionMotor)
 		{
 			double lbpa = LocHandleTimeTraxx ? eim_localbrake : LocalBrakePosA;
@@ -5330,7 +5370,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			{
 				lbpa = std::max(lbpa, StopBrakeDecc);
 			}
-			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
+			dpLocalValve = LocHandle->GetPF(PulleeMode ? 0.0 : std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
 		}
 		else
 		{
@@ -5351,7 +5391,7 @@ void TMoverParameters::UpdatePipePressure(double dt)
 			{
 				lbpa = 0.0;
 			}
-			dpLocalValve = LocHandle->GetPF(std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
+			dpLocalValve = LocHandle->GetPF(PulleeMode ? 0.0 : std::max(lbpa, LocalBrakePosAEIM), Hamulec->GetBCP(), ScndPipePress, dt, 0);
 		}
 
 		LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
@@ -5369,7 +5409,12 @@ void TMoverParameters::UpdatePipePressure(double dt)
 		}
 		Handle->SetReductor(BrakeCtrlPos2);
 
-		if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
+		if (PulleeMode)
+		{
+			// the driver's valve of a vehicle prepared for hauling is cut out, whatever its handle shows
+			dpMainValve = 0;
+		}
+		else if ((BrakeOpModes & bom_PS) == 0 || (CabOccupied != 0 && BrakeOpModeFlag != bom_PS))
 		{
 
 			if (BrakeOpModeFlag < bom_EP || Handle->GetPos(bh_EB) - 0.5 < BrakeCtrlPosR || (BrakeHandle != TBrakeHandle::MHZ_EN57 && BrakeHandle != TBrakeHandle::MHZ_K8P))
@@ -5413,10 +5458,13 @@ void TMoverParameters::UpdatePipePressure(double dt)
 
 	// EngDmgFlag 32 (load destroyed) used to trigger this too; dropped, it has nothing to do with
 	// the emergency brake (a broken coupler sets AlarmChainFlag instead). the Elf's emergency brake position
-	// vents the pipe only from the vehicle driven from, whatever the controllers of the others show
-	if (RadioStopFlag || AlarmChainFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || (IsMainCtrlEmergencyPos() && IsCabMaster()) || SecuritySystem.is_braking() ||
-		(SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
-		(0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0))
+	// vents the pipe only from the vehicle driven from, whatever the controllers of the others show.
+	// a vehicle prepared for hauling (PulleeMode) vents it for nothing of its own, only for the alarm chain,
+	// which a train parting sets too
+	auto const ownemergency{RadioStopFlag || (EIMCtrlEmergency && LocalBrakePosA >= 1.0) || (IsMainCtrlEmergencyPos() && IsCabMaster()) || SecuritySystem.is_braking() ||
+	                        (SpringBrakeDriveEmergencyVel >= 0 && Vel > SpringBrakeDriveEmergencyVel && SpringBrake.IsActive) ||
+	                        (0 == CabActive && (InactiveCabFlag & activation::emergencybrake) != 0)};
+	if (AlarmChainFlag || (ownemergency && false == PulleeMode))
 	{
 		EmergencyValveFlow = PF(0, PipePress, 0.15) * dt;
 	}
@@ -6216,7 +6264,8 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 		K = MaxBrakeForce * ManualBrakeRatio();
 	}
 
-	if (SpringBrake.IsReady)
+	// the spring brake of a vehicle prepared for hauling (PulleeMode) is released by hand: no force, whatever its cylinder has
+	if (SpringBrake.IsReady && false == PulleeMode)
 		K += std::max(0.0, SpringBrake.MinForcePressure - SpringBrake.Cylinder->P()) * SpringBrake.MaxBrakeForce;
 
 	u = (BrakePress * P2FTrans - BrakeCylSpring) * BrakeCylMult[0] - BrakeSlckAdj;
@@ -14231,6 +14280,11 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 			break;
 		}
 		}
+		if (PulleeMode)
+		{
+			// a vehicle prepared for hauling takes no cab, the command only passes through it
+			CabActive = 0;
+		}
 		DirAbsolute = DirActive * CabActive;
 		CabMaster = false;
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
@@ -14258,7 +14312,8 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 	}
 	else if (Command == "BatterySwitch") /*NBMX*/
 	{
-		if (BatteryStart == start_t::manual)
+		// the battery of a vehicle prepared for hauling (PulleeMode) stays off
+		if (BatteryStart == start_t::manual && (false == PulleeMode || CValue1 <= 0.0))
 		{
 			Battery = CValue1 > 0.0;
 		}

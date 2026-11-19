@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/odometer.h"
+#include "vehicle/pulleemode.h"
 #include "vehicle/Driver.h"
 
 #include <algorithm>
@@ -2080,6 +2081,14 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     // another run of the same scenario, with another seed, dresses it differently
     m_variantseed = hash_string( asName, Global.random_seed );
     std::string asAnimName; // zmienna robocza do wyszukiwania osi i wózków
+    // a vehicle prepared for being hauled dead (parameter H after its coupling, MaSzyna-EU07/maszyna#64) has nobody
+    // driving it, whatever its crew entry says: its cab can't be activated, and a driver in it would either take
+    // the train or be one more for the train's driver to put to sleep
+    auto const hauled { pullee_mode::requested( MoreParams ) };
+    if( hauled && ( DriverType == "headdriver" || DriverType == "reardriver" ) ) {
+        WriteLog( "Vehicle " + asName + " is prepared for hauling (parameter H), the driver it was given is left out" );
+        DriverType = "nobody";
+    }
     // Ra: zmieniamy znaczenie obsady na jednoliterowe, żeby dosadzić kierownika
     if (DriverType == "headdriver")
         DriverType = "1"; // sterujący kabiną +1
@@ -2398,6 +2407,11 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
         }
 */
     } // koniec while kropka
+
+    if( hauled ) {
+        // once the vehicle has its starting state: the hand brake and the spring brake of a standing one let go, battery off
+        MoverParameters->PulleeModeSwitch( true );
+    }
 
     if (MoverParameters->CategoryFlag & 2) // jeśli samochód
     { // ustawianie samochodow na poboczu albo na środku drogi
