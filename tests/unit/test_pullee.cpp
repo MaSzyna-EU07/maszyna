@@ -5,6 +5,8 @@
 #include "drive.h"
 #include "real_vehicles.h"
 
+#include "vehicle/pulleemode.h"
+
 using test::definition;
 using test::vehicle;
 
@@ -51,6 +53,21 @@ bool can_be_hauled(std::string const &Path) {
 }
 
 } // namespace
+
+TEST_CASE("pullee: the parameter H among the ones after the coupling of a vehicle asks for the mode") {
+	CHECK(pullee_mode::requested("H"));
+	CHECK(pullee_mode::requested("h"));
+	CHECK(pullee_mode::requested("BG.H"));
+	CHECK(pullee_mode::requested("H.BG"));
+	CHECK(pullee_mode::requested("BP.WF10.h.TA"));
+	CHECK(pullee_mode::requested("HX")); // letters after it are for later
+	// the parameters the sceneries have: brakes, wheels (their H is the hunting of a bogie), temperatures, load
+	CHECK_FALSE(pullee_mode::requested(""));
+	CHECK_FALSE(pullee_mode::requested("BG"));
+	CHECK_FALSE(pullee_mode::requested("WH25"));
+	CHECK_FALSE(pullee_mode::requested("BR.WF5R10P50H25.TA.L50"));
+	CHECK_FALSE(pullee_mode::requested("0"));
+}
 
 TEST_CASE("pullee: a dead Vectron vents the brake pipe of the train hauling it, prepared for hauling it doesn't") {
 	// the Vectron applies the emergency brake while none of its cabs is active (InactiveCabFlag bit 1), which a
