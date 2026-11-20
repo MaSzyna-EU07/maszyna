@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/handover.h"
@@ -170,6 +171,7 @@ const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
 const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
+bool WriteTrainLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
 std::string StopReasonTable[] = {
@@ -2339,33 +2341,16 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         iDrivigFlags |= movePrimary; // aktywnie prowadzące pojazd
     }
 
-    SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    if( mvOccupied != nullptr ) {
+        SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    }
     TableClear();
 
-    if( WriteLogFlag ) {
-#ifdef _WIN32
-		CreateDirectory( "physicslog", nullptr);
-#elif __unix__
-		mkdir( "physicslog", 0740 );
-#endif
-        LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
-            std::ios::in | std::ios::out | std::ios::trunc );
-#if LOGPRESS == 0
-        LogFile
-            << "Time[s] Velocity[m/s] Acceleration[m/ss] "
-            << "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-            << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
-            << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
-            << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
-            << "VehicleVelocity[km/h]"
-            << "\r\n";
-        LogFile << std::fixed << std::setprecision( 4 );
-#endif
-#if LOGPRESS == 1
-        LogFile << string( "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP" ).c_str() << "\n";
-#endif
-        LogFile.flush();
+    // the logs of all but the road vehicles, begun at once as they always were. one of a train only at its first line
+    // (update_logs): every crew is made primary here, and the drivers but one of a train with crews in more vehicles
+    // are made passive before it starts, so they get no file with only the header
+    if( WriteLogFlag && false == drives_road_vehicle() ) {
+        begin_physicslog();
     }
 
     // HACK: give the simulation a small window to potentially replace the AI with a human driver
@@ -2374,7 +2359,6 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 
 TController::~TController()
 { // wykopanie mechanika z roboty
-    // LogFile is closed by its own destructor
 };
 
 // zamiana kodu rozkazu na opis
@@ -5390,58 +5374,80 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     return false; // nierozpoznana - wysłać bezpośrednio do pojazdu
 };
 
-void TController::PhysicsLog()
-{ // zapis logu - na razie tylko wypisanie parametrów
-    if (LogFile.is_open())
-    {
+std::string_view TController::physicslog_header() {
+    // the columns of the readers of these logs, the Hasler tape of the starter among them, stay where they are:
+    // a new one goes at the end
+    return "Time[s] Velocity[m/s] Acceleration[m/ss] "
+           "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
+           "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
+           "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
+           "Security Wheelslip "
+           "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+           "VehicleVelocity[km/h]"
+           "\r\n";
+}
+
+physicslog_values TController::physicslog_line() const {
+    // the values only: the writer of the logs makes them into text on its own thread
+    physicslog_values line;
+    line.time = ElapsedTime;
+    line.wheelspeed = fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot);
+    line.acceleration = mvControlling->AccS;
+    line.couplerdistance = mvOccupied->Couplers[1].Dist;
+    line.couplerforce = mvOccupied->Couplers[1].CForce;
+    line.tractionforce = mvOccupied->Ft;
+    line.frictionforce = mvOccupied->Ff;
+    line.brakeforce = mvOccupied->Fb;
+    line.brakepressure = mvOccupied->BrakePress;
+    line.pipepressure = mvOccupied->PipePress;
+    line.motorcurrent = mvControlling->Im;
+    line.mainctrl = static_cast<int>(mvControlling->MainCtrlPos);
+    line.scndctrl = static_cast<int>(mvControlling->ScndCtrlPos);
+    line.brakectrl = mvOccupied->fBrakeCtrlPos;
+    line.localbrake = mvOccupied->LocalBrakePosA;
+    line.direction = static_cast<int>(mvControlling->DirActive);
+    line.command = ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() );
+    line.value1 = mvOccupied->CommandIn.Value1;
+    line.value2 = mvOccupied->CommandIn.Value2;
+    line.security = static_cast<int>(mvControlling->SecuritySystem.is_blinking());
+    line.wheelslip = static_cast<int>(mvControlling->SlippingWheels);
+    // floats, as the stream wrote them: widened to double
+    line.enginetemperature = mvControlling->dizel_heat.Ts;
+    line.oiltemperature = mvControlling->dizel_heat.To;
+    line.watertemperature = mvControlling->dizel_heat.temperatura1;
+    line.wateraux = mvControlling->dizel_heat.temperatura2;
+    // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+    line.vehiclespeed = mvOccupied->V * 3.6;
+    return line;
+}
+
+void TController::begin_physicslog()
+{
+    // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
 #if LOGPRESS == 0
-/*
-<< "Time[s] Velocity[m/s] Acceleration[m/ss] "
-<< "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-<< "BrakePress[MPa] PipePress[MPa] MotorCurrent[A]    "
-<< "MCP SCP BCP LBP DmgFlag Command CVal1 CVal2 "
-<< "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
-*/
-        LogFile
-            << ElapsedTime << " "
-            << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
-            << mvControlling->AccS << " "
-            << mvOccupied->Couplers[1].Dist << " "
-            << mvOccupied->Couplers[1].CForce << " "
-            << mvOccupied->Ft << " "
-            << mvOccupied->Ff << " "
-            << mvOccupied->Fb << " "
-            << mvOccupied->BrakePress << " "
-            << mvOccupied->PipePress << " "
-            << mvControlling->Im << " "
-            << int(mvControlling->MainCtrlPos) << " "
-            << int(mvControlling->ScndCtrlPos) << " "
-            << mvOccupied->fBrakeCtrlPos << " "
-            << mvOccupied->LocalBrakePosA << " "
-            << int(mvControlling->DirActive) << " "
-            << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
-            << mvOccupied->CommandIn.Value1 << " "
-            << mvOccupied->CommandIn.Value2 << " "
-		    << int(mvControlling->SecuritySystem.is_blinking()) << " "
-            << int(mvControlling->SlippingWheels) << " "
-            << mvControlling->dizel_heat.Ts << " "
-            << mvControlling->dizel_heat.To << " "
-            << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2 << " "
-            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-            << mvOccupied->V * 3.6
-            << "\r\n";
+    PhysicsLogs.begin( VehicleName, physicslog_header() );
 #endif
 #if LOGPRESS == 1
-        LogFile << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
-                << "\t";
-        LogFile << Controlling->AccS << "\t";
-        LogFile << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
-                << mvOccupied->BrakePress << "\t";
-        LogFile << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
 #endif
-        LogFile.flush();
-    }
+    PhysicsLogBegun = true;
+}
+
+void TController::PhysicsLog()
+{ // zapis logu - na razie tylko wypisanie parametrów
+#if LOGPRESS == 0
+    PhysicsLogs.append( VehicleName, physicslog_line() );
+#endif
+#if LOGPRESS == 1
+    std::ostringstream line;
+    line << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
+         << "\t";
+    line << mvControlling->AccS << "\t";
+    line << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
+         << mvOccupied->BrakePress << "\t";
+    line << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.append( VehicleName, line.str() );
+#endif
 };
 
 void
@@ -6392,6 +6398,10 @@ void TController::ControllingSet()
     // problematyczne jest sterowanie z członu biernego, dlatego damy AI silnikowy
     // dzięki temu będzie wirtualna kabina w silnikowym, działająca w rozrządczym
     // w plikach FIZ zostały zgubione ujemne maski sprzęgów, stąd problemy z EZT
+    if( pVehicle == nullptr ) {
+        // a driver of no vehicle has nothing to control
+        return;
+    }
     mvOccupied = pVehicle->MoverParameters; // domyślny skrót do obiektu parametrów
 	BrakeSystem = mvOccupied->BrakeSystem; // domyślny sposób hamowania
     mvControlling = pVehicle->FindPowered()->MoverParameters; // poszukiwanie członu sterowanego
@@ -6493,10 +6503,18 @@ TController::update_timers( double dt ) {
 void
 TController::update_logs( double const dt ) {
     // log vehicle data
+    if( false == writes_physicslog() ) {
+        // not counted while it isn't logged (the driver of a road vehicle, or no logs on): were the logs turned on,
+        // it would write a line every 0.05 s from then on, not one each update to make up for the time before
+        LastUpdatedTime = 0.0;
+        return;
+    }
     LastUpdatedTime += dt;
-    if( WriteLogFlag
-     && LastUpdatedTime > deltalog ) {
+    if( LastUpdatedTime > deltalog ) {
         // zapis do pliku DAT
+        if( false == PhysicsLogBegun ) {
+            begin_physicslog();
+        }
         PhysicsLog();
         LastUpdatedTime -= deltalog;
     }
