@@ -1,0 +1,34 @@
+{
+  "description": "Crew events, the driver is replaced (eu07/maszyna#510): an EU07 with an AI driver waits on track 1 of Stacja1 on td.scn. 20 s after the start Crew:<vehicle> 0 0 takes the driver off, which leaves the locomotive braked; 20 s later Crew:<vehicle> 1 0 puts a new one in cab A, who gets the order to go (Shunt -1 0 from event0 of the track), releases the brakes and leaves through the exit signal.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset td/rozklad tdo_n1734 0.0 0.1",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_off putvalues 20 none 0 0 0 Crew:{{vehicle}} 0 0 endevent",
+      "node -1 0 autotest_crew_off_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_off end",
+      "event autotest_crew_put putvalues 0 none 0 0 0 Crew:{{vehicle}} 1 0 endevent",
+      "event autotest_crew_on multiple 40 none autotest_crew_put autotest_crew_waits endevent",
+      "node -1 0 autotest_crew_on_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_on end"
+    ]
+  },
+  "track_events": {
+    "tdo_n1734": "event0 autotest_wake"
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_swap\\] the AI driver leaves" },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_swap\\] an AI driver takes cab A" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "ai", "after": 35, "before": 50 },
+    { "type": "starts", "min_speed": 20, "within": 200 },
+    { "type": "moves", "vehicle": "{{vehicle}}", "direction": "front", "min_speed": 20 },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}
