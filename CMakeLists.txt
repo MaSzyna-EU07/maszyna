@@ -575,6 +575,7 @@ set(CORE_SOURCES
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
 "vehicle/odometer.cpp"
+"world/timetablestart.cpp"
 "vehicle/timetableservice.cpp"
 "world/timetableflags.cpp"
 "world/timetablereader.cpp"

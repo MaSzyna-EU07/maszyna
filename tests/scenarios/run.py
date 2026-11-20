@@ -146,6 +146,15 @@ def scenery_cache(game_dir: Path, case_name: str) -> Path:
     return game_dir / "scenery" / f"autotest_{case_name}.sbt"
 
 
+def timetable_name(case_name: str) -> str:
+    """The case's own timetable as a trainset names it: {{timetable}} in the fragment."""
+    return f"autotest_{case_name}"
+
+
+def timetable_path(game_dir: Path, case_name: str) -> Path:
+    return game_dir / "scenery" / f"{timetable_name(case_name)}.txt"
+
+
 def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> str:
     """Writes the case scenery into the game's scenery dir and returns its file name."""
     scenery_dir = game_dir / "scenery"
@@ -165,9 +174,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         text = text.replace(old, new)
     # a case on a mission of the base scenery may have nothing to add but its test_config
     fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1") if "fragment" in case else ""
-    # vars first: {{vehicle}} inside a var's value gets filled in the second pass
-    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle"})
-    fragment = fill_vars(fragment, {"vehicle": vehicle})
+    # vars first: {{vehicle}} and {{timetable}} inside a var's value get filled in the second pass
+    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable"})
+    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name)})
     # FirstInit binds event launchers to their events and links the tracks. so launchers and
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
@@ -185,6 +194,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     text += header + trainsets + "\n"
     name = f"autotest_{case_name}.scn"
     (scenery_dir / name).write_bytes(text.encode("latin-1"))
+    # a timetable of the case's own, for a train whose timetable the sceneries of the game have none like
+    if "timetable" in case:
+        shutil.copyfile(CASES_DIR / case["timetable"], timetable_path(game_dir, case_name))
     # the simulator caches the scenery's static geometry in <name>.sbt and reads it instead of
     # the terrain in the .scn (tracks, events and trainsets always come from the .scn), so
     # drop the cache once the base scenery has changed
@@ -838,6 +850,7 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
                            duration, float(case.get("timeout", 600)), watch, say,
                            expect_rows=with_physicslog and not own_vehicle)
+    timetable_path(game_dir, name).unlink(missing_ok=True)
     # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
     if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
         scenery_cache(game_dir, name).unlink(missing_ok=True)
