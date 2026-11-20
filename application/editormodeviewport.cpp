@@ -21,11 +21,13 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "imgui/imgui.h"
+#include "application/uidescription.h"
 
 #include <algorithm>
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <format>
 #include <functional>
 #include <vector>
 
@@ -476,14 +478,16 @@ void editor_mode::render_mode_plate()
 		work_area which;
 		icon picture;
 		char const *key;
+		char const *description;
 	};
+	// the descriptions as those of the row of the work modes of the flat palettes, see render_workspaces()
 	std::array<area, 6> const areas{{
-	    {STR_C("Surroundings"), work_area::surroundings, icon::work_surroundings, "F2"},
-	    {STR_C("Tracks"), work_area::tracks, icon::work_tracks, "F3"},
-	    {STR_C("Roads"), work_area::roads, icon::work_roads, "F4"},
-	    {STR_C("Terrain"), work_area::terrain, icon::work_terrain, "F5"},
-	    {STR_C("Catenary"), work_area::catenary, icon::work_catenary, "F6"},
-	    {"GeoTools", work_area::features, icon::work_terrain, "F7"},
+	    {STR_C("Surroundings"), work_area::surroundings, icon::work_surroundings, "F2", STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
+	    {STR_C("Tracks"), work_area::tracks, icon::work_tracks, "F3", STR_C("Tracks and switches, signals, kilometrage and posts along the track, checks of the line")},
+	    {STR_C("Roads"), work_area::roads, icon::work_roads, "F4", STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
+	    {STR_C("Terrain"), work_area::terrain, icon::work_terrain, "F5", STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
+	    {STR_C("Catenary"), work_area::catenary, icon::work_catenary, "F6", STR_C("The overhead catenary: poles with cantilevers, gantries, the wires of the chains")},
+	    {"GeoTools", work_area::features, icon::work_terrain, "F7", STR_C("From the maps of geoportal.gov.pl onto the terrain: fields and parcels, trees, the track bed and slopes, the map to go to")},
 	}};
 	auto const s{scale()};
 	auto const dark{EditorSettings.palette() == 3};
@@ -522,6 +526,7 @@ void editor_mode::render_mode_plate()
 	list->AddTriangleFilled(ImVec2(cx - 4.0f * s, middle - 2.0f * s), ImVec2(cx + 4.0f * s, middle - 2.0f * s), ImVec2(cx, middle + 3.0f * s), IM_COL32(255, 255, 255, 210));
 	if (hovered)
 		ImGui::SetTooltip("%s", STR_C("Work modes"));
+	ui::rest_description(chosen->description);
 	if (false == ImGui::BeginPopup("##modes"))
 		return;
 	ImGui::TextDisabled("%s", STR_C("Work modes"));
@@ -532,6 +537,7 @@ void editor_mode::render_mode_plate()
 		auto const rowwidth{std::max(240.0f * s, ImGui::GetContentRegionAvail().x)};
 		ImGui::PushID(static_cast<int>(entry.which));
 		auto const picked{ImGui::Selectable("##mode", entry.which == current, 0, ImVec2(rowwidth, rowheight))};
+		ui::rest_description(entry.description);
 		ImGui::PopID();
 		auto *popup{ImGui::GetWindowDrawList()};
 		auto const square{26.0f * s};
@@ -603,8 +609,11 @@ void editor_mode::render_capsule_tools()
 		}
 		else
 			icon_or_letters(list, button, ImVec2(position.x + width * 0.5f, middle), text);
+		// its name and key at once, how it works when the cursor rests on it
 		if (hovered)
-			button_tooltip(button);
+			ImGui::SetTooltip("%s", button.key != nullptr ? std::format("{}  [{}]", button.label, button.key).c_str() : button.label);
+		if (button.tooltip != nullptr)
+			ui::rest_description(button.tooltip);
 		if (clicked && button.enabled && button.action)
 			button.action();
 	}

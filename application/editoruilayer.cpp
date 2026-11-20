@@ -1122,6 +1122,11 @@ void editor_ui::island_heading(char const *Kind, char const *Name)
 {
 	// what the island holds, small and faint, over its name in the bold font
 	ImGui::TextDisabled("%s", Kind);
+	if (Name == nullptr || *Name == 0)
+	{
+		ImGui::Spacing();
+		return;
+	}
 	if (ui_layer::font_bold != nullptr)
 	{
 		ImGui::PushFont(ui_layer::font_bold);
@@ -1146,7 +1151,7 @@ void editor_ui::render_inspector()
 		if (island)
 		{
 			island_shadow();
-			std::string name{"-"};
+			std::string name;
 			if (m_node != nullptr)
 				name = m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name();
 			island_heading(STR_C("Selection"), name.c_str());
