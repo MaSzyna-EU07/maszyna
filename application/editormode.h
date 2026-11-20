@@ -916,8 +916,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	{
 		std::array<char, 512> url{};
 		std::array<char, 64> filter{};
+		// the reading is given up: the editor goes. before the reading, so it outlives the future waiting for the reading to end
+		std::atomic<bool> closing{false};
 		std::future<editor_orthophoto::service_info> reading;
-		std::atomic<bool> closing{false}; // the reading is given up: the editor goes
 		std::optional<editor_orthophoto::service_info> info;
 		std::string service; // the address the capabilities were read of
 		std::vector<char> ticked;
