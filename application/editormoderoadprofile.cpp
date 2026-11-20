@@ -421,6 +421,29 @@ void close_loop(chain_profile const &Profile, std::vector<double> &Heights, std:
 		Grades.front() = Grades.back();
 }
 
+// the run's direction seen from above at its end node End, pointing out of the run: along the chord from the node next to it
+glm::dvec2 out_of_run(chain_profile const &Profile, std::size_t const End)
+{
+	auto const next{End == 0 ? std::size_t{1} : End - 1};
+	auto const out{Profile.positions[End] - Profile.positions[next]};
+	return {out.x, out.z};
+}
+
+// how another piece at the joint with an end of the run goes on from it, seen from above: 1 straight on (a change of lanes, a fork),
+// -1 back along the run (a merge from behind), 0 across it (a road meeting the run in a T), which takes no grade from the run
+int continues_run(std::array<glm::dvec3, 4> const &P, bool const AtEnd, glm::dvec2 const &Out)
+{
+	auto const a{absolute(P)};
+	auto const into{AtEnd ? a[2] - a[3] : a[1] - a[0]}; // from the joint into the piece
+	glm::dvec2 const level{into.x, into.z};
+	if (glm::length(level) < 1e-9 || glm::length(Out) < 1e-9)
+		return 0;
+	auto const cosine{glm::dot(glm::normalize(level), glm::normalize(Out))};
+	if (cosine > 0.7)
+		return 1;
+	return cosine < -0.7 ? -1 : 0;
+}
+
 // the handle of another piece at its joint with an end of the run, made to rise with the grade the run has there (Grade: metres up
 // for a metre away from the joint, into that piece); a straight gets its handles made first, so it can bend up and down
 void join_handle(std::array<glm::dvec3, 4> &P, bool const AtEnd, double const Grade)
@@ -437,8 +460,9 @@ void join_handle(std::array<glm::dvec3, 4> &P, bool const AtEnd, double const Gr
 
 // the end of the run at node End changed: the other pieces ending there (a change of lanes, three or more meeting with no junction)
 // and the arms of the junctions there go with its height, as the Raise of the road tool takes them, so the road isn't pulled apart.
-// Where the operation gave the end a new grade (Grade: metres up for a metre along the run), the handles of those pieces at the
-// joint take it as well, so the joint gets no kink; an arm of a junction has no grade of its own to take
+// Where the operation gave the end a new grade (Grade: metres up for a metre along the run), the handles of the pieces going on
+// from the run at the joint take it as well, so the joint gets no kink; a piece across the run (a T) keeps its handle, so the road
+// through gets no V, and an arm of a junction has no grade of its own to take
 void write_run_end(chain_profile const &Profile, std::size_t const End, double const Height, std::optional<double> const Grade,
                    std::vector<std::pair<road_node *, road_node::state>> &Changes, std::vector<std::pair<junction_node *, junction_node::state>> &Junctions)
 {
@@ -447,6 +471,7 @@ void write_run_end(chain_profile const &Profile, std::size_t const End, double c
 		return;
 	// the pieces beyond the first node lie before the run: away from the joint into them is down the run
 	auto const away{End == 0 ? -1.0 : 1.0};
+	auto const out{out_of_run(Profile, End)};
 	for (auto const &other : editor_road::ends_at(Profile.positions[End]))
 	{
 		if (std::ranges::any_of(Profile.order, [&other](oriented_piece const &Piece) { return Piece.road == other.road; }))
@@ -459,8 +484,8 @@ void write_run_end(chain_profile const &Profile, std::size_t const End, double c
 		}
 		auto &points{listed->second.axis.points};
 		points[other.atend ? segment_data::point::end : segment_data::point::start].y = Height;
-		if (Grade.has_value())
-			join_handle(points, other.atend, away * *Grade);
+		if (auto const along{continues_run(points, other.atend, out)}; Grade.has_value() && along != 0)
+			join_handle(points, other.atend, along * away * *Grade);
 	}
 	if (false == moved)
 		return;
