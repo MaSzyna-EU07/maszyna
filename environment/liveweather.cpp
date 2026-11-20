@@ -37,9 +37,11 @@ void live_weather::request(glm::dvec2 const &Place)
 {
 	if (busy() || (false == available()))
 		return;
+	// the thread of the fetch before, finished: busy() said so
+	join();
 	m_stop = std::make_shared<std::atomic<bool>>(false);
 	auto const stop{m_stop};
-	m_fetch = std::async(std::launch::async, [Place, stop]() {
+	std::packaged_task<report()> fetch([Place, stop]() {
 		editor_http::client client;
 		std::vector<std::uint8_t> body;
 		std::string error;
@@ -52,6 +54,14 @@ void live_weather::request(glm::dvec2 const &Place)
 		}
 		return read(std::string(body.begin(), body.end()), Place);
 	});
+	m_fetch = fetch.get_future();
+	m_thread = std::thread(std::move(fetch));
+}
+
+void live_weather::join()
+{
+	if (m_thread.joinable())
+		m_thread.join();
 }
 
 bool live_weather::busy() const
@@ -63,6 +73,7 @@ std::optional<live_weather::report> live_weather::take()
 {
 	if ((false == m_fetch.valid()) || busy())
 		return std::nullopt;
+	join();
 	return m_fetch.get();
 }
 
@@ -70,8 +81,7 @@ void live_weather::reset()
 {
 	if (m_stop)
 		m_stop->store(true);
-	if (m_fetch.valid())
-		m_fetch.wait();
+	join();
 	m_fetch = {};
 	m_stop.reset();
 }
