@@ -250,8 +250,8 @@ state_serializer::deserialize_assignment( cParser &Input, scene::scratch_data &S
     while( false == token.empty()
         && token != "endassignment" ) {
         // assignment is expected to come as string pairs: language id and the actual assignment enclosed in quotes to form a single token
-        auto assignment{ Input.getToken<std::string>() };
-        win1250_to_ascii( assignment );
+        // the assignment is only shown to the player, so it's kept with its letters, in utf-8 as the user interface takes it
+        auto const assignment{ data_text_to_utf8( Input.getToken<std::string>() ) };
         Scratchpad.trainset.assignment.emplace( token, assignment );
         token = Input.getToken<std::string>();
     }
@@ -362,8 +362,9 @@ state_serializer::deserialize_camera( cParser &Input, scene::scratch_data &Scrat
 void
 state_serializer::deserialize_config( cParser &Input, scene::scratch_data &Scratchpad ) {
 
-    // config parameters (re)definition
-    Global.ConfigParse( Input );
+    // config parameters (re)definition, but for what only eu07.ini sets: programs to run, connections, the sandbox of
+    // the scripts (utilities/inionlysettings.h)
+    Global.ConfigParse( Input, config_source::scenery );
     if( Global.test.enabled ) {
         // a scenery doesn't get to turn on what a test keeps off
         simulation::apply_test_mode_settings();
@@ -405,7 +406,8 @@ void state_serializer::deserialize_lua( cParser &Input, scene::scratch_data &Scr
        std::string file;
        Input >> file;
 #ifdef WITH_LUA
-       simulation::Lua.interpret(Global.asCurrentSceneryPath + file);
+       // the file is relative to the scenery folder, and stays inside it
+       simulation::Lua.interpret(Global.asCurrentSceneryPath, file);
 #else
        ErrorLog(file + ": lua scripts not supported in this build.");
 #endif
@@ -445,6 +447,9 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
     Scratchpad.binary.terrain_binaryfiles.clear();
 
     simulation::Paths.InitTracks();
+    if( Global.track_check ) {
+        simulation::Paths.CheckTracks();
+    }
     // the roads tie up their own lanes where they gain or lose some, the junctions tie the lanes of the roads together,
     // what's left loose after that gets closed by the roads
     simulation::Roads.InitLanes();
@@ -571,7 +576,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "road" ) {
 
         auto *road { new road_node( nodedata ) };
-        road->import(
+        road->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -587,7 +592,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "sweep" ) {
 
         auto *sweep { new sweep_node( nodedata ) };
-        sweep->import(
+        sweep->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -601,7 +606,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( nodedata.type == "junction" ) {
 
         auto *junction { new junction_node( nodedata ) };
-        junction->import(
+        junction->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -633,7 +638,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
     else if( roadpoint_node::is_keyword( nodedata.type ) ) {
         // level crossing, or a point where road vehicles appear or are taken away
         auto *point { new roadpoint_node( nodedata ) };
-        point->import(
+        point->import_from(
             Input,
             ( Scratchpad.location.offset.empty() ?
                 glm::dvec3 { 0.0 } :
@@ -734,7 +739,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
         if( false == skip ) {
 
             ++Scratchpad.binary.geometry_imported;
-            auto shape { scene::shape_node().import( Input, nodedata ) };
+            auto shape { scene::shape_node().import_from( Input, nodedata ) };
             material = shape.data().material;
             if( true == Global.editor_session ) {
                 shape.source_file( scene::terrain_file::reference_of( Input.Name() ) );
@@ -772,7 +777,7 @@ state_serializer::deserialize_node( cParser &Input, scene::scratch_data &Scratch
 
             ++Scratchpad.binary.geometry_imported;
             simulation::Region->insert(
-                scene::lines_node().import(
+                scene::lines_node().import_from(
                     Input, nodedata ),
                 Scratchpad );
         }
@@ -1200,6 +1205,8 @@ include_terrain_file( std::string File, std::string &Includes, scene::scratch_da
 
     replace_slashes( File );
     erase_extension( File );
+    // the parser gives the name in lowercase, the files may be named in another case; the binary file is made next to the text
+    File = FileStemOnDisk( Global.asCurrentSceneryPath, File, { ".txtf", ".btf" } );
     if( std::find( binary.terrain_textfiles.begin(), binary.terrain_textfiles.end(), File ) != binary.terrain_textfiles.end() ) {
         WriteLog( "Terrain file: " + File + " is already in use, ignored" );
         return;

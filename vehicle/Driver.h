@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
 #include "MOVER.h"
@@ -19,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
+#include "utilities/physicslog.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -197,6 +199,9 @@ static const bool Humandriver = false;
 static const int maxorders = 64; // ilość rozkazów w tabelce
 static const int maxdriverfails = 4; // ile błędów może zrobić AI zanim zmieni nastawienie
 extern bool WriteLogFlag; // logowanie parametrów fizycznych
+// the physics logs of the trains only (physicslog.trains yes): of each driver of rail vehicles who drives them, not
+// of the passengers nor of the vehicles of the roads
+extern bool WriteTrainLogFlag;
 static const int BrakeAccTableSize = 20;
 
 static const int gbh_NP = -2; //odciecie w hamulcu ogolnym
@@ -663,6 +668,7 @@ private:
     std::string m_lastexchangestop; // HACK: safeguard to prevent multiple load exchanges per station
     int m_lastexchangeplatforms { 0 }; // cached station platforms for last exchange
     int m_lastexchangedirection { 0 }; //
+    timetable::service_flags m_stopflags; // service flags of the timetable at the stop the train is at or left last
     double fLastStopExpDist = -1.0; // odległość wygasania ostateniego przystanku
     int iRadioChannel = 1; // numer aktualnego kanału radiowego
     int iGuardRadio = 0; // numer kanału radiowego kierownika (0, gdy nie używa radia)
@@ -720,9 +726,12 @@ private:
 
 // logs
 // methods
+    // the line of the log, to PhysicsLogs (utilities/physicslog.h)
     void PhysicsLog();
+    // its log begun anew, its file emptied and given the header
+    void begin_physicslog();
 // members
-    std::ofstream LogFile; // zapis parametrow fizycznych
+    bool PhysicsLogBegun = false; // its log was begun, by this driver
     double LastUpdatedTime = 0.0; // czas od ostatniego logu
     double ElapsedTime = 0.0; // czas od poczatku logu
 
@@ -730,6 +739,22 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line, with
+    // its line end, and the values of a line of it as the vehicle is now, which the writer of the logs makes into text.
+    // the black box keeps the lines of the vehicle the user is in when its driver doesn't write its own
+    std::string const &physicslog_name() const {
+        return VehicleName; }
+    // whether it writes its physics log itself: with "physicslog yes" all but the drivers of road vehicles, with
+    // "physicslog.trains yes" one who drives rail vehicles. a driver made primary later begins its log then. the cars of
+    // a big scenery are hundreds, whose logs nobody reads and which a hard disk can't keep up with; the black box writes
+    // the log of one the user is in
+    bool writes_physicslog() const {
+        return ( WriteLogFlag && false == drives_road_vehicle() ) || ( WriteTrainLogFlag && is_train() && primary() ); }
+    // a driver of a road vehicle; not one of no vehicle
+    bool drives_road_vehicle() const {
+        return mvOccupied != nullptr && is_car(); }
+    static std::string_view physicslog_header();
+    physicslog_values physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:

@@ -1,8 +1,10 @@
 #include "stdafx.h"
 
+#include <cerrno>
 #include <fstream>
 #include <sstream>
 #include <cstring>
+#include <system_error>
 #include "shader.h"
 #include "glsl_common.h"
 #include "utilities/Logs.h"
@@ -58,6 +60,12 @@ std::string gl::shader::read_file(const std::string &filename) const
     std::ifstream f;
 
     f.open(filename);
+    if (false == f.is_open())
+    {
+        // with the reason the system gives: a file which is there but can't be opened (too many files open) looks
+        // the same as a missing one otherwise
+        throw shader_exception("cannot open shader: " + filename + " (" + std::generic_category().message(errno) + ")");
+    }
     stream << f.rdbuf();
     f.close();
 

@@ -323,7 +323,7 @@ std::string ToUpper(std::string const &text)
 void win1250_to_ascii(std::string &Input)
 {
 
-	std::unordered_map<char, char> const charmap{{165, 'A'}, {198, 'C'}, {202, 'E'}, {163, 'L'}, {209, 'N'}, {211, 'O'}, {140, 'S'}, {143, 'Z'}, {175, 'Z'},
+	static std::unordered_map<char, char> const charmap{{165, 'A'}, {198, 'C'}, {202, 'E'}, {163, 'L'}, {209, 'N'}, {211, 'O'}, {140, 'S'}, {143, 'Z'}, {175, 'Z'},
 	                                             {185, 'a'}, {230, 'c'}, {234, 'e'}, {179, 'l'}, {241, 'n'}, {243, 'o'}, {156, 's'}, {159, 'z'}, {191, 'z'}};
 	std::unordered_map<char, char>::const_iterator lookup;
 	for (auto &input : Input)
@@ -457,9 +457,126 @@ void win1250_to_utf32(std::string const &Text, std::u32string &Output)
 	}
 }
 
+namespace
+{
+void append_utf8(std::string &Output, char32_t const Codepoint)
+{
+	if (Codepoint < 0x80)
+	{
+		Output += static_cast<char>(Codepoint);
+	}
+	else if (Codepoint < 0x800)
+	{
+		Output += static_cast<char>(0xC0 | (Codepoint >> 6));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+	else if (Codepoint < 0x10000)
+	{
+		Output += static_cast<char>(0xE0 | (Codepoint >> 12));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 6) & 0x3F));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+	else
+	{
+		Output += static_cast<char>(0xF0 | (Codepoint >> 18));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 12) & 0x3F));
+		Output += static_cast<char>(0x80 | ((Codepoint >> 6) & 0x3F));
+		Output += static_cast<char>(0x80 | (Codepoint & 0x3F));
+	}
+}
+} // namespace
+
+std::string data_text_to_utf8(std::string const &Text)
+{
+	if (std::ranges::all_of(Text, [](char const Character) { return static_cast<unsigned char>(Character) < 0x80; }))
+	{
+		return Text;
+	}
+	std::u32string codepoints;
+	// a text in windows-1250 can happen to be valid utf-8 as well: two capital letters with marks in a row, as the bytes
+	// D3 A3 of "WOLKA" with its marks, make a sequence of two bytes. such a pair decodes to a letter between U+0180 and
+	// U+07FF (cyrillic, greek and the like), which the texts of the data files, when they are in utf-8, don't have
+	if (utf8_to_utf32(Text, codepoints) && std::ranges::none_of(codepoints, [](char32_t const Codepoint) { return Codepoint >= 0x180 && Codepoint < 0x800; }))
+	{
+		return Text;
+	}
+	// the code page the data files are written in
+	win1250_to_utf32(Text, codepoints);
+	std::string output;
+	output.reserve(Text.size() + 8);
+	for (auto const codepoint : codepoints)
+	{
+		// the bytes the code page has no character for come as 0
+		append_utf8(output, codepoint != 0 ? codepoint : U'?');
+	}
+	return output;
+}
+
+std::string data_name_to_utf8(std::string const &Name, bool const Underscorestospaces)
+{
+	auto name{data_text_to_utf8(Name)};
+	// in utf-8 the bytes below 0x80 are characters of their own, never a part of another one
+	for (auto &character : name)
+	{
+		if (static_cast<unsigned char>(character) < 0x20 || (Underscorestospaces && character == '_'))
+		{
+			character = ' ';
+		}
+	}
+	return name;
+}
+
+namespace
+{
+// number of bytes of the character of a text in utf-8 which starts at given position; 1 for a byte which starts no valid sequence
+std::size_t utf8_character_size(std::string_view const Text, std::size_t const Position)
+{
+	auto const length{utf8_sequence_length(static_cast<std::byte>(Text[Position]))};
+	if (length < 2 || Position + length > Text.size())
+	{
+		return 1;
+	}
+	for (std::size_t offset = 1; offset < length; ++offset)
+	{
+		if ((static_cast<std::byte>(Text[Position + offset]) & std::byte{0xC0}) != std::byte{0x80})
+		{
+			return 1;
+		}
+	}
+	return length;
+}
+} // namespace
+
+std::size_t utf8_length(std::string_view const Text)
+{
+	std::size_t length{0};
+	for (std::size_t position = 0; position < Text.size(); position += utf8_character_size(Text, position))
+	{
+		++length;
+	}
+	return length;
+}
+
+std::string utf8_fit(std::string_view const Text, std::size_t const Width)
+{
+	std::size_t length{0};
+	std::size_t position{0};
+	while (position < Text.size() && length < Width)
+	{
+		position += utf8_character_size(Text, position);
+		++length;
+	}
+	std::string output{Text.substr(0, position)};
+	output.append(Width - length, ' ');
+	return output;
+}
+
 // Ra: tymczasowe rozwiązanie kwestii zagranicznych (czeskich) napisów
+// NOTE: the entry of 0xB1 (the plus-minus sign of windows-1250, left as it is) is written as its byte. written as the
+// character it took two bytes in the builds which keep the texts of the sources in utf-8 (GCC, Clang, MSVC with /utf-8),
+// and every entry after it was off by one
 char const charsetconversiontable[] = "E?,?\"_++?%S<STZZ?`'\"\".--??s>stzz"
-                                " ^^L$A|S^CS<--RZo±,l'uP.,as>L\"lz"
+                                " ^^L$A|S^CS<--RZo\xB1,l'uP.,as>L\"lz"
                                 "RAAAALCCCEEEEIIDDNNOOOOxRUUUUYTB"
                                 "raaaalccceeeeiiddnnoooo-ruuuuyt?";
 
@@ -516,6 +633,140 @@ bool FileExists(std::string const &Filename)
 	return std::filesystem::exists(Filename);
 }
 
+#ifndef _WIN32
+namespace
+{
+
+// the names in a folder by their lowercase, the time the folder was changed and the time they were read
+struct cased_folder
+{
+	bool read{false};
+	std::filesystem::file_time_type changed{};
+	std::filesystem::file_time_type listed{};
+	// when the time of the change was last looked at
+	std::chrono::steady_clock::time_point checked{};
+	std::unordered_map<std::string, std::string> names;
+};
+
+std::mutex cased_mutex;
+std::unordered_map<std::string, cased_folder> cased_folders;
+// a folder by the name it's given with (parts split by '/', a '/' at the end): as it's named on the disk, or missing in any case
+// since the time given
+struct cased_path
+{
+	std::string name;
+	bool missing{false};
+	std::chrono::steady_clock::time_point checked{};
+};
+std::unordered_map<std::string, cased_path> cased_paths;
+
+// the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
+// function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
+void read_cased_folder(cased_folder &Cached, std::filesystem::path const &Folder, std::filesystem::file_time_type const Changed)
+{
+	Cached.names.clear();
+	Cached.changed = Changed;
+	Cached.listed = std::filesystem::file_time_type::clock::now();
+	std::error_code error;
+	for (std::filesystem::directory_iterator entry{Folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
+	{
+		auto const name{entry->path().filename().string()};
+		Cached.names.try_emplace(ToLower(name), name);
+	}
+	// a listing cut short isn't kept
+	Cached.read = (false == bool(error));
+}
+
+// the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
+// changed, as the editor writes files while it runs, the time of the change looked at once a second at most, which keeps a
+// missing file as cheap as a single check; a name missing from a folder changed shortly before it was read is looked for again,
+// the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
+std::string cased_name(std::string const &Folder, std::string const &Name)
+{
+	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
+	std::error_code error;
+	auto &cached{cased_folders[Folder]};
+	auto const now{std::chrono::steady_clock::now()};
+	auto changed{cached.changed};
+	if ((false == cached.read) || (now - cached.checked >= std::chrono::seconds{1}))
+	{
+		changed = std::filesystem::last_write_time(folder, error);
+		if (error)
+		{
+			// a folder found before may have been renamed or removed since
+			cased_folders.erase(Folder);
+			cased_paths.clear();
+			return {};
+		}
+		cached.checked = now;
+	}
+	auto const wanted{ToLower(Name)};
+	if ((false == cached.read) || (cached.changed != changed))
+		read_cased_folder(cached, folder, changed);
+	auto found{cached.names.find(wanted)};
+	// a folder changed in the future, as from another clock, isn't read again on every miss
+	if (auto const age{cached.listed - cached.changed}; (found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
+	{
+		read_cased_folder(cached, folder, changed);
+		found = cached.names.find(wanted);
+	}
+	return found != cached.names.end() ? found->second : std::string{};
+}
+
+// keeps the folder by the name it's given with as Name, or as missing since the time given when Name is empty, and puts Name into
+// Cased; false when it's missing
+bool keep_cased_path(std::string const &Folder, std::string const &Name, std::chrono::steady_clock::time_point const Now, std::string &Cased)
+{
+	auto &path{cased_paths[Folder]};
+	path.name = Name;
+	path.missing = Name.empty();
+	path.checked = Now;
+	Cased = Name;
+	return false == Name.empty();
+}
+
+// the folder as it's named on the disk into Cased, from the one given with '/' between its parts and at its end ("" the current
+// folder); false when it's missing in any case. the folders found are kept, and the missing ones for a second, so a file missing
+// costs a check of its folder alone. to be called with cased_mutex held
+bool cased_folder_path(std::string const &Folder, std::string &Cased)
+{
+	if (Folder.empty() || (Folder == "/"))
+	{
+		Cased = Folder;
+		return true;
+	}
+	auto const now{std::chrono::steady_clock::now()};
+	if (auto const found{cased_paths.find(Folder)}; found != cased_paths.end())
+	{
+		if (false == found->second.missing)
+		{
+			Cased = found->second.name;
+			return true;
+		}
+		if (now - found->second.checked < std::chrono::seconds{1})
+			return false;
+	}
+	std::error_code error;
+	if (std::filesystem::is_directory(Folder, error))
+	{
+		// named as it is on the disk
+		return keep_cased_path(Folder, Folder, now, Cased);
+	}
+	// the parent, then the last part among the names in it
+	auto const last{Folder.size() - 1};
+	auto const split{Folder.rfind('/', last - 1)};
+	auto const parent{split == std::string::npos ? std::string{} : Folder.substr(0, split + 1)};
+	auto const part{Folder.substr(parent.size(), last - parent.size())};
+	std::string casedparent;
+	if (false == cased_folder_path(parent, casedparent))
+		return keep_cased_path(Folder, {}, now, Cased);
+	auto const name{((part == ".") || (part == "..")) ? part : cased_name(casedparent, part)};
+	return keep_cased_path(Folder, name.empty() ? std::string{} : casedparent + name + '/', now, Cased);
+}
+
+} // namespace
+#endif
+
 std::string FileCased(std::filesystem::path const &Filename)
 {
 	std::error_code error;
@@ -526,14 +777,57 @@ std::string FileCased(std::filesystem::path const &Filename)
 	// code page to throw on
 	return {};
 #else
-	// only the name of the file itself, a folder named in another case isn't found
-	auto const directory{Filename.has_parent_path() ? Filename.parent_path() : std::filesystem::path{"."}};
-	auto const wanted{ToLower(Filename.filename().string())};
-	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
-		if (ToLower(entry->path().filename().string()) == wanted)
-			return Filename.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
-	return {};
+	// the folder, then the file in it: the folders can be named in another case as well as the file
+	auto text{Filename.string()};
+	std::replace(text.begin(), text.end(), '\\', '/');
+	std::string folder{(false == text.empty()) && (text.front() == '/') ? "/" : ""};
+	std::string file;
+	for (std::size_t start{0}; start < text.size();)
+	{
+		auto end{text.find('/', start)};
+		if (end == std::string::npos)
+			end = text.size();
+		if (end > start)
+		{
+			if (false == file.empty())
+				folder += file + '/';
+			file = text.substr(start, end - start);
+		}
+		start = end + 1;
+	}
+	if (file.empty())
+		return {};
+	std::string cased;
+	{
+		std::scoped_lock const lock{cased_mutex};
+		if (false == cased_folder_path(folder, cased))
+			return {};
+		auto const name{((file == ".") || (file == "..")) ? file : cased_name(cased, file)};
+		if (name.empty())
+			return {};
+		cased += name;
+	}
+	return std::filesystem::exists(cased, error) ? cased : std::string{};
 #endif
+}
+
+std::string FileOnDisk(std::string const &Filename)
+{
+	auto cased{FileCased(Filename)};
+	return cased.empty() ? Filename : cased;
+}
+
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)
+{
+	for (auto const &extension : Extensions)
+	{
+		auto const cased{FileCased(Folder + Name + extension)};
+		if (cased.size() > Folder.size() + extension.size() && cased.starts_with(Folder) && cased.ends_with(extension))
+		{
+			return cased.substr(Folder.size(), cased.size() - Folder.size() - extension.size());
+		}
+	}
+	return Name;
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
@@ -543,7 +837,8 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	{
 		for (auto const &extension : Extensions)
 		{
-			if (FileExists(name + extension))
+			// found in any case, given back as named here: the name stays the key of the banks, the file is opened by FileOnDisk()
+			if (false == FileCased(name + extension).empty())
 			{
 				return {name, extension};
 			}

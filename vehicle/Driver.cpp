@@ -18,10 +18,13 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/handover.h"
+#include "vehicle/timetableservice.h"
 #include "world/mtable.h"
+#include "world/stationnames.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -168,6 +171,7 @@ const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
 const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
+bool WriteTrainLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
 std::string StopReasonTable[] = {
@@ -1200,8 +1204,9 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     if( ( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) { return true; }
     // jeśli przystanek, trzeba obsłużyć wg rozkładu
     iDrivigFlags |= moveStopPointFound;
-    // first 19 chars of the command is expected to be "PassengerStopPoint:" so we skip them
-    if( ToLower( Point.evEvent->input_text() ).compare( 19, sizeof( asNextStop ), ToLower( asNextStop ) ) != 0 )
+    // the W4 and the timetable name the station each in its own file, so the two spellings are compared by their key:
+    // with or without the polish letters, in any case, with spaces or underscores
+    if( false == timetable::stop_point_is_for( Point.evEvent->input_text(), asNextStop ) )
     { // jeśli nazwa nie jest zgodna
         if( false == IsScheduledPassengerStopVisible // check if our next scheduled stop didn't show up earlier in the scan
          && Point.fDist < 1.15 * fBrakeDist + 300
@@ -1345,6 +1350,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                 if (TrainParams.UpdateMTable( simulation::Time, asNextStop) ) {
                     // to się wykona tylko raz po zatrzymaniu na W4
                     record_station( Point, blackbox::station_kinds::stopped );
+                    // the service flags of this stop hold for its doors and departure
+                    m_stopflags = TrainParams.stop_flags();
                     if( TrainParams.StationIndex < TrainParams.StationCount ) {
                         // jeśli są dalsze stacje, bez trąbienia przed odjazdem
                         // also ignore any horn cue that may be potentially set below 1 km/h and before the actual full stop
@@ -1443,7 +1450,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                         if( Command == TCommandType::cm_Unknown ) { // jeśli nie było komendy wcześniej
                             Command = TCommandType::cm_Ready; // gotów do odjazdu z W4 (semafor może zatrzymać)
                         }
-                        if( false == tsGuardSignal.empty() ) {
+                        if( false == tsGuardSignal.empty()
+                         && true == timetable::has_conductor( m_stopflags ) ) {
                             // jeśli mamy głos kierownika, to odegrać
                             iDrivigFlags |= moveGuardSignal;
                         }
@@ -1451,7 +1459,8 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
                     } // koniec startu z zatrzymania
 					else {
 						cue_action(driver_hint::waitdeparturetime);
-						if (TrainParams.IsTimeToGo(simulation::Time.data().wHour, simulation::Time.data().wMinute + simulation::Time.data().wSecond*0.0167 + 0.1)) { //if is less than 6 sec to departure
+						if (timetable::has_conductor(m_stopflags) // no conductor, no door kept open for him
+						 && TrainParams.IsTimeToGo(simulation::Time.data().wHour, simulation::Time.data().wMinute + simulation::Time.data().wSecond*0.0167 + 0.1)) { //if is less than 6 sec to departure
 							iDrivigFlags |= moveGuardOpenDoor;
 							GuardOpenDoor();
 						}
@@ -2332,33 +2341,16 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         iDrivigFlags |= movePrimary; // aktywnie prowadzące pojazd
     }
 
-    SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    if( mvOccupied != nullptr ) {
+        SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    }
     TableClear();
 
-    if( WriteLogFlag ) {
-#ifdef _WIN32
-		CreateDirectory( "physicslog", nullptr);
-#elif __unix__
-		mkdir( "physicslog", 0740 );
-#endif
-        LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
-            std::ios::in | std::ios::out | std::ios::trunc );
-#if LOGPRESS == 0
-        LogFile
-            << "Time[s] Velocity[m/s] Acceleration[m/ss] "
-            << "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-            << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
-            << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
-            << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
-            << "VehicleVelocity[km/h]"
-            << "\r\n";
-        LogFile << std::fixed << std::setprecision( 4 );
-#endif
-#if LOGPRESS == 1
-        LogFile << string( "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP" ).c_str() << "\n";
-#endif
-        LogFile.flush();
+    // the logs of all but the road vehicles, begun at once as they always were. one of a train only at its first line
+    // (update_logs): every crew is made primary here, and the drivers but one of a train with crews in more vehicles
+    // are made passive before it starts, so they get no file with only the header
+    if( WriteLogFlag && false == drives_road_vehicle() ) {
+        begin_physicslog();
     }
 
     // HACK: give the simulation a small window to potentially replace the AI with a human driver
@@ -2367,7 +2359,6 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 
 TController::~TController()
 { // wykopanie mechanika z roboty
-    // LogFile is closed by its own destructor
 };
 
 // zamiana kodu rozkazu na opis
@@ -2876,7 +2867,7 @@ bool TController::CheckVehicles(TOrders user)
             = 0;
 		}
 
-        if( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) {
+        if( brake_setting::inspects_train( OrderCurrentGet(), user == Connect ) ) {
             // nastawianie hamulca do jazdy pociągowej
             AutoRewident();
 /*
@@ -4474,7 +4465,16 @@ void TController::SpeedCntrl(double DesiredSpeed)
 {
     if( false == mvControlling->SpeedCtrl ) { return; }
 
-	if (mvControlling->EngineType == TEngineType::DieselEngine)
+	if (mvControlling->IsSpeedCtrlSeparate())
+	{
+		// a switch of its own, the secondary controller left to the field shunting (eu07/maszyna#69)
+		if (DesiredSpeed < 0.1) {
+			DesiredSpeed = 0;
+		}
+		mvControlling->SpeedCtrlSwitch(DesiredSpeed > 0);
+		mvControlling->RunCommand("SpeedCntrl", DesiredSpeed, mvControlling->CabActive);
+	}
+	else if (mvControlling->EngineType == TEngineType::DieselEngine)
 	{
 		if (DesiredSpeed < 0.1) {
 			mvControlling->DecScndCtrl(2);
@@ -4498,7 +4498,7 @@ void TController::SpeedCntrl(double DesiredSpeed)
         while( mvControlling->ScndCtrlPos < DesiredPos && true == mvControlling->IncScndCtrl(1) ) { ; } // all work is done in the condition loop
 	}
 
-    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->ScndCtrlPos > 0 ) {
+    if( mvControlling->SpeedCtrlUnit.PowerStep > 0 && mvControlling->IsSpeedCtrlEngaged() ) {
 		while (mvControlling->SpeedCtrlUnit.DesiredPower < mvControlling->SpeedCtrlUnit.MaxPower)
 		{
 			mvControlling->SpeedCtrlPowerInc();
@@ -4790,6 +4790,11 @@ void TController::Doors( bool const Open, int const Side ) {
 
         auto const lewe = pVehicle->DirectionGet() > 0 ? 1 : 2;
         auto const prawe = 3 - lewe;
+        // doorsteps as the timetable asks, before the doors open (eu07/maszyna#95)
+        if( auto const doorstep { timetable::doorstep( m_stopflags ) };
+            doorstep.has_value() && mvOccupied->Doors.step_enabled != *doorstep ) {
+            cue_action( *doorstep ? driver_hint::doorstepon : driver_hint::doorstepoff );
+        }
         // grant door control permission if it's not automatic
         // TBD: stricter requirements?
         if( true == pVehicle->MoverParameters->Doors.permit_needed ) {
@@ -4801,10 +4806,9 @@ void TController::Doors( bool const Open, int const Side ) {
             }
         }
         // consist-wide remote signals to open doors doors
-        if( pVehicle->MoverParameters->Doors.open_control == control_t::conductor
-         || pVehicle->MoverParameters->Doors.open_control == control_t::driver
-            // NOTE: disabled for mixed controls, leave it up to passengers to open doors by themselves
-/*         || ( pVehicle->MoverParameters->Doors.open_control == control_t::mixed ) */ ) {
+        // NOTE: mixed controls are left up to passengers to open doors by themselves, unless the timetable has
+        // the driver open all the doors
+        if( true == timetable::opens_doors( *pVehicle->MoverParameters, m_stopflags ) ) {
             if( Side & prawe ) {
                 cue_action( driver_hint::doorrightopen );
             }
@@ -4954,6 +4958,7 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
         TrainParams = TTrainParameters(NewCommand); // rozkład jazdy
         tsGuardSignal = sound_source { sound_placement::internal, 2 * EU07_SOUND_CABCONTROLSCUTOFFRANGE }; // wywalenie kierownika
         m_lastexchangestop.clear();
+        m_stopflags = {};
         if (NewCommand != "none")
         {
             if (false == TrainParams.LoadTTfile(
@@ -4988,6 +4993,8 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
                 TrainParams.StationIndexInc(); // przejście do następnej
                 TrainParams.StationStart = TrainParams.StationIndex;
                 asNextStop = TrainParams.NextStop();
+                // the flags of the first station until the train stops there
+                m_stopflags = TrainParams.stop_flags();
                 m_lastannouncement = announcement_t::idle;
                 iDrivigFlags |= movePrimary; // skoro dostał rozkład, to jest teraz głównym
 //                NewCommand = Global.asCurrentSceneryPath + NewCommand;
@@ -5367,58 +5374,80 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     return false; // nierozpoznana - wysłać bezpośrednio do pojazdu
 };
 
-void TController::PhysicsLog()
-{ // zapis logu - na razie tylko wypisanie parametrów
-    if (LogFile.is_open())
-    {
+std::string_view TController::physicslog_header() {
+    // the columns of the readers of these logs, the Hasler tape of the starter among them, stay where they are:
+    // a new one goes at the end
+    return "Time[s] Velocity[m/s] Acceleration[m/ss] "
+           "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
+           "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
+           "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
+           "Security Wheelslip "
+           "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+           "VehicleVelocity[km/h]"
+           "\r\n";
+}
+
+physicslog_values TController::physicslog_line() const {
+    // the values only: the writer of the logs makes them into text on its own thread
+    physicslog_values line;
+    line.time = ElapsedTime;
+    line.wheelspeed = fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot);
+    line.acceleration = mvControlling->AccS;
+    line.couplerdistance = mvOccupied->Couplers[1].Dist;
+    line.couplerforce = mvOccupied->Couplers[1].CForce;
+    line.tractionforce = mvOccupied->Ft;
+    line.frictionforce = mvOccupied->Ff;
+    line.brakeforce = mvOccupied->Fb;
+    line.brakepressure = mvOccupied->BrakePress;
+    line.pipepressure = mvOccupied->PipePress;
+    line.motorcurrent = mvControlling->Im;
+    line.mainctrl = static_cast<int>(mvControlling->MainCtrlPos);
+    line.scndctrl = static_cast<int>(mvControlling->ScndCtrlPos);
+    line.brakectrl = mvOccupied->fBrakeCtrlPos;
+    line.localbrake = mvOccupied->LocalBrakePosA;
+    line.direction = static_cast<int>(mvControlling->DirActive);
+    line.command = ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() );
+    line.value1 = mvOccupied->CommandIn.Value1;
+    line.value2 = mvOccupied->CommandIn.Value2;
+    line.security = static_cast<int>(mvControlling->SecuritySystem.is_blinking());
+    line.wheelslip = static_cast<int>(mvControlling->SlippingWheels);
+    // floats, as the stream wrote them: widened to double
+    line.enginetemperature = mvControlling->dizel_heat.Ts;
+    line.oiltemperature = mvControlling->dizel_heat.To;
+    line.watertemperature = mvControlling->dizel_heat.temperatura1;
+    line.wateraux = mvControlling->dizel_heat.temperatura2;
+    // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+    line.vehiclespeed = mvOccupied->V * 3.6;
+    return line;
+}
+
+void TController::begin_physicslog()
+{
+    // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
 #if LOGPRESS == 0
-/*
-<< "Time[s] Velocity[m/s] Acceleration[m/ss] "
-<< "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-<< "BrakePress[MPa] PipePress[MPa] MotorCurrent[A]    "
-<< "MCP SCP BCP LBP DmgFlag Command CVal1 CVal2 "
-<< "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
-*/
-        LogFile
-            << ElapsedTime << " "
-            << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
-            << mvControlling->AccS << " "
-            << mvOccupied->Couplers[1].Dist << " "
-            << mvOccupied->Couplers[1].CForce << " "
-            << mvOccupied->Ft << " "
-            << mvOccupied->Ff << " "
-            << mvOccupied->Fb << " "
-            << mvOccupied->BrakePress << " "
-            << mvOccupied->PipePress << " "
-            << mvControlling->Im << " "
-            << int(mvControlling->MainCtrlPos) << " "
-            << int(mvControlling->ScndCtrlPos) << " "
-            << mvOccupied->fBrakeCtrlPos << " "
-            << mvOccupied->LocalBrakePosA << " "
-            << int(mvControlling->DirActive) << " "
-            << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
-            << mvOccupied->CommandIn.Value1 << " "
-            << mvOccupied->CommandIn.Value2 << " "
-		    << int(mvControlling->SecuritySystem.is_blinking()) << " "
-            << int(mvControlling->SlippingWheels) << " "
-            << mvControlling->dizel_heat.Ts << " "
-            << mvControlling->dizel_heat.To << " "
-            << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2 << " "
-            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-            << mvOccupied->V * 3.6
-            << "\r\n";
+    PhysicsLogs.begin( VehicleName, physicslog_header() );
 #endif
 #if LOGPRESS == 1
-        LogFile << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
-                << "\t";
-        LogFile << Controlling->AccS << "\t";
-        LogFile << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
-                << mvOccupied->BrakePress << "\t";
-        LogFile << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
 #endif
-        LogFile.flush();
-    }
+    PhysicsLogBegun = true;
+}
+
+void TController::PhysicsLog()
+{ // zapis logu - na razie tylko wypisanie parametrów
+#if LOGPRESS == 0
+    PhysicsLogs.append( VehicleName, physicslog_line() );
+#endif
+#if LOGPRESS == 1
+    std::ostringstream line;
+    line << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
+         << "\t";
+    line << mvControlling->AccS << "\t";
+    line << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
+         << mvOccupied->BrakePress << "\t";
+    line << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.append( VehicleName, line.str() );
+#endif
 };
 
 void
@@ -6118,7 +6147,8 @@ std::string TController::NextStop() const
     if (asNextStop == "[End of route]")
         return ""; // nie zawiera nazwy stacji, gdy dojechał do końca
     // dodać godzinę odjazdu
-    auto nextstop{ Bezogonkow( asNextStop, true ) };
+    // the name the way the timetable spells it, in utf-8 as the user interface takes it
+    auto nextstop{ TrainParams.station_caption( asNextStop ) };
     auto const *t{ TrainParams.TimeTable + TrainParams.StationIndex };
     if( t->Ah >= 0 ) {
         // przyjazd
@@ -6368,6 +6398,10 @@ void TController::ControllingSet()
     // problematyczne jest sterowanie z członu biernego, dlatego damy AI silnikowy
     // dzięki temu będzie wirtualna kabina w silnikowym, działająca w rozrządczym
     // w plikach FIZ zostały zgubione ujemne maski sprzęgów, stąd problemy z EZT
+    if( pVehicle == nullptr ) {
+        // a driver of no vehicle has nothing to control
+        return;
+    }
     mvOccupied = pVehicle->MoverParameters; // domyślny skrót do obiektu parametrów
 	BrakeSystem = mvOccupied->BrakeSystem; // domyślny sposób hamowania
     mvControlling = pVehicle->FindPowered()->MoverParameters; // poszukiwanie członu sterowanego
@@ -6469,10 +6503,18 @@ TController::update_timers( double dt ) {
 void
 TController::update_logs( double const dt ) {
     // log vehicle data
+    if( false == writes_physicslog() ) {
+        // not counted while it isn't logged (the driver of a road vehicle, or no logs on): were the logs turned on,
+        // it would write a line every 0.05 s from then on, not one each update to make up for the time before
+        LastUpdatedTime = 0.0;
+        return;
+    }
     LastUpdatedTime += dt;
-    if( WriteLogFlag
-     && LastUpdatedTime > deltalog ) {
+    if( LastUpdatedTime > deltalog ) {
         // zapis do pliku DAT
+        if( false == PhysicsLogBegun ) {
+            begin_physicslog();
+        }
         PhysicsLog();
         LastUpdatedTime -= deltalog;
     }
@@ -8588,6 +8630,8 @@ TController::adjust_desired_speed_for_braking_test() {
 
 //    if( false == Global.DynamicBrakeTest ) { return; }
     if( DynamicBrakeTest >= 5 ) { return; } // all done
+    if( ( DynamicBrakeTest == 0 )
+     && ( false == timetable::makes_brake_test( TrainParams.run_flags() ) ) ) { return; } // the timetable says there's none (eu07/maszyna#95)
     if( false == is_train() ) { return; } // not applicable
     if( mvOccupied->BrakeHandle == TBrakeHandle::FVel6 ) { return; } // leads to bugs in DecBrake, disable for now
     if( false == TestFlag( OrderCurrentGet(), Obey_train ) ) { return; } // not applicable

@@ -7,14 +7,42 @@ done at the same moment, every command the user gave, when the autopilot took ov
 the timetable and how the train kept to it at each station, and where it was told to sound the horn. From it another program (the
 starter, a viewer) can replay the session on the map, or set the user's driving against the AI's.
 
-It is written along with the physics logs: `physicslog yes` in `eu07.ini`, not in an editor session.
-`blackbox no` turns it off while the physics logs are kept (it is on by default). The file goes next to
-them, `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the recording started at).
-The `.dat` logs stay as they are.
+`blackbox yes` in `eu07.ini` writes it, with the physics logs on or off; `blackbox no` never does. With no
+`blackbox` entry it is written along with the physics logs, `physicslog yes` or `physicslog.trains yes`.
+The former writes the `.dat` log of every driver but those of the road vehicles, which on a big scenery are
+hundreds and nobody reads. The latter writes the `.dat` logs of the trains only: of each driver who drives rail
+vehicles, not of the passengers either, so a big scenery gives far fewer of them still. It is never written in an
+editor session. The file goes to `physicslog/<scenery>_<YYYY-MM-DD_HH-MM-SS>.blackbox` (the local time the
+recording started at), next to the `.dat` logs of the vehicles when those are on; they stay as they are.
+
+With the physics logs off it still gives the `.dat` log of each vehicle the user was in, as it goes:
+`physicslog/<vehicle>.dat`, the same file name, the same columns and the same line every 0.05 s as
+`physicslog yes` would write. In the name of a file, of these logs and of those of `physicslog yes`, the
+characters no file name may have on Windows, `< > : " / \ | ? *` and the control characters, are `_`, on
+every system: a spawned vehicle, named `<spawn>:<number>`, has its log as `<spawn>_<number>.dat`. A name
+Windows keeps for a device (`con`, `nul`, `com1` and the like) gets a `_` before it. A log is the driver's, named after the vehicle that driver began in: it
+begins the first time the user is with that driver, and goes on while the user looks around outside, or
+moves to another cab of the unit or another vehicle of the same train. Taking a vehicle of another driver
+goes on in that driver's log, begun then if it is the first time. Back with a driver, the log goes on after
+the gap in its time. A vehicle with no driver of its own, or whose own driver is passive, takes the log of
+the driver of its train. So the speed recorder's tape can be read from them as before, also while the
+simulator runs, without a log of every vehicle. A driver who writes a log of its own, with
+`physicslog.trains yes` or `physicslog yes`, isn't written twice; with `physicslog yes` it is a road vehicle the
+user drives whose log the black box writes, so with the black box off (`blackbox no`, or in the editor) a car the
+user drives has no log. Like those of `physicslog yes`, they are written every
+two seconds, each file opened only for the moment it is written to; a crash loses the last two seconds
+of real time of them (at a higher time speed, more of the simulated time), up to ten on a disk which can't keep up. A file another program holds
+for a while doesn't lose its lines: they are written once it can be, the last 64 MB of all such logs at most.
+The writing of all the logs goes after the simulator's own reading of the disk. When it takes over a third of
+those two seconds, hundreds of logs on a hard disk say, they are written less often from then on, three times as
+long after a writing as it took and every ten seconds at most, and the simulator's log tells it once.
+Closing the simulator waits for the logs' last lines a second at most: what isn't written by then is lost,
+and the simulator's log tells how many logs were left unwritten.
 
 The recording starts once the scenery is loaded and ends when the simulator closes. Going into the
 editor (F11) ends it too, since the editor may take away the tracks and the vehicles it refers to; no
-new one starts when driving goes on after that.
+new one starts when driving goes on after that. The `.dat` logs it gives with the physics logs off go on
+then, after the gap of the time in the editor, until the simulator closes: they are files of their own.
 
 It is written as the session goes and flushed once a second, so the file can be read while the simulator
 still writes it, and after a crash all but the last second is there. A file without the `end` record
@@ -162,14 +190,15 @@ record.
 
 ### 0x20 cab
 
-The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 190 bytes.
+The vehicle the user is in, every 0.1 s, also while the user looks around outside it. 194 bytes (190 in the
+files written before the speed of the wheels was added at the end).
 
 | type    | field                                                                  |
 |---------|------------------------------------------------------------------------|
 | `f64`   | t                                                                      |
 | `u32`   | number of the vehicle                                                  |
 | `dvec3` | position                                                               |
-| `f32`   | speed [km/h], positive along the front of the vehicle                  |
+| `f32`   | speed of the vehicle [km/h], positive along its front                  |
 | `f32`   | acceleration along the track [m/s²]                                    |
 | `f32`   | odometer [km]                                                          |
 | `u8`    | driver: 0 none, 1 the user, 2 the AI (the autopilot)                   |
@@ -221,6 +250,7 @@ The vehicle the user is in, every 0.1 s, also while the user looks around outsid
 | `f32`   | the clutch of a diesel's gearbox, 0 open .. 1 closed                   |
 | `f32`   | the filling of a diesel's hydraulic torque converter, 0..1             |
 | `f32`   | the highest brake cylinder pressure of the vehicles of the train [bar] |
+| `f32`   | speed of the wheels [km/h], as the speedometer shows it: those of the powered vehicle (in a unit driven from an unpowered car, its motor car), signed as the speed of the vehicle: apart from it while the wheels slip, 0 while they are locked in a skid |
 
 The lights the train is to show follow from the movement and the two patterns after it: in a train run the head the pattern asked for,
 the usual one Pc 1 (both headlights and the upper one; Pc 2 is the left red marker with the right and the
@@ -285,7 +315,8 @@ whose motors the cab drives (the motor car of a unit).
 | 0x0800'0000 | the cruise control holds a speed |
 
 The doors, their permits and steps, the departure signal and the releaser are of the vehicle the user is
-in; the pumps, the fans, the engine's heat and the cruise control of the one whose motors the cab drives.
+in. Left and right are those of the vehicle, seen from its front: from the rear cab (the cab -1) the driver's
+left doors are the vehicle's right, as the simulator works them from there. The pumps, the fans, the engine's heat and the cruise control of the one whose motors the cab drives.
 
 The lights: 0x001 left headlight, 0x002 left red marker, 0x004 upper headlight, 0x010 right
 headlight, 0x020 right red marker, 0x040 rear-end signals, 0x080 left and 0x100 right auxiliary
@@ -388,7 +419,7 @@ moved more than 0.5 m or turned more than 0.05 rad.
 |---------|------------------------------------------------------------------------------|
 | `f64`   | t                                                                            |
 | `u8`    | mode: 0 from the cab, 1 an outside view of the user's train, 2 the free camera, 3 the debug camera |
-| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by; 0 in the other modes |
+| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by, 4 the orbit around a vehicle, 5 the shunting view from above, 6 beside a coupling, 7 trackside; 0 in the other modes |
 | `u32`   | number of the vehicle the camera goes with, 0 for none                       |
 | `dvec3` | position                                                                     |
 | `f32`   | heading [rad] of where it looks, as that of a vehicle: towards (sin, cos) in (x, z) |
