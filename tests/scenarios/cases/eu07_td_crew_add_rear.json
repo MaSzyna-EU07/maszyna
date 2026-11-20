@@ -1,0 +1,33 @@
+{
+  "description": "Crew event, a driver appears in cab B (eu07/maszyna#510): as eu07_td_crew_add, with Crew:<vehicle> -1 0. The driver takes the rear cab, so the order to go sends the locomotive the other way, its rear end leading.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none tdo_n1734 0.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_put putvalues 0 none 0 0 0 Crew:{{vehicle}} -1 0 endevent",
+      "event autotest_crew_on multiple 20 none autotest_crew_put autotest_crew_waits endevent",
+      "node -1 0 autotest_crew_on_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_on end"
+    ]
+  },
+  "track_events": {
+    "tdo_n1734": "event0 autotest_wake"
+  },
+  "test_config": [
+    "test.fail_if_stop_overran no"
+  ],
+  "duration": 200,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_eu07_td_crew_add_rear\\] an AI driver takes cab B" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "ai", "after": 15, "before": 30 },
+    { "type": "moves", "vehicle": "{{vehicle}}", "direction": "rear", "min_speed": 5 },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}

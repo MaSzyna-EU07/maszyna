@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import math
 import re
 import shutil
 import struct
@@ -77,12 +78,14 @@ width 1280
 height 720
 inactivepause no
 soundenabled no
+convertmodels 0
 physicslog {physicslog}
 multiplelogs yes
 timespeed {timespeed}
 """
 # multiplelogs: log and errors go to logs/log (<scenery>) <date>.txt instead of the shared
 # log.txt, so runs of different cases can go in parallel
+# convertmodels 0: a test run writes no converted models (.e3d) into the game dir
 
 
 # ---------------------------------------------------------------- scenery
@@ -253,8 +256,10 @@ def read_text(path: Path | None) -> str:
 BLACKBOX_MAGIC = b"EU07BBX\0"
 BLACKBOX_HEADER = 12  # the magic, the version of the format, two bytes reserved
 BLACKBOX_VEHICLE = 0x12  # a vehicle: its number and its name
+BLACKBOX_VEHICLES = 0x21  # once a second: the vehicles which moved, changed speed or got another driver
 BLACKBOX_COUPLING = 0x37  # a coupler of a vehicle coupled, uncoupled, or its hoses and cables changed
 COUPLING_COUPLER = 0x01  # of the bits telling what is coupled: the coupler itself
+BLACKBOX_DRIVERS = {"none": 0, "user": 1, "ai": 2}  # the driver byte of a vehicle state
 
 
 @dataclass
@@ -271,9 +276,20 @@ class Coupling:
 
 
 @dataclass
+class VehicleState:
+    """A vehicle in a `vehicles` record: where it is and who drives it from `time` on, until its next one."""
+    time: float
+    position: tuple[float, float, float]
+    speed: float  # km/h, positive along its front
+    driver: int  # 0 none, 1 a user, 2 the AI
+
+
+@dataclass
 class Blackbox:
     vehicles: dict[int, str] = field(default_factory=dict)  # names by number
     couplings: list[Coupling] = field(default_factory=list)  # in the order written
+    states: dict[int, list[VehicleState]] = field(default_factory=dict)  # of each vehicle by number, in time order
+    end_time: float = 0.0  # of the last `vehicles` record
 
 
 def find_blackbox(game_dir: Path, scenery: str, since: float) -> Path | None:
@@ -315,6 +331,13 @@ def read_blackbox(path: Path | None) -> Blackbox | None:
                     if byte < 0x80:
                         break
                 box.vehicles[number] = content[start: start + size].decode("utf-8", errors="replace")
+            elif kind == BLACKBOX_VEHICLES:
+                # the time, a keyframe mark, the count, then 25 bytes a vehicle: number, position, heading, speed, driver
+                when, _, count = struct.unpack_from("<dBI", content)
+                box.end_time = when
+                for i in range(count):
+                    number, x, y, z, _, speed, driver = struct.unpack_from("<I3fffB", content, 13 + 25 * i)
+                    box.states.setdefault(number, []).append(VehicleState(when, (x, y, z), speed, driver))
             elif kind == BLACKBOX_COUPLING:
                 # the position of the coupler follows
                 box.couplings.append(Coupling(*struct.unpack_from("<dIBIBBBI", content)))
@@ -628,9 +651,113 @@ def check_couples(box, vehicle, other):
                   f"{ends[c.other_side]} one of {box.vehicles[c.other]}, coupling 0x{c.flags:02X}")
 
 
+def check_parts(box, vehicle, other, before=None):
+    """The two vehicles, coupled to each other, come apart in the run: a coupler broken, or uncoupled."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    unknown = [name for name in (vehicle, other) if name.lower() not in numbers]
+    if unknown:
+        return False, f"the black box has no vehicle {' nor '.join(unknown)}"
+    pair = {numbers[vehicle.lower()], numbers[other.lower()]}
+    # the record of the coupler which let go: coupled to the other vehicle before, the coupler itself no more
+    c = next((c for c in box.couplings if {c.vehicle, c.previous_other} == pair
+              and c.previous_flags & COUPLING_COUPLER and not c.flags & COUPLING_COUPLER), None)
+    if c is None:
+        return False, f"none of the {len(box.couplings)} coupling record(s) of the black box parts {vehicle} and {other}"
+    if before is not None and c.time > before:
+        return False, f"{vehicle} and {other} came apart at t={c.time:.1f}s, after {before:g}s"
+    ends = ("front", "rear")
+    return True, (f"at t={c.time:.1f}s the {ends[c.side]} coupler of {box.vehicles[c.vehicle]} let go of "
+                  f"{box.vehicles[c.previous_other]}, coupling 0x{c.previous_flags:02X} before")
+
+
+def _vehicle_states(box, vehicle):
+    """The states of the vehicle named, or None and why not."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    number = numbers.get(vehicle.lower())
+    if number is None:
+        return None, f"the black box has no vehicle {vehicle}"
+    states = box.states.get(number)
+    if not states:
+        return None, f"the black box has no state of {vehicle}"
+    return states, ""
+
+
+def _driver_change(states, to):
+    """The first state with the driver `to` after one with another driver; None when there is none."""
+    return next((now for before, now in zip(states, states[1:]) if now.driver == to and before.driver != to), None)
+
+
+def check_driver_changes(box, vehicle, to, after=0.0, before=None):
+    """The vehicle gets the driver `to` (none, ai, user) between the times given, and keeps it to the end."""
+    states, why = _vehicle_states(box, vehicle)
+    if states is None:
+        return False, why
+    wanted = BLACKBOX_DRIVERS[to]
+    names = {number: name for name, number in BLACKBOX_DRIVERS.items()}
+    change = _driver_change(states, wanted)
+    if change is None:
+        return False, f"{vehicle} starts with driver {names.get(states[0].driver)} and never changes to {to}"
+    if change.time < after or (before is not None and change.time > before):
+        return False, f"{vehicle} got driver {to} at t={change.time:.1f}s, outside {after:g}..{before if before is not None else 'end'}"
+    later = next((s for s in states if s.time > change.time and s.driver != wanted), None)
+    if later is not None:
+        return False, f"{vehicle} got driver {to} at t={change.time:.1f}s but {names.get(later.driver)} at t={later.time:.1f}s"
+    return True, f"{vehicle} has driver {to} from t={change.time:.1f}s to the end (t={box.end_time:.1f}s)"
+
+
+def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0):
+    """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it
+    stopped, to the end of the recording or until it gets a driver again."""
+    states, why = _vehicle_states(box, vehicle)
+    if states is None:
+        return False, why
+    left = _driver_change(states, BLACKBOX_DRIVERS["none"])
+    if left is None:
+        return False, f"{vehicle} never loses its driver"
+    if abs(left.speed) < min_speed:
+        return False, f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, below {min_speed}"
+    after = [s for s in states if s.time >= left.time]
+    stop = next((s for s in after if abs(s.speed) <= stop_speed), None)
+    if stop is None or stop.time - left.time > within:
+        took = "never" if stop is None else f"after {stop.time - left.time:.0f}s"
+        return False, f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h and stood {took} (limit {within}s)"
+    # left alone until the recording ends, or a driver comes again
+    crewed = next((s for s in after if s.time > stop.time and s.driver != BLACKBOX_DRIVERS["none"]), None)
+    until = crewed.time if crewed else box.end_time
+    alone = "until a driver came" if crewed else "to the end"
+    if until - stop.time < hold:
+        return False, f"{vehicle} stood at t={stop.time:.1f}s, with no driver for {until - stop.time:.0f}s more {alone} (hold {hold}s)"
+    # a standing vehicle is listed again only in the keyframes, or when it moves
+    standing = [s for s in after if stop.time <= s.time <= until]
+    fastest = max(abs(s.speed) for s in standing)
+    creep = max(math.dist(s.position, stop.position) for s in standing)
+    if fastest > stop_speed or creep > max_creep:
+        return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h with no driver"
+    way = sum(math.dist(a.position, b.position) for a, b in zip(after, after[1:]) if b.time <= stop.time)
+    return True, (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
+                  f"and {way:.0f} m later, moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}")
+
+
+def check_moves(box, vehicle, min_speed, direction="front"):
+    """The vehicle reaches `min_speed` with its front end leading, or its rear one (the physicslog has no direction)."""
+    states, why = _vehicle_states(box, vehicle)
+    if states is None:
+        return False, why
+    sign = {"front": 1.0, "rear": -1.0}[direction]
+    fastest = max(states, key=lambda s: sign * s.speed)
+    if sign * fastest.speed < min_speed:
+        return False, f"{vehicle} never reaches {min_speed} km/h {direction} end leading, at most {sign * fastest.speed:.1f}"
+    first = next(s for s in states if sign * s.speed >= min_speed)
+    return True, f"{vehicle} runs {direction} end leading: {min_speed} km/h at t={first.time:.1f}s, up to {sign * fastest.speed:.1f} km/h"
+
+
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
     "couples": check_couples,
+    "parts": check_parts,
+    "driver_changes": check_driver_changes,
+    "stops_driverless": check_stops_driverless,
+    "moves": check_moves,
 }
 
 
