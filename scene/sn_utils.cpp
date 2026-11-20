@@ -93,12 +93,24 @@ std::string sn_utils::d_str(std::istream &s)
 	char c{};
 	while (true)
 	{
-		s.read(&c, 1);
-		if (c == 0)
+		// a string cut short by the end of the data ends there too
+		if (!s.read(&c, 1) || c == 0)
 			break;
 		r.push_back(c);
 	}
 	return r;
+}
+
+// number of bytes left to read in the stream, 0 if it failed or can't tell
+std::uint64_t sn_utils::remaining(std::istream &s)
+{
+	auto const position{s.tellg()};
+	if (position < 0)
+		return 0;
+	s.seekg(0, std::ios::end);
+	auto const end{s.tellg()};
+	s.seekg(position);
+	return end > position ? static_cast<std::uint64_t>(end - position) : 0;
 }
 
 bool sn_utils::d_bool(std::istream& s)

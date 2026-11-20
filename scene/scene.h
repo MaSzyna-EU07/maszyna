@@ -134,6 +134,9 @@ public:
     // restores content of the class from provided stream
     void
         deserialize( std::istream &Input );
+    // takes over the content restored from a file into another cell, as deserialize() would have added it to this one
+    void
+        merge( basic_cell &&Other );
     // sends content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;
@@ -343,6 +346,9 @@ public:
     // restores content of the class from provided stream
     void
         deserialize( std::istream &Input );
+    // takes over the content restored from a file into another section, as deserialize() would have added it to this one
+    void
+        merge( basic_section &&Other );
     // sends content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;
@@ -474,6 +480,9 @@ public:
     // restores content of the class from file with specified name. returns: true on success, false otherwise
     bool
         deserialize( std::string const &Scenariofile );
+    // removes the region file of specified scenario file, which turned out to be damaged, so the next start writes it anew
+    void
+        discard_scene( std::string const &Scenariofile ) const;
     // sends content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;
