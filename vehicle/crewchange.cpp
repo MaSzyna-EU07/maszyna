@@ -74,8 +74,11 @@ void add_driver(TDynamicObject &Vehicle, int const Cab) {
 	Vehicle.create_controller(Cab > 0 ? "1" : "2", false);
 }
 
-// takes the AI driver off. nothing but the vehicle and the vehicles of its consist points at a driver (the
-// panels and the black box read it from the vehicle each time), so these are cleared and the driver deleted
+// takes the AI driver off. nothing but the vehicle and the vehicles the driver is in charge of points at a driver
+// (the panels, the events, the network and the black box read it from a vehicle each time), so these are cleared
+// and the driver deleted. the vehicles in its charge are looked for among all vehicles, not along the couplers:
+// a coupler broken under force or in a collision (TMoverParameters::damage_coupler()) parts the train and leaves
+// the vehicles parted from it in the driver's charge, as uncoupling (TDynamicObject::Dettach()) doesn't
 void remove_driver(TDynamicObject &Vehicle) {
 	auto *driver{Vehicle.Mechanik};
 	auto &occupied{*Vehicle.MoverParameters};
@@ -90,11 +93,14 @@ void remove_driver(TDynamicObject &Vehicle) {
 		occupied.CabOccupied = 0;
 	}
 	Vehicle.Mechanik = nullptr;
-	for_each_in_consist(Vehicle, [driver](TDynamicObject &Other) {
-		if (Other.ctOwner == driver) {
-			Other.ctOwner = nullptr;
+	auto released{0};
+	for (auto *other : simulation::Vehicles.sequence()) {
+		if (other->ctOwner == driver) {
+			other->ctOwner = nullptr;
+			++released;
 		}
-	});
+	}
+	WriteLog("Crew: [" + Vehicle.name() + "] the driver was in charge of " + std::to_string(released) + " vehicles");
 	delete driver;
 }
 
