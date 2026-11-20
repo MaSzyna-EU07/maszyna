@@ -326,7 +326,7 @@ std::vector<roadpoint_node::vehicle_data> roadpoint_node::parse_vehicles(std::st
 }
 
 // restores content of the node from provided input stream; reads up to and including the closing statement
-void roadpoint_node::import(cParser &Input, glm::dvec3 const &Offset)
+void roadpoint_node::import_from(cParser &Input, glm::dvec3 const &Offset)
 {
 	auto const type{keyword(m_state.kind)};
 	auto const label{type + " \"" + m_name + "\""};
