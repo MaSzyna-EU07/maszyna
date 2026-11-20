@@ -77,6 +77,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 	double level{0.0};
 	double j{0.0};
 	double away{0.0};
+	double aside{0.0};
 	for (int line = 0; line < lines; ++line)
 	{
 		auto const heading{glm::pi<double>() * (line + 0.37) / lines};
@@ -86,6 +87,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 		std::array<std::vector<double>, 2> up;
 		std::array<std::vector<double>, 2> side;
 		std::vector<double> middle;
+		std::vector<double> across_middle;
 		for (int i = 0; i < steps; ++i)
 		{
 			auto const point{start + along * (i * step)};
@@ -96,7 +98,9 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 				up[rail].push_back((stray.y - sign * 0.5 * track_uneven::level(point, across)) * amplitude);
 				side[rail].push_back(glm::dot(stray, across) * sideways);
 			}
-			middle.push_back(track_uneven::field(point).y * amplitude);
+			auto const centre{track_uneven::field(point)};
+			middle.push_back(centre.y * amplitude);
+			across_middle.push_back(glm::dot(centre, across) * sideways);
 		}
 		std::vector<double> verticals;
 		std::vector<double> horizontals;
@@ -121,6 +125,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 		wander += peak(gauges) / lines;
 		level += peak(levels) / lines;
 		away += peak(middle) / lines;
+		aside += peak(across_middle) / lines;
 		j += (deviation(verticals) + deviation(horizontals) + deviation(twists) + 0.5 * deviation(gauges)) / 3.5 / lines;
 	}
 	CHECK(vertical == doctest::Approx(18.0).epsilon(0.1));
@@ -132,6 +137,8 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 	// the long waves go past the 15 mm off the survey marks of appendix 1a: most of the height of a track spectrum is in them, the 10 m chord
 	// hardly sees them
 	CHECK(away < 60.0);
+	// and sideways: about 4.5 cm, which a platform edge or the panels of a level crossing laid on the design are off the rails by
+	CHECK(aside < 50.0);
 }
 
 TEST_CASE("uneven track: a place strays the same every time")
