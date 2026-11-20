@@ -1,0 +1,34 @@
+{
+  "description": "Crew event on a train parted by a broken coupler (eu07/maszyna#510, review of #422): an EN57-2000 unit with an AI driver and no timetable stands on track 1 of Stacja1 on td.scn, and another one with nobody in it runs into its rear at 100 km/h. The hit breaks the coupler between the middle and the rear car of the standing unit (TMoverParameters::damage_coupler()), which parts the unit and leaves the rear car with the driver in charge of it, as uncoupling doesn't. At 10:35 a putvalues event, Crew:<vehicle> 0 0, takes the driver off: all three vehicles of the unit had it in charge, the parted ones too, and none of them keeps it.",
+  "base_scenery": "td.scn",
+  "ini": ["crashdamage yes"],
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none tdo_n1734 0.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\en57-2000_v1 en57-2040_ra 6ba 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_s dynamic pkp\\en57-2000_v1 en57-2040_s 6bs 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_rb dynamic pkp\\en57-2000_v1 en57-2040_rb 6bb 0 nobody 0 0 enddynamic",
+      "endtrainset",
+      "trainset none tdo_n1725 0.0 100",
+      "node -1 0 {{vehicle}}_hit_ra dynamic pkp\\en57-2000_v1 en57-2040_ra 6ba 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_hit_s dynamic pkp\\en57-2000_v1 en57-2040_s 6bs 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_hit_rb dynamic pkp\\en57-2000_v1 en57-2040_rb 6bb 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_off putvalues 0 none 0 0 0 Crew:{{vehicle}} 0 0 endevent",
+      "node -1 0 autotest_crew_off_launcher eventlauncher 0 0 0 -1 none 1035 autotest_crew_off end"
+    ]
+  },
+  "duration": 120,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Bad driving: autotest_\\S+ broke a coupler" },
+    { "type": "parts", "vehicle": "{{vehicle}}_s", "other": "{{vehicle}}_rb", "before": 30 },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_en57_td_crew_parted\\] the AI driver leaves" },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_en57_td_crew_parted\\] the driver was in charge of 3 vehicles" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "none", "after": 50, "before": 70 }
+  ]
+}
