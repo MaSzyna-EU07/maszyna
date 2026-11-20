@@ -104,7 +104,8 @@ live_weather::report live_weather::read(std::string const &Answer, glm::dvec2 co
 {
 	report result;
 	result.place = Place;
-	auto const answer{nlohmann::json::parse(Answer, nullptr, false)};
+	// "=", not braces: a json braced around a json is an array of it
+	auto const answer = nlohmann::json::parse(Answer, nullptr, false);
 	if (answer.is_discarded() || (false == answer.is_object()))
 	{
 		result.error = "the answer isn't json";
