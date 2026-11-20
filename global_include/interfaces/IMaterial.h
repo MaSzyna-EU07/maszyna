@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <optional>
+#include <vector>
 
 #include "ITexture.h"
 
@@ -17,6 +18,11 @@ struct IMaterial
 	virtual std::optional<float> GetSelfillum() const = 0;
 	virtual int GetShadowRank() const = 0;
 	virtual texture_handle GetTexture(int slot) const = 0;
+	// every texture the material draws with, those of all its variants included. materials which don't tell give none
+	virtual std::vector<texture_handle> GetAllTextures() const
+	{
+		return {};
+	}
 	static IMaterial *null_material()
 	{
 		struct NullMaterial : public IMaterial

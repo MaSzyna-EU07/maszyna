@@ -220,6 +220,65 @@ bool global_settings::ConfigParseAudio(cParser& Parser, const std::string& token
         return true;
     }
 
+    return ConfigParseAudioDevice(Parser, token);
+}
+
+bool global_settings::ConfigParseAudioDevice(cParser& Parser, const std::string& token)
+{
+    if (token == "sound.outputmode")
+    {
+        AudioOutputMode = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.hrtf")
+    {
+        AudioHrtf = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.hrtf.profile")
+    {
+        AudioHrtfProfile = Parser.getToken<std::string>(false);
+        return true;
+    }
+
+    if (token == "sound.resampler")
+    {
+        AudioResampler = Parser.getToken<std::string>(false);
+        return true;
+    }
+
+    if (token == "sound.limiter")
+    {
+        AudioLimiter = Parser.getToken<std::string>(true);
+        return true;
+    }
+
+    if (token == "sound.frequency")
+    {
+        ParseOneClamped(Parser, AudioFrequency, 0, 192000);
+        return true;
+    }
+
+    if (token == "sound.doppler")
+    {
+        ParseOneClamped(Parser, AudioDoppler, 0.f, 10.f);
+        return true;
+    }
+
+    if (token == "sound.efx.lowpass")
+    {
+        ParseOne(Parser, AudioLowpass);
+        return true;
+    }
+
+    if (token == "sound.efx.airabsorption")
+    {
+        ParseOneClamped(Parser, AudioAirAbsorption, 0.f, 10.f);
+        return true;
+    }
+
     return false;
 }
 
@@ -322,6 +381,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
     if (token == "gfxrenderer")
     {
         ParseOne(Parser, GfxRenderer);
+        // read in any case, as the starter does: "Legacy" written by hand is the legacy renderer
+        GfxRenderer = ToLower(GfxRenderer);
 
         if (GfxRenderer == "full")
             GfxRenderer = "default";
@@ -546,9 +607,18 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    // the physics logs of the trains only, of the drivers of rail vehicles; "physicslog yes" writes them all anyway
+    if (token == "physicslog.trains")
+    {
+        ParseOne(Parser, WriteTrainLogFlag);
+        return true;
+    }
+
     if (token == "blackbox")
     {
-        ParseOne(Parser, BlackBox);
+        bool blackbox{false};
+        ParseOne(Parser, blackbox);
+        BlackBox = blackbox;
         return true;
     }
 
@@ -1802,8 +1872,21 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.volume.positional", EnvironmentPositionalVolume );
     export_as_text( Output, "sound.volume.ambient", EnvironmentAmbientVolume );
     export_as_text( Output, "sound.asyncload", AudioAsyncLoad );
+    export_as_text( Output, "sound.maxsources", audio_max_sources );
+    export_as_text( Output, "sound.outputmode", AudioOutputMode );
+    export_as_text( Output, "sound.hrtf", AudioHrtf );
+    export_as_text( Output, "sound.hrtf.profile", AudioHrtfProfile );
+    export_as_text( Output, "sound.resampler", AudioResampler );
+    export_as_text( Output, "sound.limiter", AudioLimiter );
+    export_as_text( Output, "sound.frequency", AudioFrequency );
+    export_as_text( Output, "sound.doppler", AudioDoppler );
+    export_as_text( Output, "sound.efx.lowpass", AudioLowpass );
+    export_as_text( Output, "sound.efx.airabsorption", AudioAirAbsorption );
     export_as_text( Output, "physicslog", WriteLogFlag );
-    export_as_text( Output, "blackbox", BlackBox );
+    export_as_text( Output, "physicslog.trains", WriteTrainLogFlag );
+    if( BlackBox ) {
+        export_as_text( Output, "blackbox", *BlackBox );
+    }
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "debuglog", iWriteLogEnabled );
     export_as_text( Output, "multiplelogs", MultipleLogs );
