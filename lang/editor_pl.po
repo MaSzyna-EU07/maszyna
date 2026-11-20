@@ -15997,8 +15997,8 @@ msgstr "Prędkość kamery"
 msgid "Turns the debug mode of the simulator on or off. It shows more in the windows and the log and allows the debug commands, such as the jump in time. In the Windows menu it adds the ImGui Demo and the Headlight config."
 msgstr "Włącza albo wyłącza tryb debugowania symulatora. Okna i log pokazują więcej, działają polecenia debugowania, np. skok w czasie. W menu Okna dochodzą ImGui Demo i Headlight config."
 
-msgid "Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question. In the editor, what isn't saved with Ctrl+S is lost."
-msgstr "Pyta, czy zamknąć symulator: Y albo Tak zamyka, N, Nie albo ponowne F10 zamyka pytanie. W edytorze to, czego nie zapisano Ctrl+S, przepada."
+msgid "Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question."
+msgstr "Pyta, czy zamknąć symulator: Y albo Tak zamyka, N, Nie albo ponowne F10 zamyka pytanie."
 
 msgid "Writes the messages of the simulator to log.txt in the game folder. Turned off, nothing more is written there until it's turned on again. The choice lasts until the simulator is closed."
 msgstr "Zapisuje komunikaty symulatora do log.txt w folderze gry. Po wyłączeniu nic więcej się tam nie zapisuje, dopóki znowu go nie włączysz. Wybór obowiązuje do zamknięcia symulatora."
@@ -16134,3 +16134,42 @@ msgstr "Otwiera warstwy bazowe mapy w oknie Warstwy: ustawienia ortofotomapy i w
 
 msgid "Every model in the scenery made from the same file as the selected one is moved straight down or up to the ground under it. Useful after the terrain has changed under many copies of one model."
 msgstr "Każdy model w scenerii z tego samego pliku co zaznaczony przesuwa się prosto w dół lub w górę na grunt pod nim. Przydaje się, gdy teren zmienił się pod wieloma kopiami jednego modelu."
+
+msgid "LMB selects a model, Shift+LMB adds another one to the selection. The gizmo moves, turns and scales what is selected, and its properties are on the right."
+msgstr "LPM zaznacza model, Shift+LPM dodaje kolejny do zaznaczenia. Gizmo przesuwa, obraca i skaluje zaznaczenie, a jego właściwości są po prawej."
+
+msgid "LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom."
+msgstr "LPM stawia model wybrany w banku obiektów w klikniętym miejscu. Bank obiektów otwiera się na dole."
+
+msgid "Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set. It also paints the ground texture and grows the 3D grass."
+msgstr "Przeciągany z LPM rozrzuca po gruncie modele wybrane w banku obiektów, według opcji narzędzia. Maluje też teksturę gruntu i sieje trawę 3D."
+
+msgid "LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set."
+msgstr "LPM dodaje punkty obrysu obszaru, który potem wypełnia się modelami z banku obiektów, rozłożonymi według opcji narzędzia."
+
+msgid "LMB on a model in the scene copies it into the node bank, to be put down again elsewhere."
+msgstr "LPM na modelu w scenie kopiuje go do banku obiektów, żeby można go było postawić gdzie indziej."
+
+msgid "LMB where a road crosses a track puts a level crossing there."
+msgstr "LPM w miejscu, gdzie droga przecina tor, stawia tam przejazd kolejowy."
+
+msgid "LMB on a road puts a point where the road vehicles appear and drive into the scenery."
+msgstr "LPM na drodze stawia punkt, w którym pojawiają się pojazdy drogowe i wjeżdżają w scenerię."
+
+msgid "LMB on a road puts a point where the road vehicles leave the scenery and are taken off it."
+msgstr "LPM na drodze stawia punkt, w którym pojazdy drogowe opuszczają scenerię i znikają."
+
+msgid "LMB on a road puts a pedestrian crossing across it."
+msgstr "LPM na drodze stawia na niej przejście dla pieszych."
+
+msgid "A click opens the list of the work modes; F2 to F5 switch to them at once."
+msgstr "Kliknięcie otwiera listę trybów pracy, a F2–F5 przełączają je od razu."
+
+msgid "Undo  [Ctrl+Z]"
+msgstr "Cofnij  [Ctrl+Z]"
+
+msgid "Redo  [Ctrl+Y]"
+msgstr "Ponów  [Ctrl+Y]"
+
+msgid "The editor draws the mouse pointer into the picture itself, so it is seen by those who watch a stream or a recording of the window: Discord, OBS and the capture of the system leave the pointer of the system out."
+msgstr "Edytor sam rysuje kursor myszy w obrazie, żeby widzieli go oglądający transmisję albo nagranie okna: Discord, OBS i przechwytywanie systemu pomijają kursor systemowy."

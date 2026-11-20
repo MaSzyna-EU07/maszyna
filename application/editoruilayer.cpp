@@ -307,8 +307,13 @@ void editor_ui::render_capsule()
 
 namespace
 {
+// the descriptions of the windows shown both from the rail and from the windows menu, the same in both
+constexpr char const *scene_description{"What the scene holds, by its kind and name, with a search. From here you select an object without looking for it in the view."};
+constexpr char const *layers_description{"The files the scenery is made of (the scenery and its includes) and the base layers of the map. Here you choose which file new objects go to, hide a layer and save."};
+constexpr char const *bank_description{"The bank of what can be placed: models, tracks and scenery templates, in groups with previews. Choose one, then click in the view to put it there."};
+
 // a button of the rail: a square with a picture drawn by Draw, filled when it's chosen
-bool rail_button(char const *Id, char const *Tooltip, bool const Chosen, void (*Draw)(ImDrawList *, ImVec2, float, ImU32))
+bool rail_button(char const *Id, char const *Tooltip, char const *Description, bool const Chosen, void (*Draw)(ImDrawList *, ImVec2, float, ImU32))
 {
 	auto const s{island_scale()};
 	auto const side{38.0f * s};
@@ -325,6 +330,7 @@ bool rail_button(char const *Id, char const *Tooltip, bool const Chosen, void (*
 	Draw(list, ImVec2(position.x + side * 0.5f, position.y + side * 0.5f), s, colour);
 	if (hovered)
 		ImGui::SetTooltip("%s", Tooltip);
+	ui::rest_description(Description, Tooltip, ui_layer::font_bold);
 	return clicked;
 }
 
@@ -378,11 +384,11 @@ void editor_ui::render_rail()
 	{
 		island_shadow();
 		auto const toggle = [](drawer const Which) { m_drawer = m_drawer == Which ? drawer::none : Which; };
-		if (rail_button("##railscene", STR_C("Scene"), m_drawer == drawer::scene, &draw_scene))
+		if (rail_button("##railscene", STR_C("Scene"), STR_C(scene_description), m_drawer == drawer::scene, &draw_scene))
 			toggle(drawer::scene);
-		if (rail_button("##raillayers", STR_C("Layers"), m_drawer == drawer::layers, &draw_layers))
+		if (rail_button("##raillayers", STR_C("Layers"), STR_C(layers_description), m_drawer == drawer::layers, &draw_layers))
 			toggle(drawer::layers);
-		if (rail_button("##railbank", STR_C("Node bank"), m_trayshown, &draw_bank))
+		if (rail_button("##railbank", STR_C("Node bank"), STR_C(bank_description), m_trayshown, &draw_bank))
 			m_trayforced = false == m_trayshown;
 	}
 	ImGui::End();
@@ -1044,6 +1050,8 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 
 void editor_ui::render_tool_options()
 {
+	if (islands())
+		m_tooloptionsopen = true;
 	if (false == m_tooloptionsopen)
 		return;
 	auto const island{place_island(island::tool)};
@@ -1395,21 +1403,48 @@ void editor_ui::render_tools_menu()
 void editor_ui::render_windows_menu()
 {
 	ImGui::Separator();
-	ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
-	ui::rest_description(STR_C("The settings of the tool in use, such as the radius and the type of a track, the profile of a road or the brush of the terrain. What it shows changes with the tool."));
-	ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
-	ui::rest_description(STR_C("The properties of what is selected: its position and turn, the model and its textures, the parameters of a track and more. A change made here goes into the scene at once and Ctrl+Z takes it back."));
-	ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
-	ui::rest_description(STR_C("What the scene holds, by its kind and name, with a search. From here you select an object without looking for it in the view."));
-	ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
-	ui::rest_description(STR_C("The bank of what can be placed: models, tracks and scenery templates, in groups with previews. Choose one, then click in the view to put it there."));
+	if (islands())
+	{
+		// the windows of the islands: the tool options and the selection are the cards on the right and always shown, the scene and the
+		// layers are the drawers of the rail, the node bank its tray; the entries open them as the rail does
+		auto scene{m_drawer == drawer::scene};
+		if (ImGui::MenuItem(STR_C("Scene"), nullptr, scene))
+			m_drawer = scene ? drawer::none : drawer::scene;
+		ui::rest_description(STR_C(scene_description));
+		auto layers{m_drawer == drawer::layers};
+		if (ImGui::MenuItem(STR_C("Layers"), nullptr, layers))
+			m_drawer = layers ? drawer::none : drawer::layers;
+		ui::rest_description(STR_C(layers_description));
+		// in insert, brush and area fill the mode keeps the tray shown
+		if (ImGui::MenuItem(STR_C("Node bank"), nullptr, m_trayshown, m_trayforced || false == m_trayshown))
+			m_trayforced = false == m_trayshown;
+		ui::rest_description(STR_C(bank_description));
+	}
+	else
+	{
+		ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
+		ui::rest_description(STR_C("The settings of the tool in use, such as the radius and the type of a track, the profile of a road or the brush of the terrain. What it shows changes with the tool."));
+		ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
+		ui::rest_description(STR_C("The properties of what is selected: its position and turn, the model and its textures, the parameters of a track and more. A change made here goes into the scene at once and Ctrl+Z takes it back."));
+		ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
+		ui::rest_description(STR_C(scene_description));
+		ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
+		ui::rest_description(STR_C(bank_description));
+		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
+		ui::rest_description(STR_C(layers_description));
+	}
 	if (ImGui::MenuItem(STR_C("Model sets")))
+	{
+		if (islands() && false == m_trayshown)
+			m_trayforced = true;
 		m_nodebankpanel.open_sets_window();
+	}
 	ui::rest_description(STR_C("Sets of models put down at random, such as several kinds of trees or houses: at each click one model of the set is picked, so the place doesn't look copied."));
-	ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
-	ui::rest_description(STR_C("The files the scenery is made of (the scenery and its includes) and the base layers of the map. Here you choose which file new objects go to, hide a layer and save."));
 	ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
 	ui::rest_description(STR_C("The descriptions of the scenery templates (includes): what parameters they take and what the parameters mean, so the editor shows them as named fields. Only the descriptions are kept, the templates aren't changed."));
+	// the layout of the docks: the islands have none
+	if (islands())
+		return;
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Reset window layout")))
 		m_layoutreset = true;

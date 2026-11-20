@@ -139,7 +139,7 @@ private:
 	int m_signal_plate_look{1};
 	bool m_nodebank_previews{true};
 	int m_nodebank_card{96};
-	int m_palette{2};
+	int m_palette{0};
 	bool m_first_steps{true};
 	bool m_terrain_offer{true};
 	bool m_terrain_buried_ask{true};

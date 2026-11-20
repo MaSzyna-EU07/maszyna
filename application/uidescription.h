@@ -18,7 +18,7 @@ namespace ui
 {
 
 // how long the cursor rests on an item of a menu or a tool before its description shows
-inline constexpr float rest_description_seconds{5.f};
+inline constexpr float rest_description_seconds{3.f};
 
 // whether the cursor has rested on the item just drawn for the given time without leaving it. one item is under the cursor at a
 // time, so one record of it is enough: it starts anew with another item, or when the cursor came back after a frame away
@@ -46,20 +46,34 @@ inline bool rested_on_item(float const Seconds)
 	return now - last.since >= Seconds;
 }
 
-// the longer description of how a menu entry or a tool works, shown once the cursor has rested on the item just drawn for the
-// given time. called right after the item, as ImGui::IsItemHovered; it takes the place of a short tooltip the item shows at once
-inline void rest_description(std::string_view const Text, float const Seconds = rest_description_seconds)
+// the description of how a menu entry or a tool works, in a large tooltip shown once the cursor has rested on the item just drawn
+// for a while: the title (the name of the tool with its key) in the bold font if there is one, the text under it. called right
+// after the item, as ImGui::IsItemHovered; it takes the place of a short tooltip the item shows at once
+inline void rest_description(std::string_view const Text, std::string_view const Title = {}, ImFont *const TitleFont = nullptr, float const Seconds = rest_description_seconds)
 {
 	if (Text.empty() || false == rested_on_item(Seconds))
 		return;
+	auto const size{ImGui::GetFontSize()};
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(size * 0.9f, size * 0.75f));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(size * 0.5f, size * 0.45f));
 	// over the short tooltip of the item, not added under it
 	if (ImGui::BeginTooltipEx(ImGuiTooltipFlags_OverridePrevious, ImGuiWindowFlags_None))
 	{
-		ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.f);
+		ImGui::PushTextWrapPos(size * 30.f);
+		if (false == Title.empty())
+		{
+			if (TitleFont != nullptr)
+				ImGui::PushFont(TitleFont);
+			ImGui::TextUnformatted(Title.data(), Title.data() + Title.size());
+			if (TitleFont != nullptr)
+				ImGui::PopFont();
+			ImGui::Separator();
+		}
 		ImGui::TextUnformatted(Text.data(), Text.data() + Text.size());
 		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 	}
+	ImGui::PopStyleVar(2);
 }
 
 } // namespace ui

@@ -4250,6 +4250,7 @@ void editor_mode::render_view_menu()
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+    ui::rest_description(STR_C("Switches between the perspective camera and the view straight down without perspective, as on a map. Pressed again, it brings the camera back as it was. In the top view the wheel zooms."));
     if (ImGui::BeginMenu(STR_C("Tracks in the top view")))
     {
         render_top_tracks_choice(false);
@@ -4286,6 +4287,7 @@ void editor_mode::render_view_menu()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\n"
                                       "or a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"));
+    ui::rest_description(STR_C("The editor draws the mouse pointer into the picture itself, so it is seen by those who watch a stream or a recording of the window: Discord, OBS and the capture of the system leave the pointer of the system out."));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())

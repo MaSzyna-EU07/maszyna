@@ -860,8 +860,12 @@ void ui_layer::render_menu_contents()
 			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}
 		ui::rest_description(STR_C("Turns the debug mode of the simulator on or off. It shows more in the windows and the log and allows the debug commands, such as the jump in time. In the Windows menu it adds the ImGui Demo and the Headlight config."));
-		ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
-		ui::rest_description(STR_C("Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question. In the editor, what isn't saved with Ctrl+S is lost."));
+		// the editor closes from its file menu (Close the editor), one entry for it is enough
+		if (false == EditorModeFlag)
+		{
+			ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
+			ui::rest_description(STR_C("Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question."));
+		}
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Tools")))

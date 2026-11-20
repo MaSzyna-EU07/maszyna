@@ -223,7 +223,9 @@ class editor_ui : public ui_layer
 	// when their tab in the strip is pointed at or clicked. the shortcut unpins all docks, or pins them back
 	void toggle_docks()
 	{
-		m_dockstoggle = true;
+		// the islands have no docks to unpin (Ctrl+Space would only take apart the layout of the flat palettes, kept for them)
+		if (false == islands())
+			m_dockstoggle = true;
 	}
 	// the unpinned docks are kept in imgui.ini along with the layout; the handler has to be there before the file is read
 	static void register_settings();

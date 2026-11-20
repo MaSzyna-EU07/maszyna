@@ -162,6 +162,81 @@ void icon_button(tool_button const &Button, ImVec2 const &Position, int const Id
 		Button.action();
 }
 
+
+// the width of a tool of the capsule: the chosen tool with its name and key, the others as icons; a tool with no icon always by its name
+float capsule_button_width(tool_button const &Button, float const Height)
+{
+	if (false == Button.chosen && Button.picture != icon::count)
+		return Height;
+	auto const s{scale()};
+	auto width{2.0f * 10.0f * s + ImGui::CalcTextSize(Button.label).x};
+	if (Button.picture != icon::count)
+		width += editor_icons::size() + 7.0f * s;
+	if (Button.chosen && Button.key != nullptr)
+		width += 7.0f * s + key_cap_width(Button.key);
+	return width;
+}
+
+// the background of a tool of the capsule: filled when it's chosen, lighter under the cursor
+void capsule_button_background(ImDrawList *List, tool_button const &Button, ImVec2 const &Min, ImVec2 const &Max, bool const Hovered)
+{
+	auto const rounding{10.0f * scale()};
+	if (Button.chosen)
+		List->AddRectFilled(Min, Max, ImGui::GetColorU32(ImGuiCol_Header), rounding);
+	else if (Hovered && Button.enabled)
+		List->AddRectFilled(Min, Max, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+}
+
+ImU32 capsule_text_colour(tool_button const &Button, bool const Hovered)
+{
+	if (false == Button.enabled)
+		return ImGui::GetColorU32(ImGuiCol_TextDisabled);
+	return ImGui::GetColorU32(ImGuiCol_Text, Button.chosen || Hovered ? 1.0f : 0.72f);
+}
+
+// a tool of the capsule with its name: the icon in the colour of the mode if it's the chosen one, the name, the key of the chosen one
+void capsule_button_name(ImDrawList *List, tool_button const &Button, ImVec2 const &At, ImU32 const Text, ImU32 const Accent)
+{
+	auto const s{scale()};
+	auto const spacing{7.0f * s};
+	auto x{At.x + 10.0f * s};
+	if (Button.picture != icon::count)
+	{
+		auto const iconside{editor_icons::size()};
+		editor_icons::draw(List, Button.picture, ImVec2(x + iconside * 0.5f, At.y), Button.chosen ? Accent : Text);
+		x += iconside + spacing;
+	}
+	List->AddText(ImVec2(x, std::round(At.y - ImGui::GetFontSize() * 0.5f)), Text, Button.label);
+	if (Button.chosen && Button.key != nullptr)
+		key_cap(List, ImVec2(x + ImGui::CalcTextSize(Button.label).x + spacing, At.y), Button.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+}
+
+// one tool of the capsule; its name and key at once under the cursor, how it works when the cursor rests on it. true when clicked
+bool capsule_button(tool_button const &Button, int const Id, ImU32 const Accent)
+{
+	auto const height{42.0f * scale()};
+	auto const width{capsule_button_width(Button, height)};
+	auto const position{ImGui::GetCursorScreenPos()};
+	ImGui::PushID(Id);
+	auto const clicked{ImGui::InvisibleButton("##capsuletool", ImVec2(width, height))};
+	ImGui::PopID();
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	capsule_button_background(list, Button, position, ImVec2(position.x + width, position.y + height), hovered);
+	auto const text{capsule_text_colour(Button, hovered)};
+	auto const middle{position.y + height * 0.5f};
+	if (Button.chosen || Button.picture == icon::count)
+		capsule_button_name(list, Button, ImVec2(position.x, middle), text, Accent);
+	else
+		icon_or_letters(list, Button, ImVec2(position.x + width * 0.5f, middle), text);
+	auto const title{Button.key != nullptr ? std::format("{}  [{}]", Button.label, Button.key) : std::string{Button.label}};
+	if (hovered)
+		ImGui::SetTooltip("%s", title.c_str());
+	if (Button.tooltip != nullptr)
+		ui::rest_description(Button.tooltip, title, ui_layer::font_bold);
+	return clicked;
+}
+
 } // namespace
 
 void editor_mode::render_viewport_overlays()
@@ -187,14 +262,21 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			char const *label;
 			char const *key;
 			nodebank_panel::edit_mode which;
+			char const *description;
 		};
-		mode const modes[] = {{icon::select, STR_C("Select"), "1", nodebank_panel::MODIFY},
-		                      {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD},
-		                      {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH},
-		                      {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL},
-		                      {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY}};
+		mode const modes[] = {
+		    {icon::select, STR_C("Select"), "1", nodebank_panel::MODIFY,
+		     STR_C("LMB selects a model, Shift+LMB adds another one to the selection. The gizmo moves, turns and scales what is selected, and its properties are on the right.")},
+		    {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD,
+		     STR_C("LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom.")},
+		    {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH,
+		     STR_C("Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set. It also paints the ground texture and grows the 3D grass.")},
+		    {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL,
+		     STR_C("LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set.")},
+		    {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY,
+		     STR_C("LMB on a model in the scene copies it into the node bank, to be put down again elsewhere.")}};
 		for (auto const &entry : modes)
-			Buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+			Buttons.push_back({entry.picture, entry.label, entry.key, entry.description, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
 		break;
 	}
 	case work_area::tracks:
@@ -259,8 +341,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		{
 			// what the place tool puts
 			char const *const kinds[] = {STR_C("Level crossing"), STR_C("Spawn point"), STR_C("Removal point"), STR_C("Pedestrian crossing")};
+			char const *const descriptions[] = {STR_C("LMB where a road crosses a track puts a level crossing there."),
+			                                    STR_C("LMB on a road puts a point where the road vehicles appear and drive into the scenery."),
+			                                    STR_C("LMB on a road puts a point where the road vehicles leave the scenery and are taken off it."),
+			                                    STR_C("LMB on a road puts a pedestrian crossing across it.")};
 			for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
-				Buttons.push_back({icon::count, kinds[index], nullptr, nullptr, tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
+				Buttons.push_back({icon::count, kinds[index], nullptr, descriptions[index], tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
 		}
 		Buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
 		break;
@@ -292,7 +378,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
 		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
 		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, STR_C("Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."), orthophoto_settings_open(), [this]() {
 			                   // among the base layers in the layers window
 			                   ui()->show_layers();
 			                   m_orthophoto_window = true;
@@ -524,7 +610,8 @@ void editor_mode::render_mode_plate()
 	list->AddTriangleFilled(ImVec2(cx - 4.0f * s, middle - 2.0f * s), ImVec2(cx + 4.0f * s, middle - 2.0f * s), ImVec2(cx, middle + 3.0f * s), IM_COL32(255, 255, 255, 210));
 	if (hovered)
 		ImGui::SetTooltip("%s", STR_C("Work modes"));
-	ui::rest_description(chosen->description);
+	ui::rest_description(std::format("{}\n\n{}", chosen->description, STR_C("A click opens the list of the work modes; F2 to F5 switch to them at once.")), std::format("{}  [{}]", chosen->label, chosen->key),
+	                     ui_layer::font_bold);
 	if (false == ImGui::BeginPopup("##modes"))
 		return;
 	ImGui::TextDisabled("%s", STR_C("Work modes"));
@@ -535,7 +622,7 @@ void editor_mode::render_mode_plate()
 		auto const rowwidth{std::max(240.0f * s, ImGui::GetContentRegionAvail().x)};
 		ImGui::PushID(static_cast<int>(entry.which));
 		auto const picked{ImGui::Selectable("##mode", entry.which == current, 0, ImVec2(rowwidth, rowheight))};
-		ui::rest_description(entry.description);
+		ui::rest_description(entry.description, std::format("{}  [{}]", entry.label, entry.key), ui_layer::font_bold);
 		ImGui::PopID();
 		auto *popup{ImGui::GetWindowDrawList()};
 		auto const square{26.0f * s};
@@ -559,60 +646,13 @@ void editor_mode::render_capsule_tools()
 	buttons.reserve(24);
 	work_area_tools(buttons);
 	auto const s{scale()};
-	auto const iconside{editor_icons::size()};
-	auto const height{42.0f * s};
-	auto const pad{10.0f * s};
-	auto const spacing{7.0f * s};
 	auto const accent{colour_of(work_area_colour(current_work_area(), EditorSettings.palette() == 3))};
-	auto *list{ImGui::GetWindowDrawList()};
 	for (std::size_t index = 0; index < buttons.size(); ++index)
 	{
 		auto const &button{buttons[index]};
 		if (index > 0)
 			ImGui::SameLine(0.0f, button.group ? 12.0f * s : 2.0f * s);
-		// the chosen tool with its name and key, the others as icons; a tool with no icon always by its name
-		auto const named{button.chosen || button.picture == icon::count};
-		auto width{height};
-		if (named)
-		{
-			width = 2.0f * pad + ImGui::CalcTextSize(button.label).x;
-			if (button.picture != icon::count)
-				width += iconside + spacing;
-			if (button.chosen && button.key != nullptr)
-				width += spacing + key_cap_width(button.key);
-		}
-		auto const position{ImGui::GetCursorScreenPos()};
-		ImGui::PushID(static_cast<int>(index));
-		auto const clicked{ImGui::InvisibleButton("##capsuletool", ImVec2(width, height))};
-		ImGui::PopID();
-		auto const hovered{ImGui::IsItemHovered()};
-		ImVec2 const end{position.x + width, position.y + height};
-		if (button.chosen)
-			list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_Header), 10.0f * s);
-		else if (hovered && button.enabled)
-			list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 10.0f * s);
-		auto const text{button.enabled ? ImGui::GetColorU32(ImGuiCol_Text, button.chosen || hovered ? 1.0f : 0.72f) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
-		auto const middle{position.y + height * 0.5f};
-		if (named)
-		{
-			auto x{position.x + pad};
-			if (button.picture != icon::count)
-			{
-				editor_icons::draw(list, button.picture, ImVec2(x + iconside * 0.5f, middle), button.chosen ? accent : text);
-				x += iconside + spacing;
-			}
-			list->AddText(ImVec2(x, std::round(middle - ImGui::GetFontSize() * 0.5f)), text, button.label);
-			if (button.chosen && button.key != nullptr)
-				key_cap(list, ImVec2(x + ImGui::CalcTextSize(button.label).x + spacing, middle), button.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-		}
-		else
-			icon_or_letters(list, button, ImVec2(position.x + width * 0.5f, middle), text);
-		// its name and key at once, how it works when the cursor rests on it
-		if (hovered)
-			ImGui::SetTooltip("%s", button.key != nullptr ? std::format("{}  [{}]", button.label, button.key).c_str() : button.label);
-		if (button.tooltip != nullptr)
-			ui::rest_description(button.tooltip);
-		if (clicked && button.enabled && button.action)
+		if (capsule_button(button, static_cast<int>(index), accent) && button.enabled && button.action)
 			button.action();
 	}
 }
@@ -633,6 +673,12 @@ void editor_mode::render_history_button(bool const Redo, float const Side)
 	draw_history_arrow(list, ImVec2(position.x + Side * 0.5f, position.y + Side * 0.5f), Side * 0.2f, Redo, colour);
 	if (hovered)
 		ImGui::SetTooltip("%s", (Redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
+	// the same descriptions as those of the edit menu
+	if (Redo)
+		ui::rest_description(STR_C("Makes the change taken back with Ctrl+Z again, one by one, in the order they were taken back."), STR_C("Redo  [Ctrl+Y]"), ui_layer::font_bold);
+	else
+		ui::rest_description(STR_C("Takes back the last change made in the editor, such as a move, an object added or deleted, or a change of the tracks or the terrain. Pressed again, it goes further back. Ctrl+Y makes a change taken back again."),
+		                     STR_C("Undo  [Ctrl+Z]"), ui_layer::font_bold);
 	if (false == clicked || false == enabled)
 		return;
 	if (Redo)
