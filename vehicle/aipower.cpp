@@ -15,17 +15,18 @@ http://mozilla.org/MPL/2.0/.
 namespace ai_power {
 
 stall check(state const &State) {
+	using enum stall;
 	if (false == State.collector || true == State.power) {
-		return stall::none;
+		return not_stalled;
 	}
 	if (false == State.standing || false == State.pantographs_up) {
-		return stall::waiting;
+		return waiting;
 	}
-	return State.wire ? stall::no_voltage : stall::no_wire;
+	return State.wire ? no_voltage : no_wire;
 }
 
 std::optional<stall> reporter::update(stall const Stall, double const Now) {
-	if (Stall == stall::none) {
+	if (Stall == stall::not_stalled) {
 		m_since.reset();
 		m_reported = false;
 		return std::nullopt;

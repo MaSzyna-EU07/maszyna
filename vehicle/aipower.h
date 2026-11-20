@@ -30,7 +30,7 @@ struct state {
 };
 
 enum class stall {
-	none, // the voltage is there, or the vehicle doesn't take it from the wire
+	not_stalled, // the voltage is there, or the vehicle doesn't take it from the wire
 	waiting, // no voltage, but nothing to tell yet: the vehicle moves, or its pantographs aren't up
 	no_wire, // standing with the pantographs up and no wire above them
 	no_voltage // standing with a pantograph up at a wire which carries no voltage

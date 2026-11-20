@@ -40,8 +40,8 @@ TEST_CASE("ai power: with the voltage there, or without a pantograph to take it,
 	auto diesel{past_the_wire()};
 	diesel.collector = false;
 
-	CHECK(ai_power::check(powered) == stall::none);
-	CHECK(ai_power::check(diesel) == stall::none);
+	CHECK(ai_power::check(powered) == stall::not_stalled);
+	CHECK(ai_power::check(diesel) == stall::not_stalled);
 }
 
 TEST_CASE("ai power: moving, or the pantographs not up yet, it only waits") {
@@ -73,7 +73,7 @@ TEST_CASE("ai power: the voltage coming back ends the stall, the next one is rep
 	REQUIRE(reporter.update(stall::no_wire, ai_power::report_delay).has_value());
 
 	// towed back under the wire: the vehicle gets prepared
-	CHECK_FALSE(reporter.update(stall::none, 100.0).has_value());
+	CHECK_FALSE(reporter.update(stall::not_stalled, 100.0).has_value());
 	// and later stands without voltage again, under a wire switched off this time
 	CHECK_FALSE(reporter.update(stall::no_voltage, 200.0).has_value());
 	auto const report{reporter.update(stall::no_voltage, 200.0 + ai_power::report_delay)};

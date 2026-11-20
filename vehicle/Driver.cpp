@@ -3376,7 +3376,7 @@ TController::report_power_stall( bool const Poweravailable, double const Pantogr
     // the pantographs of the vehicle carrying them hold the wire they found above them
     if( auto const *carrier { pVehicle->FindPantographCarrier() };
         carrier != nullptr && carrier->MoverParameters == mvPantographUnit ) {
-        auto const pantographcount { std::min<int>( carrier->iAnimType[ ANIM_PANTS ], carrier->MoverParameters->Pantographs.size() ) };
+        auto const pantographcount { std::min<int>( carrier->iAnimType[ ANIM_PANTS ], static_cast<int>( carrier->MoverParameters->Pantographs.size() ) ) };
         for( auto index { 0 }; index < pantographcount; ++index ) {
             if( true == carrier->MoverParameters->Pantographs[ index ].is_active
              && carrier->pants[ index ].fParamPants->hvPowerWire != nullptr ) {
