@@ -265,6 +265,15 @@ pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the bl
 locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
 hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
 
+The `eu07_td_buckle_*` cases (fragment `td_buckle_event.scn`) run the timetable train of
+`td_timetable.scn` and buckle the curve `tdo_n222`, about 950 m ahead of it, with a `trackbuckle`
+event of `vars.amplitude` at 10:35. Both have `physics.derailment new` in `ini`: the default,
+`monitor`, leaves the decision to the legacy draw and only logs what the criteria would do
+(`derailment monitor: ... overturned at 46 km/h on track tdo_n222`), so the train runs on to
+Przystanek whatever the buckle. With 600 mm over a main lobe of 8 m the locomotive overturns on
+the buckle at 46 km/h, 1036 m from the start (`Bad driving: ... derailed on buckled track`); with
+30 mm it keeps on the rails and stops at Przystanek after 1400 m.
+
 The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
 `putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
 the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are
