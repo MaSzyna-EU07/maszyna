@@ -14267,6 +14267,159 @@ msgstr "Kursor rysowany w obrazie (stream)"
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
 
+msgid "Single model##brush"
+msgstr "Pojedynczy model##brush"
+
+msgid "Many models##brush"
+msgstr "Wiele modeli##brush"
+
+msgid "LMB: one model at the cross on the ground"
+msgstr "LPM: jeden model w miejscu krzyżyka na gruncie"
+
+msgid "Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"
+msgstr "Przytrzymaj LPM: modele w okręgu wzdłuż drogi kursora; jedno Ctrl+Z cofa całe pociągnięcie"
+
+msgid "Radius##brush"
+msgstr "Promień##brush"
+
+msgid "Random, anywhere in the circle"
+msgstr "Losowe"
+
+msgid "Uniform (grid)"
+msgstr "Równomierne (siatka)"
+
+msgid "Feathered to the edge"
+msgstr "Rozmyte do krawędzi"
+
+msgid "Fill##brush"
+msgstr "Wypełnienie##brush"
+
+msgid "Spacing##brush"
+msgstr "Odstęp##brush"
+
+msgid "The step of the grid the models stand on"
+msgstr "Krok siatki, na której stoją modele"
+
+msgid "The least distance between two models"
+msgstr "Najmniejsza odległość między dwoma modelami"
+
+msgid "Density##brush"
+msgstr "Gęstość##brush"
+
+msgid "%.1f per 100 m²"
+msgstr "%.1f na 100 m²"
+
+msgid "How many models a 100 m² the circle gets, as many as the spacing lets in"
+msgstr "Ile modeli na 100 m² dostaje okrąg, o ile pozwala na to odstęp"
+
+msgid "Turn##brush"
+msgstr "Obrót##brush"
+
+msgid "Fixed##brushturn"
+msgstr "Stały##brushturn"
+
+msgid "Random##brushturn"
+msgstr "Losowy##brushturn"
+
+msgid "Angles x y z##brush"
+msgstr "Kąty x y z##brush"
+
+msgid "Each way x y z##brushturn"
+msgstr "W obie strony x y z##brushturn"
+
+msgid "Each model turned by a random angle up to this much each way: x and z tilt it, y turns it round (180: any way)"
+msgstr "Każdy model obrócony o losowy kąt do tylu stopni w obie strony: x i z go przechylają, y obraca wokół pionu (180: dowolnie)"
+
+msgid "Scale##brush"
+msgstr "Skala##brush"
+
+msgid "Fixed##brushscale"
+msgstr "Stała##brushscale"
+
+msgid "Random##brushscale"
+msgstr "Losowa##brushscale"
+
+msgid "Percent x y z##brush"
+msgstr "Procent x y z##brush"
+
+msgid "The same on every axis##brush"
+msgstr "Jednakowa na wszystkich osiach##brush"
+
+msgid "Each way##brushscale"
+msgstr "W obie strony##brushscale"
+
+msgid "Each way x y z##brushscale"
+msgstr "W obie strony x y z##brushscale"
+
+msgid "Each model scaled by a random share up to this much each way from its own size"
+msgstr "Każdy model przeskalowany losowo o tyle procent w obie strony od własnego rozmiaru"
+
+msgid "Brush: %zu models put; Ctrl+Z takes the whole stroke back"
+msgstr "Pędzel: postawiono %zu modeli; Ctrl+Z cofa całe pociągnięcie"
+
+msgid "Brush: a dab puts %d models at most; widen the spacing or narrow the circle for the rest"
+msgstr "Pędzel: jedno dotknięcie stawia najwyżej %d modeli; zwiększ odstęp albo zmniejsz koło, by objąć resztę"
+
+msgid "In a circle##brushshape"
+msgstr "W kole##brushshape"
+
+msgid "Along a line##brushshape"
+msgstr "Wzdłuż linii##brushshape"
+
+msgid "LMB: the points of the line; Enter puts the models, Backspace takes the last point back, Esc drops the line"
+msgstr "LPM: punkty linii; Enter stawia modele, Backspace cofa ostatni punkt, Esc porzuca linię"
+
+msgid "Width each side##brushline"
+msgstr "Szerokość w każdą stronę##brushline"
+
+msgid "How far to each side of the line the models go; 0: one row on the line itself"
+msgstr "Jak daleko w każdą stronę od linii sięgają modele; 0: jeden rząd na samej linii"
+
+msgid "Regular, in rows"
+msgstr "Regularnie, w rzędach"
+
+msgid "Irregular, anywhere in the band"
+msgstr "Nieregularnie, gdziekolwiek w pasie"
+
+msgid "Fill##brushline"
+msgstr "Wypełnienie##brushline"
+
+msgid "Spacing##brushline"
+msgstr "Odstęp##brushline"
+
+msgid "The step along the line and between the rows"
+msgstr "Krok wzdłuż linii i odstęp między rzędami"
+
+msgid "Irregularity##brushline"
+msgstr "Nieregularność##brushline"
+
+msgid "Each model moved off its place in the rows by up to this share of the spacing each way; 0: exactly in rows"
+msgstr "Każdy model przesunięty ze swojego miejsca w rzędzie o najwyżej taką część odstępu w każdą stronę; 0: dokładnie w rzędach"
+
+msgid "Density##brushline"
+msgstr "Gęstość##brushline"
+
+msgid "Fewer towards the edges##brushline"
+msgstr "Rzadziej ku krawędziom##brushline"
+
+msgid "Size at the edges##brushline"
+msgstr "Rozmiar na krawędziach##brushline"
+
+msgid "The size of the models at the edges of the band, as a share of their size on the line; between, it goes evenly from one to the other"
+msgstr "Rozmiar modeli na krawędziach pasa jako część ich rozmiaru na linii; pomiędzy zmienia się równomiernie od jednego do drugiego"
+
+msgid "Brush: a line needs two points at least"
+msgstr "Pędzel: linia potrzebuje co najmniej dwóch punktów"
+
+msgid "Brush: no models put along the line"
+msgstr "Pędzel: wzdłuż linii nie postawiono żadnego modelu"
+
+msgid "Brush: %zu models put along the line, the most one line puts; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii, najwięcej, ile stawia jedna linia; Ctrl+Z je cofa"
+
+msgid "Brush: %zu models put along the line; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii; Ctrl+Z je cofa"
+
 msgid "Camera speed"
 msgstr "Prędkość kamery"
 
