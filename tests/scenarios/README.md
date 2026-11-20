@@ -300,6 +300,19 @@ set off by event launchers, at an hour or with a delay; `vars.trainsets` are the
 A vehicle with a user in it is left alone by the command, which the test mode can't show: nobody
 sits in a vehicle there.
 
+`eu07_td_hauls_dead_vectron` is the timetable run with a dead locomotive in the train: behind the EU07 a
+Vectron with nobody in it, coupled with the hook and the brake hose alone (the EU07's coupling `3`) and
+prepared for hauling, the parameter `H` after its own coupling (`0.H`: the pullee mode of
+MaSzyna-EU07/maszyna#64). The checks are those of the timetable cases; the train takes 300 s to
+Przystanek and on (20 km/h after 79 s, the stop after 220 s and 1405 m). Without the `H` the Vectron,
+which applies the emergency brake while none of its cabs is active, empties the brake pipe of the train
+in two seconds, both locomotives stand with their brake cylinders full and the train never moves.
+`eu07_td_hauls_dead_vectron_cold` (fragment `td_cold_timetable.scn`) is the same train from a cold start:
+trainset velocity 0, so both locomotives stand braked (brake pipe at 3.5 bar, batteries off, the spring
+brake of the Vectron switched on), and `event0` of the track gives the driver `Obey_train`, once. The EU07
+starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
+the pipe stays below 1 bar and the case ends as a standstill after 300 s.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission

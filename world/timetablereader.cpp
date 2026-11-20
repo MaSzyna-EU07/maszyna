@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
+#include "world/stationnames.h"
 
 namespace Mtable {
 
@@ -125,8 +126,9 @@ int read_timetable(std::istream &fin, timetable_data &Data) {
 					break;
 			}
 			if (s != "|") {
-				Data.Relation1 = s;
-				win1250_to_ascii(Data.Relation1);
+				// the name is kept as written, for showing; the ascii form is what the rest of the simulator goes by
+				Data.RelationLabel1 = s;
+				Data.Relation1 = timetable::station_ascii(s);
 			}
 			else
 				conversionerror = -5;
@@ -138,8 +140,9 @@ int read_timetable(std::istream &fin, timetable_data &Data) {
 				if (s == "|")
 					break;
 			}
-			fin >> Data.Relation2;
-			win1250_to_ascii(Data.Relation2);
+			if (fin >> Data.RelationLabel2) {
+				Data.Relation2 = timetable::station_ascii(Data.RelationLabel2);
+			}
 			while (fin >> s) {
 				if (s == "Wymagany")
 					break;
@@ -195,9 +198,11 @@ int read_timetable(std::istream &fin, timetable_data &Data) {
 					}
 					while (false == contains(s, "|") && false == fin.fail())
 						fin >> s;
-					fin >> record->StationName;
-					// get rid of non-ascii chars. TODO: run correct version based on locale
-					win1250_to_ascii(record->StationName);
+					// the name is kept as written, for showing; the W4 stop points, the announcement files, the scenery
+					// events and the scripts go by its ascii form, as they always did
+					if (fin >> record->StationLabel) {
+						record->StationName = timetable::station_ascii(record->StationLabel);
+					}
 					do {
 						fin >> s;
 					} while (!(s == "1" || s == "2" || fin.fail()));

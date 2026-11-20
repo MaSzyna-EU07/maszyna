@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/odometer.h"
+#include "vehicle/pulleemode.h"
 #include "vehicle/Driver.h"
 
 #include <algorithm>
@@ -317,9 +318,13 @@ namespace {
 void deserialize_script_sign( cParser &Parser, script_screens::screen_config &Sign, std::string const &Folder ) {
 
     Sign.deserialize( Parser );
-    if( false == Sign.script.empty()
-     && substr_path( Sign.script ).empty() ) {
-        Sign.script = Folder + Sign.script;
+    if( Sign.script.empty() ) { return; }
+    if( auto path { script_screens::screen_script_path( Folder, Sign.script ) }; path.has_value() ) {
+        Sign.script = std::move( *path );
+    }
+    else {
+        ErrorLog( "Bad script sign: \"" + Sign.script + "\" leads outside the game's folder" );
+        Sign.script.clear();
     }
 }
 
@@ -2076,6 +2081,14 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     // another run of the same scenario, with another seed, dresses it differently
     m_variantseed = hash_string( asName, Global.random_seed );
     std::string asAnimName; // zmienna robocza do wyszukiwania osi i wózków
+    // a vehicle prepared for being hauled dead (parameter H after its coupling, MaSzyna-EU07/maszyna#64) has nobody
+    // driving it, whatever its crew entry says: its cab can't be activated, and a driver in it would either take
+    // the train or be one more for the train's driver to put to sleep
+    auto const hauled { pullee_mode::requested( MoreParams ) };
+    if( hauled && ( DriverType == "headdriver" || DriverType == "reardriver" ) ) {
+        WriteLog( "Vehicle " + asName + " is prepared for hauling (parameter H), the driver it was given is left out" );
+        DriverType = "nobody";
+    }
     // Ra: zmieniamy znaczenie obsady na jednoliterowe, żeby dosadzić kierownika
     if (DriverType == "headdriver")
         DriverType = "1"; // sterujący kabiną +1
@@ -2394,6 +2407,11 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
         }
 */
     } // koniec while kropka
+
+    if( hauled ) {
+        // once the vehicle has its starting state: the hand brake and the spring brake of a standing one let go, battery off
+        MoverParameters->PulleeModeSwitch( true );
+    }
 
     if (MoverParameters->CategoryFlag & 2) // jeśli samochód
     { // ustawianie samochodow na poboczu albo na środku drogi
@@ -3491,7 +3509,9 @@ bool TDynamicObject::Update(double dt, double dt1)
             {
                 Fzad = std::min(LBR * FmaxED, FfulED);
             }
-            if (MoverParameters->ShuntMode && eimic <= 0 || doorisopen /*||
+            // the holding brake lets go once power has been demanded for its delay (SBDReleaseDelay, none by default)
+            auto const holdingbrakereleased { MoverParameters->UpdateStopBrakeRelease( eimic, dt1 ) };
+            if (MoverParameters->ShuntMode && false == holdingbrakereleased || doorisopen /*||
                 (MoverParameters->V * MoverParameters->DirAbsolute < -0.2)*/)
             {
                 auto const sbd { ( MoverParameters->SpringBrake.IsActive && MoverParameters->ReleaseParkingBySpringBrake ? 0.0 : MoverParameters->StopBrakeDecc ) };
@@ -8173,6 +8193,10 @@ std::shared_ptr<script_screen> TDynamicObject::draw_script_texture( std::string 
     auto const script { Name.substr( 5, query == std::string::npos ? std::string::npos : query - 5 ) };
     auto const language { script_language_of( script ) };
     if( false == language.has_value() ) { return nullptr; } // a python texture, made by the texture itself
+    if( false == script_screens::screen_script_path( "", script ).has_value() ) {
+        ErrorLog( "Bad script texture: \"" + script + "\" leads outside the game's folder" );
+        return nullptr;
+    }
 
     auto &queue { Application.screens() };
     auto &texture { GfxRenderer->Texture( GfxRenderer->Material( Material )->GetTexture( 0 ) ) };

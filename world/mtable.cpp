@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "utilities/dictionary.h"
 #include "utilities/utilities.h"
+#include "world/stationnames.h"
 
 double TTrainParameters::CheckTrainLatency() const
 {
@@ -160,12 +161,14 @@ bool TTrainParameters::UpdateMTable(double hh, double mm, std::string_view NewNa
 
 bool Mtable::TTrainParameters::RewindTimeTable(std::string actualStationName) {
 
-    if( actualStationName.compare( 0, 19, "PassengerStopPoint:" ) == 0 ) {
-        actualStationName = ToLower( actualStationName.substr( 19 ) );
-    }
+    // the text of a W4 or a plain name, spelled the way its file has it: with or without the polish letters, in any case
+    auto const isstoppoint { actualStationName.starts_with( timetable::stop_point_prefix ) };
     for( auto i = 1; i <= StationCount; ++i ) {
         // przechodzimy po całej tabelce i sprawdzamy nazwy stacji (bez pierwszej)
-        if (ToLower(TimeTable[i].StationName) == actualStationName) {
+        auto const &stationname { TimeTable[i].StationName };
+        if( isstoppoint ?
+                timetable::stop_point_is_for( actualStationName, stationname ) :
+                timetable::same_station( actualStationName, stationname ) ) {
             // nazwa stacji zgodna więc ustawiamy na poprzednią, żeby w następnym kroku poprawnie obsłużyć
             StationIndex = i;
             NextStationName = TimeTable[ i ].StationName;
@@ -218,6 +221,29 @@ std::string TTrainParameters::ShowRelation() const
         return "";
 }
 
+std::string TTrainParameters::relation_caption() const
+{
+    if (Relation1 != "" && Relation2 != "")
+        return timetable::station_caption( RelationLabel1 ) + " - " + timetable::station_caption( RelationLabel2 );
+    else
+        return "";
+}
+
+std::string TTrainParameters::station_caption( std::string const &Name ) const
+{
+    // the station the train makes for first, then the rest of the table
+    if( StationIndex >= 0 && StationIndex <= StationCount && TimeTable[ StationIndex ].StationName == Name ) {
+        return timetable::station_caption( TimeTable[ StationIndex ].StationLabel );
+    }
+    for( auto i = 1; i <= StationCount; ++i ) {
+        if( TimeTable[ i ].StationName == Name ) {
+            return timetable::station_caption( TimeTable[ i ].StationLabel );
+        }
+    }
+    // not a station of the timetable
+    return timetable::station_caption( Name );
+}
+
 TTrainParameters::TTrainParameters(std::string const &NewTrainName)
 /*wstępne ustawienie parametrów rozkładu jazdy*/
 {
@@ -236,6 +262,8 @@ void TTrainParameters::NewName(std::string_view NewTrainName)
     Direction = 1;
     Relation1 = "";
     Relation2 = "";
+    RelationLabel1 = "";
+    RelationLabel2 = "";
     for (auto &tableline : TimeTable)
     {
         tableline = TMTableLine();
@@ -307,6 +335,8 @@ bool TTrainParameters::LoadTTfile(std::string const &scnpath, int iPlus, double 
             TrainLabel = data.TrainLabel;
             Relation1 = data.Relation1;
             Relation2 = data.Relation2;
+            RelationLabel1 = data.RelationLabel1;
+            RelationLabel2 = data.RelationLabel2;
             BrakeRatio = data.BrakeRatio;
             LocSeries = data.LocSeries;
             LocLoad = data.LocLoad;

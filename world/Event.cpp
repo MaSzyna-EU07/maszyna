@@ -717,7 +717,8 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         if( contains( token, '#' ) ) {
             token.erase( token.find( '#' ) ); // obcięcie unikatowości
         }
-        win1250_to_ascii( token ); // get rid of non-ascii chars
+        // NOTE: the name stays as the scenery spells it, with its polish letters; whoever matches it with the name
+        // a timetable has goes by timetable::stop_point_is_for(), which takes any spelling of the station
         m_input.command_type = TCommandType::cm_PassengerStopPoint;
         // nie do kolejki (dla SetVelocity też, ale jak jest do toru dowiązany)
         m_passive = true;
