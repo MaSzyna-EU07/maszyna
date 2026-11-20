@@ -109,7 +109,11 @@ void LogService()
 		last = log_stopped();
 		// what is logged before the settings are read waits for them, or it would open (and empty) the shared log.txt
 		// of a run that writes its own files in logs/. a start that stops before that writes it anyway
-		if (log_files_open() || last)
+		if (false == log_files_open() && false == last)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			continue;
+		}
 		{
 			// --- Obsługa InfoStack ---
 			while (!InfoStack.empty())
