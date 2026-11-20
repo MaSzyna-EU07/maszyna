@@ -18,6 +18,8 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include <charconv>
 #include <ranges>
 #include <format>
+#include <functional>
+#include <string_view>
 #include <unordered_set>
 //#ifndef WIN32
 //#include <unistd.h>
@@ -543,8 +545,18 @@ struct cased_path
 	std::chrono::steady_clock::time_point checked{};
 };
 std::unordered_map<std::string, cased_path> cased_paths;
+// transparent hasher, so the names can be looked up with any string type without a temporary std::string
+struct cased_hash
+{
+	using is_transparent = void;
+	std::size_t operator()(std::string_view const Text) const noexcept { return std::hash<std::string_view>{}(Text); }
+};
 // the files found only in another case than asked for, written to the log once each
-std::unordered_set<std::string> cased_reported;
+std::unordered_set<std::string, cased_hash, std::equal_to<>> &cased_reported()
+{
+	static std::unordered_set<std::string, cased_hash, std::equal_to<>> reported;
+	return reported;
+}
 
 // the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
 // function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
@@ -694,7 +706,7 @@ std::string FileCased(std::filesystem::path const &Filename)
 		if (name.empty())
 			return {};
 		cased += name;
-		report = (cased != asked) && cased_reported.insert(asked).second;
+		report = (cased != asked) && cased_reported().insert(asked).second;
 	}
 	if (false == std::filesystem::exists(cased, error))
 		return {};
