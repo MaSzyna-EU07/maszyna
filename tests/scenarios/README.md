@@ -130,7 +130,7 @@ are doing, what the drivers are up to. Loading one means loading its scenery the
 state over it before the first frame, so a run can go on from the middle of a scenario:
 
 ```
-eu07 -s <scenery.scn> [--snapshot-at <seconds> <file>]... [--load-snapshot <file>]
+eu07 -s <scenery.scn> [--snapshot-at <seconds> <file>]... [--load-snapshot <file> [--load-snapshot-force]]
 ```
 
 - `--snapshot-at <seconds> <file>` writes a snapshot once the simulation has run that long and goes on. The
@@ -139,7 +139,9 @@ eu07 -s <scenery.scn> [--snapshot-at <seconds> <file>]... [--load-snapshot <file
   switch can be given several times.
 - `--load-snapshot <file>` puts the snapshot over the scenery given with `-s` once it has loaded. Without
   `-seed` the random seed is taken from the snapshot, so the scenery loads the way it did then; without
-  `-v` the player starts in the vehicle they were in.
+  `-v` the player starts in the vehicle they were in. A file the reader finds damaged (an entry cut short, or
+  fewer entries than its header counts) isn't loaded: the scenery starts as it is, the log says why, and a
+  test run ends with the error code. `--load-snapshot-force` loads what can be read of it all the same.
 - Both work with and without `--test`. In the game the `snapshotsave` command ([Ctrl]+[Shift]+[F9], or
   whatever `eu07_input-keyboard.ini` binds it to) writes one to `snapshots/<scenery>_<date>_<time>.snapshot`
   in the game folder.
@@ -149,7 +151,12 @@ The file is in the syntax of the scenery files: entries of the form
 `snapshot <version> scenery <file> ...`, which also holds how many tracks, cells, events and vehicles the
 scenery had and a hash of their names; loaded over a scenery which gives other numbers, the log says which
 ones differ and the snapshot is applied as far as its names lead anywhere. A reader skips the entries and
-keys it doesn't know, and what a snapshot doesn't have stays as the scenery made it.
+keys it doesn't know, and what a snapshot doesn't have stays as the scenery made it. Every value which is
+used as an index, a count, a choice of a few or the name of something is checked as it is read: a coupler
+end other than 0 or 1, a count past what the entry lists, an index past the end of a table, a number which
+isn't whole or doesn't fit, couplings which would close a ring of vehicles, are left out and listed in the
+log (errors.txt), and the positions of the controllers are brought within the ranges of the vehicle. A
+snapshot is written to `<file>.tmp` first, which takes the place of the file only once it is all written.
 
 It is written from outside the classes, not an image of the simulator's memory. What comes back as it was:
 the time, the cells, the switches, the event queue, the places, speeds and couplings of the vehicles, their

@@ -63,14 +63,19 @@ struct axle_place {
 	}
 };
 
+// returns: the place, without its track if the entry doesn't give one which can be used
 axle_place read_axle(snapshot::record const &Entry, int const Index)
 {
 	axle_place place;
 	place.track = snapshot::find_track(Entry.text(indexed("track", Index)));
-	Entry.get(indexed("path", Index), place.path);
-	Entry.get(indexed("at", Index), place.distance);
-	Entry.get(indexed("dir", Index), place.direction);
-	Entry.get(indexed("events", Index), place.events);
+	// the path is a segment of a switch (0, 1) or of a crossing (1..6, the sign the way through it), the events two
+	// pairs of flags. the axle is put at a distance along its track, which has to be a number
+	auto const usable{(Entry.get(indexed("path", Index), place.path, -6, 6) || false == Entry.has(indexed("path", Index))) &&
+	                  (Entry.get(indexed("at", Index), place.distance, -1e7, 1e7) || false == Entry.has(indexed("at", Index))) &&
+	                  (Entry.get(indexed("dir", Index), place.direction, -1e7, 1e7) || false == Entry.has(indexed("dir", Index))) &&
+	                  (Entry.get(indexed("events", Index), place.events, 0, 15) || false == Entry.has(indexed("events", Index)))};
+	if (false == usable)
+		place.track = nullptr;
 	return place;
 }
 
@@ -172,11 +177,13 @@ void load_machinery(TDynamicObject &Vehicle, snapshot::record const &Entry)
 	}
 	auto &exchange{Vehicle.m_exchange};
 	exchange = {};
-	Entry.get("exchangeunload", exchange.unload_count);
-	Entry.get("exchangeload", exchange.load_count);
+	// the counts of the passengers getting off and on are counted down step by step
+	constexpr auto most_passengers{1e6f};
+	Entry.get("exchangeunload", exchange.unload_count, -most_passengers, most_passengers);
+	Entry.get("exchangeload", exchange.load_count, -most_passengers, most_passengers);
 	Entry.get("exchangeplatforms", exchange.platforms);
 	Entry.get("exchangetime", exchange.time);
-	Entry.get("raillength", Vehicle.dRailLength);
+	Entry.get("raillength", Vehicle.dRailLength, -1.0, 1e6);
 	if (auto const joints{snapshot::text_numbers(Entry.text("railjoints"))}; joints.size() == 2 * Vehicle.m_axlesounds.size())
 	{
 		for (std::size_t index{0}; index < Vehicle.m_axlesounds.size(); ++index)
@@ -195,7 +202,7 @@ void load_machinery(TDynamicObject &Vehicle, snapshot::record const &Entry)
 	Entry.get("highbeamlights", Vehicle.HighBeamLights);
 	Entry.get("headlightsaoff", Vehicle.HeadlightsAoff);
 	Entry.get("headlightsboff", Vehicle.HeadlightsBoff);
-	Vehicle.MED_oldFED = Entry.value("medoldfed", 0.0);
+	Vehicle.MED_oldFED = Entry.value("medoldfed", 0.0, -1e9, 1e9);
 }
 
 } // namespace
@@ -252,7 +259,8 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 	if (places[0].track == nullptr || places[1].track == nullptr)
 		return false;
 
-	Entry.get("facing", iDirection);
+	// which of the ends of the vehicle leads in its consist, which of its axles is the first: 0 or 1
+	Entry.get("facing", iDirection, 0, 1);
 	// the axles a hair off the ends of their tracks first, for the body of the vehicle to be worked out from them:
 	// Move() does that, and takes an axle standing at the very end of a track over to the next one
 	constexpr double inset{1e-6};
@@ -263,7 +271,7 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 	// then exactly where they were
 	places[0].put(Axle0, 0.0);
 	places[1].put(Axle1, 0.0);
-	Entry.get("first", iAxleFirst);
+	Entry.get("first", iAxleFirst, 0, 1);
 
 	// the vehicle is on the list of the track its leading axle is on
 	if (auto *track{iAxleFirst != 0 ? Axle1.GetTrack() : Axle0.GetTrack()}; track != MyTrack)

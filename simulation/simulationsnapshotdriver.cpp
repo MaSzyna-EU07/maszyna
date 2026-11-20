@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <format>
+#include <limits>
 #include <vector>
 
 // the part of a simulation snapshot kept by the driver of a train (TController): the orders it has and which one it's
@@ -28,10 +29,27 @@ namespace {
 
 namespace snapshot = simulation::snapshot;
 
-// a variable of the driver kept under a key of the entry
+// a variable of the driver kept under a key of the entry, and for a number the range a value of the file has to be in
 template <typename Type_> struct member {
 	std::string_view key;
 	Type_ TController::*variable;
+	Type_ min{lowest()};
+	Type_ max{highest()};
+
+	static constexpr Type_ lowest()
+	{
+		if constexpr (std::is_arithmetic_v<Type_>)
+			return std::numeric_limits<Type_>::lowest();
+		else
+			return Type_{};
+	}
+	static constexpr Type_ highest()
+	{
+		if constexpr (std::is_arithmetic_v<Type_>)
+			return std::numeric_limits<Type_>::max();
+		else
+			return Type_{};
+	}
 };
 
 template <typename Table_> void save_members(snapshot::record &Entry, TController const &Driver, Table_ const &Table)
@@ -43,8 +61,19 @@ template <typename Table_> void save_members(snapshot::record &Entry, TControlle
 template <typename Table_> void load_members(TController &Driver, snapshot::record const &Entry, Table_ const &Table)
 {
 	for (auto const &item : Table)
-		Entry.get(item.key, Driver.*(item.variable));
+	{
+		// the whole numbers in their ranges; a number of another kind is a measure, which can be anything
+		if constexpr (std::is_integral_v<decltype(item.min)> && false == std::is_same_v<decltype(item.min), bool>)
+			Entry.get(item.key, Driver.*(item.variable), item.min, item.max);
+		else
+			Entry.get(item.key, Driver.*(item.variable));
+	}
 }
+
+// the most events sharing a name a snapshot looks among
+constexpr int most_siblings{100000};
+// every order the driver knows, as bits (TOrders)
+constexpr int every_order{(Jump_to_first_order << 1) - 1};
 
 // the orders as their numbers joined with commas: "1,128,16,32"
 std::string join(std::span<TOrders const> const Orders)
@@ -59,14 +88,18 @@ std::string join(std::span<TOrders const> const Orders)
 	return text;
 }
 
-std::vector<int> split(std::string_view Text)
+// the whole numbers of a list between Min and Max. returns: empty if one of them isn't such a number
+std::optional<std::vector<int>> split(std::string_view Text, int const Min, int const Max)
 {
 	std::vector<int> numbers;
 	while (false == Text.empty())
 	{
 		auto const comma{Text.find(',')};
-		if (auto const number{snapshot::text_number(Text.substr(0, comma))}; number.has_value())
-			numbers.emplace_back(static_cast<int>(*number));
+		auto const number{snapshot::text_number(Text.substr(0, comma))};
+		auto const whole{number.has_value() ? snapshot::whole_number(*number, Min, Max) : std::nullopt};
+		if (false == whole.has_value())
+			return std::nullopt;
+		numbers.emplace_back(*whole);
 		Text.remove_prefix(comma == std::string_view::npos ? Text.size() : comma + 1);
 	}
 	return numbers;
@@ -85,7 +118,10 @@ void save_event(snapshot::record &Entry, std::string const &Key, basic_event con
 basic_event *load_event(snapshot::record const &Entry, std::string const &Key)
 {
 	auto const name{Entry.text(Key)};
-	return name.empty() ? nullptr : snapshot::find_event(name, Entry.value(Key + "sibling", 0));
+	auto sibling{0};
+	if (name.empty() || (false == Entry.get(Key + "sibling", sibling, 0, most_siblings) && Entry.has(Key + "sibling")))
+		return nullptr;
+	return snapshot::find_event(name, sibling);
 }
 
 // a point of the table of what's ahead: its numbers under "<key>", its track and its event beside them
@@ -105,11 +141,18 @@ bool load_point(snapshot::record const &Entry, std::string const &Key, TSpeedPos
 	auto const numbers{snapshot::text_numbers(Entry.text(Key))};
 	if (numbers.size() != 10)
 		return false;
+	// the flags of a point are bits of a whole number
+	auto const flags{snapshot::whole_number(numbers[4], std::numeric_limits<int>::min(), std::numeric_limits<int>::max())};
+	if (false == flags.has_value())
+	{
+		Entry.refuse(Key, "its flags aren't a whole number");
+		return false;
+	}
 	Point.fDist = numbers[0];
 	Point.fVelNext = numbers[1];
 	Point.fSectionVelocityDist = numbers[2];
 	Point.fPointDist = numbers[3];
-	Point.iFlags = static_cast<int>(numbers[4]);
+	Point.iFlags = *flags;
 	Point.bMoved = numbers[5] != 0.0;
 	Point.fMoved = numbers[6];
 	Point.vPos = {numbers[7], numbers[8], numbers[9]};
@@ -203,8 +246,8 @@ struct TController::snapshot_members {
 	};
 	static constexpr std::array numbers{
 	    member<int>{"flags", &TController::iDrivigFlags},
-	    member<int>{"direction", &TController::iDirection},
-	    member<int>{"directionorder", &TController::iDirectionOrder},
+	    member<int>{"direction", &TController::iDirection, -1, 1},
+	    member<int>{"directionorder", &TController::iDirectionOrder, -1, 1},
 	    member<int>{"vehiclecount", &TController::iVehicleCount},
 	    member<int>{"coupler", &TController::iCoupler},
 	    member<int>{"failcount", &TController::iDriverFailCount},
@@ -337,26 +380,34 @@ bool TController::snapshot_load_table(simulation::snapshot::record const &Entry)
 	TableClear();
 	m_pointlimits.clear();
 	m_pointlimitsvehicle = nullptr;
-	std::size_t count{0};
-	if (false == Entry.get("table", count))
+	// each point of the table has a key of its own: a count past the keys of the entry can't be the count of its points
+	auto const points{snapshot::read_count(Entry, "table")};
+	if (false == points.has_value())
 		return false;
+	auto const count{*points};
 	std::vector<TSpeedPos> table(count);
 	for (std::size_t index{0}; index < count; ++index)
 	{
 		if (false == load_point(Entry, std::format("p{}", index), table[index]))
 			return false;
 	}
+	// the indices into the table point at one of its points, or at none (-1 and npos, which the entry doesn't write)
+	auto last{-1};
+	auto const next{snapshot::read_index(Entry, "semnext", count)};
+	auto const nextstop{snapshot::read_index(Entry, "semnextstop", count)};
+	if ((false == Entry.get("tablelast", last, -1, static_cast<int>(count) - 1) && Entry.has("tablelast")) || (false == next.has_value() && Entry.has("semnext")) ||
+	    (false == nextstop.has_value() && Entry.has("semnextstop")))
+		return false;
 	sSpeedTable = std::move(table);
-	Entry.get("tablelast", iLast);
-	Entry.get("tabledirection", iTableDirection);
+	iLast = last;
+	Entry.get("tabledirection", iTableDirection, -1, 1);
 	Entry.get("tablelastvel", fLastVel);
 	tLast = snapshot::find_track(Entry.text("tablelasttrack"));
-	SemNextIndex = Entry.value("semnext", npos);
-	SemNextStopIndex = Entry.value("semnextstop", npos);
+	SemNextIndex = next.value_or(npos);
+	SemNextStopIndex = nextstop.value_or(npos);
 	eSignNext = load_event(Entry, "signnext");
 
-	std::size_t limits{0};
-	Entry.get("limits", limits);
+	auto const limits{snapshot::read_count(Entry, "limits").value_or(0)};
 	for (std::size_t index{0}; index < limits; ++index)
 	{
 		auto const key{std::format("l{}", index)};
@@ -393,14 +444,16 @@ void TController::snapshot_load(simulation::snapshot::record const &Entry)
 		if (train != "none" && false == TrainParams.LoadTTfile(Global.asCurrentSceneryPath, 0, Entry.value("ttvmax", 0.0)))
 			ErrorLog(std::format("snapshot: timetable \"{}\" of {} can't be loaded", train, OwnerName()));
 	}
-	Entry.get("station", TrainParams.StationIndex);
-	Entry.get("stationstart", TrainParams.StationStart);
+	// the stations are entries of the table of the timetable, 1..StationCount, and the one after the last
+	auto const laststation{std::clamp(TrainParams.StationCount + 1, 0, MaxTTableSize)};
+	Entry.get("station", TrainParams.StationIndex, 0, laststation);
+	Entry.get("stationstart", TrainParams.StationStart, 0, laststation);
 	Entry.get("nextstation", TrainParams.NextStationName);
 	Entry.get("latency", TrainParams.LastStationLatency);
-	Entry.get("timetabledirection", TrainParams.Direction);
+	Entry.get("timetabledirection", TrainParams.Direction, -1, 1);
 	Entry.get("ttvmax", TrainParams.TTVmax);
 	m_stopflags = TrainParams.stop_flags();
-	if (auto const stopflags{split(Entry.text("stopflags"))}; stopflags.size() == 4)
+	if (auto const stopflags{split(Entry.text("stopflags"), 0, static_cast<int>(timetable::tristate::no)).value_or(std::vector<int>{})}; stopflags.size() == 4)
 	{
 		using timetable::tristate;
 		m_stopflags.central_doors = static_cast<tristate>(stopflags[0]);
@@ -413,16 +466,22 @@ void TController::snapshot_load(simulation::snapshot::record const &Entry)
 	// the orders
 	if (Entry.has("orders"))
 	{
-		auto const orders{split(Entry.text("orders"))};
-		OrdersClear();
-		OrderTop = std::min(static_cast<int>(orders.size()), maxorders);
-		for (auto index{0}; index < OrderTop; ++index)
-			OrderList[index] = static_cast<TOrders>(orders[index]);
+		// the orders are bits, and the stack holds so many of them
+		if (auto const orders{split(Entry.text("orders"), 0, every_order)}; orders.has_value() && orders->size() <= static_cast<std::size_t>(maxorders))
+		{
+			OrdersClear();
+			OrderTop = static_cast<int>(orders->size());
+			for (auto index{0}; index < OrderTop; ++index)
+				OrderList[index] = static_cast<TOrders>((*orders)[index]);
+		}
+		else
+			Entry.refuse("orders", std::format("they aren't up to {} numbers of orders", maxorders));
 	}
-	Entry.get("orderpos", OrderPos);
+	// the order the driver is on is an index into the stack
+	Entry.get("orderpos", OrderPos, 0, maxorders - 1);
 
-	Entry.get("action", eAction);
-	Entry.get("stopreason", eStopReason);
+	Entry.get("action", eAction, TAction::actUnknown, TAction::actTrial);
+	Entry.get("stopreason", eStopReason, stopNone, stopError);
 	load_members(*this, Entry, snapshot_members::numbers);
 	load_members(*this, Entry, snapshot_members::flags);
 	load_members(*this, Entry, snapshot_members::speeds);
@@ -434,19 +493,23 @@ void TController::snapshot_load(simulation::snapshot::record const &Entry)
 		std::ranges::copy(numbers, fBrake_a0);
 	if (auto const numbers{snapshot::text_numbers(Entry.text("brakea1"))}; numbers.size() == std::size(fBrake_a1))
 		std::ranges::copy(numbers, fBrake_a1);
-	Entry.get("brakesystem", BrakeSystem);
-	Entry.get("doorclosure", DoorClosure);
-	Entry.get("lastannouncement", m_lastannouncement);
+	Entry.get("brakesystem", BrakeSystem, TBrakeSystem::Individual, TBrakeSystem::ElectroPneumatic);
+	Entry.get("doorclosure", DoorClosure, door_closure_t::none, door_closure_t::open);
+	Entry.get("lastannouncement", m_lastannouncement, announcement_t::idle, announcement_t::end);
 	Entry.get("vellimitlastdist0", VelLimitLastDist.first);
 	Entry.get("vellimitlastdist1", VelLimitLastDist.second);
 	Entry.get("lighthint0", m_lighthints[end::front]);
 	Entry.get("lighthint1", m_lighthints[end::rear]);
 	iDirectionBackup.reset();
-	if (auto direction{0}; Entry.get("directionbackup", direction))
+	if (auto direction{0}; Entry.get("directionbackup", direction, -1, 1))
 		iDirectionBackup = direction;
 	iCouplingVehicle.reset();
+	// the end of the vehicle to couple to is one of its two couplers
 	if (auto *vehicle{snapshot::find_vehicle(Entry.text("couplingvehicle"))}; vehicle != nullptr)
-		iCouplingVehicle = std::make_pair(vehicle, Entry.value("couplingend", 0));
+	{
+		if (auto end{0}; Entry.get("couplingend", end, 0, 1) || false == Entry.has("couplingend"))
+			iCouplingVehicle = std::make_pair(vehicle, end);
+	}
 
 	// the consist: its ends as they were, the vehicles driven and braked found anew among what's coupled now
 	if (auto *front{snapshot::find_vehicle(Entry.text("front"))}; front != nullptr)

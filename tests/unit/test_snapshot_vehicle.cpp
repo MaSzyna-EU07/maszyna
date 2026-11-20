@@ -442,3 +442,72 @@ TEST_CASE("snapshot: what a brake valve keeps beside its air comes back on a fre
 		CHECK(second->Hamulec->reservoirs()[1]->GetPendingFlow() == 0.125);
 	}
 }
+
+TEST_CASE("snapshot: positions of the controllers past the ranges of the vehicle are brought within them")
+{
+	snapshot::take_refusals();
+	vehicle locomotive{definition::fiz("4e_v1/4e"), 0.0, "test", 1};
+	REQUIRE(locomotive->MainCtrlPosNo > 0);
+	auto entry{state_of(locomotive.mover())};
+	// what an edited file, or one saved with a definition of more positions than the vehicle has now, may hold
+	entry.set("mainctrl", 999).set("mainctrlactual", -4).set("scndctrl", locomotive->ScndCtrlPosNo + 5).set("scndctrlactual", 1000);
+	entry.set("brakectrl", 99).set("manualbrake", -3).set("lightspos", 500).set("compressorlistpos", 40).set("wiperswitchpos", 16);
+	entry.set("caboccupied", 7).set("diractive", -2).set("dimmer", 1000);
+	snapshot::apply_mover(locomotive.mover(), through_text(entry));
+	CHECK(locomotive->MainCtrlPos == locomotive->MainCtrlPosNo);
+	CHECK(locomotive->MainCtrlActualPos == 0);
+	CHECK(locomotive->ScndCtrlPos == locomotive->ScndCtrlPosNo);
+	CHECK(locomotive->ScndCtrlActualPos == locomotive->ScndCtrlPosNo);
+	CHECK(locomotive->BrakeCtrlPos == std::max(locomotive->BrakeCtrlPosNo, 0));
+	CHECK(locomotive->ManualBrakePos == 0);
+	CHECK(locomotive->LightsPos <= 18);
+	CHECK(locomotive->LightsPos == std::min(locomotive->LightsPosNo, 18));
+	CHECK(locomotive->CompressorListPos <= 8);
+	CHECK(locomotive->wiperSwitchPos == 15);
+	CHECK(locomotive->CabOccupied == 1);
+	CHECK(locomotive->DirActive == -1);
+	CHECK(locomotive->modernDimmerPosition == static_cast<int>(locomotive->dimPositions.size()) - 1);
+	auto const refusals{snapshot::take_refusals()};
+	CAPTURE(refusals.size());
+	CHECK(refusals.size() >= 10);
+
+	// a value which isn't a whole number at all isn't taken, and the position stays as it was
+	auto const before{locomotive->MainCtrlPos};
+	snapshot::record broken{"vehicle", "test"};
+	broken.fields = {{"mainctrl", "1e18"}, {"mainctrlactual", "nan"}, {"scndctrl", "2.5"}};
+	snapshot::apply_mover(locomotive.mover(), broken);
+	CHECK(locomotive->MainCtrlPos == before);
+	CHECK(snapshot::take_refusals().size() == 3);
+}
+
+TEST_CASE("snapshot: a load which can't be one is refused")
+{
+	snapshot::take_refusals();
+	std::string path;
+	for (auto const &candidate : test::real_vehicles())
+	{
+		if (vehicle probe{definition::fiz(candidate)}; probe->MaxLoad > 0.f && false == probe->LoadAttributes.empty())
+		{
+			path = candidate;
+			break;
+		}
+	}
+	REQUIRE_FALSE(path.empty());
+	vehicle wagon{definition::fiz(path)};
+	auto const loadname{wagon->LoadAttributes.front().name};
+	for (auto const *amount : {"nan", "-1", "inf", "1e30"})
+	{
+		CAPTURE(amount);
+		snapshot::record entry{"vehicle", "test"};
+		entry.fields = {{"load", amount}, {"loadtype", loadname}};
+		snapshot::apply_mover(wagon.mover(), entry);
+		CHECK(wagon->LoadAmount == 0.f);
+		CHECK(wagon->LoadType.name.empty());
+	}
+	// a load is named by its model, which is looked up in the folder of the vehicle
+	snapshot::record entry{"vehicle", "test"};
+	entry.fields = {{"load", "1"}, {"loadtype", "../../../models/elsewhere"}};
+	snapshot::apply_mover(wagon.mover(), entry);
+	CHECK(wagon->LoadType.name.empty());
+	CHECK(snapshot::take_refusals().size() == 5);
+}

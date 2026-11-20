@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <format>
 #include <iterator>
+#include <limits>
+#include <utility>
 
 namespace simulation::snapshot {
 
@@ -253,6 +255,43 @@ template <typename Table_> void apply_members(TMoverParameters &Mover, record co
 		Entry.get(item.key, Mover.*(item.variable));
 }
 
+// the positions a controller or a switch of the vehicle can take. they index tables of the vehicle (the resistors of
+// the start by the master controller, the settings of the compressor, the lights, the wipers), so a position of the
+// file past them is brought within them: a file edited by hand, or a vehicle definition with fewer positions since
+std::pair<int, int> position_range(TMoverParameters const &Mover, std::string_view const Key)
+{
+	if (Key == "mainctrl")
+		return {0, std::clamp(Mover.MainCtrlPosNo, 0, ResArraySize)};
+	if (Key == "mainctrlactual")
+		return {0, std::clamp(std::max(Mover.MainCtrlPosNo, Mover.RlistSize), 0, ResArraySize - 1)};
+	if (Key == "scndctrl" || Key == "scndctrlactual")
+		return {0, std::max(Mover.ScndCtrlPosNo, 0)};
+	if (Key == "diractive" || Key == "dirabsolute" || Key == "cabactive" || Key == "caboccupied")
+		return {-1, 1};
+	if (Key == "lightspos")
+		return {0, std::clamp(Mover.LightsPosNo, 0, static_cast<int>(std::size(Mover.Lights[0])))};
+	if (Key == "compressorlistpos")
+		return {0, std::clamp(Mover.CompressorListPosNo, 0, static_cast<int>(std::size(Mover.CompressorList[0])) - 1)};
+	if (Key == "wiperswitchpos")
+		return {0, static_cast<int>(std::size(Mover.WiperList)) - 1};
+	if (Key == "brakectrl")
+		return {-2, std::max(Mover.BrakeCtrlPosNo, 0)};
+	if (Key == "manualbrake")
+		return {0, ManualBrakePosNo};
+	if (Key == "dimmer")
+		return {0, std::max(static_cast<int>(Mover.dimPositions.size()) - 1, 0)};
+	return {std::numeric_limits<int>::min(), std::numeric_limits<int>::max()};
+}
+
+void apply_positions(TMoverParameters &Mover, record const &Entry)
+{
+	for (auto const &item : positions)
+	{
+		auto const [lowest, highest]{position_range(Mover, item.key)};
+		Entry.get_clamped(item.key, Mover.*(item.variable), lowest, highest);
+	}
+}
+
 // keys of the parts a vehicle has two of, or a few: "pant0valve", "door1open"
 std::string indexed(std::string_view const Part, int const Index, std::string_view const Key)
 {
@@ -346,7 +385,13 @@ void apply_power(TMoverParameters &Mover, record const &Entry)
 		}
 	}
 	if (Entry.has("security"))
-		Mover.SecuritySystem.state(text_numbers(Entry.text("security")));
+	{
+		// the last one is the cab it watches
+		if (auto const state{text_numbers(Entry.text("security"))}; false == state.empty() && whole_number(state.back(), -1, 1).has_value())
+			Mover.SecuritySystem.state(state);
+		else
+			Entry.refuse("security", "its cab isn't -1, 0 or 1");
+	}
 	if (auto const drive{text_numbers(Entry.text("eimv"))}; drive.size() == std::size(Mover.eimv))
 		std::ranges::copy(drive, std::begin(Mover.eimv));
 	auto &control{Mover.SpeedCtrlUnit};
@@ -680,7 +725,7 @@ void apply_brake(TMoverParameters &Mover, record const &Entry)
 		Mover.Pipe2->CreatePress(Mover.ScndPipePress);
 		Mover.Pipe2->Act();
 	}
-	if (auto setting{Mover.LoadFlag}; Entry.get("brakeload", setting))
+	if (auto setting{Mover.LoadFlag}; Entry.get("brakeload", setting, 0, 3))
 	{
 		// by the steps of the lever, which change the ratio of the rigging with it
 		auto moved{true};
@@ -708,7 +753,19 @@ void apply_load(TMoverParameters &Mover, record const &Entry)
 {
 	auto amount{Mover.LoadAmount};
 	auto name{Mover.LoadType.name};
-	auto const given{Entry.get("load", amount)};
+	// the share of the load shown is worked out from it: what can be read as a load, up to a thousand times what the
+	// vehicle is rated for
+	auto const most{1000.f * std::max(Mover.MaxLoad, 1.f)};
+	auto const given{Entry.get("load", amount, 0.f, most)};
+	if (Entry.has("load") && false == given)
+		return;
+	// the name of the load is that of its model, looked up in the folder of the vehicle
+	if (auto const *text{Entry.find("loadtype")};
+	    text != nullptr && (text->find_first_of("/\\:") != std::string::npos || text->find("..") != std::string::npos))
+	{
+		Entry.refuse("loadtype", "a load is named by a name, not by a path");
+		return;
+	}
 	if (false == Entry.get("loadtype", name) && false == given)
 		return;
 	if (amount == Mover.LoadAmount && name == Mover.LoadType.name)
@@ -771,13 +828,23 @@ void apply_running(TMoverParameters &Mover, record const &Entry)
 	}
 	if (auto const numbers{text_numbers(Entry.text("runningtrack"))}; numbers.size() == 6)
 	{
-		auto &track{Mover.RunningTrack};
-		track.Width = numbers[0];
-		track.friction = numbers[1];
-		track.CategoryFlag = static_cast<int>(numbers[2]);
-		track.QualityFlag = static_cast<int>(numbers[3]);
-		track.DamageFlag = static_cast<int>(numbers[4]);
-		track.Velmax = numbers[5];
+		constexpr auto lowest{std::numeric_limits<int>::min()};
+		constexpr auto highest{std::numeric_limits<int>::max()};
+		auto const category{whole_number(numbers[2], lowest, highest)};
+		auto const quality{whole_number(numbers[3], lowest, highest)};
+		auto const damage{whole_number(numbers[4], lowest, highest)};
+		if (category.has_value() && quality.has_value() && damage.has_value())
+		{
+			auto &track{Mover.RunningTrack};
+			track.Width = numbers[0];
+			track.friction = numbers[1];
+			track.CategoryFlag = *category;
+			track.QualityFlag = *quality;
+			track.DamageFlag = *damage;
+			track.Velmax = numbers[5];
+		}
+		else
+			Entry.refuse("runningtrack", "its flags aren't whole numbers");
 	}
 	if (auto const numbers{text_numbers(Entry.text("loc"))}; numbers.size() == 3)
 		Mover.Loc = {numbers[0], numbers[1], numbers[2]};
@@ -814,6 +881,12 @@ void apply_couplers(TMoverParameters &Mover, record const &Entry)
 		auto const values{text_numbers(Entry.text(indexed("couplerstate", side, "")))};
 		if (values.size() != 17)
 			continue;
+		auto const stop{whole_number(values[15], std::numeric_limits<int>::min(), std::numeric_limits<int>::max())};
+		if (false == stop.has_value())
+		{
+			Entry.refuse(indexed("couplerstate", side, ""), "the stop of the pair isn't a whole number");
+			continue;
+		}
 		auto &coupler{Mover.Couplers[side]};
 		auto &pair{coupler.physics_state};
 		coupler.CForce = values[0];
@@ -831,7 +904,7 @@ void apply_couplers(TMoverParameters &Mover, record const &Entry)
 		pair.buffers.deflection = values[12];
 		pair.elongation = values[13];
 		pair.gap = values[14];
-		pair.stop = static_cast<int>(values[15]);
+		pair.stop = *stop;
 		pair.stop_force = values[16];
 	}
 }
@@ -861,7 +934,7 @@ void apply_mover(TMoverParameters &Mover, record const &Entry)
 	apply_load(Mover, Entry);
 	apply_members(Mover, Entry, motion);
 	apply_members(Mover, Entry, forces);
-	apply_members(Mover, Entry, positions);
+	apply_positions(Mover, Entry);
 	apply_members(Mover, Entry, levels);
 	apply_members(Mover, Entry, switches);
 	apply_members(Mover, Entry, relays);

@@ -4,8 +4,12 @@
 #include "simulation/simulationsnapshot.h"
 #include "utilities/parser.h"
 
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -149,6 +153,7 @@ TEST_CASE("snapshot: numbers read back as the very same values")
 
 TEST_CASE("snapshot: an entry gives its values in the type asked for, and leaves alone what it doesn't have")
 {
+	snapshot::take_refusals();
 	snapshot::record entry{"vehicle", "eu07-424"};
 	entry.set("battery", true).set("mains", false).set("mainctrl", 12).set("pipe", 4.85).set("load", "coal").set("direction", -1);
 	CHECK(entry.value("battery", false));
@@ -167,6 +172,7 @@ TEST_CASE("snapshot: an entry gives its values in the type asked for, and leaves
 	// a value which isn't a number, asked for as one
 	CHECK_FALSE(entry.get("load", untouched));
 	CHECK(untouched == 7);
+	CHECK(snapshot::take_refusals().size() == 1);
 
 	// a key set again keeps its place
 	entry.set("mains", true);
@@ -219,10 +225,12 @@ TEST_CASE("snapshot: the reader says what's wrong with a damaged file and keeps 
 	}
 	SUBCASE("newer version")
 	{
+		// not a damage: a reader takes what it knows of it
 		auto const read{snapshot::parse("snapshot 99 endsnapshot")};
 		CHECK(read.version() == 99);
-		REQUIRE(read.problems.size() == 1);
-		CHECK(read.problems[0].find("99") != std::string::npos);
+		CHECK(read.problems.empty());
+		REQUIRE(read.warnings.size() == 1);
+		CHECK(read.warnings[0].find("99") != std::string::npos);
 	}
 	SUBCASE("missing file")
 	{
@@ -421,4 +429,312 @@ TEST_CASE("snapshot: the command line says which snapshot to load and when to ta
 		CHECK(snapshot::option_value_count("--test") == 0);
 		CHECK(snapshot::option_value_count("td.scn") == 0);
 	}
+}
+
+namespace {
+
+// whether one of the refusals told of names the key
+bool refused(std::vector<std::string> const &Refusals, std::string_view const Key)
+{
+	return std::ranges::any_of(Refusals, [&](std::string const &Line) { return Line.find(Key) != std::string::npos; });
+}
+
+// a vehicle entry with the couplings given as text, as a damaged file can have them
+snapshot::record coupled(std::string const &Name, std::string const &End, std::string const &Flags)
+{
+	snapshot::record entry{"vehicle", Name};
+	entry.fields.emplace_back("coupler0", "other");
+	entry.fields.emplace_back("coupler0end", End);
+	entry.fields.emplace_back("coupler0flags", Flags);
+	return entry;
+}
+
+std::string file_text(std::filesystem::path const &File)
+{
+	std::ifstream input{File, std::ios::binary};
+	std::ostringstream text;
+	text << input.rdbuf();
+	return text.str();
+}
+
+} // namespace
+
+TEST_CASE("snapshot: a value out of the range of what it's read into is refused and told of")
+{
+	snapshot::take_refusals();
+	snapshot::record entry{"vehicle", "eu07-424"};
+	entry.fields = {{"huge", "1e18"}, {"nan", "nan"}, {"fraction", "2.5"}, {"negative", "-1"}, {"inf", "inf"}, {"big", "1e300"}, {"three", "3"}};
+
+	SUBCASE("a whole number has to be whole and fit its type")
+	{
+		auto number{7};
+		CHECK_FALSE(entry.get("huge", number));
+		CHECK_FALSE(entry.get("nan", number));
+		CHECK_FALSE(entry.get("fraction", number));
+		CHECK_FALSE(entry.get("inf", number));
+		CHECK(number == 7);
+		std::size_t count{7};
+		CHECK_FALSE(entry.get("negative", count));
+		CHECK(count == 7);
+		CHECK(entry.get("huge", count));
+		CHECK(count == 1000000000000000000ULL);
+		auto flag{false};
+		CHECK_FALSE(entry.get("nan", flag));
+		enum class mode { off, on };
+		auto setting{mode::off};
+		CHECK_FALSE(entry.get("huge", setting));
+		CHECK(setting == mode::off);
+		auto const refusals{snapshot::take_refusals()};
+		CHECK(refusals.size() == 7);
+		CHECK(refused(refusals, "huge \"1e18\""));
+		CHECK(refused(refusals, "eu07-424"));
+	}
+	SUBCASE("a measure takes what isn't a number and the infinities, but not more than its type holds")
+	{
+		auto value{0.0};
+		CHECK(entry.get("nan", value));
+		CHECK(std::isnan(value));
+		CHECK(entry.get("inf", value));
+		CHECK(std::isinf(value));
+		auto single{1.f};
+		CHECK_FALSE(entry.get("big", single));
+		CHECK(single == 1.f);
+		CHECK(snapshot::take_refusals().size() == 1);
+	}
+	SUBCASE("a value which has to be in a range")
+	{
+		auto end{0};
+		CHECK_FALSE(entry.get("three", end, 0, 1));
+		CHECK(end == 0);
+		auto measure{0.5};
+		CHECK_FALSE(entry.get("nan", measure, 0.0, 1.0));
+		CHECK(measure == 0.5);
+		CHECK(entry.value("three", -1, 0, 1) == -1);
+		CHECK(entry.value("three", -1, 0, 5) == 3);
+		auto const refusals{snapshot::take_refusals()};
+		REQUIRE(refusals.size() == 3);
+		CHECK(refused(refusals, "0 .. 1"));
+	}
+	SUBCASE("a value brought into its range")
+	{
+		auto position{0};
+		CHECK(entry.get_clamped("three", position, 0, 2));
+		CHECK(position == 2);
+		CHECK(entry.get_clamped("negative", position, 0, 2));
+		CHECK(position == 0);
+		CHECK_FALSE(entry.get_clamped("huge", position, 0, 2));
+		CHECK(position == 0);
+		auto const refusals{snapshot::take_refusals()};
+		REQUIRE(refusals.size() == 3);
+		CHECK(refused(refusals, "2 is taken"));
+	}
+	SUBCASE("a number of a list as a whole number")
+	{
+		CHECK(snapshot::whole_number(3.0, 0, 5) == 3);
+		CHECK_FALSE(snapshot::whole_number(3.5, 0, 5).has_value());
+		CHECK_FALSE(snapshot::whole_number(6.0, 0, 5).has_value());
+		CHECK_FALSE(snapshot::whole_number(std::nan(""), 0, 5).has_value());
+		CHECK_FALSE(snapshot::whole_number(1e18, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()).has_value());
+	}
+	SUBCASE("a great many refusals are counted, not listed")
+	{
+		for (auto index{0}; index < 150; ++index)
+			entry.refuse("huge", "a test");
+		auto const refusals{snapshot::take_refusals()};
+		REQUIRE(refusals.size() == 101);
+		CHECK(refusals.back() == "and 50 more values refused");
+		CHECK(snapshot::take_refusals().empty());
+	}
+}
+
+TEST_CASE("snapshot: the couplings of a damaged file are refused where they'd point past a vehicle's couplers")
+{
+	snapshot::take_refusals();
+	std::vector<snapshot::record> const entries{
+	    coupled("end3", "3", "3"),        // past the two couplers: an index past the array of them
+	    coupled("end2", "2", "3"),        // the same
+	    coupled("endminus", "-1", "3"),   //
+	    coupled("endnan", "nan", "3"),    //
+	    coupled("endhuge", "1e18", "3"),  //
+	    coupled("endhalf", "0.5", "3"),   //
+	    coupled("flagsbig", "1", "4096"), // not a flag of the couplings
+	    coupled("flagsminus", "1", "-1"), //
+	    coupled("good", "1", "3"),        // the one which stays
+	};
+	std::vector<snapshot::record const *> pointers;
+	for (auto const &entry : entries)
+		pointers.emplace_back(&entry);
+	auto const links{snapshot::read_couplings(pointers)};
+	REQUIRE(links.size() == 1);
+	CHECK(links[0] == snapshot::coupling_link{"good", 0, "other", 1, 3});
+	auto const refusals{snapshot::take_refusals()};
+	CHECK(refusals.size() == 8);
+	CHECK(refused(refusals, "end3"));
+	CHECK(refused(refusals, "flagsbig"));
+}
+
+TEST_CASE("snapshot: couplings which would close a ring of vehicles are refused")
+{
+	using link = snapshot::coupling_link;
+	std::vector<std::string> const present{"a", "b", "c"};
+	SUBCASE("two vehicles coupled at both ends")
+	{
+		std::vector<link> const wanted{{"a", 1, "b", 0, 3}, {"b", 1, "a", 0, 3}};
+		auto const plan{snapshot::plan_couplings({}, wanted, present)};
+		CHECK(plan.join.size() == 1);
+		REQUIRE(plan.refused.size() == 1);
+		CHECK(plan.refused[0] == link{"b", 1, "a", 0, 3});
+	}
+	SUBCASE("a vehicle coupled to itself")
+	{
+		auto const plan{snapshot::plan_couplings({}, {{"a", 0, "a", 1, 3}}, present)};
+		CHECK(plan.join.empty());
+		CHECK(plan.refused.size() == 1);
+	}
+	SUBCASE("the last of a consist the scenery made to its first")
+	{
+		std::vector<link> const current{{"a", 1, "b", 0, 3}, {"b", 1, "c", 0, 3}};
+		auto const plan{snapshot::plan_couplings(current, {{"c", 1, "a", 0, 3}}, present)};
+		CHECK(plan.join.empty());
+		CHECK(plan.refused.size() == 1);
+	}
+	SUBCASE("a consist turned round is no ring: the old link is parted first")
+	{
+		std::vector<link> const current{{"a", 1, "b", 0, 3}};
+		std::vector<link> const wanted{{"a", 0, "b", 1, 3}, {"a", 1, "", 0, 0}, {"b", 0, "", 0, 0}};
+		auto const plan{snapshot::plan_couplings(current, wanted, present)};
+		CHECK(plan.part.size() == 1);
+		CHECK(plan.join.size() == 1);
+		CHECK(plan.refused.empty());
+	}
+}
+
+TEST_CASE("snapshot: counts and indices of a damaged file stay within what the entry holds")
+{
+	snapshot::take_refusals();
+	snapshot::record entry{"driver", "eu07-424"};
+	entry.fields = {{"table", "3"}, {"p0", "x"}, {"p1", "x"}, {"p2", "x"}, {"semnext", "2"}, {"semnextstop", "3"}};
+	SUBCASE("a count of what the entry lists")
+	{
+		CHECK(snapshot::read_count(entry, "table") == 3u);
+		for (auto const *value : {"1e18", "-1", "nan", "inf", "2.5", "7", "huge"})
+		{
+			CAPTURE(value);
+			entry.fields[0].second = value;
+			CHECK_FALSE(snapshot::read_count(entry, "table").has_value());
+		}
+		// the count can't be past the keys of the entry
+		entry.fields[0].second = "6";
+		CHECK(snapshot::read_count(entry, "table") == 6u);
+		CHECK_FALSE(snapshot::read_count(entry, "limits").has_value());
+		CHECK(snapshot::take_refusals().size() == 7);
+	}
+	SUBCASE("an index into a table")
+	{
+		CHECK(snapshot::read_index(entry, "semnext", 3) == 2u);
+		CHECK_FALSE(snapshot::read_index(entry, "semnextstop", 3).has_value());
+		CHECK_FALSE(snapshot::read_index(entry, "semnext", 0).has_value());
+		CHECK_FALSE(snapshot::read_index(entry, "absent", 3).has_value());
+		auto const refusals{snapshot::take_refusals()};
+		REQUIRE(refusals.size() == 2);
+		CHECK(refused(refusals, "past the end"));
+	}
+}
+
+TEST_CASE("snapshot: a damaged file isn't put over the scenery unless that's forced")
+{
+	auto document{sample()};
+	document.records.front().set("entries", document.records.size());
+	auto const text{snapshot::to_text(document)};
+	SUBCASE("a whole file is used")
+	{
+		auto const read{snapshot::parse(text)};
+		CHECK(read.problems.empty());
+		CHECK(snapshot::accepted(read, false));
+	}
+	SUBCASE("a file cut in the middle of an entry")
+	{
+		auto const read{snapshot::parse(text.substr(0, text.find("endmemcell")))};
+		CHECK_FALSE(read.problems.empty());
+		CHECK_FALSE(snapshot::accepted(read, false));
+		CHECK(snapshot::accepted(read, true));
+		// what could be read is there for --load-snapshot-force
+		CHECK(read.find("memcell", "sem_a") != nullptr);
+	}
+	SUBCASE("a file cut between two entries, which reads without a fault but for the count of its header")
+	{
+		auto const read{snapshot::parse(text.substr(0, text.find("switch")))};
+		REQUIRE(read.problems.size() == 1);
+		CHECK(read.problems[0].find("cut short") != std::string::npos);
+		CHECK_FALSE(snapshot::accepted(read, false));
+		CHECK(snapshot::accepted(read, true));
+	}
+	SUBCASE("a file without a header isn't a snapshot, forced or not")
+	{
+		auto const read{snapshot::parse("memcell a text x endmemcell")};
+		CHECK_FALSE(snapshot::accepted(read, false));
+		CHECK_FALSE(snapshot::accepted(read, true));
+		CHECK_FALSE(snapshot::accepted(snapshot::load("no/such/file.snapshot"), true));
+	}
+	SUBCASE("a file of a newer version is used for what it holds that's known")
+	{
+		auto const read{snapshot::parse("snapshot 2 endsnapshot memcell a text x endmemcell")};
+		CHECK(snapshot::accepted(read, false));
+	}
+	SUBCASE("the switch which forces it, beside the file to load")
+	{
+		std::vector<char const *> const arguments{"eu07", "--load-snapshot", "a.snapshot", "--load-snapshot-force"};
+		auto const line{snapshot::parse_command_line(arguments)};
+		CHECK(line.error.empty());
+		CHECK(line.load == "a.snapshot");
+		CHECK(line.force);
+		CHECK(snapshot::option_value_count("--load-snapshot-force") == 0);
+		std::vector<char const *> const plain{"eu07", "--load-snapshot", "a.snapshot"};
+		CHECK_FALSE(snapshot::parse_command_line(plain).force);
+	}
+}
+
+TEST_CASE("snapshot: a file is written whole or not at all")
+{
+	auto const folder{std::filesystem::path{EU07_UNIT_TESTS_SCRATCH} / "snapshot_write"};
+	std::filesystem::remove_all(folder);
+	std::filesystem::create_directories(folder);
+	auto const file{folder / "state.snapshot"};
+	auto const temporary{folder / "state.snapshot.tmp"};
+	auto const document{sample()};
+
+	// a new file
+	CHECK(snapshot::write_file(file.string(), document).empty());
+	CHECK(file_text(file) == snapshot::to_text(document));
+	CHECK_FALSE(std::filesystem::exists(temporary));
+	// one written over another
+	auto other{sample()};
+	other.add("memcell", "more").set("text", "x");
+	CHECK(snapshot::write_file(file.string(), other).empty());
+	CHECK(file_text(file) == snapshot::to_text(other));
+	CHECK_FALSE(std::filesystem::exists(temporary));
+
+	SUBCASE("the stream fails half way: the file stays as it was, and nothing's left beside it")
+	{
+		auto const error{snapshot::write_file(file.string(), [](std::ostream &Output) {
+			Output << "snapshot 1 scenery td.scn endsnapshot\nmemcell a te";
+			Output.setstate(std::ios::badbit);
+		})};
+		CHECK_FALSE(error.empty());
+		CHECK(file_text(file) == snapshot::to_text(other));
+		CHECK_FALSE(std::filesystem::exists(temporary));
+	}
+	SUBCASE("the file can't be made at all: the old one stays")
+	{
+		std::filesystem::create_directory(temporary);
+		CHECK_FALSE(snapshot::write_file(file.string(), document).empty());
+		CHECK(file_text(file) == snapshot::to_text(other));
+		std::filesystem::remove(temporary);
+	}
+	SUBCASE("a folder which isn't there")
+	{
+		CHECK_FALSE(snapshot::write_file((folder / "no" / "such.snapshot").string(), document).empty());
+		CHECK_FALSE(std::filesystem::exists(folder / "no"));
+	}
+	std::filesystem::remove_all(folder);
 }

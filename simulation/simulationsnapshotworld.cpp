@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtest.h"
 #include "simulation/simulationtime.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
@@ -42,6 +43,11 @@ namespace {
 
 // the cells the simulation itself writes each frame: the weather, the time and the date for the scripts
 constexpr std::string_view scripting_cells{"__simulation."};
+// a speed limit beyond any a track has: a value of the file past it is refused
+constexpr double big_velocity{1e6};
+// the most events sharing a name a snapshot looks among, the most seconds an event waits in the queue
+constexpr int most_siblings{100000};
+constexpr double longest_wait{1e9};
 
 // the place of each thing of a table, to name the ones without a name of their own
 template <typename Item_> class table_index {
@@ -167,19 +173,33 @@ void capture_time(document &Document)
 	entry.set("hour", time.wHour).set("minute", time.wMinute).set("second", time.wSecond).set("milliseconds", Time.milliseconds());
 }
 
-void apply_time(record const &Entry)
+bool apply_time(record const &Entry)
 {
+	// the month and the day pick entries of the tables of the clock: a date which isn't one is refused whole
 	auto time{Time.data()};
-	Entry.get("year", time.wYear);
-	Entry.get("month", time.wMonth);
-	Entry.get("day", time.wDay);
-	Entry.get("weekday", time.wDayOfWeek);
-	Entry.get("hour", time.wHour);
-	Entry.get("minute", time.wMinute);
-	Entry.get("second", time.wSecond);
-	Time.restore(time, Entry.value("milliseconds", Time.milliseconds()));
+	if (false == Entry.get("year", time.wYear, WORD{1}, WORD{9999}) && Entry.has("year"))
+		return false;
+	if (false == Entry.get("month", time.wMonth, WORD{1}, WORD{12}) && Entry.has("month"))
+		return false;
+	constexpr std::array<WORD, 13> days{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	if (false == Entry.get("day", time.wDay, WORD{1}, days[time.wMonth]) && Entry.has("day"))
+		return false;
+	if (time.wMonth == 2 && time.wDay == 29 && false == ((time.wYear % 4 == 0 && time.wYear % 100 != 0) || time.wYear % 400 == 0))
+	{
+		Entry.refuse("day", "the year isn't a leap one");
+		return false;
+	}
+	auto milliseconds{Time.milliseconds()};
+	if ((false == Entry.get("weekday", time.wDayOfWeek, WORD{0}, WORD{6}) && Entry.has("weekday")) ||
+	    (false == Entry.get("hour", time.wHour, WORD{0}, WORD{23}) && Entry.has("hour")) ||
+	    (false == Entry.get("minute", time.wMinute, WORD{0}, WORD{59}) && Entry.has("minute")) ||
+	    (false == Entry.get("second", time.wSecond, WORD{0}, WORD{59}) && Entry.has("second")) ||
+	    (false == Entry.get("milliseconds", milliseconds, 0.0, 999.999999) && Entry.has("milliseconds")))
+		return false;
+	Time.restore(time, milliseconds);
 	// the season goes by the date, and the weather by the season
 	Environment.compute_season(Time.year_day());
+	return true;
 }
 
 void capture_weather(document &Document)
@@ -195,15 +215,22 @@ void capture_weather(document &Document)
 
 void apply_weather(record const &Entry)
 {
-	Entry.get("overcast", Global.Overcast);
-	Entry.get("fog", Global.fFogEnd);
-	Entry.get("temperature", Global.AirTemperature);
+	// the weather is drawn from these: a number which isn't one has no place in it
+	constexpr auto big{1e9f};
+	Entry.get("overcast", Global.Overcast, 0.f, 10.f);
+	Entry.get("fog", Global.fFogEnd, 0.f, big);
+	Entry.get("temperature", Global.AirTemperature, -100.f, 100.f);
 	Environment.compute_weather();
 	auto state{Environment.wind_state()};
 	if (auto const wind{text_numbers(Entry.text("wind"))}; wind.size() == state.size())
 	{
-		std::ranges::transform(wind, state.begin(), [](double const Value) { return static_cast<float>(Value); });
-		Environment.wind_state(state);
+		if (std::ranges::all_of(wind, [](double const Value) { return std::isfinite(Value) && std::abs(Value) < 1e9; }))
+		{
+			std::ranges::transform(wind, state.begin(), [](double const Value) { return static_cast<float>(Value); });
+			Environment.wind_state(state);
+		}
+		else
+			Entry.refuse("wind", "a number of it isn't finite");
 	}
 }
 
@@ -230,7 +257,14 @@ bool apply_power(record const &Entry)
 	auto *source{find_in(Powergrid, Entry.name)};
 	if (source == nullptr)
 		return false;
-	source->state(text_numbers(Entry.text("state")));
+	auto const state{text_numbers(Entry.text("state"))};
+	// the last one counts the times the fuse blew
+	if (false == state.empty() && false == whole_number(state.back(), 0, std::numeric_limits<int>::max()).has_value())
+	{
+		Entry.refuse("state", "the count of its fuse isn't a whole number");
+		return true;
+	}
+	source->state(state);
 	return true;
 }
 
@@ -335,8 +369,8 @@ bool apply_crossing(record const &Entry)
 	auto *track{find_track(Entry.name)};
 	if (track == nullptr || track->eType != tt_Cross || track->SwitchExtension == nullptr)
 		return false;
-	auto const index{Entry.value("segment", -1)};
-	if (index < 0 || index >= 6 || track->SwitchExtension->Segments[index] == nullptr)
+	auto const index{Entry.value("segment", -1, 0, 5)};
+	if (index < 0 || track->SwitchExtension->Segments[index] == nullptr)
 		return false;
 	track->Segment = track->SwitchExtension->Segments[index];
 	return true;
@@ -365,7 +399,9 @@ bool apply_made_track(record const &Entry)
 	auto *track{find_track(Entry.name)};
 	if (track == nullptr)
 		return false;
-	auto const end{Entry.value("end", 0)};
+	auto end{0};
+	if (false == Entry.get("end", end, 0, 1) && Entry.has("end"))
+		return false;
 	// made anew unless the scenery has something there by now
 	if ((end == 0 ? track->trPrev : track->trNext) == nullptr)
 		track->NullCreate(end);
@@ -377,9 +413,9 @@ bool apply_switch(record const &Entry)
 	auto *track{find_track(Entry.name)};
 	if (track == nullptr || track->eType != tt_Switch)
 		return false;
-	if (auto state{0}; Entry.get("state", state) && state != track->GetSwitchState())
+	if (auto state{0}; Entry.get("state", state, 0, 1) && state != track->GetSwitchState())
 		track->Switch(state);
-	if (auto velocity{0.0}; Entry.get("velocity", velocity))
+	if (auto velocity{0.0}; Entry.get("velocity", velocity, -big_velocity, big_velocity))
 		track->velocity_limit(velocity);
 	return true;
 }
@@ -389,7 +425,7 @@ bool apply_track(record const &Entry)
 	auto *track{find_track(Entry.name)};
 	if (track == nullptr)
 		return false;
-	if (auto velocity{0.0}; Entry.get("velocity", velocity))
+	if (auto velocity{0.0}; Entry.get("velocity", velocity, -big_velocity, big_velocity))
 		track->velocity_limit(velocity);
 	Entry.get("damage", track->iDamageFlag);
 	return true;
@@ -412,11 +448,18 @@ void capture_events(document &Document)
 
 bool apply_event(record const &Entry)
 {
-	auto *event{find_event(Entry.name, Entry.value("sibling", 0))};
+	auto sibling{0};
+	if (false == Entry.get("sibling", sibling, 0, most_siblings) && Entry.has("sibling"))
+		return false;
+	auto *event{find_event(Entry.name, sibling)};
 	if (event == nullptr)
 		return false;
-	// without the time it ran at, the seconds it had left count from now
-	auto const launchtime{Entry.value("at", Timer::GetTime() + Entry.value("left", 0.0))};
+	// without the time it ran at, the seconds it had left count from now. the queue is kept in the order of the times,
+	// which a time that isn't a number has none in
+	auto const now{Timer::GetTime()};
+	auto launchtime{now + Entry.value("left", 0.0, -longest_wait, longest_wait)};
+	if (false == Entry.get("at", launchtime, now - longest_wait, now + longest_wait) && Entry.has("at"))
+		return false;
 	auto const *activator{Entry.has("activator") ? find_vehicle(Entry.text("activator")) : nullptr};
 	return Events.restore_queued(event, activator, launchtime);
 }
@@ -450,7 +493,7 @@ bool apply_launcher(record const &Entry, std::vector<TEventLauncher *> const &La
 		launcher = *lookup;
 	if (launcher == nullptr)
 		return false;
-	launcher->timer(Entry.value("timer", launcher->timer()));
+	launcher->timer(Entry.value("timer", launcher->timer(), 0.0, longest_wait));
 	return true;
 }
 
@@ -497,7 +540,7 @@ bool apply_lights(record const &Entry)
 		return false;
 	for (auto light{0}; light < iMaxNumLights; ++light)
 	{
-		if (auto state{0.f}; Entry.get(std::format("light{}", light), state))
+		if (auto state{0.f}; Entry.get(std::format("light{}", light), state, -1e6f, 1e6f))
 			model->LightSet(light, state);
 	}
 	return true;
@@ -533,22 +576,7 @@ std::vector<coupling_link> current_couplings(std::unordered_map<TMoverParameters
 	return links;
 }
 
-// the couplings the snapshot has, for the vehicles it has
-std::vector<coupling_link> wanted_couplings(std::vector<record const *> const &Entries)
-{
-	std::vector<coupling_link> links;
-	for (auto const *entry : Entries)
-	{
-		for (auto const side : {end::front, end::rear})
-		{
-			auto const key{std::format("coupler{}", static_cast<int>(side))};
-			if (false == entry->has(key + "flags"))
-				continue;
-			links.emplace_back(entry->name, side, entry->text(key), entry->value(key + "end", 0), entry->value(key + "flags", 0));
-		}
-	}
-	return links;
-}
+static_assert(coupling_flags_mask == (coupling::power3x400v << 1) - 1, "the flags a snapshot takes are every bit of the coupling enum");
 
 void part(TDynamicObject &Vehicle, int const End)
 {
@@ -577,18 +605,20 @@ void apply_couplings(std::vector<record const *> const &Entries, apply_summary &
 		owners.emplace(vehicle->MoverParameters, vehicle);
 		present.emplace_back(vehicle_reference(vehicle));
 	}
-	auto const plan{plan_couplings(current_couplings(owners), wanted_couplings(Entries), present)};
+	auto const plan{plan_couplings(current_couplings(owners), read_couplings(Entries), present)};
 
+	// the vehicles of the links are of the scenery (Present), with their physics
+	auto const with_physics{[](TDynamicObject const *Vehicle) { return Vehicle != nullptr && Vehicle->MoverParameters != nullptr; }};
 	for (auto const &link : plan.part)
 	{
-		if (auto *vehicle{find_vehicle(link.vehicle)}; vehicle != nullptr)
+		if (auto *vehicle{find_vehicle(link.vehicle)}; with_physics(vehicle))
 			part(*vehicle, link.end);
 	}
 	for (auto const &link : plan.change)
 	{
 		auto const *vehicle{find_vehicle(link.vehicle)};
 		auto const *other{find_vehicle(link.other)};
-		if (vehicle == nullptr || other == nullptr)
+		if (false == with_physics(vehicle) || false == with_physics(other))
 			continue;
 		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
 		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
@@ -598,7 +628,8 @@ void apply_couplings(std::vector<record const *> const &Entries, apply_summary &
 	{
 		auto *vehicle{find_vehicle(link.vehicle)};
 		auto *other{find_vehicle(link.other)};
-		if (vehicle == nullptr || other == nullptr || false == vehicle->MoverParameters->Attach(link.end, link.otherend, other->MoverParameters, link.flags, true, false))
+		if (false == with_physics(vehicle) || false == with_physics(other) ||
+		    false == vehicle->MoverParameters->Attach(link.end, link.otherend, other->MoverParameters, link.flags, true, false))
 		{
 			++failed;
 			continue;
@@ -611,6 +642,11 @@ void apply_couplings(std::vector<record const *> const &Entries, apply_summary &
 		Summary.remarks.emplace_back(std::format("couplings: {} parted, {} joined, {} changed", plan.part.size(), static_cast<int>(plan.join.size()) - failed, plan.change.size()));
 	if (failed != 0 || false == plan.missing.empty())
 		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot couldn't be made, {} are to vehicles the scenery doesn't have", failed, plan.missing.size()));
+	if (false == plan.refused.empty())
+	{
+		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot refused, they'd close a ring of vehicles; the first one {} {} to {} {}", plan.refused.size(),
+		                                       plan.refused.front().vehicle, plan.refused.front().end, plan.refused.front().other, plan.refused.front().otherend));
+	}
 
 	// each vehicle knows the one coupled to it as its neighbour at that end
 	for (auto *vehicle : Vehicles.sequence())
@@ -720,7 +756,7 @@ void apply_isolated(document const &Document, apply_summary &Summary)
 		}
 		// a count beyond any the vehicles of a scenery make
 		auto axles{0};
-		if (false == entry->get("axles", axles))
+		if (false == entry->get("axles", axles, -1000000, 1000000))
 		{
 			++Summary.skipped;
 			continue;
@@ -969,6 +1005,8 @@ document capture()
 	capture_player(result);
 	// the long one last, out of the way of whoever reads the file
 	capture_random(result);
+	// a file cut short between two entries is told by this
+	result.records.front().set("entries", result.records.size());
 	return result;
 }
 
@@ -988,12 +1026,9 @@ apply_summary apply(document const &Document)
 	// set off the events of the tracks, the sections they free and take don't change their signals
 	Events.suspend(true);
 
-	if (auto timer{0.0}; header->get("timer", timer))
+	if (auto timer{0.0}; header->get("timer", timer, 0.0, longest_wait))
 		Timer::set_time(timer);
-	apply_each(Document, "time", summary, [](record const &Entry) {
-		apply_time(Entry);
-		return true;
-	});
+	apply_each(Document, "time", summary, apply_time);
 	apply_each(Document, "weather", summary, [](record const &Entry) {
 		apply_weather(Entry);
 		return true;
@@ -1024,23 +1059,19 @@ apply_summary apply(document const &Document)
 	}
 	// last, whatever was drawn at random on the way here doesn't count
 	apply_each(Document, "random", summary, apply_random);
+	// the values of the file which weren't taken
+	for (auto &refusal : take_refusals())
+		summary.notes.emplace_back(std::move(refusal));
 	return summary;
 }
 
 bool save(std::string const &File)
 {
 	auto const document{capture()};
-	std::ofstream output{File, std::ios::binary | std::ios::trunc};
-	if (false == output.is_open())
+	// to a file of its own first, which takes the place of the one asked for once it's whole
+	if (auto const error{write_file(File, document)}; false == error.empty())
 	{
-		ErrorLog(std::format("snapshot: file \"{}\" can't be written", File));
-		return false;
-	}
-	write(output, document);
-	output.close();
-	if (output.fail())
-	{
-		ErrorLog(std::format("snapshot: writing file \"{}\" failed", File));
+		ErrorLog(std::format("snapshot: {}", error));
 		return false;
 	}
 	WriteLog(std::format("snapshot: the simulation at {:.2f} s saved to \"{}\", {} entries", Timer::GetTime(), File, document.records.size()));
@@ -1073,10 +1104,17 @@ void request(command_line const &Requests)
 		schedule.pending = load(Requests.load);
 }
 
+// the snapshot to load, if it's to be used
+document const *accepted_pending()
+{
+	auto const &schedule{requested()};
+	return schedule.pending.has_value() && accepted(*schedule.pending, schedule.requests.force) ? &*schedule.pending : nullptr;
+}
+
 std::optional<std::uint32_t> requested_seed()
 {
-	auto const &pending{requested().pending};
-	auto const *header{pending.has_value() ? pending->header() : nullptr};
+	auto const *pending{accepted_pending()};
+	auto const *header{pending != nullptr ? pending->header() : nullptr};
 	if (std::uint32_t seed{0}; header != nullptr && header->get("seed", seed))
 		return seed;
 	return std::nullopt;
@@ -1084,8 +1122,8 @@ std::optional<std::uint32_t> requested_seed()
 
 std::string requested_player_vehicle()
 {
-	auto const &pending{requested().pending};
-	if (false == pending.has_value())
+	auto const *pending{accepted_pending()};
+	if (pending == nullptr)
 		return {};
 	auto const players{pending->of("player")};
 	return players.empty() ? std::string{} : players.front()->name;
@@ -1094,19 +1132,39 @@ std::string requested_player_vehicle()
 void start()
 {
 	auto &schedule{requested()};
-	auto const loaded{schedule.pending.has_value()};
-	if (loaded)
+	auto loaded{false};
+	if (schedule.pending.has_value())
 	{
 		auto const document{std::move(*schedule.pending)};
 		schedule.pending.reset();
 		for (auto const &problem : document.problems)
 			ErrorLog(std::format("snapshot: \"{}\": {}", schedule.requests.load, problem));
-		auto const summary{apply(document)};
+		for (auto const &warning : document.warnings)
+			ErrorLog(std::format("snapshot: \"{}\": {}", schedule.requests.load, warning));
+		// a damaged file would put back part of the world, and leave the rest as the scenery makes it
+		apply_summary summary;
+		if (accepted(document, schedule.requests.force))
+		{
+			if (false == document.problems.empty())
+				ErrorLog(std::format("snapshot: \"{}\" is loaded as far as it could be read, --load-snapshot-force says so", schedule.requests.load));
+			summary = apply(document);
+		}
+		else
+		{
+			summary.refused = true;
+			summary.notes.emplace_back(std::format("\"{}\" isn't loaded: it's damaged (--load-snapshot-force loads what can be read of it)", schedule.requests.load));
+		}
 		for (auto const &note : summary.notes)
 			ErrorLog(std::format("snapshot: {}", note));
 		for (auto const &remark : summary.remarks)
 			WriteLog(std::format("snapshot: {}", remark));
-		if (false == summary.refused)
+		loaded = (false == summary.refused);
+		if (false == loaded && Global.test.enabled)
+		{
+			// a test run from a snapshot is no test without it
+			test().finish(test_result::error, "the snapshot to load is damaged or missing");
+		}
+		if (loaded)
 		{
 			// the simulation goes on, it doesn't start: with nobody to wait for in a cab the drivers and the scenery
 			// take the first frame as any other, the way they took it in the run the snapshot comes from

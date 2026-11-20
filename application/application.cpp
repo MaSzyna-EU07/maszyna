@@ -1302,7 +1302,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			// taken from the command line above, with its value
 			++i;
 		}
-		else if (token == "--load-snapshot" || token == "--snapshot-at")
+		else if (token == "--load-snapshot" || token == "--snapshot-at" || token == "--load-snapshot-force")
 		{
 			// taken from the command line above, with their values
 			i += simulation::snapshot::option_value_count(token);
@@ -1325,7 +1325,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
 			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]"
-			          << " [--load-snapshot file] [--snapshot-at seconds file]" << std::endl;
+			          << " [--load-snapshot file [--load-snapshot-force]] [--snapshot-at seconds file]" << std::endl;
 			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}

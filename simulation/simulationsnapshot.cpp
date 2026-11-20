@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
@@ -202,6 +203,55 @@ coupler_link const *wanted_link(coupler_map const &Wanted, std::string const &Ve
 	return lookup != Wanted.end() ? &lookup->second : nullptr;
 }
 
+// the consists the links make, as sets of vehicles: two vehicles are of one consist if a chain of links joins them
+class consists {
+
+public:
+	// joins the consists of the two vehicles. returns: false if they're of one consist already, which the link would
+	// make into a ring
+	bool join(std::string const &Left, std::string const &Right)
+	{
+		auto const left{root(Left)};
+		auto const right{root(Right)};
+		if (left == right)
+			return false;
+		m_parents[left] = right;
+		return true;
+	}
+
+private:
+	std::string root(std::string const &Vehicle) const
+	{
+		auto current{Vehicle};
+		for (auto lookup{m_parents.find(current)}; lookup != m_parents.end(); lookup = m_parents.find(current))
+			current = lookup->second;
+		return current;
+	}
+
+	std::map<std::string, std::string, std::less<>> m_parents;
+};
+
+// what's refused is kept in the order it came, up to this many lines
+constexpr std::size_t refusals_kept{100};
+
+struct refusal_list {
+	std::vector<std::string> lines;
+	std::size_t more{0};
+};
+
+refusal_list &refusals()
+{
+	static refusal_list list;
+	return list;
+}
+
+// a value of the file in what's told of it: a damaged file can have anything in a value, a whole other file too
+std::string shortened(std::string_view const Text)
+{
+	constexpr std::size_t length{40};
+	return Text.size() <= length ? std::string(Text) : std::string(Text.substr(0, length)) + "...";
+}
+
 } // namespace
 
 std::string number_text(double const Value)
@@ -252,6 +302,31 @@ std::string numbers_text(std::span<double const> const Numbers)
 	return text;
 }
 
+std::optional<int> whole_number(double const Value, int const Min, int const Max)
+{
+	if (false == detail::fits_integer<int>(Value) || Value < Min || Value > Max)
+		return std::nullopt;
+	return static_cast<int>(Value);
+}
+
+void refuse(std::string Text)
+{
+	auto &list{refusals()};
+	if (list.lines.size() < refusals_kept)
+		list.lines.emplace_back(std::move(Text));
+	else
+		++list.more;
+}
+
+std::vector<std::string> take_refusals()
+{
+	auto list{std::move(refusals())};
+	refusals() = {};
+	if (list.more != 0)
+		list.lines.emplace_back(std::format("and {} more values refused", list.more));
+	return std::move(list.lines);
+}
+
 std::vector<double> text_numbers(std::string_view Text)
 {
 	std::vector<double> numbers;
@@ -277,6 +352,11 @@ std::string record::text(std::string_view const Key, std::string_view const Fall
 	return value != nullptr ? *value : std::string(Fallback);
 }
 
+void record::refuse(std::string_view const Key, std::string_view const Why) const
+{
+	snapshot::refuse(std::format("{} {}: {} \"{}\" refused, {}", type, shortened(name), Key, shortened(text(Key)), Why));
+}
+
 void record::set_text(std::string_view const Key, std::string Value)
 {
 	if (auto const lookup{std::ranges::find(fields, Key, &std::pair<std::string, std::string>::first)}; lookup != fields.end())
@@ -285,6 +365,26 @@ void record::set_text(std::string_view const Key, std::string Value)
 		return;
 	}
 	fields.emplace_back(std::string(Key), std::move(Value));
+}
+
+std::optional<std::size_t> read_count(record const &Entry, std::string_view const Key)
+{
+	if (std::size_t count{0}; Entry.get(Key, count, std::size_t{0}, Entry.fields.size()))
+		return count;
+	return std::nullopt;
+}
+
+std::optional<std::size_t> read_index(record const &Entry, std::string_view const Key, std::size_t const Size)
+{
+	std::size_t index{0};
+	if (false == Entry.get(Key, index))
+		return std::nullopt;
+	if (index >= Size)
+	{
+		Entry.refuse(Key, std::format("it's past the end of a table of {}", Size));
+		return std::nullopt;
+	}
+	return index;
 }
 
 record &document::add(std::string_view const Type, std::string_view const Name)
@@ -325,8 +425,8 @@ int document::version() const
 	auto const *first{header()};
 	if (first == nullptr)
 		return 0;
-	auto const number{text_number(first->name)};
-	return number.has_value() ? static_cast<int>(*number) : 0;
+	// a version which isn't a whole number is no version this build knows
+	return whole_number(text_number(first->name).value_or(0.0), 0, std::numeric_limits<int>::max()).value_or(0);
 }
 
 void write(std::ostream &Output, document const &Document)
@@ -371,10 +471,23 @@ document read(cParser &Input)
 			result.problems.emplace_back(std::move(problem));
 		type = next_token(Input);
 	}
-	if (result.header() == nullptr)
+	auto const *header{result.header()};
+	if (header == nullptr)
+	{
 		result.problems.emplace_back("the file doesn't start with a \"snapshot\" entry");
-	else if (result.version() > format_version)
-		result.problems.emplace_back(std::format("the file is of version {}, newer than {} which this build writes", result.version(), format_version));
+		return result;
+	}
+	if (result.version() > format_version)
+		result.warnings.emplace_back(std::format("the file is of version {}, newer than {} which this build writes", result.version(), format_version));
+	// the header counts the entries of the file: a file cut short between two entries reads without a fault otherwise
+	if (auto const *entries{header->find("entries")}; entries != nullptr)
+	{
+		if (auto const count{text_number(*entries)}; false == count.has_value() || *count != static_cast<double>(result.records.size()))
+		{
+			result.problems.emplace_back(std::format("the header says the file has {} entries, it has {}: it's cut short, or it was put together from pieces",
+			                                         shortened(*entries), result.records.size()));
+		}
+	}
 	return result;
 }
 
@@ -382,6 +495,43 @@ document parse(std::string const &Text)
 {
 	cParser parser(Text, cParser::buffer_TEXT);
 	return read(parser);
+}
+
+bool accepted(document const &Document, bool const Force)
+{
+	return Document.header() != nullptr && (Document.problems.empty() || Force);
+}
+
+std::string write_file(std::string const &File, std::function<void(std::ostream &)> const &Writer)
+{
+	auto const temporary{File + ".tmp"};
+	std::error_code error;
+	{
+		std::ofstream output{temporary, std::ios::binary | std::ios::trunc};
+		if (false == output.is_open())
+			return std::format("file \"{}\" can't be written", temporary);
+		Writer(output);
+		output.flush();
+		output.close();
+		if (output.fail())
+		{
+			std::filesystem::remove(temporary, error);
+			return std::format("writing file \"{}\" failed", temporary);
+		}
+	}
+	// the whole text is there: it takes the place of the file at once
+	std::filesystem::rename(temporary, File, error);
+	if (error)
+	{
+		std::filesystem::remove(temporary, error);
+		return std::format("file \"{}\" can't be put in place of \"{}\"", temporary, File);
+	}
+	return {};
+}
+
+std::string write_file(std::string const &File, document const &Document)
+{
+	return write_file(File, [&Document](std::ostream &Output) { write(Output, Document); });
 }
 
 document load(std::string const &File)
@@ -454,7 +604,11 @@ command_line parse_command_line(std::span<char const *const> const Arguments)
 		std::string_view const option{Arguments[index]};
 		auto const values{static_cast<std::size_t>(option_value_count(option))};
 		auto const complete{index + values < Arguments.size()};
-		if (option == "--load-snapshot")
+		if (option == "--load-snapshot-force")
+		{
+			result.force = true;
+		}
+		else if (option == "--load-snapshot")
 		{
 			if (complete)
 				result.load = Arguments[index + 1];
@@ -510,7 +664,41 @@ coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vec
 			continue;
 		plan.join.emplace_back(link);
 	}
+	// the links which stay and the ones to make mustn't close a ring of vehicles
+	consists joined;
+	for (auto const &link : unique_links(Current))
+	{
+		if (std::ranges::find(plan.part, link) == plan.part.end())
+			joined.join(link.vehicle, link.other);
+	}
+	std::erase_if(plan.join, [&](coupling_link const &Link) {
+		if (Link.vehicle != Link.other && joined.join(Link.vehicle, Link.other))
+			return false;
+		plan.refused.emplace_back(Link);
+		return true;
+	});
 	return plan;
+}
+
+std::vector<coupling_link> read_couplings(std::vector<record const *> const &Entries)
+{
+	std::vector<coupling_link> links;
+	for (auto const *entry : Entries)
+	{
+		for (auto const side : {0, 1})
+		{
+			auto const key{std::format("coupler{}", side)};
+			if (false == entry->has(key + "flags"))
+				continue;
+			// the end of the coupler on the other side is the index of one of the two couplers of a vehicle
+			auto otherend{0};
+			auto flags{0};
+			if (false == entry->get(key + "end", otherend, 0, 1) || false == entry->get(key + "flags", flags, 0, coupling_flags_mask))
+				continue;
+			links.emplace_back(entry->name, side, entry->text(key), otherend, flags);
+		}
+	}
+	return links;
 }
 
 } // namespace simulation::snapshot
