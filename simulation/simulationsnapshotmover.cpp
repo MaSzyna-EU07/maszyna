@@ -83,6 +83,8 @@ constexpr std::array forces{
     member<double>{"vadd", &TMoverParameters::Vadd},
     member<double>{"medepvctime", &TMoverParameters::MED_EPVC_CurrentTime},
     member<double>{"mededdelay", &TMoverParameters::MED_ED_DelayTimer},
+    // how long power has been asked for, which lets the holding brake of a unit go after its delay
+    member<double>{"stopbrakereleasetimer", &TMoverParameters::StopBrakeReleaseTimer},
 };
 
 // switches, levers and what they've set going
@@ -125,6 +127,8 @@ constexpr std::array switches{
     member<bool>{"stlinswitchoff", &TMoverParameters::StLinSwitchOff},
     member<bool>{"power110v", &TMoverParameters::Power110vIsAvailable},
     member<bool>{"power24v", &TMoverParameters::Power24vIsAvailable},
+    // prepared for being hauled dead: the scenery sets it, a switch of the physics can change it
+    member<bool>{"pulleemode", &TMoverParameters::PulleeMode},
 };
 
 // relays and contactors

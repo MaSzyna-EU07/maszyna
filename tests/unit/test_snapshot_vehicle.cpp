@@ -480,6 +480,25 @@ TEST_CASE("snapshot: positions of the controllers past the ranges of the vehicle
 	CHECK(snapshot::take_refusals().size() == 3);
 }
 
+TEST_CASE("snapshot: the pullee mode and the timer of the release of the holding brake come back")
+{
+	// nobody in it: a vehicle with a cab taken isn't prepared for being hauled
+	vehicle first{definition::fiz("4e_v1/4e")};
+	REQUIRE_FALSE(first->PulleeMode);
+	REQUIRE(first->PulleeModeSwitch(true));
+	first->StopBrakeReleaseTimer = 1.25;
+	auto const saved{through_text(state_of(first.mover()))};
+	CHECK(saved.text("pulleemode") == "1");
+	CHECK(saved.text("stopbrakereleasetimer") == "1.25");
+
+	vehicle second{definition::fiz("4e_v1/4e")};
+	snapshot::apply_mover(second.mover(), saved);
+	CHECK(second->PulleeMode);
+	CHECK(second->StopBrakeReleaseTimer == 1.25);
+	auto const restored{state_of(second.mover())};
+	CHECK_MESSAGE(restored == saved, differences(saved, restored));
+}
+
 TEST_CASE("snapshot: a load which can't be one is refused")
 {
 	snapshot::take_refusals();
