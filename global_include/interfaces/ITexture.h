@@ -21,6 +21,19 @@ struct ITexture
 	virtual void set_components_hint(int hint) = 0;
 	virtual void make_from_memory(size_t width, size_t height, const uint8_t *data) = 0;
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) = 0;
+	// uploads an image from a thread with a gl context of its own, sharing the objects with the drawing one. a texture that
+	// can keeps the image apart until commit_thread_upload(), called on the drawing thread, puts it in place
+	virtual void upload_from_thread(size_t width, size_t height, const uint8_t *data)
+	{
+		update_from_memory(width, height, data);
+	}
+	// puts in place the image of the last upload_from_thread() once the gpu has it, without waiting for it. called on the
+	// drawing thread; false while the upload isn't done yet, to be asked again later
+	virtual bool commit_thread_upload()
+	{
+		// the image went in place right away
+		return true;
+	}
 	static ITexture *null_texture()
 	{
 		struct NullTexture : public ITexture

@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include <atomic>
 #include <istream>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include "winheaders.h"
 #include <string>
 #include "model/ResourceManager.h"
@@ -19,6 +21,14 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/ITexture.h"
 
 struct texture_request; // texture data read by a worker thread, with gfx.textures.streaming
+
+// an image uploaded by another thread into a texture of its own, waiting for the drawing thread to put it in place
+struct texture_thread_upload {
+    GLuint id { 0 };
+    GLsync fence { nullptr }; // set after the upload in the uploading context; none where the driver has no sync objects
+    size_t width { 0 };
+    size_t height { 0 };
+};
 
 struct opengl_texture : public ITexture {
     static DDSURFACEDESC2 deserialize_ddsd(std::istream&);
@@ -93,6 +103,10 @@ struct opengl_texture : public ITexture {
 
     virtual void make_from_memory(size_t width, size_t height, const uint8_t *data) override;
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
+	// the image goes into a texture of its own, and the drawing thread swaps it in after the gpu has it (commit_thread_upload).
+	// the texture drawn from is never written by the uploading thread
+	void upload_from_thread(size_t width, size_t height, const uint8_t *data) override;
+	bool commit_thread_upload() override;
 
 // members
     static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
@@ -110,6 +124,9 @@ struct opengl_texture : public ITexture {
     static GLint m_activeunit;
     // set by invalidate_unit_cache(), from the python upload thread too; the units themselves are touched only by the drawing thread
     static std::atomic<bool> m_unitcachestale;
+
+    std::mutex m_threaduploadmutex;
+    std::optional<texture_thread_upload> m_threadupload; // guarded by m_threaduploadmutex
 
 public:
 // methods
