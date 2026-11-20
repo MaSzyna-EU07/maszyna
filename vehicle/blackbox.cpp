@@ -205,6 +205,7 @@ void writer::cab(cab_sample const &Sample) {
 	out.f32(Sample.clutch);
 	out.f32(Sample.converter_fill);
 	out.f32(Sample.consist_brake_cylinder);
+	out.f32(Sample.wheel_speed_kmh);
 	emit(record::cab);
 }
 

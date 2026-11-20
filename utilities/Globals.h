@@ -119,7 +119,9 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
-    bool BlackBox{ true }; // with the physics logs on, the black box of the session is written as well (blackbox_doc.md)
+    // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
+    // never, and with no entry it is written along with the physics logs
+    std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -231,6 +233,16 @@ struct global_settings {
     int audio_max_sources = 30;
     std::string AudioRenderer;
     bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
+    // OpenAL Soft device and mixing options; the defaults leave the choice to the library, as before they existed
+    std::string AudioOutputMode{ "auto" }; // sound.outputmode: auto, mono, stereo, stereo-basic, uhj, headphones, quad, 5.1, 6.1, 7.1
+    std::string AudioHrtf{ "auto" }; // sound.hrtf: auto, on, off
+    std::string AudioHrtfProfile; // sound.hrtf.profile: name of the HRTF data set, empty for the library's choice
+    std::string AudioResampler; // sound.resampler: name of the resampler, empty for the library's default
+    std::string AudioLimiter{ "auto" }; // sound.limiter: auto, on, off
+    int AudioFrequency{ 0 }; // sound.frequency: mixing rate in Hz, 0 for the device's
+    float AudioDoppler{ 0.25f }; // sound.doppler: strength of the Doppler effect
+    bool AudioLowpass{ false }; // sound.efx.lowpass: soundproofing also muffles the high frequencies
+    float AudioAirAbsorption{ 0.f }; // sound.efx.airabsorption: 0-10, high frequencies fade with distance
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };
@@ -437,6 +449,7 @@ struct global_settings {
 	void ConfigParse(cParser &parser, config_source Source = config_source::ini);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
 	bool ConfigParseAudio(cParser& Parser, const std::string& token);
+	bool ConfigParseAudioDevice(cParser& Parser, const std::string& token);
 	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
 	bool ConfigParseInput(cParser& Parser, const std::string& token);
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);

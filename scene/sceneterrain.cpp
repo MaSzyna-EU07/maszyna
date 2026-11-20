@@ -455,7 +455,7 @@ bool terrain_file::write(std::string const &Text, std::string const &Binaryfile,
 					Message = "node of type \"" + nodedata.type + "\" (line " + std::to_string(input.Line()) + ") can't be a part of binary terrain";
 					return false;
 				}
-				auto shape{shape_node().import(input, nodedata)};
+				auto shape{shape_node().import_from(input, nodedata)};
 				// the shapes are all sent to the section cells, which groups them the way it'd be done for translucent geometry.
 				// whether they can be merged into section-wide pieces instead is decided when the file is loaded, see the layout notes
 				shape.m_data.translucent = true;
@@ -799,7 +799,7 @@ bool read_text_triangles(std::string const &Text, terrain_reference const &Refer
 			input >> nodedata.range_max >> nodedata.range_min >> nodedata.name >> nodedata.type;
 			if (nodedata.type == "triangles" || nodedata.type == "triangle_strip" || nodedata.type == "triangle_fan")
 			{
-				auto const shape{shape_node().import(input, nodedata)};
+				auto const shape{shape_node().import_from(input, nodedata)};
 				auto const &data{shape.data()};
 				auto const *material{GfxRenderer->Material(data.material)};
 				auto const name{material != nullptr ? material->GetName() : std::string{}};

@@ -91,7 +91,7 @@ class sweep_node : public scene::basic_node
 
 	explicit sweep_node(scene::node_data const &Nodedata);
 
-	void import(cParser &Input, glm::dvec3 const &Offset);
+	void import_from(cParser &Input, glm::dvec3 const &Offset);
 	void define(state const &State);
 	state const &definition() const
 	{
