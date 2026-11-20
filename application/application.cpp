@@ -429,7 +429,11 @@ int eu07_application::init(int Argc, char *Argv[])
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
-			ErrorLog("Failed to run crash gui!");
+			// above 0 the player closed the window, which is no error
+			if (result < 0)
+				ErrorLog("Failed to run crash gui!");
+			else
+				WriteLog("Crash report window closed, closing");
 			return result;
 		}
 	}

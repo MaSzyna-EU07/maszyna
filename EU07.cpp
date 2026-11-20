@@ -25,6 +25,8 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "utilities/physicslog.h"
 #include <cstdlib>
 #include <exception>
+#include <new>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -229,8 +231,8 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		// stays below 0 when init() throws, so a start that ends with an exception counts as failed too
-		int initresult{-1};
+		// below 0 when the start failed (see eu07_application::init())
+		int initresult{0};
 		try
 		{
 			initresult = Application.init(argc, argv);
@@ -240,16 +242,29 @@ int main(int argc, char *argv[])
 				Application.exit();
 			}
 		}
+		// an exception that ends the simulator is a crash, whether in the start or later: it says what it was in the
+		// log and ends with an error code
 		catch (std::bad_alloc const &Error)
 		{
 			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
 			std::string msg = "Simulator crash occured :(\n";
 			msg += Error.what();
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+			exitcode = 1;
+		}
+#else
+		// elsewhere one not caught here ends the simulator through std::terminate, with no word in the log. on
+		// Windows it is left to CrashHandler, whose dump shows where it was thrown
+		catch (std::exception const &Error)
+		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #endif
 		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
