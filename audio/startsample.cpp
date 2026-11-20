@@ -22,7 +22,7 @@ int start_sample( float const Start, int const Buffersize ) {
      || false == ( Start > 0.f ) ) { // also a NaN
         return 0;
     }
-    return std::min( static_cast<int>( std::min( Start, 1.f ) * samples ), samples - 1 );
+    return std::min( static_cast<int>( std::min( Start, 1.f ) * static_cast<float>( samples ) ), samples - 1 );
 }
 
 } // audio
