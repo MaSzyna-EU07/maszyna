@@ -21,8 +21,10 @@ http://mozilla.org/MPL/2.0/.
 #include "world/TractionPower.h"
 #include "vehicle/Camera.h"
 #include "world/mtable.h"
+#include "world/stationnames.h"
 #include "vehicle/Train.h"
 #include "vehicle/Driver.h"
+#include "vehicle/drivingaid.h"
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
 #include "model/Model3d.h"
@@ -76,6 +78,13 @@ drivingaid_panel::update() {
     auto const *mover = controlled->MoverParameters;
     auto const *vehicledriver = controlled->Mechanik;
     auto const *owner = controlled->ctOwner != nullptr ? controlled->ctOwner : controlled->Mechanik;
+    // the numbers of the throttle and brakes lines, with the controls of the cab the driver is in
+    auto const readout { drivingaid::compute( drivingaid::from_movers(
+        *mover,
+        *vehicledriver->Controlling(),
+        drivingaid::cab_controls {
+            train->ggLocalBrake.SubModel != nullptr,
+            train->ggJointCtrl.SubModel != nullptr } ) ) };
 
     { // throttle, velocity, speed limits and grade
         std::string expandedtext;
@@ -116,8 +125,8 @@ drivingaid_panel::update() {
         std::snprintf(
             m_buffer.data(), m_buffer.size(),
             STR_C("Throttle: %3d+%d %c%s"),
-            mover->EIMCtrlType > 0 ? std::max(0, static_cast<int>(100.4 * mover->eimic_real)) : vehicledriver->Controlling()->MainCtrlPos,
-            mover->EIMCtrlType > 0 ? vehicledriver->Controlling()->MainCtrlPos : vehicledriver->Controlling()->ScndCtrlPos,
+            readout.throttle_first,
+            readout.throttle_second,
             mover->SpeedCtrlUnit.IsActive ? 'T' :
 		              mover->DirActive > 0          ? 'D' :
 		              mover->DirActive < 0          ? 'R' :
@@ -137,16 +146,32 @@ drivingaid_panel::update() {
                 mover->PipePress * 100 );
             expandedtext = m_buffer.data();
         }
-        auto const basicbraking { mover->fBrakeCtrlPos };
-        auto const eimicbraking { std::max( 0.0, -100.0 * mover->eimic_real ) };
-        std::snprintf(
-            m_buffer.data(), m_buffer.size(),
-            STR_C("Brakes: %5.1f+%-2.0f%c%s"),
-//            ( mover->EIMCtrlType == 0 ? basicbraking : mover->EIMCtrlType == 3 ? ( mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking ) : eimicbraking ),
-            mover->UniCtrlIntegratedBrakeCtrl ? eimicbraking : basicbraking,
-            mover->LocalBrakePosA * LocalBrakePosNo,
-            mover->SlippingWheels ? '!' : ' ',
-            expandedtext.c_str() );
+        if( readout.ed_percent ) {
+            // the ED braking demand, ahead of the expanded data (eu07/maszyna#558)
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C(" ED brake: %d%%%%"),
+                *readout.ed_percent );
+            expandedtext.insert( 0, m_buffer.data() );
+        }
+        if( readout.show_local_brake ) {
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Brakes: %5.1f+%-2.0f%c%s"),
+                readout.brake_first,
+                readout.local_brake,
+                mover->SlippingWheels ? '!' : ' ',
+                expandedtext.c_str() );
+        }
+        else {
+            // the cab has no local brake control: its setting is left out (eu07/maszyna#555)
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Brakes: %5.1f%c%s"),
+                readout.brake_first,
+                mover->SlippingWheels ? '!' : ' ',
+                expandedtext.c_str() );
+        }
 
         text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
     }
@@ -326,9 +351,10 @@ timetable_panel::update() {
 
     // destination
     {
-        auto textline = Bezogonkow( owner->Relation(), true );
+        // the names with the letters their files have, in utf-8 as the user interface takes it
+        auto textline = table.relation_caption();
         if( false == textline.empty() ) {
-            textline += " (" + Bezogonkow( owner->TrainName(), true ) + ")";
+            textline += " (" + data_name_to_utf8( owner->TrainName(), true ) + ")";
         }
         text_lines.emplace_back( textline, Global.UITextColor );
     }
@@ -395,10 +421,9 @@ timetable_panel::update() {
                     vmax += to_string( tableline->vmax, 0 );
                     vmax = vmax.substr( vmax.size() - 3, 3 ); // z wyrównaniem do prawej
                 }
-                auto const station { (
-                    Bezogonkow( tableline->StationName, true )
-                    + "                                  " )
-                    .substr( 0, 34 ) };
+                // the name as the timetable spells it; in utf-8 a letter can take more than one byte, the column is
+                // 34 characters wide
+                auto const station { utf8_fit( timetable::station_caption( tableline->StationLabel ), 34 ) };
                 auto const location { (
                     ( tableline->km > 0.0 ?
                         to_string( tableline->km, 2 ) :
@@ -1140,7 +1165,7 @@ debug_panel::update_section_ai( std::vector<text_line> &Output ) const {
     if( mechanik.VelNext == 0.0
      && mechanik.eSignNext ) {
         // jeśli ma zapamiętany event semafora, nazwa eventu semafora
-        Output.emplace_back( "Current signal: " + Bezogonkow( mechanik.eSignNext->m_name ), Global.UITextColor );
+        Output.emplace_back( "Current signal: " + data_name_to_utf8( mechanik.eSignNext->m_name ), Global.UITextColor );
     }
 
     // distances
@@ -1251,7 +1276,7 @@ debug_panel::update_section_scantable( std::vector<text_line> &Output ) const {
 	do {
 		auto const scanline = mechanik.TableText( i );
 		if( scanline.empty() ) { break; }
-		Output.emplace_back( Bezogonkow( scanline ), Global.UITextColor );
+		Output.emplace_back( data_name_to_utf8( scanline ), Global.UITextColor );
 		++i;
 	} while( i < speedtablesize );
 	if( Output.size() == 1 ) {

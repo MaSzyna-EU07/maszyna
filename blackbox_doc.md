@@ -388,7 +388,7 @@ moved more than 0.5 m or turned more than 0.05 rad.
 |---------|------------------------------------------------------------------------------|
 | `f64`   | t                                                                            |
 | `u8`    | mode: 0 from the cab, 1 an outside view of the user's train, 2 the free camera, 3 the debug camera |
-| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by; 0 in the other modes |
+| `u8`    | the outside view: 0 the front of the train, 1 its rear, 2 a bogie, 3 drive-by, 4 the orbit around a vehicle, 5 the shunting view from above, 6 beside a coupling, 7 trackside; 0 in the other modes |
 | `u32`   | number of the vehicle the camera goes with, 0 for none                       |
 | `dvec3` | position                                                                     |
 | `f32`   | heading [rad] of where it looks, as that of a vehicle: towards (sin, cos) in (x, z) |
