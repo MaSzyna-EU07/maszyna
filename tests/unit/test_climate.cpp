@@ -58,7 +58,8 @@ TEST_CASE("psychrometry: the temperature of the day is lowest about sunrise and 
 	auto const night{psychrometry::diurnal_temperature(-4.f, 6.f, 0.1f)};
 	CHECK(std::abs(evening - night) < 0.3f);
 	CHECK(night > psychrometry::diurnal_temperature(-4.f, 6.f, 3.f));
-	for (float hour = 0.f; hour < 24.f; hour += 0.5f) {
+	for (int half = 0; half < 48; ++half) {
+		auto const hour{0.5f * static_cast<float>(half)};
 		auto const value{psychrometry::diurnal_temperature(-4.f, 6.f, hour)};
 		CHECK(value >= -4.f);
 		CHECK(value <= 6.f);
@@ -84,8 +85,10 @@ TEST_CASE("climate: every month has its kinds of weather, the winter ones in win
 		CHECK(climate::weight(station, month, climate::preset::typical) > 0.f);
 		CHECK(climate::weight(station, month, climate::preset::precipitation) > 0.f);
 		// every number draws a kind which comes in the month
-		for (float random = 0.f; random <= 1.f; random += 0.05f)
+		for (int step = 0; step <= 20; ++step) {
+			auto const random{0.05f * static_cast<float>(step)};
 			CHECK(climate::weight(station, month, climate::pick(station, month, random)) > 0.f);
+		}
 	}
 	CHECK(climate::weight(station, 0, climate::preset::blizzard) > 0.f);
 	CHECK(climate::weight(station, 0, climate::preset::frost) > 0.f);
