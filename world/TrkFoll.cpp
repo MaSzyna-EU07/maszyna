@@ -272,6 +272,11 @@ double TTrackFollower::RailPhase( double const Offset ) const {
     return pCurrentTrack != nullptr ? pCurrentTrack->rail_phase( fCurrentDistance + fDirection * Offset ) : -1.0;
 }
 
+double TTrackFollower::BuckleCurvature( double const Base ) const {
+
+    return pCurrentTrack != nullptr ? pCurrentTrack->buckle_curvature( fCurrentDistance, Base ) : 0.0;
+}
+
 bool TTrackFollower::ComputatePosition()
 { // ustalenie współrzędnych XYZ
     if (pCurrentSegment) // o ile jest tor

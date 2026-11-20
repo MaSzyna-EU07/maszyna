@@ -38,8 +38,8 @@ TTranscripts::Add( std::string const &txt, bool /*backgorund*/ ) {
 
     if( true == txt.empty() ) { return; }
 
-    std::string asciitext{ txt }; win1250_to_ascii( asciitext ); // TODO: launch relevant conversion table based on language
-    cParser parser( asciitext );
+    // the captions are read as their files have them (windows-1250, the newer ones utf-8) and shown with their letters
+    cParser parser( txt );
     while( true == parser.getTokens( 3, false, "[]\n" ) ) {
 
         float begin{ 0.f };
@@ -49,14 +49,14 @@ TTranscripts::Add( std::string const &txt, bool /*backgorund*/ ) {
             >> begin
             >> end
             >> transcript;
-        AddLine( transcript, static_cast<float>(0.10 * begin), static_cast<float>(0.12 * end), false );
+        AddLine( data_text_to_utf8( transcript ), static_cast<float>(0.10 * begin), static_cast<float>(0.12 * end), false );
     }
     // try to handle malformed(?) cases with no show/hide times
     std::string transcript; parser >> transcript;
     while( false == transcript.empty() ) {
 
         //        WriteLog( "Transcript text with no display/hide times: \"" + transcript + "\"" );
-        AddLine( transcript, 0.0, static_cast<float>(0.12 * static_cast<double>(transcript.size())), false );
+        AddLine( data_text_to_utf8( transcript ), 0.0, static_cast<float>(0.12 * static_cast<double>(transcript.size())), false );
         transcript = ""; parser >> transcript;
     }
 }

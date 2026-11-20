@@ -994,8 +994,7 @@ void roadpoint_node::update_spawn(double const Deltatime)
 	auto *vehicle{entry.vehicle};
 	// it comes back the way it was made: whole, at speed, with the driver told to drive on
 	vehicle->bEnabled = true;
-	vehicle->MoverParameters->DamageFlag = 0;
-	vehicle->MoverParameters->EngDmgFlag = 0;
+	vehicle->MoverParameters->repair_damage();
 	vehicle->MoverParameters->V = entry.velocity;
 	vehicle->place_on_track(m_lanes.front(), m_offset + 0.5 * vehicle->MoverParameters->Dim.L, false);
 	if (vehicle->Mechanik != nullptr)

@@ -8,14 +8,19 @@ http://mozilla.org/MPL/2.0/.
 */
 
 // the Lua screens: scripts run by LuaJIT, each screen in a state of its own, with the eu07 table of
-// script_screens_doc.md. the state has no io, os, ffi, debug or require, reads files only through eu07 and below the
-// script's folder, takes no precompiled code, and runs without the JIT compiler, so that the instruction count hook
-// can stop a script stuck in a loop (LuaJIT calls no hooks in compiled code)
+// script_screens_doc.md. the state has no io, os, ffi, debug, require or newproxy, reads files only through eu07 and
+// below the script's folder, takes no precompiled code, and runs without the JIT compiler, so that the instruction
+// count hook can stop a script stuck in a loop (LuaJIT calls no hooks in compiled code). what runs in C without the
+// hook is held to limits of its own: the pattern functions to the steps they may take, what makes large strings and
+// images to the memory of the screen. the game reads the script's table in protected mode, as its metamethods may
+// fail
 
 #include "stdafx.h"
 #include "scripting/scriptscreenprogram.h"
 #include "scripting/scriptscreendrawing.h"
 #include "scripting/scriptscreenkernels.h"
+#include "scripting/scriptscreenrules.h"
+#include "scripting/luasandbox.h"
 
 #include "utilities/Logs.h"
 #include "utilities/dictionary.h"
@@ -27,11 +32,11 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <new>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -43,20 +48,69 @@ namespace
 {
 
 constexpr int hook_interval{1000};
-constexpr char const *image_metatable{"eu07.image"};
-constexpr char const *font_metatable{"eu07.font"};
-constexpr char const *sprite_metatable{"eu07.sprite"};
+// the longest string string.rep makes
+constexpr double max_repeat{1024 * 1024};
+// arrays, to be arguments of collect<>
+constexpr char image_metatable[]{"eu07.image"};
+constexpr char font_metatable[]{"eu07.font"};
+constexpr char sprite_metatable[]{"eu07.sprite"};
 // the address is the key of the program in the registry of its state
 constexpr char program_key{0};
+
+// the memory of a screen: what its Lua heap holds, when the allocator counts it, and the pixels of its images, fonts
+// and sprites, which the objects keep outside the heap
+struct screen_memory
+{
+	std::size_t heap{0};
+	std::size_t objects{0};
+	bool counted{false}; // the state was made with limited_alloc
+	bool enforced{false}; // a call into the script is in progress: the allocator refuses what goes over the limit
+	// what the screen holds when it is checked next (lua_program::over_memory) with a full collection
+	std::size_t collect_at{max_screen_memory};
+};
+
+// the allocator of a screen's state (lua_newstate), which refuses a block that would take the screen over twice
+// max_screen_memory (what it holds, and its garbage between the collections) while a call into the script is in
+// progress: LuaJIT raises "not enough memory" there, in the protected call. the game's own work between the calls isn't
+// refused, as it isn't protected
+void *limited_alloc(void *Data, void *Block, std::size_t Old, std::size_t New)
+{
+	auto &memory{*static_cast<screen_memory *>(Data)};
+	if (Block == nullptr)
+	{
+		Old = 0;
+	}
+	if (New == 0)
+	{
+		std::free(Block);
+		memory.heap -= Old;
+		return nullptr;
+	}
+	if (New > Old && memory.enforced && memory.heap - Old + New + memory.objects > 2 * max_screen_memory)
+	{
+		return nullptr;
+	}
+	auto *result{std::realloc(Block, New)};
+	if (result != nullptr)
+	{
+		memory.heap = memory.heap - Old + New;
+	}
+	return result;
+}
 
 class lua_program final : public program
 {
   public:
-	lua_program(std::string const &Script, script_screen_kind const Kind) : kind{Kind}, script{Script}, folder{substr_path(Script)} {}
+	lua_program(std::string const &Script, script_screen_kind const Kind)
+	    : kind{Kind}, script{Script}, folder{substr_path(Script)}, output{std::format("Lua screen \"{}\"", Script)}
+	{
+	}
 	~lua_program() override
 	{
 		if (m_state != nullptr)
 		{
+			// the finalizers lua_close runs aren't counted: the budget of the last call may be spent
+			lua_sethook(m_state, nullptr, 0, 0);
 			lua_close(m_state);
 		}
 	}
@@ -71,7 +125,15 @@ class lua_program final : public program
 	std::string const folder;
 	render_call *call{nullptr}; // the refresh in progress
 	bool commands_ignored{false}; // a screen outside the cab tried to send a command, and it was logged
+	output_limits output;
 	std::int64_t budget{0}; // instructions left to the call in progress
+	char const *stopped{nullptr}; // why the call in progress is being stopped: the hook raises it at every instruction
+	screen_memory memory;
+
+	// true when the screen would hold more than max_screen_memory with Adding bytes more. checked with a full collection
+	// once it has made a quarter of the limit since the last one, so a screen near its limit isn't collected over and
+	// over
+	bool over_memory(lua_State *L, std::size_t Adding);
 
   private:
 	// calls what's on the stack, with the instruction limit. logs a failure
@@ -92,6 +154,24 @@ lua_program *program_of(lua_State *L)
 	return self;
 }
 
+bool lua_program::over_memory(lua_State *L, std::size_t const Adding)
+{
+	auto const used{[this, L] {
+		auto const heap{memory.counted ? memory.heap
+		                               : static_cast<std::size_t>(lua_gc(L, LUA_GCCOUNT, 0)) * 1024 + static_cast<std::size_t>(lua_gc(L, LUA_GCCOUNTB, 0))};
+		return heap + memory.objects;
+	}};
+	if (used() + Adding <= memory.collect_at)
+	{
+		return false;
+	}
+	// what is garbage doesn't count
+	lua_gc(L, LUA_GCCOLLECT, 0);
+	auto const held{used()};
+	memory.collect_at = std::max(max_screen_memory, held + max_screen_memory / 4);
+	return held + Adding > max_screen_memory;
+}
+
 void count_hook(lua_State *L, lua_Debug * /*Debug*/)
 {
 	auto *self{program_of(L)};
@@ -99,31 +179,61 @@ void count_hook(lua_State *L, lua_Debug * /*Debug*/)
 	{
 		return;
 	}
-	self->budget -= hook_interval;
-	if (self->budget < 0)
+	if (self->stopped == nullptr)
 	{
-		luaL_error(L, "instruction limit exceeded");
+		self->budget -= hook_interval;
+		if (self->budget < 0)
+		{
+			self->stopped = "instruction limit exceeded";
+		}
+		else if (self->over_memory(L, 0))
+		{
+			// what the allocator doesn't refuse (where the screen has none of its own) is caught here
+			self->stopped = "memory limit exceeded";
+		}
+	}
+	if (self->stopped != nullptr)
+	{
+		// from now on the hook runs at every instruction, and raises the error again. a script that catches it (pcall,
+		// xpcall, coroutine.resume) gets it again at its next instruction, so the error comes out of every level of the
+		// script in turn, and the call ends. run() sets the interval back for the next call. the hook is the state's,
+		// shared by its coroutines
+		lua_sethook(L, count_hook, LUA_MASKCOUNT, 1);
+		luaL_error(L, "%s", self->stopped);
+	}
+}
+
+// raises a Lua error when the screen can't take Bytes more: called before an object of the api is made
+void reserve_memory(lua_State *L, std::size_t const Bytes)
+{
+	if (auto *self{program_of(L)}; self != nullptr && self->over_memory(L, Bytes))
+	{
+		luaL_error(L, "memory limit exceeded (%d MB)", static_cast<int>(max_screen_memory / (1024 * 1024)));
 	}
 }
 
 // objects of the api -------------------------------------------------------------------------------------------------
 
+// where the userdata of an object keeps the bytes it counts in the screen's memory, after the object
+template <typename Type_> constexpr std::size_t charge_offset{(sizeof(Type_) + alignof(std::size_t) - 1) / alignof(std::size_t) * alignof(std::size_t)};
+
 // puts the object in a new userdata with the metatable, left on the stack: an rvalue is moved in, an lvalue copied.
-// what's stored is the plain type (no reference, no const), the one collect<> and check_object<> are given
-template <typename Type_> std::remove_cvref_t<Type_> *push_object(lua_State *L, Type_ &&Object, char const *Metatable)
+// what's stored is the plain type (no reference, no const), the one collect<> and check_object<> are given. Bytes: what
+// the object holds outside the heap (its pixels), counted in the screen's memory until it is collected, and checked
+// with reserve_memory() before the object was made
+template <typename Type_> std::remove_cvref_t<Type_> *push_object(lua_State *L, Type_ &&Object, char const *Metatable, std::size_t const Bytes)
 {
 	using object_type = std::remove_cvref_t<Type_>;
-	auto *memory{lua_newuserdata(L, sizeof(object_type))};
+	auto *memory{static_cast<char *>(lua_newuserdata(L, charge_offset<object_type> + sizeof(std::size_t)))};
 	auto *object{new (memory) object_type(std::forward<Type_>(Object))};
+	std::memcpy(memory + charge_offset<object_type>, &Bytes, sizeof(Bytes));
+	if (auto *self{program_of(L)}; self != nullptr)
+	{
+		self->memory.objects += Bytes;
+	}
 	luaL_getmetatable(L, Metatable);
 	lua_setmetatable(L, -2);
 	return object;
-}
-
-template <typename Type_> int collect(lua_State *L)
-{
-	static_cast<Type_ *>(lua_touserdata(L, 1))->~Type_();
-	return 0;
 }
 
 // the object at the index when it has the metatable, otherwise nullptr
@@ -138,6 +248,25 @@ template <typename Type_> Type_ *test_object(lua_State *L, int const Index, char
 	auto const matches{lua_rawequal(L, -1, -2) != 0};
 	lua_pop(L, 2);
 	return matches ? static_cast<Type_ *>(object) : nullptr;
+}
+
+// __gc. the metatables are locked (make_metatable), so only the collector calls it; all the same it destroys only an
+// object of its own type, and once: the object loses its metatable, which its methods check for
+template <typename Type_, char const *Metatable_> int collect(lua_State *L)
+{
+	if (auto *object{test_object<Type_>(L, 1, Metatable_)}; object != nullptr)
+	{
+		std::size_t bytes{0};
+		std::memcpy(&bytes, reinterpret_cast<char const *>(object) + charge_offset<Type_>, sizeof(bytes));
+		object->~Type_();
+		lua_pushnil(L);
+		lua_setmetatable(L, 1);
+		if (auto *self{program_of(L)}; self != nullptr)
+		{
+			self->memory.objects -= std::min(bytes, self->memory.objects);
+		}
+	}
+	return 0;
 }
 
 template <typename Type_> Type_ &check_object(lua_State *L, int const Index, char const *Metatable)
@@ -197,6 +326,28 @@ struct lua_image
 		return result;
 	}
 };
+
+// the pixels an image holds: as drawn, and as its post-processing leaves it
+std::size_t image_bytes(int const Width, int const Height, int const Finalwidth, int const Finalheight)
+{
+	auto const drawn{static_cast<std::size_t>(Width) * static_cast<std::size_t>(Height)};
+	auto const done{Width == Finalwidth && Height == Finalheight ? 0 : static_cast<std::size_t>(Finalwidth) * static_cast<std::size_t>(Finalheight)};
+	return (drawn + done) * 4;
+}
+
+std::size_t image_bytes(lua_image const &Image)
+{
+	return image_bytes(Image.drawn.width(), Image.drawn.height(), Image.width(), Image.height());
+}
+
+// a new image, Image a step further, counted in the screen's memory
+void push_image_then(lua_State *L, lua_image const &Image, post_step const &Step)
+{
+	reserve_memory(L, image_bytes(Image.drawn.width(), Image.drawn.height(), width_after(Step, Image.width()), height_after(Step, Image.height())));
+	auto next{Image.then(Step)};
+	auto const bytes{image_bytes(next)};
+	push_object(L, std::move(next), image_metatable, bytes);
+}
 
 lua_image &check_lua_image(lua_State *L, int const Index)
 {
@@ -262,6 +413,12 @@ std::optional<decoded_image> read_png(std::string const &Folder, std::string_vie
 	int width{0};
 	int height{0};
 	int channels{0};
+	// the size first: a small file may declare an image of gigabytes
+	if (0 == stbi_info_from_memory(reinterpret_cast<stbi_uc const *>(file->data()), static_cast<int>(file->size()), &width, &height, &channels) ||
+	    false == valid_image_side(width) || false == valid_image_side(height))
+	{
+		return std::nullopt;
+	}
 	// the texture loader turns every image bottom row first, for all threads (model/Texture.cpp): fonts and sprites are
 	// read top row first, as led_util reads them
 	stbi_set_flip_vertically_on_load_thread(0);
@@ -285,7 +442,9 @@ int api_image(lua_State *L)
 	luaL_argcheck(L, valid_image_side(width), 1, "between 1 and 4096");
 	luaL_argcheck(L, valid_image_side(height), 2, "between 1 and 4096");
 	auto const color{lua_isnoneornil(L, 3) ? rgb{0, 0, 0} : check_color(L, 3)};
-	push_object(L, lua_image{canvas{width, height, color}, {}}, image_metatable);
+	auto const bytes{image_bytes(width, height, width, height)};
+	reserve_memory(L, bytes);
+	push_object(L, lua_image{canvas{width, height, color}, {}}, image_metatable, bytes);
 	return 1;
 }
 
@@ -300,9 +459,12 @@ int api_font(lua_State *L)
 		auto const description{read_screen_file(self->folder, std::string{path} + ".txt")};
 		if (image.has_value() && description.has_value())
 		{
+			// the glyphs keep a bit of each pixel; a byte is counted
+			auto const bytes{static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height)};
+			reserve_memory(L, bytes);
 			if (auto font{bitmap_font::parse(image->pixels, image->width, image->height, *description)}; font.has_value())
 			{
-				push_object(L, std::move(*font), font_metatable);
+				push_object(L, std::move(*font), font_metatable, bytes);
 				loaded = true;
 			}
 		}
@@ -323,7 +485,9 @@ int api_sprite(lua_State *L)
 	{
 		if (auto const image{read_png(self->folder, std::string{path} + ".png")}; image.has_value())
 		{
-			push_object(L, bitmap_font::sprite(image->pixels, image->width, image->height), sprite_metatable);
+			auto const bytes{static_cast<std::size_t>(image->width) * static_cast<std::size_t>(image->height)};
+			reserve_memory(L, bytes);
+			push_object(L, bitmap_font::sprite(image->pixels, image->width, image->height), sprite_metatable, bytes);
 			loaded = true;
 		}
 	}
@@ -362,9 +526,13 @@ int api_log(lua_State *L)
 	{
 		lua_concat(L, count * 2 - 1);
 	}
-	auto const *self{program_of(L)};
-	auto const *text{lua_tostring(L, -1)};
-	WriteLog(std::format("Lua screen \"{}\": {}", self->script, text != nullptr ? text : ""));
+	auto *self{program_of(L)};
+	std::size_t length{0};
+	auto const *text{lua_tolstring(L, -1, &length)};
+	if (auto const line{self->output.take_log(text != nullptr ? std::string_view{text, length} : std::string_view{})}; line.has_value())
+	{
+		WriteLog(*line);
+	}
 	return 0;
 }
 
@@ -388,7 +556,10 @@ int api_command(lua_State *L)
 		}
 		return 0;
 	}
-	self->call->commands.emplace_back(std::string{name}, param1, param2, self->call->vehicle);
+	if (self->output.take_command(*self->call, name))
+	{
+		self->call->commands.emplace_back(std::string{name}, param1, param2, self->call->vehicle);
+	}
 	return 0;
 }
 
@@ -411,12 +582,7 @@ int api_read_file(lua_State *L)
 // loads a script as text: precompiled code is refused. leaves the chunk, or an error message, on the stack
 bool load_chunk(lua_State *L, std::string_view const Code, std::string const &Name)
 {
-	if (false == Code.empty() && Code.front() == '\x1b')
-	{
-		lua_pushfstring(L, "%s: precompiled scripts aren't loaded", Name.c_str());
-		return false;
-	}
-	return 0 == luaL_loadbufferx(L, Code.data(), Code.size(), ("@" + Name).c_str(), "t");
+	return lua_sandbox::load_text_chunk(L, Code, Name);
 }
 
 // eu07.include(path): runs another script below the script's folder and returns what it returns
@@ -566,7 +732,7 @@ int image_led_post(lua_State *L)
 	post_step step;
 	step.type = post_step::kind::led;
 	step.bloom = bloom;
-	push_object(L, image.then(step), image_metatable);
+	push_image_then(L, image, step);
 	return 1;
 }
 
@@ -582,14 +748,16 @@ int image_resize(lua_State *L)
 	step.type = post_step::kind::resize;
 	step.width = width;
 	step.height = height;
-	push_object(L, image.then(step), image_metatable);
+	push_image_then(L, image, step);
 	return 1;
 }
 
 int image_copy(lua_State *L)
 {
 	auto const &image{check_lua_image(L, 1)};
-	push_object(L, lua_image{image}, image_metatable);
+	auto const bytes{image_bytes(image)};
+	reserve_memory(L, bytes);
+	push_object(L, lua_image{image}, image_metatable, bytes);
 	return 1;
 }
 
@@ -663,6 +831,226 @@ constexpr std::array api_functions{
     luaL_Reg{nullptr, nullptr},
 };
 
+// string.rep, which makes no string longer than max_repeat. a separator (a third argument, where LuaJIT takes one)
+// is counted as well
+int api_repeat(lua_State *L)
+{
+	std::size_t length{0};
+	luaL_checklstring(L, 1, &length);
+	auto const count{luaL_checknumber(L, 2)};
+	std::size_t separator{0};
+	luaL_optlstring(L, 3, "", &separator);
+	// as a double: no overflow for any count, and a count of NaN fails both comparisons
+	if (false == (count <= 0) && false == (static_cast<double>(length) * count + static_cast<double>(separator) * (count - 1) <= max_repeat))
+	{
+		return luaL_error(L, "string.rep: the result would be over %d bytes", static_cast<int>(max_repeat));
+	}
+	lua_pushvalue(L, lua_upvalueindex(1));
+	lua_insert(L, 1);
+	lua_call(L, lua_gettop(L) - 1, 1);
+	return 1;
+}
+
+// the functions of the libraries that make a string in one call, around the library's own (the upvalue): refused when
+// the result may be over the memory of a screen. what they make otherwise is counted with the rest of the heap
+int too_large(lua_State *L, char const *Function)
+{
+	return luaL_error(L, "%s: the result may be over the memory of a screen (%d MB)", Function, static_cast<int>(max_screen_memory / (1024 * 1024)));
+}
+
+// calls the library's own function, the upvalue, with the arguments, and returns what it returns
+int call_library(lua_State *L)
+{
+	lua_pushvalue(L, lua_upvalueindex(1));
+	lua_insert(L, 1);
+	lua_call(L, lua_gettop(L) - 1, LUA_MULTRET);
+	return lua_gettop(L);
+}
+
+// string.format: no longer than the format and its arguments, each string as %q writes it (a character as up to 4,
+// "\0" as "\000"), anything else in at most 512 characters
+int api_format(lua_State *L)
+{
+	std::size_t length{0};
+	luaL_checklstring(L, 1, &length);
+	auto total{static_cast<double>(length)};
+	for (int idx = 2; idx <= lua_gettop(L); ++idx)
+	{
+		total += lua_type(L, idx) == LUA_TSTRING ? 4.0 * static_cast<double>(lua_objlen(L, idx)) : 512.0;
+	}
+	if (total > static_cast<double>(max_screen_memory))
+	{
+		return too_large(L, "string.format");
+	}
+	return call_library(L);
+}
+
+// table.concat: the items and the separators between them. the items are read as the library reads them, up to the
+// first one that isn't a string or a number, on which the library raises its error
+int api_concat(lua_State *L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+	std::size_t separator{0};
+	luaL_optlstring(L, 2, "", &separator);
+	auto const first{luaL_optinteger(L, 3, 1)};
+	auto const last{lua_isnoneornil(L, 4) ? static_cast<lua_Integer>(lua_objlen(L, 1)) : luaL_checkinteger(L, 4)};
+	auto total{0.0};
+	for (auto idx = first; idx <= last; ++idx)
+	{
+		lua_rawgeti(L, 1, static_cast<int>(idx));
+		auto const type{lua_type(L, -1)};
+		// a number in at most 32 characters
+		total += (type == LUA_TSTRING ? static_cast<double>(lua_objlen(L, -1)) : 32.0) + (idx > first ? static_cast<double>(separator) : 0.0);
+		lua_pop(L, 1);
+		if (type != LUA_TSTRING && type != LUA_TNUMBER)
+		{
+			break;
+		}
+		if (total > static_cast<double>(max_screen_memory))
+		{
+			return too_large(L, "table.concat");
+		}
+	}
+	return call_library(L);
+}
+
+// the pattern functions, upvalue 2 telling which
+enum class pattern_function
+{
+	find,
+	match,
+	gmatch,
+	gsub
+};
+
+constexpr std::array<char const *, 4> pattern_function_names{"string.find", "string.match", "string.gmatch", "string.gsub"};
+
+// the longest text a replacement of gsub puts in place of the matches: a string (or a number) as it is, with each %0-%9
+// as long as a match, a table by its longest value. nothing when it can't be told (a function, a table with a
+// metatable): what those give is made in Lua, under the hook
+std::optional<double> replacement_length(lua_State *L, int const Index, double const Subject, double const Matches)
+{
+	if (lua_type(L, Index) == LUA_TSTRING || lua_type(L, Index) == LUA_TNUMBER)
+	{
+		std::size_t length{0};
+		auto const *text{lua_tolstring(L, Index, &length)};
+		auto const captures{static_cast<double>(std::count(text, text + length, '%'))};
+		// the matches don't overlap: a capture of each takes at most the subject; a position capture is a number
+		return Matches * static_cast<double>(length) + captures * (Subject + 24.0 * Matches);
+	}
+	if (lua_type(L, Index) == LUA_TTABLE)
+	{
+		if (lua_getmetatable(L, Index) != 0)
+		{
+			// pushed: off the stack again, or the library gets it as the 4th argument
+			lua_pop(L, 1);
+			return std::nullopt;
+		}
+		auto longest{0.0};
+		lua_pushnil(L);
+		while (lua_next(L, Index) != 0)
+		{
+			longest = std::max(longest, lua_type(L, -1) == LUA_TSTRING ? static_cast<double>(lua_objlen(L, -1)) : 32.0);
+			lua_pop(L, 1);
+		}
+		return Matches * longest;
+	}
+	return std::nullopt;
+}
+
+// string.find, match, gmatch and gsub, refused for a pattern that may take too long on the subject: they run in C,
+// without the instruction hook (see lua_pattern_cost() and max_pattern_cost). gsub with a string or a table is refused
+// as well when its result may be over the memory of a screen
+int api_pattern(lua_State *L)
+{
+	auto const function{static_cast<pattern_function>(lua_tointeger(L, lua_upvalueindex(2)))};
+	auto const *name{pattern_function_names[static_cast<std::size_t>(function)]};
+	std::size_t subject{0};
+	auto const *text{luaL_checklstring(L, 1, &subject)};
+	std::size_t length{0};
+	auto const *pattern{luaL_checklstring(L, 2, &length)};
+	auto const plain{function == pattern_function::find && lua_toboolean(L, 4) != 0};
+	if (lua_pattern_cost(std::string_view{pattern, length}, std::string_view{text, subject}, plain, function != pattern_function::gmatch) > max_pattern_cost)
+	{
+		return luaL_error(L, "%s: the pattern may take too long on a subject of %d bytes", name, static_cast<int>(subject));
+	}
+	if (function == pattern_function::gsub)
+	{
+		auto const size{static_cast<double>(subject)};
+		auto const matches{lua_isnumber(L, 4) ? std::clamp(static_cast<double>(lua_tonumber(L, 4)), 0.0, size + 1.0) : size + 1.0};
+		if (auto const replaced{replacement_length(L, 3, size, matches)}; replaced.has_value() && size + *replaced > static_cast<double>(max_screen_memory))
+		{
+			return too_large(L, name);
+		}
+	}
+	return call_library(L);
+}
+
+// xpcall(f, handler, ...), in Lua on top of pcall: LuaJIT calls the handler of its own xpcall where the error was
+// raised, before the stack unwinds, which for the error of the instruction hook is while the hook still runs, when no
+// hook is called, so a handler that loops would never be stopped. here the handler is called once the error has left
+// f, under pcall as well, and a script has no debug library to look at the stack with. made in Lua, a coroutine yields
+// across it as across pcall
+constexpr std::string_view xpcall_source{R"lua(
+local pcall, select, error = pcall, select, error
+local function finish(handler, ok, ...)
+	if ok then
+		return true, ...
+	end
+	local _, handled = pcall(handler, (...))
+	return false, handled
+end
+return function(...)
+	if select("#", ...) < 2 then
+		error("bad argument #2 to 'xpcall' (value expected)", 2)
+	end
+	local f, handler = ...
+	return finish(handler, pcall(f, select(3, ...)))
+end
+)lua"};
+
+// what the screens get of the libraries in place of the library's own functions, which run in C without the hook:
+// string.rep, string.format and table.concat with a cap on the length of the result, the pattern functions with a cap
+// on the steps they take, and xpcall made of pcall. strings share the string table as their methods
+void limit_libraries(lua_State *L)
+{
+	lua_getglobal(L, LUA_STRLIBNAME);
+	lua_getfield(L, -1, "rep");
+	lua_pushcclosure(L, api_repeat, 1);
+	lua_setfield(L, -2, "rep");
+	lua_getfield(L, -1, "format");
+	lua_pushcclosure(L, api_format, 1);
+	lua_setfield(L, -2, "format");
+	for (std::size_t idx = 0; idx < pattern_function_names.size(); ++idx)
+	{
+		// "string.find": the name in the table is past the dot
+		auto const *name{pattern_function_names[idx] + sizeof("string.") - 1};
+		lua_getfield(L, -1, name);
+		lua_pushinteger(L, static_cast<lua_Integer>(idx));
+		lua_pushcclosure(L, api_pattern, 2);
+		lua_setfield(L, -2, name);
+	}
+	lua_pop(L, 1);
+
+	lua_getglobal(L, LUA_TABLIBNAME);
+	lua_getfield(L, -1, "concat");
+	lua_pushcclosure(L, api_concat, 1);
+	lua_setfield(L, -2, "concat");
+	lua_pop(L, 1);
+
+	if (0 == luaL_loadbuffer(L, xpcall_source.data(), xpcall_source.size(), "=xpcall") && 0 == lua_pcall(L, 0, 1, 0))
+	{
+		lua_setglobal(L, "xpcall");
+	}
+	else
+	{
+		// a script then gets no xpcall rather than the one the hook doesn't reach
+		lua_pop(L, 1);
+		lua_pushnil(L);
+		lua_setglobal(L, "xpcall");
+	}
+}
+
 template <std::size_t Size_> void make_metatable(lua_State *L, char const *Name, std::array<luaL_Reg, Size_> const &Methods, lua_CFunction Collect)
 {
 	luaL_newmetatable(L, Name);
@@ -679,6 +1067,9 @@ template <std::size_t Size_> void make_metatable(lua_State *L, char const *Name,
 	lua_setfield(L, -2, "__index");
 	lua_pushcfunction(L, Collect);
 	lua_setfield(L, -2, "__gc");
+	// getmetatable() of an object gives this instead of the table
+	lua_pushboolean(L, 0);
+	lua_setfield(L, -2, "__metatable");
 	lua_pop(L, 1);
 }
 
@@ -724,30 +1115,12 @@ void push_state(lua_State *L, dictionary_source const &Input)
 	}
 }
 
-void open_library(lua_State *L, lua_CFunction Open, char const *Name)
-{
-	lua_pushcfunction(L, Open);
-	lua_pushstring(L, Name);
-	lua_call(L, 1, 0);
-}
-
 void lua_program::open_libraries()
 {
-	open_library(m_state, luaopen_base, "");
-	open_library(m_state, luaopen_table, LUA_TABLIBNAME);
-	open_library(m_state, luaopen_string, LUA_STRLIBNAME);
-	open_library(m_state, luaopen_math, LUA_MATHLIBNAME);
-	open_library(m_state, luaopen_bit, LUA_BITLIBNAME);
-	// what reaches files or loads code
-	for (auto const *name : {"dofile", "loadfile", "load", "loadstring", "module", "require"})
-	{
-		lua_pushnil(m_state);
-		lua_setglobal(m_state, name);
-	}
-	lua_getglobal(m_state, LUA_STRLIBNAME);
-	lua_pushnil(m_state);
-	lua_setfield(m_state, -2, "dump");
-	lua_pop(m_state, 1);
+	// base, table, string, math and bit, without what reaches files or loads code
+	lua_sandbox::open_safe_libraries(m_state);
+	// what runs in C without the hook is held to limits of its own
+	limit_libraries(m_state);
 }
 
 void lua_program::register_api()
@@ -757,9 +1130,9 @@ void lua_program::register_api()
 	lua_pushlightuserdata(L, this);
 	lua_rawset(L, LUA_REGISTRYINDEX);
 
-	make_metatable(L, image_metatable, image_methods, collect<lua_image>);
-	make_metatable(L, font_metatable, font_methods, collect<bitmap_font>);
-	make_metatable(L, sprite_metatable, sprite_methods, collect<glyph>);
+	make_metatable(L, image_metatable, image_methods, collect<lua_image, image_metatable>);
+	make_metatable(L, font_metatable, font_methods, collect<bitmap_font, font_metatable>);
+	make_metatable(L, sprite_metatable, sprite_methods, collect<glyph, sprite_metatable>);
 
 	lua_newtable(L);
 	for (auto const &function : api_functions)
@@ -780,19 +1153,83 @@ void lua_program::register_api()
 bool lua_program::run(int const Arguments, int const Results, std::string_view const What)
 {
 	budget = instruction_limit;
-	if (0 == lua_pcall(m_state, Arguments, Results, 0))
+	stopped = nullptr;
+	// the interval, which the hook shortens once the budget of a call is spent
+	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
+	output.start_call();
+	memory.enforced = true;
+	auto const status{lua_pcall(m_state, Arguments, Results, 0)};
+	memory.enforced = false;
+	if (0 == status)
 	{
 		return true;
 	}
 	auto const *message{lua_tostring(m_state, -1)};
 	ErrorLog(std::format("Lua screen \"{}\": {} failed: {}", script, What, message != nullptr ? message : "unknown error"));
 	lua_pop(m_state, 1);
+	// what the call left behind, a heap run over the limit
+	lua_gc(m_state, LUA_GCCOLLECT, 0);
 	return false;
+}
+
+// render and init of the table the script returned (the argument), read in protected mode: the table may have a
+// metatable of the script's, whose __index runs the script and may fail
+int screen_functions(lua_State *L)
+{
+	lua_getfield(L, 1, "render");
+	lua_getfield(L, 1, "init");
+	return 2;
+}
+
+// a refresh: render of the screen's table (its reference, the second argument) called with the state of the refresh
+// (the dictionary_source, the first). in protected mode, the reading of render and the making of the state as well
+int call_render(lua_State *L)
+{
+	auto const &input{*static_cast<dictionary_source const *>(lua_touserdata(L, 1))};
+	auto const screen{static_cast<int>(lua_tointeger(L, 2))};
+	lua_settop(L, 0);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, screen);
+	lua_getfield(L, 1, "render");
+	push_state(L, input);
+	lua_call(L, 1, 1);
+	return 1;
+}
+
+// true when a screen's state can be made with an allocator of its own: LuaJIT 2.0 on x64, and 2.1 on x64 without GC64,
+// refuse one (lua_newstate gives nullptr, and writes so to stderr: 2.0 isn't asked)
+bool custom_allocator_works()
+{
+#if LUAJIT_VERSION_NUM < 20100
+	if constexpr (sizeof(void *) == 8)
+	{
+		return false;
+	}
+#endif
+	static bool const works{[] {
+		screen_memory probe;
+		auto *state{lua_newstate(limited_alloc, &probe)};
+		if (state == nullptr)
+		{
+			return false;
+		}
+		lua_close(state);
+		return true;
+	}()};
+	return works;
 }
 
 bool lua_program::start()
 {
-	m_state = luaL_newstate();
+	// the screen's own allocator counts its memory, where LuaJIT takes one
+	if (custom_allocator_works())
+	{
+		m_state = lua_newstate(limited_alloc, &memory);
+		memory.counted = m_state != nullptr;
+	}
+	if (m_state == nullptr)
+	{
+		m_state = luaL_newstate();
+	}
 	if (m_state == nullptr)
 	{
 		ErrorLog(std::format("Lua screen \"{}\": failed to create the state", script));
@@ -804,14 +1241,13 @@ bool lua_program::start()
 	register_api();
 	lua_sethook(m_state, count_hook, LUA_MASKCOUNT, hook_interval);
 
-	std::ifstream file{script, std::ios::binary};
-	if (false == file.is_open())
+	auto const code{read_regular_file(script)};
+	if (false == code.has_value())
 	{
-		ErrorLog(std::format("Lua screen \"{}\": file not found", script));
+		ErrorLog(std::format("Lua screen \"{}\": file not found, or larger than {} bytes", script, max_screen_file));
 		return false;
 	}
-	std::string const code{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
-	if (false == load_chunk(m_state, code, script))
+	if (false == load_chunk(m_state, *code, script))
 	{
 		ErrorLog(std::format("Lua screen \"{}\": {}", script, lua_tostring(m_state, -1)));
 		return false;
@@ -825,19 +1261,22 @@ bool lua_program::start()
 		ErrorLog(std::format("Lua screen \"{}\": the script has to return a table with a render function", script));
 		return false;
 	}
-	lua_getfield(m_state, -1, "render");
-	auto const renders{lua_isfunction(m_state, -1)};
-	lua_pop(m_state, 1);
-	if (false == renders)
+	lua_pushcfunction(m_state, screen_functions);
+	lua_pushvalue(m_state, -2);
+	if (false == run(1, 2, "reading render and init"))
+	{
+		return false;
+	}
+	// the table, render, init
+	if (false == lua_isfunction(m_state, -2))
 	{
 		ErrorLog(std::format("Lua screen \"{}\": the script has to return a table with a render function", script));
 		return false;
 	}
-	m_screen = luaL_ref(m_state, LUA_REGISTRYINDEX);
-
-	lua_rawgeti(m_state, LUA_REGISTRYINDEX, m_screen);
-	lua_getfield(m_state, -1, "init");
 	lua_remove(m_state, -2);
+	lua_insert(m_state, -2);
+	// init, the table
+	m_screen = luaL_ref(m_state, LUA_REGISTRYINDEX);
 	if (lua_isfunction(m_state, -1))
 	{
 		if (false == run(0, 0, "init"))
@@ -856,11 +1295,10 @@ bool lua_program::start()
 bool lua_program::render(render_call &Call)
 {
 	call = &Call;
-	lua_rawgeti(m_state, LUA_REGISTRYINDEX, m_screen);
-	lua_getfield(m_state, -1, "render");
-	lua_remove(m_state, -2);
-	push_state(m_state, Call.input);
-	auto const rendered{run(1, 1, "render")};
+	lua_pushcfunction(m_state, call_render);
+	lua_pushlightuserdata(m_state, const_cast<dictionary_source *>(&Call.input));
+	lua_pushinteger(m_state, m_screen);
+	auto const rendered{run(2, 1, "render")};
 	call = nullptr;
 	if (false == rendered)
 	{
@@ -901,6 +1339,11 @@ class lua_runtime_host final : public runtime
 };
 
 } // namespace
+
+bool lua_screen_memory_allocator()
+{
+	return custom_allocator_works();
+}
 
 std::unique_ptr<runtime> make_lua_runtime()
 {
