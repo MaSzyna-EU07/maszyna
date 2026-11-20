@@ -249,6 +249,8 @@ class TReservoir
 	/// </summary>
 	/// <param name="Press">Pressure in bar (atm).</param>
 	void CreatePress(double Press);
+	/// <summary>Returns reservoir capacity in liters.</summary>
+	double GetCap() const { return Cap; }
 	/// <summary>
 	/// Returns absolute (atmospheric) pressure inside the reservoir.
 	/// </summary>
