@@ -425,6 +425,7 @@ jobs:
           # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
           sudo apt-get install -y \
             build-essential \
+            ccache \
             libasound2-dev \
             libpulse-dev \
             libpipewire-0.3-dev \
@@ -482,11 +483,34 @@ jobs:
           cmake --version
           python --version
 
+      # The compiler cache (ccache), one per variant. Only the runs on staging and master save it (the step after the
+      # build); a pull request takes the newest one of its variant, and so recompiles just what it changed. A pull
+      # request can read the caches of its base branch and of the default branch, not those of other pull requests.
+      # The compiler version is in the key, so a new GCC of the runner image starts a cache of its own.
+      - name: Compiler cache key
+        id: ccache-key
+        run: echo "gcc=$(g++ -dumpfullversion)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
+          restore-keys: |
+            ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-
+            ccache-linux-${{ matrix.variant.suffix }}-
+
       - name: Configure
+        env:
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+          CCACHE_MAXSIZE: 500M
         run: |
+          ccache --zero-stats
           cmake \
             -S . \
             -B build \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_BUILD_TYPE="${CONFIG_LINUX}" \
             -DWITH_BETTER_RENDERER=OFF \
             -DWITH_ZMQ=OFF \
@@ -496,11 +520,24 @@ jobs:
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once"
 
+      # CCACHE_BASEDIR makes the paths relative, so a cache made on another checkout path still hits
       - name: Build
+        env:
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+          CCACHE_MAXSIZE: 500M
+          CCACHE_BASEDIR: ${{ github.workspace }}
         run: |
           cmake \
             --build build \
             --parallel "$(nproc)"
+          ccache --show-stats
+
+      - name: Save the compiler cache
+        if: ${{ !cancelled() && github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/master') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
 
       # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
       # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
