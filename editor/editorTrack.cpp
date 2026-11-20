@@ -26,6 +26,7 @@ http:
 #include "utilities/utilities.h"
 #include "utilities/parser.h"
 #include "utilities/Logs.h"
+#include "utilities/asciiname.h"
 
 #include <algorithm>
 #include <cmath>
@@ -479,6 +480,12 @@ bool editor_track::name_valid(TTrack const &Track, std::string &Name, std::strin
 	if (Name.find_first_of(" \t\r\n\"';") != std::string::npos || Name.find("//") != std::string::npos)
 	{
 		Reason = "The name can't hold blanks, quotes, semicolons or //";
+		return false;
+	}
+	// the names the editor gives are plain ASCII: the code page of a scenery file decides what other letters turn into
+	if (false == ascii_name::plain(Name))
+	{
+		Reason = "The name can hold ASCII only: no Polish letters or other characters outside of it";
 		return false;
 	}
 	auto *owner{simulation::Paths.find(Name)};

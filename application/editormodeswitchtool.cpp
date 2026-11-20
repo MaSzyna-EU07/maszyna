@@ -255,7 +255,11 @@ void editor_mode::render_switch_ui()
 			if (begin_fields("##switchnamefields", 0.3f))
 			{
 				field_row("Name##switchname");
-				ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name));
+				// the names the editor gives are plain ASCII (editor_track::name_valid): a letter outside of it is dropped as it's typed
+				bool dropped{false};
+				ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CallbackCharFilter, ascii_only_filter, &dropped);
+				if (dropped)
+					tool.status = refused(STR("The name can hold ASCII only: no Polish letters or other characters outside of it"));
 				item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
 				ImGui::EndTable();
 			}
