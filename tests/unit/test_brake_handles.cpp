@@ -265,3 +265,81 @@ TEST_CASE("brake handles: the Knorr St113 EP brake needs the control of the cab 
 	unit.run(0.1);
 	CHECK(ep_brake(unit, 0.0, 10.0) < 0.1);
 }
+
+// the Knorr St113 of the EN57 (TSt113, derived from TH14K1) over a service application, lap and release: its
+// control chamber (GetCP), the brake pipe and the cylinder, against the values the code gave when the test was
+// written, at 1e-9. a change of the handle's code which shouldn't alter anything has to keep them
+namespace {
+
+struct st113_sample {
+	double cp; // the handle's control chamber
+	double pipe; // the brake pipe
+	double cylinder;
+	double ep; // the EP intensity the handle gives
+};
+
+std::vector<st113_sample> st113_run() {
+	test::reseed_random();
+	vehicle real{definition::fiz("en57_v1/6bai")};
+	REQUIRE(real->BrakeHandle == TBrakeHandle::St113);
+	REQUIRE(real->Handle != nullptr);
+	real.hold_main_reservoir(std::max(real->MaxCompressor, 8.0));
+	auto &handle{*real->Handle};
+	std::vector<st113_sample> samples;
+	auto const sample{[&] { samples.push_back({handle.GetCP(), real->PipePress, real->BrakePress, handle.GetEP()}); }};
+	auto const hold{[&](double Position, std::initializer_list<double> Seconds) {
+		real->BrakeLevelSet(Position);
+		for (auto const seconds : Seconds) {
+			real.run(seconds);
+			sample();
+		}
+	}};
+	sample(); // before the first step: the chamber as Init left it
+	hold(handle.GetPos(bh_RP), {1.0, 30.0, 30.0}); // charged in the running position
+	hold(handle.GetPos(bh_MB), {1.0, 5.0}); // the first step of the service brake
+	hold(handle.GetPos(bh_FB), {1.0, 2.0, 5.0, 10.0}); // full service
+	hold(handle.GetPos(bh_NP), {5.0}); // lap
+	hold(handle.GetPos(bh_RP), {1.0, 5.0, 10.0, 30.0}); // released
+	hold(handle.GetPos(bh_EB), {1.0, 5.0}); // emergency
+	hold(handle.GetPos(bh_FS), {1.0, 3.0}); // filling stroke
+	hold(handle.GetPos(bh_RP), {10.0, 60.0}); // released again
+	return samples;
+}
+
+} // namespace
+
+TEST_CASE("brake handles: the pressures of the Knorr St113 of the EN57 over an application and a release") {
+	// {control chamber, brake pipe, cylinder, EP} after each hold of st113_run(), as the code gave them
+	std::vector<st113_sample> const expected{
+	    {0, 3.5, 6, 0},
+	    {4.9984786171489723, 4.9985239614132073, 3.8589217414374479, -1},
+	    {4.9987671731417445, 4.9988125312381184, 9.6079198677899244e-17, -1},
+	    {4.9991258752288621, 4.9991713394295099, 9.6079198677899244e-17, -1},
+	    {4.9533680060376426, 4.9530025463238161, 9.6079198677899244e-17, 0},
+	    {4.8311329228109479, 4.8310446333333399, 9.6079198677899244e-17, 0},
+	    {4.7310321436160523, 4.7325637973526726, 9.6079198677899244e-17, 0},
+	    {4.5872331917154092, 4.5890657213751611, 9.6079198677899244e-17, 0},
+	    {4.1778305377419631, 4.1793406294291415, 1.6739519661380537, 0},
+	    {3.355298669598576, 3.3569433138107754, 2.5006765921012648, 0},
+	    {3.340608574818968, 3.3406062128010463, 2.5006765921012648, 0},
+	    {4.9982940431020717, 4.9983393759288948, 1.805897475684926, -1},
+	    {4.9983349224059745, 4.9983802579817755, 0.096548127644583259, -1},
+	    {4.9984201641741199, 4.9984655050733862, 0.062980447840665657, -1},
+	    {4.9987011353434028, 4.998746490639209, 9.2221356484789066e-17, -1},
+	    {0.005419548331438478, 0.0049542946616295885, 2.0688047473966584, 0},
+	    {1.1051369154140042e-16, 1.1051359148828238e-16, 2.5210994451474482, 0},
+	    {7.9894372542519436, 7.9895176172361353, 1.9107481967960043, 0},
+	    {7.9894891501326404, 7.9895615214846529, 0.36406880055594204, 0},
+	    {6.2299691431411732, 6.2285260180794131, 0.068969473862745739, -1},
+	    {4.9988917107669719, 4.9989370736220264, 1.0102243333979078e-16, -1},
+	};
+	auto const samples{st113_run()};
+	REQUIRE(samples.size() == expected.size());
+	for (std::size_t i = 0; i < samples.size(); ++i) {
+		CAPTURE(i);
+		CHECK(samples[i].cp == doctest::Approx(expected[i].cp).epsilon(1e-9));
+		CHECK(samples[i].pipe == doctest::Approx(expected[i].pipe).epsilon(1e-9));
+		CHECK(samples[i].cylinder == doctest::Approx(expected[i].cylinder).epsilon(1e-9));
+		CHECK(samples[i].ep == doctest::Approx(expected[i].ep).epsilon(1e-9));
+	}
+}

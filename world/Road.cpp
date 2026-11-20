@@ -875,7 +875,7 @@ glm::dvec3 road_node::state::tangent(double const T) const
 road_node::road_node(scene::node_data const &Nodedata) : basic_node(Nodedata) {}
 
 // restores content of the node from provided input stream; reads up to and including the closing 'endroad'
-void road_node::import(cParser &Input, glm::dvec3 const &Offset)
+void road_node::import_from(cParser &Input, glm::dvec3 const &Offset)
 {
 	auto const label{m_name.empty() ? std::string{"unnamed road"} : "road \"" + m_name + "\""};
 
@@ -2307,7 +2307,7 @@ std::vector<glm::dvec3> junction_node::state::outline(std::vector<std::vector<gl
 junction_node::junction_node(scene::node_data const &Nodedata) : basic_node(Nodedata) {}
 
 // restores content of the node from provided input stream; reads up to and including the closing 'endjunction'
-void junction_node::import(cParser &Input, glm::dvec3 const &Offset)
+void junction_node::import_from(cParser &Input, glm::dvec3 const &Offset)
 {
 	auto const label{m_name.empty() ? std::string{"unnamed junction"} : "junction \"" + m_name + "\""};
 
