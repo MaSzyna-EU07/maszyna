@@ -944,23 +944,13 @@ void editor_orthophoto::ground_arrived()
 	}
 }
 
-bool editor_orthophoto::on_ground(tile_key const &Key)
+bool editor_orthophoto::waits_for_ground(tile_key const &Key) const
 {
-	if (!m_cover)
-		return true;
+	// a tile laid out already stays, sampled again when its ground comes (ground_came)
+	if (!m_coming || m_tiles.contains(Key))
+		return false;
 	glm::dvec2 const corner = tile_corner(Key);
-	auto const ground{m_cover(corner - glm::dvec2{tile_size}, corner)};
-	auto const found{m_tiles.find(Key)};
-	if (false == ground.has_value())
-		return found != m_tiles.end(); // the ground still coming: a tile laid out already stays, a new one waits for it
-	if (*ground)
-		return true;
-	if (found != m_tiles.end())
-	{
-		release_tile(found->second);
-		m_tiles.erase(found);
-	}
-	return false;
+	return m_coming(corner - glm::dvec2{tile_size}, corner);
 }
 
 bool editor_orthophoto::ground_came(tile_key const &Key, tile const &Tile) const
@@ -1342,12 +1332,20 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	// the points the ground didn't answer: the ground coming there later (the terrain loaded after the imagery, which comes from the
 	// disk cache at once) has the tile sampled again, rather than left at the heights filled in or guessed now
 	Tile.unanswered.clear();
+	auto const columns{static_cast<std::size_t>(samples)};
 	for (std::size_t index = 0; index < heights.size(); ++index)
-		if (heights[index] == no_height)
-			Tile.unanswered.push_back(static_cast<std::uint16_t>(index));
+	{
+		if (heights[index] != no_height)
+			continue;
+		// in the scene the heights come from the triangles, and a steep spot (a wall, a quarry face) gives none: where the heightmap
+		// terrain answers the point, its ground is there already, and ground_came() would find it again on every chunk that comes
+		if (double y; surface && m_height && m_height(corner.x - static_cast<double>(index % columns) * step, corner.y - static_cast<double>(index / columns) * step, y))
+			continue;
+		Tile.unanswered.push_back(static_cast<std::uint16_t>(index));
+	}
 
 	// holes (places without ground) take the average of their neighbours, spreading inwards
-	std::size_t missing = Tile.unanswered.size();
+	std::size_t missing = std::count(heights.begin(), heights.end(), no_height);
 	if (missing == heights.size())
 	{
 		// no ground at all yet: the heights of the terrain model it waits for, else those of the tiles beside along its edges
@@ -1681,7 +1679,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				}
 				continue;
 			}
-			if (false == on_ground(key))
+			if (waits_for_ground(key))
 				continue;
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))

@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -118,11 +117,10 @@ class editor_orthophoto
 	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
 	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
 	void guess_source(height_query Query) { m_guess = std::move(Query); }
-	// the ground under an XZ rectangle (Min/Max are x,z): true there and in memory, false where there's none and won't be, empty
-	// while some of it is still to come. A tile is asked for and shown only on the ground in memory, none where there's no ground:
-	// laid out before its ground, it would lie at the height of the layer. Without it, everywhere around the camera
-	using cover_query = std::function<std::optional<bool>(glm::dvec2 const &Min, glm::dvec2 const &Max)>;
-	void cover_source(cover_query Query) { m_cover = std::move(Query); }
+	// true while the ground under an XZ rectangle (Min/Max are x,z) is still to come. A new tile there waits for it, rather than
+	// being laid out at the height of the layer; elsewhere it lies on whatever ground there is, or on the guess, as without it
+	using coming_query = std::function<bool(glm::dvec2 const &Min, glm::dvec2 const &Max)>;
+	void coming_source(coming_query Query) { m_coming = std::move(Query); }
 	// the area the imagery is downloaded in, a polygon of PUWG 1992 (easting, northing): its tiles go to the disk cache in the
 	// background, the products the settings ask for, and no tile outside it is asked for around the camera. Empty: no area, the
 	// tiles around the camera as before
@@ -264,8 +262,8 @@ class editor_orthophoto
 	void sample_ground(tile_key const &Key, tile &Tile);
 	// the ground has come under a point of the tile which had none when it was sampled
 	bool ground_came(tile_key const &Key, tile const &Tile) const;
-	// whether the tile is asked for and shown as far as the ground under it goes; a tile where there's no ground is dropped
-	bool on_ground(tile_key const &Key);
+	// a new tile isn't asked for yet: the ground under it is still to come
+	bool waits_for_ground(tile_key const &Key) const;
 	// the height of the ground sampled under a tile beside Own at the point, the tiles with guessed heights left out
 	bool sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const;
 	void build_shape(tile_key const &Key, tile &Tile);
@@ -285,7 +283,7 @@ class editor_orthophoto
 	ground_query m_ground;
 	height_query m_height;
 	height_query m_guess;
-	cover_query m_cover;
+	coming_query m_coming;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles
