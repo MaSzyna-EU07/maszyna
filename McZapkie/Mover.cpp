@@ -900,7 +900,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 			// Ra 2013-12: Niebugocław mówi, że w EZT nie ma potrzeby odcinać kurkiem
 			PantPress = ScndPipePress;
 			// ograniczenie ciśnienia do MaxPress (tylko w pantografach!)
-			PantPress = std::clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
+			PantPress = safe_clamp(ScndPipePress, 0.0, EnginePowerSource.CollectorParameters.MaxPress);
 			PantVolume = (PantPress + 1.0) * 0.1; // objętość, na wypadek odcięcia kurkiem
 		}
 		else
@@ -912,7 +912,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 				              // Ra 2013-12: Niebugocław mówi, że w EZT nabija 1.5 raz wolniej niż jak było 0.005
 				              * (TrainType == dt_EZT ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - (0.1 / PantVolume / 10 - 0.1)) / 0.45;
 			}
-			PantPress = std::clamp(10.0 * PantVolume - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
+			PantPress = safe_clamp(10.0 * PantVolume - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
 		}
 		if (!PantCompFlag && PantVolume > 0.1)
 			PantVolume -= dt * 0.0003 * std::max(1.0, PantPress * 0.5); // nieszczelności: 0.0003=0.3l/s
@@ -3950,7 +3950,7 @@ bool TMoverParameters::ChangeCompressorPreset(int const State, range_t const Not
 
 	auto const initialstate{CompressorListPos};
 
-	CompressorListPos = std::clamp(State, 0, CompressorListPosNo);
+	CompressorListPos = safe_clamp(State, 0, CompressorListPosNo);
 
 	if (Notify != range_t::local)
 	{
@@ -5602,7 +5602,7 @@ double TMoverParameters::CouplerForce(int const End, double dt)
 	if (thiscoupler.CouplingFlag != coupling::faux || initialdistance < 0)
 	{
 
-		thiscoupler.Dist = std::clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
+		thiscoupler.Dist = safe_clamp(newdistance, thiscoupler.has_adapter() ? 0 : -thiscoupler.DmaxB, thiscoupler.DmaxC);
 
 		double BetaAvg = 0;
 		double Fmax = 0;
@@ -5900,7 +5900,7 @@ double TMoverParameters::TractionForce(double dt)
 
 		if (enrot != tmp)
 		{
-			enrot = std::clamp(enrot + dt / dizel_AIM * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
+			enrot = safe_clamp(enrot + dt / dizel_AIM * (enrot < tmp ? 1.0 : -1.0 * dizel_RevolutionsDecreaseRate), // NOTE: revolutions typically drop faster than they rise
 			              0.0, std::max(tmp, enrot));
 			if (std::abs(tmp - enrot) < 0.001)
 			{
@@ -7755,7 +7755,9 @@ double stepped_uc_value(double const Current, double const Ramped, TUniversalCtr
 	{
 		Progress = 0.0;
 	}
-	return safe_clamp(value, Position.MinCtrlVal, Position.MaxCtrlVal);
+	// added after the move to std::clamp: bounds given the other way round are put in order, as master did it
+	auto const [lowest, highest] = std::minmax(Position.MinCtrlVal, Position.MaxCtrlVal);
+	return std::clamp(value, lowest, highest);
 }
 } // namespace
 
@@ -7839,18 +7841,18 @@ void TMoverParameters::CheckEIMIC(double dt)
 			{
 			case 0:
 			case 1:
-				eimic -= std::clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
+				eimic -= safe_clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
 				if (eimic > 0)
 					eimic = 0;
 				break;
 			case 2:
-				eimic -= std::clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
+				eimic -= safe_clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
 				break;
 			case 3:
-				eimic += std::clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
+				eimic += safe_clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
 				break;
 			case 4:
-				eimic += std::clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
+				eimic += safe_clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
 				if (eimic < 0)
 					eimic = 0;
 				break;
@@ -7957,7 +7959,7 @@ void TMoverParameters::CheckEIMIC(double dt)
 			eimic_max = 0.001;
 		}
 	}
-	eimic = std::clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
+	eimic = safe_clamp(eimic, -1.0, eimicpowerenabled ? eimic_max : 0.0);
 }
 
 void TMoverParameters::CheckSpeedCtrl(double dt)
@@ -8015,7 +8017,7 @@ void TMoverParameters::CheckSpeedCtrl(double dt)
 					eimicSpeedCtrlIntegral = 0;
 				}
 				auto const DesiredeimicSpeedCtrl{safe_clamp(eimicSpeedCtrlIntegral + eSCP, -SpeedCtrlUnit.DesiredPower, accfactor)};
-				eimicSpeedCtrl = std::clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
+				eimicSpeedCtrl = safe_clamp(DesiredeimicSpeedCtrl, eimicSpeedCtrl - SpeedCtrlUnit.PowerDownSpeed * dt, eimicSpeedCtrl + SpeedCtrlUnit.PowerUpSpeed * dt);
 				if (Vel < SpeedCtrlUnit.FullPowerVelocity)
 				{
 					eimicSpeedCtrl = std::min(eimicSpeedCtrl, SpeedCtrlUnit.InitialPower);
@@ -8944,7 +8946,7 @@ bool TMoverParameters::AssignLoad(std::string const &Loadname, float const Amoun
 	}
 	LoadTypeChange = LoadType.name != Loadname;
 	LoadType = *loadattributes;
-	LoadAmount = std::clamp(Amount, 0.f, MaxLoad);
+	LoadAmount = safe_clamp(Amount, 0.f, MaxLoad);
 	ComputeMass();
 	return true;
 }
@@ -8989,7 +8991,7 @@ bool TMoverParameters::LoadingDone(double const LSpeed, std::string_view Loadnam
 			{
 				// pusto lub rozładowano żądaną ilość
 				LoadStatus = 4; // skończony rozładunek
-				LoadAmount = std::clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
+				LoadAmount = safe_clamp(LoadAmount, 0.f, MaxLoad); // ładunek nie może być ujemny
 			}
 			if (LoadAmount == 0.f)
 			{
@@ -12853,7 +12855,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	{
 		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
 	}
-	SecuritySystem.MagnetLocation = std::clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
+	SecuritySystem.MagnetLocation = safe_clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
 
 	return OK;
 }
@@ -13255,7 +13257,7 @@ bool TMoverParameters::RunCommand(std::string const &Command, double CValue1, do
 	}
 	else if (Command == "CompressorPreset")
 	{
-		CompressorListPos = std::clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
+		CompressorListPos = safe_clamp(static_cast<int>(CValue1), 0, CompressorListPosNo);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else if (Command == "DoorPermit")

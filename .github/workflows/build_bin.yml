@@ -32,12 +32,26 @@ jobs:
   # running is left to finish; with a build cancelled the publish job of that run is skipped. A push
   # to master gets a group of its own, its commit, so the builds of master are never cancelled.
 
+  # Windows is built twice: with AVX2 (the default of ENABLE_AVX2) and without it, for CPUs older
+  # than Haswell (2013). Each variant has its own concurrency group, or one would cancel the other.
+
   windows:
-    name: Windows x64 / MSVC
+    name: Windows x64 / MSVC / ${{ matrix.variant.name }}
     runs-on: windows-2022
     concurrency:
-      group: ${{ github.workflow }}-windows-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      group: ${{ github.workflow }}-windows-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
       cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: "AVX2"
+            suffix: "avx2"
+            cmake_flags: "-DENABLE_AVX2=ON"
+          - name: "No AVX2"
+            suffix: "noavx2"
+            cmake_flags: "-DENABLE_AVX2=OFF"
 
     steps:
       - name: Checkout repository
@@ -112,11 +126,13 @@ jobs:
           $pythonRoot = Split-Path $pythonExe
 
           Write-Host "Python root: $pythonRoot"
+          Write-Host "Extra CMake flags: ${{ matrix.variant.cmake_flags }}"
 
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
-            "-DPython3_ROOT_DIR=$pythonRoot"
+            "-DPython3_ROOT_DIR=$pythonRoot" `
+            ${{ matrix.variant.cmake_flags }}
 
       - name: Build
         shell: pwsh
@@ -167,7 +183,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
             build/bin/${{ env.CONFIG_WIN }}/
           if-no-files-found: error
@@ -176,7 +192,7 @@ jobs:
       - name: Upload Windows debug symbols
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: maszyna-windows-x64-symbols-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-symbols-${{ matrix.variant.suffix }}-${{ env.CONFIG_WIN }}
           path: |
             build/pdb/${{ env.CONFIG_WIN }}/*.pdb
             build/bin/${{ env.CONFIG_WIN }}/*.map
@@ -189,12 +205,23 @@ jobs:
   # ============================================================
 
   linux:
-    name: Linux x64 / GCC
+    name: Linux x64 / GCC / ${{ matrix.variant.name }}
     runs-on: ubuntu-24.04
-    # see the note above the windows job
+    # see the notes above the windows job: two variants, each with a concurrency group of its own
     concurrency:
-      group: ${{ github.workflow }}-linux-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+      group: ${{ github.workflow }}-linux-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
       cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: "AVX2"
+            suffix: "avx2"
+            cmake_flags: "-DENABLE_AVX2=ON"
+          - name: "No AVX2"
+            suffix: "noavx2"
+            cmake_flags: "-DENABLE_AVX2=OFF"
 
     steps:
       - name: Checkout repository
@@ -221,8 +248,13 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
           sudo apt-get update
 
+          # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
+          # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
           sudo apt-get install -y \
             build-essential \
+            libasound2-dev \
+            libpulse-dev \
+            libpipewire-0.3-dev \
             libgl1-mesa-dev \
             libglew-dev \
             libglfw3-dev \
@@ -249,12 +281,17 @@ jobs:
             https://github.com/kcat/openal-soft.git \
             /tmp/openal-soft
 
+          # the backends are loaded with dlopen at run time (ALSOFT_DLOPEN), so the bundled library needs none of them;
+          # REQUIRE makes a missing header fail the build instead of shipping a library without sound
           cmake \
             -S /tmp/openal-soft \
             -B /tmp/openal-soft/build \
             -DCMAKE_BUILD_TYPE=Release \
             -DALSOFT_EXAMPLES=OFF \
-            -DALSOFT_UTILS=OFF
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_REQUIRE_PIPEWIRE=ON \
+            -DALSOFT_REQUIRE_PULSEAUDIO=ON \
+            -DALSOFT_REQUIRE_ALSA=ON
 
           cmake \
             --build /tmp/openal-soft/build \
@@ -282,6 +319,7 @@ jobs:
             -DWITH_ZMQ=OFF \
             -DWITH_OPENVR=OFF \
             -DUSE_LTO=OFF \
+            ${{ matrix.variant.cmake_flags }} \
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DCMAKE_CXX_FLAGS="-Wno-attributes -fno-inline-functions-called-once"
 
@@ -347,7 +385,7 @@ jobs:
       - name: Upload Linux build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          name: maszyna-linux-x64-${{ matrix.variant.suffix }}-${{ env.CONFIG_LINUX }}
           path: |
             build/bin/
           if-no-files-found: error
@@ -370,29 +408,47 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Download Windows build
+      # the AVX2 build keeps the old name of the download, so the links already handed out still work
+      - name: Download Windows build (AVX2)
         uses: actions/download-artifact@v4
         with:
-          name: maszyna-windows-x64-${{ env.CONFIG_WIN }}
+          name: maszyna-windows-x64-avx2-${{ env.CONFIG_WIN }}
           path: dist/maszyna-windows-x64
 
-      - name: Download Linux build
+      - name: Download Windows build (no AVX2)
         uses: actions/download-artifact@v4
         with:
-          name: maszyna-linux-x64-${{ env.CONFIG_LINUX }}
+          name: maszyna-windows-x64-noavx2-${{ env.CONFIG_WIN }}
+          path: dist/maszyna-windows-x64-noavx2
+
+      - name: Download Linux build (AVX2)
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-linux-x64-avx2-${{ env.CONFIG_LINUX }}
           path: dist/maszyna-linux-x64
+
+      - name: Download Linux build (no AVX2)
+        uses: actions/download-artifact@v4
+        with:
+          name: maszyna-linux-x64-noavx2-${{ env.CONFIG_LINUX }}
+          path: dist/maszyna-linux-x64-noavx2
 
       - name: Pack
         run: |
           cd dist
 
-          find maszyna-linux-x64 -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
-          if [ -d maszyna-linux-x64/linuxpython64/bin ]; then
-            chmod +x maszyna-linux-x64/linuxpython64/bin/*
-          fi
+          # the artifacts lose the executable bit
+          for dir in maszyna-linux-x64 maszyna-linux-x64-noavx2; do
+            find "$dir" -type f -exec sh -c 'file -b "$1" | grep -q "^ELF" && chmod +x "$1"' _ {} \;
+            if [ -d "$dir/linuxpython64/bin" ]; then
+              chmod +x "$dir"/linuxpython64/bin/*
+            fi
+          done
 
           (cd maszyna-windows-x64 && zip -qr9 ../maszyna-windows-x64.zip .)
+          (cd maszyna-windows-x64-noavx2 && zip -qr9 ../maszyna-windows-x64-noavx2.zip .)
           tar -czf maszyna-linux-x64.tar.gz -C maszyna-linux-x64 .
+          tar -czf maszyna-linux-x64-noavx2.tar.gz -C maszyna-linux-x64-noavx2 .
           ls -la
 
       - name: Publish rolling release of the branch
@@ -412,14 +468,18 @@ jobs:
             "" \
             "Download without a GitHub account:" \
             "- Windows: $base/maszyna-windows-x64.zip" \
+            "- Windows, CPUs without AVX2 (older than Haswell, 2013): $base/maszyna-windows-x64-noavx2.zip" \
             "- Linux: $base/maszyna-linux-x64.tar.gz" \
+            "- Linux, CPUs without AVX2: $base/maszyna-linux-x64-noavx2.tar.gz" \
             "" \
             "Unpack over a MaSzyna installation (the game data isn't included). Build log: $RUN_URL")"
 
           gh release delete "$tag" --yes --cleanup-tag || true
           gh release create "$tag" \
             dist/maszyna-windows-x64.zip \
+            dist/maszyna-windows-x64-noavx2.zip \
             dist/maszyna-linux-x64.tar.gz \
+            dist/maszyna-linux-x64-noavx2.tar.gz \
             --target "$SHA" \
             --prerelease \
             --latest=false \
@@ -428,4 +488,6 @@ jobs:
 
           echo "### Public download" >> "$GITHUB_STEP_SUMMARY"
           echo "- Windows: $base/maszyna-windows-x64.zip" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Windows, no AVX2: $base/maszyna-windows-x64-noavx2.zip" >> "$GITHUB_STEP_SUMMARY"
           echo "- Linux: $base/maszyna-linux-x64.tar.gz" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Linux, no AVX2: $base/maszyna-linux-x64-noavx2.tar.gz" >> "$GITHUB_STEP_SUMMARY"

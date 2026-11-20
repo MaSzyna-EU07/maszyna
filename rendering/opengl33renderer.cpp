@@ -2457,6 +2457,8 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 
 		if (GLAD_GL_ARB_multi_bind)
 		{
+			// the cache may have been marked stale by the python upload thread
+			opengl_texture::sync_unit_cache();
 			GLuint lastdiff = 0;
 			size_t i;
 			for (i = 0; i < gl::MAX_TEXTURES; i++)
@@ -2568,6 +2570,11 @@ ITexture const &opengl33_renderer::Texture(texture_handle const Texture) const
 {
 
 	return m_textures.texture(Texture);
+}
+
+void opengl33_renderer::Unload_Texture(texture_handle const Texture)
+{
+	m_textures.unload(Texture);
 }
 
 void opengl33_renderer::Update_AnimModel(TAnimModel *model)
@@ -4333,7 +4340,7 @@ bool opengl33_renderer::Render_cab(TDynamicObject const *Dynamic, float const Li
             auto const luminance { Global.fLuminance * ( Dynamic->fShade > 0.0f ? Dynamic->fShade : 1.0f ) };
             if( Lightlevel > 0.f ) {
                 // crude way to light the cabin, until we have something more complete in place
-                light_ubs.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * std::clamp( 1.25f - (float)luminance, 0.f, 1.f ) );
+                light_ubs.ambient += packed_vec3( ( Dynamic->InteriorLight * Lightlevel ) * static_cast<float>( std::clamp( 1.25 - luminance, 0.0, 1.0 ) ) );
                 light_ubo->update( light_ubs );
             }
 

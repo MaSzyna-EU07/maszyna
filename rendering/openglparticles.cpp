@@ -65,7 +65,9 @@ opengl_particles::update( opengl_camera const &Camera ) {
             vertex.color[ 0 ] = static_cast<std::uint_fast8_t>( particlecolor.r );
             vertex.color[ 1 ] = static_cast<std::uint_fast8_t>( particlecolor.g );
             vertex.color[ 2 ] = static_cast<std::uint_fast8_t>( particlecolor.b );
-            vertex.color[ 3 ] = static_cast<std::uint_fast8_t>( std::clamp( particle.opacity * 255, 0.f, 255.f ) );
+            // as up to 26.05.1, when clamp<std::uint8_t> made the alpha a byte before clamping it: an opacity over 1 wraps
+            // round. through int: the byte the x86-64 compilers gave, without the undefined behaviour of that conversion
+            vertex.color[ 3 ] = static_cast<std::uint8_t>( static_cast<int>( particle.opacity * 255 ) );
 
             auto const offset { glm::vec3{ particle.position - Camera.position() } };
             auto const rotation { glm::angleAxis( particle.rotation, glm::vec3{ 0.f, 0.f, 1.f } ) };

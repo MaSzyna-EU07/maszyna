@@ -9,8 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <istream>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include "winheaders.h"
 #include <string>
 #include "model/ResourceManager.h"
@@ -18,6 +21,14 @@ http://mozilla.org/MPL/2.0/.
 #include "interfaces/ITexture.h"
 
 struct texture_request; // texture data read by a worker thread, with gfx.textures.streaming
+
+// an image uploaded by another thread into a texture of its own, waiting for the drawing thread to put it in place
+struct texture_thread_upload {
+    GLuint id { 0 };
+    GLsync fence { nullptr }; // set after the upload in the uploading context; none where the driver has no sync objects
+    size_t width { 0 };
+    size_t height { 0 };
+};
 
 struct opengl_texture : public ITexture {
     static DDSURFACEDESC2 deserialize_ddsd(std::istream&);
@@ -47,6 +58,13 @@ struct opengl_texture : public ITexture {
         set_components_hint( GLint hint ) override;
     static void
         reset_unit_cache();
+    // marks the unit cache as not to be trusted. safe to call from any thread: the cache itself is
+    // cleared by the thread drawing with it, the next time it binds textures (sync_unit_cache)
+    static void
+        invalidate_unit_cache();
+    // clears the unit cache if a thread marked it as not to be trusted since. called before the cache is read
+    static void
+        sync_unit_cache();
     virtual int
         get_width() const override {
             return data_width; }
@@ -85,6 +103,10 @@ struct opengl_texture : public ITexture {
 
     virtual void make_from_memory(size_t width, size_t height, const uint8_t *data) override;
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
+	// the image goes into a texture of its own, and the drawing thread swaps it in after the gpu has it (commit_thread_upload).
+	// the texture drawn from is never written by the uploading thread
+	void upload_from_thread(size_t width, size_t height, const uint8_t *data) override;
+	bool commit_thread_upload() override;
 
 // members
     static constexpr GLuint invalid_id { std::numeric_limits<GLuint>::max() }; // id value of texture without GL resource
@@ -100,6 +122,11 @@ struct opengl_texture : public ITexture {
     GLenum target = GL_TEXTURE_2D;
     static std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> units;
     static GLint m_activeunit;
+    // set by invalidate_unit_cache(), from the python upload thread too; the units themselves are touched only by the drawing thread
+    static std::atomic<bool> m_unitcachestale;
+
+    std::mutex m_threaduploadmutex;
+    std::optional<texture_thread_upload> m_threadupload; // guarded by m_threaduploadmutex
 
 public:
 // methods
@@ -181,6 +208,10 @@ public:
     // releases gl textures of vehicles not needed nor drawn for a while
     void
         release_unneeded();
+    // takes a texture the scene has never drawn out of both the gfx card and the memory, e.g. the image of a picker scrolled
+    // past, or one read and not made yet; it's read again when it's used. textures the scene draws are left to the resource sweep
+    void
+        unload( texture_handle const Texture );
     // debug performance string
     std::string
         info() const;
