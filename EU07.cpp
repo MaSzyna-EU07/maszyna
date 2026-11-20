@@ -22,7 +22,9 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "simulation/simulationtest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/crashsignals.h"
 #include "utilities/physicslog.h"
+#include "version_info.h"
 #include <cstdlib>
 #include <exception>
 #include <new>
@@ -178,6 +180,8 @@ int main(int argc, char *argv[])
 	SetUnhandledExceptionFilter(CrashHandler);
 #endif
 #endif
+	// on Linux, where no dump is written, the stack of a crash in the log and on the standard error
+	crash_signals::install(VERSION_INFO);
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
