@@ -184,8 +184,12 @@ void editor_mode::brush_line_point()
 	if (false == viewport_click())
 		return;
 	glm::dvec3 at;
-	if (brush_ground(at))
-		m_brush_line.push_back(at);
+	if (false == brush_ground(at))
+		return;
+	// a double-click on the last point gives it twice: one is enough
+	if (false == m_brush_line.empty() && glm::distance(glm::dvec2{at.x, at.z}, glm::dvec2{m_brush_line.back().x, m_brush_line.back().z}) < 0.1)
+		return;
+	m_brush_line.push_back(at);
 }
 
 void editor_mode::brush_line_finish()

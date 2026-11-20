@@ -192,6 +192,40 @@ TEST_CASE("scatter: a line bent back on itself puts no two models on one place")
 	CHECK(closest_pair(points) >= 1.0 - 1e-9);
 }
 
+TEST_CASE("scatter: the last point of a line given twice puts nothing past its end")
+{
+	std::mt19937 random{5}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::line_settings settings;
+	settings.mode = scatter::line_fill::regular;
+	settings.jitter = 0.0;
+	settings.spacing = 5.0;
+	settings.width = 10.0;
+	// a double-click on the end: the piece of no length has no direction, the rows stay to the side of the line
+	std::vector<glm::dvec3> const line{{0.0, 0.0, 0.0}, {0.0, 0.0, 100.0}, {0.0, 0.0, 100.0}};
+	auto const places{scatter::along(line, settings, random)};
+	CHECK(false == places.empty());
+	for (auto const &place : places)
+	{
+		CHECK(std::abs(place.point.x) <= 10.0 + 1e-9);
+		CHECK(place.point.y >= -1e-9);
+		CHECK(place.point.y <= 100.0 + 1e-9);
+	}
+}
+
+TEST_CASE("scatter: a regular line too long for its spacing stops at the limit")
+{
+	std::mt19937 random{6}; // NOSONAR(cpp:S2245) a repeatable test, not security
+	scatter::line_settings settings;
+	settings.mode = scatter::line_fill::regular;
+	settings.jitter = 0.0;
+	settings.spacing = 0.1;
+	settings.width = 0.0;
+	// 10 km a model every 0.1 m: 100001 places, cut short at the limit
+	std::vector<glm::dvec3> const line{{0.0, 0.0, 0.0}, {10000.0, 0.0, 0.0}};
+	auto const places{scatter::along(line, settings, random)};
+	CHECK(static_cast<int>(places.size()) == scatter::line_most);
+}
+
 TEST_CASE("scatter: the irregular fill along a line keeps to the band and the spacing, thinner at the edges")
 {
 	std::mt19937 random{13}; // NOSONAR(cpp:S2245) a repeatable test, not security

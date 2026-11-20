@@ -62,14 +62,22 @@ std::vector<glm::dvec2> grid_points(glm::dvec2 const &Centre, double const Radiu
 class polyline
 {
   public:
-	explicit polyline(std::vector<glm::dvec3> const &Points) : m_points{Points}
+	explicit polyline(std::vector<glm::dvec3> const &Points)
 	{
-		m_lengths.reserve(m_points.size());
+		m_points.reserve(Points.size());
+		m_lengths.reserve(Points.size());
 		auto total{0.0};
-		m_lengths.push_back(total);
-		for (std::size_t i = 1; i < m_points.size(); ++i)
+		for (auto const &point : Points)
 		{
-			total += glm::distance(flat(m_points[i - 1]), flat(m_points[i]));
+			// a point given twice (a double-click) makes a piece of no length, with no direction to put the rows to the side of
+			if (false == m_points.empty())
+			{
+				auto const step{glm::distance(flat(m_points.back()), flat(point))};
+				if (step < 1e-6)
+					continue;
+				total += step;
+			}
+			m_points.push_back(point);
 			m_lengths.push_back(total);
 		}
 	}
@@ -110,7 +118,7 @@ class polyline
 		return std::clamp<std::size_t>(index, 1, m_points.size() - 1) - 1;
 	}
 
-	std::vector<glm::dvec3> const &m_points;
+	std::vector<glm::dvec3> m_points;
 	std::vector<double> m_lengths;
 };
 
