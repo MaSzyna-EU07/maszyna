@@ -193,6 +193,13 @@ void scenario_time::set_time(int yearday, int minute) {
 	m_time.wMinute = minute % 60;
 }
 
+void scenario_time::restore( SYSTEMTIME const &Time, double const Milliseconds ) {
+	m_time = Time;
+	m_milliseconds = Milliseconds;
+	m_time.wMilliseconds = static_cast<uint16_t>( std::floor( m_milliseconds ) );
+	m_yearday = year_day( m_time.wDay, m_time.wMonth, m_time.wYear );
+}
+
 // calculates day of week for provided date
 int
 scenario_time::day_of_week( int const Day, int const Month, int const Year ) const {

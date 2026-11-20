@@ -34,6 +34,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
+#include "simulation/simulationsnapshotworld.h"
 #include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
@@ -1210,7 +1211,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 	// a test run is known before the rest of the command line is read (Global.test.enabled, see init()), so a
 	// command line it can't take ends with the error code of the test, not with 0, which would pass it
-	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
+	std::vector<char const *> const arguments(Argv, Argv + Argc);
+	auto const testcommandline{simulation::parse_test_command_line(arguments)};
 	if (false == testcommandline.error.empty())
 	{
 		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
@@ -1225,6 +1227,15 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	{
 		Global.test.wall_timeout = testcommandline.wall_timeout;
 		Global.test.wall_timeout_from_command_line = true;
+	}
+
+	// the simulation snapshots to load and to take (--load-snapshot, --snapshot-at)
+	auto const snapshotcommandline{simulation::snapshot::parse_command_line(arguments)};
+	if (false == snapshotcommandline.error.empty())
+	{
+		std::cerr << snapshotcommandline.error << std::endl;
+		simulation::test().conclude(simulation::test_result::error, snapshotcommandline.error);
+		return -1;
 	}
 
 	fs::path iniPath = user_config_path("eu07.ini");
@@ -1243,6 +1254,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	// process command line arguments
 	bool sceneryfromcommandline{false};
 	bool editwithoutscenery{false};
+	bool seedfromcommandline{false};
+	bool vehiclefromcommandline{false};
 	for (int i = 1; i < Argc; ++i)
 	{
 
@@ -1261,6 +1274,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.local_start_vehicle = ToLower(Argv[++i]);
+				vehiclefromcommandline = true;
 			}
 		}
 		else if (token == "-edit")
@@ -1283,6 +1297,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			if (i + 1 < Argc)
 			{
 				Global.random_seed = seed_of(Argv[++i]);
+				seedfromcommandline = true;
 				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
 			}
 		}
@@ -1295,6 +1310,11 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		{
 			// taken from the command line above, with its value
 			++i;
+		}
+		else if (token == "--load-snapshot" || token == "--snapshot-at" || token == "--load-snapshot-force")
+		{
+			// taken from the command line above, with their values
+			i += simulation::snapshot::option_value_count(token);
 		}
 		else if (token == "-ini")
 		{
@@ -1313,13 +1333,25 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 			          << " [-edit [sceneryfilepath]]"
 			          << " [-seed number|word]"
 			          << " [-ini settingsfile]"
-			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]" << std::endl;
+			          << " [--test [--test-timeout seconds] [--test-wall-timeout seconds]]"
+			          << " [--load-snapshot file [--load-snapshot-force]] [--snapshot-at seconds file]" << std::endl;
 			simulation::test().conclude(simulation::test_result::error, std::format("unknown command line argument {}", token));
 			return -1;
 		}
 	}
 	if (editwithoutscenery && false == sceneryfromcommandline)
 		Global.SceneryFile.clear();
+
+	simulation::snapshot::request(snapshotcommandline);
+	// the scenery of a snapshot loads the way it did when the snapshot was taken only with the seed it had then
+	if (auto const seed{simulation::snapshot::requested_seed()}; seed.has_value() && false == seedfromcommandline)
+	{
+		Global.random_seed = *seed;
+		WriteLog(std::format("seed taken from the snapshot to load: {}", Global.random_seed));
+	}
+	// and the player goes on in the vehicle they were in
+	if (auto const vehicle{simulation::snapshot::requested_player_vehicle()}; false == vehicle.empty() && false == vehiclefromcommandline)
+		Global.local_start_vehicle = vehicle;
 
 	if (Global.test.enabled)
 	{

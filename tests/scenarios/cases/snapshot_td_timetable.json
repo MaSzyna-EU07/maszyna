@@ -1,0 +1,11 @@
+{
+  "description": "Simulation snapshot on td.scn: EU07 with an AI driver on the td/rozklad timetable. A snapshot is taken at 90 s, on the run from Stacja1 to Przystanek; the run loaded from it is compared at 240 s, when the train stands at Przystanek, with the run that went on.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "snapshot": { "at": 90, "until": 240 },
+  "timeout": 600
+}

@@ -97,6 +97,39 @@ int DirF(int CouplerN)
 	}
 }
 
+std::vector<double> TSecuritySystem::state() const
+{
+	return {vigilance_timer,
+	        alert_timer,
+	        press_timer,
+	        velocity,
+	        cabsignal_active ? 1.0 : 0.0,
+	        pressed ? 1.0 : 0.0,
+	        enabled ? 1.0 : 0.0,
+	        cabsignal_lock ? 1.0 : 0.0,
+	        vigilance_suspended ? 1.0 : 0.0,
+	        power ? 1.0 : 0.0,
+	        static_cast<double>(cabactive)};
+}
+
+void TSecuritySystem::state(std::vector<double> const &State)
+{
+	// a list of another length comes from a build which keeps other things
+	if (State.size() != 11)
+		return;
+	vigilance_timer = State[0];
+	alert_timer = State[1];
+	press_timer = State[2];
+	velocity = State[3];
+	cabsignal_active = State[4] != 0.0;
+	pressed = State[5] != 0.0;
+	enabled = State[6] != 0.0;
+	cabsignal_lock = State[7] != 0.0;
+	vigilance_suspended = State[8] != 0.0;
+	power = State[9] != 0.0;
+	cabactive = static_cast<int>(State[10]);
+}
+
 void TSecuritySystem::set_enabled(bool e)
 {
 	if (vigilance_enabled || cabsignal_enabled || radiostop_enabled)

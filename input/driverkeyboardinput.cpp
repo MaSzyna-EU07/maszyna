@@ -328,7 +328,8 @@ driverkeyboard_input::default_bindings() {
 	    { vehiclemovebackwards, {GLFW_KEY_RIGHT_BRACKET | keymodifier::control, "Move the train backwards (Debug Mode only)"} },
 	    { vehicleboost, {GLFW_KEY_TAB | keymodifier::control, "Boost the train (Debug Mode only)"} },
 	    { debugtoggle, {GLFW_KEY_F12 | keymodifier::control | keymodifier::shift, "Toggle Debug Mode"} },
-	    { pausetoggle, {GLFW_KEY_ESCAPE, "Pause the game"} }
+	    { pausetoggle, {GLFW_KEY_ESCAPE, "Pause the game"} },
+	    { snapshotsave, {GLFW_KEY_F9 | keymodifier::control | keymodifier::shift, "Save a snapshot of the simulation"} }
     };
 }
 

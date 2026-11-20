@@ -1230,6 +1230,9 @@ class TSecuritySystem
 	bool radiostop_available() const;
 	bool has_separate_acknowledge() const;
 	void load(std::string const &line, double Vmax);
+	// what the device keeps from one step to the next, its timers and latches: read and put back by a snapshot of the simulation
+	std::vector<double> state() const;
+	void state(std::vector<double> const &State);
 
 	double MagnetLocation = 0.0;
 };

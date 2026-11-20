@@ -46,6 +46,16 @@ public:
     // TTrack::buckle_curvature at the axle, averaged over Base around it
     double BuckleCurvature( double const Base ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
+    // for a simulation snapshot: which path of a switch (0, 1) or a crossing (its segment number) the axle runs on, 0 on other tracks,
+    // and which of the events of its track it has yet to set off
+    int Path() const;
+    int EventFlags() const {
+        return iEventFlag; }
+    int EventallFlags() const {
+        return iEventallFlag; }
+    // puts the axle where a saved simulation had it: counted in on the track and out of the one it was on, with no event
+    // set off and no switch thrown under it. returns: false if there's no such place
+    bool Place( TTrack *Track, int const Path, double const Distance, double const Direction, int const Eventflags, int const Eventallflags );
 	void Reset();
     void Render(float fNr);
 // members

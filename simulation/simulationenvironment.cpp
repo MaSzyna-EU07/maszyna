@@ -226,6 +226,23 @@ world_environment::update_moon() {
     m_moon.update( true );
 }
 
+std::array<float, 8>
+world_environment::wind_state() const {
+
+    return { m_wind.azimuth, m_wind.azimuth_change, m_wind.velocity, m_wind.velocity_change, m_wind.change_time, m_wind.vector.x, m_wind.vector.y, m_wind.vector.z };
+}
+
+void
+world_environment::wind_state( std::array<float, 8> const &State ) {
+
+    m_wind.azimuth = State[ 0 ];
+    m_wind.azimuth_change = State[ 1 ];
+    m_wind.velocity = State[ 2 ];
+    m_wind.velocity_change = State[ 3 ];
+    m_wind.change_time = State[ 4 ];
+    m_wind.vector = { State[ 5 ], State[ 6 ], State[ 7 ] };
+}
+
 void
 world_environment::update_wind() {
 

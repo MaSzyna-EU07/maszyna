@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "simulation/simulationtestrules.h"
 
+#include "simulation/simulationsnapshot.h"
+
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -28,11 +30,6 @@ std::string reason_suffix(std::string_view const Reason)
 	return Reason.empty() ? std::string() : std::format(" ({})", Reason);
 }
 
-// options of the simulator which take a value, see eu07_application::init_settings()
-bool takes_value(std::string_view const Option)
-{
-	return Option == "-s" || Option == "-v" || Option == "-seed" || Option == "-ini";
-}
 
 // a number of seconds given to Option, at Index of Arguments; the index is moved past the value
 std::optional<double> option_seconds(std::span<char const *const> const Arguments, std::size_t &Index)
@@ -96,9 +93,10 @@ test_command_line parse_test_command_line(std::span<char const *const> const Arg
 			else
 				result.wall_timeout = seconds;
 		}
-		else if (takes_value(option))
+		else
 		{
-			++i;
+			// the values of the other options, see eu07_application::init_settings()
+			i += static_cast<std::size_t>(snapshot::option_value_count(option));
 		}
 	}
 	return result;

@@ -2548,6 +2548,7 @@ event_manager::FindEvent( std::string const &Name )
 bool
 event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, double delay ) {
 
+    if( m_suspended )          { return false; } // a saved state is being put back, see suspend()
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { return false; } // jeśli nie dodany jeszcze do kolejki
 
@@ -2626,6 +2627,37 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
         }
     }
 
+    return true;
+}
+
+// takes every event out of the queue
+void
+event_manager::clear_queue() {
+
+    while( QueryRootEvent != nullptr ) {
+        auto *queued { QueryRootEvent };
+        QueryRootEvent = queued->m_next;
+        queued->m_next = nullptr;
+        queued->m_inqueue = 0;
+    }
+}
+
+// puts the event in the queue to run at the given time, with none of its delays added
+bool
+event_manager::restore_queued( basic_event *Event, TDynamicObject const *Activator, double const Launchtime ) {
+
+    if( Event == nullptr || Event->m_inqueue > 0 ) { return false; }
+
+    Event->m_activator = Activator;
+    Event->m_launchtime = Launchtime;
+    Event->m_inqueue = 1;
+    // behind the events which run no later than it does, the way AddToQuery() keeps the queue
+    auto **link { &QueryRootEvent };
+    while( *link != nullptr && ( *link )->m_launchtime <= Launchtime ) {
+        link = &( *link )->m_next;
+    }
+    Event->m_next = *link;
+    *link = Event;
     return true;
 }
 

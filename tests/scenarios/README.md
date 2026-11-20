@@ -122,6 +122,53 @@ a driver isn't watched, and neither is a signal the driver never scanned (a trai
 100 km/h 150 m before a signal at stop got past it before its AI first looked ahead; at
 60 km/h it was caught). Outside the test mode the same is written to the log, nothing more.
 
+## Simulation snapshots
+
+A snapshot is a text file with the state of a running simulation: the clock, the weather, the memory cells,
+the switches, the queued events, where every vehicle is, how it is coupled and what its machinery and brakes
+are doing, what the drivers are up to. Loading one means loading its scenery the usual way and putting that
+state over it before the first frame, so a run can go on from the middle of a scenario:
+
+```
+eu07 -s <scenery.scn> [--snapshot-at <seconds> <file>]... [--load-snapshot <file> [--load-snapshot-force]]
+```
+
+- `--snapshot-at <seconds> <file>` writes a snapshot once the simulation has run that long and goes on. The
+  time is the simulation time since the scenery started, which a run loaded from a snapshot carries on with
+  (a snapshot taken at 600 s and loaded starts at 600 s, so `--snapshot-at 900` is written 300 s later). The
+  switch can be given several times.
+- `--load-snapshot <file>` puts the snapshot over the scenery given with `-s` once it has loaded. Without
+  `-seed` the random seed is taken from the snapshot, so the scenery loads the way it did then; without
+  `-v` the player starts in the vehicle they were in. A file the reader finds damaged (an entry cut short, or
+  fewer entries than its header counts) isn't loaded: the scenery starts as it is, the log says why, and a
+  test run ends with the error code. `--load-snapshot-force` loads what can be read of it all the same.
+- Both work with and without `--test`. In the game the `snapshotsave` command ([Ctrl]+[Shift]+[F9], or
+  whatever `eu07_input-keyboard.ini` binds it to) writes one to `snapshots/<scenery>_<date>_<time>.snapshot`
+  in the game folder.
+
+The file is in the syntax of the scenery files: entries of the form
+`<type> <name> <key> <value> ... end<type>`, with the scenery's own comments and quotes. It starts with
+`snapshot <version> scenery <file> ...`, which also holds how many tracks, cells, events and vehicles the
+scenery had and a hash of their names; loaded over a scenery which gives other numbers, the log says which
+ones differ and the snapshot is applied as far as its names lead anywhere. A reader skips the entries and
+keys it doesn't know, and what a snapshot doesn't have stays as the scenery made it. Every value which is
+used as an index, a count, a choice of a few or the name of something is checked as it is read: a coupler
+end other than 0 or 1, a count past what the entry lists, an index past the end of a table, a number which
+isn't whole or doesn't fit, couplings which would close a ring of vehicles, are left out and listed in the
+log (errors.txt), and the positions of the controllers are brought within the ranges of the vehicle. A
+snapshot is written to `<file>.tmp` first, which takes the place of the file only once it is all written.
+
+It is written from outside the classes, not an image of the simulator's memory. What comes back as it was:
+the time, the cells, the switches, the event queue, the places, speeds and couplings of the vehicles, their
+loads, the positions of their controls, the air in their pipes and reservoirs with the latches of their
+brake valves, the state of their couplers, the orders and timetable positions of their drivers with what
+they see ahead, the wind, the traction power sources, the random numbers still to be drawn, the lights of
+the signals, how many axles each isolated section counts. In the test mode that is enough for a loaded run to go on bit for bit on the sceneries of the
+snapshot cases below. What isn't kept: sounds, animations and the poses of models other than signal lamps,
+Lua and Python state, vehicles which came into being during the run (road traffic made by scripts).
+`tests/scenarios/snapshots.py a b` tells two snapshots apart, with the largest differences of position,
+speed and pressure.
+
 ## Running
 
 ```
@@ -331,6 +378,36 @@ trainset velocity 0, so both locomotives stand braked (brake pipe at 3.5 bar, ba
 brake of the Vectron switched on), and `event0` of the track gives the driver `Obey_train`, once. The EU07
 starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
 the pipe stays below 1 bar and the case ends as a standstill after 300 s.
+
+### Snapshot cases
+
+A case with a `snapshot` section checks the simulation snapshots (above) on its scenery instead of a
+physicslog:
+
+```json
+"snapshot": { "at": 90, "until": 240, "tolerances": { "position": 1.0, "speed": 1.0 } }
+```
+
+The runner starts the simulator twice: from the start to `until` seconds, taking snapshots at `at` and at
+`until`, then from the snapshot of `at` to `until`, taking one right after loading and one at `until`. The
+four files stay in `out/<case>/` (`first`, `reference`, `resaved`, `continued`), the logs of the two runs as
+`log_1.txt` and `log_2.txt`. Two checks follow:
+
+- `snapshot_round_trip`: the snapshot saved right after loading holds, key for key, the text of the one
+  loaded (`round_trip_differences` allows a number of keys to differ),
+- `snapshot_continues`: at `until` the run loaded from the snapshot has every vehicle within
+  `tolerances.position` metres and `tolerances.speed` km/h of the run which went on (defaults 1 and 1;
+  `pipe` and `cylinder` in bar, default 0.1), on the same tracks, coupled the same way, with the same
+  memory cells, switches and counts of the isolated sections and the drivers at the same order and timetable
+  position. The line of the check gives the measured differences either way.
+
+`snapshot_td_portal_isolated` (fragment `td_portal_isolated.scn`) has a train which is gone before the
+snapshot: an SM42 starts on the track of an isolated section added beside td.scn and runs into a portal next
+to it about 30 s in. The snapshot of 90 s has it as removed; loaded, the section has to count no axles, as in
+the run which went on (the log of the loaded run mustn't say a section "counted other axles").
+
+Such a case writes no physicslog, has `convertmodels 0` in its settings, and of `checks` takes the log ones
+only, which read the log of the second run. `expect` is the result of both runs, `timeout` by default.
 
 ### Cases on a mission of a scenery
 

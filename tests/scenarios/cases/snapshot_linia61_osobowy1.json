@@ -1,0 +1,16 @@
+{
+  "description": "Simulation snapshot on a mission of the game: linia61_osobowy1 (Czestochowa - Kepno, 2003 timetable), five EN57 units and a locomotive hauled express on their timetables, standing rakes and road traffic. A snapshot is taken at 300 s; the run loaded from it is compared at 600 s with the run that went on. The express has coaches sharing a name, which the snapshot tells apart by their place in the scenery.",
+  "base_scenery": "linia61_osobowy1.scn",
+  "strip_trainsets": false,
+  "vehicle": "EN57-1394ra",
+  "slow": true,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.standstill 0",
+    "test.fail_if_stop_overran no"
+  ],
+  "snapshot": { "at": 300, "until": 600 },
+  "timeout": 1800
+}

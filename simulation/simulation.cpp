@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
 #include "simulation/simulationtest.h"
+#include "simulation/simulationsnapshotworld.h"
 #include "simulation/blackboxrecorder.h"
 
 #include "utilities/Globals.h"
@@ -490,6 +491,10 @@ void state_manager::process_commands() {
 			glm::dvec3 location = commanddata.location;
 			if (vehicle && vehicle->Mechanik)
 				vehicle->Mechanik->PutCommand(command, commanddata.param1, commanddata.param2, &location);
+		}
+
+		if (commanddata.command == user_command::snapshotsave && commanddata.action == GLFW_PRESS) {
+			snapshot::save_now();
 		}
 
 		if (commanddata.command == user_command::quitsimulation) {

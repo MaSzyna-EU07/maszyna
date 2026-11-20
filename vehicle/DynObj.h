@@ -29,6 +29,9 @@ http://mozilla.org/MPL/2.0/.
 #include <memory>
 
 class script_screen; // scripting/scriptscreens.h
+namespace simulation::snapshot {
+class record; // simulation/simulationsnapshot.h
+}
 enum class script_language; // scripting/scriptscreens.h
 
 #define EU07_SOUND_BOGIESOUNDS
@@ -749,6 +752,13 @@ private:
     bool FastUpdate(double dt);
     void Move(double fDistance);
     void FastMove(double fDistance);
+    // the vehicle's part of a simulation snapshot (simulation/simulationsnapshotvehicle.cpp): its place, consist, physics and
+    // what else it keeps, written to an entry of the snapshot
+    void snapshot_save( simulation::snapshot::record &Entry ) const;
+    // puts the vehicle where the entry has it, or takes it out of the simulation if it was gone by then. returns: false if it can't be done
+    bool snapshot_place( simulation::snapshot::record const &Entry );
+    // sets the rest of the vehicle as the entry has it; after the vehicles are placed and coupled
+    void snapshot_load( simulation::snapshot::record const &Entry );
     void RenderSounds();
     // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
     void play_mirror_sounds( side const Side, mirror_moves::event const Event );

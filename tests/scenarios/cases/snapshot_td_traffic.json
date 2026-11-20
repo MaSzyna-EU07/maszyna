@@ -1,0 +1,11 @@
+{
+  "description": "Simulation snapshot on td.scn with two trains: one standing on track 2 with its driver waiting, one leaving on the td/rozklad timetable. The snapshot is taken at 120 s; the run loaded from it is compared at 300 s with the run that went on.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_traffic.scn",
+  "test_config": [
+    "test.standstill 0"
+  ],
+  "snapshot": { "at": 120, "until": 300 },
+  "timeout": 600
+}

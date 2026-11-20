@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 #include "utilities/Names.h"
 
+#include <vector>
+
 class TTractionPowerSource : public scene::basic_node {
 
     friend class debug_panel;
@@ -30,6 +32,9 @@ public:
     void PowerSet(TTractionPowerSource *ps);
     bool Fuse() const {
         return FastFuse || SlowFuse; }
+    // what the source keeps from one step to the next (its voltage, load and fuses), read and put back by a snapshot of the simulation
+    std::vector<double> state() const;
+    void state( std::vector<double> const &State );
 // members
     TTractionPowerSource *psNode[ 2 ] = { nullptr, nullptr }; // zasilanie na końcach dla sekcji
     bool bSection = false; // czy jest sekcją

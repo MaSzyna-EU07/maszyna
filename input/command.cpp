@@ -446,6 +446,7 @@ commanddescription_sequence Commands_descriptions = {
     {"genericset27", command_target::vehicle, command_mode::oneoff},
     {"genericset28", command_target::vehicle, command_mode::oneoff},
     {"genericset29", command_target::vehicle, command_mode::oneoff},
+    {"snapshotsave", command_target::simulation, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -871,6 +872,7 @@ std::unordered_map<std::string, user_command> const commandMap = {
     {"genericset27", user_command::genericset27},
     {"genericset28", user_command::genericset28},
     {"genericset29", user_command::genericset29},
+    {"snapshotsave", user_command::snapshotsave},
 	{"none", user_command::none}};
 
 } // namespace simulation
