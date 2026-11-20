@@ -35,6 +35,8 @@ std::string read_file(std::string const &Path) {
 
 // the child: the report goes to the pipe in place of the standard error, no core dump is left behind
 [[noreturn]] void crash_in_child(std::array<int, 2> const &Pipe, std::string const &Log) {
+	// a child stuck before the crash (a lock some other thread held at the fork) ends anyway, and the test with it
+	alarm(10);
 	dup2(Pipe[1], STDERR_FILENO);
 	close(Pipe[0]);
 	close(Pipe[1]);

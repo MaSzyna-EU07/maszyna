@@ -114,6 +114,23 @@ std::string_view signal_name(int const Signal) {
 	}
 }
 
+// the signal being reported, for a report that hangs
+std::atomic<int> &crash_signal() {
+	static std::atomic<int> signal{0};
+	return signal;
+}
+
+// a report that hangs is given up: the process ends by the signal of the crash, as it would have without the handler
+void handle_report_timeout(int) {
+	auto const crashsignal{crash_signal().load()};
+	raise(crashsignal);
+	// it is blocked while its own handler runs, which this one interrupted
+	sigset_t unblocked;
+	sigemptyset(&unblocked);
+	sigaddset(&unblocked, crashsignal);
+	sigprocmask(SIG_UNBLOCK, &unblocked, nullptr);
+}
+
 struct crash_stack {
 	std::array<void *, 64> frames{};
 	int count{0};
@@ -141,6 +158,11 @@ void write_report(int const File, int const Signal, siginfo_t const *Info, crash
 }
 
 void handle_crash_signal(int const Signal, siginfo_t *Info, void *) {
+	crash_signal() = Signal;
+	struct sigaction timeout{};
+	timeout.sa_handler = handle_report_timeout;
+	sigemptyset(&timeout.sa_mask);
+	sigaction(SIGALRM, &timeout, nullptr);
 	alarm(crash_report_timeout_seconds);
 
 	crash_stack stack;
@@ -181,7 +203,12 @@ void install(std::string_view const Version) {
 	struct sigaction action{};
 	action.sa_sigaction = handle_crash_signal;
 	action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+	// another crash signal of the same thread waits until the report is written, rather than starting a second one in
+	// its middle (a fault that comes while it is blocked still ends the process). a crash of another thread at the
+	// same moment may still write its report alongside
 	sigemptyset(&action.sa_mask);
+	for (auto const crashsignal : crash_signal_list)
+		sigaddset(&action.sa_mask, crashsignal);
 	for (auto const crashsignal : crash_signal_list)
 		sigaction(crashsignal, &action, nullptr);
 }
