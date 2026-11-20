@@ -368,13 +368,12 @@ class RunResult:
     truncated: bool = False  # the simulator said it lost physicslog lines while closing
 
 
-
 def physicslog_cut(text: str) -> bool:
     """The simulator's closing waits for the physicslog writer only a limited time and says so when it gives
-    up (`Bad physics log: ... closing ... lost / not written`), the log is then cut short on a busy disk.
-    A build that doesn't wait prints no such line."""
-    return any("Bad physics log:" in line and any(k in line for k in ("closing", "lost", "not written"))
-               for line in text.splitlines())
+    up (`Bad physics log: ... the closing ...`), the log is then cut short on a busy disk. A failed write
+    (`Bad physics log: the writing failed`) is not this, and stays a failure. A build that doesn't wait
+    prints no such line."""
+    return any("Bad physics log:" in line and "closing" in line for line in text.splitlines())
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
