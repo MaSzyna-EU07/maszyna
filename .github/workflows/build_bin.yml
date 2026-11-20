@@ -45,13 +45,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant:
-          - name: "AVX2"
-            suffix: "avx2"
-            cmake_flags: "-DENABLE_AVX2=ON"
-          - name: "No AVX2"
-            suffix: "noavx2"
-            cmake_flags: "-DENABLE_AVX2=OFF"
+        # a pull request builds the AVX2 variant only; the variant without AVX2 (the same sources, one compiler
+        # switch) is built by the pushes to the branches and by a manual run
+        variant: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
       - name: Checkout repository
@@ -215,13 +211,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant:
-          - name: "AVX2"
-            suffix: "avx2"
-            cmake_flags: "-DENABLE_AVX2=ON"
-          - name: "No AVX2"
-            suffix: "noavx2"
-            cmake_flags: "-DENABLE_AVX2=OFF"
+        # a pull request builds the AVX2 variant only; the variant without AVX2 (the same sources, one compiler
+        # switch) is built by the pushes to the branches and by a manual run
+        variant: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
       - name: Checkout repository
