@@ -14308,3 +14308,1829 @@ msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
 msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
+msgid "No rail track over the terrain: nothing to look for"
+msgstr "Nad terenem nie ma żadnego toru: nie ma czego szukać"
+
+msgid "No county read yet: find and read them first"
+msgstr "Nie wczytano jeszcze żadnego powiatu: najpierw je znajdź i wczytaj"
+
+msgid "%zu trees would be planted (from %zu of %zu counties read)"
+msgstr "Zostałoby posadzonych %zu drzew (z %zu z %zu wczytanych powiatów)"
+
+msgid "No group %s in the node bank: nothing to plant with"
+msgstr "Brak grupy %s w banku węzłów: nie ma czym sadzić"
+
+msgid "No tree passes the sieve"
+msgstr "Żadne drzewo nie przeszło przez sito"
+
+msgid "Planted %zu trees (%zu planted before taken away). The source: GUGiK, 3D tree models, CC BY 4.0"
+msgstr "Posadzono %zu drzew (usunięto %zu posadzonych wcześniej). Źródło: GUGiK, modele 3D drzew, CC BY 4.0"
+
+msgid "ZIELSKO from space"
+msgstr "ZIELSKO z kosmosu"
+
+msgid "The trees of the 3D tree models of geoportal.gov.pl (GUGiK, from airborne laser scanning, trees over 4 m): where each stands and how tall it is. The counties under the scenery are found and their packages (gigabytes each) read over the network in the background; only the trees near the tracks are kept, beside the terrain"
+msgstr "Drzewa z modeli 3D drzew geoportal.gov.pl (GUGiK, z lotniczego skanowania laserowego, drzewa powyżej 4 m): gdzie stoi każde z nich i jak jest wysokie. Edytor sam znajduje powiaty pod scenerią i w tle czyta ich paczki z sieci (po kilka GB); zostają tylko drzewa blisko torów, zapisane obok terenu"
+
+msgid "1. The data"
+msgstr "1. Dane"
+
+msgid "Kept up to (m from the tracks)##zielsko"
+msgstr "Zachowuj do (m od torów)##zielsko"
+
+msgid "The trees further from a rail track aren't kept at all; a wider band means reading the counties again"
+msgstr "Drzewa dalej od toru w ogóle nie są zachowywane; szerszy pas wymaga ponownego wczytania powiatów"
+
+msgid "Read again the counties read before##zielsko"
+msgstr "Wczytaj ponownie wczytane już powiaty##zielsko"
+
+msgid "Find the counties and read their trees"
+msgstr "Znajdź powiaty i wczytaj ich drzewa"
+
+msgid "Stop reading##zielsko"
+msgstr "Przerwij wczytywanie##zielsko"
+
+msgid "Counties (TERYT): %s"
+msgstr "Powiaty (TERYT): %s"
+
+msgid "2. The sieve"
+msgstr "2. Sito"
+
+msgid "Around the camera##zielsko"
+msgstr "Wokół kamery##zielsko"
+
+msgid "The whole scenery##zielsko"
+msgstr "Cała sceneria##zielsko"
+
+msgid "Within the outline##zielsko"
+msgstr "W obrysie##zielsko"
+
+msgid "Radius (m)##zielsko"
+msgstr "Promień (m)##zielsko"
+
+msgid "LMB adds a point of the outline, Shift+LMB takes the last one back"
+msgstr "LPM dodaje punkt obrysu, Shift+LPM cofa ostatni"
+
+msgid "Nearest to a track (m)##zielsko"
+msgstr "Najbliżej toru (m)##zielsko"
+
+msgid "From the axis of a rail track: the clearance, the poles and the cess stay free"
+msgstr "Od osi toru: skrajnia, słupy i ścieżka służbowa zostają wolne"
+
+msgid "Farthest from a track (m)##zielsko"
+msgstr "Najdalej od toru (m)##zielsko"
+
+msgid "Off the roads (m)##zielsko"
+msgstr "Od dróg (m)##zielsko"
+
+msgid "From the edge of a road of the scenery"
+msgstr "Od krawędzi drogi scenerii"
+
+msgid "Lowest tree (m)##zielsko"
+msgstr "Najniższe drzewo (m)##zielsko"
+
+msgid "Spacing (m)##zielsko"
+msgstr "Odstęp (m)##zielsko"
+
+msgid "A wood thinned out: no two trees nearer than this, the taller kept"
+msgstr "Przerzedzony las: żadne dwa drzewa bliżej niż tyle, zostaje wyższe"
+
+msgid "At most##zielsko"
+msgstr "Najwyżej##zielsko"
+
+msgid "The trees nearest to the tracks first; each one is a model of the scenery"
+msgstr "Najpierw drzewa najbliżej torów; każde z nich to model w scenerii"
+
+msgid "The water bodies of the terrain stay free of trees"
+msgstr "Woda terenu zostaje bez drzew"
+
+msgid "3. The models"
+msgstr "3. Modele"
+
+msgid "Group of the node bank, trees##zielsko"
+msgstr "Grupa banku węzłów, drzewa##zielsko"
+
+msgid "Group of the node bank, low ones##zielsko"
+msgstr "Grupa banku węzłów, niskie##zielsko"
+
+msgid "Low ones below (m)##zielsko"
+msgstr "Niskie poniżej (m)##zielsko"
+
+msgid "Height of the models (m)##zielsko"
+msgstr "Wysokość modeli (m)##zielsko"
+
+msgid "from the model"
+msgstr "z modelu"
+
+msgid "How tall the models of the groups are at the scale of 1, so a tree of the data gets its own height.\nFrom the model: about the radius of the model, which suits the models standing on their foot"
+msgstr "Jak wysokie są modele grup w skali 1, żeby drzewo z danych dostało swoją wysokość.\nZ modelu: mniej więcej promień modelu, co pasuje do modeli stojących na swojej podstawie"
+
+msgid "Scatter of the size##zielsko"
+msgstr "Rozrzut wielkości##zielsko"
+
+msgid "Count and show##zielsko"
+msgstr "Policz i pokaż##zielsko"
+
+msgid "Sifting the trees"
+msgstr "Przesiewanie drzew"
+
+msgid "The trees which would be planted, as dots up to 1.5 km from the camera: yellow low, green tall"
+msgstr "Drzewa, które zostałyby posadzone, jako kropki do 1,5 km od kamery: żółte niskie, zielone wysokie"
+
+msgid "Plant"
+msgstr "Posadź"
+
+msgid "Planting the trees"
+msgstr "Sadzenie drzew"
+
+msgid "The trees planted before by ZIELSKO go first, then the ones through the sieve are planted"
+msgstr "Najpierw znikają drzewa posadzone wcześniej przez ZIELSKO, potem sadzone są te, które przeszły przez sito"
+
+msgid "Clear the trees planted##zielsko"
+msgstr "Wykarczuj posadzone##zielsko"
+
+msgid "Taken away: %zu trees planted by ZIELSKO"
+msgstr "Wykarczowano %zu drzew posadzonych przez ZIELSKO"
+
+msgid "The source: GUGiK, 3D tree models (geoportal.gov.pl), CC BY 4.0: name it with the scenery"
+msgstr "Źródło: GUGiK, modele 3D drzew (geoportal.gov.pl), CC BY 4.0: podaj je w opisie scenerii"
+
+msgid "Asking which counties lie under the scenery: %zu of %zu points, %zu counties"
+msgstr "Sprawdzanie, które powiaty leżą pod scenerią: %zu z %zu punktów, %zu powiatów"
+
+msgid "Stopped"
+msgstr "Przerwano"
+
+msgid "County %s (%zu of %zu): %.0f of %.0f MB read, %zu sheets, %zu trees kept"
+msgstr "Powiat %s (%zu z %zu): wczytano %.0f z %.0f MB, %zu arkuszy, zachowano %zu drzew"
+
+msgid "Done: %zu of %zu counties read, %zu trees kept now"
+msgstr "Gotowe: wczytano %zu z %zu powiatów, teraz zachowano %zu drzew"
+
+msgid "The trees of the 3D tree models of geoportal.gov.pl, where they stand and as tall as they are, planted along the tracks"
+msgstr "Drzewa z modeli 3D drzew geoportal.gov.pl, tam gdzie stoją i tak wysokie jak są, sadzone wzdłuż torów"
+
+msgid "Finding the band along the tracks"
+msgstr "Wyznaczanie pasa wzdłuż torów"
+
+msgid "LMB adds a point of the outline, Shift+LMB takes the last one back. The field gets the material chosen in the palette and is kept in the list below, where its material can be changed later"
+msgstr "LPM dodaje punkt obrysu, Shift+LPM cofa ostatni. Pole dostaje materiał wybrany w palecie i trafia na listę poniżej, gdzie jego materiał można później zmienić"
+
+msgid "Painted into the terrain##fields"
+msgstr "Wmalowane w teren##fields"
+
+msgid "The material goes into the paint of the chunks: no seam, the edge blends into the ground around; a chunk holds up to 8 materials"
+msgstr "Materiał trafia do malowania chunków: bez szwu, krawędź przechodzi w otoczenie; chunk mieści do 8 materiałów"
+
+msgid "A surface of its own##fields"
+msgstr "Osobna powierzchnia##fields"
+
+msgid "The ground is cut away within the outline and the field drawn over the hole as a mesh of its own, following the heights of the terrain:\nit doesn't take one of the 8 materials of a chunk, but its edge is sharp and the seam can show"
+msgstr "Grunt w obrysie zostaje wycięty, a pole rysowane nad dziurą jako osobna siatka po wysokościach terenu:\nnie zajmuje żadnego z 8 materiałów chunka, ale krawędź jest ostra i może być widać szew"
+
+msgid "Cut out the field"
+msgstr "Wytnij pole"
+
+msgid "Clear the outline##fields"
+msgstr "Wyczyść obrys##fields"
+
+msgid "field %d"
+msgstr "pole %d"
+
+msgid "Fields"
+msgstr "Pola"
+
+msgid "LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; Shift+LMB takes the last one back"
+msgstr "LPM dodaje punkt obrysu pola: powierzchni wyciętej z terenu z własnym materiałem, z pofalowanym gruntem, jeśli chcesz; Shift+LPM cofa ostatni"
+
+msgid "Cutting out the field"
+msgstr "Wycinanie pola"
+
+msgid "Fields and surfaces cut out##fields"
+msgstr "Pola i wycięte powierzchnie##fields"
+
+msgid "Natural slopes##fields"
+msgstr "Naturalne skarpy##fields"
+
+msgid "Draw the outline first"
+msgstr "Najpierw narysuj obrys"
+
+msgid "The area has no terrain"
+msgstr "Pod tym zasięgiem nie ma terenu"
+
+msgid "%s: read whole, %zu trees"
+msgstr "%s: wczytany w całości, %zu drzew"
+
+msgid "%s: only the band along the tracks (the first version), %zu trees"
+msgstr "%s: tylko pas wzdłuż torów (pierwsza wersja), %zu drzew"
+
+msgid "%s: %zu sheets read, %zu trees"
+msgstr "%s: wczytano %zu arkuszy, %zu drzew"
+
+msgid "Nothing read yet: Plant reads what the area needs first"
+msgstr "Nic jeszcze nie wczytano: Posadź najpierw wczyta to, czego potrzebuje zasięg"
+
+msgid "Planted %zu trees (%zu planted before within the area taken away). The source: GUGiK, 3D tree models, CC BY 4.0"
+msgstr "Posadzono %zu drzew (usunięto %zu posadzonych wcześniej w tym zasięgu). Źródło: GUGiK, modele 3D drzew, CC BY 4.0"
+
+msgid "The trees of the 3D tree models of geoportal.gov.pl (GUGiK, from airborne laser scanning, trees over 4 m): where each stands and how tall it is. What the area needs is read over the network when planting, only once: every sheet of the map read is kept beside the terrain, all its trees"
+msgstr "Drzewa z modeli 3D drzew geoportal.gov.pl (GUGiK, z lotniczego skanowania laserowego, drzewa powyżej 4 m): gdzie stoi każde z nich i jak jest wysokie. To, czego potrzebuje zasięg, jest czytane z sieci przy sadzeniu i tylko raz: każdy wczytany arkusz mapy zostaje zapisany obok terenu, ze wszystkimi drzewami"
+
+msgid "1. The area"
+msgstr "1. Zasięg"
+
+msgid "LMB adds a point of the outline, Shift+LMB takes the last one back (%zu points)"
+msgstr "LPM dodaje punkt obrysu, Shift+LPM cofa ostatni (%zu punktów)"
+
+msgid "The counties under the whole terrain are read to the end: tens of gigabytes for a large scenery"
+msgstr "Powiaty pod całym terenem są czytane do końca: dla dużej scenerii to dziesiątki GB"
+
+msgid "Finding what the area needs"
+msgstr "Sprawdzanie, czego potrzebuje zasięg"
+
+msgid "The sheets of the map of the area not read yet are read first, in the background (the package of a county is read only as far as they come); then the trees planted before within the area go and the ones through the sieve are planted"
+msgstr "Najpierw w tle są wczytywane arkusze mapy z zasięgu, których jeszcze nie ma (paczka powiatu jest czytana tylko do miejsca, gdzie się pojawią); potem znikają drzewa posadzone wcześniej w zasięgu i sadzone są te, które przeszły przez sito"
+
+msgid "From what's read already: the trees which would be planted, as dots up to 1.5 km from the camera, yellow low, green tall"
+msgstr "Z tego, co już wczytane: drzewa, które zostałyby posadzone, jako kropki do 1,5 km od kamery, żółte niskie, zielone wysokie"
+
+msgid "Clear the trees planted within the area##zielsko"
+msgstr "Wykarczuj posadzone w zasięgu##zielsko"
+
+msgid "4. The data"
+msgstr "4. Dane"
+
+msgid "What has come is kept; nothing is planted"
+msgstr "To, co doszło, zostaje zapisane; nic nie jest sadzone"
+
+msgid "The trees are planted when the reading ends"
+msgstr "Drzewa zostaną posadzone, gdy wczytywanie się skończy"
+
+msgid "County %s: read before"
+msgstr "Powiat %s: wczytany wcześniej"
+
+msgid "County %s: %zu sheets to read, the package up to %.0f MB"
+msgstr "Powiat %s: %zu arkuszy do wczytania, paczka do %.0f MB"
+
+msgid "Kept beside the terrain##zielsko"
+msgstr "Zapisane obok terenu##zielsko"
+
+msgid "Nothing yet"
+msgstr "Jeszcze nic"
+
+msgid "Refresh##zielsko"
+msgstr "Odśwież##zielsko"
+
+msgid "Read the whole scenery in the background##zielsko"
+msgstr "Wczytaj całą scenerię w tle##zielsko"
+
+msgid "Finding the counties under the terrain"
+msgstr "Szukanie powiatów pod terenem"
+
+msgid "All the counties under the terrain read to the end, the ones read whole before passed over: for a night, tens of gigabytes for a large scenery. Nothing is planted"
+msgstr "Wszystkie powiaty pod terenem czytane do końca, te wczytane wcześniej w całości są pomijane: na noc, dla dużej scenerii dziesiątki GB. Nic nie jest sadzone"
+
+msgid "Asking which counties lie under the area: %zu of %zu points, %zu counties"
+msgstr "Sprawdzanie, które powiaty leżą pod zasięgiem: %zu z %zu punktów, %zu powiatów"
+
+msgid "County %s (%zu of %zu): %.0f of %.0f MB read, %zu sheets, %zu trees"
+msgstr "Powiat %s (%zu z %zu): wczytano %.0f z %.0f MB, %zu arkuszy, %zu drzew"
+
+msgid "County %s (%zu of %zu): %.0f of up to %.0f MB read, %zu sheets passed, %zu wanted still to come"
+msgstr "Powiat %s (%zu z %zu): wczytano %.0f z najwyżej %.0f MB, minęło %zu arkuszy, brakuje jeszcze %zu potrzebnych"
+
+msgid "Stopped; what came is kept"
+msgstr "Przerwano; to, co doszło, zostało zapisane"
+
+msgid "Done: %zu counties under the area, %zu read now"
+msgstr "Gotowe: %zu powiatów pod zasięgiem, teraz wczytano %zu"
+
+msgid "Ploughed"
+msgstr "Zaorane"
+
+msgid "Turned over in autumn or before sowing: dark furrows of soil, clods, the lands with their dead furrows; no grass"
+msgstr "Odwrócone jesienią albo przed siewem: ciemne skiby ziemi, grudy, zagony z bruzdami rozorywkowymi; bez trawy"
+
+msgid "Harrowed and sown"
+msgstr "Zbronowane i obsiane"
+
+msgid "Smooth, crumbly soil just sown, the tramlines already driven"
+msgstr "Gładka, gruzełkowata ziemia tuż po siewie, ścieżki technologiczne już przejechane"
+
+msgid "Winter crop, young"
+msgstr "Ozimina, młoda"
+
+msgid "Wheat, rye or barley sown in autumn: a low green carpet in rows over the soil, from October till April"
+msgstr "Pszenica, żyto albo jęczmień siane jesienią: niski zielony dywanik w rzędach na ziemi, od października do kwietnia"
+
+msgid "Cereal, green"
+msgstr "Zboże, zielone"
+
+msgid "A cereal grown up but still green, May and June: dense knee-high stalks"
+msgstr "Zboże wyrośnięte, ale jeszcze zielone, maj i czerwiec: gęste źdźbła do kolan"
+
+msgid "Cereal, heading"
+msgstr "Zboże, kłoszenie"
+
+msgid "Ears out, the green going yellow: the end of June"
+msgstr "Kłosy wyszły, zieleń żółknie: koniec czerwca"
+
+msgid "Wheat, ripe"
+msgstr "Pszenica, dojrzała"
+
+msgid "Golden, waist-high, ears upright: July and August till the harvest"
+msgstr "Złota, do pasa, kłosy prosto: lipiec i sierpień do żniw"
+
+msgid "Barley, ripe"
+msgstr "Jęczmień, dojrzały"
+
+msgid "Paler than wheat, lower, the ears bowed: ripe from the start of July"
+msgstr "Jaśniejszy od pszenicy, niższy, kłosy pochylone: dojrzały od początku lipca"
+
+msgid "Rye, ripe"
+msgstr "Żyto, dojrzałe"
+
+msgid "The tallest of them, greyish straw: a man's height, the poorer sandy soils"
+msgstr "Najwyższe z nich, szarawa słoma: na wysokość człowieka, słabsze piaszczyste gleby"
+
+msgid "Oats, ripe"
+msgstr "Owies, dojrzały"
+
+msgid "Light, loose panicles instead of ears, a greenish straw"
+msgstr "Lekkie, luźne wiechy zamiast kłosów, zielonkawa słoma"
+
+msgid "Rape in flower"
+msgstr "Rzepak kwitnący"
+
+msgid "Yellow over the whole field, high: the end of April and May"
+msgstr "Żółto na całym polu, wysoki: koniec kwietnia i maj"
+
+msgid "Rape, ripe"
+msgstr "Rzepak, dojrzały"
+
+msgid "Brown pods on dry stalks: July before the harvest"
+msgstr "Brązowe łuszczyny na suchych łodygach: lipiec przed żniwami"
+
+msgid "Stubble"
+msgstr "Ściernisko"
+
+msgid "After the harvest: short straw in rows over the soil, the tramlines still there"
+msgstr "Po żniwach: krótka słoma w rzędach na ziemi, ścieżki technologiczne wciąż widać"
+
+msgid "High meadow"
+msgstr "Łąka wysoka"
+
+msgid "Mown once or twice a year, the grass and the herbs up to the knees, the ground gently uneven"
+msgstr "Koszona raz czy dwa razy w roku, trawa i zioła do kolan, ziemia lekko nierówna"
+
+msgid "Low meadow, pasture"
+msgstr "Łąka niska, pastwisko"
+
+msgid "Grazed or mown often: short dense grass, tussocks and trodden places"
+msgstr "Wypasana albo często koszona: krótka gęsta trawa, kępy i wydeptane miejsca"
+
+msgid "Fallow"
+msgstr "Ugór"
+
+msgid "Left unsown: grass, weeds and dry stalks of last year, tussocks"
+msgstr "Nieobsiany: trawa, chwasty i suche zeszłoroczne łodygi, kępy"
+
+msgid "A cultivated field"
+msgstr "Pole uprawne"
+
+msgid "A field as it's worked: the rows never quite straight, the lands with a crown and dead furrows, the headland along the edge with the rows going round, the ruts of the tramlines; the direction along the longest side"
+msgstr "Pole tak, jak się je uprawia: rzędy nigdy całkiem proste, zagony z grzbietem i bruzdami rozorywkowymi, uwrocia wzdłuż brzegu z rzędami dookoła, koleiny ścieżek technologicznych; kierunek wzdłuż najdłuższego boku"
+
+msgid "Crop##fields"
+msgstr "Uprawa##fields"
+
+msgid "Sown with##fields"
+msgstr "Obsiane##fields"
+
+msgid "none: the material of the palette"
+msgstr "brak: materiał z palety"
+
+msgid "The field gets the texture of the crop instead of the material of the palette, its 3D grass (added to the grass palette the first time) and the shape of the ground below; the texture lies along the rows. Each of them can be changed below before cutting out"
+msgstr "Pole dostaje teksturę uprawy zamiast materiału z palety, jej trawę 3D (dodaną do palety traw za pierwszym razem) i kształt ziemi poniżej; tekstura leży wzdłuż rzędów. Każde z nich można zmienić niżej przed wycięciem"
+
+msgid "Rows along the longest side##waves"
+msgstr "Rzędy wzdłuż najdłuższego boku##waves"
+
+msgid "The direction of the rows taken from the outline when it's cut out, as a farmer drives along the longest side; off: the direction below"
+msgstr "Kierunek rzędów wzięty z obrysu przy wycinaniu, tak jak rolnik jeździ wzdłuż najdłuższego boku; wyłączone: kierunek poniżej"
+
+msgid "Rows wander (m)##waves"
+msgstr "Rzędy falują (m)##waves"
+
+msgid "How far the rows bend sideways over a hundred metres or so: nothing in a field is drawn with a ruler. 0.5-1 m looks driven by hand"
+msgstr "Jak daleko rzędy uciekają na boki na mniej więcej stu metrach: nic na polu nie jest od linijki. 0,5-1 m wygląda jak jechane ręcznie"
+
+msgid "Lands (m)##waves"
+msgstr "Zagony (m)##waves"
+
+msgid "The width of a land: ploughed towards its middle for years it has a crown, the dead furrows lie between them. 20-40 m; 0: none"
+msgstr "Szerokość zagonu: orany latami do środka ma grzbiet, między zagonami leżą bruzdy rozorywkowe. 20-40 m; 0: brak"
+
+msgid "Crown of a land (m)##waves"
+msgstr "Grzbiet zagonu (m)##waves"
+
+msgid "Headland (m)##waves"
+msgstr "Uwrocie (m)##waves"
+
+msgid "The strip along the edge where the tractor turns: its rows go round the field, its inner side ragged where the rows end. 12-24 m; 0: none"
+msgstr "Pas wzdłuż brzegu, na którym zawraca ciągnik: jego rzędy idą dookoła pola, wewnętrzna krawędź poszarpana tam, gdzie kończą się rzędy. 12-24 m; 0: brak"
+
+msgid "Tramlines every (m)##waves"
+msgstr "Ścieżki technologiczne co (m)##waves"
+
+msgid "The two ruts of the sprayer, 1.8 m apart, across the field every 18, 24 or 36 m and round it in the middle of the headland: the soil painted in them, the grass taken away. 0: none"
+msgstr "Dwie koleiny opryskiwacza, 1,8 m od siebie, przez pole co 18, 24 albo 36 m i dookoła niego środkiem uwrocia: ziemia namalowana w nich, trawa zabrana. 0: brak"
+
+msgid "Ruts deep (m)##waves"
+msgstr "Głębokość kolein (m)##waves"
+
+msgid "How deep the ruts go into the ground; the terrain gets a point every metre under the field for them, so they come out as shallow wide dips; the paint does the rest. 0: painted only"
+msgstr "Jak głęboko koleiny wchodzą w ziemię; teren dostaje pod polem punkt co metr, więc wychodzą jako płytkie szerokie zagłębienia; resztę robi malowanie. 0: tylko namalowane"
+
+msgid "With a crop: turned from along the rows by this much (0: the rows of the texture along the rows of the field)"
+msgstr "Z uprawą: obrót względem rzędów o tyle (0: rzędy tekstury wzdłuż rzędów pola)"
+
+msgid "%s outlined again, Ctrl+Z puts it back"
+msgstr "%s obrysowane na nowo, Ctrl+Z cofa"
+
+msgid "Puts the outline of the surface back as the outline of the Fill tool; cut out again, it changes this surface"
+msgstr "Wstawia obrys powierzchni z powrotem jako obrys narzędzia Wypełnij; wycięcie go zmienia tę powierzchnię"
+
+msgid "Fetching the parcel from the cadastre (ULDK)"
+msgstr "Pobieranie działki z ewidencji (ULDK)"
+
+msgid "A cadastral parcel (click it)##outline"
+msgstr "Działka z ewidencji (kliknij ją)##outline"
+
+msgid "A click on the ground takes the outline of the parcel there from the cadastre (ULDK of GUGiK), Shift+click adds the parcel next to it or takes one away; then its points are moved as any others. Needs the terrain set where it lies (PUWG 1992)"
+msgstr "Klik w teren bierze obrys działki w tym miejscu z ewidencji (ULDK GUGiK), Shift+klik dokłada sąsiednią albo zabiera już wziętą; potem jej punkty przesuwa się jak każde inne. Teren musi wiedzieć, gdzie leży (PUWG 1992)"
+
+msgid "Fetch by the number##parcel"
+msgstr "Pobierz po numerze##parcel"
+
+msgid "The full number of the parcel: the district (TERYT), the precinct and the parcel; with Shift held it's added"
+msgstr "Pełny numer działki: jednostka (TERYT), obręb i numer; z wciśniętym Shift jest dokładana"
+
+msgid "Drag a point to move it, Alt+click on a point takes it away, on a side puts one in"
+msgstr "Przeciągnij punkt, by go przesunąć; Alt+klik na punkcie go usuwa, na boku wstawia nowy"
+
+msgid "No parcel: %s"
+msgstr "Brak działki: %s"
+
+msgid "%s doesn't touch the parcels taken before along a side: not added"
+msgstr "%s nie styka się bokiem z wziętymi wcześniej działkami: nie dodana"
+
+msgid "%zu parcels, %zu points"
+msgstr "Działek: %zu, punktów: %zu"
+
+msgid "rows %.0f deg%s"
+msgstr "rzędy %.0f°%s"
+
+msgid " (longest side)"
+msgstr " (najdłuższy bok)"
+
+msgid "Of %zu trees read: %zu too low, %zu outside the area, %zu too far from the tracks, %zu too near them, %zu by a road, %zu in water, %zu too close to another, %zu over the limit; %zu left"
+msgstr "Z %zu wczytanych drzew: za niskich %zu, poza obszarem %zu, za daleko od torów %zu, za blisko nich %zu, przy drodze %zu, w wodzie %zu, za blisko innego %zu, ponad limit %zu; zostaje %zu"
+
+msgid ". No tracks found in the scenery: the distance to the tracks takes every tree out"
+msgstr ". W scenerii nie znaleziono torów: odległość od torów odsiewa każde drzewo"
+
+msgid ". Not planted: %zu with no terrain under them, %zu outside the scenery, %zu whose model couldn't be made"
+msgstr ". Nie posadzono: %zu bez terenu pod nimi, %zu poza scenerią, %zu, których modelu nie dało się utworzyć"
+
+msgid "Part of the outline has no terrain under it: %zu chunks. A field there ends at the edge of the terrain"
+msgstr "Część obrysu nie ma pod sobą terenu: chunków %zu. Pole kończy się tam na krawędzi terenu"
+
+msgid "Add the missing chunks under the outline"
+msgstr "Dodaj brakujące chunki pod obrysem"
+
+msgid "Made from the terrain model (NMT of GUGiK), as the chunks around the camera are; the fields over them go onto them as they come"
+msgstr "Robione z numerycznego modelu terenu (NMT GUGiK), jak chunki wokół kamery; pola nad nimi wchodzą na nie, gdy się pojawią"
+
+msgid "Made from the ground of the scenery and the edges of the chunks beside them; the fields over them go onto them"
+msgstr "Robione z gruntu scenerii i krawędzi sąsiednich chunków; pola nad nimi wchodzą na nie"
+
+msgid "%zu chunks made from the ground of the scenery"
+msgstr "Zrobiono chunków z gruntu scenerii: %zu"
+
+msgid ". %zu chunks under the outline have no terrain: the field ends at its edge until they're added (then it goes onto them)"
+msgstr ". Pod obrysem %zu chunków nie ma terenu: pole kończy się na jego krawędzi, dopóki ich nie dodasz (wtedy na nie wejdzie)"
+
+msgid ". By the tracks (up to %.0f m, named zielsko_tor_): %zu"
+msgstr ". Przy torze (do %.0f m, nazwa zielsko_tor_): %zu"
+
+msgid "A group of the node bank of 3D trees: the trees by the tracks are planted from it straight away. Empty: from the groups above"
+msgstr "Grupa banku węzłów z drzewami 3D: drzewa przy torze od razu sadzą się z niej. Puste: z grup powyżej"
+
+msgid "Fields and surfaces cut out to texture them: GeoTools (F7)"
+msgstr "Pola i powierzchnie wycięte do teksturowania: GeoTools (F7)"
+
+msgid "Fields##geotools"
+msgstr "Pola##geotools"
+
+msgid "From the maps of geoportal.gov.pl onto the terrain: fields and parcels, trees, the track bed and slopes, the map to go to"
+msgstr "Z map geoportal.gov.pl na teren: pola i działki, drzewa, torowisko i skarpy, mapa do przechodzenia"
+
+msgid "Go to##geotools"
+msgstr "Idź do##geotools"
+
+msgid "Group for them##zielskonear"
+msgstr "Grupa dla nich##zielskonear"
+
+msgid "LMB adds a point of the outline of a field (or takes a parcel of the cadastre): a surface cut out of the terrain with a material of its own, a crop, the ground under it made wavy if wanted; Shift+LMB takes the last one back"
+msgstr "LPM dodaje punkt obrysu pola (albo bierze działkę z ewidencji): powierzchnia wycięta z terenu z własnym materiałem, uprawą, grunt pod nią falowany, jeśli trzeba; Shift+LPM cofa ostatni"
+
+msgid "No group %s in the node bank: nothing to put in"
+msgstr "W banku węzłów nie ma grupy %s: nie ma czym wstawiać"
+
+msgid "No trees by the tracks within the area"
+msgstr "W zasięgu nie ma drzew przy torze"
+
+msgid "Put in from##zielskoreplace"
+msgstr "Wstaw z##zielskoreplace"
+
+msgid "Replace the trees by the tracks##zielsko"
+msgstr "Wymień drzewa przy torze##zielsko"
+
+msgid "Replacing the trees by the tracks"
+msgstr "Wymiana drzew przy torze"
+
+msgid "Select the trees by the tracks##zielsko"
+msgstr "Zaznacz drzewa przy torze##zielsko"
+
+msgid "Selected: %zu trees by the tracks"
+msgstr "Zaznaczono drzew przy torze: %zu"
+
+msgid "The ones within the area, in the selection of the surroundings: moved, turned or deleted together there"
+msgstr "Te w zasięgu, do zaznaczenia w Otoczeniu: tam przesuwa się je, obraca albo usuwa razem"
+
+msgid "The trees named zielsko_tor_ within the area go in again from the group given, where they stood, turned as they were and as tall as the data has them. Not in the history: planting again puts the atlases back"
+msgstr "Drzewa zielsko_tor_ w zasięgu wstawiane są od nowa z podanej grupy, w tym samym miejscu, z tym samym obrotem i wysokością z danych. Bez historii: ponowne sadzenie przywraca atlasy"
+
+msgid "These are named zielsko_tor_N (the others zielsko_N) and shown blue in the dots: easy to find and to put in as 3D models, whose atlases would show up close to the train"
+msgstr "Te dostają nazwę zielsko_tor_N (pozostałe zielsko_N) i są niebieskie w podglądzie: łatwo je znaleźć i wstawić jako modele 3D, bo atlasy z bliska pociągu widać"
+
+msgid "Track bed and slopes##geotools"
+msgstr "Torowisko i skarpy##geotools"
+
+msgid "Trees"
+msgstr "Drzewa"
+
+msgid "Trees by the tracks"
+msgstr "Drzewa przy torze"
+
+msgid "Trees by the tracks put in from %s: %zu of %zu"
+msgstr "Drzewa przy torze wstawione z %s: %zu z %zu"
+
+msgid "Trees##geotools"
+msgstr "Drzewa##geotools"
+
+msgid "Up to (m from the axis)##zielskonear"
+msgstr "Do (m od osi)##zielskonear"
+
+msgid "ZIELSKO from space: the trees of the 3D tree models of geoportal.gov.pl, where they stand and as tall as they are, planted along the tracks"
+msgstr "ZIELSKO z kosmosu: drzewa z modeli 3D drzew geoportal.gov.pl, tam gdzie stoją i tak wysokie, jak są, sadzone wzdłuż torów"
+
+msgid "as the others"
+msgstr "jak pozostałe"
+
+msgid "group of 3D trees"
+msgstr "grupa drzew 3D"
+
+msgid "electrified"
+msgstr "zelektryfikowana"
+
+msgid "not electrified"
+msgstr "niezelektryfikowana"
+
+msgid "No map of the lines read"
+msgstr "Nie wczytano żadnej mapy linii"
+
+msgid "Read %zu files: %zu sections of lines, %zu stations; %zu stretches to design"
+msgstr "Wczytano plików: %zu; odcinków linii: %zu, stacji: %zu; odcinków do zaprojektowania: %zu"
+
+msgid "Designed %zu stretches of the area, %zu of them couldn't be"
+msgstr "Zaprojektowano odcinków w obszarze: %zu, z czego nie udało się: %zu"
+
+msgid "Nothing to lay: the tracks of the lines of the area lie there already, or no line goes through it"
+msgstr "Nie ma czego układać: tory linii z tego obszaru już leżą albo żadna linia przez niego nie przechodzi"
+
+msgid "Laid %zu paths, %.1f km of track, along %zu pieces of the lines. Ctrl+Z takes it back"
+msgstr "Ułożono torów: %zu, %.1f km toru, na %zu kawałkach linii. Ctrl+Z cofa"
+
+msgid "Stretches of lines through the area: %zu"
+msgstr "Odcinki linii przechodzące przez obszar: %zu"
+
+msgid "Stretch##rails"
+msgstr "Odcinek##rails"
+
+msgid "km##rails"
+msgstr "km##rails"
+
+msgid "km/h##rails"
+msgstr "km/h##rails"
+
+msgid "Tracks##rails"
+msgstr "Tory##rails"
+
+msgid "Traction##rails"
+msgstr "Trakcja##rails"
+
+msgid "Stretch##railsplan"
+msgstr "Odcinek##railsplan"
+
+msgid "m##railsplan"
+msgstr "m##railsplan"
+
+msgid "Curves##railsplan"
+msgstr "Łuki##railsplan"
+
+msgid "Slower##railsplan"
+msgstr "Wolniej##railsplan"
+
+msgid "From the map (m)##railsplan"
+msgstr "Od mapy (m)##railsplan"
+
+msgid "To lay##railsplan"
+msgstr "Do ułożenia##railsplan"
+
+msgid "Slower: curves too sharp for the speed of the line, laid with the speed they allow. From the map: how far the line designed lies from the points of the map, on average and at the worst; red where that's far, to be looked at on the orthophoto before it's laid. To lay: pieces within the area not laid yet, of all of the stretch"
+msgstr "Wolniej: łuki za ciasne na prędkość linii, ułożone z prędkością, na jaką pozwalają. Od mapy: jak daleko zaprojektowana linia leży od punktów mapy, średnio i w najgorszym miejscu; na czerwono tam, gdzie daleko, do obejrzenia na ortofotomapie przed ułożeniem. Do ułożenia: kawałki w obszarze jeszcze nieułożone, ze wszystkich kawałków odcinka"
+
+msgid "Chunks round the one under the camera##rails"
+msgstr "Chunki wokół tego pod kamerą##rails"
+
+msgid "The area the tracks are laid in: the chunk of the terrain under the camera and as many chunks round it; drawn yellow on the ground"
+msgstr "Obszar, w którym układane są tory: chunk terenu pod kamerą i tyle chunków wokół niego; narysowany na żółto na ziemi"
+
+msgid "Between the tracks of a double line (m)##rails"
+msgstr "Odstęp torów linii dwutorowej (m)##rails"
+
+msgid "The map gives the axis of the line: its two tracks are laid half of this to either side of it"
+msgstr "Mapa podaje oś linii: jej dwa tory są układane po połowie tego odstępu z każdej strony osi"
+
+msgid "Pieces of track up to (m)##rails"
+msgstr "Kawałki toru do (m)##rails"
+
+msgid "Speed where the map gives none (km/h)##rails"
+msgstr "Prędkość tam, gdzie mapa jej nie podaje (km/h)##rails"
+
+msgid "A point of the map is a bend from (m)##rails"
+msgstr "Punkt mapy jest załomem od (m)##rails"
+
+msgid "How far a point of the map has to lie from the straight through its neighbours to be a bend of the line: lower follows the map closer, and takes its inaccuracies for curves"
+msgstr "Jak daleko punkt mapy musi leżeć od prostej przez sąsiednie punkty, żeby był załomem linii: mniejsza wartość trzyma się mapy bliżej, ale bierze jej niedokładności za łuki"
+
+msgid "The lines of a railway map laid as tracks: designed by the norms from the axes of the map, with the speeds, the cants and the transition curves, their heights a grade line fitted to the ground. The tracks of stations, the switches and the shaping of the terrain under the tracks aren't made here yet"
+msgstr "Linie z mapy kolejowej ułożone jako tory: zaprojektowane według norm z osi mapy, z prędkościami, przechyłkami i krzywymi przejściowymi, a ich wysokości to niweleta dopasowana do terenu. Torów stacyjnych, rozjazdów i kształtowania terenu pod torami jeszcze tu nie ma"
+
+msgid "Read the map again##rails"
+msgstr "Wczytaj mapę ponownie##rails"
+
+msgid "The files .geojson (PUWG 1992, EPSG:2180) of the folder tory/ beside the terrain of the scenery: the axes of the lines with LN, km_s, km_e, v_k, NT, EL"
+msgstr "Pliki .geojson (PUWG 1992, EPSG:2180) z folderu tory/ obok terenu scenerii: osie linii z atrybutami LN, km_s, km_e, v_k, NT, EL"
+
+msgid "Design the tracks of the area##rails"
+msgstr "Zaprojektuj tory w obszarze##rails"
+
+msgid "Designing the tracks"
+msgstr "Projektowanie torów"
+
+msgid "Each stretch of a line going through the area is designed whole, which takes up to some seconds a stretch; the tracks are shown green, orange where a curve makes them slower than the line, red where they lie far from the map"
+msgstr "Każdy odcinek linii przechodzący przez obszar jest projektowany w całości, co trwa do kilku sekund na odcinek; tory są pokazane na zielono, na pomarańczowo tam, gdzie łuk wymusza prędkość niższą niż na linii, a na czerwono tam, gdzie leżą daleko od mapy"
+
+msgid "Lay the tracks of the area##rails"
+msgstr "Ułóż tory w obszarze##rails"
+
+msgid "Laying the tracks"
+msgstr "Układanie torów"
+
+msgid "The pieces of the tracks designed which lie within the area are laid, the ones laid before left as they are; they go on from the tracks laid in the areas next to it. Ctrl+Z takes all of it back"
+msgstr "Układane są kawałki zaprojektowanych torów leżące w obszarze, a ułożone wcześniej zostają bez zmian; nowe tory są kontynuacją torów ułożonych w sąsiednich obszarach. Ctrl+Z cofa wszystko"
+
+msgid "Tracks##geotools"
+msgstr "Tory##geotools"
+
+msgid "The lines of a railway map within the chunks round the camera designed by the norms and laid as tracks on the ground"
+msgstr "Linie z mapy kolejowej w chunkach wokół kamery, zaprojektowane według norm i ułożone jako tory na terenie"
+
+msgid "CREATE##chunk"
+msgstr "UTWÓRZ##chunk"
+
+msgid "The chunk was made from the ground of the scenery"
+msgstr "Chunk utworzony z podłoża scenerii"
+
+msgid "No terrain here: the chunk is made from the terrain model (NMT) where the terrain knows its place, else from the ground of the scenery and the edges of the chunks beside it"
+msgstr "Tu nie ma terenu: chunk powstaje z modelu terenu (NMT), jeśli teren zna swoje położenie, a inaczej z podłoża scenerii i krawędzi sąsiednich chunków"
+
+msgid "Left alone under the embankments of tracks at %zu places: the road gets through there in a structure (below)"
+msgstr "Pod nasypami torów teren zostawiony w %zu miejscach: tam droga przechodzi w obiekcie (niżej)"
+
+msgid "Flat ground past the road (m)##roadterrain"
+msgstr "Płaski teren poza drogą (m)##roadterrain"
+
+msgid "The ground is levelled wider than the road by this much either side, then the slopes begin: the edges of the road don't hang over them"
+msgstr "Teren jest wyrównany szerzej niż droga o tyle z każdej strony i dopiero potem zaczynają się skarpy: krawędzie drogi nie wiszą nad nimi"
+
+msgid "Take the grass from under the road##roadterrain"
+msgstr "Usuń trawę spod drogi##roadterrain"
+
+msgid "The grass grown on the terrain is taken away under the surface of the road and what's built beside it, so it doesn't stand out of the asphalt"
+msgstr "Trawa rosnąca na terenie jest usuwana pod nawierzchnią drogi i tym, co zbudowane obok, żeby nie wystawała z asfaltu"
+
+msgid "Semicircular arch (stone, brick)"
+msgstr "Sklepienie półkoliste (kamień, cegła)"
+
+msgid "Span of girders on abutments (steel, concrete)"
+msgstr "Przęsło belkowe na przyczółkach (stal, beton)"
+
+msgid "As high as fits where the clearance doesn't##structure"
+msgstr "Tak wysoki, jak się zmieści, gdy skrajnia się nie mieści##structure"
+
+msgid "Where the formation of the track isn't high enough over the road for the clearance set, the structure is built with the clearance there's room for (2.2 m at least) and says so, instead of being refused"
+msgstr "Gdzie torowisko nie leży dość wysoko nad drogą na ustawioną skrajnię, obiekt powstaje ze skrajnią, na jaką jest miejsce (co najmniej 2,2 m), i jest to zgłoszone, zamiast odmowy"
+
+msgid "Texture repeats every (m)##structure"
+msgstr "Tekstura powtarza się co (m)##structure"
+
+msgid "Lower lays the texture denser on the walls, higher stretches it"
+msgstr "Mniejsza wartość zagęszcza teksturę na ścianach, większa ją rozciąga"
+
+msgid "%s: built with a clearance of %.2f m, the formation is too low over the road for %.2f m"
+msgstr "%s: zbudowany ze skrajnią %.2f m, torowisko leży za nisko nad drogą na %.2f m"
+
+msgid "Texture turned by [deg]"
+msgstr "Obrót tekstury [°]"
+
+msgid "The image of the surface is laid flat over the world, the same way at every road; this turns it, for a surface with a grain (ruts, slabs) to go along the road"
+msgstr "Obraz nawierzchni jest położony płasko na świecie, tak samo na każdej drodze; to pole go obraca, żeby nawierzchnia z wyraźnym kierunkiem (koleiny, płyty) szła wzdłuż drogi"
+
+msgid "Asphalt road"
+msgstr "Droga asfaltowa"
+
+msgid "Dirt road"
+msgstr "Droga gruntowa"
+
+msgid "Kind of the road##roadkind"
+msgstr "Rodzaj drogi##roadkind"
+
+msgid "Dirt: no markings are painted, the steepest grade is three times what it was and the radii of the vertical curves a third, and the road is uneven. Choose its surface below as for any road"
+msgstr "Gruntowa: bez malowania pasów, największe pochylenie trzy razy większe, promienie łuków pionowych trzy razy mniejsze, a droga jest nierówna. Nawierzchnię wybierz niżej jak dla każdej drogi"
+
+msgid "Even as a table##roadkind"
+msgstr "Równa jak stół##roadkind"
+
+msgid "Up and down by (cm)##roadkind"
+msgstr "Nierówności do (cm)##roadkind"
+
+msgid "Waves about (m)##roadkind"
+msgstr "Fale co około (m)##roadkind"
+
+msgid "What's seen of the road rises and falls, the same way over the same ground, so its pieces meet; the vehicles go by its axis. Where it meets an even road or a junction there's a step of up to that much"
+msgstr "To, co widać z drogi, faluje, tak samo nad tym samym miejscem, więc kawałki się stykają; pojazdy jadą po osi. Na styku z równą drogą albo skrzyżowaniem jest uskok do tej wysokości"
+
+msgid "Uneven by [cm]"
+msgstr "Nierówności [cm]"
+
+msgid "A dirt road: what's seen of it rises and falls by this much; 0: even"
+msgstr "Droga gruntowa: to, co widać, faluje o tyle; 0: równa"
+
+msgid "As the kind has it##parapet"
+msgstr "Jak dla rodzaju obiektu##parapet"
+
+msgid "Nothing##parapet"
+msgstr "Nic##parapet"
+
+msgid "Railing (steel)##parapet"
+msgstr "Balustrada (stal)##parapet"
+
+msgid "Wall##parapet"
+msgstr "Attyka (mur)##parapet"
+
+msgid "On top of the faces##structure"
+msgstr "Na czołach##structure"
+
+msgid "What stands over each face along the track: an arch has a wall of its masonry, a viaduct and a span of girders a railing of steel, a culvert nothing"
+msgstr "Co stoi nad każdym czołem wzdłuż toru: sklepienie ma attykę z muru, wiadukt i przęsło belkowe stalową balustradę, przepust nic"
+
+msgid "Tube of corrugated steel"
+msgstr "Rura z blachy falistej"
+
+msgid "Spans##structure"
+msgstr "Przęsła##structure"
+
+msgid "More than one: piers stand between the spans, the width set shared by the spans and the piers; set the width for what's crossed, a road and a river beside it. A span narrower than 2 m isn't made"
+msgstr "Więcej niż jedno: między przęsłami stoją filary, a ustawiona szerokość dzieli się na przęsła i filary; ustaw szerokość na to, co ma być przekroczone, np. drogę i rzekę obok. Przęsło węższe niż 2 m nie powstaje"
+
+msgid "Texture of the steel##structure"
+msgstr "Tekstura stali##structure"
+
+msgid "Of the girders, the railings and the tube; empty: a plain dark colour with no texture"
+msgstr "Dźwigarów, balustrad i rury; puste: ciemny kolor bez tekstury"
+
+msgid "Preparing the graphics (takes longer at the first start of a new version)"
+msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
+
+msgid "Bridge of plate girders, the track on it"
+msgstr "Most blachownicowy, tor na konstrukcji"
+
+msgid "Bridge of trusses, the track between them"
+msgstr "Most kratownicowy, tor między kratownicami"
+
+msgid "%s: the formation is %.1f m over the road, a bridge with the track on it needs %.1f m: lower the road by %.1f m or the clearance"
+msgstr "%s: torowisko jest %.1f m nad drogą, most z torem na konstrukcji potrzebuje %.1f m: obniż drogę o %.1f m albo skrajnię"
+
+msgid "Pipe of corrugated steel"
+msgstr "Rura z blachy falistej"
+
+msgid "Box culvert (reinforced concrete)"
+msgstr "Przepust skrzynkowy (żelbet)"
+
+msgid "Masonry arch (stone, brick)"
+msgstr "Sklepienie murowane (kamień, cegła)"
+
+msgid "Frame viaduct (reinforced concrete)"
+msgstr "Wiadukt ramowy (żelbet)"
+
+msgid "Slab of encased steel beams on abutments"
+msgstr "Płyta z belek stalowych obetonowanych na przyczółkach"
+
+msgid "Deck plate girders, the track over them"
+msgstr "Blachownica z jazdą górą (tor na dźwigarach)"
+
+msgid "Through plate girders, the track between them"
+msgstr "Blachownica z jazdą dołem (tor między dźwigarami)"
+
+msgid "Through truss, the track between the trusses"
+msgstr "Kratownica z jazdą dołem (tor między kratownicami)"
+
+msgid "Takes %.2f m under the formation over the clearance"
+msgstr "Zajmuje %.2f m pod torowiskiem ponad skrajnią"
+
+msgid "%s: not built. The formation is %.1f m over the road and this kind takes %.2f m of it under the formation, which leaves %.2f m of clearance; lower the road under the track by %.2f m, or choose a bridge with the track between its girders (it takes the least)"
+msgstr "%s: nie postawiony. Torowisko jest %.1f m nad drogą, ten rodzaj zabiera z tego %.2f m pod torowiskiem i zostaje %.2f m skrajni; obniż drogę pod torem o %.2f m albo wybierz most z torem między dźwigarami (zabiera najmniej)"
+
+msgid "%zu crossing not built, the reason is over the button"
+msgid_plural "%zu crossings not built, the reasons are over the button"
+msgstr[0] "%zu skrzyżowanie bez obiektu, powód nad przyciskiem"
+msgstr[1] "%zu skrzyżowania bez obiektu, powody nad przyciskiem"
+msgstr[2] "%zu skrzyżowań bez obiektu, powody nad przyciskiem"
+
+msgid "Where the road crosses the formation of a track (its modifier of the terrain). Under the embankment (a pipe, a box culvert, an arch,\na frame, a slab): faces where the slopes come down to them, wings along the slopes, the ground over them raised to cover them.\nBridges (deck or through plate girders, a truss): the embankment cut away between the abutments, the deck on bearings.\nEvery edge of the cut ground lies inside a wall or a wing, the opening has a floor of its own"
+msgstr "Tam, gdzie droga przecina torowisko (jego modyfikator terenu). Pod nasypem (rura, przepust skrzynkowy, sklepienie,\nrama, płyta): czoła tam, gdzie skarpa schodzi do obiektu, skrzydła wzdłuż skarp, teren nad obiektem podniesiony, by go przykryć.\nMosty (blachownica z jazdą górą lub dołem, kratownica): nasyp wycięty między przyczółkami, przęsło na łożyskach.\nKażda krawędź wyciętego terenu leży wewnątrz ściany albo skrzydła, otwór ma własne dno"
+
+msgid "Where the formation of the track isn't high enough over the road for the clearance set, the structure is built with the clearance there's room for (2.5 m at least) and says so, instead of being refused"
+msgstr "Tam, gdzie torowisko nie jest dość wysoko nad drogą na ustawioną skrajnię, obiekt dostaje skrajnię, na jaką jest miejsce (co najmniej 2,5 m), i o tym mówi, zamiast odmówić"
+
+msgid "The kind as it is built with these settings on an embankment 7 m high; drag to turn it round"
+msgstr "Ten rodzaj tak, jak powstanie z tymi ustawieniami na nasypie wysokim na 7 m; przeciągnij myszą, żeby go obrócić"
+
+msgid "Not built on a 7 m embankment with these settings"
+msgstr "Z tymi ustawieniami nie powstanie na nasypie 7 m"
+
+msgid "Texture of the earth##structure"
+msgstr "Tekstura obsypki##structure"
+
+msgid "Look for textures##earth"
+msgstr "Szukaj tekstur##earth"
+
+msgid "Looking for the textures of earth"
+msgstr "Szukam tekstur ziemi"
+
+msgid "Textures of earth found: %zu"
+msgstr "Znalezione tekstury ziemi: %zu"
+
+msgid "The earth heaped along the wings and the cornices, over the edges where the terrain is cut, down into the terrain round about; textures with earth, gravel, stone or soil in the name. Empty: the material of the terrain there"
+msgstr "Obsypka z ziemi wzdłuż skrzydeł i gzymsów: przykrywa krawędzie wycięcia terenu i schodzi łagodnie w teren wokół. Lista szuka tekstur z ziemią, żwirem, kamieniem, gruntem w nazwie. Puste pole: materiał terenu w tym miejscu"
+
+msgid "Add a model..."
+msgstr "Dodaj model..."
+
+msgid "Puts a model into the node bank (nodebank.txt) in a group of your choice; its preview is made in the background"
+msgstr "Dopisuje model do banku obiektów (nodebank.txt) w wybranej grupie; miniatura robi się w tle"
+
+msgid "Make the missing previews"
+msgstr "Zrób brakujące miniatury"
+
+msgid "No previews are missing"
+msgstr "Nie brakuje żadnej miniatury"
+
+msgid "Making %zu previews in the background; reload the node bank when it's done, or they show at the next start"
+msgstr "Robię w tle %zu miniatur; po skończeniu przeładuj bank albo pokażą się przy następnym uruchomieniu"
+
+msgid "The maker of the previews couldn't be started"
+msgstr "Nie udało się uruchomić robienia miniatur"
+
+msgid "Starts the simulator again in the background to draw the models with no preview yet (eu07 -generate-nodebank-previews); the previews show after reloading the node bank, or at the next start"
+msgstr "Uruchamia w tle drugi raz symulator, który rysuje modele bez miniatury (eu07 -generate-nodebank-previews); miniatury pokażą się po przeładowaniu banku albo przy następnym uruchomieniu"
+
+msgid "The preview shows at the next start (or after reloading the node bank), once it's made:\na model added here gets it made in the background, the others with \"Make the missing previews\" under More settings"
+msgstr "Miniatura pojawi się przy następnym uruchomieniu (albo po przeładowaniu banku), kiedy już powstanie:\nmodel dodany tutaj dostaje ją w tle sam, pozostałe zrobisz przyciskiem „Zrób brakujące miniatury” w „Więcej ustawień”"
+
+msgid "Add a model to the node bank"
+msgstr "Dodaj model do banku obiektów"
+
+msgid "model, from models/ (e.g. drzewa/drzewo_lisciaste_01.t3d)"
+msgstr "model, z models/ (np. drzewa/drzewo_lisciaste_01.t3d)"
+
+msgid "Look for models not in the bank"
+msgstr "Szukaj modeli spoza banku"
+
+msgid "filter"
+msgstr "filtr"
+
+msgid "press the button above to list them"
+msgstr "naciśnij przycisk wyżej, żeby je wypisać"
+
+msgid "Skin##add"
+msgstr "Skóra (tekstura)##add"
+
+msgid "A texture replacing the model's own (a path under textures/), or none: the model as it is"
+msgstr "Tekstura zamiast własnej modelu (ścieżka w textures/) albo none: model taki, jaki jest"
+
+msgid "Range (m)##add"
+msgstr "Zasięg (m)##add"
+
+msgid "Group##addcombo"
+msgstr "Grupa##addcombo"
+
+msgid "(choose or type below)"
+msgstr "(wybierz albo wpisz niżej)"
+
+msgid "New group##add"
+msgstr "Nowa grupa##add"
+
+msgid "or a name of a new group"
+msgstr "albo nazwa nowej grupy"
+
+msgid "There's no models/%s"
+msgstr "Nie ma pliku models/%s"
+
+msgid "Add to the node bank"
+msgstr "Dodaj do banku"
+
+msgid "Added to \"%s\"; its preview is being made in the background and shows after reloading the node bank, or at the next start"
+msgstr "Dodano do „%s”; miniatura robi się w tle i pokaże się po przeładowaniu banku albo przy następnym uruchomieniu"
+
+msgid "Added to \"%s\"; the preview couldn't be made in the background, it'll be made with \"Make the missing previews\""
+msgstr "Dodano do „%s”; miniatury nie udało się zrobić w tle, zrobisz ją przyciskiem „Zrób brakujące miniatury”"
+
+msgid "nodebank.txt couldn't be written"
+msgstr "Nie udało się zapisać nodebank.txt"
+
+msgid "Written into nodebank.txt in the group chosen. The preview is made in the background and shows after reloading the node bank, or at the next start"
+msgstr "Zapisuje do nodebank.txt w wybranej grupie. Miniatura robi się w tle i pokaże się po przeładowaniu banku albo przy następnym uruchomieniu"
+
+msgid "Single model##brush"
+msgstr "Pojedynczy model##brush"
+
+msgid "Many models##brush"
+msgstr "Wiele modeli##brush"
+
+msgid "LMB: one model at the cross on the ground"
+msgstr "LPM: jeden model w miejscu krzyżyka na gruncie"
+
+msgid "Hold LMB: models in the circle along the cursor's path; one Ctrl+Z takes the whole stroke back"
+msgstr "Przytrzymaj LPM: modele w okręgu wzdłuż drogi kursora; jedno Ctrl+Z cofa całe pociągnięcie"
+
+msgid "Radius##brush"
+msgstr "Promień##brush"
+
+msgid "Random, anywhere in the circle"
+msgstr "Losowe"
+
+msgid "Uniform (grid)"
+msgstr "Równomierne (siatka)"
+
+msgid "Feathered to the edge"
+msgstr "Rozmyte do krawędzi"
+
+msgid "Fill##brush"
+msgstr "Wypełnienie##brush"
+
+msgid "Spacing##brush"
+msgstr "Odstęp##brush"
+
+msgid "The step of the grid the models stand on"
+msgstr "Krok siatki, na której stoją modele"
+
+msgid "The least distance between two models"
+msgstr "Najmniejsza odległość między dwoma modelami"
+
+msgid "Density##brush"
+msgstr "Gęstość##brush"
+
+msgid "%.1f per 100 m²"
+msgstr "%.1f na 100 m²"
+
+msgid "How many models a 100 m² the circle gets, as many as the spacing lets in"
+msgstr "Ile modeli na 100 m² dostaje okrąg, o ile pozwala na to odstęp"
+
+msgid "Turn##brush"
+msgstr "Obrót##brush"
+
+msgid "Fixed##brushturn"
+msgstr "Stały##brushturn"
+
+msgid "Random##brushturn"
+msgstr "Losowy##brushturn"
+
+msgid "Angles x y z##brush"
+msgstr "Kąty x y z##brush"
+
+msgid "Each way x y z##brushturn"
+msgstr "W obie strony x y z##brushturn"
+
+msgid "Each model turned by a random angle up to this much each way: x and z tilt it, y turns it round (180: any way)"
+msgstr "Każdy model obrócony o losowy kąt do tylu stopni w obie strony: x i z go przechylają, y obraca wokół pionu (180: dowolnie)"
+
+msgid "Scale##brush"
+msgstr "Skala##brush"
+
+msgid "Fixed##brushscale"
+msgstr "Stała##brushscale"
+
+msgid "Random##brushscale"
+msgstr "Losowa##brushscale"
+
+msgid "Percent x y z##brush"
+msgstr "Procent x y z##brush"
+
+msgid "The same on every axis##brush"
+msgstr "Jednakowa na wszystkich osiach##brush"
+
+msgid "Each way##brushscale"
+msgstr "W obie strony##brushscale"
+
+msgid "Each way x y z##brushscale"
+msgstr "W obie strony x y z##brushscale"
+
+msgid "Each model scaled by a random share up to this much each way from its own size"
+msgstr "Każdy model przeskalowany losowo o tyle procent w obie strony od własnego rozmiaru"
+
+msgid "Brush: %zu models put; Ctrl+Z takes the whole stroke back"
+msgstr "Pędzel: postawiono %zu modeli; Ctrl+Z cofa całe pociągnięcie"
+
+msgid "The names of %zu tracks had characters outside of ASCII (Polish letters and the like), they were changed to ASCII:"
+msgstr "UWAGA: nazwy %zu torów miały znaki spoza ASCII (polskie litery itp.), zamieniono je na ASCII:"
+
+msgid "... and %zu more, the whole list is in the log"
+msgstr "... i %zu kolejnych, pełna lista jest w logu"
+
+msgid "The events and the rest still find the tracks by their old names. Save the scenery to write the new names into its files."
+msgstr "Eventy i reszta dalej znajdują tory po starych nazwach. Zapisz scenerię, żeby nowe nazwy trafiły do plików."
+
+msgid "%d of them are in files the editor doesn't write; there they stay as they were."
+msgstr "%d z nich jest w plikach, których edytor nie zapisuje; tam zostają po staremu."
+
+msgid "Track names changed to ASCII: %zu"
+msgstr "Nazwy torów zamienione na ASCII: %zu"
+
+msgid "Safety barriers##barriers"
+msgstr "Bariery ochronne##barriers"
+
+msgid "A barrier of a kind which isn't drawn yet; it's kept as it is"
+msgstr "Bariera rodzaju, który nie jest jeszcze rysowany; zostaje zapisana bez zmian"
+
+msgid "Left side##barrier"
+msgstr "Lewa strona##barrier"
+
+msgid "Right side##barrier"
+msgstr "Prawa strona##barrier"
+
+msgid "Side##barrier"
+msgstr "Strona##barrier"
+
+msgid "Left and right are told facing along the axis of the piece, as its sides are"
+msgstr "Lewa i prawa są liczone patrząc wzdłuż osi odcinka, tak jak jego pobocza"
+
+msgid "From the edge of the lanes [m]##barrier"
+msgstr "Od krawędzi pasów [m]##barrier"
+
+msgid "Starts at [m]##barrier"
+msgstr "Początek [m]##barrier"
+
+msgid "Up to the end of the piece##barrier"
+msgstr "Do końca odcinka##barrier"
+
+msgid "Ends at [m]##barrier"
+msgstr "Koniec [m]##barrier"
+
+msgid "Start##barrier"
+msgstr "Zakończenie na początku##barrier"
+
+msgid "End##barrier"
+msgstr "Zakończenie na końcu##barrier"
+
+msgid "over [m]##barrierstart"
+msgstr "na długości [m]##barrierstart"
+
+msgid "over [m]##barrierend"
+msgstr "na długości [m]##barrierend"
+
+msgid "Led down into the ground##ending"
+msgstr "Pochylona do ziemi##ending"
+
+msgid "Led down and away from the road##ending"
+msgstr "Pochylona do ziemi i odgięta od drogi##ending"
+
+msgid "Cut short##ending"
+msgstr "Krótka końcówka##ending"
+
+msgid "Remove the barrier##barrier"
+msgstr "Usuń barierę##barrier"
+
+msgid "Add on the left##barrier"
+msgstr "Dodaj z lewej##barrier"
+
+msgid "Add on the right##barrier"
+msgstr "Dodaj z prawej##barrier"
+
+msgid "A steel rail on posts along the whole piece. Where the barriers of two pieces meet they're one barrier:\nit's led down into the ground only where it really ends, and it ends short of a junction"
+msgstr "Stalowa prowadnica na słupkach wzdłuż całego odcinka. Gdzie bariery dwóch odcinków się stykają, są jedną barierą:\nschodzi do ziemi tylko tam, gdzie naprawdę się kończy, i kończy się przed skrzyżowaniem"
+
+msgid "Barriers changed, Ctrl+Z takes it back"
+msgstr "Bariery zmienione, Ctrl+Z cofa"
+
+msgid "Stalks sown (per m2)##fields"
+msgstr "Obsada (źdźbeł/m²)##fields"
+
+msgid "How dense the crop stands in this field, up to the most its kind of the grass palette can have. A poor soil or the edge of a field: fewer"
+msgstr "Jak gęsto stoi uprawa na tym polu, najwyżej tyle, ile może mieć jej rodzaj w palecie traw. Słaba gleba albo brzeg pola: mniej"
+
+msgid "Update the crops of the grass palette##fields"
+msgstr "Odśwież uprawy w palecie traw##fields"
+
+msgid "The kinds of the grass palette named as the crops take the plants of the crops as they are now: the ear, the colours, the light of the canopy, the reach. The fields sown with them change with them"
+msgstr "Rodzaje palety traw nazwane jak uprawy dostają obecne rośliny upraw: kłos, kolory, światło w łanie, zasięg. Pola obsiane nimi zmieniają się razem z nimi"
+
+msgid "Brush: a dab puts %d models at most; widen the spacing or narrow the circle for the rest"
+msgstr "Pędzel: jedno dotknięcie stawia najwyżej %d modeli; zwiększ odstęp albo zmniejsz koło, by objąć resztę"
+
+msgid "In a circle##brushshape"
+msgstr "W kole##brushshape"
+
+msgid "Along a line##brushshape"
+msgstr "Wzdłuż linii##brushshape"
+
+msgid "LMB: the points of the line; Enter puts the models, Backspace takes the last point back, Esc drops the line"
+msgstr "LPM: punkty linii; Enter stawia modele, Backspace cofa ostatni punkt, Esc porzuca linię"
+
+msgid "Width each side##brushline"
+msgstr "Szerokość w każdą stronę##brushline"
+
+msgid "How far to each side of the line the models go; 0: one row on the line itself"
+msgstr "Jak daleko w każdą stronę od linii sięgają modele; 0: jeden rząd na samej linii"
+
+msgid "Regular, in rows"
+msgstr "Regularnie, w rzędach"
+
+msgid "Irregular, anywhere in the band"
+msgstr "Nieregularnie, gdziekolwiek w pasie"
+
+msgid "Fill##brushline"
+msgstr "Wypełnienie##brushline"
+
+msgid "Spacing##brushline"
+msgstr "Odstęp##brushline"
+
+msgid "The step along the line and between the rows"
+msgstr "Krok wzdłuż linii i odstęp między rzędami"
+
+msgid "Irregularity##brushline"
+msgstr "Nieregularność##brushline"
+
+msgid "Each model moved off its place in the rows by up to this share of the spacing each way; 0: exactly in rows"
+msgstr "Każdy model przesunięty ze swojego miejsca w rzędzie o najwyżej taką część odstępu w każdą stronę; 0: dokładnie w rzędach"
+
+msgid "Density##brushline"
+msgstr "Gęstość##brushline"
+
+msgid "Fewer towards the edges##brushline"
+msgstr "Rzadziej ku krawędziom##brushline"
+
+msgid "Size at the edges##brushline"
+msgstr "Rozmiar na krawędziach##brushline"
+
+msgid "The size of the models at the edges of the band, as a share of their size on the line; between, it goes evenly from one to the other"
+msgstr "Rozmiar modeli na krawędziach pasa jako część ich rozmiaru na linii; pomiędzy zmienia się równomiernie od jednego do drugiego"
+
+msgid "Brush: a line needs two points at least"
+msgstr "Pędzel: linia potrzebuje co najmniej dwóch punktów"
+
+msgid "Brush: no models put along the line"
+msgstr "Pędzel: wzdłuż linii nie postawiono żadnego modelu"
+
+msgid "Brush: %zu models put along the line, the most one line puts; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii, najwięcej, ile stawia jedna linia; Ctrl+Z je cofa"
+
+msgid "Brush: %zu models put along the line; Ctrl+Z takes them back"
+msgstr "Pędzel: postawiono %zu modeli wzdłuż linii; Ctrl+Z je cofa"
+
+msgid "Brush: the scenery has no terrain of the Terrain mode to grow the 3D grass on or to paint"
+msgstr "Pędzel: sceneria nie ma terenu z trybu Teren, nie ma na czym sadzić trawy 3D ani malować"
+
+msgid "3D grass: a path needs two points at least"
+msgstr "Trawa 3D: ścieżka potrzebuje co najmniej dwóch punktów"
+
+msgid "3D grass: no grass along the path to take away"
+msgstr "Trawa 3D: wzdłuż ścieżki nie ma trawy do zabrania"
+
+msgid "3D grass: nothing grown, no chunk of the terrain under the path, or no room for another kind of grass"
+msgstr "Trawa 3D: nic nie wyrosło, pod ścieżką nie ma kawałka terenu albo nie ma miejsca na kolejny rodzaj trawy"
+
+msgid "3D grass taken away along the path; Ctrl+Z puts it back"
+msgstr "Trawa 3D zabrana wzdłuż ścieżki; Ctrl+Z ją przywraca"
+
+msgid "3D grass grown along the path: %s; Ctrl+Z takes it back"
+msgstr "Trawa 3D wyrosła wzdłuż ścieżki: %s; Ctrl+Z cofa"
+
+msgid "3D grass: no grass under the cursor to pick"
+msgstr "Trawa 3D: pod kursorem nie ma trawy do pobrania"
+
+msgid "3D grass: picked %s"
+msgstr "Trawa 3D: pobrano %s"
+
+msgid "Ground texture: no terrain under the cursor to pick a material from"
+msgstr "Tekstura gruntu: pod kursorem nie ma terenu, z którego można pobrać materiał"
+
+msgid "Ground texture: picked %s"
+msgstr "Tekstura gruntu: pobrano %s"
+
+msgid "3D grass: the path dropped"
+msgstr "Trawa 3D: ścieżka porzucona"
+
+msgid "Brush: the line dropped"
+msgstr "Pędzel: linia porzucona"
+
+msgid "Brush: the stroke taken back (Esc)"
+msgstr "Pędzel: pociągnięcie cofnięte (Esc)"
+
+msgid "The scenery has no terrain of the Terrain mode yet: there's nothing to grow the 3D grass on or to paint the ground texture of. Make it in the Terrain mode, from the terrain model or an empty, flat one."
+msgstr "Sceneria nie ma jeszcze terenu z trybu Teren: nie ma na czym sadzić trawy 3D ani malować tekstury gruntu. Zrób go w trybie Teren, z prawdziwego terenu z map albo pusty, płaski."
+
+msgid "LMB: the points of the path. Enter grows the grass along it, Shift+Enter takes the grass away along it. Backspace takes the last point back, Esc drops the path. Alt+LMB picks the kind of grass under the cursor"
+msgstr "LPM: punkty ścieżki. Enter sadzi trawę wzdłuż niej, Shift+Enter zabiera trawę wzdłuż niej. Backspace cofa ostatni punkt, Esc porzuca ścieżkę. Alt+LPM pobiera rodzaj trawy spod kursora"
+
+msgid "Width each side##grasspath"
+msgstr "Szerokość w każdą stronę##grasspath"
+
+msgid "How far to each side of the path the grass grows fully"
+msgstr "Jak daleko w każdą stronę od ścieżki trawa rośnie w pełni"
+
+msgid "Soft edge##grasspath"
+msgstr "Miękka krawędź##grasspath"
+
+msgid "Metres beyond the width over which the grass thins out to nothing; 0: a sharp edge"
+msgstr "Ile metrów za szerokością trawa rzednie do zera; 0: ostra krawędź"
+
+msgid "Fullness##grasspath"
+msgstr "Pełność##grasspath"
+
+msgid "100%: the full density of the kind (blades/m2 in the palette below), the other kinds there giving way;\nless: part of the way there, the grass growing there already partly kept. With Shift+Enter: how much of the grass is taken away"
+msgstr "100%: pełna gęstość rodzaju (źdźbła/m2 w palecie niżej), inne rodzaje ustępują mu miejsca;\nmniej: część drogi do pełnej, trawa, która już tam rośnie, częściowo zostaje. Przy Shift+Enter: ile trawy zabrać"
+
+msgid "Points of the path: %zu"
+msgstr "Punkty ścieżki: %zu"
+
+msgid "Hold LMB: paints the material chosen below in the circle. Shift+LMB: the first material of the palette. Alt+LMB: picks the material under the cursor. Esc with the button held takes the stroke back"
+msgstr "Trzymaj LPM: maluje w kole materiał wybrany niżej. Shift+LPM: pierwszy materiał palety. Alt+LPM: pobiera materiał spod kursora. Esc przy wciśniętym przycisku cofa pociągnięcie"
+
+msgid "Hold LMB: grows the kind of grass chosen below in the circle. Shift+LMB: takes all grass away. Alt+LMB: picks the kind of grass under the cursor. Esc with the button held takes the stroke back"
+msgstr "Trzymaj LPM: sadzi w kole rodzaj trawy wybrany niżej. Shift+LPM: zabiera całą trawę. Alt+LPM: pobiera rodzaj trawy spod kursora. Esc przy wciśniętym przycisku cofa pociągnięcie"
+
+msgid "Radius##brushsurface"
+msgstr "Promień##brushsurface"
+
+msgid "The radius of the brush, the same as of the brushes of the Terrain mode"
+msgstr "Promień pędzla, ten sam co pędzli trybu Teren"
+
+msgid "Strength##brushsurface"
+msgstr "Siła##brushsurface"
+
+msgid "How fast the material covers the ground while the button is held (Mix); Cover covers at once"
+msgstr "Jak szybko materiał pokrywa grunt przy trzymanym przycisku (Mieszaj); Kryj pokrywa od razu"
+
+msgid "How fast the grass grows dense while the button is held"
+msgstr "Jak szybko trawa gęstnieje przy trzymanym przycisku"
+
+msgid "Materials##brushtexture"
+msgstr "Materiały##brushtexture"
+
+msgid "Kinds of 3D grass##brushgrass"
+msgstr "Rodzaje trawy 3D##brushgrass"
+
+msgid "Models##brushwhat"
+msgstr "Modele##brushwhat"
+
+msgid "Puts models of the node bank on the ground: one at a click, many in a circle or along a line"
+msgstr "Stawia na gruncie modele z banku obiektów: jeden na kliknięcie, wiele w kole albo wzdłuż linii"
+
+msgid "3D grass##brushwhat"
+msgstr "Trawa 3D##brushwhat"
+
+msgid "Grows 3D grass on the terrain: blades drawn by the shader of the terrain (Hirek's), no models.\nThe kinds of grass are those of the grass palette, the same as the 3D grass tool of the Terrain mode"
+msgstr "Sadzi trawę 3D na terenie: źdźbła rysowane przez shader terenu (Hirka), bez modeli.\nRodzaje trawy są z palety traw, tej samej co w narzędziu Trawa 3D trybu Teren"
+
+msgid "Ground texture##brushwhat"
+msgstr "Tekstura gruntu##brushwhat"
+
+msgid "Paints the materials of the terrain palette into the ground (grass, earth, gravel and the like),\nas the Ground texture tool of the Terrain mode does. Only the picture of the ground changes, no blades grow"
+msgstr "Maluje w gruncie materiały z palety terenu (trawa, ziemia, żwir i tym podobne),\njak narzędzie Tekstura gruntu trybu Teren. Zmienia się tylko obraz gruntu, źdźbła nie rosną"
+
+msgid "The brush puts:"
+msgstr "Pędzel kładzie:"
+
+msgid "In a circle##grassshape"
+msgstr "W kole##grassshape"
+
+msgid "The grass grows in the circle under the cursor while LMB is held, the longer the denser"
+msgstr "Trawa rośnie w kole pod kursorem, dopóki trzymasz LPM; im dłużej, tym gęściej"
+
+msgid "Along a path##grassshape"
+msgstr "Wzdłuż ścieżki##grassshape"
+
+msgid "LMB clicks the points of a path on the ground, Enter grows the grass in a band along it at once:\na verge, a ditch, a strip between the tracks, a path across a meadow"
+msgstr "LPM klika punkty ścieżki na gruncie, Enter od razu sadzi trawę pasem wzdłuż niej:\npobocze, rów, pas między torami, ścieżka przez łąkę"
+
+msgid "Ground texture"
+msgstr "Tekstura gruntu"
+
+msgid "LMB paints the material chosen in the palette into the ground, Shift+LMB the first material of the palette, Alt+LMB picks the material under the cursor.\nThe Brush of the Surroundings paints it too (Ground texture)"
+msgstr "LPM maluje w gruncie materiał wybrany w palecie, Shift+LPM pierwszy materiał palety, Alt+LPM pobiera materiał spod kursora.\nPędzel w Otoczeniu też to maluje (Tekstura gruntu)"
+
+msgid "3D grass"
+msgstr "Trawa 3D"
+
+msgid "LMB grows the kind of 3D grass chosen in the grass palette (blades drawn by the shader of the terrain), Shift+LMB takes the grass away.\nThe Brush of the Surroundings grows it too (3D grass), also in a band along a path"
+msgstr "LPM sadzi rodzaj trawy 3D wybrany w palecie traw (źdźbła rysowane przez shader terenu), Shift+LPM zabiera trawę.\nPędzel w Otoczeniu też ją sadzi (Trawa 3D), także pasem wzdłuż ścieżki"
+
+msgid "3D grass##terrain"
+msgstr "Trawa 3D##terrain"
+
+# scenery editor: entries of both sides of the merge of feat/gl46-migration
+
+msgid "Along the track: hectometre posts, fouling point markers, trainsets"
+msgstr "Przy torze: słupki hektometrowe, wskaźniki ukresu, składy"
+
+msgid "Objects along the track"
+msgstr "Obiekty przy torze"
+
+msgid "the line the objects go along"
+msgstr "linia, wzdłuż której idą obiekty"
+
+msgid "LMB on a track: the line the objects go along"
+msgstr "LPM na torze: linia, wzdłuż której idą obiekty"
+
+msgid "Click: the line the objects go along"
+msgstr "LPM: linia, wzdłuż której idą obiekty"
+
+msgid "%.2f m along the reference line, %d copies (the model is %.2f m)"
+msgstr "%.2f m wzdłuż linii odniesienia, kopii: %d (model ma %.2f m)"
+
+msgid "As long as the model"
+msgstr "Długość jak model"
+
+msgid "Along the whole track"
+msgstr "Na całym torze"
+
+msgid "In the view: drag the blue cross along the track and aside; Shift: height; Ctrl: only along"
+msgstr "W widoku: przeciągnij niebieski celownik wzdłuż toru i w bok; Shift: wysokość; Ctrl: tylko wzdłuż"
+
+msgid "Fit to terrain"
+msgstr "Dopasuj do terenu"
+
+msgid "Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, editor terrain).\nPlaces without any ground use the height below."
+msgstr "Kładzie zdjęcia na geometrii gruntu (kształty terenu, modele kafli terenu, teren edytora).\nMiejsca bez gruntu dostają wysokość podaną niżej."
+
+msgid "Raises the fitted imagery above the ground. Keep it below the objects you want to see:\nin the scene everything lower than this ends up under the imagery."
+msgstr "Unosi dopasowane zdjęcia nad grunt. Trzymaj je poniżej obiektów, które chcesz widzieć:\nw scenie wszystko, co jest niżej, znajdzie się pod zdjęciami."
+
+msgid "Covered by objects and terrain"
+msgstr "Chowaj za obiektami i terenem"
+
+msgid "No signal templates: no template of the scenery directory is described with category: signal. tools/editor/signal_headers.py writes the descriptions into the signal templates."
+msgstr "Brak szablonów sygnalizatorów: żaden szablon katalogu scenerii nie ma opisu z category: signal. tools/editor/signal_headers.py dopisuje opisy do szablonów sygnalizatorów."
+
+msgid "Texture of the plate from textures/tabl, e.g. a-12 or tob. Left empty: the one named like the signal, if there is one"
+msgstr "Tekstura tablicy z textures/tabl, np. a-12 albo tob. Puste: ta nazwana tak jak sygnalizator, jeśli istnieje"
+
+msgid "Tracks and switches, signals, objects along the track, checks of the line"
+msgstr "Tory i rozjazdy, sygnalizatory, obiekty wzdłuż toru, kontrole linii"
+
+msgid "the type of the signal"
+msgstr "typ sygnalizatora"
+
+msgid "Hold the right button and move the mouse: look around"
+msgstr "Trzymaj prawy przycisk i ruszaj myszą: rozglądasz się"
+
+msgid "With the right button held: fly forwards, back and to the sides; E and Q: up and down"
+msgstr "Z wciśniętym prawym przyciskiem: lot do przodu, do tyłu i na boki; E i Q: w górę i w dół"
+
+msgid "The top view, and back to 3D"
+msgstr "Widok z góry i z powrotem do 3D"
+
+msgid "Zoom in and out where the cursor points"
+msgstr "Przybliża i oddala tam, gdzie wskazuje kursor"
+
+msgid "In the top view: hold the wheel and drag to move the map"
+msgstr "W widoku z góry: wciśnij kółko i przeciągnij, żeby przesunąć mapę"
+
+msgid "Fly to what is selected"
+msgstr "Lot do zaznaczonego"
+
+msgid "Look around with the right button held"
+msgstr "Rozejrzyj się z wciśniętym prawym przyciskiem"
+
+msgid "Switch to the top view"
+msgstr "Przełącz na widok z góry"
+
+msgid "The Tracks field of work"
+msgstr "Dział Tory"
+
+msgid "The lay tool"
+msgstr "Narzędzie Układanie"
+
+msgid "Open the Tracks field of work"
+msgstr "Otwórz dział Tory"
+
+msgid "Turn the lay tool on"
+msgstr "Włącz układanie"
+
+msgid "Held: the direction turns in steps of 15 degrees, or to 1:9, 1:6.6... to a straight track it starts by or crosses"
+msgstr "Trzymany: kierunek zmienia się co 15 stopni albo na 1:9, 1:6,6… do prostego toru, przy którym się zaczyna albo który przecina"
+
+msgid "Alone it zooms, as everywhere"
+msgstr "Samo kółko przybliża, jak wszędzie"
+
+msgid "Press on a free end (a magenta ring) and drag: a new track goes out of it"
+msgstr "Wciśnij na wolnym końcu (różowy okrąg) i przeciągnij: wychodzi z niego nowy tor"
+
+msgid "Let go on another free end: a curve joins the two tracks"
+msgstr "Puść na innym wolnym końcu: łuk połączy oba tory"
+
+msgid "While over the other end: the radius of the joining curve"
+msgstr "Nad drugim końcem: promień łuku, który je łączy"
+
+msgid "While over the other end: another way to join"
+msgstr "Nad drugim końcem: inny sposób połączenia"
+
+msgid "Join two free ends"
+msgstr "Połącz dwa wolne końce"
+
+msgid "The select tool"
+msgstr "Narzędzie Zaznaczanie"
+
+msgid "Click a track: it is selected, with its ends"
+msgstr "Kliknij tor: zostaje zaznaczony, widać jego końce"
+
+msgid "The gizmo, to move, turn or bend the track: the next lesson"
+msgstr "Gizmo do przesuwania, obracania i wyginania toru: następna lekcja"
+
+msgid "The gizmo on the selected track, hidden until then: arrows which move it"
+msgstr "Gizmo na zaznaczonym torze, do tej pory ukryte: strzałki, które go przesuwają"
+
+msgid "Rings which turn it: its direction, its grade and its cant; the tracks joined to it follow"
+msgstr "Pierścienie, które go obracają: kierunek, pochylenie i przechyłka; połączone tory idą za nim"
+
+msgid "Handles which lengthen it at its free end, the curve keeping its radius"
+msgstr "Uchwyty, które wydłużają go na wolnym końcu, łuk zachowuje promień"
+
+msgid "With the gizmo out the control vectors are there too: drag one, the curve follows it"
+msgstr "Z gizmo widać też wektory sterujące: przeciągnij jeden, łuk idzie za nim"
+
+msgid "A click on a point of the track: the gizmo goes to it, that point alone is moved or turned"
+msgstr "Klik na punkcie toru: gizmo przechodzi do niego, przesuwa albo obraca tylko ten punkt"
+
+msgid "Held while dragging: the gizmo goes by its step"
+msgstr "Trzymany przy przeciąganiu: gizmo przeskakuje o swój krok"
+
+msgid "Releases the point; the arrow above the view hides the gizmo again"
+msgstr "Puszcza punkt; strzałka nad widokiem chowa gizmo z powrotem"
+
+msgid "Bring out the gizmo with Q, W or E"
+msgstr "Pokaż gizmo klawiszem Q, W albo E"
+
+msgid "Bend a track by a control vector, or move it with the gizmo"
+msgstr "Wygnij tor wektorem sterującym albo przesuń go gizmem"
+
+msgid "Drag an end: at a joint the neighbours follow, from a free end a new track goes out, with Ctrl the end moves"
+msgstr "Przeciągnij koniec: na styku sąsiednie tory idą za nim, z wolnego końca wychodzi nowy tor, z Ctrl koniec się przesuwa"
+
+msgid "A click on a track: what can be done with it"
+msgstr "Klik na torze: co można z nim zrobić"
+
+msgid "Deletes the selected"
+msgstr "Usuwa zaznaczone"
+
+msgid "Takes the last change back; Ctrl+Y brings it back again"
+msgstr "Cofa ostatnią zmianę; Ctrl+Y ją przywraca"
+
+msgid "Take a change back"
+msgstr "Cofnij zmianę"
+
+msgid "Turntable, signalling and signals, kilometrage, objects, trainset, profile, speed, joints, gauge"
+msgstr "Obrotnica, SRK i sygnalizatory, kilometraż, obiekty, skład, profil, prędkość, styki, skrajnia"
+
+msgid "The switch tool; at the top: what to place"
+msgstr "Narzędzie Rozjazd; na górze: co stawiasz"
+
+msgid "Click a track: the one the switch goes into"
+msgstr "Kliknij tor: ten, w który wejdzie rozjazd"
+
+msgid "Press on it and drag: along the direction, sideways the side; let go: the switch is laid"
+msgstr "Wciśnij na nim i przeciągnij: wzdłuż toru zmienia kierunek, w bok stronę; puszczenie kładzie rozjazd"
+
+msgid "Connection: drag from a straight onto the other track; a crossover, a double one or scissors, as chosen at the top"
+msgstr "Połączenie: przeciągnij z prostej na drugi tor; przejście rozjazdowe, podwójne albo nożyce, jak wybrano na górze"
+
+msgid "Switch ladder: drag from the straight to the side the tracks go off to; the ones missing are laid with it"
+msgstr "Ulica zwrotnicowa: przeciągnij z prostej w stronę, w którą odchodzą tory; brakujące tory układają się razem z nią"
+
+msgid "The profile tool: a click on a track opens the grade line of its whole line in the strip below"
+msgstr "Narzędzie Profil: klik na torze otwiera niweletę całej jego linii w pasku na dole"
+
+msgid "Drag a point of the grade line: the grades on both sides of it follow"
+msgstr "Przeciągnij punkt niwelety: pochylenia po obu jego stronach idą za nim"
+
+msgid "A double click on the line adds a point"
+msgstr "Podwójny klik na linii dodaje punkt"
+
+msgid "Over the plot: the heights stretched, the grades seen better"
+msgstr "Nad wykresem: wysokości rozciągnięte, pochylenia lepiej widać"
+
+msgid "Over the plot: the view moves along the line"
+msgstr "Nad wykresem: widok przesuwa się wzdłuż linii"
+
+msgid "Open the grade line of a track"
+msgstr "Otwórz niweletę toru"
+
+msgid "Apply it: the tracks take its heights"
+msgstr "Zastosuj ją: tory przyjmą jej wysokości"
+
+msgid "The Terrain field of work: the terrain model (NMT) is in its tool options"
+msgstr "Dział Teren: numeryczny model terenu (NMT) jest w jego opcjach narzędzia"
+
+msgid "Open the Terrain field of work"
+msgstr "Otwórz dział Teren"
+
+msgid "Load terrain from the model"
+msgstr "Wczytaj teren z modelu"
+
+msgid "A track of an include or of a file that isn't saved: the inspector says why it can't be changed"
+msgstr "Tor z pliku dołączanego (include) albo z pliku, który nie jest zapisywany: Inspektor mówi, czemu nie da się go zmienić"
+
+msgid "Grade lines kept by an older editor are read as they were kept"
+msgstr "Niwelety zapisane przez starszy edytor są czytane tak, jak je zapisano"
+
+msgid "Only what changed is written: the other lines stay as they were, the comment lines of other tools too"
+msgstr "Zapisuje się tylko to, co się zmieniło: reszta pliku zostaje jak była, także komentarze innych narzędzi"
+
+msgid "The plan tool: a click on a curve shows its design, the vertex and the radius to drag in the view"
+msgstr "Narzędzie Plan: klik na łuku pokazuje jego projekt, wierzchołek i promień do przeciągania w widoku"
+
+msgid "In the panel, the band of the curvature: drag the plateau of an arc up or down for its radius, each arc of a compound curve its own"
+msgstr "W panelu pasek krzywizny: półka łuku przeciągnięta w górę albo w dół zmienia jego promień, każdy łuk koszowego osobno"
+
+msgid "Drag a ramp sideways: the transition curve gets longer or shorter"
+msgstr "Rampa przeciągnięta w bok: krzywa przejściowa wydłuża się albo skraca"
+
+msgid "Over the band: the radius by 5%, a transition by 5 m"
+msgstr "Nad paskiem: promień o 5%, przejściowa o 5 m"
+
+msgid "Apply to the scenery: the tracks are laid by the design"
+msgstr "Zastosuj w scenerii: tory układają się według projektu"
+
+msgid "Change the curve in the band"
+msgstr "Zmień łuk na pasku krzywizny"
+
+msgid "Apply it to the scenery"
+msgstr "Zastosuj go w scenerii"
+
+msgid "Shift + a box: between the outermost"
+msgstr "Shift+ramka: między skrajnymi"
+
+msgid "A click adds a track, a box from the empty ground takes the tracks in it: the route runs between the outermost of them"
+msgstr "Klik dodaje tor, ramka z pustego terenu bierze tory w niej: trasa biegnie między skrajnymi z nich"
+
+msgid "Trainset tool: a click on the track where the train stands"
+msgstr "Narzędzie Skład: klik na torze, gdzie stoi pociąg"
+
+msgid "A double click on a vehicle of the list puts it into the train; a click on a vehicle of the train moves it, turns it or takes it out"
+msgstr "Podwójny klik na pojeździe z listy wstawia go do pociągu; klik na pojeździe pociągu przesuwa go, obraca albo wyjmuje"
+
+msgid "Place and drive: the train goes onto the track and the cab is yours"
+msgstr "Postaw i jedź: pociąg staje na torze, a kabina jest twoja"
+
+msgid "Thirteen short lessons with clips and drawings: the camera, laying track, curves, correcting a curve, joining, switches, signals and posts, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Trzynaście krótkich lekcji z filmikami i rysunkami: kamera, układanie toru, łuki, poprawianie łuku, łączenie, rozjazdy, sygnalizatory i słupki, poprawki, gizmo, niweleta, teren, starsze scenerie, zapis i jazda"
+
+msgid "B: the hectometre posts of the whole line at once"
+msgstr "B: słupki hektometrowe całej linii naraz"
+
+msgid "The signalling tool: click a type of signal in its Signals, from the templates of the scenery"
+msgstr "Narzędzie SRK: kliknij typ sygnalizatora w sekcji Sygnalizatory, z szablonów scenerii"
+
+msgid "A click by a track places the signal on that side"
+msgstr "Klik przy torze stawia sygnalizator po tej stronie"
+
+msgid "Press by the track and drag along it: the trains running that way see the signal"
+msgstr "Wciśnij przy torze i przeciągnij wzdłuż: sygnalizator widzą pociągi jadące w tę stronę"
+
+msgid "Drag a standing signal: it moves along its track"
+msgstr "Przeciągnij stojący sygnalizator: przesuwa się wzdłuż swojego toru"
+
+msgid "Objects along the track: the hectometre posts and the W17 markers of a whole line at once, and trainsets"
+msgstr "Obiekty przy torze: słupki hektometrowe i wskaźniki W17 całej linii naraz oraz składy"
+
+msgid "Place a signal"
+msgstr "Postaw sygnalizator"
+
+msgid "Place the hectometre posts of a line"
+msgstr "Postaw słupki hektometrowe linii"
+
+msgid "LMB: select a point   Shift+LMB: add a point or take it out   Del: delete the points   Ctrl+Z: undo"
+msgstr "LPM: zaznacz punkt   Shift+LPM: dodaj punkt albo go odznacz   Del: usuń punkty   Ctrl+Z: cofnij"
+
+msgid "No presets: save one in the inspector of a track, Look, Sleeper models, Presets"
+msgstr "Brak zestawów: zapisz zestaw w inspektorze toru, Wygląd, Modele podkładów, Zestawy"
+
+msgid "%zu drive with no switch"
+msgid_plural "%zu drives with no switch"
+msgstr[0] "%zu napęd bez zwrotnicy"
+msgstr[1] "%zu napędy bez zwrotnicy"
+msgstr[2] "%zu napędów bez zwrotnicy"
+
+msgid "Drives set to a switch the scenery hasn't got, left when a switch was deleted or renamed by hand or in an earlier editor: their events throw nothing.\nA click goes to the drive and selects it, Delete removes it; or give a switch its name"
+msgstr "Napędy ustawione na zwrotnicę, której w scenerii nie ma: zostały po zwrotnicy usuniętej lub przemianowanej ręcznie albo we wcześniejszym edytorze, ich eventy niczego nie przestawiają.\nKliknięcie przenosi do napędu i go zaznacza, Delete go usuwa; można też nadać jakiejś zwrotnicy jego nazwę"
+
+msgid "%s: no switch of this name"
+msgstr "%s: brak zwrotnicy o tej nazwie"
+
+msgid "%zu switch drive has no switch of its name: it's listed in the switch tool and marked red in the view"
+msgid_plural "%zu switch drives have no switch of their names: they're listed in the switch tool and marked red in the view"
+msgstr[0] "%zu napęd nie ma zwrotnicy o swojej nazwie: jest na liście w narzędziu zwrotnic i na czerwono w widoku"
+msgstr[1] "%zu napędy nie mają zwrotnic o swoich nazwach: są na liście w narzędziu zwrotnic i na czerwono w widoku"
+msgstr[2] "%zu napędów nie ma zwrotnic o swoich nazwach: są na liście w narzędziu zwrotnic i na czerwono w widoku"
+
+msgid "The drive %s isn't described for the editor: it may also set the speed or carry the ballast of the switch, so it's kept as it is"
+msgstr "Napęd %s nie ma opisu dla edytora: może też ustawiać prędkość albo nieść podsypkę zwrotnicy, więc zostaje bez zmian"
+
+msgid "The slip has the drive %s, not described for the editor, which may also set the speed or carry its ballast: it isn't laid anew"
+msgstr "Rozjazd krzyżowy ma napęd %s bez opisu dla edytora, który może też ustawiać prędkość albo nieść jego podsypkę: nie zostanie ułożony od nowa"
+
+msgid "Switch %s keeps its drive %s, which isn't described for the editor"
+msgstr "Zwrotnica %s zostaje przy swoim napędzie %s, który nie ma opisu dla edytora"
+
+msgid "A drive not described for the editor, as the one of a double switch, which may also set the speed or carry the ballast of the switch: the editor keeps it as it is, it stays where it is when the switch is moved and goes when the last switch it throws is deleted"
+msgstr "Napęd bez opisu dla edytora, np. rozjazdu krzyżowego, który może też ustawiać prędkość albo nieść podsypkę zwrotnicy: edytor go nie zmienia, zostaje na miejscu, gdy zwrotnica się przesuwa, i znika razem z ostatnią zwrotnicą, którą przestawia"
+
+msgid "Camera speed"
+msgstr "Prędkość kamery"
+
+# the descriptions shown after the cursor rests on an entry of the main menu for 5 s
+msgid "Turns the debug mode of the simulator on or off. It shows more in the windows and the log and allows the debug commands, such as the jump in time. In the Windows menu it adds the ImGui Demo and the Headlight config."
+msgstr "Włącza albo wyłącza tryb debugowania symulatora. Okna i log pokazują więcej, działają polecenia debugowania, np. skok w czasie. W menu Okna dochodzą ImGui Demo i Headlight config."
+
+msgid "Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question. In the editor, what isn't saved with Ctrl+S is lost."
+msgstr "Pyta, czy zamknąć symulator: Y albo Tak zamyka, N, Nie albo ponowne F10 zamyka pytanie. W edytorze to, czego nie zapisano Ctrl+S, przepada."
+
+msgid "Writes the messages of the simulator to log.txt in the game folder. Turned off, nothing more is written there until it's turned on again. The choice lasts until the simulator is closed."
+msgstr "Zapisuje komunikaty symulatora do log.txt w folderze gry. Po wyłączeniu nic więcej się tam nie zapisuje, dopóki znowu go nie włączysz. Wybór obowiązuje do zamknięcia symulatora."
+
+msgid "Saves the picture of the window as a PNG file in the screenshots folder, named by the date and time. The file is written in the background, a moment after the click."
+msgstr "Zapisuje obraz okna jako plik PNG w folderze zrzutów ekranu, z datą i godziną w nazwie. Plik zapisuje się w tle, chwilę po kliknięciu."
+
+msgid "The window with the messages of the simulator as they are written to log.txt, the newest at the bottom. Warnings and errors of the scenery show up here too."
+msgstr "Okno z komunikatami symulatora, tymi samymi, które idą do log.txt, najnowsze na dole. Widać tu też ostrzeżenia i błędy scenerii."
+
+msgid "The demo window of ImGui, the library these windows are made with. For those who work on the interface."
+msgstr "Okno demonstracyjne ImGui, biblioteki, z której są zrobione te okna. Dla osób pracujących nad interfejsem."
+
+msgid "A debug window of the renderer with the settings of the headlights of the vehicles, to try them out live."
+msgstr "Okno debugowania renderera z ustawieniami reflektorów pojazdów, do wypróbowania na żywo."
+
+msgid "The list of the nodes registered in the scene. A click on one takes the camera to it, and its identifier and type show when the cursor is over it."
+msgstr "Lista węzłów zarejestrowanych w scenie. Kliknięcie węzła przenosi do niego kamerę, a po najechaniu widać jego identyfikator i typ."
+
+msgid "The window of the changes made in this session, the newest at the end, which Ctrl+Z takes back one by one. In it you set how many changes are kept and how far from the camera an object may be placed."
+msgstr "Okno zmian zrobionych w tej sesji, najnowsze na końcu. Ctrl+Z cofa je po kolei. Tu ustawiasz, ile zmian jest pamiętanych i jak daleko od kamery można postawić obiekt."
+
+msgid "The settings of the editor, such as the colours of the interface, the node bank and the signals. They are kept in eu07_editor.ini in the user's profile and come back at the next start."
+msgstr "Ustawienia edytora, np. kolory interfejsu, bank obiektów i sygnalizacja. Zapisują się w eu07_editor.ini w profilu użytkownika i wracają przy następnym starcie."
+
+msgid "Closes this scenery and starts the editor again with the wizard of a new scenery, where you give its name and its place on the map. Save first with Ctrl+S what you want to keep."
+msgstr "Zamyka tę scenerię i uruchamia edytor od nowa z kreatorem nowej scenerii, w którym podajesz jej nazwę i miejsce na mapie. Najpierw zapisz Ctrl+S to, co chcesz zachować."
+
+msgid "Starts the editor again with another scenery, chosen from the scenery folder. Save first with Ctrl+S what you want to keep here."
+msgstr "Uruchamia edytor od nowa z inną scenerią, wybraną z folderu scenery. Najpierw zapisz Ctrl+S to, co chcesz tu zachować."
+
+msgid "Writes the changes into the scenery files they came from. The definitions you didn't change stay in the files byte for byte, an edited object is written anew. It works when the scenery was loaded with -edit."
+msgstr "Zapisuje zmiany do plików scenerii, z których pochodzą. Definicje, których nie zmieniałeś, zostają w plikach bajt w bajt, a edytowany obiekt zapisuje się od nowa. Działa, gdy sceneria była wczytana z -edit."
+
+msgid "Writes the whole scene as the editor holds it to files with _export in their names, next to the scenario. The scenery files aren't changed. Useful to see what the editor has loaded, or as a start for another scenery."
+msgstr "Zapisuje całą scenę, tak jak ją ma edytor, do plików z _export w nazwie, obok scenariusza. Pliki scenerii zostają bez zmian. Przydaje się, żeby zobaczyć, co edytor wczytał, albo jako początek innej scenerii."
+
+msgid "Closes the editor at once, without asking. What isn't saved with Ctrl+S is lost, and the downloads of the orthophoto and the terrain model still under way are dropped."
+msgstr "Zamyka edytor od razu, bez pytania. To, czego nie zapisano Ctrl+S, przepada, a trwające pobierania ortofotomapy i modelu terenu są przerywane."
+
+msgid "Finds the memory cells of the scenery by name, shows their text and values and lets you set them by hand while the editor runs, for example to try the events that read them."
+msgstr "Wyszukuje komórki pamięci scenerii po nazwie, pokazuje ich tekst i wartości i pozwala ustawić je ręcznie w trakcie pracy, np. żeby sprawdzić zdarzenia, które je czytają."
+
+msgid "The settings of the tool in use, such as the radius and the type of a track, the profile of a road or the brush of the terrain. What it shows changes with the tool."
+msgstr "Ustawienia używanego narzędzia, np. promień i typ toru, profil drogi albo pędzel terenu. Zawartość zmienia się razem z narzędziem."
+
+msgid "The properties of what is selected: its position and turn, the model and its textures, the parameters of a track and more. A change made here goes into the scene at once and Ctrl+Z takes it back."
+msgstr "Właściwości zaznaczonego obiektu: położenie i obrót, model i tekstury, parametry toru i inne. Zmiana wprowadzona tutaj od razu trafia do sceny, a Ctrl+Z ją cofa."
+
+msgid "What the scene holds, by its kind and name, with a search. From here you select an object without looking for it in the view."
+msgstr "Zawartość sceny według rodzaju i nazwy, z wyszukiwaniem. Stąd zaznaczysz obiekt bez szukania go w widoku."
+
+msgid "The bank of what can be placed: models, tracks and scenery templates, in groups with previews. Choose one, then click in the view to put it there."
+msgstr "Bank obiektów do postawienia: modele, tory i szablony scenerii, pogrupowane, z podglądami. Wybierz obiekt i kliknij w widoku, żeby go tam postawić."
+
+msgid "Sets of models put down at random, such as several kinds of trees or houses: at each click one model of the set is picked, so the place doesn't look copied."
+msgstr "Zestawy modeli stawianych losowo, np. kilka rodzajów drzew albo domów. Przy każdym kliknięciu losuje się jeden model z zestawu, więc okolica nie wygląda na skopiowaną."
+
+msgid "The files the scenery is made of (the scenery and its includes) and the base layers of the map. Here you choose which file new objects go to, hide a layer and save."
+msgstr "Pliki, z których składa się sceneria (główny plik i dołączane), oraz warstwy bazowe mapy. Tu wybierasz, do którego pliku trafiają nowe obiekty, ukrywasz warstwę i zapisujesz."
+
+msgid "The descriptions of the scenery templates (includes): what parameters they take and what the parameters mean, so the editor shows them as named fields. Only the descriptions are kept, the templates aren't changed."
+msgstr "Opisy szablonów scenerii (include): jakie parametry przyjmują i co one znaczą, żeby edytor pokazywał je jako nazwane pola. Zapisują się tylko opisy, same szablony zostają bez zmian."
+
+msgid "Puts all the windows and docks of the editor back where they are at the first start."
+msgstr "Ustawia wszystkie okna i doki edytora z powrotem tam, gdzie są przy pierwszym uruchomieniu."
+
+msgid "Unpinned, the docks hide at the edges of the screen and slide out when the cursor comes to them, leaving more room for the view. Pinned, they stay open. Ctrl+Space switches between the two."
+msgstr "Odpięte doki chowają się przy krawędziach ekranu i wysuwają, gdy podjedzie do nich kursor, więc widok ma więcej miejsca. Przypięte zostają otwarte. Ctrl+Spacja przełącza między tymi stanami."
+
+msgid "Takes back the last change made in the editor, such as a move, an object added or deleted, or a change of the tracks or the terrain. Pressed again, it goes further back. Ctrl+Y makes a change taken back again."
+msgstr "Cofa ostatnią zmianę w edytorze, np. przesunięcie, dodanie lub usunięcie obiektu albo zmianę torów czy terenu. Kolejne naciśnięcia cofają dalej. Ctrl+Y przywraca cofniętą zmianę."
+
+msgid "Makes the change taken back with Ctrl+Z again, one by one, in the order they were taken back."
+msgstr "Przywraca zmiany cofnięte Ctrl+Z, po kolei, w kolejności cofania."
+
+msgid "Deletes what's selected: a model, tracks, a piece or a point of a road, a signal or an included scenery template. Ctrl+Z brings it back."
+msgstr "Usuwa zaznaczenie: model, tory, odcinek lub punkt drogi, semafor albo dołączony szablon scenerii. Ctrl+Z przywraca usunięte."
+
+msgid "Copies the selected models, with all the models of their groups, to the clipboard of the editor. Ctrl+V puts them at the cursor, Ctrl+RMB at the point clicked in the view."
+msgstr "Kopiuje zaznaczone modele razem z modelami z ich grup do schowka edytora. Ctrl+V wstawia je przy kursorze, a Ctrl+PPM w klikniętym miejscu widoku."
+
+msgid "Puts new copies of the copied models at the cursor, set around it as they were around the selected one. Ctrl+RMB in the view pastes them where you click. Each paste makes new copies."
+msgstr "Wstawia nowe kopie skopiowanych modeli przy kursorze, rozstawione wokół niego tak jak wokół zaznaczonego modelu. Ctrl+PPM w widoku wstawia je w klikniętym miejscu. Każde wklejenie tworzy nowe kopie."
+
+msgid "Ties the selected models into a group: from now on they move and turn together, and a click on one of them selects them all. First select the models with Shift+LMB."
+msgstr "Łączy zaznaczone modele w grupę: odtąd przesuwają się i obracają razem, a kliknięcie jednego zaznacza wszystkie. Najpierw zaznacz modele z Shift+LPM."
+
+msgid "Breaks the group of the selected model: each of its models is selected and moved by itself again."
+msgstr "Rozbija grupę zaznaczonego modelu: każdy z jej modeli znowu zaznacza się i przesuwa osobno."
+
+msgid "Moves each selected model, and each model of their groups, straight down or up onto the terrain or the object under it. The turn of the models stays as it was."
+msgstr "Przesuwa każdy zaznaczony model, także modele z ich grup, prosto w dół lub w górę na teren albo obiekt pod nim. Obrót modeli zostaje bez zmian."
+
+msgid "The camera flies smoothly to the selected object and stops a little way off, looking at it."
+msgstr "Kamera płynnie podlatuje do zaznaczonego obiektu i zatrzymuje się w niewielkiej odległości, patrząc na niego."
+
+msgid "Opens the track panel at the search field: type the name of a track, Polish letters too, and the editor finds it and takes the camera there."
+msgstr "Otwiera panel torów na polu wyszukiwania: wpisz nazwę toru, także z polskimi literami, a edytor go znajdzie i przeniesie tam kamerę."
+
+msgid "Bends the selected model, such as a platform edge or a fence, along the nearest track, so it follows the curve. How it bends is set in the inspector."
+msgstr "Wygina zaznaczony model, np. krawędź peronu albo płot, wzdłuż najbliższego toru, żeby szedł po łuku. Sposób wyginania ustawia się w inspektorze."
+
+msgid "A window with all the keys and mouse actions of the editor, grouped by mode of work. F1 opens and closes it at any time."
+msgstr "Okno ze wszystkimi klawiszami i akcjami myszy edytora, pogrupowanymi według trybu pracy. F1 otwiera je i zamyka w dowolnej chwili."
+
+msgid "Short lessons, each with a picture of the keys and the mouse, from the camera and the first track to a whole line, the terrain and saving. The lessons done are ticked off."
+msgstr "Krótkie lekcje, każda z rysunkiem klawiszy i myszy: od kamery i pierwszego toru po całą linię, teren i zapis. Ukończone lekcje są odhaczane."
+
+msgid "Switches between the perspective camera and the view straight down without perspective, as on a map. Pressed again, it brings the camera back as it was. In the top view the wheel zooms."
+msgstr "Przełącza między kamerą z perspektywą a widokiem prosto z góry bez perspektywy, jak na mapie. Ponowne naciśnięcie przywraca kamerę do poprzedniego położenia. W widoku z góry kółko przybliża."
+
+msgid "In the top view, zoomed in, the curves show their radius and length and the switches their name and type, as on a track plan. Where labels would overlap, some are left out."
+msgstr "W widoku z góry, po przybliżeniu, łuki pokazują promień i długość, a rozjazdy nazwę i typ, jak na planie torów. Gdzie napisy by na siebie nachodziły, część jest pomijana."
+
+msgid "Draws on the roads the lanes the road vehicles drive along, so you can check where they go at junctions and roundabouts."
+msgstr "Rysuje na drogach pasy, po których jeżdżą pojazdy drogowe, żeby sprawdzić, którędy jadą na skrzyżowaniach i rondach."
+
+msgid "A window that checks the models along the tracks against the structure gauge and over the roads against the clearance, and lists those that stick into them, so they can be moved."
+msgstr "Okno, które sprawdza modele przy torach względem skrajni budowli, a nad drogami względem skrajni drogowej, i wypisuje te, które w nie wchodzą, żeby można je było przesunąć."
+
+msgid "Sets the time of day, the day of the year, the visibility, the clouds and the air temperature, to see the scenery in the editor as it will look at that time. It doesn't change the scenery files."
+msgstr "Ustawia porę dnia, dzień roku, widoczność, zachmurzenie i temperaturę powietrza, żeby zobaczyć w edytorze, jak sceneria będzie wtedy wyglądać. Nie zmienia plików scenerii."
+
+msgid "A small map of the whole scenery in its own window: the tracks and the camera. A click on it takes the camera there, and the stations (W4) can be found by name."
+msgstr "Mała mapa całej scenerii w osobnym oknie: tory i kamera. Kliknięcie na mapie przenosi tam kamerę, a stacje (W4) można wyszukać po nazwie."
+
+msgid "Turns on the aerial imagery of geoportal.gov.pl under the scenery. It is downloaded around the camera, kept in a cache on the disk and laid out by the origin of the scenery, its place on the map."
+msgstr "Włącza ortofotomapę z geoportal.gov.pl pod scenerią. Pobiera się wokół kamery, zapisuje w pamięci podręcznej na dysku i układa według originu scenerii, czyli jej miejsca na mapie."
+
+msgid "Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."
+msgstr "Otwiera warstwy bazowe mapy w oknie Warstwy: ustawienia ortofotomapy i własne dodatkowe warstwy WMS nałożone na nią."
+
+msgid "Every model in the scenery made from the same file as the selected one is moved straight down or up to the ground under it. Useful after the terrain has changed under many copies of one model."
+msgstr "Każdy model w scenerii z tego samego pliku co zaznaczony przesuwa się prosto w dół lub w górę na grunt pod nim. Przydaje się, gdy teren zmienił się pod wieloma kopiami jednego modelu."

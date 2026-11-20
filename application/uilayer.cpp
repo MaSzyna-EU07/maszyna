@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_internal.h"
+#include "application/uidescription.h"
 
 GLFWwindow *ui_layer::m_window{nullptr};
 GLFWwindow *ui_layer::m_keywindow{nullptr};
@@ -858,7 +859,9 @@ void ui_layer::render_menu_contents()
 			command_relay relay;
 			relay.post(user_command::debugtoggle, 0.0, 0.0, GLFW_RELEASE, 0);
 		}
+		ui::rest_description(STR_C("Turns the debug mode of the simulator on or off. It shows more in the windows and the log and allows the debug commands, such as the jump in time. In the Windows menu it adds the ImGui Demo and the Headlight config."));
 		ImGui::MenuItem(STR_C("Quit"), "F10", &m_quit_active);
+		ui::rest_description(STR_C("Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question. In the editor, what isn't saved with Ctrl+S is lost."));
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Tools")))
@@ -866,6 +869,7 @@ void ui_layer::render_menu_contents()
 		static bool log = Global.iWriteLogEnabled & 1;
 
 		ImGui::MenuItem(STR_C("Logging to log.txt"), nullptr, &log);
+		ui::rest_description(STR_C("Writes the messages of the simulator to log.txt in the game folder. Turned off, nothing more is written there until it's turned on again. The choice lasts until the simulator is closed."));
 		if (log)
 			Global.iWriteLogEnabled |= 1;
 		else
@@ -873,31 +877,38 @@ void ui_layer::render_menu_contents()
 
 		if (ImGui::MenuItem(STR_C("Screenshot"), "PrtScr"))
 			Application.queue_screenshot();
+		ui::rest_description(STR_C("Saves the picture of the window as a PNG file in the screenshots folder, named by the date and time. The file is written in the background, a moment after the click."));
 		render_tools_menu();
 		ImGui::EndMenu();
 	}
 	if (ImGui::BeginMenu(STR_C("Windows")))
 	{
 		ImGui::MenuItem(STR_C("Log"), "F9", &m_logpanel.is_open);
+		ui::rest_description(STR_C("The window with the messages of the simulator as they are written to log.txt, the newest at the bottom. Warnings and errors of the scenery show up here too."));
 		if (DebugModeFlag)
 		{
 			ImGui::MenuItem(STR_C("ImGui Demo"), nullptr, &m_imgui_demo);
+			ui::rest_description(STR_C("The demo window of ImGui, the library these windows are made with. For those who work on the interface."));
 			bool ret = ImGui::MenuItem(STR_C("Headlight config"), nullptr, GfxRenderer->Debug_Ui_State(std::nullopt));
 
 			GfxRenderer->Debug_Ui_State(ret);
+			ui::rest_description(STR_C("A debug window of the renderer with the settings of the headlights of the vehicles, to try them out live."));
 		}
 		if(EditorModeFlag){
 			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
+			ui::rest_description(STR_C("The list of the nodes registered in the scene. A click on one takes the camera to it, and its identifier and type show when the cursor is over it."));
 			bool change_history_enabled = editor_mode::change_history();
 			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{
 				editor_mode::set_change_history(change_history_enabled);
 			}
+			ui::rest_description(STR_C("The window of the changes made in this session, the newest at the end, which Ctrl+Z takes back one by one. In it you set how many changes are kept and how far from the camera an object may be placed."));
 			bool settings_open = editor_mode::settings_open();
 			if (ImGui::MenuItem(STR_C("Editor Settings"), nullptr, &settings_open))
 			{
 				editor_mode::set_settings_open(settings_open);
 			}
+			ui::rest_description(STR_C("The settings of the editor, such as the colours of the interface, the node bank and the signals. They are kept in eu07_editor.ini in the user's profile and come back at the next start."));
 		}
 		render_windows_menu();
 		ImGui::EndMenu();
