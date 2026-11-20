@@ -70,11 +70,11 @@ axle_place read_axle(snapshot::record const &Entry, int const Index)
 	place.track = snapshot::find_track(Entry.text(indexed("track", Index)));
 	// the path is a segment of a switch (0, 1) or of a crossing (1..6, the sign the way through it), the events two
 	// pairs of flags. the axle is put at a distance along its track, which has to be a number
-	auto const usable{(Entry.get(indexed("path", Index), place.path, -6, 6) || false == Entry.has(indexed("path", Index))) &&
-	                  (Entry.get(indexed("at", Index), place.distance, -1e7, 1e7) || false == Entry.has(indexed("at", Index))) &&
-	                  (Entry.get(indexed("dir", Index), place.direction, -1e7, 1e7) || false == Entry.has(indexed("dir", Index))) &&
-	                  (Entry.get(indexed("events", Index), place.events, 0, 15) || false == Entry.has(indexed("events", Index)))};
-	if (false == usable)
+	if (auto const usable{(Entry.get(indexed("path", Index), place.path, -6, 6) || false == Entry.has(indexed("path", Index))) &&
+	                      (Entry.get(indexed("at", Index), place.distance, -1e7, 1e7) || false == Entry.has(indexed("at", Index))) &&
+	                      (Entry.get(indexed("dir", Index), place.direction, -1e7, 1e7) || false == Entry.has(indexed("dir", Index))) &&
+	                      (Entry.get(indexed("events", Index), place.events, 0, 15) || false == Entry.has(indexed("events", Index)))};
+	    false == usable)
 		place.track = nullptr;
 	return place;
 }
@@ -125,8 +125,7 @@ void save_machinery(snapshot::record &Entry, TDynamicObject const &Vehicle)
 		Entry.set(indexed("pant", index, "wire"), pantograph->PantTraction);
 		Entry.set(indexed("pant", index, "novolttime"), pantograph->NoVoltTime);
 	}
-	auto const &exchange{Vehicle.m_exchange};
-	if (exchange.unload_count != 0.f || exchange.load_count != 0.f)
+	if (auto const &exchange{Vehicle.m_exchange}; exchange.unload_count != 0.f || exchange.load_count != 0.f)
 	{
 		Entry.set("exchangeunload", exchange.unload_count).set("exchangeload", exchange.load_count);
 		Entry.set("exchangeplatforms", exchange.platforms).set("exchangetime", exchange.time);
@@ -263,8 +262,7 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 	Entry.get("facing", iDirection, 0, 1);
 	// the axles a hair off the ends of their tracks first, for the body of the vehicle to be worked out from them:
 	// Move() does that, and takes an axle standing at the very end of a track over to the next one
-	constexpr double inset{1e-6};
-	if (false == places[0].put(Axle0, inset) || false == places[1].put(Axle1, inset))
+	if (constexpr double inset{1e-6}; false == places[0].put(Axle0, inset) || false == places[1].put(Axle1, inset))
 		return false;
 	// too short a way for the axles to move at all
 	Move(1e-300);

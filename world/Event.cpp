@@ -2635,10 +2635,10 @@ void
 event_manager::clear_queue() {
 
     while( QueryRootEvent != nullptr ) {
-        auto *event { QueryRootEvent };
-        QueryRootEvent = event->m_next;
-        event->m_next = nullptr;
-        event->m_inqueue = 0;
+        auto *queued { QueryRootEvent };
+        QueryRootEvent = queued->m_next;
+        queued->m_next = nullptr;
+        queued->m_inqueue = 0;
     }
 }
 

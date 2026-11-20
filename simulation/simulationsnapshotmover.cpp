@@ -26,6 +26,7 @@ namespace {
 
 // a plain variable of the physics kept under a key of the entry
 template <typename Type_> struct member {
+	using type = Type_;
 	std::string_view key;
 	Type_ TMoverParameters::*variable;
 };
@@ -256,7 +257,10 @@ template <typename Table_> void capture_members(record &Entry, TMoverParameters 
 template <typename Table_> void apply_members(TMoverParameters &Mover, record const &Entry, Table_ const &Table)
 {
 	for (auto const &item : Table)
-		Entry.get(item.key, Mover.*(item.variable));
+	{
+		typename Table_::value_type::type &target{Mover.*(item.variable)};
+		Entry.get(item.key, target);
+	}
 }
 
 // the positions a controller or a switch of the vehicle can take. they index tables of the vehicle (the resistors of
@@ -343,9 +347,9 @@ void capture_power(record &Entry, TMoverParameters const &Mover)
 	Entry.set("circuits", numbers_text(circuits));
 	for (auto side{0}; side < 2; ++side)
 	{
-		auto const &coupler{Mover.Couplers[side]};
+		auto const &joint{Mover.Couplers[side]};
 		std::vector<double> values;
-		for (auto const *power : {&coupler.power_high, &coupler.power_110v, &coupler.power_24v})
+		for (auto const *power : {&joint.power_high, &joint.power_110v, &joint.power_24v})
 		{
 			values.emplace_back(power->current);
 			values.emplace_back(power->voltage);
@@ -358,11 +362,11 @@ void capture_power(record &Entry, TMoverParameters const &Mover)
 	// the figures of an induction motor drive, which each step goes on from
 	Entry.set("eimv", numbers_text(Mover.eimv));
 	// the speed control: 1 active, 2 starting, 4 set by hand, 8 braking in, 16 braking, 32 releasing, 64 standby, 128 parking
-	auto const &control{Mover.SpeedCtrlUnit};
-	Entry.set("speedctrlstate", (control.IsActive ? 1 : 0) | (control.Start ? 2 : 0) | (control.ManualStateOverride ? 4 : 0) | (control.BrakeIntervention ? 8 : 0) |
-	                                (control.BrakeInterventionBraking ? 16 : 0) | (control.BrakeInterventionUnbraking ? 32 : 0) | (control.Standby ? 64 : 0) |
-	                                (control.Parking ? 128 : 0));
-	Entry.set("speedctrlvelocity", control.DesiredVelocity).set("speedctrlpower", control.DesiredPower);
+	auto const &speedctrl{Mover.SpeedCtrlUnit};
+	Entry.set("speedctrlstate", (speedctrl.IsActive ? 1 : 0) | (speedctrl.Start ? 2 : 0) | (speedctrl.ManualStateOverride ? 4 : 0) | (speedctrl.BrakeIntervention ? 8 : 0) |
+	                                (speedctrl.BrakeInterventionBraking ? 16 : 0) | (speedctrl.BrakeInterventionUnbraking ? 32 : 0) | (speedctrl.Standby ? 64 : 0) |
+	                                (speedctrl.Parking ? 128 : 0));
+	Entry.set("speedctrlvelocity", speedctrl.DesiredVelocity).set("speedctrlpower", speedctrl.DesiredPower);
 }
 
 void apply_power(TMoverParameters &Mover, record const &Entry)
@@ -374,12 +378,12 @@ void apply_power(TMoverParameters &Mover, record const &Entry)
 	}
 	for (auto side{0}; side < 2; ++side)
 	{
-		auto &coupler{Mover.Couplers[side]};
+		auto &joint{Mover.Couplers[side]};
 		auto const values{text_numbers(Entry.text(indexed("couplerpower", side, "")))};
 		if (values.size() != 12)
 			continue;
 		std::size_t index{0};
-		for (auto *power : {&coupler.power_high, &coupler.power_110v, &coupler.power_24v})
+		for (auto *power : {&joint.power_high, &joint.power_110v, &joint.power_24v})
 		{
 			power->current = values[index];
 			power->voltage = values[index + 1];
@@ -398,20 +402,20 @@ void apply_power(TMoverParameters &Mover, record const &Entry)
 	}
 	if (auto const drive{text_numbers(Entry.text("eimv"))}; drive.size() == std::size(Mover.eimv))
 		std::ranges::copy(drive, std::begin(Mover.eimv));
-	auto &control{Mover.SpeedCtrlUnit};
+	auto &speedctrl{Mover.SpeedCtrlUnit};
 	if (auto state{0}; Entry.get("speedctrlstate", state))
 	{
-		control.IsActive = (state & 1) != 0;
-		control.Start = (state & 2) != 0;
-		control.ManualStateOverride = (state & 4) != 0;
-		control.BrakeIntervention = (state & 8) != 0;
-		control.BrakeInterventionBraking = (state & 16) != 0;
-		control.BrakeInterventionUnbraking = (state & 32) != 0;
-		control.Standby = (state & 64) != 0;
-		control.Parking = (state & 128) != 0;
+		speedctrl.IsActive = (state & 1) != 0;
+		speedctrl.Start = (state & 2) != 0;
+		speedctrl.ManualStateOverride = (state & 4) != 0;
+		speedctrl.BrakeIntervention = (state & 8) != 0;
+		speedctrl.BrakeInterventionBraking = (state & 16) != 0;
+		speedctrl.BrakeInterventionUnbraking = (state & 32) != 0;
+		speedctrl.Standby = (state & 64) != 0;
+		speedctrl.Parking = (state & 128) != 0;
 	}
-	Entry.get("speedctrlvelocity", control.DesiredVelocity);
-	Entry.get("speedctrlpower", control.DesiredPower);
+	Entry.get("speedctrlvelocity", speedctrl.DesiredVelocity);
+	Entry.get("speedctrlpower", speedctrl.DesiredPower);
 }
 
 // the three states of a device as one number: 1 allowed to run, 2 told to stop, 4 running
@@ -687,9 +691,9 @@ void apply_brake_valve(TBrake &Valve, TMoverParameters const &Mover, record cons
 	auto const reservoirs{Valve.reservoirs()};
 	// the air of each reservoir, when the entry has it for the reservoirs this kind of valve has; otherwise the valve
 	// is set as the scenery sets it at the start, to the pressures of the pipe and of the cylinders
-	auto const complete{false == reservoirs.empty() && Entry.has(indexed("res", static_cast<int>(reservoirs.size()) - 1, "")) &&
-	                    false == Entry.has(indexed("res", static_cast<int>(reservoirs.size()), ""))};
-	if (false == complete)
+	if (auto const complete{false == reservoirs.empty() && Entry.has(indexed("res", static_cast<int>(reservoirs.size()) - 1, "")) &&
+	                        false == Entry.has(indexed("res", static_cast<int>(reservoirs.size()), ""))};
+	    false == complete)
 	{
 		if (Entry.has("pipe"))
 			Valve.Init(Mover.PipePress, Mover.HighPipePress, Mover.LowPipePress, Mover.BrakePress, Mover.BrakeDelayFlag);
@@ -868,11 +872,11 @@ void capture_couplers(record &Entry, TMoverParameters const &Mover)
 {
 	for (auto side{0}; side < 2; ++side)
 	{
-		auto const &coupler{Mover.Couplers[side]};
-		auto const &pair{coupler.physics_state};
+		auto const &joint{Mover.Couplers[side]};
+		auto const &pair{joint.physics_state};
 		Entry.set(indexed("couplerstate", side, ""),
-		          numbers_text(std::array{coupler.CForce, coupler.Dist, static_cast<double>(coupler.stretch_duration), coupler.CheckCollision ? 1.0 : 0.0,
-		                                  coupler.crush, coupler.closing, coupler.hit_handled ? 1.0 : 0.0, coupler.hit_force, coupler.hit_duration,
+		          numbers_text(std::array{joint.CForce, joint.Dist, static_cast<double>(joint.stretch_duration), joint.CheckCollision ? 1.0 : 0.0,
+		                                  joint.crush, joint.closing, joint.hit_handled ? 1.0 : 0.0, joint.hit_force, joint.hit_duration,
 		                                  pair.draw_gear.force, pair.draw_gear.deflection, pair.buffers.force, pair.buffers.deflection, pair.elongation,
 		                                  pair.gap, static_cast<double>(pair.stop), pair.stop_force}));
 	}
@@ -891,17 +895,17 @@ void apply_couplers(TMoverParameters &Mover, record const &Entry)
 			Entry.refuse(indexed("couplerstate", side, ""), "the stop of the pair isn't a whole number");
 			continue;
 		}
-		auto &coupler{Mover.Couplers[side]};
-		auto &pair{coupler.physics_state};
-		coupler.CForce = values[0];
-		coupler.Dist = values[1];
-		coupler.stretch_duration = static_cast<float>(values[2]);
-		coupler.CheckCollision = values[3] != 0.0;
-		coupler.crush = values[4];
-		coupler.closing = values[5];
-		coupler.hit_handled = values[6] != 0.0;
-		coupler.hit_force = values[7];
-		coupler.hit_duration = values[8];
+		auto &joint{Mover.Couplers[side]};
+		auto &pair{joint.physics_state};
+		joint.CForce = values[0];
+		joint.Dist = values[1];
+		joint.stretch_duration = static_cast<float>(values[2]);
+		joint.CheckCollision = values[3] != 0.0;
+		joint.crush = values[4];
+		joint.closing = values[5];
+		joint.hit_handled = values[6] != 0.0;
+		joint.hit_force = values[7];
+		joint.hit_duration = values[8];
 		pair.draw_gear.force = values[9];
 		pair.draw_gear.deflection = values[10];
 		pair.buffers.force = values[11];

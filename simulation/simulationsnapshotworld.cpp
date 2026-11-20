@@ -32,8 +32,10 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -143,8 +145,8 @@ void capture_fingerprint(record &Header)
 	}
 	for (auto const *cell : Memory.sequence())
 		names.add(cell != nullptr ? cell->name() : std::string{});
-	for (auto const *event : Events.sequence())
-		names.add(event != nullptr ? event->m_name : std::string{});
+	for (auto const *scenery_event : Events.sequence())
+		names.add(scenery_event != nullptr ? scenery_event->m_name : std::string{});
 	for (auto const *vehicle : Vehicles.sequence())
 		names.add(vehicle != nullptr ? vehicle->name() : std::string{});
 	Header.set("tracks", tracks);
@@ -181,8 +183,8 @@ bool apply_time(record const &Entry)
 		return false;
 	if (false == Entry.get("month", time.wMonth, WORD{1}, WORD{12}) && Entry.has("month"))
 		return false;
-	constexpr std::array<WORD, 13> days{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-	if (false == Entry.get("day", time.wDay, WORD{1}, days[time.wMonth]) && Entry.has("day"))
+	if (constexpr std::array<WORD, 13> days{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	    false == Entry.get("day", time.wDay, WORD{1}, days[time.wMonth]) && Entry.has("day"))
 		return false;
 	if (time.wMonth == 2 && time.wDay == 29 && false == ((time.wYear % 4 == 0 && time.wYear % 100 != 0) || time.wYear % 400 == 0))
 	{
@@ -238,7 +240,7 @@ void apply_weather(record const &Entry)
 void capture_power(document &Document)
 {
 	// what a source which has fed nothing yet says of itself, but for its voltage
-	std::vector<double> const idle{0.0, 1e-10, 1e-10, 0.0, 0.0, 0.0, 0.0, 0.0};
+	std::vector const idle{0.0, 1e-10, 1e-10, 0.0, 0.0, 0.0, 0.0, 0.0};
 	for (auto const *source : Powergrid.sequence())
 	{
 		if (source == nullptr)
@@ -290,7 +292,7 @@ void capture_random(document &Document)
 bool apply_random(record const &Entry)
 {
 	std::istringstream state{Entry.text("state")};
-	auto engine{Global.random_engine};
+	auto engine{Global.random_engine}; // NOSONAR: a copy of the simulation's reproducible engine, which nothing secure uses
 	state >> engine;
 	if (state.fail())
 		return false;
@@ -434,15 +436,15 @@ bool apply_track(record const &Entry)
 void capture_events(document &Document)
 {
 	auto const now{Timer::GetTime()};
-	for (auto const *event{Events.begin()}; event != nullptr; event = event->m_next)
+	for (auto const *queued{Events.begin()}; queued != nullptr; queued = queued->m_next)
 	{
-		auto &entry{Document.add("event", event->m_name)};
-		if (auto const sibling{event_sibling(event)}; sibling != 0)
+		auto &entry{Document.add("event", queued->m_name)};
+		if (auto const sibling{event_sibling(queued)}; sibling != 0)
 			entry.set("sibling", sibling);
 		// when it runs, by the clock of the simulation; the seconds left are for the reader of the file
-		entry.set("at", event->m_launchtime).set("left", event->m_launchtime - now);
-		if (event->m_activator != nullptr)
-			entry.set("activator", vehicle_reference(event->m_activator));
+		entry.set("at", queued->m_launchtime).set("left", queued->m_launchtime - now);
+		if (queued->m_activator != nullptr)
+			entry.set("activator", vehicle_reference(queued->m_activator));
 	}
 }
 
@@ -451,8 +453,8 @@ bool apply_event(record const &Entry)
 	auto sibling{0};
 	if (false == Entry.get("sibling", sibling, 0, most_siblings) && Entry.has("sibling"))
 		return false;
-	auto *event{find_event(Entry.name, sibling)};
-	if (event == nullptr)
+	auto *found{find_event(Entry.name, sibling)};
+	if (found == nullptr)
 		return false;
 	// without the time it ran at, the seconds it had left count from now. the queue is kept in the order of the times,
 	// which a time that isn't a number has none in
@@ -461,7 +463,7 @@ bool apply_event(record const &Entry)
 	if (false == Entry.get("at", launchtime, now - longest_wait, now + longest_wait) && Entry.has("at"))
 		return false;
 	auto const *activator{Entry.has("activator") ? find_vehicle(Entry.text("activator")) : nullptr};
-	return Events.restore_queued(event, activator, launchtime);
+	return Events.restore_queued(found, activator, launchtime);
 }
 
 void capture_launchers(document &Document)
@@ -502,11 +504,11 @@ std::vector<TAnimModel *> switched_models()
 {
 	std::vector<TAnimModel *> models;
 	std::unordered_set<scene::basic_node const *> seen;
-	for (auto const *event : Events.sequence())
+	for (auto const *scenery_event : Events.sequence())
 	{
-		if (dynamic_cast<lights_event const *>(event) == nullptr)
+		if (dynamic_cast<lights_event const *>(scenery_event) == nullptr)
 			continue;
-		for (auto *node : event->target_nodes())
+		for (auto *node : scenery_event->target_nodes())
 		{
 			if (seen.emplace(node).second)
 				models.emplace_back(static_cast<TAnimModel *>(node));
@@ -566,11 +568,11 @@ std::vector<coupling_link> current_couplings(std::unordered_map<TMoverParameters
 			continue;
 		for (auto const side : {end::front, end::rear})
 		{
-			auto const &coupler{vehicle->MoverParameters->Couplers[side]};
-			auto const owner{coupler.Connected != nullptr ? Owners.find(coupler.Connected) : Owners.end()};
-			if (owner == Owners.end() || coupler.CouplingFlag == coupling::faux)
+			auto const &joint{vehicle->MoverParameters->Couplers[side]};
+			auto const owner{joint.Connected != nullptr ? Owners.find(joint.Connected) : Owners.end()};
+			if (owner == Owners.end() || joint.CouplingFlag == coupling::faux)
 				continue;
-			links.emplace_back(vehicle_reference(vehicle), side, vehicle_reference(owner->second), coupler.ConnectedNr, coupler.CouplingFlag);
+			links.emplace_back(vehicle_reference(vehicle), side, vehicle_reference(owner->second), joint.ConnectedNr, joint.CouplingFlag);
 		}
 	}
 	return links;
@@ -580,17 +582,97 @@ static_assert(coupling_flags_mask == (coupling::power3x400v << 1) - 1, "the flag
 
 void part(TDynamicObject &Vehicle, int const End)
 {
-	auto &coupler{Vehicle.MoverParameters->Couplers[End]};
-	if (coupler.Connected != nullptr && coupler.ConnectedNr >= 0 && coupler.ConnectedNr < 2)
+	auto &joint{Vehicle.MoverParameters->Couplers[End]};
+	if (joint.Connected != nullptr && joint.ConnectedNr >= 0 && joint.ConnectedNr < 2)
 	{
-		auto &other{coupler.Connected->Couplers[coupler.ConnectedNr]};
+		auto &other{joint.Connected->Couplers[joint.ConnectedNr]};
 		other.Connected = nullptr;
 		other.ConnectedNr = -1;
 		other.CouplingFlag = coupling::faux;
 	}
-	coupler.Connected = nullptr;
-	coupler.ConnectedNr = -1;
-	coupler.CouplingFlag = coupling::faux;
+	joint.Connected = nullptr;
+	joint.ConnectedNr = -1;
+	joint.CouplingFlag = coupling::faux;
+}
+
+// whether the vehicle is there, with its physics
+bool with_physics(TDynamicObject const *Vehicle)
+{
+	return Vehicle != nullptr && Vehicle->MoverParameters != nullptr;
+}
+
+// the links of the plan which change the kind of a coupling the vehicles keep
+void change_couplings(std::vector<coupling_link> const &Links)
+{
+	for (auto const &link : Links)
+	{
+		auto const *vehicle{find_vehicle(link.vehicle)};
+		auto const *other{find_vehicle(link.other)};
+		if (false == with_physics(vehicle) || false == with_physics(other))
+			continue;
+		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
+		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
+	}
+}
+
+// the links of the plan to make. returns: how many couldn't be made
+int join_couplings(std::vector<coupling_link> const &Links)
+{
+	auto failed{0};
+	for (auto const &link : Links)
+	{
+		auto *vehicle{find_vehicle(link.vehicle)};
+		auto *other{find_vehicle(link.other)};
+		if (false == with_physics(vehicle) || false == with_physics(other) ||
+		    false == vehicle->MoverParameters->Attach(link.end, link.otherend, other->MoverParameters, link.flags, true, false))
+		{
+			++failed;
+			continue;
+		}
+		// the vehicles joined in the snapshot, whatever the scenery made of their couplers
+		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
+		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
+	}
+	return failed;
+}
+
+void report_couplings(coupling_plan const &Plan, int const Failed, apply_summary &Summary)
+{
+	if (false == Plan.part.empty() || false == Plan.join.empty() || false == Plan.change.empty())
+		Summary.remarks.emplace_back(std::format("couplings: {} parted, {} joined, {} changed", Plan.part.size(), static_cast<int>(Plan.join.size()) - Failed, Plan.change.size()));
+	if (Failed != 0 || false == Plan.missing.empty())
+		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot couldn't be made, {} are to vehicles the scenery doesn't have", Failed, Plan.missing.size()));
+	if (false == Plan.refused.empty())
+	{
+		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot refused, they'd close a ring of vehicles; the first one {} {} to {} {}", Plan.refused.size(),
+		                                       Plan.refused.front().vehicle, Plan.refused.front().end, Plan.refused.front().other, Plan.refused.front().otherend));
+	}
+}
+
+// each vehicle knows the one coupled to it as its neighbour at that end
+void find_neighbours(std::unordered_map<TMoverParameters const *, TDynamicObject *> const &Owners)
+{
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
+			continue;
+		for (auto const side : {end::front, end::rear})
+		{
+			auto const &joint{vehicle->MoverParameters->Couplers[side]};
+			auto &neighbour{vehicle->MoverParameters->Neighbours[side]};
+			neighbour = neighbour_data();
+			if (auto const owner{joint.Connected != nullptr ? Owners.find(joint.Connected) : Owners.end()}; owner != Owners.end())
+			{
+				neighbour.vehicle = owner->second;
+				neighbour.vehicle_end = joint.ConnectedNr;
+			}
+		}
+	}
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle != nullptr && vehicle->MoverParameters != nullptr && vehicle->bEnabled)
+			vehicle->update_neighbours();
+	}
 }
 
 // parts and joins the vehicles of the scenery until they're coupled the way the snapshot has them
@@ -608,68 +690,15 @@ void apply_couplings(std::vector<record const *> const &Entries, apply_summary &
 	auto const plan{plan_couplings(current_couplings(owners), read_couplings(Entries), present)};
 
 	// the vehicles of the links are of the scenery (Present), with their physics
-	auto const with_physics{[](TDynamicObject const *Vehicle) { return Vehicle != nullptr && Vehicle->MoverParameters != nullptr; }};
 	for (auto const &link : plan.part)
 	{
 		if (auto *vehicle{find_vehicle(link.vehicle)}; with_physics(vehicle))
 			part(*vehicle, link.end);
 	}
-	for (auto const &link : plan.change)
-	{
-		auto const *vehicle{find_vehicle(link.vehicle)};
-		auto const *other{find_vehicle(link.other)};
-		if (false == with_physics(vehicle) || false == with_physics(other))
-			continue;
-		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
-		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
-	}
-	auto failed{0};
-	for (auto const &link : plan.join)
-	{
-		auto *vehicle{find_vehicle(link.vehicle)};
-		auto *other{find_vehicle(link.other)};
-		if (false == with_physics(vehicle) || false == with_physics(other) ||
-		    false == vehicle->MoverParameters->Attach(link.end, link.otherend, other->MoverParameters, link.flags, true, false))
-		{
-			++failed;
-			continue;
-		}
-		// the vehicles joined in the snapshot, whatever the scenery made of their couplers
-		vehicle->MoverParameters->Couplers[link.end].CouplingFlag = link.flags;
-		other->MoverParameters->Couplers[link.otherend].CouplingFlag = link.flags;
-	}
-	if (false == plan.part.empty() || false == plan.join.empty() || false == plan.change.empty())
-		Summary.remarks.emplace_back(std::format("couplings: {} parted, {} joined, {} changed", plan.part.size(), static_cast<int>(plan.join.size()) - failed, plan.change.size()));
-	if (failed != 0 || false == plan.missing.empty())
-		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot couldn't be made, {} are to vehicles the scenery doesn't have", failed, plan.missing.size()));
-	if (false == plan.refused.empty())
-	{
-		Summary.notes.emplace_back(std::format("couplings: {} of the snapshot refused, they'd close a ring of vehicles; the first one {} {} to {} {}", plan.refused.size(),
-		                                       plan.refused.front().vehicle, plan.refused.front().end, plan.refused.front().other, plan.refused.front().otherend));
-	}
-
-	// each vehicle knows the one coupled to it as its neighbour at that end
-	for (auto *vehicle : Vehicles.sequence())
-	{
-		if (vehicle == nullptr || vehicle->MoverParameters == nullptr)
-			continue;
-		for (auto const side : {end::front, end::rear})
-		{
-			auto const &coupler{vehicle->MoverParameters->Couplers[side]};
-			auto &neighbour{vehicle->MoverParameters->Neighbours[side]};
-			neighbour = neighbour_data();
-			if (auto const owner{coupler.Connected != nullptr ? owners.find(coupler.Connected) : owners.end()}; owner != owners.end())
-			{
-				neighbour.vehicle = owner->second;
-				neighbour.vehicle_end = coupler.ConnectedNr;
-			}
-		}
-	}
-	for (auto *vehicle : Vehicles.sequence())
-	{
-		if (vehicle != nullptr && vehicle->MoverParameters != nullptr && vehicle->bEnabled)
-			vehicle->update_neighbours();
-	}
+	change_couplings(plan.change);
+	auto const failed{join_couplings(plan.join)};
+	report_couplings(plan, failed, Summary);
+	find_neighbours(owners);
 }
 
 void apply_vehicles(document const &Document, apply_summary &Summary)
@@ -716,12 +745,20 @@ void apply_vehicles(document const &Document, apply_summary &Summary)
 		Summary.notes.emplace_back(std::format("{} vehicles of the scenery aren't in the snapshot, they stay as the scenery made them", unknown));
 }
 
+// a hash of the text of a name, which finds a string key by any kind of string
+struct name_hash {
+	using is_transparent = void;
+	std::size_t operator()(std::string_view const Name) const noexcept { return std::hash<std::string_view>{}(Name); }
+};
+
+using isolated_map = std::unordered_map<std::string, TIsolated *, name_hash, std::equal_to<>>;
+
 // the isolated sections, by their names: the scenery makes one for each name (TIsolated::Find())
-std::unordered_map<std::string, TIsolated *> isolated_sections()
+isolated_map isolated_sections()
 {
-	std::unordered_map<std::string, TIsolated *> sections;
+	isolated_map sections;
 	for (auto *section{TIsolated::Root()}; section != nullptr; section = section->Next())
-		sections.emplace(section->asName, section);
+		sections.try_emplace(section->asName, section);
 	return sections;
 }
 
@@ -819,8 +856,8 @@ void apply_drivers(document const &Document, apply_summary &Summary)
 		}
 		if (vehicle->Mechanik == nullptr)
 		{
-			if (auto *driver{spare_driver(vehicle, taken)}; driver != nullptr)
-				driver->MoveTo(vehicle);
+			if (auto *spare{spare_driver(vehicle, taken)}; spare != nullptr)
+				spare->MoveTo(vehicle);
 		}
 		if (vehicle->Mechanik == nullptr)
 		{
@@ -891,7 +928,7 @@ void capture_player(document &Document)
 void check_scenery(record const &Header, apply_summary &Summary)
 {
 	if (auto const scenery{Header.text("scenery")}; scenery != Global.SceneryFile)
-		Summary.notes.emplace_back(std::format("the snapshot was taken in scenery \"{}\", this one is \"{}\"", scenery, Global.SceneryFile));
+		Summary.notes.emplace_back(std::format(R"(the snapshot was taken in scenery "{}", this one is "{}")", scenery, Global.SceneryFile));
 	record now;
 	capture_fingerprint(now);
 	std::string changed;
@@ -979,10 +1016,14 @@ int event_sibling(basic_event const *Event)
 
 basic_event *find_event(std::string const &Name, int const Sibling)
 {
-	auto *event{Events.FindEvent(Name)};
-	for (auto index{0}; index < Sibling && event != nullptr; ++index)
-		event = event->m_sibling;
-	return event;
+	auto *found{Events.FindEvent(Name)};
+	auto index{0};
+	while (index < Sibling && found != nullptr)
+	{
+		found = found->m_sibling;
+		++index;
+	}
+	return found;
 }
 
 document capture()
@@ -1173,7 +1214,7 @@ void start()
 				// the cells the scripts read the weather and the time from are made by the first, not yet ready, pass.
 				// the run the snapshot comes from made them in its first frame; made here, the numbers their making
 				// draws at random don't count
-				auto const engine{Global.random_engine};
+				auto const engine{Global.random_engine}; // NOSONAR: a copy of the simulation's reproducible engine, which nothing secure uses
 				State.update_scripting_interface();
 				Global.random_engine = engine;
 				is_ready = true;

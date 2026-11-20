@@ -137,8 +137,8 @@ TEST_CASE("snapshot: the state of a vehicle with a load and one without")
 
 	// and the other way: a vehicle loaded by the scenery, empty in the snapshot
 	vehicle unloaded{wagon};
-	auto const none{through_text(state_of(unloaded.mover()))};
-	snapshot::apply_mover(empty.mover(), none);
+	auto const emptied{through_text(state_of(unloaded.mover()))};
+	snapshot::apply_mover(empty.mover(), emptied);
 	CHECK(empty->LoadAmount == 0.f);
 	CHECK(empty->LoadType.name.empty());
 	CHECK(empty->TotalMass == doctest::Approx(emptymass));

@@ -33,8 +33,8 @@ namespace snapshot = simulation::snapshot;
 template <typename Type_> struct member {
 	std::string_view key;
 	Type_ TController::*variable;
-	Type_ min{lowest()};
-	Type_ max{highest()};
+	Type_ least{lowest()};
+	Type_ most{highest()};
 
 	static constexpr Type_ lowest()
 	{
@@ -62,11 +62,13 @@ template <typename Table_> void load_members(TController &Driver, snapshot::reco
 {
 	for (auto const &item : Table)
 	{
+		using type = decltype(item.least);
+		type &target{Driver.*(item.variable)};
 		// the whole numbers in their ranges; a number of another kind is a measure, which can be anything
-		if constexpr (std::is_integral_v<decltype(item.min)> && false == std::is_same_v<decltype(item.min), bool>)
-			Entry.get(item.key, Driver.*(item.variable), item.min, item.max);
+		if constexpr (std::is_integral_v<type> && false == std::is_same_v<type, bool>)
+			Entry.get(item.key, target, item.least, item.most);
 		else
-			Entry.get(item.key, Driver.*(item.variable));
+			Entry.get(item.key, target);
 	}
 }
 
@@ -512,10 +514,10 @@ void TController::snapshot_load(simulation::snapshot::record const &Entry)
 	}
 
 	// the consist: its ends as they were, the vehicles driven and braked found anew among what's coupled now
-	if (auto *front{snapshot::find_vehicle(Entry.text("front"))}; front != nullptr)
-		pVehicles[end::front] = front;
-	if (auto *rear{snapshot::find_vehicle(Entry.text("rear"))}; rear != nullptr)
-		pVehicles[end::rear] = rear;
+	if (auto *first{snapshot::find_vehicle(Entry.text("front"))}; first != nullptr)
+		pVehicles[end::front] = first;
+	if (auto *last{snapshot::find_vehicle(Entry.text("rear"))}; last != nullptr)
+		pVehicles[end::rear] = last;
 	ControllingSet();
 	if (auto ai{AIControllFlag}; Entry.get("ai", ai))
 	{

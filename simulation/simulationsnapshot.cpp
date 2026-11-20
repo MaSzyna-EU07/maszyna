@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <system_error>
@@ -406,13 +407,13 @@ std::vector<record const *> document::of(std::string_view const Type) const
 record const *document::find(std::string_view const Type, std::string_view const Name) const
 {
 	auto const lookup{std::ranges::find_if(records, [&](record const &Entry) { return Entry.type == Type && Entry.name == Name; })};
-	return lookup != records.end() ? &*lookup : nullptr;
+	return lookup != records.end() ? std::to_address(lookup) : nullptr;
 }
 
 record *document::find(std::string_view const Type, std::string_view const Name)
 {
 	auto const lookup{std::ranges::find_if(records, [&](record const &Entry) { return Entry.type == Type && Entry.name == Name; })};
-	return lookup != records.end() ? &*lookup : nullptr;
+	return lookup != records.end() ? std::to_address(lookup) : nullptr;
 }
 
 record const *document::header() const
@@ -502,29 +503,42 @@ bool accepted(document const &Document, bool const Force)
 	return Document.header() != nullptr && (Document.problems.empty() || Force);
 }
 
-std::string write_file(std::string const &File, std::function<void(std::ostream &)> const &Writer)
+namespace {
+
+std::filesystem::path temporary_file(std::string const &File)
 {
-	auto const temporary{File + ".tmp"};
+	std::filesystem::path temporary{File};
+	temporary += ".tmp";
+	return temporary;
+}
+
+} // namespace
+
+std::string open_temporary(std::string const &File, std::ofstream &Output)
+{
+	Output.open(temporary_file(File), std::ios::binary | std::ios::trunc);
+	if (false == Output.is_open())
+		return std::format("file \"{}.tmp\" can't be written", File);
+	return {};
+}
+
+std::string put_in_place(std::string const &File, std::ofstream &Output)
+{
+	auto const temporary{temporary_file(File)};
 	std::error_code error;
+	Output.flush();
+	Output.close();
+	if (Output.fail())
 	{
-		std::ofstream output{temporary, std::ios::binary | std::ios::trunc};
-		if (false == output.is_open())
-			return std::format("file \"{}\" can't be written", temporary);
-		Writer(output);
-		output.flush();
-		output.close();
-		if (output.fail())
-		{
-			std::filesystem::remove(temporary, error);
-			return std::format("writing file \"{}\" failed", temporary);
-		}
+		std::filesystem::remove(temporary, error);
+		return std::format("writing file \"{}.tmp\" failed", File);
 	}
 	// the whole text is there: it takes the place of the file at once
 	std::filesystem::rename(temporary, File, error);
 	if (error)
 	{
 		std::filesystem::remove(temporary, error);
-		return std::format("file \"{}\" can't be put in place of \"{}\"", temporary, File);
+		return std::format(R"(file "{0}.tmp" can't be put in place of "{0}")", File);
 	}
 	return {};
 }
@@ -639,11 +653,9 @@ coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vec
 	for (auto const &link : unique_links(Current))
 	{
 		auto const *here{wanted_link(wanted, link.vehicle, link.end)};
-		auto const *there{wanted_link(wanted, link.other, link.otherend)};
-		if (here == nullptr && there == nullptr)
+		if (auto const *there{wanted_link(wanted, link.other, link.otherend)}; here == nullptr && there == nullptr)
 			continue;
-		auto const kept{here != nullptr && same_partner(*here, coupler_link{link.other, link.otherend, link.flags})};
-		if (false == kept)
+		if (auto const kept{here != nullptr && same_partner(*here, coupler_link{link.other, link.otherend, link.flags})}; false == kept)
 		{
 			plan.part.emplace_back(link);
 			continue;
@@ -659,8 +671,7 @@ coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vec
 			plan.missing.emplace_back(link);
 			continue;
 		}
-		auto const lookup{current.find(coupler_key{link.vehicle, link.end})};
-		if (lookup != current.end() && same_partner(lookup->second, coupler_link{link.other, link.otherend, link.flags}))
+		if (auto const lookup{current.find(coupler_key{link.vehicle, link.end})}; lookup != current.end() && same_partner(lookup->second, coupler_link{link.other, link.otherend, link.flags}))
 			continue;
 		plan.join.emplace_back(link);
 	}
@@ -671,7 +682,7 @@ coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vec
 		if (std::ranges::find(plan.part, link) == plan.part.end())
 			joined.join(link.vehicle, link.other);
 	}
-	std::erase_if(plan.join, [&](coupling_link const &Link) {
+	std::erase_if(plan.join, [&joined, &plan](coupling_link const &Link) {
 		if (Link.vehicle != Link.other && joined.join(Link.vehicle, Link.other))
 			return false;
 		plan.refused.emplace_back(Link);

@@ -1211,7 +1211,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 
 	// a test run is known before the rest of the command line is read (Global.test.enabled, see init()), so a
 	// command line it can't take ends with the error code of the test, not with 0, which would pass it
-	auto const testcommandline{simulation::parse_test_command_line(std::vector<char const *>(Argv, Argv + Argc))};
+	std::vector<char const *> const arguments(Argv, Argv + Argc);
+	auto const testcommandline{simulation::parse_test_command_line(arguments)};
 	if (false == testcommandline.error.empty())
 	{
 		simulation::test().conclude(simulation::test_result::error, testcommandline.error);
@@ -1229,7 +1230,7 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 	}
 
 	// the simulation snapshots to load and to take (--load-snapshot, --snapshot-at)
-	auto const snapshotcommandline{simulation::snapshot::parse_command_line(std::vector<char const *>(Argv, Argv + Argc))};
+	auto const snapshotcommandline{simulation::snapshot::parse_command_line(arguments)};
 	if (false == snapshotcommandline.error.empty())
 	{
 		std::cerr << snapshotcommandline.error << std::endl;

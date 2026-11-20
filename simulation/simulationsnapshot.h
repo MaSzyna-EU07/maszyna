@@ -14,8 +14,8 @@ http://mozilla.org/MPL/2.0/.
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <fstream>
 #include <functional>
-#include <iosfwd>
 #include <limits>
 #include <optional>
 #include <span>
@@ -139,10 +139,21 @@ document load(std::string const &File);
 // whether the document is to be put over the scenery: it has to start with a header, and to have no problems unless
 // Force says to use what could be read of it all the same (--load-snapshot-force)
 bool accepted(document const &Document, bool Force);
+// the steps of write_file(): opens "<file>.tmp" for Output, and puts it in place of the file once it's written.
+// returns: what went wrong, empty if nothing did
+std::string open_temporary(std::string const &File, std::ofstream &Output);
+std::string put_in_place(std::string const &File, std::ofstream &Output);
 // writes the text Writer gives to the file, whole or not at all: to "<file>.tmp" first, which takes the place of the
 // file only once it's all written. a write which fails leaves the file as it was, and no .tmp behind.
 // returns: what went wrong, empty if nothing did
-std::string write_file(std::string const &File, std::function<void(std::ostream &)> const &Writer);
+template <typename Writer_> std::string write_file(std::string const &File, Writer_ const &Writer)
+{
+	std::ofstream output;
+	if (auto error{open_temporary(File, output)}; false == error.empty())
+		return error;
+	Writer(output);
+	return put_in_place(File, output);
+}
 std::string write_file(std::string const &File, document const &Document);
 
 // a thing of the scenery is named in a snapshot by its name where it has one of its own, which is the one the tables
@@ -286,8 +297,8 @@ template <typename Type_> bool text_value(std::string const &Text, Type_ &Target
 			// not a number and the infinities are values like any other, a finite number too big for the type isn't: one
 			// which rounds past its largest value
 			auto const top{static_cast<double>(std::numeric_limits<type>::max())};
-			auto const step{top - static_cast<double>(std::nextafter(std::numeric_limits<type>::max(), type{0}))};
-			if (std::isfinite(*number) && std::abs(*number) >= top + step / 2)
+			if (auto const step{top - static_cast<double>(std::nextafter(std::numeric_limits<type>::max(), type{0}))};
+			    std::isfinite(*number) && std::abs(*number) >= top + step / 2)
 				return false;
 			Target = static_cast<type>(*number);
 		}

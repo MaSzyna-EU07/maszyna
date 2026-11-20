@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -63,7 +64,7 @@ TEST_CASE("snapshot: the values keep their case, their spaces and whatever else 
 	    "quote\"inside",
 	    "back\\slash",
 	    "ends with backslash\\",
-	    "http://not.a/comment",
+	    "not.a//comment",
 	    "a /* b */ c",
 	    "tab\there",
 	    "line\nbreak",
@@ -80,7 +81,7 @@ TEST_CASE("snapshot: the values keep their case, their spaces and whatever else 
 	auto &entry{document.add("memcell", "cell with a space")};
 	auto index{0};
 	for (auto const &value : values)
-		entry.set("key" + std::to_string(index++), value);
+		entry.set(std::format("key{}", index++), value);
 
 	auto const text{snapshot::to_text(document)};
 	auto const read{snapshot::parse(text)};
@@ -101,7 +102,7 @@ TEST_CASE("snapshot: the values keep their case, their spaces and whatever else 
 
 TEST_CASE("snapshot: numbers read back as the very same values")
 {
-	std::vector<double> const values{
+	std::vector const values{
 	    0.0,
 	    -0.0,
 	    1.0,
@@ -436,7 +437,7 @@ namespace {
 // whether one of the refusals told of names the key
 bool refused(std::vector<std::string> const &Refusals, std::string_view const Key)
 {
-	return std::ranges::any_of(Refusals, [&](std::string const &Line) { return Line.find(Key) != std::string::npos; });
+	return std::ranges::any_of(Refusals, [&](std::string_view const Line) { return Line.find(Key) != std::string_view::npos; });
 }
 
 // a vehicle entry with the couplings given as text, as a damaged file can have them
@@ -550,7 +551,7 @@ TEST_CASE("snapshot: a value out of the range of what it's read into is refused 
 TEST_CASE("snapshot: the couplings of a damaged file are refused where they'd point past a vehicle's couplers")
 {
 	snapshot::take_refusals();
-	std::vector<snapshot::record> const entries{
+	std::vector const entries{
 	    coupled("end3", "3", "3"),        // past the two couplers: an index past the array of them
 	    coupled("end2", "2", "3"),        // the same
 	    coupled("endminus", "-1", "3"),   //
