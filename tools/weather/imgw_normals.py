@@ -22,6 +22,8 @@ The files of IMGW don't hold the places of the stations: the ones below are appr
 good enough to find the nearest station. --coords gives a file of "name;latitude;longitude;elevation" rows
 to add to them or to replace them.
 
+The paths given (--out, --cpp, --cache, --coords) have to lead inside the folder the script is run in.
+
 Source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy. The data of
 IMGW-PIB were processed.
 """
@@ -92,9 +94,18 @@ def fold(text):
     return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower().strip()
 
 
+def inside(path, option):
+    """The path, made absolute; the script stops when it leads out of the folder the script is run in."""
+    root = os.path.realpath(os.getcwd())
+    full = os.path.realpath(os.path.join(root, path))
+    if os.path.commonpath([root, full]) != root:
+        sys.exit(f"{option} has to lead to a place inside {root}, not to {full}")
+    return full
+
+
 def fetch(url, cache, offline):
     """The bytes of a file of the server, kept in the cache; None when it isn't there."""
-    path = os.path.join(cache, url[len(BASE):].replace("/", "_"))
+    path = os.path.join(cache, os.path.basename(url[len(BASE):].replace("/", "_")))
     if os.path.exists(path):
         with open(path, "rb") as file:
             return file.read()
@@ -117,7 +128,7 @@ def format_names(text):
     then its name."""
     names = []
     for line in text.splitlines():
-        match = re.match(r"^\s*([A-Z][A-Z0-9]*)\s+(\S.*?)\s*$", line)
+        match = re.match(r"^\s*([A-Z][A-Z0-9]*)\s+(\S.*)$", line.rstrip())
         if match:
             names.append((match.group(1), fold(match.group(2))))
     return names
@@ -279,7 +290,7 @@ def write_cpp(path, stations, first, last):
     """The table as the source file the simulator is built with (environment/climatestations.cpp)."""
     lines = [
         "/*", "This Source Code Form is subject to the", "terms of the Mozilla Public License, v.", "2.0. If a copy of the MPL was not",
-        "distributed with this file, You can", "obtain one at", "http://mozilla.org/MPL/2.0/.", "*/", "",
+        "distributed with this file, You can", "obtain one at", "http://mozilla.org/MPL/2.0/.", "*/", "",  # NOSONAR(python:S5332) the notice of the MPL as every source of the simulator has it, not an address fetched
         f"// climate normals of the synoptic stations of IMGW-PIB, {first}-{last}. made by tools/weather/imgw_normals.py --cpp of the",
         "// public monthly data of the stations: not to be edited by hand, made again when the normals change.",
         "// source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data were processed",
@@ -313,6 +324,13 @@ def main():
     parser.add_argument("--cpp", help="also write the table as the source file of the simulator (environment/climatestations.cpp)")
     parser.add_argument("--coords", help='file of "name;latitude;longitude;elevation" rows of stations')
     arguments = parser.parse_args()
+    # the files read and written stay inside the folder the script is run in (the root of the repository)
+    arguments.out = inside(arguments.out, "--out")
+    arguments.cache = inside(arguments.cache, "--cache")
+    if arguments.cpp:
+        arguments.cpp = inside(arguments.cpp, "--cpp")
+    if arguments.coords:
+        arguments.coords = inside(arguments.coords, "--coords")
 
     places = dict(STATIONS)
     if arguments.coords:
