@@ -639,6 +639,25 @@ def check_couples(box, vehicle, other):
                   f"{ends[c.other_side]} one of {box.vehicles[c.other]}, coupling 0x{c.flags:02X}")
 
 
+def check_parts(box, vehicle, other, before=None):
+    """The two vehicles, coupled to each other, come apart in the run: a coupler broken, or uncoupled."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    unknown = [name for name in (vehicle, other) if name.lower() not in numbers]
+    if unknown:
+        return False, f"the black box has no vehicle {' nor '.join(unknown)}"
+    pair = {numbers[vehicle.lower()], numbers[other.lower()]}
+    # the record of the coupler which let go: coupled to the other vehicle before, the coupler itself no more
+    c = next((c for c in box.couplings if {c.vehicle, c.previous_other} == pair
+              and c.previous_flags & COUPLING_COUPLER and not c.flags & COUPLING_COUPLER), None)
+    if c is None:
+        return False, f"none of the {len(box.couplings)} coupling record(s) of the black box parts {vehicle} and {other}"
+    if before is not None and c.time > before:
+        return False, f"{vehicle} and {other} came apart at t={c.time:.1f}s, after {before:g}s"
+    ends = ("front", "rear")
+    return True, (f"at t={c.time:.1f}s the {ends[c.side]} coupler of {box.vehicles[c.vehicle]} let go of "
+                  f"{box.vehicles[c.previous_other]}, coupling 0x{c.previous_flags:02X} before")
+
+
 def _vehicle_states(box, vehicle):
     """The states of the vehicle named, or None and why not."""
     numbers = {name.lower(): number for number, name in box.vehicles.items()}
@@ -723,6 +742,7 @@ def check_moves(box, vehicle, min_speed, direction="front"):
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
     "couples": check_couples,
+    "parts": check_parts,
     "driver_changes": check_driver_changes,
     "stops_driverless": check_stops_driverless,
     "moves": check_moves,

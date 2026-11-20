@@ -296,6 +296,12 @@ set off by event launchers, at an hour or with a delay; `vars.trainsets` are the
   (no cab), a cab which is none of 1, -1, 0, a driver taken off a coach which has none, and a
   vehicle the scenery lacks. Each leaves its line in the log and the train runs its timetable to
   the stop at Przystanek as it does without them.
+- `en57_td_crew_parted`: an EN57-2000 unit with an AI driver and no timetable stands on track 1,
+  another one with nobody in it runs into its rear at 100 km/h (`crashdamage yes`). The hit
+  breaks the coupler between the middle and the rear car (`parts`, at 2 s), which leaves the rear
+  car with the driver in charge of it. The driver taken off at 10:35 had all three cars in charge,
+  the parted one too, and none of them keeps it (the log line `the driver was in charge of 3
+  vehicles`; the cars still coupled to the head car are two).
 
 A vehicle with a user in it is left alone by the command, which the test mode can't show: nobody
 sits in a vehicle there.
@@ -395,6 +401,9 @@ the row instead, logged by builds from this branch on.
   filled in as in the fragment, e.g. `{{vehicle}}_rb`. Fails when the two were coupled from the
   start, came apart again, or the run left no black box. The black box is looked at once a
   second, so the time given is that of the first look after the couplers caught.
+- `parts` `vehicle`, `other`, optional `before`: the black box has the two vehicles, coupled to
+  each other, come apart (the coupler itself let go: broken, or uncoupled), by the time `before`
+  of the recording when given.
 - `driver_changes` `vehicle`, `to`, optional `after`, `before`: the black box has the vehicle get
   the driver `to` (`none`, `ai` or `user`) at a time of the recording between the two, having had
   another one before, and keep it to the end.
