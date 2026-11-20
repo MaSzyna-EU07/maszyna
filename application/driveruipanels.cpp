@@ -41,6 +41,10 @@ http://mozilla.org/MPL/2.0/.
 #endif
 
 #include <format>
+#include <string_view>
+#include <vector>
+
+#include "audio/audiorenderer.h"
 
 namespace {
 
@@ -1720,6 +1724,81 @@ bool debug_panel::render_section_developer() const
 	return true;
 }
 
+namespace {
+
+// a combo choosing one of the names, the first entry standing for the library's own choice. the names are asked for
+// each time the list opens, as devices come and go. returns: true if the choice changed
+template <class Names_>
+bool name_combo( char const *Label, std::string &Value, Names_ const &Names, char const *Defaultlabel, std::string_view const Defaultvalue ) {
+
+    auto const preview { Value == Defaultvalue ? std::string{ Defaultlabel } : Value };
+    if( false == ImGui::BeginCombo( Label, preview.c_str() ) ) { return false; }
+
+    static std::vector<std::string> names; // one list per call site, as each passes its own lambda
+    if( ImGui::IsWindowAppearing() ) {
+        names = Names();
+    }
+    auto changed { false };
+    if( ImGui::Selectable( Defaultlabel, Value == Defaultvalue ) ) {
+        Value = Defaultvalue;
+        changed = true;
+    }
+    for( auto const &name : names ) {
+        if( ImGui::Selectable( name.c_str(), name == Value ) ) {
+            Value = name;
+            changed = true;
+        }
+    }
+    ImGui::EndCombo();
+    return changed;
+}
+
+// options of the audio device, applied by reopening it: output device, output mode, HRTF, limiter, mixing rate, sources
+void render_audio_device_settings() {
+
+    auto changed { false };
+    changed |= name_combo( "Output device###audiodevice", Global.AudioRenderer,
+        [] { return audio::renderer.output_devices(); }, "System default", "" );
+    changed |= name_combo( "Output mode###audiooutputmode", Global.AudioOutputMode,
+        [] { return std::vector<std::string>{ "mono", "stereo", "stereo-basic", "uhj", "headphones", "quad", "5.1", "6.1", "7.1" }; },
+        "Automatic", "auto" );
+    changed |= name_combo( "HRTF###audiohrtf", Global.AudioHrtf,
+        [] { return std::vector<std::string>{ "on", "off" }; }, "Automatic", "auto" );
+    changed |= name_combo( "HRTF data set###audiohrtfprofile", Global.AudioHrtfProfile,
+        [] { return audio::renderer.hrtf_profiles(); }, "Library's choice", "" );
+    changed |= name_combo( "Limiter###audiolimiter", Global.AudioLimiter,
+        [] { return std::vector<std::string>{ "on", "off" }; }, "Automatic", "auto" );
+
+    auto frequency { Global.AudioFrequency > 0 ? std::to_string( Global.AudioFrequency ) : std::string{} };
+    if( name_combo( "Mixing rate###audiofrequency", frequency,
+            [] { return std::vector<std::string>{ "22050", "32000", "44100", "48000", "96000" }; }, "Device's", "" ) ) {
+        Global.AudioFrequency = ( frequency.empty() ? 0 : std::stoi( frequency ) );
+        changed = true;
+    }
+
+    if( changed ) {
+        audio::renderer.apply_device_settings();
+    }
+}
+
+// options of the sources, applied to the playing ones right away: resampler, Doppler effect, EFX
+void render_audio_source_settings() {
+
+    auto changed { false };
+    changed |= name_combo( "Resampler###audioresampler", Global.AudioResampler,
+        [] { return audio::renderer.resamplers(); }, "Library's default", "" );
+    changed |= ImGui::SliderFloat( ( to_string( Global.AudioDoppler, 2 ) + "###audiodoppler" ).c_str(), &Global.AudioDoppler, 0.0f, 1.0f, "Doppler effect" );
+    changed |= ImGui::Checkbox( "Soundproofing muffles high frequencies###audiolowpass", &Global.AudioLowpass );
+    changed |= ImGui::SliderFloat( ( to_string( Global.AudioAirAbsorption, 1 ) + "###audioairabsorption" ).c_str(), &Global.AudioAirAbsorption, 0.0f, 10.0f, "Air absorption" );
+
+    if( changed ) {
+        audio::renderer.apply_source_settings();
+    }
+    ImGui::TextWrapped( "%s", audio::renderer.device_status().c_str() );
+}
+
+} // namespace
+
 bool
 debug_panel::render_section_settings() const {
 
@@ -1766,6 +1845,10 @@ debug_panel::render_section_settings() const {
             command_relay commandrelay;
             commandrelay.post(user_command::radiovolumeset, val, 0.0, GLFW_PRESS, 0);
         }
+    }
+    if( Global.bSoundEnabled ) {
+        render_audio_device_settings();
+        render_audio_source_settings();
     }
 
     return true;
