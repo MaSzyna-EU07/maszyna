@@ -235,7 +235,7 @@ pair_result update_pair(end_parameters const &First, end_parameters const &Secon
 	else {
 		State.draw_gear.reset();
 	}
-	auto const pushed{press(buffers_of(First, Second, Input.adapter), State.buffers, -Input.gap, -Input.gap_rate)};
+	auto const pushed{press(buffers_of(First, Second, Input.adapter), State.buffers, -Input.gap - std::max(Input.crush, 0.0), -Input.gap_rate)};
 
 	result.tension = pulled.force;
 	result.compression = pushed.force;
