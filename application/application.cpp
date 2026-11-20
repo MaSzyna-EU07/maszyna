@@ -37,6 +37,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
+#include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 #include "utilities/translation.h"
 
@@ -171,6 +174,28 @@ void char_callback(GLFWwindow *window, unsigned int c)
 	Application.on_char(c);
 }
 
+namespace
+{
+
+// what glfw says went wrong during the start (init()), such as why the window or its context couldn't be made (no
+// OpenGL driver, no pixel format that fits). each message once, so one repeated, for each window or worker's context,
+// is told once. glfw may call this from any thread that uses it
+void glfw_error_callback(int const Code, char const *Description)
+{
+	auto message{std::format("GLFW error 0x{:08X}: {}", static_cast<unsigned int>(Code), Description != nullptr ? Description : "(no description)")};
+
+	static std::mutex reportedmutex;
+	static std::set<std::string> reported;
+	{
+		std::scoped_lock lock(reportedmutex);
+		if (false == reported.insert(message).second)
+			return;
+	}
+	ErrorLog(message);
+}
+
+} // namespace
+
 // public:
 
 void eu07_application::queue_screenshot()
@@ -253,7 +278,8 @@ int eu07_application::run_crashgui()
 			return 0;
 		}
 	}
-	return -1;
+	// the player closed the window: the simulator closes with it, as it always has, but that is no failed start
+	return 1;
 }
 #if WITH_DISCORD_RPC
 void eu07_application::DiscordRPCService()
@@ -436,7 +462,11 @@ int eu07_application::init(int Argc, char *Argv[])
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
-			ErrorLog("Failed to run crash gui!");
+			// above 0 the player closed the window, which is no error
+			if (result < 0)
+				ErrorLog("Failed to run crash gui!");
+			else
+				WriteLog("Crash report window closed, closing");
 			return result;
 		}
 	}
@@ -502,6 +532,11 @@ int eu07_application::init(int Argc, char *Argv[])
 
 	if (!init_network())
 		return -1;
+
+	// glfw's errors are told to explain a failed start. once the simulator runs they would only repeat what the
+	// platform can't do (no setting of the cursor position on Wayland) or what a scenery asks for in vain (old key
+	// codes of its launchers), every frame
+	glfwSetErrorCallback(nullptr);
 
 	return result;
 }
@@ -1391,6 +1426,9 @@ int eu07_application::init_locale()
 
 int eu07_application::init_glfw()
 {
+	// set before glfwInit(), so a failure of the start itself is told too
+	glfwSetErrorCallback(glfw_error_callback);
+
 	{
 		int glfw_major, glfw_minor, glfw_rev;
 		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);

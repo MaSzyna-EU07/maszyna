@@ -113,6 +113,10 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
+    // the dump written when the simulator crashes (Windows): a small one by default, with the stacks, the threads, the
+    // modules, the memory the stacks point to and the modules' data. "crashdump.full yes" writes all the memory of the
+    // simulator instead, as large as the memory it took
+    bool CrashDumpFull{ false };
     // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
     // never, and with no entry it is written along with the physics logs
     std::optional<bool> BlackBox;
