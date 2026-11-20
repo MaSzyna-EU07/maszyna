@@ -1586,7 +1586,7 @@ namespace {
 // fluttering with the burning arc, with sharp cracks, coming on at once and dying away in a few tenths of a second
 std::vector<std::int16_t> arc_crackle( unsigned int const Rate ) {
 
-    std::mt19937 random { 0x5ea7u };
+    std::mt19937 random { 0x5ea7u }; // NOSONAR(cpp:S2245) the noise of a sound made the same every time, not security
     std::uniform_real_distribution<double> signed_unit { -1.0, 1.0 };
     std::uniform_real_distribution<double> unit { 0.0, 1.0 };
     auto const count { static_cast<std::size_t>( 0.35 * Rate ) };
