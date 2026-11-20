@@ -2,6 +2,9 @@
 #include "doctest.h"
 #include "scratch.h"
 
+#include <cmath>
+#include <limits>
+
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
@@ -578,6 +581,56 @@ TEST_CASE("utilities: a file is found by its name in another case") {
 	CHECK(FileCased("eu07_unit_test_no_such_file.xyz").empty());
 }
 
+TEST_CASE("utilities: a file is found in folders named in another case, the way the parser gives the names in lowercase") {
+	test::scratch_folder const folder{"utilities_cased_folders"};
+	folder.write("Scenery/Braniewo/rozklady/Os91121.txt", "x");
+	folder.write("Textures/Tabl/L101-2m.BMP", "x");
+
+	// every part of the path in lowercase: the file as it's on the disk where the case matters, the name given where it doesn't
+	auto const timetable{FileCased(folder.path("scenery/braniewo/rozklady/os91121.txt"))};
+	REQUIRE_FALSE(timetable.empty());
+	CHECK(std::filesystem::exists(timetable));
+	CHECK(ToLower(timetable) == ToLower(folder.path("Scenery/Braniewo/rozklady/Os91121.txt")));
+	CHECK(FileOnDisk(folder.path("scenery/braniewo/rozklady/os91121.txt")) == timetable);
+	// the folders written the Windows way as well
+	CHECK_FALSE(FileCased(folder.path() + "scenery\\braniewo\\rozklady\\os91121.txt").empty());
+	// a folder missing in any case
+	CHECK(FileCased(folder.path("scenery/nowhere/rozklady/os91121.txt")).empty());
+	CHECK(FileOnDisk(folder.path("scenery/nowhere/rozklady/os91121.txt")) == folder.path("scenery/nowhere/rozklady/os91121.txt"));
+
+	// among names and extensions: found in any case, given back as named, the name being the key of the banks
+	auto const texture{FileExists(std::vector<std::string>{folder.path("textures/tabl/l101-2m")}, std::vector<std::string>{".dds", ".bmp"})};
+	REQUIRE_FALSE(texture.first.empty());
+	CHECK(texture.first == folder.path("textures/tabl/l101-2m"));
+	CHECK(texture.second == ".bmp");
+	CHECK(std::filesystem::exists(FileOnDisk(texture.first + texture.second)));
+
+	// a file written after the folder was gone through is found as well
+	CHECK(FileCased(folder.path("textures/tabl/l7-2m.bmp")).empty());
+	folder.write("Textures/Tabl/L7-2m.bmp", "x");
+	auto const added{FileCased(folder.path("textures/tabl/l7-2m.bmp"))};
+	REQUIRE_FALSE(added.empty());
+	CHECK(std::filesystem::exists(added));
+}
+
+TEST_CASE("utilities: a terrain file is found in another case, by its text or by its binary file") {
+	test::scratch_folder const folder{"utilities_cased_terrain"};
+	folder.write("Scenery/L204/Teren/Woda_ter.txtf", "x");
+	folder.write("Scenery/Nmt/Gory_ter.btf", "x");
+	auto const scenery{folder.path("Scenery/")};
+	std::vector<std::string> const extensions{".txtf", ".btf"};
+
+	// the name as the parser gives it: the files are there under the name given back, which differs only in case
+	auto const text{FileStemOnDisk(scenery, "l204/teren/woda_ter", extensions)};
+	CHECK(ToLower(text) == "l204/teren/woda_ter");
+	CHECK(std::filesystem::exists(scenery + text + ".txtf"));
+	auto const binary{FileStemOnDisk(scenery, "nmt/gory_ter", extensions)};
+	CHECK(ToLower(binary) == "nmt/gory_ter");
+	CHECK(std::filesystem::exists(scenery + binary + ".btf"));
+	// neither file in any case: the name stays as given
+	CHECK(FileStemOnDisk(scenery, "nmt/nowhere_ter", extensions) == "nmt/nowhere_ter");
+}
+
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {
 	test::scratch_folder const folder{"utilities_modified"};
 	auto const name{folder.write("fresh.txt", "x")};
@@ -631,12 +684,30 @@ TEST_CASE("utilities: the sign of a number, and a number rounded to a whole one"
 	CHECK(Round(-2.5) == -2);
 }
 
-TEST_CASE("utilities: a value is kept within bounds, given in any order") {
+TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the upper one, as the old clamp did") {
 	CHECK(safe_clamp(5, 0, 3) == 3);
-	CHECK(safe_clamp(5, 3, 0) == 3);
-	CHECK(safe_clamp(-1, 3, 0) == 0);
-	CHECK(safe_clamp(2.0, 3.0, 1.0) == 2.0);
+	CHECK(safe_clamp(-1, 0, 3) == 0);
+	CHECK(safe_clamp(2, 0, 3) == 2);
 	CHECK(safe_clamp(2.0, 2.0, 2.0) == 2.0);
+	// inverted bounds: always the upper bound, whatever the value
+	CHECK(safe_clamp(5, 3, 0) == 0);
+	CHECK(safe_clamp(-1, 3, 0) == 0);
+	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
+	// NaN as the old clamp had it: a NaN value stays NaN, a NaN bound doesn't clamp
+	auto const notanumber{std::numeric_limits<double>::quiet_NaN()};
+	CHECK(std::isnan(safe_clamp(notanumber, 0.0, 1.0)));
+	CHECK(safe_clamp(2.0, 0.0, notanumber) == 2.0);
+	CHECK(safe_clamp(-1.0, notanumber, 1.0) == -1.0);
+	// what the helper gives for arguments in the order and of the signs of two calls (these checks don't call
+	// them): the AI braking test, whose demand is the stronger of the two (negative) bounds, as up to 26.05.1
+	double const threshold{-0.45};
+	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	// and the bump at a rail joint, 0 in place of the value as up to 26.05.1: the figure is capped from above
+	// only, and above 68% of the top speed it is negative
+	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
+	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
+	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {
