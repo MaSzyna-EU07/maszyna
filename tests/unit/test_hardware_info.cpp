@@ -84,7 +84,7 @@ gpu_adapter adapter(std::string Description, std::uint32_t const VendorId, bool 
 
 TEST_CASE("hardware info: a warning when OpenGL runs on the integrated GPU beside a dedicated one")
 {
-	std::vector<gpu_adapter> const laptop{adapter("Intel(R) UHD Graphics 630", vendor_intel), adapter("NVIDIA GeForce GTX 1650", vendor_nvidia)};
+	std::vector const laptop{adapter("Intel(R) UHD Graphics 630", vendor_intel), adapter("NVIDIA GeForce GTX 1650", vendor_nvidia)};
 
 	auto const warnings{gl_warnings(laptop, "Intel", "Intel(R) UHD Graphics 630")};
 	REQUIRE(warnings.size() == 1);
@@ -125,11 +125,11 @@ TEST_CASE("hardware info: a warning for a cpu without AVX2 only when the build n
 TEST_CASE("hardware info: sizes")
 {
 	CHECK(format_size(0) == "0 MiB");
-	CHECK(format_size(128ull * 1024 * 1024) == "128 MiB");
-	CHECK(format_size(1023ull * 1024 * 1024) == "1023 MiB");
-	CHECK(format_size(1024ull * 1024 * 1024) == "1.0 GiB");
-	CHECK(format_size(12ull * 1024 * 1024 * 1024) == "12.0 GiB");
-	CHECK(format_size(17'058'000'000ull) == "15.9 GiB");
+	CHECK(format_size(128ULL * 1024 * 1024) == "128 MiB");
+	CHECK(format_size(1023ULL * 1024 * 1024) == "1023 MiB");
+	CHECK(format_size(1024ULL * 1024 * 1024) == "1.0 GiB");
+	CHECK(format_size(12ULL * 1024 * 1024 * 1024) == "12.0 GiB");
+	CHECK(format_size(17'058'000'000ULL) == "15.9 GiB");
 }
 
 TEST_CASE("hardware info: names")
@@ -182,8 +182,8 @@ TEST_CASE("hardware info: /proc/cpuinfo")
 TEST_CASE("hardware info: /proc/meminfo")
 {
 	auto const memory{parse_meminfo("MemTotal:       16303064 kB\nMemFree:         1234567 kB\nMemAvailable:    8151532 kB\n")};
-	CHECK(memory.total == 16303064ull * 1024);
-	CHECK(memory.available == 8151532ull * 1024);
+	CHECK(memory.total == 16303064ULL * 1024);
+	CHECK(memory.available == 8151532ULL * 1024);
 	CHECK(parse_meminfo("").total == 0);
 }
 
@@ -198,23 +198,23 @@ TEST_CASE("hardware info: the lines of the log")
 	CHECK(format_cpu(cpu_info{}) == "hardware: cpu: unknown, avx2 unknown");
 
 	memory_info memory;
-	memory.total = 16ull * 1024 * 1024 * 1024;
-	memory.available = 7ull * 1024 * 1024 * 1024;
+	memory.total = 16ULL * 1024 * 1024 * 1024;
+	memory.available = 7ULL * 1024 * 1024 * 1024;
 	CHECK(format_memory(memory) == "hardware: ram: 16.0 GiB total, 7.0 GiB available");
 	CHECK(format_memory(memory_info{}) == "hardware: ram: unknown total");
 
 	gpu_adapter gpu{adapter("NVIDIA GeForce GTX 1650", vendor_nvidia)};
 	gpu.device_id = 0x1f82;
-	gpu.dedicated_video_memory = 4ull * 1024 * 1024 * 1024;
-	gpu.shared_system_memory = 8ull * 1024 * 1024 * 1024;
+	gpu.dedicated_video_memory = 4ULL * 1024 * 1024 * 1024;
+	gpu.shared_system_memory = 8ULL * 1024 * 1024 * 1024;
 	gpu.outputs = 1;
 	CHECK(format_adapter(1, gpu) == "hardware: gpu 1: NVIDIA GeForce GTX 1650 (vendor 0x10de, device 0x1f82), 4.0 GiB dedicated, 8.0 GiB shared, 1 outputs, discrete");
 
 	CHECK(format_gl("Intel", "Intel(R) UHD Graphics 630") == "hardware: opengl gpu: Intel(R) UHD Graphics 630 (Intel), integrated");
 
 	gl_memory_info gl;
-	gl.dedicated = 4ull * 1024 * 1024 * 1024;
-	gl.available = 3ull * 1024 * 1024 * 1024;
+	gl.dedicated = 4ULL * 1024 * 1024 * 1024;
+	gl.available = 3ULL * 1024 * 1024 * 1024;
 	CHECK(format_gl_memory(gl) == "hardware: opengl gpu memory: 4.0 GiB dedicated, 3.0 GiB free");
 	gl.dedicated = 0;
 	CHECK(format_gl_memory(gl) == "hardware: opengl gpu memory: 3.0 GiB free");

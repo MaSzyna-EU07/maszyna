@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/hardwareinfo.h"
 #include "utilities/Logs.h"
 
+#include <array>
 #include <cstring>
 
 #if defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
@@ -33,54 +34,56 @@ namespace hardware {
 namespace {
 
 // the adapters log_system() found, for the warning of log_gl_context()
-std::vector<gpu_adapter> system_adapters;
+std::vector<gpu_adapter> &system_adapters()
+{
+	static std::vector<gpu_adapter> adapters;
+	return adapters;
+}
 
 #ifdef EU07_HARDWARE_X86
-void cpuid(unsigned int const Leaf, unsigned int const Subleaf, unsigned int (&Registers)[4])
+// the eax, ebx, ecx and edx the cpuid instruction gives for the provided leaf and subleaf
+std::array<unsigned int, 4> cpuid(unsigned int const Leaf, unsigned int const Subleaf)
 {
+	std::array<unsigned int, 4> result{};
 #ifdef _MSC_VER
-	int registers[4]{};
-	__cpuidex(registers, static_cast<int>(Leaf), static_cast<int>(Subleaf));
-	for (int i = 0; i < 4; ++i)
-		Registers[i] = static_cast<unsigned int>(registers[i]);
+	std::array<int, 4> registers{};
+	__cpuidex(registers.data(), static_cast<int>(Leaf), static_cast<int>(Subleaf));
+	for (std::size_t i = 0; i < result.size(); ++i)
+		result[i] = static_cast<unsigned int>(registers[i]);
 #else
-	__cpuid_count(Leaf, Subleaf, Registers[0], Registers[1], Registers[2], Registers[3]);
+	__cpuid_count(Leaf, Subleaf, result[0], result[1], result[2], result[3]);
 #endif
+	return result;
 }
 
 // the brand string of the cpu ("AMD Ryzen 5 5600X 6-Core Processor"); empty if the cpu has none
 std::string cpu_brand()
 {
-	unsigned int registers[4]{};
-	cpuid(0x80000000u, 0, registers);
-	if (registers[0] < 0x80000004u)
+	if (cpuid(0x80000000u, 0)[0] < 0x80000004u)
 		return {};
-	char brand[49]{};
+	std::array<char, 49> brand{};
 	for (unsigned int leaf = 0; leaf < 3; ++leaf)
 	{
-		cpuid(0x80000002u + leaf, 0, registers);
-		std::memcpy(brand + leaf * 16, registers, 16);
+		auto const registers{cpuid(0x80000002u + leaf, 0)};
+		std::memcpy(brand.data() + leaf * 16, registers.data(), 16);
 	}
-	return tidy_name(brand);
+	return tidy_name(brand.data());
 }
 
 // whether the cpu has AVX2 and the system saves the AVX registers
 int cpu_avx2()
 {
 #ifdef _MSC_VER
-	unsigned int registers[4]{};
-	cpuid(0, 0, registers);
-	if (registers[0] < 7)
+	if (cpuid(0, 0)[0] < 7)
 		return 0;
-	cpuid(1, 0, registers);
-	auto const osxsave{(registers[2] & (1u << 27)) != 0};
-	auto const avx{(registers[2] & (1u << 28)) != 0};
+	auto const features{cpuid(1, 0)};
+	auto const osxsave{(features[2] & (1u << 27)) != 0};
+	auto const avx{(features[2] & (1u << 28)) != 0};
 	if (!osxsave || !avx)
 		return 0;
 	if ((_xgetbv(0) & 0x6) != 0x6) // the system saves xmm and ymm
 		return 0;
-	cpuid(7, 0, registers);
-	return (registers[1] & (1u << 5)) != 0 ? 1 : 0;
+	return (cpuid(7, 0)[1] & (1u << 5)) != 0 ? 1 : 0;
 #else
 	// checks the system's support as well
 	__builtin_cpu_init();
@@ -280,13 +283,14 @@ gl_memory_info probe_gl_memory()
 	else if (has_gl_extension("GL_ATI_meminfo"))
 	{
 		// the free memory of the texture pool, the largest free block, and the same of the auxiliary memory
-		GLint kilobytes[4]{};
-		glGetIntegerv(texture_free_memory_ati, kilobytes);
+		std::array<GLint, 4> kilobytes{};
+		glGetIntegerv(texture_free_memory_ati, kilobytes.data());
 		memory.available = static_cast<std::uint64_t>(std::max(kilobytes[0], 0)) * 1024;
 	}
 	// a driver that takes the queries amiss leaves an error the renderer would report as its own
 	while (glGetError() != GL_NO_ERROR)
 	{
+		// each call takes one error off
 	}
 	return memory;
 }
@@ -306,9 +310,10 @@ void log_system()
 		WriteLog(warning);
 	WriteLog(format_memory(probe_memory()));
 #ifdef _WIN32
-	system_adapters = probe_adapters();
-	for (std::size_t index = 0; index < system_adapters.size(); ++index)
-		WriteLog(format_adapter(static_cast<int>(index), system_adapters[index]));
+	auto &adapters{system_adapters()};
+	adapters = probe_adapters();
+	for (std::size_t index = 0; index < adapters.size(); ++index)
+		WriteLog(format_adapter(static_cast<int>(index), adapters[index]));
 #endif
 }
 
@@ -317,10 +322,9 @@ void log_gl_context()
 	auto const vendor{gl_string(GL_VENDOR)};
 	auto const renderer{gl_string(GL_RENDERER)};
 	WriteLog(format_gl(vendor, renderer));
-	auto const memory{probe_gl_memory()};
-	if (memory.dedicated > 0 || memory.available > 0)
+	if (auto const memory{probe_gl_memory()}; memory.dedicated > 0 || memory.available > 0)
 		WriteLog(format_gl_memory(memory));
-	for (auto const &warning : gl_warnings(system_adapters, vendor, renderer))
+	for (auto const &warning : gl_warnings(system_adapters(), vendor, renderer))
 		WriteLog(warning);
 }
 

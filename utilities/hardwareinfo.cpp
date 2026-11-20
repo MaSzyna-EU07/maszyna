@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/hardwareinfo.h"
 
+#include <algorithm>
+#include <array>
 #include <format>
 #include <set>
 #include <utility>
@@ -33,8 +35,12 @@ bool contains(std::string_view Text, std::string_view What)
 
 void erase_all(std::string &Text, std::string_view What)
 {
-	for (auto at = Text.find(What); at != std::string::npos; at = Text.find(What, at))
+	auto at = Text.find(What);
+	while (at != std::string::npos)
+	{
 		Text.erase(at, What.size());
+		at = Text.find(What, at);
+	}
 }
 
 // the words of a GPU name, lowercase: without the (TM) and (R) marks, and without what follows them in parentheses
@@ -76,24 +82,23 @@ bool has_pair(std::vector<std::string> const &Words, std::string_view First, std
 
 bool has_word(std::vector<std::string> const &Words, std::string_view What)
 {
-	return std::find(Words.begin(), Words.end(), What) != Words.end();
+	return std::ranges::find(Words, What) != Words.end();
 }
 
 bool is_software_name(std::string_view Name)
 {
+	constexpr std::array<std::string_view, 6> markers{"llvmpipe", "softpipe", "swiftshader", "gdi generic", "software rasterizer", "basic render driver"};
 	auto const name{lowercase(Name)};
-	for (auto const *marker : {"llvmpipe", "softpipe", "swiftshader", "gdi generic", "software rasterizer", "basic render driver"})
-		if (contains(name, marker))
-			return true;
-	return false;
+	return std::ranges::any_of(markers, [&name](std::string_view const Marker) { return contains(name, Marker); });
 }
 
 gpu_kind classify_intel(std::vector<std::string> const &Words)
 {
+	using enum gpu_kind;
 	// Iris Xe MAX (DG1) is a laptop card
 	for (std::size_t i = 0; i + 2 < Words.size(); ++i)
 		if (Words[i] == "iris" && Words[i + 1] == "xe" && Words[i + 2] == "max")
-			return gpu_kind::discrete;
+			return discrete;
 	// the Arc cards have a letter and a number after "Arc" (A770, B580) or are the Pro ones; the integrated Arc are
 	// "Arc Graphics" (Meteor Lake) and "Arc 140V" (Lunar Lake)
 	for (std::size_t i = 0; i + 1 < Words.size(); ++i)
@@ -102,27 +107,32 @@ gpu_kind classify_intel(std::vector<std::string> const &Words)
 			continue;
 		auto const &model{Words[i + 1]};
 		if (model == "pro")
-			return gpu_kind::discrete;
+			return discrete;
 		if (model.size() >= 2 && std::isalpha(static_cast<unsigned char>(model[0])) && std::isdigit(static_cast<unsigned char>(model[1])))
-			return gpu_kind::discrete;
+			return discrete;
 	}
-	return gpu_kind::integrated;
+	return integrated;
 }
 
 gpu_kind classify_amd(std::vector<std::string> const &Words)
 {
+	using enum gpu_kind;
 	if (has_word(Words, "rx") || has_word(Words, "firepro") || has_word(Words, "instinct") || has_pair(Words, "radeon", "pro") || has_pair(Words, "radeon", "vii"))
-		return gpu_kind::discrete;
+		return discrete;
 	// the APUs are "Radeon Graphics", "Radeon Vega 8 Graphics", "Radeon R7 Graphics", "Radeon 780M Graphics"; the
 	// cards are named by their model ("Radeon RX 580 Series", "Radeon R7 370")
 	if (!Words.empty() && Words.back() == "graphics")
-		return gpu_kind::integrated;
-	return gpu_kind::unknown;
+		return integrated;
+	return unknown;
 }
 
 std::string_view yes_no(int const Value)
 {
-	return Value > 0 ? "yes" : Value == 0 ? "no" : "unknown";
+	if (Value > 0)
+		return "yes";
+	if (Value == 0)
+		return "no";
+	return "unknown";
 }
 
 // "Key<spaces>: value" of /proc/cpuinfo and /proc/meminfo
@@ -166,17 +176,62 @@ std::uint64_t to_number(std::string_view Text)
 	return result;
 }
 
+// the state of reading /proc/cpuinfo, line by line
+struct cpuinfo_reader
+{
+	cpu_info cpu;
+	std::set<std::pair<std::string, std::string>> cores; // (physical id, core id)
+	std::set<std::string, std::less<>> packages;
+	int cores_per_package{0};
+	std::string package;
+
+	void read(std::string_view Line);
+};
+
+void cpuinfo_reader::read(std::string_view const Line)
+{
+	auto const [key, value] = split_entry(Line);
+	if (key == "processor")
+	{
+		++cpu.logical_cores;
+		package.clear();
+	}
+	else if ((key == "model name" || key == "Model") && cpu.model.empty())
+	{
+		cpu.model = tidy_name(value);
+	}
+	else if (key == "physical id")
+	{
+		package = value;
+		packages.emplace(value);
+	}
+	else if (key == "core id")
+	{
+		cores.emplace(package, value);
+	}
+	else if (key == "cpu cores" && cores_per_package == 0)
+	{
+		cores_per_package = static_cast<int>(to_number(value));
+	}
+	else if (key == "flags" && cpu.avx2 < 0)
+	{
+		auto const flags{name_words(value)};
+		cpu.avx2 = has_word(flags, "avx2") ? 1 : 0;
+	}
+}
+
 } // namespace
 
 std::string_view to_string(gpu_kind const Kind)
 {
+	using enum gpu_kind;
 	switch (Kind)
 	{
-	case gpu_kind::integrated:
+	case integrated:
 		return "integrated";
-	case gpu_kind::discrete:
+	case discrete:
 		return "discrete";
-	case gpu_kind::software:
+	case software:
 		return "software";
 	default:
 		return "unknown";
@@ -185,20 +240,21 @@ std::string_view to_string(gpu_kind const Kind)
 
 gpu_kind classify_gpu(std::uint32_t const VendorId, std::string_view const Name)
 {
+	using enum gpu_kind;
 	if (is_software_name(Name))
-		return gpu_kind::software;
+		return software;
 	auto const words{name_words(Name)};
 	switch (VendorId)
 	{
 	case vendor_nvidia:
-		return gpu_kind::discrete;
+		return discrete;
 	case vendor_intel:
 		return classify_intel(words);
 	case vendor_amd:
 	case vendor_amd_alt:
 		return classify_amd(words);
 	default:
-		return gpu_kind::unknown;
+		return unknown;
 	}
 }
 
@@ -206,7 +262,7 @@ std::uint32_t vendor_from_gl(std::string_view const GlVendor, std::string_view c
 {
 	// the vendor first; Mesa ("Mesa", "X.Org", "Collabora Ltd") and the D3D12 layer ("Microsoft Corporation") name
 	// the maker of the chip in the renderer
-	for (auto const text : {lowercase(GlVendor), lowercase(GlRenderer)})
+	for (auto const &text : {lowercase(GlVendor), lowercase(GlRenderer)})
 	{
 		if (contains(text, "nvidia") || contains(text, "geforce") || contains(text, "quadro"))
 			return vendor_nvidia;
@@ -261,52 +317,20 @@ std::string tidy_name(std::string_view const Name)
 
 cpu_info parse_cpuinfo(std::string_view const Text)
 {
-	cpu_info cpu;
-	std::set<std::pair<std::string, std::string>> cores; // (physical id, core id)
-	std::set<std::string> packages;
-	int cores_per_package{0};
-	std::string package;
-	for_each_line(Text, [&](std::string_view const Line) {
-		auto const [key, value] = split_entry(Line);
-		if (key == "processor")
-		{
-			++cpu.logical_cores;
-			package.clear();
-		}
-		else if ((key == "model name" || key == "Model") && cpu.model.empty())
-		{
-			cpu.model = tidy_name(value);
-		}
-		else if (key == "physical id")
-		{
-			package = value;
-			packages.emplace(value);
-		}
-		else if (key == "core id")
-		{
-			cores.emplace(package, value);
-		}
-		else if (key == "cpu cores" && cores_per_package == 0)
-		{
-			cores_per_package = static_cast<int>(to_number(value));
-		}
-		else if (key == "flags" && cpu.avx2 < 0)
-		{
-			auto const flags{name_words(value)};
-			cpu.avx2 = has_word(flags, "avx2") ? 1 : 0;
-		}
-	});
-	if (!cores.empty())
-		cpu.physical_cores = static_cast<int>(cores.size());
-	else if (cores_per_package > 0)
-		cpu.physical_cores = cores_per_package * static_cast<int>(std::max<std::size_t>(packages.size(), 1));
+	cpuinfo_reader reader;
+	for_each_line(Text, [&reader](std::string_view const Line) { reader.read(Line); });
+	auto cpu{std::move(reader.cpu)};
+	if (!reader.cores.empty())
+		cpu.physical_cores = static_cast<int>(reader.cores.size());
+	else if (reader.cores_per_package > 0)
+		cpu.physical_cores = reader.cores_per_package * static_cast<int>(std::max<std::size_t>(reader.packages.size(), 1));
 	return cpu;
 }
 
 memory_info parse_meminfo(std::string_view const Text)
 {
 	memory_info memory;
-	for_each_line(Text, [&](std::string_view const Line) {
+	for_each_line(Text, [&memory](std::string_view const Line) {
 		auto const [key, value] = split_entry(Line);
 		// the values are in kB (kibibytes, whatever the unit says)
 		if (key == "MemTotal")
@@ -371,10 +395,10 @@ std::vector<std::string> gl_warnings(std::vector<gpu_adapter> const &Adapters, s
 	}
 	if (kind != gpu_kind::integrated)
 		return warnings;
-	auto const discrete = std::find_if(Adapters.begin(), Adapters.end(), [](gpu_adapter const &Adapter) {
-		return !Adapter.software && classify_gpu(Adapter.vendor_id, Adapter.description) == gpu_kind::discrete;
-	});
-	if (discrete != Adapters.end())
+	if (auto const discrete = std::ranges::find_if(Adapters, [](gpu_adapter const &Adapter) {
+		    return !Adapter.software && classify_gpu(Adapter.vendor_id, Adapter.description) == gpu_kind::discrete;
+	    });
+	    discrete != Adapters.end())
 	{
 		warnings.push_back(std::format("hardware: warning: OpenGL runs on the integrated GPU ({}) though there is a dedicated one ({}); "
 		                               "choose High performance for the game in the Windows graphics settings or the GPU control panel, "
