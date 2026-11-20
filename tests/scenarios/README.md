@@ -155,6 +155,10 @@ the summary); a case marked `xfail` that passes (`XPASS`) fails the run, so that
 removed. Logs of each run (`log.txt`, `errors.txt`,
 `stdout.txt`, the physicslogs of the vehicle and of other trains of the case, the black box as
 `autotest_<case>.blackbox`) are moved to `tests/scenarios/out/<case>/`.
+When the simulator reports `Bad physics log: ...` lines about the physicslog lost while closing (a busy
+disk, builds that wait for the writer only a limited time), the case is run once more, and if it is cut
+again it fails as `physicslog truncated by the closing wait` without the row checks, which would only
+show misleading numbers; builds that print no such line behave as before.
 
 ## How it works
 

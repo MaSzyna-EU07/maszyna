@@ -365,6 +365,15 @@ class RunResult:
     wall_seconds: float = 0.0
     logs: dict[str, Path] = field(default_factory=dict)
     blackbox: Path | None = None
+    truncated: bool = False  # the simulator said it lost physicslog lines while closing
+
+
+def physicslog_cut(text: str) -> bool:
+    """The simulator's closing waits for the physicslog writer only a limited time and says so when it gives
+    up (`Bad physics log: ... the closing ...`), the log is then cut short on a busy disk. A failed write
+    (`Bad physics log: the writing failed`) is not this, and stays a failure. A build that doesn't wait
+    prints no such line."""
+    return any("Bad physics log:" in line and "closing" in line for line in text.splitlines())
 
 
 def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog: Path,
@@ -430,11 +439,12 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
                 proc.kill()
         result.wall_seconds = time.monotonic() - started
         stdout.seek(0)
-        result.verdict = next((line.strip() for line in stdout.read().decode(errors="replace").splitlines()
-                               if line.startswith("test:")), "")
+        output = stdout.read().decode(errors="replace")
+        result.verdict = next((line.strip() for line in output.splitlines() if line.startswith("test:")), "")
         stdout.close()
     result.rows = read_physicslog(physicslog)
     result.logs = find_logs(game_dir, scenery, since)
+    result.truncated = not watch and physicslog_cut(output + read_text(result.logs.get("errors")))
     result.blackbox = find_blackbox(game_dir, scenery, since)
     return result
 
@@ -850,6 +860,16 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
                            duration, float(case.get("timeout", 600)), watch, say,
                            expect_rows=with_physicslog and not own_vehicle)
+    if with_physicslog and result.truncated:
+        # the verdict and the exit code come before the closing and stay valid, the rows of the log don't:
+        # the case runs once more, its first logs are removed so that the second run's are found
+        say("  note  physicslog cut short by the closing wait (disk busy), running the case again")
+        for stale in (*result.logs.values(), result.blackbox):
+            if stale:
+                stale.unlink(missing_ok=True)
+        result = run_simulator(exe, game_dir, scenery, ini, physicslog,
+                               duration, float(case.get("timeout", 600)), watch, say,
+                               expect_rows=with_physicslog and not own_vehicle)
     timetable_path(game_dir, name).unlink(missing_ok=True)
     # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
     if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
@@ -906,6 +926,9 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     if result.failure:
         say(f"  FAIL  {result.failure}")
         ok = False
+    if with_physicslog and result.truncated:
+        say("  FAIL  physicslog truncated by the closing wait (disk busy), the checks on its rows are skipped")
+        return False
     if not result.rows and needs_physicslog:
         if not result.failure:
             say(f"  FAIL  no physicslog for '{vehicle}'")
