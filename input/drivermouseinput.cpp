@@ -616,6 +616,9 @@ drivermouse_input::default_bindings() {
         { "maxcurrent_sw:", {
             motoroverloadrelaythresholdtoggle,
             none } },
+        { "autorelay_sw:", {
+            notchingrelaytoggle,
+            none } },
         { "waterpumpbreaker_sw:", {
             waterpumpbreakertoggle,
             none } },

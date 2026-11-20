@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "simulation/simulation.h"
+#include "vehicle/fieldshunting.h"
 
 #include <charconv>
 #include <cmath>
@@ -3546,7 +3547,8 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 		{
 			// TBD, TODO: refactor this validation as part of relay check routine (currently in tractionforce()
 			// TBD, TODO: diesel electric engine utilize scndctrlactualpos like the other types?
-			if (EngineType == TEngineType::DieselElectric && (IsMainCtrlNoPowerPos() || AutoRelayFlag || ShuntMode || false == Mains))
+			if (EngineType == TEngineType::DieselElectric &&
+			    (IsMainCtrlNoPowerPos() || fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag) != fieldshunting::control::manual || ShuntMode || false == Mains))
 			{
 				OK = false;
 			}
@@ -7264,12 +7266,14 @@ double TMoverParameters::TractionForce(double dt)
 				EngineVoltage = 0;
 
 			// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
-			if (false == StLinFlag || ShuntMode)
+			if (auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag)};
+			    false == StLinFlag || ShuntMode || fieldshuntingcontrol == fieldshunting::control::off)
 			{
 				ScndCtrlPos = 0;
 			}
 			else
 			{
+				// the shunting relays set the field shunting (fieldshunting::control::automatic)
 				if (AutoRelayFlag)
 				{
 

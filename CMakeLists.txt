@@ -563,6 +563,7 @@ set(CORE_SOURCES
 "utilities/physicslog.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
+"vehicle/fieldshunting.cpp"
 "vehicle/drivingaid.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
