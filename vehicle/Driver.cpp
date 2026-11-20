@@ -8793,7 +8793,7 @@ void TController::control_tractive_force() {
 	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
 	    // speeds the train up, more power only drags the brake and slips the wheels. nor is a notch past that taken
 	    // back: the power got there in one notch from below, and the notch below doesn't hold the train
-	    ( false == bUphillRelease || fUphillTractiveForce < EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce ) &&
+	    ( false == bUphillRelease || fUphillTractiveForce < uphill_start::holding_force * fUphillHoldingForce ) &&
 	    // nor while the train brake is still being applied further to hold the train
 	    false == bUphillBrakeTopUp &&
 	    velocity < (VelDesired == 1.0 ? // work around for trains getting stuck on tracks with speed limit = 1
@@ -8864,8 +8864,7 @@ void TController::control_uphill_start() {
          && ( BrakeCtrlPosition > 0.0 ) ) { // only with the train brake still applied to hold the train
             bUphillStart = true;
             bUphillRelease = false;
-            bUphillTopUpDone = false;
-            fUphillTopUpForce = -1.0;
+            UphillTopUp = {};
             fUphillStartTime = ElapsedTime;
         }
         else {
@@ -8901,7 +8900,7 @@ void TController::control_uphill_start() {
             cue_action( driver_hint::independentbrakerelease );
         }
         if( ( velocity > 1.0 )
-         || ( fUphillTractiveForce > EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce )
+         || ( fUphillTractiveForce > uphill_start::holding_force * fUphillHoldingForce )
          // a locomotive that can't hold the train on its own power gets the brake off in the end all the same
          || ( ElapsedTime - fUphillStartTime > 45.0 ) ) {
             // the power holds the train: the train brake can be released
@@ -8932,27 +8931,20 @@ bool TController::uphill_brake_top_up() {
             haswagons = true;
         }
     }
-    if( ( false == haswagons )
-     || bUphillTopUpDone
-     || ( trainbrakeforce >= EU07_AI_UPHILLHOLDFORCE * fUphillHoldingForce )
-     || ( BrakeCtrlPosition >= EU07_AI_UPHILLTOPUPPOSITION ) ) {
+    if( false == haswagons ) {
+        return false;
+    }
+    auto const action { uphill_start::brake_top_up(
+        UphillTopUp, trainbrakeforce, fUphillHoldingForce, BrakeCtrlPosition, fBrakeHeldTime,
+        mvOccupied->BrakeDelay[ mvOccupied->BrakeDelayFlag > bdelay_G ? 1 : 3 ] ) };
+    if( action == uphill_start::top_up_action::none ) {
         return false;
     }
     // the time for the power to hold the train starts once the brake does
     fUphillStartTime = ElapsedTime;
-    // each step is given the full application time of the train brake, for the cylinders along the train to fill
-    if( fBrakeHeldTime < mvOccupied->BrakeDelay[ mvOccupied->BrakeDelayFlag > bdelay_G ? 1 : 3 ] ) {
-        return true;
+    if( action == uphill_start::top_up_action::step ) {
+        BrakeLevelAdd( BrakingLevelIncrease );
     }
-    if( ( fUphillTopUpForce >= 0.0 )
-     && ( trainbrakeforce - fUphillTopUpForce < EU07_AI_UPHILLTOPUPGAIN * fUphillHoldingForce ) ) {
-        // the last step added next to nothing: the brake of this train can't hold it (brakes cut out, a load setting
-        // too low), and the start goes on without
-        bUphillTopUpDone = true;
-        return false;
-    }
-    fUphillTopUpForce = trainbrakeforce;
-    BrakeLevelAdd( BrakingLevelIncrease );
     return true;
 }
 

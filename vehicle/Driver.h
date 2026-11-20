@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/uphillstart.h"
 #include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
@@ -28,9 +29,6 @@ auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start keeps the power on while the train brake releases
-auto const EU07_AI_UPHILLHOLDFORCE = 1.1; // a force that holds a train uphill, as a multiple of the grade force
-auto const EU07_AI_UPHILLTOPUPPOSITION = 4.0; // full service: the furthest an uphill start applies the train brake to hold the train
-auto const EU07_AI_UPHILLTOPUPGAIN = 0.02; // a step of the train brake that adds less brake force than this, as a multiple of the grade force, is the last one
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -448,8 +446,7 @@ private:
     double fUphillStartTime = 0.0; // when the uphill start began
     bool bUphillRelease = false; // starting uphill, the power holds the train and the train brake is being released
     bool bUphillBrakeTopUp = false; // starting uphill, the train brake is applied further before the locomotive brake comes off
-    bool bUphillTopUpDone = false; // starting uphill, a further step of the train brake added next to nothing: no more of them
-    double fUphillTopUpForce = -1.0; // the brake force of the unpowered vehicles when the last step was given, -1 before the first [N]
+    uphill_start::top_up UphillTopUp; // starting uphill, what has been done to apply the train brake further
     double fUphillReleaseTime = 0.0; // when the release began
     double fUphillTractiveForce = 0.0; // the tractive force of the consist while starting uphill [N]
     double fUphillHoldingForce = 0.0; // the grade force on the consist while starting uphill [N]
