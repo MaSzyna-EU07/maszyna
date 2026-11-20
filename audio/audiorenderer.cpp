@@ -450,6 +450,7 @@ openal_renderer::erase( sound_source const *Controller ) {
 void
 openal_renderer::update( double const Deltatime ) {
 
+    m_time += Deltatime;
     // buffers of sound files decoded in the background since the last update
     m_buffers.update();
 

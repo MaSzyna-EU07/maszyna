@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "utilities/Names.h"
 
+#include <string_view>
+
 float const EU07_SOUND_GLOBALRANGE { -1.f };
 float const EU07_SOUND_CABCONTROLSCUTOFFRANGE { 7.5f };
 float const EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE{ -10.f };
@@ -50,6 +52,8 @@ auto const EU07_SOUNDPROOFING_NONE{ 1.f };
 auto const EU07_SOUNDPROOFING_SOME{ std::sqrt( 0.65f ) };
 auto const EU07_SOUNDPROOFING_STRONG{ std::sqrt( 0.20f ) };
 auto const EU07_SOUNDPROOFING_VERYSTRONG{ std::sqrt( 0.01f ) };
+
+double const EU07_SOUND_VARIANTCROSSFADE { 0.3 }; // seconds, crossfade between a definition and its inside variant when the listener moves
 
 // mini controller and audio dispatcher; issues play commands for the audio renderer,
 // updates parameters of created audio emitters for the playback duration
@@ -177,9 +181,55 @@ private:
     };
 
 // methods
+    // parameters given explicitly in the definition; an inside variant takes the others from the definition it belongs to
+    enum explicit_parameter {
+        explicit_offset = 0x1,
+        explicit_range = 0x2,
+        explicit_placement = 0x4,
+        explicit_soundproofing = 0x8,
+        explicit_pitchvariation = 0x10,
+        explicit_startoffset = 0x20,
+    };
+
     // imports member data pair from the provided data stream
     bool
-        deserialize_mapping( cParser &Input );
+        deserialize_mapping( cParser &Input, int const Chunkrange );
+    // reads the block of the inside variant and adds the variant, if it's usable
+    void
+        deserialize_variant( cParser &Input, int const Chunkrange );
+    // imports custom soundproofing in format [ p1, p2, p3, p4, p5, p6 ]
+    void
+        deserialize_soundproofing( cParser &Input );
+    // imports sound chunk pitch, defined with key pitchX where X = activation threshold
+    void
+        deserialize_chunk_pitch( cParser &Input, std::string_view const Key );
+    // imports one of the floating point properties, if the key names one
+    void
+        deserialize_property( cParser &Input, std::string_view const Key );
+    // issues contextual play commands for the audio renderer, for this definition alone
+    void
+        play_definition( int const Flags );
+    // plays the definition or its inside variant, whichever suits the listener, crossfading them when that changes
+    void
+        play_variants( int const Flags );
+    // gives the inside variant what it takes from this definition
+    void
+        sync_variant( sound_source &Variant ) const;
+    // stops currently active play commands of this definition alone
+    void
+        stop_definition( bool const Skipend );
+    // adjusts parameters of provided implementation-side sound source, for this definition alone
+    void
+        update_definition( audio::openal_source &Source );
+    // updates the crossfade volume factor of a definition which has a variant, or is one
+    void
+        update_variant_fade();
+    // returns true if this definition alone emits any sound
+    bool
+        is_definition_playing() const;
+    // returns true if this definition alone has no sound buffer
+    bool
+        is_definition_empty() const;
     // imports values for initial, main and ending sounds from provided data stream
     void
         deserialize_soundset( cParser &Input );
@@ -243,6 +293,15 @@ private:
     bool m_soundchunksempty { true }; // helper, cached check whether sample table is linked with any actual samples
     int m_crossfaderange {}; // range of transition from one chunk to another
     std::optional< std::array<float, 6> > m_soundproofing; // custom soundproofing parameters
+    int m_explicit {}; // parameters given explicitly in the definition, combination of explicit_parameter flags
+    // optional inside variant, played instead of this definition when the listener is enclosed in a vehicle (at most one;
+    // a vector, as the type isn't complete yet)
+    std::vector<sound_source> m_variants;
+    bool m_isvariant { false }; // this definition is an inside variant of another one
+    // crossfade state of a definition which has a variant, or is one
+    bool m_variantchosen { true }; // the definition is the one chosen for the listener
+    double m_variantswitchtime { -1.0e9 }; // audio time of the last change of the chosen definition, the start of the crossfade
+    float m_variantgain { 1.f }; // current crossfade volume factor
 };
 
 // owner setter/getter

@@ -124,6 +124,8 @@ public:
 
     void erase( sound_source const *Controller );
     void update( double const Deltatime );
+    // seconds of audio updates so far, standing still while the simulation is paused
+    double time() const { return m_time; }
 
     // choices the library offers, for the settings
     std::vector<std::string> output_devices() const;
@@ -160,6 +162,7 @@ private:
     bool m_freeflymode { true };
     bool m_windowopen { true };
     int m_activecab { 0 };
+    double m_time { 0.0 };
 
     buffer_manager m_buffers;
     source_list m_sources;
