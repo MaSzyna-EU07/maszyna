@@ -100,7 +100,7 @@ void remove_driver(TDynamicObject &Vehicle) {
 			++released;
 		}
 	}
-	WriteLog("Crew: [" + Vehicle.name() + "] the driver was in charge of " + std::to_string(released) + " vehicles");
+	WriteLog("Crew: [" + Vehicle.name() + "] the driver was in charge of " + std::to_string(released) + (released == 1 ? " vehicle" : " vehicles"));
 	delete driver;
 }
 
