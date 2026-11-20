@@ -1,0 +1,26 @@
+{
+  "description": "eu07/maszyna#524, Wrzosy PXE336080: EU07-234 runs light to the rake of 12 coaches in the Wolica depot, gets the order to couple (the player's hand, the scenery gives none), has to couple to the first coach and leave the depot with the rake behind it.",
+  "base_scenery": "wrzosy_pxe336080.scn",
+  "strip_trainsets": false,
+  "vehicle": "EU07-234",
+  "fragment": "wrzosy_pxe336080_couple.scn",
+  "slow": true,
+  "ini": [
+    "file.binary.terrain no"
+  ],
+  "test_config": [
+    "test.timeout 1800",
+    "test.standstill 900",
+    "test.fail_if_stop_overran no",
+    "test.no_movement_before_pass no"
+  ],
+  "expect": "pass",
+  "timeout": 1200,
+  "checks": [
+    {
+      "type": "couples",
+      "vehicle": "EU07-234",
+      "other": "pxe_1"
+    }
+  ]
+}
