@@ -43,7 +43,8 @@ public:
     void
         export_as_text( std::string const &Scenariofile ) const;
 	// create new model from node stirng
-	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position);
+	// the model goes to the layer given, or to the active one with none given
+	TAnimModel * create_model(std::string const &src, std::string const &name, const glm::dvec3 &position, scene::layer_handle Layer = null_handle);
 	// places the vehicles, given as their node statements, as a trainset on the path, while the simulation runs. returns: the vehicles made
 	std::vector<TDynamicObject *> insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
 	// create new eventlauncher from node stirng

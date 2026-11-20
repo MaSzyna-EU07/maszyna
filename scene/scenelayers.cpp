@@ -858,7 +858,8 @@ namespace
 {
 // marks of the lines the editor keeps track of. The letters the starters read in a scenery file are left to them: the title //$n,
 // the description //$d, the attachments //$f, the image //$i, the id //$l and the old scenery //$a, in the trainsets //$o and //$r
-std::array<char const *, 11> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$z", "//$w", "//$t"};
+// the filled areas of the area fill //$u
+std::array<char const *, 12> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$z", "//$w", "//$t", "//$u"};
 
 // the marks some of these had before, on the letters of the starters: the download area //$z was //$a, the shared grade lines //$w
 // were //$n, the fitted tracks //$t were //$f. Their lines are read only by the word the editor wrote in them, or by the start of
@@ -894,7 +895,7 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 		std::string on, state, next;
 		return words >> on >> state && on == "on" && (state == "0" || state == "1") && (false == static_cast<bool>(words >> next) || next == "origin" || next == "year");
 	}
-	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 7> const words{{
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 8> const words{{
 	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "kept", "vertex", "click", "element", "end"}},
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
 	    {"//$s", {"#", "station"}},
@@ -902,6 +903,7 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 	    {"//$z", {"#", "point"}},
 	    {"//$w", {"#", "gradeline"}},
 	    {"//$t", {"#", "fitted"}},
+	    {"//$u", {"#", "area", "outline", "template", "end"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())

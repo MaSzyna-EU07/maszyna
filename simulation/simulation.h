@@ -39,7 +39,7 @@ public:
         process_commands();
  	// create model from node string
 	TAnimModel *
-	    create_model(const std::string &src, const std::string &name, const glm::dvec3 &position);
+	    create_model(const std::string &src, const std::string &name, const glm::dvec3 &position, scene::layer_handle Layer = null_handle);
 	// places the vehicles, given as their node statements, as a trainset on the path. returns: the vehicles made
 	std::vector<TDynamicObject *>
 	    insert_trainset(std::string const &Name, TTrack *Path, double const Offset, std::string const &Vehicles, bool const Reversed = false);
