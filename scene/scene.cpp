@@ -25,6 +25,8 @@ http://mozilla.org/MPL/2.0/.
 #include "widgets/map_objects.h"
 #include "vehicle/aiwire.h"
 
+#include <format>
+
 namespace scene {
 
 std::string const EU07_FILEEXTENSION_REGION { ".sbt" };
@@ -48,6 +50,37 @@ region_file_name( std::string const &Scenariofile ) {
     filename += EU07_FILEEXTENSION_REGION;
 
     return filename;
+}
+
+// reads the next section of a region file into the provided list. returns: the empty string on success, the reason
+// of the failure otherwise
+std::string
+read_region_section( std::istream &Input, std::uint32_t const Sectionlimit, std::vector<std::pair<std::uint32_t, std::unique_ptr<basic_section>>> &Sections ) {
+
+    // section index, followed by section data size (counted from the start of the index), followed by section data
+    std::uint32_t sectionindex;
+    std::uint32_t sectionsize;
+    if( auto const error { region_file::read_section_header( Input, Sectionlimit, sectionindex, sectionsize ) }; false == error.empty() ) {
+        return error;
+    }
+    // the section is read out of its own data, it can't reach into the next one
+    std::string data( sectionsize - region_file::section_header_size, '\0' );
+    Input.read( data.data(), static_cast<std::streamsize>( data.size() ) );
+    if( false == Input.good() ) {
+        return std::format( "ends inside section {}", sectionindex );
+    }
+    std::istringstream sectioninput { std::move( data ) };
+    auto section { std::make_unique<basic_section>() };
+    section->deserialize( sectioninput );
+    std::string error;
+    if( true == sectioninput.fail() ) {
+        error = std::format( "has section {} shorter than its content", sectionindex );
+    }
+    else if( sectioninput.peek() != std::char_traits<char>::eof() ) {
+        error = std::format( "has section {} longer than its content", sectionindex );
+    }
+    Sections.emplace_back( sectionindex, std::move( section ) );
+    return error;
 }
 
 } // namespace
@@ -1278,8 +1311,8 @@ basic_region::is_scene( std::string const &Scenariofile ) const {
     // file type and version check, and whether the sections add up to the whole file. a file cut short (by a write
     // interrupted with an older version, or a copy) is caught here, while the scenery can still be loaded from the text
     std::ifstream input( filename, std::ios::binary );
-    auto const layout { region_file::check_layout( input, EU07_FILEHEADER, EU07_FILEVERSION_REGION, static_cast<std::uint32_t>( m_sections.size() ) ) };
-    if( false == layout.empty() ) {
+    if( auto const layout { region_file::check_layout( input, EU07_FILEHEADER, EU07_FILEVERSION_REGION, static_cast<std::uint32_t>( m_sections.size() ) ) };
+        false == layout.empty() ) {
         WriteLog( "Bad file: \"" + filename + "\" " + layout + ", ignored" );
         return false;
     }
@@ -1354,27 +1387,7 @@ basic_region::deserialize( std::string const &Scenariofile ) {
         auto sectioncount { sn_utils::ld_uint32( input ) };
         sections.reserve( sectioncount );
         while( ( sectioncount-- ) && ( true == error.empty() ) ) {
-            // section index, followed by section data size (counted from the start of the index), followed by section data
-            std::uint32_t sectionindex, sectionsize;
-            error = region_file::read_section_header( input, sectionlimit, sectionindex, sectionsize );
-            if( false == error.empty() ) { break; }
-            // the section is read out of its own data, it can't reach into the next one
-            std::string data( sectionsize - region_file::section_header_size, '\0' );
-            input.read( data.data(), static_cast<std::streamsize>( data.size() ) );
-            if( false == input.good() ) {
-                error = "ends inside section " + std::to_string( sectionindex );
-                break;
-            }
-            std::istringstream sectioninput { std::move( data ) };
-            auto section { std::make_unique<basic_section>() };
-            section->deserialize( sectioninput );
-            if( true == sectioninput.fail() ) {
-                error = "has section " + std::to_string( sectionindex ) + " shorter than its content";
-            }
-            else if( sectioninput.peek() != std::char_traits<char>::eof() ) {
-                error = "has section " + std::to_string( sectionindex ) + " longer than its content";
-            }
-            sections.emplace_back( sectionindex, std::move( section ) );
+            error = read_region_section( input, sectionlimit, sections );
         }
     }
     catch( std::exception const &Exception ) {

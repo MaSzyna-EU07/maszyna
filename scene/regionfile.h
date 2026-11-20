@@ -10,9 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include <iosfwd>
+#include <exception>
+#include <fstream>
 #include <string>
+#include <utility>
 
 // the parts of the region file (<scenery>.sbt, the static geometry of a scenery cached by basic_region) which need
 // nothing of the scene: checking how a file is laid out, and writing it so that an interrupted write leaves no
@@ -39,11 +40,38 @@ std::string
 std::string
     read_section_header( std::istream &Input, std::uint32_t const Sectionlimit, std::uint32_t &Index, std::uint32_t &Size );
 
-// writes a file with the provided function into a temporary file next to it (the name with .tmp added), which then
-// replaces the file in one go. if the writing fails or is cut short, the previous file (or none) stays in place,
-// rather than a partial one; the temporary file is removed when the failure is noticed. returns: the empty string on
-// success, the reason of the failure otherwise
+// opens the temporary file write_through_temporary() writes into. returns: the empty string on success, the reason of
+// the failure otherwise
 std::string
-    write_through_temporary( std::string const &Filename, std::function<void( std::ostream & )> const &Write );
+    open_temporary( std::string const &Filename, std::ofstream &Output );
+
+// closes the temporary file write_through_temporary() wrote into, and puts it in place of the file, unless Error holds
+// the reason why the writing failed. the temporary file is removed on a failure. returns: the empty string on success,
+// the reason of the failure otherwise
+std::string
+    finish_temporary( std::string const &Filename, std::ofstream &Output, std::string Error );
+
+// writes a file with the provided function (taking the std::ostream to write into) into a temporary file next to it
+// (the name with .tmp added), which then replaces the file in one go. if the writing fails or is cut short, the
+// previous file (or none) stays in place, rather than a partial one; the temporary file is removed when the failure is
+// noticed. returns: the empty string on success, the reason of the failure otherwise
+template <typename Writer_>
+std::string
+    write_through_temporary( std::string const &Filename, Writer_ const &Write ) {
+
+    std::ofstream output;
+    if( auto const openerror { open_temporary( Filename, output ) }; false == openerror.empty() ) {
+        return openerror;
+    }
+    std::string error;
+    try {
+        Write( output );
+        output.flush();
+    }
+    catch( std::exception const &Exception ) {
+        error = "can't write to file \"" + Filename + ".tmp\": " + Exception.what();
+    }
+    return finish_temporary( Filename, output, std::move( error ) );
+}
 
 } // scene::region_file

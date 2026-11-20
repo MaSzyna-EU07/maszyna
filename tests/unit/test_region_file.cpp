@@ -42,6 +42,12 @@ std::string check(std::string const &File) {
 	return scene::region_file::check_layout(input, header, version, sectionlimit);
 }
 
+// what a writer throws when it gives up
+class writer_failure : public std::runtime_error {
+  public:
+	using std::runtime_error::runtime_error;
+};
+
 std::string read(std::filesystem::path const &Path) {
 	std::ifstream input{Path, std::ios::binary};
 	return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
@@ -80,7 +86,9 @@ TEST_CASE("region file: sections the region can't hold, held twice, or of imposs
 	// a size smaller than the header of the section
 	auto file{region({{5, "abcd"}})};
 	file[16] = 7;
-	file[17] = file[18] = file[19] = 0;
+	file[17] = 0;
+	file[18] = 0;
+	file[19] = 0;
 	CHECK(check(file).find("less than its header takes") != std::string::npos);
 	// a size reaching past the end of the file
 	file[16] = 13;
@@ -90,12 +98,15 @@ TEST_CASE("region file: sections the region can't hold, held twice, or of imposs
 	CHECK(check(file).find("bytes past its last section") != std::string::npos);
 	// more sections than a region has
 	auto many{region({})};
-	many[8] = many[9] = many[10] = many[11] = static_cast<char>(0xff);
+	for (std::size_t byte{8}; byte < 12; ++byte) {
+		many[byte] = static_cast<char>(0xff);
+	}
 	CHECK(check(many).find("more than the 250000") != std::string::npos);
 }
 
 TEST_CASE("region file: the header of a section is read and checked") {
-	std::uint32_t index{0}, size{0};
+	std::uint32_t index{0};
+	std::uint32_t size{0};
 	{
 		std::istringstream input{region({{42, "abc"}}).substr(12)};
 		CHECK(scene::region_file::read_section_header(input, sectionlimit, index, size) == "");
@@ -141,8 +152,8 @@ TEST_CASE("region file: the file is written through a temporary one, which repla
 	test::scratch_folder folder{"region_file"};
 	auto const file{folder.root() / "scenery.sbt"};
 	auto const temporary{folder.root() / "scenery.sbt.tmp"};
-	auto const write = [&](std::string const &Content) {
-		return scene::region_file::write_through_temporary(file.string(), [&](std::ostream &Output) { Output << Content; });
+	auto const write = [&file](std::string const &Content) {
+		return scene::region_file::write_through_temporary(file.string(), [&Content](std::ostream &Output) { Output << Content; });
 	};
 
 	SUBCASE("a new file") {
@@ -173,7 +184,7 @@ TEST_CASE("region file: a write which fails leaves the previous file, or none, a
 	SUBCASE("the writer gives up half way") {
 		auto const error{scene::region_file::write_through_temporary(file.string(), [](std::ostream &Output) {
 			Output << "half of the";
-			throw std::runtime_error("out of memory");
+			throw writer_failure("out of memory");
 		})};
 		CHECK(error.find("out of memory") != std::string::npos);
 	}
