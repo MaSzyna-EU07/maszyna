@@ -10,6 +10,10 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/uilayer.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <iterator>
 #include <utility>
 
 #include "utilities/Globals.h"
@@ -30,6 +34,7 @@ ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
 int ui_layer::m_palette{0};
+int ui_layer::m_accent{-1};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
@@ -182,12 +187,167 @@ void create_viewport_window(ImGuiViewport *Viewport)
 }
 } // namespace
 
+namespace
+{
+ImVec4 rgb(int const Color, float const Alpha = 1.0f)
+{
+	return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
+}
+
+// Colour From mixed with colour To, Amount of To from 0 to 1
+int mix(int const From, int const To, float const Amount)
+{
+	auto const channel = [From, To, Amount](int const Shift) {
+		auto const a{static_cast<float>((From >> Shift) & 0xff)};
+		auto const b{static_cast<float>((To >> Shift) & 0xff)};
+		return static_cast<int>(std::lround(std::lerp(a, b, Amount))) << Shift;
+	};
+	return channel(16) | channel(8) | channel(0);
+}
+
+// the sizes of the elements: flat and square with thin borders, or rounded, padded and without borders
+void imgui_geometry(bool const Rounded)
+{
+	auto &style = ImGui::GetStyle();
+	// the sizes start again from those of imgui, they are scaled below
+	std::array<ImVec4, ImGuiCol_COUNT> colors{};
+	std::ranges::copy(style.Colors, colors.begin());
+	style = ImGuiStyle();
+	std::ranges::copy(colors, std::begin(style.Colors));
+	if (Rounded)
+	{
+		style.WindowRounding = 12.0f;
+		style.ChildRounding = 10.0f;
+		style.FrameRounding = 7.0f;
+		style.PopupRounding = 10.0f;
+		style.ScrollbarRounding = 12.0f;
+		style.GrabRounding = 7.0f;
+		style.TabRounding = 7.0f;
+		style.WindowBorderSize = 1.0f;
+		style.ChildBorderSize = 0.0f;
+		style.PopupBorderSize = 1.0f;
+		style.FrameBorderSize = 0.0f;
+		style.TabBorderSize = 0.0f;
+		style.TabBarBorderSize = 0.0f;
+		style.WindowPadding = ImVec2(12.0f, 12.0f);
+		style.FramePadding = ImVec2(9.0f, 5.0f);
+		style.ItemSpacing = ImVec2(8.0f, 7.0f);
+		style.ItemInnerSpacing = ImVec2(6.0f, 5.0f);
+		style.CellPadding = ImVec2(6.0f, 4.0f);
+		style.IndentSpacing = 18.0f;
+		style.ScrollbarSize = 12.0f;
+		style.GrabMinSize = 12.0f;
+		style.SeparatorTextBorderSize = 1.0f;
+		style.DockingSeparatorSize = 4.0f;
+	}
+	else
+	{
+		style.WindowRounding = 0.0f;
+		style.ChildRounding = 0.0f;
+		style.FrameRounding = 0.0f;
+		style.PopupRounding = 0.0f;
+		style.ScrollbarRounding = 0.0f;
+		style.GrabRounding = 0.0f;
+		style.TabRounding = 0.0f;
+		style.WindowBorderSize = 1.0f;
+		style.ChildBorderSize = 1.0f;
+		style.PopupBorderSize = 1.0f;
+		style.FrameBorderSize = 1.0f;
+		style.TabBorderSize = 0.0f;
+	}
+	style.ScaleAllSizes(Global.ui_scale);
+}
+
+// the light (2) or the dark (3) palette of the editor, its accent the colour of the work mode
+void rounded_colors(bool const Dark, int const Accent)
+{
+	struct tones
+	{
+		int text, muted, panel, popup, field, fieldhover, fieldactive, line, grab, grabhover;
+	};
+	tones const light{0x15181e, 0x8a93a2, 0xffffff, 0xffffff, 0xeff1f5, 0xe5e8ee, 0xdde1e8, 0xe3e6eb, 0xc9ced6, 0xaeb4be};
+	tones const dark{0xeef0f4, 0x747d8b, 0x1a1d23, 0x1d2026, 0x2a2e36, 0x333842, 0x3b414c, 0x2c3038, 0x3b414c, 0x4a515e};
+	auto const &t{Dark ? dark : light};
+	auto const accent{Accent >= 0 ? Accent : (Dark ? 0x5b82ff : 0x2a55e5)};
+	// the accent laid thinly over the panel: chosen rows, headers, tabs
+	auto const soft{mix(t.panel, accent, Dark ? 0.24f : 0.14f)};
+	auto const softer{mix(t.panel, accent, Dark ? 0.15f : 0.08f)};
+	auto const strong{mix(t.panel, accent, Dark ? 0.36f : 0.24f)};
+	auto const bright{mix(accent, 0xffffff, Dark ? 0.2f : 0.0f)};
+	// the windows float over the 3d view: a little more opaque than the flat ones, to keep the text readable
+	auto const opacity{std::max(Global.UIBgOpacity, 0.9f)};
+
+	auto *colors{ImGui::GetStyle().Colors};
+	colors[ImGuiCol_Text] = rgb(t.text);
+	colors[ImGuiCol_TextDisabled] = rgb(t.muted);
+	colors[ImGuiCol_WindowBg] = rgb(t.panel, opacity);
+	colors[ImGuiCol_ChildBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	colors[ImGuiCol_PopupBg] = rgb(t.popup, 0.99f);
+	colors[ImGuiCol_Border] = Dark ? ImVec4(0.0f, 0.0f, 0.0f, 0.45f) : ImVec4(0.07f, 0.09f, 0.14f, 0.10f);
+	colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	colors[ImGuiCol_FrameBg] = rgb(t.field);
+	colors[ImGuiCol_FrameBgHovered] = rgb(t.fieldhover);
+	colors[ImGuiCol_FrameBgActive] = rgb(t.fieldactive);
+	colors[ImGuiCol_TitleBg] = rgb(t.panel, opacity);
+	colors[ImGuiCol_TitleBgActive] = rgb(t.panel, opacity);
+	colors[ImGuiCol_TitleBgCollapsed] = rgb(t.panel, 0.75f);
+	colors[ImGuiCol_MenuBarBg] = rgb(t.panel, opacity);
+	colors[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	colors[ImGuiCol_ScrollbarGrab] = rgb(t.grab);
+	colors[ImGuiCol_ScrollbarGrabHovered] = rgb(t.grabhover);
+	colors[ImGuiCol_ScrollbarGrabActive] = rgb(accent);
+	colors[ImGuiCol_CheckMark] = rgb(bright);
+	colors[ImGuiCol_SliderGrab] = rgb(accent);
+	colors[ImGuiCol_SliderGrabActive] = rgb(bright);
+	colors[ImGuiCol_Button] = rgb(t.field);
+	colors[ImGuiCol_ButtonHovered] = rgb(t.fieldhover);
+	colors[ImGuiCol_ButtonActive] = rgb(strong);
+	colors[ImGuiCol_Header] = rgb(soft);
+	colors[ImGuiCol_HeaderHovered] = rgb(softer);
+	colors[ImGuiCol_HeaderActive] = rgb(strong);
+	colors[ImGuiCol_Separator] = rgb(t.line);
+	colors[ImGuiCol_SeparatorHovered] = rgb(accent);
+	colors[ImGuiCol_SeparatorActive] = rgb(bright);
+	colors[ImGuiCol_ResizeGrip] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	colors[ImGuiCol_ResizeGripHovered] = rgb(accent, 0.6f);
+	colors[ImGuiCol_ResizeGripActive] = rgb(accent);
+	colors[ImGuiCol_Tab] = rgb(t.field);
+	colors[ImGuiCol_TabHovered] = rgb(t.fieldhover);
+	colors[ImGuiCol_TabActive] = rgb(soft);
+	colors[ImGuiCol_TabUnfocused] = rgb(t.field);
+	colors[ImGuiCol_TabUnfocusedActive] = rgb(softer);
+	colors[ImGuiCol_TabSelectedOverline] = rgb(accent);
+	colors[ImGuiCol_TabDimmedSelectedOverline] = rgb(soft);
+	colors[ImGuiCol_PlotLines] = rgb(accent);
+	colors[ImGuiCol_PlotLinesHovered] = rgb(bright);
+	colors[ImGuiCol_PlotHistogram] = rgb(accent);
+	colors[ImGuiCol_PlotHistogramHovered] = rgb(bright);
+	colors[ImGuiCol_TableHeaderBg] = rgb(t.field);
+	colors[ImGuiCol_TableBorderStrong] = rgb(t.line);
+	colors[ImGuiCol_TableBorderLight] = rgb(t.line);
+	colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	colors[ImGuiCol_TableRowBgAlt] = rgb(t.field, 0.5f);
+	colors[ImGuiCol_TextSelectedBg] = rgb(accent, 0.35f);
+	colors[ImGuiCol_DragDropTarget] = rgb(accent, 0.9f);
+	colors[ImGuiCol_NavHighlight] = rgb(accent);
+	colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+	colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.8f, 0.8f, 0.8f, 0.2f);
+	colors[ImGuiCol_ModalWindowDimBg] = rgb(0x15181e, 0.35f);
+	colors[ImGuiCol_DockingPreview] = rgb(accent, 0.5f);
+	colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+}
+} // namespace
+
 void ui_layer::imgui_colors(int const Palette)
 {
+	if (rounded_palette(Palette) != rounded_palette(m_palette) || Palette == m_palette)
+		imgui_geometry(rounded_palette(Palette));
 	m_palette = Palette;
-	auto const rgb = [](int const Color, float const Alpha = 1.0f) {
-		return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
-	};
+	if (rounded_palette(Palette))
+	{
+		rounded_colors(Palette == 3, m_accent);
+		return;
+	}
 	auto const editor{Palette == 1};
 	// palette shared with the MaSzyna starter: flat dark panels, thin borders, green accents; the one of the editor
 	// has amber accents on cooler grey panels
@@ -261,24 +421,9 @@ void ui_layer::imgui_colors(int const Palette)
 
 void ui_layer::imgui_style()
 {
+	// flat, square elements with thin borders, in the green colours; the sizes are set by imgui_colors()
+	m_palette = 0;
 	imgui_colors(0);
-
-	// flat, square elements with thin borders
-	auto &style = ImGui::GetStyle();
-	style.WindowRounding = 0.0f;
-	style.ChildRounding = 0.0f;
-	style.FrameRounding = 0.0f;
-	style.PopupRounding = 0.0f;
-	style.ScrollbarRounding = 0.0f;
-	style.GrabRounding = 0.0f;
-	style.TabRounding = 0.0f;
-	style.WindowBorderSize = 1.0f;
-	style.ChildBorderSize = 1.0f;
-	style.PopupBorderSize = 1.0f;
-	style.FrameBorderSize = 1.0f;
-	style.TabBorderSize = 0.0f;
-
-	style.ScaleAllSizes(Global.ui_scale);
 }
 
 bool ui_layer::init(GLFWwindow *Window)
@@ -544,7 +689,16 @@ void ui_layer::begin_ui_frame()
 {
 	// the colours follow the ui of the mode drawn
 	if (palette() != m_palette)
+	{
+		m_accent = accent();
 		imgui_colors(palette());
+	}
+	else if (rounded() && accent() != m_accent)
+	{
+		// the work mode changed: its colour in the accents
+		m_accent = accent();
+		rounded_colors(m_palette == 3, m_accent);
+	}
 	begin_ui_frame_internal();
 	render_dockspace();
 	m_dockspaceframe = ImGui::GetFrameCount();

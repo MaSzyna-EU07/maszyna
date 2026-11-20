@@ -3921,6 +3921,12 @@ msgstr "Zielone, jak reszta symulatora"
 msgid "Amber, of the editor"
 msgstr "Bursztynowe, własne edytora"
 
+msgid "Light, in the colour of the work mode"
+msgstr "Jasne, w kolorze trybu pracy"
+
+msgid "Dark, in the colour of the work mode"
+msgstr "Ciemne, w kolorze trybu pracy"
+
 msgid "Surroundings"
 msgstr "Otoczenie"
 

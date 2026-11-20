@@ -1041,6 +1041,11 @@ int editor_ui::palette() const
 	return EditorSettings.palette();
 }
 
+int editor_ui::accent() const
+{
+	return m_accentsource ? m_accentsource() : -1;
+}
+
 void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)
 {
 	m_save = Save;

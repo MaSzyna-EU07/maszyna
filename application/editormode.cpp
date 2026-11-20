@@ -554,6 +554,7 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_workspace_bar([this]() { render_workspaces(); });
+	ui()->set_accent_source([this]() { return work_area_colour(current_work_area(), EditorSettings.palette() == 3); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
@@ -1769,8 +1770,8 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::TextUnformatted(STR_C("Colours of the editor"));
-            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor")};
-            int palette = std::clamp(EditorSettings.palette(), 0, 1);
+            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor"), STR_C("Light, in the colour of the work mode"), STR_C("Dark, in the colour of the work mode")};
+            int palette = std::clamp(EditorSettings.palette(), 0, 3);
             if (ImGui::Combo("##palette", &palette, palettes, IM_ARRAYSIZE(palettes)))
             {
                 EditorSettings.palette(palette);
@@ -5223,6 +5224,27 @@ editor_mode::work_area editor_mode::current_work_area() const
 	if (m_roadtool.window)
 		return work_area::roads;
 	return work_area::surroundings;
+}
+
+int editor_mode::work_area_colour(work_area const Area, bool const Dark)
+{
+	// a colour of its own for each work mode, brighter on the dark panels: the accents say where one is
+	switch (Area)
+	{
+	case work_area::surroundings:
+		return Dark ? 0x2bc49b : 0x12866a;
+	case work_area::tracks:
+		return Dark ? 0x5b82ff : 0x2a55e5;
+	case work_area::roads:
+		return Dark ? 0xff8a45 : 0xe0601a;
+	case work_area::terrain:
+		return Dark ? 0x86c447 : 0x4f8a1f;
+	case work_area::catenary:
+		return Dark ? 0xa684ff : 0x7b4ee0;
+	case work_area::features:
+		return Dark ? 0xff6aa3 : 0xcc3471;
+	}
+	return -1;
 }
 
 void editor_mode::choose_work_area(work_area const Area)

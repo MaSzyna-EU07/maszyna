@@ -86,6 +86,11 @@ class editor_ui : public ui_layer
 		m_toolsmenu = std::move(Renderer);
 	}
 	// draws the fields of work of the editor mode in a row above the toolbar
+	// colour of the work mode as 0xRRGGBB, for the accents of the rounded palettes
+	void set_accent_source(std::function<int()> Source)
+	{
+		m_accentsource = std::move(Source);
+	}
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
 		m_workspacebar = std::move(Renderer);
@@ -193,6 +198,7 @@ class editor_ui : public ui_layer
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
+	int accent() const override;
 	void render_dockspace() override;
 	void render_() override;
 	// docks the windows of the editor in their default places
@@ -224,6 +230,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
+	std::function<int()> m_accentsource;
 	std::function<void()> m_editmenu;
 	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
