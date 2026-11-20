@@ -1809,6 +1809,10 @@ class TMoverParameters
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
 	double StopBrakeDecc = 0.0;
+	// the holding brake (StopBrakeDecc) of a unit with the MED lets go only once power has been demanded for this long (SBDReleaseDelay, s);
+	// 0 lets it go at the first demand
+	double StopBrakeReleaseDelay = 0.0;
+	double StopBrakeReleaseTimer = 0.0; // how long power has been demanded without a break, s
 	bool ReleaseParkingBySpringBrake{false};
 	bool ReleaseParkingBySpringBrakeWhenDoorIsOpen{false};
 	bool SpringBrakeCutsOffDrive{true};
@@ -2250,6 +2254,15 @@ class TMoverParameters
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
+	// config, .fiz Engine:PressureSwitchBrakeCylinder. whether the pressure switch watches the brake cylinders (it cuts the
+	// start off above 2 bar there) as well as the brake pipe (below 3.6 bar). off, it's left with the brake pipe alone,
+	// and the vehicle takes current whatever the pressure in its brake cylinders (EP05)
+	bool PressureSwitchBrakeCylinder{true};
+	// config, .fiz Cntrl.EmergencyBrakeMainOff. the brake pipe pressure [bar] taken for an emergency brake application:
+	// below it, with the master controller on a power position, the line breaker opens and doesn't close again. where
+	// the pantographs stay up only through the closed line breaker (PantographsRequireMains) they drop with it (EP05).
+	// 0: an emergency application leaves the line breaker alone
+	double EmergencyBrakeMainOffPressure{0.0};
 	bool ReleaserEnabledOnlyAtNoPowerPos{false};
 	int MainCtrlPos = 0; /*polozenie glownego nastawnika*/
 	int ScndCtrlPos = 0; /*polozenie dodatkowego nastawnika*/
@@ -2261,6 +2274,9 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
+	// pullee mode ("jazda ciągniona", MaSzyna-EU07/maszyna#64): the vehicle is prepared for being hauled dead in a
+	// train, see PulleeModeSwitch()
+	bool PulleeMode{false};
 	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
@@ -2625,6 +2641,7 @@ class TMoverParameters
 	bool SpringBrakeActivate(bool State);
 	bool SpringBrakeShutOff(bool State);
 	bool SpringBrakeRelease();
+	bool PulleeModeSwitch(bool const State);
 
 	/*! stopnie hamowania - hamulec zasadniczy*/
 	bool IncBrakeLevelOld(void);
@@ -2726,6 +2743,12 @@ class TMoverParameters
 	bool MainCircuitLampsEnabled() const
 	{
 		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+	}
+	// whether an emergency brake application holds the line breaker open: the brake pipe below the pressure taken for one
+	// (EmergencyBrakeMainOffPressure) while the master controller is on a power position
+	bool EmergencyBrakeHoldsMainOff() const
+	{
+		return EmergencyBrakeMainOffPressure > 0.0 && PipePress < EmergencyBrakeMainOffPressure && false == IsMainCtrlNoPowerPos();
 	}
 	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
 	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the
@@ -2861,6 +2884,9 @@ class TMoverParameters
 	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
+	// whether the holding brake (StopBrakeDecc) lets go at the power demand (eimic, above 0 when power is demanded) of this step of
+	// Dt seconds: once the demand has stayed above 0 for StopBrakeReleaseDelay. a demand of 0 or less starts the count again
+	bool UpdateStopBrakeRelease(double Demand, double Dt);
 	void CheckSpeedCtrl(double dt);
 	// whether the cruise control has a switch of its own: the secondary controller doubles as its switch unless it
 	// shunts the field of the traction motors already, or there's none (the 6Dg, the ST45; eu07/maszyna#69)

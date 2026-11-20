@@ -250,8 +250,8 @@ state_serializer::deserialize_assignment( cParser &Input, scene::scratch_data &S
     while( false == token.empty()
         && token != "endassignment" ) {
         // assignment is expected to come as string pairs: language id and the actual assignment enclosed in quotes to form a single token
-        auto assignment{ Input.getToken<std::string>() };
-        win1250_to_ascii( assignment );
+        // the assignment is only shown to the player, so it's kept with its letters, in utf-8 as the user interface takes it
+        auto const assignment{ data_text_to_utf8( Input.getToken<std::string>() ) };
         Scratchpad.trainset.assignment.emplace( token, assignment );
         token = Input.getToken<std::string>();
     }

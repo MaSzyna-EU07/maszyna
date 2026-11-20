@@ -137,6 +137,49 @@ used:
 - on the cpu, in the screens' worker, when the renderer can't do it on the gpu (the NVRHI renderer, OpenGL ES, a
   shader that failed to load) or `screens.gpupost` is 0. A shader that fails is logged once, and the cpu takes over.
 
+### Limits of a Lua script
+
+Besides the 200 million instructions of a call, a Lua screen is held to what runs in C, where the count doesn't reach:
+
+- memory: a screen holds at most 128 MB: its Lua heap and the pixels of its images, fonts and sprites (4 bytes a pixel
+  of an image, 1 of a font or a sprite). An object that would take the screen over is refused (`memory limit
+  exceeded`), and a screen found holding more stops with that error. Garbage doesn't count: the check collects it
+  first. Where LuaJIT takes an allocator of the game's (2.1 in its GC64 mode), anything over twice the limit is refused
+  as it is asked for (`not enough memory`); the game's LuaJIT 2.0 on 64-bit Windows takes none, and there the heap is
+  checked every thousand instructions and before the calls below, and whatever a script makes between two checks is
+  made whole first: every concatenation (`a .. b`) within one interval of a thousand instructions, so a loop doubling a
+  string (`for i = 1, 11 do s = s .. s end` on a 1 MB `s`) gets to LuaJIT's own heap limit of about 2 GB before the
+  check sees it;
+- `string.rep` makes no string over 1 MB; `string.format`, `table.concat` and `string.gsub` (with a string or a table to
+  replace with) refuse a result that may be over the memory of a screen, counted from the lengths of what they are
+  given;
+- the pattern functions (`string.find`, `match`, `gmatch`, `gsub`) backtrack, and some patterns take hours on a long
+  subject (`("a"):rep(1e6):find(".-b")`). A call is refused (`the pattern may take too long`) when the steps it may
+  take at worst are over 100 million, about a tenth of a second at worst: the length of the subject (plus one), times the
+  length of the pattern, times the subject again for each repetition (`*`, `+`, `-`, `%b`, a back reference `%1`) but
+  one followed by what always matches (nothing, as in a repetition that ends the pattern, or `(.-)%s*$`), times 2 for
+  each `?`, and taken once rather than from every position for a pattern anchored with `^` (not in `gmatch`). A
+  repetition of a character or a `%` class right before the final `$` (`%s*$`) counts the longest run of it in the
+  subject rather than the whole subject. A plain search (`find` with `plain`, or a pattern of no special characters) is
+  the subject times the pattern. So a pattern ending in its only repetition (`"[^\n]+"`, `"%d+"`) works on any subject,
+  one more repetition (`"(%w+)=(%w+)"`) on some 3 000 to 5 000 bytes, and each further one divides that a lot. The
+  usual trim, `s:match("^%s*(.-)%s*$")`, costs the line times its longest run of spaces: a line of words, even a
+  megabyte long, is fine, but a long run of spaces inside it is refused, since the trim really takes the square of that.
+  A trim that stays linear on any string:
+
+  ```lua
+  local function trim(s)
+      local first = s:find("%S")
+      if not first then return "" end
+      return s:sub(first, #s - s:reverse():find("%S") + 1)
+  end
+  ```
+- `xpcall` is made of `pcall`: the handler gets the error once it has left the function, and a coroutine may yield
+  inside either. There is no `newproxy`, so no finalizer (`__gc`) of the script's own: LuaJIT runs those without the
+  instruction count;
+- the game reads `render` and `init` of the script's table in protected mode, so a metatable of the script's
+  (`__index`) may provide them; one that fails or runs over switches the screen off.
+
 ## WebAssembly modules
 
 A module exports:

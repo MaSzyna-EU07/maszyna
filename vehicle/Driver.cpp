@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/handover.h"
 #include "vehicle/timetableservice.h"
 #include "world/mtable.h"
+#include "world/stationnames.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -1201,8 +1202,9 @@ TController::TableUpdateStopPoint( TCommandType &Command, TSpeedPos &Point, doub
     if( ( OrderCurrentGet() & ( Shunt | Loose_shunt | Obey_train | Bank ) ) == 0 ) { return true; }
     // jeśli przystanek, trzeba obsłużyć wg rozkładu
     iDrivigFlags |= moveStopPointFound;
-    // first 19 chars of the command is expected to be "PassengerStopPoint:" so we skip them
-    if( ToLower( Point.evEvent->input_text() ).compare( 19, sizeof( asNextStop ), ToLower( asNextStop ) ) != 0 )
+    // the W4 and the timetable name the station each in its own file, so the two spellings are compared by their key:
+    // with or without the polish letters, in any case, with spaces or underscores
+    if( false == timetable::stop_point_is_for( Point.evEvent->input_text(), asNextStop ) )
     { // jeśli nazwa nie jest zgodna
         if( false == IsScheduledPassengerStopVisible // check if our next scheduled stop didn't show up earlier in the scan
          && Point.fDist < 1.15 * fBrakeDist + 300
@@ -6139,7 +6141,8 @@ std::string TController::NextStop() const
     if (asNextStop == "[End of route]")
         return ""; // nie zawiera nazwy stacji, gdy dojechał do końca
     // dodać godzinę odjazdu
-    auto nextstop{ Bezogonkow( asNextStop, true ) };
+    // the name the way the timetable spells it, in utf-8 as the user interface takes it
+    auto nextstop{ TrainParams.station_caption( asNextStop ) };
     auto const *t{ TrainParams.TimeTable + TrainParams.StationIndex };
     if( t->Ah >= 0 ) {
         // przyjazd

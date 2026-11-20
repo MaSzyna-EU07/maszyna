@@ -42,6 +42,9 @@ class TTrainParameters
     double TTVmax;
     std::string Relation1;
     std::string Relation2; // nazwy stacji danego odcinka
+    // the two as the timetable spells them, with their letters (see TMTableEntry::StationLabel)
+    std::string RelationLabel1;
+    std::string RelationLabel2;
     double BrakeRatio;
     std::string LocSeries; // seria (typ) pojazdu
     double LocLoad;
@@ -55,6 +58,9 @@ class TTrainParameters
     double CheckTrainLatency() const;
     /*todo: str hh:mm to int i z powrotem*/
     std::string ShowRelation() const;
+    // the relation and the name of given station for the player: utf-8, with the letters the timetable has
+    std::string relation_caption() const;
+    std::string station_caption( std::string const &Name ) const;
     double WatchMTable(double DistCounter) const;
     std::string NextStop() const;
     // wpis rozkladu Offset pozycji za StationIndex (Offset>=1); poza zakresem 1..StationCount
