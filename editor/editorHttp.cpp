@@ -16,7 +16,10 @@ http://mozilla.org/MPL/2.0/.
 #include <curl/curl.h>
 #endif
 
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
+#include <string>
 
 namespace editor_http
 {
@@ -160,6 +163,37 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 
 #elif defined(EU07_WITH_CURL)
 
+namespace
+{
+// the file of the certificates https is checked with. the libcurl bundled with the game knows only the one of the system it
+// was built on (/etc/ssl/certs/ca-certificates.crt of Debian and Ubuntu), which Fedora, RHEL and openSUSE don't have: there
+// every download failed. the file named by the user first, then the ones the distributions keep; empty leaves libcurl's own
+std::string const &certificates_file()
+{
+	static std::string const file{[]() {
+		std::error_code error;
+		for (char const *variable : {"SSL_CERT_FILE", "CURL_CA_BUNDLE"})
+		{
+			if (char const *value{std::getenv(variable)}; (value != nullptr) && (*value != '\0') && std::filesystem::is_regular_file(value, error))
+				return std::string{value};
+		}
+		for (char const *candidate : {
+				 "/etc/ssl/certs/ca-certificates.crt", // Debian, Ubuntu, Arch, SteamOS, Gentoo, NixOS
+				 "/etc/pki/tls/certs/ca-bundle.crt", // Fedora, RHEL
+				 "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // Fedora, RHEL
+				 "/etc/ssl/ca-bundle.pem", // openSUSE
+				 "/etc/ssl/cert.pem", // Alpine, the BSDs, macOS
+			 })
+		{
+			if (std::filesystem::is_regular_file(candidate, error))
+				return std::string{candidate};
+		}
+		return std::string{};
+	}()};
+	return file;
+}
+} // namespace
+
 client::client() :
 	m_platform(std::make_unique<platform>())
 {
@@ -204,6 +238,14 @@ bool client::get(std::string const &Url, std::vector<std::uint8_t> &Out, std::st
 	::curl_easy_reset(m_platform->curl);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_URL, Url.c_str());
 	::curl_easy_setopt(m_platform->curl, CURLOPT_USERAGENT, "MaSzyna-editor");
+	if (auto const &certificates{certificates_file()}; false == certificates.empty())
+	{
+		::curl_easy_setopt(m_platform->curl, CURLOPT_CAINFO, certificates.c_str());
+#if LIBCURL_VERSION_NUM >= 0x073400
+		// an https proxy is checked with the same file
+		::curl_easy_setopt(m_platform->curl, CURLOPT_PROXY_CAINFO, certificates.c_str());
+#endif
+	}
 	::curl_easy_setopt(m_platform->curl, CURLOPT_FOLLOWLOCATION, 1L);
 	::curl_easy_setopt(m_platform->curl, CURLOPT_MAXREDIRS, 10L);
 	// http kept for the services the user types; nothing else, also where a redirect leads
