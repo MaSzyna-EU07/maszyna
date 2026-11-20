@@ -25,8 +25,6 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <cstring>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <span>
 #include <string_view>
@@ -117,7 +115,10 @@ std::int32_t to_int32(std::size_t const Value)
 class wasm_program final : public program
 {
   public:
-	wasm_program(std::string const &Script, script_screen_kind const Kind) : kind{Kind}, script{Script}, folder{substr_path(Script)} {}
+	wasm_program(std::string const &Script, script_screen_kind const Kind)
+	    : kind{Kind}, script{Script}, folder{substr_path(Script)}, output{std::format("WASM screen \"{}\"", Script)}
+	{
+	}
 	~wasm_program() override
 	{
 		if (exec_env != nullptr)
@@ -142,6 +143,7 @@ class wasm_program final : public program
 	input_view const *input{nullptr};
 	render_call *call{nullptr};
 	bool commands_ignored{false}; // a screen outside the cab tried to send a command, and it was logged
+	output_limits output;
 
   private:
 	bool call_i32(wasm_function_inst_t Function, std::string_view Name, std::int32_t &Result);
@@ -300,17 +302,23 @@ void native_command(wasm_exec_env_t Env, char const *Name, std::uint32_t const L
 		}
 		return;
 	}
-	screen->call->commands.emplace_back(std::string{Name, Length}, Param1, Param2, screen->call->vehicle);
+	if (screen->output.take_command(*screen->call, std::string_view{Name, Length}))
+	{
+		screen->call->commands.emplace_back(std::string{Name, Length}, Param1, Param2, screen->call->vehicle);
+	}
 }
 
 void native_log(wasm_exec_env_t Env, char const *Text, std::uint32_t const Length)
 {
-	auto const *screen{program_of(Env)};
+	auto *screen{program_of(Env)};
 	if (screen == nullptr || Text == nullptr)
 	{
 		return;
 	}
-	WriteLog(std::format("WASM screen \"{}\": {}", screen->script, std::string_view{Text, Length}));
+	if (auto const line{screen->output.take_log(std::string_view{Text, Length})}; line.has_value())
+	{
+		WriteLog(*line);
+	}
 }
 
 // reads a file from the screen's folder into the buffer. returns the size of the whole file, which may be more
@@ -436,6 +444,7 @@ bool wasm_program::instantiate(wasm_module_t const Module)
 bool wasm_program::call_i32(wasm_function_inst_t Function, std::string_view const Name, std::int32_t &Result)
 {
 	wasm_runtime_set_instruction_count_limit(exec_env, static_cast<int>(instruction_limit));
+	output.start_call();
 	std::array<std::uint32_t, 1> cells{};
 	if (false == wasm_runtime_call_wasm(exec_env, Function, 0, cells.data()))
 	{
@@ -579,13 +588,13 @@ wasm_module_t wasm_runtime_host::load_module(std::string const &Script)
 	}
 	// a failure is kept as well, so the module isn't tried again for every screen using it
 	auto &entry{m_modules[Script]};
-	std::ifstream file{Script, std::ios::binary};
-	if (false == file.is_open())
+	auto const file{read_regular_file(Script)};
+	if (false == file.has_value())
 	{
-		ErrorLog(std::format("WASM screen \"{}\": file not found", Script));
+		ErrorLog(std::format("WASM screen \"{}\": file not found, or larger than {} bytes", Script, max_screen_file));
 		return nullptr;
 	}
-	entry.bytes.assign(std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
+	entry.bytes.assign(file->begin(), file->end());
 	if (entry.bytes.empty() || entry.bytes.size() > std::numeric_limits<std::uint32_t>::max())
 	{
 		ErrorLog(std::format("WASM screen \"{}\": invalid module size", Script));

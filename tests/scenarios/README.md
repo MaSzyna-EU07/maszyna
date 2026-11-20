@@ -262,6 +262,28 @@ an ET21 and its AI driver on it. The pantographs go up and find no wire, so the 
 start: the driver has to say so in the log, once, naming the locomotive and where it stands, and
 not mistake it for a wire without voltage. It ends on the standstill.
 
+`eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
+(`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
+so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
+until `event0` of its track gives it, once, `Shunt -1 3`: start the engine, couple to the consist
+ahead (Connect, the first order it drives under), go on shunting. It passes when the first coach,
+pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the black box has the
+locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
+hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
+
+`eu07_td_hauls_dead_vectron` is the timetable run with a dead locomotive in the train: behind the EU07 a
+Vectron with nobody in it, coupled with the hook and the brake hose alone (the EU07's coupling `3`) and
+prepared for hauling, the parameter `H` after its own coupling (`0.H`: the pullee mode of
+MaSzyna-EU07/maszyna#64). The checks are those of the timetable cases; the train takes 300 s to
+Przystanek and on (20 km/h after 79 s, the stop after 220 s and 1405 m). Without the `H` the Vectron,
+which applies the emergency brake while none of its cabs is active, empties the brake pipe of the train
+in two seconds, both locomotives stand with their brake cylinders full and the train never moves.
+`eu07_td_hauls_dead_vectron_cold` (fragment `td_cold_timetable.scn`) is the same train from a cold start:
+trainset velocity 0, so both locomotives stand braked (brake pipe at 3.5 bar, batteries off, the spring
+brake of the Vectron switched on), and `event0` of the track gives the driver `Obey_train`, once. The EU07
+starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
+the pipe stays below 1 bar and the case ends as a standstill after 300 s.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -287,9 +309,9 @@ into the game dir. What they add to the scenery:
 A train whose trainset has velocity 0 has a driver that sleeps in `Wait_for_orders` when nobody
 is in the cab: the player would drive it, so the fragment has to give the orders the player's
 hands stand for, with `PutValues` from an event the vehicle itself sets off (`event0` of the
-track it stands on). The first of them must not be the one to couple (`Shunt -2 -3`): a driver
-whose first order is `Connect` never releases the hand brake a cold locomotive starts with. The
-mission trains of velocity 0.1 wait for their signal and need nothing.
+track it stands on). The first of them may be the one to couple (`Shunt -2 -3`): a driver whose
+first order is `Connect` releases the hand brake a cold locomotive starts with
+(`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
 The cases and what they showed on master of 2026-11-11:
 

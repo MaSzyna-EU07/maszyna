@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include "hamulce.h"
 #include "couplerphysics.h"
+#include "derailment.h"
+#include "collision.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/odometerreading.h"
 
@@ -175,6 +177,10 @@ enum DerailReason
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
 	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
 	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
+	/// <summary>Climbed onto the vehicle it hit, its end crushed (physics.collisions new).</summary>
+	COLLISION_OVERRIDE = 7, // najechanie
+	/// <summary>Pushed off the track by the force pressing its end (physics.collisions new).</summary>
+	COLLISION_PUSHED_OFF = 8, // wyciśnięcie z toru
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -690,6 +696,12 @@ struct TTrackShape
 	double dHtrack = 0.0; // nachylenie
 	/// <summary>Track cant / superelevation.</summary>
 	double dHrail = 0.0; // przechylka
+	/// <summary>Lateral curvature of the track unevenness under the vehicle [1/m], see world/TrackUneven.h.</summary>
+	double uneven_curvature = 0.0;
+	/// <summary>Cross level unevenness of the track [mm].</summary>
+	double uneven_cross = 0.0;
+	/// <summary>Curvature a buckle of the track adds under the body [1/m], positive with the curve, see world/TrackBuckle.h.</summary>
+	double buckle_curvature = 0.0;
 };
 
 /// <summary>Per-segment track parameters: gauge, friction, category, load capacity, damage.</summary>
@@ -707,6 +719,8 @@ struct TTrackParam
 	int DamageFlag = 0;
 	/// <summary>Maximum allowed velocity on this segment (used by AI driver).</summary>
 	double Velmax; /*dla uzytku maszynisty w ai_driver*/
+	/// <summary>Name of the track, for the log; nullptr where there is none.</summary>
+	std::string const *Name = nullptr;
 };
 
 /// <summary>Traction-supply parameters at the vehicle's current location.</summary>
@@ -1283,6 +1297,21 @@ struct TCoupling
 	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
 	coupler_physics::end_parameters physics;
 	coupler_physics::pair_state physics_state;
+	// the collisions past the buffers (physics.collisions new), see collision.h: the optional keys of this end, the depth
+	// it's crushed to for good [m], and the hit of the pair in the step: whether either vehicle handled it already, its
+	// peak force [N] and how long that acted [s]
+	collision::end_definition collision;
+	double crush{0.0};
+	double closing{0.0}; // the velocity the buffers of the pair closed in at, at the start of the step [m/s]
+	bool hit_handled{false};
+	double hit_force{0.0};
+	double hit_duration{0.0};
+	// physics.collisions monitor: the log told of the crush of this hit of the pair already
+	bool crush_monitored{false};
+	// the energy the contact of the pair brought to its buffers, for the budget of the crush
+	collision::contact_energy contact;
+	// the log told of the vehicle at this end being inside this one already
+	bool inside_reported{false};
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/
@@ -1654,6 +1683,9 @@ class TMoverParameters
 	TDimension Dim; /*wymiary*/
 	double Cx = 0.0; /*wsp. op. aerodyn.*/
 	float Floor = 0.96f; // poziom podłogi dla ładunków
+	// height of the centre of gravity of the empty vehicle above the rail [m] (CoGH in the Dimensions of the .fiz),
+	// negative when the definition gives none: derailment::default_centre_of_gravity() then
+	double CentreOfGravity = -1.0;
 	float WheelDiameter = 1.f; /*srednica kol napednych*/
 	float WheelDiameterL = 0.9f; // Ra: srednica kol tocznych przednich
 	float WheelDiameterT = 0.9f; // Ra: srednica kol tocznych tylnych
@@ -1774,6 +1806,10 @@ class TMoverParameters
 	bool MBrake = false; /*Czy jest hamulec reczny*/
 	double maxTachoSpeed = {0.0}; // maksymalna predkosc na tarczce predkosciomierza analogowego
 	double StopBrakeDecc = 0.0;
+	// the holding brake (StopBrakeDecc) of a unit with the MED lets go only once power has been demanded for this long (SBDReleaseDelay, s);
+	// 0 lets it go at the first demand
+	double StopBrakeReleaseDelay = 0.0;
+	double StopBrakeReleaseTimer = 0.0; // how long power has been demanded without a break, s
 	bool ReleaseParkingBySpringBrake{false};
 	bool ReleaseParkingBySpringBrakeWhenDoorIsOpen{false};
 	bool SpringBrakeCutsOffDrive{true};
@@ -1842,6 +1878,29 @@ class TMoverParameters
 	int DynamicBrakeAmpmeters = 2; /*liczba amperomierzy przy hamowaniu ED*/
 	bool SplitEDPneumaticBrake = false; /*czy hamulec ED i pneumatyczny pomocniczy są rozdzielone na osobne nastawniki*/
 	int DynamicBrakeCtrlPosNo = 10; /*ilosc pozycji nastawnika hamulca ED (DBPN, domyslnie 10)*/
+	// the dynamic brake of a diesel-electric vehicle (Engine: EDBrake=...): the traction motors brake into resistors while
+	// the engine runs, with the force of the definition rather than from a circuit, as the drive of these vehicles is
+	// computed from the generator's power. no definition, no dynamic brake (MaSzyna-EU07/maszyna#82)
+	struct diesel_electric_dynamic_brake
+	{
+		enum class control
+		{
+			none,
+			controller, // the negative range of the integrated controller (EIMCtrlType > 0), as the TRAXX one of the BR285
+			lever // a lever of its own (the SplitEDPneumaticBrake one, DBPN steps), with the master controller at zero
+		};
+		control source{control::none};
+		double max_force{0.0}; // [N] at the wheel rims of the whole vehicle, EDBrakeFmax [kN]
+		double max_power{0.0}; // [W] the resistors take, EDBrakePmax [kW]; 0: no limit
+		double fade_low{0.0}; // [km/h] EDBrakeV0: no force below
+		double fade_high{0.0}; // [km/h] EDBrakeV1: the whole force above, rising in between
+		double rate{0.5}; // [1/s] EDBrakeRate: how fast the effort follows the demand
+		bool blending{false}; // EDBrakeBlending: the locomotive's train brake lets off while the dynamic brake works (Hamulec->SetED)
+		// state
+		double level{0.0}; // the effort, 0..1
+		double force{0.0}; // [N] the braking force, against the motion
+	};
+	diesel_electric_dynamic_brake DEDynamicBrake;
 	double DynamicBrakeRes = 5.8; /*rezystancja oporników przy hamowaniu ED*/
 	double DynamicBrakeRes1 = 5.8; /*rezystancja oporników przy hamowaniu ED - 1 tryb*/
 	double DynamicBrakeRes2 = 5.8; /*rezystancja oporników przy hamowaniu ED - 2 tryb*/
@@ -2038,6 +2097,13 @@ class TMoverParameters
 	int SoundFlag = 0; /*!o patrz stale sound_ */
 	int AIFlag{0}; // HACK: events of interest for consist owner
 	double DistCounter = 0.0; /*! licznik kilometrow */
+	// the criteria of derailment (physics.derailment new), and the distance travelled since they were checked [m]
+	derailment::monitor derailment_monitor;
+	double derailment_distance = 0.0;
+	// physics.derailment monitor: the name of the track the criteria were last reported on (one report on a track), and
+	// how many reports there were
+	std::optional<std::string const *> derailment_reported;
+	int derailment_reports = 0;
 	odometer::reading Odometer; // total distance run, kept between the sessions (eu07/maszyna#72)
 	std::pair<double, double> EnergyMeter; // energy <drawn, returned> from grid [kWh]
 	double V = 0.0; // predkosc w [m/s] względem sprzęgów (dodania gdy jedzie w stronę 0)
@@ -2074,10 +2140,12 @@ class TMoverParameters
 	double EmergencyValveFlow = 0.0; // air flow through alerter valve during last simulation step
 	/*! przyrosty cisnienia w kroku czasowym*/
 	double ScndPipePress = 0.0; /*cisnienie w przewodzie zasilajacym*/
+	bool ScndPipeCouplersPending{false}; // the main reservoir pipe stepped, its air exchange through the hoses is yet to come (UpdatePipeCouplers())
 	double BrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych*/
 	double LocBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z pomocniczego*/
 	double PipeBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z przewodu*/
 	double PipePress = 0.0; /*!o cisnienie w przewodzie glownym*/
+	bool PipeCouplersPending{false}; // the brake pipe stepped, its air exchange through the hoses is yet to come (UpdatePipeCouplers())
 	double EqvtPipePress = 0.0; /*!o cisnienie w przewodzie glownym skladu*/
 	double Volume = 0.0; /*objetosc spr. powietrza w zbiorniku hamulca*/
 	double CompressedVolume = 0.0; /*objetosc spr. powietrza w ukl. zasilania*/
@@ -2183,6 +2251,15 @@ class TMoverParameters
 	bool LineBreakerClosesOnlyAtNoPowerPos{false};
 	bool ControlPressureSwitch{false}; // activates if the main pipe and/or brake cylinder pressure aren't within operational levels
 	bool HasControlPressureSwitch{true};
+	// config, .fiz Engine:PressureSwitchBrakeCylinder. whether the pressure switch watches the brake cylinders (it cuts the
+	// start off above 2 bar there) as well as the brake pipe (below 3.6 bar). off, it's left with the brake pipe alone,
+	// and the vehicle takes current whatever the pressure in its brake cylinders (EP05)
+	bool PressureSwitchBrakeCylinder{true};
+	// config, .fiz Cntrl.EmergencyBrakeMainOff. the brake pipe pressure [bar] taken for an emergency brake application:
+	// below it, with the master controller on a power position, the line breaker opens and doesn't close again. where
+	// the pantographs stay up only through the closed line breaker (PantographsRequireMains) they drop with it (EP05).
+	// 0: an emergency application leaves the line breaker alone
+	double EmergencyBrakeMainOffPressure{0.0};
 	bool ReleaserEnabledOnlyAtNoPowerPos{false};
 	int MainCtrlPos = 0; /*polozenie glownego nastawnika*/
 	int ScndCtrlPos = 0; /*polozenie dodatkowego nastawnika*/
@@ -2194,6 +2271,9 @@ class TMoverParameters
 	int CabActive = 0; // numer kabiny, z której jest sterowanie: 1 lub -1; w przeciwnym razie brak sterowania - rozrzad
 	int CabOccupied = 0; // numer kabiny, w ktorej jest obsada (zwykle jedna na skład) // TODO: move to TController
 	bool CabMaster = false; // czy pojazd jest nadrzędny w składzie
+	// pullee mode ("jazda ciągniona", MaSzyna-EU07/maszyna#64): the vehicle is prepared for being hauled dead in a
+	// train, see PulleeModeSwitch()
+	bool PulleeMode{false};
 	inline bool IsCabMaster() const
 	{
 		return CabActive == CabOccupied && CabMaster;
@@ -2424,6 +2504,46 @@ class TMoverParameters
 	// was a broken coupler to repair
 	bool repair_coupler(int const End);
 	void Derail(DerailReason Reason);
+	// the velocity of the vehicles coupled to this one changes by the Change along the axis of this one [m/s], as the
+	// legacy derailment changes the velocity of this one (physics.collisions new)
+	void change_train_velocity(double Change);
+	// physics.derailment new: the criteria of derailment.h over the step, which travelled the Distance [m]; monitor: what
+	// they would do, to the log
+	void check_derailment(TTrackShape const &Shape, TTrackParam const &Track, double Distance);
+	// the vehicle leaves the rails, as the criteria of derailment.h found
+	void derail(derailment::verdict const &Verdict, derailment::vehicle_state const &Vehicle, derailment::track_state const &Track, std::string const *TrackName = nullptr);
+	// height of the centre of gravity above the rail with the load [m]
+	double centre_of_gravity() const;
+	// the vehicle is back on the rails (resetconsist, SetDamage taking dtrain_out off): not derailed any more, and the
+	// criteria of derailment start from scratch, so a later derailment goes the way its model has it
+	void rerail();
+	// what resetconsist does to a vehicle: no damage of any kind, the alarm chain released, back on the rails
+	void repair_damage();
+	// how the vehicle left the rails by the criteria of derailment.h: upright, or on its side. none for any other
+	// derailment, which stops it as the legacy model does (with physics.collisions new by a friction of its weight, the
+	// forces of the vehicles coupled to it acting on it)
+	derailment::outcome Derailed{derailment::outcome::none};
+	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
+	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit
+	collision::vehicle_kind collision_kind() const;
+	collision::crush_curve crush_curve_at(int End) const;
+	double buffer_height_at(int End) const;
+	collision::pushed_monitor pushed_off_monitor;
+	// how the vehicle left the rails in a collision (physics.collisions new): overriding or pushed off, NONE otherwise
+	DerailReason CollisionDerail{NONE};
+	// physics.collisions monitor: how many crushes the log told of, of the hits of this vehicle on the others
+	int crush_reports{0};
+	// physics.collisions new: the hit of the end on the stop of its buffers, harder than the steel takes, crushes the
+	// weaker end and may let one vehicle climb onto the other one, see collision.h. returns: whether it did, and the
+	// velocities took the hit; the legacy collision takes the rest. physics.collisions monitor: the log tells what the
+	// crush of the whole hit would be, once for a hit, nothing changes, and it returns false
+	bool crush_hit(int End, double dt);
+	// the force pressing the ends pushes the vehicle off the track (physics.collisions new), the step travelled the
+	// Distance [m]: the flange climbs while the wheels roll on
+	void check_pushed_off(double dt, double Distance);
+	// the vehicle leaves the rails in a collision, the reason told in the log, and slides on as the criteria of
+	// derailment.h have it
+	void derail_in_collision(DerailReason Reason, std::string const &Why);
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
@@ -2518,6 +2638,7 @@ class TMoverParameters
 	bool SpringBrakeActivate(bool State);
 	bool SpringBrakeShutOff(bool State);
 	bool SpringBrakeRelease();
+	bool PulleeModeSwitch(bool const State);
 
 	/*! stopnie hamowania - hamulec zasadniczy*/
 	bool IncBrakeLevelOld(void);
@@ -2558,6 +2679,11 @@ class TMoverParameters
 	void UpdateScndPipePressure(double dt);
 	void UpdateSpringBrake(double dt);
 	double GetDVc(double dt);
+	int PipeCouplersSubsteps(double dt) const;
+	double GetScndDVc(double dt);
+	int ScndPipeCouplersSubsteps(double dt) const;
+	// the air exchange through the brake and main reservoir hoses, after the vehicles stepped
+	static void UpdatePipeCouplers(std::vector<TMoverParameters *> const &Vehicles, double dt);
 
 	/*funkcje obliczajace sily*/
 	void ComputeConstans(void); // ABu: wczesniejsze wyznaczenie stalych dla liczenia sil
@@ -2565,6 +2691,12 @@ class TMoverParameters
 	void ComputeTotalForce(double dt);
 	double Adhesive(double staticfriction) const;
 	double TractionForce(double dt);
+	// the dynamic brake of a diesel-electric vehicle: the effort following the demand, the force it gives at the speed
+	void update_dieselelectric_dynamic_brake(double dt);
+	double dieselelectric_dynamic_brake_demand() const; // 0..1, the effort the driver asks for
+	double dieselelectric_dynamic_brake_limit() const; // [N] the force at full effort at the speed
+	void apply_dieselelectric_dynamic_brake(double dt); // the force in place of the drive's one, over the step dt
+	double dieselelectric_motor_current(double Moment) const; // the current of the motors giving the moment
 	double FrictionForce() const;
 	double BrakeForceR(double ratio, double velocity) const;
 	double BrakeForceP(double press, double velocity) const;
@@ -2608,6 +2740,12 @@ class TMoverParameters
 	bool MainCircuitLampsEnabled() const
 	{
 		return false == ControlPressureSwitch && (HasControlPressureSwitch || BrakePress < 1.0);
+	}
+	// whether an emergency brake application holds the line breaker open: the brake pipe below the pressure taken for one
+	// (EmergencyBrakeMainOffPressure) while the master controller is on a power position
+	bool EmergencyBrakeHoldsMainOff() const
+	{
+		return EmergencyBrakeMainOffPressure > 0.0 && PipePress < EmergencyBrakeMainOffPressure && false == IsMainCtrlNoPowerPos();
 	}
 	// whether the lamp of the open line contactors is lit. on the electric locomotives it tells the start can be made, so
 	// it goes out with the start cut off; on the diesel-electric ones (the SU45 and SU46 family) it just tells the
@@ -2743,6 +2881,9 @@ class TMoverParameters
 	bool DropAllPantographs(bool const State, range_t const Notify = range_t::consist);
 
 	void CheckEIMIC(double dt); // sprawdzenie i zmiana nastawy zintegrowanego nastawnika jazdy/hamowania
+	// whether the holding brake (StopBrakeDecc) lets go at the power demand (eimic, above 0 when power is demanded) of this step of
+	// Dt seconds: once the demand has stayed above 0 for StopBrakeReleaseDelay. a demand of 0 or less starts the count again
+	bool UpdateStopBrakeRelease(double Demand, double Dt);
 	void CheckSpeedCtrl(double dt);
 	// whether the cruise control has a switch of its own: the secondary controller doubles as its switch unless it
 	// shunts the field of the traction motors already, or there's none (the 6Dg, the ST45; eu07/maszyna#69)
@@ -2824,6 +2965,7 @@ class TMoverParameters
 	void LoadFIZ_AI(std::string const &Input);
 	void LoadFIZ_RList(std::string const &Input);
 	void LoadFIZ_UCList(std::string const &Input);
+	void LoadFIZ_DieselElectricDynamicBrake(std::string const &Input);
 	void LoadFIZ_DList(std::string const &Input);
 	void LoadFIZ_FFList(std::string const &Input);
 	void LoadFIZ_FFEDList(std::string const &Input);
