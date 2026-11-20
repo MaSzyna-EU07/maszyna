@@ -87,7 +87,7 @@ void editor_mode::render_track_names_window()
 		ImGui::End();
 		return;
 	}
-	ImGui::TextWrapped("%s", STR_C("These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there."));
+	ImGui::TextWrapped("%s", STR_C("These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there. A track named by a parameter of an include (From an include: yes) can't be renamed there: change that parameter in the line of the scenery which puts the include."));
 	if (ImGui::SmallButton(STR_C("Check again")))
 		check_track_names(false);
 	ImGui::SameLine();

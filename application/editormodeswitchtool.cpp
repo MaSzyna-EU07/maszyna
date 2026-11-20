@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorTrack.hpp"
 #include "simulation/simulation.h"
-#include "utilities/asciiname.h"
 #include "utilities/translation.h"
 #include "world/Track.h"
 #include "world/TrackSleepers.h"
@@ -256,14 +255,11 @@ void editor_mode::render_switch_ui()
 			if (begin_fields("##switchnamefields", 0.3f))
 			{
 				field_row("Name##switchname");
-				// the names the editor gives are plain ASCII (editor_track::name_valid): a letter outside of it is refused as it's typed
-				std::string const typed{tool.name};
-				if (ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name)) && false == ascii_name::plain(tool.name))
-				{
-					auto const kept{typed.copy(tool.name, sizeof(tool.name) - 1)};
-					tool.name[kept] = '\0';
+				// the names the editor gives are plain ASCII (editor_track::name_valid): a letter outside of it is dropped as it's typed
+				bool dropped{false};
+				ImGui::InputTextWithHint("##switchname", switch_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CallbackCharFilter, ascii_only_filter, &dropped);
+				if (dropped)
 					tool.status = refused(STR("The name can hold ASCII only: no Polish letters or other characters outside of it"));
-				}
 				item_tooltip("Name of the next switch, its drive events are named after it; empty: the next free z1, z2...; a number at the end goes up with each switch");
 				ImGui::EndTable();
 			}

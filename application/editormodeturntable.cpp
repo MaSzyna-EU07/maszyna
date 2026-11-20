@@ -1011,7 +1011,11 @@ void editor_mode::render_turntable_ui()
 		if (begin_fields("##turntablenamefields", 0.3f))
 		{
 			field_row("Name##turntablename");
-			ImGui::InputTextWithHint("##turntablename", turntable_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CharsNoBlank);
+			// the name of the bridge track: plain ASCII as every name the editor gives (editor_track::name_valid)
+			bool dropped{false};
+			ImGui::InputTextWithHint("##turntablename", turntable_name_for_new().c_str(), tool.name, sizeof(tool.name), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, ascii_only_filter, &dropped);
+			if (dropped)
+				tool.status = STR("The name can hold ASCII only: no Polish letters or other characters outside of it");
 			ImGui::EndTable();
 		}
 		gesture_rows({{"Drag", "from where the centre goes, turning the bridge"}, {"LMB on a free end", "the turntable lines up with it, at its end"}, {"Shift+LMB", "no lining up"}});

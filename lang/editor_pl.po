@@ -14279,8 +14279,8 @@ msgstr "%zu nazw torów ma znaki spoza ASCII; działają tak jak są, lista jest
 msgid "Track names outside of ASCII"
 msgstr "Nazwy torów spoza ASCII"
 
-msgid "These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there."
-msgstr "Te nazwy działają tak jak są i nic tutaj ich nie zmienia. Nowe nazwy nadawane w edytorze mogą mieć tylko znaki ASCII. Żeby dać któremuś z tych torów nazwę w ASCII, zmień ją we właściwościach toru: komórki pamięci i include'y, które go nazywają, zmienią się razem z nią, a eventy nazwane od niego są tam wypisane."
+msgid "These names work as they are and nothing here changes them. New names given in the editor are ASCII only. To give one of these tracks an ASCII name, rename it in the track properties: the memory cells and the includes which name it go along, the events named after it are listed there. A track named by a parameter of an include (From an include: yes) can't be renamed there: change that parameter in the line of the scenery which puts the include."
+msgstr "Te nazwy działają tak jak są i nic tutaj ich nie zmienia. Nowe nazwy nadawane w edytorze mogą mieć tylko znaki ASCII. Żeby dać któremuś z tych torów nazwę w ASCII, zmień ją we właściwościach toru: komórki pamięci i include'y, które go nazywają, zmienią się razem z nią, a eventy nazwane od niego są tam wypisane. Toru nazwanego parametrem include'a (Z include'a: tak) nie da się tam przemianować: zmień ten parametr w linii scenerii, która wstawia include."
 
 msgid "Check again"
 msgstr "Sprawdź ponownie"
