@@ -28,8 +28,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"      // material_handle
 #include "rendering/geometrybank.h" // gfx::geometry_handle
 
-bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error);
-
 namespace scene
 {
 class basic_region;
@@ -179,7 +177,8 @@ class editor_orthophoto
 		bool puwg{false};
 		std::string error;
 	};
-	static service_info describe(std::string const &Service);
+	// Stop: true to give the reading up
+	static service_info describe(std::string const &Service, std::function<bool()> const &Stop = {});
 	static std::string cache_directory();
 
   private:

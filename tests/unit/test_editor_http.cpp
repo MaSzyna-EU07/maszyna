@@ -4,10 +4,10 @@
 
 #include <asio.hpp>
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <string>
 #include <thread>
@@ -30,7 +30,7 @@ class local_server {
 	}
 	~local_server() {
 		m_done = true;
-		// a connection of its own wakes the server waiting for one; the one of the client it reads from ends with the client
+		// a connection of its own wakes the server waiting for one
 		asio::ip::tcp::socket wake{m_context};
 		asio::error_code ignored;
 		wake.connect({asio::ip::address_v4::loopback(), m_port}, ignored);
@@ -56,10 +56,9 @@ class local_server {
 				answer(socket);
 				continue;
 			}
-			// the request is read and left without an answer, until the other side closes the connection
-			std::array<char, 4096> request{};
-			while (!error)
-				socket.read_some(asio::buffer(request), error);
+			// the request is left without an answer, the connection open, until the server goes
+			while (false == m_done)
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
 
@@ -81,11 +80,20 @@ class local_server {
 	std::jthread m_thread;
 };
 
+// the requests to the local server would go to a proxy named in the environment, which can't reach it
+bool proxied() {
+	for (char const *variable : {"http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"}) {
+		if (char const *value{std::getenv(variable)}; value != nullptr && *value != '\0')
+			return true;
+	}
+	return false;
+}
+
 } // namespace
 
 TEST_CASE("editor http: a request a service doesn't answer is given up as soon as a stop is asked for") {
-	if (false == editor_http::available())
-		return; // a build with no http client
+	if (false == editor_http::available() || proxied())
+		return; // a build with no http client, or a proxy in the way
 	local_server server;
 	auto const start{std::chrono::steady_clock::now()};
 	auto const elapsed = [start]() { return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(); };
@@ -101,7 +109,7 @@ TEST_CASE("editor http: a request a service doesn't answer is given up as soon a
 }
 
 TEST_CASE("editor http: the whole body of a response is read") {
-	if (false == editor_http::available())
+	if (false == editor_http::available() || proxied())
 		return;
 	std::string body(100000, '\0');
 	for (std::size_t i = 0; i < body.size(); ++i)
@@ -116,7 +124,7 @@ TEST_CASE("editor http: the whole body of a response is read") {
 }
 
 TEST_CASE("editor http: the body of an error is kept with the status in the error") {
-	if (false == editor_http::available())
+	if (false == editor_http::available() || proxied())
 		return;
 	// the terrain model service tells a place outside of its coverage in the body of an error
 	std::string const body{"<ServiceException>outside requested coverage</ServiceException>"};
