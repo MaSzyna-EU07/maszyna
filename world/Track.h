@@ -131,6 +131,11 @@ public:
     static TIsolated * Find(const std::string &n); // znalezienie obiektu albo utworzenie nowego
     void AssignEvents();
     void Modify(int i, TDynamicObject *o); // dodanie lub odjęcie osi
+    // the axles counted in, for a simulation snapshot: read, and set without a word to the events or the cell
+    int axles() const {
+        return iAxles; }
+    void axles( int const Count ) {
+        iAxles = Count; }
     inline
     bool
         Busy() {

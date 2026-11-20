@@ -1,0 +1,14 @@
+{
+  "description": "Simulation snapshot on td.scn with a train which leaves the scenery before the snapshot: an SM42 starts on the track of an isolated section and runs into a portal next to it, about 30 s in. The snapshot is taken at 90 s and has the SM42 as removed; loaded, the section has to count no axles, as in the run that went on (review of MaSzyna-EU07/maszyna#420). The run loaded from it is compared at 180 s with the run that went on.",
+  "base_scenery": "td.scn",
+  "time": "10:30",
+  "fragment": "td_portal_isolated.scn",
+  "test_config": [
+    "test.standstill 0"
+  ],
+  "snapshot": { "at": 90, "until": 180 },
+  "checks": [
+    { "type": "log_lacks", "pattern": "counted other axles" }
+  ],
+  "timeout": 600
+}

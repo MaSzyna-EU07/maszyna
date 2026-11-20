@@ -157,6 +157,7 @@ class Comparison:
     couplings: list[str] = field(default_factory=list)  # vehicles coupled another way
     memcells: list[str] = field(default_factory=list)  # cells with other content
     switches: list[str] = field(default_factory=list)  # switches set another way
+    isolated: list[str] = field(default_factory=list)  # isolated sections with other counts of axles
     drivers: list[str] = field(default_factory=list)  # drivers elsewhere in their orders or timetables
     events: list[str] = field(default_factory=list)  # events queued in one of them only
     missing: list[str] = field(default_factory=list)  # vehicles in one of them only
@@ -173,7 +174,8 @@ class Comparison:
         ]
         for label, items in (("vehicles in one snapshot only", self.missing), ("on another track", self.tracks),
                              ("coupled another way", self.couplings), ("memory cells", self.memcells),
-                             ("switches", self.switches), ("drivers", self.drivers), ("queued events", self.events)):
+                             ("switches", self.switches), ("isolated sections", self.isolated), ("drivers", self.drivers),
+                             ("queued events", self.events)):
             shown = ", ".join(items[:8]) + (f", ... ({len(items)})" if len(items) > 8 else "")
             out.append(f"{label}: {shown if items else 'the same'}")
         return out
@@ -228,6 +230,10 @@ def compare(first: list[Entry], second: list[Entry], cell_tolerance: float = 1e-
     sa, sb = by_type(first, "switch"), by_type(second, "switch")
     result.switches = sorted(n for n in sa.keys() | sb.keys()
                              if n not in sa or n not in sb or sa[n].text("state") != sb[n].text("state"))
+
+    ia, ib = by_type(first, "isolated"), by_type(second, "isolated")
+    result.isolated = sorted(n for n in ia.keys() | ib.keys()
+                             if n not in ia or n not in ib or ia[n].text("axles") != ib[n].text("axles"))
 
     da, db = by_type(first, "driver"), by_type(second, "driver")
     for name in sorted(da.keys() | db.keys()):

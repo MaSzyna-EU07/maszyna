@@ -156,7 +156,7 @@ the time, the cells, the switches, the event queue, the places, speeds and coupl
 loads, the positions of their controls, the air in their pipes and reservoirs with the latches of their
 brake valves, the state of their couplers, the orders and timetable positions of their drivers with what
 they see ahead, the wind, the traction power sources, the random numbers still to be drawn, the lights of
-the signals. In the test mode that is enough for a loaded run to go on bit for bit on the sceneries of the
+the signals, how many axles each isolated section counts. In the test mode that is enough for a loaded run to go on bit for bit on the sceneries of the
 snapshot cases below. What isn't kept: sounds, animations and the poses of models other than signal lamps,
 Lua and Python state, vehicles which came into being during the run (road traffic made by scripts).
 `tests/scenarios/snapshots.py a b` tells two snapshots apart, with the largest differences of position,
@@ -337,8 +337,13 @@ four files stay in `out/<case>/` (`first`, `reference`, `resaved`, `continued`),
 - `snapshot_continues`: at `until` the run loaded from the snapshot has every vehicle within
   `tolerances.position` metres and `tolerances.speed` km/h of the run which went on (defaults 1 and 1;
   `pipe` and `cylinder` in bar, default 0.1), on the same tracks, coupled the same way, with the same
-  memory cells and switches and the drivers at the same order and timetable position. The line of the check
-  gives the measured differences either way.
+  memory cells, switches and counts of the isolated sections and the drivers at the same order and timetable
+  position. The line of the check gives the measured differences either way.
+
+`snapshot_td_portal_isolated` (fragment `td_portal_isolated.scn`) has a train which is gone before the
+snapshot: an SM42 starts on the track of an isolated section added beside td.scn and runs into a portal next
+to it about 30 s in. The snapshot of 90 s has it as removed; loaded, the section has to count no axles, as in
+the run which went on (the log of the loaded run mustn't say a section "counted other axles").
 
 Such a case writes no physicslog, has `convertmodels 0` in its settings, and of `checks` takes the log ones
 only, which read the log of the second run. `expect` is the result of both runs, `timeout` by default.

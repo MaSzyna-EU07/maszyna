@@ -703,12 +703,14 @@ def check_snapshot_continues(reference: Path, continued: Path, tolerances: dict)
         if measured > limits[what]:
             problems.append(f"{what} {measured:.3f} {unit} > {limits[what]}")
     for what, items in (("vehicles in one only", result.missing), ("tracks", result.tracks), ("couplings", result.couplings),
-                        ("memcells", result.memcells), ("switches", result.switches), ("drivers", result.drivers)):
+                        ("memcells", result.memcells), ("switches", result.switches), ("isolated", result.isolated),
+                        ("drivers", result.drivers)):
         if len(items) > limits.get(what, 0):
             problems.append(f"{what}: {', '.join(items[:4])}{' ...' if len(items) > 4 else ''}")
     summary = (f"{result.vehicles} vehicles, position {result.position:.3f} m ({result.position_vehicle}), "
                f"speed {result.velocity * 3.6:.3f} km/h, pipe {result.pipe:.3f} bar, cylinders {result.cylinder:.3f} bar, "
-               f"{len(result.memcells)} memcells, {len(result.switches)} switches, {len(result.couplings)} couplings, "
+               f"{len(result.memcells)} memcells, {len(result.switches)} switches, {len(result.isolated)} isolated sections, "
+               f"{len(result.couplings)} couplings, "
                f"{len(result.drivers)} drivers, {len(result.events)} queued events differ")
     if problems:
         return False, summary + " -- " + "; ".join(problems)

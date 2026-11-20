@@ -650,8 +650,14 @@ void apply_vehicles(document const &Document, apply_summary &Summary)
 			Summary.notes.emplace_back(std::format("vehicle {} of the snapshot isn't in the scenery", entry->name));
 			continue;
 		}
+		// a vehicle placed twice would have its axles counted out of their sections twice
+		if (false == listed.emplace(vehicle).second)
+		{
+			++Summary.skipped;
+			Summary.notes.emplace_back(std::format("vehicle {} has more than one entry in the snapshot, the first one is taken", entry->name));
+			continue;
+		}
 		known.emplace_back(vehicle, entry);
-		listed.emplace(vehicle);
 	}
 	// where the vehicles are, then what they're coupled to, then what they're doing
 	auto misplaced{0};
@@ -672,6 +678,67 @@ void apply_vehicles(document const &Document, apply_summary &Summary)
 	if (auto const unknown{std::ranges::count_if(Vehicles.sequence(), [&](TDynamicObject const *Vehicle) { return Vehicle != nullptr && false == listed.contains(Vehicle); })};
 	    unknown != 0)
 		Summary.notes.emplace_back(std::format("{} vehicles of the scenery aren't in the snapshot, they stay as the scenery made them", unknown));
+}
+
+// the isolated sections, by their names: the scenery makes one for each name (TIsolated::Find())
+std::unordered_map<std::string, TIsolated *> isolated_sections()
+{
+	std::unordered_map<std::string, TIsolated *> sections;
+	for (auto *section{TIsolated::Root()}; section != nullptr; section = section->Next())
+		sections.emplace(section->asName, section);
+	return sections;
+}
+
+// how many axles each isolated section counts. in a running simulation it's the vehicles on its tracks, but not only:
+// the vehicles of a consist which follow its first one out through a portal leave the simulation where they are, and
+// stay counted there. a snapshot keeps the counts as they are
+void capture_isolated(document &Document)
+{
+	for (auto *section{TIsolated::Root()}; section != nullptr; section = section->Next())
+		Document.add("isolated", section->asName).set("axles", section->axles());
+}
+
+// sets the counts of the isolated sections to those of the snapshot, after the vehicles are put on their tracks: which
+// counts them anew. a section whose count comes out other than the snapshot has is told of
+void apply_isolated(document const &Document, apply_summary &Summary)
+{
+	auto const entries{Document.of("isolated")};
+	if (entries.empty())
+		return;
+	auto const sections{isolated_sections()};
+	auto missing{0};
+	auto differing{0};
+	std::string example;
+	for (auto const *entry : entries)
+	{
+		auto const lookup{sections.find(entry->name)};
+		if (lookup == sections.end())
+		{
+			++Summary.skipped;
+			++missing;
+			continue;
+		}
+		// a count beyond any the vehicles of a scenery make
+		auto axles{0};
+		if (false == entry->get("axles", axles))
+		{
+			++Summary.skipped;
+			continue;
+		}
+		if (auto *section{lookup->second}; section->axles() != axles)
+		{
+			if (differing++ == 0)
+				example = std::format("{}: {} axles, the snapshot has {}", section->asName, section->axles(), axles);
+			section->axles(axles);
+		}
+		++Summary.entries;
+	}
+	if (missing != 0)
+		Summary.notes.emplace_back(std::format("{} isolated sections of the snapshot aren't in the scenery", missing));
+	// not a fault as such: the vehicles a consist leaves behind as it goes through a portal stay counted where they were
+	if (differing != 0)
+		Summary.remarks.emplace_back(std::format("{} isolated sections counted other axles with the vehicles placed than the snapshot has, set to its counts; the first one {}",
+		                                       differing, example));
 }
 
 void capture_drivers(document &Document)
@@ -734,12 +801,23 @@ void apply_drivers(document const &Document, apply_summary &Summary)
 	std::unordered_set<TDynamicObject const *> known;
 	for (auto const *entry : Document.of("vehicle"))
 		known.emplace(find_vehicle(entry->name));
+	std::unordered_set<TController const *> deleted;
 	for (auto *vehicle : Vehicles.sequence())
 	{
 		if (vehicle == nullptr || vehicle->Mechanik == nullptr || taken.contains(vehicle) || false == known.contains(vehicle))
 			continue;
 		if (vehicle->Mechanik->AIControllFlag)
+		{
+			deleted.emplace(vehicle->Mechanik);
 			SafeDelete(vehicle->Mechanik);
+		}
+	}
+	// the other vehicles of their consists had them in charge: those the snapshot has get their owners anew
+	// (apply_owners()), but no vehicle is left pointing at a driver who's no more
+	for (auto *vehicle : Vehicles.sequence())
+	{
+		if (vehicle != nullptr && deleted.contains(vehicle->ctOwner))
+			vehicle->ctOwner = nullptr;
 	}
 }
 
@@ -749,7 +827,15 @@ void apply_owners(document const &Document)
 	for (auto const *entry : Document.of("vehicle"))
 	{
 		auto *vehicle{find_vehicle(entry->name)};
-		if (vehicle == nullptr || false == entry->has("first"))
+		if (vehicle == nullptr)
+			continue;
+		// a vehicle gone from the simulation has nobody in charge
+		if (entry->value("removed", false))
+		{
+			vehicle->ctOwner = nullptr;
+			continue;
+		}
+		if (false == entry->has("first"))
 			continue;
 		auto const *owner{find_vehicle(entry->text("owner"))};
 		vehicle->ctOwner = (owner != nullptr ? owner->Mechanik : nullptr);
@@ -878,6 +964,7 @@ document capture()
 	capture_launchers(result);
 	capture_lights(result);
 	capture_vehicles(result);
+	capture_isolated(result);
 	capture_drivers(result);
 	capture_player(result);
 	// the long one last, out of the way of whoever reads the file
@@ -918,6 +1005,8 @@ apply_summary apply(document const &Document)
 	apply_each(Document, "madetrack", summary, apply_made_track);
 	apply_each(Document, "powersource", summary, apply_power);
 	apply_vehicles(Document, summary);
+	// the sections the vehicles were counted in and out of as they were put on their tracks
+	apply_isolated(Document, summary);
 	apply_drivers(Document, summary);
 	apply_owners(Document);
 	// the cells after the vehicles, whose sections write to their cells as they're taken and freed

@@ -74,6 +74,14 @@ axle_place read_axle(snapshot::record const &Entry, int const Index)
 	return place;
 }
 
+// takes the vehicle off the list of the track it's on, if it's on it
+void leave_track(TDynamicObject &Vehicle)
+{
+	if (Vehicle.MyTrack != nullptr && Vehicle.MyTrack->CheckDynamicObject(&Vehicle))
+		Vehicle.MyTrack->RemoveDynamicObject(&Vehicle);
+	Vehicle.MyTrack = nullptr;
+}
+
 // the vehicle whose physics a coupler is joined to: the neighbour at that end as a rule, otherwise looked up
 TDynamicObject const *coupled_vehicle(TCoupling const &Coupler, TDynamicObject const *Neighbour)
 {
@@ -225,8 +233,17 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 		if (false == bEnabled)
 			return true;
 		// the vehicle left the simulation before the snapshot was taken: off the track, and off the list at the next update
-		if (MyTrack != nullptr && MyTrack->RemoveDynamicObject(this))
-			MyTrack = nullptr;
+		leave_track(*this);
+		// the scenery counted its axles in the isolated sections of the tracks it put it on, the run the snapshot comes
+		// from counted them out as the train drove off. the events are held while a snapshot is put back, and the saved
+		// cells and queue carry what followed from it
+		for (auto const *axle : {&Axle0, &Axle1})
+		{
+			if (auto *track{axle->GetTrack()}; track != nullptr)
+				track->AxleCounter(-1, this);
+		}
+		// nobody's in charge of it: its driver, if it had one, doesn't go on (apply_drivers())
+		ctOwner = nullptr;
 		bEnabled = false;
 		bDynamicRemove = true;
 		return true;
@@ -251,8 +268,7 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 	// the vehicle is on the list of the track its leading axle is on
 	if (auto *track{iAxleFirst != 0 ? Axle1.GetTrack() : Axle0.GetTrack()}; track != MyTrack)
 	{
-		if (MyTrack != nullptr)
-			MyTrack->RemoveDynamicObject(this);
+		leave_track(*this);
 		track->AddDynamicObject(this);
 	}
 	MoverParameters->Loc = {-vPosition.x, vPosition.z, vPosition.y};
