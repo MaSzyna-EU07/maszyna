@@ -481,13 +481,11 @@ void editor_mode::render_mode_plate()
 		char const *description;
 	};
 	// the descriptions as those of the row of the work modes of the flat palettes, see render_workspaces()
-	std::array<area, 6> const areas{{
+	std::array<area, 4> const areas{{
 	    {STR_C("Surroundings"), work_area::surroundings, icon::work_surroundings, "F2", STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
 	    {STR_C("Tracks"), work_area::tracks, icon::work_tracks, "F3", STR_C("Tracks and switches, signals, kilometrage and posts along the track, checks of the line")},
 	    {STR_C("Roads"), work_area::roads, icon::work_roads, "F4", STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
 	    {STR_C("Terrain"), work_area::terrain, icon::work_terrain, "F5", STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
-	    {STR_C("Catenary"), work_area::catenary, icon::work_catenary, "F6", STR_C("The overhead catenary: poles with cantilevers, gantries, the wires of the chains")},
-	    {"GeoTools", work_area::features, icon::work_terrain, "F7", STR_C("From the maps of geoportal.gov.pl onto the terrain: fields and parcels, trees, the track bed and slopes, the map to go to")},
 	}};
 	auto const s{scale()};
 	auto const dark{EditorSettings.palette() == 3};

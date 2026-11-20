@@ -920,7 +920,6 @@ void editor_ui::render_()
 		render_scene();
 		render_islands_status();
 		render_refusal();
-		render_warning();
 		return;
 	}
 	auto *viewport{ImGui::GetMainViewport()};

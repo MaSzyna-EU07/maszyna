@@ -5249,10 +5249,6 @@ int editor_mode::work_area_colour(work_area const Area, bool const Dark)
 		return Dark ? 0xff8a45 : 0xe0601a;
 	case work_area::terrain:
 		return Dark ? 0x86c447 : 0x4f8a1f;
-	case work_area::catenary:
-		return Dark ? 0xa684ff : 0x7b4ee0;
-	case work_area::features:
-		return Dark ? 0xff6aa3 : 0xcc3471;
 	}
 	return -1;
 }
