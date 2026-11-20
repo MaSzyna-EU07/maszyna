@@ -419,6 +419,15 @@ opengl_renderer::Render() {
     // add user interface
     setup_units( true, false, false );
     ::glPushClientAttrib( GL_CLIENT_VERTEX_ARRAY_BIT );
+    // the arrays the scene left enabled point into the buffer of whatever was drawn last; the ui sets up
+    // the vertex, colour and texture coordinates of the active unit only, so the driver would go on reading
+    // the rest with the indices of the ui, past the end of that buffer once the ui has more vertices than it
+    for( auto const unit : m_geometry.units().texture ) {
+        ::glClientActiveTexture( GL_TEXTURE0 + unit );
+        ::glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+    }
+    ::glDisableClientState( GL_NORMAL_ARRAY );
+    ::glDisableClientState( GL_COLOR_ARRAY );
     ::glClientActiveTexture( GL_TEXTURE0 + m_diffusetextureunit );
 
     // clear state for ui
@@ -1920,6 +1929,12 @@ ITexture const &
 opengl_renderer::Texture( texture_handle const Texture ) const {
 
     return m_textures.texture( Texture );
+}
+
+void
+opengl_renderer::Unload_Texture( texture_handle const Texture ) {
+
+    m_textures.unload( Texture );
 }
 
 void
@@ -4355,8 +4370,8 @@ glm::dvec3
 opengl_renderer::Update_Mouse_Position() {
 
     glm::ivec2 mousepos = Global.cursor_pos * Global.fb_size / Global.window_size;
-    mousepos.x = std::clamp( mousepos.x, 0, Global.fb_size.x - 1 );
-	mousepos.y = std::clamp(Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1);
+    mousepos.x = safe_clamp( mousepos.x, 0, Global.fb_size.x - 1 );
+	mousepos.y = safe_clamp(Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1);
     GLfloat pointdepth;
     ::glReadPixels( mousepos.x, mousepos.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pointdepth );
 

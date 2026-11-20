@@ -93,23 +93,51 @@ std::uint64_t editor_mode::texture_thumbnail(texture_browser::item const &Item)
 		if (browser.loads >= 2)
 			return 0;
 		++browser.loads;
-		texture_handle texture{null_handle};
+		texture_browser::thumbnail thumbnail;
 		if (Item.material)
 		{
-			auto const material{GfxRenderer->Fetch_Material(Item.name)};
-			if (auto const *data{GfxRenderer->Material(material)}; material != null_handle && data != nullptr)
-				texture = data->GetTexture(0);
+			// a material reads all its textures, the normal maps and the rest with the one shown
+			thumbnail.material = GfxRenderer->Fetch_Material(Item.name);
+			if (auto const *data{GfxRenderer->Material(thumbnail.material)}; thumbnail.material != null_handle && data != nullptr)
+				thumbnail.texture = data->GetTexture(0);
 		}
 		else
-			texture = GfxRenderer->Fetch_Texture(Item.name, true);
-		lookup = browser.thumbnails.emplace(Item.name, texture).first;
+			thumbnail.texture = GfxRenderer->Fetch_Texture(Item.name, true);
+		lookup = browser.thumbnails.emplace(Item.name, thumbnail).first;
 	}
-	if (lookup->second == null_handle)
+	lookup->second.shown = ImGui::GetTime();
+	if (lookup->second.texture == null_handle)
 		return 0;
-	auto &texture{GfxRenderer->Texture(lookup->second)};
+	auto &texture{GfxRenderer->Texture(lookup->second.texture)};
 	if (false == texture.get_is_ready())
 		texture.create();
 	return texture.get_is_ready() ? static_cast<std::uint64_t>(texture.get_id()) : 0;
+}
+
+void editor_mode::thumbnails_trim()
+{
+	// a few seconds out of sight, so scrolling back and forth doesn't read them over and over
+	// all of them after the browser's Refresh, here before any image is drawn: not while the panels drawn earlier in the
+	// frame still refer to them
+	auto constexpr kept{3.0};
+	auto const now{ImGui::GetTime()};
+	auto &browser{m_textures};
+	for (auto entry{browser.thumbnails.begin()}; entry != browser.thumbnails.end();)
+	{
+		auto const &thumbnail{entry->second};
+		if (false == browser.refresh && ((thumbnail.texture == null_handle && thumbnail.material == null_handle) || now - thumbnail.shown < kept))
+		{
+			++entry;
+			continue;
+		}
+		// the scene's own textures stay; shown again, the image is read anew within the few a frame
+		if (thumbnail.material != null_handle)
+			GfxRenderer->Unload_Material(thumbnail.material);
+		else
+			GfxRenderer->Unload_Texture(thumbnail.texture);
+		entry = browser.thumbnails.erase(entry);
+	}
+	browser.refresh = false;
 }
 
 void editor_mode::render_texture_browser()
@@ -173,7 +201,8 @@ void editor_mode::render_texture_browser()
 	if (ImGui::Button(STR_C("Refresh")))
 	{
 		browser.listed = false;
-		browser.thumbnails.clear();
+		// the images let go of at the start of the next frame, see thumbnails_trim()
+		browser.refresh = true;
 	}
 	ImGui::SameLine();
 	ImGui::TextUnformatted((std::string{paths::textures} + browser.folder).c_str());

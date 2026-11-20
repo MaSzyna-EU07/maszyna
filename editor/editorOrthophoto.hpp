@@ -102,6 +102,9 @@ class editor_orthophoto
 	editor_orthophoto(editor_orthophoto const &) = delete;
 	editor_orthophoto &operator=(editor_orthophoto const &) = delete;
 
+	// the tiles over a rectangle of the world (x, z; what the camera sees), within the reach around the camera, asked for before anything
+	// else, the ones which failed tried again at once. returns: how many were put at the front of the queue
+	std::size_t hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera);
 	bool enabled() const { return m_enabled; }
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
@@ -245,6 +248,12 @@ class editor_orthophoto
 	};
 
 	static int level_for(int Distance, bool Hires);
+	// the level a tile is asked for at first: a tile showing nothing yet takes the standard image before the 4K one
+	static int first_level(tile const &Tile, int Level);
+	// the tile is outside the download area set, which then has no imagery asked for it
+	bool outside_area(tile_key const &Key) const;
+	// a tile of the view hurried: put at the front of the queue unless it's shown as it should be. true: counted among the hurried
+	bool hurry_tile(tile_key const &Key, int Distance);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
 	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
 	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha);
@@ -300,6 +309,7 @@ class editor_orthophoto
 	bool m_prefetch_paused{false};
 	source m_prefetch_source;
 	std::uint32_t m_prefetch_generation{0};
+	std::set<tile_key> m_urgent; // asked for by hurry(): workers take these first; guarded by m_mutex
 
 	std::atomic<bool> m_stop{false};
 	std::atomic<std::uint32_t> m_generation{1};

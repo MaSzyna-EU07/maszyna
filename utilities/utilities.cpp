@@ -516,6 +516,140 @@ bool FileExists(std::string const &Filename)
 	return std::filesystem::exists(Filename);
 }
 
+#ifndef _WIN32
+namespace
+{
+
+// the names in a folder by their lowercase, the time the folder was changed and the time they were read
+struct cased_folder
+{
+	bool read{false};
+	std::filesystem::file_time_type changed{};
+	std::filesystem::file_time_type listed{};
+	// when the time of the change was last looked at
+	std::chrono::steady_clock::time_point checked{};
+	std::unordered_map<std::string, std::string> names;
+};
+
+std::mutex cased_mutex;
+std::unordered_map<std::string, cased_folder> cased_folders;
+// a folder by the name it's given with (parts split by '/', a '/' at the end): as it's named on the disk, or missing in any case
+// since the time given
+struct cased_path
+{
+	std::string name;
+	bool missing{false};
+	std::chrono::steady_clock::time_point checked{};
+};
+std::unordered_map<std::string, cased_path> cased_paths;
+
+// the names in the folder into Cached by their lowercase, with the time the folder was changed and the time they were read. a named
+// function rather than a lambda capturing Cached, which Sonar takes for a reference to null (S2259)
+void read_cased_folder(cased_folder &Cached, std::filesystem::path const &Folder, std::filesystem::file_time_type const Changed)
+{
+	Cached.names.clear();
+	Cached.changed = Changed;
+	Cached.listed = std::filesystem::file_time_type::clock::now();
+	std::error_code error;
+	for (std::filesystem::directory_iterator entry{Folder, error}, end; (false == bool(error)) && (entry != end); entry.increment(error))
+	{
+		auto const name{entry->path().filename().string()};
+		Cached.names.try_emplace(ToLower(name), name);
+	}
+	// a listing cut short isn't kept
+	Cached.read = (false == bool(error));
+}
+
+// the name in the folder matching the one given in any case, empty when there's none. the folder is read again once it was
+// changed, as the editor writes files while it runs, the time of the change looked at once a second at most, which keeps a
+// missing file as cheap as a single check; a name missing from a folder changed shortly before it was read is looked for again,
+// the time of the change being as coarse as the clock of the file system. to be called with cased_mutex held
+std::string cased_name(std::string const &Folder, std::string const &Name)
+{
+	std::filesystem::path const folder{Folder.empty() ? std::string{"."} : Folder};
+	std::error_code error;
+	auto &cached{cased_folders[Folder]};
+	auto const now{std::chrono::steady_clock::now()};
+	auto changed{cached.changed};
+	if ((false == cached.read) || (now - cached.checked >= std::chrono::seconds{1}))
+	{
+		changed = std::filesystem::last_write_time(folder, error);
+		if (error)
+		{
+			// a folder found before may have been renamed or removed since
+			cased_folders.erase(Folder);
+			cased_paths.clear();
+			return {};
+		}
+		cached.checked = now;
+	}
+	auto const wanted{ToLower(Name)};
+	if ((false == cached.read) || (cached.changed != changed))
+		read_cased_folder(cached, folder, changed);
+	auto found{cached.names.find(wanted)};
+	// a folder changed in the future, as from another clock, isn't read again on every miss
+	if (auto const age{cached.listed - cached.changed}; (found == cached.names.end()) && (age >= std::chrono::seconds{0}) && (age < std::chrono::seconds{2}))
+	{
+		read_cased_folder(cached, folder, changed);
+		found = cached.names.find(wanted);
+	}
+	return found != cached.names.end() ? found->second : std::string{};
+}
+
+// keeps the folder by the name it's given with as Name, or as missing since the time given when Name is empty, and puts Name into
+// Cased; false when it's missing
+bool keep_cased_path(std::string const &Folder, std::string const &Name, std::chrono::steady_clock::time_point const Now, std::string &Cased)
+{
+	auto &path{cased_paths[Folder]};
+	path.name = Name;
+	path.missing = Name.empty();
+	path.checked = Now;
+	Cased = Name;
+	return false == Name.empty();
+}
+
+// the folder as it's named on the disk into Cased, from the one given with '/' between its parts and at its end ("" the current
+// folder); false when it's missing in any case. the folders found are kept, and the missing ones for a second, so a file missing
+// costs a check of its folder alone. to be called with cased_mutex held
+bool cased_folder_path(std::string const &Folder, std::string &Cased)
+{
+	if (Folder.empty() || (Folder == "/"))
+	{
+		Cased = Folder;
+		return true;
+	}
+	auto const now{std::chrono::steady_clock::now()};
+	if (auto const found{cased_paths.find(Folder)}; found != cased_paths.end())
+	{
+		if (false == found->second.missing)
+		{
+			Cased = found->second.name;
+			return true;
+		}
+		if (now - found->second.checked < std::chrono::seconds{1})
+			return false;
+	}
+	std::error_code error;
+	if (std::filesystem::is_directory(Folder, error))
+	{
+		// named as it is on the disk
+		return keep_cased_path(Folder, Folder, now, Cased);
+	}
+	// the parent, then the last part among the names in it
+	auto const last{Folder.size() - 1};
+	auto const split{Folder.rfind('/', last - 1)};
+	auto const parent{split == std::string::npos ? std::string{} : Folder.substr(0, split + 1)};
+	auto const part{Folder.substr(parent.size(), last - parent.size())};
+	std::string casedparent;
+	if (false == cased_folder_path(parent, casedparent))
+		return keep_cased_path(Folder, {}, now, Cased);
+	auto const name{((part == ".") || (part == "..")) ? part : cased_name(casedparent, part)};
+	return keep_cased_path(Folder, name.empty() ? std::string{} : casedparent + name + '/', now, Cased);
+}
+
+} // namespace
+#endif
+
 std::string FileCased(std::filesystem::path const &Filename)
 {
 	std::error_code error;
@@ -526,14 +660,57 @@ std::string FileCased(std::filesystem::path const &Filename)
 	// code page to throw on
 	return {};
 #else
-	// only the name of the file itself, a folder named in another case isn't found
-	auto const directory{Filename.has_parent_path() ? Filename.parent_path() : std::filesystem::path{"."}};
-	auto const wanted{ToLower(Filename.filename().string())};
-	for (std::filesystem::directory_iterator entry{directory, error}, end; entry != end; entry.increment(error))
-		if (ToLower(entry->path().filename().string()) == wanted)
-			return Filename.has_parent_path() ? (directory / entry->path().filename()).string() : entry->path().filename().string();
-	return {};
+	// the folder, then the file in it: the folders can be named in another case as well as the file
+	auto text{Filename.string()};
+	std::replace(text.begin(), text.end(), '\\', '/');
+	std::string folder{(false == text.empty()) && (text.front() == '/') ? "/" : ""};
+	std::string file;
+	for (std::size_t start{0}; start < text.size();)
+	{
+		auto end{text.find('/', start)};
+		if (end == std::string::npos)
+			end = text.size();
+		if (end > start)
+		{
+			if (false == file.empty())
+				folder += file + '/';
+			file = text.substr(start, end - start);
+		}
+		start = end + 1;
+	}
+	if (file.empty())
+		return {};
+	std::string cased;
+	{
+		std::scoped_lock const lock{cased_mutex};
+		if (false == cased_folder_path(folder, cased))
+			return {};
+		auto const name{((file == ".") || (file == "..")) ? file : cased_name(cased, file)};
+		if (name.empty())
+			return {};
+		cased += name;
+	}
+	return std::filesystem::exists(cased, error) ? cased : std::string{};
 #endif
+}
+
+std::string FileOnDisk(std::string const &Filename)
+{
+	auto cased{FileCased(Filename)};
+	return cased.empty() ? Filename : cased;
+}
+
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)
+{
+	for (auto const &extension : Extensions)
+	{
+		auto const cased{FileCased(Folder + Name + extension)};
+		if (cased.size() > Folder.size() + extension.size() && cased.starts_with(Folder) && cased.ends_with(extension))
+		{
+			return cased.substr(Folder.size(), cased.size() - Folder.size() - extension.size());
+		}
+	}
+	return Name;
 }
 
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions)
@@ -543,7 +720,8 @@ std::pair<std::string, std::string> FileExists(std::vector<std::string> const &N
 	{
 		for (auto const &extension : Extensions)
 		{
-			if (FileExists(name + extension))
+			// found in any case, given back as named here: the name stays the key of the banks, the file is opened by FileOnDisk()
+			if (false == FileCased(name + extension).empty())
 			{
 				return {name, extension};
 			}
