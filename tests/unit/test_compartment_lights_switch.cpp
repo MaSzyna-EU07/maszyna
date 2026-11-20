@@ -54,12 +54,13 @@ void enable_press(vehicle &Car, cab_controls const &Cab) {
 }
 
 void enable_release(vehicle &Car, cab_controls const &Cab) {
+	using enum range_t;
 	if (Cab.has_switch && false == Cab.switch_is_toggle) {
-		Car->CompartmentLightsSwitch(false, range_t::local);
-		Car->CompartmentLightsSwitchOff(false, range_t::local);
+		Car->CompartmentLightsSwitch(false, local);
+		Car->CompartmentLightsSwitchOff(false, local);
 	}
 	if (Cab.has_on_button) {
-		Car->CompartmentLightsSwitch(false, range_t::local);
+		Car->CompartmentLightsSwitch(false, local);
 	}
 }
 
@@ -71,12 +72,13 @@ void disable_press(vehicle &Car, cab_controls const &Cab) {
 }
 
 void disable_release(vehicle &Car, cab_controls const &Cab) {
+	using enum range_t;
 	if (Cab.has_switch && false == Cab.switch_is_toggle) {
-		Car->CompartmentLightsSwitch(false, range_t::local);
-		Car->CompartmentLightsSwitchOff(false, range_t::local);
+		Car->CompartmentLightsSwitch(false, local);
+		Car->CompartmentLightsSwitchOff(false, local);
 	}
 	if (Cab.has_off_button) {
-		Car->CompartmentLightsSwitchOff(false, range_t::local);
+		Car->CompartmentLightsSwitchOff(false, local);
 	}
 }
 
@@ -98,8 +100,7 @@ void disable(vehicle &Car, cab_controls const &Cab) {
 // the keyboard toggle picks the command from the state on the press, the key held down for a few frames; the release
 // goes to both commands, the press changed the state it would be picked from
 void toggle(vehicle &Car, cab_controls const &Cab) {
-	auto const &lights{Car->CompartmentLights};
-	if (false == lights.is_active && false == lights.is_enabled) {
+	if (auto const &lights{Car->CompartmentLights}; false == lights.is_active && false == lights.is_enabled) {
 		enable_press(Car, Cab);
 	}
 	else {
