@@ -15,8 +15,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <atomic>
 #include <future>
+#include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include <glm/glm.hpp>
 
@@ -58,6 +60,10 @@ class live_weather
 	static std::string present_weather(int const Code);
 
   private:
+	// the joining of the thread of a finished fetch, before the next one or when the fetch is given up
+	void join();
+
 	std::future<report> m_fetch;
+	std::thread m_thread; // of the fetch going on or finished and not joined yet
 	std::shared_ptr<std::atomic<bool>> m_stop;
 };
