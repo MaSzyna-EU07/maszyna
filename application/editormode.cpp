@@ -554,6 +554,7 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_workspace_bar([this]() { render_workspaces(); });
+	ui()->set_capsule([this]() { render_capsule(); });
 	ui()->set_accent_source([this]() { return work_area_colour(current_work_area(), EditorSettings.palette() == 3); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });

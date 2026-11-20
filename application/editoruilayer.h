@@ -91,6 +91,11 @@ class editor_ui : public ui_layer
 	{
 		m_accentsource = std::move(Source);
 	}
+	// the capsule of the islands: the plate of the work mode, its tools, undo and redo
+	void set_capsule(std::function<void()> Renderer)
+	{
+		m_capsule = std::move(Renderer);
+	}
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
 		m_workspacebar = std::move(Renderer);
@@ -132,6 +137,51 @@ class editor_ui : public ui_layer
 	static glm::vec2 view_max()
 	{
 		return m_viewmax;
+	}
+	// in the light and the dark palettes the windows of the editor float over the 3d view at fixed places, as islands:
+	// the capsule of the work mode and its tools at the top left, the rail of the scene windows under it, the tool and the
+	// selection on the right, the scene or the layers as a drawer by the rail, the node bank as a tray at the bottom
+	enum class island
+	{
+		capsule,
+		rail,
+		tool,
+		inspector,
+		drawer,
+		bank,
+		sets
+	};
+	enum class drawer
+	{
+		none,
+		scene,
+		layers
+	};
+	// the windows are islands, not docked
+	static bool islands();
+	// places the window begun next as the island. returns: false if the windows are docked (the flat palettes)
+	static bool place_island(island const Which);
+	// flags of a window kept at its place
+	static int island_flags();
+	// a soft shadow under the window being drawn
+	static void island_shadow();
+	static drawer shown_drawer()
+	{
+		return m_drawer;
+	}
+	static void show_drawer(drawer const Which)
+	{
+		m_drawer = Which;
+	}
+	// the node bank is in the tray: for the modes which insert models, or brought there from the rail
+	static bool tray_shown()
+	{
+		return m_trayshown;
+	}
+	// the model sets window shares the tray with the node bank
+	static void sets_shown(bool const Shown)
+	{
+		m_setsshown = Shown;
 	}
 	// tools of the track mode in the tool options window, the selected path in the inspector
 	void set_track_options(std::function<void()> Tools, std::function<void()> Selection)
@@ -265,6 +315,21 @@ class editor_ui : public ui_layer
 	std::vector<std::size_t> m_scenematches;
 	static glm::vec2 m_viewmin;
 	static glm::vec2 m_viewmax;
+	// the islands of the light and the dark palettes
+	static ImVec2 island_position(island const Which);
+	static ImVec2 island_size(island const Which);
+	void render_islands_status();
+	static void island_heading(char const *Kind, char const *Name);
+	void render_islands_dockspace(unsigned int const Dockspace);
+	void render_rail();
+	void render_capsule();
+	static inline drawer m_drawer{drawer::none};
+	static inline bool m_trayforced{false}; // brought to the tray from the rail
+	static inline bool m_trayshown{false};
+	static inline bool m_setsshown{false};
+	static inline float m_toolheight{0.0f}; // of the content of the tool window in the frame before
+	static inline bool m_islandsbefore{false}; // the frame before had the islands: the docks are taken apart once when they come
+	std::function<void()> m_capsule;
 	std::function<void()> m_gizmooptions;
 	std::function<void()> m_arrayoptions;
 	std::function<void()> m_bendoptions;

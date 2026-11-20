@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <functional>
 #include <vector>
@@ -85,6 +86,42 @@ void button_tooltip(tool_button const &Button)
 	if (Button.tooltip != nullptr)
 		tip += std::string{"\n"} + Button.tooltip;
 	ImGui::SetTooltip("%s", tip.c_str());
+}
+
+// a hook of an arrow: back to the left for undo, on to the right for redo, R its size from the centre
+void draw_history_arrow(ImDrawList *List, ImVec2 const &Centre, float const R, bool const Redo, ImU32 const Colour)
+{
+	auto const s{scale()};
+	auto const direction{Redo ? -1.0f : 1.0f};
+	ImVec2 const from{Centre.x + direction * R, Centre.y + R * 0.9f};
+	ImVec2 const to{Centre.x - direction * R * 0.2f, Centre.y - R * 0.55f};
+	List->AddBezierCubic(from, ImVec2(Centre.x + direction * R * 1.6f, Centre.y + R * 0.2f), ImVec2(Centre.x + direction * R * 1.2f, Centre.y - R * 0.6f), to, Colour, 1.8f * s);
+	List->AddLine(to, ImVec2(to.x - direction * R * 0.9f, to.y), Colour, 1.8f * s);
+	List->AddTriangleFilled(ImVec2(to.x - direction * R * 1.45f, to.y), ImVec2(to.x - direction * R * 0.75f, to.y - R * 0.5f), ImVec2(to.x - direction * R * 0.75f, to.y + R * 0.5f), Colour);
+}
+
+ImU32 colour_of(int const Rgb, float const Alpha = 1.0f)
+{
+	return IM_COL32((Rgb >> 16) & 0xff, (Rgb >> 8) & 0xff, Rgb & 0xff, static_cast<int>(std::lround(Alpha * 255.0f)));
+}
+
+// a key of the keyboard as a small cap with its name, its left edge at the point, centred on its line; returns its width
+float key_cap(ImDrawList *List, ImVec2 const &Position, char const *Key, ImU32 const Colour)
+{
+	auto const s{scale()};
+	auto const text{ImGui::CalcTextSize(Key)};
+	auto const padx{4.0f * s};
+	auto const pady{1.0f * s};
+	ImVec2 const min{Position.x, Position.y - text.y * 0.5f - pady};
+	ImVec2 const max{Position.x + text.x + 2.0f * padx, Position.y + text.y * 0.5f + pady + 1.0f * s};
+	List->AddRect(min, max, (Colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 4.0f * s, 0, 1.0f * s);
+	List->AddText(ImVec2(min.x + padx, min.y + pady), Colour, Key);
+	return max.x - min.x;
+}
+
+float key_cap_width(char const *Key)
+{
+	return ImGui::CalcTextSize(Key).x + 8.0f * scale();
 }
 
 // the first letters of the label in place of the icon, if the renderer can't show images
@@ -400,14 +437,7 @@ void editor_mode::render_toolbar_tools()
 		list->AddRectFilled(position, end, hovered && enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
 		auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
 		// a hook of an arrow: back to the left for undo, on to the right for redo
-		auto const centre{ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f)};
-		auto const r{buttonheight * 0.22f};
-		auto const direction{redo ? -1.0f : 1.0f};
-		ImVec2 const from{centre.x + direction * r, centre.y + r * 0.9f};
-		ImVec2 const to{centre.x - direction * r * 0.2f, centre.y - r * 0.55f};
-		list->AddBezierCubic(from, ImVec2(centre.x + direction * r * 1.6f, centre.y + r * 0.2f), ImVec2(centre.x + direction * r * 1.2f, centre.y - r * 0.6f), to, colour, 1.8f * s);
-		list->AddLine(to, ImVec2(to.x - direction * r * 0.9f, to.y), colour, 1.8f * s);
-		list->AddTriangleFilled(ImVec2(to.x - direction * r * 1.45f, to.y), ImVec2(to.x - direction * r * 0.75f, to.y - r * 0.5f), ImVec2(to.x - direction * r * 0.75f, to.y + r * 0.5f), colour);
+		draw_history_arrow(list, ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f), buttonheight * 0.22f, redo, colour);
 		if (hovered)
 			ImGui::SetTooltip("%s", (redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
 		if (clicked && enabled)
@@ -418,6 +448,190 @@ void editor_mode::render_toolbar_tools()
 				undo_last();
 		}
 	}
+}
+
+void editor_mode::render_capsule()
+{
+	render_mode_plate();
+	ImGui::SameLine(0.0f, 6.0f * scale());
+	render_capsule_tools();
+	// undo and redo after a line
+	auto const s{scale()};
+	auto const side{42.0f * s};
+	ImGui::SameLine(0.0f, 6.0f * s);
+	auto const position{ImGui::GetCursorScreenPos()};
+	ImGui::GetWindowDrawList()->AddLine(ImVec2(position.x, position.y + side * 0.25f), ImVec2(position.x, position.y + side * 0.75f), ImGui::GetColorU32(ImGuiCol_Separator), 1.0f * s);
+	ImGui::Dummy(ImVec2(1.0f * s, side));
+	ImGui::SameLine(0.0f, 6.0f * s);
+	render_history_button(false, side);
+	ImGui::SameLine(0.0f, 2.0f * s);
+	render_history_button(true, side);
+}
+
+void editor_mode::render_mode_plate()
+{
+	struct area
+	{
+		char const *label;
+		work_area which;
+		icon picture;
+		char const *key;
+	};
+	std::array<area, 6> const areas{{
+	    {STR_C("Surroundings"), work_area::surroundings, icon::work_surroundings, "F2"},
+	    {STR_C("Tracks"), work_area::tracks, icon::work_tracks, "F3"},
+	    {STR_C("Roads"), work_area::roads, icon::work_roads, "F4"},
+	    {STR_C("Terrain"), work_area::terrain, icon::work_terrain, "F5"},
+	    {STR_C("Catenary"), work_area::catenary, icon::work_catenary, "F6"},
+	    {"GeoTools", work_area::features, icon::work_terrain, "F7"},
+	}};
+	auto const s{scale()};
+	auto const dark{EditorSettings.palette() == 3};
+	auto const current{current_work_area()};
+	auto const *chosen{&areas[0]};
+	for (auto const &entry : areas)
+		if (entry.which == current)
+			chosen = &entry;
+	// the plate in the colour of the mode: its icon, its name in the bold font, its key under it
+	auto *font{ui_layer::font_bold != nullptr ? ui_layer::font_bold : ImGui::GetFont()};
+	auto const fontsize{font->FontSize};
+	auto const name{font->CalcTextSizeA(fontsize, FLT_MAX, 0.0f, chosen->label)};
+	auto const iconside{editor_icons::size()};
+	auto const height{42.0f * s};
+	auto const pad{11.0f * s};
+	auto const width{pad + iconside + 9.0f * s + std::max(name.x, ImGui::CalcTextSize(chosen->key).x) + 10.0f * s + 10.0f * s + pad};
+	auto const position{ImGui::GetCursorScreenPos()};
+	if (ImGui::InvisibleButton("##modeplate", ImVec2(width, height)))
+		ImGui::OpenPopup("##modes");
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const accent{work_area_colour(current, dark)};
+	list->AddRectFilled(position, ImVec2(position.x + width, position.y + height), colour_of(accent, hovered ? 0.88f : 1.0f), 10.0f * s);
+	auto const white{IM_COL32(255, 255, 255, 255)};
+	auto const middle{position.y + height * 0.5f};
+	editor_icons::draw(list, chosen->picture, ImVec2(position.x + pad + iconside * 0.5f, middle), white);
+	auto const textx{position.x + pad + iconside + 9.0f * s};
+	auto const keysize{ImGui::GetFontSize() * 0.85f};
+	auto const top{middle - (fontsize + keysize) * 0.5f};
+	list->AddText(font, fontsize, ImVec2(textx, top), white, chosen->label);
+	if (ui_layer::font_bold == nullptr)
+		list->AddText(font, fontsize, ImVec2(textx + 1.0f, top), white, chosen->label);
+	list->AddText(ImGui::GetFont(), keysize, ImVec2(textx, top + fontsize), IM_COL32(255, 255, 255, 200), chosen->key);
+	// a chevron: the list of the modes opens from it
+	auto const cx{position.x + width - pad - 4.0f * s};
+	list->AddTriangleFilled(ImVec2(cx - 4.0f * s, middle - 2.0f * s), ImVec2(cx + 4.0f * s, middle - 2.0f * s), ImVec2(cx, middle + 3.0f * s), IM_COL32(255, 255, 255, 210));
+	if (hovered)
+		ImGui::SetTooltip("%s", STR_C("Work modes"));
+	if (false == ImGui::BeginPopup("##modes"))
+		return;
+	ImGui::TextDisabled("%s", STR_C("Work modes"));
+	for (auto const &entry : areas)
+	{
+		auto const row{ImGui::GetCursorScreenPos()};
+		auto const rowheight{30.0f * s};
+		auto const rowwidth{std::max(240.0f * s, ImGui::GetContentRegionAvail().x)};
+		ImGui::PushID(static_cast<int>(entry.which));
+		auto const picked{ImGui::Selectable("##mode", entry.which == current, 0, ImVec2(rowwidth, rowheight))};
+		ImGui::PopID();
+		auto *popup{ImGui::GetWindowDrawList()};
+		auto const square{26.0f * s};
+		ImVec2 const squaremin{row.x + 2.0f * s, row.y + (rowheight - square) * 0.5f};
+		popup->AddRectFilled(squaremin, ImVec2(squaremin.x + square, squaremin.y + square), colour_of(work_area_colour(entry.which, dark)), 8.0f * s);
+		editor_icons::draw(popup, entry.picture, ImVec2(squaremin.x + square * 0.5f, squaremin.y + square * 0.5f), white);
+		popup->AddText(ImVec2(squaremin.x + square + 10.0f * s, row.y + (rowheight - ImGui::GetFontSize()) * 0.5f), ImGui::GetColorU32(ImGuiCol_Text), entry.label);
+		key_cap(popup, ImVec2(row.x + rowwidth - key_cap_width(entry.key) - 4.0f * s, row.y + rowheight * 0.5f), entry.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+		if (picked)
+		{
+			choose_work_area(entry.which);
+			ImGui::CloseCurrentPopup();
+		}
+	}
+	ImGui::EndPopup();
+}
+
+void editor_mode::render_capsule_tools()
+{
+	std::vector<tool_button> buttons;
+	buttons.reserve(24);
+	work_area_tools(buttons);
+	auto const s{scale()};
+	auto const iconside{editor_icons::size()};
+	auto const height{42.0f * s};
+	auto const pad{10.0f * s};
+	auto const spacing{7.0f * s};
+	auto const accent{colour_of(work_area_colour(current_work_area(), EditorSettings.palette() == 3))};
+	auto *list{ImGui::GetWindowDrawList()};
+	for (std::size_t index = 0; index < buttons.size(); ++index)
+	{
+		auto const &button{buttons[index]};
+		if (index > 0)
+			ImGui::SameLine(0.0f, button.group ? 12.0f * s : 2.0f * s);
+		// the chosen tool with its name and key, the others as icons; a tool with no icon always by its name
+		auto const named{button.chosen || button.picture == icon::count};
+		auto width{height};
+		if (named)
+		{
+			width = 2.0f * pad + ImGui::CalcTextSize(button.label).x;
+			if (button.picture != icon::count)
+				width += iconside + spacing;
+			if (button.chosen && button.key != nullptr)
+				width += spacing + key_cap_width(button.key);
+		}
+		auto const position{ImGui::GetCursorScreenPos()};
+		ImGui::PushID(static_cast<int>(index));
+		auto const clicked{ImGui::InvisibleButton("##capsuletool", ImVec2(width, height))};
+		ImGui::PopID();
+		auto const hovered{ImGui::IsItemHovered()};
+		ImVec2 const end{position.x + width, position.y + height};
+		if (button.chosen)
+			list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_Header), 10.0f * s);
+		else if (hovered && button.enabled)
+			list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 10.0f * s);
+		auto const text{button.enabled ? ImGui::GetColorU32(ImGuiCol_Text, button.chosen || hovered ? 1.0f : 0.72f) : ImGui::GetColorU32(ImGuiCol_TextDisabled)};
+		auto const middle{position.y + height * 0.5f};
+		if (named)
+		{
+			auto x{position.x + pad};
+			if (button.picture != icon::count)
+			{
+				editor_icons::draw(list, button.picture, ImVec2(x + iconside * 0.5f, middle), button.chosen ? accent : text);
+				x += iconside + spacing;
+			}
+			list->AddText(ImVec2(x, std::round(middle - ImGui::GetFontSize() * 0.5f)), text, button.label);
+			if (button.chosen && button.key != nullptr)
+				key_cap(list, ImVec2(x + ImGui::CalcTextSize(button.label).x + spacing, middle), button.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+		}
+		else
+			icon_or_letters(list, button, ImVec2(position.x + width * 0.5f, middle), text);
+		if (hovered)
+			button_tooltip(button);
+		if (clicked && button.enabled && button.action)
+			button.action();
+	}
+}
+
+void editor_mode::render_history_button(bool const Redo, float const Side)
+{
+	// as Ctrl+Z and Ctrl+Y: not in the middle of a drag, it would go on from the state which was undone
+	auto const dragging{m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active};
+	auto const steps{Redo ? g_redo.size() : m_history.size()};
+	auto const enabled{steps > 0 && false == dragging && false == m_history_busy};
+	auto const position{ImGui::GetCursorScreenPos()};
+	auto const clicked{ImGui::InvisibleButton(Redo ? "##capsuleredo" : "##capsuleundo", ImVec2(Side, Side))};
+	auto const hovered{ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)};
+	auto *list{ImGui::GetWindowDrawList()};
+	if (hovered && enabled)
+		list->AddRectFilled(position, ImVec2(position.x + Side, position.y + Side), ImGui::GetColorU32(ImGuiCol_FrameBg), 10.0f * scale());
+	auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.72f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
+	draw_history_arrow(list, ImVec2(position.x + Side * 0.5f, position.y + Side * 0.5f), Side * 0.2f, Redo, colour);
+	if (hovered)
+		ImGui::SetTooltip("%s", (Redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
+	if (false == clicked || false == enabled)
+		return;
+	if (Redo)
+		redo_last();
+	else
+		undo_last();
 }
 
 void editor_mode::render_viewport_gizmo()
