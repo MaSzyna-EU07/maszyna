@@ -122,8 +122,9 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
     Parser.getTokens();
     if( Parser.peek() != "{" ) {
         // old fixed size config
-        // it has no scaletable:, drop the one of an earlier definition of the same control
+        // it has no scaletable: nor drag:, drop the ones of an earlier definition of the same control
         m_scaletable.clear();
+        m_drag = universal_drag::direction::none;
         Parser >> submodelname;
         gaugetypename = Parser.getToken<std::string>( true );
         Parser.getTokens( 3, false );
@@ -169,6 +170,7 @@ void TGauge::Load( cParser &Parser, TDynamicObject const *Owner, double const mu
             }
             gauge_scale::sort( scratchpad.scaletable );
             m_scaletable = std::move( scratchpad.scaletable );
+            m_drag = scratchpad.drag;
             // post-deserialization cleanup
             // set provided custom soundproofing to assigned sounds (for sounds without their own custom soundproofing)
             if( scratchpad.soundproofing ) {
@@ -308,6 +310,16 @@ TGauge::Load_mapping( cParser &Input, TGauge::scratch_data &Scratchpad ) {
             >> soundproofing[ 4 ]
             >> soundproofing[ 5 ];
         Scratchpad.soundproofing = soundproofing;
+    }
+    else if( key == "drag:" ) {
+        // the mouse drags the control to any position between its ends, moving in the given direction to open it
+        // (MaSzyna-EU07/maszyna#62)
+        auto const value { Input.getToken<std::string>( true, "\n\r\t  ,;" ) };
+        auto const drag { universal_drag::parse( value ) };
+        if( false == drag.has_value() ) {
+            ErrorLog( "Bad model: unknown drag direction \"" + value + "\" of a cab control, it takes up, down, left, right, yes or no", logtype::model );
+        }
+        Scratchpad.drag = drag.value_or( universal_drag::direction::none );
     }
     else if( key == "scaletable:" ) {
         // non-uniform scale in format [ value1 scaled1, value2 scaled2, ... ]
