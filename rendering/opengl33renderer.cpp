@@ -2570,6 +2570,11 @@ ITexture const &opengl33_renderer::Texture(texture_handle const Texture) const
 	return m_textures.texture(Texture);
 }
 
+void opengl33_renderer::Unload_Texture(texture_handle const Texture)
+{
+	m_textures.unload(Texture);
+}
+
 void opengl33_renderer::Update_AnimModel(TAnimModel *model)
 {
 	model->RaAnimate(m_framestamp);

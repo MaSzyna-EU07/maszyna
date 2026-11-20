@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "utilities/utilities.h"
 #include "world/stationnames.h"
 
@@ -43,6 +44,7 @@ namespace {
 
 // [s] between the samples of the user's train, the looks at everything else and the full looks at the vehicles
 constexpr double cabinterval{0.1};
+constexpr double tapeinterval{0.05}; // as the physics logs (deltalog of Driver.cpp)
 constexpr double lookinterval{1.0};
 constexpr double slowlook{20.0}; // [ms] a look around taking longer is told in the log, part by part
 constexpr double keyframeinterval{60.0};
@@ -234,15 +236,26 @@ void blackbox_recorder::update(double const Deltatime) {
 		if (false == simulation::is_ready)
 			return;
 		m_started = true;
-		if (false == WriteLogFlag || false == Global.BlackBox || Global.editor_session)
+		// "blackbox yes" or "no" of eu07.ini decides by itself, with no entry it goes with the physics logs
+		if (false == Global.BlackBox.value_or(WriteLogFlag || WriteTrainLogFlag) || Global.editor_session)
 			return;
+		m_taping = true;
 		open();
 	}
-	if (m_writer == nullptr)
+	if (false == m_taping)
 		return;
 
 	std::scoped_lock lock{m_mutex};
 	m_time += Deltatime;
+	// the tape of the driver the user is with, unless it writes its own: with "physicslog yes" each driver but one of a
+	// road vehicle does. the tapes are files of their own: they go on after the recording ends in the editor, and with
+	// a recording which couldn't be made
+	if (m_time >= m_tapedue) {
+		keep_tape_line();
+		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
+	}
+	if (m_writer == nullptr)
+		return;
 	if (m_time >= m_cabdue) {
 		write_cab();
 		m_cabdue = std::max(m_cabdue + cabinterval, m_time);
@@ -412,6 +425,13 @@ void blackbox_recorder::write_cab() {
 	sample.vehicle = vehicle_id(vehicle);
 	sample.position = vehicle->GetPosition();
 	sample.speed_kmh = static_cast<float>(occupied->V * 3.6);
+	// of the wheels as they turn, which the speedometer shows: apart from that of the vehicle when they slip or skid.
+	// those of the powered vehicle, as the speedometer has it (TTrain::DynamicSet), which in a unit driven from an
+	// unpowered car is another one, maybe facing the other way: signed as the occupied one's speed
+	// the vehicle itself, if none in the unit is powered
+	auto const *powered{train->Dynamic()->FindPowered()};
+	auto const facing{powered->DirectionGet() * vehicle->DirectionGet()};
+	sample.wheel_speed_kmh = static_cast<float>(facing * M_PI * powered->MoverParameters->WheelDiameter * powered->MoverParameters->nrot * 3.6);
 	sample.acceleration = static_cast<float>(controlling->AccS);
 	sample.lateral_acceleration = static_cast<float>(occupied->AccN);
 	if (owner != nullptr && owner->is_train()) {
@@ -478,6 +498,30 @@ void blackbox_recorder::write_cab() {
 			brakes = std::max(brakes, each->MoverParameters->BrakePress);
 	sample.consist_brake_cylinder = static_cast<float>(brakes);
 	m_writer->cab(sample);
+}
+
+void blackbox_recorder::keep_tape_line() {
+	auto const *train{simulation::Train};
+	if (train == nullptr || train->Dynamic() == nullptr)
+		return;
+	auto const *vehicle{train->Dynamic()};
+	// the driver of the vehicle, whose log it would be: it keeps the name of its first vehicle, so a change of the cab
+	// in a unit goes on in the same log. a passive one stands still (its clock too), so then the driver of the train
+	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
+	if (driver == nullptr)
+		return;
+	auto const &name{driver->physicslog_name()};
+	// its log, the driver's own or written here, before the logs of the other drivers: the closing drops those it has
+	// no time for, on a hard disk with hundreds of them
+	PhysicsLogs.put_first(name);
+	// a driver writing its own, of a train with "physicslog.trains yes", isn't written twice
+	if (driver->writes_physicslog())
+		return;
+	if (m_tapes.insert(name).second) {
+		PhysicsLogs.begin(name, TController::physicslog_header());
+		WriteLog(std::format("Black box: the physics log \"{}\" begun", PhysicsLogs.shown(name)));
+	}
+	PhysicsLogs.append(name, driver->physicslog_line());
 }
 
 void blackbox_recorder::look_around(bool const Keyframe) {

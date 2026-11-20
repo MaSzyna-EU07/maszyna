@@ -404,7 +404,7 @@ bool sweep_node::state::operator==(state const &Other) const
 
 sweep_node::sweep_node(scene::node_data const &Nodedata) : basic_node(Nodedata) {}
 
-void sweep_node::import(cParser &Input, glm::dvec3 const &Offset)
+void sweep_node::import_from(cParser &Input, glm::dvec3 const &Offset)
 {
 	m_state = state{};
 	m_state.model = Input.getToken<std::string>();
