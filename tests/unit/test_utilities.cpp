@@ -2,6 +2,9 @@
 #include "doctest.h"
 #include "scratch.h"
 
+#include <cmath>
+#include <limits>
+
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
@@ -681,12 +684,30 @@ TEST_CASE("utilities: the sign of a number, and a number rounded to a whole one"
 	CHECK(Round(-2.5) == -2);
 }
 
-TEST_CASE("utilities: a value is kept within bounds, given in any order") {
+TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the upper one, as the old clamp did") {
 	CHECK(safe_clamp(5, 0, 3) == 3);
-	CHECK(safe_clamp(5, 3, 0) == 3);
-	CHECK(safe_clamp(-1, 3, 0) == 0);
-	CHECK(safe_clamp(2.0, 3.0, 1.0) == 2.0);
+	CHECK(safe_clamp(-1, 0, 3) == 0);
+	CHECK(safe_clamp(2, 0, 3) == 2);
 	CHECK(safe_clamp(2.0, 2.0, 2.0) == 2.0);
+	// inverted bounds: always the upper bound, whatever the value
+	CHECK(safe_clamp(5, 3, 0) == 0);
+	CHECK(safe_clamp(-1, 3, 0) == 0);
+	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
+	// NaN as the old clamp had it: a NaN value stays NaN, a NaN bound doesn't clamp
+	auto const notanumber{std::numeric_limits<double>::quiet_NaN()};
+	CHECK(std::isnan(safe_clamp(notanumber, 0.0, 1.0)));
+	CHECK(safe_clamp(2.0, 0.0, notanumber) == 2.0);
+	CHECK(safe_clamp(-1.0, notanumber, 1.0) == -1.0);
+	// what the helper gives for arguments in the order and of the signs of two calls (these checks don't call
+	// them): the AI braking test, whose demand is the stronger of the two (negative) bounds, as up to 26.05.1
+	double const threshold{-0.45};
+	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	// and the bump at a rail joint, 0 in place of the value as up to 26.05.1: the figure is capped from above
+	// only, and above 68% of the top speed it is negative
+	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
+	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
+	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {
