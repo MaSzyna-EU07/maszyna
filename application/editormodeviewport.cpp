@@ -238,7 +238,14 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::terrain:
 	{
 		// what the left button does on the terrain
-		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
+		// another tool than the fields: the field picked with "Outline it again" no longer waits for its outline, which the fill can use up
+		auto const choose = [this](terrain_tool const Tool) {
+			return [this, Tool]() {
+				if (Tool != terrain_tool::fields)
+					m_patch_reoutline.clear();
+				m_terrain_tool = Tool;
+			};
+		};
 		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
 		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
 		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});
@@ -252,6 +259,10 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
 		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
 		                   choose(terrain_tool::fill)});
+		Buttons.push_back({icon::grass, STR_C("Fields"), nullptr,
+		                   STR_C("LMB adds a point of the outline of a field: a surface cut out of the terrain with a material of its own, the ground under it made wavy if wanted; "
+		                         "Shift+LMB takes the last one back"),
+		                   chosen(terrain_tool::fields), choose(terrain_tool::fields)});
 		Buttons.push_back({icon::hole, STR_C("Holes"), nullptr, STR_C("LMB cuts a hole in the terrain under the brush (portals of tunnels), Shift+LMB closes it"), chosen(terrain_tool::holes),
 		                   choose(terrain_tool::holes)});
 		auto const orthophoto{m_orthophoto.enabled()};
