@@ -323,6 +323,7 @@ GLint readback_format( GLint const Internalformat ) {
 
 std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> opengl_texture::units = { 0 };
 GLint opengl_texture::m_activeunit = -1;
+std::atomic<bool> opengl_texture::m_unitcachestale { false };
 
 std::unordered_map<GLint, int> opengl_texture::precompressed_formats =
 {
@@ -729,9 +730,10 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		is_static = true;
 		is_ready = true;
 	}
-	// the name may be a new one, and the unit active took the texture past the unit cache
-	for (auto &unit : units)
-		unit = -1;
+	// the name may be a new one, and the unit active took the texture past the unit cache. this runs on the python upload
+	// thread too (python.threadedupload), so the cache is only marked here: clearing it outright raced the drawing thread
+	// filling it for a multi-bind, and an object got the texture of the one drawn before it for a frame
+	invalidate_unit_cache();
 }
 
 void
@@ -1263,6 +1265,7 @@ opengl_texture::bind(size_t unit) {
         return false;
     }
 
+    sync_unit_cache();
     if (units[unit] == id)
         return true;
     if (GLAD_GL_ARB_direct_state_access)
@@ -1628,6 +1631,25 @@ opengl_texture::reset_unit_cache() {
         unit = 0;
     }
     m_activeunit = -1;
+}
+
+void
+opengl_texture::invalidate_unit_cache() {
+
+    m_unitcachestale.store( true );
+}
+
+void
+opengl_texture::sync_unit_cache() {
+
+    // a plain load first: bind() calls this for every texture, and a read-modify-write each time would cost more
+    if( ( false == m_unitcachestale.load() )
+     || ( false == m_unitcachestale.exchange( false ) ) ) {
+        return;
+    }
+    for( auto &unit : units ) {
+        unit = -1;
+    }
 }
 
 void

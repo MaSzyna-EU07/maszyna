@@ -54,6 +54,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "version.lib")
+#include <timeapi.h>
 #endif
 
 #ifdef __unix__
@@ -64,6 +65,36 @@ http://mozilla.org/MPL/2.0/.
 eu07_application Application;
 screenshot_manager screenshot_man;
 ui_layer uilayerstaticinitializer;
+
+namespace
+{
+#ifdef _WIN32
+// windows wakes a sleeping thread of a process which didn't ask for a finer timer in steps of up to ~15.6 ms.
+// the wait of fpslimit sleeps, so a 10 ms frame slot of fpslimit 100 ended ~15.6 ms later, the pacer made it up
+// with no wait in the next frame, and the frames came in turns long and short: with vsync on, shown for one or
+// two refreshes of the screen. the finer timer is asked for only with fpslimit, the only steady sleeper of the
+// main loop, as it costs some power for as long as it's held
+bool timer_period_set{false};
+#endif
+
+// asks for the finer timer once, when fpslimit is set
+void begin_timer_period()
+{
+#ifdef _WIN32
+	if (!timer_period_set && Global.minframetime.count() > 0.f)
+		timer_period_set = (timeBeginPeriod(1) == TIMERR_NOERROR);
+#endif
+}
+
+void end_timer_period()
+{
+#ifdef _WIN32
+	if (timer_period_set)
+		timeEndPeriod(1);
+	timer_period_set = false;
+#endif
+}
+} // namespace
 
 #ifdef _WIN32
 extern "C"
@@ -352,6 +383,8 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
 		return result;
 	}
+	// fpslimit is known now
+	begin_timer_period();
 
 	// the run's seed, settled once and kept in Globals: the engines come out of it.
 	// narrowed on purpose - mt19937 and seed_of() both work on 32 bits, and that is
@@ -686,6 +719,8 @@ int eu07_application::run()
 		// fpslimit: wait for the next frame's slot (eu07/maszyna#416)
 		if (auto const nextframe{framepacer.next_frame(frame_pacer::clock::now(), Global.minframetime)})
 		{
+			// fpslimit may come from the config block of the scenery, read after the settings
+			begin_timer_period();
 			std::this_thread::sleep_until(*nextframe);
 		}
 	}
@@ -782,6 +817,7 @@ void eu07_application::exit()
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
 
+	end_timer_period();
 	step("done");
 	StopLogService();
 	auto it = Global.threads.find("LogService");

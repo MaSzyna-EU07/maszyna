@@ -2457,6 +2457,8 @@ void opengl33_renderer::Bind_Material( material_handle const Material, TSubModel
 
 		if (GLAD_GL_ARB_multi_bind)
 		{
+			// the cache may have been marked stale by the python upload thread
+			opengl_texture::sync_unit_cache();
 			GLuint lastdiff = 0;
 			size_t i;
 			for (i = 0; i < gl::MAX_TEXTURES; i++)

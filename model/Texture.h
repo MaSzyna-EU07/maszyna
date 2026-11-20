@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <istream>
 #include <limits>
 #include "winheaders.h"
@@ -47,6 +48,13 @@ struct opengl_texture : public ITexture {
         set_components_hint( GLint hint ) override;
     static void
         reset_unit_cache();
+    // marks the unit cache as not to be trusted. safe to call from any thread: the cache itself is
+    // cleared by the thread drawing with it, the next time it binds textures (sync_unit_cache)
+    static void
+        invalidate_unit_cache();
+    // clears the unit cache if a thread marked it as not to be trusted since. called before the cache is read
+    static void
+        sync_unit_cache();
     virtual int
         get_width() const override {
             return data_width; }
@@ -100,6 +108,8 @@ struct opengl_texture : public ITexture {
     GLenum target = GL_TEXTURE_2D;
     static std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> units;
     static GLint m_activeunit;
+    // set by invalidate_unit_cache(), from the python upload thread too; the units themselves are touched only by the drawing thread
+    static std::atomic<bool> m_unitcachestale;
 
 public:
 // methods
