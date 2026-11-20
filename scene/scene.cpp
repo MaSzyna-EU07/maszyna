@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/sceneterrain.h"
 #include "rendering/renderer.h"
 #include "widgets/map_objects.h"
+#include "vehicle/aiwire.h"
 
 namespace scene {
 
@@ -57,25 +58,15 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
 
     for( auto *traction : m_directories.traction ) {
 
-        // współczynniki równania parametrycznego
-        auto const paramfrontdot = glm::dot( traction->vParametric, vFront );
-        auto const fRaParam =
-            -( glm::dot( traction->pPoint1, vFront ) - glm::dot( pantographposition, vFront ) )
-            / ( paramfrontdot != 0.0 ?
-                    paramfrontdot :
-                    0.001 ); // div0 trap
-
-        if( fRaParam < -0.001
-         || fRaParam > 1.001 ) { continue; }
+        // the span against the pantograph, the geometry the AI uses to find the wire as well
+        auto const contact = ai_wire::span_contact(
+            traction->pPoint1, traction->vParametric, pantographposition, vFront, vUp, vLeft, pantograph->fWidth );
         // jeśli tylko jest w przedziale, wyznaczyć odległość wzdłuż wektorów vUp i vLeft
-        // punkt styku płaszczyzny z drutem (dla generatora łuku el.)
-        auto const vStyk = traction->pPoint1 + fRaParam * traction->vParametric;
-        // wektor musi się mieścić w przedziale ruchu pantografu
-        auto const vGdzie = vStyk - pantographposition;
-        auto fVertical = glm::dot( vGdzie, vUp );
+        if( false == contact.within ) { continue; }
+        auto fVertical = contact.vertical;
         if( fVertical >= 0.0 ) {
             // jeśli ponad pantografem (bo może łapać druty spod wiaduktu)
-            auto const fHorizontal = std::abs( glm::dot( vGdzie, vLeft ) ) - pantograph->fWidth;
+            auto const fHorizontal = contact.horizontal;
 
             if (Global.bEnableTraction
              && fVertical < pantograph->PantWys - 0.15 ) {
@@ -118,6 +109,24 @@ basic_cell::update_traction( TDynamicObject *Vehicle, int const Pantographindex 
             }
         }
     }
+}
+
+// checks whether a wire of the cell, not broken, is within reach of a pantograph at specified point
+bool
+basic_cell::wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, glm::dvec3 const &Up, glm::dvec3 const &Left, double const Halfwidth, double const Minheight, double const Maxheight ) const {
+
+    for( auto const *traction : m_directories.traction ) {
+        if( ( traction->DamageFlag & 128 ) != 0 ) {
+            // a broken wire powers nothing
+            continue;
+        }
+        if( ai_wire::reaches(
+                ai_wire::span_contact( traction->pPoint1, traction->vParametric, Point, Front, Up, Left, Halfwidth ),
+                Minheight, Maxheight ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // legacy method, updates sounds and polls event launchers within radius around specified point
@@ -785,6 +794,22 @@ basic_section::update_traction( TDynamicObject *Vehicle, int const Pantographind
     }
 }
 
+// checks whether a wire of the section's cells around specified point is within reach of a pantograph at the point
+bool
+basic_section::wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, glm::dvec3 const &Up, glm::dvec3 const &Left, double const Halfwidth, double const Minheight, double const Maxheight ) const {
+
+    auto const radius { EU07_CELLSIZE * 0.5 }; // the same area of interest the pantographs look for their wire in
+
+    for( auto const &cell : m_cells ) {
+        // we reject early cells which aren't within our area of interest
+        if( glm::length2( cell.area().center - Point ) < sq( cell.area().radius + radius )
+         && cell.wire_over( Point, Front, Up, Left, Halfwidth, Minheight, Maxheight ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // legacy method, polls event launchers within radius around specified point
 void
 basic_section::update_events( glm::dvec3 const &Location, float const Radius ) {
@@ -1166,6 +1191,29 @@ basic_region::update_traction( TDynamicObject *Vehicle, int const Pantographinde
     for( auto *section : sectionlist ) {
         section->update_traction( Vehicle, Pantographindex );
     }
+}
+
+// checks whether there's a contact wire over specified point, within reach of a pantograph there
+bool
+basic_region::wire_over( glm::dvec3 const &Point, glm::dvec3 const &Front, double const Halfwidth, double const Minheight, double const Maxheight ) const {
+
+    // the vertical up and the horizontal left of the heading. the tilt of the track in curves is left out
+    auto const up { glm::dvec3 { 0.0, 1.0, 0.0 } };
+    auto const left { glm::cross( up, Front ) };
+    auto const leftlength { glm::length( left ) };
+    if( leftlength <= 0.0 ) {
+        // no heading along the ground
+        return false;
+    }
+    // a list of its own, not the shared scratchpad of the region
+    std::vector<basic_section *> sectionlist;
+    sections( Point, EU07_CELLSIZE * 0.5, sectionlist );
+    for( auto const *section : sectionlist ) {
+        if( section->wire_over( Point, Front, up, left / leftlength, Halfwidth, Minheight, Maxheight ) ) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // checks whether specified file is a valid region data file
