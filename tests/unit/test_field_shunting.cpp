@@ -16,14 +16,14 @@ TEST_CASE("field shunting: who shunts the field of a diesel-electric, by AutoRel
 	struct setting {
 		int type; // AutoRelay: 0 No, 1 Yes, 2 Optional
 		bool flag; // the switch, AutoRelayFlag
-		fieldshunting::control control;
+		fieldshunting::control expected;
 	};
-	for (auto const &[type, flag, control] : {setting{0, false, manual}, setting{1, true, automatic}, setting{2, true, automatic}, setting{2, false, off},
+	for (auto const &[type, flag, expected] : {setting{0, false, manual}, setting{1, true, automatic}, setting{2, true, automatic}, setting{2, false, off},
 	                                          // AutoRelaySwitch from a coupled vehicle turns the flag of every one off, as before
 	                                          setting{1, false, manual}}) {
 		CAPTURE(type);
 		CAPTURE(flag);
-		CHECK(fieldshunting::diesel_electric(type, flag) == control);
+		CHECK(fieldshunting::diesel_electric(type, flag) == expected);
 	}
 }
 

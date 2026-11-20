@@ -13,10 +13,11 @@ http://mozilla.org/MPL/2.0/.
 namespace fieldshunting {
 
 control diesel_electric(int const Autorelaytype, bool const Autorelayflag) {
+	using enum control;
 	if (Autorelayflag) {
-		return control::automatic;
+		return automatic;
 	}
-	return Autorelaytype == 2 ? control::off : control::manual;
+	return Autorelaytype == 2 ? off : manual;
 }
 
 } // namespace fieldshunting

@@ -7266,14 +7266,15 @@ double TMoverParameters::TractionForce(double dt)
 				EngineVoltage = 0;
 
 			// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
-			auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag)};
-			if (false == StLinFlag || ShuntMode || fieldshuntingcontrol == fieldshunting::control::off)
+			if (auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag)};
+			    false == StLinFlag || ShuntMode || fieldshuntingcontrol == fieldshunting::control::off)
 			{
 				ScndCtrlPos = 0;
 			}
 			else
 			{
-				if (fieldshuntingcontrol == fieldshunting::control::automatic)
+				// the shunting relays set the field shunting (fieldshunting::control::automatic)
+				if (AutoRelayFlag)
 				{
 
 					auto const shuntfieldstate{ScndCtrlPos};
