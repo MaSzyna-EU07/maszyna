@@ -19,6 +19,8 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "audio/audiorenderer_extra.h"
 
+#include <format>
+
 namespace {
 
 // where the listener is, as the soundproofing tables and the inside variants of the sounds see it
@@ -192,23 +194,7 @@ sound_source::deserialize_mapping( cParser &Input, int const Chunkrange ) {
         sound( sound_id::end ).buffer = audio::renderer.fetch_buffer( deserialize_random_set( Input, "\n\r\t ,;" ) );
     }
     else if( key == "soundproofing:" ) {
-        // custom soundproofing in format [ p1, p2, p3, p4, p5, p6 ]
-        Input.getTokens( 6, false, "\n\r\t ,;[]" );
-        std::array<float, 6> soundproofing;
-        Input
-            >> soundproofing[ 0 ]
-            >> soundproofing[ 1 ]
-            >> soundproofing[ 2 ]
-            >> soundproofing[ 3 ]
-            >> soundproofing[ 4 ]
-            >> soundproofing[ 5 ];
-        for( auto & soundproofingelement : soundproofing ) {
-            if( soundproofingelement != -1.f ) {
-                soundproofingelement = std::sqrt( std::clamp( soundproofingelement, 0.f, 1.f ) );
-            }
-        }
-        m_soundproofing = soundproofing;
-        m_explicit |= explicit_soundproofing;
+        deserialize_soundproofing( Input );
     }
     else if( key == sound_variants::inside_key ) {
         // optional variant heard instead of this definition by a listener enclosed in a vehicle
@@ -245,19 +231,7 @@ sound_source::deserialize_mapping( cParser &Input, int const Chunkrange ) {
         m_explicit |= explicit_startoffset;
     }
 	else if ( key.starts_with("pitch") ) {
-        // sound chunk pitch, defined with key pitchX where X = activation threshold
-        auto const indexstart { key.find_first_of( "-1234567890" ) };
-        auto const indexend { key.find_first_not_of( "-1234567890", indexstart ) };
-        if( indexstart != std::string::npos ) {
-            auto const index { std::stoi( key.substr( indexstart, indexend - indexstart ) ) };
-            auto const pitch { Input.getToken<float>( false, "\n\r\t ,;" ) };
-            for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
-                if( chunkdata.threshold == index ) {
-                    chunkdata.pitch = pitch > 0.f ? pitch : 1.f;
-                    break;
-                }
-            }
-        }
+        deserialize_chunk_pitch( Input, key );
     }
     else if( key == "crossfade:" ) {
         // for combined sounds, percentage of assigned range allocated to crossfade sections
@@ -290,25 +264,72 @@ sound_source::deserialize_mapping( cParser &Input, int const Chunkrange ) {
         m_explicit |= explicit_offset;
     }
     else {
-        // floating point properties
-        std::map<std::string, float &, std::less<>> const properties {
-            { "frequencyfactor:", m_frequencyfactor },
-            { "frequencyoffset:", m_frequencyoffset },
-            { "amplitudefactor:", m_amplitudefactor },
-            { "amplitudeoffset:", m_amplitudeoffset },
-            { "range:", m_range } };
-
-        auto lookup { properties.find( key ) };
-        if( lookup != properties.end() ) {
-            Input.getTokens( 1, false, "\n\r\t ,;" );
-            Input >> lookup->second;
-            if( key == "range:" ) {
-                m_explicit |= explicit_range;
-            }
-        }
+        deserialize_property( Input, key );
     }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
+}
+
+// imports custom soundproofing in format [ p1, p2, p3, p4, p5, p6 ]
+void
+sound_source::deserialize_soundproofing( cParser &Input ) {
+
+    Input.getTokens( 6, false, "\n\r\t ,;[]" );
+    std::array<float, 6> soundproofing;
+    Input
+        >> soundproofing[ 0 ]
+        >> soundproofing[ 1 ]
+        >> soundproofing[ 2 ]
+        >> soundproofing[ 3 ]
+        >> soundproofing[ 4 ]
+        >> soundproofing[ 5 ];
+    for( auto & soundproofingelement : soundproofing ) {
+        if( soundproofingelement != -1.f ) {
+            soundproofingelement = std::sqrt( std::clamp( soundproofingelement, 0.f, 1.f ) );
+        }
+    }
+    m_soundproofing = soundproofing;
+    m_explicit |= explicit_soundproofing;
+}
+
+// imports sound chunk pitch, defined with key pitchX where X = activation threshold
+void
+sound_source::deserialize_chunk_pitch( cParser &Input, std::string_view const Key ) {
+
+    auto const indexstart { Key.find_first_of( "-1234567890" ) };
+    auto const indexend { Key.find_first_not_of( "-1234567890", indexstart ) };
+    if( indexstart == std::string_view::npos ) {
+        return;
+    }
+    auto const index { std::stoi( std::string { Key.substr( indexstart, indexend - indexstart ) } ) };
+    auto const pitch { Input.getToken<float>( false, "\n\r\t ,;" ) };
+    for( auto &[chunkbuffer, chunkdata] : m_soundchunks ) {
+        if( chunkdata.threshold == index ) {
+            chunkdata.pitch = pitch > 0.f ? pitch : 1.f;
+            break;
+        }
+    }
+}
+
+// imports one of the floating point properties, if the key names one
+void
+sound_source::deserialize_property( cParser &Input, std::string_view const Key ) {
+
+    std::map<std::string, float &, std::less<>> const properties {
+        { "frequencyfactor:", m_frequencyfactor },
+        { "frequencyoffset:", m_frequencyoffset },
+        { "amplitudefactor:", m_amplitudefactor },
+        { "amplitudeoffset:", m_amplitudeoffset },
+        { "range:", m_range } };
+
+    auto lookup { properties.find( Key ) };
+    if( lookup != properties.end() ) {
+        Input.getTokens( 1, false, "\n\r\t ,;" );
+        Input >> lookup->second;
+        if( Key == "range:" ) {
+            m_explicit |= explicit_range;
+        }
+    }
 }
 
 // reads the block of the inside variant and adds the variant, if it's usable
@@ -316,7 +337,7 @@ void
 sound_source::deserialize_variant( cParser &Input, int const Chunkrange ) {
 
     auto const block { sound_variants::capture_block( Input ) };
-    auto const location { Input.Name() + " (line " + std::to_string( Input.Line() ) + ")" };
+    auto const location { std::format( "{} (line {})", Input.Name(), Input.Line() ) };
     if( true == block.empty() ) {
         ErrorLog( "Bad sound: inside variant isn't a { } block, ignored (" + location + ")" );
         return;

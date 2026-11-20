@@ -13,6 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "utilities/Names.h"
 
+#include <string_view>
+
 float const EU07_SOUND_GLOBALRANGE { -1.f };
 float const EU07_SOUND_CABCONTROLSCUTOFFRANGE { 7.5f };
 float const EU07_SOUND_CABANNOUNCEMENTCUTOFFRANGE{ -10.f };
@@ -195,6 +197,15 @@ private:
     // reads the block of the inside variant and adds the variant, if it's usable
     void
         deserialize_variant( cParser &Input, int const Chunkrange );
+    // imports custom soundproofing in format [ p1, p2, p3, p4, p5, p6 ]
+    void
+        deserialize_soundproofing( cParser &Input );
+    // imports sound chunk pitch, defined with key pitchX where X = activation threshold
+    void
+        deserialize_chunk_pitch( cParser &Input, std::string_view const Key );
+    // imports one of the floating point properties, if the key names one
+    void
+        deserialize_property( cParser &Input, std::string_view const Key );
     // issues contextual play commands for the audio renderer, for this definition alone
     void
         play_definition( int const Flags );

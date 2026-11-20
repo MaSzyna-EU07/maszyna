@@ -33,14 +33,12 @@ namespace sound_variants {
 
 // where the listener is, numbered as the listener locations of the soundproofing tables (the column is this + 1):
 // rear cab, engine compartment, front cab, cab window, a camera attached to a vehicle, a free camera
-enum listener_location : int {
-	rear_cab = -1,
-	engine_compartment = 0,
-	front_cab = 1,
-	cab_window = 2,
-	attached_camera = 3,
-	free_camera = 4,
-};
+inline constexpr int rear_cab{-1};
+inline constexpr int engine_compartment{0};
+inline constexpr int front_cab{1};
+inline constexpr int cab_window{2};
+inline constexpr int attached_camera{3};
+inline constexpr int free_camera{4};
 
 // the location of the listener: the cab window when looking out of it, a camera (attached to a vehicle or free) in the
 // external view, otherwise the occupied compartment of the vehicle the camera is in (-1, 0 or 1). without such a vehicle
