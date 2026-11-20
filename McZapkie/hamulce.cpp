@@ -3135,8 +3135,7 @@ std::vector<double *> TH14K1::pressures()
 
 std::vector<double *> TSt113::pressures()
 {
-	auto list{TH14K1::pressures()};
-	list.emplace_back(&CP);
+	auto list{TH14K1::pressures()}; // the control chamber and the reductor are inherited
 	list.emplace_back(&EPS);
 	return list;
 }

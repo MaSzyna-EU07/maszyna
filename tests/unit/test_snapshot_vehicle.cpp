@@ -3,6 +3,7 @@
 
 #include "consist.h"
 #include "drive.h"
+#include "McZapkie/hamulce.h"
 #include "real_vehicles.h"
 #include "simulation/simulationsnapshot.h"
 #include "simulation/simulationsnapshotmover.h"
@@ -10,6 +11,7 @@
 
 #include <cmath>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -529,4 +531,67 @@ TEST_CASE("snapshot: a load which can't be one is refused")
 	snapshot::apply_mover(wagon.mover(), entry);
 	CHECK(wagon->LoadType.name.empty());
 	CHECK(snapshot::take_refusals().size() == 5);
+}
+
+namespace {
+
+// the pressures a driver's handle of the kind gives to a snapshot: each of its variables once, as a second copy of
+// one would be saved twice and put back twice
+template <typename Handle>
+void pressures_listed_once(char const *Kind)
+{
+	CAPTURE(Kind);
+	Handle handle;
+	auto const pressures{handle.pressures()};
+	std::set<double const *> const distinct(pressures.begin(), pressures.end());
+	CHECK(distinct.size() == pressures.size());
+}
+
+} // namespace
+
+TEST_CASE("snapshot: a driver's handle lists each of its pressures once")
+{
+	pressures_listed_once<TFV4a>("FV4a");
+	pressures_listed_once<TFV4aM>("FV4aM");
+	pressures_listed_once<TMHZ_EN57>("MHZ_EN57");
+	pressures_listed_once<TMHZ_K5P>("MHZ_K5P");
+	pressures_listed_once<TMHZ_6P>("MHZ_6P");
+	pressures_listed_once<TM394>("M394");
+	pressures_listed_once<TH14K1>("H14K1");
+	pressures_listed_once<TSt113>("St113");
+	pressures_listed_once<Ttest>("test");
+	pressures_listed_once<TFD1>("FD1");
+	pressures_listed_once<TH1405>("H1405");
+	pressures_listed_once<TFVel6>("FVel6");
+	pressures_listed_once<TFVE408>("FVE408");
+}
+
+TEST_CASE("snapshot: the pressures of the Knorr St113 come back on a fresh vehicle")
+{
+	test::reseed_random();
+	vehicle first{definition::fiz("en57_v1/6bai"), 0.0, "test", 1};
+	REQUIRE(first->BrakeHandle == TBrakeHandle::St113);
+	REQUIRE(first->Handle != nullptr);
+	// the control chamber, the reductor and the EP intensity, none of them what a fresh handle has
+	auto const pressures{first->Handle->pressures()};
+	std::vector<double> const values{4.625, 0.125, -1.0};
+	REQUIRE(pressures.size() == values.size());
+	for (std::size_t index{0}; index < values.size(); ++index)
+		*pressures[index] = values[index];
+	CHECK(first->Handle->GetCP() == values[0]);
+	CHECK(first->Handle->GetRP() == 5.0 + values[1]);
+	CHECK(first->Handle->GetEP() == values[2]);
+	auto const saved{through_text(state_of(first.mover()))};
+	CHECK(snapshot::text_numbers(saved.text("handle")) == values);
+
+	test::reseed_random();
+	vehicle second{definition::fiz("en57_v1/6bai"), 0.0, "test", 1};
+	REQUIRE(second->Handle != nullptr);
+	CHECK(second->Handle->GetCP() != values[0]);
+	snapshot::apply_mover(second.mover(), saved);
+	CHECK(second->Handle->GetCP() == values[0]);
+	CHECK(second->Handle->GetRP() == 5.0 + values[1]);
+	CHECK(second->Handle->GetEP() == values[2]);
+	auto const restored{state_of(second.mover())};
+	CHECK_MESSAGE(restored == saved, differences(saved, restored));
 }
