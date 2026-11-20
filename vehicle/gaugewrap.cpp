@@ -34,8 +34,7 @@ std::optional<int> full_turn(float const Scale, int const Positions) {
 	}
 	auto const positions{static_cast<int>(turn)};
 	// the way on from the last position to the first one, in positions
-	auto const wayon{positions - (Positions - 1)};
-	if (wayon < 1 || 2 * wayon > positions) {
+	if (auto const wayon{positions - (Positions - 1)}; wayon < 1 || 2 * wayon > positions) {
 		// the positions overlap in a turn, or the knob would turn on more than half a turn
 		return std::nullopt;
 	}

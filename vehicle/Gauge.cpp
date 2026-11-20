@@ -405,11 +405,11 @@ TGauge::UpdateValue( float fNewDesired ) {
 void
 TGauge::UpdateValueWrapped( float const fNewDesired, bool const Forward, int const Positions, std::optional<sound_source> &Fallbacksound ) {
 
-    auto const turn { (
-        m_animation == TGaugeAnimation::gt_Rotate && false == m_interpolatescale && m_scaletable.empty() ?
-            gauge_wrap::full_turn( m_scale, Positions ) :
-            std::nullopt ) };
-    if( turn ) {
+    if( auto const turn { (
+            m_animation == TGaugeAnimation::gt_Rotate && false == m_interpolatescale && m_scaletable.empty() ?
+                gauge_wrap::full_turn( m_scale, Positions ) :
+                std::nullopt ) };
+        turn.has_value() ) {
         // the knob stands the same one turn earlier (later), from there it turns on to the new position
         // rather than all the way back, sounding the position it reaches
         m_value = gauge_wrap::turned_round( m_value, *turn, Forward );
