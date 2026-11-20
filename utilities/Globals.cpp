@@ -1552,6 +1552,9 @@ void global_settings::ConfigParse(cParser& Parser)
         if (ConfigParse_gfx(Parser, token))
             continue;
 
+        if (ConfigParse_gfx_lamps(Parser, token))
+            continue;
+
         if (ConfigParseGeneral(Parser, token))
             continue;
 
@@ -2276,6 +2279,32 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     return true;
 }
 
+bool
+global_settings::ConfigParse_gfx_lamps( cParser &Parser, std::string_view const Token ) {
+
+    // a list of names separated with |, or "no" for none
+    auto const readlist = [&Parser]( std::string &Value ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        if( Value == "no" ) { Value.clear(); } };
+    auto const readvalue = [&Parser]( float &Value, float const Min, float const Max ) {
+        Parser.getTokens( 1 );
+        Parser >> Value;
+        Value = std::clamp( Value, Min, Max ); };
+
+    if( Token == "gfx.lights.points.near" ) {
+        Parser.getTokens( 1 );
+        Parser >> gfx_lights_points_near; }
+    else if( Token == "gfx.lights.stars" ) { readlist( gfx_lights_stars ); }
+    else if( Token == "gfx.lights.freespot.mincone" ) { readvalue( gfx_lights_freespot_mincone, 0.f, 89.f ); }
+    else if( Token == "gfx.lights.lamps.gain" ) { readvalue( gfx_lights_lamps_gain, 0.1f, 10.f ); }
+    else if( Token == "gfx.lights.lamps.range" ) { readvalue( gfx_lights_lamps_range, 0.f, 10000.f ); }
+    else if( Token == "gfx.lights.hideglow" ) { readlist( gfx_lights_hideglow ); }
+    else { return false; }
+
+    return true;
+}
+
 void
 global_settings::export_as_text( std::ostream &Output ) const {
 
@@ -2633,6 +2662,12 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );
     export_as_text( Output, "gfx.lights.cab.intensity", gfx_lights_cab_intensity );
     export_as_text( Output, "gfx.lights.cab.bounce", gfx_lights_cab_bounce );
+    export_as_text( Output, "gfx.lights.points.near", gfx_lights_points_near );
+    export_as_text( Output, "gfx.lights.stars", gfx_lights_stars.empty() ? std::string{ "no" } : gfx_lights_stars );
+    export_as_text( Output, "gfx.lights.freespot.mincone", gfx_lights_freespot_mincone );
+    export_as_text( Output, "gfx.lights.lamps.gain", gfx_lights_lamps_gain );
+    export_as_text( Output, "gfx.lights.lamps.range", gfx_lights_lamps_range );
+    export_as_text( Output, "gfx.lights.hideglow", gfx_lights_hideglow.empty() ? std::string{ "no" } : gfx_lights_hideglow );
     export_as_text( Output, "gfx.cabprobe", std::string{ gfx_cabprobe == 3 ? "high" : gfx_cabprobe == 2 ? "medium" : gfx_cabprobe == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.cabprobe.interval", gfx_cabprobe_interval );
     export_as_text( Output, "gfx.cabprobe.bounce", gfx_cabprobe_bounce );

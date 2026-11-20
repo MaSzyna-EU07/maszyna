@@ -537,6 +537,26 @@ struct global_settings {
     float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment
     float gfx_lights_cab_intensity { 1.5f }; // brightness of the cab lamp
     float gfx_lights_cab_bounce { 0.3f }; // share of the former ambient light of the cab lamp kept, for the light which bounces around the cab
+    // a light point of a scenery lamp shining downwards lights its surroundings also closer than its glare is seen from (the
+    // minimal distance of its submodel, which many lamps have set for the glare seen from afar), so the lamp doesn't go out as the
+    // camera comes near it. off: as before
+    bool gfx_lights_points_near { false };
+    // names of the smt_Stars submodels of scenery models (many street lamps have nothing else) whose glowing points light their
+    // surroundings, each one downwards as the lamp of a street light, separated with |. other glowing points (lights of signals,
+    // of chimneys, the stars of the sky) only glow. empty (as before): none. the lamps of many models are named "lamp"
+    std::string gfx_lights_stars {};
+    // the half angle of the cone of the light of a light point of a scenery lamp shining downwards is at least this, degrees.
+    // 0: the cone of its glare, which many lamps have narrow. lights shining sideways (signals) keep their cones
+    float gfx_lights_freespot_mincone { 0.f };
+    // the brightness of the light the lamps of the scenery shining downwards (and their glowing points, gfx_lights_stars) light
+    // their surroundings with is multiplied by this. lights shining sideways (signals) keep theirs
+    float gfx_lights_lamps_gain { 1.f };
+    // the lamps of the scenery are gathered from this far from the camera when it's above gfx_lights_range, metres, so the lit
+    // stations are seen from afar; the vehicles keep gfx_lights_range. 0: from gfx_lights_range
+    float gfx_lights_lamps_range { 0.f };
+    // textures of the planes models fake the light of their lamps with (pools of light on the ground, glows), separated with |:
+    // they aren't drawn while the light points of scenery models light their surroundings. empty: they're drawn
+    std::string gfx_lights_hideglow;
     // the probe of the occupied cab (opengl 4.6 and vulkan, gfx::cab_probe): cube maps of the cab lit by its lamp (and what glows in
     // it) and of its albedo, drawn every few frames: the light of the lamp bounces around the cab from it (in place of
     // gfx_lights_cab_bounce) and the cab reflects itself in its glasses and glossy parts. 0 off, 1 low, 2 medium, 3 high (faces of
@@ -718,6 +738,7 @@ struct global_settings {
 	bool ConfigParse_gfx( cParser &parser, std::string_view const Token );
 	// sky light and exposure switches of the opengl 4.6 renderer (gfx.ambient.*, gfx.envmap.ggx, gfx.atmosphere*, gfx.postfx.autoexposure*, gfx.postfx.bloom*, gfx.postfx.whitebalance*, gfx.postfx.ao*)
 	bool ConfigParse_gfx_sky( cParser &parser, std::string_view const Token );
+	bool ConfigParse_gfx_lamps( cParser &parser, std::string_view const Token );
     // sends basic content of the class in legacy (text) format to provided stream
     void
         export_as_text( std::ostream &Output ) const;

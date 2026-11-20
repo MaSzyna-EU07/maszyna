@@ -635,6 +635,14 @@ class scene_walk
 
   private:
 	static float editor_ortho_reach();
+	// a plane faking the light of a lamp (its texture is one of gfx_lights_hideglow), left out while the lamps of the scenery
+	// light their surroundings
+	bool is_fake_glow(TSubModel const *Submodel);
+	// whether the submodel is drawn in the phase of the mask (0x2F translucent): it has a part of it, and isn't a fake glow (the
+	// glow planes are translucent)
+	bool drawn_in_phase(TSubModel const *Submodel, int Mask);
+
+	std::unordered_map<material_handle, bool> m_fakeglows; // whether the material is one of gfx_lights_hideglow
 };
 
 } // namespace gfx
