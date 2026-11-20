@@ -1,0 +1,22 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// the vehicles of the case (vars.trainsets), the lead one on track 1 of Stacja1 (tdo_n1734), where td.scn keeps
+// its timetable train, and the crew events of the case (vars.crew, eu07/maszyna#510): a putvalues event with
+// "Crew:<vehicle> <cab> <flags>" puts an AI driver in cab A (1) or cab B (-1) of the vehicle named, or takes its
+// AI driver off (0). the vehicle is named in the text, so the events run from event launchers, with no vehicle
+// setting them off.
+{{trainsets}}
+
+// the way out of track 1, see td_timetable.scn
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end
+
+{{crew}}
+
+// a driver put in a standing vehicle waits for orders, as the driver of a standing trainset does, and the scenery
+// has to give them. event0 of the track the locomotive stands on (the track_events of the case) runs while a
+// vehicle with a driver in charge stands there; once the cell says a new driver waits (autotest_crew_waits, run
+// along with the crew event), it gives the order to go, Shunt -1 0, one time.
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_crew_waits UpdateValues 0 autotest_ordered * 1 * endevent
+event autotest_wake multiple 0 autotest_ordered autotest_order autotest_order_given condition memcompare * 1 * endevent
+event autotest_order PutValues 0 none 0 0 0 Shunt -1 0 endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 2 * endevent

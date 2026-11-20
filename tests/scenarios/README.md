@@ -265,6 +265,47 @@ pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the bl
 locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
 hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
 
+The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
+`putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
+the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are
+set off by event launchers, at an hour or with a delay; `vars.trainsets` are the vehicles and
+`vars.crew` the events of the case:
+
+- `eu07_td_crew_add`: an EU07 standing cold with nobody in it gets a driver in cab A 20 s after
+  the start. A driver put in a standing vehicle waits for orders, as the one of a standing
+  trainset does, so `event0` of its track gives the order to go (`Shunt -1 0`), once: the driver
+  starts the locomotive and leaves through the exit signal, whose aspect makes it a train run.
+  `eu07_td_crew_add_rear` is the same with cab B: the locomotive leaves the other way, its rear
+  end leading (`moves`, from the black box).
+- `eu07_td_crew_remove`: the EU07 of `eu07_td_timetable` loses its driver at 10:36, on the run at
+  59 km/h. It is left with the power off and the brake valve in the emergency position: it
+  stands 16 s and 168 m later and doesn't move in the 164 s to the end (`stops_driverless`; the
+  physicslog ends when the driver goes). `en57_td_crew_remove` (driven from the head car, the
+  motors in the middle one), `vectron_td_crew_remove` (induction motors and an integrated handle)
+  and `sm42_td_crew_remove` (diesel) are the same with other vehicles.
+- `eu07_td_crew_swap`: the driver waiting at Stacja1 is taken off after 20 s, which leaves the
+  locomotive braked, and a new one put in 20 s later, who gets the order to go, releases the
+  brakes and leaves.
+- `golf_td_crew_swap`: a car running along the road `d3` at 50 km/h loses its driver, which
+  leaves it with its own brake applied in full: it stands 3 s and 17 m later. A road vehicle has
+  no cab to tell by and takes a driver all the same: the new one, put in 40 s later, drives on
+  along the road, at up to 100 km/h, having no timetable to cap the speed as the first one had
+  (the trainset's `50`).
+- `eu07_td_crew_refused`: the run of `eu07_td_timetable` with crew events which must be refused,
+  at the start and again on the run: a second driver for the locomotive, a driver for a coach
+  (no cab), a cab which is none of 1, -1, 0, a driver taken off a coach which has none, and a
+  vehicle the scenery lacks. Each leaves its line in the log and the train runs its timetable to
+  the stop at Przystanek as it does without them.
+- `en57_td_crew_parted`: an EN57-2000 unit with an AI driver and no timetable stands on track 1,
+  another one with nobody in it runs into its rear at 100 km/h (`crashdamage yes`). The hit
+  breaks the coupler between the middle and the rear car (`parts`, at 2 s), which leaves the rear
+  car with the driver in charge of it. The driver taken off at 10:35 had all three cars in charge,
+  the parted one too, and none of them keeps it (the log line `the driver was in charge of 3
+  vehicles`; the cars still coupled to the head car are two).
+
+A vehicle with a user in it is left alone by the command, which the test mode can't show: nobody
+sits in a vehicle there.
+
 `eu07_td_hauls_dead_vectron` is the timetable run with a dead locomotive in the train: behind the EU07 a
 Vectron with nobody in it, coupled with the hook and the brake hose alone (the EU07's coupling `3`) and
 prepared for hauling, the parameter `H` after its own coupling (`0.H`: the pullee mode of
@@ -360,10 +401,25 @@ the row instead, logged by builds from this branch on.
   filled in as in the fragment, e.g. `{{vehicle}}_rb`. Fails when the two were coupled from the
   start, came apart again, or the run left no black box. The black box is looked at once a
   second, so the time given is that of the first look after the couplers caught.
+- `parts` `vehicle`, `other`, optional `before`: the black box has the two vehicles, coupled to
+  each other, come apart (the coupler itself let go: broken, or uncoupled), by the time `before`
+  of the recording when given.
+- `driver_changes` `vehicle`, `to`, optional `after`, `before`: the black box has the vehicle get
+  the driver `to` (`none`, `ai` or `user`) at a time of the recording between the two, having had
+  another one before, and keep it to the end.
+- `stops_driverless` `vehicle`, `min_speed`, `within`, optional `stop_speed` (0.5), `max_creep`
+  (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
+  stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
+  the recording, or until it gets a driver again, at least `hold` seconds. The physicslog can't
+  tell: the driver writes it, so it ends when the driver goes.
+- `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
+  vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
 text of `log.txt` instead of the rows. Checks on the black box (`blackbox_doc.md` in the root of
 the repo; the simulator writes it along with the physicslogs) go in `BLACKBOX_CHECKS` and get
-what `read_blackbox()` read of it: the names of the vehicles and the coupling records. A check
+what `read_blackbox()` read of it: the names of the vehicles, the coupling records, and the
+states of each vehicle from the `vehicles` records (position, speed, driver; a vehicle is listed
+when it moved, changed speed or got another driver, and all of them every 60 s). A check
 on another kind of record has to add it there.
