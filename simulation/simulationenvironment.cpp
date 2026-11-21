@@ -189,7 +189,9 @@ world_environment::update() {
 
     // update the fog. setting it to match the average colour of the sky dome is cheap
     // but quite effective way to make the distant items blend with background better
-    Global.FogColor = m_skydome.GetAverageHorizonColor() * keylightcolor *
+    // the legacy renderer keeps the fog of 26.05, lit by the key light at its diffuse level
+    glm::vec3 const foglightcolor { Global.LegacyRenderer ? keylightcolor * diffuselevel : keylightcolor };
+    Global.FogColor = m_skydome.GetAverageHorizonColor() * foglightcolor *
 	                  std::clamp((float)Global.fLuminance, 0.f, 1.f);
 	
 
