@@ -618,6 +618,8 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 editor_mode::~editor_mode()
 {
 	editor_track::observe(nullptr);
+	// the capabilities of a WMS service being read are given up rather than waited for to their timeouts
+	m_wms_adding.closing = true;
 }
 
 std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
@@ -4101,7 +4103,7 @@ void editor_mode::render_wms_adding()
         adding.info.reset();
         adding.ticked.clear();
         adding.service = url;
-        adding.reading = std::async(std::launch::async, [url]() { return editor_orthophoto::describe(url); });
+        adding.reading = std::async(std::launch::async, [url, closing = &adding.closing]() { return editor_orthophoto::describe(url, [closing]() { return closing->load(); }); });
     }
     if (adding.reading.valid())
     {

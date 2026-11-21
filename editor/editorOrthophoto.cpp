@@ -63,12 +63,6 @@ double steady_seconds()
 
 } // namespace
 
-bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error)
-{
-	thread_local http_client client;
-	return client.get(Url, Out, Error, []() { return false; });
-}
-
 namespace
 {
 
@@ -688,7 +682,7 @@ std::string xml_element(std::string const &Xml, std::string const &Tag, std::siz
 
 } // namespace
 
-editor_orthophoto::service_info editor_orthophoto::describe(std::string const &Service)
+editor_orthophoto::service_info editor_orthophoto::describe(std::string const &Service, std::function<bool()> const &Stop)
 {
 	service_info info;
 	auto url{Service};
@@ -700,8 +694,10 @@ editor_orthophoto::service_info editor_orthophoto::describe(std::string const &S
 	// a few tries, the services drop connections and time out now and then
 	std::vector<std::uint8_t> data;
 	auto read{false};
-	for (int attempt = 0; attempt < 3 && false == read; ++attempt)
-		read = editor_http_get(url, data, info.error);
+	stop_check const stopping{Stop ? Stop : stop_check{[]() { return false; }}};
+	thread_local http_client client;
+	for (int attempt = 0; attempt < 3 && false == read && false == stopping(); ++attempt)
+		read = client.get(url, data, info.error, stopping);
 	if (false == read)
 		return info;
 	info.error.clear();
