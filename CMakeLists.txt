@@ -133,7 +133,6 @@ set(SOURCES
 "nodebank_previews_standalone.cpp"
 "world/Event.cpp"
 "world/EvLaunch.cpp"
-"utilities/Float3d.cpp"
 "vehicle/Gauge.cpp"
 "utilities/Globals.cpp"
 "utilities/Logs.cpp"

@@ -54,8 +54,8 @@ template <typename Visit>
 void vertices_of( TSubModel *Submodel, Visit Visitor ) {
 
     glm::mat4 transform { 1.f };
-    if( ( Submodel->iFlags & 0xC000 ) && ( Submodel->GetMatrix() != nullptr ) ) {
-        transform = glm::make_mat4( Submodel->GetMatrix()->readArray() );
+    if( Submodel->iFlags & 0xC000 ) {
+        transform = Submodel->fMatrix;
     }
     auto const &vertices { Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices( Submodel->m_geometry.handle ) : Submodel->Vertices };
     for( auto const &vertex : vertices ) {
