@@ -551,6 +551,7 @@ set(CORE_SOURCES
 "McZapkie/collision.cpp"
 "world/TrackCheck.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
+"utilities/logfiles.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scene/sn_utils.cpp"
