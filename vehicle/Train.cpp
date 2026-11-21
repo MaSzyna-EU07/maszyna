@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/compartmentlightsswitch.h"
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
@@ -5455,14 +5456,15 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// past the last position to the first one: a knob turning all the way round turns on rather than
+				// back across all the positions, and the position reached sounds (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), true, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -5493,14 +5495,14 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// back past the first position to the last one, the same way (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), false, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -6635,6 +6637,16 @@ void TTrain::OnCommand_compartmentlightstoggle(TTrain *Train, command_data const
 		return;
 	}
 
+	if (Command.action == GLFW_RELEASE)
+	{
+		// the press changed the state the command is picked from below, so a release picked from it went to the other
+		// command and the push button that was pressed never withdrew its request. The release goes to both commands:
+		// each returns its own push type control to the neutral position and withdraws its request
+		OnCommand_compartmentlightsenable(Train, Command);
+		OnCommand_compartmentlightsdisable(Train, Command);
+		return;
+	}
+
 	// keep the switch from flipping back and forth if key is held down
 	if (false == Train->mvOccupied->CompartmentLights.is_active && false == Train->mvOccupied->CompartmentLights.is_enabled)
 	{
@@ -6654,13 +6666,11 @@ void TTrain::OnCommand_compartmentlightsenable(TTrain *Train, command_data const
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitch(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the off request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightsoff_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -6695,13 +6705,11 @@ void TTrain::OnCommand_compartmentlightsdisable(TTrain *Train, command_data cons
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitchOff(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the on request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightson_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitch(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
