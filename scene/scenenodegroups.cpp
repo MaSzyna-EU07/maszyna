@@ -130,20 +130,6 @@ node_groups::update_map()
 			if (typeid(*node) == typeid(TMemCell) && node->name().ends_with(postfix)) {
 				std::string sem_name = node->name().substr(0, node->name().length() - postfix.length());
 
-				auto sem_info = std::make_shared<map::semaphore>();
-				map::Objects.entries.push_back(sem_info);
-
-				sem_info->location = node->location();
-				sem_info->memcell = static_cast<TMemCell*>(node);
-				sem_info->name = sem_name;
-
-				for (basic_event *event : group.events) {
-					if (event->name().starts_with(sem_name)
-					        && event->name().substr(sem_name.length()).find("sem") == std::string::npos) {
-						sem_info->events.push_back(event);
-					}
-				}
-
 				if (false == namedmodelscollected) {
 					for (basic_node *groupnode : group.nodes)
 						if (false == groupnode->name().empty())
@@ -152,9 +138,34 @@ node_groups::update_map()
 					namedmodelscollected = true;
 				}
 
+				std::vector<TAnimModel *> signal_models;
+				bool derailer_model{false};
 				for (auto *model : namedmodels)
-					if (model->name().starts_with(sem_name))
-						sem_info->models.push_back(model);
+					if (model->name().starts_with(sem_name)) {
+						if (model->name().ends_with("_wk_el")) {
+							derailer_model = true;
+							continue;
+						}
+						signal_models.push_back(model);
+					}
+
+				if (sem_name.ends_with("_wk_el") || (derailer_model && signal_models.empty()))
+					continue;
+
+				auto sem_info = std::make_shared<map::semaphore>();
+				map::Objects.entries.push_back(sem_info);
+
+				sem_info->location = node->location();
+				sem_info->memcell = static_cast<TMemCell*>(node);
+				sem_info->name = sem_name;
+				sem_info->models = std::move(signal_models);
+
+				for (basic_event *event : group.events) {
+					if (event->name().starts_with(sem_name)
+					        && event->name().substr(sem_name.length()).find("sem") == std::string::npos) {
+						sem_info->events.push_back(event);
+					}
+				}
 			}
 
             if (Global.map_manualswitchcontrol) {
