@@ -1,0 +1,71 @@
+{
+  "description": "The train of eu07_td_reinspect_brakes_after_coupling with the inspector of the releases before eu07/maszyna#350 (ai.brakesetting.cw1 no), which cuts no brake out: every brake of the train works, and the emergency stop after the driver is taken off at 38 km/h comes at some 0.57 m/s2, over 99 m. It shows what the deceleration check of that case tells apart.",
+  "base_scenery": "td.scn",
+  "fragment": "td_reinspect_brakes.scn",
+  "vars": {
+    "locomotive": "pkp\\4e_v1 4e-004 4e",
+    "cut": [
+      "node -1 0 {{vehicle}}_c01 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c02 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c03 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c04 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c05 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c06 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c07 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c08 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c09 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c10 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c11 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c12 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c13 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c14 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c15 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c16 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w4 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w5 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w6 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w7 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w8 dynamic pkp\\401w_v2 82515314470-4 401w_w_d 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "track_events": {
+    "koniec": "event0 autotest_wake",
+    "tdo_n231": "event2 autotest_way",
+    "tdo_n240": "event2 autotest_crew_off"
+  },
+  "test_config": [
+    "test.timeout 1200",
+    "test.standstill 600"
+  ],
+  "expect": "pass",
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "couples",
+      "vehicle": "{{vehicle}}",
+      "other": "{{vehicle}}_w8"
+    },
+    {
+      "type": "stops_driverless",
+      "vehicle": "{{vehicle}}",
+      "min_speed": 30,
+      "within": 60,
+      "hold": 60,
+      "min_deceleration": 0.45
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "derailed"
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "collided"
+    }
+  ],
+  "ini": [
+    "ai.brakesetting.cw1 no"
+  ]
+}
