@@ -1,6 +1,73 @@
 from PIL import Image, ImageDraw, ImageFont
 from math import ceil, floor, cos, sin, radians
+import builtins
 import os
+import sys
+import time
+
+# Linux tells the case of the letters in a file name apart, Windows doesn't, and the data is made on Windows: a screen asks for
+# "WS_on.png" where the disk has "ws_on.png", or names a folder in another case. The simulator opens such files of its own through
+# FileOnDisk(); the files a screen opens itself (images, fonts, text) are found here the same way. The name given when it's on the
+# disk, otherwise the one differing from it only in case, of the file or of its folders. On Windows nothing changes.
+_case_sensitive = not sys.platform.startswith('win')
+_cased_listings = {}  # folder -> (when listed, {name in lower case: name on the disk})
+
+def _cased_name(folder, name):
+	"""the name in the folder differing from the one given only in case, as on the disk; None when there's none"""
+	listed = _cased_listings.get(folder)
+	# a name missing gets the folder listed again, at most once a second, as FileCased() does
+	if listed is None or (name.lower() not in listed[1] and time.monotonic() - listed[0] >= 1.0):
+		names = {}
+		try:
+			for entry in os.listdir(folder or '.'):
+				names.setdefault(entry.lower(), entry)
+		except OSError:
+			pass
+		listed = (time.monotonic(), names)
+		_cased_listings[folder] = listed
+	return listed[1].get(name.lower())
+
+def file_on_disk(path):
+	"""the file to open: as it's named on the disk, the path given when there's none (and on Windows, which finds it itself)"""
+	if not _case_sensitive or not isinstance(path, str) or os.path.exists(path):
+		return path
+	text = path.replace('\\', '/')
+	parts = [part for part in text.split('/') if part]
+	cased = '/' if text.startswith('/') else ''
+	for index, part in enumerate(parts):
+		last = index == len(parts) - 1
+		found = part
+		if part not in ('.', '..') and not os.path.exists(cased + part):
+			found = _cased_name(cased, part)
+			if found is None:
+				if not last:
+					return path
+				# a file not there yet goes into its folder as named on the disk: one written for the first time. The folder
+				# gets listed anew next time, the file being there by then
+				_cased_listings.pop(cased, None)
+				return cased + part
+		cased += found if last else found + '/'
+	return cased
+
+def _open_files_on_disk():
+	# Image.open() opens the file through builtins.open(); the fonts are opened by FreeType, from the name. What the wrappers
+	# call is held here, not looked up in __main__, which the screens share and could name the same
+	on_disk = file_on_disk
+	open_given = builtins.open
+	truetype_given = ImageFont.truetype
+
+	def open_on_disk(file, *args, **kwargs):
+		return open_given(on_disk(file), *args, **kwargs)
+
+	def truetype_on_disk(font=None, *args, **kwargs):
+		return truetype_given(on_disk(font), *args, **kwargs)
+
+	open_on_disk.file_on_disk = True
+	builtins.open = open_on_disk
+	ImageFont.truetype = truetype_on_disk
+
+if _case_sensitive and not getattr(builtins.open, 'file_on_disk', False):
+	_open_files_on_disk()
 
 # Pillow 10 removed ImageFont.getsize(), ImageDraw.textsize() and Image.ANTIALIAS, which the screen scripts use; for
 # Python 3.14 only a newer Pillow is available, so they are put back, on top of getbbox() / textbbox() and LANCZOS
@@ -30,7 +97,7 @@ class abstractscreenrenderer():
 	def openimage(self, name):
 		exts = [ ".png", ".tga", ".dds" ]
 		for e in exts:
-			path = name + e
+			path = file_on_disk(name + e)
 			if os.path.isfile(path):
 				if e == ".dds":
 					return Image.open(path).transpose(Image.FLIP_TOP_BOTTOM)
