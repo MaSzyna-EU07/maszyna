@@ -754,6 +754,41 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 					cache.valid = true;
 				}
 
+				bool const shunting =
+					sem->memcell && sem->memcell->Command() == TCommandType::cm_ShuntVelocity;
+				if (shunting)
+				{
+					bool const shunt_hovered =
+						mouse_over_map &&
+						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
+					if (shunt_hovered)
+						m_hovered_map_object = sem;
+					draw_list->AddCircleFilled(center, 7.0f, IM_COL32(35, 40, 45, 220));
+					if (cache.colors.empty())
+					{
+						draw_list->AddCircleFilled(center, 3.0f, IM_COL32(255, 210, 70, 255));
+					}
+					else
+					{
+						float const spacing = 5.0f;
+						float const first_offset =
+							(static_cast<float>(cache.colors.size()) - 1.0f) * -0.5f;
+						for (std::size_t idx = 0; idx < cache.colors.size(); ++idx)
+						{
+							ImVec2 const lamp_position(
+								center.x,
+								center.y + (first_offset + static_cast<float>(idx)) * spacing);
+							draw_list->AddCircleFilled(
+								lamp_position,
+								2.4f,
+								static_cast<ImU32>(cache.colors[idx]));
+						}
+					}
+					if (shunt_hovered)
+						draw_list->AddCircle(center, 9.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
+					return;
+				}
+
 				if (!cache.direction_valid) {
 					cache.direction = map_signal_direction(
 						glm::dvec3(location), model ? model->Angles().y : 0.0f);
