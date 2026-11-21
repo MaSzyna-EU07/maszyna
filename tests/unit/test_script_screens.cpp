@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "doctest.h"
+#include "scratch.h"
 
+#include "scripting/scriptscreenprogram.h"
 #include "scripting/scriptscreenrules.h"
 #include "utilities/parser.h"
 
@@ -100,4 +102,14 @@ TEST_CASE("script screens: a screen reads files only below its own folder") {
 	CHECK_FALSE(script_screens::is_safe_relative_path("/etc/passwd"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("\\windows"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("c:/windows/win.ini"));
+}
+
+TEST_CASE("script screens: a file of the screen's folder named in another case is read (GE#542)") {
+	test::scratch_folder const folder{"screen_file_case"};
+	folder.write("Font/Test.PNG", "png");
+	// the name as the screen asks for it, the folder and the file named in another case on the disk
+	auto const content{script_screens::read_screen_file(folder.path(), "font/test.png")};
+	REQUIRE(content.has_value());
+	CHECK(*content == "png");
+	CHECK_FALSE(script_screens::read_screen_file(folder.path(), "font/nothing.png").has_value());
 }

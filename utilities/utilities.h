@@ -228,10 +228,14 @@ template <> bool extract_value(bool &Variable, std::string const &Key, std::stri
 
 bool FileExists(std::string const &Filename);
 // the file as it's named on the disk when only the case of its name or of its folders differs, as in the sceneries made on Windows;
-// empty when there's none. on Windows, finding the names in any case itself, the file given or none
+// empty when there's none. on Windows, finding the names in any case itself, the file given or none. a file found only in another
+// case is written to the log, once
 std::string FileCased(std::filesystem::path const &Filename);
 // the file to open: as it's named on the disk, the name given when there's none
 std::string FileOnDisk(std::string const &Filename);
+// the file to write: as it's named on the disk when it's there in any case, otherwise a new file of the name given in the folders
+// as they're named on the disk, those missing in any case named as given, to be made
+std::string FileOnDiskToWrite(std::string const &Filename);
 // the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
 // found in any case; the name given when there's none
 std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);

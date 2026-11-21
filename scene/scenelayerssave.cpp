@@ -1884,7 +1884,7 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 			terrainfile.erase(0, 1);
 		}
 		erase_extension(terrainfile);
-		if (std::filesystem::remove(Global.asCurrentSceneryPath + terrainfile + ".sbt", error))
+		if (std::filesystem::remove(FileOnDisk(Global.asCurrentSceneryPath + terrainfile + ".sbt"), error))
 		{
 			WriteLog("Scenery save: binary terrain file removed, it'll be generated again on the next load");
 		}
