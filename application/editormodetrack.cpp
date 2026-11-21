@@ -277,7 +277,10 @@ void editor_mode::commit_track_drag(bool const Force)
 void editor_mode::trim_history()
 {
 	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
+	{
 		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+		++m_history_changes;
+	}
 }
 
 void editor_mode::push_track_snapshot(std::vector<std::pair<TTrack *, editor_track::state>> States, std::vector<TTrack *> Created, std::vector<TTrack *> Removed)

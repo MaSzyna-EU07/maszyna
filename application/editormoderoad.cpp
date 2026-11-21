@@ -1873,7 +1873,10 @@ void editor_mode::push_road_snapshot(editor_road::record Record)
 		return;
 
 	if (m_max_history_size >= 0 && (int)m_history.size() >= m_max_history_size)
+	{
 		m_history.erase(m_history.begin(), m_history.begin() + ((int)m_history.size() - m_max_history_size + 1));
+		++m_history_changes;
+	}
 
 	// the entry is listed under the name of the first thing it's about
 	scene::basic_node const *node{nullptr};

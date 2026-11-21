@@ -223,6 +223,8 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
 				Buttons.push_back({icon::count, kinds[index], nullptr, nullptr, tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
 		}
+		Buttons.push_back({icon::profile, STR_C("Profile"), "P", STR_C("The vertical profile of the selected road in a window of its own: its nodes dragged, levelled, given a grade or a vertical curve"),
+		                   m_road_profile.open, [this]() { road_profile_window_toggle(); }, true});
 		Buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
 		break;
 	}
