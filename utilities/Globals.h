@@ -24,6 +24,12 @@ http://mozilla.org/MPL/2.0/.
 #include "input/zmq_input.h"
 #endif
 
+// where the keys global_settings::ConfigParse reads come from
+enum class config_source {
+	ini, // eu07.ini, and the file given with -ini
+	scenery // a config block of a scenery (.scn, .inc), read as it loads
+};
+
 struct global_settings {
 // members
     // data items
@@ -112,7 +118,9 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
-    bool BlackBox{ true }; // with the physics logs on, the black box of the session is written as well (blackbox_doc.md)
+    // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
+    // never, and with no entry it is written along with the physics logs
+    std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -224,6 +232,16 @@ struct global_settings {
     int audio_max_sources = 30;
     std::string AudioRenderer;
     bool AudioAsyncLoad{ false }; // sound files are decoded by worker threads
+    // OpenAL Soft device and mixing options; the defaults leave the choice to the library, as before they existed
+    std::string AudioOutputMode{ "auto" }; // sound.outputmode: auto, mono, stereo, stereo-basic, uhj, headphones, quad, 5.1, 6.1, 7.1
+    std::string AudioHrtf{ "auto" }; // sound.hrtf: auto, on, off
+    std::string AudioHrtfProfile; // sound.hrtf.profile: name of the HRTF data set, empty for the library's choice
+    std::string AudioResampler; // sound.resampler: name of the resampler, empty for the library's default
+    std::string AudioLimiter{ "auto" }; // sound.limiter: auto, on, off
+    int AudioFrequency{ 0 }; // sound.frequency: mixing rate in Hz, 0 for the device's
+    float AudioDoppler{ 0.25f }; // sound.doppler: strength of the Doppler effect
+    bool AudioLowpass{ false }; // sound.efx.lowpass: soundproofing also muffles the high frequencies
+    float AudioAirAbsorption{ 0.f }; // sound.efx.airabsorption: 0-10, high frequencies fade with distance
     // input
     float fMouseXScale{ 1.5f };
     float fMouseYScale{ 0.2f };
@@ -231,6 +249,7 @@ struct global_settings {
     int iFeedbackPort{ 0 }; // dodatkowy adres dla informacji zwrotnych
     bool InputGamepad{ true }; // whether gamepad support is enabled
     bool InputMouse{ true }; // whether control pick mode can be activated
+    bool ConsistViews{ true }; // whether [Shift]+[F4] goes on to the orbit, shunting, coupling and trackside views of the train (eu07/maszyna#551)
     double fBrakeStep { 1.0 }; // krok zmiany hamulca innych niż FV4a dla klawiszy [Num3] i [Num9]
     double brake_speed { 3.0 }; // prędkość przesuwu hamulca dla FV4a
     // parametry kalibracyjne wejść z pulpitu
@@ -283,12 +302,34 @@ struct global_settings {
     bool captureonstart = true;
 	bool render_cab = true;
 	bool crash_damage = true;
+	// the buckling of welded track in the heat (physics.trackbuckling in eu07.ini, see world/TrackBuckle.h): off, none; scenery, the
+	// buckles the scenery enters and its trackbuckle events; automatic, also by the temperature of the rails at the weak places
+	enum class track_buckling_mode { off, scenery, automatic };
+	track_buckling_mode track_buckling = track_buckling_mode::scenery;
 	// the physical model of the couplings (McZapkie/couplerphysics.h): progressive buffers and draw gear with hysteresis,
 	// the play of the coupling, its yield and breaking; the legacy model of TMoverParameters::CouplerForce() without it.
 	// it covers the player's train and the trains it closes in on (vehicle_table::update_coupler_physics()), or every
 	// train with coupler_physics_all
 	bool coupler_physics = false;
 	bool coupler_physics_all = false;
+	// a vehicle too fast in a curve (physics.derailment in eu07.ini): new, it overturns or its flange climbs the rail
+	// by the criteria of McZapkie/derailment.h held over 2 m, and slides on with the friction of the ballast; old, the
+	// legacy draw of the lateral acceleration against the gauge to the height of the vehicle in every step, which stops
+	// it; off, it stays on the rails at any speed; monitor, the legacy draw decides and the log tells where the criteria
+	// would derail a vehicle (derailment monitor:, once for a vehicle on a track), for the run of a scenery as it was.
+	// monitor is the default until the speed limits of the bundled sceneries are checked against the criteria (some
+	// tracks allow more than the reference vehicle survives there): new is opt-in until then
+	enum class derailment_model { off, old, physical, monitor };
+	derailment_model derailment = derailment_model::monitor;
+	// the collisions of rail vehicles past their buffers (physics.collisions in eu07.ini): new, the ends crush, a vehicle
+	// may ride up onto the other one or be pushed off the track (McZapkie/collision.h); old, the legacy rule of the safe
+	// closing speed weighed by the masses; monitor, the legacy rule decides and the log tells what the crush would be
+	// (collision monitor:, once for a hit). the road vehicles of the traffic keep the legacy rule with any
+	enum class collision_model { old, physical, monitor };
+	collision_model collisions = collision_model::physical;
+	// physics.trackcheck: the geometry of the rail tracks the criteria of derailment find suspicious, to the log once the
+	// scenery loaded (trackcheck:, see world/TrackCheck.h)
+	bool track_check = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
 	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
@@ -311,6 +352,7 @@ struct global_settings {
 	bool python_uploadmain = true;
 	std::chrono::duration<float> python_minframetime {0.01f};
 	bool luascreens_enabled{true}; // screens drawn by Lua scripts (luascreen:, luadestinationsign: in the .mmd)
+	bool lua_fulllibraries{false}; // the scenery scripts (lua in the .scn) get all of LuaJIT's libraries (io, os, ffi, require...), not only the sandboxed ones
 	bool wasm_enabled{true}; // screens drawn by WebAssembly modules (wasmscreen:, wasmdestinationsign: in the .mmd)
 	int screens_cabframes{4}; // the script screens in the cab are refreshed every so many rendered frames
 	int screens_externalframes{30}; // the script screens outside the cab (destination signs) are refreshed every so many rendered frames
@@ -401,9 +443,12 @@ struct global_settings {
 	// methods
 	void LoadIniFile( std::string asFileName );
 	void FinalizeConfig();
-	void ConfigParse(cParser &parser);
+	// the keys of eu07.ini. Source: where they come from, eu07.ini or a config block of a scenery, which doesn't change
+	// the settings only eu07.ini sets (utilities/inionlysettings.h)
+	void ConfigParse(cParser &parser, config_source Source = config_source::ini);
 	bool ConfigParseGeneral(cParser& Parser, const std::string& token);
 	bool ConfigParseAudio(cParser& Parser, const std::string& token);
+	bool ConfigParseAudioDevice(cParser& Parser, const std::string& token);
 	bool ConfigParseGraphics(cParser& Parser, const std::string& token);
 	bool ConfigParseInput(cParser& Parser, const std::string& token);
 	bool ConfigParseSimulation(cParser& Parser, const std::string& token);
@@ -437,6 +482,37 @@ global_settings::export_as_text( std::ostream &Output, std::string const Key, st
 template <>
 void
 global_settings::export_as_text( std::ostream &Output, std::string const Key, bool const &Value ) const;
+
+// the models of physics.collisions by their names in eu07.ini: new (the default, also for a name it doesn't know), old,
+// monitor
+inline global_settings::collision_model collision_model_of( std::string_view const Name ) {
+    if( Name == "old" ) { return global_settings::collision_model::old; }
+    if( Name == "monitor" ) { return global_settings::collision_model::monitor; }
+    return global_settings::collision_model::physical;
+}
+inline std::string_view name_of( global_settings::collision_model const Model ) {
+    switch( Model ) {
+        case global_settings::collision_model::old: { return "old"; }
+        case global_settings::collision_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
+// the models of physics.derailment by their names in eu07.ini: new, old, off or no, monitor (the default, also for a
+// name it doesn't know)
+inline global_settings::derailment_model derailment_model_of(std::string_view const Name) {
+    if( Name == "new" ) { return global_settings::derailment_model::physical; }
+    if( Name == "old" ) { return global_settings::derailment_model::old; }
+    if( Name == "off" || Name == "no" ) { return global_settings::derailment_model::off; }
+    return global_settings::derailment_model::monitor;
+}
+inline std::string_view name_of( global_settings::derailment_model const Model ) {
+    switch( Model ) {
+        case global_settings::derailment_model::old: { return "old"; }
+        case global_settings::derailment_model::off: { return "off"; }
+        case global_settings::derailment_model::monitor: { return "monitor"; }
+        default: { return "new"; }
+    }
+}
 
 extern global_settings& GetGlobalSettings();
 

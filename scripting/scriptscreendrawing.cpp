@@ -64,13 +64,11 @@ bool lit_pixel(std::span<std::uint8_t const> const Rgba, int const Width, int co
 glyph cut_glyph(std::span<std::uint8_t const> const Rgba, int const Width, int const Height, int const First, int const Count)
 {
 	std::vector<bool> lit(static_cast<std::size_t>(Count) * Height, false);
-	for (auto column = 0; column < Count; ++column)
+	// only the columns inside the image are read
+	auto const last{static_cast<int>(std::min<std::int64_t>(static_cast<std::int64_t>(First) + Count, Width))};
+	for (auto x = std::max(First, 0); x < last; ++x)
 	{
-		auto const x{First + column};
-		if (x < 0 || x >= Width)
-		{
-			continue;
-		}
+		auto const column{x - First};
 		for (auto y = 0; y < Height; ++y)
 		{
 			lit[static_cast<std::size_t>(column) * Height + y] = lit_pixel(Rgba, Width, x, y);
@@ -128,14 +126,15 @@ std::u32string decode_utf8(std::string_view const Text)
 
 std::optional<bitmap_font> bitmap_font::parse(std::span<std::uint8_t const> const Rgba, int const Width, int const Height, std::string_view const Description)
 {
-	if (Width <= 0 || Height <= 0 || Rgba.size() < static_cast<std::size_t>(Width) * Height * 4)
+	if (Width <= 0 || Height <= 0 || Width > max_font_image_side || Height > max_font_image_side || Rgba.size() < static_cast<std::size_t>(Width) * Height * 4)
 	{
 		return std::nullopt;
 	}
 	bitmap_font font;
 	font.m_height = Height;
 	auto const all{lines(Description)};
-	auto x{0};
+	auto x{0}; // where the glyph starts: at most max_font_columns
+	auto glyphs{0};
 	// the first line is a comment
 	for (std::size_t line = 1; line < all.size(); ++line)
 	{
@@ -157,9 +156,13 @@ std::optional<bitmap_font> bitmap_font::parse(std::span<std::uint8_t const> cons
 			digits.remove_suffix(1);
 		}
 		auto width{0};
-		if (std::from_chars(digits.data(), digits.data() + digits.size(), width).ec != std::errc{} || width < 0)
+		if (std::from_chars(digits.data(), digits.data() + digits.size(), width).ec != std::errc{} || width < 0 || width > max_font_image_side)
 		{
 			continue;
+		}
+		if (++glyphs > max_font_glyphs || x + width > max_font_columns)
+		{
+			return std::nullopt;
 		}
 		auto cut{cut_glyph(Rgba, Width, Height, x, width)};
 		if (font.m_glyphs.empty())

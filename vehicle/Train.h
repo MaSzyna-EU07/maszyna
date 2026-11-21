@@ -172,6 +172,11 @@ class TTrain {
     inline
     std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
+    // the direction the mouse drags universal control Index in to any position between its ends, none if the control
+    // is only set to its ends (MaSzyna-EU07/maszyna#62)
+    universal_drag::direction universal_drag_direction( int const Index ) const;
+    // the position universal control Index is set to, from 0 to 1
+    float universal_position( int const Index ) const;
     void UpdateCab();
     bool Update( double const Deltatime );
 	void UpdateDirectionRelays();
@@ -518,6 +523,7 @@ class TTrain {
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_genericset( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
@@ -748,6 +754,7 @@ public: // reszta może by?publiczna
     TButton btLampkaNadmPrzetw;
     TButton btLampkaPrzetw;
     TButton btLampkaPrzetwOff;
+    TButton btLampkaPrzetwAOff; // the converter of this very unit off, where the trainset shares its 110 V (ET42 section fans)
     TButton btLampkaPrzekRozn; // TODO: implement
     TButton btLampkaPrzekRoznPom; // TODO: implement
     TButton btLampkaNadmSil;
@@ -854,6 +861,7 @@ public: // reszta może by?publiczna
     TButton btLampkaMalfunctionB;
     TButton btLampkaMotorBlowers;
     TButton btLampkaCoolingFans;
+    TButton btLampkaLouvresClosed; // ET22, the pneumatic louvres of the motor fans not open yet
     TButton btLampkaTempomat;
     TButton btLampkaDistanceCounter;
 

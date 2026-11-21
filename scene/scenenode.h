@@ -101,6 +101,9 @@ public:
 		gfx::userdata_array userdata;
         // terrain file the shape comes from, see scene::terrain_file::reference_of(); 0: none, or not known (only the editor asks)
         std::uint16_t terrainfile { 0 };
+        // drawn pulled towards the camera in the depth buffer, over the surface it lies on: the photos of the editor laid on the
+        // terrain. not kept by serialize()
+        bool decal { false };
     // methods:
         // sends content of the struct to provided stream
         void
@@ -119,7 +122,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     shape_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import_from( cParser &Input, scene::node_data const &Nodedata );
     // imports data from provided submodel
     shape_node &
         convert( TSubModel const *Submodel );
@@ -127,6 +130,9 @@ public:
     // relative to Origin. used by the editor's terrain to own editable geometry it can re-upload.
     shape_node &
         make_terrain( material_handle const Material, std::vector<world_vertex> Vertices, glm::dvec3 const Origin );
+    // see shapenode_data::decal
+    void
+        decal( bool const Decal ) { m_data.decal = Decal; }
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( shape_node &Shape );
@@ -248,7 +254,7 @@ public:
         deserialize( std::istream &Input );
     // restores content of the node from provided input stream
     lines_node &
-        import( cParser &Input, scene::node_data const &Nodedata );
+        import_from( cParser &Input, scene::node_data const &Nodedata );
     // adds content of provided node to already enclosed geometry. returns: true if merge could be performed
     bool
         merge( lines_node &Lines );

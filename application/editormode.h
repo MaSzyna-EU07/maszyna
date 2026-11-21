@@ -240,6 +240,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_dragging = false;
 	glm::dvec3 oldPos; // world position of the last brush placement
 	bool m_brush_has_last{false}; // false at the start of a brush stroke, so the first placement ignores spacing
+	bool m_draw_cursor{false}; // the cursor drawn into the picture (View menu), on only while the editor is
 	bool mouseHold{false};
 	float kMaxPlacementDistance = 200.0f;
 	static bool m_change_history;
@@ -534,6 +535,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::optional<double> nmt_terrain_offset(std::vector<glm::dvec2> const &Points, bool &Foreign) const;
 	// the same along the edges the chunk shares with the chunks beside it in memory
 	std::optional<double> nmt_seam_offset(heightmap::chunk_key const &Key, bool &Foreign) const;
+	// the offset a chunk made from the model where there's no terrain gets: of the terrain made from the model beside it, empty
+	// (the offset of the scenery) beside terrain made by hand or none
+	std::optional<double> nmt_chunk_offset(heightmap::chunk_key const &Key) const;
 	// the terrain beside the formation of the track is the one made from the model; Waiting: its squares of the model aren't in yet
 	// the tracks changed by hand are told to the terrain: their formations laid anew, of the tracks removed taken away, a
 	// track laid onto the terrain of the model given its own, once the mouse lets go; in the step of the history of the change
@@ -551,6 +555,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// of the modifiers laid
 	std::size_t nmt_shape_tracks(std::vector<TTrack *> const *Only = nullptr);
 	void nmt_update();
+	// the terrain of the scenery made from the model around the camera within the download area, a chunk at a time while nothing
+	// else is done with the model and the frames are quick: edited chunks wait in memory to be saved, so not the whole area at once
+	void nmt_area_terrain();
 	void nmt_grow();
 	void render_nmt_ui();
 	// where the scenery lies: the map to click on, the place typed; true once it's placed
@@ -676,6 +683,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		return m_terrain_tool == terrain_tool::sculpt || m_terrain_tool == terrain_tool::smooth || m_terrain_tool == terrain_tool::level || m_terrain_tool == terrain_tool::paint ||
 		       m_terrain_tool == terrain_tool::restore;
 	}
+	// the point of the ground of the terrain under the cursor, found along the ray through the cursor, so it's found also over
+	// a hole and behind the grass. returns: false if the ray meets no terrain
+	bool terrain_cursor(glm::dvec3 &World) const;
+	// the point of the ground under the cursor in this frame, for the points put on the ground (outlines, areas, brushes): along the ray
+	// through the cursor to the terrain; the depth read back (a frame late, and stopped by the models over the ground) only where
+	// there's none. false: nothing under the cursor
+	bool cursor_on_ground(glm::dvec3 &World);
 	// converts the point spacing of the selected chunks to m_terrain_convert_spacing
 	void convert_selected_chunks();
 	// the chunks selected with the spacing tool taken out of the terrain, in one step of the history
@@ -731,13 +745,23 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char filter[64]{};
 		float size{96.f}; // of the images, pixels
 		std::string selected;
-		std::map<std::string, int> thumbnails; // texture shown for the item of the name, 0: none
+		struct thumbnail
+		{
+			int texture{0}; // 0: none
+			int material{0}; // the material the texture is the first of, 0: a texture alone
+			double shown{0.0}; // when it was last asked for, ImGui time
+		};
+		std::map<std::string, thumbnail> thumbnails; // texture shown for the item of the name
+		bool refresh{false}; // all the images to be let go of and read again
 		int loads{0}; // textures read in the frame, a few at most so the browser doesn't stall the editor
 		int loadsframe{-1};
 	} m_textures;
 	void render_texture_browser();
 	// texture of the image of the item of the browser, 0 while there's none
 	std::uint64_t texture_thumbnail(texture_browser::item const &Item);
+	// the textures of the images out of sight for a while taken out of the memory: a picker of thousands of them scrolled
+	// through would keep them all, full size, until the memory ran out
+	void thumbnails_trim();
 	// takes a material dragged from the texture browser onto the item drawn last. returns: true if one was dropped, its name in Name
 	static bool material_drop(std::string &Name);
 	// the same, for a text field
@@ -911,6 +935,25 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	} m_area_drawing;
 	std::vector<glm::dvec2> m_nmt_prefetched; // the download area the terrain model was given
 	bool m_area_paused{false}; // the download of the area held by the button; out of the editor it's held anyway
+	// the terrain made around the camera within the area: the chunks there, nearest first, the next one looked at, when the next one
+	// may be made, those made (or left: the model has no data there, or the chunk is outside the region) since the scenery opened
+	struct area_terrain
+	{
+		std::vector<heightmap::chunk_key> keys;
+		std::size_t next{0};
+		heightmap::chunk_key centre{0, 0};
+		bool listed{false};
+		double resume{0.0};
+		std::size_t made{0};
+		std::size_t square_made{0}; // of them, in the square around the camera now
+		bool refit{false};     // chunks made since the photos were last laid onto the ground
+		double waiting{-1.0};  // since when the next chunk waits for its model; -1: it doesn't
+		std::string held{"-"}; // what held it last, as logged; empty: nothing
+		double took{0.0};      // s the chunks of the square around the camera took, all and the longest
+		double took_most{0.0};
+		std::set<heightmap::chunk_key> empty;
+		std::optional<bool> run_only; // the selftest turned it on or off for its run, the setting left as it is
+	} m_area_terrain;
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
 	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
 	int m_empty_hint_frame{-10};       // the frame the panel of the empty scenery was last drawn in

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -31,13 +32,14 @@ enum class user_command;
 namespace simulation {
 
 // the black box of the session (see blackbox_doc.md): written along with the physics logs, in driver mode,
-// from the moment the scenario is loaded until the simulator closes or the editor is entered
+// from the moment the scenario is loaded until the simulator closes or the editor is entered. the tapes of the user's
+// vehicles, with the physics logs off, go on after the editor until the simulator closes
 class blackbox_recorder {
 public:
 	// starts the recording once the scenario is ready, if it is to be made, then records what is due.
 	// Deltatime: simulation time passed since the last call
 	void update(double Deltatime);
-	// writes the end of the recording and closes the file. a recording closed isn't started again
+	// writes the end of the recording and closes the file. a recording closed isn't started again; its tapes go on
 	void close();
 
 	// what happens between the looks, from wherever it happens; the cabs may run on threads of their own.
@@ -86,6 +88,11 @@ private:
 	void write_map();
 	static std::vector<std::pair<glm::dvec3, float>> stop_point_headings();
 	void write_cab();
+	// the line of the log of the driver the user is with, unless that driver writes its own (the physics logs, a road
+	// vehicle's driver not even with "physicslog yes"), to its log, physicslog/<vehicle>.dat, as the physics logs would
+	// have it. a driver's log is begun at the first line given for that driver, and goes on
+	// while the user looks around outside or is in another vehicle of that driver; back with it, after the gap
+	void keep_tape_line();
 	// the clock, the user's vehicle, the vehicles, the switches and the signals
 	void look_around(bool Keyframe);
 	void look_at_vehicles(bool Keyframe);
@@ -107,8 +114,12 @@ private:
 	std::ofstream m_file;
 	std::unique_ptr<blackbox::writer> m_writer;
 	bool m_started{false}; // tried to start, made or not
+	bool m_taping{false}; // the recording was to be made: its tapes are kept from then on, the file made or not, closed or not
 	double m_time{0.0};
 	double m_cabdue{0.0};
+	double m_tapedue{0.0};
+	// the names of the logs begun by the recording
+	std::set<std::string> m_tapes;
 	double m_lookdue{0.0};
 	double m_keyframedue{0.0};
 	std::unordered_map<TDynamicObject const *, vehicle_entry> m_vehicles;

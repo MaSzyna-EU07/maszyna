@@ -135,15 +135,26 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. All 17 cases
-  take about 30 s with `-j 4`, loading included.
+- `-j N` runs N cases at once. Each case prints its results when it is done. The 22 cases
+  that aren't `slow` take about 30 s with `-j 4` and 2 minutes one at a time, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
   watching what a case does.
+- `--slow` runs the cases marked `slow` too. Without it, and with no cases named, they are
+  skipped (and listed): each is a whole mission on a big scenery and takes many minutes. A
+  slow case named on the command line always runs. Run them one at a time (`-j 1`): each
+  simulator loads a whole scenery. A case on a mission of the base scenery with physicslog on
+  (`vehicle` given) removes every physicslog written in the game dir meanwhile, so with `-j N`
+  it runs alone, after the others.
+- `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
+  numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
+  sometimes: run the case with a few seeds.
 
-Exit code is 0 when every case passed. Logs of each run (`log.txt`, `errors.txt`,
-`stdout.txt`, the physicslogs of the vehicle and of other trains of the case) are moved to
-`tests/scenarios/out/<case>/`.
+Exit code is 0 when every case passed, or failed as its `xfail` mark says it does (`XFAIL` in
+the summary); a case marked `xfail` that passes (`XPASS`) fails the run, so that the mark gets
+removed. Logs of each run (`log.txt`, `errors.txt`,
+`stdout.txt`, the physicslogs of the vehicle and of other trains of the case, the black box as
+`autotest_<case>.blackbox`) are moved to `tests/scenarios/out/<case>/`.
 
 ## How it works
 
@@ -157,20 +168,31 @@ For each case the runner:
 2. starts the simulator with `--test -s autotest_<case>.scn -ini out/<case>/autotest.ini
    --test-wall-timeout <timeout>`, plus `--test-timeout <duration>` when the case gives a
    `duration`; the extra ini turns on
-   `physicslog` and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
+   `physicslog` (and with it the black box of the run, `physicslog/autotest_<case>_<date>.blackbox`)
+   and writes the logs to `logs/log (autotest_<case>) <date>.txt` rather than the
    shared `log.txt` (`multiplelogs`),
 3. waits until the simulator quits by itself. It gives up early when the log reports
    `Bad vehicle` / `Bad trainset`, or when the scenario has loaded and no physicslog appeared.
    After the case's `timeout` of wall-clock time the simulator ends itself with the timeout code;
    one that doesn't is killed 30 s later,
 4. compares the result from the exit code with the case's `expect`, then runs the checks on
-   the physicslog.
+   the physicslog, the log and the black box.
 
 The lead vehicle is named `autotest_<case>`, so every case has its own physicslog and log
 files and cases can run in parallel. The `autotest_*` sceneries (and the simulator's `.sbt`
 geometry cache of them) stay in the game's `scenery/` dir; the cache is dropped when the base
 scenery is newer, and after a run cut short (`wall_timeout`, `error`, a crash, or killed by run.py),
-which could have been writing it.
+which could have been writing it. A case with `file.binary.terrain no` in its `ini` has no cache
+written, and one left by an earlier run is removed.
+
+A case with `vehicle` runs a train of the base scenery under its own name: its physicslog is
+`physicslog/<vehicle>.dat` (one of that name already in the game dir is replaced), and with the
+physicslogs on, every train of the scenery writes one, over any of the same name; those written
+during the run are deleted after it. Don't run such a case along with another one in the same game dir.
+
+Apart from these the game dir loses its `log.txt` and `errors.txt`, those of the last game
+session: the simulator deletes them at every start, before it knows that the run's log goes
+to `logs/`.
 
 ## Writing a case
 
@@ -179,13 +201,20 @@ which could have been writing it.
 | key | meaning |
 | --- | --- |
 | `base_scenery` | scenery file in the game's `scenery/` dir |
-| `strip_trainsets` | drop the base scenery's trainsets (default `true`) |
+| `strip_trainsets` | drop the base scenery's trainsets (default `true`); `false` keeps them, for a case on one of the scenery's own missions (below) |
+| `vehicle` | the train under test is this vehicle of the base scenery (its node name), instead of the `autotest_<case>` one of the fragment: `test.vehicle`, the physicslog checked and `{{vehicle}}` are this one. With `strip_trainsets` `false` |
+| `replace` | literal replacements in the text of the base scenery, a list of `[old, new]`, e.g. to put another locomotive on a mission; an `old` the scenery doesn't have is an error |
+| `physicslog` | `false` turns the physicslogs (and the black box) off for the run: on a scenery with dozens of AI trains each of them would write 3-4 kB per second of simulation into the game dir. Such a case has the result of the test mode and the log checks only (default `true`) |
+| `slow` | `true` marks a case that takes many minutes: skipped unless named or run with `--slow` |
+| `xfail` | marks a case that fails because of a known, reported bug, with the reference and the reason as its text, e.g. `"eu07/maszyna#524: the AI never couples"`. Its failure is reported as `XFAIL` and doesn't fail the run; when it passes (`XPASS`) the run fails until the mark is removed |
 | `time` | replace the scenery start time, `HH:MM` |
 | `track_friction` | set the friction of every track of the base scenery (default in the sceneries is 0.15), e.g. for slippery rail |
 | `track_events` | lines added to tracks of the base scenery, by track name, e.g. `{ "tor1k": "event0 test_pass" }`; only tracks in the scenery file itself, not in its includes |
 | `test_config` | lines of a `config` block added to the scenery, e.g. `["test.timeout 90"]`; the block always has `test.vehicle` with the case's lead vehicle, so only its train counts for the pass and the standstill |
-| `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire) |
+| `ini` | extra `eu07.ini` lines for the run, after the common ones of the runner's `-ini` file, e.g. `["crashdamage yes"]` |
+| `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire). Optional when the case keeps the scenery's trainsets |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
+| `timetable` | a timetable file in `cases/` for a trainset of the fragment, for a train whose timetable no scenery of the game has: copied to the game's `scenery/` dir as `autotest_<case>.txt` for the run and removed after it; the fragment names it `{{timetable}}` |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
 | `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
@@ -208,6 +237,18 @@ and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
 
+`eu07_td_departure_station_capitals` runs an EU07 from where `td_timetable.scn` puts it, with the W4 of Stacja1 about
+35 m ahead, on a timetable of its own (`td_departure_station_capitals.txt`, fragment `td_departure_station.scn`):
+its first row, the station of departure, gives no arrival time and is written in capitals (`STACJA1`), the relation
+says `Stacja1`, as in some timetables of the game (`Os33733` of linia_107_poludnie.scn starts at `ZAGORZ`). The
+train has to stop there and leave at its departure time, 10:35, which the log shows as `as TEST24: at 10:35 next
+Przystanek`; taking Stacja1 for a station it passes through, the driver logs `passed STACJA1` at once and leaves as
+soon as the route is set at 10:34, and the train manager gives no departure signal. `eu07_td_departure_station` is the
+same with the row written as in the relation. `eu07_td_timetable_past_w4` (fragment `td_timetable_past_w4.scn`) puts
+the td/rozklad train, an EU07 with three coaches, with its head 80 m past the W4 of Stacja1, on `tor1k`: the W4 stays
+under the consist, behind the head, and the driver still counts Stacja1 and leaves at 10:35, since the scan of the
+route begins at the last vehicle and keeps a W4 behind the head.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -218,6 +259,126 @@ standstill of 100 s ends the test although the traffic runs on (counting every v
 into the test timeout).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
+
+The `en57_2000_automatic_coupler_*` cases (issue #86) share `td_automatic_coupler_hit.scn`: an
+EN57-2000 unit without a driver runs at `vars.velocity` km/h into a standing one, from
+`35.6 - vars.offset` m behind it, with `crashdamage yes` in `ini`. At 50 km/h the automatic
+couplers mustn't catch and the log has to show the collision and the derailment; at 4 km/h they
+couple and neither shows up: the black box has to have the last car of the standing unit,
+`{{vehicle}}_rb`, and the first of the rolling one, `{{vehicle}}_hit_ra`, coupled (the simulator
+writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
+test timeout.
+
+`eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
+(`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
+so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
+until `event0` of its track gives it, once, `Shunt -1 3`: start the engine, couple to the consist
+ahead (Connect, the first order it drives under), go on shunting. It passes when the first coach,
+pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the black box has the
+locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
+hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
+
+The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
+`putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
+the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are
+set off by event launchers, at an hour or with a delay; `vars.trainsets` are the vehicles and
+`vars.crew` the events of the case:
+
+- `eu07_td_crew_add`: an EU07 standing cold with nobody in it gets a driver in cab A 20 s after
+  the start. A driver put in a standing vehicle waits for orders, as the one of a standing
+  trainset does, so `event0` of its track gives the order to go (`Shunt -1 0`), once: the driver
+  starts the locomotive and leaves through the exit signal, whose aspect makes it a train run.
+  `eu07_td_crew_add_rear` is the same with cab B: the locomotive leaves the other way, its rear
+  end leading (`moves`, from the black box).
+- `eu07_td_crew_remove`: the EU07 of `eu07_td_timetable` loses its driver at 10:36, on the run at
+  59 km/h. It is left with the power off and the brake valve in the emergency position: it
+  stands 16 s and 168 m later and doesn't move in the 164 s to the end (`stops_driverless`; the
+  physicslog ends when the driver goes). `en57_td_crew_remove` (driven from the head car, the
+  motors in the middle one), `vectron_td_crew_remove` (induction motors and an integrated handle)
+  and `sm42_td_crew_remove` (diesel) are the same with other vehicles.
+- `eu07_td_crew_swap`: the driver waiting at Stacja1 is taken off after 20 s, which leaves the
+  locomotive braked, and a new one put in 20 s later, who gets the order to go, releases the
+  brakes and leaves.
+- `golf_td_crew_swap`: a car running along the road `d3` at 50 km/h loses its driver, which
+  leaves it with its own brake applied in full: it stands 3 s and 17 m later. A road vehicle has
+  no cab to tell by and takes a driver all the same: the new one, put in 40 s later, drives on
+  along the road, at up to 100 km/h, having no timetable to cap the speed as the first one had
+  (the trainset's `50`).
+- `eu07_td_crew_refused`: the run of `eu07_td_timetable` with crew events which must be refused,
+  at the start and again on the run: a second driver for the locomotive, a driver for a coach
+  (no cab), a cab which is none of 1, -1, 0, a driver taken off a coach which has none, and a
+  vehicle the scenery lacks. Each leaves its line in the log and the train runs its timetable to
+  the stop at Przystanek as it does without them.
+- `en57_td_crew_parted`: an EN57-2000 unit with an AI driver and no timetable stands on track 1,
+  another one with nobody in it runs into its rear at 100 km/h (`crashdamage yes`). The hit
+  breaks the coupler between the middle and the rear car (`parts`, at 2 s), which leaves the rear
+  car with the driver in charge of it. The driver taken off at 10:35 had all three cars in charge,
+  the parted one too, and none of them keeps it (the log line `the driver was in charge of 3
+  vehicles`; the cars still coupled to the head car are two).
+
+A vehicle with a user in it is left alone by the command, which the test mode can't show: nobody
+sits in a vehicle there.
+
+`eu07_td_hauls_dead_vectron` is the timetable run with a dead locomotive in the train: behind the EU07 a
+Vectron with nobody in it, coupled with the hook and the brake hose alone (the EU07's coupling `3`) and
+prepared for hauling, the parameter `H` after its own coupling (`0.H`: the pullee mode of
+MaSzyna-EU07/maszyna#64). The checks are those of the timetable cases; the train takes 300 s to
+Przystanek and on (20 km/h after 79 s, the stop after 220 s and 1405 m). Without the `H` the Vectron,
+which applies the emergency brake while none of its cabs is active, empties the brake pipe of the train
+in two seconds, both locomotives stand with their brake cylinders full and the train never moves.
+`eu07_td_hauls_dead_vectron_cold` (fragment `td_cold_timetable.scn`) is the same train from a cold start:
+trainset velocity 0, so both locomotives stand braked (brake pipe at 3.5 bar, batteries off, the spring
+brake of the Vectron switched on), and `event0` of the track gives the driver `Obey_train`, once. The EU07
+starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
+the pipe stays below 1 bar and the case ends as a standstill after 300 s.
+
+### Cases on a mission of a scenery
+
+The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
+of a scenery of the game, among its own traffic: `strip_trainsets` `false`, `vehicle` the
+mission's own locomotive or unit, every train driven by AI as always in the test mode. They are
+`slow`, have `physicslog` `false` unless a check needs the black box, and `file.binary.terrain no`
+in `ini`, so that no geometry cache of the copied scenery (hundreds of MB for these) is written
+into the game dir. What they add to the scenery:
+
+- nothing, when standing too long is the bug: `test.standstill` is set above the longest wait
+  the mission has, and the run ends with `duration` (`baltyk_skm1_*`),
+- `mission_state_probe.scn`: these sceneries steer each station with a state cell per train
+  (text and two values, e.g. `deb_tme222158_stat` = `a 6 *`: the route of step 6 is set). The
+  probe is a loop of two events that looks at the cell `vars.cell` every 5 s and reports the
+  pass once it holds `vars.state` (a `memcompare`: `* 6 *`, `d * *`), with `vars.reason` as the
+  text. No fail event: a train that never gets there ends the test with the standstill or the
+  timeout. A periodic event launcher wouldn't do, the simulator polls those near the camera only,
+- events named `<track>:event0`, `:event1`, `:event2` or `:eventall1`...: the simulator binds an
+  event with such a name to the track by itself, so a fragment can hang events on tracks that
+  live in the scenery's includes, where `track_events` doesn't reach (`wrzosy_pxe336080_couple.scn`).
+  The name must not be one the scenery has already: a second event of the same name replaces the first.
+
+A train whose trainset has velocity 0 has a driver that sleeps in `Wait_for_orders` when nobody
+is in the cab: the player would drive it, so the fragment has to give the orders the player's
+hands stand for, with `PutValues` from an event the vehicle itself sets off (`event0` of the
+track it stands on). The first of them may be the one to couple (`Shunt -2 -3`): a driver whose
+first order is `Connect` releases the hand brake a cold locomotive starts with
+(`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
+
+The cases and what they showed on master of 2026-11-11:
+
+| case | report | result |
+| --- | --- | --- |
+| `wrzosy_pxe336080_couples` | #524 | passes: ordered to, the locomotive couples to the rake (`couples`, 262 s) and takes it out of the depot (696 s). The scenery itself gives no such order |
+| `baltyk_skm1_roj55324_shunting_signal` | #525 | passes, with four seeds: the unit on the siding is let into the platforms 4 minutes after the start, once the shunter beside it has done its first moves, and leaves at 10:42 |
+| `baltyk_skm1_roj55321_departure` | #525 | passes, with three seeds: the unit in the platform leaves at 10:34 |
+| `l053_poranek_tme222158_debica` | #421 | `xfail`: the train is never let into Debica, the station jams 4 minutes after the start: the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint the station waits for it at |
+| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: with an ET21, as in the report, the locomotive stops for good at Debica Towarowa: running round the wagons it stands on the headshunt 20 m past the end of the overhead wire, and its driver never gets out of `Prepare_engine` |
+| `l053_poludnie_roj32134_debica` | #506 | passes: both trains run and the unit ends at Debica after 6134 s; no train in its way |
+
+In the L053 sceneries the test mode logs a signal passed at danger for several shunting
+locomotives within minutes, so these cases have `test.fail_if_stop_overran no`.
+
+The simulation ran at 15 times real time on Baltyk and at 5-8 times on L053 (with another
+build going on on the machine) with the physicslogs off, and at 3-4 times on Wrzosy with them
+on (250 drivers, the road vehicles included: 740 MB of physicslogs in 900 s), after 30-150 s of
+loading.
 
 Checks (speeds in km/h, times in seconds of physicslog time, distances in metres). Most use
 the physicslog Velocity column, which is the wheel speed: it stays at 0 while the wheels are
@@ -244,6 +405,34 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
+  `Bad driving: ... collided` message of a collision.
+- `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.
+- `couples` `vehicle`, `other`: the black box of the run has the two vehicles coupled to each
+  other (the coupler itself, whatever else of the hoses and the cables) at some time after the
+  start, and still coupled at the end. The vehicles go by their node names, with `{{vehicle}}`
+  filled in as in the fragment, e.g. `{{vehicle}}_rb`. Fails when the two were coupled from the
+  start, came apart again, or the run left no black box. The black box is looked at once a
+  second, so the time given is that of the first look after the couplers caught.
+- `parts` `vehicle`, `other`, optional `before`: the black box has the two vehicles, coupled to
+  each other, come apart (the coupler itself let go: broken, or uncoupled), by the time `before`
+  of the recording when given.
+- `driver_changes` `vehicle`, `to`, optional `after`, `before`: the black box has the vehicle get
+  the driver `to` (`none`, `ai` or `user`) at a time of the recording between the two, having had
+  another one before, and keep it to the end.
+- `stops_driverless` `vehicle`, `min_speed`, `within`, optional `stop_speed` (0.5), `max_creep`
+  (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
+  stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
+  the recording, or until it gets a driver again, at least `hold` seconds. The physicslog can't
+  tell: the driver writes it, so it ends when the driver goes.
+- `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
+  vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
-parameters and returns `(passed, detail)`.
+parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
+text of `log.txt` instead of the rows. Checks on the black box (`blackbox_doc.md` in the root of
+the repo; the simulator writes it along with the physicslogs) go in `BLACKBOX_CHECKS` and get
+what `read_blackbox()` read of it: the names of the vehicles, the coupling records, and the
+states of each vehicle from the `vehicles` records (position, speed, driver; a vehicle is listed
+when it moved, changed speed or got another driver, and all of them every 60 s). A check
+on another kind of record has to add it there.

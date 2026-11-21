@@ -88,13 +88,15 @@ public:
 	bool terrain_while_laying() const { return m_terrain_while_laying; }
 	void terrain_while_laying(bool const Make) { m_terrain_while_laying = Make; }
 	// the terrain model in the terrain panel: the band along the tracks it's loaded in, m; the chunks along a side of the square
-	// made around the camera; the formation and the slopes made along the tracks; the terrain following the tracks edited
+	// made around the camera; the formation and the slopes made along the tracks; the terrain following the tracks edited; the
+	// terrain made from the model around the camera within the download area, in the background
 	struct terrain_model_settings
 	{
 		double band{300.0};
 		int around{4};
 		bool shape{true};
 		bool follow{true};
+		bool area{true};
 	};
 	terrain_model_settings &terrain_model() { return m_terrain_model; }
 	// the height offset of the terrain model to the tracks of the scenery, and whether it was fitted to them; false when none was stored

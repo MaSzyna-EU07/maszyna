@@ -175,6 +175,17 @@ std::string utf8_to_win1250(std::string const &Text);
 bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
 // decodes windows-1250 (ansi) encoded text into unicode code points
 void win1250_to_utf32(std::string const &Text, std::u32string &Output);
+// a text of the data files as utf-8, for the user interface. the files are in windows-1250, some of the newer ones in
+// utf-8: a text which is valid utf-8 stays as it is, any other is read as windows-1250, every letter of the code page
+// (not only the polish ones win1250_to_utf8() knows) turned into utf-8
+std::string data_text_to_utf8(std::string const &Text);
+// the same for a name (of a station, a train, an event, a node, a file) shown in a line of the user interface: what
+// Bezogonkow() is for, but the letters keep their marks. control characters become spaces and, when asked, underscores too
+std::string data_name_to_utf8(std::string const &Name, bool Underscorestospaces = false);
+// number of characters (code points) of a text in utf-8; a byte which isn't a part of a valid sequence counts as one
+std::size_t utf8_length(std::string_view Text);
+// a text in utf-8 cut or filled with spaces to given number of characters, for the columns of the fixed width
+std::string utf8_fit(std::string_view Text, std::size_t Width);
 
 inline std::string extract_value(std::string const &Key, std::string const &Input)
 {
@@ -222,10 +233,17 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
-// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
-// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+// the file as it's named on the disk when only the case of its name or of its folders differs, as in the sceneries made on Windows;
+// empty when there's none. on Windows, finding the names in any case itself, the file given or none
 std::string FileCased(std::filesystem::path const &Filename);
+// the file to open: as it's named on the disk, the name given when there's none
+std::string FileOnDisk(std::string const &Filename);
+// the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
+// found in any case; the name given when there's none
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);
 
+// the first name with one of the extensions which has a file in any case, in the order given; given back as named here, the file
+// is opened by FileOnDisk()
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file

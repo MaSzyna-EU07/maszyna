@@ -1,0 +1,19 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// two EN57-2000 units, which have automatic couplers at their cab ends, on the straight track 1
+// of Stacja1: one stands where td.scn keeps its timetable train, with an AI driver and no
+// timetable, so it stays put and logs its physics; the other has no driver and rolls into it at
+// {{velocity}} km/h, its front coupler hitting the rear one of the first.
+// a trainset's first vehicle stands {{offset}} m past point 1 of its track, the rest towards point 1,
+// and a positive velocity runs towards point 2. tdo_n1734 is the 100 m track after tdo_n1725, a unit
+// is 64.4 m long: the first one reaches back to 35.6 m into tdo_n1725, so the gap is 35.6 - offset m.
+trainset none tdo_n1734 0.0 0.0
+node -1 0 {{vehicle}} dynamic pkp\en57-2000_v1 en57-2040_ra 6ba 0 headdriver 255 0 enddynamic
+node -1 0 {{vehicle}}_s dynamic pkp\en57-2000_v1 en57-2040_s 6bs 0 nobody 255 0 enddynamic
+node -1 0 {{vehicle}}_rb dynamic pkp\en57-2000_v1 en57-2040_rb 6bb 0 nobody 0 0 enddynamic
+endtrainset
+
+trainset none tdo_n1725 {{offset}} {{velocity}}
+node -1 0 {{vehicle}}_hit_ra dynamic pkp\en57-2000_v1 en57-2040_ra 6ba 0 nobody 255 0 enddynamic
+node -1 0 {{vehicle}}_hit_s dynamic pkp\en57-2000_v1 en57-2040_s 6bs 0 nobody 255 0 enddynamic
+node -1 0 {{vehicle}}_hit_rb dynamic pkp\en57-2000_v1 en57-2040_rb 6bb 0 nobody 0 0 enddynamic
+endtrainset
