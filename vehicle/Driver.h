@@ -29,7 +29,6 @@ auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
-auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start keeps the power on while the train brake releases
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders

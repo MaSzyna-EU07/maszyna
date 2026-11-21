@@ -8819,10 +8819,8 @@ void TController::control_tractive_force() {
     if( AccDesired > EU07_AI_NOACCELERATION // don't add power if not asked for actual speed-up
 	    && (AbsAccS < AccDesired /*- std::min( 0.05, 0.01 * iDriverFailCount )*/ || mvOccupied->SpeedCtrlUnit.IsActive && velocity < mvOccupied->SpeedCtrlUnit.FullPowerVelocity) &&
 	    false == TestFlag(iDrivigFlags, movePress) &&
-	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
-	    // speeds the train up, more power only drags the brake and slips the wheels. nor is a notch past that taken
-	    // back: the power got there in one notch from below, and the notch below doesn't hold the train
-	    ( false == bUphillRelease || fUphillTractiveForce < uphill_start::holding_force * fUphillHoldingForce ) &&
+	    // starting uphill against the releasing brake, no more power than holds the train
+	    uphill_start::may_add_power( bUphillRelease, fUphillTractiveForce, fUphillHoldingForce ) &&
 	    // nor while the train brake is still being applied further to hold the train
 	    false == bUphillBrakeTopUp &&
 	    velocity < (VelDesired == 1.0 ? // work around for trains getting stuck on tracks with speed limit = 1
@@ -8884,41 +8882,35 @@ void TController::control_uphill_start() {
         end_uphill_start();
         return;
     }
-    if( false == bUphillStart ) {
-        if( ( std::abs( velocity ) < EU07_AI_NOMOVEMENT )
-         // the whole train at a stand, not only its head stopped for a moment while the train rolls back
-         && ( fConsistVelocity > -0.5 )
-         && ( AccDesired > EU07_AI_NOACCELERATION )
-         && ( VelDesired > 0.0 )
-         && ( BrakeCtrlPosition > 0.0 ) // only with the train brake still applied to hold the train
-         && ( IsConsistCharged ) ) { // and charged to what the pipe has, or the brake that holds the train has no air
-            bUphillStart = true;
-            bUphillRelease = false;
-            UphillTopUp = {};
-            fUphillStartTime = ElapsedTime;
-        }
-        else {
-            return;
-        }
-    }
-    if( AccDesired <= EU07_AI_NOACCELERATION ) {
-        // no longer to start: the standing rules take over
-        end_uphill_start();
-        return;
-    }
-    if( fConsistVelocity < -0.5 ) {
-        // the train rolls back all the same: the rules for a train slipping back take over and apply the brakes.
-        // the train as a whole, not its head: with the locomotive brake off, the locomotive and the first vehicles
-        // run back into the slack of a long train still held by its brake
-        end_uphill_start();
-        return;
-    }
     fUphillTractiveForce = 0.0;
     for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
         // Ft is signed in the vehicle's own frame, and turned into the direction of travel as AbsAccS is
         fUphillTractiveForce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) * ( iDirection >= 0 ? 1 : -1 ) );
     }
     fUphillHoldingForce = fMass * -fAccGravity;
+    uphill_start::situation const now {
+        std::abs( velocity ) < EU07_AI_NOMOVEMENT, velocity, fConsistVelocity,
+        AccDesired > EU07_AI_NOACCELERATION, VelDesired > 0.0, BrakeCtrlPosition > 0.0,
+        fUphillTractiveForce, fUphillHoldingForce, IsConsistReleased, IsConsistCharged };
+    if( false == bUphillStart ) {
+        if( false == uphill_start::begins( now ) ) {
+            return;
+        }
+        bUphillStart = true;
+        bUphillRelease = false;
+        UphillTopUp = {};
+        fUphillStartTime = ElapsedTime;
+    }
+    if( false == now.speed_up ) {
+        // no longer to start: the standing rules take over
+        end_uphill_start();
+        return;
+    }
+    if( uphill_start::rolls_back( now ) ) {
+        // the rules for a train slipping back take over and apply the brakes
+        end_uphill_start();
+        return;
+    }
     bUphillBrakeTopUp = false;
     if( false == bUphillRelease ) {
         bUphillBrakeTopUp = uphill_brake_top_up();
@@ -8929,10 +8921,7 @@ void TController::control_uphill_start() {
          && ( mvOccupied->LocalBrakePosA > 0.0 ) ) {
             cue_action( driver_hint::independentbrakerelease );
         }
-        if( ( velocity > 1.0 )
-         || ( fUphillTractiveForce > uphill_start::holding_force * fUphillHoldingForce )
-         // a locomotive that can't hold the train on its own power gets the brake off in the end all the same
-         || ( ElapsedTime - fUphillStartTime > 45.0 ) ) {
+        if( uphill_start::power_holds( now, ElapsedTime - fUphillStartTime ) ) {
             // the power holds the train: the train brake can be released
             bUphillRelease = true;
             fUphillReleaseTime = ElapsedTime;
@@ -8941,9 +8930,7 @@ void TController::control_uphill_start() {
     }
     // the train brake is being released with the power on. the start ends once the brakes are off: ended before,
     // the brake still on takes the power off, the train rolls back and has to be braked to a stand again
-    if( IsConsistReleased
-     // a brake that doesn't come off (a hand brake) ends it all the same
-     || ( ElapsedTime - fUphillReleaseTime > EU07_AI_UPHILLRELEASETIME ) ) {
+    if( uphill_start::released( now, ElapsedTime - fUphillReleaseTime ) ) {
         end_uphill_start();
     }
 }
