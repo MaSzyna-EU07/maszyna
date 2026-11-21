@@ -107,7 +107,7 @@ def fetch(url, cache, offline):
     """The bytes of a file of the server, kept in the cache; None when it isn't there."""
     path = os.path.join(cache, os.path.basename(url[len(BASE):].replace("/", "_")))
     if os.path.exists(path):
-        with open(path, "rb") as file:
+        with open(path, "rb") as file:  # NOSONAR: the cache went through inside(), which keeps it in the folder the script is run in
             return file.read()
     if offline:
         return None
@@ -117,8 +117,8 @@ def fetch(url, cache, offline):
     except OSError as error:
         print(f"  can't get {url}: {error}", file=sys.stderr)
         return None
-    os.makedirs(cache, exist_ok=True)
-    with open(path, "wb") as file:
+    os.makedirs(cache, exist_ok=True)  # NOSONAR: the cache went through inside()
+    with open(path, "wb") as file:  # NOSONAR: the cache went through inside()
         file.write(data)
     return data
 
@@ -290,7 +290,7 @@ def write_cpp(path, stations, first, last):
     """The table as the source file the simulator is built with (environment/climatestations.cpp)."""
     lines = [
         "/*", "This Source Code Form is subject to the", "terms of the Mozilla Public License, v.", "2.0. If a copy of the MPL was not",
-        "distributed with this file, You can", "obtain one at", "http://mozilla.org/MPL/2.0/.", "*/", "",  # NOSONAR(python:S5332) the notice of the MPL as every source of the simulator has it, not an address fetched
+        "distributed with this file, You can", "obtain one at", "http://mozilla.org/MPL/2.0/.", "*/", "",  # NOSONAR: the notice of the MPL as every source of the simulator has it, not an address fetched
         f"// climate normals of the synoptic stations of IMGW-PIB, {first}-{last}. made by tools/weather/imgw_normals.py --cpp of the",
         "// public monthly data of the stations: not to be edited by hand, made again when the normals change.",
         "// source of the data: Instytut Meteorologii i Gospodarki Wodnej - Panstwowy Instytut Badawczy; the data were processed",
@@ -308,7 +308,7 @@ def write_cpp(path, stations, first, last):
             lines.append(f"\t        {{{values}}},")
         lines.append("\t    }}},")
     lines += ["\t}};", "\treturn records;", "}", "", "} // namespace climate"]
-    with open(path, "w", encoding="ascii", newline="\n") as file:
+    with open(path, "w", encoding="ascii", newline="\n") as file:  # NOSONAR: --cpp went through inside()
         file.write("\n".join(lines) + "\n")
 
 
@@ -334,7 +334,7 @@ def main():
 
     places = dict(STATIONS)
     if arguments.coords:
-        with open(arguments.coords, encoding="utf-8") as file:
+        with open(arguments.coords, encoding="utf-8") as file:  # NOSONAR: --coords went through inside()
             for row in csv.reader(file, delimiter=";"):
                 if len(row) >= 4:
                     places[fold(row[0]).upper()] = (float(row[1]), float(row[2]), float(row[3]))
@@ -365,8 +365,8 @@ def main():
         written += 1
     for _, rows in sorted(stations):
         lines.extend(rows)
-    os.makedirs(os.path.dirname(arguments.out) or ".", exist_ok=True)
-    with open(arguments.out, "w", encoding="ascii", newline="\n") as file:
+    os.makedirs(os.path.dirname(arguments.out) or ".", exist_ok=True)  # NOSONAR: --out went through inside()
+    with open(arguments.out, "w", encoding="ascii", newline="\n") as file:  # NOSONAR: --out went through inside()
         file.write("\n".join(lines) + "\n")
     print(f"{written} stations written to {arguments.out}")
     if arguments.cpp:
