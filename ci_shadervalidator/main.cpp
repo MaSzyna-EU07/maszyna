@@ -1,11 +1,13 @@
 #include "stdafx.h"
 #include "../gl/shader.h"
 #include "../gl/glsl_common.h"
-#include "Globals.h"
+#include "utilities/Globals.h"
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <vector>
+#include <algorithm>
 
 _global Global;
 
@@ -14,7 +16,14 @@ bool check_shader(std::string filename)
 	gl::shader shader_processor;
 
 	gl::glsl_common_setup();
-	std::pair<GLuint, std::string> source = shader_processor.process_source(filename, "../shaders/");
+	std::pair<GLuint, std::string> source;
+	try {
+		source = shader_processor.process_source(filename, "../shaders/");
+	}
+	catch (gl::shader_exception const &e) {
+		std::cout << "failed to preprocess: " << e.what() << std::endl;
+		return false;
+	}
 
 	std::string stage;
 	if (source.first == GL_VERTEX_SHADER)
@@ -26,11 +35,28 @@ bool check_shader(std::string filename)
 	else
 		return false;
 
-	std::ofstream file("/tmp/shader");
+	// glslang defines the GL_ARB_gpu_shader5 macro without the #extension directive, so light_common.glsl
+	// takes its textureGather() path, which needs the extension enabled on desktop GL 3.30. has_gl_extension()
+	// of gl/shader.cpp has no GL context here and says no, so the directive which the simulator gives on the
+	// drivers with the extension is added here
+	std::string const gpu_shader5 = "#extension GL_ARB_gpu_shader5 : enable\n";
+	if (!Global.gfx_usegles && source.second.find(gpu_shader5) == std::string::npos) {
+		std::size_t const version_end = source.second.find('\n');
+		if (version_end != std::string::npos)
+			source.second.insert(version_end + 1, gpu_shader5);
+	}
+
+	// in the temporary directory of the system, which is /tmp on linux
+	std::string const path = (std::filesystem::temp_directory_path() / "shader").string();
+	std::ofstream file(path);
 	file << source.second;
 	file.close();
+	if (!file) {
+		std::cout << "cannot write " << path << std::endl;
+		return false;
+	}
 
-	int ret = system(("glslangValidator -S " + stage + " /tmp/shader").c_str());
+	int ret = system(("glslangValidator -S " + stage + " \"" + path + "\"").c_str());
 
 	return ret == 0;
 }
@@ -90,24 +116,32 @@ bool check_shader_confs(std::string filename)
 
 int main()
 {
-	bool suc = true;
+	// in name order, so the runs can be compared
+	std::vector<std::string> shaders;
 	for (auto &f : std::filesystem::recursive_directory_iterator("../shaders/")) {
 		if (!f.is_regular_file())
 			continue;
 
-		std::string relative = std::filesystem::relative(f.path(), "../shaders/").string();
 		if (f.path().extension() != ".frag" && f.path().extension() != ".geom" && f.path().extension() != ".vert")
 			continue;
 
+		shaders.push_back(std::filesystem::relative(f.path(), "../shaders/").generic_string());
+	}
+	std::sort(shaders.begin(), shaders.end());
+
+	std::vector<std::string> failed;
+	for (auto const &relative : shaders) {
 		std::cout << "== validating shader " << relative << ": " << std::flush;
 		if (!check_shader_confs(relative))
-			suc = false;
+			failed.push_back(relative);
 	}
 
-	if (suc)
-		std::cout << "==== all checks ok" << std::endl;
+	if (failed.empty())
+		std::cout << "==== all checks ok (" << shaders.size() << " shaders)" << std::endl;
 	else {
-		std::cout << "==== checks failed" << std::endl;
+		std::cout << "==== checks failed for " << failed.size() << " of " << shaders.size() << " shaders:" << std::endl;
+		for (auto const &relative : failed)
+			std::cout << relative << std::endl;
 		return 1;
 	}
 
