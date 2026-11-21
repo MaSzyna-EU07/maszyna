@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Knots.h"
 
 struct map_colored_paths {
+	std::vector<gfx::geometrybank_handle> roads;
 	std::vector<gfx::geometrybank_handle> switches;
 	std::vector<gfx::geometrybank_handle> occupied;
 	std::vector<gfx::geometrybank_handle> future;
@@ -253,6 +254,8 @@ public:
 
 	void
 	    render_lines(std::vector<gfx::basic_vertex> &out, float quality = 1.0f) const;
+	void
+	    plan_bounds(glm::dvec2 &minimum, glm::dvec2 &maximum) const;
 
 	glm::vec3
 	    get_nearest_point(const glm::dvec3 &point, float quality = 1.0f) const;

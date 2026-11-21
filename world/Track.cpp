@@ -118,6 +118,18 @@ void chain_switch_pieces( TTrack &Track, std::size_t const Index ) {
 TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 int TTrack::s_layoutstamp { 0 };
+std::atomic<std::uint64_t> TTrack::s_map_dynamics_revision { 0 };
+std::atomic<std::uint64_t> TTrack::s_map_geometry_revision { 0 };
+
+std::uint64_t TTrack::map_dynamics_revision()
+{
+	return s_map_dynamics_revision.load(std::memory_order_relaxed);
+}
+
+std::uint64_t TTrack::map_geometry_revision()
+{
+	return s_map_geometry_revision.load(std::memory_order_relaxed);
+}
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
 { // na początku wszystko puste
@@ -241,6 +253,7 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 
 // tworzenie nowego odcinka ruchu
 TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
+	++s_map_geometry_revision;
 
     track_rails::forget();
 }
@@ -248,6 +261,7 @@ TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
 TTrack::~TTrack()
 { // likwidacja odcinka
     track_rails::forget();
+	++s_map_geometry_revision;
 	if( eType == tt_Cross ) {
 		delete SwitchExtension->vPoints; // skrzyżowanie może mieć punkty
 	}
@@ -865,6 +879,7 @@ void TTrack::init_segments( bool const Initial ) {
 	double r1, r2, r3, r4;
     double segsize = 5.0; // długość odcinka segmentowania
 
+    ++s_map_geometry_revision;
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
@@ -1266,7 +1281,10 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
+    bool const was_unoccupied = Dynamics.empty();
     Dynamics.emplace_back( Dynamic );
+    if (was_unoccupied && iCategoryFlag == 1)
+        ++s_map_dynamics_revision;
     Dynamic->MyTrack = this; // ABu: na ktorym torze jesteśmy
     if( Dynamic->iOverheadMask ) {
         // jeśli ma pantografy
@@ -1289,6 +1307,7 @@ bool TTrack::CheckDynamicObject(TDynamicObject *Dynamic)
 
 bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
 { // usunięcie pojazdu z listy przypisanych do toru
+    bool const was_occupied = !Dynamics.empty();
     bool result = false;
     if( *Dynamics.begin() == Dynamic ) {
         // most likely the object getting removed is at the front...
@@ -1312,6 +1331,8 @@ bool TTrack::RemoveDynamicObject(TDynamicObject *Dynamic)
                 ++idx;
             }
         }
+        if (result && was_occupied && Dynamics.empty() && iCategoryFlag == 1)
+            ++s_map_dynamics_revision;
     }
     if( Global.iMultiplayer ) {
         // jeśli multiplayer
@@ -1365,9 +1386,29 @@ void TTrack::RaAssign( TAnimModel *am, basic_event *done, basic_event *joined )
 
 void TTrack::create_map_geometry(std::vector<gfx::basic_vertex> &Bank, const gfx::geometrybank_handle Extra)
 {
-    if (iCategoryFlag != 1)
-        return; // only tracks for now
 	gfx::userdata_array empty_userdata{};
+
+	if (iCategoryFlag == 2)
+	{
+		std::vector<gfx::basic_vertex> vertices;
+		if (eType == tt_Normal)
+		{
+			Segment->render_lines(vertices, 0.5f);
+		}
+		else if (eType == tt_Cross)
+		{
+			for (auto const &segment : SwitchExtension->Segments)
+			{
+				if (segment)
+					segment->render_lines(vertices, 0.5f);
+			}
+		}
+		road_map_geometry = GfxRenderer->Insert(vertices, empty_userdata, Extra, GL_LINES);
+		return;
+	}
+
+	if (iCategoryFlag != 1)
+		return;
 
 	switch (eType)
 	{
@@ -1438,6 +1479,12 @@ double TTrack::ActiveLength() {
 
 void TTrack::get_map_active_paths(map_colored_paths &handles)
 {
+	if (iCategoryFlag == 2) {
+		if (road_map_geometry != null_handle)
+			handles.roads.push_back(road_map_geometry);
+		return;
+	}
+
 	if (iCategoryFlag != 1)
 		return;
 

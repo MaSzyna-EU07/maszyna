@@ -9,6 +9,7 @@ ci_shadervalidator/validateshaders
 # CMake build output
 build/
 bin/
+widgets/map_icons.png
 
 #Visual Studio [Code] folders
 .vscode/

@@ -529,15 +529,11 @@ public:
         sections( glm::dvec3 const &Point, float const Radius, std::vector<basic_section *> &Sections ) const;
 	void
 	    create_map_geometry();
-	void
-	    update_poi_geometry();
     // loads all geometry kept in binary terrain files which wasn't needed so far
     void
         load_terrain();
     basic_section* get_section(size_t section)
 	    { return m_sections[section]; }
-	gfx::geometrybank_handle
-	    get_map_poi_geometry() { return m_map_poipoints; }
 	glm::vec3 find_nearest_track_point(const glm::dvec3 &pos)
 	    { return section(pos).find_nearest_track_point(pos); }
 
@@ -549,9 +545,7 @@ public:
 
         std::vector<basic_section *> sections;
     };
-
     gfx::geometrybank_handle m_map_geometrybank;
-	gfx::geometrybank_handle m_map_poipoints;
 
 // methods
     // checks whether specified point is within boundaries of the region

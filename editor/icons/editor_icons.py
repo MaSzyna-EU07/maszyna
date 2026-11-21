@@ -415,6 +415,27 @@ def line_block(d):
     line(d, [(31, 44), (31, 62)], W - 10)
 
 
+def zoom_in(d):
+    circle(d, 27, 27, 16, outline=True, width=W - 5)
+    line(d, [(39, 39), (56, 56)], W - 5)
+    line(d, [(19, 27), (35, 27)], W - 7)
+    line(d, [(27, 19), (27, 35)], W - 7)
+
+
+def camera(d):
+    rect(d, 7, 18, 57, 53, outline=True, width=W - 4, radius=5)
+    poly(d, [(17, 18), (22, 9), (39, 9), (44, 18)])
+    circle(d, 33, 35, 11, outline=True, width=W - 6)
+    circle(d, 33, 35, 3)
+    circle(d, 49, 25, 2)
+
+
+def zoom_out(d):
+    circle(d, 27, 27, 16, outline=True, width=W - 5)
+    line(d, [(39, 39), (56, 56)], W - 5)
+    line(d, [(19, 27), (35, 27)], W - 7)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,

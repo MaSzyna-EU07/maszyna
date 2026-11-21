@@ -59,7 +59,7 @@ private:
 	scenario_panel m_scenariopanel { "Scenario", false };
     timetable_panel m_timetablepanel { "Timetable", false };
     debug_panel m_debugpanel { "Debug Data", false };
-    transcripts_panel m_transcriptspanel { "Transcripts", true }; // voice transcripts
+    transcripts_panel m_transcriptspanel { "Transcripts", false }; // voice transcripts
 	trainingcard_panel m_trainingcardpanel;
 	perfgraph_panel m_perfgraphpanel;
     bool m_paused { false };
