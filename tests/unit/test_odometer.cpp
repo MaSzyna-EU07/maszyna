@@ -4,9 +4,14 @@
 #include "utilities/Globals.h"
 #include "vehicle/odometer.h"
 
+#include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <optional>
 #include <sstream>
+#include <string>
 
 // the odometer of a vehicle, kept between the sessions (eu07/maszyna#72): one state the cab's counters and the
 // python screens show, saved in one store, taking over the states the python screens kept in their own files
@@ -664,4 +669,284 @@ TEST_CASE("odometer: the files of both kinds of python screens are read, by the 
 	// neither
 	CHECK_FALSE(odometer::legacy_state(vehicles, "EU07-425", scripts).has_value());
 	CHECK_FALSE(odometer::legacy_state(vehicles, "", scripts).has_value());
+}
+
+// the day a state was last updated, kept in the file so the vehicles not run for long are dropped from it (review of
+// eu07/maszyna#283: the file grew with every vehicle ever run). the tests give the day, the clock of the machine
+// doesn't matter
+
+namespace {
+
+constexpr odometer::day today{std::chrono::year{2026} / 11 / 21};
+
+odometer::day days_ago(int const Days) {
+	return today - std::chrono::days{Days};
+}
+
+odometer::day days_on(int const Days) {
+	return today + std::chrono::days{Days};
+}
+
+odometer::store read_text(std::string const &Text, odometer::day const Today = today) {
+	std::stringstream file{Text};
+	odometer::store store;
+	store.read(file, Today);
+	return store;
+}
+
+std::string read_file(std::filesystem::path const &Path) {
+	std::ifstream input{Path, std::ios::binary};
+	std::stringstream content;
+	content << input.rdbuf();
+	return content.str();
+}
+
+std::string written(odometer::store const &Store) {
+	std::stringstream text;
+	Store.write(text);
+	return text.str();
+}
+
+// the reader of the builds before the stamps, as it was (2f127688, odometer::store::read): the states it gets
+struct old_state {
+	double km;
+	bool guessed;
+};
+
+std::optional<old_state> old_line(std::string const &Line, std::string &Name) {
+	auto const separator{Line.find_first_of(" \t")};
+	if (separator == std::string::npos)
+		return std::nullopt;
+	auto number{Line.substr(0, separator)};
+	auto const guessed{false == number.empty() && number.front() == '~'};
+	if (guessed)
+		number.erase(0, 1);
+	std::size_t used{0};
+	double km{0.0};
+	try {
+		km = std::stod(number, &used);
+	} catch (std::exception const &) {
+		return std::nullopt;
+	}
+	Name = Line.substr(separator + 1);
+	if (used != number.size() || false == std::isfinite(km) || km < 0.0 || Name.empty())
+		return std::nullopt;
+	return old_state{km, guessed};
+}
+
+std::map<std::string, old_state> old_read(std::string const &Text) {
+	std::map<std::string, old_state> states;
+	std::stringstream input{Text};
+	std::string line;
+	while (std::getline(input, line)) {
+		if (false == line.empty() && line.back() == '\r')
+			line.pop_back();
+		if (line.empty() || line.front() == '#')
+			continue;
+		std::string name;
+		if (auto const state{old_line(line, name)}; state.has_value())
+			states[name] = *state;
+	}
+	return states;
+}
+
+odometer::reading guessed_run(double const Km, double const Metres) {
+	odometer::reading reading;
+	reading.begin(Km, odometer::origin::guessed);
+	reading.run(Metres);
+	return reading;
+}
+
+} // namespace
+
+TEST_CASE("odometer: a file of the builds before the stamps is read whole, its states updated the day it's read") {
+	std::string const unstamped{"# odometer states of the vehicles: <km> <vehicle name>, ~<km> for one counted from a made up state\n"
+	                            "1000.0000 EU07-424\n"
+	                            "~20000.0000 SM42-001\n"
+	                            "42.5000 loco with spaces\n"};
+	auto const store{read_text(unstamped)};
+	REQUIRE(store.size() == 3);
+	CHECK(store.find("EU07-424").value() == 1000.0);
+	CHECK(store.guessed("SM42-001"));
+	CHECK(store.find("loco with spaces").value() == 42.5);
+	for (auto const *name : {"EU07-424", "SM42-001", "loco with spaces"}) {
+		CAPTURE(name);
+		CHECK(store.updated(name) == today);
+	}
+	CHECK_FALSE(store.updated("EU07-425").has_value());
+
+	// saved, all of them are written with the day they were read, none dropped
+	scratch_directory directory{"odometer_unstamped"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, unstamped);
+	auto loaded{read_text(read_file(path))};
+	loaded.record("EU07-424", run(1000.0, 1000.0), today);
+	REQUIRE(odometer::save(loaded, path, today));
+	auto const text{read_file(path)};
+	CHECK(text.find("# updated 2026-11-21\n") != std::string::npos);
+	auto const after{read_text(text, days_on(10))};
+	CHECK(after.size() == 3);
+	CHECK(after.find("EU07-424").value() == doctest::Approx(1001.0));
+	CHECK(after.find("SM42-001").value() == 20000.0);
+	CHECK(after.updated("SM42-001") == today);
+}
+
+TEST_CASE("odometer: the day a state was last updated is written with it and read back") {
+	odometer::store store;
+	store.record("EU07-424", run(1000.0, 1000.0), days_ago(10));
+	store.record("loco with spaces", run(42.0, 500.0), today);
+	store.record("SM42-001", guessed_run(20000.0, 1000.0), days_ago(10));
+	store.record("ET22-001", run(5.0, 1000.0), days_ago(400));
+	auto const text{written(store)};
+	// grouped by the day, the oldest first, by the name in a group
+	CHECK(text.find("# updated 2025-10-17\n6.0000 ET22-001\n"
+	                "# updated 2026-11-11\n1001.0000 EU07-424\n~20001.0000 SM42-001\n"
+	                "# updated 2026-11-21\n42.5000 loco with spaces\n")
+	      != std::string::npos);
+
+	auto const read{read_text(text)};
+	CHECK(read.size() == 4);
+	CHECK(read.updated("EU07-424") == days_ago(10));
+	CHECK(read.updated("SM42-001") == days_ago(10));
+	CHECK(read.guessed("SM42-001"));
+	CHECK(read.updated("loco with spaces") == today);
+	CHECK(read.updated("ET22-001") == days_ago(400));
+	CHECK(read.find("loco with spaces").value() == doctest::Approx(42.5));
+	// the store read writes the same file again
+	CHECK(written(read) == text);
+}
+
+TEST_CASE("odometer: a build before the stamps reads the file with them as it read its own") {
+	odometer::store store;
+	store.record("EU07-424", run(1000.0, 1000.0), days_ago(10));
+	store.record("loco with spaces", run(42.0, 500.0), today);
+	store.record("SM42-001", guessed_run(20000.0, 1000.0), days_ago(300));
+	auto const old{old_read(written(store))};
+	REQUIRE(old.size() == 3);
+	CHECK(old.at("EU07-424").km == doctest::Approx(1001.0));
+	CHECK_FALSE(old.at("EU07-424").guessed);
+	CHECK(old.at("loco with spaces").km == doctest::Approx(42.5));
+	CHECK(old.at("SM42-001").km == doctest::Approx(20001.0));
+	CHECK(old.at("SM42-001").guessed);
+}
+
+TEST_CASE("odometer: a stamp later than the day, or a malformed one, doesn't make a state expire") {
+	auto const store{read_text("# updated 2099-01-01\n1 future\n"
+	                           "# updated 2025-01-01\n2 dated\n"
+	                           "# a comment between\n3 after a comment\n"
+	                           "# updated nonsense\n4 malformed\n"
+	                           "# updated 2026-02-30\n5 no such day\n"
+	                           "# updated 2025-1-01\n6 short\n"
+	                           "# updated 2025-01-01 \r\n7 trailing space\n"
+	                           "#updated 2024-01-01\n8 not a stamp\n")};
+	odometer::day const newyear{std::chrono::year{2025} / 1 / 1};
+	CHECK(store.size() == 8);
+	CHECK(store.updated("future") == today);
+	CHECK(store.updated("dated") == newyear);
+	CHECK(store.updated("after a comment") == newyear);
+	CHECK(store.updated("malformed") == today);
+	CHECK(store.updated("no such day") == today);
+	CHECK(store.updated("short") == today);
+	CHECK(store.updated("trailing space") == newyear);
+	CHECK(store.updated("not a stamp") == newyear);
+}
+
+TEST_CASE("odometer: a state is updated the day it's recorded, one left as it was keeps its day") {
+	auto store{read_text("# updated 2026-08-13\n300 known\n")};
+	REQUIRE(store.updated("known") == days_ago(100));
+	store.record("known", started(300.0), today);
+	CHECK(store.updated("known") == days_ago(100));
+	store.record("known", run(300.0, 1000.0), today);
+	CHECK(store.updated("known") == today);
+}
+
+TEST_CASE("odometer: of two stores merged, the later day of a state is kept, whichever state is newer") {
+	auto const other{read_text("# updated 2026-11-01\n100 known\n# updated 2026-11-20\n200 other\n")};
+	auto mine{read_text("# updated 2026-11-10\n150 known\n# updated 2026-11-15\n250 other\n")};
+	mine.merge(other);
+	CHECK(mine.find("known").value() == 150.0);
+	CHECK(mine.updated("known") == days_ago(11));
+	CHECK(mine.find("other").value() == 250.0);
+	CHECK(mine.updated("other") == days_ago(1));
+	auto const newer{read_text("# updated 2026-11-01\n500 known\n")};
+	mine.merge(newer);
+	CHECK(mine.find("known").value() == 500.0);
+	CHECK(mine.updated("known") == days_ago(11));
+}
+
+TEST_CASE("odometer: a save drops the states not updated for longer than a year, the other simulations' too") {
+	static_assert(odometer::expiry == std::chrono::days{365});
+	scratch_directory directory{"odometer_expiry"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "# updated 2025-11-20\n100 over a year\n"
+	                 "# updated 2025-11-21\n200 a year\n"
+	                 "# updated 2026-11-20\n300 fresh\n");
+	auto store{read_text(read_file(path))};
+	// another simulation saved meanwhile, with a state as old as one of this one's
+	write_file(path, "# updated 2025-11-20\n100 over a year\n"
+	                 "# updated 2025-11-21\n200 a year\n"
+	                 "# updated 2025-06-01\n5 old of another\n"
+	                 "# updated 2026-11-20\n300 fresh\n6 fresh of another\n");
+	store.record("run today", run(70.0, 1000.0), today);
+	REQUIRE(odometer::save(store, path, today));
+
+	auto const saved{read_text(read_file(path))};
+	CHECK(saved.size() == 4);
+	CHECK_FALSE(saved.find("over a year").has_value());
+	CHECK_FALSE(saved.find("old of another").has_value());
+	CHECK(saved.find("a year").value() == 200.0);
+	CHECK(saved.updated("a year") == days_ago(365));
+	CHECK(saved.find("fresh").value() == 300.0);
+	CHECK(saved.find("fresh of another").value() == 6.0);
+	CHECK(saved.find("run today").value() == doctest::Approx(71.0));
+	// gone from the store of the simulation too
+	CHECK_FALSE(store.find("over a year").has_value());
+	CHECK(store.size() == 4);
+
+	SUBCASE("the day after, the one of a year drops too, at the next save") {
+		store.record("run today", run(71.0, 1000.0), days_on(1));
+		REQUIRE(odometer::save(store, path, days_on(1)));
+		auto const later{read_text(read_file(path), days_on(1))};
+		CHECK(later.size() == 3);
+		CHECK_FALSE(later.find("a year").has_value());
+		CHECK(later.updated("run today") == days_on(1));
+	}
+	SUBCASE("a store with nothing recorded since doesn't write the file only to drop them") {
+		REQUIRE(odometer::save(store, path, today));
+		mark(path);
+		REQUIRE(odometer::save(store, path, days_on(1)));
+		CHECK(marked(path));
+		CHECK(read_text(read_file(path), days_on(1)).find("a year").has_value());
+	}
+}
+
+TEST_CASE("odometer: a save lost to another simulation's save is written again with its stamps") {
+	scratch_directory directory{"odometer_lost_save_stamps"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "# updated 2026-06-01\n1000 shared\n");
+	auto first{read_text(read_file(path))};
+	auto second{read_text(read_file(path))};
+	first.record("shared", run(1000.0, 5000.0), today);
+	first.record("first only", run(70.0, 1000.0), today);
+	second.record("second only", run(80.0, 1000.0), days_ago(1));
+
+	// the second one reads the file before the first one writes it, and puts its own in place after
+	auto const view{directory.path / "late_view" / path.filename()};
+	std::filesystem::create_directories(view.parent_path());
+	std::filesystem::copy_file(path, view);
+	REQUIRE(odometer::save(first, path, today));
+	REQUIRE(odometer::save(second, view, today));
+	std::filesystem::rename(view, path);
+	REQUIRE_FALSE(read_text(read_file(path)).find("first only").has_value());
+
+	REQUIRE(odometer::save(first, path, today));
+	REQUIRE(odometer::save(second, path, today));
+	auto const saved{read_text(read_file(path))};
+	CHECK(saved.size() == 3);
+	CHECK(saved.find("shared").value() == doctest::Approx(1005.0));
+	CHECK(saved.updated("shared") == today);
+	CHECK(saved.find("first only").value() == doctest::Approx(71.0));
+	CHECK(saved.updated("first only") == today);
+	CHECK(saved.find("second only").value() == doctest::Approx(81.0));
+	CHECK(saved.updated("second only") == days_ago(1));
 }
