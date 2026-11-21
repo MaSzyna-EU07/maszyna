@@ -771,45 +771,95 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				else
 					dir = glm::normalize(dir);
 				glm::vec2 const normal(-dir.y, dir.x);
+				glm::vec2 const post_direction(dir.x, dir.y);
+				float constexpr post_segment_length = 8.0f;
+				float constexpr post_length = post_segment_length * 6.0f;
+				ImVec2 const post_start(center.x, center.y);
+				ImVec2 const post_end(
+					center.x + post_direction.x * post_length,
+					center.y + post_direction.y * post_length);
+				glm::vec2 const mouse_from_post(
+					mouse_position.x - center.x,
+					mouse_position.y - center.y);
+				float const post_projection = glm::dot(
+					mouse_from_post,
+					glm::vec2(post_direction.x, post_direction.y));
+				float const post_projection_clamped = std::clamp(post_projection, 0.0f, post_length);
+				glm::vec2 const post_nearest(
+					center.x + post_direction.x * post_projection_clamped,
+					center.y + post_direction.y * post_projection_clamped);
+				glm::vec2 const post_distance(
+					mouse_position.x - post_nearest.x,
+					mouse_position.y - post_nearest.y);
+				bool const post_hovered =
+					mouse_over_map && glm::length2(post_distance) <= 49.0f;
 				float constexpr lamp_spacing = 7.0f;
 				if (cache.colors.empty())
 				{
 					bool const icon_hovered = mouse_over_map &&
-						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
-					if (icon_hovered)
+						(glm::length2(glm::vec2(mouse_position.x - post_end.x, mouse_position.y - post_end.y)) <= 100.0f ||
+						 post_hovered);
+					if (icon_hovered || post_hovered)
 						m_hovered_map_object = sem;
-					draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
-					if (icon_hovered)
-						draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
+					draw_list->AddLine(post_start, post_end, IM_COL32(245, 245, 245, 255), 3.0f);
+					for (int segment = 0; segment < 6; segment += 2)
+					{
+						ImVec2 const segment_start(
+							center.x + post_direction.x * post_segment_length * static_cast<float>(segment),
+							center.y + post_direction.y * post_segment_length * static_cast<float>(segment));
+						ImVec2 const segment_end(
+							center.x + post_direction.x * post_segment_length * static_cast<float>(segment + 1),
+							center.y + post_direction.y * post_segment_length * static_cast<float>(segment + 1));
+						draw_list->AddLine(segment_start, segment_end, IM_COL32(220, 55, 55, 255), 3.0f);
+					}
+					if (icon_hovered || post_hovered)
+						draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
+					draw_list->AddCircleFilled(post_end, 5.0f, IM_COL32(255, 210, 70, 255));
+					if (icon_hovered || post_hovered)
+						draw_list->AddCircle(post_end, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
 					return;
 				}
 
-				float const head_offset = (static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f;
-				ImVec2 const head_center(center.x + dir.x * head_offset, center.y + dir.y * head_offset);
+				ImVec2 const head_center(post_end.x, post_end.y);
+				glm::vec2 const head_axis(post_direction.x, post_direction.y);
+				glm::vec2 const head_normal(-head_axis.y, head_axis.x);
 				float const head_half_length =
 					std::max(5.0f, (static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
 				float constexpr head_half_width = 5.0f;
 				glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
 				bool const icon_hovered = mouse_over_map &&
-					std::abs(glm::dot(mouse_from_head, dir)) <= head_half_length &&
-					std::abs(glm::dot(mouse_from_head, normal)) <= head_half_width;
+					((std::abs(glm::dot(mouse_from_head, head_axis)) <= head_half_length &&
+					  std::abs(glm::dot(mouse_from_head, head_normal)) <= head_half_width) ||
+					 post_hovered);
 				bool const signal_hovered = icon_hovered;
 				if (signal_hovered)
 					m_hovered_map_object = sem;
 
 				ImVec2 const head_front_left(
-					head_center.x + dir.x * head_half_length + normal.x * head_half_width,
-					head_center.y + dir.y * head_half_length + normal.y * head_half_width);
+					head_center.x + head_axis.x * head_half_length + head_normal.x * head_half_width,
+					head_center.y + head_axis.y * head_half_length + head_normal.y * head_half_width);
 				ImVec2 const head_front_right(
-					head_center.x + dir.x * head_half_length - normal.x * head_half_width,
-					head_center.y + dir.y * head_half_length - normal.y * head_half_width);
+					head_center.x + head_axis.x * head_half_length - head_normal.x * head_half_width,
+					head_center.y + head_axis.y * head_half_length - head_normal.y * head_half_width);
 				ImVec2 const head_rear_right(
-					head_center.x - dir.x * head_half_length - normal.x * head_half_width,
-					head_center.y - dir.y * head_half_length - normal.y * head_half_width);
+					head_center.x - head_axis.x * head_half_length - head_normal.x * head_half_width,
+					head_center.y - head_axis.y * head_half_length - head_normal.y * head_half_width);
 				ImVec2 const head_rear_left(
-					head_center.x - dir.x * head_half_length + normal.x * head_half_width,
-					head_center.y - dir.y * head_half_length + normal.y * head_half_width);
-				draw_list->AddLine(center, head_center, IM_COL32(200, 200, 200, 255), 2.0f);
+					head_center.x - head_axis.x * head_half_length + head_normal.x * head_half_width,
+					head_center.y - head_axis.y * head_half_length + head_normal.y * head_half_width);
+				draw_list->AddLine(post_start, post_end, IM_COL32(245, 245, 245, 255), 3.0f);
+				for (int segment = 0; segment < 6; segment += 2)
+				{
+					ImVec2 const segment_start(
+						center.x + post_direction.x * post_segment_length * static_cast<float>(segment),
+						center.y + post_direction.y * post_segment_length * static_cast<float>(segment));
+					ImVec2 const segment_end(
+						center.x + post_direction.x * post_segment_length * static_cast<float>(segment + 1),
+						center.y + post_direction.y * post_segment_length * static_cast<float>(segment + 1));
+					draw_list->AddLine(segment_start, segment_end, IM_COL32(220, 55, 55, 255), 3.0f);
+				}
+				if (signal_hovered)
+					draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
 				draw_list->AddQuadFilled(
 					head_front_left, head_front_right, head_rear_right, head_rear_left,
 					IM_COL32(35, 40, 45, 220));
@@ -819,10 +869,12 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 						IM_COL32(120, 200, 255, 255), 3.0f);
 				for (std::size_t idx = 0; idx < cache.colors.size(); ++idx)
 				{
-					float const offset = static_cast<float>(cache.colors.size() - idx - 1);
+					float const offset =
+						static_cast<float>(cache.colors.size() - idx - 1) -
+						(static_cast<float>(cache.colors.size()) - 1.0f) * 0.5f;
 					ImVec2 const lamp_position(
-						center.x + dir.x * offset * lamp_spacing,
-						center.y + dir.y * offset * lamp_spacing);
+						head_center.x + head_axis.x * offset * lamp_spacing,
+						head_center.y + head_axis.y * offset * lamp_spacing);
 					draw_list->AddCircleFilled(lamp_position, 3.6f, static_cast<ImU32>(cache.colors[idx]));
 				}
 			};
