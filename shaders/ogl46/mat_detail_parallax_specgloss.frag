@@ -60,6 +60,7 @@ void main()
 	bool alphatestfail = ( opacity >= 0.0 ? (tex_color.a < opacity) : (tex_color.a >= -opacity) );
 	if(alphatestfail)
 		discard;
+	snow_foliage_from(diffuse, f_coord);
 
 	vec3 fragcolor = ambient;
 

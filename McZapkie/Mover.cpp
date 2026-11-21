@@ -5188,7 +5188,8 @@ void TMoverParameters::ComputeConstans(void)
 		{
 			dragarea = std::max(0.0, dragarea - 0.85 * previousvehicle->Dim.W * previousvehicle->Dim.H);
 		}
-		FrictConst1 += Cx * dragarea;
+		DragConst = Cx * dragarea;
+		FrictConst1 += DragConst;
 	}
 
 	if (CategoryFlag & 1)
@@ -5273,6 +5274,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 
 	// juz zoptymalizowane:
 	FStand = FrictionForce(); // siła oporów ruchu
+	FStand += SnowForce();
 	if (true == TestFlag(DamageFlag, dtrain_out))
 	{
 		// HACK: crude way to reduce speed after derailment
@@ -5321,6 +5323,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		FTrain *= FT_factor;
 	}
 
+	UpdateBrakeWeather(dt);
 	Fb = BrakeForce(RunningTrack);
 	// poslizg
 	auto Fwheels{FTrain - Fb * Sign(V)};
@@ -5389,6 +5392,8 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// doliczenie składowej stycznej grawitacji
 	FTrain /= FT_factor;
 	FTrain += TotalMassxg * RunningShape.dHtrack;
+	// the wind pushes the body, as the gravity does: against the vehicle, or on with it
+	FTrain += WeatherDragForce();
 	//! niejawne przypisanie zmiennej!
 	FTotal = FTrain - Sign(V) * FStand;
 }
@@ -5508,6 +5513,54 @@ double TMoverParameters::BrakeForce(TTrackParam const & /*Track*/)
 // Q: 20160713
 // Obliczanie siły tarcia
 // *************************************************************************************************
+double TMoverParameters::SnowForce() const
+{
+	if (RunningTrack.snow <= 0.0)
+		return 0.0;
+	// m the heads of the rails stand over the snow lying beside the sleepers; m the snow is pushed aside over (the width of the
+	// front of a vehicle), and m the flanges cut through the snow between the rails
+	double constexpr railhead{0.17};
+	double constexpr width{3.0};
+	double constexpr flanges{0.15};
+	double const over{std::max(RunningTrack.snow - railhead, 0.0)};
+	double const between{std::min(RunningTrack.snow, railhead)};
+	// the snow set moving at the speed of the vehicle, and what it takes to break it up and press it when it hardly moves
+	double const moving{V * V + 10.0};
+	return RunningTrack.snow_density * (width * over + flanges * between) * moving;
+}
+
+double TMoverParameters::WeatherDragForce() const
+{
+	auto const &settings{Global.physics_weather};
+	if ((false == settings.enabled) || (DragConst <= 0.0))
+		return 0.0;
+	auto const wind{settings.wind};
+	auto const along{wind ? RunningWeather.wind_along : 0.0};
+	auto const across{wind ? RunningWeather.wind_across : 0.0};
+	auto const density{settings.air_density ? RunningWeather.air_density : 1.0};
+	if ((along == 0.0) && (across == 0.0) && (density == 1.0))
+		return 0.0;
+	// the drag of the weather, less the one of the calm air FrictionForce() has already
+	return weather_physics::aerodynamic_force(DragConst, V, along, across, density, settings.wind_yaw) + Sign(V) * DragConst * V * V;
+}
+
+void TMoverParameters::UpdateBrakeWeather(double const dt)
+{
+	if (Hamulec == nullptr)
+		return;
+	auto const &settings{Global.physics_weather};
+	if ((false == settings.enabled) || (false == settings.brakes))
+	{
+		BrakeWeather = weather_physics::brake_state{};
+		Hamulec->weather_factor(1.0);
+		return;
+	}
+	// the heat of the braking of the previous step dries and thaws the blocks
+	weather_physics::brake_weather const weather{RunningWeather.rain, RunningWeather.snow, RunningWeather.temperature};
+	weather_physics::update_brakes(BrakeWeather, weather, V, std::abs(Fb * V), TotalMass, dt);
+	Hamulec->weather_factor(weather_physics::brake_factor(settings, Hamulec->material(), BrakeWeather));
+}
+
 double TMoverParameters::FrictionForce() const
 {
 	double FF = 0;
@@ -5569,7 +5622,11 @@ double TMoverParameters::Adhesive(double staticfriction) const
 	double deltaV = V - Vwheels; // poślizg - różnica prędkości w punkcie styku koła i szyny
 	deltaV = std::max(0.0, std::abs(deltaV) - 0.25); // mikropoślizgi do ok. 0,25 m/s nie zrywają przyczepności
 	Vwheels = std::abs(Vwheels);
-	adhesion = staticfriction * (28 + Vwheels) / (14 + Vwheels) * ((SandDose ? sandfactor : 1) - (1 - adh_factor) * (deltaV / (deltaV + slipfactor)));
+	// the sand gives a share more on a dry rail, and on a slippery one at least a share of the dry one (physics.weather.sand)
+	auto sanding{sandfactor};
+	if (SandDose && Global.physics_weather.enabled && Global.physics_weather.adhesion && RunningTrack.friction_dry > 0.0)
+		sanding = weather_physics::sanded(Global.physics_weather, staticfriction, RunningTrack.friction_dry, sandfactor);
+	adhesion = staticfriction * (28 + Vwheels) / (14 + Vwheels) * ((SandDose ? sanding : 1) - (1 - adh_factor) * (deltaV / (deltaV + slipfactor)));
 
 	return adhesion;
 }

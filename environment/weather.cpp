@@ -10,10 +10,20 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "environment/weather.h"
 
+#include "editor/editorGeoMap.hpp"
+#include "editor/editorSettings.hpp"
+#include "environment/climate.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/parser.h"
 #include "simulation/simulationenvironment.h"
+#include "simulation/simulationtime.h"
+#include "simulation/simulation.h"
+#include "environment/georeference.h"
+#include "vehicle/DynObj.h"
+#include "vehicle/Train.h"
+
+#include <algorithm>
 
 namespace
 {
@@ -150,6 +160,59 @@ cloud_layer typical_layer(cloud_type const Type, float const Coverage, float con
 	return layer;
 }
 
+bool is_section_keyword(std::string const &Token);
+
+// the wind at the ground of a description, with the wind at the clouds going the same way half as fast again
+void describe_wind(weather_conditions &Conditions, float const Direction, float const Speed, float const Gust)
+{
+	Conditions.wind_described = true;
+	Conditions.wind_direction = Direction;
+	Conditions.wind_speed = std::max(Speed, 0.f);
+	Conditions.wind_gust = std::max(Gust, 0.f);
+	Conditions.cloud_wind_direction = Direction;
+	Conditions.cloud_wind_speed = std::max(Conditions.wind_speed * 1.5f, 2.f);
+}
+
+// where the scenery lies: the place the editor keeps for it (the origin of its aerial photos, PUWG 1992), degrees of latitude and
+// longitude
+std::optional<glm::vec2> editor_location()
+{
+	auto scenery{Global.SceneryFile};
+	if (auto const slash = scenery.find_last_of("/\\"); slash != std::string::npos)
+		scenery = scenery.substr(slash + 1);
+	if (auto const dot = scenery.find_last_of('.'); dot != std::string::npos)
+		scenery = scenery.substr(0, dot);
+	double north{0.0};
+	double east{0.0};
+	if (scenery.empty() || (false == std::as_const(EditorSettings).orthophoto_origin(scenery, north, east)))
+		return std::nullopt;
+	auto const degrees{editor_geo::to_degrees(glm::dvec2{east, north})};
+	return glm::vec2{static_cast<float>(degrees.x), static_cast<float>(degrees.y)};
+}
+
+// the weather of a kind (a preset of environment/climate.h, random: one drawn as often as each comes) the climate of the place has
+// in the month of the simulation, in place of what Conditions held; the place and the seed are kept. false for an unknown kind
+bool describe_climate(weather_conditions &Conditions, std::string const &Kind)
+{
+	auto const location{Conditions.location ? Conditions.location : editor_location()};
+	auto const &station{location ? climate::stations().nearest(location->x, location->y) : climate::default_station()};
+	auto const month{std::clamp(static_cast<int>(simulation::Time.data().wMonth), 1, 12) - 1};
+	// a seed of the description makes the same day each time, without one it's another day each time
+	auto const seed{Conditions.seed != 0 ? Conditions.seed : static_cast<std::uint32_t>(Random(1, 1000000))};
+	auto preset{climate::preset::typical};
+	if (Kind == "random")
+		preset = climate::pick(station, month, static_cast<float>(seed % 9973u) / 9973.f);
+	else if (auto const named = climate::preset_from_name(Kind))
+		preset = *named;
+	else
+		return false;
+	auto const kept{Conditions.location};
+	Conditions = climate::make(station, month, preset, seed);
+	Conditions.location = kept;
+	WriteLog(std::string{"Weather: "} + climate::preset_name(preset) + " of month " + std::to_string(month + 1) + " at " + station.name);
+	return true;
+}
+
 // reads the body of a weather section (or the text the scripting interface gives) into Conditions
 void parse_section(std::vector<std::string> const &Tokens, weather_conditions &Conditions, std::optional<float> *Elevation, float *Transition)
 {
@@ -240,11 +303,69 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 			next_number(Conditions.cloud_wind_direction);
 			next_number(Conditions.cloud_wind_speed);
 		}
+		else if (keyword == "wind")
+		{
+			// wind direction speed [gust]: at the ground
+			auto direction{Conditions.wind_direction};
+			auto speed{Conditions.wind_speed};
+			auto gust{0.f};
+			if (next_number(direction) && next_number(speed))
+			{
+				next_number(gust);
+				describe_wind(Conditions, direction, speed, gust);
+			}
+		}
 		else if (keyword == "temperature")
 		{
 			float temperature{0.f};
 			if (next_number(temperature))
+			{
 				Conditions.temperature = temperature;
+				// a single temperature holds all day
+				Conditions.temperature_min.reset();
+				Conditions.temperature_max.reset();
+			}
+		}
+		else if (keyword == "temperaturerange")
+		{
+			// temperaturerange lowest highest: of the day
+			float lowest{0.f};
+			float highest{0.f};
+			if (next_number(lowest) && next_number(highest))
+			{
+				Conditions.temperature_min = std::min(lowest, highest);
+				Conditions.temperature_max = std::max(lowest, highest);
+				Conditions.temperature = 0.5f * (lowest + highest);
+			}
+		}
+		else if (keyword == "dewpoint")
+		{
+			float dewpoint{0.f};
+			if (next_number(dewpoint))
+				Conditions.dew_point = dewpoint;
+		}
+		else if (keyword == "humidity")
+		{
+			// relative humidity in percent, at the temperature given before it (or the one of the simulation)
+			float humidity{0.f};
+			if (next_number(humidity))
+				Conditions.dew_point = psychrometry::dew_point(Conditions.temperature.value_or(Global.AirTemperature), std::clamp(humidity / 100.f, 0.01f, 1.f));
+		}
+		else if (keyword == "location")
+		{
+			float latitude{0.f};
+			float longitude{0.f};
+			if (next_number(latitude) && next_number(longitude))
+				Conditions.location = glm::vec2{latitude, longitude};
+		}
+		else if (keyword == "climate")
+		{
+			// climate [kind]: the weather the place has in this month; without a kind an average day
+			std::string kind{"typical"};
+			if ((i < Tokens.size()) && (false == is_section_keyword(Tokens[i])) && (false == number(Tokens[i]).has_value()))
+				kind = lower(Tokens[i++]);
+			if (false == describe_climate(Conditions, kind))
+				WriteLog("Weather: unknown kind of weather \"" + kind + "\"", logtype::file);
 		}
 		else if (keyword == "elevation")
 		{
@@ -257,6 +378,19 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 			float seed{0.f};
 			if (next_number(seed))
 				Conditions.seed = static_cast<std::uint32_t>(std::max(seed, 0.f));
+		}
+		else if (keyword == "snowcover")
+		{
+			// snowcover depth [drift [fresh [tracks]]]: the snow lying, m, how far it is worked into drifts and how loose it is, 0..1,
+			// and the share of it lying on the tracks too, as before the first train went (without it the tracks are cleared)
+			float depth{0.f};
+			if (next_number(depth))
+			{
+				Conditions.snow_depth = std::max(depth, 0.f);
+				next_number(Conditions.snow_drift);
+				next_number(Conditions.snow_fresh);
+				next_number(Conditions.snow_tracks);
+			}
 		}
 		else if (keyword == "transition")
 		{
@@ -272,7 +406,8 @@ void parse_section(std::vector<std::string> const &Tokens, weather_conditions &C
 
 bool is_section_keyword(std::string const &Token)
 {
-	static std::array<char const *, 14> const keywords{"metar", "visibility", "haze", "groundfog", "fognoise", "noclouds", "clear", "clouds", "precipitation", "cloudwind", "temperature", "elevation", "seed", "transition"};
+	static std::array<char const *, 21> const keywords{"metar",     "visibility", "haze", "groundfog",  "fognoise",  "noclouds", "clear",            "clouds",   "precipitation", "cloudwind", "temperature",
+	                                                   "elevation", "seed",       "transition", "snowcover", "wind",     "temperaturerange", "dewpoint", "humidity",      "location",  "climate"};
 	auto const token{lower(Token)};
 	return std::any_of(keywords.begin(), keywords.end(), [&](char const *Keyword) { return token == Keyword; });
 }
@@ -375,16 +510,19 @@ bool parse_metar(std::string_view const Report, weather_conditions &Conditions)
 				auto const body{token.substr(0, token.size() - unit)};
 				auto const direction{body.substr(0, 3)};
 				auto speedtext{body.substr(3)};
+				std::string gusttext;
 				if (auto const gust = speedtext.find('G'); gust != std::string::npos)
+				{
+					gusttext = speedtext.substr(gust + 1);
 					speedtext = speedtext.substr(0, gust);
+				}
 				if ((all_digits(direction) || direction == "VRB") && all_digits(speedtext))
 				{
-					auto speed{static_cast<float>(std::stoi(speedtext))};
-					speed *= token.ends_with("KT") ? KNOTS : token.ends_with("KMH") ? (1.f / 3.6f) : 1.f;
-					if (direction != "VRB")
-						Conditions.cloud_wind_direction = static_cast<float>(std::stoi(direction));
-					// the wind at the clouds is stronger than at the ground
-					Conditions.cloud_wind_speed = std::max(speed * 1.5f, 2.f);
+					auto const scale{token.ends_with("KT") ? KNOTS : token.ends_with("KMH") ? (1.f / 3.6f) : 1.f};
+					auto const speed{static_cast<float>(std::stoi(speedtext)) * scale};
+					auto const gust{all_digits(gusttext) ? static_cast<float>(std::stoi(gusttext)) * scale : 0.f};
+					// the wind at the ground, a variable one keeping its direction; the wind at the clouds is stronger
+					describe_wind(Conditions, direction != "VRB" ? static_cast<float>(std::stoi(direction)) : Conditions.wind_direction, speed, gust);
 					understood = true;
 					continue;
 				}
@@ -480,6 +618,14 @@ bool parse_metar(std::string_view const Report, weather_conditions &Conditions)
 			if (all_digits(temperature) && temperature.size() <= 2)
 			{
 				Conditions.temperature = static_cast<float>(std::stoi(temperature)) * (negative ? -1.f : 1.f);
+				Conditions.temperature_min.reset();
+				Conditions.temperature_max.reset();
+				auto dewpoint{token.substr(slash + 1)};
+				auto const below{(false == dewpoint.empty()) && (dewpoint[0] == 'M')};
+				if (below)
+					dewpoint.erase(0, 1);
+				if (all_digits(dewpoint) && (dewpoint.size() <= 2))
+					Conditions.dew_point = static_cast<float>(std::stoi(dewpoint)) * (below ? -1.f : 1.f);
 				understood = true;
 				continue;
 			}
@@ -608,8 +754,14 @@ std::string to_metar(weather_conditions const &Conditions)
 {
 	std::ostringstream report;
 	report.imbue(std::locale::classic());
-	auto const knots{static_cast<int>(std::round(Conditions.cloud_wind_speed / 1.5f / KNOTS))};
-	report << std::setfill('0') << std::setw(3) << static_cast<int>(std::round(Conditions.cloud_wind_direction / 10.f) * 10.f) % 360 << std::setw(2) << std::min(knots, 99) << "KT ";
+	// the wind at the ground: the described one, or the one the clouds go with, slowed down
+	auto const direction{Conditions.wind_described ? Conditions.wind_direction : Conditions.cloud_wind_direction};
+	auto const knots{static_cast<int>(std::round((Conditions.wind_described ? Conditions.wind_speed : Conditions.cloud_wind_speed / 1.5f) / KNOTS))};
+	auto const gust{static_cast<int>(std::round(Conditions.wind_gust / KNOTS))};
+	report << std::setfill('0') << std::setw(3) << static_cast<int>(std::round(direction / 10.f) * 10.f) % 360 << std::setw(2) << std::min(knots, 99);
+	if (Conditions.wind_described && (gust >= knots + 5))
+		report << 'G' << std::setw(2) << std::min(gust, 99);
+	report << "KT ";
 	auto const fogged{Conditions.groundfog_thickness > 0.f};
 	auto const visibility{fogged ? Conditions.groundfog_visibility : Conditions.visibility};
 	if (visibility >= 10000.f)
@@ -619,8 +771,14 @@ std::string to_metar(weather_conditions const &Conditions)
 	if (Conditions.precipitation_intensity > 0.f && Conditions.precipitation != precipitation_type::none)
 	{
 		report << ' ' << (Conditions.precipitation_intensity < 0.4f ? "-" : Conditions.precipitation_intensity > 0.8f ? "+" : "");
-		auto const snow{(Conditions.precipitation == precipitation_type::snow) || ((Conditions.precipitation == precipitation_type::automatic) && (Global.AirTemperature <= 1.f))};
-		report << (snow ? "SN" : "RA");
+		std::optional<bool> rain;
+		if (Conditions.precipitation != precipitation_type::automatic)
+			rain = (Conditions.precipitation == precipitation_type::rain);
+		std::optional<float> wetbulb;
+		if (Conditions.dew_point)
+			wetbulb = psychrometry::wet_bulb(Global.AirTemperature, psychrometry::relative_humidity(Global.AirTemperature, *Conditions.dew_point));
+		auto const kind{psychrometry::falling_kind(Global.AirTemperature, wetbulb, rain)};
+		report << (kind == psychrometry::falling::freezing_rain ? "FZRA" : kind == psychrometry::falling::wet_snow ? "RASN" : psychrometry::is_snow(kind) ? "SN" : "RA");
 	}
 	if (fogged)
 		report << ' ' << (Conditions.groundfog_thickness < 30.f ? "MIFG" : Conditions.groundfog_visibility < 1000.f ? "FG" : "BR");
@@ -645,6 +803,11 @@ std::string to_metar(weather_conditions const &Conditions)
 	{
 		auto const temperature{static_cast<int>(std::round(*Conditions.temperature))};
 		report << ' ' << (temperature < 0 ? "M" : "") << std::setw(2) << std::abs(temperature) << '/';
+		if (Conditions.dew_point)
+		{
+			auto const dewpoint{static_cast<int>(std::round(std::min(*Conditions.dew_point, *Conditions.temperature)))};
+			report << (dewpoint < 0 ? "M" : "") << std::setw(2) << std::abs(dewpoint);
+		}
 	}
 	return report.str();
 }
@@ -698,6 +861,9 @@ float fog_range_from_visibility(float const Visibility, float const Overcast)
 void world_weather::reset()
 {
 	m_scenery.reset();
+	m_scenerytokens.clear();
+	m_surfacewind = glm::vec2{0.f};
+	m_snowing = false;
 	m_elevation.reset();
 	m_described_clouds = false;
 	m_described_fog = false;
@@ -708,6 +874,12 @@ void world_weather::reset()
 	m_ground_set = false;
 	m_ground = 0.f;
 	m_cloud_offset = glm::dvec2{0.0};
+	m_snow.reset();
+	m_rails.reset();
+	m_live.reset();
+	m_livenext = 0.0;
+	m_liveapplied = false;
+	m_livestatus.clear();
 	m_time = 0.0;
 }
 
@@ -720,16 +892,53 @@ void world_weather::deserialize(cParser &Input)
 		tokens.push_back(token);
 		token = Input.getToken<std::string>(false);
 	}
-	// a later section adds to an earlier one
-	auto conditions{m_scenery.value_or(weather_conditions{})};
-	parse_section(tokens, conditions, &m_elevation, nullptr);
-	m_scenery = conditions;
+	// a later section adds to an earlier one. they're read in init(), once the date of the simulation is known: the weather a
+	// section takes from the climate depends on the month
+	m_scenerytokens.insert(m_scenerytokens.end(), tokens.begin(), tokens.end());
 }
 
 void world_weather::init()
 {
 	m_transition = 0.0;
 	m_transition_time = 0.0;
+	// the weather of the settings over the one of the scenery (weather.mode): what they say is read after the section of the
+	// scenery, so it wins where both say something, and a preset of the climate replaces it all but the place and the ground
+	auto tokens{m_scenerytokens};
+	if (Global.WeatherMode == global_settings::weather_mode::manual)
+		tokens.insert(tokens.end(), Global.WeatherManual.begin(), Global.WeatherManual.end());
+	else if (Global.WeatherMode == global_settings::weather_mode::automatic)
+	{
+		// the climate only where the place of the scenery is known (its location entry, or the place the editor keeps for it);
+		// elsewhere the weather the starter set (atmo, the temperature and the date of the config of the scenery) stands, as
+		// without the setting, rather than the climate of a stand-in station
+		auto const located{std::ranges::any_of(m_scenerytokens, [](std::string const &Token) { return lower(Token) == "location"; })};
+		if (located || editor_location().has_value())
+		{
+			tokens.emplace_back("climate");
+			tokens.emplace_back("random");
+		}
+		else
+			WriteLog("Weather: the place of the scenery isn't known, the weather of the starter stands (weather.mode auto)");
+	}
+	else if (Global.WeatherMode == global_settings::weather_mode::preset)
+	{
+		// a preset of the climate by its name, or one drawn as often as each comes in the month; the climate of the place where it's
+		// known, of the stand-in station elsewhere
+		auto preset{lower(Global.WeatherPreset)};
+		if ((preset != "random") && (false == climate::preset_from_name(preset).has_value()))
+		{
+			WriteLog("Weather: unknown preset \"" + Global.WeatherPreset + "\" of weather.preset, one drawn instead");
+			preset = "random";
+		}
+		tokens.emplace_back("climate");
+		tokens.emplace_back(preset);
+	}
+	if (false == tokens.empty())
+	{
+		weather_conditions conditions;
+		parse_section(tokens, conditions, &m_elevation, nullptr);
+		m_scenery = conditions;
+	}
 	if (m_scenery)
 	{
 		// the description wins over the atmo section, wherever it was in the scenery
@@ -749,11 +958,35 @@ void world_weather::init()
 		m_current = m_target;
 	}
 	m_from = m_current;
+	apply_snow();
 	if (m_elevation)
 	{
 		m_ground = *m_elevation;
 		m_ground_set = true;
 	}
+	// the live weather: the weather of the scenery stands until the first report comes, fetched at once
+	m_live.reset();
+	m_livenext = 0.0;
+	m_liveapplied = false;
+	m_livestatus.clear();
+	if (Global.WeatherMode == global_settings::weather_mode::live)
+	{
+		if (false == georeference::scenery_origin().has_value())
+		{
+			m_livestatus = "the scenery isn't laid on the map: the weather of the scenery";
+			WriteLog("Weather: the scenery isn't laid on the map (no //$g line, no place in the editor), the weather of the scenery stands (weather.mode live)");
+		}
+		else if (false == live_weather::available())
+		{
+			m_livestatus = "this build can't fetch anything: the weather of the scenery";
+			WriteLog("Weather: no https in this build, the weather of the scenery stands (weather.mode live)");
+		}
+		else
+			m_livestatus = "waiting for the first report";
+	}
+	// the rails as the weather of the start left them: wet in the rain, iced in a freezing rain, with the leaves of the autumn
+	m_rails.reset();
+	m_rails.settle(surface_weather(), rails_daylight(), rails_leaves());
 	WriteLog("Weather: " + to_metar(m_current) + (m_scenery ? " (described)" : " (from the overcast and the fog range)"));
 }
 
@@ -807,6 +1040,7 @@ void world_weather::write_globals()
 
 void world_weather::update(double const Deltatime, glm::dvec3 const &Camera)
 {
+	update_live(Camera);
 	if (!m_ground_set)
 	{
 		// the ground below the place the simulation starts at, for want of anything better: the camera is in the cab
@@ -856,6 +1090,22 @@ void world_weather::update(double const Deltatime, glm::dvec3 const &Camera)
 		auto turn{m_target.cloud_wind_direction - m_from.cloud_wind_direction};
 		turn -= 360.f * std::round(turn / 360.f);
 		mixed.cloud_wind_direction = m_from.cloud_wind_direction + turn * t;
+		if (m_from.wind_described && m_target.wind_described)
+		{
+			mixed.wind_speed = mix(m_from.wind_speed, m_target.wind_speed);
+			mixed.wind_gust = mix(m_from.wind_gust, m_target.wind_gust);
+			auto veer{m_target.wind_direction - m_from.wind_direction};
+			veer -= 360.f * std::round(veer / 360.f);
+			mixed.wind_direction = m_from.wind_direction + veer * t;
+		}
+		// the air: from what it was when the change began
+		if (m_target.dew_point)
+			mixed.dew_point = mix(m_from.dew_point.value_or(*m_target.dew_point), *m_target.dew_point);
+		if (m_target.temperature_min && m_target.temperature_max)
+		{
+			mixed.temperature_min = mix(m_from.temperature_min.value_or(m_from.temperature.value_or(*m_target.temperature_min)), *m_target.temperature_min);
+			mixed.temperature_max = mix(m_from.temperature_max.value_or(m_from.temperature.value_or(*m_target.temperature_max)), *m_target.temperature_max);
+		}
 		// the same layers change their sizes; different ones fade out and in
 		auto const same{(m_from.clouds.size() == m_target.clouds.size()) &&
 		                std::equal(m_from.clouds.begin(), m_from.clouds.end(), m_target.clouds.begin(), [](cloud_layer const &Left, cloud_layer const &Right) { return Left.type == Right.type; })};
@@ -901,6 +1151,187 @@ void world_weather::update(double const Deltatime, glm::dvec3 const &Camera)
 	// kept small, the shaders take it in single precision; the noise of the clouds repeats long before this
 	auto const period{1024.0 * 1024.0};
 	m_cloud_offset = glm::mod(m_cloud_offset, glm::dvec2{period});
+
+	update_air();
+	update_snow(Deltatime);
+}
+
+glm::vec2 world_weather::ground_wind() const
+{
+	if (false == m_current.wind_described)
+		return cloud_velocity() / 1.5f;
+	// where the wind goes to, as cloud_velocity() has it
+	auto const to{glm::radians(m_current.wind_direction + 180.f)};
+	return glm::vec2{-std::sin(to), std::cos(to)} * m_current.wind_speed;
+}
+
+float world_weather::dew_point() const
+{
+	if (m_current.dew_point)
+		return std::min(*m_current.dew_point, Global.AirTemperature);
+	return psychrometry::dew_point(Global.AirTemperature, humidity());
+}
+
+float world_weather::humidity() const
+{
+	if (m_current.dew_point)
+		return psychrometry::relative_humidity(Global.AirTemperature, *m_current.dew_point);
+	// what the weather is likely to have: saturated in a fog, nearly so while something falls, drier the clearer the sky
+	if ((m_current.groundfog_thickness > 0.f) || (m_current.visibility < 1000.f))
+		return 0.98f;
+	if (Global.Overcast > 1.f)
+		return 0.92f;
+	return 0.55f + 0.3f * std::clamp(Global.Overcast, 0.f, 1.f);
+}
+
+float world_weather::wet_bulb() const
+{
+	return psychrometry::wet_bulb(Global.AirTemperature, humidity());
+}
+
+psychrometry::falling world_weather::falling() const
+{
+	if (Global.Overcast <= 1.f)
+		return psychrometry::falling::nothing;
+	std::optional<bool> rain;
+	if (auto const kind{precipitation_override()})
+		rain = (*kind == precipitation_type::rain);
+	// without a described moisture the air temperature decides, as it always did
+	std::optional<float> wetbulb;
+	if (m_current.dew_point)
+		wetbulb = wet_bulb();
+	return psychrometry::falling_kind(Global.AirTemperature, wetbulb, rain);
+}
+
+std::optional<glm::vec2> world_weather::location() const
+{
+	return m_current.location ? m_current.location : editor_location();
+}
+
+void world_weather::update_air()
+{
+	if (m_current.temperature_min && m_current.temperature_max)
+	{
+		auto const &time{simulation::Time.data()};
+		auto const hour{static_cast<float>(time.wHour) + static_cast<float>(time.wMinute) / 60.f + static_cast<float>(time.wSecond) / 3600.f};
+		Global.AirTemperature = psychrometry::diurnal_temperature(*m_current.temperature_min, *m_current.temperature_max, hour);
+	}
+	// the weather name tells the snow from the rain; it follows the air as the day goes
+	if (auto const snowing{psychrometry::is_snow(falling())}; snowing != m_snowing)
+	{
+		m_snowing = snowing;
+		simulation::Environment.compute_weather();
+	}
+}
+
+void world_weather::apply_snow()
+{
+	if (!m_target.snow_depth)
+		return;
+	m_snow.set(*m_target.snow_depth, m_target.snow_drift, ground_wind(), m_target.snow_fresh, m_target.snow_tracks);
+	WriteLog("Weather: snow cover " + std::to_string(*m_target.snow_depth) + " m");
+	// applied once; a later change of the weather keeps the snow as it lies then
+	m_target.snow_depth.reset();
+	m_current.snow_depth.reset();
+}
+
+std::optional<glm::dvec2> world_weather::live_place(glm::dvec3 const &Camera)
+{
+	auto const origin{georeference::scenery_origin()};
+	if (false == origin.has_value())
+		return std::nullopt;
+	// the vehicle driven, else the camera
+	auto const *vehicle{(simulation::Train != nullptr) ? simulation::Train->Dynamic() : nullptr};
+	return georeference::to_degrees(*origin, vehicle != nullptr ? vehicle->GetPosition() : Camera);
+}
+
+void world_weather::update_live(glm::dvec3 const &Camera)
+{
+	if ((Global.WeatherMode != global_settings::weather_mode::live) || EditorModeFlag || (false == live_weather::available()))
+		return;
+	if (auto const report{m_live.take()})
+	{
+		if (false == report->error.empty())
+		{
+			m_livestatus = "the fetch failed: " + report->error;
+			WriteLog("Weather: live weather of " + std::to_string(report->place.x) + ", " + std::to_string(report->place.y) + " not fetched: " + report->error);
+			// tried again in a minute
+			m_livenext = std::min(m_livenext, m_time + 60.0);
+		}
+		else
+		{
+			// the report read as any other; the place kept for the climate and the sun
+			auto conditions{m_target};
+			auto const place{conditions.location};
+			conditions = weather_conditions{};
+			conditions.location = place;
+			if (parse_metar(report->metar, conditions))
+			{
+				// the first report comes with the snow lying there and goes at once; the next ones change the weather over two minutes
+				// and leave the snow as the simulation keeps it
+				if (false == m_liveapplied)
+					conditions.snow_depth = report->snow_depth;
+				apply(conditions, m_liveapplied ? 120.f : 0.f, m_liveapplied);
+				m_liveapplied = true;
+				char place_text[64];
+				std::snprintf(place_text, sizeof(place_text), "%.4f, %.4f", report->place.x, report->place.y);
+				m_livestatus = std::string{"Open-Meteo at "} + place_text + ": " + report->metar;
+				WriteLog("Weather: live weather of " + std::string{place_text} + " (Open-Meteo): " + report->metar);
+			}
+			else
+				m_livestatus = "the report wasn't understood: " + report->metar;
+		}
+	}
+	if ((m_time < m_livenext) || m_live.busy())
+		return;
+	auto const place{live_place(Camera)};
+	if (false == place.has_value())
+		return;
+	m_live.request(*place);
+	m_livenext = m_time + std::clamp(static_cast<double>(Global.WeatherLiveInterval), 60.0, 300.0);
+}
+
+snow_weather world_weather::surface_weather() const
+{
+	snow_weather weather;
+	weather.temperature = Global.AirTemperature;
+	weather.humidity = humidity();
+	weather.wet_bulb = psychrometry::wet_bulb(weather.temperature, weather.humidity);
+	weather.wind = m_surfacewind;
+	// what falls: the overcast past 1 is the precipitation (weather_conditions::overcast()), as the renderers draw it
+	auto const intensity{std::clamp(Global.Overcast - 1.f, 0.f, 1.f)};
+	auto const snow{psychrometry::is_snow(falling())};
+	weather.snowfall = (snow ? intensity : 0.f);
+	weather.rainfall = (snow ? 0.f : intensity);
+	// a fog thick enough to leave rime on the wires
+	weather.fog = std::clamp(1.f - m_current.visibility / 1000.f, 0.f, 1.f);
+	return weather;
+}
+
+float world_weather::rails_daylight()
+{
+	// the height of the sun, degrees: dark at the end of the civil twilight, full day a little over the horizon
+	auto const angle{simulation::Environment.sun().getAngle()};
+	return std::clamp((angle + 6.f) / 16.f, 0.f, 1.f);
+}
+
+float world_weather::rails_leaves()
+{
+	return rail_surface::leaf_season(simulation::Time.year_day()) * std::max(Global.physics_weather.leaves, 0.f);
+}
+
+void world_weather::update_snow(double const Deltatime)
+{
+	auto const weather{surface_weather()};
+	// the kinds of the ice on the wires the settings let the weather lay (physics.weather.glaze, .rimehard, .rimesoft, .wetsnow)
+	auto const &settings{Global.physics_weather};
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::glaze)] = settings.glaze;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::rime_hard)] = settings.rime_hard;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::rime_soft)] = settings.rime_soft;
+	m_snow.wire_ice_kinds[static_cast<int>(snow_cover::ice_kind::wet_snow)] = settings.wet_snow;
+	m_snow.update(Deltatime, weather);
+	m_rails.time_scale = m_snow.time_scale;
+	m_rails.update(Deltatime, weather, rails_daylight(), rails_leaves());
 }
 
 glm::vec2 world_weather::cloud_velocity() const
@@ -932,6 +1363,7 @@ void world_weather::apply(weather_conditions const &Conditions, float const Tran
 	m_transition_time = 0.0;
 	if (m_transition <= 0.0)
 		m_current = m_target;
+	apply_snow();
 	write_globals();
 	if (false == Quiet)
 		WriteLog("Weather: changed to " + to_metar(m_target) + (m_transition > 0.0 ? " over " + std::to_string(static_cast<int>(m_transition)) + " s" : ""));

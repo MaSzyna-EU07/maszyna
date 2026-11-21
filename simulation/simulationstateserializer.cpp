@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationsounds.h"
 #include "simulation/simulationenvironment.h"
+#include "environment/liveweather.h"
 #include "simulation/simulationtest.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
@@ -490,7 +491,8 @@ state_serializer::deserialize_firstinit( cParser &Input, scene::scratch_data &Sc
 
 void state_serializer::init_time() {
 	auto &time = simulation::Time.data();
-	if( true == Global.ScenarioTimeCurrent ) {
+	// the live weather is the weather of now: the clock of the scenario goes by the one of the system too
+	if( ( true == Global.ScenarioTimeCurrent ) || live_weather::active() ) {
 		// calculate time shift required to match scenario time with local clock
 		auto const localtime = utc_tm( Global.starting_timestamp );
 		Global.ScenarioTimeOffset = ( localtime.tm_hour * 60 + localtime.tm_min - ( time.wHour * 60 + time.wMinute ) ) / 60.f;

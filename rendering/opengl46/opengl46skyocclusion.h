@@ -28,10 +28,24 @@ class opengl46_sky_occlusion : public gfx::sky_occlusion
 	bool gpu_allocate(int const Side) override;
 	void gpu_release() override;
 	void gpu_upload(int const X, int const Y, int const Size, float const *Heights, std::uint16_t const *Occlusion) override;
+	void gpu_upload_surface(int const X, int const Y, int const Size, float const *Surface) override;
+
+  public:
+	// the surface of the scenery for the snow (RGBA32F, gfx::sky_occlusion::gpu_upload_surface()), 0 without the maps; and texels
+	// across it
+	GLuint surface_texture() const
+	{
+		return m_surface;
+	}
+	int side() const
+	{
+		return m_side;
+	}
 
   private:
 	GLuint m_heights{0};
 	GLuint m_occlusion{0};
+	GLuint m_surface{0};
 	GLuint m_emptyheights{0};
 	GLuint m_emptyocclusion{0};
 };

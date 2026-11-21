@@ -171,6 +171,13 @@ set(SOURCES
 "environment/stars.cpp"
 "environment/starcatalog.cpp"
 "environment/weather.cpp"
+"environment/snowcover.cpp"
+"environment/railsurface.cpp"
+"environment/georeference.cpp"
+"environment/liveweather.cpp"
+"environment/liveweatherreport.cpp"
+"environment/climate.cpp"
+"environment/climatestations.cpp"
 "rendering/lightarray.cpp"
 "environment/skydome.cpp"
 "audio/sound.cpp"
@@ -328,6 +335,7 @@ set(SOURCES
 "widgets/map_objects.cpp"
 "widgets/popup.cpp"
 "widgets/time.cpp"
+"widgets/weatherphysics.cpp"
 "widgets/weatherpanel.cpp"
 "widgets/vehicleparams.cpp"
 "widgets/trainingcard.cpp"
@@ -473,6 +481,7 @@ if (WITH_OPENGL_MODERN)
             "rendering/opengl46/opengl46water.cpp"
             "rendering/opengl46/opengl46terrain.cpp"
             "rendering/opengl46/opengl46grass.cpp"
+            "rendering/opengl46/opengl46snow.cpp"
             "rendering/opengl46/opengl46backend.cpp"
             "rendering/opengl46/opengl46renderer.cpp")
 		set(DEFINITIONS ${DEFINITIONS} "WITH_OPENGL_MODERN")
@@ -708,6 +717,7 @@ add_library(eu07_settings INTERFACE)
 # definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
+"McZapkie/weatherphysics.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"

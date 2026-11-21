@@ -25,6 +25,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "vao.h"
 
+#include <array>
+#include <optional>
+#include <string_view>
+
 void global_settings::LoadIniFile(std::string asFileName)
 {
 	// initialize season data in case the main config file doesn't
@@ -43,6 +47,37 @@ static void ParseOne(cParser& parser, T& out, int tokenCount = 1, bool convert =
     parser.getTokens(tokenCount, convert);
     parser >> out;
 }
+
+namespace
+{
+// the day of the year of a date DD.MM (a year of 365 days); 0 for today, nullopt for a date which isn't one
+std::optional<int> year_day_of(std::string_view const Date)
+{
+	if (Date == "today" || Date == "0")
+		return 0;
+	auto const dot{Date.find('.')};
+	if (dot == std::string_view::npos)
+		return std::nullopt;
+	int day{0};
+	int month{0};
+	try
+	{
+		day = std::stoi(std::string{Date.substr(0, dot)});
+		month = std::stoi(std::string{Date.substr(dot + 1)});
+	}
+	catch (std::exception const &)
+	{
+		return std::nullopt;
+	}
+	static constexpr std::array<int, 12> lengths{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	if (month < 1 || month > 12 || day < 1 || day > lengths[static_cast<std::size_t>(month - 1)])
+		return std::nullopt;
+	auto yearday{day};
+	for (int i = 0; i < month - 1; ++i)
+		yearday += lengths[static_cast<std::size_t>(i)];
+	return yearday;
+}
+} // namespace
 
 template <typename T>
 static void ParseOneClamped(cParser& parser, T& out, T minValue, T maxValue, int tokenCount = 1, bool convert = false)
@@ -599,6 +634,31 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    if (token == "physics.snow")
+    {
+        ParseOne(Parser, physics_snow);
+        return true;
+    }
+
+    for (auto const &parameter : weather_physics::bool_parameters)
+    {
+        if (token == parameter.key)
+        {
+            ParseOne(Parser, physics_weather.*parameter.member);
+            return true;
+        }
+    }
+    for (auto const &parameter : weather_physics::float_parameters)
+    {
+        if (token == parameter.key)
+        {
+            auto &value{physics_weather.*parameter.member};
+            ParseOne(Parser, value);
+            value = std::clamp(value, parameter.minimum, parameter.maximum);
+            return true;
+        }
+    }
+
     if (token == "physics.roadlod")
     {
         ParseOne(Parser, physics_roadlod);
@@ -659,6 +719,80 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         }
 
         simulation::Environment.compute_season(fMoveLight);
+        return true;
+    }
+
+    if (token == "scenario.date")
+    {
+        // the day the simulation goes on, DD.MM, or today: as movelight, given as a date
+        std::string date;
+        ParseOne(Parser, date, 1, false);
+        if (auto const yearday{year_day_of(date)}; yearday.has_value())
+        {
+            ScenarioDate = date;
+            fMoveLight = (*yearday > 0 ? static_cast<float>(*yearday) : static_cast<float>(local_tm(std::time(nullptr)).tm_yday + 1));
+            simulation::Environment.compute_season(fMoveLight);
+        }
+        else
+            ErrorLog("Bad config: scenario.date \"" + date + "\" isn't a date DD.MM, nor today");
+        return true;
+    }
+
+    if (token == "seasons.wintertextures")
+    {
+        ParseOne(Parser, WinterTextures, 1, false);
+        simulation::Environment.compute_season(fMoveLight);
+        return true;
+    }
+
+    if (token == "weather.mode")
+    {
+        std::string mode;
+        ParseOne(Parser, mode, 1, false);
+        WeatherMode = weather_mode::scenery;
+        if (mode == "manual")
+            WeatherMode = weather_mode::manual;
+        else if (mode == "auto")
+            WeatherMode = weather_mode::automatic;
+        else if (mode == "preset")
+            WeatherMode = weather_mode::preset;
+        else if (mode == "live")
+            WeatherMode = weather_mode::live;
+        return true;
+    }
+
+    if (token == "weather.preset")
+    {
+        ParseOne(Parser, WeatherPreset, 1, false);
+        return true;
+    }
+
+    if (token == "weather.live.locktime")
+    {
+        ParseOne(Parser, WeatherLiveLockTime);
+        return true;
+    }
+
+    if (token == "weather.live.interval")
+    {
+        ParseOne(Parser, WeatherLiveInterval);
+        WeatherLiveInterval = std::clamp(WeatherLiveInterval, 60.f, 300.f);
+        return true;
+    }
+
+    if (token == "weather.manual")
+    {
+        // the body of a weather section, as a scenery has it, up to endweather
+        WeatherManual.clear();
+        for (;;)
+        {
+            Parser.getTokens(1, false);
+            std::string entry;
+            Parser >> entry;
+            if (entry.empty() || entry == "endweather")
+                break;
+            WeatherManual.emplace_back(entry);
+        }
         return true;
     }
 
@@ -2124,6 +2258,14 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
             ( level == "high" || level == "3" ) ? 3 :
             0; }
     else if( Token == "gfx.skyvisibility.sun" ) { readswitch( gfx_skyvisibility_sun ); }
+    else if( Token == "gfx.snow" ) {
+        // no/surfaces/drifts, or the number of the level
+        Parser.getTokens( 1 );
+        std::string level;
+        Parser >> level;
+        if( ( level == "no" ) || ( level == "false" ) || ( level == "0" ) ) { gfx_snow = 0; }
+        else if( ( level == "surfaces" ) || ( level == "1" ) ) { gfx_snow = 1; }
+        else { gfx_snow = 2; } }
     else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
     else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
@@ -2350,6 +2492,13 @@ global_settings::export_as_text( std::ostream &Output ) const {
     }
     export_as_text( Output, "fullphysics", FullPhysics );
     export_as_text( Output, "physics.sleepheld", physics_sleepheld );
+    export_as_text( Output, "physics.snow", physics_snow );
+    for( auto const &parameter : weather_physics::bool_parameters ) {
+        export_as_text( Output, std::string{ parameter.key }, physics_weather.*parameter.member );
+    }
+    for( auto const &parameter : weather_physics::float_parameters ) {
+        export_as_text( Output, std::string{ parameter.key }, physics_weather.*parameter.member );
+    }
     export_as_text( Output, "physics.roadlod", physics_roadlod );
     export_as_text( Output, "physics.pipewake", physics_pipewake );
     export_as_text( Output, "performance.multithreading", performance_multithreading );
@@ -2379,6 +2528,24 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "maxtexturesize", iMaxTextureSize );
     export_as_text( Output, "maxcabtexturesize", iMaxCabTextureSize );
     export_as_text( Output, "movelight", fMoveLight );
+    if( false == ScenarioDate.empty() ) {
+        export_as_text( Output, "scenario.date", ScenarioDate );
+    }
+    export_as_text( Output, "seasons.wintertextures", WinterTextures );
+    {
+        std::array<char const *, 5> const weathermodes { "scenery", "manual", "auto", "preset", "live" };
+        export_as_text( Output, "weather.mode", std::string{ weathermodes[ static_cast<std::size_t>( WeatherMode ) ] } );
+    }
+    export_as_text( Output, "weather.preset", WeatherPreset );
+    export_as_text( Output, "weather.live.interval", WeatherLiveInterval );
+    export_as_text( Output, "weather.live.locktime", WeatherLiveLockTime );
+    if( false == WeatherManual.empty() ) {
+        std::string manual;
+        for( auto const &entry : WeatherManual ) {
+            manual += entry + " ";
+        }
+        export_as_text( Output, "weather.manual", manual + "endweather" );
+    }
     export_as_text( Output, "dynamiclights", DynamicLightCount );
     if( std::isnormal( ScenarioTimeOverride ) ) {
         export_as_text( Output, "scenario.time.override", ScenarioTimeOverride );
@@ -2677,6 +2844,10 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.water.realistic", gfx_water_realistic );
     export_as_text( Output, "gfx.skyvisibility", std::string{ gfx_skyvisibility == 3 ? "high" : gfx_skyvisibility == 2 ? "medium" : gfx_skyvisibility == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.skyvisibility.sun", gfx_skyvisibility_sun );
+    {
+        std::array<char const *, 3> const snowlevels { "no", "surfaces", "drifts" };
+        export_as_text( Output, "gfx.snow", std::string{ snowlevels[ static_cast<std::size_t>( std::clamp( gfx_snow, 0, 2 ) ) ] } );
+    }
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
     export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );

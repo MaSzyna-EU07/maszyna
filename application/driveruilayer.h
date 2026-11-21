@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "widgets/vehicleparams.h"
 #include "widgets/map.h"
 #include "widgets/time.h"
+#include "widgets/weatherphysics.h"
 #include "widgets/trainingcard.h"
 #include "widgets/perfgraphs.h"
 #include "widgets/cameraview_extcam.h"
@@ -68,5 +69,6 @@ private:
 	ui::vehiclelist_panel m_vehiclelist { ui::vehiclelist_panel(*this) };
 	ui::map_panel m_mappanel;
 	ui::time_panel m_timepanel;
+	ui::weatherphysics_panel m_weatherphysicspanel;
 	ui::cameraview_panel m_cameraviewpanel;
 };

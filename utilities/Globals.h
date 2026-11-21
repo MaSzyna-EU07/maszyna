@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/light.h"
 #include "utilities/utilities.h"
 #include "utilities/motiontelemetry.h"
+#include "McZapkie/weatherphysics.h"
 #include <map>
 #include <optional>
 
@@ -136,14 +137,31 @@ struct global_settings {
     std::string Period{}; // time of the day, based on sun position
     bool FullPhysics{ true }; // full calculations performed for each simulation step
     bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
+    bool physics_snow{ true }; // physics.snow: the snow lying on the tracks holds the vehicles back (TTrack::snow_at()); off as before
+    weather_physics::settings physics_weather; // physics.weather.*: the weather in the physics of the vehicles (McZapkie/weatherphysics.h)
     bool physics_roadlod{ true }; // road vehicles far from the camera go by one step of the physics in a frame, see vehicle_table::update()
     float physics_pipewake{ 0.001f }; // bar: air flowing along a pipe wakes the physics of a vehicle when it changes its pressure by more than this. 0: any flow does
     bool performance_multithreading{ true }; // work split over the logical cores of the machine (worker_pool), as many as each job is worth
     bool debug_memorystats{ false }; // the memory of the parts of the program in the debug panel, with new and delete counted (start_heap_counting()). slows the loading down
     bool bnewAirCouplers{ true };
     float fMoveLight{ 0.f }; // numer dnia w roku albo -1
+    // seasons.wintertextures: the winter variants of the textures and models (winter:) in winter, as always; off, the winter is the
+    // autumn till the end of January and the spring from February, the snow lying on it as the weather has it
+    bool WinterTextures{ true };
+    // weather.mode: the weather of the scenery and the starter as they set it (scenery), with weather.manual over it (manual: the
+    // values of a weather section), the weather the climate of the place has in the month (auto, as preset random), a preset of the
+    // climate or one drawn as often as each comes (preset, weather.preset), or the weather now at the vehicle driven, from Open-Meteo,
+    // on a scenery laid on the map (live, environment/liveweather.h; the weather of the scenery elsewhere)
+    enum class weather_mode : int { scenery = 0, manual, automatic, preset, live };
+    weather_mode WeatherMode{ weather_mode::scenery };
+    std::vector<std::string> WeatherManual; // weather.manual: the body of a weather section, up to endweather
+    std::string WeatherPreset{ "random" }; // weather.preset: a preset of environment/climate.h by its name, or random
+    float WeatherLiveInterval{ 300.f }; // weather.live.interval: seconds between the fetches of the live weather, 60..300
+    bool WeatherLiveLockTime{ true }; // weather.live.locktime: with the live weather the time can't go faster nor be set by hand, it keeps the clock of the system
+    std::string ScenarioDate; // scenario.date as given (DD.MM or today), for the settings in the log; the day itself is fMoveLight
     bool FakeLight{ false }; // toggle between fixed and dynamic daylight
     double fTimeSpeed{ 1.0 }; // przyspieszenie czasu, zmienna do testów
+    bool ClockLocked{ false }; // the clock of the simulation is the one of the system: it goes as fast as it, whatever fTimeSpeed says, and can't be set by hand (the live weather with weather.live.locktime)
 	double default_timespeed { 1.0 }; // timescale loaded from config
     double fLatitudeDeg{ 52.0 }; // szerokość geograficzna
     float ScenarioTimeOverride{ std::numeric_limits<float>::quiet_NaN() }; // requested scenario start time
@@ -582,6 +600,9 @@ struct global_settings {
     // 2 medium (512 m, 1 m), 3 high (512 m, 0.5 m, searched farther); whether the sun (the moon) is held back too, and the light of
     // the volumetric fog
     int gfx_skyvisibility { 2 };
+    // the snow lying on the scenery (environment/snowcover.h): 0 none, 1 on the surfaces only, 2 with the drifts as a surface of their own
+    // over the ground around the camera, worked out from the maps of gfx_skyvisibility (none without them); in the opengl 4.6 renderer
+    int gfx_snow { 2 };
     bool gfx_skyvisibility_sun { true };
     bool gfx_skyvisibility_fog { true };
     // the occlusion only around the tracks with the tunnel flag (the geometry there makes the tunnel dark, the portals, the passage at

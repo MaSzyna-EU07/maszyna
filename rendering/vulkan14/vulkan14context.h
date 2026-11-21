@@ -427,6 +427,8 @@ struct scene_state
 	// the shadow maps of the lamps and the headlights (the stage P4), and the programs drawing the cube maps
 	local_shadow_maps lamps;
 	std::shared_ptr<scene_program> cube_shadow, cube_alpha_shadow;
+	// the shadows of the wires of the traction, blown aside by the wind as they are drawn (wire_sway.glsl)
+	std::shared_ptr<scene_program> wire_shadow, cube_wire_shadow;
 	target_formats cube_formats;
 	// the probe of the occupied cab (the stage A4): its maps, the programs and the targets drawing it, the kernel of the spherical
 	// harmonics of the light it reflects and their storage (CAB_PROBE_SSBO), and the stand-in of its maps

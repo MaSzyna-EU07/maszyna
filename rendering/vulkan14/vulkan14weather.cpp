@@ -74,6 +74,7 @@ struct horizon_constants
 	float pad1;
 	glm::vec3 old_color;
 	float pad2;
+	glm::vec4 overcast_fog;
 };
 struct shadow_constants
 {
@@ -422,9 +423,10 @@ void vulkan14_renderer::update_weather()
 	if (m_weatherstate.horizon_on_gpu())
 	{
 		horizon_constants constants{};
-		constants.params = glm::vec4{m_skylight.atmosphere_weight(), m_skylight.sky_scale(), 0.5f * m_skylight.overcast(), 64.f};
+		constants.params = glm::vec4{m_skylight.atmosphere_weight(), m_skylight.sky_scale(), m_skylight.greyness(), 64.f};
 		constants.white_balance = m_skylight.white_balance();
 		constants.old_color = m_fogcolor;
+		constants.overcast_fog = m_skylight.overcast_fog();
 		vk14::memory_barrier(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT, compute_stage, storage_write);
 		weather.horizon.dispatch(commands, {vk14::buffer_descriptor(scene.weather_horizon.handle(), 0, sizeof(glm::vec4) * gl::FOG_HORIZON_SAMPLES)}, constants, 1);
 		vk14::memory_barrier(commands, compute_stage, storage_write, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);

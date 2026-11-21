@@ -141,6 +141,18 @@ void weather_state::update(float const Atmosphereweight, bool const Skyview, glm
 	auto const speed{glm::length(velocity)};
 	auto const wind{speed > 1e-3f ? glm::dvec2{velocity / speed} : glm::dvec2{1.0, 0.0}};
 	m_weather.cloud_wind = glm::vec4{static_cast<float>(wind.x), static_cast<float>(wind.y), speed, m_cloud_detail_scale};
+	// the snow cover
+	auto const &snow{weather.snow()};
+	auto const drifting{snow.drift_wind()};
+	auto const driftspeed{glm::length(drifting)};
+	auto const driftdirection{driftspeed > 1e-3f ? drifting / driftspeed : glm::vec2{0.f, 1.f}};
+	auto const depth{Global.gfx_snow > 0 ? snow.depth() : 0.f};
+	m_weather.snow_cover = glm::vec4{depth, snow.fresh(), snow.wetness(), snow.falling()};
+	m_weather.snow_drift = glm::vec4{driftdirection.x, driftdirection.y, snow.drift(), driftspeed};
+	m_weather.snow_wind = glm::vec4{snow.wind().x, snow.wind().y, snow.blowing(), Global.gfx_snow > 0 ? snow.plaster() : 0.f};
+	// the rails and the surfaces in the open, as the physics of the vehicles has them
+	auto const &rails{weather.rails().state()};
+	m_weather.surface_state = glm::vec4{rails.water, rails.ice, rails.leaves, snow.wire_ice() * 1000.f};
 	for (std::size_t i = 0; i < gl::MAX_CLOUD_LAYERS; ++i)
 	{
 		auto &target{m_weather.cloud_layers[i]};

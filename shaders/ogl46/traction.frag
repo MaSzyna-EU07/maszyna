@@ -14,7 +14,16 @@ layout(location = 1) out vec4 out_motion;
 
 void main()
 {
-	vec4 color = vec4(apply_fog(pow(param[0].rgb, vec3(2.2))), param[0].a);
+	vec3 wire = pow(param[0].rgb, vec3(2.2));
+	// the ice on the wires, the ice the pantographs meet (environment/snowcover.h), param[2] each kind, mm: the glaze clear and grey
+	// like glass, the hard rime white, the soft rime and the hoarfrost whiter still, the wet snow a greyish white
+	float ice = param[2].x + param[2].y + param[2].z + param[2].w;
+	if (ice > 0.0)
+	{
+		vec3 icecolor = (vec3(0.50, 0.56, 0.62) * param[2].x + vec3(0.80, 0.83, 0.86) * param[2].y + vec3(0.90, 0.92, 0.95) * param[2].z + vec3(0.74, 0.76, 0.78) * param[2].w) / ice;
+		wire = mix(wire, icecolor, smoothstep(0.3, 6.0, ice));
+	}
+	vec4 color = vec4(apply_fog(wire), param[0].a);
     if (POSTFX_ENABLED)
     {
         out_color = color;

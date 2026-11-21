@@ -127,6 +127,7 @@ class scene_walk
 		pick, // a colour for the picking of the scenery or the controls
 		pick_surface, // the gradient of a touch screen for the picking of the controls
 		line, // the wires of the traction and the lines
+		line_shadow, // the shadows of the wires of the traction, blown aside by the wind as the wires are drawn (wire_sway.glsl)
 		billboard, // the glare of a lamp
 		freespot // the point of light of a lamp
 	};
@@ -186,6 +187,8 @@ class scene_walk
 	void Render_Alpha(TTraction *Traction);
 	void Render_Alpha(scene::lines_node const &Lines);
 	bool Render_Alpha(TDynamicObject *Dynamic);
+	// the flashes of the arcs at the pantographs of a vehicle (physics.weather.arcs), where gfx::local_lights puts their light
+	void Render_arcs(TDynamicObject const *Dynamic);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance, glm::dvec3 const &Position, glm::vec3 const &Angle);
 	bool Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance);
 	void Render_Alpha(TSubModel *Submodel);

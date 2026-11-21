@@ -106,6 +106,8 @@ public:
     ~openal_renderer();
 
     audio::buffer_handle fetch_buffer( std::string const &Filename );
+    // a sound the simulator makes itself, unless the sound folder holds a file of its name (audio::buffer_manager::create_generated())
+    audio::buffer_handle generated_buffer( std::string const &Name, std::vector<std::int16_t> const &Samples, unsigned int const Rate );
     audio::openal_buffer const &buffer( audio::buffer_handle const Buffer ) const;
     // makes buffers of all sound files still decoded in the background (sound.asyncload), waiting for them
     void complete_buffers();

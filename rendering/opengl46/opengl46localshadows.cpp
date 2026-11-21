@@ -114,8 +114,14 @@ void opengl46_local_shadows::init()
 		gl::shader fragment("alphashadowmap.frag");
 		m_alpha_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
 	}
+	{
+		gl::shader wirevertex("wireshadowcube.vert");
+		gl::shader fragment("shadowmap.frag");
+		m_wire_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{wirevertex, geometry, fragment});
+	}
 	glProgramUniform1f(*m_program, NEAR_LOCATION, SHADOW_NEAR);
 	glProgramUniform1f(*m_alpha_program, NEAR_LOCATION, SHADOW_NEAR);
+	glProgramUniform1f(*m_wire_program, NEAR_LOCATION, SHADOW_NEAR);
 	// the variants for the multi draws of the instances drawn from the gpu culling (the scenery parts of the maps of lamps); the
 	// fragment stages read nothing of the model block
 	try

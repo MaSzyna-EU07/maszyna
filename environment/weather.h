@@ -18,6 +18,11 @@ http://mozilla.org/MPL/2.0/.
 
 #include <glm/glm.hpp>
 
+#include "environment/psychrometry.h"
+#include "environment/liveweather.h"
+#include "environment/railsurface.h"
+#include "environment/snowcover.h"
+
 class cParser;
 
 // cloud genera as aviation reports them (WMO), each drawn in its own way. the order is that of the names in cloud_genus_info()
@@ -94,8 +99,31 @@ struct weather_conditions
 	float precipitation_intensity{0.f}; // 0-1
 	float cloud_wind_direction{270.f}; // where the wind at the height of the clouds blows from, degrees from the north, clockwise
 	float cloud_wind_speed{8.f}; // m/s
+	// the wind at the ground, when the description gives it (a report, the wind entry): where it blows from, degrees from the north,
+	// clockwise, its mean speed and the speed of its gusts, m/s (0: none given, they're taken as half as much again). without it
+	// the simulation keeps its light changing wind
+	bool wind_described{false};
+	float wind_direction{270.f};
+	float wind_speed{0.f};
+	float wind_gust{0.f};
 	std::uint32_t seed{0}; // changes the shapes of the clouds
 	std::optional<float> temperature; // air temperature a report gave, degrees C; applied with the weather
+	// the lowest and the highest temperature of the day, degrees C: with both the air temperature follows the time of the day
+	// between them (psychrometry::diurnal_temperature())
+	std::optional<float> temperature_min;
+	std::optional<float> temperature_max;
+	// the dew point, degrees C: the moisture of the air, which the humidity and the wet-bulb temperature are worked out from
+	std::optional<float> dew_point;
+	// where the scenery lies, degrees of latitude and longitude, for the climate its weather is taken from (environment/climate.h)
+	std::optional<glm::vec2> location;
+	// snow lying on the ground (the snowcover entry), applied with the weather: the depth over open flat ground, m, and how far
+	// the wind has worked it into drifts, 0..1, and how loose it still is, 0..1
+	std::optional<float> snow_depth;
+	float snow_drift{0.5f};
+	float snow_fresh{0.5f};
+	// the share of the snow lying on the tracks too, as before the first train cleared them, 0..1 (0: cleared); negative: the
+	// snow on the tracks left as it is (without the fourth number of the snowcover entry, and when the snow is set by hand)
+	float snow_tracks{-1.f};
 
 	// share of the sky the clouds hold back, 0-1, and the precipitation past it: the overcast the rest of the simulation goes by
 	float overcast() const;
@@ -170,6 +198,52 @@ class world_weather
 	glm::vec2 cloud_velocity() const;
 	// precipitation the description sets, or nullopt when the air temperature decides
 	std::optional<precipitation_type> precipitation_override() const;
+	// the snow lying on the ground and stuck to the scenery, and the ice on the wires
+	snow_cover const &snow() const
+	{
+		return m_snow;
+	}
+	snow_cover &snow()
+	{
+		return m_snow;
+	}
+	// what lies on the heads of the rails and the surfaces in the open: the water, the dirt, the ice, the leaves
+	rail_surface const &rails() const
+	{
+		return m_rails;
+	}
+	rail_surface &rails()
+	{
+		return m_rails;
+	}
+	// the mean wind at the ground the weather describes, world x and z of where it blows to, m/s; without a described wind the one
+	// the clouds go with, slowed down as it is near the ground
+	glm::vec2 ground_wind() const;
+	// the wind at the ground as it blows now, with its gusts, world x and z of where it blows to, m/s: the wind of the simulation
+	// (world_environment::wind()), which follows the described one, given here by the environment every frame
+	glm::vec2 const &surface_wind() const
+	{
+		return m_surfacewind;
+	}
+	void surface_wind(glm::vec2 const &Wind)
+	{
+		m_surfacewind = Wind;
+	}
+	// the moisture of the air now: the dew point (the described one, or a likely one for the weather), the relative humidity 0..1
+	// and the wet-bulb temperature, degrees C
+	float dew_point() const;
+	float humidity() const;
+	float wet_bulb() const;
+	// what falls now
+	psychrometry::falling falling() const;
+	// what the live weather (weather.mode live) is doing, for the user interface; empty in the other modes
+	std::string const &live_status() const
+	{
+		return m_livestatus;
+	}
+	// where the scenery lies, degrees of latitude and longitude: the location entry of the weather section, or the place the editor
+	// keeps for the scenery; nullopt when neither is there
+	std::optional<glm::vec2> location() const;
 
   private:
 	// the clouds and the visibility of the old global state
@@ -177,12 +251,35 @@ class world_weather
 	void follow_fog_range();
 	// the old global state of the weather described
 	void write_globals();
+	// the snow of a description applied, and the snow cover moved on by a step
+	void apply_snow();
+	void update_snow(double const Deltatime);
+	// the live weather: a fetch started when it's due, a report taken in when it comes (weather.mode live)
+	void update_live(glm::dvec3 const &Camera);
+	// where the live weather is fetched for: the vehicle driven, else the camera, on a scenery laid on the map; nullopt off it
+	static std::optional<glm::dvec2> live_place(glm::dvec3 const &Camera);
+	// the weather at the ground the snow cover and the rails go by
+	snow_weather surface_weather() const;
+	// how light the day is for the rails, 0..1, and how many leaves fall now
+	static float rails_daylight();
+	static float rails_leaves();
+	// the air temperature of the time of the day, where the weather gives its range, and the weather name after what falls now
+	void update_air();
 
 	std::optional<weather_conditions> m_scenery; // read from the scenery
 	std::optional<float> m_elevation; // ground reference the scenery gives
 	weather_conditions m_from; // weather a change started at
 	weather_conditions m_target;
 	weather_conditions m_current;
+	snow_cover m_snow;
+	rail_surface m_rails;
+	live_weather m_live;
+	double m_livenext{0.0}; // the time of the simulation the next fetch is due at (m_time)
+	bool m_liveapplied{false}; // the first report came and was applied with the snow it gives
+	std::string m_livestatus;
+	glm::vec2 m_surfacewind{0.f};
+	std::vector<std::string> m_scenerytokens; // the weather sections of the scenery, read once its date is known (init())
+	bool m_snowing{false}; // what the weather name was made for
 	double m_transition{0.0}; // length of the change in progress, seconds
 	double m_transition_time{0.0}; // how far it got
 	bool m_described_clouds{false};

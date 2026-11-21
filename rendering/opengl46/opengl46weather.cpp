@@ -191,10 +191,12 @@ void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight
 		glBindTextureUnit(gl::SKY_VIEW_TEX, Sky.skyview_table());
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, gl::WEATHER_SCRATCH_SSBO_BINDING, *m_weather_ubo);
 		glProgramUniform1i(*m_horizon_program, 0, static_cast<GLint>(offsetof(gl::weather_ubs, fog_horizon) / sizeof(glm::vec4)));
-		glProgramUniform4f(*m_horizon_program, 1, Sky.atmosphere_weight(), Sky.sky_scale(), 0.5f * Sky.overcast(), 64.f);
+		glProgramUniform4f(*m_horizon_program, 1, Sky.atmosphere_weight(), Sky.sky_scale(), Sky.greyness(), 64.f);
 		auto const &balance{Sky.white_balance()};
 		glProgramUniform3f(*m_horizon_program, 2, balance.r, balance.g, balance.b);
 		glProgramUniform3f(*m_horizon_program, 3, Fogcolor.r, Fogcolor.g, Fogcolor.b);
+		auto const overcastfog{Sky.overcast_fog()};
+		glProgramUniform4f(*m_horizon_program, 4, overcastfog.r, overcastfog.g, overcastfog.b, overcastfog.a);
 		m_horizon_program->dispatch(1);
 		glMemoryBarrier(GL_UNIFORM_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, gl::WEATHER_SCRATCH_SSBO_BINDING, 0);

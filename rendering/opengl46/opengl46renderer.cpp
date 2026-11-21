@@ -126,6 +126,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_line_shader = make_shader("traction.vert", "traction.frag");
 		m_freespot_shader = make_shader("freespot.vert", "freespot.frag");
 		m_shadow_shader = make_shader("simpleuv.vert", "shadowmap.frag");
+		m_wire_shadow_shader = make_shader("wireshadow.vert", "shadowmap.frag");
 		m_alpha_shadow_shader = make_shader("simpleuv.vert", "alphashadowmap.frag");
         m_pick_shader = make_shader("vertexonly.vert", "pick.frag");
         m_pick_surface_shader = make_shader("simpleuv.vert", "pick_surface.frag");
@@ -220,6 +221,7 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_localshadows.init();
 		m_cabprobe.init();
 		m_skyocclusion.init();
+		m_snow.init();
 	}
 	catch (gl::shader_exception const &e)
 	{
@@ -688,7 +690,11 @@ bool opengl46_renderer::Render()
 			m_locallights.gather(Global.pCamera.Pos, *simulation::Region, m_geometry, m_framestamp);
 		// the occlusion of the sky by the scenery around the camera: the tiles which came in, what the background worked out
 		if (false == Global.gfx_skiprendering)
+		{
 			m_skyocclusion.update(simulation::Region, Global.pCamera.Pos, -m_sunlight.direction);
+			// the drifts of the snow, from the maps as they are now and the weather block of the frame
+			m_snow.update(m_skyocclusion, Global.pCamera.Pos);
+		}
 	}
 	else
 	{
@@ -1063,6 +1069,7 @@ void opengl46_renderer::SwapBuffers()
             std::string{} )
         + ( Global.gfx_cabprobe > 0 ? " " + m_cabprobe.info() + "\n" : std::string{} )
         + ( Global.gfx_skyvisibility > 0 ? " " + m_skyocclusion.info() + "\n" : std::string{} )
+        + ( Global.gfx_snow > 0 ? " " + m_snow.info() + "\n" : std::string{} )
         + shadowcascadestext
         + " instance buffer: " + std::to_string( m_instancestream->used() / static_cast<GLsizeiptr>( sizeof( glm::mat4 ) ) ) + " matrices, "
         + std::to_string( m_instancestream->size() / 1024 ) + " KiB\n"
@@ -1689,6 +1696,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		m_cabprobe.bind();
 		// the maps of the occlusion of the sky, or the stand-ins
 		m_skyocclusion.bind();
+		// the cells of the snow, or the stand-in
+		m_snow.bind();
 
 		if (Global.gfx_shadowmap_enabled && vp.main)
 		{
@@ -1931,6 +1940,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 		{
 			gpupart("grass");
 			Render_grass(future);
+			gpupart("snow");
+			Render_snow(future);
 		}
 
         Render_vr_models();
@@ -4949,6 +4960,12 @@ void opengl46_renderer::walk_program(walk_shader const Program)
 	case walk_shader::line:
 		m_line_shader->bind();
 		break;
+	case walk_shader::line_shadow:
+		if (m_cubeshadows)
+			m_localshadows.wire_program().bind();
+		else
+			m_wire_shadow_shader->bind();
+		break;
 	case walk_shader::billboard:
 		m_billboard_shader->bind();
 		break;
@@ -5213,6 +5230,28 @@ void opengl46_renderer::Render_grass(glm::mat4 const &Future)
 	model_ubs.opacity = 0.5f;
 	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
 	auto const triangles{m_grass.render(m_renderpass.pass_camera, view, [this](glm::mat4 const &Modelview) {
+		model_ubs.set_modelview(Modelview);
+		model_ubo->update(model_ubs);
+	})};
+	m_renderpass.draw_stats.triangles += static_cast<int>(triangles);
+}
+
+void opengl46_renderer::Render_snow(glm::mat4 const &Future)
+{
+	if (false == m_snow.drawn())
+		return;
+	glDebug("render snow");
+	// the snow brings its colour, the lights do the rest
+	model_ubs.future = Future;
+	model_ubs.param[0] = glm::vec4(1.f);
+	model_ubs.param[1] = glm::vec4(1.f, 1.f, 0.f, 1.f); // diffuse, specular, reflection, glossiness
+	model_ubs.param[2] = glm::vec4(0.f);
+	model_ubs.emission = 0.f;
+	model_ubs.alpha_mult = 1.f;
+	model_ubs.opacity = 0.5f;
+	model_ubs.cab_interior = 0.f;
+	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
+	auto const triangles{m_snow.render(view, [this](glm::mat4 const &Modelview) {
 		model_ubs.set_modelview(Modelview);
 		model_ubo->update(model_ubs);
 	})};

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/catenary_span.h"
 
 #include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
 #include "utilities/Globals.h"
 #include "world/TractionPower.h"
 #include "utilities/Logs.h"
@@ -195,6 +196,7 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
 
     if( catenary_span_lines( *this, vertices ) ) {
         // przęsło z typem sieci: lina nośna, podwieszenie Y i wieszaki policzone, zamiast przybliżenia poniżej
+        sway_vertices( vertices, true );
         auto const elementcount = vertices.size() / 2;
         gfx::userdata_array empty_userdata{};
         m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
@@ -371,12 +373,83 @@ TTraction::create_geometry( gfx::geometrybank_handle const &Geometrybank ) {
         }
     }
 
+    sway_vertices( vertices, true );
     auto const elementcount = vertices.size() / 2;
 
 	gfx::userdata_array empty_userdata{};
     m_geometry = GfxRenderer->Insert( vertices, empty_userdata, Geometrybank, GL_LINES );
 
     return elementcount;
+}
+
+glm::dvec3 TTraction::sway_axis() const {
+
+    auto const along { glm::dvec2 { pPoint2.x - pPoint1.x, pPoint2.z - pPoint1.z } };
+    auto const length { glm::length( along ) };
+    if( length < 0.01 ) { return glm::dvec3 { 0.0 }; }
+    return glm::dvec3 { -along.y / length, 0.0, along.x / length };
+}
+
+double TTraction::sway() const {
+
+    auto const &settings { Global.physics_weather };
+    if( ( false == settings.enabled ) || ( false == settings.wire_wind ) || EditorModeFlag ) { return 0.0; }
+    auto const axis { sway_axis() };
+    auto const wind { simulation::Environment.wind() };
+    auto const across { wind.x * axis.x + wind.z * axis.z };
+    auto const length { std::hypot( pPoint2.x - pPoint1.x, pPoint2.z - pPoint1.z ) };
+    auto const &snow { simulation::Environment.weather().snow() };
+    return weather_physics::wire_sway(
+        settings, length, across, snow.wire_ice(),
+        settings.air_density ? weather_physics::air_density( Global.AirTemperature ) : 1.0 );
+}
+
+glm::dvec3 TTraction::sway_at( double const Parameter ) const {
+
+    auto const sway { this->sway() };
+    if( sway == 0.0 ) { return glm::dvec3 { 0.0 }; }
+    return sway_axis() * ( sway * weather_physics::sway_profile( Parameter ) );
+}
+
+void TTraction::sway_vertices( gfx::vertex_array &Vertices, bool const Lines ) const {
+
+    auto const along { glm::dvec2 { pPoint2.x - pPoint1.x, pPoint2.z - pPoint1.z } };
+    auto const length { glm::length( along ) };
+    if( length < 0.01 ) { return; }
+    auto const axis { along / length };
+    auto const parameter = [&]( glm::vec3 const &Position ) {
+        auto const offset { glm::dvec2 { Position.x + m_origin.x - pPoint1.x, Position.z + m_origin.z - pPoint1.z } };
+        return static_cast<float>( std::clamp( glm::dot( offset, axis ) / length, 0.0, 1.0 ) );
+    };
+    if( false == Lines ) {
+        for( auto &vertex : Vertices ) {
+            vertex.texture.x = parameter( vertex.position );
+        }
+        return;
+    }
+    // a line running along the span is bent in pieces of an eighth of it at most
+    gfx::vertex_array result;
+    result.reserve( Vertices.size() );
+    for( std::size_t i = 0; i + 1 < Vertices.size(); i += 2 ) {
+        auto const &from { Vertices[ i ] };
+        auto const &to { Vertices[ i + 1 ] };
+        auto const span { std::abs( parameter( to.position ) - parameter( from.position ) ) };
+        auto const pieces { std::max( 1, static_cast<int>( std::ceil( span * 8.f - 0.01f ) ) ) };
+        auto start { from };
+        start.texture.x = parameter( start.position );
+        for( int piece = 1; piece <= pieces; ++piece ) {
+            auto end { to };
+            if( piece < pieces ) {
+                auto const t { static_cast<float>( piece ) / static_cast<float>( pieces ) };
+                end.position = glm::mix( from.position, to.position, t );
+            }
+            end.texture.x = parameter( end.position );
+            result.emplace_back( start );
+            result.emplace_back( end );
+            start = end;
+        }
+    }
+    Vertices.swap( result );
 }
 
 int TTraction::TestPoint(glm::dvec3 const &Point) const

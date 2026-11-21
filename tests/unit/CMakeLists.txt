@@ -29,11 +29,19 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
 	# and the switches laid into the curves
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	"${CMAKE_SOURCE_DIR}/environment/railsurface.cpp"
+	# the answer of the live weather read into a report
+	"${CMAKE_SOURCE_DIR}/environment/liveweatherreport.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# which textures the shadow maps draw without the alpha test
 	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
+	# the snow lying, as the weather lays it, drifts and melts it
+	"${CMAKE_SOURCE_DIR}/environment/snowcover.cpp"
+	# and the weather made of the climate of a place
+	"${CMAKE_SOURCE_DIR}/environment/climate.cpp"
+	"${CMAKE_SOURCE_DIR}/environment/climatestations.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

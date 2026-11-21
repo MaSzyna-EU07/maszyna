@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Track.h"
 #include "world/TrackRails.h"
 #include "simulation/simulation.h"
+#include "simulation/simulationenvironment.h"
 #include "scene/scene.h"
 #include "utilities/Globals.h"
 #include "world/Event.h"
@@ -3128,6 +3129,85 @@ double TTrack::VelocityGet()
 { // pobranie dozwolonej prędkości podczas skanowania
     return iDamageFlag & 128 ? 0.0 : fVelocity; // tor uszkodzony = prędkość zerowa
 };
+
+namespace {
+
+// a passage over a track goes on while its vehicles keep coming over it within this many seconds
+double constexpr SNOW_PASSAGE_GAP { 30.0 };
+// how much higher than on the open ground the snow gets on a track the wind fills up (sunk in the snow around, in a cutting)
+double constexpr SNOW_TRACK_DRIFT { 1.5 };
+
+} // namespace
+
+double TTrack::snow_at( double const Distance ) const {
+
+    if( false == Global.physics_snow ) { return 0.0; }
+    auto const &snow { simulation::Environment.weather().snow() };
+    auto const cleared {
+        ( m_snow.from <= m_snow.to )
+     && ( Distance >= m_snow.from - 1.0 )
+     && ( Distance <= m_snow.to + 1.0 ) };
+    auto const since { snow.brought() - ( cleared ? m_snow.now : m_snow.before ) };
+    auto const around { static_cast<double>( snow.depth() ) * ( 1.0 + SNOW_TRACK_DRIFT * static_cast<double>( snow.drift() ) ) };
+    return std::clamp( since, 0.0, around );
+}
+
+void TTrack::snow_cleared( double const Distance ) {
+
+    if( false == Global.physics_snow ) { return; }
+    auto const brought { simulation::Environment.weather().snow().brought() };
+    auto const time { Timer::GetTime() };
+    if( ( m_snow.from > m_snow.to ) || ( time - m_snow.touched > SNOW_PASSAGE_GAP ) ) {
+        // a passage begins: what an earlier one cleared of the track and didn't go all along it, the snow has taken back
+        m_snow.from = Distance;
+        m_snow.to = Distance;
+    }
+    else {
+        m_snow.from = std::min( m_snow.from, Distance );
+        m_snow.to = std::max( m_snow.to, Distance );
+    }
+    m_snow.now = brought;
+    m_snow.touched = time;
+    if( ( Segment != nullptr ) && ( m_snow.from <= 1.0 ) && ( m_snow.to >= Segment->GetLength() - 1.0 ) ) {
+        // gone along all of it: the whole track is cleared
+        m_snow.before = brought;
+        m_snow.from = 1.0;
+        m_snow.to = 0.0;
+    }
+}
+
+void TTrack::wheels_passed( double const Distance ) {
+
+    auto const time { Timer::GetTime() };
+    if( ( m_wheels.from > m_wheels.to ) || ( time - m_wheels.touched > SNOW_PASSAGE_GAP ) ) {
+        // a passage begins
+        m_wheels.from = Distance;
+        m_wheels.to = Distance;
+    }
+    else {
+        m_wheels.from = std::min( m_wheels.from, Distance );
+        m_wheels.to = std::max( m_wheels.to, Distance );
+    }
+    m_wheels.touched = time;
+    if( ( Segment != nullptr ) && ( m_wheels.from <= 1.0 ) && ( m_wheels.to >= Segment->GetLength() - 1.0 ) ) {
+        // gone along all of it
+        m_wheels.whole = time;
+        m_wheels.from = 1.0;
+        m_wheels.to = 0.0;
+    }
+}
+
+double TTrack::since_wheels( double const Distance ) const {
+
+    auto const inside {
+        ( m_wheels.from <= m_wheels.to )
+     && ( Distance >= m_wheels.from - 1.0 )
+     && ( Distance <= m_wheels.to + 1.0 ) };
+    // the stretch of the passage going on, else the last one which went all along the track
+    auto const when { inside ? std::max( m_wheels.touched, m_wheels.whole ) : m_wheels.whole };
+    if( when < 0.0 ) { return -1.0; }
+    return std::max( 0.0, Timer::GetTime() - when );
+}
 
 float TTrack::Friction() const {
 

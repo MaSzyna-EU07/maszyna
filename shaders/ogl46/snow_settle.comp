@@ -1,0 +1,72 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the drifts of the snow around the camera, second pass (opengl46_snow): the depths snow_drift.comp worked out, smoothed over the
+// texels around (not over a step of the scenery, a wall or the edge of a platform), into the cells the shading and the surface of
+// the drifts read (snow.glsl). a track or a road keeps the snow down after the smoothing as well, and its cell keeps the height it
+// keeps the snow below in place of the ceiling (the snow under a bridge was taken away by snow_drift.comp already)
+
+#include "common.glsl"
+#include "weather_common.glsl"
+#define SNOW_WRITE 1
+#include "snow.glsl"
+
+layout(local_size_x = SNOW_GROUP_SIZE, local_size_y = SNOW_GROUP_SIZE, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D surface;
+layout(binding = 1) uniform sampler2D drifted;
+
+// x: texels across the maps
+layout(location = 0) uniform ivec4 map;
+
+const float NONE = -5000.0;
+const float NO_CAP = 5000.0;
+// m of a step of the scenery the smoothing doesn't cross
+const float STEP = 0.6;
+
+int wrapped(int value)
+{
+	int side = map.x;
+	return ((value % side) + side) % side;
+}
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	if ((texel.x >= map.x) || (texel.y >= map.x))
+		return;
+	int index = texel.y * map.x + texel.x;
+	vec4 here = texelFetch(surface, texel, 0);
+	vec2 own = texelFetch(drifted, texel, 0).xy;
+	if ((here.x < NONE) || (own.x < 0.0))
+	{
+		snow_cells[index] = vec4(SNOW_NONE - 1.0, 0.0, here.y, 0.0);
+		return;
+	}
+	float sum = 0.0;
+	float weights = 0.0;
+	for (int dz = -2; dz <= 2; ++dz)
+	{
+		for (int dx = -2; dx <= 2; ++dx)
+		{
+			ivec2 other = ivec2(wrapped(texel.x + dx), wrapped(texel.y + dz));
+			float top = texelFetch(surface, other, 0).x;
+			float depth = texelFetch(drifted, other, 0).x;
+			if ((top < NONE) || (depth < 0.0) || (abs(top - here.x) > STEP))
+				continue;
+			float w = exp(-0.35 * float(dx * dx + dz * dz));
+			// the surface of the snow is smoothed, not the depth over a ground which changes
+			sum += (top + depth - here.x) * w;
+			weights += w;
+		}
+	}
+	float depth = max((weights > 0.0) ? sum / weights : own.x, 0.0);
+	// as snow_drift.comp: the snow on a track over what it keeps down, the rails buried under it no longer kept clean
+	bool buried = false;
+	if (here.z < NO_CAP)
+	{
+		float kept = here.z - here.x;
+		depth = (here.w >= 0.0) ? max(clamp(kept, 0.0, depth), kept - 0.14 + here.w) : clamp(kept, 0.0, depth);
+		buried = here.w > 0.17;
+	}
+	snow_cells[index] = vec4(here.x + depth, depth, ((here.z < NO_CAP) && !buried) ? here.z : here.y, own.y);
+}

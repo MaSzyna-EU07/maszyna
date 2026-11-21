@@ -374,14 +374,17 @@ catenary_span_solid( TTraction &Traction, glm::dvec3 const &Camera ) {
     gfx::userdata_array userdata;
     {
         auto data { vertices( Traction, wires ) };
+        Traction.sway_vertices( data, false );
         span.solid.wires = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
     }
     if( false == fittings.empty() ) {
         auto data { vertices( Traction, fittings ) };
+        Traction.sway_vertices( data, false );
         span.solid.fittings = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
     }
     if( false == span.attached.empty() ) {
         auto data { vertices( Traction, span.attached ) };
+        Traction.sway_vertices( data, false );
         span.solid.rope = GfxRenderer->Insert( data, userdata, span.solidbank, GL_TRIANGLES );
     }
     span.solidloaded = ( span.solid.wires != null_handle );
@@ -414,6 +417,7 @@ catenary_span_refresh( TTraction &Traction ) {
     if( Traction.m_geometry == null_handle ) { return; }
     gfx::vertex_array vertices;
     if( false == catenary_span_lines( Traction, vertices ) ) { return; }
+    Traction.sway_vertices( vertices, true );
     gfx::userdata_array userdata;
     GfxRenderer->Replace( vertices, userdata, Traction.m_geometry, GL_LINES );
 }

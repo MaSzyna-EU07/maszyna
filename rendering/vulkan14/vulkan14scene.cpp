@@ -644,6 +644,8 @@ bool vulkan14_renderer::init_scene(std::string &Reason)
 		scene.prepass_alpha = program("depthprepass.vert", "depthprepass_alpha.frag", vk14::vertex_kind::scene);
 		scene.cube_shadow = program("shadowcube.vert", "shadowmap.frag", vk14::vertex_kind::scene);
 		scene.cube_alpha_shadow = program("shadowcube.vert", "alphashadowmap.frag", vk14::vertex_kind::scene);
+		scene.wire_shadow = program("wireshadow.vert", "shadowmap.frag", vk14::vertex_kind::scene);
+		scene.cube_wire_shadow = program("wireshadowcube.vert", "shadowmap.frag", vk14::vertex_kind::scene);
 		scene.quad = ctx.shaders.get("quad.vert");
 		for (auto const *name : {"copy.frag", "present.frag", "postfx_tonemapping.frag", "postfx_motionblur.frag", "postfx_chromaticaberration.frag"})
 		{
@@ -1691,6 +1693,9 @@ void vulkan14_renderer::walk_program(walk_shader const Program)
 		break;
 	case walk_shader::line:
 		m_draw->program = scene.line.get();
+		break;
+	case walk_shader::line_shadow:
+		m_draw->program = (m_cubeshadows ? scene.cube_wire_shadow.get() : scene.wire_shadow.get());
 		break;
 	case walk_shader::billboard:
 		m_draw->program = scene.billboard.get();

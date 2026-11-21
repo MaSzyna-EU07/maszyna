@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/common/scenewalk.h"
+#include "simulation/simulationenvironment.h"
 #include "rendering/common/walksync.h"
 #include "utilities/color.h"
 #include "utilities/Globals.h"
@@ -2913,9 +2914,23 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 
 	// McZapkie-261102: kolor zalezy od materialu i zasniedzenia
 	model_ubs.param[0] = glm::vec4(Traction->wire_color(), glm::min(1.0f, linealpha));
+	// the wind blowing the span aside (traction.vert), as the pantographs meet the wire
+	auto const swayaxis{Traction->sway_axis()};
+	// and the ice on the wires (environment/snowcover.h, the ice the pantographs meet): w its radial thickness, m, which the solids up
+	// close grow by; param[2] each kind, mm (the glaze, the hard rime, the soft rime, the wet snow), which colour the wires
+	auto const &snow{simulation::Environment.weather().snow()};
+	using icekind = snow_cover::ice_kind;
+	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), snow.wire_ice());
+	model_ubs.param[2] = glm::vec4(snow.wire_ice(icekind::glaze), snow.wire_ice(icekind::rime_hard), snow.wire_ice(icekind::rime_soft), snow.wire_ice(icekind::wet_snow)) * 1000.f;
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
-		walk_shadow_material(null_handle);
+	{
+		// the shadows go with the wires blown aside (physics.weather.wireshadows), or stay as the wires stand still
+		if (Global.physics_weather.wire_shadows)
+			walk_program(walk_shader::line_shadow);
+		else
+			walk_shadow_material(null_handle);
+	}
 	else
 		walk_program( walk_shader::line );
 
@@ -2947,6 +2962,10 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 		if (m_renderpass.draw_mode != rendermode::shadows)
 			walk_blending(blending);
 	}
+
+	// the other lines drawn with the program aren't blown aside nor iced
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
 
 	// debug data
 	++m_renderpass.draw_stats.traction;
@@ -3116,10 +3135,48 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
 
 	model_ubs.future = future_stack;
 
+	// the arcs at its pantographs
+	Render_arcs(Dynamic);
+
 	if (Dynamic->btnOn)
 		Dynamic->TurnOff(); // przywrócenie domyślnych pozycji submodeli
 
 	return true;
+}
+
+void scene_walk::Render_arcs(TDynamicObject const *Dynamic)
+{
+	if ((m_renderpass.draw_mode != rendermode::color) || (false == Global.physics_weather.arcs) || (Dynamic->pants == nullptr))
+		return;
+	auto const camera{m_renderpass.pass_camera.position()};
+	for (int index = 0; index < Dynamic->iAnimType[ANIM_PANTS]; ++index)
+	{
+		auto const *pantograph{Dynamic->pants[index].fParamPants};
+		if ((pantograph == nullptr) || (pantograph->arc <= 0.f))
+			continue;
+		// the place of the arc in the view, pulled a little towards the camera out of the strip and the wire; drawn with the depth
+		// test, so the roof of the cab and a bridge hide it
+		auto const &view = OpenGLMatrices.data(GL_MODELVIEW);
+		auto center{view * glm::vec4(glm::vec3(pantograph->arc_position - camera), 1.f)};
+		auto const distance{glm::length(glm::vec3(center))};
+		if (distance > 0.5f)
+			center -= glm::vec4(glm::vec3(center) * (0.3f / distance), 0.f);
+		auto const flicker{0.55f + 0.45f * static_cast<float>(Random())};
+		auto const strength{std::clamp(pantograph->arc * flicker * Global.physics_weather.arc_brightness, 0.f, 1.f)};
+		::glPushMatrix();
+		::glLoadIdentity();
+		::glTranslatef(center.x, center.y, center.z);
+		::glRotated(std::atan2(center.x, center.z) * 180.0 / M_PI, 0.0, 1.0, 0.0);
+		// the billboard is 2.5 m across: the flash some 0.6..1 m
+		auto const scale{0.25f + 0.15f * strength};
+		::glScalef(scale, scale, scale);
+		walk_program(walk_shader::billboard);
+		walk_texture(0, m_glaretexture);
+		// blue-white and brighter than white, the bloom of the post processing takes it further
+		model_ubs.param[0] = glm::vec4(glm::vec3{2.4f, 2.8f, 3.4f} * strength, strength);
+		walk_draw(m_billboardgeometry);
+		::glPopMatrix();
+	}
 }
 
 bool scene_walk::Render_Alpha(TModel3d *Model, material_data const *Material, float const Squaredistance)
