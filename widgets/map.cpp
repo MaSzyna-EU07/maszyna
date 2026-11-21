@@ -774,21 +774,12 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				float constexpr lamp_spacing = 7.0f;
 				if (cache.colors.empty())
 				{
-					ImVec2 const label_position(center.x + 8.0f, center.y - 10.0f);
-					ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
-					ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
-					ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
-					bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
 					bool const icon_hovered = mouse_over_map &&
 						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
-					if (label_hovered || icon_hovered)
+					if (icon_hovered)
 						m_hovered_map_object = sem;
 					draw_list->AddCircleFilled(center, 5.0f, IM_COL32(255, 210, 70, 255));
-					draw_list->AddText(
-						label_position,
-						label_hovered || icon_hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(245, 245, 245, 255),
-						sem->name.c_str());
-					if (label_hovered || icon_hovered)
+					if (icon_hovered)
 						draw_list->AddCircle(center, 8.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
 					return;
 				}
@@ -798,16 +789,11 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 				float const head_half_length =
 					std::max(5.0f, (static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
 				float constexpr head_half_width = 5.0f;
-				ImVec2 const label_position(head_center.x + 10.0f, head_center.y - 12.0f);
-				ImVec2 const label_size = ImGui::CalcTextSize(sem->name.c_str());
-				ImVec2 const label_min(label_position.x - 3.0f, label_position.y - 2.0f);
-				ImVec2 const label_max(label_position.x + label_size.x + 3.0f, label_position.y + label_size.y + 2.0f);
-				bool const label_hovered = mouse_over_map && map_point_in_rect(mouse_position, label_min, label_max);
 				glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
 				bool const icon_hovered = mouse_over_map &&
 					std::abs(glm::dot(mouse_from_head, dir)) <= head_half_length &&
 					std::abs(glm::dot(mouse_from_head, normal)) <= head_half_width;
-				bool const signal_hovered = label_hovered || icon_hovered;
+				bool const signal_hovered = icon_hovered;
 				if (signal_hovered)
 					m_hovered_map_object = sem;
 
@@ -839,10 +825,6 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 						center.y + dir.y * offset * lamp_spacing);
 					draw_list->AddCircleFilled(lamp_position, 3.6f, static_cast<ImU32>(cache.colors[idx]));
 				}
-				draw_list->AddText(
-					label_position,
-					signal_hovered ? IM_COL32(120, 200, 255, 255) : IM_COL32(230, 240, 255, 255),
-					sem->name.c_str());
 			};
 
 			if (sem->models.empty())
