@@ -1068,9 +1068,16 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		terrain
 	};
 	work_area current_work_area() const;
+	// colour of a work mode as 0xRRGGBB, for the accents of the light or the dark palette
+	static int work_area_colour(work_area const Area, bool const Dark);
 	void choose_work_area(work_area const Area);
 	void render_workspaces();
-	bool m_gizmo_enabled{true};                                  // master switch for the in-viewport gizmo
+	// the capsule of the light and the dark palettes: the plate of the work mode with the list of the modes, its tools, undo and redo
+	void render_capsule();
+	void render_mode_plate();
+	void render_capsule_tools();
+	void render_history_button(bool const Redo, float const Side);
+	bool m_gizmo_enabled{true};                                 // master switch for the in-viewport gizmo
 	bool m_track_gizmo_on{false};                                // the gizmo in the tracks: off until Q, W or E, so a track isn't moved by chance
 	bool gizmo_shown() const;                                    // the switch of the field of work in use
 	bool m_gizmo_using{false};                                   // tracks an ongoing drag, so a single undo snapshot is taken per drag

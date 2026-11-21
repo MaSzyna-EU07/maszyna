@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui_internal.h"
 #include "editor/editorSettings.hpp"
 #include "editor/editorIcons.hpp"
+#include "application/uidescription.h"
 
 #include <cstdio>
 #include <limits>
@@ -49,6 +50,17 @@ void editor_ui::render_dockspace()
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const dockspace{ImGui::GetID("###editordockspace")};
 	m_dockspace = dockspace;
+	if (islands())
+	{
+		render_islands_dockspace(dockspace);
+		return;
+	}
+	if (m_islandsbefore)
+	{
+		// back from the islands: the windows go to their docks again
+		m_islandsbefore = false;
+		m_layoutreset = true;
+	}
 	if (m_layoutreset || ImGui::DockBuilderGetNode(dockspace) == nullptr)
 	{
 		m_layoutreset = false;
@@ -106,6 +118,306 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 		ImGui::DockBuilderDockWindow(window, bottomleft);
 	ImGui::DockBuilderDockWindow("###modelsets", bottomright);
 	ImGui::DockBuilderFinish(Dockspace);
+}
+
+namespace
+{
+// sizes of the islands, in pixels at the scale of the user interface
+float island_scale()
+{
+	return std::max(1.0f, Global.ui_scale);
+}
+constexpr float island_margin{12.0f}; // from the edges of the window
+constexpr float island_gap{10.0f}; // between two islands
+constexpr float island_column{340.0f}; // the tool and the selection on the right
+constexpr float island_capsule{52.0f}; // height of the capsule
+constexpr float island_rail{48.0f}; // width of the rail
+constexpr float island_drawer{300.0f};
+constexpr float island_tray{250.0f}; // height of the tray
+
+// the part of the main window the islands are laid out in, under the menu
+ImVec2 work_min()
+{
+	return ImGui::GetMainViewport()->WorkPos;
+}
+ImVec2 work_max()
+{
+	auto const *viewport{ImGui::GetMainViewport()};
+	return {viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y};
+}
+} // namespace
+
+bool editor_ui::islands()
+{
+	return ui_layer::rounded();
+}
+
+ImVec2 editor_ui::island_position(island const Which)
+{
+	auto const s{island_scale()};
+	auto const min{work_min()};
+	auto const max{work_max()};
+	auto const margin{island_margin * s};
+	auto const gap{island_gap * s};
+	auto const left{min.x + margin};
+	auto const right{max.x - margin - island_column * s};
+	auto const belowcapsule{min.y + margin + island_capsule * s + gap};
+	auto const besiderail{left + island_rail * s + gap};
+	switch (Which)
+	{
+	case island::capsule:
+		return {left, min.y + margin};
+	case island::rail:
+		return {left, belowcapsule};
+	case island::tool:
+		return {right, min.y + margin};
+	case island::inspector:
+		return {right, min.y + margin + island_size(island::tool).y + gap};
+	case island::drawer:
+		return {besiderail, belowcapsule};
+	case island::bank:
+		return {besiderail, max.y - margin - island_tray * s};
+	case island::sets:
+		return {besiderail + island_size(island::bank).x + gap, max.y - margin - island_tray * s};
+	}
+	return min;
+}
+
+ImVec2 editor_ui::island_size(island const Which)
+{
+	auto const s{island_scale()};
+	auto const min{work_min()};
+	auto const max{work_max()};
+	auto const margin{island_margin * s};
+	auto const gap{island_gap * s};
+	auto const height{max.y - min.y - 2.0f * margin};
+	auto const column{island_column * s};
+	// the tray between the rail and the column on the right
+	auto const trayleft{min.x + margin + island_rail * s + gap};
+	auto const traywidth{std::max(200.0f * s, max.x - margin - column - gap - trayleft)};
+	switch (Which)
+	{
+	case island::tool:
+	{
+		// as high as its content was, up to six tenths of the height; the selection has the rest
+		auto const wanted{m_toolheight > 0.0f ? m_toolheight : 300.0f * s};
+		return {column, std::clamp(wanted, 140.0f * s, std::max(140.0f * s, height * 0.6f))};
+	}
+	case island::inspector:
+		return {column, std::max(120.0f * s, height - island_size(island::tool).y - gap)};
+	case island::drawer:
+	{
+		auto bottom{max.y - margin};
+		if (m_trayshown)
+			bottom -= island_tray * s + gap;
+		auto const top{island_position(island::drawer).y};
+		return {island_drawer * s, std::clamp(bottom - top, 160.0f * s, 560.0f * s)};
+	}
+	case island::bank:
+		return {m_setsshown ? std::floor((traywidth - gap) * 0.58f) : traywidth, island_tray * s};
+	case island::sets:
+		return {std::max(160.0f * s, traywidth - gap - std::floor((traywidth - gap) * 0.58f)), island_tray * s};
+	default:
+		return {0.0f, 0.0f};
+	}
+}
+
+bool editor_ui::place_island(island const Which)
+{
+	if (false == islands())
+		return false;
+	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
+	ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+	ImGui::SetNextWindowPos(island_position(Which), ImGuiCond_Always);
+	if (Which != island::capsule && Which != island::rail)
+		ImGui::SetNextWindowSize(island_size(Which), ImGuiCond_Always);
+	return true;
+}
+
+int editor_ui::island_flags()
+{
+	return ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+}
+
+void editor_ui::island_shadow()
+{
+	// a few rounded rectangles, wider and fainter, behind every window: the islands lift off the 3d view
+	auto const position{ImGui::GetWindowPos()};
+	auto const size{ImGui::GetWindowSize()};
+	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetWindowViewport())};
+	auto const s{island_scale()};
+	auto const rounding{ImGui::GetStyle().WindowRounding};
+	auto const dark{ui_layer::m_palette == 3};
+	constexpr int layers{6};
+	for (int layer = layers; layer > 0; --layer)
+	{
+		auto const spread{static_cast<float>(layer) * 2.5f * s};
+		auto const drop{static_cast<float>(layer) * 1.2f * s};
+		auto const alpha{static_cast<int>((dark ? 34.0f : 16.0f) * (1.0f - static_cast<float>(layer - 1) / layers))};
+		list->AddRectFilled(ImVec2(position.x - spread, position.y - spread + drop), ImVec2(position.x + size.x + spread, position.y + size.y + spread + drop), IM_COL32(10, 14, 22, alpha), rounding + spread);
+	}
+}
+
+void editor_ui::render_islands_dockspace(unsigned int const Dockspace)
+{
+	if (false == m_islandsbefore || ImGui::DockBuilderGetNode(Dockspace) == nullptr)
+	{
+		// the docks are taken apart once: their windows float, those of the islands are placed by place_island()
+		m_islandsbefore = true;
+		m_autohide.clear();
+		m_autohideshown = 0;
+		auto *viewport{ImGui::GetMainViewport()};
+		ImGui::DockBuilderRemoveNode(Dockspace);
+		ImGui::DockBuilderAddNode(Dockspace, ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
+		ImGui::DockBuilderSetNodePos(Dockspace, viewport->WorkPos);
+		ImGui::DockBuilderSetNodeSize(Dockspace, viewport->WorkSize);
+		ImGui::DockBuilderFinish(Dockspace);
+		ImGui::MarkIniSettingsDirty();
+	}
+	// the other windows can still be docked by hand, the 3d view is the whole window
+	ImGui::DockSpaceOverViewport(Dockspace, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+	auto const current{mode()};
+	m_trayshown = m_trayforced || current == nodebank_panel::ADD || current == nodebank_panel::BRUSH || current == nodebank_panel::FILL;
+	// the overlays of the 3d view go between the islands
+	auto const s{island_scale()};
+	auto const gap{island_gap * s};
+	auto const rail{island_position(island::rail)};
+	auto const capsule{island_position(island::capsule)};
+	m_viewmin = {rail.x + island_rail * s + gap, capsule.y + island_capsule * s + gap};
+	m_viewmax = {island_position(island::tool).x - gap, m_trayshown ? island_position(island::bank).y - gap : work_max().y - island_margin * s};
+}
+
+void editor_ui::render_capsule()
+{
+	if (false == place_island(island::capsule))
+		return;
+	auto const s{island_scale()};
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5.0f * s, 5.0f * s));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f * s);
+	auto const open{ImGui::Begin("##editorcapsule", nullptr, island_flags() | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoFocusOnAppearing)};
+	ImGui::PopStyleVar(2);
+	if (open)
+	{
+		island_shadow();
+		if (m_capsule)
+			m_capsule();
+	}
+	ImGui::End();
+}
+
+namespace
+{
+// the descriptions of the windows shown both from the rail and from the windows menu, the same in both
+constexpr char const *scene_description{"What the scene holds, by its kind and name, with a search. From here you select an object without looking for it in the view."};
+constexpr char const *layers_description{"The files the scenery is made of (the scenery and its includes) and the base layers of the map. Here you choose which file new objects go to, hide a layer and save."};
+constexpr char const *bank_description{"The bank of what can be placed: models, tracks and scenery templates, in groups with previews. Choose one, then click in the view to put it there."};
+
+// a button of the rail: a square with a picture drawn by Draw, filled when it's chosen
+bool rail_button(char const *Id, char const *Tooltip, char const *Description, bool const Chosen, void (*Draw)(ImDrawList *, ImVec2, float, ImU32))
+{
+	auto const s{island_scale()};
+	auto const side{38.0f * s};
+	auto const position{ImGui::GetCursorScreenPos()};
+	auto const clicked{ImGui::InvisibleButton(Id, ImVec2(side, side))};
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	ImVec2 const end{position.x + side, position.y + side};
+	if (Chosen)
+		list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_Text), 10.0f * s);
+	else if (hovered)
+		list->AddRectFilled(position, end, ImGui::GetColorU32(ImGuiCol_FrameBg), 10.0f * s);
+	auto const colour{Chosen ? ImGui::GetColorU32(ImGuiCol_WindowBg, 1.0f) : ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.7f)};
+	Draw(list, ImVec2(position.x + side * 0.5f, position.y + side * 0.5f), s, colour);
+	if (hovered)
+		ImGui::SetTooltip("%s", Tooltip);
+	ui::rest_description(Description, Tooltip, ui_layer::font_bold);
+	return clicked;
+}
+
+void draw_scene(ImDrawList *List, ImVec2 const C, float const S, ImU32 const Colour)
+{
+	// a tree: a stem with two branches ending in boxes
+	auto const w{1.6f * S};
+	List->AddLine(ImVec2(C.x - 7.0f * S, C.y - 7.0f * S), ImVec2(C.x - 7.0f * S, C.y + 6.0f * S), Colour, w);
+	List->AddLine(ImVec2(C.x - 7.0f * S, C.y - 1.0f * S), ImVec2(C.x - 1.0f * S, C.y - 1.0f * S), Colour, w);
+	List->AddLine(ImVec2(C.x - 7.0f * S, C.y + 6.0f * S), ImVec2(C.x - 1.0f * S, C.y + 6.0f * S), Colour, w);
+	List->AddRect(ImVec2(C.x, C.y - 3.5f * S), ImVec2(C.x + 7.0f * S, C.y + 1.5f * S), Colour, 1.5f * S, 0, w);
+	List->AddRect(ImVec2(C.x, C.y + 3.5f * S), ImVec2(C.x + 7.0f * S, C.y + 8.5f * S), Colour, 1.5f * S, 0, w);
+	List->AddLine(ImVec2(C.x - 9.0f * S, C.y - 7.0f * S), ImVec2(C.x - 3.0f * S, C.y - 7.0f * S), Colour, w);
+}
+
+void draw_layers(ImDrawList *List, ImVec2 const C, float const S, ImU32 const Colour)
+{
+	// three sheets lying on each other
+	auto const w{1.6f * S};
+	for (int sheet = 0; sheet < 3; ++sheet)
+	{
+		auto const y{C.y - 5.0f * S + static_cast<float>(sheet) * 4.5f * S};
+		List->AddQuad(ImVec2(C.x, y - 3.5f * S), ImVec2(C.x + 8.0f * S, y), ImVec2(C.x, y + 3.5f * S), ImVec2(C.x - 8.0f * S, y), Colour, w);
+	}
+}
+
+void draw_bank(ImDrawList *List, ImVec2 const C, float const S, ImU32 const Colour)
+{
+	// a grid of four cards
+	auto const w{1.6f * S};
+	for (int row = 0; row < 2; ++row)
+		for (int column = 0; column < 2; ++column)
+		{
+			ImVec2 const a{C.x - 7.5f * S + static_cast<float>(column) * 8.0f * S, C.y - 7.5f * S + static_cast<float>(row) * 8.0f * S};
+			List->AddRect(a, ImVec2(a.x + 6.5f * S, a.y + 6.5f * S), Colour, 1.5f * S, 0, w);
+		}
+}
+} // namespace
+
+void editor_ui::render_rail()
+{
+	if (false == place_island(island::rail))
+		return;
+	auto const s{island_scale()};
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5.0f * s, 5.0f * s));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2.0f * s, 2.0f * s));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f * s);
+	auto const open{ImGui::Begin("##editorrail", nullptr, island_flags() | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoFocusOnAppearing)};
+	ImGui::PopStyleVar(3);
+	if (open)
+	{
+		island_shadow();
+		auto const toggle = [](drawer const Which) { m_drawer = m_drawer == Which ? drawer::none : Which; };
+		if (rail_button("##railscene", STR_C("Scene"), STR_C(scene_description), m_drawer == drawer::scene, &draw_scene))
+			toggle(drawer::scene);
+		if (rail_button("##raillayers", STR_C("Layers"), STR_C(layers_description), m_drawer == drawer::layers, &draw_layers))
+			toggle(drawer::layers);
+		if (rail_button("##railbank", STR_C("Node bank"), STR_C(bank_description), m_trayshown, &draw_bank))
+			m_trayforced = false == m_trayshown;
+	}
+	ImGui::End();
+	// Esc puts the drawer away, when nothing is typed into
+	if (m_drawer != drawer::none && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && false == ImGui::GetIO().WantTextInput && false == ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+		m_drawer = drawer::none;
+}
+
+void editor_ui::render_islands_status()
+{
+	// the outcome of the last operation and the selected node, as a caption at the bottom left of the 3d view
+	std::string text{m_layerspanel.status};
+	if (m_node != nullptr)
+	{
+		auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};
+		if (false == text.empty())
+			text += "   ";
+		text += std::string{STR_C("Selected:")} + " " + name;
+	}
+	if (text.empty())
+		return;
+	auto const s{island_scale()};
+	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+	auto const size{ImGui::CalcTextSize(text.c_str())};
+	ImVec2 const padding{10.0f * s, 4.0f * s};
+	ImVec2 const position{m_viewmin.x, m_viewmax.y - size.y - 2.0f * padding.y};
+	list->AddRectFilled(position, ImVec2(position.x + size.x + 2.0f * padding.x, position.y + size.y + 2.0f * padding.y), ImGui::GetColorU32(ImGuiCol_WindowBg, 0.85f), 999.0f);
+	auto const colour{m_layerspanel.status_error && false == m_layerspanel.status.empty() ? IM_COL32(220, 60, 50, 255) : ImGui::GetColorU32(ImGuiCol_Text)};
+	list->AddText(ImVec2(position.x + padding.x, position.y + padding.y), colour, text.c_str());
 }
 
 // unpinned docks. imgui has no auto-hide of its own: the windows of an unpinned dock are undocked, kept hidden while they aren't shown,
@@ -604,6 +916,18 @@ void editor_ui::render_()
 		if (m_save)
 			m_save();
 	}
+	if (islands())
+	{
+		// the islands: no bars, the capsule and the rail float over the 3d view, the status is a caption in it
+		render_capsule();
+		render_rail();
+		render_tool_options();
+		render_inspector();
+		render_scene();
+		render_islands_status();
+		render_refusal();
+		return;
+	}
 	auto *viewport{ImGui::GetMainViewport()};
 	auto const flags{ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar};
 	// the fields of work of the editor under the menu, in a row twice as high; the tools of the one chosen in the toolbar under it
@@ -726,9 +1050,13 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 
 void editor_ui::render_tool_options()
 {
+	if (islands())
+		m_tooloptionsopen = true;
 	if (false == m_tooloptionsopen)
 		return;
-	ImGui::SetNextWindowSize(ImVec2S(400, 300), ImGuiCond_FirstUseEver);
+	auto const island{place_island(island::tool)};
+	if (false == island)
+		ImGui::SetNextWindowSize(ImVec2S(400, 300), ImGuiCond_FirstUseEver);
 	auto const current{mode()};
 	auto const active{m_workspace == workspace::terrain || (m_workspace == workspace::roads && current != nodebank_panel::TRACK) ? m_workspace : workspace::none};
 	// a change of the mode brings the window forward, in case it shares its dock with another one
@@ -736,10 +1064,14 @@ void editor_ui::render_tool_options()
 	if (shown != m_toolmode)
 	{
 		m_toolmode = shown;
-		ImGui::SetNextWindowFocus();
+		if (false == island)
+			ImGui::SetNextWindowFocus();
 	}
-	if (ImGui::Begin((std::string(STR_C("Tool options")) + "###tooloptions").c_str(), &m_tooloptionsopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	auto const flags{island ? island_flags() | ImGuiWindowFlags_NoFocusOnAppearing : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysVerticalScrollbar};
+	if (ImGui::Begin((std::string(STR_C("Tool options")) + "###tooloptions").c_str(), island ? nullptr : &m_tooloptionsopen, flags))
 	{
+		if (island)
+			island_shadow();
 		char const *name{STR_C("Select")};
 		switch (current)
 		{
@@ -765,7 +1097,10 @@ void editor_ui::render_tool_options()
 			name = STR_C("Roads");
 		else if (active == workspace::terrain)
 			name = STR_C("Terrain");
-		ImGui::SeparatorText(name);
+		if (island)
+			island_heading(STR_C("Tool options"), name);
+		else
+			ImGui::SeparatorText(name);
 		if (active != workspace::none)
 		{
 			auto const &tools{m_workspacetools[static_cast<std::size_t>(active)]};
@@ -784,17 +1119,51 @@ void editor_ui::render_tool_options()
 			if (m_gizmooptions)
 				m_gizmooptions();
 		}
+		// the island is as high as its content, in the next frame
+		if (island)
+			m_toolheight = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
 	}
 	ImGui::End();
 }
 
+void editor_ui::island_heading(char const *Kind, char const *Name)
+{
+	// what the island holds, small and faint, over its name in the bold font
+	ImGui::TextDisabled("%s", Kind);
+	if (Name == nullptr || *Name == 0)
+	{
+		ImGui::Spacing();
+		return;
+	}
+	if (ui_layer::font_bold != nullptr)
+	{
+		ImGui::PushFont(ui_layer::font_bold);
+		ImGui::TextUnformatted(Name);
+		ImGui::PopFont();
+	}
+	else
+		ImGui::TextUnformatted(Name);
+	ImGui::Spacing();
+}
+
 void editor_ui::render_inspector()
 {
-	if (false == m_inspectoropen)
+	auto const island{place_island(island::inspector)};
+	if (false == island && false == m_inspectoropen)
 		return;
-	ImGui::SetNextWindowSize(ImVec2S(420, 480), ImGuiCond_FirstUseEver);
-	if (ImGui::Begin((std::string(STR_C("Inspector")) + "###inspector").c_str(), &m_inspectoropen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	if (false == island)
+		ImGui::SetNextWindowSize(ImVec2S(420, 480), ImGuiCond_FirstUseEver);
+	auto const flags{island ? island_flags() | ImGuiWindowFlags_NoFocusOnAppearing : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse};
+	if (ImGui::Begin((std::string(STR_C("Inspector")) + "###inspector").c_str(), island ? nullptr : &m_inspectoropen, flags))
 	{
+		if (island)
+		{
+			island_shadow();
+			std::string name;
+			if (m_node != nullptr)
+				name = m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name();
+			island_heading(STR_C("Selection"), name.c_str());
+		}
 		if (mode() == nodebank_panel::TRACK)
 		{
 			// in the track mode the selection is a path
@@ -878,11 +1247,22 @@ void editor_ui::scene_row(std::size_t const Entry)
 
 void editor_ui::render_scene()
 {
-	if (false == m_sceneopen)
+	auto const island{islands()};
+	// with the islands the scene is a drawer by the rail, shown from it
+	if (island ? m_drawer != drawer::scene : false == m_sceneopen)
 		return;
-	ImGui::SetNextWindowSize(ImVec2S(400, 420), ImGuiCond_FirstUseEver);
-	if (ImGui::Begin((std::string(STR_C("Scene")) + "###scenetree").c_str(), &m_sceneopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	if (island)
+		place_island(island::drawer);
+	else
+		ImGui::SetNextWindowSize(ImVec2S(400, 420), ImGuiCond_FirstUseEver);
+	auto const flags{island ? island_flags() : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse};
+	if (ImGui::Begin((std::string(STR_C("Scene")) + "###scenetree").c_str(), island ? nullptr : &m_sceneopen, flags))
 	{
+		if (island)
+		{
+			island_shadow();
+			island_heading(STR_C("Scene"), m_sceneentries.empty() ? "" : std::format("{}", m_sceneentries.size()).c_str());
+		}
 		if (m_scenesize != scene::Hierarchy.size())
 			scene_rebuild();
 		if (ImGui::Button(STR_C("Refresh")))
@@ -973,10 +1353,12 @@ void editor_ui::render_menu_contents()
 			m_newscenery();
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The editor starts again with the wizard of a new scenery: its name and its centre on the map"));
+		ui::rest_description(STR_C("Closes this scenery and starts the editor again with the wizard of a new scenery, where you give its name and its place on the map. Save first with Ctrl+S what you want to keep."));
 		if (ImGui::MenuItem(STR_C("Open scenery...")) && m_openscenery)
 			m_openscenery();
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The editor starts again with another scenery of the scenery folder"));
+		ui::rest_description(STR_C("Starts the editor again with another scenery, chosen from the scenery folder. Save first with Ctrl+S what you want to keep here."));
 		// changes go to the scenery files only if the scenery was loaded with its sources tracked
 		auto const editsession{false == scene::Layers.empty()};
 		if (ImGui::MenuItem(STR_C("Save"), STR_C("Ctrl+S"), false, editsession) && m_save)
@@ -987,6 +1369,7 @@ void editor_ui::render_menu_contents()
 		{
 			ImGui::SetTooltip("%s", STR_C("Start the simulator with -edit <scenery file> to save changes to the scenery files"));
 		}
+		ui::rest_description(STR_C("Writes the changes into the scenery files they came from. The definitions you didn't change stay in the files byte for byte, an edited object is written anew. It works when the scenery was loaded with -edit."));
 		if (ImGui::MenuItem(STR_C("Export scenery dump"), STR_C("Ctrl+Shift+F11")) && m_export)
 		{
 			m_export();
@@ -995,6 +1378,7 @@ void editor_ui::render_menu_contents()
 		{
 			ImGui::SetTooltip("%s", STR_C("Writes the whole scene to _export files next to the scenario, the scenery files are left as they are"));
 		}
+		ui::rest_description(STR_C("Writes the whole scene as the editor holds it to files with _export in their names, next to the scenario. The scenery files aren't changed. Useful to see what the editor has loaded, or as a start for another scenery."));
 		ImGui::EndMenu();
 	}
 	if (m_editmenu)
@@ -1019,26 +1403,67 @@ void editor_ui::render_tools_menu()
 void editor_ui::render_windows_menu()
 {
 	ImGui::Separator();
-	ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
-	ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
-	ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
-	ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
+	if (islands())
+	{
+		// the windows of the islands: the tool options and the selection are the cards on the right and always shown, the scene and the
+		// layers are the drawers of the rail, the node bank its tray; the entries open them as the rail does
+		auto scene{m_drawer == drawer::scene};
+		if (ImGui::MenuItem(STR_C("Scene"), nullptr, scene))
+			m_drawer = scene ? drawer::none : drawer::scene;
+		ui::rest_description(STR_C(scene_description));
+		auto layers{m_drawer == drawer::layers};
+		if (ImGui::MenuItem(STR_C("Layers"), nullptr, layers))
+			m_drawer = layers ? drawer::none : drawer::layers;
+		ui::rest_description(STR_C(layers_description));
+		// in insert, brush and area fill the mode keeps the tray shown
+		if (ImGui::MenuItem(STR_C("Node bank"), nullptr, m_trayshown, m_trayforced || false == m_trayshown))
+			m_trayforced = false == m_trayshown;
+		ui::rest_description(STR_C(bank_description));
+	}
+	else
+	{
+		ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
+		ui::rest_description(STR_C("The settings of the tool in use, such as the radius and the type of a track, the profile of a road or the brush of the terrain. What it shows changes with the tool."));
+		ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
+		ui::rest_description(STR_C("The properties of what is selected: its position and turn, the model and its textures, the parameters of a track and more. A change made here goes into the scene at once and Ctrl+Z takes it back."));
+		ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
+		ui::rest_description(STR_C(scene_description));
+		ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
+		ui::rest_description(STR_C(bank_description));
+		ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
+		ui::rest_description(STR_C(layers_description));
+	}
 	if (ImGui::MenuItem(STR_C("Model sets")))
+	{
+		if (islands() && false == m_trayshown)
+			m_trayforced = true;
 		m_nodebankpanel.open_sets_window();
-	ImGui::MenuItem(STR_C("Layers"), nullptr, &m_layerspanel.is_open);
+	}
+	ui::rest_description(STR_C("Sets of models put down at random, such as several kinds of trees or houses: at each click one model of the set is picked, so the place doesn't look copied."));
 	ImGui::MenuItem(STR_C("Include database"), nullptr, &m_includespanel.is_open);
+	ui::rest_description(STR_C("The descriptions of the scenery templates (includes): what parameters they take and what the parameters mean, so the editor shows them as named fields. Only the descriptions are kept, the templates aren't changed."));
+	// the layout of the docks: the islands have none
+	if (islands())
+		return;
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Reset window layout")))
 		m_layoutreset = true;
+	ui::rest_description(STR_C("Puts all the windows and docks of the editor back where they are at the first start."));
 	std::vector<ImGuiDockNode *> pinned;
 	autohide_leaves(ImGui::DockBuilderGetNode(m_dockspace), pinned);
 	if (ImGui::MenuItem(pinned.empty() ? STR_C("Pin the docks back") : STR_C("Unpin all docks"), "Ctrl+Space", false, false == pinned.empty() || false == m_autohide.empty()))
 		toggle_docks();
+	ui::rest_description(STR_C("Unpinned, the docks hide at the edges of the screen and slide out when the cursor comes to them, leaving more room for the view. Pinned, they stay open. Ctrl+Space switches between the two."));
 }
 
 int editor_ui::palette() const
 {
 	return EditorSettings.palette();
+}
+
+int editor_ui::accent() const
+{
+	return m_accentsource ? m_accentsource() : -1;
 }
 
 void editor_ui::set_file_actions(std::function<void()> Save, std::function<void()> Export)

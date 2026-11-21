@@ -86,6 +86,16 @@ class editor_ui : public ui_layer
 		m_toolsmenu = std::move(Renderer);
 	}
 	// draws the fields of work of the editor mode in a row above the toolbar
+	// colour of the work mode as 0xRRGGBB, for the accents of the rounded palettes
+	void set_accent_source(std::function<int()> Source)
+	{
+		m_accentsource = std::move(Source);
+	}
+	// the capsule of the islands: the plate of the work mode, its tools, undo and redo
+	void set_capsule(std::function<void()> Renderer)
+	{
+		m_capsule = std::move(Renderer);
+	}
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
 		m_workspacebar = std::move(Renderer);
@@ -128,6 +138,51 @@ class editor_ui : public ui_layer
 	{
 		return m_viewmax;
 	}
+	// in the light and the dark palettes the windows of the editor float over the 3d view at fixed places, as islands:
+	// the capsule of the work mode and its tools at the top left, the rail of the scene windows under it, the tool and the
+	// selection on the right, the scene or the layers as a drawer by the rail, the node bank as a tray at the bottom
+	enum class island
+	{
+		capsule,
+		rail,
+		tool,
+		inspector,
+		drawer,
+		bank,
+		sets
+	};
+	enum class drawer
+	{
+		none,
+		scene,
+		layers
+	};
+	// the windows are islands, not docked
+	static bool islands();
+	// places the window begun next as the island. returns: false if the windows are docked (the flat palettes)
+	static bool place_island(island const Which);
+	// flags of a window kept at its place
+	static int island_flags();
+	// a soft shadow under the window being drawn
+	static void island_shadow();
+	static drawer shown_drawer()
+	{
+		return m_drawer;
+	}
+	static void show_drawer(drawer const Which)
+	{
+		m_drawer = Which;
+	}
+	// the node bank is in the tray: for the modes which insert models, or brought there from the rail
+	static bool tray_shown()
+	{
+		return m_trayshown;
+	}
+	// the model sets window shares the tray with the node bank
+	static void sets_shown(bool const Shown)
+	{
+		m_setsshown = Shown;
+	}
 	// tools of the track mode in the tool options window, the selected path in the inspector
 	void set_track_options(std::function<void()> Tools, std::function<void()> Selection)
 	{
@@ -168,7 +223,9 @@ class editor_ui : public ui_layer
 	// when their tab in the strip is pointed at or clicked. the shortcut unpins all docks, or pins them back
 	void toggle_docks()
 	{
-		m_dockstoggle = true;
+		// the islands have no docks to unpin (Ctrl+Space would only take apart the layout of the flat palettes, kept for them)
+		if (false == islands())
+			m_dockstoggle = true;
 	}
 	// the unpinned docks are kept in imgui.ini along with the layout; the handler has to be there before the file is read
 	static void register_settings();
@@ -193,6 +250,7 @@ class editor_ui : public ui_layer
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
+	int accent() const override;
 	void render_dockspace() override;
 	void render_() override;
 	// docks the windows of the editor in their default places
@@ -224,6 +282,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
+	std::function<int()> m_accentsource;
 	std::function<void()> m_editmenu;
 	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
@@ -258,6 +317,21 @@ class editor_ui : public ui_layer
 	std::vector<std::size_t> m_scenematches;
 	static glm::vec2 m_viewmin;
 	static glm::vec2 m_viewmax;
+	// the islands of the light and the dark palettes
+	static ImVec2 island_position(island const Which);
+	static ImVec2 island_size(island const Which);
+	void render_islands_status();
+	static void island_heading(char const *Kind, char const *Name);
+	void render_islands_dockspace(unsigned int const Dockspace);
+	void render_rail();
+	void render_capsule();
+	static inline drawer m_drawer{drawer::none};
+	static inline bool m_trayforced{false}; // brought to the tray from the rail
+	static inline bool m_trayshown{false};
+	static inline bool m_setsshown{false};
+	static inline float m_toolheight{0.0f}; // of the content of the tool window in the frame before
+	static inline bool m_islandsbefore{false}; // the frame before had the islands: the docks are taken apart once when they come
+	std::function<void()> m_capsule;
 	std::function<void()> m_gizmooptions;
 	std::function<void()> m_arrayoptions;
 	std::function<void()> m_bendoptions;

@@ -21,10 +21,13 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "imgui/imgui.h"
+#include "application/uidescription.h"
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
+#include <format>
 #include <functional>
 #include <vector>
 
@@ -87,6 +90,42 @@ void button_tooltip(tool_button const &Button)
 	ImGui::SetTooltip("%s", tip.c_str());
 }
 
+// a hook of an arrow: back to the left for undo, on to the right for redo, R its size from the centre
+void draw_history_arrow(ImDrawList *List, ImVec2 const &Centre, float const R, bool const Redo, ImU32 const Colour)
+{
+	auto const s{scale()};
+	auto const direction{Redo ? -1.0f : 1.0f};
+	ImVec2 const from{Centre.x + direction * R, Centre.y + R * 0.9f};
+	ImVec2 const to{Centre.x - direction * R * 0.2f, Centre.y - R * 0.55f};
+	List->AddBezierCubic(from, ImVec2(Centre.x + direction * R * 1.6f, Centre.y + R * 0.2f), ImVec2(Centre.x + direction * R * 1.2f, Centre.y - R * 0.6f), to, Colour, 1.8f * s);
+	List->AddLine(to, ImVec2(to.x - direction * R * 0.9f, to.y), Colour, 1.8f * s);
+	List->AddTriangleFilled(ImVec2(to.x - direction * R * 1.45f, to.y), ImVec2(to.x - direction * R * 0.75f, to.y - R * 0.5f), ImVec2(to.x - direction * R * 0.75f, to.y + R * 0.5f), Colour);
+}
+
+ImU32 colour_of(int const Rgb, float const Alpha = 1.0f)
+{
+	return IM_COL32((Rgb >> 16) & 0xff, (Rgb >> 8) & 0xff, Rgb & 0xff, static_cast<int>(std::lround(Alpha * 255.0f)));
+}
+
+// a key of the keyboard as a small cap with its name, its left edge at the point, centred on its line; returns its width
+float key_cap(ImDrawList *List, ImVec2 const &Position, char const *Key, ImU32 const Colour)
+{
+	auto const s{scale()};
+	auto const text{ImGui::CalcTextSize(Key)};
+	auto const padx{4.0f * s};
+	auto const pady{1.0f * s};
+	ImVec2 const min{Position.x, Position.y - text.y * 0.5f - pady};
+	ImVec2 const max{Position.x + text.x + 2.0f * padx, Position.y + text.y * 0.5f + pady + 1.0f * s};
+	List->AddRect(min, max, (Colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90), 4.0f * s, 0, 1.0f * s);
+	List->AddText(ImVec2(min.x + padx, min.y + pady), Colour, Key);
+	return max.x - min.x;
+}
+
+float key_cap_width(char const *Key)
+{
+	return ImGui::CalcTextSize(Key).x + 8.0f * scale();
+}
+
 // the first letters of the label in place of the icon, if the renderer can't show images
 void icon_or_letters(ImDrawList *List, tool_button const &Button, ImVec2 const &Center, ImU32 const Color)
 {
@@ -123,6 +162,81 @@ void icon_button(tool_button const &Button, ImVec2 const &Position, int const Id
 		Button.action();
 }
 
+
+// the width of a tool of the capsule: the chosen tool with its name and key, the others as icons; a tool with no icon always by its name
+float capsule_button_width(tool_button const &Button, float const Height)
+{
+	if (false == Button.chosen && Button.picture != icon::count)
+		return Height;
+	auto const s{scale()};
+	auto width{2.0f * 10.0f * s + ImGui::CalcTextSize(Button.label).x};
+	if (Button.picture != icon::count)
+		width += editor_icons::size() + 7.0f * s;
+	if (Button.chosen && Button.key != nullptr)
+		width += 7.0f * s + key_cap_width(Button.key);
+	return width;
+}
+
+// the background of a tool of the capsule: filled when it's chosen, lighter under the cursor
+void capsule_button_background(ImDrawList *List, tool_button const &Button, ImVec2 const &Min, ImVec2 const &Max, bool const Hovered)
+{
+	auto const rounding{10.0f * scale()};
+	if (Button.chosen)
+		List->AddRectFilled(Min, Max, ImGui::GetColorU32(ImGuiCol_Header), rounding);
+	else if (Hovered && Button.enabled)
+		List->AddRectFilled(Min, Max, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+}
+
+ImU32 capsule_text_colour(tool_button const &Button, bool const Hovered)
+{
+	if (false == Button.enabled)
+		return ImGui::GetColorU32(ImGuiCol_TextDisabled);
+	return ImGui::GetColorU32(ImGuiCol_Text, Button.chosen || Hovered ? 1.0f : 0.72f);
+}
+
+// a tool of the capsule with its name: the icon in the colour of the mode if it's the chosen one, the name, the key of the chosen one
+void capsule_button_name(ImDrawList *List, tool_button const &Button, ImVec2 const &At, ImU32 const Text, ImU32 const Accent)
+{
+	auto const s{scale()};
+	auto const spacing{7.0f * s};
+	auto x{At.x + 10.0f * s};
+	if (Button.picture != icon::count)
+	{
+		auto const iconside{editor_icons::size()};
+		editor_icons::draw(List, Button.picture, ImVec2(x + iconside * 0.5f, At.y), Button.chosen ? Accent : Text);
+		x += iconside + spacing;
+	}
+	List->AddText(ImVec2(x, std::round(At.y - ImGui::GetFontSize() * 0.5f)), Text, Button.label);
+	if (Button.chosen && Button.key != nullptr)
+		key_cap(List, ImVec2(x + ImGui::CalcTextSize(Button.label).x + spacing, At.y), Button.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+}
+
+// one tool of the capsule; its name and key at once under the cursor, how it works when the cursor rests on it. true when clicked
+bool capsule_button(tool_button const &Button, int const Id, ImU32 const Accent)
+{
+	auto const height{42.0f * scale()};
+	auto const width{capsule_button_width(Button, height)};
+	auto const position{ImGui::GetCursorScreenPos()};
+	ImGui::PushID(Id);
+	auto const clicked{ImGui::InvisibleButton("##capsuletool", ImVec2(width, height))};
+	ImGui::PopID();
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	capsule_button_background(list, Button, position, ImVec2(position.x + width, position.y + height), hovered);
+	auto const text{capsule_text_colour(Button, hovered)};
+	auto const middle{position.y + height * 0.5f};
+	if (Button.chosen || Button.picture == icon::count)
+		capsule_button_name(list, Button, ImVec2(position.x, middle), text, Accent);
+	else
+		icon_or_letters(list, Button, ImVec2(position.x + width * 0.5f, middle), text);
+	auto const title{Button.key != nullptr ? std::format("{}  [{}]", Button.label, Button.key) : std::string{Button.label}};
+	if (hovered)
+		ImGui::SetTooltip("%s", title.c_str());
+	if (Button.tooltip != nullptr)
+		ui::rest_description(Button.tooltip, title, ui_layer::font_bold);
+	return clicked;
+}
+
 } // namespace
 
 void editor_mode::render_viewport_overlays()
@@ -148,14 +262,21 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			char const *label;
 			char const *key;
 			nodebank_panel::edit_mode which;
+			char const *description;
 		};
-		mode const modes[] = {{icon::select, STR_C("Select"), "1", nodebank_panel::MODIFY},
-		                      {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD},
-		                      {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH},
-		                      {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL},
-		                      {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY}};
+		mode const modes[] = {
+		    {icon::select, STR_C("Select"), "1", nodebank_panel::MODIFY,
+		     STR_C("LMB selects a model, Shift+LMB adds another one to the selection. The gizmo moves, turns and scales what is selected, and its properties are on the right.")},
+		    {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD,
+		     STR_C("LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom.")},
+		    {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH,
+		     STR_C("Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set. It also paints the ground texture and grows the 3D grass.")},
+		    {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL,
+		     STR_C("LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set.")},
+		    {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY,
+		     STR_C("LMB on a model in the scene copies it into the node bank, to be put down again elsewhere.")}};
 		for (auto const &entry : modes)
-			Buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+			Buttons.push_back({entry.picture, entry.label, entry.key, entry.description, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
 		break;
 	}
 	case work_area::tracks:
@@ -220,8 +341,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		{
 			// what the place tool puts
 			char const *const kinds[] = {STR_C("Level crossing"), STR_C("Spawn point"), STR_C("Removal point"), STR_C("Pedestrian crossing")};
+			char const *const descriptions[] = {STR_C("LMB where a road crosses a track puts a level crossing there."),
+			                                    STR_C("LMB on a road puts a point where the road vehicles appear and drive into the scenery."),
+			                                    STR_C("LMB on a road puts a point where the road vehicles leave the scenery and are taken off it."),
+			                                    STR_C("LMB on a road puts a pedestrian crossing across it.")};
 			for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
-				Buttons.push_back({icon::count, kinds[index], nullptr, nullptr, tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
+				Buttons.push_back({icon::count, kinds[index], nullptr, descriptions[index], tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
 		}
 		Buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
 		break;
@@ -253,7 +378,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
 		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
 		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, STR_C("Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."), orthophoto_settings_open(), [this]() {
 			                   // among the base layers in the layers window
 			                   ui()->show_layers();
 			                   m_orthophoto_window = true;
@@ -400,14 +525,7 @@ void editor_mode::render_toolbar_tools()
 		list->AddRectFilled(position, end, hovered && enabled ? ImGui::GetColorU32(ImGuiCol_HeaderHovered) : ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
 		auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.85f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
 		// a hook of an arrow: back to the left for undo, on to the right for redo
-		auto const centre{ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f)};
-		auto const r{buttonheight * 0.22f};
-		auto const direction{redo ? -1.0f : 1.0f};
-		ImVec2 const from{centre.x + direction * r, centre.y + r * 0.9f};
-		ImVec2 const to{centre.x - direction * r * 0.2f, centre.y - r * 0.55f};
-		list->AddBezierCubic(from, ImVec2(centre.x + direction * r * 1.6f, centre.y + r * 0.2f), ImVec2(centre.x + direction * r * 1.2f, centre.y - r * 0.6f), to, colour, 1.8f * s);
-		list->AddLine(to, ImVec2(to.x - direction * r * 0.9f, to.y), colour, 1.8f * s);
-		list->AddTriangleFilled(ImVec2(to.x - direction * r * 1.45f, to.y), ImVec2(to.x - direction * r * 0.75f, to.y - r * 0.5f), ImVec2(to.x - direction * r * 0.75f, to.y + r * 0.5f), colour);
+		draw_history_arrow(list, ImVec2(position.x + buttonheight * 0.5f, position.y + buttonheight * 0.5f), buttonheight * 0.22f, redo, colour);
 		if (hovered)
 			ImGui::SetTooltip("%s", (redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
 		if (clicked && enabled)
@@ -418,6 +536,155 @@ void editor_mode::render_toolbar_tools()
 				undo_last();
 		}
 	}
+}
+
+void editor_mode::render_capsule()
+{
+	render_mode_plate();
+	ImGui::SameLine(0.0f, 6.0f * scale());
+	render_capsule_tools();
+	// undo and redo after a line
+	auto const s{scale()};
+	auto const side{42.0f * s};
+	ImGui::SameLine(0.0f, 6.0f * s);
+	auto const position{ImGui::GetCursorScreenPos()};
+	ImGui::GetWindowDrawList()->AddLine(ImVec2(position.x, position.y + side * 0.25f), ImVec2(position.x, position.y + side * 0.75f), ImGui::GetColorU32(ImGuiCol_Separator), 1.0f * s);
+	ImGui::Dummy(ImVec2(1.0f * s, side));
+	ImGui::SameLine(0.0f, 6.0f * s);
+	render_history_button(false, side);
+	ImGui::SameLine(0.0f, 2.0f * s);
+	render_history_button(true, side);
+}
+
+void editor_mode::render_mode_plate()
+{
+	struct area
+	{
+		char const *label;
+		work_area which;
+		icon picture;
+		char const *key;
+		char const *description;
+	};
+	// the descriptions as those of the row of the work modes of the flat palettes, see render_workspaces()
+	std::array<area, 4> const areas{{
+	    {STR_C("Surroundings"), work_area::surroundings, icon::work_surroundings, "F2", STR_C("Models around the line: select, insert, brush, area fill, copy to the node bank")},
+	    {STR_C("Tracks"), work_area::tracks, icon::work_tracks, "F3", STR_C("Tracks and switches, signals, kilometrage and posts along the track, checks of the line")},
+	    {STR_C("Roads"), work_area::roads, icon::work_roads, "F4", STR_C("Roads and junctions, level crossings, the points where the traffic comes and goes")},
+	    {STR_C("Terrain"), work_area::terrain, icon::work_terrain, "F5", STR_C("Heightmap terrain: chunks, sculpting, painting, water, orthophoto")},
+	}};
+	auto const s{scale()};
+	auto const dark{EditorSettings.palette() == 3};
+	auto const current{current_work_area()};
+	auto const *chosen{&areas[0]};
+	for (auto const &entry : areas)
+		if (entry.which == current)
+			chosen = &entry;
+	// the plate in the colour of the mode: its icon, its name in the bold font, its key under it
+	auto *font{ui_layer::font_bold != nullptr ? ui_layer::font_bold : ImGui::GetFont()};
+	auto const fontsize{font->FontSize};
+	auto const name{font->CalcTextSizeA(fontsize, FLT_MAX, 0.0f, chosen->label)};
+	auto const iconside{editor_icons::size()};
+	auto const height{42.0f * s};
+	auto const pad{11.0f * s};
+	auto const width{pad + iconside + 9.0f * s + std::max(name.x, ImGui::CalcTextSize(chosen->key).x) + 10.0f * s + 10.0f * s + pad};
+	auto const position{ImGui::GetCursorScreenPos()};
+	if (ImGui::InvisibleButton("##modeplate", ImVec2(width, height)))
+		ImGui::OpenPopup("##modes");
+	auto const hovered{ImGui::IsItemHovered()};
+	auto *list{ImGui::GetWindowDrawList()};
+	auto const accent{work_area_colour(current, dark)};
+	list->AddRectFilled(position, ImVec2(position.x + width, position.y + height), colour_of(accent, hovered ? 0.88f : 1.0f), 10.0f * s);
+	auto const white{IM_COL32(255, 255, 255, 255)};
+	auto const middle{position.y + height * 0.5f};
+	editor_icons::draw(list, chosen->picture, ImVec2(position.x + pad + iconside * 0.5f, middle), white);
+	auto const textx{position.x + pad + iconside + 9.0f * s};
+	auto const keysize{ImGui::GetFontSize() * 0.85f};
+	auto const top{middle - (fontsize + keysize) * 0.5f};
+	list->AddText(font, fontsize, ImVec2(textx, top), white, chosen->label);
+	if (ui_layer::font_bold == nullptr)
+		list->AddText(font, fontsize, ImVec2(textx + 1.0f, top), white, chosen->label);
+	list->AddText(ImGui::GetFont(), keysize, ImVec2(textx, top + fontsize), IM_COL32(255, 255, 255, 200), chosen->key);
+	// a chevron: the list of the modes opens from it
+	auto const cx{position.x + width - pad - 4.0f * s};
+	list->AddTriangleFilled(ImVec2(cx - 4.0f * s, middle - 2.0f * s), ImVec2(cx + 4.0f * s, middle - 2.0f * s), ImVec2(cx, middle + 3.0f * s), IM_COL32(255, 255, 255, 210));
+	if (hovered)
+		ImGui::SetTooltip("%s", STR_C("Work modes"));
+	ui::rest_description(std::format("{}\n\n{}", chosen->description, STR_C("A click opens the list of the work modes; F2 to F5 switch to them at once.")), std::format("{}  [{}]", chosen->label, chosen->key),
+	                     ui_layer::font_bold);
+	if (false == ImGui::BeginPopup("##modes"))
+		return;
+	ImGui::TextDisabled("%s", STR_C("Work modes"));
+	for (auto const &entry : areas)
+	{
+		auto const row{ImGui::GetCursorScreenPos()};
+		auto const rowheight{30.0f * s};
+		auto const rowwidth{std::max(240.0f * s, ImGui::GetContentRegionAvail().x)};
+		ImGui::PushID(static_cast<int>(entry.which));
+		auto const picked{ImGui::Selectable("##mode", entry.which == current, 0, ImVec2(rowwidth, rowheight))};
+		ui::rest_description(entry.description, std::format("{}  [{}]", entry.label, entry.key), ui_layer::font_bold);
+		ImGui::PopID();
+		auto *popup{ImGui::GetWindowDrawList()};
+		auto const square{26.0f * s};
+		ImVec2 const squaremin{row.x + 2.0f * s, row.y + (rowheight - square) * 0.5f};
+		popup->AddRectFilled(squaremin, ImVec2(squaremin.x + square, squaremin.y + square), colour_of(work_area_colour(entry.which, dark)), 8.0f * s);
+		editor_icons::draw(popup, entry.picture, ImVec2(squaremin.x + square * 0.5f, squaremin.y + square * 0.5f), white);
+		popup->AddText(ImVec2(squaremin.x + square + 10.0f * s, row.y + (rowheight - ImGui::GetFontSize()) * 0.5f), ImGui::GetColorU32(ImGuiCol_Text), entry.label);
+		key_cap(popup, ImVec2(row.x + rowwidth - key_cap_width(entry.key) - 4.0f * s, row.y + rowheight * 0.5f), entry.key, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+		if (picked)
+		{
+			choose_work_area(entry.which);
+			ImGui::CloseCurrentPopup();
+		}
+	}
+	ImGui::EndPopup();
+}
+
+void editor_mode::render_capsule_tools()
+{
+	std::vector<tool_button> buttons;
+	buttons.reserve(24);
+	work_area_tools(buttons);
+	auto const s{scale()};
+	auto const accent{colour_of(work_area_colour(current_work_area(), EditorSettings.palette() == 3))};
+	for (std::size_t index = 0; index < buttons.size(); ++index)
+	{
+		auto const &button{buttons[index]};
+		if (index > 0)
+			ImGui::SameLine(0.0f, button.group ? 12.0f * s : 2.0f * s);
+		if (capsule_button(button, static_cast<int>(index), accent) && button.enabled && button.action)
+			button.action();
+	}
+}
+
+void editor_mode::render_history_button(bool const Redo, float const Side)
+{
+	// as Ctrl+Z and Ctrl+Y: not in the middle of a drag, it would go on from the state which was undone
+	auto const dragging{m_track_gizmo_using || m_track_set_using || m_straights.dragging || m_extend.active || m_switch.placing || m_point_drag.active || m_handle_drag.active};
+	auto const steps{Redo ? g_redo.size() : m_history.size()};
+	auto const enabled{steps > 0 && false == dragging && false == m_history_busy};
+	auto const position{ImGui::GetCursorScreenPos()};
+	auto const clicked{ImGui::InvisibleButton(Redo ? "##capsuleredo" : "##capsuleundo", ImVec2(Side, Side))};
+	auto const hovered{ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)};
+	auto *list{ImGui::GetWindowDrawList()};
+	if (hovered && enabled)
+		list->AddRectFilled(position, ImVec2(position.x + Side, position.y + Side), ImGui::GetColorU32(ImGuiCol_FrameBg), 10.0f * scale());
+	auto const colour{enabled ? ImGui::GetColorU32(ImGuiCol_Text, hovered ? 1.0f : 0.72f) : ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f)};
+	draw_history_arrow(list, ImVec2(position.x + Side * 0.5f, position.y + Side * 0.5f), Side * 0.2f, Redo, colour);
+	if (hovered)
+		ImGui::SetTooltip("%s", (Redo ? format(STR_C("Redo (Ctrl+Y): %zu steps"), steps) : format(STR_C("Undo (Ctrl+Z): %zu steps"), steps)).c_str());
+	// the same descriptions as those of the edit menu
+	if (Redo)
+		ui::rest_description(STR_C("Makes the change taken back with Ctrl+Z again, one by one, in the order they were taken back."), STR_C("Redo  [Ctrl+Y]"), ui_layer::font_bold);
+	else
+		ui::rest_description(STR_C("Takes back the last change made in the editor, such as a move, an object added or deleted, or a change of the tracks or the terrain. Pressed again, it goes further back. Ctrl+Y makes a change taken back again."),
+		                     STR_C("Undo  [Ctrl+Z]"), ui_layer::font_bold);
+	if (false == clicked || false == enabled)
+		return;
+	if (Redo)
+		redo_last();
+	else
+		undo_last();
 }
 
 void editor_mode::render_viewport_gizmo()
