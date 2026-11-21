@@ -15,13 +15,17 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <string_view>
 #include <thread>
+#include <vector>
 #ifdef _WIN32
 #include <process.h>
 #else
@@ -62,7 +66,58 @@ std::optional<double> parse_number(std::string const &Text) {
 	}
 }
 
+// the comment line which gives the day the states after it were last updated
+constexpr std::string_view stamp_prefix{"# updated "};
+
+// a whole number making up all of the text
+std::optional<int> parse_integer(std::string_view const Text) {
+	if (Text.empty() || Text.front() == '-')
+		return std::nullopt;
+	int value{0};
+	auto const *const end{Text.data() + Text.size()};
+	if (auto const [used, error] {std::from_chars(Text.data(), end, value)}; error != std::errc{} || used != end)
+		return std::nullopt;
+	return value;
+}
+
+// day written as yyyy-mm-dd
+std::optional<day> parse_day(std::string_view const Text) {
+	if (Text.size() != 10 || Text[4] != '-' || Text[7] != '-')
+		return std::nullopt;
+	auto const year{parse_integer(Text.substr(0, 4))};
+	auto const month{parse_integer(Text.substr(5, 2))};
+	auto const dayofmonth{parse_integer(Text.substr(8, 2))};
+	if (false == (year.has_value() && month.has_value() && dayofmonth.has_value()))
+		return std::nullopt;
+	std::chrono::year_month_day const date{std::chrono::year{*year}, std::chrono::month{static_cast<unsigned>(*month)},
+	                                       std::chrono::day{static_cast<unsigned>(*dayofmonth)}};
+	if (false == date.ok())
+		return std::nullopt;
+	return day{date};
+}
+
+std::string format_day(day const Day) {
+	std::chrono::year_month_day const date{Day};
+	return std::format("{:04}-{:02}-{:02}", static_cast<int>(date.year()), static_cast<unsigned>(date.month()),
+	                   static_cast<unsigned>(date.day()));
+}
+
+// the day of a stamp line, which can't be later than Today. Today for a malformed one: the states after it are kept
+day stamp_day(std::string_view const Line, day const Today) {
+	auto text{Line.substr(stamp_prefix.size())};
+	while (false == text.empty() && (text.back() == ' ' || text.back() == '\t'))
+		text.remove_suffix(1);
+	auto const stamp{parse_day(text)};
+	if (false == stamp.has_value())
+		return Today;
+	return std::min(*stamp, Today);
+}
+
 } // namespace
+
+day today() {
+	return std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+}
 
 void reading::begin(double const Km, origin const Source) {
 	km = Km;
@@ -89,12 +144,16 @@ bool reading::moved() const {
 	return km != start;
 }
 
-std::size_t store::read(std::istream &Input) {
+std::size_t store::read(std::istream &Input, day const Today) {
 	std::size_t count{0};
+	// the states with no stamp before them, as the builds without the stamps wrote them, count as updated today
+	auto stamp{Today};
 	std::string line;
 	while (std::getline(Input, line)) {
 		if (false == line.empty() && line.back() == '\r')
 			line.pop_back();
+		if (line.starts_with(stamp_prefix))
+			stamp = stamp_day(line, Today);
 		if (line.empty() || line.front() == '#')
 			continue;
 		// the name goes last, it's the rest of the line after the separator
@@ -109,7 +168,7 @@ std::size_t store::read(std::istream &Input) {
 		auto const name{line.substr(separator + 1)};
 		if (false == km.has_value() || name.empty())
 			continue;
-		m_states[name] = state{*km, guessed};
+		m_states[name] = state{*km, guessed, stamp};
 		++count;
 	}
 	return count;
@@ -117,9 +176,23 @@ std::size_t store::read(std::istream &Input) {
 
 void store::write(std::ostream &Output) const {
 	Output << "# odometer states of the vehicles: <km> <vehicle name>, ~<km> for one counted from a made up state\n";
+	Output << "# the states after a line \"" << stamp_prefix << "<yyyy-mm-dd>\" were last updated on that day (UTC)\n";
 	Output << std::fixed << std::setprecision(4);
-	for (auto const &[name, state] : m_states)
-		Output << (state.guessed ? "~" : "") << state.km << ' ' << name << '\n';
+	// by the day, then by the name as the map has them
+	std::vector<std::map<std::string, state>::value_type const *> entries;
+	entries.reserve(m_states.size());
+	for (auto const &entry : m_states)
+		entries.push_back(&entry);
+	std::ranges::stable_sort(entries, {}, [](auto const *Entry) { return Entry->second.updated; });
+	std::optional<day> group;
+	for (auto const *entry : entries) {
+		auto const &written{entry->second};
+		if (group != written.updated) {
+			group = written.updated;
+			Output << stamp_prefix << format_day(written.updated) << '\n';
+		}
+		Output << (written.guessed ? "~" : "") << written.km << ' ' << entry->first << '\n';
+	}
 }
 
 std::optional<double> store::find(std::string const &Vehicle) const {
@@ -127,6 +200,13 @@ std::optional<double> store::find(std::string const &Vehicle) const {
 	if (lookup == m_states.end())
 		return std::nullopt;
 	return lookup->second.km;
+}
+
+std::optional<day> store::updated(std::string const &Vehicle) const {
+	auto const lookup{m_states.find(Vehicle)};
+	if (lookup == m_states.end())
+		return std::nullopt;
+	return lookup->second.updated;
 }
 
 bool store::guessed(std::string const &Vehicle) const {
@@ -140,10 +220,10 @@ bool store::newer(state const &Left, state const &Right) {
 	return Left.km > Right.km;
 }
 
-void store::record(std::string const &Vehicle, reading const &Odometer) {
+void store::record(std::string const &Vehicle, reading const &Odometer, day const Today) {
 	if (Vehicle.empty() || false == valid(Odometer.km))
 		return;
-	state const recorded{Odometer.km, Odometer.source == origin::guessed};
+	state const recorded{Odometer.km, Odometer.source == origin::guessed, Today};
 	auto const lookup{m_states.find(Vehicle)};
 	if (lookup == m_states.end()) {
 		if (false == Odometer.moved())
@@ -171,9 +251,18 @@ void record(store &States, std::string const &Vehicle, bool const Drivercab, rea
 void store::merge(store const &Other) {
 	for (auto const &[name, other] : Other.m_states) {
 		auto const [lookup, added] {m_states.try_emplace(name, other)};
-		if (false == added && newer(other, lookup->second))
-			lookup->second = other;
+		if (added)
+			continue;
+		auto &mine{lookup->second};
+		auto const latest{std::max(mine.updated, other.updated)};
+		if (newer(other, mine))
+			mine = other;
+		mine.updated = latest;
 	}
+}
+
+std::size_t store::expire(day const Today) {
+	return std::erase_if(m_states, [Today](auto const &Entry) { return Today - Entry.second.updated > expiry; });
 }
 
 bool store::holds(store const &Other) const {
@@ -297,7 +386,7 @@ store as_written(store const &States) {
 
 } // namespace
 
-bool save(store &States, std::filesystem::path const &File) {
+bool save(store &States, std::filesystem::path const &File, day const Today) {
 	if (false == States.modified() && false == States.unconfirmed())
 		return true;
 	std::error_code error;
@@ -309,8 +398,12 @@ bool save(store &States, std::filesystem::path const &File) {
 		store saved;
 		std::ifstream input{File, std::ios::binary};
 		if (input.is_open())
-			saved.read(input);
+			saved.read(input, Today);
 		States.merge(saved);
+		// the vehicles not run for long, of this simulation and of the others alike, so the file doesn't keep every
+		// vehicle ever run
+		if (auto const expired{States.expire(Today)}; expired > 0)
+			WriteLog(std::format("Odometer states of {} vehicles not updated for {} days dropped", expired, expiry.count()));
 		// another simulation that read the file before the last save of this one and put its own in place after it
 		// dropped the states this one wrote. when the file holds them all, the same or newer, there's nothing to write
 		if (false == States.modified()) {
