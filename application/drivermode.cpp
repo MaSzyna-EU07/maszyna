@@ -31,6 +31,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+
+#include <algorithm>
+
 /*
 namespace input {
 
@@ -639,6 +642,12 @@ bool driver_mode::is_command_processor() const
 	return true;
 }
 
+double driver_mode::shake_fraction() const
+{
+	// how far the simulation time has got from the last step of the shake towards the next one
+	return std::clamp(m_secondaryupdateaccumulator / m_secondaryupdaterate, 0.0, 1.0);
+}
+
 void driver_mode::update_camera(double const Deltatime)
 {
 
@@ -814,7 +823,8 @@ void driver_mode::update_camera(double const Deltatime)
 				// ale bez odbicia
 				Camera.LookAt = Camera.Pos - simulation::Train->GetDirection() * (double)simulation::Train->Occupied()->CabOccupied; //-1 albo 1
 			}
-			auto const shakeangles{simulation::Train->Dynamic()->shake_angles()};
+			auto const *dynamic{simulation::Train->Dynamic()};
+			auto const shakeangles{dynamic->shake_angles(dynamic->shake_between(shake_fraction()))};
 			Camera.Angle.x = 0.5 * shakeangles.second; // hustanie kamery przod tyl
 			Camera.Angle.z = shakeangles.first; // hustanie kamery na boki
 			/*
@@ -835,8 +845,9 @@ void driver_mode::update_camera(double const Deltatime)
 			}
 
 			float const shakescale{FreeFlyModeFlag ? 5.0f : 1.0f};
-			auto shakencamerapos{Camera.m_owneroffset +
-			                     shakescale * glm::vec3(1.5 * Camera.m_owner->ShakeState.offset.x, 2.0 * Camera.m_owner->ShakeState.offset.y, 1.5 * Camera.m_owner->ShakeState.offset.z)};
+			// the shake steps at a fixed rate, the frames come at their own: taken at the frame's moment between the steps, it moves as smoothly as the vehicle
+			auto const shake{Camera.m_owner->shake_between(shake_fraction())};
+			auto shakencamerapos{Camera.m_owneroffset + shakescale * glm::vec3(1.5 * shake.offset.x, 2.0 * shake.offset.y, 1.5 * shake.offset.z)};
 
 			Camera.Pos = Camera.m_owner->GetWorldPosition(FreeFlyModeFlag ? glm::dvec3(shakencamerapos) : // TODO: vehicle collision box for the external vehicle camera
 			                                                                simulation::Train->clamp_inside(shakencamerapos));
@@ -844,7 +855,7 @@ void driver_mode::update_camera(double const Deltatime)
 			if (!Global.iPause)
 			{
 				// podczas pauzy nie przeliczać kątów przypadkowymi wartościami
-				auto const shakeangles{Camera.m_owner->shake_angles()};
+				auto const shakeangles{Camera.m_owner->shake_angles(shake)};
 				Camera.Angle.x -= 0.5 * shakeangles.second; // hustanie kamery przod tyl
 				Camera.Angle.z = shakeangles.first; // hustanie kamery na boki
 				/*

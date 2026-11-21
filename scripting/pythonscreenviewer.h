@@ -31,8 +31,12 @@ class python_screen_viewer
 	gl::scene_ubs m_ubs;
 
 	std::atomic_bool m_exit = false;
+	// the texture of the screen when the viewer was made, read on the drawing thread: shown until an image is put in place
+	size_t m_initialtexture{0};
 
 	void threadfunc();
+	// with python.sharectx, binds the texture with the last image of the screen, in the context of the window made current
+	void bind_shared_texture() const;
 
 public:
     python_screen_viewer(std::shared_ptr<python_rt> rt, std::shared_ptr<std::vector<glm::vec2>> touchlist, std::string const &name);

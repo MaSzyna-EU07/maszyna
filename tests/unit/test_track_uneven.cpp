@@ -63,7 +63,8 @@ TEST_CASE("uneven track: the cab keeps what the ride on the track doesn't stand 
 TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 {
 	// appendix 1, class C at 80 km/h: 18 mm vertically, 17 mm sideways, 16 mm of twist on 5 m, gauge +10/-8 mm, 20 mm of cross level, J = 5.3
-	auto const amplitude{track_uneven::stray_per_mm * 18.0 * 1000.0}; // mm
+	auto const amplitude{track_uneven::stray_up_per_mm * 18.0 * 1000.0}; // mm
+	auto const sideways{track_uneven::stray_side_per_mm * 18.0 * 1000.0}; // mm
 	double const gauge{1.435};
 	double const step{0.5};
 	int const steps{4000};
@@ -76,6 +77,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 	double level{0.0};
 	double j{0.0};
 	double away{0.0};
+	double aside{0.0};
 	for (int line = 0; line < lines; ++line)
 	{
 		auto const heading{glm::pi<double>() * (line + 0.37) / lines};
@@ -85,6 +87,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 		std::array<std::vector<double>, 2> up;
 		std::array<std::vector<double>, 2> side;
 		std::vector<double> middle;
+		std::vector<double> across_middle;
 		for (int i = 0; i < steps; ++i)
 		{
 			auto const point{start + along * (i * step)};
@@ -93,9 +96,11 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 				auto const sign{rail == 0 ? 1.0 : -1.0};
 				auto const stray{track_uneven::field(point + across * (sign * 0.5 * gauge))};
 				up[rail].push_back((stray.y - sign * 0.5 * track_uneven::level(point, across)) * amplitude);
-				side[rail].push_back(glm::dot(stray, across) * amplitude);
+				side[rail].push_back(glm::dot(stray, across) * sideways);
 			}
-			middle.push_back(track_uneven::field(point).y * amplitude);
+			auto const centre{track_uneven::field(point)};
+			middle.push_back(centre.y * amplitude);
+			across_middle.push_back(glm::dot(centre, across) * sideways);
 		}
 		std::vector<double> verticals;
 		std::vector<double> horizontals;
@@ -120,6 +125,7 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 		wander += peak(gauges) / lines;
 		level += peak(levels) / lines;
 		away += peak(middle) / lines;
+		aside += peak(across_middle) / lines;
 		j += (deviation(verticals) + deviation(horizontals) + deviation(twists) + 0.5 * deviation(gauges)) / 3.5 / lines;
 	}
 	CHECK(vertical == doctest::Approx(18.0).epsilon(0.1));
@@ -128,7 +134,11 @@ TEST_CASE("uneven track: measures as the Id-14 limits for its value")
 	CHECK(wander == doctest::Approx(10.0).epsilon(0.2));
 	CHECK(level == doctest::Approx(20.0).epsilon(0.1));
 	CHECK(j == doctest::Approx(5.3).epsilon(0.2));
-	CHECK(away < 40.0); // the long waves go past the 15 mm off the survey marks of appendix 1a
+	// the long waves go past the 15 mm off the survey marks of appendix 1a: most of the height of a track spectrum is in them, the 10 m chord
+	// hardly sees them
+	CHECK(away < 60.0);
+	// and sideways: about 4.5 cm, which a platform edge or the panels of a level crossing laid on the design are off the rails by
+	CHECK(aside < 50.0);
 }
 
 TEST_CASE("uneven track: a place strays the same every time")
@@ -136,11 +146,11 @@ TEST_CASE("uneven track: a place strays the same every time")
 	// no random numbers: changing these changes how every uneven track in every scenery looks
 	glm::dvec3 const place{1234.5, 0.0, -678.9};
 	auto const stray{track_uneven::field(place)};
-	CHECK(stray.x == doctest::Approx(0.309777548158).epsilon(1e-9));
-	CHECK(stray.y == doctest::Approx(0.311350299745).epsilon(1e-9));
-	CHECK(stray.z == doctest::Approx(-0.328429734019).epsilon(1e-9));
-	CHECK(track_uneven::level(place, {1.0, 0.0, 0.0}) == doctest::Approx(0.53 * -0.178598957983).epsilon(1e-9));
-	CHECK(track_uneven::level(place, {0.0, 0.0, 1.0}) == doctest::Approx(0.53 * -0.868291889902).epsilon(1e-9));
+	CHECK(stray.x == doctest::Approx(0.158385385505).epsilon(1e-9));
+	CHECK(stray.y == doctest::Approx(0.356190053667).epsilon(1e-9));
+	CHECK(stray.z == doctest::Approx(0.200372098150).epsilon(1e-9));
+	CHECK(track_uneven::level(place, {1.0, 0.0, 0.0}) == doctest::Approx(0.35 * -0.178598957983).epsilon(1e-9));
+	CHECK(track_uneven::level(place, {0.0, 0.0, 1.0}) == doctest::Approx(0.35 * -0.868291889902).epsilon(1e-9));
 }
 
 TEST_CASE("uneven track: tracks laid towards each other meet at one cant")
