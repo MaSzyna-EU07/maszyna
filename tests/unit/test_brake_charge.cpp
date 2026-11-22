@@ -62,8 +62,10 @@ TEST_CASE("brake charge: a train let go stays let go while its charge rises agai
 TEST_CASE("brake charge: a train with nothing to charge with yet isn't let go for a stall") {
 	// prepared from cold: the pipe empty, the engine not started, no air in the main reservoir
 	state s;
-	for (auto time{0.0}; time < 10.0 * brake_charge::stall_time; time += 5.0) {
-		CHECK_FALSE(charged(s, 0.0, 5.0, time, false));
+	// a look every 5 s for ten times the stall time
+	auto const looks{static_cast<int>(10.0 * brake_charge::stall_time / 5.0)};
+	for (auto i{0}; i < looks; ++i) {
+		CHECK_FALSE(charged(s, 0.0, 5.0, 5.0 * i, false));
 	}
 	CHECK_FALSE(s.stalled);
 	CHECK_FALSE(s.going);
