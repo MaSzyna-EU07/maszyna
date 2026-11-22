@@ -807,9 +807,8 @@ void ui::map_panel::render_map_lines(
 					dir = glm::vec2(1.0f, 0.0f);
 				else
 					dir = glm::normalize(dir);
-				glm::vec2 const normal(-dir.y, dir.x);
 				glm::vec2 const post_direction(dir.x, dir.y);
-				float const post_length = std::lerp(48.0f, 0.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
+				float const post_length = std::lerp(50.0f, 10.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
 				float const post_segment_length = post_length / 6.0f;
 				ImVec2 const post_start(center.x, center.y);
 				ImVec2 const post_end(
@@ -830,7 +829,7 @@ void ui::map_panel::render_map_lines(
 					mouse_position.y - post_nearest.y);
 				bool const post_hovered =
 					mouse_over_map && glm::length2(post_distance) <= 49.0f;
-				float const lamp_spacing = std::lerp(7.0f, 0.0f, std::clamp((static_cast<float>(scale_length) - 100.0f) / 100.0f, 0.0f, 1.0f));
+				float const lamp_spacing = std::lerp(10.0f, 0.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
 				if (cache.colors.empty())
 				{
 					bool const icon_hovered = mouse_over_map &&
