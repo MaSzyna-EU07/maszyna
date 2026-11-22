@@ -79,7 +79,13 @@ void ui::time_panel::render_contents()
 	else
 		render_time();
 	ImGui::Separator();
-	render_weather();
+	// the weather set here would change on this machine only, and the random kinds draw from Random() of the simulation:
+	// the machines of a network session would go apart (global_settings::FinalizeConfig())
+	auto const shared{Global.network_session()};
+	if (shared)
+		ImGui::TextWrapped("%s", STR_C("A network session: the weather is the one of the scenery, the same on every machine."));
+	else
+		render_weather();
 	ImGui::Separator();
 	render_now();
 
@@ -88,7 +94,7 @@ void ui::time_panel::render_contents()
 		auto const year{static_cast<int>(simulation::Time.data().wYear)};
 		if (false == Global.ClockLocked)
 			m_relay.post(user_command::setdatetime, static_cast<double>(year_day(day, month, year)), static_cast<double>(minute), 1, 0);
-		if (weather_edited || snow_edited || kind > 0)
+		if (false == shared && (weather_edited || snow_edited || kind > 0))
 			apply_weather();
 	}
 }
