@@ -28,6 +28,8 @@ http://mozilla.org/MPL/2.0/.
 
 glm::vec2 editor_ui::m_viewmin{0.0f};
 glm::vec2 editor_ui::m_viewmax{0.0f};
+glm::vec2 editor_ui::m_viewclipmin{0.0f};
+glm::vec2 editor_ui::m_viewclipmax{0.0f};
 
 editor_ui::editor_ui()
 {
@@ -83,6 +85,9 @@ void editor_ui::render_dockspace()
 		m_viewmin = {viewport->WorkPos.x, viewport->WorkPos.y};
 		m_viewmax = {viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y};
 	}
+	// the docks hide what is around the view, so it is seen where the overlays are placed
+	m_viewclipmin = m_viewmin;
+	m_viewclipmax = m_viewmax;
 	autohide_place();
 }
 
@@ -286,6 +291,11 @@ void editor_ui::render_islands_dockspace(unsigned int const Dockspace)
 	auto const capsule{island_position(island::capsule)};
 	m_viewmin = {rail.x + island_rail * s + gap, capsule.y + island_capsule * s + gap};
 	m_viewmax = {island_position(island::tool).x - gap, m_trayshown ? island_position(island::bank).y - gap : work_max().y - island_margin * s};
+	// the 3d view is seen around the islands and between them too, so what's drawn over it goes as far as the window does
+	auto const workmin{work_min()};
+	auto const workmax{work_max()};
+	m_viewclipmin = {workmin.x, workmin.y};
+	m_viewclipmax = {workmax.x, workmax.y};
 }
 
 void editor_ui::render_capsule()

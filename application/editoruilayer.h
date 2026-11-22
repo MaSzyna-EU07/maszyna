@@ -138,6 +138,16 @@ class editor_ui : public ui_layer
 	{
 		return m_viewmax;
 	}
+	// part of the main window where the 3d view is seen, under the floating islands as well; what's drawn over the view is clipped
+	// to it. without the islands it is the part between the docked windows, as view_min() and view_max()
+	static glm::vec2 view_clip_min()
+	{
+		return m_viewclipmin;
+	}
+	static glm::vec2 view_clip_max()
+	{
+		return m_viewclipmax;
+	}
 	// in the light and the dark palettes the windows of the editor float over the 3d view at fixed places, as islands:
 	// the capsule of the work mode and its tools at the top left, the rail of the scene windows under it, the tool and the
 	// selection on the right, the scene or the layers as a drawer by the rail, the node bank as a tray at the bottom
@@ -318,6 +328,8 @@ class editor_ui : public ui_layer
 	std::vector<std::size_t> m_scenematches;
 	static glm::vec2 m_viewmin;
 	static glm::vec2 m_viewmax;
+	static glm::vec2 m_viewclipmin;
+	static glm::vec2 m_viewclipmax;
 	// the islands of the light and the dark palettes
 	static ImVec2 island_position(island const Which);
 	static ImVec2 island_size(island const Which);

@@ -1603,7 +1603,7 @@ bool editor_mode::update()
     steps.step("nmt");
     // what's drawn over the 3d view stays in it, the docks around it are see-through a little
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-    background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
+    background->PushClipRect(ImVec2(editor_ui::view_clip_min().x, editor_ui::view_clip_min().y), ImVec2(editor_ui::view_clip_max().x, editor_ui::view_clip_max().y), true);
     draw_orthophoto();
     draw_nmt_pending();
     area_update();
