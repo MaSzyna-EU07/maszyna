@@ -3407,6 +3407,9 @@ void write_ending(std::ostream &Text, TTrack const &Style, bool const Switch)
 	if ((Style.iCategoryFlag & 15) == 1 && false == Style.m_profile1.first.empty())
 		Text << "railprofile " << Style.m_profile1.first << ' ';
 	Text << track_uneven::write_attribute(Style.m_uneven, Switch);
+	// the welded rail goes on in the piece; a buckle stays where it was
+	if (false == Switch && (Style.iCategoryFlag & 15) == 1)
+		Text << track_buckle::write_cwr(Style.m_cwr);
 	// a piece of the track made from another one stays in its track circuit and under the same overhead line
 	for (auto const *isolated : Style.Isolated)
 		Text << "isolated " << isolated->asName << ' ';

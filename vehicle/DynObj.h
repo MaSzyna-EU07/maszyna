@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
+#include "vehicle/doorwings.h"
 #include "scripting/scriptscreenrules.h"
 
 #include <vector>
@@ -305,6 +306,12 @@ private:
     void UpdateDoorRotate(TAnim *pAnim); // animacja drzwi - obrót
     void UpdateDoorFold(TAnim *pAnim); // animacja drzwi - składanie
 	void UpdateDoorPlug(TAnim *pAnim);      // animacja drzwi - odskokowo-przesuwne
+    // a wing with its own kind of animation, given in the .mmd (animdoor:), in place of the one of the .fiz
+    void UpdateDoorWing( TAnim *pAnim, door_wings::wing_spec const &Spec );
+    // sets the update of a door wing animation, for its own kind if the .mmd gives one, otherwise for the .fiz
+    void bind_door_animation( TAnim &Animation );
+    // door wings animated in their own way, from the .mmd (eu07/maszyna#70)
+    std::vector<door_wings::wing_spec> m_doorwings;
 	void UpdatePant(TAnim *pAnim); // animacja pantografu
     void UpdatePlatformTranslate(TAnim *pAnim); // doorstep animation, shift
     void UpdatePlatformRotate(TAnim *pAnim); // doorstep animation, rotate
@@ -953,8 +960,12 @@ private:
     // the trains it closes in on
     void
         update_coupler_physics() const;
+    // the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
+    void
+        update_brake_pipes( double const Deltatime );
 
     double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
+    std::vector<TMoverParameters *> m_brakepipes; // the vehicles of update_brake_pipes(), kept for the memory
 };
 
 

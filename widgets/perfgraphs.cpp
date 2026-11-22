@@ -49,13 +49,13 @@ void perfgraph_panel::render_contents() {
 	if (!stopwatch)
 		return;
 
-	history[pos] = static_cast<float>(static_cast<double>(stopwatch->last().count()) / 1000.0);
-	const std::string label = std::to_string(history[pos]) + "ms";
+	history[history_pos] = static_cast<float>(static_cast<double>(stopwatch->last().count()) / 1000.0);
+	const std::string label = std::to_string(history[history_pos]) + "ms";
 
-	pos++;
-	if (pos >= history.size())
-		pos = 0;
+	history_pos++;
+	if (history_pos >= history.size())
+		history_pos = 0;
 
 	ImGui::SliderFloat(STR_C("Range"), &max, 0.1f, 250.0f);
-	ImGui::PlotLines("##timer", &history[0], static_cast<int>(history.size()), static_cast<int>(pos), label.c_str(), 0.0f, max, ImVec2(500, 200));
+	ImGui::PlotLines("##timer", &history[0], static_cast<int>(history.size()), static_cast<int>(history_pos), label.c_str(), 0.0f, max, ImVec2(500, 200));
 }

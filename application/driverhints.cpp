@@ -1150,6 +1150,29 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     return IsAnyDoorPermitActive[side::left] == false; } );
             break;
         }
+        // doorsteps, as the timetable asks (eu07/maszyna#95)
+        case driver_hint::doorstepon: {
+            if( AIControllFlag ) {
+                mvOccupied->PermitDoorStep( true );
+            }
+            remove_hint( driver_hint::doorstepoff );
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->Doors.step_enabled == true; } );
+            break;
+        }
+        case driver_hint::doorstepoff: {
+            if( AIControllFlag ) {
+                mvOccupied->PermitDoorStep( false );
+            }
+            remove_hint( driver_hint::doorstepon );
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return mvOccupied->Doors.step_enabled == false; } );
+            break;
+        }
         // consist lights
         case driver_hint::consistlightson: {
             if( AIControllFlag ) {

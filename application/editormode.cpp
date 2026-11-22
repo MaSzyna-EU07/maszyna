@@ -610,6 +610,9 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
+	// with the heightmap terrain, a new tile waits while a chunk under it is still to come; where none is nor will be, or the walk of
+	// the chunks doesn't reach, it lies on the other ground or on the NMT guess as before. A scenery without it as before
+	Layer.coming_source([](glm::dvec2 const &Min, glm::dvec2 const &Max) { return EditorTerrain.active() && EditorTerrain.ground_coming(Min, Max); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))
@@ -624,6 +627,8 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 editor_mode::~editor_mode()
 {
 	editor_track::observe(nullptr);
+	// the capabilities of a WMS service being read are given up rather than waited for to their timeouts
+	m_wms_adding.closing = true;
 }
 
 std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
@@ -4108,7 +4113,7 @@ void editor_mode::render_wms_adding()
         adding.info.reset();
         adding.ticked.clear();
         adding.service = url;
-        adding.reading = std::async(std::launch::async, [url]() { return editor_orthophoto::describe(url); });
+        adding.reading = std::async(std::launch::async, [url, closing = &adding.closing]() { return editor_orthophoto::describe(url, [closing]() { return closing->load(); }); });
     }
     if (adding.reading.valid())
     {

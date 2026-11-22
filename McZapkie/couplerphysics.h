@@ -112,6 +112,7 @@ struct pair_input {
 	bool coupled{false};
 	bool adapter{false}; // an adapter on either end: the buffers don't meet, the coupler takes the push alone
 	bool damage{false}; // the link can stretch and break (crash damage on)
+	double crush{0.0}; // the ends of both crushed for good (collision.h), the buffers meet that much closer [m]
 };
 
 struct pair_result {
