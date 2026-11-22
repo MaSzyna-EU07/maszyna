@@ -218,7 +218,7 @@ vec4 snow_move(ivec2 texel, vec4 state, float seconds)
 	vec2 waterout = snow_out(motion.zw, seconds);
 	float snow = state.x * (1.0 - snowout.x - snowout.y);
 	float water = state.y * (1.0 - waterout.x - waterout.y);
-	float packed = state.z * snow;
+	float packing = state.z * snow;   // (not "packed": a reserved word of GLSL, the NVIDIA OpenGL compiler refuses it)
 	const ivec2 sides[4] = ivec2[4](ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1));
 	for (int k = 0; k < 4; ++k)
 	{
@@ -244,10 +244,10 @@ vec4 snow_move(ivec2 texel, vec4 state, float seconds)
 			water += (itsmotion.w * float(side.y) < 0.0) ? neighbour.y * itswater.y : 0.0;
 		}
 		snow += coming;
-		packed += coming * neighbour.z;
+		packing += coming * neighbour.z;
 	}
 	snow = max(snow, 0.0);
-	return vec4(snow, max(water, 0.0), (snow > 1e-4) ? clamp(packed / snow, 0.0, 1.0) : 0.0, state.w);
+	return vec4(snow, max(water, 0.0), (snow > 1e-4) ? clamp(packing / snow, 0.0, 1.0) : 0.0, state.w);
 }
 
 void main()

@@ -126,6 +126,8 @@ void windscreen_water::release()
 	m_glasses = {};
 	m_glasscount = 0;
 	m_layerslot = -1;
+	m_logged.fill(-1);
+	m_layerlogged = -1;
 	m_kinds.clear();
 	m_vehicle = nullptr;
 	m_cab = nullptr;
@@ -459,6 +461,14 @@ void windscreen_water::update(double const Seconds)
 		auto const *material{m_host.material(glass.material)};
 		auto const snowed{glass.baked && glass.snow && is_snow_glass(material)};
 		block.snow_slots[static_cast<glm::length_t>(slot)] = (snowed ? 1.f : 0.f);
+		// the state of the glass in the log once it changes: why a glass stays without its water or snow
+		if (auto const state{(glass.baked ? 1 : 0) | (glass.snow ? 2 : 0) | (glass_kind(material) << 2) | (snowed ? 16 : 0)}; state != m_logged[slot])
+		{
+			m_logged[slot] = state;
+			WriteLog("windscreen water: glass " + std::to_string(slot + 1) + (glass.baked ? " baked" : " not baked yet (the mask of the wipers not loaded)") +
+			         (glass.snow ? ", built as a glass of the snow" : ", built as a glass of the water") + ", its material now " +
+			         std::to_string(glass_kind(material)) + " (0 none, 1 water, 2 snow)" + (snowed ? ", its snow simulated" : ""));
+		}
 		anysnow = anysnow || snowed;
 		auto const simulated{glass.baked && (false == glass.snow) && is_water_glass(material)};
 		glass.landings += static_cast<double>(perground / fall * coming * glass.densest) * seconds;
@@ -572,7 +582,12 @@ void windscreen_water::lay_snow(gl::water_ubs const &Block)
 			auto layer{Block};
 			layer.counts.z = static_cast<std::uint32_t>(slot);
 			layer.counts.w = m_step;
-			gpu_snow_layer(slot, atlas, normal, layer);
+			auto const laid{gpu_snow_layer(slot, atlas, normal, layer)};
+			if (int const state{laid ? 1 : 0}; state != m_layerlogged)
+			{
+				m_layerlogged = state;
+				WriteLog("windscreen water: the layer of the snow of glass " + std::to_string(slot + 1) + (laid ? " laid" : " not laid (the atlas of the snow not loaded)"));
+			}
 		}
 	}
 }
