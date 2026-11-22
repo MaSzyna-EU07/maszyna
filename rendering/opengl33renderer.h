@@ -469,6 +469,8 @@ class opengl33_renderer : public gfx_renderer {
 	GLuint64 m_gllasttime = 0;
 
     double m_precipitationrotation;
+    // where the camera with no vehicle of its own was at the frame before, for the motion blur of its movement
+    std::optional<glm::dvec3> m_freecameraposition;
 
     glm::mat4 perspective_projection_raw(float fovy, float aspect, float znear, float zfar);
 	glm::mat4 perspective_projection(const viewport_proj_config &c, float n, float f, glm::mat4 &frustum);
