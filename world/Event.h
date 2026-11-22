@@ -97,6 +97,7 @@ public:
     bool m_ignored { false }; // replacement for tp_ignored
     bool m_passive { false }; // false gdy ma nie być dodawany do kolejki (skanowanie sygnałów)
     int m_inqueue { 0 }; // ile razy dodany do kolejki
+    bool m_lostcalllogged { false }; // a lost call was already logged during the current stay in the queue
     TDynamicObject const *m_activator { nullptr };
     double m_launchtime { 0.0 };
     double m_delay { 0.0 };

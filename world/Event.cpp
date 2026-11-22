@@ -1185,7 +1185,12 @@ multi_event::init() {
         if( conditiontchecksmemcell
          && std::ranges::any_of( m_targets, []( basic_node const &Target ) { return std::get<scene::basic_node *>( Target ) == nullptr; } ) ) {
             // init_targets() named the missing cell; say what it does to the event, as it isn't what the scenery asks for
-            ErrorLog( std::format( "Bad event: \"{}\" compares a memory cell which doesn't exist, so its whole memcompare condition is off and it always runs the events before its else", m_name ) );
+            // the track and probability tests still apply, only the comparison is off
+            auto const otherconditions { ( m_conditions.flags & ( flags::track_busy | flags::track_free | flags::probability ) ) != 0 };
+            ErrorLog( std::format(
+                "Bad event: \"{}\" compares a memory cell which doesn't exist, so its memcompare test is off{}",
+                m_name,
+                otherconditions ? std::string() : " and it always runs the events before its else" ) );
         }
         m_conditions.flags &= ~( flags::text | flags::value1 | flags::value2 );
         m_ignored = false;
@@ -2463,12 +2468,17 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { // jeśli nie dodany jeszcze do kolejki
-        // this call is lost, the event runs once, for whoever queued it first
-        WriteLog( std::format(
-            "EVENT ALREADY IN QUEUE, NOT ADDED{}: {}{}",
-            Owner ? " by " + Owner->asName : std::string(),
-            Event->m_name,
-            Event->m_activator ? " (queued by " + Event->m_activator->asName + ")" : std::string() ) );
+        // a call of another vehicle is lost, the event runs once, for whoever queued it first.
+        // logged once per stay in the queue, as a standing vehicle repeats its event0 call every frame
+        if( Owner != Event->m_activator
+         && false == Event->m_lostcalllogged ) {
+            Event->m_lostcalllogged = true;
+            WriteLog( std::format(
+                "EVENT ALREADY IN QUEUE, NOT ADDED{}: {}{}",
+                Owner ? " by " + Owner->asName : std::string(),
+                Event->m_name,
+                Event->m_activator ? " (queued by " + Event->m_activator->asName + ")" : std::string() ) );
+        }
         return false;
     }
 
@@ -2491,6 +2501,8 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
     if( Event != nullptr
      && false == Event->m_ignored ) {
         // standardowe dodanie do kolejki
+        Event->m_activator = Owner; // a joint event reached above still holds the vehicle of its previous run
+        Event->m_lostcalllogged = false;
         ++Event->m_inqueue; // zabezpieczenie przed podwójnym dodaniem do kolejki
         WriteLog( "EVENT ADDED TO QUEUE" + ( Owner ? " by " + Owner->asName : "" ) + ": " + Event->m_name );
         Event->m_launchtime = delay + std::abs( Event->m_delay ) + Timer::GetTime(); // czas od uruchomienia scenerii
@@ -2565,6 +2577,7 @@ event_manager::CheckQuery() {
             QueryRootEvent->m_launchtime = m_workevent->m_launchtime; // czas musi być ten sam, bo nie jest aktualizowany
             QueryRootEvent->m_activator = m_workevent->m_activator; // pojazd aktywujący
             QueryRootEvent->m_inqueue = 1;
+            QueryRootEvent->m_lostcalllogged = false;
             // w sumie można by go dodać normalnie do kolejki, ale trzeba te połączone posortować wg czasu wykonania
         }
         else // a jak nazwa jest unikalna, to kolejka idzie dalej
