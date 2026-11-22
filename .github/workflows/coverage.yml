@@ -53,7 +53,7 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')" || [ -z "$files" ]; then
+          if ! files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')" || [ -z "$files" ]; then
             echo "The list of changed files is not available, building."
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0

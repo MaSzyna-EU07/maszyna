@@ -45,9 +45,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # a pull request builds the AVX2 variant only; the variant without AVX2 (the same sources, one compiler
-        # switch) is built by the pushes to the branches and by a manual run
-        variant: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
+        # a pull request from a branch of this repository builds the AVX2 variant only; the variant without AVX2
+        # (the same sources, one compiler switch) is built by the push of that branch, by the pushes to staging
+        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both
+        variant: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
       - name: Checkout repository
@@ -211,9 +212,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # a pull request builds the AVX2 variant only; the variant without AVX2 (the same sources, one compiler
-        # switch) is built by the pushes to the branches and by a manual run
-        variant: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
+        # a pull request from a branch of this repository builds the AVX2 variant only; the variant without AVX2
+        # (the same sources, one compiler switch) is built by the push of that branch, by the pushes to staging
+        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both
+        variant: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
       - name: Checkout repository
@@ -305,7 +307,8 @@ jobs:
       # The compiler cache (ccache), one per variant. Only the runs on staging and master save it (the step after the
       # build); a pull request takes the newest one of its variant, and so recompiles just what it changed. A pull
       # request can read the caches of its base branch and of the default branch, not those of other pull requests.
-      # The compiler version is in the key, so a new GCC of the runner image starts a cache of its own.
+      # The compiler version is in the key, so a new GCC of the runner image starts a cache of its own, with no
+      # fallback to the cache of the old one, which ccache couldn't use (the compiler is part of its hash).
       - name: Compiler cache key
         id: ccache-key
         run: echo "gcc=$(g++ -dumpfullversion)" >> "$GITHUB_OUTPUT"
@@ -317,12 +320,14 @@ jobs:
           key: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
           restore-keys: |
             ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-
-            ccache-linux-${{ matrix.variant.suffix }}-
 
       - name: Configure
         env:
           CCACHE_DIR: ${{ runner.temp }}/ccache
           CCACHE_MAXSIZE: 500M
+          # the game and eu07_core use a precompiled header (stdafx.h): ccache caches such compilations only with
+          # this sloppiness, else it compiles every file in full
+          CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
         run: |
           ccache --zero-stats
           cmake \
@@ -345,6 +350,9 @@ jobs:
           CCACHE_DIR: ${{ runner.temp }}/ccache
           CCACHE_MAXSIZE: 500M
           CCACHE_BASEDIR: ${{ github.workspace }}
+          # the game and eu07_core use a precompiled header (stdafx.h): ccache caches such compilations only with
+          # this sloppiness, else it compiles every file in full
+          CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
         run: |
           cmake \
             --build build \
