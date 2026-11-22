@@ -548,6 +548,71 @@ bool event_names(std::string const &File, std::vector<std::string> &Names)
 	return true;
 }
 
+bool switched_tracks(std::string const &File, std::vector<std::string> &Suffixes)
+{
+	Suffixes.clear();
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	// event <name> switch <delay> <track> <state>
+	auto const tokens{tokenize(text.content)};
+	std::string const first{"(p1)"};
+	// a drive has the events thrown by the keys and the map, (p1)+ and (p1)-, or moves a model, lights its lamps or throws a double switch at
+	// once; the sleepers or the ballast of a switch may throw it on their own events too, with nothing else, but they don't drive it
+	bool driven{false};
+	for (std::size_t idx = 0; idx + 2 < tokens.size() && false == driven; ++idx)
+	{
+		if (tokens[idx] != "event")
+		{
+			continue;
+		}
+		auto const &name{tokens[idx + 1]};
+		auto const &kind{tokens[idx + 2]};
+		driven = (name.size() > first.size() && name.compare(0, first.size(), first) == 0 && (name.back() == '+' || name.back() == '-')) || (kind != "switch" && kind != "trackvel");
+	}
+	if (false == driven)
+	{
+		return true;
+	}
+	for (std::size_t idx = 0; idx + 4 < tokens.size(); ++idx)
+	{
+		if (tokens[idx] != "event" || tokens[idx + 2] != "switch" || tokens[idx + 4].compare(0, first.size(), first) != 0)
+		{
+			continue;
+		}
+		auto suffix{tokens[idx + 4].substr(first.size())};
+		if (std::find(Suffixes.begin(), Suffixes.end(), suffix) == Suffixes.end())
+		{
+			Suffixes.push_back(std::move(suffix));
+		}
+	}
+	return true;
+}
+
+bool switch_bed(std::string const &File)
+{
+	template_text text;
+	std::string error;
+	if (false == read_template(File, text, error))
+	{
+		return false;
+	}
+	auto const tokens{tokenize(text.content)};
+	for (std::size_t idx = 0; idx < tokens.size(); ++idx)
+	{
+		// node <range max> <range min> <name> track ...
+		if (tokens[idx] == "include" || (tokens[idx] == "node" && idx + 4 < tokens.size() && tokens[idx + 4] == "track") ||
+		    (tokens[idx] == "event" && idx + 2 < tokens.size() && tokens[idx + 2] != "switch" && tokens[idx + 2] != "trackvel"))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 bool signal_speeds(std::string const &File, std::vector<int> &Speeds)
 {
 	Speeds.clear();

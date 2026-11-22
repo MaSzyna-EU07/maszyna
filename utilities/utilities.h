@@ -64,7 +64,12 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int Random(int min, int max);
+// whole numbers from min to max, both included. a name of its own keeps the calls of Random() with whole-number
+// bounds (the wind, the wheel flats, the truck hunting, the tachometer) on Random(double, double), which draws the
+// real number in between that they expect. drawn from the local engine, as up to 26.05.1 from an engine of its own: it
+// picks what one machine shows (the trivia of the loading screen), and a draw from the engine of the run's seed would
+// put that engine out of step with the other machines of a network session
+int RandomInt(int min, int max);
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
@@ -233,10 +238,17 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
-// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
-// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+// the file as it's named on the disk when only the case of its name or of its folders differs, as in the sceneries made on Windows;
+// empty when there's none. on Windows, finding the names in any case itself, the file given or none
 std::string FileCased(std::filesystem::path const &Filename);
+// the file to open: as it's named on the disk, the name given when there's none
+std::string FileOnDisk(std::string const &Filename);
+// the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
+// found in any case; the name given when there's none
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);
 
+// the first name with one of the extensions which has a file in any case, in the order given; given back as named here, the file
+// is opened by FileOnDisk()
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
@@ -286,17 +298,18 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return Left == Right;
 }
 
-// Tolerant clamp. Unlike std::clamp, this does NOT invoke undefined behaviour when
-// the bounds are inverted (Lo > Hi) - it normalizes them instead. This restores the
-// pre-refactor behaviour of the old custom clamp() for code paths where the bounds are
-// computed at runtime and can legitimately cross (e.g. AI acceleration/braking limits,
-// physics jolt calculations), where std::clamp's UB produced wrong results.
+// Tolerant clamp, the old custom clamp() of the project (up to 26.05.1). Unlike
+// std::clamp, this does NOT invoke undefined behaviour when the bounds are inverted
+// (Lo > Hi): the lower bound is applied first and the upper one last, so inverted
+// bounds give the upper bound, as the old clamp() did. Every call of the old clamp()
+// whose bounds can cross (they come from the .fiz, the .mmd or the window, or are
+// computed from such values) uses it, so it gives what it gave before the move to
+// std::clamp. Where the code keeps the bounds in order, std::clamp gives the same.
+// New code uses std::clamp.
 template <typename Type_>
 constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
 {
-	return ( Hi < Lo )
-		? std::clamp( Value, Hi, Lo )
-		: std::clamp( Value, Lo, Hi );
+	return std::min( std::max( Value, Lo ), Hi );
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer

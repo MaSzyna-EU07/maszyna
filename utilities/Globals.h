@@ -119,7 +119,13 @@ struct global_settings {
 	bool priorityLoadText3D{false}; // ladowanie T3D priorytetowo
     int iWriteLogEnabled{ 3 }; // maska bitowa: 1-zapis do pliku, 2-okienko, 4-nazwy torów
     bool MultipleLogs{ false };
-    bool BlackBox{ true }; // with the physics logs on, the black box of the session is written as well (blackbox_doc.md)
+    // the dump written when the simulator crashes (Windows): a small one by default, with the stacks, the threads, the
+    // modules, the memory the stacks point to and the modules' data. "crashdump.full yes" writes all the memory of the
+    // simulator instead, as large as the memory it took
+    bool CrashDumpFull{ false };
+    // the black box of the session (blackbox_doc.md): "blackbox yes" writes it whatever the physics logs, "blackbox no"
+    // never, and with no entry it is written along with the physics logs
+    std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
     bool ParserLogIncludes{ true };
@@ -199,6 +205,12 @@ struct global_settings {
     bool EditorOrtho{ false };
     float EditorOrthoExtent{ 150.f };
     int EditorOrthoTracks{ 0 }; // the railway in the top view of the editor: 0 whole, 1 without the ballast, 2 the rails alone
+    // the free camera of the editor: its speed set in the View menu, the Ctrl multiplier of it, and in the top view whether it goes as far
+    // as the view reaches, so the map moves across the screen as fast zoomed in as out
+    bool EditorCameraOn{ false }; // the editor is on: its camera goes by the settings below
+    double EditorCameraSpeed{ 1.0 };
+    double EditorCameraFast{ 30.0 };
+    bool EditorCameraZoomed{ false };
     GLint iMaxTextureSize{ 4096 }; // maksymalny rozmiar tekstury
     GLint iMaxCabTextureSize{ 4096 }; // largest allowed texture in vehicle cab
     int iMultisampling{ 2 }; // tryb antyaliasingu: 0=brak,1=2px,2=4px,3=8px,4=16px

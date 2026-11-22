@@ -18,8 +18,10 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
+#include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
+#include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
 #include "vehicle/timetableservice.h"
 #include "world/mtable.h"
@@ -170,6 +172,7 @@ const double FSOverchargeCRP = 0.05;
 const double FSMaxTime = 10.0;
 const double DepartBlockedFSDelay = 10.0;
 bool WriteLogFlag = false;
+bool WriteTrainLogFlag = false;
 double const deltalog = 0.05; // przyrost czasu
 
 std::string StopReasonTable[] = {
@@ -210,6 +213,7 @@ void TSpeedPos::Clear()
 	fSectionVelocityDist = 0.0; //brak długości
     fPointDist = 0.0;
     fDist = 0.0;
+    bSeenAhead = false;
     vPos = glm::dvec3(0, 0, 0);
     trTrack = nullptr; // brak wskaźnika
 };
@@ -326,6 +330,9 @@ bool TSpeedPos::Update()
         // trzeba zazanaczyć, że minięty
         iFlags |= spElapsed;
     }
+    else {
+        bSeenAhead = true;
+    }
     if (iFlags & spTrack) {
         // road/track
         if (trTrack) {
@@ -411,9 +418,18 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
+// how far behind the head an event found in the scan may lie and still count as one the head had ahead [m]
+constexpr double SeenAheadTolerance { 5.0 };
+
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
+    // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
+    // may come out a few metres behind it: those still count as seen ahead. the price is that a train set less than
+    // the tolerance past a signal at stop is still reported to pass it; a train standing that close to a signal can't
+    // be told from one stopped just short of it, which really passes the signal if it goes on
+    bSeenAhead = ( dist >= -SeenAheadTolerance );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
@@ -908,6 +924,7 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
 {
     if( Passedbefore
      || false == TestFlag( Point.iFlags, spElapsed )
+     || false == Point.bSeenAhead // found already behind the head: the train stood across it, it didn't pass it
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
@@ -2339,33 +2356,16 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         iDrivigFlags |= movePrimary; // aktywnie prowadzące pojazd
     }
 
-    SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    if( mvOccupied != nullptr ) {
+        SetDriverPsyche(); // na końcu, bo wymaga ustawienia zmiennych
+    }
     TableClear();
 
+    // the logs of all, begun at once as they always were. one of a train only at its first line (update_logs): every
+    // crew is made primary here, and the drivers but one of a train with crews in more vehicles are made passive
+    // before it starts, so they get no file with only the header
     if( WriteLogFlag ) {
-#ifdef _WIN32
-		CreateDirectory( "physicslog", nullptr);
-#elif __unix__
-		mkdir( "physicslog", 0740 );
-#endif
-        LogFile.open( std::string( "physicslog/" + VehicleName + ".dat" ),
-            std::ios::in | std::ios::out | std::ios::trunc );
-#if LOGPRESS == 0
-        LogFile
-            << "Time[s] Velocity[m/s] Acceleration[m/ss] "
-            << "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-            << "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
-            << "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
-            << "Security Wheelslip "
-            << "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
-            << "VehicleVelocity[km/h]"
-            << "\r\n";
-        LogFile << std::fixed << std::setprecision( 4 );
-#endif
-#if LOGPRESS == 1
-        LogFile << string( "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP" ).c_str() << "\n";
-#endif
-        LogFile.flush();
+        begin_physicslog();
     }
 
     // HACK: give the simulation a small window to potentially replace the AI with a human driver
@@ -2374,7 +2374,6 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
 
 TController::~TController()
 { // wykopanie mechanika z roboty
-    // LogFile is closed by its own destructor
 };
 
 // zamiana kodu rozkazu na opis
@@ -5390,58 +5389,80 @@ bool TController::PutCommand( std::string NewCommand, double NewValue1, double N
     return false; // nierozpoznana - wysłać bezpośrednio do pojazdu
 };
 
-void TController::PhysicsLog()
-{ // zapis logu - na razie tylko wypisanie parametrów
-    if (LogFile.is_open())
-    {
+std::string_view TController::physicslog_header() {
+    // the columns of the readers of these logs, the Hasler tape of the starter among them, stay where they are:
+    // a new one goes at the end
+    return "Time[s] Velocity[m/s] Acceleration[m/ss] "
+           "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
+           "BrakePress[MPa] PipePress[MPa] MotorCurrent[A] "
+           "MCP SCP BCP LBP Direction Command CVal1 CVal2 "
+           "Security Wheelslip "
+           "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg] "
+           "VehicleVelocity[km/h]"
+           "\r\n";
+}
+
+std::string TController::physicslog_line() const {
+    std::ostringstream line;
+    line << std::fixed << std::setprecision( 4 )
+        << ElapsedTime << " "
+        << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
+        << mvControlling->AccS << " "
+        << mvOccupied->Couplers[1].Dist << " "
+        << mvOccupied->Couplers[1].CForce << " "
+        << mvOccupied->Ft << " "
+        << mvOccupied->Ff << " "
+        << mvOccupied->Fb << " "
+        << mvOccupied->BrakePress << " "
+        << mvOccupied->PipePress << " "
+        << mvControlling->Im << " "
+        << int(mvControlling->MainCtrlPos) << " "
+        << int(mvControlling->ScndCtrlPos) << " "
+        << mvOccupied->fBrakeCtrlPos << " "
+        << mvOccupied->LocalBrakePosA << " "
+        << int(mvControlling->DirActive) << " "
+        << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
+        << mvOccupied->CommandIn.Value1 << " "
+        << mvOccupied->CommandIn.Value2 << " "
+        << int(mvControlling->SecuritySystem.is_blinking()) << " "
+        << int(mvControlling->SlippingWheels) << " "
+        << mvControlling->dizel_heat.Ts << " "
+        << mvControlling->dizel_heat.To << " "
+        << mvControlling->dizel_heat.temperatura1 << " "
+        << mvControlling->dizel_heat.temperatura2 << " "
+        // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+        << mvOccupied->V * 3.6
+        << "\r\n";
+    return line.str();
+}
+
+void TController::begin_physicslog()
+{
+    // physicslog/<vehicle>.dat, written every two seconds along with the logs of the other drivers
 #if LOGPRESS == 0
-/*
-<< "Time[s] Velocity[m/s] Acceleration[m/ss] "
-<< "Coupler.Dist[m] Coupler.Force[N] TractionForce[kN] FrictionForce[kN] BrakeForce[kN] "
-<< "BrakePress[MPa] PipePress[MPa] MotorCurrent[A]    "
-<< "MCP SCP BCP LBP DmgFlag Command CVal1 CVal2 "
-<< "EngineTemp[Deg] OilTemp[Deg] WaterTemp[Deg] WaterAuxTemp[Deg]"
-*/
-        LogFile
-            << ElapsedTime << " "
-            << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
-            << mvControlling->AccS << " "
-            << mvOccupied->Couplers[1].Dist << " "
-            << mvOccupied->Couplers[1].CForce << " "
-            << mvOccupied->Ft << " "
-            << mvOccupied->Ff << " "
-            << mvOccupied->Fb << " "
-            << mvOccupied->BrakePress << " "
-            << mvOccupied->PipePress << " "
-            << mvControlling->Im << " "
-            << int(mvControlling->MainCtrlPos) << " "
-            << int(mvControlling->ScndCtrlPos) << " "
-            << mvOccupied->fBrakeCtrlPos << " "
-            << mvOccupied->LocalBrakePosA << " "
-            << int(mvControlling->DirActive) << " "
-            << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
-            << mvOccupied->CommandIn.Value1 << " "
-            << mvOccupied->CommandIn.Value2 << " "
-		    << int(mvControlling->SecuritySystem.is_blinking()) << " "
-            << int(mvControlling->SlippingWheels) << " "
-            << mvControlling->dizel_heat.Ts << " "
-            << mvControlling->dizel_heat.To << " "
-            << mvControlling->dizel_heat.temperatura1 << " "
-            << mvControlling->dizel_heat.temperatura2 << " "
-            // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-            << mvOccupied->V * 3.6
-            << "\r\n";
+    PhysicsLogs.begin( VehicleName, physicslog_header() );
 #endif
 #if LOGPRESS == 1
-        LogFile << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
-                << "\t";
-        LogFile << Controlling->AccS << "\t";
-        LogFile << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
-                << mvOccupied->BrakePress << "\t";
-        LogFile << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.begin( VehicleName, "t\tVel\tAcc\tPP\tVVP\tBP\tBVP\tCVP\n" );
 #endif
-        LogFile.flush();
-    }
+    PhysicsLogBegun = true;
+}
+
+void TController::PhysicsLog()
+{ // zapis logu - na razie tylko wypisanie parametrów
+#if LOGPRESS == 0
+    PhysicsLogs.append( VehicleName, physicslog_line() );
+#endif
+#if LOGPRESS == 1
+    std::ostringstream line;
+    line << ElapsedTime << "\t" << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot)
+         << "\t";
+    line << mvControlling->AccS << "\t";
+    line << mvOccupied->PipePress << "\t" << mvOccupied->CntrlPipePress << "\t"
+         << mvOccupied->BrakePress << "\t";
+    line << mvOccupied->Volume << "\t" << mvOccupied->Hamulec->GetCRP() << "\n";
+    PhysicsLogs.append( VehicleName, line.str() );
+#endif
 };
 
 void
@@ -6392,6 +6413,10 @@ void TController::ControllingSet()
     // problematyczne jest sterowanie z członu biernego, dlatego damy AI silnikowy
     // dzięki temu będzie wirtualna kabina w silnikowym, działająca w rozrządczym
     // w plikach FIZ zostały zgubione ujemne maski sprzęgów, stąd problemy z EZT
+    if( pVehicle == nullptr ) {
+        // a driver of no vehicle has nothing to control
+        return;
+    }
     mvOccupied = pVehicle->MoverParameters; // domyślny skrót do obiektu parametrów
 	BrakeSystem = mvOccupied->BrakeSystem; // domyślny sposób hamowania
     mvControlling = pVehicle->FindPowered()->MoverParameters; // poszukiwanie członu sterowanego
@@ -6493,10 +6518,18 @@ TController::update_timers( double dt ) {
 void
 TController::update_logs( double const dt ) {
     // log vehicle data
+    if( false == writes_physicslog() ) {
+        // not counted while it isn't logged (the driver of a road vehicle, or no logs on): were the logs turned on,
+        // it would write a line every 0.05 s from then on, not one each update to make up for the time before
+        LastUpdatedTime = 0.0;
+        return;
+    }
     LastUpdatedTime += dt;
-    if( WriteLogFlag
-     && LastUpdatedTime > deltalog ) {
+    if( LastUpdatedTime > deltalog ) {
         // zapis do pliku DAT
+        if( false == PhysicsLogBegun ) {
+            begin_physicslog();
+        }
         PhysicsLog();
         LastUpdatedTime -= deltalog;
     }
@@ -8195,54 +8228,6 @@ uphill_coasting_speed( double const Distance, double const Gravity ) {
     return 3.6 * std::sqrt( 2.0 * std::max( 0.01, -Gravity ) * std::max( 0.0, Distance ) );
 }
 
-// resultant acceleration [m/s2] to ask for now so that a steady application of the pneumatic brake takes the train
-// from Velocity down to Target [km/h] over Distance [m], with the brake force following the speed the way the
-// consist brake table says it does (cast iron blocks grip harder as the train slows)
-struct consist_brake_table {
-    double const *a0; // deceleration at handle position 1, by speed
-    double const *a1; // deceleration added by each quarter of a position, by speed
-    int size; // entries, up to the vehicle's top speed
-    double vmax; // the vehicle's top speed [km/h]
-
-    // deceleration [m/s2] of a full service application at Kmh
-    double full_braking( double const Kmh ) const {
-        auto const index { std::clamp( static_cast<int>( size * Kmh / std::max( 1.0, vmax ) ), 1, size ) };
-        return std::max( 0.01, a0[ index ] + 12.0 * a1[ index ] ); }
-};
-
-static double
-shaped_braking_demand(
-    double const Velocity, double const Target, double const Distance, double const Gravity,
-    consist_brake_table const &Table ) {
-
-    auto const fullbraking = [&Table]( double const Kmh ) {
-        return Table.full_braking( Kmh ); };
-    auto const travel = [Velocity, Target, Gravity, &fullbraking]( double const Ratio ) {
-        auto const steps { 24 };
-        auto const step { ( Velocity - Target ) / steps };
-        auto distance { 0.0 };
-        for( auto i { 0 }; i < steps; ++i ) {
-            auto const kmh { Target + ( i + 0.5 ) * step };
-            auto const deceleration { Ratio * fullbraking( kmh ) - Gravity };
-            if( deceleration <= 0.001 ) {
-                return std::numeric_limits<double>::max();
-            }
-            distance += ( kmh / 3.6 ) * ( step / 3.6 ) / deceleration;
-        }
-        return distance; };
-
-    auto low { 0.0 };
-    auto high { 3.0 };
-    if( travel( high ) > Distance ) {
-        return Gravity - high * fullbraking( Velocity );
-    }
-    for( auto i { 0 }; i < 30; ++i ) {
-        auto const middle { 0.5 * ( low + high ) };
-        ( travel( middle ) > Distance ? low : high ) = middle;
-    }
-    return Gravity - high * fullbraking( Velocity );
-}
-
 // outside of max safe range: follow the braking curve down to the speed ahead, Vel is the present speed in the
 // direction of travel
 void
@@ -8269,43 +8254,19 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
         ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
             stopping_margin() : // the same stopping point as the final approach
             VelNext * braking_distance_multiplier( static_cast<float>( VelNext ) ) );
-    // a pneumatic brake acts on the state the train will be in once it has responded; while the
-    // train is still speeding up, plan the deceleration from there, so more is asked for at once
-    auto velocity { Vel };
-    auto distance { ActualProximityDist };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic )
-     && ( AbsAccS > 0.0 ) ) {
-        auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
-        velocity = Vel + 3.6 * horizon * AbsAccS;
-        distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( Vel + velocity ) * 0.5 / 3.6 * horizon );
-    }
-    auto const brakingroom {
-        std::max(
-            distance - brakingpointoffset,
-            std::min(
-                distance,
-                brakingpointoffset ) ) };
-    auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
-        // follow the shape of the consist brake force over speed rather than assume a constant
-        // deceleration, over the distance left once the brake has had time to fill (while the
-        // train is still speeding up, the prediction above has taken that off already)
-        auto room { brakingroom };
-        if( ( AbsAccS <= 0.0 )
-         && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
-            // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
-            // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
-            // independent brake, which leaves the train brake handle where it is, kept braking earlier
-            // and earlier the whole way in, to crawl the last tens of metres to the stop point
-            auto const brakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
-            room = std::max(
-                0.5 * brakingroom,
-                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
-        }
-        deceleration = shaped_braking_demand(
-            velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
-            { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
-    }
+    // both plans of a pneumatic brake are made from the brake table of the consist; with none (in shunting it isn't
+    // worked out) the braking curve is the constant deceleration over the distance left, as before them
+    braking_curve::brake_table const braketable { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax };
+    // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
+    // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
+    // independent brake, which leaves the train brake handle where it is, kept braking earlier
+    // and earlier the whole way in, to crawl the last tens of metres to the stop point
+    auto const fillbrakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
+    braking_curve::approach const approach {
+        Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS, BrakeCtrlPosition > 0.0,
+        brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ),
+        brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fillbrakea0 ) };
+    auto const deceleration { braking_curve::demand( approach, BrakeSystem == TBrakeSystem::Pneumatic ? &braketable : nullptr ) };
     AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
     if( Vel <= VelNext ) {
         return;
@@ -8356,7 +8317,7 @@ TController::adjust_desired_speed_for_final_approach( double const Vel ) {
     AccDesired = (
         BrakeSystem == TBrakeSystem::Pneumatic ?
             // cast iron blocks grip harder as the train comes to a stand
-            shaped_braking_demand(
+            braking_curve::shaped_demand(
                 Vel, VelNext, stoppingroom, fAccGravity,
                 { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } ) :
             ( VelNext * VelNext - Vel * Vel ) / ( 25.92 * stoppingroom ) );

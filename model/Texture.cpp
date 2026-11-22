@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "winheaders.h"
 
 #include <bit>
+#include <utility>
 
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 
@@ -323,6 +324,7 @@ GLint readback_format( GLint const Internalformat ) {
 
 std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> opengl_texture::units = { 0 };
 GLint opengl_texture::m_activeunit = -1;
+std::atomic<bool> opengl_texture::m_unitcachestale { false };
 
 std::unordered_map<GLint, int> opengl_texture::precompressed_formats =
 {
@@ -640,7 +642,7 @@ void opengl_texture::load_STBI()
 {
 	int x, y, n;
 	stbi_set_flip_vertically_on_load(1);
-	uint8_t *image = stbi_load((name + type).c_str(), &x, &y, &n, 4);
+	uint8_t *image = stbi_load(FileOnDisk(name + type).c_str(), &x, &y, &n, 4);
 
 	if (!image) {
 		data_state = resource_state::failed;
@@ -729,9 +731,104 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		is_static = true;
 		is_ready = true;
 	}
-	// the name may be a new one, and the unit active took the texture past the unit cache
+	// the name may be a new one, and the unit active took the texture past the unit cache. this runs on the python upload
+	// thread too (python.threadedupload), so the cache is only marked here: clearing it outright raced the drawing thread
+	// filling it for a multi-bind, and an object got the texture of the one drawn before it for a frame
+	invalidate_unit_cache();
+}
+
+namespace
+{
+// gl objects of an image uploaded by another thread that was never put in place
+void delete_thread_upload(GLuint const Texture, GLsync const Fence)
+{
+	if (Fence != nullptr)
+		glDeleteSync(Fence);
+	glDeleteTextures(1, &Texture);
+}
+} // namespace
+
+void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8_t *raw)
+{
+	// a texture of its own each time: the one drawn from may be in use by the gpu for the drawing context, and writing it from
+	// here, with nothing to order the two contexts, could leave it incomplete or half written for a frame
+	texture_thread_upload upload;
+	upload.width = width;
+	upload.height = height;
+	glGenTextures(1, &upload.id);
+	glBindTexture(target, upload.id);
+	set_filtering();
+	glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
+	glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
+	if (!glGenerateMipmap)
+		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
+	glTexImage2D(target, 0, GL_SRGB8_ALPHA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, raw);
+	if (glGenerateMipmap)
+		glGenerateMipmap(target);
+	glBindTexture(target, 0);
+	if (glFenceSync)
+	{
+		upload.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	}
+	if (upload.fence == nullptr)
+	{
+		// no sync objects, or no fence made: the drawing context can only be sure of the image once the upload is done
+		glFinish();
+	}
+	else
+	{
+		// the drawing context asks for the fence, which signals only once it is on its way to the gpu
+		glFlush();
+	}
+
+	std::optional<texture_thread_upload> superseded;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		superseded = std::exchange(m_threadupload, upload);
+	}
+	if (superseded.has_value())
+	{
+		// the drawing thread didn't take it, so nothing drew from it
+		delete_thread_upload(superseded->id, superseded->fence);
+	}
+}
+
+bool opengl_texture::commit_thread_upload()
+{
+	texture_thread_upload upload;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		if (false == m_threadupload.has_value())
+			return true;
+		// asked without waiting. the image goes in place only once the upload is done, so every context binding it after
+		// has it whole: the extra viewports and the windows of python.displaywindows draw in contexts of their own
+		if (m_threadupload->fence != nullptr)
+		{
+			// a failed query (GL_WAIT_FAILED) isn't asked again: the image would never go in place
+			if (glClientWaitSync(m_threadupload->fence, 0, 0) == GL_TIMEOUT_EXPIRED)
+				return false;
+			glDeleteSync(m_threadupload->fence);
+		}
+		upload = *m_threadupload;
+		m_threadupload.reset();
+	}
+
+	if (id != invalid_id)
+		glDeleteTextures(1, &id);
+	id = upload.id;
+	data_width = static_cast<unsigned int>(upload.width);
+	data_height = static_cast<unsigned int>(upload.height);
+	data_format = GL_SRGB8_ALPHA8;
+	data_components = GL_RGBA;
+	if (type == "internalsrc:")
+	{
+		is_static = true;
+		is_ready = true;
+	}
+	// the name deleted may come back for another texture, and a deleted texture isn't bound any more
 	for (auto &unit : units)
 		unit = -1;
+	return true;
 }
 
 void
@@ -818,7 +915,7 @@ DDSURFACEDESC2 opengl_texture::deserialize_ddsd(std::istream &s)
 void
 opengl_texture::load_DDS() {
 
-    std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
 
@@ -938,7 +1035,7 @@ opengl_texture::load_DDS() {
     if( true == Global.gfx_texture_streaming ) {
         // the data is read by a worker thread, everything else about the texture is known already
         request = std::make_shared<texture_request>();
-        request->file = name + type;
+        request->file = FileOnDisk( name + type );
         request->offset = static_cast<std::size_t>( file.tellg() ) + offset;
         request->size = datasize;
         request->flip = flip;
@@ -1000,7 +1097,7 @@ opengl_texture::load_DDS() {
 
 void
 opengl_texture::load_KTX() {
-    std::ifstream file( name + type, std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary | std::ios::ate ); file.unsetf( std::ios::skipws );
     std::size_t filesize = static_cast<size_t>(file.tellg());   // ios::ate already positioned us at the end of the file
     file.seekg( 0, std::ios::beg ); // rewind the caret afterwards
 
@@ -1061,7 +1158,7 @@ opengl_texture::load_KTX() {
 void
 opengl_texture::load_TEX() {
 
-    std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary ); file.unsetf( std::ios::skipws );
 
     char head[ 5 ];
     file.read( head, 4 );
@@ -1108,7 +1205,7 @@ opengl_texture::load_TEX() {
 void
 opengl_texture::load_TGA() {
 
-    std::ifstream file( name + type, std::ios::binary ); file.unsetf( std::ios::skipws );
+    std::ifstream file( FileOnDisk( name + type ), std::ios::binary ); file.unsetf( std::ios::skipws );
 
     // Read the header of the TGA, compare it with the known headers for compressed and uncompressed TGAs
     unsigned char tgaheader[ 18 ];
@@ -1263,6 +1360,7 @@ opengl_texture::bind(size_t unit) {
         return false;
     }
 
+    sync_unit_cache();
     if (units[unit] == id)
         return true;
     if (GLAD_GL_ARB_direct_state_access)
@@ -1631,6 +1729,25 @@ opengl_texture::reset_unit_cache() {
 }
 
 void
+opengl_texture::invalidate_unit_cache() {
+
+    m_unitcachestale.store( true );
+}
+
+void
+opengl_texture::sync_unit_cache() {
+
+    // a plain load first: bind() calls this for every texture, and a read-modify-write each time would cost more
+    if( ( false == m_unitcachestale.load() )
+     || ( false == m_unitcachestale.exchange( false ) ) ) {
+        return;
+    }
+    for( auto &unit : units ) {
+        unit = -1;
+    }
+}
+
+void
 opengl_texture::set_filtering() const
 {
     // default texture mode
@@ -1884,6 +2001,52 @@ texture_manager::mark_as_needed( texture_handle const Texture, bool const Near )
         // from now on the texture can be released, if no vehicle near enough needs it for a while
         needed = m_releasescantime;
     }
+}
+
+void
+texture_manager::unload( texture_handle const Texture ) {
+
+    if( ( Texture <= 0 )
+     || ( Texture >= static_cast<texture_handle>( m_textures.size() ) ) ) {
+        return;
+    }
+    auto const &record { m_textures[ Texture ] };
+    auto &texture { *record.first };
+    if( ( record.second != resource_timestamp() )
+     || ( texture.id == 0 ) // failed to load
+     || ( true == texture.is_static )
+     || ( true == texture.is_rendertarget )
+     || ( texture.type == "make:" )
+     || ( texture.type == "internalsrc:" ) ) {
+        return;
+    }
+    if( ( texture.data_state == resource_state::loading )
+     && ( texture.request != nullptr ) ) {
+        // read by a worker thread: taken over first, to be dropped with the rest
+        texture.complete_data();
+        if( texture.data_state == resource_state::failed ) {
+            return;
+        }
+    }
+    auto const created { texture.id != opengl_texture::invalid_id };
+    if( ( false == created )
+     && ( texture.data_state != resource_state::good ) ) {
+        // nothing read nor made, e.g. the textures of a material asked for without loading
+        return;
+    }
+    if( true == created ) {
+        // deleted outright: release() would read the texture back from the card with gfx.resource.move, only for it to be dropped
+        ::glDeleteTextures( 1, &texture.id );
+        texture.id = opengl_texture::invalid_id;
+        texture.is_ready = false;
+        // the released gl name can be given to a new texture, the unit cache can't trust it
+        for( auto &unit : opengl_texture::units ) {
+            unit = -1;
+        }
+    }
+    texture.data = std::vector<unsigned char>();
+    texture.data_state = resource_state::none;
+    texture.reload_on_use = true;
 }
 
 // releases gl textures of vehicles not needed nor drawn for a while

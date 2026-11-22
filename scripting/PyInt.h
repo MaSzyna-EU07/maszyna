@@ -67,6 +67,9 @@ struct python_rt
 	int width;
 	int height;
 	std::string image;
+	// gl name of the texture with the last image put in place, for the windows of python.displaywindows (0: none yet). the image
+	// uploaded by a worker gets a texture of its own, so the name changes with each one
+	size_t texture_id{0};
 
 	std::chrono::high_resolution_clock::time_point timestamp;
 };
@@ -80,7 +83,13 @@ class render_task
 	render_task(PyObject *Renderer, std::shared_ptr<dictionary_source> Input, std::shared_ptr<python_rt> Target) : m_renderer(Renderer), m_input(Input), m_target(Target) {}
 	// methods
 	void run();
+	// uploads the image on the drawing thread
 	void upload() const;
+	// uploads the image on a worker with a gl context of its own (python.threadedupload); finish_upload() puts it in place
+	void upload_from_thread();
+	// on the drawing thread: uploads the image, or puts in place the one a worker uploaded. false while the gpu hasn't got
+	// the latter yet, to be called again
+	bool finish_upload() const;
 	void cancel() const;
 	auto target() const -> std::shared_ptr<python_rt>
 	{
@@ -92,6 +101,8 @@ class render_task
 	PyObject *m_renderer{nullptr};
 	std::shared_ptr<dictionary_source> m_input{nullptr};
 	std::shared_ptr<python_rt> m_target{nullptr};
+	// set by upload_from_thread(); read by the drawing thread after the task was handed over under the lock of the queue
+	bool m_uploadedbyworker{false};
 };
 
 class python_taskqueue

@@ -1609,6 +1609,13 @@ bool editor_mode::replace_double_slip(TTrack &Part, editor_track::switch_templat
 			return false;
 		}
 	}
+	// a drive not described for the editor may set the speed or carry the ballast of the slip too: the editor can neither take it
+	// away nor move it to the switches laid anew, which get other names, so the slip is left as it is
+	if (auto const drive{undescribed_drive({switches.begin(), switches.end()})}; false == drive.empty())
+	{
+		state.status = refused(format(STR_C("The slip has the drive %s, not described for the editor, which may also set the speed or carry its ballast: it isn't laid anew"), drive.c_str()));
+		return false;
+	}
 	struct end
 	{
 		TTrack *track;

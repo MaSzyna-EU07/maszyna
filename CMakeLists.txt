@@ -479,6 +479,11 @@ if (ADD_VERSION_SUFFIX)
 	set (SUFFIX "_${SRC_SHORT_DATE}_${GIT_HASH}")
 endif()
 
+# a build without AVX2 says so in its name, so a starter can pick it on a CPU without AVX2
+if (NOT ENABLE_AVX2)
+	set (SUFFIX "${SUFFIX}_noavx2")
+endif()
+
 set(OPENVR_LIBRARY "openvr_api")
 set(OPENVR_INCLUDE_DIR "")
 
@@ -551,6 +556,7 @@ set(CORE_SOURCES
 "scene/sn_utils.cpp"
 "scene/regionfile.cpp"
 "utilities/inionlysettings.cpp"
+"utilities/crashsignals.cpp"
 "scripting/ladderlogic.cpp"
 "scripting/scriptscreenrules.cpp"
 "scripting/scriptscreenkernels.cpp"
@@ -558,10 +564,12 @@ set(CORE_SOURCES
 "simulation/simulationtestrules.cpp"
 "vehicle/aiwire.cpp"
 "vehicle/blackbox.cpp"
+"utilities/physicslog.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
 "vehicle/gaugewrap.cpp"
 "vehicle/drivingaid.cpp"
+"vehicle/brakingcurve.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
 "vehicle/horn.cpp"
