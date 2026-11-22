@@ -22,9 +22,13 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "simulation/simulationtest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/crashsignals.h"
 #include "utilities/physicslog.h"
+#include "version_info.h"
 #include <cstdlib>
 #include <exception>
+#include <new>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -78,8 +82,12 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS *ExceptionInfo)
 		dumpInfo.ExceptionPointers = ExceptionInfo;
 		dumpInfo.ClientPointers = FALSE;
 
-		// Wybrana kombinacja flag
-		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
+		// a small dump by default: the stacks with the memory they point to, the threads with their process and thread
+		// blocks (the command line with the scenery and the vehicle), the modules, the handles and the modules' data
+		// (Global among them). all the memory of the simulator, as large as the memory it took, only with
+		// "crashdump.full yes" in eu07.ini
+		auto const dumpflags{Global.CrashDumpFull ? MiniDumpWithFullMemory : MiniDumpWithDataSegs};
+		MINIDUMP_TYPE dumpType = MINIDUMP_TYPE(dumpflags | MiniDumpWithProcessThreadData | MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory |
 		                                       MiniDumpWithFullMemoryInfo | MiniDumpWithTokenInformation);
 
 		// in test mode nobody is there to close the box, and the run would wait for it until killed
@@ -113,7 +121,7 @@ void finish_log()
 [[noreturn]] void end_test_run(std::string_view const Reason)
 {
 	simulation::test().conclude(simulation::test_result::error, Reason);
-	// the last seconds of the physics logs, which the runner of the tests reads: a second at most is waited for them
+	// the last two seconds of the physics logs, which the runner of the tests reads
 	PhysicsLogs.stop();
 	finish_log();
 	fflush(stdout);
@@ -172,8 +180,14 @@ int main(int argc, char *argv[])
 	SetUnhandledExceptionFilter(CrashHandler);
 #endif
 #endif
+	// on Linux, where no dump is written, the stack of a crash in the log and on the standard error
+	crash_signals::install(VERSION_INFO);
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
+
+	// a start that failed ends with an error code, so whoever started the simulator (the starter) can tell it
+	// from a closing; how the simulator ends after a start that worked stays as it was
+	int exitcode{0};
 
 	// quick short-circuit for standalone e3d export
 	if (argc == 6 && std::string(argv[1]) == "-e3d")
@@ -221,34 +235,54 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
+		// below 0 when the start failed (see eu07_application::init())
+		int initresult{0};
 		try
 		{
-			auto result{Application.init(argc, argv)};
-			if (result == 0)
+			initresult = Application.init(argc, argv);
+			if (initresult == 0)
 			{
-				result = Application.run();
+				Application.run();
 				Application.exit();
 			}
 		}
+		// an exception that ends the simulator is a crash, whether in the start or later: it says what it was in the
+		// log and ends with an error code
 		catch (std::bad_alloc const &Error)
 		{
 			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
 			std::string msg = "Simulator crash occured :(\n";
 			msg += Error.what();
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+			exitcode = 1;
+		}
+#else
+		// elsewhere one not caught here ends the simulator through std::terminate, with no word in the log. on
+		// Windows it is left to CrashHandler, whose dump shows where it was thrown
+		catch (std::exception const &Error)
+		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #endif
-		// the last seconds of the physics logs, a second at most, also after an error caught above; Application.exit() stops them
+		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
 		// otherwise, and a second stop only writes what came since
 		PhysicsLogs.stop();
+		// after a failed start or an error caught above the log thread still runs, and what it hasn't written yet
+		// (why the start failed) would go with the process. after Application.exit() it has stopped already
+		finish_log();
+		if (initresult < 0)
+			exitcode = 1;
 	}
 #ifndef _WIN32
 	fflush(stdout);
 	fflush(stderr);
 #endif
-	std::_Exit(0); // skip destructors, there are ordering errors which causes segfaults
+	std::_Exit(exitcode); // skip destructors, there are ordering errors which causes segfaults
 }

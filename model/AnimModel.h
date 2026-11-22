@@ -225,6 +225,7 @@ public:
     float fOffTime { 1.f / 2 };// { 60.f / 45.f / 2 }; // były stałymi, teraz mogą być zmienne dla każdego egzemplarza
 //    float fTransitionTime { fOnTime * 0.9f }; // time
     bool m_transition { true }; // smooth transition between light states
+    bool m_lightsanimated { false }; // the lights were brought to their state at least once
     unsigned int m_framestamp { 0 }; // id of last rendered gfx frame
 
     // true if this instance is eligible for the batched/instanced render path:

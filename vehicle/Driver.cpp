@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
+#include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
 #include "vehicle/timetableservice.h"
 #include "world/mtable.h"
@@ -212,6 +213,7 @@ void TSpeedPos::Clear()
 	fSectionVelocityDist = 0.0; //brak długości
     fPointDist = 0.0;
     fDist = 0.0;
+    bSeenAhead = false;
     vPos = glm::dvec3(0, 0, 0);
     trTrack = nullptr; // brak wskaźnika
 };
@@ -328,6 +330,9 @@ bool TSpeedPos::Update()
         // trzeba zazanaczyć, że minięty
         iFlags |= spElapsed;
     }
+    else {
+        bSeenAhead = true;
+    }
     if (iFlags & spTrack) {
         // road/track
         if (trTrack) {
@@ -413,9 +418,18 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
+// how far behind the head an event found in the scan may lie and still count as one the head had ahead [m]
+constexpr double SeenAheadTolerance { 5.0 };
+
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
+    // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
+    // may come out a few metres behind it: those still count as seen ahead. the price is that a train set less than
+    // the tolerance past a signal at stop is still reported to pass it; a train standing that close to a signal can't
+    // be told from one stopped just short of it, which really passes the signal if it goes on
+    bSeenAhead = ( dist >= -SeenAheadTolerance );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
@@ -910,6 +924,7 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
 {
     if( Passedbefore
      || false == TestFlag( Point.iFlags, spElapsed )
+     || false == Point.bSeenAhead // found already behind the head: the train stood across it, it didn't pass it
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
@@ -2346,10 +2361,10 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
     }
     TableClear();
 
-    // the logs of all but the road vehicles, begun at once as they always were. one of a train only at its first line
-    // (update_logs): every crew is made primary here, and the drivers but one of a train with crews in more vehicles
-    // are made passive before it starts, so they get no file with only the header
-    if( WriteLogFlag && false == drives_road_vehicle() ) {
+    // the logs of all, begun at once as they always were. one of a train only at its first line (update_logs): every
+    // crew is made primary here, and the drivers but one of a train with crews in more vehicles are made passive
+    // before it starts, so they get no file with only the header
+    if( WriteLogFlag ) {
         begin_physicslog();
     }
 
@@ -5394,38 +5409,38 @@ std::string_view TController::physicslog_header() {
            "\r\n";
 }
 
-physicslog_values TController::physicslog_line() const {
-    // the values only: the writer of the logs makes them into text on its own thread
-    physicslog_values line;
-    line.time = ElapsedTime;
-    line.wheelspeed = fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot);
-    line.acceleration = mvControlling->AccS;
-    line.couplerdistance = mvOccupied->Couplers[1].Dist;
-    line.couplerforce = mvOccupied->Couplers[1].CForce;
-    line.tractionforce = mvOccupied->Ft;
-    line.frictionforce = mvOccupied->Ff;
-    line.brakeforce = mvOccupied->Fb;
-    line.brakepressure = mvOccupied->BrakePress;
-    line.pipepressure = mvOccupied->PipePress;
-    line.motorcurrent = mvControlling->Im;
-    line.mainctrl = static_cast<int>(mvControlling->MainCtrlPos);
-    line.scndctrl = static_cast<int>(mvControlling->ScndCtrlPos);
-    line.brakectrl = mvOccupied->fBrakeCtrlPos;
-    line.localbrake = mvOccupied->LocalBrakePosA;
-    line.direction = static_cast<int>(mvControlling->DirActive);
-    line.command = ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() );
-    line.value1 = mvOccupied->CommandIn.Value1;
-    line.value2 = mvOccupied->CommandIn.Value2;
-    line.security = static_cast<int>(mvControlling->SecuritySystem.is_blinking());
-    line.wheelslip = static_cast<int>(mvControlling->SlippingWheels);
-    // floats, as the stream wrote them: widened to double
-    line.enginetemperature = mvControlling->dizel_heat.Ts;
-    line.oiltemperature = mvControlling->dizel_heat.To;
-    line.watertemperature = mvControlling->dizel_heat.temperatura1;
-    line.wateraux = mvControlling->dizel_heat.temperatura2;
-    // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
-    line.vehiclespeed = mvOccupied->V * 3.6;
-    return line;
+std::string TController::physicslog_line() const {
+    std::ostringstream line;
+    line << std::fixed << std::setprecision( 4 )
+        << ElapsedTime << " "
+        << fabs(11.31 * mvOccupied->WheelDiameter * mvOccupied->nrot) << " "
+        << mvControlling->AccS << " "
+        << mvOccupied->Couplers[1].Dist << " "
+        << mvOccupied->Couplers[1].CForce << " "
+        << mvOccupied->Ft << " "
+        << mvOccupied->Ff << " "
+        << mvOccupied->Fb << " "
+        << mvOccupied->BrakePress << " "
+        << mvOccupied->PipePress << " "
+        << mvControlling->Im << " "
+        << int(mvControlling->MainCtrlPos) << " "
+        << int(mvControlling->ScndCtrlPos) << " "
+        << mvOccupied->fBrakeCtrlPos << " "
+        << mvOccupied->LocalBrakePosA << " "
+        << int(mvControlling->DirActive) << " "
+        << ( mvOccupied->CommandIn.Command.empty() ? "none" : mvOccupied->CommandIn.Command.c_str() ) << " "
+        << mvOccupied->CommandIn.Value1 << " "
+        << mvOccupied->CommandIn.Value2 << " "
+        << int(mvControlling->SecuritySystem.is_blinking()) << " "
+        << int(mvControlling->SlippingWheels) << " "
+        << mvControlling->dizel_heat.Ts << " "
+        << mvControlling->dizel_heat.To << " "
+        << mvControlling->dizel_heat.temperatura1 << " "
+        << mvControlling->dizel_heat.temperatura2 << " "
+        // vehicle speed [km/h], the second column is the wheel speed, which stays at 0 while the wheels are locked in a skid
+        << mvOccupied->V * 3.6
+        << "\r\n";
+    return line.str();
 }
 
 void TController::begin_physicslog()
@@ -8220,54 +8235,6 @@ uphill_coasting_speed( double const Distance, double const Gravity ) {
     return 3.6 * std::sqrt( 2.0 * std::max( 0.01, -Gravity ) * std::max( 0.0, Distance ) );
 }
 
-// resultant acceleration [m/s2] to ask for now so that a steady application of the pneumatic brake takes the train
-// from Velocity down to Target [km/h] over Distance [m], with the brake force following the speed the way the
-// consist brake table says it does (cast iron blocks grip harder as the train slows)
-struct consist_brake_table {
-    double const *a0; // deceleration at handle position 1, by speed
-    double const *a1; // deceleration added by each quarter of a position, by speed
-    int size; // entries, up to the vehicle's top speed
-    double vmax; // the vehicle's top speed [km/h]
-
-    // deceleration [m/s2] of a full service application at Kmh
-    double full_braking( double const Kmh ) const {
-        auto const index { std::clamp( static_cast<int>( size * Kmh / std::max( 1.0, vmax ) ), 1, size ) };
-        return std::max( 0.01, a0[ index ] + 12.0 * a1[ index ] ); }
-};
-
-static double
-shaped_braking_demand(
-    double const Velocity, double const Target, double const Distance, double const Gravity,
-    consist_brake_table const &Table ) {
-
-    auto const fullbraking = [&Table]( double const Kmh ) {
-        return Table.full_braking( Kmh ); };
-    auto const travel = [Velocity, Target, Gravity, &fullbraking]( double const Ratio ) {
-        auto const steps { 24 };
-        auto const step { ( Velocity - Target ) / steps };
-        auto distance { 0.0 };
-        for( auto i { 0 }; i < steps; ++i ) {
-            auto const kmh { Target + ( i + 0.5 ) * step };
-            auto const deceleration { Ratio * fullbraking( kmh ) - Gravity };
-            if( deceleration <= 0.001 ) {
-                return std::numeric_limits<double>::max();
-            }
-            distance += ( kmh / 3.6 ) * ( step / 3.6 ) / deceleration;
-        }
-        return distance; };
-
-    auto low { 0.0 };
-    auto high { 3.0 };
-    if( travel( high ) > Distance ) {
-        return Gravity - high * fullbraking( Velocity );
-    }
-    for( auto i { 0 }; i < 30; ++i ) {
-        auto const middle { 0.5 * ( low + high ) };
-        ( travel( middle ) > Distance ? low : high ) = middle;
-    }
-    return Gravity - high * fullbraking( Velocity );
-}
-
 // outside of max safe range: follow the braking curve down to the speed ahead, Vel is the present speed in the
 // direction of travel
 void
@@ -8294,43 +8261,19 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
         ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
             stopping_margin() : // the same stopping point as the final approach
             VelNext * braking_distance_multiplier( static_cast<float>( VelNext ) ) );
-    // a pneumatic brake acts on the state the train will be in once it has responded; while the
-    // train is still speeding up, plan the deceleration from there, so more is asked for at once
-    auto velocity { Vel };
-    auto distance { ActualProximityDist };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic )
-     && ( AbsAccS > 0.0 ) ) {
-        auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
-        velocity = Vel + 3.6 * horizon * AbsAccS;
-        distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( Vel + velocity ) * 0.5 / 3.6 * horizon );
-    }
-    auto const brakingroom {
-        std::max(
-            distance - brakingpointoffset,
-            std::min(
-                distance,
-                brakingpointoffset ) ) };
-    auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
-        // follow the shape of the consist brake force over speed rather than assume a constant
-        // deceleration, over the distance left once the brake has had time to fill (while the
-        // train is still speeding up, the prediction above has taken that off already)
-        auto room { brakingroom };
-        if( ( AbsAccS <= 0.0 )
-         && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
-            // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
-            // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
-            // independent brake, which leaves the train brake handle where it is, kept braking earlier
-            // and earlier the whole way in, to crawl the last tens of metres to the stop point
-            auto const brakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
-            room = std::max(
-                0.5 * brakingroom,
-                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
-        }
-        deceleration = shaped_braking_demand(
-            velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
-            { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
-    }
+    // both plans of a pneumatic brake are made from the brake table of the consist; with none (in shunting it isn't
+    // worked out) the braking curve is the constant deceleration over the distance left, as before them
+    braking_curve::brake_table const braketable { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax };
+    // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
+    // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
+    // independent brake, which leaves the train brake handle where it is, kept braking earlier
+    // and earlier the whole way in, to crawl the last tens of metres to the stop point
+    auto const fillbrakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
+    braking_curve::approach const approach {
+        Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS, BrakeCtrlPosition > 0.0,
+        brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ),
+        brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fillbrakea0 ) };
+    auto const deceleration { braking_curve::demand( approach, BrakeSystem == TBrakeSystem::Pneumatic ? &braketable : nullptr ) };
     AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
     if( Vel <= VelNext ) {
         return;
@@ -8381,7 +8324,7 @@ TController::adjust_desired_speed_for_final_approach( double const Vel ) {
     AccDesired = (
         BrakeSystem == TBrakeSystem::Pneumatic ?
             // cast iron blocks grip harder as the train comes to a stand
-            shaped_braking_demand(
+            braking_curve::shaped_demand(
                 Vel, VelNext, stoppingroom, fAccGravity,
                 { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } ) :
             ( VelNext * VelNext - Vel * Vel ) / ( 25.92 * stoppingroom ) );
