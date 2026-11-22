@@ -100,6 +100,13 @@ void main()
     float snowTr  = 0.0;
     float wet = 0.0;
     snSlot = int(param[2].z + 0.5) - 1;
+    // the material without its slot (the opengl renderer may give the glass a fresh copy of the material after the weather
+    // changed, without it): the first glass whose snow the simulation keeps
+    for (int s = 0; (snSlot < 0) && (s < WATER_SLOTS); ++s)
+    {
+        if (water_header[s].z > 0.5)
+            snSlot = s;
+    }
     if ((snSlot >= 0) && (snSlot < WATER_SLOTS) && water_snow_map(uint(snSlot), snMap))
     {
         // the sprites coming within the texel of the layer at the pixel (water_snowlayer.comp) laid at the pixel, sharp from the

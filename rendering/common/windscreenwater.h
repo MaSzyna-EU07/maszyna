@@ -124,6 +124,8 @@ class windscreen_water
 	std::array<glass, gl::WATER_SLOTS> m_glasses{};
 	std::size_t m_glasscount{0};
 	int m_layerslot{-1}; // the glass with the layer of the snow, -1 none
+	std::array<int, gl::WATER_SLOTS> m_logged{-1, -1, -1, -1}; // what the log last said of each glass (baked, snow, the shader, simulated)
+	int m_layerlogged{-1}; // what the log last said of the layer of the snow
 	glm::vec4 m_bladesbefore{-1.f};
 	double m_time{0.0}; // seconds the simulation runs
 	std::uint32_t m_step{0};
