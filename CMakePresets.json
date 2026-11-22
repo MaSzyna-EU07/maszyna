@@ -1,0 +1,24 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-openvr",
+      "displayName": "Windows x64 SteamVR (OpenGL)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/vr",
+      "cacheVariables": {
+        "WITH_OPENVR": "ON",
+        "WITH_OPENGL_MODERN": "ON",
+        "WITH_BETTER_RENDERER": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-openvr",
+      "configurePreset": "windows-openvr",
+      "configuration": "RelWithDebInfo"
+    }
+  ]
+}
