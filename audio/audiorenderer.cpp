@@ -75,6 +75,14 @@ std::optional<ALCint> switch_value( std::string_view const Name ) {
     return std::nullopt;
 }
 
+// returns: name of an output device without the prefix OpenAL Soft may put before the names of the devices it lists on
+// Windows. it opens a device named either way, so the name in eu07.ini can come with it or without
+std::string_view bare_output_name( std::string_view const Name ) {
+
+    constexpr std::string_view prefix { "OpenAL Soft on " };
+    return Name.starts_with( prefix ) ? Name.substr( prefix.size() ) : Name;
+}
+
 // opens the output device of sound.openal.renderer. the library names devices in UTF-8, but the starter writes eu07.ini
 // in code page 1250, so a name that fails as written is tried as 1250 text too. a device found neither way, unplugged
 // say, leaves the default one rather than no sound at all: Fallback is set then, and the name stays as it is, for
@@ -418,20 +426,57 @@ openal_renderer::reopen_output_on( ALCchar const *Devicename ) {
     return reopened && output_connected();
 }
 
+// returns: the name under which the library lists the device set in eu07.ini, or nothing if it isn't listed. the name
+// is matched as written and read as code page 1250 text (the starter writes eu07.ini in it), with or without the prefix
+// of the library. every attempt to open a device stops the playback for a moment, even one that fails, so a device that
+// isn't there isn't tried
+std::optional<std::string>
+openal_renderer::find_preferred_output() const {
+
+    if( Global.AudioRenderer.empty() ) { return std::nullopt; }
+    auto const devices { output_devices() };
+    auto const listed = [&devices]( std::string_view const Name ) -> std::optional<std::string> {
+        auto const match { std::ranges::find_if( devices, [Name]( std::string_view const Device ) {
+            return bare_output_name( Device ) == bare_output_name( Name ); } ) };
+        if( match == std::end( devices ) ) { return std::nullopt; }
+        return *match;
+    };
+    if( auto name { listed( Global.AudioRenderer ) } ) { return name; }
+    if( auto const utf8name { win1250_to_utf8( Global.AudioRenderer ) }; utf8name != Global.AudioRenderer ) {
+        return listed( utf8name );
+    }
+    return std::nullopt;
+}
+
 // opens the output anew: the device set in eu07.ini if there is one and it works, the default one of the system otherwise
 void
 openal_renderer::reopen_output( output_follower::clock::time_point const Now ) {
 
     auto const pinned { false == Global.AudioRenderer.empty() };
-    if( pinned && reopen_output_on( Global.AudioRenderer.c_str() ) ) {
-        m_output.succeeded( false, Now );
-        WriteLog( std::format( "sound: audio output changed, reopened playback on \"{}\"", output_name() ) );
-        return;
+    if( pinned ) {
+        auto name { find_preferred_output() };
+        if( false == name.has_value() && false == output_connected() ) {
+            // not listed under a name that matches, but there is no sound to break anyway: the library may know it still
+            name = Global.AudioRenderer;
+        }
+        if( name.has_value() && reopen_output_on( name->c_str() ) ) {
+            Global.AudioRenderer = *name;
+            m_output.succeeded( false, Now );
+            WriteLog( std::format( "sound: audio output changed, reopened playback on \"{}\"", output_name() ) );
+            return;
+        }
     }
+    reopen_default_output( pinned, Now );
+}
+
+// opens the default output of the system. Pinned: it stands in for the device set in eu07.ini
+void
+openal_renderer::reopen_default_output( bool const Pinned, output_follower::clock::time_point const Now ) {
+
     if( reopen_output_on( nullptr ) ) {
-        m_output.succeeded( pinned, Now );
+        m_output.succeeded( Pinned, Now );
         WriteLog( std::format( "sound: audio output changed, reopened playback on \"{}\"{}", output_name(),
-            pinned ? " (the default output; the device set in eu07.ini isn't available)" : "" ) );
+            Pinned ? " (the default output; the device set in eu07.ini isn't available)" : "" ) );
         return;
     }
     if( m_output.failed( Now ) ) {
@@ -440,16 +485,28 @@ openal_renderer::reopen_output( output_follower::clock::time_point const Now ) {
     }
 }
 
-// while the default output plays in place of the device set in eu07.ini: moves back to that device if it works again.
-// if it doesn't the library keeps the playback where it is
+// while the default output plays in place of the device set in eu07.ini: moves back to that device if it is listed again
 void
 openal_renderer::restore_preferred_output( output_follower::clock::time_point const Now ) {
 
-    if( Global.AudioRenderer.empty() ) { return; }
-    if( reopen_output_on( Global.AudioRenderer.c_str() ) ) {
+    auto const name { find_preferred_output() };
+    if( false == name.has_value() ) {
+        // some other device came, or the one set isn't listed yet: nothing tried, the playback goes on undisturbed
+        m_output.restore_failed( Now );
+        return;
+    }
+    if( reopen_output_on( name->c_str() ) ) {
+        Global.AudioRenderer = *name;
         m_output.succeeded( false, Now );
         WriteLog( std::format( "sound: the audio device set in eu07.ini is available again, reopened playback on \"{}\"", output_name() ) );
+        return;
     }
+    WriteLog( std::format( "sound: warning: the audio device \"{}\" set in eu07.ini is listed again but doesn't play, staying on the default output", *name ) );
+    if( false == output_connected() ) {
+        // the device opened but didn't start. the library had let go of the default output before it tried, so that's gone too
+        reopen_default_output( true, Now );
+    }
+    m_output.restore_failed( Now );
 }
 
 // keeps the sound on an output that works. OpenAL neither moves to another output on its own nor recovers one it lost:
@@ -824,7 +881,7 @@ openal_renderer::init_caps() {
         }
     }
     if( m_alcReopenDeviceSOFT != nullptr && false == m_usedeviceevents ) {
-        WriteLog( "sound: warning: extension ALC_SOFT_system_events not found; a lost audio output is recovered, a change of the default one isn't followed" );
+        WriteLog( "sound: warning: extension ALC_SOFT_system_events not found; a lost audio output is recovered, a change of the default one and the return of the device set in eu07.ini aren't followed" );
     }
     m_output.start( pinned, fallback, output_follower::clock::now() );
 
@@ -1034,7 +1091,12 @@ openal_renderer::apply_device_settings() {
     auto applied { false };
     if( m_alcReopenDeviceSOFT != nullptr ) {
         auto const pinned { false == Global.AudioRenderer.empty() };
-        applied = pinned && reopen_output_on( Global.AudioRenderer.c_str() );
+        if( pinned ) {
+            // the playback is opened anew here anyway, so a name the list doesn't match is tried too
+            auto const name { find_preferred_output().value_or( Global.AudioRenderer ) };
+            applied = reopen_output_on( name.c_str() );
+            if( applied ) { Global.AudioRenderer = name; }
+        }
         auto const fallback { pinned && false == applied };
         if( false == applied ) {
             // no device set, or the one set isn't there: the default one, which follow_output() leaves once the other is back

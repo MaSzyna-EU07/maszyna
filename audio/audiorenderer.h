@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <stack>
 #include <cstdint>
 #include <atomic>
+#include <optional>
 
 // Definicje dla OpenAL 1.25 jeśli brakuje
 #ifndef ALC_CONNECTED
@@ -158,6 +159,8 @@ private:
     void follow_output();
     void reopen_output( output_follower::clock::time_point const Now );
     void restore_preferred_output( output_follower::clock::time_point const Now );
+    void reopen_default_output( bool const Pinned, output_follower::clock::time_point const Now );
+    std::optional<std::string> find_preferred_output() const;
     bool reopen_output_on( ALCchar const *Devicename );
     bool output_connected() const;
     std::string output_name() const;
