@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46water.h"
 
+#include "model/Texture.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
 
@@ -21,6 +22,16 @@ namespace
 GLuint groups(std::size_t const Count)
 {
 	return static_cast<GLuint>((Count + gl::WATER_GROUP_SIZE - 1) / gl::WATER_GROUP_SIZE);
+}
+
+// a texture a kernel reads, made ready: read from its file first when nothing read it yet. the opengl renderer reads a texture
+// when a draw binds it, and the glasses never draw the mask of their wipers (only the kernels read it), so without this the mask
+// stayed unread and the glass never got its map
+bool kernel_texture(ITexture &Texture)
+{
+	if (auto *source{dynamic_cast<texture_source *>(&Texture)}; (source != nullptr) && (source->data_state == resource_state::none) && (false == source->is_rendertarget))
+		source->load();
+	return Texture.create() && Texture.get_is_ready() && (Texture.get_id() != 0);
 }
 
 } // namespace
@@ -116,7 +127,7 @@ bool opengl46_windscreen_water::gpu_bake(std::size_t const Slot, texture_handle 
 	if ((!m_storage) || (Mask == null_handle))
 		return false;
 	auto &texture{GfxRenderer->Texture(Mask)};
-	if ((false == texture.create()) || (false == texture.get_is_ready()) || (texture.get_id() == 0))
+	if (false == kernel_texture(texture))
 		return false;
 	m_storage->bind_base();
 	m_block->update(Block);
@@ -135,8 +146,7 @@ bool opengl46_windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_h
 		return false;
 	auto &atlas{GfxRenderer->Texture(Atlas)};
 	auto &normal{GfxRenderer->Texture(Normal)};
-	if ((false == atlas.create()) || (false == atlas.get_is_ready()) || (atlas.get_id() == 0) || (false == normal.create()) || (false == normal.get_is_ready()) ||
-	    (normal.get_id() == 0))
+	if ((false == kernel_texture(atlas)) || (false == kernel_texture(normal)))
 		return false;
 	m_storage->bind_base();
 	m_block->update(Block);
