@@ -393,8 +393,8 @@ void editor_ui::render_rail()
 			m_trayforced = false == m_trayshown;
 	}
 	ImGui::End();
-	// Esc puts the drawer away, when nothing is typed into
-	if (m_drawer != drawer::none && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && false == ImGui::GetIO().WantTextInput && false == ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	// Esc puts the drawer away, when nothing is typed into and it didn't close a list or menu in this frame
+	if (m_drawer != drawer::none && false == m_escapetaken && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && false == ImGui::GetIO().WantTextInput && false == ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 		m_drawer = drawer::none;
 }
 
@@ -902,8 +902,10 @@ void editor_ui::register_settings()
 
 void editor_ui::render_()
 {
-	// the keyboard navigation of ImGui is off, so Esc would not close an open list or menu by itself
-	if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	// the keyboard navigation of ImGui is off, so Esc would not close an open list or menu by itself.
+	// that Esc is spent on the list: the drawer it was opened in stays
+	m_escapetaken = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+	if (m_escapetaken)
 		ImGui::ClosePopupsExceptModals();
 	// the keys don't get to the editor from a field being typed in: Ctrl+S leaves the field, what was typed is taken, then the scenery saved
 	if (ImGui::GetIO().WantTextInput && false == ImGui::GetIO().KeyShift && (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) && ImGui::IsKeyPressed(ImGuiKey_S, false))
