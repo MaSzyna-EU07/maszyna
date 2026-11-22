@@ -168,20 +168,19 @@ struct lump_grid
 };
 
 // the grids of the lumps, coming one after the other as the snow piles up, each on the ones before, in the order they are laid
-// (front to back, the top one first): mostly icy fleece (the puffs and clumps of the first two rows of the atlas, tiles 0-7),
-// more and bigger, closing the glass by 2-3 mm; now and then a single lump on top: packed snow (tiles 10-13) or, more rarely, a
-// wet one with its film (tiles 8, 9)
+// (front to back, the top one first): all of them icy fleece (the dense puffs and clumps, tiles 2-5), more and bigger, closing
+// the glass by 2-3 mm; now and then a single lump on top: packed snow (tiles 10-13) or a wet one with its film (8, 9)
 const int SN_GRIDS = 9;
 const lump_grid sn_grids[SN_GRIDS] = lump_grid[SN_GRIDS](
-    lump_grid(vec2(0.4, 0.6), 271u, vec2(0.6, 2.0), vec2(1.2, 1.6), 8, 6, 0.12),
-    lump_grid(vec2(0.75), 251u, vec2(1.4, 2.8), vec2(2.0, 3.0), 0, 8, 1.0),
-    lump_grid(vec2(0.0, 0.5), 233u, vec2(1.2, 2.4), vec2(2.0, 3.0), 0, 8, 1.0),
-    lump_grid(vec2(0.5, 0.0), 199u, vec2(1.0, 2.0), vec2(2.0, 3.0), 0, 8, 1.0),
-    lump_grid(vec2(0.75, 0.25), 151u, vec2(0.7, 1.6), vec2(1.8, 2.8), 4, 4, 1.0),
-    lump_grid(vec2(0.25, 0.75), 113u, vec2(0.4, 1.2), vec2(1.8, 2.8), 4, 4, 1.0),
-    lump_grid(vec2(0.25), 97u, vec2(0.2, 0.9), vec2(1.4, 2.4), 0, 4, 1.0),
-    lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(1.4, 2.4), 0, 4, 1.0),
-    lump_grid(vec2(0.0), 31u, vec2(0.02, 0.35), vec2(1.2, 2.0), 0, 4, 1.0));
+    lump_grid(vec2(0.4, 0.6), 271u, vec2(0.6, 2.0), vec2(1.2, 1.6), 8, 6, 0.03),
+    lump_grid(vec2(0.75), 251u, vec2(1.4, 2.8), vec2(2.0, 3.0), 4, 2, 1.0),
+    lump_grid(vec2(0.0, 0.5), 233u, vec2(1.2, 2.4), vec2(2.0, 3.0), 4, 2, 1.0),
+    lump_grid(vec2(0.5, 0.0), 199u, vec2(1.0, 2.0), vec2(2.0, 3.0), 4, 2, 1.0),
+    lump_grid(vec2(0.75, 0.25), 151u, vec2(0.7, 1.6), vec2(1.8, 2.8), 4, 2, 1.0),
+    lump_grid(vec2(0.25, 0.75), 113u, vec2(0.4, 1.2), vec2(1.8, 2.8), 4, 2, 1.0),
+    lump_grid(vec2(0.25), 97u, vec2(0.2, 0.9), vec2(1.4, 2.4), 2, 4, 1.0),
+    lump_grid(vec2(0.5), 77u, vec2(0.15, 0.7), vec2(1.4, 2.4), 2, 4, 1.0),
+    lump_grid(vec2(0.0), 31u, vec2(0.02, 0.35), vec2(1.2, 2.0), 2, 4, 1.0));
 
 const float SN_COVERED = 0.998;   // the snow over the pixel covering it: the sprites under it are not looked at
 
@@ -220,7 +219,8 @@ bool snFlakeCell(vec2 p, ivec2 cell, vec2 perUV, float pixelUV, float reach, ino
     float alpha = smoothstep(0.03, 0.1, q.y);
     if (crystal)
     {
-        tile = min(int(kind * 4.0), 3);                    // small icy puffs (the first row of the atlas)
+        tile = min(int(kind * 4.0), 3);                    // the small clump, the dots and the scattered crystals (tiles 0, 1, 6, 7)
+        tile += (tile < 2) ? 0 : 4;
         alpha = snow_thin;
     }
     snSprite(local, tile, alpha, snTone(q, random), rot, flip, snLod(pixelUV, size / max(perUV.x, perUV.y)), 1.0, acc);
