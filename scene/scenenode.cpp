@@ -87,8 +87,6 @@ shape_node::shapenode_data::serialize( std::ostream &Output ) const {
     }
 }
 
-namespace {
-
 // legacy scenery shapes frequently come with all-zero normals (e.g. pkp/szafa-przek1.inc).
 // the shaders normalize the interpolated normal, which turns a zero vector into NaN; with the gl46
 // lighting (ambient sh, envmap, sky occlusion all depend on the normal) that blackens the whole surface.
@@ -117,8 +115,6 @@ fill_missing_normals( std::vector<world_vertex> &Vertices ) {
         }
     }
 }
-
-} // namespace
 
 // restores content of the struct from provided input stream
 void
