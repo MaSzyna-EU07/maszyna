@@ -560,7 +560,8 @@ void ui::map_panel::render_grid(ImDrawList *draw_list, ImVec2 origin, glm::vec2 
 	}
 }
 
-void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform)
+void ui::map_panel::render_map_lines(
+	ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform, double const scale_length)
 {
 	m_hovered_map_object.reset();
 	ImVec2 const mouse_position = ImGui::GetMousePos();
@@ -716,7 +717,7 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 		{
 			sem->light_caches.resize(sem->models.size());
 			auto const light_cache_now = std::chrono::steady_clock::now();
-			auto draw_signal_head = [this, &sem, draw_list, &to_screen, &transform, &surface_size,
+			auto draw_signal_head = [this, &sem, draw_list, &to_screen, &transform, &surface_size, scale_length,
 			                         mouse_over_map, mouse_position, light_cache_now,
 			                         origin](TAnimModel *model, glm::vec3 const &location,
 			                                 map::semaphore::light_cache &cache) {
@@ -807,8 +808,8 @@ void ui::map_panel::render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::
 					dir = glm::normalize(dir);
 				glm::vec2 const normal(-dir.y, dir.x);
 				glm::vec2 const post_direction(dir.x, dir.y);
-				float constexpr post_segment_length = 8.0f;
-				float constexpr post_length = post_segment_length * 6.0f;
+				float const post_length = 48.0f * static_cast<float>(std::clamp(100.0 / scale_length, 0.0, 1.0));
+				float const post_segment_length = post_length / 6.0f;
 				ImVec2 const post_start(center.x, center.y);
 				ImVec2 const post_end(
 					center.x + post_direction.x * post_length,
@@ -1199,6 +1200,8 @@ void ui::map_panel::render_contents()
 	transform = glm::translate(transform, glm::vec3(translate.x, 0.0f, translate.y));
 	transform = glm::scale(transform, glm::vec3(zoom));
 	transform = glm::translate(glm::mat4(1.0f), glm::vec3(follow_screen_offset.x, 0.0f, follow_screen_offset.y)) * transform;
+	double const scale_length = 110.0 / (base_pixels_per_meter * zoom);
+	double const scale_distance = nice_distance_step(scale_length);
 
 	prepare_static_scene_cache();
 	collect_map_geometry(transform);
@@ -1213,7 +1216,7 @@ void ui::map_panel::render_contents()
 		ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y),
 		IM_COL32(18, 22, 26, 255));
 	render_grid(draw_list, screen_origin, surface_size, transform);
-	render_map_lines(draw_list, screen_origin, surface_size, transform);
+	render_map_lines(draw_list, screen_origin, surface_size, transform, scale_length);
 	if (map_has_vertex_budget(draw_list, 64))
 	{
 		TCamera const &camera = Global.pCamera;
@@ -1414,7 +1417,6 @@ void ui::map_panel::render_contents()
 		float const pixels_per_meter = glm::length(glm::vec2(scale_unit.x - scale_origin.x, scale_unit.y - scale_origin.y));
 		if (pixels_per_meter > 0.0f && std::isfinite(pixels_per_meter))
 		{
-			double const scale_distance = nice_distance_step(110.0 / pixels_per_meter);
 			float const scale_width = static_cast<float>(scale_distance * pixels_per_meter);
 			char label[32];
 			if (scale_distance >= 1000.0)

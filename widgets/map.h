@@ -165,7 +165,7 @@ class map_panel : public ui_panel
 	void prepare_static_view_cache(glm::mat4 const &transform);
 	void collect_map_geometry(glm::mat4 transform);
 	void render_grid(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform);
-	void render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform);
+	void render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform, double scale_length);
 	void render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
 
 	bool init_done = false;
