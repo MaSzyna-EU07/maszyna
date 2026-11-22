@@ -1,0 +1,30 @@
+{
+  "description": "Crew events on a road vehicle (eu07/maszyna#510): a car with an AI driver runs along the road d3 of td.scn, at 50 km/h, the top speed its trainset gives it. 20 s after the start Crew:<vehicle> 0 0 takes the driver off: the car is left with its own brake applied in full, stops and stands. 40 s later Crew:<vehicle> 1 0 puts a driver in again (a road vehicle has no cab to tell by, and takes one all the same), who drives on along the road, with no timetable to cap the speed.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_crew.scn",
+  "vars": {
+    "trainsets": [
+      "trainset 50 d3 0.0 30",
+      "node -1 0 {{vehicle}} dynamic road\\golf none golf 0 headdriver 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "crew": [
+      "event autotest_crew_off putvalues 20 none 0 0 0 Crew:{{vehicle}} 0 0 endevent",
+      "node -1 0 autotest_crew_off_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_off end",
+      "event autotest_crew_on putvalues 60 none 0 0 0 Crew:{{vehicle}} 1 0 endevent",
+      "node -1 0 autotest_crew_on_launcher eventlauncher 0 0 0 -1 none 1034 autotest_crew_on end"
+    ]
+  },
+  "duration": 120,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_golf_td_crew_swap\\] the AI driver leaves" },
+    { "type": "stops_driverless", "vehicle": "{{vehicle}}", "min_speed": 10, "within": 30, "hold": 30 },
+    { "type": "log_contains", "pattern": "Crew: \\[autotest_golf_td_crew_swap\\] an AI driver takes cab A" },
+    { "type": "driver_changes", "vehicle": "{{vehicle}}", "to": "ai", "after": 55, "before": 70 },
+    { "type": "starts", "min_speed": 20, "within": 60 },
+    { "type": "log_lacks", "pattern": "derailed" },
+    { "type": "log_lacks", "pattern": "collided" }
+  ]
+}

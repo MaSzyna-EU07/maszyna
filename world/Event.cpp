@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
+#include "vehicle/crewchange.h"
 #include "rendering/renderer.h"
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
@@ -716,7 +717,8 @@ putvalues_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad )
         if( contains( token, '#' ) ) {
             token.erase( token.find( '#' ) ); // obcięcie unikatowości
         }
-        win1250_to_ascii( token ); // get rid of non-ascii chars
+        // NOTE: the name stays as the scenery spells it, with its polish letters; whoever matches it with the name
+        // a timetable has goes by timetable::stop_point_is_for(), which takes any spelling of the station
         m_input.command_type = TCommandType::cm_PassengerStopPoint;
         // nie do kolejki (dla SetVelocity też, ale jak jest do toru dowiązany)
         m_passive = true;
@@ -781,6 +783,12 @@ putvalues_event::run_() {
         + to_string( m_input.data_value_1, 2 ) + "] ["
         + to_string( m_input.data_value_2, 2 ) + "]" );
 
+    if( crew::is_command( m_input.data_text ) ) {
+        // a driver for the vehicle named in the command, or none (eu07/maszyna#510). not a command for a driver or
+        // a vehicle to take, and it works with nothing setting the event off too (a key, an event launcher)
+        crew::change( crew::parse( m_input.data_text, m_input.data_value_1, m_input.data_value_2 ), m_activator );
+        return;
+    }
     if( m_activator == nullptr ) { return; }
     // zamiana, bo fizyka ma inaczej niż sceneria
     // NOTE: y & z swap, negative x
@@ -2056,6 +2064,69 @@ track_event::export_as_text_( std::ostream &Output ) const {
 
 // prepares event for use
 void
+buckle_event::init() {
+
+    init_targets( simulation::Paths, "track" );
+}
+
+// event type string
+std::string
+buckle_event::type() const {
+
+    return "trackbuckle";
+}
+
+// deserialize() subclass details
+void
+buckle_event::deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) {
+
+    Input.getTokens();
+    Input >> m_buckle.amplitude;
+    m_buckle.amplitude = std::clamp( m_buckle.amplitude, 0.f, static_cast<float>( 1000.0 * track_buckle::most_amplitude ) );
+    Input.getTokens();
+    // the length, the centre and the side, each optional
+    if( false == is_keyword( Input.peek() ) ) {
+        Input >> m_buckle.length;
+        if( m_buckle.length > 0.f ) {
+            m_buckle.length = std::clamp( m_buckle.length, static_cast<float>( track_buckle::least_length ), static_cast<float>( track_buckle::most_length ) );
+        }
+        Input.getTokens();
+    }
+    if( false == is_keyword( Input.peek() ) ) {
+        Input >> m_buckle.centre;
+        Input.getTokens();
+    }
+    if( false == is_keyword( Input.peek() ) ) {
+        auto side { 0.f };
+        Input >> side;
+        m_buckle.side = ( side > 0.f ? 1 : side < 0.f ? -1 : 0 );
+        Input.getTokens();
+    }
+}
+
+// run() subclass details
+void
+buckle_event::run_() {
+
+    WriteLog( "Type: TrackBuckle - [" + to_string( m_buckle.amplitude, 0 ) + " mm]" );
+    for( auto &target : m_targets ) {
+        auto *targettrack = static_cast<TTrack *>( std::get<scene::basic_node *>( target ) );
+        if( targettrack == nullptr ) { continue; }
+        targettrack->buckle_now( m_buckle, "event " + m_name );
+    }
+}
+
+// export_as_text() subclass details
+void
+buckle_event::export_as_text_( std::ostream &Output ) const {
+
+    Output << m_buckle.amplitude << ' ' << m_buckle.length << ' ' << m_buckle.centre << ' ' << m_buckle.side << ' ';
+}
+
+
+
+// prepares event for use
+void
 voltage_event::init() {
     // zmiana napięcia w zasilaczu (TractionPowerSource)
     init_targets( simulation::Powergrid, "power source" );
@@ -2310,6 +2381,7 @@ make_event( cParser &Input, scene::scratch_data &Scratchpad ) {
     else if( type == "multiple" )     { event = new multi_event(); }
     else if( type == "switch" )       { event = new switch_event(); }
     else if( type == "trackvel" )     { event = new track_event(); }
+    else if( type == "trackbuckle" )  { event = new buckle_event(); }
     else if( type == "sound" )        { event = new sound_event(); }
     else if( type == "texture" )      { event = new texture_event(); }
     else if( type == "animation" )    { event = new animation_event(); }

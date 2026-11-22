@@ -20,6 +20,7 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `3wl_v2/3wl.fiz` | 3WL | - | ESt3 | - | ManualBrake | Screw |
 | `430w_v2/430w.fiz` | 430W | - | ESt3AL2HBG300 | - | ManualBrake | Screw |
 | `4e_v1/4e.fiz` | 4E | ElectricSeriesMotor | LSt | FV4a | PneumaticBrake | Screw |
+| `6dg_v1/6dg.fiz` | 6Dg | DumbDE | LSt | MHZ_K8P | PneumaticBrake | Screw |
 | `bdhpumn_v3/bdhpumn.fiz` | BDHPUMN | - | KE | - | ManualBrake | Screw |
 | `bhp_v1/bhp-b.fiz` | BHP | - | ESt3AL2 | - | ManualBrake | Articulated |
 | `br285_v1/br285.fiz` | BR285 | DieselElectric | KE | MHZ_6P | PneumaticBrake | Screw |
@@ -59,8 +60,9 @@ Every `.json` here is a vehicle picked up by `test_fiz.cpp`: record the paramete
 | `su45_v2/301d.fiz` | SU45 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `su46_v2/303d.fiz` | SU46 | DumbDE | LSt | FV4a | PneumaticBrake | Screw |
 | `tem2_v2/tem2a.fiz` | TEM2 | DieselElectric | LSt | M394 | PneumaticBrake | Screw |
+| `vectron_v1/wariant_7w.fiz` | VECTRON | ElectricInductionMotor | EStED | MHZ_K8P | PneumaticBrake | Screw |
 | `wm15_v1/wm15.fiz` | WM15 | Dumb | LSt | FV4a | PneumaticBrake | Screw |
 | `wmb10_v1/wmb10.fiz` | WMB10 | DieselEngine | LSt | FV4a | PneumaticBrake | Screw |
 | `z1_v2/152a.fiz` | Z1 | - | KE | - | ManualBrake | Screw |
 
-The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 218M (V2NList), the SA134 (HTCList) and the 22WEc (ffBrakeList) are there for lists the others lack, the EP05 for its camshaft. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.
+The paths are those of the game's `.fiz` files. `elf_v1/inverter.fiz` is a part the Elf units include, not a vehicle. The 218M (V2NList), the SA134 (HTCList) and the 22WEc (ffBrakeList) are there for lists the others lack, the EP05 for its camshaft, the Vectron for its ED brake lever of its own (SplitEDPneumaticBrake). The 6Dg is there for its universal controller (UCList) setting the power in steps (CtrlValStep), converted alone from the game data of 2026-11 (SVN r9630, which added the key), the others staying as they were. The 214MA stands for the 214M railbus, whose own file repeats a section (TurboPos and MotorParamTable twice), which the definitions here can't hold.

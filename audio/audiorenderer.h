@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "audio/audio.h"
 #include "audio/outputfollow.h"
+#include "audio/startsample.h"
 #include "model/ResourceManager.h"
 #include "application/uitranscripts.h"
 
@@ -49,6 +50,9 @@ struct sound_properties {
     sound_category category { sound_category::unknown };
     float gain { 1.f };
     float soundproofing { 1.f };
+    // the soundproofing of what stands between the sound and the listener, without the volume trim of the sounds placed
+    // on top of the listener: what the low-pass filter muffles the sound by (sound.efx.lowpass)
+    float soundproofing_hf { 1.f };
     std::uintptr_t soundproofing_stamp { ~std::uintptr_t{0} };
 };
 
@@ -67,6 +71,7 @@ struct openal_source {
     using buffer_sequence = std::vector<audio::buffer_handle>;
 
     ALuint id { audio::null_resource };
+    ALuint last_buffer { audio::null_resource }; // the buffer queued last, the one left playing once those before it are done
     sound_source *controller { nullptr };
     uint32_sequence sounds;
     int sound_index { 0 };
@@ -123,6 +128,20 @@ public:
     void erase( sound_source const *Controller );
     void update( double const Deltatime );
 
+    // choices the library offers, for the settings
+    std::vector<std::string> output_devices() const;
+    std::vector<std::string> hrtf_profiles() const;
+    std::vector<std::string> resamplers() const;
+    // what the device ended up with: device, mixing rate, output mode, HRTF, resampler
+    std::string device_status() const;
+    // applies changed device options (sound.openal.renderer, outputmode, hrtf, limiter, frequency)
+    // without a restart. returns: false if the library can't do it
+    bool apply_device_settings();
+    // applies changed source options (sound.resampler, doppler, efx.*) to every source
+    void apply_source_settings();
+    // sets the EFX low-pass filter of a source for given soundproofing (sound.efx.lowpass)
+    void soundproofing_filter( ALuint const Source, float const Soundproofing ) const;
+
     glm::dvec3 cached_camerapos;
 
 private:
@@ -130,6 +149,11 @@ private:
     using source_sequence = std::stack<ALuint>;
 
     bool init_caps();
+    void init_extensions();
+    std::vector<ALCint> device_attributes() const;
+    int hrtf_index( std::string const &Name ) const;
+    ALint resampler_index() const;
+    void configure_source( ALuint const Source ) const;
     // keeps the sound on an output that works, see audio::output_follower
     void follow_output();
     void reopen_output( output_follower::clock::time_point const Now );
@@ -157,9 +181,22 @@ private:
     LPALCDEVICEPAUSESOFT m_alcDevicePauseSOFT { nullptr };
     LPALCDEVICERESUMESOFT m_alcDeviceResumeSOFT { nullptr };
     LPALCREOPENDEVICESOFT m_alcReopenDeviceSOFT { nullptr };
+    LPALCRESETDEVICESOFT m_alcResetDeviceSOFT { nullptr };
+    LPALCGETSTRINGISOFT m_alcGetStringiSOFT { nullptr };
+    LPALGETSTRINGISOFT m_alGetStringiSOFT { nullptr };
+    LPALGENFILTERS m_alGenFilters { nullptr };
+    LPALDELETEFILTERS m_alDeleteFilters { nullptr };
+    LPALFILTERI m_alFilteri { nullptr };
+    LPALFILTERF m_alFilterf { nullptr };
+
+    bool m_hasoutputmode { false }; // ALC_SOFT_output_mode
+    bool m_haslimiter { false }; // ALC_SOFT_output_limiter
+    bool m_hasefx { false }; // ALC_EXT_EFX, with its filter entry points
+    ALuint m_lowpassfilter { 0 }; // shared low-pass filter, its parameters are copied to a source when attached
+    ALint m_resampler { -1 }; // index of the resampler set on the sources, or -1 to leave the library's default
 
     bool m_candetectdisconnect { false };
-    ALCint m_contextattributes[3] { 0, 0, 0 };
+    std::vector<ALCint> m_contextattributes; // cached for device reopen
     output_follower m_output; // decides when the device is opened again
 
     // ALC_SOFT_system_events: the system reports output devices coming, going and the default one changing.
