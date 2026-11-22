@@ -350,6 +350,10 @@ vec2 wsFromLayer(vec2 p)
 // the layers: 0 gravity, 1 air. WindShare: how much the air drives the water (0 standing still), WindCos / WindSin: the turn
 // of the layer of the air
 float wsWindShare = 0.0;
+// the layer of the weight turned by a quarter turn at a time so that its rivulets run down the glass in the world, whichever
+// way the texture lies on it (an island of the UV turned or upside down)
+float wsGravCos   = 1.0;
+float wsGravSin   = 0.0;
 float wsWindCos   = 1.0;
 float wsWindSin   = 0.0;
 void wsSetLayer(int layer)
@@ -359,8 +363,8 @@ void wsSetLayer(int layer)
         wsLayerDensity = 1.0 - wsWindShare;
         wsLayerIndex   = 0;
         wsLayerHead    = 1.0;
-        wsLayerCos     = 1.0;
-        wsLayerSin     = 0.0;
+        wsLayerCos     = wsGravCos;
+        wsLayerSin     = wsGravSin;
         wsLayerVaried  = false;
     }
     else
@@ -559,8 +563,9 @@ void drawRivulet(inout Hit hit, Riv r, vec2 sUVr, vec2 rd1, vec2 rd2)
 float wsKept(vec2 cg, float rad, float sCW, float sCH, float gridSize)
 {
     wsSetLayer(0);
-    Riv  rv = getRiv(floor(cg / vec2(sCW, sCH)), sCW, sCH, gridSize);
-    float kept = 1.0 - streak_sweep * rivSwept(rv, cg, rad);
+    vec2 cl = wsToLayer(cg);
+    Riv  rv = getRiv(floor(cl / vec2(sCW, sCH)), sCW, sCH, gridSize);
+    float kept = 1.0 - streak_sweep * rivSwept(rv, cl, rad);
     if (wsWindShare > 0.001)
     {
         wsSetLayer(1);
@@ -665,6 +670,14 @@ void main()
     // to the glass UV (v up) through the tangent frame of the texture
     vec2  gravG  = vec2(dot(wsGrav, Tgl), dot(wsGrav, Bgl) * flipS);
     vec2  flowG  = vec2(dot(wsFlowDir, Tgl), dot(wsFlowDir, Bgl) * flipS);
+    if (dot(gravG, gravG) > 1e-8)
+    {
+        // down the glass in its UV, to the nearest quarter turn (a finer turn would break the rivulets at the seams where a curved
+        // glass bends); none on a glass lying flat
+        float turn = round(atan(gravG.x, -gravG.y) / 1.5707963) * 1.5707963;
+        wsGravCos = round(cos(turn));
+        wsGravSin = round(sin(turn));
+    }
     wsSpeed = smoothstep(0.3, 1.2, wsDrag);               // 0 standing still .. 1 at speed (haze, drops)
     wsWindShare   = smoothstep(0.5, 1.3, wsDrag);               // how much the air drives the rivulets
     if (wsWindShare > 0.0)
@@ -699,7 +712,8 @@ void main()
     float sCW   = streak_cell / gridSize;
     float sCH   = streak_run  / gridSize;
     vec2  sUVg  = vec2(f_coord.x, (STREAK_FLIP_Y != 0) ? 1.0 - f_coord.y : f_coord.y);   // glass UV, v up
-    vec2  sCell = floor(sUVg / vec2(sCW, sCH));
+    vec2  sUVl  = wsToLayer(sUVg);                                // the same in the layer of the weight (down: -v)
+    vec2  sCell = floor(sUVl / vec2(sCW, sCH));
     bool  sweepOn = streak_sweep > 0.0 && streak_density > 0.0 && (wind_streaks > 0.0 || wsWindShare < 1.0) && (WS_PROFILE != 2);
 
     if ((rain_state.y > 0.001) && (WS_PROFILE != 5))
@@ -840,7 +854,7 @@ void main()
         // ===================================================================
 #if WS_PROFILE != 2
         wsSetLayer(0);
-        drawRivulet(hit, getRiv(sCell, sCW, sCH, gridSize), sUVg, wsRd1, wsRd2);
+        drawRivulet(hit, getRiv(sCell, sCW, sCH, gridSize), sUVl, wsToLayerDir(wsRd1), wsToLayerDir(wsRd2));
         if (wsWindShare > 0.001)
         {
             for (int wl = 1; wl <= wind_layers; ++wl)
