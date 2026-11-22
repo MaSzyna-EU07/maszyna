@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
+#include "world/stationnames.h"
 
 #include <algorithm>
 #include <cctype>
@@ -392,8 +393,9 @@ void blackbox_recorder::write_map() {
 		if (values == nullptr)
 			continue;
 		auto const &text{values->input_text()};
+		// the name in the form the station records and the rows of the timetable have theirs, as it always was
 		if (text.starts_with(stoppoint))
-			m_writer->stop_point(stoppoints++, text_of(std::string_view{text}.substr(stoppoint.size())), values->input_location(),
+			m_writer->stop_point(stoppoints++, text_of(timetable::station_ascii(text.substr(stoppoint.size()))), values->input_location(),
 			    static_cast<float>(values->input_value(1)), static_cast<float>(values->input_value(2)), heading_of(values->input_location()));
 		else if (text == "Warning_signal")
 			m_writer->horn_point(hornpoints++, text_of(values->name()), values->input_location(), static_cast<float>(values->input_value(1)),

@@ -2,23 +2,27 @@
 #include "doctest.h"
 
 // the script screen host (scripting/scriptscreens.cpp) with the real runtimes: a script reads its input, draws an
-// image that goes to the screen's texture, bottom row first, and sends a command; a script stuck in a loop is stopped;
-// a Lua script can't reach files, the system or precompiled code. the Lua cases need WITH_LUA, the WebAssembly ones
-// WITH_WASM
+// image that goes to the screen's texture, bottom row first, and sends a command; a script stuck in a loop is stopped,
+// even when it catches the error; a Lua script can't reach files, the system, precompiled code or the metatables of the
+// api; what a call may send, log, read or make is capped. the Lua cases need WITH_LUA, the WebAssembly ones WITH_WASM
 
 #include "scripting/scriptscreens.h"
+#include "scripting/scriptscreenprogram.h"
 #include "input/command.h"
 #include "interfaces/ITexture.h"
 #include "utilities/Globals.h"
 #include "utilities/dictionary.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -142,6 +146,47 @@ void refresh(script_screen_queue &Queue, std::shared_ptr<script_screen> const &S
 	Queue.submit(Screen, std::move(Input), Vehicle);
 }
 
+// runs frames for a while: long enough for the worker to load and run a screen that was submitted
+void run_frames(script_screen_queue &Queue) {
+	for (int frame = 0; frame < 40; ++frame) {
+		Queue.update();
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+}
+
+// the limits of the sandbox (scripting/scriptscreenprogram.h), as the tests expect them
+constexpr std::size_t commands_per_call{64};
+constexpr std::size_t log_lines_per_call{32};
+constexpr std::size_t log_line_length{1024};
+constexpr std::size_t screen_file_size{16 * 1024 * 1024};
+
+} // namespace
+
+// the lines logged while the object lives, kept by the engine stubs (engine_stubs.cpp)
+void unit_tests_log_capture(bool Enabled);
+std::vector<std::string> unit_tests_logged_lines();
+
+namespace {
+
+class log_capture {
+  public:
+	log_capture() { unit_tests_log_capture(true); }
+	~log_capture() { unit_tests_log_capture(false); }
+	log_capture(log_capture const &) = delete;
+	log_capture &operator=(log_capture const &) = delete;
+
+	// the lines logged so far with the text in them
+	std::vector<std::string> lines_with(std::string_view const Text) const {
+		std::vector<std::string> result;
+		for (auto &line : unit_tests_logged_lines()) {
+			if (line.find(Text) != std::string::npos) {
+				result.push_back(std::move(line));
+			}
+		}
+		return result;
+	}
+};
+
 } // namespace
 
 TEST_CASE("script screens: a language that doesn't run gets no screens") {
@@ -202,21 +247,54 @@ constexpr std::array<std::uint8_t, 108> spin_module{
 	0x64, 0x65, 0x72, 0x00, 0x02, 0x0a, 0x15, 0x03, 0x04, 0x00, 0x41, 0x02, 0x0b, 0x04, 0x00, 0x41,
 	0x02, 0x0b, 0x09, 0x00, 0x03, 0x40, 0x0c, 0x00, 0x0b, 0x41, 0x00, 0x0b};
 
+// "flood": screen_render sends the command "cmdtest" 1000 times (with the parameters (i, 0)), then logs a line of
+// 4000 'a' 100 times, and returns 0:
+//   (import "eu07" "command" (func $command (param i32 i32 i32 i32)))
+//   (import "eu07" "log" (func $log (param i32 i32)))
+//   (memory (export "memory") 1)
+//   (data (i32.const 0) "cmdtest")
+//   (func (export "screen_width") (result i32) i32.const 2)
+//   (func (export "screen_height") (result i32) i32.const 2)
+//   (func (export "screen_render") (result i32) (local $i i32)
+//     ;; for i in 0..1000: (call $command (i32.const 0) (i32.const 7) (local.get $i) (i32.const 0))
+//     ;; for i in 0..4000: (i32.store8 (i32.add (local.get $i) (i32.const 64)) (i32.const 97))
+//     ;; for i in 0..100: (call $log (i32.const 64) (i32.const 4000))
+//     (i32.const 0))
+constexpr std::array<std::uint8_t, 273> flood_module{
+	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x11, 0x03, 0x60, 0x04, 0x7f, 0x7f, 0x7f,
+	0x7f, 0x00, 0x60, 0x02, 0x7f, 0x7f, 0x00, 0x60, 0x00, 0x01, 0x7f, 0x02, 0x1b, 0x02, 0x04, 0x65,
+	0x75, 0x30, 0x37, 0x07, 0x63, 0x6f, 0x6d, 0x6d, 0x61, 0x6e, 0x64, 0x00, 0x00, 0x04, 0x65, 0x75,
+	0x30, 0x37, 0x03, 0x6c, 0x6f, 0x67, 0x00, 0x01, 0x03, 0x04, 0x03, 0x02, 0x02, 0x02, 0x05, 0x03,
+	0x01, 0x00, 0x01, 0x07, 0x39, 0x04, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x00, 0x0c,
+	0x73, 0x63, 0x72, 0x65, 0x65, 0x6e, 0x5f, 0x77, 0x69, 0x64, 0x74, 0x68, 0x00, 0x02, 0x0d, 0x73,
+	0x63, 0x72, 0x65, 0x65, 0x6e, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x00, 0x03, 0x0d, 0x73,
+	0x63, 0x72, 0x65, 0x65, 0x6e, 0x5f, 0x72, 0x65, 0x6e, 0x64, 0x65, 0x72, 0x00, 0x04, 0x0a, 0x81,
+	0x01, 0x03, 0x04, 0x00, 0x41, 0x02, 0x0b, 0x04, 0x00, 0x41, 0x02, 0x0b, 0x75, 0x01, 0x01, 0x7f,
+	0x41, 0x00, 0x21, 0x00, 0x02, 0x40, 0x03, 0x40, 0x20, 0x00, 0x41, 0xe8, 0x07, 0x4e, 0x0d, 0x01,
+	0x41, 0x00, 0x41, 0x07, 0x20, 0x00, 0x41, 0x00, 0x10, 0x00, 0x20, 0x00, 0x41, 0x01, 0x6a, 0x21,
+	0x00, 0x0c, 0x00, 0x0b, 0x0b, 0x41, 0x00, 0x21, 0x00, 0x02, 0x40, 0x03, 0x40, 0x20, 0x00, 0x41,
+	0xa0, 0x1f, 0x4e, 0x0d, 0x01, 0x20, 0x00, 0x41, 0xc0, 0x00, 0x6a, 0x41, 0xe1, 0x00, 0x3a, 0x00,
+	0x00, 0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, 0x0c, 0x00, 0x0b, 0x0b, 0x41, 0x00, 0x21, 0x00,
+	0x02, 0x40, 0x03, 0x40, 0x20, 0x00, 0x41, 0xe4, 0x00, 0x4e, 0x0d, 0x01, 0x41, 0xc0, 0x00, 0x41,
+	0xa0, 0x1f, 0x10, 0x01, 0x20, 0x00, 0x41, 0x01, 0x6a, 0x21, 0x00, 0x0c, 0x00, 0x0b, 0x0b, 0x41,
+	0x00, 0x0b, 0x0b, 0x0d, 0x01, 0x00, 0x41, 0x00, 0x0b, 0x07, 0x63, 0x6d, 0x64, 0x74, 0x65, 0x73,
+	0x74};
+
 } // namespace
 
 TEST_CASE("wasm screens: a cab screen draws from its input and sends commands to its vehicle") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_paint"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 	REQUIRE(queue.runs(script_language::wasm));
 
 	recording_texture texture;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "cab", &texture))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "cab", &texture))};
 	REQUIRE(screen != nullptr);
 	// the same key, the same screen
-	CHECK(queue.acquire(request(script_language::wasm, module, "cab", &texture)) == screen);
+	CHECK(queue.acquire(request(script_language::wasm, module_path, "cab", &texture)) == screen);
 
 	refresh(queue, screen, speed(5.0), 42);
 	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0 && false == sent_commands().empty(); }));
@@ -243,13 +321,13 @@ TEST_CASE("wasm screens: a cab screen draws from its input and sends commands to
 TEST_CASE("wasm screens: the image goes up again when the texture is made anew, and waits while it isn't there") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_reupload"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 
 	recording_texture texture;
 	texture.ready = false;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "cab", &texture))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "cab", &texture))};
 	refresh(queue, screen, speed(9.0), 1);
 	REQUIRE(run_until(queue, [] { return false == sent_commands().empty(); }));
 	queue.update();
@@ -272,12 +350,12 @@ TEST_CASE("wasm screens: the image goes up again when the texture is made anew, 
 TEST_CASE("wasm screens: a screen outside the cab draws, but its commands are dropped") {
 	sent_commands().clear();
 	script_folder const folder{"wasm_sign"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	script_screen_queue queue;
 	REQUIRE(queue.init());
 
 	recording_texture texture;
-	auto const screen{queue.acquire(request(script_language::wasm, module, "sign", &texture, script_screen_kind::external))};
+	auto const screen{queue.acquire(request(script_language::wasm, module_path, "sign", &texture, script_screen_kind::external))};
 	refresh(queue, screen, speed(3.0), 0);
 	REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
 	queue.update();
@@ -310,19 +388,73 @@ TEST_CASE("wasm screens: a screen stuck in a loop is stopped, and the others kee
 
 TEST_CASE("wasm screens: the screens outlive the queue without harm") {
 	script_folder const folder{"wasm_outlive"};
-	auto const module{folder.write("paint.wasm", paint_module)};
+	auto const module_path{folder.write("paint.wasm", paint_module)};
 	std::shared_ptr<script_screen> screen;
 	recording_texture texture;
 	{
 		script_screen_queue queue;
 		REQUIRE(queue.init());
-		screen = queue.acquire(request(script_language::wasm, module, "cab", &texture));
+		screen = queue.acquire(request(script_language::wasm, module_path, "cab", &texture));
 		refresh(queue, screen, speed(4.0), 1);
 		REQUIRE(run_until(queue, [&texture] { return texture.uploads > 0; }));
 	}
 	// the queue and the runtime are gone, the vehicle still holds its screen
 	CHECK(screen != nullptr);
 	screen.reset();
+}
+
+TEST_CASE("wasm screens: the commands and the log lines of one call are capped") {
+	sent_commands().clear();
+	log_capture const log;
+	script_folder const folder{"wasm_flood"};
+	auto const module{folder.write("flood.wasm", flood_module)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::wasm, module, "flood", &texture))};
+	refresh(queue, screen, speed(0.0), 3);
+	REQUIRE(run_until(queue, [] { return false == sent_commands().empty(); }));
+	queue.update();
+	// the first ones go, the rest is dropped
+	CHECK(sent_commands().size() == commands_per_call);
+	CHECK(sent_commands().back().first.param1 == static_cast<double>(commands_per_call - 1));
+
+	auto const lines{log.lines_with("aaaaaaaaaa")};
+	REQUIRE(false == lines.empty());
+	CHECK(lines.size() <= log_lines_per_call);
+	auto const longest{std::ranges::max(lines, {}, [](std::string const &Line) { return Line.size(); })};
+	CHECK(longest.size() < module.size() + log_line_length + 100);
+	queue.exit();
+}
+
+TEST_CASE("wasm screens: a module larger than the limit isn't loaded") {
+	// the screen of "paint", with a custom section that makes the file larger than a screen may read
+	std::vector<std::uint8_t> bytes(paint_module.begin(), paint_module.end());
+	auto const payload{screen_file_size};
+	auto size{static_cast<std::uint32_t>(payload + 2)}; // the name: its length and one letter
+	bytes.push_back(0x00);
+	do {
+		auto const low{static_cast<std::uint8_t>(size & 0x7f)};
+		size >>= 7;
+		bytes.push_back(size != 0 ? static_cast<std::uint8_t>(low | 0x80) : low);
+	} while (size != 0);
+	bytes.push_back(0x01);
+	bytes.push_back('x');
+	bytes.resize(bytes.size() + payload, 0);
+
+	script_folder const folder{"wasm_large"};
+	auto const module{folder.write("large.wasm", bytes)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::wasm, module, "large", &texture))};
+	refresh(queue, screen, speed(1.0), 1);
+	run_frames(queue);
+	CHECK_FALSE(queue.due(*screen));
+	CHECK(texture.uploads == 0);
+	queue.exit();
 }
 
 #endif
@@ -748,6 +880,525 @@ TEST_CASE("lua screens: an image read after led_post has its post-processing don
 	CHECK(texture.pixels[1] == 0);
 	CHECK(texture.pixels[2] == 255);
 	queue.exit();
+}
+
+namespace {
+
+// scripts that catch the error of the instruction limit and go on looping
+constexpr std::string_view pcall_spin_script{R"(
+local function spin() while true do end end
+return { render = function(state) while true do pcall(spin) end end }
+)"};
+
+constexpr std::string_view nested_pcall_spin_script{R"(
+local function spin() while true do end end
+return { render = function(state) while true do pcall(function() while true do pcall(spin) end end) end end }
+)"};
+
+constexpr std::string_view xpcall_spin_script{R"(
+local function spin() while true do end end
+local function handler() while true do end end
+return { render = function(state) while true do xpcall(spin, handler) end end }
+)"};
+
+constexpr std::string_view coroutine_spin_script{R"(
+local function spin() while true do end end
+return { render = function(state) while true do coroutine.resume(coroutine.create(spin)) end end }
+)"};
+
+// white when the metatable of an image can't be reached, and its __gc can't be called
+constexpr std::string_view metatable_script{R"(
+local image = eu07.image(1, 1)
+local metatable = getmetatable(image)
+local locked = type(metatable) ~= "table"
+-- only where the metatable is locked: an unlocked one would destroy the image twice
+local collected = locked and pcall(function() return metatable.__gc(image) end)
+local usable = image:width() == 1
+return {
+	render = function(state)
+		return eu07.image(1, 1, (locked and not collected and usable) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when string.rep refuses a result over the limit and makes the ones under it
+constexpr std::string_view repeat_script{R"(
+local huge = pcall(string.rep, "x", 64 * 1024 * 1024)
+local method = pcall(function() return ("ab"):rep(16 * 1024 * 1024) end)
+local endless = pcall(string.rep, "x", 1e300)
+local fits = #string.rep("x", 1024 * 1024) == 1024 * 1024 and ("ab"):rep(3) == "ababab" and ("x"):rep(0) == "" and ("x"):rep(-1) == ""
+return {
+	render = function(state)
+		return eu07.image(1, 1, (not huge and not method and not endless and fits) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when an image larger than a screen can be isn't decoded, and a small one is
+constexpr std::string_view large_png_script{R"(
+local sprite = pcall(eu07.sprite, "large")
+local font = pcall(eu07.font, "large")
+local small = pcall(eu07.sprite, "small")
+return {
+	render = function(state)
+		return eu07.image(1, 1, (not sprite and not font and small) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// a long command name first, then too many commands and log lines for one call
+constexpr std::string_view flood_script{R"(
+return {
+	render = function(state)
+		eu07.command("cmdtest" .. ("q"):rep(100), 1, 0)
+		for i = 0, 999 do eu07.command("cmdtest", i, 0) end
+		for i = 1, 100 do eu07.log(("y"):rep(5000)) end
+		return eu07.image(1, 1)
+	end
+}
+)"};
+
+// white when a file larger than a screen may read, and a folder, read as nothing
+constexpr std::string_view large_file_script{R"(
+local large = eu07.read_file("large.bin")
+local folder = eu07.read_file("data")
+local small = eu07.read_file("data/small.txt")
+return {
+	render = function(state)
+		return eu07.image(1, 1, (large == nil and folder == nil and small == "small") and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// a white image of the size, as a .png
+std::vector<std::uint8_t> white_png(int const Width, int const Height) {
+	std::vector<std::uint8_t> const pixels(static_cast<std::size_t>(Width) * Height * 4, 255);
+	std::vector<std::uint8_t> result;
+	auto const append{[](void *Target, void *Data, int const Size) {
+		auto *bytes{static_cast<std::uint8_t const *>(Data)};
+		static_cast<std::vector<std::uint8_t> *>(Target)->insert(static_cast<std::vector<std::uint8_t> *>(Target)->end(), bytes, bytes + Size);
+	}};
+	stbi_write_png_to_func(append, &result, Width, Height, 4, pixels.data(), Width * 4);
+	return result;
+}
+
+// runs the script of a screen once; the first pixel of what it drew, or -1 when it drew nothing (after a wait)
+int first_pixel(std::string const &Script, std::string const &Key) {
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, Script, Key, &texture))};
+	refresh(queue, screen, speed(0.0), 1);
+	auto const drawn{run_until(queue, [&texture] { return texture.uploads > 0; })};
+	queue.exit();
+	return drawn && false == texture.pixels.empty() ? texture.pixels[0] : -1;
+}
+
+} // namespace
+
+TEST_CASE("lua screens: a script catching the instruction limit with pcall, xpcall or a coroutine is stopped all the same") {
+	script_folder const folder{"lua_pcall_spin"};
+	auto const painting{folder.write("paint.lua", paint_script)};
+	for (auto const &[name, code] : {std::pair{"pcall.lua", pcall_spin_script}, std::pair{"nested.lua", nested_pcall_spin_script},
+	                                 std::pair{"xpcall.lua", xpcall_spin_script}, std::pair{"coroutine.lua", coroutine_spin_script}}) {
+		CAPTURE(name);
+		auto const spinning{folder.write(name, code)};
+		// a worker stuck for good would keep the queue's destructor waiting: such a queue is left behind, so the test
+		// fails instead of hanging the run
+		auto *queue{new script_screen_queue}; // NOSONAR see above
+		REQUIRE(queue->init());
+
+		recording_texture stuck;
+		recording_texture working;
+		auto const first{queue->acquire(request(script_language::lua, spinning, "spin", &stuck))};
+		auto const second{queue->acquire(request(script_language::lua, painting, "paint", &working))};
+		refresh(*queue, first, speed(1.0), 1);
+		refresh(*queue, second, speed(2.0), 1);
+
+		auto const stopped{run_until(*queue, [&working] { return working.uploads > 0; })};
+		CHECK(stopped);
+		if (false == stopped) {
+			// the stuck worker doesn't touch the textures, and nothing uploads to them any more
+			continue;
+		}
+		CHECK(stuck.uploads == 0);
+		CHECK_FALSE(queue->due(*first));
+		queue->exit();
+		delete queue; // NOSONAR see above
+	}
+}
+
+TEST_CASE("lua screens: xpcall passes the arguments, and the error to its handler") {
+	script_folder const folder{"lua_xpcall"};
+	constexpr std::string_view script{R"(
+local ok1, sum = xpcall(function(a, b) return a + b end, function(e) return "handled" end, 2, 3)
+local ok2, handled = xpcall(function() error("boom") end, function(e) return "handled: " .. tostring(e) end)
+local ok3 = xpcall(function() error("boom") end, function(e) error("again") end)
+local good = ok1 and sum == 5 and not ok2 and handled:find("handled: .*boom") ~= nil and not ok3
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+	CHECK(first_pixel(folder.write("xpcall.lua", script), "xpcall") == 255);
+}
+
+TEST_CASE("lua screens: the metatables of the api objects can't be reached from a script") {
+	script_folder const folder{"lua_metatable"};
+	CHECK(first_pixel(folder.write("metatable.lua", metatable_script), "metatable") == 255);
+}
+
+TEST_CASE("lua screens: string.rep makes no string over the limit") {
+	script_folder const folder{"lua_rep"};
+	CHECK(first_pixel(folder.write("rep.lua", repeat_script), "rep") == 255);
+}
+
+TEST_CASE("lua screens: a .png larger than a screen image isn't decoded") {
+	script_folder const folder{"lua_large_png"};
+	folder.write("large.png", white_png(5000, 1));
+	folder.write("large.txt", std::string_view{"//\na1\n"});
+	folder.write("small.png", white_png(2, 2));
+	CHECK(first_pixel(folder.write("png.lua", large_png_script), "png") == 255);
+}
+
+TEST_CASE("lua screens: the commands and the log lines of one call are capped") {
+	sent_commands().clear();
+	log_capture const log;
+	script_folder const folder{"lua_flood"};
+	auto const script{folder.write("flood.lua", flood_script)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "flood", &texture))};
+	refresh(queue, screen, speed(0.0), 3);
+	REQUIRE(run_until(queue, [] { return false == sent_commands().empty(); }));
+	queue.update();
+	// the long name is dropped, of the rest the first ones go
+	CHECK(sent_commands().size() == commands_per_call);
+	CHECK(sent_commands().front().first.param1 == 0.0);
+	CHECK(sent_commands().back().first.param1 == static_cast<double>(commands_per_call - 1));
+	// the command of the long name didn't get as far as the engine's command names
+	CHECK(log.lines_with("not found").empty());
+
+	auto const lines{log.lines_with("yyyyyyyyyy")};
+	REQUIRE(false == lines.empty());
+	CHECK(lines.size() <= log_lines_per_call);
+	auto const longest{std::ranges::max(lines, {}, [](std::string const &Line) { return Line.size(); })};
+	CHECK(longest.size() < script.size() + log_line_length + 100);
+	queue.exit();
+}
+
+TEST_CASE("lua screens: a file larger than the limit, or a folder, reads as nothing") {
+	script_folder const folder{"lua_large_file"};
+	folder.write("large.bin", std::string(screen_file_size + 1, 'x'));
+	folder.write("data/small.txt", std::string_view{"small"});
+	CHECK(first_pixel(folder.write("file.lua", large_file_script), "file") == 255);
+}
+
+TEST_CASE("lua screens: a script larger than the limit isn't loaded") {
+	script_folder const folder{"lua_large_script"};
+	std::string code{"return { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }\n--"};
+	code.append(screen_file_size, 'x');
+	auto const script{folder.write("large.lua", code)};
+	script_screen_queue queue;
+	REQUIRE(queue.init());
+
+	recording_texture texture;
+	auto const screen{queue.acquire(request(script_language::lua, script, "large", &texture))};
+	refresh(queue, screen, speed(0.0), 1);
+	run_frames(queue);
+	CHECK_FALSE(queue.due(*screen));
+	CHECK(texture.uploads == 0);
+	queue.exit();
+}
+
+namespace {
+
+// white when the script gets no userdata of its own (newproxy), and a table's __gc isn't called: no finalizer of the
+// script's, which LuaJIT would run without the hook
+constexpr std::string_view finalizer_script{R"(
+local collected = false
+setmetatable({}, { __gc = function() collected = true end })
+collectgarbage()
+collectgarbage()
+local good = newproxy == nil and ffi == nil and require == nil and not collected
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// a table whose metatable fails, loops, or gives render: the game reads the table in protected mode
+constexpr std::string_view failing_index_script{R"(
+return setmetatable({}, { __index = function() error("x") end })
+)"};
+
+constexpr std::string_view looping_index_script{R"(
+return setmetatable({}, { __index = function() while true do end end })
+)"};
+
+constexpr std::string_view inherited_render_script{R"(
+local base = { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
+return setmetatable({}, { __index = base })
+)"};
+
+// starts, then fails when render is read for a refresh
+constexpr std::string_view failing_later_script{R"(
+local started = false
+return setmetatable({}, { __index = function(t, key)
+	if key == "init" then return function() started = true end end
+	if key == "render" then
+		if started then error("render can't be read any more") end
+		return function() end
+	end
+end })
+)"};
+
+// white when the pattern functions refuse what may take too long, and do what doesn't
+constexpr std::string_view pattern_script{R"(
+local long = ("a"):rep(1000000)
+local function refused(...)
+	local ok, message = pcall(...)
+	return not ok and message:find("may take too long", 1, true) ~= nil
+end
+local slow = refused(string.find, long, ".-b")
+	and refused(function() return long:find(".-b") end)
+	and refused(string.match, long, "(a*)b")
+	and refused(string.gsub, long, "a-b", "")
+	and refused(function() for x in long:gmatch("a-b") do end end)
+	and refused(string.find, ("a"):rep(1000), "a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab")
+	and refused(string.find, long, ("a"):rep(1000) .. "b", 1, true)
+-- %b walks to the end of the subject from each opening character that nothing closes
+local open = ("("):rep(1000000)
+slow = slow and refused(string.find, open, '%b()')
+	and refused(string.gsub, open, '%b()', "")
+	and refused(function() for x in open:gmatch('%b()') do end end)
+-- what a screen does: lines of a file, fields of a line, a plain search, short subjects
+local text = ("key=value\n"):rep(10000)
+local lines = 0
+for line in text:gmatch("[^\n]+") do lines = lines + 1 end
+local key, value = ("speed=120"):match("^(%w+)=(%d+)$")
+local spaced = select(2, (("a  b   c "):rep(100)):gsub("%s+", " "))
+local found = long:find("aaab", 1, true) == nil and (long .. "b"):find("ab", 1, true) == 1000000
+local calls = select(2, (("call(a, b) "):rep(10000)):gsub('%b()', ""))
+local fast = lines == 10000 and key == "speed" and value == "120" and spaced == 300 and found and calls == 10000
+	and ("x = 1"):find("=") == 3 and ("abc"):gsub("b", "%0%0") == "abbc"
+return {
+	render = function(state)
+		return eu07.image(1, 1, (slow and fast) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when what makes a large string in one call is refused past the memory of a screen
+constexpr std::string_view large_result_script{R"(
+local mega = ("x"):rep(1024 * 1024)
+local function refused(...)
+	local ok, message = pcall(...)
+	return not ok and message:find("over the memory of a screen", 1, true) ~= nil
+end
+local parts = {}
+for i = 1, 200 do parts[i] = mega end
+local format = refused(string.format, ("%s"):rep(200), unpack(parts))
+local concat = refused(table.concat, parts)
+local gsub = refused(string.gsub, mega, "", ("y"):rep(1000))
+local gsub_table = refused(string.gsub, mega, ".", { x = ("y"):rep(1000) })
+local fits = #table.concat({ mega, mega }, ",") == 2 * 1024 * 1024 + 1 and #string.format("%s%s", mega, mega) == 2 * 1024 * 1024
+	and select(2, mega:gsub("x", "yy")) == 1024 * 1024
+return {
+	render = function(state)
+		return eu07.image(1, 1, (format and concat and gsub and gsub_table and fits) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when gsub takes a table with a metatable as Lua does (the metatable doesn't get to the library as an argument),
+// and a line is trimmed: with the usual idiom on a long line of words, without a pattern on a long run of spaces
+constexpr std::string_view gsub_metatable_trim_script{R"(
+local upper = setmetatable({}, { __index = function(_, k) return k:upper() end })
+local replaced, count = ("one two"):gsub("%w+", upper)
+local line = ("word  next\tone "):rep(700)
+local trimmed = ("  " .. line .. "  "):match("^%s*(.-)%s*$")
+local ok, message = pcall(string.match, "x" .. (" "):rep(1000000) .. "x", "^%s*(.-)%s*$")
+local refused = not ok and message:find("may take too long", 1, true) ~= nil
+local function trim(s)
+	local first = s:find("%S")
+	if not first then return "" end
+	return s:sub(first, #s - s:reverse():find("%S") + 1)
+end
+local spaced = trim("  x" .. (" "):rep(1000000) .. "x  ")
+local good = replaced == "ONE TWO" and count == 2 and trimmed == line:sub(1, -2) and refused
+	and #spaced == 1000002 and trim("   ") == "" and trim(" a b ") == "a b"
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when the images a screen holds are held to its memory, and the images it dropped don't count
+constexpr std::string_view image_memory_script{R"(
+local kept = {}
+local ok, message = pcall(function()
+	for i = 1, 100 do kept[i] = eu07.image(4096, 4096) end
+end)
+local refused = not ok and message:find("memory limit exceeded", 1, true) ~= nil and #kept < 100
+kept = nil
+local dropped = pcall(function()
+	for i = 1, 20 do local image = eu07.image(4096, 4096) end
+end)
+return {
+	render = function(state)
+		return eu07.image(1, 1, (refused and dropped) and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// holds more and more memory, a little at a time
+constexpr std::string_view growing_script{R"(
+local kept = {}
+for i = 1, 10000000 do kept[i] = ("x"):rep(1000) .. i end
+return { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
+)"};
+
+// a concatenation of 320 MB in one operation, from a string of 64 MB: only an allocator of the screen's own refuses
+// it as it is made
+constexpr std::string_view one_concatenation_script{R"(
+local a = ("x"):rep(1024 * 1024)
+for i = 1, 6 do a = a .. a end
+local ok, message = pcall(function() return #(a .. a .. a .. a .. a) end)
+local refused = #a == 64 * 1024 * 1024 and not ok and message:find("not enough memory", 1, true) ~= nil
+a = nil
+return {
+	render = function(state)
+		return eu07.image(1, 1, refused and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// white when a coroutine yields across xpcall, and xpcall without a handler is an error
+constexpr std::string_view xpcall_yield_script{R"(
+local resume = coroutine.wrap(function()
+	local ok, value = xpcall(function()
+		coroutine.yield(1)
+		return 2
+	end, function(e) return e end)
+	coroutine.yield(ok and value)
+	local caught, handled = xpcall(function()
+		coroutine.yield(3)
+		error("boom")
+	end, function(e) return "handled: " .. e end)
+	coroutine.yield(not caught and handled:find("handled: .*boom") ~= nil)
+end)
+local first, second, third, fourth = resume(), resume(), resume(), resume()
+local missing = not pcall(xpcall, print)
+local good = first == 1 and second == 2 and third == 3 and fourth == true and missing
+return {
+	render = function(state)
+		return eu07.image(1, 1, good and { 255, 255, 255 } or { 0, 0, 0 })
+	end
+}
+)"};
+
+// loads the script as a screen next to a working one: the working one draws, the script's screen draws nothing, and
+// nothing hangs or ends the program
+void check_switched_off(script_folder const &Folder, std::string const &Name, std::string_view const Code) {
+	auto const painting{Folder.write("paint.lua", paint_script)};
+	auto const failing{Folder.write(Name, Code)};
+	auto *queue{new script_screen_queue}; // NOSONAR a stuck worker would keep the destructor waiting, see above
+	REQUIRE(queue->init());
+	recording_texture switched_off;
+	recording_texture working;
+	auto const first{queue->acquire(request(script_language::lua, failing, Name, &switched_off))};
+	auto const second{queue->acquire(request(script_language::lua, painting, "paint", &working))};
+	refresh(*queue, first, speed(1.0), 1);
+	refresh(*queue, second, speed(2.0), 1);
+	auto const drawn{run_until(*queue, [&working] { return working.uploads > 0; })};
+	CHECK(drawn);
+	if (false == drawn) {
+		return;
+	}
+	run_frames(*queue);
+	CHECK(switched_off.uploads == 0);
+	CHECK_FALSE(queue->due(*first));
+	queue->exit();
+	delete queue; // NOSONAR see above
+}
+
+} // namespace
+
+TEST_CASE("lua screens: a script makes no finalizer of its own") {
+	script_folder const folder{"lua_finalizer"};
+	CHECK(first_pixel(folder.write("finalizer.lua", finalizer_script), "finalizer") == 255);
+}
+
+TEST_CASE("lua screens: the table of a script is read in protected mode") {
+	log_capture const log;
+	script_folder const folder{"lua_index"};
+	SUBCASE("a metatable that fails") {
+		check_switched_off(folder, "failing.lua", failing_index_script);
+		CHECK_FALSE(log.lines_with("reading render and init failed").empty());
+	}
+	SUBCASE("a metatable that loops") {
+		check_switched_off(folder, "looping.lua", looping_index_script);
+		CHECK_FALSE(log.lines_with("instruction limit exceeded").empty());
+	}
+	SUBCASE("a metatable that fails once the screen runs") {
+		check_switched_off(folder, "later.lua", failing_later_script);
+		CHECK_FALSE(log.lines_with("render can't be read any more").empty());
+	}
+	SUBCASE("a metatable that gives render") {
+		CHECK(first_pixel(folder.write("inherited.lua", inherited_render_script), "inherited") == 255);
+	}
+}
+
+TEST_CASE("lua screens: the pattern functions refuse what may take too long, and do the rest") {
+	script_folder const folder{"lua_patterns"};
+	auto const started{std::chrono::steady_clock::now()};
+	CHECK(first_pixel(folder.write("patterns.lua", pattern_script), "patterns") == 255);
+	// the refused calls take no time, the others little
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
+}
+
+TEST_CASE("lua screens: what makes a large string in one call is held to the memory of a screen") {
+	script_folder const folder{"lua_large_result"};
+	CHECK(first_pixel(folder.write("large.lua", large_result_script), "large") == 255);
+}
+
+TEST_CASE("lua screens: gsub with a table that has a metatable, and the trim of a long line") {
+	script_folder const folder{"lua_gsub_metatable_trim"};
+	auto const started{std::chrono::steady_clock::now()};
+	CHECK(first_pixel(folder.write("trim.lua", gsub_metatable_trim_script), "trim") == 255);
+	CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
+}
+
+TEST_CASE("lua screens: the images a screen holds are held to its memory") {
+	script_folder const folder{"lua_image_memory"};
+	CHECK(first_pixel(folder.write("images.lua", image_memory_script), "images") == 255);
+}
+
+TEST_CASE("lua screens: a screen holding more than its memory is switched off") {
+	log_capture const log;
+	script_folder const folder{"lua_growing"};
+	check_switched_off(folder, "growing.lua", growing_script);
+	CHECK(log.lines_with("memory limit exceeded").size() + log.lines_with("not enough memory").size() > 0);
+}
+
+TEST_CASE("lua screens: with an allocator of the screen's own, a string made over the memory in one operation is refused") {
+	if (false == script_screens::lua_screen_memory_allocator()) {
+		MESSAGE("LuaJIT takes no allocator of the game's here (2.0, or 2.1 without GC64 on x64): not tested");
+		return;
+	}
+	script_folder const folder{"lua_one_concatenation"};
+	CHECK(first_pixel(folder.write("concatenation.lua", one_concatenation_script), "concatenation") == 255);
+}
+
+TEST_CASE("lua screens: a coroutine yields across xpcall") {
+	script_folder const folder{"lua_xpcall_yield"};
+	CHECK(first_pixel(folder.write("yield.lua", xpcall_yield_script), "yield") == 255);
 }
 
 #endif

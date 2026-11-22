@@ -1,0 +1,11 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed:
+// td_timetable.scn (the timetable train from track 1 of Stacja1 to Przystanek), and at 10:35, as the train leaves,
+// the curve tdo_n222 (R 600 m, about 950 m ahead of it) buckles in the heat out of the curve with the
+// trackbuckle event of {{amplitude}} mm (see world/TrackBuckle.h)
+trainset td/rozklad tdo_n1734 0.0 0.1
+{{consist}}
+endtrainset
+
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end
+event autotest_buckle trackbuckle 0 tdo_n222 {{amplitude}} endevent
+node -1 0 autotest_buckle_launcher eventlauncher 0 0 0 -1 none 1035 autotest_buckle end

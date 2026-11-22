@@ -65,6 +65,15 @@ std::vector<int> choose(std::vector<vehicle> const &Consist, bool Train);
 // train run too (with the braking of a train). Orders is the order of the AI (TOrders)
 bool runs_as_train(int Orders);
 
+// the AI has the inspector look at its train (TController::AutoRewident(): the brake settings, and the hand and
+// spring brakes of the train released) under the orders it drives the train under: shunting, loose shunting, the
+// train run, banking, and the run up to the wagons to couple to (Connect), which a locomotive left standing cold,
+// with its hand brake on, would make pulling against it. Coupled: the look the AI takes at the moment it couples
+// (CheckVehicles(Connect)); Connect doesn't count for it, so the wagons just coupled keep their hand brakes until
+// the order after the coupling looks at the new train, as before: those of them to be left standing again
+// (Shunt x,-y) stay braked. Orders is the order of the AI (TOrders)
+bool inspects_train(int Orders, bool Coupled);
+
 // the train stands for the inspector: slower than the AI takes for a deliberate movement (EU07_AI_MOVEMENT).
 // the AI looks at the train while it still creeps to a stop (at a W4, or switching from shunting to the train
 // run), so a stricter threshold would miss those checks; a train really on the run (an order changed mid-run)

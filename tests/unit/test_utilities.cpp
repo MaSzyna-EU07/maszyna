@@ -8,6 +8,9 @@
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
+#include <cmath>
+#include <type_traits>
+
 // the helpers of utilities/utilities.cpp and utilities.h as they behave now: the numbers and texts they give, their
 // oddities included. the ones which look like mistakes are listed in COVERAGE.md. the helpers which read from a
 // parser (LoadPoint, the sets, the map) are in test_parser.cpp
@@ -115,16 +118,31 @@ TEST_CASE("utilities: clearing a flag needs all of its bits set") {
 TEST_CASE("utilities: random whole numbers are within the bounds, both included, given in any order") {
 	std::set<int> seen;
 	for (auto draw{0}; draw < 200; ++draw) {
-		auto const value{Random(3, 7)};
+		auto const value{RandomInt(3, 7)};
 		CHECK(value >= 3);
 		CHECK(value <= 7);
 		seen.insert(value);
-		auto const swapped{Random(7, 3)};
+		auto const swapped{RandomInt(7, 3)};
 		CHECK(swapped >= 3);
 		CHECK(swapped <= 7);
 	}
 	CHECK(seen.size() == 5);
-	CHECK(Random(5, 5) == 5);
+	CHECK(RandomInt(5, 5) == 5);
+}
+
+TEST_CASE("utilities: whole-number bounds still give a real number in between") {
+	// the wind, the wheel flats, the truck hunting and the tachometer draw with whole-number bounds
+	static_assert(std::is_same_v<decltype(Random(0, 4)), double>);
+	auto fractions{0};
+	for (auto draw{0}; draw < 50; ++draw) {
+		auto const value{Random(0, 4)};
+		CHECK(value >= 0.0);
+		CHECK(value <= 4.0);
+		if (value != std::floor(value)) {
+			++fractions;
+		}
+	}
+	CHECK(fractions > 0);
 }
 
 TEST_CASE("utilities: random numbers are within the bounds given in any order") {
@@ -157,17 +175,37 @@ TEST_CASE("utilities: random numbers are within the bounds given in any order") 
 }
 
 TEST_CASE("utilities: the same seed gives the same random numbers") {
-	std::vector<int> first;
+	std::vector<double> first;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		first.push_back(Random(0, 1000000));
+		first.push_back(Random(0.0, 1000000.0));
 	}
-	std::vector<int> second;
+	std::vector<double> second;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		second.push_back(Random(0, 1000000));
+		second.push_back(Random(0.0, 1000000.0));
 	}
 	CHECK(first == second);
+	std::vector<int> localfirst;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localfirst.push_back(RandomInt(0, 1000000));
+	}
+	std::vector<int> localsecond;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localsecond.push_back(RandomInt(0, 1000000));
+	}
+	CHECK(localfirst == localsecond);
+}
+
+TEST_CASE("utilities: the whole numbers are drawn from the local engine, not from that of the run's seed") {
+	// the trivia of the loading screen is drawn before a network client gets the seed of the session
+	Global.random_engine.seed(5);
+	auto const first{Random()};
+	Global.random_engine.seed(5);
+	RandomInt(0, 9);
+	CHECK(Random() == first);
 }
 
 TEST_CASE("utilities: the local random numbers have an engine of their own") {
@@ -368,9 +406,17 @@ TEST_CASE("utilities: a text for the timetable loses its marks, control characte
 }
 
 TEST_CASE("utilities: the polish letters from 0xB2 on lose their marks in every build") {
-	// the table of Bezogonkow() is plain ASCII, so every compiler makes one byte of each of its entries
-	CHECK(Bezogonkow("\xB1") == "+");
+	// the table of Bezogonkow() has the plus-minus sign for 0xB1. it used to be written as the character in the source,
+	// a utf-8 file: GCC and Clang put the two bytes of utf-8 into the table, which moved the entries after it by one
+	// (the polish letters came out as "ALELDNSZZ,le,dnszl"). now it's the byte, and the table is the same everywhere
+	CHECK(Bezogonkow("\xB1") == "\xB1");
+	CHECK(Bezogonkow("\xB1\xB2") == "\xB1,");
 	CHECK(Bezogonkow(kWin1250) == "ACELNOSZZacelnoszz");
+	// the last entry of the table, and the first: none is left out and none added
+	CHECK(Bezogonkow("\xFF") == "?");
+	CHECK(Bezogonkow("\x80") == "E");
+	// the letters of other languages the table knows (c-caron, e-caron, s-caron, u-ring, a-acute)
+	CHECK(Bezogonkow("\xE8\xEC\x9A\xF9\xE1") == "cesua");
 }
 
 TEST_CASE("utilities: utf-8 is decoded into code points of one to four bytes") {
