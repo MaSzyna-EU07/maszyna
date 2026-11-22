@@ -2,8 +2,14 @@
 #include "doctest.h"
 #include "scratch.h"
 
+#include <cmath>
+#include <limits>
+
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+
+#include <cmath>
+#include <type_traits>
 
 // the helpers of utilities/utilities.cpp and utilities.h as they behave now: the numbers and texts they give, their
 // oddities included. the ones which look like mistakes are listed in COVERAGE.md. the helpers which read from a
@@ -112,16 +118,31 @@ TEST_CASE("utilities: clearing a flag needs all of its bits set") {
 TEST_CASE("utilities: random whole numbers are within the bounds, both included, given in any order") {
 	std::set<int> seen;
 	for (auto draw{0}; draw < 200; ++draw) {
-		auto const value{Random(3, 7)};
+		auto const value{RandomInt(3, 7)};
 		CHECK(value >= 3);
 		CHECK(value <= 7);
 		seen.insert(value);
-		auto const swapped{Random(7, 3)};
+		auto const swapped{RandomInt(7, 3)};
 		CHECK(swapped >= 3);
 		CHECK(swapped <= 7);
 	}
 	CHECK(seen.size() == 5);
-	CHECK(Random(5, 5) == 5);
+	CHECK(RandomInt(5, 5) == 5);
+}
+
+TEST_CASE("utilities: whole-number bounds still give a real number in between") {
+	// the wind, the wheel flats, the truck hunting and the tachometer draw with whole-number bounds
+	static_assert(std::is_same_v<decltype(Random(0, 4)), double>);
+	auto fractions{0};
+	for (auto draw{0}; draw < 50; ++draw) {
+		auto const value{Random(0, 4)};
+		CHECK(value >= 0.0);
+		CHECK(value <= 4.0);
+		if (value != std::floor(value)) {
+			++fractions;
+		}
+	}
+	CHECK(fractions > 0);
 }
 
 TEST_CASE("utilities: random numbers are within the bounds given in any order") {
@@ -154,17 +175,37 @@ TEST_CASE("utilities: random numbers are within the bounds given in any order") 
 }
 
 TEST_CASE("utilities: the same seed gives the same random numbers") {
-	std::vector<int> first;
+	std::vector<double> first;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		first.push_back(Random(0, 1000000));
+		first.push_back(Random(0.0, 1000000.0));
 	}
-	std::vector<int> second;
+	std::vector<double> second;
 	Global.random_engine.seed(42);
 	for (auto draw{0}; draw < 5; ++draw) {
-		second.push_back(Random(0, 1000000));
+		second.push_back(Random(0.0, 1000000.0));
 	}
 	CHECK(first == second);
+	std::vector<int> localfirst;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localfirst.push_back(RandomInt(0, 1000000));
+	}
+	std::vector<int> localsecond;
+	Global.local_random_engine.seed(42);
+	for (auto draw{0}; draw < 5; ++draw) {
+		localsecond.push_back(RandomInt(0, 1000000));
+	}
+	CHECK(localfirst == localsecond);
+}
+
+TEST_CASE("utilities: the whole numbers are drawn from the local engine, not from that of the run's seed") {
+	// the trivia of the loading screen is drawn before a network client gets the seed of the session
+	Global.random_engine.seed(5);
+	auto const first{Random()};
+	Global.random_engine.seed(5);
+	RandomInt(0, 9);
+	CHECK(Random() == first);
 }
 
 TEST_CASE("utilities: the local random numbers have an engine of their own") {
@@ -681,12 +722,30 @@ TEST_CASE("utilities: the sign of a number, and a number rounded to a whole one"
 	CHECK(Round(-2.5) == -2);
 }
 
-TEST_CASE("utilities: a value is kept within bounds, given in any order") {
+TEST_CASE("utilities: a value is kept within bounds; inverted bounds give the upper one, as the old clamp did") {
 	CHECK(safe_clamp(5, 0, 3) == 3);
-	CHECK(safe_clamp(5, 3, 0) == 3);
-	CHECK(safe_clamp(-1, 3, 0) == 0);
-	CHECK(safe_clamp(2.0, 3.0, 1.0) == 2.0);
+	CHECK(safe_clamp(-1, 0, 3) == 0);
+	CHECK(safe_clamp(2, 0, 3) == 2);
 	CHECK(safe_clamp(2.0, 2.0, 2.0) == 2.0);
+	// inverted bounds: always the upper bound, whatever the value
+	CHECK(safe_clamp(5, 3, 0) == 0);
+	CHECK(safe_clamp(-1, 3, 0) == 0);
+	CHECK(safe_clamp(2.0, 3.0, 1.0) == 1.0);
+	// NaN as the old clamp had it: a NaN value stays NaN, a NaN bound doesn't clamp
+	auto const notanumber{std::numeric_limits<double>::quiet_NaN()};
+	CHECK(std::isnan(safe_clamp(notanumber, 0.0, 1.0)));
+	CHECK(safe_clamp(2.0, 0.0, notanumber) == 2.0);
+	CHECK(safe_clamp(-1.0, notanumber, 1.0) == -1.0);
+	// what the helper gives for arguments in the order and of the signs of two calls (these checks don't call
+	// them): the AI braking test, whose demand is the stronger of the two (negative) bounds, as up to 26.05.1
+	double const threshold{-0.45};
+	CHECK(safe_clamp(0.3, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	CHECK(safe_clamp(-0.6, threshold * 1.01, threshold * 1.21) == doctest::Approx(threshold * 1.21));
+	// and the bump at a rail joint, 0 in place of the value as up to 26.05.1: the figure is capped from above
+	// only, and above 68% of the top speed it is negative
+	CHECK(safe_clamp(0.0, 160.0, 160.0 - (150.0 + 160.0 * 0.32)) == doctest::Approx(-41.2));
+	CHECK(safe_clamp(0.0, 4.0, -0.5) == -0.5);
+	CHECK(safe_clamp(0.0, 4.0, 5.0) == 4.0);
 }
 
 TEST_CASE("utilities: a value is wrapped into a range, as an angle into the full circle") {

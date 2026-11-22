@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <future>
 #include <string>
@@ -86,6 +87,7 @@ class editor_map
 	glm::vec2 m_pressed{0.f};
 	bool m_dragging{false};
 	std::future<image> m_request;
+	std::atomic<bool> m_closing{false}; // the download of the map is given up: the map goes
 	std::uint64_t m_texture{0};
 	glm::dvec2 m_image_low{0.0};
 	glm::dvec2 m_image_high{0.0};
