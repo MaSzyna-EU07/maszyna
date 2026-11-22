@@ -88,9 +88,8 @@ private:
 	void write_map();
 	static std::vector<std::pair<glm::dvec3, float>> stop_point_headings();
 	void write_cab();
-	// the line of the log of the driver the user is with, unless that driver writes its own (the physics logs, a road
-	// vehicle's driver not even with "physicslog yes"), to its log, physicslog/<vehicle>.dat, as the physics logs would
-	// have it. a driver's log is begun at the first line given for that driver, and goes on
+	// with the physics logs off, the line of the log of the driver the user is with, to its log, physicslog/<vehicle>.dat,
+	// as the physics logs would have it. a driver's log is begun at the first line given for that driver, and goes on
 	// while the user looks around outside or is in another vehicle of that driver; back with it, after the gap
 	void keep_tape_line();
 	// the clock, the user's vehicle, the vehicles, the switches and the signals

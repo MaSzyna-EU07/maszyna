@@ -63,12 +63,6 @@ double steady_seconds()
 
 } // namespace
 
-bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error)
-{
-	thread_local http_client client;
-	return client.get(Url, Out, Error, []() { return false; });
-}
-
 namespace
 {
 
@@ -688,7 +682,7 @@ std::string xml_element(std::string const &Xml, std::string const &Tag, std::siz
 
 } // namespace
 
-editor_orthophoto::service_info editor_orthophoto::describe(std::string const &Service)
+editor_orthophoto::service_info editor_orthophoto::describe(std::string const &Service, std::function<bool()> const &Stop)
 {
 	service_info info;
 	auto url{Service};
@@ -700,8 +694,10 @@ editor_orthophoto::service_info editor_orthophoto::describe(std::string const &S
 	// a few tries, the services drop connections and time out now and then
 	std::vector<std::uint8_t> data;
 	auto read{false};
-	for (int attempt = 0; attempt < 3 && false == read; ++attempt)
-		read = editor_http_get(url, data, info.error);
+	stop_check const stopping{Stop ? Stop : stop_check{[]() { return false; }}};
+	thread_local http_client client;
+	for (int attempt = 0; attempt < 3 && false == read && false == stopping(); ++attempt)
+		read = client.get(url, data, info.error, stopping);
 	if (false == read)
 		return info;
 	info.error.clear();
@@ -937,21 +933,45 @@ void editor_orthophoto::ground_arrived()
 {
 	if (!m_height)
 		return;
-	for (auto &entry : m_tiles)
+	for (auto &[key, t] : m_tiles)
 	{
-		auto &t{entry.second};
-		if (!t.grounded || !t.guessed)
-			continue;
-		// the middle and the corners: a chunk of the terrain is much larger than a tile, it covers some of these when it comes. A tile
-		// lying flat, with nothing to go by, also goes onto the model once it's in
-		glm::dvec2 const corner = tile_corner(entry.first);
-		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
-			if (double y; m_height(corner.x - u * tile_size, corner.y - v * tile_size, y) || (t.heights.empty() && m_guess && m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y)))
-			{
-				t.grounded = false;
-				break;
-			}
+		if (t.grounded && ground_came(key, t))
+			t.grounded = false;
 	}
+}
+
+bool editor_orthophoto::waits_for_ground(tile_key const &Key) const
+{
+	// a tile laid out already stays, sampled again when its ground comes (ground_came)
+	if (!m_coming || m_tiles.contains(Key))
+		return false;
+	glm::dvec2 const corner = tile_corner(Key);
+	return m_coming(corner - glm::dvec2{tile_size}, corner);
+}
+
+bool editor_orthophoto::ground_came(tile_key const &Key, tile const &Tile) const
+{
+	glm::dvec2 const corner = tile_corner(Key);
+	// a tile lying flat, with nothing to go by, also goes onto the model once it's in: the middle and the corners
+	if (Tile.guessed && Tile.heights.empty() && m_guess)
+		for (auto const &[u, v] : {std::pair{0.5, 0.5}, std::pair{0.0, 0.0}, std::pair{1.0, 0.0}, std::pair{0.0, 1.0}, std::pair{1.0, 1.0}})
+			if (double y; m_guess(corner.x - u * tile_size, corner.y - v * tile_size, y))
+				return true;
+	// the points the ground didn't answer, every second one of the grid (16 m) and the edges: a chunk of the terrain is about as
+	// large as a tile and comes over a part of it, often a band along a side; partly answered tiles count too, not only the guessed
+	static_assert(ground_grid % 2 == 0, "the edges of the grid are among its even points");
+	int constexpr samples{ground_grid + 1};
+	double constexpr step{tile_size / ground_grid};
+	for (auto const index : Tile.unanswered)
+	{
+		int const i{index % samples};
+		int const j{index / samples};
+		if (i % 2 != 0 || j % 2 != 0)
+			continue;
+		if (double y; m_height(corner.x - i * step, corner.y - j * step, y))
+			return true;
+	}
+	return false;
 }
 
 void editor_orthophoto::detach_scene()
@@ -1030,6 +1050,20 @@ editor_orthophoto::statistics editor_orthophoto::stats() const
 	for (auto const &entry : m_tiles)
 		count(entry.second);
 	return out;
+}
+
+int editor_orthophoto::first_level(tile const &Tile, int const Level)
+{
+	// a tile showing nothing yet takes the standard image first, from the disk cache at once mostly: the 4K one comes from a slow
+	// service a few at a time, the tiles around the camera stayed blank meanwhile though their standard images lay on the disk
+	if (Level > standard_pixels && Tile.level < standard_pixels)
+		return standard_pixels;
+	return Level;
+}
+
+bool editor_orthophoto::outside_area(tile_key const &Key) const
+{
+	return false == m_area.empty() && 0 == m_area_tiles.count(Key);
 }
 
 int editor_orthophoto::level_for(int Distance, bool Hires)
@@ -1233,6 +1267,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
+	Tile.unanswered.clear();
 
 	glm::dvec2 const corner = tile_corner(Key);
 	glm::dvec2 const min(corner.x - tile_size, corner.y - tile_size);
@@ -1302,6 +1337,21 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 					sample = std::max(sample, static_cast<float>(y));
 				}
 			}
+	}
+
+	// the points the ground didn't answer: the ground coming there later (the terrain loaded after the imagery, which comes from the
+	// disk cache at once) has the tile sampled again, rather than left at the heights filled in or guessed now
+	Tile.unanswered.clear();
+	auto const columns{static_cast<std::size_t>(samples)};
+	for (std::size_t index = 0; index < heights.size(); ++index)
+	{
+		if (heights[index] != no_height)
+			continue;
+		// in the scene the heights come from the triangles, and a steep spot (a wall, a quarry face) gives none: where the heightmap
+		// terrain answers the point, its ground is there already, and ground_came() would find it again on every chunk that comes
+		if (double y; surface && m_height && m_height(corner.x - static_cast<double>(index % columns) * step, corner.y - static_cast<double>(index / columns) * step, y))
+			continue;
+		Tile.unanswered.push_back(static_cast<std::uint16_t>(index));
 	}
 
 	// holes (places without ground) take the average of their neighbours, spreading inwards
@@ -1630,7 +1680,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		{
 			tile_key const key{centre.first + dx, centre.second + dy};
 			// outside the download area: nothing asked for, nothing shown
-			if (false == m_area.empty() && 0 == m_area_tiles.count(key))
+			if (outside_area(key))
 			{
 				if (auto const found{m_tiles.find(key)}; found != m_tiles.end())
 				{
@@ -1639,14 +1689,12 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				}
 				continue;
 			}
+			if (waits_for_ground(key))
+				continue;
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int level = level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires);
-			// a tile showing nothing yet takes the standard image first, from the disk cache at once mostly: the 4K one comes from a slow
-			// service a few at a time, the tiles around the camera stayed blank meanwhile though their standard images lay on the disk
-			if (level > standard_pixels && t.level < standard_pixels)
-				level = standard_pixels;
+			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires));
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
@@ -1713,7 +1761,8 @@ void editor_orthophoto::worker()
 						continue;
 					long long const dx = it->key.first - m_focus.first;
 					long long const dy = it->key.second - m_focus.second;
-					long long const d = dx * dx + dy * dy;
+					// the tiles hurried (Ctrl+~) before all the others, the nearest of them first
+					long long const d = dx * dx + dy * dy - (m_urgent.count(it->key) > 0 ? (1LL << 40) : 0LL);
 					if (d < bestdistance)
 					{
 						bestdistance = d;
@@ -1730,6 +1779,7 @@ void editor_orthophoto::worker()
 			{
 				current = *best;
 				m_queue.erase(best);
+				m_urgent.erase(current.key);
 				m_running.insert(current.key);
 				if (current.level >= hires_pixels)
 					++m_running_hires;
@@ -1956,4 +2006,59 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 			}
 		drawlist->PopTextureID();
 	}
+}
+
+bool editor_orthophoto::hurry_tile(tile_key const &Key, int const Distance)
+{
+	// as update() does: nothing asked for outside the download area, nor outside the area the service covers, where the requests
+	// can't be answered
+	if (outside_area(Key))
+		return false;
+	auto &t{m_tiles[Key]};
+	if (false == in_service_area(Key.first, Key.second))
+		t.empty = true;
+	if (t.empty)
+		return false;
+	auto const level{first_level(t, level_for(Distance, m_config.hires))};
+	t.retry_at = 0.0;
+	if (t.level == level && t.alpha == m_alpha)
+		return false; // already shown as it should be
+	if (false == (t.requested == level && t.requested_alpha == m_alpha))
+		schedule(Key, t, level, m_alpha);
+	return true;
+}
+
+std::size_t editor_orthophoto::hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera)
+{
+	if (false == m_enabled)
+		return 0;
+	// the tile of the camera as it is now: it isn't followed while the layer is off
+	m_camera_tile = camera_tile(Camera);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_focus = m_camera_tile;
+	}
+	auto const a{camera_tile(glm::dvec3{Min.x, 0.0, Min.y})};
+	auto const b{camera_tile(glm::dvec3{Max.x, 0.0, Max.y})};
+	tile_key const first{std::min(a.first, b.first), std::min(a.second, b.second)};
+	tile_key const last{std::max(a.first, b.first), std::max(a.second, b.second)};
+	auto const centre{m_camera_tile};
+	int const radius = m_config.radius;
+	std::vector<tile_key> keys;
+	for (int y = first.second; y <= last.second; ++y)
+		for (int x = first.first; x <= last.first; ++x)
+		{
+			tile_key const key{x, y};
+			auto const distance{std::max(std::abs(x - centre.first), std::abs(y - centre.second))};
+			if (distance <= radius && hurry_tile(key, distance))
+				keys.push_back(key);
+		}
+	auto const count{keys.size()};
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_urgent.clear();
+		m_urgent.insert(keys.begin(), keys.end());
+	}
+	m_wakeup.notify_all();
+	return count;
 }
