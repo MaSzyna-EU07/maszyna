@@ -719,7 +719,7 @@ void TDynamicObject::UpdateDoorWing( TAnim *pAnim, door_wings::wing_spec const &
                 break;
             }
             case door_wings::rotate_type: {
-                wing->SetRotate( float3( 1, 0, 0 ), position );
+                wing->SetRotate( glm::vec3( 1, 0, 0 ), position );
                 break;
             }
             case door_wings::fold_type: {
