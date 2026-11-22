@@ -1398,7 +1398,6 @@ bool editor_mode::update()
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
     steps.step("selftest");
-    thumbnails_trim();
     // the drives of the switches go to the tips of their blades once, as the templates of the scenery are known
     if (false == m_drives_checked)
     {

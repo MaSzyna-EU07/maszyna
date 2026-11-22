@@ -298,9 +298,7 @@ void image_cache::work()
 			m_queue.pop_front();
 		}
 		int width{0}, height{0}, components{0};
-		// the file as it's named on the disk, the path stays the key of the cache
-		auto const file{FileCased(image.path)};
-		auto *pixels{file.empty() ? nullptr : stbi_load(file.c_str(), &width, &height, &components, 4)};
+		auto *pixels{stbi_load(image.path.c_str(), &width, &height, &components, 4)};
 		if (pixels != nullptr && width > 0 && height > 0)
 		{
 			// scaled down by the average of the pixels which make each one, the longer side to the size of the cache

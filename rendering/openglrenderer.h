@@ -95,8 +95,6 @@ public:
         Texture( texture_handle const Texture ) override;
     ITexture const &
         Texture( texture_handle const Texture ) const override;
-    void
-        Unload_Texture( texture_handle const Texture ) override;
     // utility methods
     void
         Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2  )> Callback ) override;

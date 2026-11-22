@@ -66,13 +66,6 @@ struct opengl_material : public IMaterial {
 	  {
 		  return textures[slot];
 	  }
-	  virtual std::vector<texture_handle> GetAllTextures() const override
-	  {
-		  std::vector<texture_handle> all(textures.begin(), textures.end());
-		  for (auto const &variant : texture_variants)
-			  all.insert(all.end(), variant.begin(), variant.end());
-		  return all;
-	  }
 	  // returns texture set to use for model instance identified by provided variant id
 	  texture_set const &GetTextures(std::uint32_t const Variant) const
 	  {

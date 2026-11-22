@@ -15,9 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
-#include "utilities/physicslog.h"
 #include "utilities/utilities.h"
-#include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -44,15 +42,6 @@ bool is_moving(TDynamicObject const *Vehicle)
 double elapsed_wall_time()
 {
 	return std::chrono::duration<double>(std::chrono::steady_clock::now() - Global.startTimestamp).count();
-}
-
-// the physics log of the driver of the vehicle, or of its train's when that one is passive, written before the logs of
-// the other drivers: the closing at the end of the run drops those it has no time for
-void put_physicslog_first(TDynamicObject const &Vehicle)
-{
-	auto const *driver { Vehicle.Mechanik != nullptr && Vehicle.Mechanik->primary() ? Vehicle.Mechanik : Vehicle.ctOwner };
-	if (driver != nullptr)
-		PhysicsLogs.put_first(driver->physicslog_name());
 }
 
 } // namespace
@@ -135,13 +124,11 @@ void test_manager::start()
 	}
 	for (auto const &name : Global.test.vehicles)
 	{
-		auto const *vehicle { simulation::Vehicles.find(name) };
-		if (vehicle == nullptr)
+		if (simulation::Vehicles.find(name) == nullptr)
 		{
 			finish(test_result::error, std::format("the scenery has no vehicle {} (test.vehicle)", name));
 			return;
 		}
-		put_physicslog_first(*vehicle);
 	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;
@@ -274,9 +261,7 @@ void test_manager::check_wall_clock(double const Elapsed)
 	// but which doesn't close ends with its result
 	if (false == conclude(test_result::timeout, std::format("still running after {:.0f} s of real time (test.wall_timeout)", limit)))
 		ErrorLog(std::format("test: the simulator was still running {:.0f} s of real time after the start, ended", limit));
-	// what was logged last gets written, unless the log is held up by a hung thread, or the physics logs by a writer
-	// holding their files or a disk which doesn't answer: the run ends anyway, two seconds later at most
-	PhysicsLogs.flush_for(std::chrono::seconds{2});
+	// what was logged last gets written, unless the log is held up by a hung thread
 	StopLogService();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	std::_Exit(exit_code());

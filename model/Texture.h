@@ -181,10 +181,6 @@ public:
     // releases gl textures of vehicles not needed nor drawn for a while
     void
         release_unneeded();
-    // takes a texture the scene has never drawn out of both the gfx card and the memory, e.g. the image of a picker scrolled
-    // past, or one read and not made yet; it's read again when it's used. textures the scene draws are left to the resource sweep
-    void
-        unload( texture_handle const Texture );
     // debug performance string
     std::string
         info() const;

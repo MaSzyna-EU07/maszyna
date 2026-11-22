@@ -35,8 +35,7 @@ decoded_sound decode_sound( std::string const &File ) {
 	SF_INFO si;
 	si.format = 0;
 
-	// the file as it's named on the disk, the name of the buffer is in lowercase
-	SNDFILE *sf = sf_open(FileOnDisk(File).c_str(), SFM_READ, &si);
+	SNDFILE *sf = sf_open(File.c_str(), SFM_READ, &si);
 
 	if (sf == nullptr)
 		throw std::runtime_error("sound: sf_open failed");
@@ -217,9 +216,9 @@ openal_buffer::fetch_caption() {
     std::string captionfilename { name };
     captionfilename.erase( captionfilename.rfind( '.' ) ); // obcięcie rozszerzenia
     captionfilename += "-" + Global.asLang + ".txt"; // już może być w różnych językach
-    if( auto const casedfilename { FileCased( captionfilename ) }; false == casedfilename.empty() ) {
+    if( true == FileExists( captionfilename ) ) {
         // wczytanie
-        std::ifstream inputfile( casedfilename );
+        std::ifstream inputfile( captionfilename );
         caption.assign( std::istreambuf_iterator<char>( inputfile ), std::istreambuf_iterator<char>() );
     }
 }

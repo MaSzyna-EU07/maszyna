@@ -127,7 +127,6 @@ blackbox::cab_sample sample() {
 	s.clutch = 0.75f;
 	s.converter_fill = 0.25f;
 	s.consist_brake_cylinder = 3.5f;
-	s.wheel_speed_kmh = 71.5f;
 	return s;
 }
 
@@ -286,8 +285,6 @@ TEST_CASE("blackbox: a sample of the user's train has the documented size and or
 	CHECK(cab.get<float>() == 0.25f);
 	// the highest brake cylinder pressure of the train
 	CHECK(cab.get<float>() == 3.5f);
-	// the speed of the wheels
-	CHECK(cab.get<float>() == 71.5f);
 	CHECK(cab.done());
 }
 

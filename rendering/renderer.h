@@ -102,11 +102,6 @@ public:
     virtual void Bind_Texture( std::size_t const Unit, texture_handle const Texture ) = 0;
     virtual auto Texture( texture_handle const Texture ) -> ITexture & = 0;
     virtual auto Texture( texture_handle const Texture ) const -> ITexture const & = 0;
-    // a texture the scene has never drawn taken out of the gfx card and the memory, read again when it's used: the image of a
-    // texture picker scrolled past. backends which keep their textures otherwise leave it
-    virtual void Unload_Texture( texture_handle const Texture ) {}
-    // the same for all the textures of a material, those of its variants with them
-    void Unload_Material( material_handle const Material );
     // utility methods
     virtual void Pick_Control_Callback( std::function<void( TSubModel const *, const glm::vec2 )> Callback ) = 0;
     virtual void Pick_Node_Callback( std::function<void( scene::basic_node * )> Callback ) = 0;
@@ -156,7 +151,6 @@ public:
 
     bool register_backend(const std::string &backend, create_method func);
     std::unique_ptr<gfx_renderer> create(const std::string &name);
-    bool has_backend(const std::string &name) const;
 
     static gfx_renderer_factory* get_instance();
 

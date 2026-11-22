@@ -1043,10 +1043,8 @@ void editor_mode::textures_index()
 		{
 			if (entry->is_directory(ignored))
 			{
-				// the normal maps go with their textures, not on a track by themselves; the previews of the node bank, thousands of
-				// them, are images of models and not textures of anything
-				auto const folder{lowered(entry->path().filename().string())};
-				if (folder == "normals" || (folder == "previews" && entry.depth() == 0))
+				// the normal maps go with their textures, not on a track by themselves
+				if (lowered(entry->path().filename().string()) == "normals")
 					entry.disable_recursion_pending();
 				continue;
 			}

@@ -257,9 +257,6 @@ struct cab_sample {
 	float clutch{0.0f}; // the clutch of a diesel's gearbox, 0 open .. 1 closed
 	float converter_fill{0.0f}; // the filling of a diesel's hydraulic torque converter, 0..1
 	float consist_brake_cylinder{0.0f}; // the highest brake cylinder pressure of the vehicles of the train [bar]
-	// [km/h] of the wheels as they turn, which the speedometer shows, signed as speed_kmh: apart from it while the wheels
-	// slip, and 0 while they are locked in a skid
-	float wheel_speed_kmh{0.0f};
 };
 
 // a station of the timetable of the user's train; the times in minutes of the day, -1 none
@@ -357,7 +354,7 @@ struct signal_passing {
 // sizes of the parts of fixed size, as the readers expect them
 inline constexpr std::size_t header_size{12};
 inline constexpr std::size_t record_header_size{5};
-inline constexpr std::size_t cab_sample_size{194};
+inline constexpr std::size_t cab_sample_size{190};
 inline constexpr std::size_t vehicle_state_size{25};
 
 // writes the records to a stream. nothing is written until header() is
