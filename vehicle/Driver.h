@@ -20,7 +20,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
-#include "utilities/physicslog.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -165,6 +164,7 @@ class TSpeedPos
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
+    bool bSeenAhead{ false }; // the head of the train had it ahead once: only such a point can be passed by the train
     glm::dvec3 vPos; // współrzędne XYZ do liczenia odległości
     struct
     {
@@ -739,22 +739,17 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
-    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line, with
-    // its line end, and the values of a line of it as the vehicle is now, which the writer of the logs makes into text.
-    // the black box keeps the lines of the vehicle the user is in when its driver doesn't write its own
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line and
+    // a line of it as the vehicle is now, each with its line end. the black box keeps the lines of the vehicle the
+    // user is in, to write its log at the end when the logs of all the vehicles are off
     std::string const &physicslog_name() const {
         return VehicleName; }
-    // whether it writes its physics log itself: with "physicslog yes" all but the drivers of road vehicles, with
-    // "physicslog.trains yes" one who drives rail vehicles. a driver made primary later begins its log then. the cars of
-    // a big scenery are hundreds, whose logs nobody reads and which a hard disk can't keep up with; the black box writes
-    // the log of one the user is in
+    // whether it writes its physics log itself: all with "physicslog yes", with "physicslog.trains yes" one who drives
+    // rail vehicles. a driver made primary later begins its log then
     bool writes_physicslog() const {
-        return ( WriteLogFlag && false == drives_road_vehicle() ) || ( WriteTrainLogFlag && is_train() && primary() ); }
-    // a driver of a road vehicle; not one of no vehicle
-    bool drives_road_vehicle() const {
-        return mvOccupied != nullptr && is_car(); }
+        return WriteLogFlag || ( WriteTrainLogFlag && is_train() && primary() ); }
     static std::string_view physicslog_header();
-    physicslog_values physicslog_line() const;
+    std::string physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:

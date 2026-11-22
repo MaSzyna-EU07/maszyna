@@ -253,7 +253,7 @@ scene::layer_handle editor_mode::output_layer(std::string const &Part)
 
 std::size_t editor_mode::place_templates(std::vector<template_item> const &Items, std::string &Error, scene::layer_handle const Layer)
 {
-	m_drives_standing.reset();
+	drives_changed();
 	if (Items.empty())
 		return 0;
 	if (scene::Layers.empty())
@@ -341,7 +341,7 @@ std::size_t editor_mode::move_templates(std::vector<std::pair<standing_template,
 
 std::size_t editor_mode::remove_templates(std::vector<scene::instance_handle> const &Instances)
 {
-	m_drives_standing.reset();
+	drives_changed();
 	EditorSnapshot snap;
 	for (auto const instance : Instances)
 	{

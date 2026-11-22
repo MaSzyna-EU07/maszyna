@@ -97,6 +97,7 @@ private:
 
 // methods
     void update_camera( const double Deltatime );
+    double shake_fraction() const;
     // handles vehicle change flag
     void OnKeyDown( int cKey );
     void InOutKey();
