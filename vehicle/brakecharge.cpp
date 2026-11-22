@@ -34,6 +34,11 @@ bool charged(state &State, double const Level, double const Reference, double co
 	return State.stalled;
 }
 
+double locomotive_brake_force(double const Blockforce, double const Weight) {
+
+	return std::max(0.0, std::min(Blockforce, Weight * adhesion));
+}
+
 bool locomotive_brake_holds(double const Locomotivebrakeforce, double const Gradeforce) {
 
 	return Locomotivebrakeforce >= holding_force * std::abs(Gradeforce);

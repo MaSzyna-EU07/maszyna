@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 // a standing train starts only with its brakes charged, as a driver checks before setting off: the brake pipe and the
 // auxiliary reservoir of every vehicle with a working brake close to the working pressure. released alone isn't enough:
 // a train prepared from cold is released at once, its pipe still filling, and has no air to brake with
-// (TController::PrepareEngine(), TController::control_brake_charge())
+// (TController::PrepareEngine(), TController::determine_consist_state())
 namespace brake_charge {
 
 // [bar] below the working pressure the pipe and the reservoir count as charged: 4.5 of 5.0. the last wagon of a long
@@ -50,6 +50,10 @@ struct state {
 // prepared, the main reservoir above the reference): without it the charge can't rise, and that isn't a stall.
 // true once the train may start, and from then on
 bool charged(state &State, double Level, double Reference, double Time, bool Supplied = true);
+
+// what the locomotive brake of a vehicle holds with at full application [N]: the force of its brake blocks (Blockforce),
+// but no more than its wheels pass on to the rails, the adhesion share of its Weight [N]
+double locomotive_brake_force(double Blockforce, double Weight);
 
 // whether the locomotive brake, Locomotivebrakeforce at full application [N], holds the standing train against its
 // Gradeforce [N] on its own; when it doesn't, the train brake is applied lightly while the train charges

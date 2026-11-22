@@ -9021,22 +9021,17 @@ void TController::secure_standing_train() {
     cue_action( driver_hint::trainbrakerelease );
 }
 
-// the brake force of the locomotive brake at full application, of the powered vehicles of the train [N]
+// the brake force of the locomotive brake at full application [N]. of the occupied vehicle alone: its handle acts on
+// no other, not on a second section or a locomotive in multiple control either, let alone one hauled dead
 double TController::locomotive_brake_force() const {
 
-    auto force { 0.0 };
-    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
-        auto const *mover { vehicle->MoverParameters };
-        if( ( mover->Power > 0.01 )
-         && ( mover->LocalBrake != TLocalBrake::ManualBrake )
-         && ( mover->MaxBrakePress[ 0 ] > 0.0 ) ) {
-            // what the brake blocks give, but no more than the wheels pass on to the rails
-            force += std::min(
-                mover->BrakeForceP( mover->MaxBrakePress[ 0 ], 0.0 ),
-                mover->TotalMassxg * brake_charge::adhesion );
-        }
+    if( ( mvOccupied->LocalBrake == TLocalBrake::ManualBrake )
+     || ( mvOccupied->MaxBrakePress[ 0 ] <= 0.0 ) ) {
+        return 0.0;
     }
-    return force;
+    return brake_charge::locomotive_brake_force(
+        mvOccupied->BrakeForceP( mvOccupied->MaxBrakePress[ 0 ], 0.0 ),
+        mvOccupied->TotalMassxg );
 }
 
 void TController::increase_tractive_force() {

@@ -109,6 +109,16 @@ TEST_CASE("brake charge: the locomotive brake holds the train only with the marg
 	CHECK(locomotive_brake_holds(0.0, 0.0));
 }
 
+TEST_CASE("brake charge: the locomotive brake holds with no more than the wheels pass on to the rails") {
+	using brake_charge::locomotive_brake_force;
+	// an ST43 of 116 t: 1031 kN at the brake blocks, 0.25 of its weight on the rails
+	CHECK(locomotive_brake_force(1031000.0, 116000.0 * 9.81) == doctest::Approx(284490.0));
+	// a weak brake stays what it is
+	CHECK(locomotive_brake_force(50000.0, 116000.0 * 9.81) == doctest::Approx(50000.0));
+	CHECK(locomotive_brake_force(0.0, 116000.0 * 9.81) == doctest::Approx(0.0));
+	CHECK(locomotive_brake_force(-1.0, 116000.0 * 9.81) == doctest::Approx(0.0));
+}
+
 TEST_CASE("brake charge: standing not charged, the release of the locomotive brake waits") {
 	using brake_charge::release_waits;
 	// the train brake already off: what is left on is the locomotive brake, which holds the train while it charges
