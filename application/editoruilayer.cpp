@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uidescription.h"
 
 #include <cstdio>
+#include <format>
 #include <limits>
 
 glm::vec2 editor_ui::m_viewmin{0.0f};
