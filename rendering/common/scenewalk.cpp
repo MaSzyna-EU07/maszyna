@@ -31,6 +31,8 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "model/Model3d.h"
 #include "rendering/common/skyocclusion.h"
+#include "rendering/common/arcflicker.h"
+#include "utilities/Timer.h"
 #include <algorithm>
 #include <chrono>
 #include <string>
@@ -2918,10 +2920,14 @@ void scene_walk::Render_Alpha(TTraction *Traction)
 	auto const swayaxis{Traction->sway_axis()};
 	// and the ice on the wires (environment/snowcover.h, the ice the pantographs meet): w its radial thickness, m, which the solids up
 	// close grow by; param[2] each kind, mm (the glaze, the hard rime, the soft rime, the wet snow), which colour the wires
+	// the ice is shown with the weather in the physics (physics.weather), as the pantographs meet it and the wind sways the wires;
+	// without it the wires look as they did before
 	auto const &snow{simulation::Environment.weather().snow()};
 	using icekind = snow_cover::ice_kind;
-	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), snow.wire_ice());
-	model_ubs.param[2] = glm::vec4(snow.wire_ice(icekind::glaze), snow.wire_ice(icekind::rime_hard), snow.wire_ice(icekind::rime_soft), snow.wire_ice(icekind::wet_snow)) * 1000.f;
+	auto const iced{Global.physics_weather.enabled};
+	auto const ice = [&snow, iced](icekind const Kind) { return iced ? snow.wire_ice(Kind) : 0.f; };
+	model_ubs.param[1] = glm::vec4(static_cast<float>(swayaxis.x), static_cast<float>(swayaxis.z), static_cast<float>(Traction->sway()), iced ? snow.wire_ice() : 0.f);
+	model_ubs.param[2] = glm::vec4(ice(icekind::glaze), ice(icekind::rime_hard), ice(icekind::rime_soft), ice(icekind::wet_snow)) * 1000.f;
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
 	{
@@ -2989,6 +2995,10 @@ void scene_walk::Render_Alpha(scene::lines_node const &Lines)
 	    (data.line_width > 0.f ? 10.f * data.line_width / std::max(0.5f * data.area.radius + 1.f, distance - (0.5f * data.area.radius)) : 1.f); // negative width means the lines are always opague
 
 	model_ubs.param[0] = glm::vec4(glm::vec3(data.lighting.diffuse * walk_sun_ambient()), glm::min(1.0f, linealpha));
+	// the program of the lines is the one of the wires, which reads the sway and the ice from param[1] and param[2]: whatever the last
+	// material left there would blow these lines aside or tint them as iced
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
 
 	if (m_renderpass.draw_mode == rendermode::shadows)
 		walk_shadow_material(null_handle);
@@ -3161,7 +3171,8 @@ void scene_walk::Render_arcs(TDynamicObject const *Dynamic)
 		auto const distance{glm::length(glm::vec3(center))};
 		if (distance > 0.5f)
 			center -= glm::vec4(glm::vec3(center) * (0.3f / distance), 0.f);
-		auto const flicker{0.55f + 0.45f * static_cast<float>(Random())};
+		// the flicker of its light as well (gfx::local_lights)
+		auto const flicker{gfx::arc_flicker(reinterpret_cast<std::uintptr_t>(Dynamic), index, Timer::GetTime())};
 		auto const strength{std::clamp(pantograph->arc * flicker * Global.physics_weather.arc_brightness, 0.f, 1.f)};
 		::glPushMatrix();
 		::glLoadIdentity();
@@ -3174,7 +3185,10 @@ void scene_walk::Render_arcs(TDynamicObject const *Dynamic)
 		walk_texture(0, m_glaretexture);
 		// blue-white and brighter than white, the bloom of the post processing takes it further
 		model_ubs.param[0] = glm::vec4(glm::vec3{2.4f, 2.8f, 3.4f} * strength, strength);
+		// added to what is behind it like the glare of a lamp, a flash rather than a sprite
+		walk_additive(true);
 		walk_draw(m_billboardgeometry);
+		walk_additive(false);
 		::glPopMatrix();
 	}
 }

@@ -42,6 +42,8 @@ float const NO_TRACK_SNOW{-1.f};
 float const CAP_RAIL_BELOW{0.03f};
 float const CAP_RAIL_FLAT{1.3f};
 float const CAP_SLOPE_REACH{1.6f};
+// m around a tile the tracks and the roads are looked for (gather_tracks()): the widest road cleared and its slopes
+double const TRACK_REACH{static_cast<double>(CAP_SLOPE_REACH) + 8.0};
 float const CAP_RAIL_SLOPE{0.6f};
 float const CAP_ROAD_ABOVE{0.03f};
 float const CAP_ROAD_SLOPE{0.8f};
@@ -207,6 +209,28 @@ std::vector<TTrack const *> paths_near(scene::basic_region *Region, glm::dvec2 c
 	return paths;
 }
 
+// the part of the signature of a tile made of the tracks and the roads the snow on them is worked out of (gather_tracks()): each
+// with its ends and its length, so one the editor removes, lays or moves changes it, and the tile is gathered again without the
+// track it no longer has
+std::uint64_t tracks_signature(scene::basic_region *Region, glm::dvec2 const &Corner, double const Tilesize)
+{
+	std::uint64_t hash{0x7a5cu};
+	for (auto const *path : paths_near(Region, Corner, Tilesize, TRACK_REACH))
+	{
+		if ((path->iCategoryFlag & 3) == 0)
+			continue;
+		hash = hash_mix(hash, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(path)));
+		for (auto const &point : path->endpoints())
+		{
+			hash = hash_mix_double(hash, point.x);
+			hash = hash_mix_double(hash, point.y);
+			hash = hash_mix_double(hash, point.z);
+		}
+		hash = hash_mix_double(hash, path->CurrentSegment()->GetLength());
+	}
+	return hash;
+}
+
 // the points every Step m along a path within the square of Tilesize at Corner and Reach around it, x and z relative to the corner
 void along_path(TTrack const &Path, double const Step, glm::dvec2 const &Corner, double const Tilesize, double const Reach, std::function<void(glm::dvec3 const &, double)> const &Point)
 {
@@ -289,7 +313,7 @@ sky_occlusion const *sky_occlusion::current()
 void sky_occlusion::start(int const Level)
 {
 	m_layout = layout_of(Level);
-	m_snowsurface = (Global.gfx_snow > 0);
+	m_snowsurface = ((Global.gfx_snow > 0) && draws_snow());
 	auto const side{m_layout.side()};
 	if (false == gpu_allocate(side))
 	{
@@ -479,13 +503,23 @@ void sky_occlusion::update_track_snow()
 			continue;
 		auto changed{false};
 		auto *surface{m_surfaces.data() + slot * tiletexels * 4};
-		auto const *refs{m_trackrefs.data() + slot * tiletexels};
+		auto *refs{m_trackrefs.data() + slot * tiletexels};
 		for (std::size_t texel = 0; texel < tiletexels; ++texel)
 		{
-			if (refs[texel].track == nullptr)
+			auto &ref{refs[texel]};
+			if (ref.track == nullptr)
 				continue;
+			// a track the editor removed (it keeps the object, out of the scene): the snow kept down as before over it, until the
+			// changed signature of the tile has it gathered again without the track
+			if (ref.track->m_editorremoved)
+			{
+				ref = track_ref{};
+				surface[texel * 4 + 3] = NO_TRACK_SNOW;
+				changed = true;
+				continue;
+			}
 			// the snow lying on the track there, as the trains go through it (5 mm steps)
-			auto const snow{static_cast<float>(refs[texel].track->snow_at(refs[texel].distance))};
+			auto const snow{static_cast<float>(ref.track->snow_at(ref.distance))};
 			if (std::abs(snow - surface[texel * 4 + 3]) < 0.005f)
 				continue;
 			surface[texel * 4 + 3] = snow;
@@ -495,6 +529,7 @@ void sky_occlusion::update_track_snow()
 		{
 			auto const index{static_cast<int>(slot)};
 			gpu_upload_surface((index % m_layout.tiles) * px, (index / m_layout.tiles) * px, px, surface);
+			++m_uploaded;
 		}
 	}
 }
@@ -502,7 +537,7 @@ void sky_occlusion::update_track_snow()
 void sky_occlusion::update(scene::basic_region *Region, glm::dvec3 const &Camera, glm::vec3 const &Keylight)
 {
 	auto const level{std::clamp(Global.gfx_skyvisibility, 0, 3)};
-	auto const changed{(m_sun != Global.gfx_skyvisibility_sun) || (m_tunnels != Global.gfx_skyvisibility_tunnels) || (m_snowsurface != (Global.gfx_snow > 0))};
+	auto const changed{(m_sun != Global.gfx_skyvisibility_sun) || (m_tunnels != Global.gfx_skyvisibility_tunnels) || (m_snowsurface != ((Global.gfx_snow > 0) && draws_snow()))};
 	if ((level != m_level) || ((m_side > 0) && changed))
 	{
 		stop();
@@ -767,6 +802,9 @@ std::uint64_t sky_occlusion::signature(scene::basic_region *Region, glm::ivec2 c
 			hash = hash_mix(hash, instances_signature(cell));
 		}
 	}
+	// the tracks the snow on them is kept for
+	if (m_snowsurface)
+		hash = hash_mix(hash, tracks_signature(Region, corner, tilesize));
 	return hash;
 }
 
@@ -910,8 +948,7 @@ void sky_occlusion::gather_tunnels(scene::basic_region *Region, glm::ivec2 const
 void sky_occlusion::gather_tracks(scene::basic_region *Region, glm::ivec2 const &Tile, std::vector<glm::vec4> &Points, std::vector<track_ref> &Refs)
 {
 	auto const tilesize{static_cast<double>(m_layout.tile)};
-	// the widest road cleared and its slopes
-	auto const reach{static_cast<double>(CAP_SLOPE_REACH) + 8.0};
+	auto const reach{TRACK_REACH};
 	glm::dvec2 const corner{Tile.x * tilesize, Tile.y * tilesize};
 	for (auto const *path : paths_near(Region, corner, tilesize, reach))
 	{
@@ -1404,8 +1441,10 @@ void sky_occlusion::occlude(int const Slot, tile_result &Result)
 	Result.heights.resize(static_cast<std::size_t>(px) * px * 4);
 	Result.occlusion.resize(static_cast<std::size_t>(px) * px * 4);
 	if (m_snowsurface)
+	{
 		Result.surface.resize(static_cast<std::size_t>(px) * px * 4);
 		Result.trackrefs.resize(static_cast<std::size_t>(px) * px);
+	}
 	for (int z = 0; z < px; ++z)
 	{
 		for (int x = 0; x < px; ++x)

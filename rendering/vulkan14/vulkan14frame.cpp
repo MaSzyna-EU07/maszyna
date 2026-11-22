@@ -1119,6 +1119,7 @@ void vulkan14_renderer::start_draws(vk14::target_formats const &Targets, int con
 	draw.block = ~0u;
 	draw.cullface = true;
 	draw.glare = false;
+	draw.additive = false;
 	draw.depthmask_off = false;
 	vk14::set_draw_state(draw.commands, draw.extent);
 	// the faces counter-clockwise in the window of opengl are clockwise in the framebuffer of vulkan, which counts its rows the
@@ -2045,7 +2046,7 @@ void vulkan14_renderer::render_ray_scene(viewport_config &Viewport)
 void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 {
 	auto &draw{*m_draw};
-	if ((Geometry == null_handle) || (draw.program == nullptr) || (draw.program->vertices != vk14::vertex_kind::scene) || draw.blending || draw.glare)
+	if ((Geometry == null_handle) || (draw.program == nullptr) || (draw.program->vertices != vk14::vertex_kind::scene) || draw.blending || draw.glare || draw.additive)
 	{
 		return;
 	}
@@ -3181,6 +3182,9 @@ void vulkan14_renderer::render_editor_overlay()
 	draw.cullface = false;
 	draw.depthmask_off = true;
 	walk_program(walk_shader::line);
+	// the program of the wires reads the sway and the ice from param[1] and param[2]: none for the lines of the overlay
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
 	auto const &batches{EditorOverlay.batches};
 	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
 	{

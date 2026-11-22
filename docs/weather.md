@@ -148,7 +148,12 @@ The snow falls, lies, drifts and melts with the weather (`environment/snowcover.
 - the ice on the wires grows too: the glaze of freezing rain, the rime of a freezing fog or of saturated air in the wind and a sleeve of wet snow, with
   its thickness and density. Nothing reads it yet; it is there for the look of the catenary and the contact of the pantographs.
 
-The OpenGL 4.6 renderer draws the snow (`gfx.snow`, by default `drifts`):
+The OpenGL 4.6 renderer draws the snow with `gfx.snow drifts` (or `surfaces`, see below). It is off by default (`gfx.snow no`):
+the existing sceneries look as they did until the player turns it on. `gfx.snow` is for the OpenGL 4.6 renderer only: the Vulkan
+renderer draws no lying snow, and with it the key changes nothing, nor is the surface for the snow worked out. The snow in the
+physics (`physics.snow`, off by default too: the snow lying on the tracks holds the trains back) is the same with either renderer.
+
+What the OpenGL 4.6 renderer draws:
 
 - on every surface lit in the open, by how much it faces the sky and how deep the snow is: thin snow lies in patches on flat ground
   only, deeper snow on steeper slopes too. Nothing lies under a roof, a bridge or in a tunnel, inside the cabs and the interiors,
@@ -167,6 +172,25 @@ The OpenGL 4.6 renderer draws the snow (`gfx.snow`, by default `drifts`):
 on the surfaces turned up, and there are no drifts. In the **Weather** window (and in the editor, **Weather and time**) the depth,
 the drifts and the looseness of the snow can be set by hand, and the snow made to go faster than the simulation, to watch it pile up,
 drift and melt.
+
+The drifts are worked out on the gpu again only when something they're made of changed: the maps (a tile worked out, the snow on
+the tracks), the snow (its depth, the drifting, its wind) or the place of the camera (4 texels on). Then a quarter of the maps a
+frame, all of them in 4 frames, and at once the first time and after a jump of the camera. The surface of the drifts is drawn by
+blocks of 16 x 16 texels, the ones out of the view left out. The debug panel shows the gpu time of the last quarter worked out and
+of the last surface drawn.
+
+With `gfx.wetsurfaces yes` (off by default) the OpenGL 4.6 renderer shows the water and the ice the weather leaves on the
+surfaces in the open, as the physics has them on the rails: darker and glossier where wet, glassy where iced; none under a roof, a
+bridge, in a tunnel or under the snow.
+
+## In a network session
+
+The weather model isn't kept the same on the machines of a network session yet: each would work out a weather of its own from
+its own `eu07.ini`, its camera and the live reports, and the physics of the vehicles would go apart. So in a network session
+(`network.server` or `network.client` in `eu07.ini`) it is off, whatever `eu07.ini` says: `physics.weather 0`, `physics.snow 0`
+and `weather.mode scenery`, the log says so at the start, and the **Weather physics** window has nothing to set. The weather is the
+one of the scenery and the starter, as before the weather model. What only draws (`gfx.snow`, `gfx.wetsurfaces`) is left to each
+machine: it changes nothing in the simulation.
 
 ## Changing the weather while the simulation runs
 

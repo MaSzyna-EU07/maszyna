@@ -72,6 +72,10 @@ class opengl46_local_shadows : public gfx::local_shadows
 	void gpu_headlights_timer(bool const Begin) override;
 
   private:
+	// every program drawing to the cube maps (all of them through shadowcube.geom, which takes the near plane and the layer as
+	// uniforms), nullptr for the ones that couldn't be made: set_near() and set_layer() go over them all, so none is left drawing to
+	// the first cube with the near plane of the start
+	std::array<gl::program *, 5> programs() const;
 	void set_layer(int const Layer);
 	void set_near(float const Near);
 

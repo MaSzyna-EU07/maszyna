@@ -962,11 +962,12 @@ void snow_foliage_from(sampler2D tex, vec2 uv)
     vec2 steps = vec2(c * dot(dpx, up) - b * dot(dpy, up), a * dot(dpy, up) - b * dot(dpx, up)) / det;
     vec2 uvup = steps.x * dux + steps.y * duy;
     // clear 12 cm over the fragment: the top of a clump, and the snow cap on it. a texture with no holes around (a wall, a
-    // sign, a vehicle with the alpha test set) isn't leaves
+    // sign, a vehicle with the alpha test set) isn't leaves. sampled with the gradients of the uv taken above: after the discard of
+    // the alpha test and the returns here the control flow isn't uniform, and the level of detail texture() works out is undefined
     vec2 uvside = vec2(-uvup.y, uvup.x);
-    float above = texture(tex, uv + uvup * 0.12).a;
+    float above = textureGrad(tex, uv + uvup * 0.12, dux, duy).a;
     float threshold = max(opacity, 0.5);
-    float around = min(min(above, texture(tex, uv - uvup * 0.12).a), min(texture(tex, uv + uvside * 0.12).a, texture(tex, uv - uvside * 0.12).a));
+    float around = min(min(above, textureGrad(tex, uv - uvup * 0.12, dux, duy).a), min(textureGrad(tex, uv + uvside * 0.12, dux, duy).a, textureGrad(tex, uv - uvside * 0.12, dux, duy).a));
     if (around >= threshold)
         return;
     float cap = (above < threshold) ? 1.0 : 0.0;

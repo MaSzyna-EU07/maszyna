@@ -29,6 +29,11 @@ class opengl46_sky_occlusion : public gfx::sky_occlusion
 	void gpu_release() override;
 	void gpu_upload(int const X, int const Y, int const Size, float const *Heights, std::uint16_t const *Occlusion) override;
 	void gpu_upload_surface(int const X, int const Y, int const Size, float const *Surface) override;
+	// the lying snow is drawn (opengl46_snow)
+	bool draws_snow() const override
+	{
+		return true;
+	}
 
   public:
 	// the surface of the scenery for the snow (RGBA32F, gfx::sky_occlusion::gpu_upload_surface()), 0 without the maps; and texels

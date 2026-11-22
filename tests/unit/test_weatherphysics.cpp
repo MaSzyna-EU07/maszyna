@@ -5,8 +5,13 @@
 #include "environment/liveweather.h"
 #include "McZapkie/MOVER.h"
 #include "McZapkie/weatherphysics.h"
+#include "rendering/common/arcflicker.h"
 #include "utilities/Globals.h"
+#include "utilities/utilities.h"
+#include "vehicle.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 
 // the weather in the physics of the vehicles (McZapkie/weatherphysics.h, environment/railsurface.h, physics.weather)
@@ -14,6 +19,18 @@
 namespace {
 
 weather_physics::settings const defaults{};
+
+// physics.weather as a test sets it (off by default), given back as it was afterwards
+class weather_physics_setting {
+public:
+	explicit weather_physics_setting(bool const Enabled) : m_previous{Global.physics_weather} { Global.physics_weather.enabled = Enabled; }
+	~weather_physics_setting() { Global.physics_weather = m_previous; }
+	weather_physics_setting(weather_physics_setting const &) = delete;
+	weather_physics_setting &operator=(weather_physics_setting const &) = delete;
+
+private:
+	weather_physics::settings m_previous;
+};
 
 // Hours of the weather given, in steps of a minute
 void run(rail_surface &Rails, snow_weather const &Weather, double const Hours, float const Daylight = 1.f, float const Leaves = 0.f) {
@@ -156,6 +173,7 @@ TEST_CASE("weather physics: the drag of the calm air at 15 degrees is the one of
 }
 
 TEST_CASE("weather physics: the vehicle gets no force of the weather in calm air at 15 degrees") {
+	weather_physics_setting const on{true};
 	auto vehicle{std::make_unique<TMoverParameters>(0.0, "test", "test", 1)};
 	vehicle->DragConst = 3.0;
 	vehicle->V = 20.0;
@@ -287,4 +305,127 @@ TEST_CASE("live weather: a calm clear night, a storm, and an answer with an erro
 	CHECK(failed.metar.empty());
 	CHECK(failed.error.find("Latitude") != std::string::npos);
 	CHECK(live_weather::url({52.25, 21.0}).find("latitude=52.2500&longitude=21.0000") != std::string::npos);
+}
+
+namespace {
+
+// a cold wet day with a strong head wind blowing across too: all the weather a vehicle can run in
+TWeatherParam foul_weather() {
+	TWeatherParam weather;
+	weather.rain = 1.0;
+	weather.snow = 1.0;
+	weather.temperature = -2.0;
+	weather.wind_along = -15.0;
+	weather.wind_across = 12.0;
+	weather.air_density = weather_physics::air_density(-2.0);
+	return weather;
+}
+
+struct braking {
+	double speed{0.0}; // m/s, after the braking
+	// the weather factor of the friction of its brakes and the water and the ice on them, as the braking begins: the braking itself
+	// dries them, after it they may be dry again
+	double brake_factor{1.0};
+	weather_physics::brake_state brakes;
+};
+
+// a wagon coasting at 60 km/h with the brake pipe charged, then braking with a service application, in the Weather
+braking braked_in(TWeatherParam const &Weather) {
+	test::reseed_random();
+	test::vehicle wagon{test::definition::load("wagon"), 60.0};
+	wagon->DragConst = 3.0;
+	wagon->RunningWeather = Weather;
+	wagon.hold_brake_pipe(5.0);
+	wagon.run(30.0);
+	braking result;
+	result.brake_factor = wagon->Hamulec->weather_factor();
+	result.brakes = wagon->BrakeWeather;
+	wagon.hold_brake_pipe(3.5);
+	wagon.run(15.0);
+	result.speed = wagon->V;
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("weather physics: off (physics.weather 0), a vehicle brakes and coasts in any weather as it does in the calm") {
+	braking calm;
+	braking foul;
+	{
+		weather_physics_setting const off{false};
+		calm = braked_in(TWeatherParam{});
+		foul = braked_in(foul_weather());
+	}
+	CAPTURE(calm.speed);
+	CAPTURE(foul.speed);
+	// the brakes neither get wet nor iced, the wind and the cold air add no drag: the very same run
+	CHECK(foul.speed == calm.speed);
+	CHECK(foul.brake_factor == 1.0);
+	CHECK(foul.brakes.water == 0.0);
+	CHECK(foul.brakes.ice == 0.0);
+	// the run still goes: the wagon slows down, but isn't stopped yet
+	CHECK(calm.speed > 0.0);
+	CHECK(calm.speed < 60.0 / 3.6);
+
+	// on, the same weather does change the run: the comparison above isn't of two runs the weather can't touch
+	weather_physics_setting const on{true};
+	auto const weathered{braked_in(foul_weather())};
+	CAPTURE(weathered.speed);
+	CHECK(weathered.brakes.water + weathered.brakes.ice > 0.0);
+	CHECK(weathered.brake_factor < 1.0);
+	CHECK(weathered.speed != calm.speed);
+}
+
+TEST_CASE("weather physics: off (physics.weather 0), the sand on a slippery rail adds the share it always did") {
+	auto vehicle{std::make_unique<TMoverParameters>(0.0, "test", "test", 1)};
+	vehicle->SandDose = true;
+	// a rail of leaves, of 0.15 when dry and clean
+	vehicle->RunningTrack.friction_dry = 0.15;
+	auto const slippery{0.03};
+	// at a stand, no slip: the adhesion is twice the friction, the sand adds a quarter to it
+	{
+		weather_physics_setting const off{false};
+		CHECK(vehicle->Adhesive(slippery) == doctest::Approx(slippery * 2.0 * 1.25));
+	}
+	// on, the sand gives back a share of the dry rail
+	weather_physics_setting const on{true};
+	CHECK(vehicle->Adhesive(slippery) == doctest::Approx(0.15 * defaults.sand * 2.0));
+}
+
+TEST_CASE("weather physics: off by default, the existing sceneries go as they did until the player turns it on") {
+	CHECK(false == weather_physics::settings{}.enabled);
+}
+
+TEST_CASE("arc flicker: the same for the billboard and the light, not of the engine of Random(), 0.55..1") {
+	std::uintptr_t const vehicle{0x12345678};
+	// worked out, not drawn: the engine the network sessions keep in step isn't touched
+	auto const before{Random()};
+	test::reseed_random();
+	auto const once{gfx::arc_flicker(vehicle, 0, 12.34)};
+	auto const again{gfx::arc_flicker(vehicle, 0, 12.34)};
+	CHECK(once == again);
+	CHECK(Random() == before);
+	// steady within a tick, another one in the next, at any frame rate
+	CHECK(gfx::arc_flicker(vehicle, 0, 12.0) == gfx::arc_flicker(vehicle, 0, 12.0 + 0.5 / gfx::ARC_FLICKER_RATE));
+	auto lowest{1.f};
+	auto highest{0.f};
+	auto changes{0};
+	auto previous{gfx::arc_flicker(vehicle, 0, 0.0)};
+	for (int tick = 1; tick < 3000; ++tick)
+	{
+		auto const value{gfx::arc_flicker(vehicle, 0, tick / gfx::ARC_FLICKER_RATE)};
+		lowest = std::min(lowest, value);
+		highest = std::max(highest, value);
+		changes += (value != previous ? 1 : 0);
+		previous = value;
+	}
+	CHECK(lowest >= 0.55f);
+	CHECK(highest < 1.f);
+	// it does flicker, over the whole range
+	CHECK(lowest < 0.6f);
+	CHECK(highest > 0.95f);
+	CHECK(changes > 2900);
+	// the pantographs of a vehicle, and the vehicles, flicker apart
+	CHECK(gfx::arc_flicker(vehicle, 0, 12.34) != gfx::arc_flicker(vehicle, 1, 12.34));
+	CHECK(gfx::arc_flicker(vehicle, 0, 12.34) != gfx::arc_flicker(vehicle + 64, 0, 12.34));
 }

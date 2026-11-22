@@ -137,7 +137,7 @@ struct global_settings {
     std::string Period{}; // time of the day, based on sun position
     bool FullPhysics{ true }; // full calculations performed for each simulation step
     bool physics_sleepheld{ true }; // vehicles standing still and held by their brakes let their physics sleep, see TMoverParameters::accelerating()
-    bool physics_snow{ true }; // physics.snow: the snow lying on the tracks holds the vehicles back (TTrack::snow_at()); off as before
+    bool physics_snow{ false }; // physics.snow: the snow lying on the tracks holds the vehicles back (TTrack::snow_at()); off (the default) as before
     weather_physics::settings physics_weather; // physics.weather.*: the weather in the physics of the vehicles (McZapkie/weatherphysics.h)
     bool physics_roadlod{ true }; // road vehicles far from the camera go by one step of the physics in a frame, see vehicle_table::update()
     float physics_pipewake{ 0.001f }; // bar: air flowing along a pipe wakes the physics of a vehicle when it changes its pressure by more than this. 0: any flow does
@@ -601,8 +601,12 @@ struct global_settings {
     // the volumetric fog
     int gfx_skyvisibility { 2 };
     // the snow lying on the scenery (environment/snowcover.h): 0 none, 1 on the surfaces only, 2 with the drifts as a surface of their own
-    // over the ground around the camera, worked out from the maps of gfx_skyvisibility (none without them); in the opengl 4.6 renderer
-    int gfx_snow { 2 };
+    // over the ground around the camera, worked out from the maps of gfx_skyvisibility (none without them); in the opengl 4.6 renderer.
+    // none by default: the existing sceneries look as they did until the player turns it on
+    int gfx_snow { 0 };
+    // gfx.wetsurfaces: the surfaces in the open darker and glossier where wet, glassy where iced, as the weather leaves the rails
+    // (environment/railsurface.h); in the opengl 4.6 renderer. off by default, as gfx_snow
+    bool gfx_wetsurfaces { false };
     bool gfx_skyvisibility_sun { true };
     bool gfx_skyvisibility_fog { true };
     // the occlusion only around the tracks with the tunnel flag (the geometry there makes the tunnel dark, the portals, the passage at
@@ -733,6 +737,11 @@ struct global_settings {
 
 	std::vector<std::pair<std::string, std::string>> network_servers;
 	std::optional<std::pair<std::string, std::string>> network_client;
+	// a network session: this machine serves the simulation (network.server) or follows one (network.client)
+	bool network_session() const
+	{
+		return (false == network_servers.empty()) || network_client.has_value();
+	}
 	float desync = 0.0f;
 
 	std::unordered_map<int, std::string> trainset_overrides;

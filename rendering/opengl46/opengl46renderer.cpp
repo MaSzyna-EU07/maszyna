@@ -5101,6 +5101,15 @@ void opengl46_renderer::walk_glare(bool const Enabled)
 	}
 }
 
+void opengl46_renderer::walk_additive(bool const Enabled)
+{
+	// the blending of the glare, the depth test left as it is
+	if (Enabled)
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	else
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
 void opengl46_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
 {
 	if (Submodel->occlusion_query) {
@@ -5251,7 +5260,8 @@ void opengl46_renderer::Render_snow(glm::mat4 const &Future)
 	model_ubs.opacity = 0.5f;
 	model_ubs.cab_interior = 0.f;
 	glm::mat4 const view{OpenGLMatrices.data(GL_MODELVIEW)};
-	auto const triangles{m_snow.render(view, [this](glm::mat4 const &Modelview) {
+	// the projection of the scene block, the one the surface is drawn with: the blocks out of the view are left out
+	auto const triangles{m_snow.render(view, scene_ubs.projection, [this](glm::mat4 const &Modelview) {
 		model_ubs.set_modelview(Modelview);
 		model_ubo->update(model_ubs);
 	})};
@@ -5435,6 +5445,9 @@ void opengl46_renderer::Render_editor_overlay()
 	::glDisable(GL_CULL_FACE);
 	::glDepthMask(GL_FALSE);
 	m_line_shader->bind();
+	// the program of the wires reads the sway and the ice from param[1] and param[2]: none for the lines of the overlay
+	model_ubs.param[1] = glm::vec4(0.f);
+	model_ubs.param[2] = glm::vec4(0.f);
 	auto const &batches{EditorOverlay.batches};
 	for (std::size_t i = 0; i < batches.size() && i < m_editor_overlay_geometry.size(); ++i)
 	{

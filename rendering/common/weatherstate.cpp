@@ -150,9 +150,11 @@ void weather_state::update(float const Atmosphereweight, bool const Skyview, glm
 	m_weather.snow_cover = glm::vec4{depth, snow.fresh(), snow.wetness(), snow.falling()};
 	m_weather.snow_drift = glm::vec4{driftdirection.x, driftdirection.y, snow.drift(), driftspeed};
 	m_weather.snow_wind = glm::vec4{snow.wind().x, snow.wind().y, snow.blowing(), Global.gfx_snow > 0 ? snow.plaster() : 0.f};
-	// the rails and the surfaces in the open, as the physics of the vehicles has them
+	// the rails and the surfaces in the open, as the physics of the vehicles has them; dry and clean to the shading without
+	// gfx.wetsurfaces (apply_wet() of light_common.glsl reads the water and the ice)
 	auto const &rails{weather.rails().state()};
-	m_weather.surface_state = glm::vec4{rails.water, rails.ice, rails.leaves, snow.wire_ice() * 1000.f};
+	auto const wet{Global.gfx_wetsurfaces};
+	m_weather.surface_state = glm::vec4{wet ? rails.water : 0.f, wet ? rails.ice : 0.f, rails.leaves, snow.wire_ice() * 1000.f};
 	for (std::size_t i = 0; i < gl::MAX_CLOUD_LAYERS; ++i)
 	{
 		auto &target{m_weather.cloud_layers[i]};

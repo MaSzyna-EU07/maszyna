@@ -1806,6 +1806,12 @@ void vulkan14_renderer::walk_glare(bool const Enabled)
 	m_draw->glare = Enabled;
 }
 
+void vulkan14_renderer::walk_additive(bool const Enabled)
+{
+	// added to what is there, with the depth test
+	m_draw->additive = Enabled;
+}
+
 void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handle const &Geometry)
 {
 	// the point of the light wasn't seen by the occlusion query of the last frame done by the gpu
@@ -2070,7 +2076,7 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	auto &scene{ctx.scene};
 	auto const commands{draw.commands};
 	// the pipeline for the state of the walk
-	auto const blend{draw.glare ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
+	auto const blend{(draw.glare || draw.additive) ? vk14::blend_mode::scene_additive : (draw.blending ? vk14::blend_mode::scene_alpha : vk14::blend_mode::none)};
 	if (false == bind_scene_pipeline(*draw.program, *draw.targets, blend, static_cast<int>(chunk.topology)))
 	{
 		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);

@@ -18,7 +18,8 @@ layout(local_size_x = SNOW_GROUP_SIZE, local_size_y = SNOW_GROUP_SIZE, local_siz
 layout(binding = 0) uniform sampler2D surface;
 layout(rg32f, binding = 0) uniform writeonly image2D drifted;
 
-// x: texels across the maps, yz: the texel of the camera the maps follow, toroidal
+// x: texels across the maps, yz: the texel of the camera the maps follow, toroidal, w: the first row worked out (opengl46_snow
+// works the maps out a strip of rows at a time)
 layout(location = 0) uniform ivec4 map;
 // x: m of a texel, y: m from the camera the working of the wind fades out from, z: m it fades over
 layout(location = 1) uniform vec4 geometry;
@@ -120,7 +121,7 @@ float opening(ivec2 texel, float ceiling)
 
 void main()
 {
-	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy) + ivec2(0, map.w);
 	if ((texel.x >= map.x) || (texel.y >= map.x))
 		return;
 	vec4 here = texelFetch(surface, texel, 0);

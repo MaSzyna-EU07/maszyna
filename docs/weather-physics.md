@@ -26,11 +26,15 @@ i mgła pogody.
 
 `gl::weather_ubs::surface_state` (oba `weather_common.glsl`): x woda, y lód, z liście, w lód na drutach w mm.
 
-- gl46, `light_common.glsl: apply_wet()`: nawierzchnie pod gołym niebem są ciemniejsze i błyszczące, gdy mokre, i szkliste, gdy
-  oblodzone. Pod dachem, mostem i w tunelu suche (`sky_occlusion_cover()`, ta sama funkcja, co opad), pod śniegiem nie.
-- `traction.frag` (gl46 i vk14): kolor drutu od rodzaju osadu (`model_ubs.param[2]`, mm każdego rodzaju): gołoledź szklista i szara,
-  szadź twarda biała, szadź miękka bielsza, mokry śnieg szarobiały. Z bliska bryły drutów (i ich cienie) grubieją o grubość
-  lodu (`param[1].w`, wzdłuż normalnych w `wire_sway.glsl`).
+- gl46, `light_common.glsl: apply_wet()`, tylko z `gfx.wetsurfaces yes` (domyślnie `no`; bez niego woda i lód idą do shadera
+  jako zero): nawierzchnie pod gołym niebem są ciemniejsze i błyszczące, gdy mokre, i szkliste, gdy oblodzone. Pod dachem, mostem
+  i w tunelu suche (`sky_occlusion_cover()`, ta sama funkcja, co opad), pod śniegiem nie.
+- `traction.frag` (gl46 i vk14), tylko z `physics.weather yes` (bez niego druty wyglądają jak dawniej): kolor drutu od rodzaju
+  osadu (`model_ubs.param[2]`, mm każdego rodzaju): gołoledź szklista i szara, szadź twarda biała, szadź miękka bielsza, mokry śnieg
+  szarobiały. Z bliska bryły drutów (i ich cienie) grubieją o grubość lodu (`param[1].w`, wzdłuż normalnych w `wire_sway.glsl`).
+- Łuki migoczą według `gfx::arc_flicker()` (`rendering/common/arcflicker.h`): z pantografu i czasu symulacji, nie z `Random()`,
+  którego generator sesje sieciowe trzymają zgodnie na wszystkich komputerach. Błysk i światło łuku migoczą tak samo, w tym samym
+  tempie przy każdej liczbie klatek.
 - `traction.vert` (gl46 i vk14): druty i ich bryły z bliska odchylają się o to samo `TTraction::sway()`, z którym liczy fizyka
   (`model_ubs.param[1]`: oś w poprzek przęsła i wychylenie środka; `v_coord.x` wierzchołka: miejsce w przęśle). Linie przęsła są
   dzielone na odcinki nie dłuższe niż 1/8 przęsła (`TTraction::sway_vertices()`). Wzór jest w jednym miejscu, `wire_sway.glsl`.
@@ -46,7 +50,7 @@ do ustawienia ręcznie, przyspieszenie czasu i podgląd prowadzonego pojazdu.
 
 | Klucz | Domyślnie | Znaczenie |
 |---|---|---|
-| `physics.weather` | yes | całość; `no` = stare 0.85 deszcz / 0.75 śnieg |
+| `physics.weather` | no | całość; `no` = stare 0.85 deszcz / 0.75 śnieg, druty bez lodu i nieruchome. Pozostałe klucze działają dopiero z `yes`. W sesji sieciowej (`network.server` / `network.client`) zawsze `no`, razem z `physics.snow 0` i `weather.mode scenery` (`global_settings::FinalizeConfig()`, wpis w logu), a okno nie ma czego ustawiać: komputery liczyłyby każdy swoją pogodę i fizyka by się rozjechała |
 | `physics.weather.adhesion` / `.brakes` / `.wind` / `.airdensity` / `.pantographs` | yes | poszczególne części |
 | `physics.weather.wirewind` | yes | wiatr odchyla druty (rysowanie i fizyka razem) i zrywa pantografy |
 | `physics.weather.wireshadows` | yes | cienie drutów odchylane razem z drutami; `no` = cienie jak dawniej, nieruchome |

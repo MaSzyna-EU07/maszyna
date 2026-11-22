@@ -116,6 +116,18 @@ void global_settings::FinalizeConfig()
     luascreens_enabled = false;
 #endif
 
+    // the weather model (physics.weather, physics.snow, weather.mode) isn't kept the same on the machines of a network session yet:
+    // each would work out a weather of its own from its own eu07.ini, its camera and the live reports, and the physics of the
+    // vehicles would go apart. there the weather of the scenery and the physics stay as they were before it; what it draws
+    // (gfx.snow, gfx.wetsurfaces) changes nothing in the simulation and is left to each machine
+    if (network_session() && (physics_weather.enabled || physics_snow || (WeatherMode != weather_mode::scenery)))
+    {
+        physics_weather.enabled = false;
+        physics_snow = false;
+        WeatherMode = weather_mode::scenery;
+        WriteLog("Weather: a network session, the weather model is off (physics.weather 0, physics.snow 0, weather.mode scenery)");
+    }
+
 #ifdef _WIN32
     Console::ModeSet(iFeedbackMode, iFeedbackPort);
 #endif
@@ -2266,6 +2278,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
         if( ( level == "no" ) || ( level == "false" ) || ( level == "0" ) ) { gfx_snow = 0; }
         else if( ( level == "surfaces" ) || ( level == "1" ) ) { gfx_snow = 1; }
         else { gfx_snow = 2; } }
+    else if( Token == "gfx.wetsurfaces" ) { readswitch( gfx_wetsurfaces ); }
     else if( Token == "gfx.skyvisibility.fog" ) { readswitch( gfx_skyvisibility_fog ); }
     else if( Token == "gfx.skyvisibility.tunnels" ) { readswitch( gfx_skyvisibility_tunnels ); }
     else if( Token == "gfx.tunnelflags" ) { readswitch( gfx_tunnelflags ); }
@@ -2848,6 +2861,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
         std::array<char const *, 3> const snowlevels { "no", "surfaces", "drifts" };
         export_as_text( Output, "gfx.snow", std::string{ snowlevels[ static_cast<std::size_t>( std::clamp( gfx_snow, 0, 2 ) ) ] } );
     }
+    export_as_text( Output, "gfx.wetsurfaces", gfx_wetsurfaces );
     export_as_text( Output, "gfx.skyvisibility.fog", gfx_skyvisibility_fog );
     export_as_text( Output, "gfx.skyvisibility.tunnels", gfx_skyvisibility_tunnels );
     export_as_text( Output, "gfx.tunnelflags", gfx_tunnelflags );

@@ -15,7 +15,7 @@ layout(local_size_x = SNOW_GROUP_SIZE, local_size_y = SNOW_GROUP_SIZE, local_siz
 layout(binding = 0) uniform sampler2D surface;
 layout(binding = 1) uniform sampler2D drifted;
 
-// x: texels across the maps
+// x: texels across the maps, y: the first row worked out (opengl46_snow works the maps out a strip of rows at a time)
 layout(location = 0) uniform ivec4 map;
 
 const float NONE = -5000.0;
@@ -31,7 +31,7 @@ int wrapped(int value)
 
 void main()
 {
-	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy) + ivec2(0, map.y);
 	if ((texel.x >= map.x) || (texel.y >= map.x))
 		return;
 	int index = texel.y * map.x + texel.x;

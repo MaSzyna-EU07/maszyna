@@ -124,6 +124,12 @@ class sky_occlusion
 	{
 		return m_layout.tile * static_cast<float>(m_layout.tiles);
 	}
+	// grows with every upload to the maps (a tile worked out or emptied, the snow on the tracks): what is worked out of them is
+	// worked out again only when it changed
+	std::uint32_t revision() const
+	{
+		return m_uploaded;
+	}
 	// the maps of the renderer in use, nullptr when there are none
 	static sky_occlusion const *current();
 	// a scenery is being loaded or let go: the tiles and the signatures go
@@ -152,6 +158,12 @@ class sky_occlusion
 		static_cast<void>(Y);
 		static_cast<void>(Size);
 		static_cast<void>(Surface);
+	}
+	// whether the backend draws the lying snow (gfx.snow): only then is the surface for it worked out, a backend without it doesn't
+	// have the cpu gather the tracks and build the surfaces for nothing
+	virtual bool draws_snow() const
+	{
+		return false;
 	}
 	// whether the surface for the snow is worked out
 	bool snow_surface() const

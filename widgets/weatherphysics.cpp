@@ -36,6 +36,12 @@ void ui::weatherphysics_panel::render_contents()
 void ui::weatherphysics_panel::render_settings()
 {
 	auto &settings{Global.physics_weather};
+	// the machines of a network session would go apart (global_settings::FinalizeConfig())
+	if (Global.network_session())
+	{
+		ImGui::TextWrapped("%s", STR_C("A network session: the weather in the physics is off, the same on every machine."));
+		return;
+	}
 	for (auto const &parameter : weather_physics::bool_parameters)
 		ImGui::Checkbox(STR_C(parameter.label), &(settings.*parameter.member));
 	ImGui::Separator();

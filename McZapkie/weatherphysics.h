@@ -27,7 +27,9 @@ namespace weather_physics
 
 struct settings
 {
-	bool enabled{true}; // physics.weather: off, the rain and the snow change the adhesion as they did before (0.85 and 0.75)
+	// physics.weather: off (the default), the rain and the snow change the adhesion as they did before (0.85 and 0.75), and none of
+	// the keys below works; on, each of them as it is set
+	bool enabled{false};
 	bool adhesion{true}; // the state of the heads of the rails
 	bool brakes{true}; // the water and the ice on the brakes
 	bool wind{true}; // the wind in the drag
