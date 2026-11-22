@@ -743,11 +743,12 @@ void ui::map_panel::render_map_lines(
 						auto const color_component = [](float component) {
 							return static_cast<int>(std::clamp(component * 255.0f, 0.0f, 255.0f));
 						};
-						cache.colors.push_back(static_cast<std::uint32_t>(IM_COL32(
+						cache.colors.resize(static_cast<std::size_t>(i) + 1, 0);
+						cache.colors[static_cast<std::size_t>(i)] = static_cast<std::uint32_t>(IM_COL32(
 							color_component(effective_color.x),
 							color_component(effective_color.y),
 							color_component(effective_color.z),
-							255)));
+							opacity > 0.0f ? 255 : 0));
 					}
 					cache.model = model;
 					cache.revision = model->LightRevision();
@@ -808,7 +809,7 @@ void ui::map_panel::render_map_lines(
 					dir = glm::normalize(dir);
 				glm::vec2 const normal(-dir.y, dir.x);
 				glm::vec2 const post_direction(dir.x, dir.y);
-				float const post_length = 48.0f * static_cast<float>(std::clamp(100.0 / scale_length, 0.0, 1.0));
+				float const post_length = std::lerp(48.0f, 0.0f, std::clamp(static_cast<float>(scale_length) / 200.0f, 0.0f, 1.0f));
 				float const post_segment_length = post_length / 6.0f;
 				ImVec2 const post_start(center.x, center.y);
 				ImVec2 const post_end(
@@ -829,7 +830,7 @@ void ui::map_panel::render_map_lines(
 					mouse_position.y - post_nearest.y);
 				bool const post_hovered =
 					mouse_over_map && glm::length2(post_distance) <= 49.0f;
-				float constexpr lamp_spacing = 7.0f;
+				float const lamp_spacing = std::lerp(7.0f, 0.0f, std::clamp((static_cast<float>(scale_length) - 200.0f) / 200.0f, 0.0f, 1.0f));
 				if (cache.colors.empty())
 				{
 					bool const icon_hovered = mouse_over_map &&
@@ -856,11 +857,10 @@ void ui::map_panel::render_map_lines(
 					return;
 				}
 
-				ImVec2 const head_center(post_end.x, post_end.y);
 				glm::vec2 const head_axis(post_direction.x, post_direction.y);
+				float const head_half_length = std::max(5.0f, (static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
+				ImVec2 const head_center(post_end.x+head_axis.x * head_half_length, post_end.y + head_axis.y * head_half_length);
 				glm::vec2 const head_normal(-head_axis.y, head_axis.x);
-				float const head_half_length =
-					std::max(5.0f, (static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f + 4.5f);
 				float constexpr head_half_width = 5.0f;
 				glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
 				bool const icon_hovered = mouse_over_map &&
@@ -903,8 +903,10 @@ void ui::map_panel::render_map_lines(
 					draw_list->AddQuad(
 						head_front_left, head_front_right, head_rear_right, head_rear_left,
 						IM_COL32(120, 200, 255, 255), 3.0f);
-				for (std::size_t idx = 0; idx < cache.colors.size(); ++idx)
+				for (std::size_t idx = cache.colors.size(); idx-- > 0;)
 				{
+					if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
+						continue;
 					float const offset =
 						static_cast<float>(cache.colors.size() - idx - 1) -
 						(static_cast<float>(cache.colors.size()) - 1.0f) * 0.5f;
