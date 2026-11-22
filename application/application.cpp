@@ -35,8 +35,12 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
+#include "utilities/physicslog.h"
 #include <chrono>
 #include <format>
+#include <mutex>
+#include <set>
+#include <string>
 #include <vector>
 #include "utilities/translation.h"
 
@@ -54,6 +58,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "version.lib")
+#include <timeapi.h>
 #endif
 
 #ifdef __unix__
@@ -64,6 +69,36 @@ http://mozilla.org/MPL/2.0/.
 eu07_application Application;
 screenshot_manager screenshot_man;
 ui_layer uilayerstaticinitializer;
+
+namespace
+{
+#ifdef _WIN32
+// windows wakes a sleeping thread of a process which didn't ask for a finer timer in steps of up to ~15.6 ms.
+// the wait of fpslimit sleeps, so a 10 ms frame slot of fpslimit 100 ended ~15.6 ms later, the pacer made it up
+// with no wait in the next frame, and the frames came in turns long and short: with vsync on, shown for one or
+// two refreshes of the screen. the finer timer is asked for only with fpslimit, the only steady sleeper of the
+// main loop, as it costs some power for as long as it's held
+bool timer_period_set{false};
+#endif
+
+// asks for the finer timer once, when fpslimit is set
+void begin_timer_period()
+{
+#ifdef _WIN32
+	if (!timer_period_set && Global.minframetime.count() > 0.f)
+		timer_period_set = (timeBeginPeriod(1) == TIMERR_NOERROR);
+#endif
+}
+
+void end_timer_period()
+{
+#ifdef _WIN32
+	if (timer_period_set)
+		timeEndPeriod(1);
+	timer_period_set = false;
+#endif
+}
+} // namespace
 
 #ifdef _WIN32
 extern "C"
@@ -139,6 +174,28 @@ void char_callback(GLFWwindow *window, unsigned int c)
 		return;
 	Application.on_char(c);
 }
+
+namespace
+{
+
+// what glfw says went wrong during the start (init()), such as why the window or its context couldn't be made (no
+// OpenGL driver, no pixel format that fits). each message once, so one repeated, for each window or worker's context,
+// is told once. glfw may call this from any thread that uses it
+void glfw_error_callback(int const Code, char const *Description)
+{
+	auto message{std::format("GLFW error 0x{:08X}: {}", static_cast<unsigned int>(Code), Description != nullptr ? Description : "(no description)")};
+
+	static std::mutex reportedmutex;
+	static std::set<std::string> reported;
+	{
+		std::scoped_lock lock(reportedmutex);
+		if (false == reported.insert(message).second)
+			return;
+	}
+	ErrorLog(message);
+}
+
+} // namespace
 
 // public:
 
@@ -222,7 +279,8 @@ int eu07_application::run_crashgui()
 			return 0;
 		}
 	}
-	return -1;
+	// the player closed the window: the simulator closes with it, as it always has, but that is no failed start
+	return 1;
 }
 #if WITH_DISCORD_RPC
 void eu07_application::DiscordRPCService()
@@ -354,6 +412,8 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
 		return result;
 	}
+	// fpslimit is known now
+	begin_timer_period();
 
 	// the run's seed, settled once and kept in Globals: the engines come out of it.
 	// narrowed on purpose - mt19937 and seed_of() both work on 32 bits, and that is
@@ -395,17 +455,25 @@ int eu07_application::init(int Argc, char *Argv[])
 		ErrorLog("Failed to initialize glfw!");
 		return result;
 	}
-	if (needs_ogl() && (result = init_ogl()) != 0)
+	if (needs_ogl())
 	{
-		ErrorLog("Failed to initialize ogl!");
-		return result;
+		result = init_ogl();
+		if (result != 0)
+		{
+			ErrorLog("Failed to initialize ogl!");
+			return result;
+		}
 	}
 
 	if (crashreport_is_pending() && false == Global.test.enabled)
 	{ // run crashgui as early as possible
 		if ((result = run_crashgui()) != 0)
 		{
-			ErrorLog("Failed to run crash gui!");
+			// above 0 the player closed the window, which is no error
+			if (result < 0)
+				ErrorLog("Failed to run crash gui!");
+			else
+				WriteLog("Crash report window closed, closing");
 			return result;
 		}
 	}
@@ -471,6 +539,11 @@ int eu07_application::init(int Argc, char *Argv[])
 
 	if (!init_network())
 		return -1;
+
+	// glfw's errors are told to explain a failed start. once the simulator runs they would only repeat what the
+	// platform can't do (no setting of the cursor position on Wayland) or what a scenery asks for in vain (old key
+	// codes of its launchers), every frame
+	glfwSetErrorCallback(nullptr);
 
 	return result;
 }
@@ -688,6 +761,8 @@ int eu07_application::run()
 		// fpslimit: wait for the next frame's slot (eu07/maszyna#416)
 		if (auto const nextframe{framepacer.next_frame(frame_pacer::clock::now(), Global.minframetime)})
 		{
+			// fpslimit may come from the config block of the scenery, read after the settings
+			begin_timer_period();
 			std::this_thread::sleep_until(*nextframe);
 		}
 	}
@@ -748,6 +823,9 @@ void eu07_application::exit()
 	track_sleepers::stop_background();
 	step("the black box");
 	simulation::Blackbox.close();
+	step("the physics logs");
+	// what is kept of them, the black box's written last
+	PhysicsLogs.stop();
 	step("the modes");
 	for (auto &mode : m_modes)
 		mode.reset();
@@ -781,6 +859,7 @@ void eu07_application::exit()
 	if (!Global.exec_on_exit.empty())
 		system(Global.exec_on_exit.c_str());
 
+	end_timer_period();
 	step("done");
 	StopLogService();
 	auto it = Global.threads.find("LogService");
@@ -1329,6 +1408,21 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		simulation::apply_test_mode_settings();
 	}
 
+	// a renderer this build doesn't have gets the full one: the starter writes the words of every build it knows
+	// ("vulkan" for the vulkan builds), and any word not known here used to start the legacy renderer.
+	// "simpleshader" and "off" of the older starters keep the legacy one they always had
+	auto const &renderer{Global.GfxRenderer};
+	auto const known{renderer == "default" || renderer == "legacy" || renderer == "simple" || renderer == "null" || renderer == "simpleshader" ||
+	                 renderer == "off" || (renderer == "experimental" && gfx_renderer_factory::get_instance()->has_backend(renderer))};
+	if (false == known)
+	{
+		WriteLog("gfxrenderer \"" + renderer + "\" isn't in this build, the full renderer is used instead");
+		Global.GfxRenderer = "default";
+		Global.NvRenderer = false;
+		Global.LegacyRenderer = false;
+		Global.BasicRenderer = false;
+	}
+
 	return 0;
 }
 
@@ -1342,6 +1436,9 @@ int eu07_application::init_locale()
 
 int eu07_application::init_glfw()
 {
+	// set before glfwInit(), so a failure of the start itself is told too
+	glfwSetErrorCallback(glfw_error_callback);
+
 	{
 		int glfw_major, glfw_minor, glfw_rev;
 		glfwGetVersion(&glfw_major, &glfw_minor, &glfw_rev);

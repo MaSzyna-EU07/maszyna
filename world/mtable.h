@@ -13,32 +13,19 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "audio/sound.h"
+#include "world/timetablereader.h"
 
 namespace Mtable
 {
 
-static int const MaxTTableSize = 100; // można by to robić dynamicznie
 static char const *const hrsd = ".";
 
 // Ra: pozycja zerowa rozkładu chyba nie ma sensu
 // Ra: numeracja przystanków jest 1..StationCount
 
-struct TMTableLine
+// a station of the timetable as the file gives it (TMTableEntry, world/timetablereader.h), with its name announcement
+struct TMTableLine : TMTableEntry
 {
-    float km{ 0.f }; // kilometraz linii
-    float vmax{ -1.f }; // predkosc rozkladowa przed przystankiem
-    // StationName:string[32]; //nazwa stacji ('_' zamiast spacji)
-    // StationWare:string[32]; //typ i wyposazenie stacji, oddz. przecinkami}
-    std::string StationName{ "nowhere" }; // nazwa stacji ('_' zamiast spacji)
-    std::string StationWare; // typ i wyposazenie stacji, oddz. przecinkami}
-    int TrackNo{ 1 }; // ilosc torow szlakowych
-    int Ah{ -1 };
-    float Am{ -1.f }; // godz. i min. przyjazdu, -1 gdy bez postoju
-    int Dh{ -1 };
-    float Dm{ -1.f }; // godz. i min. odjazdu
-    float tm{ 0.f }; // czas jazdy do tej stacji w min. (z kolumny)
-    bool is_maintenance{ false };
-    int radio_channel{ -1 };
     sound_source name_sound{ sound_placement::engine };
 };
 
@@ -55,10 +42,13 @@ class TTrainParameters
     double TTVmax;
     std::string Relation1;
     std::string Relation2; // nazwy stacji danego odcinka
+    // the two as the timetable spells them, with their letters (see TMTableEntry::StationLabel)
+    std::string RelationLabel1;
+    std::string RelationLabel2;
     double BrakeRatio;
     std::string LocSeries; // seria (typ) pojazdu
     double LocLoad;
-    TMTable TimeTable;
+    TMTable TimeTable; // TimeTable[0].flags holds the service flags of the whole train
     int StationCount; // ilość przystanków (0-techniczny)
     int StationIndex; // numer najbliższego (aktualnego) przystanku
     int StationStart; // numer pierwszej stacji pokazywanej na podglądzie rozkładu
@@ -68,6 +58,9 @@ class TTrainParameters
     double CheckTrainLatency() const;
     /*todo: str hh:mm to int i z powrotem*/
     std::string ShowRelation() const;
+    // the relation and the name of given station for the player: utf-8, with the letters the timetable has
+    std::string relation_caption() const;
+    std::string station_caption( std::string const &Name ) const;
     double WatchMTable(double DistCounter) const;
     std::string NextStop() const;
     // wpis rozkladu Offset pozycji za StationIndex (Offset>=1); poza zakresem 1..StationCount
@@ -95,6 +88,10 @@ class TTrainParameters
     int radio_channel() const;
     // returns: sound file associated with current station, or -1
     sound_source current_stop_sound() const;
+    // service flags (eu07/maszyna#95) which hold at the stop the train makes for or stands at
+    timetable::service_flags const &stop_flags() const;
+    // service flags which hold on the way, since the stop the train left last
+    timetable::service_flags const &run_flags() const;
 private:
     void load_sounds();
 };

@@ -43,6 +43,8 @@ public:
         return pCurrentSegment ? pCurrentSegment->uneven_bend( fCurrentDistance ) : glm::dvec3 { 0.0 }; };
     // TTrack::rail_phase of the point Offset ahead of the axle along the vehicle
     double RailPhase( double const Offset ) const;
+    // TTrack::buckle_curvature at the axle, averaged over Base around it
+    double BuckleCurvature( double const Base ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
 	void Reset();
     void Render(float fNr);

@@ -1,0 +1,19 @@
+{
+  "description": "EU07 on td.scn on the td/rozklad timetable; at 10:35, as it leaves, the curve tdo_n222 about 950 m ahead buckles hard with a trackbuckle event: 600 mm out of the curve over a main lobe of 8 m (an equivalent radius of 9 m, about 30 m for the body on axles 11 m apart). The AI doesn't see it and runs into it at the 46 km/h it has there: the locomotive leaves the rails on the buckle and stops short of Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_buckle_event.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic",
+    "amplitude": "600 8"
+  },
+  "ini": ["gfxrenderer null"],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_contains", "pattern": "Track \"tdo_n222\" buckled \\(event autotest_buckle\\): 600 mm to the (left|right) at [0-9.]+ m, main lobe 8.0 m" },
+    { "type": "log_contains", "pattern": "Bad driving: autotest_\\S+ derailed on buckled track" },
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "distance", "max": 1100 }
+  ]
+}

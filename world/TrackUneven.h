@@ -20,13 +20,16 @@ http://mozilla.org/MPL/2.0/.
 #include <glm/gtc/constants.hpp>
 
 // Track unevenness: a displacement field over the plan of the scenery, so everything at one place moves together: joined tracks, the
-// paths of a switch, sleepers, axles. Waves 5-42 m long, shares after the German track spectrum with the long waves cut down; up and down to 83 m.
-// The "uneven" value is the peak deviation of a rail on a 10 m chord, as in PLK Id-14 appendix 1; see test_track_uneven.cpp.
+// paths of a switch, sleepers, axles. Waves 7-90 m long sideways and 8-110 m up and down, about the bands D1-D3 of EN 13848. Their amplitudes
+// follow the shape of the track spectra of FRA and ORE B176, S ~ Wc^2 / (W^2 (W^2 + Wc^2)) with Wc = 0.8245 rad/m: the longer a wave, the
+// higher it is. The "uneven" value only sets the scale: the peak deviation of a rail on a 10 m chord, as PLK Id-14 appendix 1 measures it;
+// see test_track_uneven.cpp.
 namespace track_uneven {
 
 inline constexpr float most { 100.f }; // largest value of the attributes, mm
-inline constexpr double stray_per_mm { 0.00145 }; // field amplitude per mm of "uneven", m
-inline constexpr double cross_share { 0.53 }; // share of the field amplitude the rails settle apart by
+inline constexpr double stray_up_per_mm { 0.00229 }; // amplitude of the field up and down per mm of "uneven", m
+inline constexpr double stray_side_per_mm { 0.0031 }; // amplitude of the field sideways per mm of "uneven", m
+inline constexpr double cross_share { 0.35 }; // share of the vertical amplitude the rails settle apart by
 inline constexpr double fade { 20.0 }; // length over which a track goes from the value at its end to its own, m
 inline constexpr double dip_share { 0.4 }; // joint dip depth per mm of "uneven", mm
 inline constexpr double dip_reach { 3.0 }; // reach of the dip on each side of a joint, m
@@ -182,12 +185,12 @@ wave_set<Count> make_waves( double const Turn, std::array<double, Count> const &
     return result;
 }
 
-inline constexpr std::array<double, 8> wave_lengths { 5.3, 7.1, 9.7, 13.1, 17.9, 23.9, 31.7, 41.9 };
-inline constexpr std::array<double, 8> wave_shares { 0.0721, 0.0997, 0.1344, 0.1703, 0.1549, 0.1386, 0.1226, 0.1074 };
+// each wave stands for a band of the spectrum, the lengths in a constant ratio, so its share goes as the square root of S(W) * W
+inline constexpr std::array<double, 8> wave_lengths { 7.0, 10.1, 14.5, 20.9, 30.1, 43.4, 62.5, 90.0 };
+inline constexpr std::array<double, 8> wave_shares { 0.0435, 0.0617, 0.082, 0.1045, 0.1294, 0.1579, 0.1909, 0.23 };
 
-// fewer short ones than sideways: the rails come near the limit in the vertical more often, with the peak still at it.
-// The long ones hardly count on the 10 m chord: the body rises and falls on them, slowly enough for a pantograph to keep up
-inline wave_set<8> const up_waves { make_waves<8>( 0.0, { 8.3, 11.9, 16.7, 23.9, 37.1, 47.3, 61.9, 83.3 }, { 0.14, 0.19, 0.22, 0.22, 0.23, 0.23, 0.23, 0.23 } ) };
+// the same shape. The long ones hardly count on the 10 m chord and the cab hardly feels them: the body rises and falls on them
+inline wave_set<8> const up_waves { make_waves<8>( 0.0, { 8.0, 11.6, 16.9, 24.6, 35.8, 52.0, 75.6, 110.0 }, { 0.0761, 0.1058, 0.1393, 0.176, 0.2175, 0.2651, 0.3215, 0.3887 } ) };
 inline wave_set<8> const x_waves { make_waves( 1.1, wave_lengths, wave_shares ) };
 inline wave_set<8> const z_waves { make_waves( 2.3, wave_lengths, wave_shares ) };
 // the tilt along each axis of the plan. Long waves only: with the short ones the cross level reaching its limit would break the limit of twist

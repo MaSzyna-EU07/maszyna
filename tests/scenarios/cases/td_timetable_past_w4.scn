@@ -1,0 +1,9 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// the timetable train of td.scn (td/rozklad, Stacja1 10:35 -> Przystanek -> Stacja2) placed past the W4 of
+// Stacja1 instead of before it: the head {{offset}} m into tor1k, the track after the one with the W4, which is
+// left under the consist, behind the head. the route out of track 1 is set at 10:34
+trainset td/rozklad tor1k {{offset}} 0.1
+{{consist}}
+endtrainset
+
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end

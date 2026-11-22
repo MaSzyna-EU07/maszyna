@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/Logs.h"
 #include "utilities/logfiles.h"
+#include "utilities/crashsignals.h"
 
 #include <format>
 
@@ -132,7 +133,10 @@ void LogService()
 				{
 					if (!output.is_open())
 					{
-						output.open(log_file_name(log_file::log, Global.MultipleLogs, filename_scenery(), filename_date()), std::ios::trunc);
+						std::string const filename { log_file_name(log_file::log, Global.MultipleLogs, filename_scenery(), filename_date()) };
+						output.open(filename, std::ios::trunc);
+						// the stack of a crash on Linux goes to the end of this file
+						crash_signals::set_log_path(filename);
 					}
 					output << msg << "\n";
 					output.flush();
