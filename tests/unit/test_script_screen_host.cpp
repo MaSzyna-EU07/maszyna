@@ -1239,7 +1239,10 @@ return {
 }
 )"};
 
-// white when the images a screen holds are held to its memory, and the images it dropped don't count
+// white when the images a screen holds are held to its memory, and the images it dropped don't count. an image of
+// 4096 x 4096 is 64 MB, half the memory of a screen: the second one kept is refused, and the 4 dropped ones (twice
+// the memory) would be refused too if the dropped ones counted. no more of them: each is filled pixel by pixel, slowly
+// in the coverage build (GCC -O0 --coverage), and with 20 of them the screen sometimes didn't draw in its 20 s there
 constexpr std::string_view image_memory_script{R"(
 local kept = {}
 local ok, message = pcall(function()
@@ -1248,7 +1251,7 @@ end)
 local refused = not ok and message:find("memory limit exceeded", 1, true) ~= nil and #kept < 100
 kept = nil
 local dropped = pcall(function()
-	for i = 1, 20 do local image = eu07.image(4096, 4096) end
+	for i = 1, 4 do local image = eu07.image(4096, 4096) end
 end)
 return {
 	render = function(state)
