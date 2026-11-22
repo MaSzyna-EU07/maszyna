@@ -101,3 +101,146 @@ TEST_CASE("script screens: a screen reads files only below its own folder") {
 	CHECK_FALSE(script_screens::is_safe_relative_path("\\windows"));
 	CHECK_FALSE(script_screens::is_safe_relative_path("c:/windows/win.ini"));
 }
+
+TEST_CASE("script screens: the script of a screen is in the vehicle's folder, or from the game's, and not outside it") {
+	using script_screens::screen_script_path;
+	std::string const vehicle{"dynamic/pkp/ep07_v1/"};
+	CHECK(screen_script_path(vehicle, "screen.lua") == "dynamic/pkp/ep07_v1/screen.lua");
+	CHECK(screen_script_path(vehicle, "scripts/screen.lua") == "scripts/screen.lua");
+	// a backslash isn't a folder to the game (substr_path), so the name goes in the vehicle's folder
+	CHECK(screen_script_path(vehicle, "lua\\screen.lua") == "dynamic/pkp/ep07_v1/lua\\screen.lua");
+
+	CHECK_FALSE(screen_script_path(vehicle, "../../../screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "scripts/../../screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "..\\..\\screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "/screen.lua").has_value());
+	CHECK_FALSE(screen_script_path(vehicle, "c:/games/screen.lua").has_value());
+	CHECK_FALSE(screen_script_path("../outside/", "screen.lua").has_value());
+}
+
+TEST_CASE("script screens: the steps a Lua pattern function may take at worst") {
+	using script_screens::lua_pattern_cost;
+	using script_screens::max_pattern_cost;
+	// a plain search: the subject (and one past it) times the pattern
+	CHECK(lua_pattern_cost("abc", 999, true, true) == doctest::Approx(1000.0 * 3));
+	CHECK(lua_pattern_cost(".-b", 999, true, true) == doctest::Approx(1000.0 * 3));
+	// a pattern without special characters is searched plainly as well
+	CHECK(lua_pattern_cost("abc", 999, false, true) == doctest::Approx(1000.0 * 3));
+	CHECK(lua_pattern_cost("", 999, false, true) == doctest::Approx(1000.0));
+	// from every position, times the subject for each repetition but a last one
+	CHECK(lua_pattern_cost(".-b", 999, false, true) == doctest::Approx(1000.0 * 1000 * 3));
+	CHECK(lua_pattern_cost("a*", 999, false, true) == doctest::Approx(1000.0 * 2));
+	CHECK(lua_pattern_cost("(a+)", 999, false, true) == doctest::Approx(1000.0 * 4));
+	CHECK(lua_pattern_cost("a+$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 3));
+	CHECK(lua_pattern_cost("(%d+):(%d+)", 999, false, true) == doctest::Approx(1000.0 * 1000 * 11));
+	CHECK(lua_pattern_cost("[^\n]+", 999, false, false) == doctest::Approx(1000.0 * 5));
+	CHECK(lua_pattern_cost("[%]x]*y", 999, false, true) == doctest::Approx(1000.0 * 1000 * 7));
+	CHECK(lua_pattern_cost("%bxyz", 999, false, true) == doctest::Approx(1000.0 * 1000 * 5));
+	// %b goes along the subject on its own: it counts where it ends the pattern too
+	CHECK(lua_pattern_cost("%b()", 999, false, true) == doctest::Approx(1000.0 * 1000 * 4));
+	CHECK(lua_pattern_cost("(%b())", 999, false, true) == doctest::Approx(1000.0 * 1000 * 6));
+	CHECK(lua_pattern_cost("%b().*", 999, false, true) == doctest::Approx(1000.0 * 1000 * 6));
+	CHECK(lua_pattern_cost("(a)%1x", 999, false, true) == doctest::Approx(1000.0 * 1000 * 6));
+	CHECK(lua_pattern_cost("%f[%w]%w+", 999, false, true) == doctest::Approx(1000.0 * 9));
+	// '?' doubles
+	CHECK(lua_pattern_cost("a?a?b", 999, false, true) == doctest::Approx(1000.0 * 4 * 5));
+	// '^' anchors find, match and gsub to the first position; gmatch takes it as a character
+	CHECK(lua_pattern_cost("^.-b", 999, false, true) == doctest::Approx(1000.0 * 4));
+	CHECK(lua_pattern_cost("^.-b", 999, false, false) == doctest::Approx(1000.0 * 1000 * 4));
+	// a malformed pattern is the library's to refuse
+	CHECK(lua_pattern_cost("[a", 999, false, true) > 0.0);
+	CHECK(lua_pattern_cost("%", 999, false, true) > 0.0);
+	CHECK(lua_pattern_cost("%b", 999, false, true) > 0.0);
+
+	// the review's case, and what a screen does
+	CHECK(lua_pattern_cost(".-b", 1'000'000, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("[^\n]+", 1'000'000, false, false) < max_pattern_cost);
+	CHECK(lua_pattern_cost("^(%w+)=(%d+)$", 1'000, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("%s+$", 4'000, false, true) < max_pattern_cost);
+	std::string optional;
+	for (int idx = 0; idx < 30; ++idx) {
+		optional += "a?";
+	}
+	CHECK(lua_pattern_cost(optional + std::string(30, 'a'), 100, false, true) > max_pattern_cost);
+}
+
+TEST_CASE("script screens: a repetition followed by what always matches doesn't multiply") {
+	using script_screens::lua_pattern_cost;
+	// the first %s* of the trim: past it, (.-)%s*$ matches from wherever it stopped, so it's tried once
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 12));
+	CHECK(lua_pattern_cost("^%s*(.*)", 999, false, true) == doctest::Approx(8.0));
+	CHECK(lua_pattern_cost("a*.-$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 5));
+	// what may not match still multiplies
+	CHECK(lua_pattern_cost("^%s*(.*%S)", 999, false, true) == doctest::Approx(1000.0 * 1000 * 10));
+	CHECK(lua_pattern_cost("^%s*x%s*$", 999, false, true) == doctest::Approx(1000.0 * 1000 * 9));
+	// '$' is the end only at the end of the pattern
+	CHECK(lua_pattern_cost("a*$b", 999, false, true) == doctest::Approx(1000.0 * 1000 * 4));
+}
+
+TEST_CASE("script screens: %b counts the way from an opening character to the one that closes it") {
+	using script_screens::lua_pattern_cost;
+	using script_screens::max_pattern_cost;
+	// nothing closes: from each character to the end of the subject, the subject squared; whatever follows the %b
+	auto const open{std::string(1'000'000, '(')};
+	CHECK(lua_pattern_cost("%b()", std::string_view{open}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%b()", std::string_view{open}, false, false) > max_pattern_cost);
+	CHECK(lua_pattern_cost("(%b())", std::string_view{open}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%b().*", std::string_view{open}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%b()x*", std::string_view{open}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%b()", std::string_view{open + open}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%b()", std::string_view{open}.substr(0, 10'000), false, true) > max_pattern_cost);
+	// the same with a hundred thousand of them, more than the openings held at a time
+	CHECK(lua_pattern_cost("%b()", std::string_view{open}.substr(0, 100'000), false, true) > max_pattern_cost);
+	// tried once from each position: the positions and the ways from the three openings, 2 + 5 + 2
+	std::string_view const calls{"a(b)c(d(e))"};
+	CHECK(lua_pattern_cost("%b()", calls, false, true) == doctest::Approx((12.0 + 9.0) * 4));
+	CHECK(lua_pattern_cost("(%b())", calls, false, true) == doctest::Approx((12.0 + 9.0) * 6));
+	// tried from the first position only, or after a repetition: the longest way of one try, and one
+	CHECK(lua_pattern_cost("^%b()", calls, false, true) == doctest::Approx(6.0 * 5));
+	CHECK(lua_pattern_cost(".-%b()", calls, false, true) == doctest::Approx(12.0 * 12 * 6 * 6));
+	// the same character opens and closes: to the next one
+	CHECK(lua_pattern_cost("%b\"\"", std::string_view{"a\"b\"c\""}, false, true) == doctest::Approx((7.0 + 5.0) * 4));
+	// none in the subject: nothing to go along
+	CHECK(lua_pattern_cost("%b()", std::string_view{"abc"}, false, true) == doctest::Approx(4.0 * 4));
+	// a long text of short calls is cheap, and so is one opening left unclosed in it
+	std::string text;
+	while (text.size() < 100'000) {
+		text += "call(a, b) ";
+	}
+	CHECK(lua_pattern_cost("%b()", std::string_view{text}, false, true) < max_pattern_cost);
+	text[9] = ' ';
+	CHECK(lua_pattern_cost("%b()", std::string_view{text}, false, true) < max_pattern_cost);
+	// nested deep, the ways add up to the subject squared again
+	auto const nested{std::string(20'000, '(') + std::string(20'000, ')')};
+	CHECK(lua_pattern_cost("%b()x", std::string_view{nested}, false, true) > max_pattern_cost);
+	// malformed: the function raises its error
+	CHECK(lua_pattern_cost("%b(", std::string_view{open}, false, true) > 0.0);
+}
+
+TEST_CASE("script screens: a repetition right before the final $ counts its longest run in the subject") {
+	using script_screens::lua_pattern_cost;
+	using script_screens::max_pattern_cost;
+	std::string words;
+	while (words.size() < 10'000) {
+		words += "word  next\tone ";
+	}
+	// a line of 10 KB trimmed: the subject times the longest run of spaces (2), where the length alone gives the
+	// subject squared
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * 3 * 12));
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{words}, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", words.size(), false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%s+$", std::string_view{words}, false, true) < max_pattern_cost);
+	CHECK(lua_pattern_cost("%d*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * 1 * 4));
+	CHECK(lua_pattern_cost("x*$", std::string_view{"axxxa"}, false, true) == doctest::Approx(6.0 * 4 * 3));
+	CHECK(lua_pattern_cost("%%*$", std::string_view{"a%%%a"}, false, true) == doctest::Approx(6.0 * 4 * 4));
+	// a long run is still the subject squared: "x", 10 000 spaces, "x" takes the trim about 10^8 steps, and a
+	// megabyte of them hours
+	auto const spaces{"x" + std::string(10'000, ' ') + "x"};
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{spaces}, false, true) > max_pattern_cost);
+	auto const megabyte{"x" + std::string(1'000'000, ' ') + "x"};
+	CHECK(lua_pattern_cost("^%s*(.-)%s*$", std::string_view{megabyte}, false, true) > max_pattern_cost);
+	CHECK(lua_pattern_cost("%s*$", std::string_view{megabyte}, false, true) > max_pattern_cost);
+	// a set or '.' isn't gone through: the whole subject
+	CHECK(lua_pattern_cost("[ ]*$", std::string_view{words}, false, true) == doctest::Approx((words.size() + 1.0) * (words.size() + 1.0) * 5));
+	CHECK(lua_pattern_cost(".-b", std::string(1'000'000, 'a'), false, true) > max_pattern_cost);
+}

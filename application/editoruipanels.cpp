@@ -166,14 +166,14 @@ void itemproperties_panel::update(scene::basic_node *Node)
 	        }
 	    }
 	*/
-	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : Bezogonkow(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node->node_type.c_str());
+	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : data_name_to_utf8(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node->node_type.c_str());
 	text_lines.emplace_back(textline, Global.UITextColor);
 	textline = format(STR_C("Location: %.2f, %.2f, %.2f (distance %.1f m)"), node->location().x, node->location().y, node->location().z,
 	                  glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z})) +
 	           "\nUUID: " + node->uuid.to_string();
 	if (scene::Layers.valid(node->layer()))
 	{
-		textline += "\n" + format(STR_C("Layer: %s"), Bezogonkow(scene::Layers.layer(node->layer()).name).c_str());
+		textline += "\n" + format(STR_C("Layer: %s"), data_name_to_utf8(scene::Layers.layer(node->layer()).name).c_str());
 	}
 	text_lines.emplace_back(textline, Global.UITextColor);
 
@@ -286,7 +286,7 @@ void itemproperties_panel::update(scene::basic_node *Node)
 				{
 					textline += ", ";
 				}
-				textline += event.second != nullptr ? Bezogonkow(event.second->m_name) : event.first + STR_C(" (missing)");
+				textline += event.second != nullptr ? data_name_to_utf8(event.second->m_name) : event.first + STR_C(" (missing)");
 			}
 			textline += "] ";
 		}
@@ -299,7 +299,7 @@ void itemproperties_panel::update(scene::basic_node *Node)
 
 		textline = format(STR_C("Data: [%s] [%.2f] [%.2f]"), subnode->Text().c_str(), subnode->Value1(), subnode->Value2());
 		text_lines.emplace_back(textline, Global.UITextColor);
-		textline = format(STR_C("Track: %s"), (subnode->asTrackName.empty() ? std::string{STR_C("(none)")} : Bezogonkow(subnode->asTrackName)).c_str());
+		textline = format(STR_C("Track: %s"), (subnode->asTrackName.empty() ? std::string{STR_C("(none)")} : data_name_to_utf8(subnode->asTrackName)).c_str());
 		text_lines.emplace_back(textline, Global.UITextColor);
 	}
 
@@ -888,7 +888,7 @@ void nodebank_panel::render_templates_list(std::string const &Filter)
 			ImGui::TextDisabled(" %s", entry.category.c_str());
 		}
 		category = &entry.category;
-		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + Bezogonkow(entry.file) + ")##inc" + std::to_string(entryidx)};
+		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + data_name_to_utf8(entry.file) + ")##inc" + std::to_string(entryidx)};
 		if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
 			m_selectedtemplate = entry.statement;
 		++listed;
@@ -1725,7 +1725,7 @@ std::string layer_content(scene::basic_layer const &Layer)
 
 std::string layer_name(scene::layer_handle const Layer)
 {
-	return scene::Layers.valid(Layer) ? Bezogonkow(scene::Layers.layer(Layer).name) : std::string{STR_C("(none)")};
+	return scene::Layers.valid(Layer) ? data_name_to_utf8(scene::Layers.layer(Layer).name) : std::string{STR_C("(none)")};
 }
 
 // button which can be greyed out, with an explanation shown when it's hovered
@@ -1769,7 +1769,7 @@ void itemproperties_panel::render_include()
 	auto &include{*m_include};
 	include.active = false;
 
-	ImGui::Text(STR_C("include: %s"), Bezogonkow(include.target).c_str());
+	ImGui::Text(STR_C("include: %s"), data_name_to_utf8(include.target).c_str());
 	if (false == include.info.name.empty())
 	{
 		ImGui::TextDisabled("%s", include.info.name.c_str());
@@ -2323,7 +2323,7 @@ void includes_panel::render_list()
 		{
 			auto const &entry{entries[m_listed[row]]};
 			auto const marker{entry.complete ? std::string{STR_C("[ready]")} + "  " : entry.described ? std::string{STR_C("[incomplete]")} + "  " : std::string{}};
-			auto const label{marker + Bezogonkow(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
+			auto const label{marker + data_name_to_utf8(entry.file) + (entry.name.empty() ? "" : "  -  " + entry.name) + "##" + std::to_string(m_listed[row])};
 			if (false == entry.described)
 			{
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
@@ -2353,7 +2353,7 @@ void includes_panel::render_list()
 void includes_panel::render_description()
 {
 	ImGui::Separator();
-	ImGui::Text("%s", Bezogonkow(m_file).c_str());
+	ImGui::Text("%s", data_name_to_utf8(m_file).c_str());
 	input_text(STR_C("Name"), m_info.name);
 	input_text(STR_C("Category"), m_info.category);
 	input_text(STR_C("Description"), m_info.description);
@@ -2431,7 +2431,7 @@ void includes_panel::render_description()
 	{
 		std::string error;
 		m_statuserror = false == editor_includes::save(m_file, m_info, error);
-		m_status = m_statuserror ? error : format(STR_C("Description saved in \"%s\""), Bezogonkow(m_file).c_str());
+		m_status = m_statuserror ? error : format(STR_C("Description saved in \"%s\""), data_name_to_utf8(m_file).c_str());
 		if (false == m_statuserror)
 		{
 			EditorIncludes.update(m_file);
