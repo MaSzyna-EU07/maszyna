@@ -36,7 +36,7 @@ struct situation {
 	bool speed_asked{false}; // there is a speed to go at
 	bool train_brake_applied{false}; // the train brake handle is past running
 	double tractive_force{0.0}; // of the train, in the direction of travel [N]
-	double holding_force{0.0}; // the grade force on the train [N]
+	double grade_force{0.0}; // the grade force on the train [N]
 	bool consist_released{false}; // the brakes of the train are off, the hold of the start not counted
 	// the brakes of the train charged to what the pipe has: else the brake that holds the train has no air
 	bool consist_charged{true};

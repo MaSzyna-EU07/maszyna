@@ -114,7 +114,7 @@ uphill_start::situation standing_train() {
 	now.speed_up = true;
 	now.speed_asked = true;
 	now.train_brake_applied = true;
-	now.holding_force = grade;
+	now.grade_force = grade;
 	return now;
 }
 
@@ -198,13 +198,13 @@ TEST_CASE("uphill start: against the releasing brake no more power is added than
 TEST_CASE("uphill start: on coarse notches the power stays on the first one that holds the train") {
 	// an EU07 at a standstill on 3 kV gives about 29, 52, 79 and 104 kN on notches 1-4 (eu07/maszyna#396): with a
 	// train of 300 t on 10 per mille, 29.4 kN of grade force, notch 2 jumps from 0.99 to 1.77 x the grade force
-	double const notches[]{29000.0, 52000.0, 79000.0, 104000.0};
+	std::array<double, 4> const notches{29000.0, 52000.0, 79000.0, 104000.0};
 	double const holding{300000.0 * 9.81 * 0.01};
 	auto notch{0};
 	auto force{0.0};
 	// in the release phase, a notch added an update as long as power may be added
 	for (auto update{0}; update < 10; ++update) {
-		if (uphill_start::may_add_power(true, force, holding) && (notch < 4)) {
+		if (uphill_start::may_add_power(true, force, holding) && (notch < static_cast<int>(notches.size()))) {
 			force = notches[notch++];
 		}
 	}

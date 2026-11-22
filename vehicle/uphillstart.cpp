@@ -30,7 +30,7 @@ bool rolls_back(situation const &Now) {
 
 bool power_holds(situation const &Now, double const Holdtime) {
 
-	return (Now.velocity > moving_velocity) || (Now.tractive_force > holding_force * Now.holding_force) || (Holdtime > hold_time);
+	return (Now.velocity > moving_velocity) || (Now.tractive_force > holding_force * Now.grade_force) || (Holdtime > hold_time);
 }
 
 bool released(situation const &Now, double const Releasetime) {
