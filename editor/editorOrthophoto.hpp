@@ -28,8 +28,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"      // material_handle
 #include "rendering/geometrybank.h" // gfx::geometry_handle
 
-bool editor_http_get(std::string const &Url, std::vector<std::uint8_t> &Out, std::string &Error);
-
 namespace scene
 {
 class basic_region;
@@ -102,6 +100,9 @@ class editor_orthophoto
 	editor_orthophoto(editor_orthophoto const &) = delete;
 	editor_orthophoto &operator=(editor_orthophoto const &) = delete;
 
+	// the tiles over a rectangle of the world (x, z; what the camera sees), within the reach around the camera, asked for before anything
+	// else, the ones which failed tried again at once. returns: how many were put at the front of the queue
+	std::size_t hurry(glm::dvec2 const &Min, glm::dvec2 const &Max, glm::dvec3 const &Camera);
 	bool enabled() const { return m_enabled; }
 	// disabling drops the queue and returns the gpu memory of the resident tiles
 	void enabled(bool State);
@@ -117,6 +118,10 @@ class editor_orthophoto
 	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
 	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
 	void guess_source(height_query Query) { m_guess = std::move(Query); }
+	// true while the ground under an XZ rectangle (Min/Max are x,z) is still to come. A new tile there waits for it, rather than
+	// being laid out at the height of the layer; elsewhere it lies on whatever ground there is, or on the guess, as without it
+	using coming_query = std::function<bool(glm::dvec2 const &Min, glm::dvec2 const &Max)>;
+	void coming_source(coming_query Query) { m_coming = std::move(Query); }
 	// the area the imagery is downloaded in, a polygon of PUWG 1992 (easting, northing): its tiles go to the disk cache in the
 	// background, the products the settings ask for, and no tile outside it is asked for around the camera. Empty: no area, the
 	// tiles around the camera as before
@@ -176,7 +181,8 @@ class editor_orthophoto
 		bool puwg{false};
 		std::string error;
 	};
-	static service_info describe(std::string const &Service);
+	// Stop: true to give the reading up
+	static service_info describe(std::string const &Service, std::function<bool()> const &Stop = {});
 	static std::string cache_directory();
 
   private:
@@ -236,6 +242,9 @@ class editor_orthophoto
 		float height_max{0.0f};
 		std::vector<glm::dvec3> surface;  // upward facing ground triangles clipped to the tile (3 vertices each)
 		bool guessed{false};              // no ground under it when sampled: the heights guessed, from the terrain model or the tiles beside
+		// the points of the grid of the heights the ground didn't answer when sampled (rows north->south, as heights): filled from
+		// the points beside or guessed, and sampled again once the ground comes under one of them
+		std::vector<std::uint16_t> unanswered;
 		// scene geometry
 		scene::basic_section *section{nullptr}; // section holding the shape (nullptr = not in the scene)
 		scene::basic_cell *cell{nullptr};       // set instead of the section's shape list when the shape is translucent
@@ -245,6 +254,12 @@ class editor_orthophoto
 	};
 
 	static int level_for(int Distance, bool Hires);
+	// the level a tile is asked for at first: a tile showing nothing yet takes the standard image before the 4K one
+	static int first_level(tile const &Tile, int Level);
+	// the tile is outside the download area set, which then has no imagery asked for it
+	bool outside_area(tile_key const &Key) const;
+	// a tile of the view hurried: put at the front of the queue unless it's shown as it should be. true: counted among the hurried
+	bool hurry_tile(tile_key const &Key, int Distance);
 	tile_key camera_tile(glm::dvec3 const &Camera) const;
 	glm::dvec2 tile_corner(tile_key const &Key) const; // world (x,z) of the north-west corner
 	void schedule(tile_key const &Key, tile &Tile, int Level, std::uint8_t Alpha);
@@ -253,6 +268,10 @@ class editor_orthophoto
 	void release_tile(tile &Tile);
 	texture_slot acquire_slot();
 	void sample_ground(tile_key const &Key, tile &Tile);
+	// the ground has come under a point of the tile which had none when it was sampled
+	bool ground_came(tile_key const &Key, tile const &Tile) const;
+	// a new tile isn't asked for yet: the ground under it is still to come
+	bool waits_for_ground(tile_key const &Key) const;
 	// the height of the ground sampled under a tile beside Own at the point, the tiles with guessed heights left out
 	bool sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const;
 	void build_shape(tile_key const &Key, tile &Tile);
@@ -272,6 +291,7 @@ class editor_orthophoto
 	ground_query m_ground;
 	height_query m_height;
 	height_query m_guess;
+	coming_query m_coming;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles
@@ -300,6 +320,7 @@ class editor_orthophoto
 	bool m_prefetch_paused{false};
 	source m_prefetch_source;
 	std::uint32_t m_prefetch_generation{0};
+	std::set<tile_key> m_urgent; // asked for by hurry(): workers take these first; guarded by m_mutex
 
 	std::atomic<bool> m_stop{false};
 	std::atomic<std::uint32_t> m_generation{1};
