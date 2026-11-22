@@ -42,6 +42,7 @@ struct editor_tool_button
 	bool group{false}; // a gap before it, it starts another group
 	bool enabled{true};
 	ImU32 accent{0}; // the colour of the family of the tool, 0 if it has none
+	char const *description{nullptr}; // how the tool works, shown once the cursor has rested on it; nullptr: the tooltip is shown then
 };
 
 namespace
@@ -79,15 +80,22 @@ bool begin_overlay(char const *Name, ImVec2 const &Position, ImVec2 const &Size)
 	return open;
 }
 
-// the name of the tool with its key, and what it does
+// the name of the tool with its key
+std::string button_title(tool_button const &Button)
+{
+	return Button.key != nullptr ? std::format("{}  [{}]", Button.label, Button.key) : std::string{Button.label};
+}
+
+// the name of the tool with its key, and what it does, at once; how it works once the cursor has rested on it
 void button_tooltip(tool_button const &Button)
 {
-	std::string tip{Button.label};
-	if (Button.key != nullptr)
-		tip += std::string{"  ["} + Button.key + "]";
+	auto const title{button_title(Button)};
 	if (Button.tooltip != nullptr)
-		tip += std::string{"\n"} + Button.tooltip;
-	ImGui::SetTooltip("%s", tip.c_str());
+		ImGui::SetTooltip("%s\n%s", title.c_str(), Button.tooltip);
+	else
+		ImGui::SetTooltip("%s", title.c_str());
+	if (Button.description != nullptr)
+		ui::rest_description(Button.description, title, ui_layer::font_bold);
 }
 
 // a hook of an arrow: back to the left for undo, on to the right for redo, R its size from the centre
@@ -229,11 +237,11 @@ bool capsule_button(tool_button const &Button, int const Id, ImU32 const Accent)
 		capsule_button_name(list, Button, ImVec2(position.x, middle), text, Accent);
 	else
 		icon_or_letters(list, Button, ImVec2(position.x + width * 0.5f, middle), text);
-	auto const title{Button.key != nullptr ? std::format("{}  [{}]", Button.label, Button.key) : std::string{Button.label}};
+	auto const title{button_title(Button)};
 	if (hovered)
 		ImGui::SetTooltip("%s", title.c_str());
-	if (Button.tooltip != nullptr)
-		ui::rest_description(Button.tooltip, title, ui_layer::font_bold);
+	if (auto const *const description{Button.description != nullptr ? Button.description : Button.tooltip}; description != nullptr)
+		ui::rest_description(description, title, ui_layer::font_bold);
 	return clicked;
 }
 
@@ -276,7 +284,10 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		    {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY,
 		     STR_C("LMB on a model in the scene copies it into the node bank, to be put down again elsewhere.")}};
 		for (auto const &entry : modes)
-			Buttons.push_back({entry.picture, entry.label, entry.key, entry.description, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+		{
+			Buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+			Buttons.back().description = entry.description;
+		}
 		break;
 	}
 	case work_area::tracks:
@@ -346,7 +357,10 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 			                                    STR_C("LMB on a road puts a point where the road vehicles leave the scenery and are taken off it."),
 			                                    STR_C("LMB on a road puts a pedestrian crossing across it.")};
 			for (int index = 0; index < static_cast<int>(std::size(kinds)); ++index)
-				Buttons.push_back({icon::count, kinds[index], nullptr, descriptions[index], tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
+			{
+				Buttons.push_back({icon::count, kinds[index], nullptr, nullptr, tool.placekind == index, [&tool, index]() { tool.placekind = index; }, index == 0});
+				Buttons.back().description = descriptions[index];
+			}
 		}
 		Buttons.push_back({icon::lanes, STR_C("Show lanes"), nullptr, STR_C("The lanes of the roads drawn as the paths the vehicles take"), tool.lanes, [&tool]() { tool.lanes = !tool.lanes; }, true});
 		break;
@@ -378,11 +392,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
 		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
 		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, STR_C("Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."), orthophoto_settings_open(), [this]() {
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
 			                   // among the base layers in the layers window
 			                   ui()->show_layers();
 			                   m_orthophoto_window = true;
 		                   }});
+		Buttons.back().description = STR_C("Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it.");
 		break;
 	}
 	}
