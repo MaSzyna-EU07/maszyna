@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
+#include "vehicle/uphillstart.h"
 #include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
@@ -27,6 +28,7 @@ auto const EU07_AI_BRAKINGTESTACCELERATION = -0.06;
 auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
+auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start keeps the power on while the train brake releases
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
 
 enum TOrders
@@ -337,6 +339,8 @@ private:
     bool uphill_stop_hold() const;
     bool uphill_brake_committed( double const Velocity ) const;
     void control_uphill_start();
+    void end_uphill_start();
+    bool uphill_brake_top_up();
     std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
@@ -441,6 +445,14 @@ private:
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
     bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
     double fUphillStartTime = 0.0; // when the uphill start began
+    bool bUphillRelease = false; // starting uphill, the power holds the train and the train brake is being released
+    bool bUphillBrakeTopUp = false; // starting uphill, the train brake is applied further before the locomotive brake comes off
+    uphill_start::top_up UphillTopUp; // starting uphill, what has been done to apply the train brake further
+    double fUphillReleaseTime = 0.0; // when the release began
+    double fUphillTractiveForce = 0.0; // the tractive force of the consist while starting uphill [N]
+    double fUphillHoldingForce = 0.0; // the grade force on the consist while starting uphill [N]
+    bool IsConsistReleased = true; // the brakes of the consist are off, the hold of an uphill start not counted
+    double fConsistVelocity = 0.0; // the mass-weighted speed of the consist, positive in the direction of travel [km/h]
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
     double VelSignal = 0.0; // ograniczenie prędkości z kompilacji znaków i sygnałów // normalnie na początku ma stać, no chyba że jedzie

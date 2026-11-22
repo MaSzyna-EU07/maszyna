@@ -572,6 +572,7 @@ set(CORE_SOURCES
 "vehicle/brakingcurve.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
+"vehicle/uphillstart.cpp"
 "vehicle/horn.cpp"
 "vehicle/cameraviews.cpp"
 "vehicle/linebreaker.cpp"
