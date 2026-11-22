@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/horn.h"
 #include "vehicle/linebreaker.h"
 #include "vehicle/holdcoillever.h"
+#include "vehicle/compartmentlightsswitch.h"
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
@@ -537,6 +538,36 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::generictoggle27, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle28, &TTrain::OnCommand_generictoggle},
     {user_command::generictoggle29, &TTrain::OnCommand_generictoggle},
+    {user_command::genericset0, &TTrain::OnCommand_genericset},
+    {user_command::genericset1, &TTrain::OnCommand_genericset},
+    {user_command::genericset2, &TTrain::OnCommand_genericset},
+    {user_command::genericset3, &TTrain::OnCommand_genericset},
+    {user_command::genericset4, &TTrain::OnCommand_genericset},
+    {user_command::genericset5, &TTrain::OnCommand_genericset},
+    {user_command::genericset6, &TTrain::OnCommand_genericset},
+    {user_command::genericset7, &TTrain::OnCommand_genericset},
+    {user_command::genericset8, &TTrain::OnCommand_genericset},
+    {user_command::genericset9, &TTrain::OnCommand_genericset},
+    {user_command::genericset10, &TTrain::OnCommand_genericset},
+    {user_command::genericset11, &TTrain::OnCommand_genericset},
+    {user_command::genericset12, &TTrain::OnCommand_genericset},
+    {user_command::genericset13, &TTrain::OnCommand_genericset},
+    {user_command::genericset14, &TTrain::OnCommand_genericset},
+    {user_command::genericset15, &TTrain::OnCommand_genericset},
+    {user_command::genericset16, &TTrain::OnCommand_genericset},
+    {user_command::genericset17, &TTrain::OnCommand_genericset},
+    {user_command::genericset18, &TTrain::OnCommand_genericset},
+    {user_command::genericset19, &TTrain::OnCommand_genericset},
+    {user_command::genericset20, &TTrain::OnCommand_genericset},
+    {user_command::genericset21, &TTrain::OnCommand_genericset},
+    {user_command::genericset22, &TTrain::OnCommand_genericset},
+    {user_command::genericset23, &TTrain::OnCommand_genericset},
+    {user_command::genericset24, &TTrain::OnCommand_genericset},
+    {user_command::genericset25, &TTrain::OnCommand_genericset},
+    {user_command::genericset26, &TTrain::OnCommand_genericset},
+    {user_command::genericset27, &TTrain::OnCommand_genericset},
+    {user_command::genericset28, &TTrain::OnCommand_genericset},
+    {user_command::genericset29, &TTrain::OnCommand_genericset},
     {user_command::vehiclemoveforwards, &TTrain::OnCommand_vehiclemoveforwards},
     {user_command::vehiclemovebackwards, &TTrain::OnCommand_vehiclemovebackwards},
     {user_command::vehicleboost, &TTrain::OnCommand_vehicleboost},
@@ -1447,8 +1478,8 @@ void TTrain::OnCommand_secondcontrollerincrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			Train->ggScndCtrlButton.UpdateValue(Command.action == GLFW_RELEASE ? 0.f : 1.f, Train->dsbSwitch);
 		}
@@ -1511,17 +1542,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 		// glfw_press
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on if it's not active
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// otherwise turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -1541,17 +1572,17 @@ void TTrain::OnCommand_tempomattoggle(TTrain *Train, command_data const &Command
 			return;
 		}
 
-		if (Train->mvControlled->ScndCtrlPos == 0)
+		if (false == Train->mvControlled->IsSpeedCtrlEngaged())
 		{
 			// turn on
-			Train->mvControlled->IncScndCtrl(1);
+			Train->mvControlled->SpeedCtrlSwitch(true);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(1.0, Train->dsbSwitch);
 		}
 		else
 		{
 			// turn off
-			Train->mvControlled->DecScndCtrl(2);
+			Train->mvControlled->SpeedCtrlSwitch(false);
 			// visual feedback
 			Train->ggScndCtrlButton.UpdateValue(0.0, Train->dsbSwitch);
 		}
@@ -1653,8 +1684,8 @@ void TTrain::OnCommand_secondcontrollerdecrease(TTrain *Train, command_data cons
 			auto const neutralposition{Train->ggScndCtrl.is_toggle() ? 0.5f : 0.f};
 			Train->ggScndCtrl.UpdateValue(Command.action == GLFW_RELEASE ? neutralposition : activeposition, Train->dsbSwitch);
 		}
-		// potentially animate tempomat button
-		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1)
+		// potentially animate tempomat button, unless the cruise control has its own
+		if (Train->ggScndCtrlButton.is_push() && Train->mvControlled->ScndCtrlPos <= 1 && false == Train->mvControlled->IsSpeedCtrlSeparate())
 		{
 			if (Train->m_controlmapper.contains("tempomatoff_sw:"))
 			{
@@ -5425,14 +5456,15 @@ void TTrain::OnCommand_lightspresetactivatenext(TTrain *Train, command_data cons
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// past the last position to the first one: a knob turning all the way round turns on rather than
+				// back across all the positions, and the position reached sounds (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), true, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -5463,14 +5495,14 @@ void TTrain::OnCommand_lightspresetactivateprevious(TTrain *Train, command_data 
 		// visual feedback
 		if (Train->ggLightsButton.SubModel != nullptr)
 		{
-			// HACK: skip submodel animation when restarting cycle, since it plays in the 'wrong' direction
 			if (false == restartcycle)
 			{
 				Train->ggLightsButton.UpdateValue(static_cast<float>(Train->mvOccupied->LightsPos - 1), Train->dsbSwitch);
 			}
 			else
 			{
-				Train->ggLightsButton.PutValue(static_cast<float>(Train->mvOccupied->LightsPos - 1));
+				// back past the first position to the last one, the same way (eu07/maszyna#464)
+				Train->ggLightsButton.UpdateValueWrapped(static_cast<float>(Train->mvOccupied->LightsPos - 1), false, Train->mvOccupied->LightsPosNo, Train->dsbSwitch);
 			}
 		}
 	}
@@ -6605,6 +6637,16 @@ void TTrain::OnCommand_compartmentlightstoggle(TTrain *Train, command_data const
 		return;
 	}
 
+	if (Command.action == GLFW_RELEASE)
+	{
+		// the press changed the state the command is picked from below, so a release picked from it went to the other
+		// command and the push button that was pressed never withdrew its request. The release goes to both commands:
+		// each returns its own push type control to the neutral position and withdraws its request
+		OnCommand_compartmentlightsenable(Train, Command);
+		OnCommand_compartmentlightsdisable(Train, Command);
+		return;
+	}
+
 	// keep the switch from flipping back and forth if key is held down
 	if (false == Train->mvOccupied->CompartmentLights.is_active && false == Train->mvOccupied->CompartmentLights.is_enabled)
 	{
@@ -6624,13 +6666,11 @@ void TTrain::OnCommand_compartmentlightsenable(TTrain *Train, command_data const
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitch(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the off request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightsoff_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitchOff(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitchOff(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -6665,13 +6705,11 @@ void TTrain::OnCommand_compartmentlightsdisable(TTrain *Train, command_data cons
 	if (Command.action == GLFW_PRESS)
 	{
 		Train->mvOccupied->CompartmentLightsSwitchOff(true);
-		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
+		// withdraw the on request, unless a push type control in the cab withdraws it when released
+		if (compartment_lights_switch::withdraws_other_request(Train->m_controlmapper.contains("compartmentlights_sw:"), Train->ggCompartmentLightsButton.is_toggle(),
+		                                                       Train->m_controlmapper.contains("compartmentlightson_sw:")))
 		{
-			auto const istoggle{(static_cast<int>(Train->ggCompartmentLightsButton.type()) & static_cast<int>(TGaugeType::toggle)) != 0};
-			if (istoggle)
-			{
-				Train->mvOccupied->CompartmentLightsSwitch(false);
-			}
+			Train->mvOccupied->CompartmentLightsSwitch(false);
 		}
 		// visual feedback
 		if (Train->m_controlmapper.contains("compartmentlights_sw:"))
@@ -6994,19 +7032,9 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		}
 		else
 		{
-			// two-state switch
-			if (item.GetDesiredValue() < 0.5)
-			{
-				// turn on
-				// visual feedback
-				item.UpdateValue(1.0);
-			}
-			else
-			{
-				// turn off
-				// visual feedback
-				item.UpdateValue(0.0);
-			}
+			// two-state switch, or one dragged in between its ends with the mouse: to the end farther from it
+			// visual feedback
+			item.UpdateValue(universal_drag::toggled(item.GetDesiredValue()));
 		}
 	}
 	else if (Command.action == GLFW_RELEASE && item.type() == TGaugeType::push)
@@ -7016,6 +7044,46 @@ void TTrain::OnCommand_generictoggle(TTrain *Train, command_data const &Command)
 		// visual feedback
 		item.UpdateValue(0.0);
 	}
+}
+
+// sets a universal control to the position given in param1, from 0 to 1 (MaSzyna-EU07/maszyna#62): the mouse drags
+// the ones with drag: in their definition, and it can be bound to an axis of a gamepad. it stays where it is set
+void TTrain::OnCommand_genericset(TTrain *Train, command_data const &Command)
+{
+
+	if (Command.action == GLFW_RELEASE)
+	{
+		return;
+	}
+	auto const itemindex = static_cast<int>(Command.command) - static_cast<int>(user_command::genericset0);
+	auto &item = Train->ggUniversals[itemindex];
+	if (item.is_push())
+	{
+		// an impulse switch springs back, it has no position to be left in
+		return;
+	}
+	// visual feedback
+	item.UpdateValue(universal_drag::clamp(Command.param1));
+}
+
+universal_drag::direction TTrain::universal_drag_direction(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()) || ggUniversals[Index].SubModel == nullptr)
+	{
+		return universal_drag::direction::none;
+	}
+	return ggUniversals[Index].drag();
+}
+
+float TTrain::universal_position(int const Index) const
+{
+
+	if (Index < 0 || Index >= static_cast<int>(ggUniversals.size()))
+	{
+		return 0.f;
+	}
+	return ggUniversals[Index].GetDesiredValue();
 }
 
 void TTrain::OnCommand_springbraketoggle(TTrain *Train, command_data const &Command)
@@ -9725,7 +9793,7 @@ bool TTrain::Update(double const Deltatime)
 	{
 		if (ggScndCtrlButton.is_toggle())
 		{
-			ggScndCtrlButton.UpdateValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f, dsbSwitch);
+			ggScndCtrlButton.UpdateValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f, dsbSwitch);
 		}
 		ggScndCtrlButton.Update(lowvoltagepower);
 	}
@@ -9760,7 +9828,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * 8.0 - 2.0;
-				b = std::clamp(b, -2.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
+				b = safe_clamp(b, -2.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -9768,7 +9836,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * 7.0 - 1.0;
-				b = std::clamp(b, -1.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
+				b = safe_clamp(b, -1.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -9776,7 +9844,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * (mvOccupied->Handle->GetPos(bh_MAX) - mvOccupied->Handle->GetPos(bh_MIN)) + mvOccupied->Handle->GetPos(bh_MIN);
-				b = std::clamp(b, mvOccupied->Handle->GetPos(bh_MIN), mvOccupied->Handle->GetPos(bh_MAX)); // przycięcie zmiennej do granic
+				b = safe_clamp(b, mvOccupied->Handle->GetPos(bh_MIN), mvOccupied->Handle->GetPos(bh_MAX)); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -10625,9 +10693,14 @@ void TTrain::load_script_screen(cParser &Parser, script_language const Language)
 	{
 		return;
 	}
-	if (substr_path(entry.config.script).empty())
+	if (auto path{script_screens::screen_script_path(DynamicObject->asBaseDir, entry.config.script)}; path.has_value())
 	{
-		entry.config.script = DynamicObject->asBaseDir + entry.config.script;
+		entry.config.script = std::move(*path);
+	}
+	else
+	{
+		ErrorLog(std::format("Bad script screen: \"{}\" leads outside the game's folder", entry.config.script));
+		return;
 	}
 
 	TSubModel *submodel{nullptr};
@@ -11390,8 +11463,11 @@ glm::dvec3 TTrain::clamp_inside(glm::dvec3 const &Point) const
 		return Point;
 	}
 
-	return {std::clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), std::clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
-	        std::clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
+	// the bounds come from the .mmd as written, and some cabs have them reversed (the B cars of SA134 and 21xM,
+	// ET40, 754...); std::clamp is undefined for those and on MSVC makes the camera jump between the two bounds
+	// every frame, as its result is fed back here. safe_clamp keeps the camera on the upper bound, as 26.05 did
+	return {safe_clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), safe_clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
+	        safe_clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
 }
 
 const TTrain::screenentry_sequence &TTrain::get_screens()
@@ -11993,7 +12069,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// tempomat
 	if (false == ggScndCtrlButton.is_push())
 	{
-		ggScndCtrlButton.PutValue(mvControlled->ScndCtrlPos > 0 ? 1.f : 0.f);
+		ggScndCtrlButton.PutValue(mvControlled->IsSpeedCtrlEngaged() ? 1.f : 0.f);
 	}
 	// sandbox
 	if (ggAutoSandButton.type() != TGaugeType::push)
@@ -12172,6 +12248,7 @@ bool TTrain::initialize_button(cParser &Parser, std::string const &Label, int co
 	    {"i-mainpipelock:", &mvOccupied->LockPipe},
 	    {"i-battery:", &mvOccupied->Power24vIsAvailable},
 	    {"i-cablight:", &Cabine[iCabn].bLight},
+	    {"i-compartmentlights:", &mvOccupied->CompartmentLights.is_active},
 	};
 	{
 		auto lookup = autolights.find(Label);

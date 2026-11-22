@@ -9,8 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include "input/command.h"
+#include "vehicle/universaldrag.h"
 
 // virtual slider; value determined by position of the mouse
 class mouse_slider {
@@ -21,9 +23,14 @@ public:
 // methods
     void
         bind( user_command const &Command );
+    // binds the slider to universal control Index, which the mouse drags in the Drag direction from its Position
+    // to any position between its ends (MaSzyna-EU07/maszyna#62)
+    void
+        bind_universal( int const Index, universal_drag::direction const Drag, float const Position );
     void
         release();
-    void
+    // returns whether the value changed
+    bool
         on_move( double const Mousex, double const Mousey );
     inline
     user_command
@@ -32,10 +39,19 @@ public:
     double
         value() const {
             return m_value; }
+    // the universal control the slider drags, if any, and whether letting it go now is a click rather than a drag
+    std::optional<int>
+        universal() const {
+            return m_universal; }
+    bool
+        is_click() const {
+            return m_universaldrag && m_universaldrag->is_click(); }
 
 private:
 // members
     user_command m_command { user_command::none };
+    std::optional<int> m_universal; // the universal control dragged, if any
+    std::optional<universal_drag::drag> m_universaldrag;
     double m_value { 0.0 };
     double m_valuerange { 0.0 };
     bool m_analogue { false };
@@ -92,6 +108,12 @@ private:
     // potentially replaces supplied command with a more relevant one
     user_command
         adjust_command( user_command Command ) const;
+    // the universal control a command toggles, if it toggles one
+    static std::optional<int>
+        universal_index( user_command const Command );
+    // toggles universal control Index, as a click on it does
+    void
+        toggle_universal( int const Index ) const;
 
 // members
     command_relay m_relay;

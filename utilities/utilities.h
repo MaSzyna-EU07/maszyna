@@ -64,7 +64,12 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int Random(int min, int max);
+// whole numbers from min to max, both included. a name of its own keeps the calls of Random() with whole-number
+// bounds (the wind, the wheel flats, the truck hunting, the tachometer) on Random(double, double), which draws the
+// real number in between that they expect. drawn from the local engine, as up to 26.05.1 from an engine of its own: it
+// picks what one machine shows (the trivia of the loading screen), and a draw from the engine of the run's seed would
+// put that engine out of step with the other machines of a network session
+int RandomInt(int min, int max);
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
@@ -175,6 +180,17 @@ std::string utf8_to_win1250(std::string const &Text);
 bool utf8_to_utf32(std::string const &Text, std::u32string &Output);
 // decodes windows-1250 (ansi) encoded text into unicode code points
 void win1250_to_utf32(std::string const &Text, std::u32string &Output);
+// a text of the data files as utf-8, for the user interface. the files are in windows-1250, some of the newer ones in
+// utf-8: a text which is valid utf-8 stays as it is, any other is read as windows-1250, every letter of the code page
+// (not only the polish ones win1250_to_utf8() knows) turned into utf-8
+std::string data_text_to_utf8(std::string const &Text);
+// the same for a name (of a station, a train, an event, a node, a file) shown in a line of the user interface: what
+// Bezogonkow() is for, but the letters keep their marks. control characters become spaces and, when asked, underscores too
+std::string data_name_to_utf8(std::string const &Name, bool Underscorestospaces = false);
+// number of characters (code points) of a text in utf-8; a byte which isn't a part of a valid sequence counts as one
+std::size_t utf8_length(std::string_view Text);
+// a text in utf-8 cut or filled with spaces to given number of characters, for the columns of the fixed width
+std::string utf8_fit(std::string_view Text, std::size_t Width);
 
 inline std::string extract_value(std::string const &Key, std::string const &Input)
 {
@@ -222,10 +238,17 @@ template <typename Type_> bool extract_value(Type_ &Variable, std::string const 
 template <> bool extract_value(bool &Variable, std::string const &Key, std::string const &Input, std::string const &Default);
 
 bool FileExists(std::string const &Filename);
-// the file as it's named on the disk when only the case of its name differs, as in the sceneries made on Windows; empty when
-// there's none. the folders have to be named in their case; on Windows, finding the names in any case itself, the file given or none
+// the file as it's named on the disk when only the case of its name or of its folders differs, as in the sceneries made on Windows;
+// empty when there's none. on Windows, finding the names in any case itself, the file given or none
 std::string FileCased(std::filesystem::path const &Filename);
+// the file to open: as it's named on the disk, the name given when there's none
+std::string FileOnDisk(std::string const &Filename);
+// the name (relative to the folder, without extension) as it's named on the disk with the first of the extensions it has a file with,
+// found in any case; the name given when there's none
+std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions);
 
+// the first name with one of the extensions which has a file in any case, in the order given; given back as named here, the file
+// is opened by FileOnDisk()
 std::pair<std::string, std::string> FileExists(std::vector<std::string> const &Names, std::vector<std::string> const &Extensions);
 
 // returns time of last modification for specified file
@@ -275,17 +298,18 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return Left == Right;
 }
 
-// Tolerant clamp. Unlike std::clamp, this does NOT invoke undefined behaviour when
-// the bounds are inverted (Lo > Hi) - it normalizes them instead. This restores the
-// pre-refactor behaviour of the old custom clamp() for code paths where the bounds are
-// computed at runtime and can legitimately cross (e.g. AI acceleration/braking limits,
-// physics jolt calculations), where std::clamp's UB produced wrong results.
+// Tolerant clamp, the old custom clamp() of the project (up to 26.05.1). Unlike
+// std::clamp, this does NOT invoke undefined behaviour when the bounds are inverted
+// (Lo > Hi): the lower bound is applied first and the upper one last, so inverted
+// bounds give the upper bound, as the old clamp() did. Every call of the old clamp()
+// whose bounds can cross (they come from the .fiz, the .mmd or the window, or are
+// computed from such values) uses it, so it gives what it gave before the move to
+// std::clamp. Where the code keeps the bounds in order, std::clamp gives the same.
+// New code uses std::clamp.
 template <typename Type_>
 constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
 {
-	return ( Hi < Lo )
-		? std::clamp( Value, Hi, Lo )
-		: std::clamp( Value, Lo, Hi );
+	return std::min( std::max( Value, Lo ), Hi );
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer

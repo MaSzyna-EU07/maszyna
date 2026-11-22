@@ -23,9 +23,11 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Camera.h"
 #include "vehicle/Train.h"
 #include "vehicle/odometer.h"
+#include "vehicle/pulleemode.h"
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <unordered_set>
 #include "utilities/Globals.h"
@@ -317,9 +319,13 @@ namespace {
 void deserialize_script_sign( cParser &Parser, script_screens::screen_config &Sign, std::string const &Folder ) {
 
     Sign.deserialize( Parser );
-    if( false == Sign.script.empty()
-     && substr_path( Sign.script ).empty() ) {
-        Sign.script = Folder + Sign.script;
+    if( Sign.script.empty() ) { return; }
+    if( auto path { script_screens::screen_script_path( Folder, Sign.script ) }; path.has_value() ) {
+        Sign.script = std::move( *path );
+    }
+    else {
+        ErrorLog( "Bad script sign: \"" + Sign.script + "\" leads outside the game's folder" );
+        Sign.script.clear();
     }
 }
 
@@ -697,6 +703,62 @@ void TDynamicObject::UpdateDoorPlug(TAnim *pAnim) {
         if( wing != nullptr ) {
             wing->SetTranslate( shift );
         }
+    }
+}
+
+// a wing animated in its own way (animdoor: of the .mmd): as far along its own range as the door of its side is
+void TDynamicObject::UpdateDoorWing( TAnim *pAnim, door_wings::wing_spec const &Spec ) {
+
+    if( pAnim->smAnimated == nullptr ) { return; }
+
+    auto const position { door_wings::wing_position( door_position( *MoverParameters, pAnim ), MoverParameters->Doors.range, Spec.range ) };
+    for( auto *wing : wing_parts( pAnim ) ) {
+        if( wing == nullptr ) { continue; }
+        switch( Spec.type ) {
+            case door_wings::shift_type: {
+                wing->SetTranslate( door_wings::slide( position ) );
+                break;
+            }
+            case door_wings::rotate_type: {
+                wing->SetRotate( float3( 1, 0, 0 ), position );
+                break;
+            }
+            case door_wings::fold_type: {
+                fold_wing( wing, door_wings::fold( position ) );
+                break;
+            }
+            case door_wings::plug_type: {
+                wing->SetTranslate( door_wings::plug( position, Spec.range_out ) );
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+    }
+}
+
+void TDynamicObject::bind_door_animation( TAnim &Animation ) {
+
+    if( auto const *spec { door_wings::find( m_doorwings, Animation.iNumber ) } ) {
+        Animation.yUpdate = [ this, spec = *spec ]( TAnim *pAnim ) { UpdateDoorWing( pAnim, spec ); };
+        return;
+    }
+    switch( MoverParameters->Doors.type ) { // od razu zapinamy potrzebny typ animacji
+        case 1:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorTranslate, this, std::placeholders::_1 );
+            break;
+        case 2:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorRotate, this, std::placeholders::_1 );
+            break;
+        case 3:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorFold, this, std::placeholders::_1 );
+            break; // obrót 3 kolejnych submodeli
+        case 4:
+            Animation.yUpdate = std::bind( &TDynamicObject::UpdateDoorPlug, this, std::placeholders::_1 );
+            break;
+        default:
+            break;
     }
 }
 
@@ -1101,7 +1163,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     continue;
                 }
 
-                auto const dist { std::clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
+                auto const dist { safe_clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
 
                 if( dist >= 0.0 ) { continue; }
 
@@ -1986,6 +2048,9 @@ void TDynamicObject::place_on_track(TTrack *Track, double fDist, bool Reversed)
 		Axle1.Move((iDirection ? fDist : -fDist) - fAxleDistHalf, false); // false, żeby nie generować eventów
 		break;
 	}
+	// the stretches the criteria of derailment held over were on the track the vehicle left (consistteleport)
+	MoverParameters->derailment_monitor.reset();
+	MoverParameters->derailment_distance = 0.0;
 	// potrzebne do wyliczenia aktualnej pozycji; nie może być zero, bo nie przeliczy pozycji
 	// teraz jeszcze trzeba przypisać pojazdy do nowego toru, bo przesuwanie początkowe osi nie
 	// zrobiło tego
@@ -2017,6 +2082,14 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     // another run of the same scenario, with another seed, dresses it differently
     m_variantseed = hash_string( asName, Global.random_seed );
     std::string asAnimName; // zmienna robocza do wyszukiwania osi i wózków
+    // a vehicle prepared for being hauled dead (parameter H after its coupling, MaSzyna-EU07/maszyna#64) has nobody
+    // driving it, whatever its crew entry says: its cab can't be activated, and a driver in it would either take
+    // the train or be one more for the train's driver to put to sleep
+    auto const hauled { pullee_mode::requested( MoreParams ) };
+    if( hauled && ( DriverType == "headdriver" || DriverType == "reardriver" ) ) {
+        WriteLog( "Vehicle " + asName + " is prepared for hauling (parameter H), the driver it was given is left out" );
+        DriverType = "nobody";
+    }
     // Ra: zmieniamy znaczenie obsady na jednoliterowe, żeby dosadzić kierownika
     if (DriverType == "headdriver")
         DriverType = "1"; // sterujący kabiną +1
@@ -2336,6 +2409,11 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
 */
     } // koniec while kropka
 
+    if( hauled ) {
+        // once the vehicle has its starting state: the hand brake and the spring brake of a standing one let go, battery off
+        MoverParameters->PulleeModeSwitch( true );
+    }
+
     if (MoverParameters->CategoryFlag & 2) // jeśli samochód
     { // ustawianie samochodow na poboczu albo na środku drogi
         if( Track->fTrackWidth < 3.5 // jeśli droga wąska
@@ -2369,6 +2447,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     ShakeSpring.Init( 125.0 );
     BaseShake = baseshake_config {};
     ShakeState = shake_state {};
+    ShakeStateBefore = shake_state {};
 
     // McZapkie-250202
 /*
@@ -2527,7 +2606,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     initial_track = MyTrack;
     iNumAxles = 2;
     // McZapkie-090402: odleglosc miedzy czopami skretu lub osiami
-    fAxleDist = std::clamp(
+    fAxleDist = safe_clamp(
             std::max( MoverParameters->BDist, MoverParameters->ADist ),
             0.2, //żeby się dało wektory policzyć
             MoverParameters->Dim.L - 0.2 ); // nie mogą być za daleko bo będzie "walenie w mur"
@@ -3125,7 +3204,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
 }
 
 void
@@ -3227,6 +3306,11 @@ bool TDynamicObject::Update(double dt, double dt1)
     // między skrajnymi osiami
     // (!!!odwrotny)
     ts.dHrail = (Axle1.GetRoll() + Axle0.GetRoll()) * 0.5; //średnia przechyłka pudła
+    // the uneven track under the outer axles, for the criteria of derailment: its lateral curvature, and its cross level
+    ts.uneven_curvature = glm::dot( 0.5 * ( Axle0.UnevenBend() + Axle1.UnevenBend() ), vLeft );
+    ts.uneven_cross = MyTrack->uneven_underway().cross;
+    // a buckle of the track under the body: the mean of the curvatures at the outer axles, each over the wheelbase of its bogie
+    ts.buckle_curvature = 0.5 * ( Axle0.BuckleCurvature( MoverParameters->ADist ) + Axle1.BuckleCurvature( MoverParameters->ADist ) );
     // TTrackParam tp;
     tp.Width = MyTrack->fTrackWidth;
     // McZapkie-250202
@@ -3234,6 +3318,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     tp.CategoryFlag = MyTrack->iCategoryFlag & 15;
     tp.DamageFlag = MyTrack->iDamageFlag;
     tp.QualityFlag = MyTrack->iQualityFlag;
+    tp.Name = &MyTrack->name();
 
     // couplers
     if( MoverParameters->Couplers[0].CouplingFlag != coupling::faux
@@ -3426,7 +3511,9 @@ bool TDynamicObject::Update(double dt, double dt1)
             {
                 Fzad = std::min(LBR * FmaxED, FfulED);
             }
-            if (MoverParameters->ShuntMode && eimic <= 0 || doorisopen /*||
+            // the holding brake lets go once power has been demanded for its delay (SBDReleaseDelay, none by default)
+            auto const holdingbrakereleased { MoverParameters->UpdateStopBrakeRelease( eimic, dt1 ) };
+            if (MoverParameters->ShuntMode && false == holdingbrakereleased || doorisopen /*||
                 (MoverParameters->V * MoverParameters->DirAbsolute < -0.2)*/)
             {
                 auto const sbd { ( MoverParameters->SpringBrake.IsActive && MoverParameters->ReleaseParkingBySpringBrake ? 0.0 : MoverParameters->StopBrakeDecc ) };
@@ -3764,20 +3851,21 @@ bool TDynamicObject::Update(double dt, double dt1)
 							// crude bump simulation, drop down on even axles, move back up on
 							// the odd ones
 							// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-							double const headroom = std::clamp(
-							    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
-							    0.0, MoverParameters->Vmax );
+							// the arguments keep the order they had up to 26.05.1, 0 in place of the value and the figure in place of the
+							// upper limit, so they work out as the old clamp worked them out up to 26.05.1: the headroom is
+							// Vmax - (Vel + 0.32 Vmax) whatever its sign, and the bump is capped from above only
+							double const headroom = safe_clamp( 0.0, MoverParameters->Vmax, MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ) );
 							double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
 							if (MyTrack->eType == tt_Normal)
 							{
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 4.0, jolt );
 							}
 							else if (MyTrack->eType == tt_Switch)
 							{
-								double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
+								double const accHorizontal = safe_clamp( 0.0, 1.0, jolt ) * ((axleindex % 2) != 0 ? 1 : -1);
 								MoverParameters->AccS += accHorizontal;
 								MoverParameters->AccN += accHorizontal;
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 2.0, jolt );
 							}
                         }
                         ++axleindex;
@@ -5882,30 +5970,42 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                         if (pAnimations[i + j].smAnimated)
                         { //++iAnimatedDoors;
                             pAnimations[i + j].smAnimated->WillBeAnimated(); // wyłączenie optymalizacji transformu
-                            switch( MoverParameters->Doors.type )
-                            { // od razu zapinamy potrzebny typ animacji
-                            case 1:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorTranslate, this, std::placeholders::_1 );
-                                break;
-                            case 2:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorRotate, this, std::placeholders::_1 );
-                                break;
-                            case 3:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorFold, this, std::placeholders::_1 );
-                                break; // obrót 3 kolejnych submodeli
-							case 4:
-								pAnimations[ i + j ].yUpdate = std::bind( &TDynamicObject::UpdateDoorPlug, this, std::placeholders::_1 );
-								break;
-							default:
-								break;
-							}
                             pAnimations[i + j].iNumber = i + 1; // parzyste działają inaczej niż nieparzyste
+                            bind_door_animation( pAnimations[ i + j ] ); // od razu zapinamy potrzebny typ animacji
                             pAnimations[i + j].fMaxDist = 300 * 300; // drzwi to z daleka widać
 /*
                             // NOTE: no longer used
                             pAnimations[i + j].fSpeed = Random(150); // oryginalny koncept z DoorSpeedFactor
                             pAnimations[i + j].fSpeed = (pAnimations[i + j].fSpeed + 100) / 100;
 */
+                        }
+                    }
+                }
+
+                else if( token == "animdoor:" ) {
+                    // own kind of animation of one door wing, in place of the one of the .fiz (eu07/maszyna#70):
+                    // animdoor: <wing number> { type: <Shift|Rotate|Fold|Plug> range: <shift or angle> rangeout: <plug shift out> }
+                    // the keys left out keep the values of the .fiz. the wing still follows the door of its side
+                    door_wings::wing_spec spec {
+                        0,
+                        MoverParameters->Doors.type,
+                        MoverParameters->Doors.range,
+                        MoverParameters->Doors.range_out };
+                    auto error { door_wings::read_spec( parser, spec ) };
+                    if( error.empty()
+                     && ( spec.number < 1 || spec.number > iAnimType[ ANIM_DOORS ] ) ) {
+                        error = "no door wing " + std::to_string( spec.number ) + " among the door animations";
+                    }
+                    if( false == error.empty() ) {
+                        ErrorLog( "Bad model: " + asFileName + " - animdoor: " + error, logtype::model );
+                    }
+                    else {
+                        door_wings::store( m_doorwings, spec );
+                        // a wing animdoorprefix has found already gets the new kind of animation now; the ones it
+                        // finds later get it then
+                        auto const index { static_cast<std::size_t>( std::accumulate( std::begin( iAnimType ), std::begin( iAnimType ) + ANIM_DOORS, 0 ) + spec.number - 1 ) };
+                        if( index < pAnimations.size() && pAnimations[ index ].yUpdate ) {
+                            bind_door_animation( pAnimations[ index ] );
                         }
                     }
                 }
@@ -8096,6 +8196,10 @@ std::shared_ptr<script_screen> TDynamicObject::draw_script_texture( std::string 
     auto const script { Name.substr( 5, query == std::string::npos ? std::string::npos : query - 5 ) };
     auto const language { script_language_of( script ) };
     if( false == language.has_value() ) { return nullptr; } // a python texture, made by the texture itself
+    if( false == script_screens::screen_script_path( "", script ).has_value() ) {
+        ErrorLog( "Bad script texture: \"" + script + "\" leads outside the game's folder" );
+        return nullptr;
+    }
 
     auto &queue { Application.screens() };
     auto &texture { GfxRenderer->Texture( GfxRenderer->Material( Material )->GetTexture( 0 ) ) };
@@ -8236,6 +8340,8 @@ void TDynamicObject::OverheadTrack(float o)
 
 void
 TDynamicObject::update_shake( double const Timedelta ) {
+
+    ShakeStateBefore = ShakeState;
     // Ra: mechanik powinien być telepany niezależnie od pozycji pojazdu
     // Ra: trzeba zrobić model bujania głową i wczepić go do pojazdu
 
@@ -8360,9 +8466,32 @@ TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int con
 std::pair<double, double>
 TDynamicObject::shake_angles() const {
 
+    return shake_angles( ShakeState );
+}
+
+std::pair<double, double>
+TDynamicObject::shake_angles( shake_state const &State ) const {
+
     return {
-        std::atan( ShakeState.velocity.x * BaseShake.angle_scale.x ),
-        std::atan( ShakeState.velocity.z * BaseShake.angle_scale.z ) };
+        std::atan( State.velocity.x * BaseShake.angle_scale.x ),
+        std::atan( State.velocity.z * BaseShake.angle_scale.z ) };
+}
+
+TDynamicObject::shake_state
+TDynamicObject::shake_between( double const Fraction ) const {
+
+    if( Fraction >= 1.0 ) {
+        return ShakeState;
+    }
+    auto const between { []( glm::dvec3 const &Before, glm::dvec3 const &After, double const Part ) {
+        return glm::dvec3 {
+            std::lerp( Before.x, After.x, Part ),
+            std::lerp( Before.y, After.y, Part ),
+            std::lerp( Before.z, After.z, Part ) }; } };
+    auto const part { std::max( Fraction, 0.0 ) };
+    return {
+        between( ShakeStateBefore.velocity, ShakeState.velocity, part ),
+        between( ShakeStateBefore.offset, ShakeState.offset, part ) };
 }
 
 void
@@ -9023,6 +9152,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
             for( auto *vehicle : m_items ) {
                 vehicle->FastUpdate( Deltatime );
             }
+            update_brake_pipes( Deltatime );
         }
     }
     for( auto *vehicle : m_items ) {
@@ -9035,6 +9165,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         // Ra 2015-01: tylko tu przelicza sieć trakcyjną
         vehicle->Update( Deltatime, totaltime );
     }
+    update_brake_pipes( Deltatime );
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
@@ -9044,6 +9175,20 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     if( m_odometersavetimer >= 60.0 ) {
         save_odometers();
     }
+}
+
+// the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
+void
+vehicle_table::update_brake_pipes( double const Deltatime ) {
+
+    m_brakepipes.clear();
+    for( auto *vehicle : m_items ) {
+        if( ( true == vehicle->MoverParameters->PipeCouplersPending )
+         || ( true == vehicle->MoverParameters->ScndPipeCouplersPending ) ) {
+            m_brakepipes.push_back( vehicle->MoverParameters );
+        }
+    }
+    TMoverParameters::UpdatePipeCouplers( m_brakepipes, Deltatime );
 }
 
 // records the odometer states of the vehicles and saves them for the next sessions (eu07/maszyna#72)

@@ -31,6 +31,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
+
+#include <algorithm>
+
 /*
 namespace input {
 
@@ -627,6 +630,12 @@ bool driver_mode::is_command_processor() const
 	return true;
 }
 
+double driver_mode::shake_fraction() const
+{
+	// how far the simulation time has got from the last step of the shake towards the next one
+	return std::clamp(m_secondaryupdateaccumulator / m_secondaryupdaterate, 0.0, 1.0);
+}
+
 void driver_mode::update_camera(double const Deltatime)
 {
 
@@ -739,7 +748,12 @@ void driver_mode::update_camera(double const Deltatime)
 	// reset window state, it'll be set again if applicable in a check below
 	Global.CabWindowOpen = false;
 
-	if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
+	if (consist_view_active())
+	{
+		// the orbit, shunting, coupling and trackside views place the camera themselves
+		update_consist_view(Deltatime);
+	}
+	else if (simulation::Train != nullptr && controlled != nullptr && Camera.m_owner != nullptr && false == DebugCameraFlag)
 	{
 		// jeśli jazda w kabinie, przeliczyć trzeba parametry kamery
 		/*
@@ -770,7 +784,8 @@ void driver_mode::update_camera(double const Deltatime)
 				// ale bez odbicia
 				Camera.LookAt = Camera.Pos - simulation::Train->GetDirection() * (double)simulation::Train->Occupied()->CabOccupied; //-1 albo 1
 			}
-			auto const shakeangles{simulation::Train->Dynamic()->shake_angles()};
+			auto const *dynamic{simulation::Train->Dynamic()};
+			auto const shakeangles{dynamic->shake_angles(dynamic->shake_between(shake_fraction()))};
 			Camera.Angle.x = 0.5 * shakeangles.second; // hustanie kamery przod tyl
 			Camera.Angle.z = shakeangles.first; // hustanie kamery na boki
 			/*
@@ -791,8 +806,9 @@ void driver_mode::update_camera(double const Deltatime)
 			}
 
 			float const shakescale{FreeFlyModeFlag ? 5.0f : 1.0f};
-			auto shakencamerapos{Camera.m_owneroffset +
-			                     shakescale * glm::vec3(1.5 * Camera.m_owner->ShakeState.offset.x, 2.0 * Camera.m_owner->ShakeState.offset.y, 1.5 * Camera.m_owner->ShakeState.offset.z)};
+			// the shake steps at a fixed rate, the frames come at their own: taken at the frame's moment between the steps, it moves as smoothly as the vehicle
+			auto const shake{Camera.m_owner->shake_between(shake_fraction())};
+			auto shakencamerapos{Camera.m_owneroffset + shakescale * glm::vec3(1.5 * shake.offset.x, 2.0 * shake.offset.y, 1.5 * shake.offset.z)};
 
 			Camera.Pos = Camera.m_owner->GetWorldPosition(FreeFlyModeFlag ? glm::dvec3(shakencamerapos) : // TODO: vehicle collision box for the external vehicle camera
 			                                                                simulation::Train->clamp_inside(shakencamerapos));
@@ -800,7 +816,7 @@ void driver_mode::update_camera(double const Deltatime)
 			if (!Global.iPause)
 			{
 				// podczas pauzy nie przeliczać kątów przypadkowymi wartościami
-				auto const shakeangles{Camera.m_owner->shake_angles()};
+				auto const shakeangles{Camera.m_owner->shake_angles(shake)};
 				Camera.Angle.x -= 0.5 * shakeangles.second; // hustanie kamery przod tyl
 				Camera.Angle.z = shakeangles.first; // hustanie kamery na boki
 				/*
@@ -1102,6 +1118,17 @@ void driver_mode::OnKeyDown(int cKey)
 		}
 		break;
 	}
+	case GLFW_KEY_LEFT_BRACKET:
+	case GLFW_KEY_RIGHT_BRACKET:
+	{
+		// in the orbit, shunting, coupling and trackside views: the vehicle (coupling) towards the front, or the rear,
+		// of the train. [Ctrl] with them moves the train in the debug mode, bound in the keyboard settings
+		if (false == Global.ctrlState && consist_view_active())
+		{
+			m_consistviews.select(cKey == GLFW_KEY_LEFT_BRACKET ? -1 : 1);
+		}
+		break;
+	}
 	default:
 	{
 		break;
@@ -1109,6 +1136,18 @@ void driver_mode::OnKeyDown(int cKey)
 	}
 
 	return; // nie są przekazywane do pojazdu wcale
+}
+
+bool driver_mode::consist_view_active() const
+{
+	return FreeFlyModeFlag && m_externalview && m_externalviewmode >= view::orbit && Camera.m_owner != nullptr && false == DebugCameraFlag;
+}
+
+void driver_mode::update_consist_view(double const Deltatime)
+{
+	auto *controlled{simulation::Train != nullptr ? simulation::Train->Dynamic() : nullptr};
+	// the camera goes with the vehicle picked, or stays where it is once the train is gone
+	Camera.m_owner = m_consistviews.update(Camera, controlled, Deltatime);
 }
 
 // places camera outside the controlled vehicle, or nearest if nothing is under control
@@ -1159,7 +1198,8 @@ void driver_mode::ExternalView()
 	if (true == m_externalview)
 	{
 		// we're already in some external view mode, so select next one on the list
-		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(view::count_));
+		// the views of the train's vehicles come after the four older ones, unless they're turned off in eu07.ini
+		m_externalviewmode = clamp_circular(++m_externalviewmode, static_cast<int>(Global.ConsistViews ? view::count_ : view::orbit));
 	}
 
 	FreeFlyModeFlag = true;
@@ -1260,6 +1300,17 @@ void driver_mode::ExternalView()
 	case view::driveby:
 	{
 		DistantView(false);
+		break;
+	}
+	case view::orbit:
+	case view::shunting:
+	case view::coupling:
+	case view::trackside:
+	{
+		// the camera goes with a vehicle of the train, placed by update_consist_view() from the next frame on
+		auto const kind{static_cast<consist_views::kind>(m_externalviewmode - view::orbit)};
+		Camera.m_owner = m_consistviews.enter(kind, vehicle);
+		Camera.m_owneroffset = {};
 		break;
 	}
 	default:

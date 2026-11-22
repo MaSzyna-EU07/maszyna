@@ -97,7 +97,7 @@ class roadpoint_node : public scene::basic_node
 	explicit roadpoint_node(scene::node_data const &Nodedata);
 	// methods
 	// restores content of the node from provided input stream; reads up to and including the closing statement
-	void import(cParser &Input, glm::dvec3 const &Offset);
+	void import_from(cParser &Input, glm::dvec3 const &Offset);
 	state const &definition() const
 	{
 		return m_state;

@@ -1,0 +1,19 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed:
+// the trainset goes after FirstInit, the launcher and the events before it.
+// the case's consist stands cold where td.scn keeps its timetable train (track 1 of Stacja1): trainset
+// velocity 0, so every vehicle starts "Braked": brake pipe at 3.5 bar, battery off, hand and spring brakes on.
+// it has the same timetable: Stacja1 10:35 -> Przystanek -> Stacja2.
+trainset td/rozklad tdo_n1734 0.0 0.0
+{{consist}}
+endtrainset
+
+// the way out of track 1, as in td_timetable.scn
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end
+
+// a driver of a standing trainset sleeps on Wait_for_orders until something wakes it. event0 of the train's
+// track (the case's track_events) runs while it stands there and gives it, once (the memory cell), the order
+// to run as a train: Obey_train. the engine is cold, so the AI starts it first (Prepare_engine).
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_wake multiple 0 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event autotest_order PutValues 0 none 0 0 0 Obey_train 0 0 endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 1 * endevent
