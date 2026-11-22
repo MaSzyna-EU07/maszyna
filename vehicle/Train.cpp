@@ -9828,7 +9828,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * 8.0 - 2.0;
-				b = std::clamp(b, -2.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
+				b = safe_clamp(b, -2.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -9836,7 +9836,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * 7.0 - 1.0;
-				b = std::clamp(b, -1.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
+				b = safe_clamp(b, -1.0, (double)mvOccupied->BrakeCtrlPosNo); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -9844,7 +9844,7 @@ bool TTrain::Update(double const Deltatime)
 			{
 				double b = Console::AnalogCalibrateGet(0);
 				b = b * (mvOccupied->Handle->GetPos(bh_MAX) - mvOccupied->Handle->GetPos(bh_MIN)) + mvOccupied->Handle->GetPos(bh_MIN);
-				b = std::clamp(b, mvOccupied->Handle->GetPos(bh_MIN), mvOccupied->Handle->GetPos(bh_MAX)); // przycięcie zmiennej do granic
+				b = safe_clamp(b, mvOccupied->Handle->GetPos(bh_MIN), mvOccupied->Handle->GetPos(bh_MAX)); // przycięcie zmiennej do granic
 				ggBrakeCtrl.UpdateValue(b); // przesów bez zaokrąglenia
 				mvOccupied->BrakeLevelSet(b);
 			}
@@ -11463,8 +11463,11 @@ glm::dvec3 TTrain::clamp_inside(glm::dvec3 const &Point) const
 		return Point;
 	}
 
-	return {std::clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), std::clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
-	        std::clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
+	// the bounds come from the .mmd as written, and some cabs have them reversed (the B cars of SA134 and 21xM,
+	// ET40, 754...); std::clamp is undefined for those and on MSVC makes the camera jump between the two bounds
+	// every frame, as its result is fed back here. safe_clamp keeps the camera on the upper bound, as 26.05 did
+	return {safe_clamp(Point.x, (double)Cabine[iCabn].CabPos1.x, (double)Cabine[iCabn].CabPos2.x), safe_clamp(Point.y, (double)Cabine[iCabn].CabPos1.y + 0.5, (double)Cabine[iCabn].CabPos2.y + 1.8),
+	        safe_clamp(Point.z, (double)Cabine[iCabn].CabPos1.z, (double)Cabine[iCabn].CabPos2.z)};
 }
 
 const TTrain::screenentry_sequence &TTrain::get_screens()

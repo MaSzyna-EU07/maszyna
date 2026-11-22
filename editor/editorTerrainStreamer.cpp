@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 
 terrain_streamer EditorTerrain;
@@ -904,6 +905,44 @@ bool terrain_streamer::owns(gfx::geometry_handle const &Geometry) const
 	for (auto const &water : m_watershapes)
 		if (water.geometry.bank == Geometry.bank && water.geometry.chunk == Geometry.chunk)
 			return true;
+	return false;
+}
+
+bool terrain_streamer::in_walk(chunk_key const &Key) const
+{
+	// the circle update() walks around the camera and around where it's heading
+	auto const within = [this, &Key](chunk_key const &Centre) {
+		auto const dx{Key.first - Centre.first};
+		auto const dz{Key.second - Centre.second};
+		return std::abs(dx) <= m_walkradius && std::abs(dz) <= m_walkradius && dx * dx + dz * dz <= (m_walkradius + 1) * (m_walkradius + 1);
+	};
+	return within(m_walkhere) || within(m_walkthere);
+}
+
+bool terrain_streamer::chunk_coming(chunk_key const &Key) const
+{
+	if (m_chunks.contains(Key) || m_removed.contains(Key))
+		return false;
+	if (m_loading.contains(Key))
+		return true;
+	// a chunk the walk doesn't reach at this distance isn't loaded, so it isn't waited for: it's taken in when the camera comes near
+	if (false == in_walk(Key))
+		return false;
+	// still to come while its pack isn't read yet, or it's in its pack; not there where the pack is read without it
+	auto const pack{m_packs.find(heightmap::pack_of(Key))};
+	if (pack == m_packs.end() || pack->second.status == pack_state::state::unknown || pack->second.status == pack_state::state::loading)
+		return true;
+	return pack->second.status == pack_state::state::ready && pack->second.file->has(Key);
+}
+
+bool terrain_streamer::ground_coming(glm::dvec2 const &Low, glm::dvec2 const &High) const
+{
+	auto const first{heightmap::chunk_at(Low.x, Low.y)};
+	auto const last{heightmap::chunk_at(High.x, High.y)};
+	for (auto z{std::min(first.second, last.second)}; z <= std::max(first.second, last.second); ++z)
+		for (auto x{std::min(first.first, last.first)}; x <= std::max(first.first, last.first); ++x)
+			if (chunk_coming(chunk_key{x, z}))
+				return true;
 	return false;
 }
 

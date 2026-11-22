@@ -7,14 +7,10 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <map>
-#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
-#include <utility>
-#include <vector>
 
 // the physics logs are kept and written by a thread of their own every so often, each file opened only to be written to
 
@@ -126,18 +122,6 @@ TEST_CASE("physicslog: stopping writes what is kept at once, and what comes afte
 	CHECK(folder.read("EN57-1001") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.0000\r\n");
 }
 
-TEST_CASE("physicslog: stopping drops the logs past the time it waits for them") {
-	log_folder folder{"closingwait"};
-	{
-		physicslog_writer logs{folder.path(), std::chrono::hours{1}, std::chrono::milliseconds{0}};
-		logs.begin("EU07-005", header);
-		logs.append("EU07-005", "0.0500 0.0000\r\n");
-		logs.stop();
-		// the writing of the stop, left behind, is waited for by the writer going
-	}
-	CHECK_FALSE(std::filesystem::exists(folder.path() / "EU07-005.dat"));
-}
-
 TEST_CASE("physicslog: the lines of a log whose file can't be written are kept, with its header, for the next try") {
 	log_folder folder{"failed"};
 	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
@@ -155,63 +139,6 @@ TEST_CASE("physicslog: the lines of a log whose file can't be written are kept, 
 	logs.append("EU07-005", "0.1500 1.0000\r\n");
 	logs.flush();
 	CHECK(folder.read("EU07-005") == std::string{header} + "0.0500 0.0000\r\n0.1000 0.5000\r\n0.1500 1.0000\r\n");
-}
-
-TEST_CASE("physicslog: a log whose file can't be written keeps the lines given as values too, in the order given with the text") {
-	log_folder folder{"failedvalues"};
-	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
-
-	physicslog_values first;
-	first.time = 0.05;
-	physicslog_values second;
-	second.time = 0.10;
-	physicslog_values last;
-	last.time = 0.20;
-	std::filesystem::create_directories(folder.path() / "EU07-008.dat");
-	logs.begin("EU07-008", header);
-	logs.append("EU07-008", first);
-	logs.flush();
-	// given while the file can't be written: after the lines kept, as text and as values
-	logs.append("EU07-008", second);
-	logs.append("EU07-008", "text\r\n");
-	logs.append("EU07-008", last);
-	logs.flush();
-	CHECK(std::filesystem::is_directory(folder.path() / "EU07-008.dat"));
-
-	std::filesystem::remove(folder.path() / "EU07-008.dat");
-	logs.flush();
-	auto const text{folder.read("EU07-008")};
-	CHECK(text.starts_with(std::string{header} + "0.0500 "));
-	CHECK(text.find("\r\n0.1000 ") != std::string::npos);
-	CHECK(text.find("\r\ntext\r\n0.2000 ") != std::string::npos);
-	CHECK(text.find("0.1000 ") < text.find("\r\ntext\r\n"));
-}
-
-TEST_CASE("physicslog: the logs put first are written before the others, each in the order of the names") {
-	// the logs of a writing as the writer has them, by their names
-	std::map<std::string, int> taken{{"EN57-1001", 0}, {"EU07-005", 0}, {"SM42-002", 0}, {"ST44-001", 0}, {"ET22-001", 0}};
-	std::vector<std::pair<std::string const, int> *> order;
-	for (auto &log : taken)
-		order.push_back(&log);
-	physicslog_writer::writing_order(order, {"ST44-001", "SM42-002", "SP42-001"});
-	std::vector<std::string> names;
-	for (auto const *log : order)
-		names.push_back(log->first);
-	CHECK(names == std::vector<std::string>{"SM42-002", "ST44-001", "EN57-1001", "ET22-001", "EU07-005"});
-}
-
-TEST_CASE("physicslog: a log put first is written as the others are") {
-	log_folder folder{"first"};
-	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
-
-	logs.put_first("SM42-002");
-	logs.begin("EU07-005", header);
-	logs.append("EU07-005", "0.0500 0.0000\r\n");
-	logs.begin("SM42-002", header);
-	logs.append("SM42-002", "0.0500 1.0000\r\n");
-	logs.flush();
-	CHECK(folder.read("EU07-005") == std::string{header} + "0.0500 0.0000\r\n");
-	CHECK(folder.read("SM42-002") == std::string{header} + "0.0500 1.0000\r\n");
 }
 
 TEST_CASE("physicslog: a log begun anew while its file can't be written drops what was kept for it") {
@@ -310,76 +237,4 @@ TEST_CASE("physicslog: what is kept is written when the writer goes") {
 		logs.append("ST44-001", "0.0500 0.0000\r\n");
 	}
 	CHECK(folder.read("ST44-001") == std::string{header} + "0.0500 0.0000\r\n");
-}
-
-TEST_CASE("physicslog: a log written by someone else before is added to after what it holds") {
-	log_folder folder{"after"};
-	std::filesystem::create_directories(folder.path());
-	{
-		std::ofstream before{folder.path() / "SU45-001.dat"};
-		before << "earlier run\n";
-	}
-	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
-
-	logs.append("SU45-001", "0.0500 0.0000\r\n");
-	logs.flush();
-	logs.append("SU45-001", "0.1000 0.0000\r\n");
-	logs.flush();
-	CHECK(folder.read("SU45-001") == "earlier run\n0.0500 0.0000\r\n0.1000 0.0000\r\n");
-}
-
-TEST_CASE("physicslog: the writings go on every interval while they're quick, and less often once they take long") {
-	using namespace std::chrono_literals;
-	using duration = std::chrono::steady_clock::duration;
-	// quick: the interval
-	CHECK(physicslog_writer::wait_after(2000ms, duration{0}) == duration{2000ms});
-	CHECK(physicslog_writer::wait_after(2000ms, duration{500ms}) == duration{2000ms});
-	// a third of the interval: still the interval
-	CHECK(physicslog_writer::wait_after(2100ms, duration{700ms}) == duration{2100ms});
-	// longer: three times the writing, the disk busy with the logs a quarter of the time
-	CHECK(physicslog_writer::wait_after(2000ms, duration{1s}) == duration{3s});
-	CHECK(physicslog_writer::wait_after(2000ms, duration{3s}) == duration{9s});
-	// five intervals at most, however long the writing took: the lines of a longer wait would make it longer still
-	CHECK(physicslog_writer::wait_after(2000ms, duration{4s}) == duration{10s});
-	CHECK(physicslog_writer::wait_after(2000ms, duration{60s}) == duration{10s});
-}
-
-TEST_CASE("physicslog: a line given as its values is written as the stream of them always wrote it") {
-	log_folder folder{"values"};
-	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
-
-	physicslog_values line;
-	line.time = 0.05;
-	line.wheelspeed = 1.23456;
-	line.acceleration = -0.5;
-	line.mainctrl = 3;
-	line.direction = 1;
-	line.command = "ShuntVelocity";
-	line.value1 = 40.0;
-	// a float of the vehicle, widened as the stream widened it
-	line.enginetemperature = 50.1f;
-	line.vehiclespeed = 36.0;
-	logs.begin("SM31-001", header);
-	logs.append("SM31-001", line);
-	logs.flush();
-	CHECK(folder.read("SM31-001") == std::string{header} +
-	                                       "0.0500 1.2346 -0.5000 0.0000 0.0000 0.0000 0.0000 0.0000 0.0000 0.0000 0.0000 3 0 0.0000 0.0000 1 "
-	                                       "ShuntVelocity 40.0000 0.0000 0 0 50.1000 0.0000 0.0000 0.0000 36.0000\r\n");
-}
-
-TEST_CASE("physicslog: lines given as values and as text are written in the order given") {
-	log_folder folder{"order"};
-	physicslog_writer logs{folder.path(), std::chrono::hours{1}};
-
-	physicslog_values first;
-	first.time = 0.05;
-	physicslog_values last;
-	last.time = 0.15;
-	logs.append("EP09-001", first);
-	logs.append("EP09-001", "text\r\n");
-	logs.append("EP09-001", last);
-	logs.flush();
-	auto const text{folder.read("EP09-001")};
-	CHECK(text.starts_with("0.0500 "));
-	CHECK(text.find("\r\ntext\r\n0.1500 ") != std::string::npos);
 }

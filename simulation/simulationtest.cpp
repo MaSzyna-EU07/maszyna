@@ -17,7 +17,6 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
-#include "vehicle/Driver.h"
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
@@ -44,15 +43,6 @@ bool is_moving(TDynamicObject const *Vehicle)
 double elapsed_wall_time()
 {
 	return std::chrono::duration<double>(std::chrono::steady_clock::now() - Global.startTimestamp).count();
-}
-
-// the physics log of the driver of the vehicle, or of its train's when that one is passive, written before the logs of
-// the other drivers: the closing at the end of the run drops those it has no time for
-void put_physicslog_first(TDynamicObject const &Vehicle)
-{
-	auto const *driver { Vehicle.Mechanik != nullptr && Vehicle.Mechanik->primary() ? Vehicle.Mechanik : Vehicle.ctOwner };
-	if (driver != nullptr)
-		PhysicsLogs.put_first(driver->physicslog_name());
 }
 
 } // namespace
@@ -135,13 +125,11 @@ void test_manager::start()
 	}
 	for (auto const &name : Global.test.vehicles)
 	{
-		auto const *vehicle { simulation::Vehicles.find(name) };
-		if (vehicle == nullptr)
+		if (simulation::Vehicles.find(name) == nullptr)
 		{
 			finish(test_result::error, std::format("the scenery has no vehicle {} (test.vehicle)", name));
 			return;
 		}
-		put_physicslog_first(*vehicle);
 	}
 	// a pause set by the scenery or the settings would never be lifted, nobody is there to press the key
 	Global.iPause = 0;
