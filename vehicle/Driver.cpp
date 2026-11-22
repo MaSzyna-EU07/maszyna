@@ -3329,9 +3329,13 @@ bool TController::PrepareEngine()
                 }
             }
             // set up train brake
-            if( mvOccupied->fBrakeCtrlPos != mvOccupied->Handle->GetPos( bh_RP ) ) {
-				if ( !mvOccupied->Handle->Time
-					|| mvOccupied->Handle->GetCP() < mvOccupied->HighPipePress - 0.05 );
+            if( mvOccupied->Vel < EU07_AI_NOMOVEMENT ) {
+                // standing: the locomotive brake first, then the pipe is filled
+                secure_standing_train();
+            }
+            else if( ( mvOccupied->fBrakeCtrlPos != mvOccupied->Handle->GetPos( bh_RP ) )
+                  && ( ( false == mvOccupied->Handle->Time )
+                    || ( mvOccupied->Handle->GetCP() < mvOccupied->HighPipePress - 0.05 ) ) ) {
                 cue_action( driver_hint::trainbrakerelease );
             }
             // sync spring brake state across consist
@@ -3769,10 +3773,16 @@ bool TController::DecBrake() {
 			    if (BrakeCtrlPosition < 0.74)
 				    /*mvOccupied->*/ BrakeLevelSet(gbh_RP);
 		    }
-            if( !OK ) {
+            // standing, the locomotive brake holds the train until its brakes are charged: off before, a train
+            // released on a gradient rolls with no air to brake with. nor through DecBrakeEIM(), which takes it off
+            // as well (the locomotive brake of a vehicle without the integrated handle)
+            auto const holdlocomotive {
+                ( false == IsConsistCharged )
+             && ( mvOccupied->Vel < EU07_AI_NOMOVEMENT ) };
+            if( ( !OK ) && ( false == holdlocomotive ) ) {
                 OK = mvOccupied->DecLocalBrakeLevel(2);
             }
-            if( !OK ) {
+            if( ( !OK ) && ( false == holdlocomotive ) ) {
 			    OK = DecBrakeEIM();
 		    }
     /*
@@ -6555,12 +6565,18 @@ TController::determine_consist_state() {
     auto released { true }; // the brakes are off, the hold of an uphill start not counted
     auto mostapplied { 0.0 }; // the most applied brake, the hold of an uphill start not counted
     auto momentum { 0.0 };
+    auto chargelevel { std::numeric_limits<double>::max() }; // the lowest pipe or auxiliary reservoir pressure of a working brake
     while (p)
     { // sprawdzenie odhamowania wszystkich połączonych pojazdów
         auto *vehicle { p->MoverParameters };
         auto const bp { std::max( 0.0, vehicle->BrakePress - ( vehicle->SpeedCtrlUnit.Parking ? vehicle->MaxBrakePress[ 0 ] * vehicle->StopBrakeDecc : 0.0 ) ) };
         momentum += vehicle->TotalMass * vehicle->V * ( p->DirectionGet() == iDirection ? 1 : -1 );
         mostapplied = std::max( bp, mostapplied );
+        if( ( vehicle->BrakeSystem != TBrakeSystem::Individual )
+         && ( vehicle->MaxBrakePress[ 3 ] > 0.0 )
+         && ( false == TestFlag( vehicle->Hamulec->GetBrakeStatus(), b_dmg ) ) ) { // a brake cut out doesn't count
+            chargelevel = std::min( { chargelevel, vehicle->PipePress, vehicle->Hamulec->GetBRP() } );
+        }
         auto const wasready { Ready };
         if( released || Ready ) {
             // bo jak coś nie odhamowane, to dalej nie ma co sprawdzać
@@ -6695,6 +6711,70 @@ TController::determine_consist_state() {
     IsConsistReleased = released || ( fAccGravity < -0.05 && mostapplied < 0.8 );
     // the frame of the vehicle the AI drives from, as for fAccGravity and AbsAccS
     fConsistVelocity = 3.6 * momentum / std::max( 1.0, fMass ) * ( iDirection >= 0 ? 1 : -1 );
+    // standing, the train starts only with its brakes charged: released alone, a train prepared from cold has no air to
+    // brake with while its auxiliary reservoirs fill. with the train brake applied (held for an uphill start, a light
+    // application while charging) they charge to what the head of the pipe has.
+    // only the start the charge is in question for: the first after the train was prepared standing, or one with the
+    // pipe near empty (after an emergency application, brake_charge::empty_level). after an ordinary stop the
+    // reservoirs refill as the brake releases, and waiting for the last tenths of a bar there only delays the train and
+    // those behind it.
+    // and only the pneumatic brake: multiple units with the electro-pneumatic one start as before
+    if( mvOccupied->Vel > 1.0 ) {
+        // the start is made. a shunting engine coupling wagons moves at a walking pace: a higher speed would leave its
+        // every start the first, waiting for each cut of wagons placed cold to charge
+        bBrakeChargeStart = false;
+        bHasRun = true;
+    }
+    auto const chargeable {
+        ( BrakeSystem == TBrakeSystem::Pneumatic )
+     && ( mvOccupied->Vel < EU07_AI_NOMOVEMENT )
+     && ( chargelevel < std::numeric_limits<double>::max() ) };
+    if( chargeable && ( chargelevel < brake_charge::empty_level ) ) {
+        bBrakeChargeStart = true;
+    }
+    if( chargeable && bBrakeChargeStart ) {
+        if( ( VelDesired <= 0.0 ) || ( AccDesired <= EU07_AI_NOACCELERATION ) ) {
+            // to stand: the next start is checked anew
+            BrakeCharge.going = false;
+        }
+        auto const trainbrakeapplied {
+            AIControllFlag ?
+                BrakeCtrlPosition > 0.0 :
+                // a human driver's handle, which BrakeCtrlPosition doesn't follow
+                mvOccupied->fBrakeCtrlPos > mvOccupied->Handle->GetPos( bh_RP ) + 0.2 };
+        auto const reference {
+            trainbrakeapplied ?
+                mvOccupied->PipePress :
+                std::min( mvOccupied->Handle->GetRP(), 5.0 ) };
+        // air to charge with: the engine prepared, the main reservoir above what the pipe charges to, and the driver's
+        // brake valve feeding the pipe at the head of the train. a train still being prepared from cold can't charge,
+        // nor one whose pipe is locked (unlocked by control_releaser()): it waits without that counting as a stall, held
+        // by its brakes as it can't release them either
+        auto const supplied {
+            iEngineActive
+         && ( std::max( mvControlling->Compressor, mvOccupied->Compressor ) > reference )
+         && ( mvOccupied->PipePress >= reference - brake_charge::margin ) };
+        auto const wasstalled { BrakeCharge.stalled };
+        IsConsistCharged = brake_charge::charged( BrakeCharge, chargelevel, reference, ElapsedTime, supplied );
+        if( BrakeCharge.stalled && ( false == wasstalled ) ) {
+            WriteLog(
+                "AI: " + mvOccupied->Name + " stopped charging its brakes at " + to_string( chargelevel, 2 )
+                + " bar of " + to_string( reference, 2 ) + ", starting all the same" );
+        }
+        if( false == IsConsistCharged ) {
+            // a human driver is told to wait as the ai does, the locomotive brake applied
+            cue_action( driver_hint::waitbrakecharge );
+        }
+    }
+    else {
+        IsConsistCharged = true;
+        BrakeCharge = {};
+    }
+    if( AIControllFlag
+     && ( false == IsConsistCharged )
+     && ( false == heldforstart ) ) {
+        Ready = false;
+    }
     auto const departblocked {
         AIControllFlag
      && mvOccupied->Vel < EU07_AI_NOMOVEMENT
@@ -8804,7 +8884,8 @@ void TController::control_uphill_start() {
          && ( fConsistVelocity > -0.5 )
          && ( AccDesired > EU07_AI_NOACCELERATION )
          && ( VelDesired > 0.0 )
-         && ( BrakeCtrlPosition > 0.0 ) ) { // only with the train brake still applied to hold the train
+         && ( BrakeCtrlPosition > 0.0 ) // only with the train brake still applied to hold the train
+         && ( IsConsistCharged ) ) { // and charged to what the pipe has, or the brake that holds the train has no air
             bUphillStart = true;
             bUphillRelease = false;
             UphillTopUp = {};
@@ -8896,6 +8977,55 @@ void TController::end_uphill_start() {
     bUphillStart = false;
     bUphillRelease = false;
     bUphillBrakeTopUp = false;
+}
+
+// standing, a train is prepared as a driver does it: the locomotive brake first, then the brake pipe is filled. the pipe
+// filled at once releases the distributors while the auxiliary reservoirs are still empty: the train has no brake left,
+// and on a gradient rolls away as it releases. where the locomotive brake alone doesn't hold the train, the train brake
+// is applied lightly, so the reservoirs charge with the train held. the locomotive brake comes off only once the train
+// is charged and to start (DecBrake())
+void TController::secure_standing_train() {
+
+    if( BrakeSystem != TBrakeSystem::Pneumatic ) {
+        // the electro-pneumatic brake of a multiple unit is released as before: nothing there takes the locomotive
+        // brake off again when the unit starts
+        cue_action( driver_hint::trainbrakerelease );
+        return;
+    }
+    // the first start of a train that hasn't run yet waits for the brakes to charge. one that has run, prepared again
+    // (a change of direction, an engine started anew), has its reservoirs charged from the run and starts as before
+    if( false == bHasRun ) {
+        bBrakeChargeStart = true;
+    }
+    if( mvOccupied->LocalBrake != TLocalBrake::ManualBrake ) {
+        cue_action( driver_hint::independentbrakeapply );
+    }
+    if( false == brake_charge::locomotive_brake_holds( locomotive_brake_force(), fMass * fAccGravity ) ) {
+        // the first service position: the pipe and the reservoirs charge to a little below the working pressure, the
+        // distributors keep a light application. a stronger application already there is left as it is, but not
+        // the emergency one or an empty pipe's, which don't charge
+        if( AIControllFlag
+         && ( ( BrakeCtrlPosition < 1.0 ) || ( BrakeCtrlPosition > uphill_start::top_up_position ) ) ) {
+            BrakeLevelSet( 1.0 );
+        }
+        return;
+    }
+    cue_action( driver_hint::trainbrakerelease );
+}
+
+// the brake force of the locomotive brake at full application, of the powered vehicles of the train [N]
+double TController::locomotive_brake_force() const {
+
+    auto force { 0.0 };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        auto const *mover { vehicle->MoverParameters };
+        if( ( mover->Power > 0.01 )
+         && ( mover->LocalBrake != TLocalBrake::ManualBrake )
+         && ( mover->MaxBrakePress[ 0 ] > 0.0 ) ) {
+            force += mover->BrakeForceP( mover->MaxBrakePress[ 0 ], 0.0 );
+        }
+    }
+    return force;
 }
 
 void TController::increase_tractive_force() {
@@ -9060,7 +9190,14 @@ void TController::control_braking_force() {
         }
         if ( (accdesiredresultant < fAccGravity - 0.05
               || AccDesired >= EU07_AI_NOACCELERATION) // no braking asked for, yet the train is slowing down more than that
-            && accdesiredresultant - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 && OrderCurrentGet() != Disconnect && VelDesired > 0.0 ) {
+            && accdesiredresultant - fBrake_a1[0] * 0.51 - AbsAccS > 0.05 && OrderCurrentGet() != Disconnect && VelDesired > 0.0
+            // a human driver standing with the train not charged yet keeps the locomotive brake on, told so by the
+            // waitbrakecharge hint; the ai is held back in DecBrake()
+            && ( AIControllFlag
+              || ( false == brake_charge::release_waits(
+                      IsConsistCharged,
+                      mvOccupied->Vel < EU07_AI_NOMOVEMENT,
+                      mvOccupied->fBrakeCtrlPos > mvOccupied->Handle->GetPos( bh_RP ) + 0.2 ) ) ) ) { // the human driver's handle
             // jak hamuje, to nie tykaj kranu za często
             // yB: luzuje hamulec dopiero przy różnicy opóźnień rzędu 0.2
 			// przy odłączaniu nie zwalniamy tu hamulca
@@ -9136,7 +9273,16 @@ void TController::control_releaser() {
     auto actuate { false };
     auto isbrakehandleinrightposition { true };
 
-    if( AccDesired > EU07_AI_NOACCELERATION ) {
+    // a train prepared standing charges its brakes before its first start. a pipe left below the lock of the driver's
+    // brake valve (a train placed cold, as after an emergency application) is unlocked as the train stands, not only
+    // once it is to go: else it charges only after the order to go, and starts on what the reservoirs got by then.
+    // a handle which has to be moved to unlock is left where it holds the train with the train brake
+    auto const chargesstanding {
+        bBrakeChargeStart
+     && ( mvOccupied->Vel < EU07_AI_NOMOVEMENT )
+     && ( ( mvOccupied->HandleUnlock == -3 ) || ( BrakeCtrlPosition <= 0.0 ) ) };
+
+    if( ( AccDesired > EU07_AI_NOACCELERATION ) || chargesstanding ) {
         // fill up brake pipe if needed
         if( mvOccupied->PipePress < 3.0 ) {
             actuate = true;
@@ -9146,6 +9292,8 @@ void TController::control_releaser() {
                 isbrakehandleinrightposition &= BrakeCtrlPosition == mvOccupied->HandleUnlock;
             }
         }
+    }
+    if( AccDesired > EU07_AI_NOACCELERATION ) {
         // wyluzuj lokomotywę, to szybciej ruszymy
         // this rule is for starting off, so only below 1 km/h: at speed, just after an application, it would vent
         // the control reservoir of a locomotive that may have to brake again before the pipe has refilled it
@@ -9186,7 +9334,9 @@ void TController::control_releaser() {
 void TController::control_main_pipe() {
 
     // unlocking main pipe
-	if( AccDesired > -0.03
+	if( ( AccDesired > -0.03
+       // standing to charge before the first start, as in control_releaser()
+       || ( bBrakeChargeStart && ( mvOccupied->Vel < EU07_AI_NOMOVEMENT ) ) )
      && true == mvOccupied->LockPipe ) {
 		UniversalBrakeButtons |= TUniversalBrake::ub_UnlockPipe;
 	}
