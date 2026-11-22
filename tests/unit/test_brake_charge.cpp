@@ -128,3 +128,32 @@ TEST_CASE("brake charge: the train brake may come off while the train charges") 
 	// released, the train brake fills the pipe, which is what charges the train
 	CHECK_FALSE(release_waits(false, true, true));
 }
+
+TEST_CASE("brake charge: with the train brake applied the train charges to the head of the pipe, not to an empty one") {
+	using brake_charge::reference;
+	// released: the working pressure
+	CHECK(reference(4.7, 5.0, false) == doctest::Approx(5.0));
+	// the first service position: what the head of the pipe has
+	CHECK(reference(4.65, 5.0, true) == doctest::Approx(4.65));
+	// a pipe emptied, or just being filled: no lower than a full service application leaves, with the margin a train
+	// is charged within. an SM42 with 32 wagons at 0.02 bar counted as charged the moment its brake was applied
+	CHECK(reference(0.02, 5.0, true) == doctest::Approx(4.0));
+	state s;
+	CHECK_FALSE(brake_charge::charged(s, 0.02, reference(0.02, 5.0, true), 0.0));
+	// an overcharged pipe doesn't raise it
+	CHECK(reference(5.4, 5.0, true) == doctest::Approx(5.0));
+}
+
+TEST_CASE("brake charge: the light application that holds a charging train stays on when the order to go comes") {
+	using brake_charge::holds_application;
+	CHECK(holds_application(true, false, true, 1.0));
+	CHECK(holds_application(true, false, true, 0.75));
+	// charged, or moving: the start releases it
+	CHECK_FALSE(holds_application(true, true, true, 1.0));
+	CHECK_FALSE(holds_application(true, false, false, 1.0));
+	// a train the locomotive brake holds has no such application
+	CHECK_FALSE(holds_application(false, false, true, 1.0));
+	// a stronger application comes off down to the first position; a released handle has nothing to hold
+	CHECK_FALSE(holds_application(true, false, true, 2.0));
+	CHECK_FALSE(holds_application(true, false, true, 0.0));
+}

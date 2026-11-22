@@ -461,6 +461,7 @@ private:
     // pipe near empty. cleared once the train runs
     bool bBrakeChargeStart = false;
     bool bHasRun = false; // the train has moved (above 1 km/h) since it was placed
+    bool bBrakeChargeHold = false; // charging, the train stands on a light application of the train brake as well
     double fConsistVelocity = 0.0; // the mass-weighted speed of the consist, positive in the direction of travel [km/h]
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)

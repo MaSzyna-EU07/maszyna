@@ -39,6 +39,19 @@ bool locomotive_brake_holds(double const Locomotivebrakeforce, double const Grad
 	return Locomotivebrakeforce >= holding_force * std::abs(Gradeforce);
 }
 
+double reference(double const Headpipe, double const Working, bool const Trainbrakeapplied) {
+
+	if (false == Trainbrakeapplied) {
+		return Working;
+	}
+	return std::clamp(Headpipe, Working - service_drop + margin, Working);
+}
+
+bool holds_application(bool const Hold, bool const Charged, bool const Standing, double const Position) {
+
+	return Hold && (false == Charged) && Standing && (Position > 0.0) && (Position <= 1.0);
+}
+
 bool release_waits(bool const Charged, bool const Standing, bool const Trainbrakeapplied) {
 
 	return (false == Charged) && Standing && (false == Trainbrakeapplied);

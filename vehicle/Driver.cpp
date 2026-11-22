@@ -3765,6 +3765,13 @@ bool TController::DecBrake() {
                 // to apply again before the train stands: keep the brake as it is, and the locomotive brake with it
                 break;
             }
+            if( brake_charge::holds_application(
+                    bBrakeChargeHold, IsConsistCharged, mvOccupied->Vel < EU07_AI_NOMOVEMENT, BrakeCtrlPosition ) ) {
+                // the order to go came while the train still charges: released now, the wagons let go as their
+                // reservoirs fill and the train stands on a locomotive brake that doesn't hold it. the locomotive
+                // brake stays on with it
+                break;
+            }
 		    if (deltaAcc < 0 && /*GBH mvOccupied->BrakeCtrlPosR*/ BrakeCtrlPosition > 0) {
 			    OK = /*mvOccupied->*/ BrakeLevelAdd(-0.25);
 			    // if ((deltaAcc < 5 * fBrake_a1[0]) && (mvOccupied->BrakeCtrlPosR >= 1.2))
@@ -6723,6 +6730,7 @@ TController::determine_consist_state() {
         // the start is made. a shunting engine coupling wagons moves at a walking pace: a higher speed would leave its
         // every start the first, waiting for each cut of wagons placed cold to charge
         bBrakeChargeStart = false;
+        bBrakeChargeHold = false;
         bHasRun = true;
     }
     auto const chargeable {
@@ -6743,9 +6751,7 @@ TController::determine_consist_state() {
                 // a human driver's handle, which BrakeCtrlPosition doesn't follow
                 mvOccupied->fBrakeCtrlPos > mvOccupied->Handle->GetPos( bh_RP ) + 0.2 };
         auto const reference {
-            trainbrakeapplied ?
-                mvOccupied->PipePress :
-                std::min( mvOccupied->Handle->GetRP(), 5.0 ) };
+            brake_charge::reference( mvOccupied->PipePress, std::min( mvOccupied->Handle->GetRP(), 5.0 ), trainbrakeapplied ) };
         // air to charge with: the engine prepared, the main reservoir above what the pipe charges to, and the driver's
         // brake valve feeding the pipe at the head of the train. a train still being prepared from cold can't charge,
         // nor one whose pipe is locked (unlocked by control_releaser()): it waits without that counting as a stall, held
@@ -9008,8 +9014,10 @@ void TController::secure_standing_train() {
          && ( ( BrakeCtrlPosition < 1.0 ) || ( BrakeCtrlPosition > uphill_start::top_up_position ) ) ) {
             BrakeLevelSet( 1.0 );
         }
+        bBrakeChargeHold = true;
         return;
     }
+    bBrakeChargeHold = false;
     cue_action( driver_hint::trainbrakerelease );
 }
 
@@ -9022,7 +9030,10 @@ double TController::locomotive_brake_force() const {
         if( ( mover->Power > 0.01 )
          && ( mover->LocalBrake != TLocalBrake::ManualBrake )
          && ( mover->MaxBrakePress[ 0 ] > 0.0 ) ) {
-            force += mover->BrakeForceP( mover->MaxBrakePress[ 0 ], 0.0 );
+            // what the brake blocks give, but no more than the wheels pass on to the rails
+            force += std::min(
+                mover->BrakeForceP( mover->MaxBrakePress[ 0 ], 0.0 ),
+                mover->TotalMassxg * brake_charge::adhesion );
         }
     }
     return force;
@@ -9368,9 +9379,12 @@ void TController::control_main_pipe() {
 
         update_brake_charging();
 
-        if( mvOccupied->Compressor < 5.0
-         || ( BrakeCtrlPosition < gbh_RP
-           && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) || is_brake_charging_done() ) ) ) {
+        if( ( mvOccupied->Compressor < 5.0
+           || ( BrakeCtrlPosition < gbh_RP
+             && ( mvOccupied->EqvtPipePress > (fReady < 0.25 ? 5.1 : 5.2) || is_brake_charging_done() ) ) )
+         // the light application a charging train stands on stays, as in DecBrake()
+         && ( false == brake_charge::holds_application(
+                bBrakeChargeHold, IsConsistCharged, mvOccupied->Vel < EU07_AI_NOMOVEMENT, BrakeCtrlPosition ) ) ) {
             cue_action( driver_hint::trainbrakerelease );
         }
     }

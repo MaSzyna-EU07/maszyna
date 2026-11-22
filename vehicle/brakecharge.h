@@ -29,6 +29,12 @@ auto const stall_gain{0.02}; // [bar]
 auto const stall_time{60.0}; // [s]
 // standing, the locomotive brake alone has to give this multiple of the grade force to hold the train while it charges
 auto const holding_force{1.1};
+// the share of a locomotive's weight its brake can hold the train with at most: what the wheels pass on to the rails,
+// taken low (a wet rail). the force of the brake blocks alone is several times that
+auto const adhesion{0.25};
+// [bar] how far below the working pressure the pipe is at a full service application: with the train brake applied the
+// train charges to what the head of the pipe has, but a pipe below this (emptied, or just being filled) is no charge
+auto const service_drop{1.5};
 
 struct state {
 	double best{-1.0}; // the highest charge seen while it still rose [bar], -1 before the first look
@@ -48,6 +54,15 @@ bool charged(state &State, double Level, double Reference, double Time, bool Sup
 // whether the locomotive brake, Locomotivebrakeforce at full application [N], holds the standing train against its
 // Gradeforce [N] on its own; when it doesn't, the train brake is applied lightly while the train charges
 bool locomotive_brake_holds(double Locomotivebrakeforce, double Gradeforce);
+
+// the pressure the train is to be charged to [bar]: the working pressure with the train brake released; with it applied
+// what the head of the pipe has (Headpipe), as the reservoirs get no more, though no less than a full service
+// application leaves, or a pipe emptied by an emergency application would count as charged at once
+double reference(double Headpipe, double Working, bool Trainbrakeapplied);
+
+// whether a light application of the train brake (Position, up to the first service position) stays on: the train
+// stands on it while it charges (Hold), the locomotive brake not holding it alone
+bool holds_application(bool Hold, bool Charged, bool Standing, double Position);
 
 // whether a release of the brakes waits for the charge: standing, a train not charged yet keeps its locomotive brake
 // on. the train brake (Trainbrakeapplied) may come off all the same: released, it fills the pipe, which is what charges
