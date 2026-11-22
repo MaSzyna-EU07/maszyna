@@ -668,6 +668,7 @@ private:
     std::string m_lastexchangestop; // HACK: safeguard to prevent multiple load exchanges per station
     int m_lastexchangeplatforms { 0 }; // cached station platforms for last exchange
     int m_lastexchangedirection { 0 }; //
+    timetable::service_flags m_stopflags; // service flags of the timetable at the stop the train is at or left last
     double fLastStopExpDist = -1.0; // odległość wygasania ostateniego przystanku
     int iRadioChannel = 1; // numer aktualnego kanału radiowego
     int iGuardRadio = 0; // numer kanału radiowego kierownika (0, gdy nie używa radia)

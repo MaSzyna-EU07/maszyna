@@ -392,7 +392,7 @@ buffer_manager::find_file( std::string const &Filename ) const {
     auto const lookup {
         FileExists(
             { Filename },
-            { ".ogg", ".flac", ".wav" } ) };
+            { ".ogg", ".flac", ".wav", ".opus", ".mp3" } ) };
 
     return lookup.first + lookup.second;
 }

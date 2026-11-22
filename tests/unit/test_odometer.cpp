@@ -355,11 +355,144 @@ TEST_CASE("odometer: two simulations saving one file keep each other's states") 
 		}
 		CHECK(files == 1);
 	}
-	SUBCASE("a store with nothing recorded since doesn't write") {
+	SUBCASE("a store with nothing recorded since doesn't write, once the file showed what it saved") {
+		REQUIRE(odometer::save(second, path));
 		write_file(path, "1 replaced by hand\n");
 		REQUIRE(odometer::save(second, path));
 		CHECK(load().size() == 1);
 	}
+}
+
+namespace {
+
+odometer::store load_store(std::filesystem::path const &Path) {
+	odometer::store store;
+	std::ifstream input{Path, std::ios::binary};
+	store.read(input);
+	return store;
+}
+
+// a comment line added to the file; a save that writes the file drops it
+void mark(std::filesystem::path const &Path) {
+	std::ofstream{Path, std::ios::binary | std::ios::app} << "# not written since\n";
+}
+
+bool marked(std::filesystem::path const &Path) {
+	std::ifstream input{Path, std::ios::binary};
+	std::stringstream content;
+	content << input.rdbuf();
+	return content.str().find("# not written since") != std::string::npos;
+}
+
+// the save of Late reads the file before the save of Early writes it, and puts its own file in place after: Late
+// writes the file as it was before Early's save, Early's states are gone from it
+void interleave(odometer::store &Early, odometer::store &Late, std::filesystem::path const &Path) {
+	auto const view{Path.parent_path() / "late_view" / Path.filename()};
+	std::filesystem::create_directories(view.parent_path());
+	std::filesystem::copy_file(Path, view, std::filesystem::copy_options::overwrite_existing);
+	REQUIRE(odometer::save(Early, Path));
+	REQUIRE(odometer::save(Late, view));
+	std::filesystem::rename(view, Path);
+}
+
+} // namespace
+
+TEST_CASE("odometer: a save another simulation's save put its file over is written again") {
+	scratch_directory directory{"odometer_lost_save"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "1000 shared\n");
+	auto first{load_store(path)};
+	auto second{load_store(path)};
+	first.record("first only", run(70.0, 1000.0));
+	second.record("second only", run(80.0, 1000.0));
+
+	interleave(second, first, path);
+	// the race of the two saves: the second one's state is gone from the file
+	REQUIRE_FALSE(load_store(path).find("second only").has_value());
+	REQUIRE(load_store(path).find("first only").has_value());
+
+	// the second one's next save, nothing recorded since, finds the file without its state and writes it again
+	CHECK_FALSE(second.modified());
+	REQUIRE(odometer::save(second, path));
+	auto const saved{load_store(path)};
+	CHECK(saved.size() == 3);
+	CHECK(saved.find("second only").value_or(0.0) == doctest::Approx(81.0));
+	CHECK(saved.find("first only").value_or(0.0) == doctest::Approx(71.0));
+	CHECK(saved.find("shared").value_or(0.0) == 1000.0);
+
+	// both find their states in the file now: their next saves don't write it
+	mark(path);
+	for (auto round{0}; round < 3; ++round) {
+		REQUIRE(odometer::save(first, path));
+		REQUIRE(odometer::save(second, path));
+	}
+	CHECK(marked(path));
+	CHECK(load_store(path).size() == 3);
+}
+
+TEST_CASE("odometer: two simulations with different states of a vehicle settle on the newer one") {
+	scratch_directory directory{"odometer_lost_save_conflict"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "1000 shared\n~20000 guessed by both\n");
+	auto first{load_store(path)};
+	auto second{load_store(path)};
+	// the first one ran the shared vehicle further, and the made up one further from its made up state; the second
+	// one has a known state of the made up one, from a cab's counter
+	first.record("shared", run(1000.0, 10000.0));
+	second.record("shared", run(1000.0, 5000.0));
+	odometer::reading guessed;
+	guessed.begin(20000.0, odometer::origin::guessed);
+	guessed.run(9000.0);
+	first.record("guessed by both", guessed);
+	odometer::reading seeded;
+	seeded.begin(300.0, odometer::origin::counter);
+	second.record("guessed by both", seeded);
+
+	// the second one's save is lost to the first one's, which holds the made up state
+	interleave(second, first, path);
+	REQUIRE(load_store(path).guessed("guessed by both"));
+
+	// the second one writes its known state again. the first one takes it, and the second one the larger state of
+	// the shared vehicle the first one saved
+	REQUIRE(odometer::save(second, path));
+	REQUIRE(odometer::save(first, path));
+	auto const settled{load_store(path)};
+	CHECK(settled.find("shared").value_or(0.0) == doctest::Approx(1010.0));
+	CHECK(settled.find("guessed by both").value_or(0.0) == 300.0);
+	CHECK_FALSE(settled.guessed("guessed by both"));
+	CHECK(first.find("guessed by both").value_or(0.0) == 300.0);
+	CHECK(second.find("shared").value_or(0.0) == doctest::Approx(1010.0));
+
+	// neither one keeps writing the file over to have its own state there
+	mark(path);
+	for (auto round{0}; round < 3; ++round) {
+		REQUIRE(odometer::save(first, path));
+		REQUIRE(odometer::save(second, path));
+	}
+	CHECK(marked(path));
+}
+
+TEST_CASE("odometer: a save with nothing recorded since doesn't write the file again") {
+	scratch_directory directory{"odometer_saved_once"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	odometer::store store;
+	// states the file holds rounded to its digits
+	store.record("known", run(1000.0, 1234.56789));
+	odometer::reading guessed;
+	guessed.begin(12345.678912, odometer::origin::guessed);
+	guessed.run(98.76543);
+	store.record("guessed", guessed);
+	REQUIRE(odometer::save(store, path));
+	CHECK_FALSE(store.modified());
+
+	// the next save finds the file holding the states, rounded as they are: it doesn't write it
+	mark(path);
+	REQUIRE(odometer::save(store, path));
+	CHECK(marked(path));
+	// and the saves after it don't look at the file any more
+	std::filesystem::remove(path);
+	REQUIRE(odometer::save(store, path));
+	CHECK_FALSE(std::filesystem::exists(path));
 }
 
 TEST_CASE("odometer: a test run neither reads nor saves the player's store") {
