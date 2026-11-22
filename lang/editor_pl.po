@@ -14442,8 +14442,8 @@ msgstr "LPM zaznacza model, Shift+LPM dodaje kolejny do zaznaczenia. Gizmo przes
 msgid "LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom."
 msgstr "LPM stawia model wybrany w banku obiektów w klikniętym miejscu. Bank obiektów otwiera się na dole."
 
-msgid "Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set. It also paints the ground texture and grows the 3D grass."
-msgstr "Przeciągany z LPM rozrzuca po gruncie modele wybrane w banku obiektów, według opcji narzędzia. Maluje też teksturę gruntu i sieje trawę 3D."
+msgid "Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set."
+msgstr "Przeciągany z LPM rozrzuca po gruncie modele wybrane w banku obiektów, według opcji narzędzia."
 
 msgid "LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set."
 msgstr "LPM dodaje punkty obrysu obszaru, który potem wypełnia się modelami z banku obiektów, rozłożonymi według opcji narzędzia."

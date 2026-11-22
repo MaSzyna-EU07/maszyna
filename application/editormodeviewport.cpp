@@ -270,7 +270,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		    {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD,
 		     STR_C("LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom.")},
 		    {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH,
-		     STR_C("Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set. It also paints the ground texture and grows the 3D grass.")},
+		     STR_C("Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set.")},
 		    {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL,
 		     STR_C("LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set.")},
 		    {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY,
