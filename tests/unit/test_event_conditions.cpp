@@ -24,7 +24,7 @@ conditions read(std::string const &Text) {
 	parser.getTokens();
 	REQUIRE(parser.peek() == "condition");
 	conditions result;
-	result.deserialize(parser);
+	result.deserialize(parser, "test");
 	// the reading stops at the next keyword of the event and leaves it for the event
 	CHECK(parser.peek() == "endevent");
 	return result;

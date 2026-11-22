@@ -122,9 +122,10 @@ protected:
         std::vector<TTrack *> tracks; // used by conditional_track
         bool has_else { false };
 
-        void deserialize( cParser &Input );
+        // the event name only goes to the log, for the faults found in the condition
+        void deserialize( cParser &Input, std::string_view Eventname );
         void bind( basic_event::node_sequence *Nodes );
-        void init();
+        void init( std::string_view Eventname );
         // verifies whether event meets execution condition(s)
         bool test() const;
         // sends basic content of the class in legacy (text) format to provided stream
