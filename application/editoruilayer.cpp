@@ -1067,7 +1067,7 @@ void editor_ui::render_tool_options()
 		if (false == island)
 			ImGui::SetNextWindowFocus();
 	}
-	auto const flags{island ? island_flags() | ImGuiWindowFlags_NoFocusOnAppearing : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysVerticalScrollbar};
+	auto const flags{island ? island_flags() | ImGuiWindowFlags_NoFocusOnAppearing : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse};
 	if (ImGui::Begin((std::string(STR_C("Tool options")) + "###tooloptions").c_str(), island ? nullptr : &m_tooloptionsopen, flags))
 	{
 		if (island)
