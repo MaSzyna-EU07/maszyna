@@ -43,6 +43,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
+#include "editor/editorRecords.hpp"
 #include "editor/editorGroundFollow.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
@@ -130,7 +131,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool picking;
 	};
 
-	struct stored_profile;
+	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
+	using stored_profile = editor_records::grade_profile;
 	struct EditorSnapshot
 	{
 		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend, Terrain, Kilometrage };
@@ -3282,16 +3284,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string error;
 	};
 	profile_state m_profile;
-	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
-	struct stored_profile
-	{
-		scene::layer_handle layer{null_handle};
-		double length{0.0};
-		glm::dvec3 start{0.0}, end{0.0}, middle{0.0}; // of the route, world space
-		double origin{0.0};
-		profile::line line;
-		double departure{-1.0}; // of the track from the design when it was kept; -1 as kept by an older editor
-	};
 	std::vector<stored_profile> m_profiles;
 	bool m_profiles_loaded{false};
 	void profile_library_load();

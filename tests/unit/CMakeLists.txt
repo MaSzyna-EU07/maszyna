@@ -34,6 +34,22 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	# and the //$ lines it keeps in the scenery files, and the descriptions of the templates (//$e)
+	"${CMAKE_SOURCE_DIR}/editor/editorRecords.cpp"
+	"${CMAKE_SOURCE_DIR}/scene/scenelayercontext.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorIncludeInfo.cpp"
+	# the tracks read from the text of the scenery files and written back, with no scene (test_track_text.cpp): the track and
+	# what reading and writing it takes, the rest of the engine it reaches for stood in by track_stubs.cpp
+	"${CMAKE_SOURCE_DIR}/world/Track.cpp"
+	"${CMAKE_SOURCE_DIR}/world/Segment.cpp"
+	"${CMAKE_SOURCE_DIR}/world/TrackUneven.cpp"
+	"${CMAKE_SOURCE_DIR}/world/MemCell.cpp"
+	"${CMAKE_SOURCE_DIR}/scene/scenenode.cpp"
+	"${CMAKE_SOURCE_DIR}/utilities/Timer.cpp"
+	"${CMAKE_SOURCE_DIR}/rendering/geometrybank.cpp"
+	track_stubs.cpp
+	# and the cant the track editor matches at the joints of the tracks
+	"${CMAKE_SOURCE_DIR}/editor/editorTrackShape.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
