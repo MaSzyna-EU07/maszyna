@@ -288,6 +288,16 @@ class reader
 	}
 	void rotate(glm::vec3 const &Rotation) { m_rotation = Rotation; }
 
+	// the placement in effect now
+	scene::layer_context context() const
+	{
+		scene::layer_context result;
+		result.offset = m_offsets.empty() ? glm::dvec3{0.0} : m_offsets.back();
+		result.rotation = m_rotation;
+		result.scale = m_scales.empty() ? glm::vec3{1.f} : m_scales.back();
+		return result;
+	}
+
   private:
 	// a file being read, its words taken one by one as they're needed
 	struct frame
@@ -298,15 +308,6 @@ class reader
 		std::size_t line{1};
 		std::vector<std::string> parameters;
 	};
-
-	scene::layer_context context() const
-	{
-		scene::layer_context result;
-		result.offset = m_offsets.empty() ? glm::dvec3{0.0} : m_offsets.back();
-		result.rotation = m_rotation;
-		result.scale = m_scales.empty() ? glm::vec3{1.f} : m_scales.back();
-		return result;
-	}
 
 	std::optional<token> raw()
 	{
@@ -464,6 +465,7 @@ scenery read(std::filesystem::path const &Folder, std::string const &Root, read_
 		current.file = first->file;
 		current.line = first->line;
 		current.map = input.in_map(first->file);
+		current.context = input.context();
 		std::string type;
 		std::string_view end;
 		std::size_t count{word_count(current.keyword)};

@@ -75,6 +75,7 @@ struct statement
 	std::size_t file{0};
 	std::size_t line{0};
 	bool map{false}; // it's in the files of the map
+	scene::layer_context context; // the placement in effect where it is (origin, rotate and scale)
 
 	// the word made small, empty past the last
 	std::string word(std::size_t const Index) const { return Index < words.size() ? lowered(words[Index].text) : std::string{}; }

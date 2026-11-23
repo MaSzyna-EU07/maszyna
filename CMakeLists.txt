@@ -225,6 +225,8 @@ set(SOURCES
 "editor/layout/layoutConnection.cpp"
 "editor/layout/layoutRecognition.cpp"
 "editor/layout/layoutLegacy.cpp"
+"editor/layout/layoutAnchors.cpp"
+"editor/project/legacyScenery.cpp"
 "editor/project/projectFile.cpp"
 "editor/project/projectGenerated.cpp"
 "editor/project/projectMigration.cpp"

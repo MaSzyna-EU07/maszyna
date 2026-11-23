@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include <map>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <tuple>
 
 namespace layout
@@ -139,6 +140,16 @@ path_end exit_of(legacy_link const &Link)
 path_end entry_of(legacy_link const &Link)
 {
 	return {Link.track, Link.path, false == Link.forward};
+}
+
+// the letters A to Z made small, as the parser makes the names
+std::string lowered(std::string_view const Text)
+{
+	std::string result{Text};
+	for (auto &c : result)
+		if (c >= 'A' && c <= 'Z')
+			c = static_cast<char>(c - 'A' + 'a');
+	return result;
 }
 
 bool lexically_before(glm::dvec3 const &A, glm::dvec3 const &B)
@@ -309,18 +320,36 @@ takeover_plan plan_takeover(std::vector<legacy_track> const &Tracks, std::vector
 	return result;
 }
 
-takeover_result take_over_tracks(model &Model, takeover_plan const &Plan)
+std::vector<std::size_t> takeover_result::doubtful() const
+{
+	std::vector<std::size_t> result;
+	for (std::size_t i = 0; i < anchors.size(); ++i)
+		if (anchors[i].doubtful())
+			result.push_back(i);
+	return result;
+}
+
+takeover_result take_over_tracks(model &Model, takeover_plan const &Plan, std::vector<lineside_object> const &Objects, std::uint32_t const First)
 {
 	takeover_result result;
 	result.made = Model.execute(Plan.command());
 	if (false == result.made.done)
 		return result;
-	for (auto const &line : Plan.lines)
+	// the lines laid, in the order of the plan, and the old tracks along them by their names made small, as the scenery names them
+	std::map<std::string, line_id> tracks;
+	for (std::size_t i = 0; i < Plan.lines.size() && i < result.made.lines.size(); ++i)
 	{
+		auto const &line{Plan.lines[i]};
 		result.deviations.push_back(line.fit.measured);
 		result.worst.add(line.fit.measured);
+		for (auto const &split : line.hard_splits)
+			if (false == split.track.name.empty())
+				tracks[lowered(split.track.name)] = result.made.lines[i];
 	}
 	result.silent = Plan.silent();
+	auto anchors{infer_anchors(Model.state(), Objects, tracks, First)};
+	std::erase_if(anchors, [&result](anchor const &Each) { return std::ranges::find(result.made.lines, Each.line) == result.made.lines.end(); });
+	result.anchors = std::move(anchors);
 	return result;
 }
 

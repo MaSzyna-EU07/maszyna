@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "editor/layout/layoutAnchors.hpp"
 #include "editor/layout/layoutNetwork.hpp"
 
 #include <cstdint>
@@ -46,7 +47,13 @@ http://mozilla.org/MPL/2.0/.
 //        [crossing <line> <node> <node> slip <line, 0 for none>]                a slip or a crossing: the crossing track, the second slip
 //                                                                                curve; the diverging track 0 0 of a crossing (E5)
 //   end                                            the turnouts (E2b), their tracks lines of them; the ones they lay laid by the turnouts
-//   anchors ... end                                kept for the anchors of the lineside objects (E6), as read; empty in version 1
+//   anchors                                        the anchors of the lineside objects (E6)
+//     anchor <id> <kind> <name> <key> group <n> at <x y z> yaw <deg> line <id> chainage <m> offset <m> height <m> turn <deg>
+//        confidence <0..1> points <n> {<chainage> <offset> <height>} poles <n> {<anchor>} [why <reasons, | between them>]
+//                                                  the object as it was found (its kind, name, key, category as editorInfra numbers
+//                                                  it, where it stood and its yaw), where it stands along the line (the offset to the
+//                                                  left, below 0 to the right), the points of a wire, the poles it hangs on
+//   end
 //   generated
 //     track <name> line <id> file <file> sum <16 hex digits>   a track written by the generator, the checksum of its text
 //     switch <name> line <id> file <file> sum <16 hex digits>  the switch track of a turnout, by its main track
@@ -94,7 +101,7 @@ struct document
 	layout::network network; // the lines, the nodes and the turnouts, the profiles of the norms by place, the identifiers handed out
 	std::vector<generated_node> generated;
 	std::set<layout::line_id> hand_changed;
-	std::vector<std::string> anchors; // the section reserved for the anchors of the lineside objects, kept as read
+	std::vector<layout::anchor> anchors; // of the lineside objects
 	std::vector<legacy_record> legacy;
 };
 

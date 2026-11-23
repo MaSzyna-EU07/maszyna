@@ -235,6 +235,84 @@ bool same_areas(norms::area_map const &A, norms::area_map const &B)
 	return true;
 }
 
+std::string anchor_line(layout::anchor const &Anchor)
+{
+	auto text{std::format("anchor {} {} {} {} group {} at {} {} {} yaw {} line {} chainage {} offset {} height {} turn {} confidence {} points {}", Anchor.id, word(Anchor.kind), word(Anchor.name),
+	                      word(Anchor.key), static_cast<int>(Anchor.group), number(Anchor.location.x), number(Anchor.location.y), number(Anchor.location.z), number(Anchor.yaw),
+	                      layout::number(Anchor.line), number(Anchor.at.chainage), number(Anchor.at.offset), number(Anchor.at.height), number(Anchor.turn), number(Anchor.confidence),
+	                      Anchor.points.size())};
+	for (auto const &point : Anchor.points)
+		text += std::format(" {} {} {}", number(point.chainage), number(point.offset), number(point.height));
+	text += std::format(" poles {}", Anchor.poles.size());
+	for (auto const pole : Anchor.poles)
+		text += std::format(" {}", pole);
+	if (false == Anchor.reasons.empty())
+	{
+		text += " why";
+		for (std::size_t i = 0; i < Anchor.reasons.size(); ++i)
+			text += (i == 0 ? " " : " | ") + Anchor.reasons[i];
+	}
+	return text;
+}
+
+layout::anchor read_anchor(record &Words)
+{
+	layout::anchor result;
+	result.id = Words.id("the anchor");
+	result.kind = unword(Words.next("the kind"));
+	result.name = unword(Words.next("the name"));
+	result.key = Words.next("the key");
+	result.key = result.key == "-" ? result.key : unword(result.key);
+	Words.expect("group");
+	result.group = static_cast<infra::category>(std::min<std::uint64_t>(Words.whole("the category"), static_cast<std::uint64_t>(infra::category::environment)));
+	Words.expect("at");
+	result.location.x = Words.real("x");
+	result.location.y = Words.real("y");
+	result.location.z = Words.real("z");
+	Words.expect("yaw");
+	result.yaw = Words.real("the yaw");
+	Words.expect("line");
+	result.line = static_cast<line_id>(Words.id("the line"));
+	Words.expect("chainage");
+	result.at.chainage = Words.real("the chainage");
+	Words.expect("offset");
+	result.at.offset = Words.real("the offset");
+	Words.expect("height");
+	result.at.height = Words.real("the height");
+	Words.expect("turn");
+	result.turn = Words.real("the turn");
+	Words.expect("confidence");
+	result.confidence = Words.real("the confidence");
+	Words.expect("points");
+	auto const points{Words.whole("the number of the points")};
+	for (std::uint64_t i = 0; i < points && false == Words.failed() && i < 16; ++i)
+	{
+		layout::anchor_point point;
+		point.chainage = Words.real("the chainage of a point");
+		point.offset = Words.real("the offset of a point");
+		point.height = Words.real("the height of a point");
+		result.points.push_back(point);
+	}
+	Words.expect("poles");
+	auto const poles{Words.whole("the number of the poles")};
+	for (std::uint64_t i = 0; i < poles && false == Words.failed() && i < 16; ++i)
+		result.poles.push_back(Words.id("a pole"));
+	if (false == Words.done())
+	{
+		Words.expect("why");
+		auto const why{Words.rest()};
+		std::size_t at{0};
+		while (at <= why.size())
+		{
+			auto end{why.find(" | ", at)};
+			end = end == std::string::npos ? why.size() : end;
+			result.reasons.emplace_back(why.substr(at, end - at));
+			at = end + 3;
+		}
+	}
+	return result;
+}
+
 // the sections of the file
 enum class section
 {
@@ -365,8 +443,8 @@ std::string write(document const &Project)
 	}
 	put("end");
 	put("anchors");
-	for (auto const &line : Project.anchors)
-		put(line);
+	for (auto const &anchor : Project.anchors)
+		put(anchor_line(anchor));
 	put("end");
 	put("generated");
 	for (auto const &node : Project.generated)
@@ -468,15 +546,22 @@ read_result read(std::string_view const Text)
 			continue;
 		}
 		auto const keyword{words.peek()};
+		words.next("");
 		if (in == section::anchors)
 		{
-			if (keyword == "end" && words_of(text).size() == 1)
+			if (keyword == "anchor")
+				project.anchors.push_back(read_anchor(words));
+			else if (keyword == "end")
+			{
+				words.finish();
 				in = section::top;
+			}
 			else
-				project.anchors.emplace_back(text);
+				words.fail(std::format("'{}' among the anchors", keyword));
+			if (words.failed())
+				return fail(words.error());
 			continue;
 		}
-		words.next("");
 		if (in == section::turnouts)
 		{
 			if (keyword == "turnout")

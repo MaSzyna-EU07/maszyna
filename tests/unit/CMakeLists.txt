@@ -68,6 +68,10 @@ add_executable(${UNIT_TESTS_NAME}
 	# the old tracks taken over: their recognition, the anchors of the lineside objects (test_takeover_*.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutRecognition.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLegacy.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutAnchors.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/legacyScenery.cpp"
+	# and the kinds of the lineside objects by their names, as the binding of the editor tells them
+	"${CMAKE_SOURCE_DIR}/editor/editorInfra.cpp"
 	# the project file of the domain, the tracks written kept by their checksums, the //$ lines migrated into it, the scenarios using a map (test_project_*.cpp, test_scenario_index.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/project/projectFile.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/projectGenerated.cpp"

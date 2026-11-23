@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "editor/layout/layoutAnchors.hpp"
 #include "editor/layout/layoutCommands.hpp"
 #include "editor/layout/layoutRecognition.hpp"
 #include "world/Segment.h"
@@ -117,16 +118,19 @@ struct takeover_plan
 takeover_plan plan_takeover(std::vector<legacy_track> const &Tracks, std::vector<std::size_t> const &Take, takeover_options const &Options = {});
 
 // what a takeover did: the outcome of the command, the deviation of each line it laid from its old tracks (in the order of the plan), and
-// whether it was within the tolerance, which takes it over with no question asked
+// whether it was within the tolerance, which takes it over with no question asked; the anchors of the lineside objects by the lines it
+// laid, the doubtful ones to be looked over
 struct takeover_result
 {
 	outcome made;
 	std::vector<measured_deviation> deviations;
 	measured_deviation worst;
 	bool silent{false};
+	std::vector<anchor> anchors;
+	std::vector<std::size_t> doubtful() const;
 };
 // the lines of the plan laid by one command of the model, one step to undo; the norms not refusing what the old tracks break (told in
-// made.broken)
-takeover_result take_over_tracks(model &Model, takeover_plan const &Plan);
+// made.broken). The objects given (those of the scenery) anchored to the lines laid, named by their old tracks, numbered from First
+takeover_result take_over_tracks(model &Model, takeover_plan const &Plan, std::vector<lineside_object> const &Objects = {}, std::uint32_t const First = 1);
 
 } // namespace layout

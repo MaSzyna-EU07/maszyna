@@ -215,15 +215,32 @@ TEST_CASE("project file: the turnouts and their tracks written and read back, th
 	CHECK_FALSE(project::read(broken).project.has_value());
 }
 
-TEST_CASE("project file: the section kept for the anchors is written back as it was read") {
+TEST_CASE("project file: the anchors of the lineside objects read and written back as they were") {
 	auto text{unix_lines(file_text(golden_path()))};
 	auto const anchors{text.find("anchors\nend\n")};
 	REQUIRE(anchors != std::string::npos);
-	text.replace(anchors, 12, "anchors\nanchor 1 line 1 chainage 120.5 offset -3.2\nend\n");
+	text.replace(anchors, 12,
+	             "anchors\nanchor 1 model sem%20a models/sem.t3d group 0 at 10 1.5 20 yaw 90 line 1 chainage 120.5 offset -3.2 height 0.5 turn 0 confidence 0.95 points 0 poles 0 why named by the "
+	             "track a | 3.2 m off\nanchor 2 traction - zasilanie group 3 at 10 6 20 yaw 0 line 1 chainage 120 offset 0.2 height 5.5 turn 0 confidence 0.9 points 4 100 0.2 5.5 140 -0.2 5.5 100 "
+	             "0.2 7 140 -0.2 7 poles 2 1 3\nend\n");
 	auto const read{project::read(text)};
 	REQUIRE_MESSAGE(read.project.has_value(), notes_of(read));
-	CHECK(read.project->anchors == std::vector<std::string>{"anchor 1 line 1 chainage 120.5 offset -3.2"});
+	REQUIRE(read.project->anchors.size() == 2);
+	auto const &signal{read.project->anchors.front()};
+	CHECK(signal.name == "sem a");
+	CHECK(signal.key == "models/sem.t3d");
+	CHECK(signal.group == infra::category::signal);
+	CHECK(signal.at == layout::anchor_point{120.5, -3.2, 0.5});
+	CHECK(signal.reasons == std::vector<std::string>{"named by the track a", "3.2 m off"});
+	auto const &wire{read.project->anchors.back()};
+	CHECK(wire.key == "zasilanie");
+	CHECK(wire.points.size() == 4);
+	CHECK(wire.poles == std::vector<std::uint32_t>{1, 3});
 	CHECK(project::write(*read.project) == text);
+	// a record the anchors haven't
+	auto other{text};
+	other.replace(other.find("anchors\n"), 8, "anchors\nbinding 1\n");
+	CHECK_FALSE(project::read(other).project.has_value());
 	// a record the turnouts haven't
 	auto turnouts{text};
 	turnouts.replace(turnouts.find("turnouts\nend\n"), 13, "turnouts\nturnout 1 type Rz%2060E1-500-1:12 at 0 0 0\nend\n");
