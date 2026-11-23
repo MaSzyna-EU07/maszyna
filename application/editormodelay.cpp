@@ -2239,8 +2239,6 @@ void editor_mode::lay_switch_mode()
 		mode = tool.mode;
 	// a shape dragged out of a free end: an arc and a straight traced on the photo, a straight with the bends, as Tab had it
 	m_track_layout = tool.mode == lay_mode::traced ? track_layout::arc_straight : track_layout::straight;
-	if (tool.mode == lay_mode::traced)
-		first_step_done(first_step::trace);
 	tool.hint = tool.mode == lay_mode::traced ? STR("From the photo: click along the middle of the track. Tab: the bends") : STR("The bends of straights. Tab: from the photo");
 	tool.hint_time = ImGui::GetTime();
 }
@@ -2302,6 +2300,8 @@ void editor_mode::lay_click()
 	tool.modes.push_back(tool.mode);
 	tool.sigmas.push_back(click_sigma_at(point));
 	tool.continuing = false;
+	if (lay_traced() && tool.points.size() >= 3)
+		first_step_done(first_step::trace_points);
 	// a point clicked near the edge of the view: the view glides on to bring it nearer to the middle
 	if (ImVec2 screen; lay_traced() && screen_projection{}.project(point, screen))
 	{
@@ -2491,6 +2491,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 			tool.laid.curves.emplace_back(format("%d. %s", curve.vertex + 1, label.c_str()), alignment::meets_norms(curve, plan.design));
 		}
 	tool.laid.traced = plan.traced;
+	if (plan.traced.has_value())
+		first_step_done(first_step::trace);
 	// the curves slowed down, told
 	if (plan.traced.has_value())
 		for (auto const &curve : plan.traced->curves)
@@ -3054,7 +3056,7 @@ void editor_mode::render_lay_settings()
 		if (ImGui::SmallButton("?##layshape"))
 		{
 			m_first_steps_open = true;
-			m_tutorial_goto = traced ? "Curves" : "Radius of the curves at the bends";
+			m_tutorial_goto = traced ? "Laying from the photo" : "Radius of the curves at the bends";
 		}
 		if (ImGui::IsItemHovered())
 		{

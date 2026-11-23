@@ -5394,9 +5394,6 @@ msgstr "Otwórz dział Tory (F3)"
 msgid "Turn laying on (L)"
 msgstr "Włącz układanie (L)"
 
-msgid "Curves"
-msgstr "Łuki"
-
 msgid "Hold it while clicking: the direction jumps in steps of 15 degrees, or to the angle of a switch to a straight track nearby"
 msgstr "Przytrzymaj przy klikaniu: kierunek przeskakuje co 15 stopni albo ustawia się pod kątem rozjazdu do prostego toru obok"
 
@@ -7476,8 +7473,8 @@ msgstr "Postaw i jedź: pociąg staje na torze, a ty siadasz w kabinie"
 msgid "The trainset tool"
 msgstr "Narzędzie Skład"
 
-msgid "Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
-msgstr "Krótkie lekcje: kamera, układanie toru, łuki, promień łuku, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, cała linia krok po kroku, poprawki, uchwyty na torze, wzniesienia i spadki, teren, starsze scenerie, zapis i jazda"
+msgid "Short lessons: the camera, laying track, laying from the photo, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"
+msgstr "Krótkie lekcje: kamera, układanie toru, układanie po zdjęciu, promień łuku, poprawianie łuku, łączenie, rozjazdy, szablony rozjazdów, sygnalizatory i słupki, cała linia krok po kroku, poprawki, uchwyty na torze, wzniesienia i spadki, teren, starsze scenerie, zapis i jazda"
 
 msgid "B: posts every 100 m along the whole line at once"
 msgstr "B: słupki co 100 m wzdłuż całej linii naraz"
@@ -11773,8 +11770,8 @@ msgstr "załamanie prostych, wyokrąglone dużym łukiem"
 msgid "lay the points clicked"
 msgstr "kładzie kliknięte punkty"
 
-msgid "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them; a click on a free end goes on from it"
-msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym łukiem; Enter je kładzie; klik w wolny koniec prowadzi tor dalej od niego"
+msgid "Lay track: with the photo on, points along the middle of the track seen on it, its straights and curves recognised; without it, each click a bend of the straights, eased with a large curve. Enter lays them; a click on a free end goes on from it"
+msgstr "Układanie toru: przy włączonym zdjęciu punkty po środku widocznego na nim toru, proste i łuki rozpoznane; bez niego każdy klik to załamanie prostych, wyokrąglone dużym łukiem. Enter je kładzie; klik w wolny koniec prowadzi tor dalej od niego"
 
 msgid "Tab while laying"
 msgstr "Tab przy układaniu"
@@ -12068,14 +12065,8 @@ msgstr "Wyrzuca nieułożone punkty, ale dopiero gdy naciśniesz go dwa razy w c
 msgid "Click a few points and press Enter"
 msgstr "Kliknij kilka punktów i naciśnij Enter"
 
-msgid "Every place where the line turns gets a curve, as big as fits. An orange label means the curve breaks the rules for the speed set in the panel"
-msgstr "Każde miejsce, w którym linia skręca, dostaje łuk, tak duży, jak się zmieści. Pomarańczowy opis znaczy, że łuk nie spełnia przepisów dla prędkości ustawionej w panelu"
-
 msgid "Lay a track that turns"
 msgstr "Ułóż tor, który skręca"
-
-msgid "Press Tab to copy a curve from the photo"
-msgstr "Naciśnij Tab, żeby odrysować łuk z ortofotomapy"
 
 msgid "Change the size of the joining curve with Ctrl+wheel"
 msgstr "Zmień wielkość łuku łączącego Ctrl+kółkiem"
@@ -12203,8 +12194,8 @@ msgstr "Tab przy kładzeniu: łuk, potem prosta"
 msgid "Ctrl+wheel: radius, Tab while laying: a straight"
 msgstr "Ctrl+kółko: promień, Tab przy kładzeniu: prosta"
 
-msgid "Lead a track out of it: a straight, an arc and a straight where a curve is traced (Tab); onto another free end: join the two"
-msgstr "Wyprowadza z niego tor: prostą, a w trybie łuku (Tab) łuk i prostą; na inny wolny koniec: łączy oba"
+msgid "Lead a track out of it: a straight, an arc and a straight; onto another free end: join the two"
+msgstr "Wyprowadza z niego tor: prostą, łuk i prostą; na inny wolny koniec: łączy oba"
 
 msgid "Dragging over another free end: another way to join"
 msgstr "Przeciąganie nad innym wolnym końcem: inny sposób połączenia"
@@ -12247,12 +12238,6 @@ msgstr "Ustawiony na wprost: przekłada go na bok. Tylko w edytorze, żeby zobac
 
 msgid "Throw the selected switch over to its other path, in the editor only"
 msgstr "Przekłada zaznaczony rozjazd na drugi tor, tylko w edytorze"
-
-msgid "To copy a curve from the orthophoto: press Tab, then click points along the middle of the curve; it ends at the last one"
-msgstr "Żeby odrysować łuk z ortofotomapy: naciśnij Tab i klikaj punkty wzdłuż środka łuku; łuk skończy się na ostatnim"
-
-msgid "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"
-msgstr "Następne punkty idą po środku łuku widocznego na ortofotomapie, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
 
 msgid "Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights"
 msgstr "Łuk: klikaj punkty po środku toru, łuk kończy się na ostatnim. Tab: z powrotem proste"
@@ -15490,3 +15475,42 @@ msgid_plural "%s again drops the %zu points not laid, Enter lays them"
 msgstr[0] "%s jeszcze raz porzuca nieułożony punkt, Enter go układa"
 msgstr[1] "%s jeszcze raz porzuca %zu nieułożone punkty, Enter je układa"
 msgstr[2] "%s jeszcze raz porzuca %zu nieułożonych punktów, Enter je układa"
+
+msgid "Laying from the photo"
+msgstr "Układanie po zdjęciu"
+
+msgid "With the photo on, the lay tool traces it: click points along the middle of the track you see, on the straights every 100-300 m, on the curves closer. The first point turns the view from above on"
+msgstr "Przy włączonym zdjęciu układanie idzie po nim: klikaj punkty po środku widocznego toru, na prostych co 100–300 m, na łukach gęściej. Pierwszy punkt włącza widok z góry"
+
+msgid "Straights and curves are recognised by themselves, very gentle ones and compound ones too. The labels tell what was understood: a straight and its length, a curve and its radius"
+msgstr "Proste i łuki rozpoznają się same, także bardzo łagodne i koszowe. Etykiety mówią, co edytor zrozumiał: prosta i jej długość, łuk i jego promień"
+
+msgid "An orange label: the curve is sharper than the rules allow at the speed of the line, so it is laid slower there, as the label says"
+msgstr "Pomarańczowa etykieta: łuk jest ciaśniejszy, niż przepisy pozwalają przy prędkości linii, więc dostaje ograniczenie prędkości, jak mówi etykieta"
+
+msgid "Takes back the last point. A point gone yellow is one the line could not follow: take it back and click again"
+msgstr "Cofa ostatni punkt. Punkt, który zrobił się żółty, nie pasuje do linii: cofnij go i kliknij jeszcze raz"
+
+msgid "Lays the track. The next clicks carry it on from its end; Esc ends it"
+msgstr "Układa tor. Kolejne kliknięcia ciągną go dalej od jego końca; Esc kończy"
+
+msgid "Switches to the bends: each point a corner of straights, rounded with a curve. Without the photo laying starts with the bends"
+msgstr "Przełącza na załamania: każdy punkt to załamanie prostych, wyokrąglone łukiem. Bez zdjęcia układanie zaczyna się od załamań"
+
+msgid "The wheel alone zooms, as everywhere; a click near the edge of the view moves the view on"
+msgstr "Samo kółko przybliża, jak wszędzie; kliknięcie przy krawędzi widoku przesuwa widok dalej"
+
+msgid "Click a few points along the track on the photo"
+msgstr "Kliknij kilka punktów po torze na zdjęciu"
+
+msgid "Press Enter to lay them"
+msgstr "Wciśnij Enter, żeby je ułożyć"
+
+msgid "From the photo or the bends, for the points clicked so far and on"
+msgstr "Po zdjęciu albo załamania, dla klikniętych punktów i następnych"
+
+msgid "Enter, LMB... while laying from the photo"
+msgstr "Enter, LPM... przy układaniu po zdjęciu"
+
+msgid "The line laid goes on from its end with the next clicks; Esc ends it"
+msgstr "Kolejne kliknięcia ciągną ułożoną linię od jej końca; Esc ją kończy"

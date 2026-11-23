@@ -34,7 +34,8 @@ enum class editor_selftest_result
 	again
 };
 
-enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, ride, count };
+// trace: a line traced on the photo laid; trace_points: three points clicked along the track on the photo
+enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, ride, trace_points, count };
 
 enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, signals, station, station_signals, line_block, kilometrage, norms };
 

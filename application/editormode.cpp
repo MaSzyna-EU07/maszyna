@@ -5779,7 +5779,7 @@ void editor_mode::render_help_menu()
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
+		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, laying from the photo, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
 	ImGui::EndMenu();
 }
 
@@ -6224,14 +6224,17 @@ std::vector<editor_mode::tutorial_lesson> const &editor_mode::tutorial_lessons()
 	      {"Esc", "Throws away the points not laid yet, but only when pressed twice within 3 seconds: the first press just warns. With no points left, Esc stops laying"}},
 	     {{first_step::tracks, "Open Tracks (F3)"}, {first_step::lay, "Turn laying on (L)"}, {first_step::laid, "Click a few points and press Enter"}},
 	     trial::lay},
-	    {"Curves",
-	     "curves",
-	     {{"LMB", "Every place where the line turns gets a curve, as big as fits. An orange label means the curve breaks the rules for the speed set in the panel"},
-	      {"Tab", "To copy a curve from the orthophoto: press Tab, then click points along the middle of the curve; it ends at the last one"},
-	      {"Alt", "Hold it while clicking: the direction jumps in steps of 15 degrees, or to the angle of a switch to a straight track nearby"},
-	      {"0 1 2 3", "After the first point: type a number and press Enter, and the next straight piece is that many metres long"},
-	      {"wheel", "The wheel alone zooms, as everywhere"}},
-	     {{first_step::bend, "Lay a track that turns"}, {first_step::trace, "Press Tab to copy a curve from the photo"}},
+	    {"Laying from the photo",
+	     // the clip of the curves showed Tab: none till one of the photo traced is recorded
+	     nullptr,
+	     {{"LMB", "With the photo on, the lay tool traces it: click points along the middle of the track you see, on the straights every 100-300 m, on the curves closer. The first point turns the view from above on"},
+	      {"LMB", "Straights and curves are recognised by themselves, very gentle ones and compound ones too. The labels tell what was understood: a straight and its length, a curve and its radius"},
+	      {"LMB", "An orange label: the curve is sharper than the rules allow at the speed of the line, so it is laid slower there, as the label says"},
+	      {"Backspace", "Takes back the last point. A point gone yellow is one the line could not follow: take it back and click again"},
+	      {"Enter", "Lays the track. The next clicks carry it on from its end; Esc ends it"},
+	      {"Tab", "Switches to the bends: each point a corner of straights, rounded with a curve. Without the photo laying starts with the bends"},
+	      {"wheel", "The wheel alone zooms, as everywhere; a click near the edge of the view moves the view on"}},
+	     {{first_step::trace_points, "Click a few points along the track on the photo"}, {first_step::trace, "Press Enter to lay them"}},
 	     trial::lay},
 	    {"Radius of the curves at the bends",
 	     nullptr,
@@ -6413,7 +6416,7 @@ char const *editor_mode::tutorial_of_tool()
 		return "";
 	};
 	if (m_lay.active)
-		return undone({"Laying track", "Radius of the curves at the bends", "Curves", "Joining tracks"});
+		return m_lay.mode == lay_mode::traced ? undone({"Laying from the photo", "Laying track", "Joining tracks"}) : undone({"Laying track", "Radius of the curves at the bends", "Laying from the photo", "Joining tracks"});
 	if (current_work_area() == work_area::terrain)
 		return undone({"Terrain model (NMT)"});
 	if (ui()->mode() != nodebank_panel::TRACK)
@@ -6835,9 +6838,10 @@ void editor_mode::render_shortcuts_window()
 	      {"Shift+LMB", "Add a track to the selection, drag: a box"},
 	      {"RMB on a track", "What can be done with it"},
 	      {"K", "Split the selected track at the cursor, a break of the grade at the height of the ground"},
-	      {"L, LMB, LMB...", "Lay track: each click a bend of the straights, eased with a large curve; Enter lays them; a click on a free end goes on from it"},
-	      {"Tab while laying", "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"},
-	      {"Drag from a free end", "Lead a track out of it: a straight, an arc and a straight where a curve is traced (Tab); onto another free end: join the two"},
+	      {"L, LMB, LMB...", "Lay track: with the photo on, points along the middle of the track seen on it, its straights and curves recognised; without it, each click a bend of the straights, eased with a large curve. Enter lays them; a click on a free end goes on from it"},
+	      {"Tab while laying", "From the photo or the bends, for the points clicked so far and on"},
+	      {"Enter, LMB... while laying from the photo", "The line laid goes on from its end with the next clicks; Esc ends it"},
+	      {"Drag from a free end", "Lead a track out of it: a straight, an arc and a straight; onto another free end: join the two"},
 	      {"Ctrl+wheel", "Dragging from a free end: radius"},
 	      {"Shift+wheel", "Dragging over another free end: another way to join"},
 	      {"0-9 while laying", "Type the length of the next straight, Enter puts the point"},
