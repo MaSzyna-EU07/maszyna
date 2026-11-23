@@ -278,6 +278,21 @@ pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the bl
 locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
 hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
 
+`sm42_td_uncouple_past_signal` (fragment `td_uncouple_past_signal.scn`) is the uncoupling of the SM42 at Debica on
+L053 poranek (step 10 of `deb_sm42_stat`) on td.scn. An SM42 with no timetable stands turned at the far end of `tor1k`,
+three wagons loaded with gravel (51 m of train) behind it towards the exit signal `stacja1_j`, which stays at stop (no
+route). `tdo_n1734`, the track behind `tor1k`, is closed (`trackvel 0`) from the start. `event0` of `tor1k` gives the
+driver `Shunt -1 0`: it pulls the wagons back for 47 m and stops in front of the closed track, with the far end of the
+last wagon 2 m past the signal's memory cell (the `distance` check keeps it 0-4 m past). The pull leaves the screw
+coupler stretched, 0.019 m apart at the buffers, and a screw coupler is let go only with the buffers pressed together
+(under 0.01 m). At the first stand `event0` gives `Shunt 0 0`: brake the wagons, change direction, push the buffers in,
+uncouple. After the direction change the driver counts `stacja1_j` as passed at its first move, so its speed is capped
+at 0. The driver used to work the brake releaser only while it wanted to speed up, so the locomotive stayed braked by
+the wagons' brake application and never closed the gap: no `uncoupled` in the log, and the case ran into its timeout.
+Now the locomotive is released, eases into the wagons and uncouples within a second. The wagons are loaded so that the
+stop leaves the gap above 0.01 m: with a coach and an empty wagon the buffers came to rest 0.009 m apart and the
+coupler let go at once.
+
 The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
 `putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
 the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are

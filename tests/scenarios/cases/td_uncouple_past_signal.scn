@@ -1,0 +1,31 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// a shunter with no timetable stands at the far end of tor1k (point 2), turned (offset -1) to face back towards
+// track 1 of Stacja1, with its wagons (vars.wagons) behind it, towards the exit signal stacja1_j (at stop, no route;
+// its memory cell is 51 m into tor1k). the trainset's velocity is negative, so its driver takes the direction of the
+// locomotive's cab and pulls. tdo_n1734, the track behind tor1k, is closed (speed 0) from the start, so the shunter
+// pulls the wagons back along tor1k and stops in front of it, with the far end of the last wagon a few metres past
+// the signal: the signal stands at stop over that wagon for the direction the shunter pushes in when it uncouples.
+// the pull leaves the screw coupler stretched, as at a real stop.
+trainset none tor1k 100.0 -0.1
+{{wagons}}
+node -1 0 {{vehicle}} dynamic pkp\sm42_v1 6DA-1096 6da -1 headdriver 0 0 enddynamic
+endtrainset
+
+node -1 0 autotest_closed eventlauncher 0 0 0 -1 none 1034 autotest_close end
+event autotest_close trackvel 0 tdo_n1734 0 endevent
+
+// a standing shunter waits for the scenery's orders. event0 of tor1k (the case's track_events) runs while it stands
+// there. the first time it gives the order to go (Shunt -1 0). 25 s later the shunter is on its way, and the first
+// time it stands again, in front of tdo_n1734, it gets the order a scenery gives to leave the wagons: Shunt 0 0,
+// uncouple everything behind the locomotive and stay. it brakes the wagons, changes direction, pushes the buffers in
+// and lets the coupler go. the order comes at once: standing for long, the wagons' brakes release and the coupler
+// draws the buffers together, which leaves nothing to push
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_wake multiple 0 none autotest_go autotest_uncouple endevent
+event autotest_go multiple 0 autotest_ordered autotest_go_order autotest_go_given autotest_go_done condition memcompare * 0 * endevent
+event autotest_go_order PutValues 0 none 0 0 0 Shunt -1 0 endevent
+event autotest_go_given UpdateValues 0 autotest_ordered * 1 * endevent
+event autotest_go_done UpdateValues 25 autotest_ordered * 2 * endevent
+event autotest_uncouple multiple 0 autotest_ordered autotest_uncouple_order autotest_uncouple_given condition memcompare * 2 * endevent
+event autotest_uncouple_order PutValues 0 none 0 0 0 Shunt 0 0 endevent
+event autotest_uncouple_given UpdateValues 0 autotest_ordered * 3 * endevent
