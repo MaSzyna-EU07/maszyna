@@ -1,0 +1,21 @@
+{
+  "description": "#272: the EP05 of ep05_td_timetable runs under power under a section insulator: a piece of the overhead wire 1 m long with no supply (\"*\", 0 V), some 375 m from the start. The pantograph is without voltage for a few hundredths of a second, which the vehicle bridges by holding the last voltage for 0.2 s (TDynamicObject::Update). Without the hold the undervoltage relay would open the line contactors, which on a PantRequiresMain vehicle close again only with the master controller back at its first position: the traction force stays up all the way past the insulator.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp/ep05_v2 ep05-23 ep05 0 headdriver 0 0 enddynamic"
+  },
+  "replace": [
+    ["node -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.687223 5.8 1500.25\r\n0.7764 5.845 1561.2417\r\n0.687223 7.5 1500.25\r\n0.7764 7.545 1561.2417\r\n0.4 4.0 3 0.04 vis\r\nendtraction", "node -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.687223 5.8 1500.25\r\n0.7457 5.8295 1540.2499\r\n0.687223 7.5 1500.25\r\n0.7457 7.5295 1540.2499\r\n0.4 4.0 3 0.04 vis\r\nendtraction\r\nnode -1 0  none traction * 0 4500 0.01 cu 3.0 1\r\n0.7457 5.8295 1540.2499\r\n0.7472 5.8302 1541.2499\r\n0.7457 7.5295 1540.2499\r\n0.7472 7.5302 1541.2499\r\n0.4 4.0 3 0.04 vis\r\nendtraction\r\nnode -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.7472 5.8302 1541.2499\r\n0.7764 5.845 1561.2417\r\n0.7472 7.5302 1541.2499\r\n0.7764 7.545 1561.2417\r\n0.4 4.0 3 0.04 vis\r\nendtraction"]
+  ],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "traction", "from_distance": 345, "to_distance": 395, "at_least": 30},
+    {"type": "log_lacks", "pattern": "lost power"},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}
