@@ -1086,6 +1086,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> const &track_set() const override;
 	editor_track_tab current_track_tab() const override;
 	void render_path_ui();
+	// the cant at an end of a path [mm] from its roll [deg] and back, as the inspector shows and takes it: over 1500 mm between the
+	// rail axes
+	static float cant_of_roll(float const Roll);
+	static float roll_of_cant(float const Cant);
+	// the cant of the track changed goes on into the tracks joined at its ends, as with the gizmo and the joints tool: the joints would
+	// step otherwise. The track, whose state before the change is Before, and its neighbours go into one undo step
+	void track_cant_commit(TTrack &Track, editor_track::state const &Before);
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
 	void select_track(scene::basic_node *Node);
@@ -3143,6 +3150,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		scripted_input input;
 		std::string badge; // the mouse or the keys drawn over the view, for the clips of the tutorial
 		glm::vec2 badge_at{0.0f}; // its bottom left corner, in the pixels of the window
+		std::map<std::string, double> marks; // the heights of the ends of tracks kept by mark, for expect lift
 	};
 	selftest m_selftest;
 	using selftest_result = editor_selftest_result;
@@ -3157,6 +3165,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
+	// the expectations of the script, which make the run fail (editormodeselftestexpect.cpp)
+	selftest_result selftest_expect(std::string const &command, std::istringstream &words);
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives

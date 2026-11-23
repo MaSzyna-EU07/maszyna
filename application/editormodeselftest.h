@@ -37,6 +37,23 @@ inline std::size_t &frames_slow()
 	return count;
 }
 
+// the expectations of the script checked, and those of them which failed, with the commands no group knew. At quit the run ends
+// with failed_exit_code when any failed, for the runner of the scripts (tests/editor/run.py)
+inline std::size_t &expectations()
+{
+	static std::size_t count{0};
+	return count;
+}
+
+inline std::size_t &failures()
+{
+	static std::size_t count{0};
+	return count;
+}
+
+// apart from the 1 of a start which failed or of an error which ended the editor
+inline constexpr int failed_exit_code{2};
+
 inline std::string one_line(std::string Text)
 {
 	std::replace(Text.begin(), Text.end(), '\n', ';');

@@ -399,6 +399,43 @@ editor_mode::selftest_result editor_mode::selftest_track(std::string const &comm
 		WriteLog("SELFTEST " + command + ": " + m_route.status + " " + m_route.error);
 		return selftest_result::handled;
 	}
+	if (command == "routegauge")
+	{
+		double gauge{1500.0};
+		std::string name;
+		words >> gauge >> name;
+		// the line of the track opened in the route tool, as a click on it with the tool does, unless it's in the line open already
+		if (auto *track{simulation::Paths.find(name)}; track != nullptr && false == track->m_editorremoved && std::ranges::find(m_route.chain.tracks, track) == m_route.chain.tracks.end())
+		{
+			m_track_tab = track_tab::route;
+			m_route.single = false;
+			route_load(*track);
+		}
+		// as the field of the rail axes distance among the norms of the route tool sets it
+		m_route.design.norms.gauge = std::max(100.0, gauge);
+		WriteLog(format("SELFTEST routegauge: %.0f mm, the line of %zu paths open", m_route.design.norms.gauge, m_route.chain.tracks.size()));
+		return selftest_result::handled;
+	}
+	if (command == "trackcant")
+	{
+		std::string name;
+		int index{0};
+		std::array<float, 2> cants{0.0f, 0.0f};
+		words >> name >> index >> cants[0] >> cants[1];
+		auto *track{simulation::Paths.find(name)};
+		std::string reason;
+		if (track == nullptr || track->m_editorremoved || index < 0 || index >= static_cast<int>(track->m_paths.size()) || false == editor_track::can_edit_geometry(*track, reason))
+		{
+			WriteLog("SELFTEST trackcant: no path " + name + " " + std::to_string(index) + " to edit " + reason);
+			return selftest_result::handled;
+		}
+		// as the field of the inspector takes it: the rolls of the path set, then the edit committed with the track as it was before
+		auto const before{editor_track::capture(*track)};
+		track->m_paths[index].rolls = {roll_of_cant(cants[0]), roll_of_cant(cants[1])};
+		track_cant_commit(*track, before);
+		WriteLog(format("SELFTEST trackcant %s %d: %.1f %.1f mm", name.c_str(), index, cant_of_roll(track->m_paths[index].rolls[0]), cant_of_roll(track->m_paths[index].rolls[1])));
+		return selftest_result::handled;
+	}
 	if (command == "digitizescenery")
 	{
 		// "digitizescenery write" digitizes, without the word only counts what it would do

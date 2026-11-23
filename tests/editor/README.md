@@ -1,0 +1,100 @@
+# Self-tests of the track editor
+
+Scripts that drive the track editor through the commands of its self-test (`application/editormodeselftest*.cpp`) and check
+what came out with `expect` commands. A failed expectation makes the run fail: the editor ends with a non-zero exit code.
+
+The game data isn't in this repository, so these run against a local game install only, not in CI.
+
+## Running
+
+The editor has to be built with the self-tests, which a normal build leaves out (a script takes over the input of the editor):
+
+```
+cmake -S . -B build -DWITH_EDITOR_SELFTESTS=ON
+cmake --build build --config RelWithDebInfo
+```
+
+Then, with the game folder (one with `scenery/`, `models/` and `dynamic/` of the game data):
+
+```
+python tests/editor/run.py --game-dir C:/MaSzyna                       # all cases
+python tests/editor/run.py --game-dir C:/MaSzyna 1_inspector_cant      # chosen cases
+python tests/editor/run.py --game-dir C:/MaSzyna --ini low.ini         # with settings of your own over the runner's
+```
+
+- `--exe` names the executable; by default it's the newest `eu07*.exe` under `build/bin`.
+- `--ini` is read over the runner's settings (a 640x480 window, no sound, `convertmodels 0`, `log.txt` in the game folder),
+  which are read over the player's own `eu07.ini`. A file with low settings of the picture makes the runs quicker.
+- `--timeout` (240 s) and `--memory-mb` (8192 MB) limit each run of the editor. On Windows the editor runs in a job object
+  which keeps its memory under the limit and ends it with the runner; the runner also stops it when it goes over the limit.
+- `--show` shows the window of the editor; without it the window is never shown nor focused (`EU07_EDITOR_SELFTEST_HIDDEN`),
+  so the computer can be used meanwhile.
+- `--keep` keeps the copies of the scenery, to look at what a script saved.
+
+The cases run one after another, one editor at a time. Each prints the exit code of the editor, its time and memory, the
+`SELFTEST FAIL` lines, and `PASS` or `FAIL`; a summary follows. The runner exits with 1 when any case failed. The scripts as
+they were run and the logs of the editor are in `tests/editor/out/<case>/`.
+
+## How it works
+
+For each case the runner:
+
+1. copies the fixture, `scenery/autotest_editor.scn`, into the `scenery` folder of the game as `autotest_editor_<case>.scn`,
+2. starts `eu07 -ini <runner's settings> [-ini <--ini>] -edit autotest_editor_<case>.scn` in the game folder, with the script in
+   `EU07_EDITOR_SELFTEST` (the settings first: a `sceneryfile` in them would take the place of the scenery otherwise),
+3. waits until the editor quits, or stops it at the limits of time and memory,
+4. reads the exit code and the `SELFTEST` lines of `log.txt`,
+5. deletes the copy of the scenery and whatever the editor wrote next to it under its name, and says what else the run added
+   to the `scenery` folder or changed there.
+
+A case passes when every run of the editor ended with the exit code 0, its log has `SELFTEST result: 0 failed of N`, and the
+case checked something (N above 0 over all its runs). The editor ends with 2 when an expectation failed or a command of the
+script wasn't taken by any group of the self-test (a typo would otherwise let the expectations after it pass for nothing),
+with 1 when it couldn't start or an error ended it, and with the system's code on a crash.
+
+The fixture holds plain tracks only, no terrain: lines of straights (`a`, `s`, `d`, the pair `p` and `q` 4.5 m apart), a track
+of 1000 mm gauge (`g1`) beside one of the standard gauge (`g2`), a turntable of 16 m with `velocity 10` (`tt1`, with the
+include of its model and events), two curves of 600 and 604.5 m side by side with a cant of 60 mm (`i0`..`i9`, `o0`..`o9`,
+the straights at their ends taking the cant on and off), and a track apart with a vehicle (`v1`), without which the editor
+would put one of its own onto a track of the cases on saving. It uses only what every install of the game has.
+
+## Writing a case
+
+A case is `cases/<name>.txt`: one command a line, `#` for comments, as for `EU07_EDITOR_SELFTEST`. The commands are listed at
+the top of `application/editormodeselftest.cpp`. Start with a `wait` of a few frames and end with `quit`, which logs
+`SELFTEST result: <failed> failed of <expectations>`.
+
+The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or `SELFTEST FAIL <what>: got <value>, expected <value>`:
+
+| expectation | checks |
+| --- | --- |
+| `expect cant <track> <start\|end> <mm> <tolerance mm>` | the cant at the end of the first path, as the inspector shows it (1500 mm between the rail axes) |
+| `expect joint <track> <start\|end> <gap m> <angle deg> <cant step mm>` | the end of the first path against the nearest end of another track (within 1 m): the gap, the kink and the step of the cant between them, each at most the value given |
+| `expect records <name> <count> [kind]` | the records of the switches (`//$r`) of the name, with the connections having the switch among theirs; only those of the kind (`switch`, `slip`, `crossing`, `double`, `connection`) when given |
+| `expect speed <track> <km/h> [tolerance]` | the speed of the track as the editor shows it (`editor_track::velocity`) |
+| `expect gauge <track> <m> [tolerance]` | the gauge of the track |
+| `expect track <name> <present\|removed>` | a track of the name is in the scenery, or isn't |
+| `expect route <track> <in\|out>` | the track is a part of the line open in the route tool, or isn't |
+| `expect norms gauge <mm> [tolerance]` | the rail axes distance of the norms the tracks are laid to |
+| `expect height <track> <start\|end> <m> <tolerance>` | the height of the end of the first path |
+| `expect lift <track> <start\|end> <label> <m> <tolerance>` | how far the end is above the height `mark <label> <track> <start\|end>` kept |
+| `expect includes <track> <count>` | the includes whose parameters name the track: the model and the events of a turntable |
+
+A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
+on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
+new editor without the script, so it isn't for the cases.
+
+## The cases
+
+The cases check the fixes of PR #450 (the numbers are those of its test plan):
+
+| case | fix |
+| --- | --- |
+| `1_inspector_cant` | the cant typed into the inspector goes on into the track joined at that end, in the same undo step |
+| `3_norms_after_delete` | deleting a track of the line open in the route tool keeps the laying norms |
+| `4_gauge_paste_group` | the gauge is a paste group of its own, off by default |
+| `5_turntable_speed` | the speed of a turntable set in the editor is the one saved |
+| `6_set_delete_records` | deleting a set of tracks takes the records of its switches, and the model and the events of a turntable |
+| `6b_set_delete_whole` | a double switch, a slip and a crossover in a set go whole, with their records |
+| `7_crossover_delete` | deleting a switch of a crossover on a curve takes the crossover out whole: the outer track comes down, the record goes |
+| `7b_bent_switch_delete` | a switch bent out of the shape of its record still takes the record along when deleted |
