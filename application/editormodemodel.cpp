@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/project/projectSession.hpp"
 #include "editor/project/scenarioIndexCache.hpp"
 #include "editor/project/sceneryText.hpp"
+#include "editor/layout/layoutTurnout.hpp"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
@@ -347,7 +348,7 @@ void editor_mode::model_open()
 	std::map<layout::line_id, std::size_t> counts;
 	for (auto const &node : model().session.project().generated)
 	{
-		if (node.kind != "track")
+		if (node.kind != "track" && node.kind != "switch")
 			continue;
 		auto *track{simulation::Paths.find(node.name)};
 		if (track == nullptr || track->m_editorremoved)
@@ -361,6 +362,7 @@ void editor_mode::model_open()
 		managed_track entry;
 		entry.line = node.line;
 		entry.index = counts[node.line]++;
+		entry.kind = node.kind;
 		if (found->second.has_value())
 			if (auto const text{scenery_text::node_text(*found->second, node.name)})
 				entry.text = *text;
@@ -434,6 +436,7 @@ void editor_mode::model_told(layout::outcome const &Outcome, bool const Refused,
 	model().refused = Refused;
 	model().notices.clear();
 	model().shown_notices.clear();
+	model().proposal.clear();
 	if (Refused)
 	{
 		model().message = "Refused, nothing changed:";
@@ -495,13 +498,14 @@ void editor_mode::model_run(std::vector<layout::command> Commands, model_context
 			for (auto const line : *lines)
 				if (Context.overwrite.contains(line))
 					overwrite.insert(line);
+		auto const before{session.network()};
 		auto const applied{session.execute(command, overwrite)};
 		if (false == applied.outcome.done)
 		{
 			model_told(applied.outcome, true);
 			return;
 		}
-		created = model_tracks_after(applied.token, applied.changed, applied.removed, Context);
+		created = model_tracks_after(applied.token, before, applied.changed, applied.removed, Context);
 		std::string what{format(STR_C("%s: done"), STR_C(layout::command_name(command)))};
 		if (false == applied.changed.empty())
 			what = format(STR_P("%s: line %s, %zu track", "%s: line %s, %zu tracks", static_cast<long long>(created.size())), STR_C(layout::command_name(command)), line_name(*applied.changed.begin()).c_str(), created.size());
@@ -512,18 +516,41 @@ void editor_mode::model_run(std::vector<layout::command> Commands, model_context
 		Context.done(created);
 }
 
-std::vector<TTrack *> editor_mode::model_tracks_after(std::uint64_t const Token, std::set<layout::line_id> const &Changed, std::set<layout::line_id> const &Removed, model_context const &Context)
+std::vector<TTrack *> editor_mode::model_tracks_after(std::uint64_t const Token, layout::network const &Before, std::set<layout::line_id> const &Changed, std::set<layout::line_id> const &Removed, model_context const &Context)
 {
-	std::vector<TTrack *> removed;
-	auto surface{Context.surface};
+	auto const &after{model().session.network()};
+	// the tracks which go: of the lines changed or gone; of a turnout one of whose tracks is, its switch tracks, kept by its main track,
+	// before and after the change. Made again: the lines of their own changed, the turnouts there are now
+	std::set<layout::line_id> going;
+	std::set<layout::line_id> own;
+	std::set<layout::turnout_id> turnouts;
 	for (auto const *lines : {&Changed, &Removed})
 		for (auto const line : *lines)
-			for (auto *track : model_line_tracks(line))
+		{
+			going.insert(line);
+			if (auto const *earlier{layout::owner_of(Before, line)})
+				going.insert(earlier->main);
+			if (auto const *now{layout::owner_of(after, line)})
 			{
-				if (surface.empty())
-					surface = surface_of(*track);
-				removed.push_back(track);
+				going.insert(now->main);
+				turnouts.insert(now->id);
 			}
+			else if (lines == &Changed && after.find(line) != nullptr)
+				own.insert(line);
+		}
+	// a turnout whose main track was there before and goes now is made again whole
+	for (auto const &[id, turnout] : after.turnouts())
+		if (going.contains(turnout.main))
+			turnouts.insert(id);
+	std::vector<TTrack *> removed;
+	auto surface{Context.surface};
+	for (auto const line : going)
+		for (auto *track : model_line_tracks(line))
+		{
+			if (surface.empty() && track->eType == tt_Normal)
+				surface = surface_of(*track);
+			removed.push_back(track);
+		}
 	// the old tracks the line takes the place of
 	for (auto *track : Context.replaced)
 		if (false == track->m_editorremoved && std::ranges::find(removed, track) == removed.end())
@@ -536,32 +563,56 @@ std::vector<TTrack *> editor_mode::model_tracks_after(std::uint64_t const Token,
 	model().session.options().surface = surface;
 	std::vector<TTrack *> created;
 	std::vector<std::pair<TTrack *, managed_track>> entries;
-	for (auto const line : Changed)
+	std::map<layout::line_id, std::size_t> indices;
+	// an entry of the generator put into the scene, the track marked as the line's
+	auto const put = [&](layout::line_id const Line, std::string const &Text, std::string const &Name, std::string const &Kind) {
+		auto const at{Text.find(" track ")};
+		if (at == std::string::npos)
+			return;
+		auto *track{editor_track::load_entry(Text.substr(at + 7), Name)};
+		if (track == nullptr)
+			return;
+		managed_track entry;
+		entry.line = Line;
+		entry.index = indices[Line]++;
+		entry.text = Text;
+		entry.kind = Kind;
+		if (track->name() != Name)
+		{
+			// another track has the name: the entry written under the one it got
+			WriteLog("Editor: model: the name " + Name + " is taken, the track is " + track->name(), logtype::generic);
+			entry.text = "node -1 0 " + track->name() + Text.substr(at);
+		}
+		created.push_back(track);
+		entries.emplace_back(track, std::move(entry));
+	};
+	for (auto const line : own)
 	{
 		auto const made{model().session.generate(line)};
 		for (auto const &error : made.errors)
 			WriteLog("Editor: model: the tracks of line " + line_name(line) + ": " + error, logtype::generic);
-		std::size_t index{0};
 		for (auto const &piece : made.pieces)
+			put(line, piece.text, piece.name, "track");
+	}
+	for (auto const id : turnouts)
+	{
+		auto const *turnout{after.find(id)};
+		if (turnout == nullptr)
+			continue;
+		auto const made{model().session.generate(id)};
+		for (auto const &error : made.errors)
+			WriteLog(format("Editor: model: the tracks of turnout %u: %s", layout::number(id), error.c_str()), logtype::generic);
+		if (made.parts.empty())
+			put(turnout->main, made.text, made.name, "switch");
+		for (auto const &part : made.parts)
 		{
-			auto const at{piece.text.find(" track ")};
-			if (at == std::string::npos)
-				continue;
-			auto *track{editor_track::load_entry(piece.text.substr(at + 7), piece.name)};
-			if (track == nullptr)
-				continue;
-			managed_track entry;
-			entry.line = line;
-			entry.index = index++;
-			entry.text = piece.text;
-			if (track->name() != piece.name)
+			if (part.is_switch)
 			{
-				// another track has the name: the entry written under the one it got
-				WriteLog("Editor: model: the name " + piece.name + " is taken, the track is " + track->name(), logtype::generic);
-				entry.text = "node -1 0 " + track->name() + piece.text.substr(at);
+				put(turnout->main, part.text, part.name, "switch");
+				continue;
 			}
-			created.push_back(track);
-			entries.emplace_back(track, std::move(entry));
+			for (auto const &piece : part.pieces[0])
+				put(turnout->main, piece.text, piece.name, "track");
 		}
 	}
 	editor_track::commit(created);
@@ -637,19 +688,19 @@ void editor_mode::model_saved(bool const Success)
 		model().written.clear();
 		return;
 	}
-	// the tracks written, by their lines and the files they went into
-	std::map<std::pair<layout::line_id, std::string>, std::vector<project::session::written_piece>> lines;
+	// the tracks written, by their lines, each with the file it went into
+	std::map<layout::line_id, std::vector<project::session::written_piece>> lines;
 	for (auto const &[track, text] : model().written)
 	{
 		auto const found{model().tracks.find(track)};
 		auto const *source{scene::Layers.source(track)};
 		if (found == model().tracks.end() || source == nullptr)
 			continue;
-		lines[{found->second.line, scene::Layers.layer(source->layer).name}].push_back({track->name(), text});
+		lines[found->second.line].push_back({track->name(), text, scene::Layers.layer(source->layer).name, found->second.kind});
 	}
 	model().written.clear();
-	for (auto const &[key, pieces] : lines)
-		model().session.record_written(key.first, pieces, key.second);
+	for (auto const &[line, pieces] : lines)
+		model().session.record_written(line, pieces);
 	for (auto const line : model_seen_changed())
 		model().session.mark_hand_changed(line);
 	std::string error;
@@ -733,7 +784,8 @@ bool editor_mode::route_from_model(layout::line_id const Line)
 	auto const *line{model().session.network().find(Line)};
 	auto const tracks{model_line_tracks(Line)};
 	model().plan = {};
-	if (line == nullptr || tracks.empty())
+	// a track of a turnout is edited through its turnout, not in the route design
+	if (line == nullptr || tracks.empty() || line->turnout != layout::turnout_id::none)
 		return false;
 	auto &route{m_route};
 	route.from = tracks.front();
@@ -1012,7 +1064,11 @@ bool editor_mode::model_delete(TTrack *Track)
 		return false;
 	if (auto const *managed{model_track(Track)})
 	{
-		model_delete_line(managed->line);
+		// a track of a turnout: the turnout taken out
+		if (auto const *turnout{layout::owner_of(model_network(), managed->line)})
+			model_turnout_remove(turnout->id);
+		else
+			model_delete_line(managed->line);
 		return true;
 	}
 	if (Track->name().empty() || Track->name() == "none")
@@ -1318,6 +1374,18 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		WriteLog(format("SELFTEST routemove %d: valid %d", index, m_route.result.valid ? 1 : 0));
 		return selftest_result::handled;
 	}
+	if (command == "modelturnoutside")
+	{
+		// the turnout of the switch track given the other side, as the inspector's button gives it
+		std::string name;
+		words >> name;
+		auto *track{resolve(name)};
+		auto const *turnout{model_turnout(track)};
+		if (turnout != nullptr)
+			model_turnout_run(layout::change_turnout{turnout->id, turnout->type, -turnout->hand});
+		WriteLog(format("SELFTEST modelturnoutside %s: %s", name.c_str(), turnout != nullptr ? editor_selftest::one_line(model().message).c_str() : "no turnout"));
+		return selftest_result::handled;
+	}
 	if (command == "modelsplit" || command == "modeldelete" || command == "modeljoin")
 	{
 		auto const line{model_plan_line()};
@@ -1408,9 +1476,33 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		auto const &network{model().session.network()};
 		for (auto const &[id, line] : network.lines())
 		{
-			auto const tracks{model_line_tracks(id)};
 			auto const *start{network.find(line.start)};
 			auto const *end{network.find(line.end)};
+			// a track of a turnout: the path of its switch track from the start of the turnout, at the numbers of the nodes at its ends
+			if (line.turnout != layout::turnout_id::none)
+			{
+				auto const *turnout{network.find(line.turnout)};
+				if (turnout == nullptr || start == nullptr || end == nullptr || layout::kind_of(*turnout) != layout::turnout_kind::ordinary)
+					continue;
+				TTrack const *switched{nullptr};
+				for (auto const *track : model_line_tracks(turnout->main))
+					if (track->eType == tt_Switch && track->m_paths.size() >= 2)
+						switched = track;
+				auto const path{id == turnout->main ? 0 : id == turnout->diverging ? 1 : -1};
+				if (switched == nullptr || path < 0)
+				{
+					problems += " " + line_name(id) + " has no switch track";
+					continue;
+				}
+				auto const &points{switched->m_paths[path].points};
+				auto const from{points[segment_data::point::start]};
+				auto const to{points[segment_data::point::end]};
+				if (false == ((bits_equal(from, start->position) && bits_equal(to, end->position)) || (bits_equal(from, end->position) && bits_equal(to, start->position))))
+					problems += format(" %s: the path %d of %s off its nodes", line_name(id).c_str(), path, switched->name().c_str());
+				++checked;
+				continue;
+			}
+			auto const tracks{model_line_tracks(id)};
 			if (tracks.empty() || start == nullptr || end == nullptr)
 			{
 				problems += " " + line_name(id) + " has no tracks";
@@ -1463,6 +1555,30 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 			shown += "\n" + notice;
 		auto const holds{message.find(text) != std::string::npos || shown.find(text) != std::string::npos};
 		expectation(holds == (mode == "holds"), "modelmessage " + mode + " " + text, editor_selftest::one_line(message), (mode == "holds" ? "holding " : "lacking ") + text);
+		return selftest_result::handled;
+	}
+	if (what == "handlines")
+	{
+		// the lines taken for changed by hand: in the project, or seen changed by the other tools since they were made
+		std::size_t wanted{0};
+		words >> wanted;
+		auto marked{model_seen_changed()};
+		marked.insert(model().session.project().hand_changed.begin(), model().session.project().hand_changed.end());
+		std::string lines;
+		for (auto const line : marked)
+			lines += " " + line_name(line);
+		expectation(marked.size() == wanted, "handlines", std::to_string(marked.size()) + lines, std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelproposal")
+	{
+		// the solver's best proposal for the crossover refused last
+		std::string mode, text;
+		words >> mode;
+		std::getline(words, text);
+		text.erase(0, text.find_first_not_of(' '));
+		auto const holds{false == model().proposal.empty() && model().proposal.find(text) != std::string::npos};
+		expectation(holds == (mode == "holds"), "modelproposal " + mode + " " + text, model().proposal.empty() ? std::string{"none"} : model().proposal, (mode == "holds" ? "holding " : "lacking ") + text);
 		return selftest_result::handled;
 	}
 	if (what == "hand")

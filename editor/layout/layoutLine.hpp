@@ -199,4 +199,7 @@ curve_norms preferred_curve(norms::profile_id const Profile, norms::line_class c
 // mm of the cant as degrees of the roll of the track: on the base of the rail heads, 1500 mm
 double roll_of(double const Cant);
 
+// the chainage of the point of the line nearest the point of the plan, and how far it is from it (Distance); 0 for a line not laid
+double chainage_of(solved_line const &Line, glm::dvec2 const &Point, double *Distance = nullptr);
+
 } // namespace layout

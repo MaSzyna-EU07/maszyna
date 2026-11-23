@@ -1,0 +1,35 @@
+# Editing on the model (E4b): a crossover dragged between two lines of the model running alongside is the solver's: two turnouts and
+# the line between their diverging tracks, one step. Between lines too close for the type (4 m apart) it's refused with the solver's proposal, nothing
+# changed. The empty ground east of k0..k3 (x 800..1300)
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100
+layclicks 0 600 804.75 -300 804.75 100
+wait 2
+expect modellines 2
+expect steps 2
+connection crossover 800 -200 804.75 -150 Rz_60E1-300-1:9
+wait 2
+modeltracks
+expect modelrefused 0
+expect steps 3
+expect modellines 9
+expect modelends
+undo
+wait 2
+expect modellines 2
+expect steps 2
+# 4 m apart: Rz 60E1-300-1:9 needs them 4.498 m apart, with the straight the norms ask for between its turnouts
+layclicks 0 600 900 -300 900 100
+layclicks 0 600 904 -300 904 100
+wait 2
+expect modellines 4
+modelmark apart
+connection crossover 900 -200 904 -150 Rz_60E1-300-1:9
+wait 2
+expect modelrefused 1
+expect modelsame apart
+expect steps 4
+expect status 4.498
+expect modelproposal holds 4.498
+quit

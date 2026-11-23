@@ -274,6 +274,7 @@ set(SOURCES
 "application/editormodespeed.cpp"
 "application/editormodenorms.cpp"
 "application/editormodemodel.cpp"
+"application/editormodemodelturnout.cpp"
 "application/editormodesrk.cpp"
 "application/editormodekm.cpp"
 "application/editormodejoints.cpp"

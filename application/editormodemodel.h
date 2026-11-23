@@ -71,5 +71,8 @@ struct editor_model
 	std::map<std::string, layout::network> marks; // the self-test's copies of the network, for expect modelsame
 	std::string shown; // the message as the user reads it, in the language of the editor
 	std::vector<std::string> shown_notices; // the notices so
+	std::string proposal; // the solver's best proposal for a crossover refused
+	std::pair<std::string, std::string> drag; // the switch dragged on a line of the model as it was tried: its command, why it's refused
+	double turnout_move{5.0}; // m, the distance the inspector moves a turnout by
 };
 

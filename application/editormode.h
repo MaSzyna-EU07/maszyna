@@ -3360,6 +3360,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string text; // its entry as written while it's as it was made: the generator's, or the file's it was read from
 		glm::dvec3 offset{0.0}; // of the placement the coordinates of the text are in
 		std::string baseline; // its own export as it was made: another one tells a change by the other tools
+		std::string kind{"track"}; // "switch": a switch track of a turnout, kept by the main track of the turnout (line)
 	};
 	// how a run of commands goes on: the lines the user let write over, what's done after the last one
 	struct model_context
@@ -3395,7 +3396,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// hand asks first
 	void model_run(std::vector<layout::command> Commands, model_context Context);
 	// the tracks of the lines the command changed made again, those of the lines gone taken away: one step of the history with its token
-	std::vector<TTrack *> model_tracks_after(std::uint64_t const Token, std::set<layout::line_id> const &Changed, std::set<layout::line_id> const &Removed, model_context const &Context);
+	std::vector<TTrack *> model_tracks_after(std::uint64_t const Token, layout::network const &Before, std::set<layout::line_id> const &Changed, std::set<layout::line_id> const &Removed, model_context const &Context);
 	void model_told(layout::outcome const &Outcome, bool const Refused, std::string const &What = {});
 	// the editor's step of a command taken back or brought again
 	void model_history(std::uint64_t const Token, bool const Undo);
@@ -3432,6 +3433,35 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the reasons of a refusal as the user reads them, the BLOCK limits of the norms of them formatted here
 	static std::string model_reasons_shown(layout::outcome const &Outcome);
 	static std::string model_notice_shown(layout::notice const &Notice);
+
+	// the turnouts of the lines of the model through the switch tool (editormodemodelturnout.cpp, stage E4b): the turnout whose track the
+	// managed track is, nullptr for none
+	layout::turnout const *model_turnout(TTrack const *Track) const;
+	// the type of the catalogue the template is of, empty for a template of the user's own
+	static std::string model_type_of(editor_track::switch_template const &Template);
+	// the line of the model one of the tracks of which runs through the point, within half a metre, and the chainage of the point on it
+	bool model_line_at(glm::dvec3 const &Point, std::vector<TTrack *> const &Tracks, layout::line_id &Line, double &Chainage) const;
+	// the turnout the switch dragged lays into a line of the model as it's let go now; none where it isn't dragged on a line of the model.
+	// Why: what keeps the template from being laid there
+	std::optional<layout::insert_turnout> model_switch_drag(std::string &Why) const;
+	std::optional<layout::insert_turnout> model_switch_command(std::vector<TTrack *> const &Tracks, glm::dvec3 const &Start, glm::dvec2 const &Heading, int const Side, editor_track::switch_template const &Shape, std::string &Why) const;
+	// the template armed laid as a turnout of the model, its start at the point running along the heading, its diverging track to the
+	// side (1 as the switch tool has it on the right); false where the point isn't on a line of the model, for the old way
+	bool model_switch_place(std::vector<TTrack *> const &Tracks, glm::dvec3 const &Start, glm::dvec2 const &Heading, int const Side);
+	// the switch dragged let go on a line of the model: laid as a turnout of the model, or refused; false for the old way
+	bool model_switch_finish();
+	bool model_switch_run(std::optional<layout::insert_turnout> const &Command, std::string const &Why);
+	void model_switch_done(std::vector<TTrack *> const &Created);
+	// the switch track of a turnout of the model moved along its line, given another template: true, taken care of here
+	bool model_switch_slide(TTrack &Switch, double const Distance);
+	bool model_switch_template(TTrack &Switch, editor_track::switch_template const &Shape);
+	void model_turnout_run(layout::command const &Command);
+	void model_turnout_remove(layout::turnout_id const Turnout);
+	// the crossover dragged between two lines of the model, as the solver of the connections plans it; false for the old way
+	bool model_connection();
+	// the first reason the switch dragged on a line of the model would be refused for as it's let go now, empty where it'd be laid
+	std::string model_switch_trial() const;
+	void render_model_turnout(TTrack &Track);
 
 	bool m_model_delete_confirmed{false}; // the old delete let through, the scenarios looked through
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);

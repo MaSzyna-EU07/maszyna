@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <optional>
 
 namespace layout
@@ -577,6 +578,65 @@ curve_norms preferred_curve(norms::profile_id const Profile, norms::line_class c
 double roll_of(double const Cant)
 {
 	return glm::degrees(std::asin(std::clamp(Cant / kRailBase, -1.0, 1.0)));
+}
+
+double chainage_of(solved_line const &Line, glm::dvec2 const &Point, double *Distance)
+{
+	if (Distance != nullptr)
+		*Distance = std::numeric_limits<double>::infinity();
+	if (Line.elements.empty() || Line.length <= 0.0)
+		return 0.0;
+	// the nearest of points a metre apart, then narrowed down within the metres either side of it: the line has no bend sharper than that
+	auto const off = [&](double const Chainage) { return glm::distance(Line.position(Chainage), Point); };
+	auto const steps{static_cast<int>(std::ceil(Line.length))};
+	double best{0.0};
+	double nearest{off(0.0)};
+	for (int i = 1; i <= steps; ++i)
+	{
+		auto const at{std::min(Line.length, static_cast<double>(i))};
+		if (auto const d{off(at)}; d < nearest)
+		{
+			nearest = d;
+			best = at;
+		}
+	}
+	auto low{std::max(0.0, best - 1.0)};
+	auto high{std::min(Line.length, best + 1.0)};
+	// golden section
+	double constexpr kRatio{0.6180339887498949};
+	auto a{high - kRatio * (high - low)};
+	auto b{low + kRatio * (high - low)};
+	auto fa{off(a)};
+	auto fb{off(b)};
+	for (int i = 0; i < 80 && high - low > 1e-9; ++i)
+	{
+		if (fa < fb)
+		{
+			high = b;
+			b = a;
+			fb = fa;
+			a = high - kRatio * (high - low);
+			fa = off(a);
+		}
+		else
+		{
+			low = a;
+			a = b;
+			fa = fb;
+			b = low + kRatio * (high - low);
+			fb = off(b);
+		}
+	}
+	auto const found{(low + high) * 0.5};
+	if (off(found) > nearest)
+	{
+		if (Distance != nullptr)
+			*Distance = nearest;
+		return best;
+	}
+	if (Distance != nullptr)
+		*Distance = off(found);
+	return found;
 }
 
 } // namespace layout

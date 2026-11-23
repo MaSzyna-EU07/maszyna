@@ -421,6 +421,9 @@ void editor_mode::finish_switch_placement()
 	tool.placing = false;
 	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return;
+	// let go on a line of the model: a turnout of the model, laid or refused
+	if (model_switch_finish())
+		return;
 	if (tool.templates[tool.armed].double_slip && false == tool.curved)
 	{
 		insert_double_slip(tool.line, tool.point, tool.templates[tool.armed], lone_slip_side());
@@ -473,6 +476,9 @@ void editor_mode::finish_switch_placement()
 
 void editor_mode::insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side)
 {
+	// on a line of the model: a turnout of the model, laid or refused
+	if (model_switch_place(Line.tracks, Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Along, Line.direction * static_cast<double>(Direction), Side))
+		return;
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
@@ -2436,6 +2442,13 @@ std::vector<segment_data> editor_mode::curved_switch_paths(editor_track::switch_
 void editor_mode::insert_curved_switch(int const Direction, int const Side)
 {
 	auto &tool{m_switch};
+	// on a line of the model: a turnout of the model, laid or refused
+	if (tool.frame.size() >= 2)
+	{
+		auto const sample{sample_at(tool.frame, tool.along)};
+		if (model_switch_place(tool.frame_tracks, sample.position, sample.tangent * static_cast<double>(Direction), Side))
+			return;
+	}
 	auto const &shape{tool.templates[tool.armed]};
 	auto const total{tool.frame.back().station};
 	if (shape.length > total - 0.02)

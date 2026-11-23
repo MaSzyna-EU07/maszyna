@@ -330,6 +330,13 @@ void editor_mode::render_switch_drag()
 	if (auto const speed{shape.radius > 0.0 ? editor_track::diverging_speed(shape.radius) : 0.0}; speed > 0.0)
 		line += format(" · %.0f km/h", speed);
 	ImGui::TextUnformatted(line.c_str());
+	// on a line of the model: what the model says of the turnout let go here
+	if (std::string why; model_switch_drag(why).has_value())
+	{
+		if (auto const trial{model_switch_trial()}; false == trial.empty())
+			editor_flow::message_line(trial, editor_flow::kRefused);
+		return;
+	}
 	if (false == refusal.empty())
 		editor_flow::message_line(refusal, editor_flow::kRefused);
 	else if (auto const problem{switch_drag_problem()}; problem.has_value())

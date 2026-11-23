@@ -15068,6 +15068,45 @@ msgstr "Zmień nazwę mimo to"
 
 # scenery editor: the turnouts, the grade line, the curves and the parallel track of the lines of the model (E4b), the messages of the model
 
+msgid " · bent R %.0f m"
+msgstr " · łukowany R %.0f m"
+
+msgid "%s isn't of the catalogue of the turnouts: a line of the model takes the types of the catalogue"
+msgstr "%s nie jest z katalogu rozjazdów: linia modelu przyjmuje tylko typy z katalogu"
+
+msgid "%s · %s · %.0f / %.0f km/h"
+msgstr "%s · %s · %.0f / %.0f km/h"
+
+msgid "A turnout of the model of the track geometry: moved, given another type or side, or taken out by its commands, checked against the norms; its tracks made anew"
+msgstr "Rozjazd modelu geometrii torów: przesuwany, zmieniany na inny typ lub stronę albo usuwany jego poleceniami, ze sprawdzeniem norm; jego tory powstają od nowa"
+
+msgid "Its diverging track goes, the line under it is one line again where it can be. Ctrl+Z brings it back"
+msgstr "Tor zwrotny znika, a linia pod rozjazdem znów staje się jedną linią, jeśli to możliwe. Ctrl+Z go przywraca"
+
+msgid "Move"
+msgstr "Przesuń"
+
+msgid "Moved along its line by the distance, above 0 toward the end of its main track: checked as when it's laid"
+msgstr "Przesunięty wzdłuż linii o odległość, dodatnią w stronę końca toru zasadniczego: sprawdzany jak przy wstawianiu"
+
+msgid "Other side"
+msgstr "Druga strona"
+
+msgid "Proposal: %s"
+msgstr "Propozycja: %s"
+
+msgid "Take the turnout out"
+msgstr "Usuń rozjazd"
+
+msgid "The diverging track to the other side, the start of the turnout where it is"
+msgstr "Tor zwrotny na drugą stronę, początek rozjazdu bez zmian"
+
+msgid "Turnout %s (managed)"
+msgstr "Rozjazd %s (zarządzany)"
+
+msgid "Turnout %s: %s, %s, %.0f km/h on the diverging track"
+msgstr "Rozjazd %s: %s, %s, %.0f km/h na torze zwrotnym"
+
 msgid "line {1} at {2} m: {3}"
 msgstr "linia {1} w {2} m: {3}"
 

@@ -1025,6 +1025,9 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 {
 	if (std::abs(Distance) < 0.005)
 		return false;
+	// a turnout of the model moved along its line by its command
+	if (model_switch_slide(Track, Distance))
+		return false == model_refused();
 	// a slip slides whole
 	if (auto const slip{slip_of(Track)})
 		return slide_slip(*slip, Distance);

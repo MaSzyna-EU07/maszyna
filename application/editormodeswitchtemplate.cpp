@@ -467,6 +467,9 @@ bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
 	auto &tool{m_switch};
 	if (Index < 0 || Index >= static_cast<int>(tool.templates.size()))
 		return false;
+	// a turnout of the model given another type by its command
+	if (model_switch_template(Switch, tool.templates[Index]))
+		return false == model_refused();
 	// the switch that keeps its template blinks
 	auto const fail = [&](std::string const &Status) {
 		tool.status = Status;
@@ -648,6 +651,12 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 
 void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 {
+	// a turnout of the model: its type, its side, moved or taken out by its commands
+	if (model_turnout(&Track) != nullptr)
+	{
+		render_model_turnout(Track);
+		return;
+	}
 	auto &tool{m_switch};
 	if (false == tool.collected)
 	{

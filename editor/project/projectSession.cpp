@@ -161,18 +161,36 @@ layout::generated_line session::generate(layout::line_id const Line) const
 	return layout::generate(m_model.state(), Line, m_options);
 }
 
+layout::generated_turnout session::generate(layout::turnout_id const Turnout) const
+{
+	return layout::generate(m_model.state(), Turnout, m_options);
+}
+
 void session::record_written(layout::line_id const Line, std::vector<written_piece> const &Pieces, std::string const &File)
 {
-	layout::generated_line written;
-	written.line = Line;
+	auto pieces{Pieces};
+	for (auto &piece : pieces)
+		if (piece.file.empty())
+			piece.file = File;
+	record_written(Line, pieces);
+}
+
+void session::record_written(layout::line_id const Line, std::vector<written_piece> const &Pieces)
+{
+	// the records of the line, of whatever kind and file, give way to the ones written now
+	std::erase_if(m_project.generated, [&](generated_node const &Node) { return Node.line == Line; });
 	for (auto const &piece : Pieces)
 	{
-		layout::generated_piece entry;
-		entry.name = piece.name;
-		entry.text = piece.text;
-		written.pieces.push_back(std::move(entry));
+		generated_node node;
+		node.kind = piece.kind;
+		node.name = piece.name;
+		node.line = Line;
+		node.file = piece.file;
+		node.sum = checksum(piece.text);
+		m_project.generated.push_back(std::move(node));
 	}
-	record_generated(m_project, written, File);
+	// written again by the editor: the author decided
+	m_project.hand_changed.erase(Line);
 }
 
 void session::mark_hand_changed(layout::line_id const Line)

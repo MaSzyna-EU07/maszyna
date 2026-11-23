@@ -326,6 +326,13 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 					WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
 				}
 		};
+		// a crossover between two lines of the model: the solver of the model's, not the old planner's
+		if (command == "connection" && false == drag && false == tool.curved && tool.connection >= 0 && model_track(start) != nullptr)
+		{
+			insert_connection();
+			WriteLog("SELFTEST connection built: " + tool.status);
+			return selftest_result::handled;
+		}
 		if (drag)
 		{
 			recognise_connection();

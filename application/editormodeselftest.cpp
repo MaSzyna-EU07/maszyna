@@ -259,6 +259,12 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect modelends, expect modelrefused <0|1>, expect modelmessage <holds|lacks> <text>, expect modelvertex <line> <index>
 //   <radius|in|out|cant> <value>, expect modelsame <label>, expect hand <line> <0|1>, expect question <none|hand|waiting|scenarios> [what]
 //                                        the editing on the model (editormodemodel.cpp, tests/editor/README.md)
+//   modelturnoutside <track>, modelgrade <track> <m> <height> <vertical radius>, modelvertexadd <m>, modelvertexdel <index>   a turnout
+//                                        given the other side, a break of the grade line put in the profile and applied, a curve added
+//                                        to the line open in the route design or taken out (E4b)
+//   expect handlines <count>, expect modelnodes <count>, expect modelproposal <holds|lacks> <text>, expect modelgrades|modelvertices
+//   <line> <count>, expect modelvertexat <line> <index> <x> <z> <tolerance>, expect modelpreview <shown|none>, expect modelspacing
+//   <line> <other> <m> <low> <high>      the editing on the model of E4b (editormodemodel.cpp, tests/editor/README.md)
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code
 //   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes

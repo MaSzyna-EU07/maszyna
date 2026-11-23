@@ -89,6 +89,8 @@ class session
 
 	// the tracks of the line as the generator makes them now, named as the options name them
 	layout::generated_line generate(layout::line_id const Line) const;
+	// the tracks of the simulator the turnout is made of now: its switch tracks, and the plain tracks of a double switch, a slip or a crossing
+	layout::generated_turnout generate(layout::turnout_id const Turnout) const;
 	layout::generator_options &options() { return m_options; }
 	layout::generator_options const &options() const { return m_options; }
 
@@ -97,10 +99,14 @@ class session
 	{
 		std::string name;
 		std::string text;
+		std::string file; // where it went, of the folder of the sceneries; empty: the one given with the pieces
+		std::string kind{"track"}; // "switch" for the switch track of a turnout, kept by its main track
 	};
 	// the tracks of the line written with the scenery into the file, as they were written: the project records them, by the checksums of
 	// their text, in the place of the ones it had of the line, and doesn't take the line for changed by hand any more
 	void record_written(layout::line_id const Line, std::vector<written_piece> const &Pieces, std::string const &File);
+	// the same, each piece with the file it went into: the tracks of a line may go into more files than one
+	void record_written(layout::line_id const Line, std::vector<written_piece> const &Pieces);
 	// the line's tracks were changed by other tools: so marked in the project, not written over unasked from now on
 	void mark_hand_changed(layout::line_id const Line);
 	// the project written next to the map, with the network as it is now and the records of the generated tracks of the lines gone taken out

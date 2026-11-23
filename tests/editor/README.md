@@ -97,7 +97,11 @@ With the editing on the model (`modelediting 1`, the setting for the run only), 
 the line of the model at the index from its start. The commands `modelplan <track>` (the route design opened on the line),
 `routeradius|routecant <vertex> <value>`, `routemove <vertex> <x> <z>`, `modelsplit <m>`, `modeljoin <x> <z> <x> <z>`, `modeldelete`
 (of the line open in the route design), `modelselect|modeldel <track>`, `modelrename <track> <name>`, `modelwait` (until the scenarios are looked through),
-`modelanswer <yes|no>` (the window asking), `modelmark <label>`, `modeltracks`; and the expectations:
+`modelanswer <yes|no>` (the window asking), `modelmark <label>`, `modeltracks`; `modelturnoutside <track>` (the turnout of the switch track
+given the other side), `modelgrade <track> <m> <height> <vertical radius>` (a break put into the grade line of the profile opened on the
+line, applied), `modelvertexadd <m>`, `modelvertexdel <index>` (a curve added to the line open in the route design, or taken out); the
+switch tool's own `switchplace`, `switchcurve`, `curvedswitch`, `switchslide`, `switchreplace`, `connection crossover` and the parallel
+tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the model on a line of the model; and the expectations:
 
 | expectation | checks |
 | --- | --- |
@@ -110,6 +114,13 @@ the line of the model at the index from its start. The commands `modelplan <trac
 | `expect modelsame <label>` | the lines and nodes of the model are the ones `modelmark` kept |
 | `expect hand <line> <0\|1>` | the line is taken for changed by hand |
 | `expect question <none\|hand\|waiting\|scenarios> [count or line]` | the window asking the user |
+| `expect handlines <count>` | the lines taken for changed by hand |
+| `expect modelnodes <count>` | the nodes of the model |
+| `expect modelproposal <holds\|lacks> <text>` | the solver's best proposal for the crossover refused last |
+| `expect modelgrades <line> <count>`, `expect modelvertices <line> <count>` | the breaks of the grade line / the vertices of a line of the model |
+| `expect modelvertexat <line> <index> <x> <z> <tolerance>` | where the vertex of a line of the model is in the plan |
+| `expect modelpreview <shown\|none>` | a handle of the route design dragged on a line of the model: the line as the model would lay it is tried and told |
+| `expect modelspacing <line> <other> <m> <low> <high>` | how far the other line runs from the point of the line at the chainage |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
@@ -175,3 +186,10 @@ and the editing on the model of the track geometry (E4a of the plan of the track
 | `m_5_index_delete` | Del on a track a scenario names, or renaming it, waits for the scenario index and asks; cancelled it stays, confirmed it goes; a line of the model goes at once |
 | `m_6_split_join` | two lines joined with a new one, split and deleted from the route design, each a step |
 | `m_7_plan_converts` | the route design applied to old tracks makes them a line of the model, after the scenarios are looked through; Ctrl+Z brings the old tracks back |
+
+and the rest of the editing on the model (E4b), with the setting on:
+
+| case | checks |
+| --- | --- |
+| `m_8_turnout` | a switch dragged on a line of the model is a turnout of the catalogue inserted by the model, one step, taken back and brought again; moved, given another type and the other side, taken out by Del, a step each; one bent into an arc 2 m off the end of a cant ramp refused (9.6 pkt 16), nothing changed; the switch track saved and found after a reopen, nothing changed by hand |
+| `m_9_crossover` | a crossover dragged between two lines of the model 4.75 m apart is the solver's, one step; between lines 4 m apart refused with the solver's proposal, nothing changed |
