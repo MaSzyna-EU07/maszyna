@@ -2534,6 +2534,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	track_hover split_spot() const;
 	void update_track_hover();
 	void draw_track_lines() const;
+	mutable std::size_t m_track_lines_drawn{0}; // the paths draw_track_lines drew in the last frame, for the self-test
 	// what the colours of the tracks in the view tell
 	enum class track_colouring { plain, radius, speed, grade };
 	track_colouring m_track_colouring{track_colouring::plain};

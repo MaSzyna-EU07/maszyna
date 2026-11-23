@@ -204,8 +204,12 @@ void editor_mode::draw_track_lines() const
 {
 	auto const metres{ortho_metres_per_pixel()};
 	auto const colouring{ui()->mode() == nodebank_panel::TRACK ? m_track_colouring : track_colouring::plain};
-	// the top view of the rails alone draws them in a colour of their own, as on a plan: both rails where they're apart on the screen
-	auto const rails{metres > 0.0 && Global.EditorOrthoTracks > 1 && colouring == track_colouring::plain};
+	// the top view of the rails alone draws them in a colour of their own, as on a plan: both rails where they're apart on the screen.
+	// Under the photo drawn over the view the tracks laid would be hidden or dimmed: they're drawn over it zoomed in as well, their
+	// rails where they're apart, so the photo and the tracks are seen together
+	auto const photo{metres > 0.0 && m_orthophoto.enabled() && false == m_orthophoto.settings().in_scene && m_orthophoto.settings().opacity > 0.0f};
+	auto const rails{metres > 0.0 && colouring == track_colouring::plain && (Global.EditorOrthoTracks > 1 || (photo && metres < kLinesFrom))};
+	m_track_lines_drawn = 0;
 	if (metres < kLinesFrom && colouring == track_colouring::plain && false == rails)
 		return;
 	auto const &io{ImGui::GetIO()};
@@ -226,6 +230,7 @@ void editor_mode::draw_track_lines() const
 			bezier const curve{path};
 			if (false == plan_near(curve, centre, reach))
 				continue;
+			++m_track_lines_drawn;
 			auto colour{rails ? railcolour : IM_COL32(235, 235, 235, 150)};
 			if (colouring == track_colouring::radius)
 			{
