@@ -1972,6 +1972,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string straight_end_note(editor_track::straight const &Line, bool const Far) const;
 	std::optional<switch_problem> switch_drag_problem() const;
 	std::optional<switch_problem> straight_switch_problem(editor_track::straight const &Line, double const Length, double const Along, int const Direction) const;
+	// the hard rules of ST-T1-A6 the switch breaks, for the status: not Laid, or kept as it is when moved or given another template
+	static std::string switch_refusal(std::vector<std::string> const &Refusals, bool const Laid);
+	// the switch lying along the straight From to To, the cant of the line under it and near it (11.4 pkt 7, 9.6 pkt 16): what it breaks,
+	// empty for nothing. Moving: the tracks of the switch moved along the straight, which the line is taken without
+	std::string straight_switch_refusal(editor_track::straight const &Line, glm::dvec3 const &From, glm::dvec3 const &To, bool const Laid, std::vector<TTrack const *> const &Moving = {}) const;
 	void flash_switch_problem(switch_problem Problem);
 	void flash_switch_problem(std::string const &Text, std::vector<segment_data> Paths, std::vector<std::pair<glm::dvec3, std::string>> Marks = {});
 	void draw_switch_problem(switch_problem const &Problem) const;
@@ -2002,13 +2007,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static curve_sample sample_at(std::vector<curve_sample> const &Frame, double const Station);
 	// the curve a switch goes into as the norms look at it: its headings and its cant along it
 	std::vector<switch_curve::track_point> frame_points(std::vector<curve_sample> const &Frame) const;
+	// the line of the chain as the norms look at it, the first path of each track the way the chain runs, and on over the plain tracks
+	// joined past its ends as far as Beyond: the ends of the cant ramps near a switch; Offset: the station the chain starts at
+	std::vector<switch_curve::track_point> line_points(editor_track::chain const &Chain, double const Beyond, double &Offset) const;
+	// the tracks of the frame as a chain, each run the way the frame goes
+	static editor_track::chain frame_chain(std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks);
+	// the tracks of the straight along their first paths as a chain, from its start on
+	static editor_track::chain straight_chain(editor_track::straight const &Line);
+	// the speed on the diverging track of the switch as it lies, km/h: the basic switch of Radius and 1:Ratio bent as its main track is
+	// (table 11.8), the cant of its line with its sign, the cant deficiency its frog takes (formula 9.9, table 9.7), no more than the
+	// basic switch has (table 11.2); Why receives how, for the status
+	double branch_speed_of(TTrack const &Switch, double const Radius, double const Ratio, std::string *Why = nullptr) const;
+	// that speed written into the switch for its diverging track, a lower limit of the main track kept for both; returns how, for the
+	// status
+	std::string write_switch_speed(TTrack &Switch, double const Radius, double const Ratio, double const Main);
+	// a switch of the scenery bent into the curve of the Frame along its Tracks, its Paths where it's moved to, as ST-T1-A6 sees it
+	switch_curve::switch_report bent_switch_report(TTrack const &Switch, std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks, std::vector<segment_data> const &Paths) const;
 	// the way the switch being placed into a curve goes along it and the side its diverging track leaves to, from the drag
 	void curved_switch_pose(int &Direction, int &Side) const;
 	// the start of the switch being placed into a curve: where it was pressed, drawn to where the switch meets an end of a cant ramp or
 	// keeps 6 m off it; What receives which
 	double curved_switch_start(int const Direction, std::string *What = nullptr) const;
-	// the switch made of the paths, laid into the curve at the station, as ST-T1-A6 sees it
-	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction) const;
+	// the switch made of the paths, laid into the curve at the station, as ST-T1-A6 sees it; with the Tracks of the frame its cant is
+	// looked at on past the ends of the curve too
+	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction, std::vector<TTrack *> const *Tracks = nullptr) const;
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	// the path of a switch template laid into the curve: x of the template across the main track to the Side, z along it from the

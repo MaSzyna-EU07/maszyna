@@ -358,6 +358,72 @@ node -1 0 o9 track normal 60 1.435 0.15 25.0 20 0 flat vis
 0
 endtrack
 
+// line r: a straight taking a cant of 60 mm on along r2 (moving a switch towards a cant ramp)
+node -1 0 r1 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+440 0 0 0
+0 0 0
+0 0 0
+440 0 100 0
+0
+endtrack
+
+node -1 0 r2 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+440 0 100 0
+0 0 0
+0 0 0
+440 0 160 -2.292443
+0
+endtrack
+
+node -1 0 r3 track normal 100 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+440 0 160 -2.292443
+0 0 0
+0 0 0
+440 0 260 -2.292443
+0
+endtrack
+
+// curve k without cant: a straight, 60 m of R 2000 m and 60 m of R 400 m turning the same way, a straight (the curvature of the
+// diverging track of a switch over the change turning from one side to the other)
+node -1 0 k0 track normal 50 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+600 0 0 0
+0 0 0
+0 0 0
+600 0 50 0
+0
+endtrack
+
+node -1 0 k1 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+600 0 50 0
+0 0 20.000375
+-0.599921 0 -19.991376
+600.899933 0 109.991 0
+2000
+endtrack
+
+node -1 0 k2 track normal 60 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+600.899933 0 109.991 0
+0.600191 0 20.000377
+-3.582271 0 -19.686103
+607.182469 0 169.60463 0
+400
+endtrack
+
+node -1 0 k3 track normal 50 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+607.182469 0 169.60463 0
+0 0 0
+0 0 0
+616.133948 0 218.796814 0
+0
+endtrack
+
 // a track apart with a vehicle of the scenery: the editor saving a scenery without one puts a vehicle of its own onto the
 // first track long enough, a track of the cases
 node -1 0 v1 track normal 50 1.435 0.15 25.0 20 0 flat vis

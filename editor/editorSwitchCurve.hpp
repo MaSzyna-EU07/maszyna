@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,18 +48,57 @@ struct switch_report
 	bool transition{false}; // its curvature changing along the switch
 	std::vector<std::string> notes;
 	std::vector<std::string> warnings;
+	// the hard rules broken (11.4 pkt 4 and 7, 9.6 pkt 16, 9.7 pkt 12): the switch isn't laid nor moved so
+	std::vector<std::string> refusals;
 };
 
 // Main, Branch: the tracks of the switch from its start, the stations from 0 there; Line: the track it's laid into, From and To the
 // stations of the start and the end of the switch along it, From after To where it goes back along the line. Radius and Ratio:
 // of the diverging track of the basic switch it's bent from; Straight: how far both tracks keep straight at the end of the switch, over
-// a straight frog, the switch bent up to it as the DB bends such switches
+// a straight frog, the switch bent up to it as the DB bends such switches; Double: a double switch, which isn't bent (11.4 pkt 4a)
 switch_report check(std::vector<track_point> const &Main, std::vector<track_point> const &Branch, std::vector<track_point> const &Line, double const From, double const To, double const Radius,
-                    double const Ratio, double const Straight = 0.0);
+                    double const Ratio, double const Straight = 0.0, bool const Double = false);
+// a switch laid into a straight: the cant of the line over it alone, as check() judges it
+switch_report check_line(std::vector<track_point> const &Line, double const From, double const To);
 
-// a slip switch bent into a curve, as ST-T1-A6 sees it: in a side track only (11.4 pkt 4b), the curvature of each track through it of
-// one sign all along it (9.7 pkt 12), its slip curves no sharper than a side track may be (table 9.2), the cant as over a switch bent,
-// none recommended in a side track (9.3 pkt 5)
+// the switches bent one-sided from the basic ones, table 11.9: the radius of the basic switch, the limiting curvature of the diverging
+// track (1/m) and the least radius of the main track (m); the values in its brackets are allowed only by way of exception, after the
+// agreement of the Zaklad Linii Kolejowych, the same as the others where it has none
+struct bent_limit
+{
+	double radius;
+	double branch;
+	double main;
+	double branch_exception;
+	double main_exception;
+};
+std::optional<bent_limit> bent_limit_of(double const Radius);
+
+// the radius of the diverging track of a switch bent from the basic one of Radius and 1:Ratio, its main track bent to Main, table 11.8:
+// Main above 0 bent the way the diverging track turns off it (one-sided), below 0 the other way (two-sided), 0 not bent. The tangent of
+// the diverging curve of the basic switch, t = r tan(a/2), corrects the plain sum of the curvatures. Above 0 the diverging track turns
+// off the way it does in the basic switch, below 0 the other way (bent past straight by a main track sharper than its own curve), 0 for
+// a straight one
+double bent_radius(double const Main, double const Radius, double const Ratio);
+
+// the cant deficiency over a switch, table 9.7, mm: recommended (P0), normal (P1) and the limit (P2); of a fixed frog up to 160 km/h,
+// of a movable nose up to 230 km/h, which take in any diverging track of the catalogue
+struct deficiency
+{
+	double recommended;
+	double normal;
+	double limit;
+};
+deficiency switch_deficiency(bool const Movable);
+
+// the speed with the cant deficiency I up to Deficiency (mm) on a track of Radius (m) under the Cant (mm, above 0 leaning into its
+// turn, below 0 against it), formula 9.9 the other way round: V = sqrt((I + D) R / 11.8), km/h. Infinite for a straight, 0 where the
+// cant against the turn takes up all the deficiency already
+double curve_speed(double const Radius, double const Cant, double const Deficiency);
+
+// a slip switch bent into a curve, as ST-T1-A6 sees it: none is bent (11.4 pkt 4b, the editor telling no main track from a side
+// one), the curvature of each track through it of one sign all along it (9.7 pkt 12), its slip curves no sharper than a side track may
+// be (table 9.2), the cant as over a switch bent, none recommended in a side track (9.3 pkt 5)
 struct slip_report
 {
 	// of the two tracks through the slip in its middle, 1/m, positive turning the way the line does
@@ -72,6 +112,8 @@ struct slip_report
 	bool curved{false}; // the tracks through it bent
 	std::vector<std::string> notes;
 	std::vector<std::string> warnings;
+	// as of a switch: a slip isn't bent (11.4 pkt 4b)
+	std::vector<std::string> refusals;
 };
 
 // Tracks: the two tracks through the slip, Curves: its slip curves, each from its start, the stations from 0 there; Line as for a switch,

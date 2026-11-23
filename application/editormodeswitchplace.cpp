@@ -16,6 +16,7 @@ http:
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorSpeed.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorIncludeInfo.hpp"
 
@@ -55,7 +56,66 @@ segment_data straight_path(glm::dvec3 const &Start, glm::dvec3 const &End)
 	return path;
 }
 
+// m past the ends of a switch its line is looked at for the ends of the cant ramps, which keep 6 m off it (9.6 pkt 16)
+double constexpr kRampReach{10.0};
+
+// the radius the main track of a switch is bent to, signed as the store signs it, + where the headings grow; 0 straight. Of its sharpest
+// piece: one bent up to the frog keeps straight over it
+double bent_main_radius(segment_data const &Main)
+{
+	std::vector<segment_data const *> parts;
+	if (Main.pieces.empty())
+		parts.push_back(&Main);
+	for (auto const &piece : Main.pieces)
+		parts.push_back(&piece);
+	double radius{0.0};
+	double sharpest{0.0};
+	for (auto const *part : parts)
+	{
+		bezier const curve{*part};
+		auto const begin{plan_of(curve.first(0.0))};
+		auto const finish{plan_of(curve.first(1.0))};
+		auto const length{curve.plan_length()};
+		if (glm::length(begin) < 1e-9 || glm::length(finish) < 1e-9 || length < 0.5)
+			continue;
+		auto const turn{geometry::signed_angle(glm::normalize(begin), glm::normalize(finish))};
+		if (std::abs(turn) / length > sharpest)
+		{
+			sharpest = std::abs(turn) / length;
+			radius = length / turn;
+		}
+	}
+	return std::abs(radius) > 20000.0 ? 0.0 : radius;
+}
+
 } // namespace
+
+std::string editor_mode::switch_refusal(std::vector<std::string> const &Refusals, bool const Laid)
+{
+	if (Refusals.empty())
+		return {};
+	return format(Laid ? STR_C("The switch isn't laid: %s") : STR_C("The switch stays as it is: %s"), lines_of(Refusals).c_str());
+}
+
+std::string editor_mode::straight_switch_refusal(editor_track::straight const &Line, glm::dvec3 const &From, glm::dvec3 const &To, bool const Laid, std::vector<TTrack const *> const &Moving) const
+{
+	// the line along the straight and on past it: no ramp within the switch nor nearer than 6 m (11.4 pkt 7, 9.6 pkt 16). A switch moved
+	// along it is left out, the line taken on over the place it leaves
+	auto chain{straight_chain(Line)};
+	for (std::size_t i = chain.tracks.size(); i-- > 0;)
+		if (std::find(Moving.begin(), Moving.end(), chain.tracks[i]) != Moving.end())
+		{
+			chain.tracks.erase(chain.tracks.begin() + i);
+			chain.forward.erase(chain.forward.begin() + i);
+		}
+	if (chain.tracks.empty())
+		return {};
+	double offset{0.0};
+	auto const points{line_points(chain, kRampReach, offset)};
+	auto const &first{chain.tracks.front()->m_paths.front()};
+	auto const origin{Line.along(first.points[chain.forward.front() ? segment_data::point::start : segment_data::point::end])};
+	return switch_refusal(switch_curve::check_line(points, offset + Line.along(From) - origin, offset + Line.along(To) - origin).refusals, Laid);
+}
 
 std::vector<double> editor_mode::switch_memo_key() const
 {
@@ -524,6 +584,13 @@ void editor_mode::insert_free_switch()
 	auto const paths{bent ? bend.paths : free_switch_paths()};
 	if (paths.size() < 2)
 		return;
+	// bent so as to break a hard rule: none laid
+	if (bent && false == bend.report.refusals.empty())
+	{
+		tool.status = refused(switch_refusal(bend.report.refusals, true));
+		flash_switch_problem(tool.status, {paths.begin(), paths.begin() + 2}, {{tool.point, ""}});
+		return;
+	}
 	auto const made{create_switch_set(tool.templates[tool.armed], paths, tool.free_end.track, switch_name_for_new())};
 	if (made.empty())
 		return;
@@ -565,6 +632,15 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 	m_track_point = {};
 	m_node = *found;
 	ui()->set_node(m_node);
+	// the speed written on its diverging track, told after what the drive placed with it tells
+	auto const told = [&]() {
+		auto const known{switch_store::named(**found)};
+		std::string speed;
+		if (known.has_value() && known->radius > 0.0)
+			branch_speed_of(**found, known->radius, known->ratio, &speed);
+		if (false == speed.empty() && m_switch.status.find(speed) == std::string::npos)
+			m_switch.status += (m_switch.status.empty() ? "" : "\n") + speed;
+	};
 	if (slip)
 	{
 		auto const known{switch_store::named(**found)};
@@ -595,11 +671,13 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 			m_switch.status = format(STR_C("Double switch %s + %s with drives: events %s+, %s- and %s+, %s- switch them, also in the map"), driven[0].c_str(), driven[1].c_str(), driven[0].c_str(), driven[0].c_str(), driven[1].c_str(), driven[1].c_str());
 			ui()->set_status(m_switch.status, false);
 		}
+		told();
 		advance_switch_name();
 		return;
 	}
 	if (place_switch_drive(**found))
 		join_last_steps();
+	told();
 	advance_switch_name();
 }
 
@@ -796,6 +874,14 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const from{switch_from(Line, shape.length, Along, Direction, Snap)};
 	auto const to{from + shape.length};
 	auto const origin{Direction > 0 ? from : to};
+	// no cant ramp within it nor near it: not laid, the tracks as they were
+	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	if (auto const refusal{straight_switch_refusal(Line, point(from), point(to), true)}; false == refusal.empty())
+	{
+		m_switch.status = refused(refusal);
+		flash_switch_problem(refusal, {straight_path(point(from), point(to))}, {{point(origin), ""}});
+		return false;
+	}
 	// from the track as it lies there, before it's cut: the switch in its plane between the heights of the two ends
 	auto const height_from{straight_height(Line, from)};
 	auto const height_to{straight_height(Line, to)};
@@ -806,7 +892,6 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 		if (std::string reason; tracks_editable(Line.tracks, reason))
 		{
 			m_switch.status = refused(STR_C("The switch would overlap another switch, move it onto plain track"));
-			auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
 			flash_switch_problem(m_switch.status, {straight_path(point(from), point(to))});
 		}
 		return false;
@@ -831,6 +916,9 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 	auto const switch_of = [&](editor_track::switch_template const &Template, std::vector<segment_data> const &Each, std::string const &Named) {
 		return Style != nullptr ? editor_track::create_switch(Template, Each, *Style, Named) : editor_track::create_switch(Template, Each, m_lay.style, Named);
 	};
+	// the speed on the diverging track written as laid, none kept from the track or the switch copied: the own limit of the plain track it
+	// goes into, or of the laying, stays for the main track where it's the lower
+	auto const main{Style != nullptr ? (Style->eType == tt_Normal ? speed_check::path_velocity(*Style, 0) : -1.0) : m_lay.style.velocity > 0.0 ? m_lay.style.velocity : -1.0};
 	if (Shape.twofold() && Paths.size() >= 5)
 	{
 		auto firstshape{Shape};
@@ -845,9 +933,11 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 			m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
 			return {};
 		}
+		auto const speed{write_switch_speed(*one, Shape.radius, Shape.ratio, main)};
+		write_switch_speed(*two, Shape.radius, Shape.ratio, main);
 		editor_track::commit({one, two, link});
 		record_double(*one, *two, Shape);
-		m_switch.status = format(STR_C("Double switch %s with its second switch %s inserted"), one->name().c_str(), two->name().c_str());
+		m_switch.status = format(STR_C("Double switch %s with its second switch %s inserted"), one->name().c_str(), two->name().c_str()) + (speed.empty() ? "" : "\n") + speed;
 		return {one, two, link};
 	}
 	auto *track{switch_of(Shape, Paths, Name)};
@@ -856,9 +946,10 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 		m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
 		return {};
 	}
+	auto const speed{write_switch_speed(*track, Shape.radius, Shape.ratio, main)};
 	editor_track::commit({track});
 	record_switch(*track, Shape);
-	m_switch.status = format(STR_C("Switch %s inserted, Ctrl+Z takes it back"), track->name().c_str());
+	m_switch.status = format(STR_C("Switch %s inserted, Ctrl+Z takes it back"), track->name().c_str()) + (speed.empty() ? "" : "\n") + speed;
 	return {track};
 }
 
@@ -1279,6 +1370,11 @@ std::vector<TTrack *> editor_mode::build_double_slip(glm::dvec3 const &PointA, g
 	if (false == single)
 		parts.push_back(editor_track::create_path(Style, laid(arc(PointC, Second, -side, PointB, middle - split, middle + split))));
 	parts.erase(std::remove(parts.begin(), parts.end(), nullptr), parts.end());
+	// the speed on its slip curves written as laid, the own limit of the track it goes into kept where it's the lower
+	auto const main{Style.eType == tt_Normal ? speed_check::path_velocity(Style, 0) : -1.0};
+	for (auto *part : parts)
+		if (part->eType == tt_Switch)
+			write_switch_speed(*part, Curve.radius, Angle > 1e-6 ? 1.0 / std::tan(Angle) : 0.0, main);
 	record_slip(parts, "slip", Type, Curve.radius, Angle, base, Curve.middle);
 	return parts;
 }
@@ -1534,6 +1630,15 @@ bool editor_mode::insert_double_slip(editor_track::straight const &Line, glm::dv
 	auto const &pointC{plan.points[2]};
 	auto const &pointD{plan.points[3]};
 
+	// no cant ramp under it nor near it, as under a switch: none laid, the tracks as they were
+	auto const along = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
+	if (auto const refusal{straight_switch_refusal(Line, along(alongfirst - half), along(alongfirst + half), true)}; false == refusal.empty())
+	{
+		state.status = refused(refusal);
+		m_switch.status = state.status;
+		flash_switch_problem(refusal, {straight_path(along(alongfirst - half), along(alongfirst + half))}, {{Point, ""}});
+		return false;
+	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
@@ -1853,6 +1958,192 @@ std::vector<switch_curve::track_point> editor_mode::frame_points(std::vector<cur
 	return points;
 }
 
+std::vector<switch_curve::track_point> editor_mode::line_points(editor_track::chain const &Chain, double const Beyond, double &Offset) const
+{
+	Offset = 0.0;
+	struct run
+	{
+		TTrack const *track;
+		bool forward;
+	};
+	std::vector<run> runs;
+	for (std::size_t i = 0; i < std::min(Chain.tracks.size(), Chain.forward.size()); ++i)
+		if (Chain.tracks[i] != nullptr && false == Chain.tracks[i]->m_paths.empty())
+			runs.push_back({Chain.tracks[i], Chain.forward[i]});
+	if (runs.empty())
+		return {};
+	auto const taken = [&](TTrack const *Track, std::vector<run> const &More) {
+		auto const of = [&](run const &Run) { return Run.track == Track; };
+		return std::any_of(runs.begin(), runs.end(), of) || std::any_of(More.begin(), More.end(), of);
+	};
+	// the plain tracks joined on past an end of the chain, each run the way the chain goes, as far as Beyond
+	auto const onward = [&](bool const Atend) {
+		std::vector<run> result;
+		auto current{Atend ? runs.back() : runs.front()};
+		for (double reached{0.0}; reached < Beyond;)
+		{
+			auto const &path{current.track->m_paths.front()};
+			auto const &leaving{path.points[current.forward == Atend ? segment_data::point::end : segment_data::point::start]};
+			std::optional<run> next;
+			for (auto const &[other, point] : editor_track::connected_points(*current.track, leaving))
+				if (other->eType == tt_Normal && false == other->m_editorremoved && other->m_paths.size() == 1 && false == taken(other, result))
+				{
+					next = run{other, (point.kind == editor_track::point_kind::start) == Atend};
+					break;
+				}
+			if (false == next.has_value())
+				break;
+			result.push_back(*next);
+			auto const &own{next->track->m_paths.front()};
+			reached += plan_distance(own.points[segment_data::point::start], own.points[segment_data::point::end]);
+			current = *next;
+		}
+		return result;
+	};
+	auto all{onward(false)};
+	std::reverse(all.begin(), all.end());
+	auto const first{all.size()};
+	all.insert(all.end(), runs.begin(), runs.end());
+	auto const after{onward(true)};
+	all.insert(all.end(), after.begin(), after.end());
+	// a point every half metre, as frame_points has them: the cant leaning the track to where the headings grow above 0
+	auto const gauge{m_route.design.norms.gauge};
+	std::vector<switch_curve::track_point> points;
+	glm::dvec2 last{0.0};
+	for (std::size_t i = 0; i < all.size(); ++i)
+	{
+		auto const &[track, forward]{all[i]};
+		auto const &path{track->m_paths.front()};
+		std::vector<segment_data const *> parts;
+		if (path.pieces.empty())
+			parts.push_back(&path);
+		for (auto const &piece : path.pieces)
+			parts.push_back(&piece);
+		if (false == forward)
+			std::reverse(parts.begin(), parts.end());
+		auto entered{false};
+		for (auto const *part : parts)
+		{
+			bezier const curve{*part};
+			auto const steps{std::max(4, static_cast<int>(std::ceil(curve.plan_length() / 0.5)))};
+			for (int k = 0; k <= steps; ++k)
+			{
+				auto const t{forward ? static_cast<double>(k) / steps : 1.0 - static_cast<double>(k) / steps};
+				auto const position{plan_of(curve.point(t))};
+				auto const station{points.empty() ? 0.0 : points.back().station + glm::distance(position, last)};
+				if (i == first && false == entered)
+				{
+					Offset = station;
+					entered = true;
+				}
+				// the point a path ends with is the one the next starts with
+				if (false == points.empty() && glm::distance(position, last) < 1e-4)
+					continue;
+				auto const tangent{plan_of(forward ? curve.first(t) : -curve.first(t))};
+				switch_curve::track_point point;
+				point.station = station;
+				point.heading = std::atan2(tangent.y, tangent.x);
+				if (false == points.empty())
+					point.heading = points.back().heading + std::remainder(point.heading - points.back().heading, 2.0 * glm::pi<double>());
+				auto const roll{part->rolls[0] + (part->rolls[1] - part->rolls[0]) * t};
+				point.cant = gauge * std::sin(glm::radians(static_cast<double>(forward ? roll : -roll)));
+				points.push_back(point);
+				last = position;
+			}
+		}
+	}
+	return points;
+}
+
+editor_track::chain editor_mode::frame_chain(std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks)
+{
+	editor_track::chain chain;
+	for (auto *track : Tracks)
+	{
+		if (track == nullptr || track->m_paths.empty())
+			continue;
+		auto const &path{track->m_paths.front()};
+		chain.tracks.push_back(track);
+		chain.forward.push_back(nearest_station(Frame, path.points[segment_data::point::start]) <= nearest_station(Frame, path.points[segment_data::point::end]));
+	}
+	return chain;
+}
+
+editor_track::chain editor_mode::straight_chain(editor_track::straight const &Line)
+{
+	std::vector<std::pair<double, std::size_t>> order;
+	for (std::size_t i = 0; i < std::min(Line.tracks.size(), Line.paths.size()); ++i)
+		if (Line.tracks[i] != nullptr && Line.paths[i] == 0 && false == Line.tracks[i]->m_paths.empty())
+		{
+			auto const &path{Line.tracks[i]->m_paths.front()};
+			order.emplace_back(std::min(Line.along(path.points[segment_data::point::start]), Line.along(path.points[segment_data::point::end])), i);
+		}
+	std::sort(order.begin(), order.end());
+	editor_track::chain chain;
+	for (auto const &[along, i] : order)
+	{
+		auto const &path{Line.tracks[i]->m_paths.front()};
+		chain.tracks.push_back(Line.tracks[i]);
+		chain.forward.push_back(Line.along(path.points[segment_data::point::end]) >= Line.along(path.points[segment_data::point::start]));
+	}
+	return chain;
+}
+
+double editor_mode::branch_speed_of(TTrack const &Switch, double const Radius, double const Ratio, std::string *Why) const
+{
+	if (Why != nullptr)
+		Why->clear();
+	if (Switch.eType != tt_Switch || Switch.m_paths.size() < 2)
+		return -1.0;
+	auto const &main{Switch.m_paths[0]};
+	auto const &diverging{Switch.m_paths[1]};
+	auto const heading{plan_of(bezier{main}.first(0.0))};
+	if (glm::length(heading) < 1e-9)
+		return -1.0;
+	// the side the diverging track leaves to, the one where the headings grow above 0, as the main radius of the store is signed
+	auto const side{cross(heading, plan_of(diverging.points[segment_data::point::end] - main.points[segment_data::point::start])) >= 0.0 ? 1.0 : -1.0};
+	// of the basic switch, else of the diverging track as it lies, bent already
+	auto const basic{Radius > 0.5 ? Radius : editor_track::branch_radius(diverging)};
+	if (basic <= 0.5)
+		return -1.0;
+	// bent with the main track, one-sided where it turns the way the diverging track does, table 11.8: signed the way the diverging track
+	// turns off it, below 0 the other way
+	auto radius{basic};
+	if (auto const bend{bent_main_radius(main)}; Radius > 0.5 && bend != 0.0)
+		radius = switch_curve::bent_radius((bend > 0.0) == (side > 0.0) ? std::abs(bend) : -std::abs(bend), Radius, Ratio);
+	// the cant of the line under it with its sign: above 0 leaning into the turn of the diverging track, below 0 against it. A roll above
+	// 0 leans the track to where the headings grow
+	auto const roll{0.5 * (static_cast<double>(diverging.rolls[0]) + static_cast<double>(diverging.rolls[1]))};
+	auto const cant{m_route.design.norms.gauge * std::sin(glm::radians(roll)) * (radius >= 0.0 ? side : -side)};
+	auto const deficiency{switch_curve::switch_deficiency(Switch.SwitchExtension != nullptr && Switch.SwitchExtension->m_movablenose).normal};
+	auto const formula{switch_curve::curve_speed(std::abs(radius), cant, deficiency)};
+	// no more than the basic switch has: table 11.2, which the formula gives for a fixed frog, a movable nose kept to it as Id-4 keeps it
+	auto const table{editor_track::diverging_speed(basic)};
+	auto const rounded{std::isinf(formula) ? table : speed_check::suggested(formula)};
+	auto const speed{std::min(table, rounded)};
+	if (Why != nullptr)
+	{
+		*Why = format(STR_C("Speed on the diverging track %.0f km/h"), speed);
+		if (std::abs(radius - basic) > 0.5 || std::abs(cant) > 0.5)
+			*Why += format(STR_C(": R %.0f m, cant %+.0f mm into its turn, I up to %.0f mm (formula 9.9, table 9.7)"), std::abs(radius), cant, deficiency);
+		if (rounded > table)
+			*Why += format(STR_C(", no more than %.0f km/h of the basic switch (table 11.2)"), table);
+	}
+	return speed;
+}
+
+std::string editor_mode::write_switch_speed(TTrack &Switch, double const Radius, double const Ratio, double const Main)
+{
+	std::string why;
+	auto const speed{branch_speed_of(Switch, Radius, Ratio, &why)};
+	if (speed <= 0.0)
+		return {};
+	// one value for both tracks of a switch: the own limit of the main track where it's the lower, for both, else the one of the diverging
+	// track for it alone, below 0
+	editor_track::velocity(Switch, Main > 0.0 && Main <= speed ? Main : -std::max(2.0, speed));
+	return why;
+}
+
 void editor_mode::curved_switch_pose(int &Direction, int &Side) const
 {
 	auto const &tool{m_switch};
@@ -1872,7 +2163,18 @@ double editor_mode::curved_switch_start(int const Direction, std::string *What) 
 		return tool.pressed;
 	auto const length{tool.templates[tool.armed].length};
 	std::string what;
-	auto start{switch_curve::snapped_start(switch_curve::ramp_ends(frame_points(tool.frame)), tool.pressed, length, Direction, 3.0, &what)};
+	// the ends of the ramps past the ends of the curve too, along it
+	double offset{0.0};
+	auto line{line_points(frame_chain(tool.frame, tool.frame_tracks), kRampReach, offset)};
+	if (line.size() < 2)
+	{
+		line = frame_points(tool.frame);
+		offset = 0.0;
+	}
+	auto ramps{switch_curve::ramp_ends(line)};
+	for (auto &end : ramps)
+		end -= offset;
+	auto start{switch_curve::snapped_start(ramps, tool.pressed, length, Direction, 3.0, &what)};
 	// as on a straight, an end of the switch within half a metre of a joint of the tracks goes right onto it: no path of a few centimetres
 	// left beside it, no gap at it
 	constexpr double kJointPull{0.5};
@@ -1997,14 +2299,41 @@ std::vector<switch_curve::track_point> plan_points(segment_data const &Path)
 
 } // namespace
 
-switch_curve::switch_report editor_mode::curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction) const
+switch_curve::switch_report editor_mode::curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction, std::vector<TTrack *> const *Tracks) const
 {
 	auto const &tool{m_switch};
 	if (Paths.size() < 2 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
 		return {};
 	auto const &shape{tool.templates[tool.armed]};
 	auto const frog{frog_zone(shape)};
-	return switch_curve::check(plan_points(Paths[0]), plan_points(Paths[1]), frame_points(Frame), Station, Station + Direction * shape.length, shape.radius, shape.ratio, frog.has_value() ? shape.length - *frog : 0.0);
+	// the line on past the ends of the curve too, for the ends of the cant ramps there
+	double offset{0.0};
+	auto line{Tracks != nullptr ? line_points(frame_chain(Frame, *Tracks), kRampReach, offset) : std::vector<switch_curve::track_point>{}};
+	if (line.size() < 2)
+	{
+		line = frame_points(Frame);
+		offset = 0.0;
+	}
+	return switch_curve::check(plan_points(Paths[0]), plan_points(Paths[1]), line, offset + Station, offset + Station + Direction * shape.length, shape.radius, shape.ratio, frog.has_value() ? shape.length - *frog : 0.0,
+	                           shape.twofold());
+}
+
+switch_curve::switch_report editor_mode::bent_switch_report(TTrack const &Switch, std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks, std::vector<segment_data> const &Paths) const
+{
+	if (Paths.size() < 2 || Frame.size() < 2)
+		return {};
+	// of the type of its record, for the limits of table 11.9; the hard rules need none
+	auto const known{switch_store::named(Switch)};
+	double offset{0.0};
+	auto line{line_points(frame_chain(Frame, Tracks), kRampReach, offset)};
+	if (line.size() < 2)
+	{
+		line = frame_points(Frame);
+		offset = 0.0;
+	}
+	auto const &main{Paths.front()};
+	return switch_curve::check(plan_points(Paths[0]), plan_points(Paths[1]), line, offset + nearest_station(Frame, main.points[segment_data::point::start]), offset + nearest_station(Frame, main.points[segment_data::point::end]),
+	                           known.has_value() ? known->radius : 0.0, known.has_value() ? known->ratio : 0.0);
 }
 
 segment_data editor_mode::frame_path(segment_data const &Local, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side, std::optional<double> const &Bent)
@@ -2113,6 +2442,15 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const station{std::clamp(tool.along, Direction > 0 ? 0.0 : shape.length, Direction > 0 ? total - shape.length : total)};
 	auto const from{Direction > 0 ? station : station - shape.length};
 	auto const to{from + shape.length};
+	// the switch as it'll lie, judged by the norms before a track is cut: one breaking a hard rule isn't laid, the tracks as they were
+	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
+	auto const report{curved_switch_report(paths, tool.frame, station, Direction, &tool.frame_tracks)};
+	if (false == report.refusals.empty())
+	{
+		tool.status = refused(switch_refusal(report.refusals, true));
+		flash_switch_problem(tool.status, {paths.begin(), paths.begin() + std::min<std::size_t>(2, paths.size())}, {{sample_at(tool.frame, station).position, ""}});
+		return;
+	}
 	editor_track::edit edit;
 	// a track of the scenery changed: its state before kept once for Ctrl+Z, none for one made here
 	auto const keep = [&](TTrack &Track) {
@@ -2160,7 +2498,6 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 			edit.removed.push_back(candidate);
 		}
 	}
-	auto const paths{curved_switch_paths(shape, tool.frame, station, Direction, Side)};
 	// a joint a few centimetres off an end of the switch, not cut there: the end of the track left beside it goes right onto the end of
 	// the switch, so the two join and no gap is left; the end of one bent up to the frog is fitted to it further on
 	std::vector<TTrack *> snapped;
@@ -2186,7 +2523,6 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 		}
 	}
 	editor_track::commit(snapped);
-	auto const report{curved_switch_report(paths, tool.frame, station, Direction)};
 	// a switch bent up to the frog leaves the curve straight, a little off it at its end: the track going on from there along the line
 	// starts where the switch ends, heading as it does, and meets the line again at its other end
 	std::string fitted;
@@ -2533,6 +2869,13 @@ void editor_mode::insert_curved_slip(int const Direction, int const Side)
 		return;
 	}
 	auto const report{curved_slip_report(plan, shape.type)};
+	// bent into the curve: none laid, the tracks as they were (11.4 pkt 4b)
+	if (false == report.refusals.empty())
+	{
+		tool.status = refused(switch_refusal(report.refusals, true));
+		flash_switch_problem(tool.status, curved_slip_lines(plan, shape.type), {{sample_at(tool.frame, plan.middle).position, ""}});
+		return;
+	}
 	std::vector<std::pair<TTrack *, editor_track::state>> states;
 	std::vector<TTrack *> created;
 	std::vector<TTrack *> removed;
