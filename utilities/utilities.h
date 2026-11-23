@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/parser.h"
 
+#include <optional>
+
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
 /*konwersja zmiennych na stringi, funkcje matematyczne, logiczne, lancuchowe, I/O etc*/
 
@@ -76,11 +78,15 @@ int RandomInt(int min, int max);
 /// @return A random seed as 64 bit unsigned integer
 std::uint64_t true_random_seed();
 
-// The seed a word stands for. A number is taken as it is written; anything else is
+// The seed a word stands for. A number is taken as it is written - the whole text, so
+// "4242abc" is a word, not 4242 - and 0 is a seed like any other; anything else is
 // hashed the way Java's String.hashCode does it, so the same word gives the same
 // world on every platform and every build - which is the whole point of telling
 // somebody a seed.
 std::uint32_t seed_of(std::string const &Text);
+// the seed a text of the settings (randomseed) or of the command line (-seed) gives: none for
+// an empty text, else seed_of() it, 0 included
+std::optional<std::uint32_t> seed_given(std::string const &Text);
 
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);

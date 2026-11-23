@@ -415,7 +415,7 @@ int eu07_application::init(int Argc, char *Argv[])
 	// the run's seed, settled once and kept in Globals: the engines come out of it.
 	// narrowed on purpose - mt19937 and seed_of() both work on 32 bits, and that is
 	// the seed somebody can write down and pass on
-	if (!Global.random_seed)
+	if (false == Global.random_seed_given)
 		Global.random_seed = static_cast<std::uint32_t>(true_random_seed());
 	Global.random_engine.seed(Global.random_seed);
 	Global.local_random_engine.seed(Global.random_seed);
@@ -1350,11 +1350,16 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		else if (token == "-seed")
 		{
 			// a number is the seed; anything else is a word that stands for one. said in the
-			// log as it was given, because that is what gets passed on to somebody else
+			// log as it was given, because that is what gets passed on to somebody else. 0 is a seed
+			// too; an empty word gives none, as randomseed with nothing after it
 			if (i + 1 < Argc)
 			{
-				Global.random_seed = seed_of(Argv[++i]);
-				WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
+				if (auto const seed{seed_given(Argv[++i])})
+				{
+					Global.random_seed = *seed;
+					Global.random_seed_given = true;
+					WriteLog(std::format("seed given on the command line: {} -> {}", Argv[i], Global.random_seed));
+				}
 			}
 		}
 		else if (token == "--test")

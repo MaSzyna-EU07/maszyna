@@ -183,9 +183,18 @@ std::uint64_t true_random_seed()
 
 std::uint32_t seed_of(std::string const &Text)
 {
-	if (std::uint32_t number{}; std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
+	auto const *const end{Text.data() + Text.size()};
+	std::uint32_t number{};
+	auto const [last, error]{std::from_chars(Text.data(), end, number)};
+	if (error == std::errc{} && last == end)
 	{
 		return number;
+	}
+	if (error == std::errc{})
+	{
+		// digits with something after them are a word like any other, not the number in front of them: "4242abc"
+		// isn't seed 4242. said in the log, since whoever wrote it most likely meant a number
+		WriteLog(std::format("seed \"{}\" isn't a number, taken as a word", Text));
 	}
 	std::uint32_t hash{};
 	for (auto const character : Text)
@@ -193,6 +202,15 @@ std::uint32_t seed_of(std::string const &Text)
 		hash = hash * 31u + static_cast<std::uint32_t>(static_cast<unsigned char>(character));
 	}
 	return hash;
+}
+
+std::optional<std::uint32_t> seed_given(std::string const &Text)
+{
+	if (Text.empty())
+	{
+		return std::nullopt;
+	}
+	return seed_of(Text);
 }
 
 std::string generate_uuid_v4()

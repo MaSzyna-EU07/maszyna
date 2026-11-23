@@ -213,7 +213,7 @@ The tests record the behaviour as it is. The following points may deserve a look
   - `stol_def()` gives its default only for an empty text. A text which isn't a number gives 0 (the flags of an event, the log setting).
   - `split_string_and_number()` throws for a name with a hyphen which no digit follows (`a-b`), and for a number too big. The gamepad bindings and the PLC use it on names from files.
   - `extract_value()` throws `std::out_of_range` when the key is the last thing in the text with nothing after its `=`. With a space after the `=`, the next `key=value` is taken for the value.
-  - `seed_of()` takes a word starting with digits for the number in front (`12abc` is 12), so different words can stand for the same seed.
+  - `seed_of()` took a word starting with digits for the number in front (`12abc` was 12), so different words could stand for the same seed, and a seed of 0 stood for none. Fixed: the whole text has to be the number, anything else is a word, and whether a seed was given is kept apart (`random_seed_given`).
   - `erase_extension()` cuts at the dot of a folder when the file has none (`dir.d/file` becomes `dir`).
   - `Round()` adds a half and cuts the fraction, which rounds the negative numbers up: -1.6 becomes -1.
 - **The PLC (`ladderlogic.cpp`):**
