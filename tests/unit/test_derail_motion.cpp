@@ -9,6 +9,9 @@
 #include <cmath>
 #include <format>
 #include <numbers>
+#include <string>
+#include <utility>
+#include <vector>
 
 // a vehicle off the rails moving on the ground by itself (physics.derailment new): vehicle/derailmotion.h, and what
 // the vehicle of TMoverParameters makes of it
@@ -113,8 +116,9 @@ outcome slide(dm::start const &Start, dm::ground const &Ground, double const Dt 
 		if (next * speed <= 0.0 && std::abs(body.grade()) <= body.friction()) {
 			next = 0.0;
 		}
+		auto const reversals{body.reversals()};
 		body.step(Dt, 0.5 * (speed + next) * Dt, next, Ground);
-		speed = next;
+		speed = (body.reversals() - reversals) % 2 != 0 ? -next : next;
 		result.time += Dt;
 		if (body.lying() && result.lying_at < 0.0) {
 			result.lying_at = result.time;
@@ -465,5 +469,347 @@ TEST_CASE("derail motion: with physics.derailment monitor and old the vehicle st
 		vehicle pulled{definition::fiz("4e_v1/4e"), 40.0};
 		pulled->pull_off(1, 5.0, "test");
 		CHECK_FALSE(TestFlag(pulled->DamageFlag, dtrain_out));
+	}
+}
+
+// ---- the yaw of the body, the train folding up, the scatter
+
+namespace {
+
+// a coach of 40 t, 24.5 m over the buffers
+dm::vehicle_shape coach() {
+	dm::vehicle_shape shape;
+	shape.length = 24.5;
+	shape.width = 2.825;
+	shape.height = 4.05;
+	shape.centre_of_gravity = dr::default_centre_of_gravity(4.05, dr::vehicle_class::unpowered);
+	shape.contact_spacing = dr::contact_spacing(1.435);
+	shape.base = 17.2;
+	shape.mass = 40e3;
+	return shape;
+}
+
+// an end of the body: its front (Front) or its rear, at the height of the buffers
+dm::end_point end_of(dm::body const &Body, bool const Front) {
+	// over its base, as TDynamicObject takes it
+	auto const half{0.5 * Body.shape().length * (Front ? 1.0 : -1.0)};
+	return dm::end_point{Body.base() + glm::dvec3{0.0, dm::buffer_height, 0.0} + Body.axis() * half, Front ? Body.axis() : -Body.axis(), Body.tipping()};
+}
+
+struct car {
+	dm::body body;
+	double speed{0.0};
+	double gap{0.0}; // of the coupling behind it
+};
+
+// the train of bodies off the track on level ground as TMoverParameters and TDynamicObject drive it: their buffers and
+// couplings a spring of 2 MN/m with its damping, the longitudinal motion of each from the forces of its couplings along
+// its heading and the friction of its motion; the forces across turn them. Dt the step [s]; till all stop or 30 s
+std::vector<car> run_train(std::vector<std::pair<dm::start, dm::scatter>> const &Starts, dm::vehicle_shape const &Shape, double const Dt = 0.01) {
+	std::vector<car> train(Starts.size());
+	for (std::size_t index = 0; index < train.size(); ++index) {
+		train[index].body.begin(Starts[index].first, Shape, ballast, Starts[index].second);
+		train[index].speed = Starts[index].first.speed;
+	}
+	for (std::size_t index = 0; index + 1 < train.size(); ++index) {
+		train[index].gap = dm::meet(end_of(train[index].body, false), end_of(train[index + 1].body, true)).gap;
+	}
+	constexpr double stiffness{2e6};
+	auto const damping{0.3 * 2.0 * std::sqrt(stiffness * Shape.mass)};
+	constexpr double slack{0.05};
+	for (double time = 0.0; time < 30.0; time += Dt) {
+		std::vector<std::array<dm::end_force, 2>> ends(train.size());
+		for (std::size_t index = 0; index + 1 < train.size(); ++index) {
+			auto &ahead{train[index]};
+			auto &behind{train[index + 1]};
+			auto const rear{dm::meet(end_of(ahead.body, false), end_of(behind.body, true))};
+			auto const front{dm::meet(end_of(behind.body, true), end_of(ahead.body, false))};
+			auto const closing{(ahead.gap - rear.gap) / Dt};
+			ahead.gap = rear.gap;
+			auto compression{0.0};
+			if (rear.gap < 0.0) {
+				compression = std::max(0.0, -stiffness * rear.gap + damping * closing);
+			}
+			else if (rear.gap > slack) {
+				compression = std::min(0.0, -stiffness * (rear.gap - slack) + damping * closing);
+			}
+			ends[index][1] = dm::force_on(rear, compression);
+			ends[index + 1][0] = dm::force_on(front, compression);
+		}
+		auto moving{false};
+		for (std::size_t index = 0; index < train.size(); ++index) {
+			auto &item{train[index]};
+			auto const push{glm::dot(ends[index][0].force + ends[index][1].force, item.body.heading()) / Shape.mass};
+			auto const friction{dm::gravity * item.body.friction()};
+			auto next{item.speed + push * Dt};
+			if (std::abs(next) <= friction * Dt) {
+				next = 0.0;
+			}
+			else {
+				next -= (next > 0.0 ? 1.0 : -1.0) * friction * Dt;
+			}
+			auto const reversals{item.body.reversals()};
+			item.body.step(Dt, 0.5 * (item.speed + next) * Dt, next, ballast, ends[index]);
+			item.speed = (item.body.reversals() - reversals) % 2 != 0 ? -next : next;
+			moving |= (false == item.body.at_rest());
+		}
+		if (false == moving) {
+			break;
+		}
+	}
+	return train;
+}
+
+// a train of four coaches at 133 km/h overturning out of the curve to the left, the leading one ploughing into the
+// ground; each scattered by the seed, or none of them
+std::vector<std::pair<dm::start, dm::scatter>> overturning_train(std::uint32_t const Seed, bool const Scattered = true) {
+	std::vector<std::pair<dm::start, dm::scatter>> starts;
+	for (int index = 0; index < 4; ++index) {
+		auto start{leaving(133.0 * kmh, dm::cause::overturned, 1, 2.0 * eu07_tipping)};
+		// one after the other along the way they leave the track
+		auto const angle{dm::departure_angle(start.reason, start.speed, start.acceleration)};
+		start.position = -index * coach().length * glm::dvec3{std::sin(angle), 0.0, std::cos(angle)};
+		auto scatter{Scattered ? dm::draw_scatter(dm::seed_of(Seed, std::format("coach{}", index))) : dm::scatter{}};
+		if (index == 0 && Scattered) {
+			// the leading one ploughs into the ground: held back harder all the way, the ones behind push into it
+			scatter.friction_front *= 1.5;
+			scatter.friction_rear *= 1.5;
+		}
+		starts.emplace_back(start, scatter);
+	}
+	return starts;
+}
+
+// the bends between the bodies of the train, from the front [rad]
+std::vector<double> bends(std::vector<car> const &Train) {
+	std::vector<double> result;
+	for (std::size_t index = 0; index + 1 < Train.size(); ++index) {
+		result.push_back(std::remainder(Train[index + 1].body.yaw() - Train[index].body.yaw(), 2.0 * std::numbers::pi));
+	}
+	return result;
+}
+
+std::string described(std::vector<car> const &Train) {
+	std::string result;
+	for (auto const &item : Train) {
+		result += std::format(" [{:.1f} m along, {:+.1f} m across, yaw {:+.1f} deg]", item.body.along(), item.body.across(), item.body.yaw() / degree);
+	}
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("derail motion: the buffers and the coupling of two ends") {
+	// two ends facing each other, the second 10 degrees to the left of the axis of the first, the buffers pressed 20 mm
+	dm::end_point const first{glm::dvec3{0.0, 1.0, 0.0}, glm::dvec3{0.0, 0.0, 1.0}};
+	auto const angle{10.0 * degree};
+	dm::end_point const second{glm::dvec3{0.0, 1.0, -0.02}, -glm::dvec3{std::sin(angle), 0.0, std::cos(angle)}};
+	auto const pressed{dm::meet(first, second)};
+	CHECK(pressed.bend == doctest::Approx(angle));
+	CHECK(pressed.gap == doctest::Approx(-0.02 * std::cos(0.5 * angle)));
+	CHECK(pressed.overlap == doctest::Approx(1.0));
+	// the push of the buffers: against the bisector of the bend, through the inner buffer (to the left); less far out
+	// once the push is more than a buffer takes
+	auto const light{dm::force_on(pressed, 200e3)};
+	CHECK(light.force.z == doctest::Approx(-200e3 * std::cos(0.5 * angle)));
+	CHECK(light.force.x == doctest::Approx(-200e3 * std::sin(0.5 * angle)));
+	CHECK(light.point.x == doctest::Approx(dm::buffer_half_spacing * std::cos(0.5 * angle)).epsilon(1e-3));
+	auto const heavy{dm::force_on(pressed, 4.0 * dm::buffer_limit)};
+	CHECK(heavy.point.x == doctest::Approx(0.25 * dm::buffer_half_spacing * std::cos(0.5 * angle)).epsilon(1e-3));
+	// a body lower by a buffer head misses the buffers of the other one: the push goes through the middle of the beams
+	dm::end_point low{second};
+	low.point.y -= dm::buffer_head;
+	CHECK(dm::force_on(dm::meet(first, low), 200e3).point.x == doctest::Approx(0.0));
+	// the coupling pulls towards the other beam, taken 1 m to the side
+	dm::end_point aside{second};
+	aside.point = glm::dvec3{1.0, 1.0, 0.5};
+	auto const pulled{dm::meet(first, aside)};
+	CHECK(pulled.gap == doctest::Approx(std::hypot(1.0, 0.5)).epsilon(0.1));
+	auto const pull{dm::force_on(pulled, -100e3)};
+	CHECK(pull.force.x == doctest::Approx(100e3 / std::hypot(1.0, 0.5)));
+	// gone past each other side by side: the coupling stretched
+	aside.point = glm::dvec3{3.0, 1.0, -5.0};
+	CHECK(dm::meet(first, aside).gap > 5.0);
+	// a body turned about, its end facing the same way as the first one, 5 m behind it: they don't press each other
+	dm::end_point const about{glm::dvec3{0.0, 1.0, -5.0}, glm::dvec3{0.0, 0.0, 1.0}};
+	CHECK(dm::meet(first, about).gap == doctest::Approx(5.0));
+}
+
+TEST_CASE("derail motion: the yaw of the body") {
+	auto shape{eu07()};
+	shape.mass = 80e3;
+	SUBCASE("a push off the middle turns it, the friction under it holds it against a small one") {
+		for (auto const side : {1.0, -1.0}) {
+			CAPTURE(side);
+			dm::body body;
+			body.begin(leaving(0.0, dm::cause::off_rails), shape, ballast);
+			// 300 kN across at the front end, to the Side: it turns its front that way
+			std::array<dm::end_force, 2> ends{};
+			ends[0] = dm::end_force{glm::dvec3{side * 300e3, 0.0, 0.0}, glm::dvec3{0.0, 1.0, 0.5 * shape.length}};
+			for (int step = 0; step < 50; ++step) {
+				body.step(0.01, 0.0, 0.0, ballast, ends);
+			}
+			CHECK(body.yaw_rate() * side > 0.0);
+			CHECK(body.yaw() * side > 0.0);
+			// through the middle along the body it doesn't turn it
+			dm::body straight;
+			straight.begin(leaving(0.0, dm::cause::off_rails), shape, ballast);
+			ends[0] = dm::end_force{glm::dvec3{0.0, 0.0, -300e3}, glm::dvec3{0.0, 1.0, 0.5 * shape.length}};
+			straight.step(0.5, 0.0, 0.0, ballast, ends);
+			CHECK(straight.yaw() == 0.0);
+			// 30 kN across: the friction holds it, once it stands on the ground
+			dm::flat_ground const rails{0.0};
+			dm::body held;
+			held.begin(leaving(0.0, dm::cause::off_rails), shape, rails);
+			ends[0] = dm::end_force{glm::dvec3{side * 30e3, 0.0, 0.0}, glm::dvec3{0.0, 1.0, 0.5 * shape.length}};
+			held.step(0.5, 0.0, 0.0, rails, ends);
+			CHECK(held.yaw() == 0.0);
+			CHECK(held.at_rest());
+		}
+	}
+	SUBCASE("the friction under it stops the turning, sliding or standing") {
+		for (auto const speed : {0.0, 30.0}) {
+			CAPTURE(speed);
+			dm::scatter spin;
+			spin.yaw_rate = 0.5;
+			dm::body body;
+			body.begin(leaving(speed, dm::cause::off_rails), shape, ballast, spin);
+			auto current{speed};
+			auto most{0.0};
+			auto halfway{0.0};
+			for (int step = 0; step < 3000 && false == body.at_rest(); ++step) {
+				auto const next{std::max(0.0, current - dm::gravity * body.friction() * 0.01)};
+				body.step(0.01, 0.5 * (current + next) * 0.01, next, ballast);
+				if (current > 0.5 * speed && next <= 0.5 * speed) {
+					halfway = body.yaw_rate();
+				}
+				current = next;
+				most = std::max(most, std::abs(body.yaw_rate()));
+			}
+			MESSAGE(std::format("set turning at 0.5 rad/s at {:.0f} m/s: turned {:.1f} deg", speed, body.yaw() / degree));
+			CHECK(body.at_rest());
+			CHECK(body.yaw_rate() == 0.0);
+			// it never turns faster than it was set to
+			CHECK(most <= 0.5 + 1e-9);
+			CHECK(body.yaw() > 0.0);
+			// standing it stops within a turn of a few degrees; sliding fast, little holds it (the friction under it goes
+			// almost all against the way it slides), it slows the turning as it slows down
+			if (speed > 0.0) {
+				CHECK(halfway < 0.4);
+				CHECK(body.yaw() < 180.0 * degree);
+			}
+			else {
+				CHECK(body.yaw() < 15.0 * degree);
+			}
+		}
+	}
+	SUBCASE("a body going askew slides harder, and the way it goes turns to the body") {
+		dm::scatter askew;
+		askew.yaw = 20.0 * degree;
+		dm::body body;
+		body.begin(leaving(30.0, dm::cause::off_rails), shape, ballast, askew);
+		CHECK(body.friction() > dr::off_rails_friction);
+		CHECK(body.friction() < dm::lateral_friction);
+		auto const before{std::abs(std::remainder(std::atan2(body.heading().x, body.heading().z) - body.yaw(), 2.0 * std::numbers::pi))};
+		auto current{30.0};
+		for (int step = 0; step < 100; ++step) {
+			auto const next{current - dm::gravity * body.friction() * 0.01};
+			body.step(0.01, 0.5 * (current + next) * 0.01, next, ballast);
+			current = next;
+		}
+		auto const after{std::abs(std::remainder(std::atan2(body.heading().x, body.heading().z) - body.yaw(), 2.0 * std::numbers::pi))};
+		CHECK(after < before);
+	}
+}
+
+TEST_CASE("derail motion: a train off the track pushed from behind folds into a zigzag") {
+	// the leading one held back harder, the ones behind push into it: a chaotic matter, so over eight seeds most of the
+	// trains fold, and the folds next to each other turn opposite ways
+	auto foldedtrains{0};
+	auto pairs{0};
+	auto zigzags{0};
+	for (std::uint32_t seed = 1; seed <= 8; ++seed) {
+		CAPTURE(seed);
+		auto const train{run_train(overturning_train(seed), coach())};
+		auto const bent{bends(train)};
+		MESSAGE((std::format("seed {} at rest:", seed) + described(train)));
+		for (auto const &item : train) {
+			CHECK(item.body.at_rest());
+		}
+		auto folds{0};
+		for (std::size_t index = 0; index < bent.size(); ++index) {
+			if (std::abs(bent[index]) > 10.0 * degree) {
+				++folds;
+				if (index + 1 < bent.size() && std::abs(bent[index + 1]) > 10.0 * degree) {
+					++pairs;
+					zigzags += (bent[index] * bent[index + 1] < 0.0 ? 1 : 0);
+				}
+			}
+		}
+		foldedtrains += (folds > 0 ? 1 : 0);
+	}
+	MESSAGE(std::format("{} of 8 trains folded, {} of {} neighbouring folds turn opposite ways", foldedtrains, zigzags, pairs));
+	CHECK(foldedtrains >= 4);
+	CHECK(pairs >= 2);
+	CHECK(zigzags * 4 >= pairs * 3);
+	SUBCASE("without the bite and the scatter it stays in line") {
+		auto const straight{run_train(overturning_train(1, false), coach())};
+		MESSAGE((std::string{"unscattered at rest:"} + described(straight)));
+		for (auto const bend : bends(straight)) {
+			CHECK(std::abs(bend) < 1.0 * degree);
+		}
+	}
+}
+
+TEST_CASE("derail motion: the scatter") {
+	SUBCASE("the same seed, the same scatter; another seed, another one") {
+		auto const one{dm::draw_scatter(dm::seed_of(7, "coach1"))};
+		auto const again{dm::draw_scatter(dm::seed_of(7, "coach1"))};
+		auto const other{dm::draw_scatter(dm::seed_of(8, "coach1"))};
+		auto const next{dm::draw_scatter(dm::seed_of(7, "coach2"))};
+		CHECK(one.departure == again.departure);
+		CHECK(one.friction_front == again.friction_front);
+		CHECK(one.dig_in == again.dig_in);
+		CHECK(one.yaw != other.yaw);
+		CHECK(one.yaw != next.yaw);
+		auto bites{0};
+		for (std::uint32_t seed = 0; seed < 300; ++seed) {
+			auto const scatter{dm::draw_scatter(seed)};
+			CHECK(std::abs(scatter.departure) <= 0.01);
+			CHECK(std::abs(scatter.yaw) <= 0.02);
+			CHECK(std::abs(scatter.yaw_rate) <= 0.02);
+			CHECK(scatter.friction_front >= 0.85);
+			CHECK(scatter.friction_rear <= 1.15);
+			CHECK((scatter.dig_in < 0.0 || (scatter.dig_in >= 0.2 && scatter.dig_in <= 1.5)));
+			bites += (scatter.dig_in >= 0.0 ? 1 : 0);
+		}
+		CHECK(bites > 150);
+		CHECK(bites < 250);
+	}
+	SUBCASE("the train: the same seed, the same way; another seed, another way") {
+		auto const one{bends(run_train(overturning_train(1), coach()))};
+		auto const again{bends(run_train(overturning_train(1), coach()))};
+		auto const othertrain{run_train(overturning_train(2), coach())};
+		auto const other{bends(othertrain)};
+		MESSAGE((std::string{"seed 2 at rest:"} + described(othertrain)));
+		CHECK(one == again);
+		auto apart{0.0};
+		for (std::size_t index = 0; index < one.size(); ++index) {
+			apart = std::max(apart, std::abs(one[index] - other[index]));
+		}
+		MESSAGE(std::format("the bends of seed 1 and seed 2 differ by {:.1f} deg at most", apart / degree));
+		CHECK(apart > 2.0 * degree);
+	}
+	SUBCASE("the same with steps of 0.01, 0.03 and 0.05 s") {
+		auto starts{overturning_train(3)};
+		starts.resize(1);
+		auto const fine{run_train(starts, coach(), 0.01)};
+		for (auto const dt : {0.03, 0.05}) {
+			CAPTURE(dt);
+			auto const coarse{run_train(starts, coach(), dt)};
+			CHECK(coarse[0].body.travelled() == doctest::Approx(fine[0].body.travelled()).epsilon(0.02));
+			CHECK(coarse[0].body.across() == doctest::Approx(fine[0].body.across()).epsilon(0.05));
+			CHECK(coarse[0].body.yaw() == doctest::Approx(fine[0].body.yaw()).epsilon(0.05));
+		}
 	}
 }

@@ -11,7 +11,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -22,10 +24,15 @@ http://mozilla.org/MPL/2.0/.
 // along: the longitudinal motion stays with the physics of the vehicle (TMoverParameters), which brakes it with the
 //   friction() of this one, takes the grade() under it and passes the forces of the couplings on; each step gives
 //   the distance travelled along the heading of the vehicle
-// the heading: the one the vehicle had when it derailed, turned out of the curve by the sideways speed it left the
-//   rail with: none off the end of the track, the speed of the flange climbing over the rail head (or of the wheels
-//   lifting over it) otherwise. it stays the heading from then on: the vehicle runs on straight, so in a curve it
-//   leaves the track to its outside, on a buckle towards the bulge
+// the heading: the way it travels; the one the vehicle had when it derailed, turned out of the curve by the sideways
+//   speed it left the rail with: none off the end of the track, the speed of the flange climbing over the rail head
+//   (or of the wheels lifting over it) otherwise. so in a curve it leaves the track to its outside, on a buckle
+//   towards the bulge. from then on the friction of a body sliding askew (more across it than along it) and the
+//   sideways part of the forces of its couplings turn it, little at speed
+// the yaw: the body turns about its vertical axis by itself, apart from the way it travels: the forces of the
+//   couplings at its ends (the push of the buffers of two bodies at an angle to each other, off the middle of the
+//   buffer beam) turn it, the friction of the ground under the length of it holds it. pushed from behind, a train
+//   of bodies off the track folds up into a zigzag once the bends between them are past what the buffers hold
 // sideways: the vehicle slides across its heading only where the ground slopes across it more than the friction
 //   holds, down an embankment say
 // the height and the attitude: the ground under the supports of the vehicle (the ends of its wheelbase, the wheels
@@ -72,6 +79,73 @@ inline constexpr double most_departure{0.2};
 // [m/s2] gives the wheels over the climb width w, against the speed [m/s]. none off the end of the track or in a
 // collision
 double departure_angle(cause Cause, double Speed, double Acceleration);
+
+// ---- the scatter: what differs from one derailed vehicle to the next
+
+// the ground under it and the way it bites into the ballast: each vehicle draws its own from the seed of the run and its
+// name, so a run with the same seed goes the same way and one with another seed another way
+struct scatter {
+	double departure{0.0}; // added to the angle it leaves the track at [rad], not off the end of the track nor in a collision
+	double yaw{0.0}; // its body turned off the way it travels when it leaves the rails [rad], to the left positive
+	double yaw_rate{0.0}; // [rad/s] the kick of the leading wheels dropping off the rail head
+	double friction_front{1.0}; // the friction under the front half of its body, of the friction of the motion
+	double friction_rear{1.0}; // and under the rear half
+	double dig_in{-1.0}; // the time after leaving the rails its leading end digs into the ballast [s], -1 never
+	double dig_in_time{0.0}; // for how long [s]
+	double dig_in_friction{1.0}; // the friction under the leading half then, of the friction of the motion
+	int dig_in_side{1}; // the wheel that digs in: 1 the left one of the leading end, -1 the right one
+};
+// the scatter of a vehicle: departure angle +-0.01 rad, yaw +-0.02 rad, yaw rate +-0.02 rad/s, the friction under each
+// half 0.85..1.15 of the friction of the motion, and in two of three vehicles a bite of the leading end 0.2..1.5 s after
+// it left the rails, for 0.3..0.8 s, the friction under that half 2..4 times the friction of the motion then
+scatter draw_scatter(std::uint32_t Seed);
+// the seed of a vehicle: of the seed of the run and its name
+std::uint32_t seed_of(std::uint32_t Run, std::string_view Name);
+
+// ---- the buffers and the couplings of two vehicles, one of them off the track at least
+
+// the height of the middle of the buffer beam above the rails [m]: UIC, 940..1065 mm
+inline constexpr double buffer_height{1.0};
+// half the spacing of the buffers [m]: UIC, 1750 mm
+inline constexpr double buffer_half_spacing{0.875};
+// the height of a buffer head [m]: two buffers further apart in height than that miss each other
+inline constexpr double buffer_head{0.34};
+// the bend between two bodies [rad] the push of the buffers goes all onto the inner buffer at: their play, 45 mm of
+// difference over the spacing
+inline constexpr double buffer_lock{0.05};
+// the most a buffer takes [N]: past it, it is pressed solid and gives way, the frames push against each other at
+// the middle of the beams
+inline constexpr double buffer_limit{1.0e6};
+
+// an end of a vehicle, where it meets the vehicle coupled to it
+struct end_point {
+	glm::dvec3 point{0.0}; // the middle of the buffer beam, at the height of the buffers
+	glm::dvec3 outward{0.0, 0.0, 1.0}; // the way the end faces, level
+	// how far the body is rolled [rad]: the buffers of two bodies rolled apart miss each other in height
+	double roll{0.0};
+};
+// a force on a body [N], at the point it acts at
+struct end_force {
+	glm::dvec3 force{0.0};
+	glm::dvec3 point{0.0};
+};
+// two ends meeting, as the first sees it
+struct meeting {
+	// apart [m], negative where the buffers press into each other: along the bisector of the bend while they touch,
+	// the distance between the middles of the beams once they are apart
+	double gap{0.0};
+	// the bend: the angle [rad] the second body turns off the axis of the first, to the left of its end positive
+	double bend{0.0};
+	glm::dvec3 push{0.0, 0.0, 1.0}; // outwards from the first, the bisector of the bend: the buffers push the other way
+	glm::dvec3 pull{0.0, 0.0, 1.0}; // the way the coupling draws the first: to the beam of the second
+	glm::dvec3 point{0.0}; // the middle of the beam of the first
+	// how well the buffers meet in height: 0 they miss each other (one body lower than the other, or rolled against it), to 1
+	double overlap{1.0};
+};
+meeting meet(end_point const &First, end_point const &Second);
+// the force on the first end of the meeting, Compression [N] pushing it (negative: the coupling pulling it): through
+// the inner buffer of the bend, off the middle of the beam as far as the buffers meet and hold
+end_force force_on(meeting const &Meeting, double Compression);
 
 // the distance [m] a vehicle slides from the speed [m/s] with the friction, on the grade (rise per metre along the
 // way); none when the grade doesn't let it stop
@@ -167,6 +241,8 @@ struct vehicle_shape {
 	// the lean of the body on the suspension, as McZapkie/derailment.h takes it: flexibility and roll centre
 	double flexibility{0.4};
 	double roll_centre{0.5};
+	// [kg] for the forces of the couplings on it; none: they don't move it
+	double mass{0.0};
 };
 
 // how it left the rails
@@ -192,18 +268,21 @@ struct pose {
 
 class body {
 public:
-	// the vehicle leaves the rails
-	void begin(start const &Start, vehicle_shape const &Shape, ground const &Ground);
+	// the vehicle leaves the rails, set apart from the others by the Scatter
+	void begin(start const &Start, vehicle_shape const &Shape, ground const &Ground, scatter const &Scatter = {});
 	// the step of Dt [s], in which the vehicle travelled Distance [m] along its heading (forwards along its front) and
-	// has the Speed [m/s] along it at its end
-	void step(double Dt, double Distance, double Speed, ground const &Ground);
+	// has the Speed [m/s] along it at its end; the couplings of its ends push or pull it with the Ends through the step
+	void step(double Dt, double Distance, double Speed, ground const &Ground, std::array<end_force, 2> const &Ends = {});
 	// back on the rails, or never off them
 	void reset() { *this = body{}; }
 
 	bool active() const { return m_active; }
 	pose const &current() const { return m_pose; }
-	// the friction along the heading now, of its weight
-	double friction() const { return sliding_friction(m_tipping, m_guided); }
+	// the middle of the vehicle on the ground, under it as it stands (not moved over to the side it tipped to)
+	glm::dvec3 const &base() const { return m_position; }
+	// the friction along the heading now, of its weight: of the body sliding along itself, more the more askew it goes,
+	// up to the friction across it going sideways
+	double friction() const;
 	// the rise of the ground per metre along the heading, for the force of the gravity along it
 	double grade() const { return m_grade; }
 	// how far the body tipped over from its wheels [rad], to the left positive; 90 degrees: it lies on its side
@@ -222,7 +301,18 @@ public:
 	double sideways() const { return m_lateral; }
 	// at rest: not sliding, not tipping, on the ground
 	bool at_rest() const;
+	// the way it travels, level
 	glm::dvec3 const &heading() const { return m_front; }
+	// the way the front of its body faces, level
+	glm::dvec3 const &axis() const { return m_axis; }
+	// the angle [rad] its body is turned by off the line of the track where it left the rails, to the left positive
+	double yaw() const;
+	// how fast it turns [rad/s], to the left positive
+	double yaw_rate() const { return m_yawrate; }
+	// how many times the heading was turned about, the body having turned more than a right angle off the way it
+	// goes: the heading stays within a right angle of the front of the body, so the speed along the heading (of
+	// TMoverParameters, of its couplers at its ends) goes with the body; the speed changes its sign with each
+	int reversals() const { return m_reversals; }
 	cause reason() const { return m_reason; }
 	// the vehicle the motion was begun with
 	vehicle_shape const &shape() const { return m_shape; }
@@ -246,7 +336,25 @@ private:
 	// the lateral acceleration [m/s2] on the centre of gravity, to the left positive, in the plane of the ground
 	double lateral_load(double Cross, double Speed) const;
 	void place();
+	// to the left of the body
 	glm::dvec3 left_of_heading() const;
+	// the friction under the body going along its heading at the Speed and turning at the Yawrate, per its mass: the
+	// force [m/s2], the moment about its middle [m2/s2] and the sideways load that trips it over [m/s2]
+	struct drag {
+		glm::dvec3 force{0.0};
+		double moment{0.0};
+		double trip{0.0};
+	};
+	drag friction_under(double Speed, double Yawrate) const;
+	// the friction under the front (Front) or the rear half of the body, of the friction of the motion
+	double friction_share(bool Front) const;
+	// the leading end biting into the ballast now: 1 its front, -1 its rear, 0 none
+	int biting() const;
+	// the friction along the body and across it
+	double friction_along() const;
+	double friction_across() const;
+	// the body turns, and the way it travels turns, through the substep
+	void turn(double Dt, double Speed);
 
 	bool m_active{false};
 	cause m_reason{cause::off_rails};
@@ -262,13 +370,28 @@ private:
 
 	glm::dvec3 m_position{0.0}; // of the middle of the vehicle on the ground (at its base)
 	glm::dvec3 m_front{0.0, 0.0, 1.0}; // the heading, level
+	glm::dvec3 m_axis{0.0, 0.0, 1.0}; // the front of the body, level
+	double m_yawrate{0.0}; // [rad/s]
+	double m_yawgyration{30.0}; // the square of the radius of gyration of the body about its vertical axis [m2]
+	scatter m_scatter;
+	double m_time{0.0}; // since it left the rails [s]
+	int m_reversals{0};
+	double m_trip{0.0}; // the load across of the friction of the body going askew [m/s2], the way it slides
+	// the forces of the couplings through the step: the force, and where it acts, along the body and across it
+	struct end_load {
+		glm::dvec3 force{0.0};
+		double along{0.0};
+		double across{0.0};
+	};
+	std::array<end_load, 2> m_ends{};
 	glm::dvec3 m_origin{0.0}; // where it left the rails
 	glm::dvec3 m_line{0.0, 0.0, 1.0}; // the direction of the track there, level
 	double m_fallspeed{0.0}; // [m/s], downwards negative
 	// on the ground, not falling. it leaves the rails above the top of the ballast, and drops onto it
 	bool m_grounded{false};
 	double m_lateral{0.0}; // [m/s], to the left positive
-	double m_grade{0.0};
+	double m_grade{0.0}; // along the heading
+	double m_pitch{0.0}; // along the body
 	double m_cross{0.0};
 	int m_side{0}; // the side it tips to: 1 left, -1 right, 0 upright
 	double m_tipping{0.0}; // [rad]
@@ -284,6 +407,15 @@ private:
 	double m_travelled{0.0};
 	pose m_pose;
 };
+
+// the slowest a point of the body slides at [m/s]: the friction under one going slower holds it as much as it goes
+inline constexpr double creep_speed{0.05};
+// the fastest the body turns about its vertical axis [rad/s]
+inline constexpr double most_yaw_rate{2.0};
+// the slowest the heading is turned at by the forces across it [m/s]: slower, the vehicle stops where it goes
+inline constexpr double turning_speed{0.5};
+// the points the friction under the body is taken at, along it
+inline constexpr int friction_points{8};
 
 // how long the curve can keep tipping over a vehicle on its outer wheels [s]
 inline constexpr double guidance_time{5.0};
