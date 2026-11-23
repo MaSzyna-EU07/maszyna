@@ -428,6 +428,16 @@ the row instead, logged by builds from this branch on.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 
+- `on_track` `vehicles`, optional `max_offset` (0.5 m), `max_detour` (5 m): every vehicle whose name starts with
+  `vehicles` (e.g. `{{vehicle}}`, the train of the case) keeps to the rails in the black box, in each of its states:
+  its middle is within `max_offset` of the line of a track (level distance, the map of the tracks of the black box),
+  and of two vehicles coupled to each other the way along the tracks from one to the other (through the ends of the
+  tracks that meet) is no more than `max_detour` longer than the straight line between them. A vehicle with its
+  bogies on two tracks that part, or thrown sideways, is off the line; a coach running on beside the locomotive it is
+  coupled to, on the next track, has a way to it hundreds of metres long. A coach on a curve of 300 m, through the
+  S of a switch, was up to 0.38 m off. The black box lists a vehicle once a second, so a jump between two lists
+  shows up only as it is at the next one.
+
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
 text of `log.txt` instead of the rows. Checks on the black box (`blackbox_doc.md` in the root of
