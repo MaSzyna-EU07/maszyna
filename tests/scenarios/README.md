@@ -250,6 +250,19 @@ the td/rozklad train, an EU07 with three coaches, with its head 80 m past the W4
 under the consist, behind the head, and the driver still counts Stacja1 and leaves at 10:35, since the scan of the
 route begins at the last vehicle and keeps a W4 behind the head.
 
+`e6actad_genset_td_timetable` (fragment `td_timetable_genset.scn`) is the timetable run of a dual-mode vehicle on its
+genset (eu07/maszyna#536): an E6ACTad, the Dragon 2 "last mile" with a 520 kW diesel generator set. The game data has no
+such vehicle yet, so the case needs a variant made for the test in `dynamic/pkp/e6act_v2` of the game, and removed after
+it: `e6actad_g6.mmd` the same as `e6actad.mmd`, and `e6actad_g6.fiz` a full copy of `e6acta.fiz.inc` (not an include of
+it: a second `Power:` line would load the power source again) with `GensetStart=Manual` on the `Cntrl.` line and
+`GensetPower=520 GensetVoltage=3000 GensetIdleRPM=700 GensetMaxRPM=1800 GensetStartTime=8 GensetSpinUpTime=3
+GensetPmaxRatio=0.85` on the `Power:` line. `event0` of the start track gives the standing vehicle, once,
+`PutValues` `MainSwitch 0`, `TractionMode 1` (the selector on the genset) and `GensetSwitch 1`, a second apart, as the
+vehicle holds one command at a time. The AI knows nothing of the genset: it closes the line breaker once the genset runs
+and drives the timetable on it, at most 520 kW x 0.85 = 442 kW at the wheels (`traction_power`).
+`e6actad_catenary_td_timetable` is the same vehicle without the events: it stays on the catenary and takes several
+times that, which shows the check tells the two apart.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -454,6 +467,10 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `traction_power` `max_kw`, optional `min_peak_kw` (*vehicle speed*): the power at the wheels, the
+  traction force times the vehicle speed, never goes above `max_kw` and, given `min_peak_kw`, reaches
+  it at least once; e.g. a dual-mode vehicle running on the power of its genset. The traction force
+  column is in N, whatever the header says.
 - `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
   `Bad driving: ... collided` message of a collision.
 - `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.

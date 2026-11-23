@@ -672,6 +672,23 @@ def check_master_controller(rows, from_distance, to_distance, at_most):
     return True, detail
 
 
+def check_traction_power(rows, max_kw, min_peak_kw=None):
+    """The power at the wheels, the traction force times the vehicle speed, stays at or below max_kw
+    and, given min_peak_kw, reaches it, e.g. a dual-mode vehicle on its genset (eu07/maszyna#536)."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column"
+    power = [abs(r[COL_TRACTION_FORCE]) * abs(r[COL_VEHICLE_VELOCITY]) / 3.6 / 1000 for r in rows]
+    peak = max(range(len(rows)), key=power.__getitem__)
+    r = rows[peak]
+    detail = (f"peak {power[peak]:.0f} kW at t={r[COL_TIME]:.1f}s, v={r[COL_VEHICLE_VELOCITY]:.1f} km/h, "
+              f"Ft={r[COL_TRACTION_FORCE] / 1000:.1f} kN")
+    if power[peak] > max_kw:
+        return False, f"{detail}, above {max_kw} kW"
+    if min_peak_kw is not None and power[peak] < min_peak_kw:
+        return False, f"{detail}, below {min_peak_kw} kW"
+    return True, detail
+
+
 CHECKS = {
     "master_controller": check_master_controller,
     "traction": check_traction,
@@ -685,6 +702,7 @@ CHECKS = {
     "stays_stopped": check_stays_stopped,
     "distance": check_distance,
     "ends_moving": check_ends_moving,
+    "traction_power": check_traction_power,
 }
 
 
