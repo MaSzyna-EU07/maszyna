@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/doorwings.h"
 #include "scripting/scriptscreenrules.h"
 
+#include <array>
 #include <vector>
 #include <memory>
 
@@ -749,6 +750,42 @@ private:
     bool FastUpdate(double dt);
     void Move(double fDistance);
     void FastMove(double fDistance);
+    // physics.derailment new, the vehicle off the track (vehicle/derailmotion.h): the offset of its body from the axis of
+    // the track at the place nearest to it, to the left of its front positive [m]; 0 while it's on the track
+    double off_track_offset() const;
+private:
+    // the axles moved along their tracks by the distance
+    void move_axles( double Distance );
+    // the vehicle placed on the track by its axles
+    void place_by_axles();
+    // the vehicle leaves the track: its motion on the ground begun, with the terrain around it
+    void begin_off_track();
+    // the vehicle off the track moved on the ground, by the distance along its heading, in the time of the frame
+    void move_off_track( double Distance );
+    // the terrain of the scenery within Reach [m] around the vehicle off the track, for the ground under it
+    void gather_off_track_terrain( double Reach );
+    // the bed of the track at the axles, the level direction of the track there, and the side the derailment throws the
+    // vehicle to (1 the left of the front, -1 the right, 0 none): out of the curve of the track as designed, into it
+    // where a buckle bends the line the other way more (McZapkie/derailment.h); on a straight track out of the turn of
+    // the path as it lies, a buckle on it
+    derail_motion::formation track_bed() const;
+    glm::dvec3 track_front() const;
+    int outward_side() const;
+    // the couplings of this vehicle off the track pull the vehicles coupled to it off the rails sideways, the step
+    // having travelled the distance
+    void pull_neighbours( double Distance );
+    // the scraping of the vehicle off the track, until it stops, and its state to the log every second
+    void update_off_track( double Deltatime );
+
+    std::shared_ptr<derail_motion::ground> m_offtrackterrain; // none in a scenery without terrain
+    glm::dvec2 m_offtrackmin { 0.0 }; // what the terrain was gathered for
+    glm::dvec2 m_offtrackmax { 0.0 };
+    derail_motion::site m_offtracksite;
+    double m_offtracktime { 0.0 }; // of the frame, for the motion
+    double m_offtracklogdue { 0.0 };
+    bool m_offtrackplaced { false }; // placed off the track: placed on it again once it's back on the rails
+    std::array<derailment::stretch, 2> m_pulledoff; // the distance the coupling of an end pulled the vehicle coupled there over the climbing limit
+public:
     void RenderSounds();
     // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
     void play_mirror_sounds( side const Side, mirror_moves::event const Event );
@@ -852,6 +889,9 @@ private:
     TDynamicObject * Neighbour(int &dir);
     // updates potential collision sources
     void update_neighbours();
+    // physics.derailment new: the vehicle and the other one, one of them off the track, are in line, close enough
+    // across to run into each other
+    bool in_line_with( TDynamicObject const &Other ) const;
     // locates potential collision source within specified range, scanning its route in specified direction
     auto find_vehicle( int const Direction, double const Range ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
