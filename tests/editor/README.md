@@ -125,6 +125,10 @@ tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the mod
 | `expect setup none`, `expect setup <key> <value>` | the assumptions of the project of the scenery: none said yet, or the value of a key as their record writes it (`norms`, `speed`, `traffic`, `track`, `gauge`, `rail`) |
 | `expect setupmark <present\|absent>` | the scenery holds the line of the assumptions (`//$u setup ...`), or not |
 | `expect layspeed <km/h>` | the speed the lay tool lays at |
+| `expect laid curves <count>`, `expect laid clicks <at most>`, `expect laid length <m> <tolerance>` | the line traced on the photo laid last: its curves, the points it was traced through, its length |
+| `expect laid radius <curve> <R>[/<R>...] <tolerance %>`, `expect laid speed <curve> <km/h>`, `expect laid nearly <curve> <0\|1>` | a curve of it: the radii of its arcs, the speed it's laid for, nearly straight (R 5 km and more) |
+| `expect laid slowtracks <km/h> <at least>`, `expect laid joined <0\|1>` | its tracks given the speed of a curve slowed down; its first track joined at its start to the one it goes on from |
+| `expect laykeys <tabs> <enters>`, `expect laycontinue <0\|1>` | the shapes switched with Tab and the lines laid with Enter so far; the lay tool goes on from the end of the line laid |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
@@ -176,7 +180,7 @@ and the flow of the lay and the switch tools, a step at a time:
 
 | case | fix |
 | --- | --- |
-| `lf_1_lay_panel_states` | the panel of the lay tool goes from ready, its settings shown, to clicking, its settings folded to a line, to the line laid told over the settings, and back to ready when it's taken back; the same in the mode of a curve traced |
+| `lf_1_lay_panel_states` | the panel of the lay tool goes from ready, its settings shown, to clicking, its settings folded to a line, to the line laid told over the settings, and back to ready when it's taken back; the same traced on the photo |
 | `lf_2_switch_panel_states` | the panel of the switch tool stays ready after a switch refused, is placed after a switch laid, and tells a switch selected again after another one was laid |
 
 and the editing on the model of the track geometry (E4a of the plan of the track editing), with the setting on:
@@ -212,6 +216,17 @@ and the aerial photo with no fuss (stage 3 of laying the tracks over the aerial 
 | `ph_2_terrain_no_question` | the first L in a new scenery placed on the map asks nothing: the terrain loads in the background, the line in the panel of the laying tells it, Without terrain stops it |
 | `ph_3_tracks_over_photo` | in the top view zoomed in under 0.5 m a pixel the tracks are drawn over the photo; without the photo they aren't |
 | `ph_4_toolbar_toggle` | the photo button of the toolbar of the tracks and ~ turn the photo on and off as the user's choice, the terrain of the model doesn't turn it on again; F1 lists ~ |
+
+and laying traced on the photo (`laymode traced`, `laysigma`, `laysample`: the points along a line of known curves of the norms, clicked
+as on the photo):
+
+| case | checks |
+| --- | --- |
+| `tr_1_three_curves` | a line of 3.2 km with three curves, clicked in 20 points at most, no Tab, one Enter: the three curves found, their radii within 3 %, laid at the speed of the line |
+| `tr_2_nearly_straight` | a curve of R 9 km over 800 m, clicked every 200 m: a curve, nearly straight, its radius within 10 % |
+| `tr_3_compound` | a compound curve of R 600 and 400 m clicked along it: one curve of two radii, each within 3 % |
+| `tr_4_below_norms` | a curve of R 300 m on a line of 120 km/h laid slowed down to 70 km/h, its tracks given it; one of R 150 m, below the least radius of a main track, not laid |
+| `tr_5_continue` | after Enter the next clicks carry the line on from its end, joined to it; Esc ends it |
 
 and the assumptions of the project and the norms enforced when laying (`editor-project-setup.md`):
 

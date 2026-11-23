@@ -1458,7 +1458,7 @@ void editor_mode::draw_route_overlay() const
 void editor_mode::render_route_trace()
 {
 	auto &trace{m_route.trace};
-	// the curve is traced on the photo with the laying (Tab), the plan has no button of its own for it
+	// the line is traced on the photo with the laying (From the photo), the plan has no button of its own for it
 	if (false == trace.active)
 		return;
 	ImGui::SeparatorText(STR_C("Tracing the curve"));

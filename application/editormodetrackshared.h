@@ -221,6 +221,7 @@ editor_track::point_kind const kPointKinds[] = {editor_track::point_kind::start,
 
 float const kHandleRadius{10.0f};
 double const kLaySnapRadius{5.0};
+double const kTraceSnap{1.0}; // m on the ground a free end is reached within while tracing the photo
 float const kSnapPixels{16.0f};
 double const kSwitchReach{6.0}; // a press farther from the selected track selects another one instead of placing the switch
 double const kFreeSwitchLock{4.0}; // m of the drag a switch with no track takes the direction of its main track from

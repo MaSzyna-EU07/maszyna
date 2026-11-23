@@ -601,6 +601,21 @@ bool editor_mode::track_shortcut(int const Key)
 		// the key of the mode on leaves it
 		auto const on{m_track_tab == mode.tab || (mode.tab == track_tab::straights && track_plan_tab())};
 		auto const leaving{m_track_window_open && on && false == (mode.tab == track_tab::lineside && m_vehicle.tab().open)};
+		// the points clicked and not laid yet would go with the lay tool: the key only warns, as Esc does, pressed again within 3 s it goes
+		if (auto const pending{m_lay.active ? lay_pending() : 0}; pending >= 1 && m_lay.points.size() >= 2 && (leaving ? track_tab::path : mode.tab) != track_tab::lay)
+		{
+			auto const now{ImGui::GetTime()};
+			if (m_lay.leave_key != Key || now - m_lay.leave_time >= 3.0)
+			{
+				m_lay.leave_key = Key;
+				m_lay.leave_time = now;
+				m_lay.escape_time = now;
+				m_lay.status = format(STR_P("%s again drops the point not laid, Enter lays it", "%s again drops the %zu points not laid, Enter lays them", static_cast<long long>(pending)), mode.key, pending);
+				m_lay.status_time = now;
+				return true;
+			}
+			m_lay.leave_key = 0;
+		}
 		show_track_tab(leaving ? track_tab::path : mode.tab);
 		// B opens on the posts, as the button of Posts does, also from the trainset
 		if (mode.tab == track_tab::lineside && false == leaving)
@@ -2074,12 +2089,16 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	// a shape dragged out of a free end tells its own
 	if (m_lay.active && false == m_extend.active)
 	{
-		bool const curve{m_lay.mode == lay_mode::curve};
-		auto const *tab{curve ? "back to the straights" : "a curve from the photo"};
-		auto const *next{curve ? "the next point along the curve" : "the next bend"};
+		bool const traced{m_lay.mode == lay_mode::traced};
+		auto const *tab{traced ? "the bends" : "from the photo"};
+		auto const *next{traced ? "a point on the track" : "the next bend"};
 		auto const *alt{"the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"};
 		if (m_lay.points.empty())
-			hints = {{"LMB", "the first point"}, {"LMB on a free end", "from the end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", alt}, {"Esc", "stop laying"}};
+			hints = {{"LMB", traced ? "a point on the track" : "the first point"}, {"LMB on a free end", "from the end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", alt}, {"Esc", "stop laying"}};
+		else if (traced && m_lay.continuing && m_lay.points.size() == 1)
+			hints = {{"LMB", "goes on with the line laid"}, {"Esc", "ends the line"}, {"Tab", tab}};
+		else if (traced && m_lay.points.size() > 1)
+			hints = {{"LMB", next}, {"Enter", "lay"}, {"Backspace", "take back"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Esc", "twice: drop the points not laid"}};
 		else if (m_lay.points.size() > 1)
 			// the points clicked are no track until Enter: it comes right after the click, where the bar at the bottom shows it
 			hints = {{"LMB", next}, {"Enter", "lay"}, {"Backspace", "take back"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", alt}, {"Esc", "twice: drop the points not laid"}};
@@ -2088,7 +2107,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints = {{"LMB", next}, {"LMB on a free end", "join and lay"}, {"Backspace", "take back"}};
 			if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
-			else if (m_lay.mouse_snap.track != nullptr && curve)
+			else if (m_lay.mouse_snap.track != nullptr && m_lay.mode == lay_mode::curve)
 				hints.push_back({"Ctrl+wheel", "radius"});
 			hints.insert(hints.end(), {{"Ctrl+Shift+wheel", "speed"}, {"Tab", tab}, {"Alt", alt}, {"Enter", "stop laying"}, {"Esc", "stop laying"}});
 		}
@@ -3114,8 +3133,16 @@ void editor_mode::draw_build_overlay() const
 		{
 			for (auto const &curve : plan.shape.curves)
 				if (curve.vertex >= 0 && curve.vertex < static_cast<int>(plan.shape.vertex_chainages.size()))
-					label_at(alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position, curve_short(curve, laying_norms()),
-					         alignment::meets_norms(curve, plan.design) ? overlay_color::marked : overlay_color::warning);
+				{
+					auto const at{alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position};
+					if (plan.traced.has_value() && curve.vertex < static_cast<int>(plan.traced->curves.size()))
+					{
+						auto const &traced{plan.traced->curves[curve.vertex]};
+						label_at(at, traced_label(traced), traced_colour(traced));
+						continue;
+					}
+					label_at(at, curve_short(curve, laying_norms()), alignment::meets_norms(curve, plan.design) ? overlay_color::marked : overlay_color::warning);
+				}
 			for (auto const &e : plan.shape.elements)
 				if (e.kind == alignment::element_kind::straight && e.length >= 20.0)
 					label_at(alignment::evaluate(plan.shape, e.chainage + e.length * 0.5).position, format(STR_C("straight %.0f m"), e.length), overlay_color::highlight);
@@ -3159,7 +3186,7 @@ void editor_mode::draw_build_overlay() const
 			i = j;
 		}
 		for (auto const &[colour, width] : {std::pair{IM_COL32(0, 0, 0, 120), 3.0f}, std::pair{IM_COL32(255, 255, 255, 160), 1.0f}})
-			for (std::size_t i = 0; i + 1 < lay.points.size(); ++i)
+			for (std::size_t i = 0; i + 1 < lay.points.size() && lay.mode != lay_mode::traced; ++i)
 				projection.line(drawlist, lay.points[i], lay.points[i + 1], colour, width);
 		// the bends of straights as squares, the points along a curve as dots in the colour of how far the line laid is from them
 		auto const departure = [&](glm::dvec3 const &Point) {
@@ -3180,6 +3207,28 @@ void editor_mode::draw_build_overlay() const
 				drawwidth(lay.points[i], overlay_color::grip);
 				continue;
 			}
+			if (i < lay.modes.size() && lay.modes[i] == lay_mode::traced)
+			{
+				auto colour{overlay_color::grip};
+				if (auto const off{departure(lay.points[i])}; off >= 0.0)
+				{
+					auto const sigma{i < lay.sigmas.size() && lay.sigmas[i] > 0.0 ? lay.sigmas[i] : 0.1};
+					colour = off <= std::max(0.1, sigma) ? IM_COL32(90, 220, 110, 255) : off <= std::max(0.3, 3.0 * sigma) ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255);
+				}
+				// the point the line couldn't be fitted to: the line stayed as it was
+				if (plan.traced.has_value())
+				{
+					auto const index{i - (lay.start.track != nullptr ? 1 : 0)};
+					if (index < plan.traced->misfit.size() && plan.traced->misfit[index] != 0)
+					{
+						colour = IM_COL32(255, 200, 60, 255);
+						drawlist->AddCircle(screen, 8.5f, colour, 16, 2.0f);
+					}
+				}
+				drawlist->AddCircleFilled(screen, 4.5f, colour);
+				drawlist->AddCircle(screen, 4.5f, IM_COL32(0, 0, 0, 170), 12, 1.5f);
+				continue;
+			}
 			if (i < lay.modes.size() && lay.modes[i] == lay_mode::curve)
 			{
 				auto const off{departure(lay.points[i])};
@@ -3190,6 +3239,17 @@ void editor_mode::draw_build_overlay() const
 			}
 			drawlist->AddRectFilled(ImVec2(screen.x - 4.5f, screen.y - 4.5f), ImVec2(screen.x + 4.5f, screen.y + 4.5f), overlay_color::grip);
 			drawlist->AddRect(ImVec2(screen.x - 4.5f, screen.y - 4.5f), ImVec2(screen.x + 4.5f, screen.y + 4.5f), IM_COL32(0, 0, 0, 170), 0.0f, 0, 1.5f);
+		}
+		// traced: the leg from the last point to the cursor, dashed, where the next click goes
+		if (lay.mode == lay_mode::traced && false == lay.points.empty() && lay.mouse_snap.track == nullptr && plan_distance(lay.points.back(), lay.mouse) > 1.0)
+		{
+			auto const &from{lay.points.back()};
+			auto const length{plan_distance(from, lay.mouse)};
+			auto const dashes{std::clamp(static_cast<int>(length / 3.0), 1, 400)};
+			for (int k = 0; k < dashes; k += 2)
+				projection.line(drawlist, glm::mix(from, lay.mouse, static_cast<double>(k) / dashes), glm::mix(from, lay.mouse, static_cast<double>(k + 1) / dashes), IM_COL32(255, 255, 255, 170), 1.5f);
+			if (ImVec2 cursor; projection.project(lay.mouse, cursor))
+				drawlist->AddCircle(cursor, 6.0f, overlay_color::grip, 16, 2.0f);
 		}
 		// the point the cursor would add along a curve
 		if (ImVec2 cursor; lay.mode == lay_mode::curve && false == lay.points.empty() && lay.mouse_snap.track == nullptr && projection.project(lay.mouse, cursor))

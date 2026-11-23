@@ -7980,7 +7980,7 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
             m_switch.one_sided = false == m_switch.one_sided;
             break;
         }
-        // laying: the bends of straights or a curve traced, for the points clicked from now on
+        // laying: the bends of straights or the line traced on the photo, for the points clicked so far and on
         if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
             lay_switch_mode();
         break;

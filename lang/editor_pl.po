@@ -11722,23 +11722,8 @@ msgstr "Prosta przed łukiem i prosta za nim się nie przecinają"
 msgid "No curve follows the points clicked along it"
 msgstr "Żaden łuk nie przechodzi przez punkty kliknięte wzdłuż niego"
 
-msgid "Curve: click points along the middle of the track, the last two on the straight after the curve. Tab: back to the straights"
-msgstr "Łuk: klikaj punkty po środku toru, dwa ostatnie na prostej za łukiem. Tab: z powrotem proste"
-
-msgid "Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo"
-msgstr "Proste: każdy kliknięty punkt to załamanie prostych, wyokrąglone dużym łukiem. Tab: łuk odrysowany z ortofotomapy"
-
-msgid "Straights   Tab"
-msgstr "Proste   Tab"
-
-msgid "Curve   Tab"
-msgstr "Łuk   Tab"
-
 msgid "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"
 msgstr "Każdy kliknięty punkt to załamanie prostych: wyokrąglone dwiema stycznymi krzywymi przejściowymi bez przechyłki, o dużym promieniu; gdzie się nie mieszczą, łukiem z krzywymi przejściowymi i przechyłką według norm, tak dużym, jak się mieści"
-
-msgid "Click points along the middle of a curve seen on the photo, the last two on the straight after it: the curve, compound or with a straight in it, is fitted to them. It comes from the straight before it, of the points clicked before or of the free end"
-msgstr "Klikaj punkty po środku łuku widocznego na ortofotomapie, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
 
 msgid "Radius of the curves at the bends"
 msgstr "Promień łuków na załamaniach"
@@ -11754,15 +11739,6 @@ msgstr "Promień, przy którym stykają się dwie krzywe przejściowe załamania
 
 msgid "The radius tried first; a bend too slight for transitions long enough at the speed takes a larger one"
 msgstr "Promień próbowany najpierw; załamanie zbyt małe na krzywe przejściowe dość długie dla prędkości dostaje większy"
-
-msgid "Two curves with a straight between them, where the points show one"
-msgstr "Dwa łuki z prostą między nimi, gdy punkty ją pokazują"
-
-msgid "The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve"
-msgstr "Punkty wzdłuż łuku mogą dać dwa łuki, w tę samą stronę albo przeciwne, z prostą między nimi, gdy trzymają się punktów dużo lepiej niż jeden łuk"
-
-msgid "Click points along the middle of the track on the photo, the last two on the straight after the curve"
-msgstr "Klikaj punkty po środku toru na ortofotomapie, dwa ostatnie na prostej za łukiem"
 
 msgid "Curves of the track laid"
 msgstr "Łuki kładzionego toru"
@@ -11785,14 +11761,8 @@ msgstr "ten łuk nie spełnia norm, zostanie położony mimo to"
 msgid "%zu points, departure %.0f cm, at most %.0f cm"
 msgstr "%zu punktów, odchyłka %.0f cm, najwięcej %.0f cm"
 
-msgid "Curve traced, Tab: the bends of straights"
-msgstr "Łuk odrysowywany, Tab: załamania prostych"
-
 msgid "back to the bends of straights"
 msgstr "z powrotem załamania prostych"
-
-msgid "trace a curve on the photo"
-msgstr "odrysuj łuk z ortofotomapy"
 
 msgid "a point along the middle of the curve, the last two on the straight after it"
 msgstr "punkt po środku łuku, dwa ostatnie na prostej za nim"
@@ -11808,9 +11778,6 @@ msgstr "Układanie toru: każdy klik to załamanie prostych, wyokrąglone dużym
 
 msgid "Tab while laying"
 msgstr "Tab przy układaniu"
-
-msgid "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"
-msgstr "Następne punkty idą po środku łuku widocznego na ortofotomapie, dwa ostatnie na prostej za nim; ponownie Tab: z powrotem załamania"
 
 msgid "Type the length of the next straight, Enter puts the point"
 msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
@@ -12104,9 +12071,6 @@ msgstr "Kliknij kilka punktów i naciśnij Enter"
 msgid "Every place where the line turns gets a curve, as big as fits. An orange label means the curve breaks the rules for the speed set in the panel"
 msgstr "Każde miejsce, w którym linia skręca, dostaje łuk, tak duży, jak się zmieści. Pomarańczowy opis znaczy, że łuk nie spełnia przepisów dla prędkości ustawionej w panelu"
 
-msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"
-msgstr "Łuk widoczny na ortofotomapie: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
-
 msgid "Lay a track that turns"
 msgstr "Ułóż tor, który skręca"
 
@@ -12292,12 +12256,6 @@ msgstr "Następne punkty idą po środku łuku widocznego na ortofotomapie, któ
 
 msgid "Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights"
 msgstr "Łuk: klikaj punkty po środku toru, łuk kończy się na ostatnim. Tab: z powrotem proste"
-
-msgid "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"
-msgstr "Klikaj punkty po środku łuku widocznego na ortofotomapie: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany i kończy się na ostatnim, w kierunku, w jakim tam biegną. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem, a gdy punkty skręcają w stronę łuku wolnego końca, także rozjazdu, ten łuk idzie dalej"
-
-msgid "Click points along the middle of the track on the photo; the curve ends at the last one"
-msgstr "Klikaj punkty po środku toru na ortofotomapie; łuk kończy się na ostatnim"
 
 msgid "a point along the middle of the curve, which ends at the last one"
 msgstr "punkt po środku łuku, który kończy się na ostatnim"
@@ -14710,9 +14668,6 @@ msgstr "Kliknij na terenie albo na wolnym końcu toru"
 msgid "Click the next bends"
 msgstr "Klikaj kolejne załamania"
 
-msgid "Click points along the curve on the photo"
-msgstr "Klikaj punkty wzdłuż łuku na ortofotomapie"
-
 msgid "Enter lays · Backspace takes back a point · Esc drops"
 msgstr "Enter układa · Backspace cofa punkt · Esc porzuca"
 
@@ -14730,9 +14685,6 @@ msgstr[2] "Ułożono %.0f m (%zu torów) · Ctrl+Z cofa"
 
 msgid "notes"
 msgstr "uwagi"
-
-msgid "Straights"
-msgstr "Proste"
 
 msgid "along the ground"
 msgstr "po terenie"
@@ -14782,29 +14734,14 @@ msgstr "łuk R %s m"
 msgid "R %s · up to %.0f km/h"
 msgstr "R %s · do %.0f km/h"
 
-msgid "Curve traced on the photo, Tab: the straights"
-msgstr "Łuk odrysowany z ortofotomapy, Tab: proste"
-
-msgid "Straights, Tab: a curve traced on the photo"
-msgstr "Proste, Tab: łuk odrysowany z ortofotomapy"
-
 msgid "the first point"
 msgstr "pierwszy punkt"
 
 msgid "from the end"
 msgstr "od końca"
 
-msgid "a curve from the photo"
-msgstr "łuk z ortofotomapy"
-
-msgid "back to the straights"
-msgstr "z powrotem proste"
-
 msgid "the next bend"
 msgstr "następne załamanie"
-
-msgid "the next point along the curve"
-msgstr "następny punkt łuku"
 
 msgid "take back"
 msgstr "cofnij"
@@ -15470,3 +15407,86 @@ msgstr "Zdjęcia lotnicze z geoportal.gov.pl, te same co pod scenerią w edytorz
 
 msgid "Zoom in for the photos"
 msgstr "Przybliż, by zobaczyć zdjęcia"
+
+# scenery editor: laying traced on the photo
+
+msgid "From the photo"
+msgstr "Po zdjęciu"
+
+msgid "Bends"
+msgstr "Załamania"
+
+msgid "From the photo   Tab"
+msgstr "Po zdjęciu   Tab"
+
+msgid "Bends   Tab"
+msgstr "Załamania   Tab"
+
+msgid "doesn't fit - Backspace takes it back"
+msgstr "nie pasuje — Backspace cofa"
+
+msgid "Click along the middle of the track on the photo: every 100-300 m on straights, closer on curves. Enter lays"
+msgstr "Klikaj po środku toru na zdjęciu — na prostych co 100–300 m, na łukach gęściej. Enter układa"
+
+msgid "Click on along the track to go on with it; Esc ends the line"
+msgstr "Klikaj dalej po torze, żeby go ciągnąć; Esc kończy linię"
+
+msgid "Click points along the middle of the track seen on the photo, on its straights and its curves: the straights and the curves, gentle, compound or the other way too, are recognised from them, with the transitions and the cant of the norms. A curve sharper than the norms allow at the speed is laid slower"
+msgstr "Klikaj punkty po środku toru widocznego na zdjęciu, na prostych i na łukach: proste i łuki, także łagodne, koszowe i w drugą stronę, edytor rozpozna sam, z krzywymi przejściowymi i przechyłką według norm. Łuk ciaśniejszy, niż normy pozwalają przy tej prędkości, zostanie ułożony z ograniczeniem prędkości"
+
+msgid "Click along the middle of the track on the photo, on the straights and the curves; Enter lays"
+msgstr "Klikaj po środku toru na zdjęciu, na prostych i na łukach; Enter układa"
+
+msgid "From the photo: click along the middle of the track. Tab: the bends"
+msgstr "Po zdjęciu: klikaj po środku toru. Tab: załamania"
+
+msgid "The bends of straights. Tab: from the photo"
+msgstr "Załamania prostych. Tab: po zdjęciu"
+
+msgid "R %s · below the least radius"
+msgstr "R %s · poniżej najmniejszego promienia"
+
+msgid "nearly straight · curve R %s"
+msgstr "prawie prosto · łuk R %s"
+
+msgid "compound curve R %s"
+msgstr "łuk koszowy R %s"
+
+msgid "curve R %s"
+msgstr "łuk R %s"
+
+msgid "No line follows the points clicked along it"
+msgstr "Żadna linia nie pasuje do klikniętych punktów"
+
+msgid "Not laid: R %.0f m is below the least radius of %.0f m the norms allow for this track at any speed"
+msgstr "Nie ułożono: R %.0f m to mniej niż najmniejszy promień %.0f m, na jaki normy pozwalają dla tego toru przy jakiejkolwiek prędkości"
+
+msgid "Curve R %s laid for %.0f km/h: sharper than the norms allow at %.0f km/h"
+msgstr "Łuk R %s ułożony na %.0f km/h: ciaśniejszy, niż normy pozwalają przy %.0f km/h"
+
+msgid "It's a side track"
+msgstr "To tor boczny"
+
+msgid "The assumptions of the project: a side track (a station track), whose least radius is smaller"
+msgstr "Założenia projektu: tor boczny (stacyjny), którego najmniejszy promień jest mniejszy"
+
+msgid "the bends"
+msgstr "załamania"
+
+msgid "from the photo"
+msgstr "po zdjęciu"
+
+msgid "a point on the track"
+msgstr "punkt na torze"
+
+msgid "goes on with the line laid"
+msgstr "ciągnie ułożoną linię"
+
+msgid "ends the line"
+msgstr "kończy linię"
+
+msgid "%s again drops the point not laid, Enter lays it"
+msgid_plural "%s again drops the %zu points not laid, Enter lays them"
+msgstr[0] "%s jeszcze raz porzuca nieułożony punkt, Enter go układa"
+msgstr[1] "%s jeszcze raz porzuca %zu nieułożone punkty, Enter je układa"
+msgstr[2] "%s jeszcze raz porzuca %zu nieułożonych punktów, Enter je układa"

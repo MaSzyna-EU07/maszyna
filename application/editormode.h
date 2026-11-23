@@ -37,6 +37,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrackTrace.hpp"
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
+#include "editor/editorTrace.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorSwitchCurve.hpp"
@@ -1887,12 +1888,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<TTrack *> line;
 	};
 	extend_tool m_extend;
-	// what a point clicked while laying is: a bend of the straights, eased with a large curve, or a point along the middle of a curve
-	// seen on the photo, the curve ending at the last of these
+	// what a point clicked while laying is: a bend of the straights, eased with a large curve, or a point along the middle of the track
+	// seen on the photo, the straights and the curves recognised from them (traced, "Po zdjęciu"); a curve traced between straights
+	// clicked as bends (curve) is the shape of before, the self-test's alone
 	enum class lay_mode
 	{
 		straights,
-		curve
+		curve,
+		traced
 	};
 	// a curve traced on the photo as it's laid, how far the points clicked along it are from it
 	struct lay_trace
@@ -1910,6 +1913,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		alignment::result shape;
 		std::vector<char> corners;
 		std::vector<lay_trace> traces;
+		// the line traced on the photo: its straights and curves as recognised, the speeds of the curves slowed down, the points which
+		// don't fit; refused where a curve is below the least radius of the kind of the track
+		std::optional<trace::result> traced;
 		// the straights of a fixed direction the next bend slides along: from a free end, out of a curve traced
 		std::vector<std::pair<glm::dvec3, glm::dvec3>> guides;
 		// where the grade breaks from point to point: the bends kept as such, at the heights clicked; a curve traced, or bends made
@@ -1922,7 +1928,22 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool active{false};
 		std::vector<glm::dvec3> points;
 		std::vector<lay_mode> modes; // of the points, as each was clicked
+		std::vector<double> sigmas; // m, the noise of each click: two pixels of the view at it
+		double sigma_given{0.0}; // m, the noise of the clicks of a self-test, where above 0
 		lay_mode mode{lay_mode::straights};
+		// the shape the user chose with Tab or in the panel; until then it follows the photo: traced where it's on, the bends where not
+		bool shape_chosen{false};
+		// the line laid goes on: the end of the one laid last is the first point, its free end held, till Esc
+		bool continuing{false};
+		// a click near the edge of the view glides the view: towards where the camera goes, from when
+		std::optional<glm::dvec2> glide;
+		double glide_time{0.0};
+		// a tool key pressed over points not laid only warns, the second press within 3 s goes
+		int leave_key{0};
+		double leave_time{-100.0};
+		// the shapes switched with Tab and the lines laid with Enter, told to the self-test
+		int tabs{0};
+		int enters{0};
 		int radii{0}; // of a curve traced: 0 as many as the points need, up to three
 		bool straights_between{true}; // a curve traced may be two with a straight between them
 		lay_line_plan plan; // of the line shown
@@ -1945,6 +1966,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			std::vector<glm::dvec3> points; // the ones clicked it was worked out for
 		};
 		std::optional<worked_out> shown;
+		std::vector<double> traced_key; // what the line traced shown was worked out for: its points, the free end reached, the edits
 		// the cursor the line is being worked out for, kept till all its fits are done: what it was worked out from
 		struct settling_cursor
 		{
@@ -1989,6 +2011,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			std::vector<TTrack *> tracks;
 			double length{0.0};
 			std::vector<laid_curve> curves;
+			std::optional<trace::result> traced; // the line traced on the photo it was laid by
 		};
 		laid_line laid;
 	};
@@ -2054,8 +2077,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_finish(editor_track::snap_target const &End);
 	void lay_cancel();
 	void lay_enter();
-	// Tab: the bends of straights or the curve traced, for the points clicked from now on
+	// Tab: the bends of straights or the line traced on the photo, for the points clicked so far and from now on
 	void lay_switch_mode();
+	// the shape the lay tool starts with: traced where the photo is on, else the bends, till the user chooses one
+	void lay_shape_default();
 	// the points the same in number as their modes, a point with none a bend of straights
 	void lay_trim();
 	// the track through the points clicked, each the way its mode says; End: the free end it finishes at, the last point then
@@ -2078,6 +2103,28 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		return [this](alignment::design const &Base, std::vector<glm::dvec2> const &Points) { return traced_stretch(Base, Points, 0, false, false); };
 	}
 	mutable std::vector<std::pair<std::vector<double>, alignment::trace_stretch>> m_stretch_cache;
+	// the line traced on the photo click after click, the points of the lay tool given to it as they come; and the one ending at a free end
+	// the cursor is over, kept for it
+	mutable trace::tracer m_tracer;
+	mutable std::optional<std::pair<glm::dvec3, trace::result>> m_tracer_ended;
+	// the tracer of the points clicked now: started anew where the free end it goes on from or the settings changed
+	trace::tracer const &tracer_now(bool const DropLast = false) const;
+	trace::settings trace_settings() const;
+	std::optional<trace::hold> trace_start() const;
+	// the line traced through the points, ending at the free end End where there's one
+	bool traced_line(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const;
+	// what a curve traced on the photo is, told by the view and the cursor: "curve R 850 m", "nearly straight · curve R 9 km", "compound
+	// curve R 600/450 m", "R 300 m · up to 70 km/h" in the colour of a warning, refused in the one of an error
+	static std::string traced_label(trace::curve const &Curve);
+	static ImU32 traced_colour(trace::curve const &Curve);
+	// laying by the points traced on the photo: the shape of the points clicked now
+	bool lay_traced() const { return m_lay.mode == lay_mode::traced; }
+	// the noise of a click at the point, from the size of a pixel of the view there
+	double click_sigma_at(glm::dvec3 const &Point) const;
+	// the view glides on to bring the last point nearer to its middle
+	void lay_glide();
+	// the least radius of the norms the tracks are laid to, for the kind of the track given
+	double least_radius(norms::track_kind const Track) const;
 	// the stretch the cursor moves along is fitted on a thread, the frames drawn meanwhile with the fit done last
 	mutable alignment::stretch_fitter m_stretch_fitter;
 	// a fit the line asked the thread for isn't done yet: the line is one of the fits meanwhile

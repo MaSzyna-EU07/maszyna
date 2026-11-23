@@ -531,6 +531,120 @@ bool expect_shown(std::string const &Kind, std::string const &What, std::istring
 	return true;
 }
 
+// expect laid <what> ...: the line the lay tool laid last, traced on the photo:
+//   curves <count>, clicks <at most> (the points it was traced through), length <m> <tolerance>,
+//   radius <curve> <R>[/<R>...] <tolerance %> (the radii of its arcs), speed <curve> <km/h> (the one it's laid for), nearly <curve> <0|1>,
+//   slowtracks <km/h> <at least> (its tracks given that speed), joined <0|1> (its first track joined to another at its start)
+void expect_laid(std::string const &What, std::istringstream &Words, std::vector<TTrack *> const &Tracks, double const Length, std::optional<trace::result> const &Traced)
+{
+	std::string which;
+	Words >> which;
+	if (false == Traced.has_value())
+	{
+		expectation(false, What, "no line traced laid", "one");
+		return;
+	}
+	auto const &line{*Traced};
+	auto const curve_at = [&](int const Index) -> trace::curve const * {
+		if (Index < 0 || Index >= static_cast<int>(line.curves.size()))
+		{
+			expectation(false, What, format("%zu curves", line.curves.size()), format("curve %d", Index));
+			return nullptr;
+		}
+		return &line.curves[Index];
+	};
+	if (which == "curves")
+	{
+		std::size_t count{0};
+		Words >> count;
+		if (malformed(What, Words))
+			return;
+		std::string got;
+		for (auto const &curve : line.curves)
+			got += (got.empty() ? "" : ", ") + trace::radii_text(curve);
+		expectation(line.curves.size() == count, What, format("%zu (%s)", line.curves.size(), got.c_str()), std::to_string(count));
+	}
+	else if (which == "clicks")
+	{
+		std::size_t most{0};
+		Words >> most;
+		if (malformed(What, Words))
+			return;
+		expectation(line.offsets.size() <= most, What, std::to_string(line.offsets.size()), format("at most %zu", most));
+	}
+	else if (which == "length")
+	{
+		double wanted{0.0};
+		double tolerance{0.0};
+		Words >> wanted >> tolerance;
+		if (malformed(What, Words))
+			return;
+		expect_near(What, Length, wanted, tolerance);
+	}
+	else if (which == "radius")
+	{
+		int index{0};
+		std::string radii;
+		double tolerance{0.0};
+		Words >> index >> radii >> tolerance;
+		if (malformed(What, Words))
+			return;
+		auto const *curve{curve_at(index)};
+		if (curve == nullptr)
+			return;
+		std::vector<double> wanted;
+		for (std::istringstream each{radii}; ; )
+		{
+			double radius{0.0};
+			if (false == static_cast<bool>(each >> radius))
+				break;
+			wanted.push_back(radius);
+			each.ignore(1);
+		}
+		auto passed{wanted.size() == curve->radii.size()};
+		for (std::size_t i = 0; passed && i < wanted.size(); ++i)
+			passed = std::abs(curve->radii[i] - wanted[i]) <= wanted[i] * tolerance / 100.0;
+		expectation(passed, What, trace::radii_text(*curve), radii + format(" +- %.1f %%", tolerance));
+	}
+	else if (which == "speed" || which == "nearly")
+	{
+		int index{0};
+		double wanted{0.0};
+		Words >> index >> wanted;
+		if (malformed(What, Words))
+			return;
+		auto const *curve{curve_at(index)};
+		if (curve == nullptr)
+			return;
+		if (which == "speed")
+			expectation(std::abs(curve->speed - wanted) < 0.5, What, format("%.0f km/h", curve->speed), format("%.0f km/h", wanted));
+		else
+			expectation(curve->nearly_straight == (wanted != 0.0), What, curve->nearly_straight ? "1" : "0", wanted != 0.0 ? "1" : "0");
+	}
+	else if (which == "joined")
+	{
+		// the first track of the line laid joined at its start to the track it goes on from
+		int wanted{0};
+		Words >> wanted;
+		if (malformed(What, Words))
+			return;
+		auto const joined{false == Tracks.empty() && (Tracks.front()->trPrev != nullptr || Tracks.front()->trNext != nullptr) && Tracks.front()->trPrev != Tracks.front()};
+		expectation(joined == (wanted != 0), What, joined ? "1" : "0", wanted != 0 ? "1" : "0");
+	}
+	else if (which == "slowtracks")
+	{
+		double speed{0.0};
+		std::size_t least{0};
+		Words >> speed >> least;
+		if (malformed(What, Words))
+			return;
+		auto const count{static_cast<std::size_t>(std::ranges::count_if(Tracks, [&](TTrack const *Track) { return false == Track->m_editorremoved && std::abs(editor_track::velocity(*Track) - speed) < 0.5; }))};
+		expectation(count >= least, What, std::to_string(count), format("at least %zu", least));
+	}
+	else
+		expectation(false, What, "no expectation laid " + which, "curves, clicks, length, radius, speed, nearly, joined or slowtracks");
+}
+
 // expect steps <count>: the steps Ctrl+Z takes back, the ones made together counted once
 void expect_steps(std::string const &What, std::istringstream &Words, std::size_t const Steps)
 {
@@ -589,6 +703,24 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_findings(what, words, m_norms.results());
 	else if (kind == "steps")
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
+	else if (kind == "laid")
+		expect_laid(what, words, m_lay.laid.tracks, m_lay.laid.length, m_lay.laid.traced);
+	else if (kind == "laykeys")
+	{
+		// the shapes switched with Tab and the lines laid with Enter since the start
+		int tabs{0};
+		int enters{0};
+		words >> tabs >> enters;
+		if (false == malformed(what, words))
+			expectation(m_lay.tabs == tabs && m_lay.enters == enters, what, format("%d Tab, %d Enter", m_lay.tabs, m_lay.enters), format("%d Tab, %d Enter", tabs, enters));
+	}
+	else if (kind == "laycontinue")
+	{
+		int wanted{0};
+		words >> wanted;
+		if (false == malformed(what, words))
+			expectation(m_lay.continuing == (wanted != 0), what, m_lay.continuing ? "1" : "0", wanted != 0 ? "1" : "0");
+	}
 	else
 	{
 		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
@@ -606,7 +738,7 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		if (false == expect_shown(kind, what, words, shown))
 			expectation(false, what, "no expectation " + kind,
 			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, "
-			            "selected, laypanel, switchpanel or steps");
+			            "selected, laypanel, switchpanel, steps, laid, laykeys or laycontinue");
 	}
 	return selftest_result::handled;
 }

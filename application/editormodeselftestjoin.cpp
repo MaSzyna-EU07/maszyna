@@ -475,14 +475,34 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 			WriteLog("SELFTEST layplan warning: " + warning);
 		for (auto const &trace : plan.traces)
 			WriteLog(format("SELFTEST layplan trace: %zu points, %zu curves, departure %.3f m, at most %.3f m", trace.points.size(), trace.curves, trace.rms, trace.worst));
+		if (plan.traced.has_value())
+			for (auto const &curve : plan.traced->curves)
+				WriteLog(format("SELFTEST layplan traced curve: %s, %.0f km/h%s%s%s", trace::radii_text(curve).c_str(), curve.speed, curve.restricted ? ", slowed down" : "", curve.nearly_straight ? ", nearly straight" : "",
+				                curve.refused ? ", refused" : ""));
 	};
+	// the shape of the points clicked from now on, set as the panel sets it, not counted as Tab: traced (on the photo), straights (the
+	// bends), curve (a curve traced between bends, the shape of before)
 	if (command == "laymode")
 	{
 		std::string which;
 		words >> which;
-		if ((which == "curve") != (m_lay.mode == lay_mode::curve))
-			lay_switch_mode();
-		WriteLog("SELFTEST laymode: " + std::string{m_lay.mode == lay_mode::curve ? "curve" : "straights"});
+		// default: as for the user who hasn't chosen, traced where the photo is on
+		m_lay.shape_chosen = which != "default";
+		m_lay.mode = which == "traced" ? lay_mode::traced : which == "curve" ? lay_mode::curve : lay_mode::straights;
+		if (false == m_lay.shape_chosen)
+			lay_shape_default();
+		lay_trim();
+		if (m_lay.mode != lay_mode::curve)
+			for (auto &mode : m_lay.modes)
+				mode = m_lay.mode;
+		WriteLog("SELFTEST laymode: " + std::string{m_lay.mode == lay_mode::traced ? "traced" : m_lay.mode == lay_mode::curve ? "curve" : "straights"});
+		return selftest_result::handled;
+	}
+	// the noise of the clicks from now on, m; 0 of the view as it is
+	if (command == "laysigma")
+	{
+		words >> m_lay.sigma_given;
+		WriteLog(format("SELFTEST laysigma: %.3f m", m_lay.sigma_given));
 		return selftest_result::handled;
 	}
 	if (command == "laytrace")
@@ -568,12 +588,12 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		                bend->curvature, chainage, position.x, position.y, heading, along.size()));
 		m_lay.active = true;
 		lay_cancel();
-		if (m_lay.mode != lay_mode::straights)
-			lay_switch_mode();
+		// traced on the photo, every point the same, no Tab
+		auto const mode{m_lay.mode};
+		m_lay.mode = lay_mode::traced;
 		if (way == "into")
 		{
 			lay_point(shifted(position + out * 60.0, side, 0));
-			lay_switch_mode();
 			lay_point(shifted(position + out * 30.0, side, 1));
 			for (auto i{along.size()}; i-- > 0;)
 				if (glm::distance(along[i], glm::dvec2{end.position.x, end.position.z}) > 3.5)
@@ -584,14 +604,13 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		else
 		{
 			lay_point(end.position);
-			lay_switch_mode();
 			for (std::size_t i = 0; i < along.size(); ++i)
 				lay_point(shifted(along[i], across[i], static_cast<int>(i)));
 			lay_point(shifted(position + out * 30.0, side, 1));
 			lay_point(shifted(position + out * 60.0, side, 2));
 			WriteLog(format("SELFTEST laywalk from: %zu points, start %s", m_lay.points.size(), m_lay.start.track != nullptr ? m_lay.start.track->name().c_str() : "-"));
 		}
-		lay_switch_mode();
+		m_lay.mode = mode;
 		return selftest_result::handled;
 	}
 	// the bends of straights from the free end nearest the point, within 60 m: the free end clicked, then each point the distance on
@@ -646,77 +665,123 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		WriteLog(format("SELFTEST %s: %zu points, history %zu, %s", command.c_str(), m_lay.points.size(), m_history.size(), m_lay.status.c_str()));
 		return selftest_result::handled;
 	}
-	// a line of known curves, turning by the deflections given (degrees, to the left positive), the points along its curves clicked as
-	// they would be on the photo: the start as a bend, then in the mode of a curve from 30 m before the first curve to the end of the
-	// last one and two on the straight after it, every Spacing metres, shifted across by up to Noise
+	// a line of known curves, as the photo would show it, the points along it clicked as on the photo, traced, no Tab: from x z heading
+	// (degrees) Lead metres to the first vertex, then for each curve its deflection (degrees, to the left positive), its radius and the metres
+	// to the next vertex or to the end; its transitions and its cant of the norms at the speed of the line, a compound curve of radii R1/R2
+	// of arcs alike, a curve with no room for them laid smaller (logged). The
+	// points every Straight metres on the straights, every Spacing metres along the curves, shifted across by up to Noise, the last one at
+	// the end of the line; left for Enter
+	//   laysample <x> <z> <heading> <lead> <straight> <spacing> <noise> <deflection> <R[/R2]> <after> [<deflection> <R> <after> ...]
 	if (command == "laysample")
 	{
-		double x{0.0}, z{0.0}, heading{0.0}, spacing{20.0}, noise{0.0}, deflection{30.0}, radius{1000.0};
-		words >> x >> z >> heading >> spacing >> noise >> deflection >> radius;
-		double apart{0.0}, second{0.0}, secondradius{0.0};
-		auto const two{static_cast<bool>(words >> apart >> second >> secondradius)};
+		double x{0.0}, z{0.0}, heading{0.0}, lead{400.0}, straight{150.0}, spacing{20.0}, noise{0.0};
+		words >> x >> z >> heading >> lead >> straight >> spacing >> noise;
+		struct sampled_curve
+		{
+			double deflection{0.0};
+			std::vector<double> radii;
+			double after{0.0};
+		};
+		std::vector<sampled_curve> curves;
+		for (std::string radii; true;)
+		{
+			sampled_curve curve;
+			if (false == static_cast<bool>(words >> curve.deflection >> radii >> curve.after))
+				break;
+			for (std::istringstream each{radii}; ;)
+			{
+				double radius{0.0};
+				if (false == static_cast<bool>(each >> radius))
+					break;
+				curve.radii.push_back(radius);
+				each.ignore(1);
+			}
+			curves.push_back(curve);
+		}
 		alignment::design truth;
 		truth.norms = laying_norms();
 		truth.shape = m_route.design.shape;
 		truth.speed = design_speed(nullptr, nullptr);
-		glm::dvec2 const start{x, z};
+		glm::dvec2 point{x, z};
 		glm::dvec2 direction{std::cos(glm::radians(heading)), std::sin(glm::radians(heading))};
-		auto const corner1{start + direction * 400.0};
-		direction = geometry::turned(direction, glm::radians(deflection));
-		auto corner2{corner1};
-		if (two)
+		truth.start = {point.x, 0.0, point.y};
+		truth.start_direction = direction;
+		auto leg{lead};
+		for (auto const &curve : curves)
 		{
-			corner2 = corner1 + direction * apart;
-			direction = geometry::turned(direction, glm::radians(second));
-		}
-		auto const end{corner2 + direction * 400.0};
-		truth.start = {start.x, 0.0, start.y};
-		truth.end = {end.x, 0.0, end.y};
-		truth.start_direction = glm::normalize(corner1 - start);
-		truth.end_direction = direction;
-		auto const curve_of = [&](double const Radius) {
+			point += direction * leg;
 			alignment::vertex vertex;
-			vertex.radius = Radius;
-			auto const recommended{alignment::recommend(std::min(truth.speed, alignment::speed_limit(Radius, truth.norms)), Radius, truth.norms)};
-			vertex.transition_in = vertex.transition_out = recommended.transition;
-			vertex.cant = recommended.cant;
-			vertex.offset = 400.0;
-			return vertex;
-		};
-		truth.vertices.push_back(curve_of(radius));
-		if (two)
-			truth.vertices.push_back(curve_of(secondradius));
+			vertex.position = point;
+			vertex.radius = curve.radii.front();
+			auto sharpest{vertex.radius};
+			if (curve.radii.size() > 1)
+			{
+				vertex.compound = true;
+				vertex.share = 1.0;
+				for (std::size_t i = 1; i < curve.radii.size(); ++i)
+					vertex.arcs.push_back({curve.radii[i], 0.0, 1.0});
+				for (auto const radius : curve.radii)
+					sharpest = std::min(sharpest, radius);
+			}
+			auto const allowed{std::min(truth.speed, alignment::speed_limit(sharpest, truth.norms))};
+			auto const cant{alignment::recommend(allowed, sharpest, truth.norms).cant};
+			vertex.cant = cant;
+			vertex.transition_in = alignment::transition_length(allowed, curve.radii.front(), cant * sharpest / curve.radii.front(), truth.norms);
+			vertex.transition_out = alignment::transition_length(allowed, curve.radii.back(), cant * sharpest / curve.radii.back(), truth.norms);
+			if (vertex.compound)
+				alignment::recommend_between(vertex, allowed, truth.norms);
+			truth.vertices.push_back(vertex);
+			direction = geometry::turned(direction, glm::radians(curve.deflection));
+			leg = curve.after;
+		}
+		point += direction * leg;
+		truth.end = {point.x, 0.0, point.y};
+		truth.end_direction = direction;
+		if (truth.vertices.size() >= 2)
+		{
+			truth.vertices.front().offset = lead;
+			truth.vertices.back().offset = leg;
+		}
 		auto const result{alignment::compute(truth)};
 		for (auto const &curve : result.curves)
-			WriteLog(format("SELFTEST laysample truth %d: R %.1f, L %.1f/%.1f, cant %.0f, deflection %.3f deg, valid %d", curve.vertex, curve.radius, curve.transition_in, curve.transition_out, curve.cant, glm::degrees(curve.deflection), result.valid ? 1 : 0));
+		{
+			auto radii{format("%.1f", curve.radius)};
+			if (curve.radii.size() > 1)
+			{
+				radii.clear();
+				for (auto const radius : curve.radii)
+					radii += (radii.empty() ? "" : "/") + format("%.1f", radius);
+			}
+			WriteLog(format("SELFTEST laysample truth %d: R %s, L %.1f/%.1f, cant %.0f, deflection %.3f deg, valid %d", curve.vertex, radii.c_str(), curve.transition_in, curve.transition_out, curve.cant, glm::degrees(curve.deflection), result.valid ? 1 : 0));
+		}
+		for (auto const &warning : result.radius_warnings)
+			WriteLog("SELFTEST laysample truth: " + warning);
 		if (false == result.valid)
 			return selftest_result::handled;
-		auto from{result.length};
-		auto to{0.0};
-		for (auto const &e : result.elements)
-			if (e.kind != alignment::element_kind::straight)
-			{
-				from = std::min(from, e.chainage);
-				to = std::max(to, e.chainage + e.length);
-			}
+		auto const curved = [&](double const Chainage) {
+			for (auto const &e : result.elements)
+				if (e.kind != alignment::element_kind::straight && Chainage >= e.chainage - 1e-6 && Chainage <= e.chainage + e.length + 1e-6)
+					return true;
+			return false;
+		};
 		m_lay.active = true;
 		lay_cancel();
-		if (m_lay.mode != lay_mode::straights)
-			lay_switch_mode();
+		auto const mode{m_lay.mode};
+		m_lay.mode = lay_mode::traced;
 		auto const along = [&](double const Chainage, double const Shift) {
 			auto const station{alignment::evaluate(result, Chainage)};
 			glm::dvec3 const across{-station.direction.z, 0.0, station.direction.x};
 			return station.position + glm::normalize(across) * Shift;
 		};
-		lay_point(truth.start);
-		lay_switch_mode();
-		auto const first{std::max(0.0, from - 30.0)};
-		for (int count = 0; first + count * spacing <= to; ++count)
-			lay_point(along(first + count * spacing, noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
-		lay_point(along(to + 30.0, noise * 0.5));
-		lay_point(along(to + 60.0, -noise * 0.5));
-		lay_switch_mode();
-		WriteLog(format("SELFTEST laysample: %zu points clicked over %.1f m of curves", m_lay.points.size(), to - from));
+		int count{0};
+		for (double s{0.0}; s < result.length - 1.0; ++count)
+		{
+			lay_point(along(s, noise * (count % 3 == 0 ? 1.0 : count % 3 == 1 ? -0.6 : 0.2)));
+			s += curved(s) || curved(s + 0.5 * straight) ? spacing : straight;
+		}
+		lay_point(along(result.length, noise * 0.5));
+		m_lay.mode = mode;
+		WriteLog(format("SELFTEST laysample: %zu points clicked along %.1f m", m_lay.points.size(), result.length));
 		lay_report("sample");
 		return selftest_result::handled;
 	}

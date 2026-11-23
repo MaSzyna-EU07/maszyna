@@ -140,19 +140,24 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   laymonkey <seed> <count> [case]      random lines laid to and from the free ends of the scenery, as the preview shows them: gaps and
 //                                        angles at the joints, loops, the turning wasted and the sharpest curve logged; case: that one alone
 //   layspeed <km/h> <own 0|1>            the speed set for the laying, and whether it goes also on from a track with its own
-//   laymode <straights|curve>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them
+//   laymode <traced|straights|curve|default>, laytrace <radii 0..3> <straights between 0|1>   as the panel of the laying sets them, not counted as
+//                                        Tab; curve: a curve traced between bends, the shape of before, reached by the self-test alone; default:
+//                                        as the user who hasn't chosen, traced where the photo is on
+//   laysigma <m>                         the noise of the clicks from now on; 0: two pixels of the view at each
 //   endcurves                            logs every free end of the rails: where, the way out and the curvature its track goes on with
 //   curvejoint <x> <z>                   logs the paths meeting at the end nearest the point, the curvature of each and its jump from the ones before to the ones after
 //   cantcheck <label>                    logs each jump of the cant at a joint of plain tracks, and the steepest ramp of the cant on a path
 //   fitcheck <label>                     logs the steps and grade breaks at the joints, the switches off their plane, the rails against the ground
 //   laywalk <from|into> <x> <z> <spacing> <noise> <k0> <k1> <L>...   a line of known curves on from the free end nearest the point,
-//                                        the points along it clicked in the mode of a curve, from the end or towards it (see the command)
+//                                        the points along it clicked traced on the photo, from the end or towards it (see the command)
 //   laybends <x> <z> <distance> <degrees> ... <distance>   the bends of straights clicked from the free end nearest the point
 //   layp <x> <z>...                      the points clicked in the mode set, on the ground, a free end within 3 m reached
 //   layreport <label>                    logs the line the points clicked make, as Enter would lay it: its bends and curves, warnings, traces
 //   layenter, layback, laycancel         as Enter, Backspace and Esc while laying
-//   laysample <x> <z> <heading> <spacing> <noise> <deflection> <R> [<from the first vertex to the second, m> <deflection> <R>]
-//                                        a line of known curves, the points along them clicked as a curve traced, the line they make logged
+//   laysample <x> <z> <heading> <lead> <straight> <spacing> <noise> <deflection> <R[/R2]> <after> [<deflection> <R> <after>]...
+//                                        a line of known curves of the norms, lead and after the metres from vertex to vertex, the points
+//                                        along it clicked traced on the photo every straight
+//                                        metres on its straights and every spacing metres along its curves, the line they make logged
 //   laychain <layout> <R> <x> <z> | b | u | r | e | t | p...   the points clicked, Backspace, undo, redo, Enter, Tab, the line logged
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged, every issue with free ends without points
 //   normsreport <file> [scope 0|1] [plk|tsi|en|ch] [km/h]   the tracks checked against the norms of the profile, the line through the
@@ -291,6 +296,9 @@ void editor_mode::selftest_step()
 			if (false == line.empty() && line.front() != '#')
 				test.lines.push_back(line);
 		WriteLog("SELFTEST: " + std::to_string(test.lines.size()) + " steps from " + file);
+		// the lay tool lays the bends whatever the orthophoto of the settings of the player: a case traces the photo by laymode traced
+		m_lay.shape_chosen = true;
+		m_lay.mode = lay_mode::straights;
 	}
 	++editor_selftest::frames();
 	// how long each frame took, for the longest one perf tells
