@@ -9,10 +9,12 @@
 #include "editor/editorAlignment.hpp"
 #include "editor/editorRecords.hpp"
 #include "editor/project/projectMigration.hpp"
+#include "layout_fixture.h"
 
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <string>
 
 namespace {
@@ -243,5 +245,71 @@ TEST_CASE("project migration: a map opened for the first time gets its project o
 	REQUIRE(again.project.project.has_value());
 	CHECK_FALSE(again.migrated);
 	CHECK(project::same(*again.project.project, project));
+	round_trip(project);
+}
+
+TEST_CASE("project migration: the //$r switches on the lines made of the alignments become turnouts, the rest kept as written with why") {
+	// the first alignment of data/records: a straight north for 570 m, then a curve to the east; switches on its straight both ways, one
+	// beside it, one of no type of the catalogue and a connection
+	auto alignment{file_text(std::string{EU07_UNIT_TESTS_DATA} + "/records/alignment.scn")};
+	// up to the end of its record, not to its ends
+	auto const end{alignment.find("//$h end\r\n") != std::string::npos ? alignment.find("//$h end\r\n") : alignment.find("//$h end\n")};
+	REQUIRE(end != std::string::npos);
+	alignment = alignment.substr(0, end + 8) + "\n";
+	std::vector<std::string> const switches{
+	    "switch z1 Rz 60E1 500.000 12.000 L 20.797 20.797 0.000 parts 1 z1 start 0.0000 0.0000 200.0000 dir 0.000000000 1.000000000 km - number - source designed",
+	    "switch z2 Rz 60E1 190.000 9.000 R 10.523 16.615 0.000 parts 1 z2 start 0.0000 0.0000 450.0000 dir 0.000000000 -1.000000000 km - number - source designed",
+	    "switch z3 Rz 60E1 500.000 12.000 L 20.797 20.797 0.000 parts 1 z3 start 50.0000 0.0000 300.0000 dir 0.000000000 1.000000000 km - number - source designed",
+	    "switch z4 Rz 60E1 777.000 13.000 L 1.000 1.000 0.000 parts 1 z4 start 0.0000 0.0000 100.0000 dir 0.000000000 1.000000000 km - number - source designed",
+	    "connection c1 Rz 60E1 500.000 12.000 R 20.797 20.797 0.000 parts 2 c3 c4 start 0.0000 0.0000 350.0000 dir 0.000000000 1.000000000 km - number - source designed",
+	};
+	std::string text{alignment + "//$r # switches placed in the track editor, the simulation skips these lines\n"};
+	for (auto const &line : switches) {
+		text += "//$r " + line + "\n";
+	}
+	auto const migrated{project::migrate({{"switches.scn", {}, project::marked_lines(text)}})};
+	CAPTURE(notes_of(migrated.notes));
+	auto const &project{migrated.project};
+	auto const &network{project.network};
+	REQUIRE(network.turnouts().size() == 2);
+	// the old design breaks the norms in its curve, which the turnouts may not add to (edit_policy::no_new_block)
+	test::layout_fixture::check_structure(network);
+	CHECK(layout::check_all(network).reasons.empty());
+	// the two on the straight: their types, hands and ways along the line, their starts where the records put them
+	std::map<std::string, layout::turnout const *> by_type;
+	for (auto const &[id, turnout] : network.turnouts()) {
+		by_type[turnout.type] = &turnout;
+	}
+	REQUIRE(by_type.contains("Rz 60E1-500-1:12"));
+	REQUIRE(by_type.contains("Rz 60E1-190-1:9"));
+	auto const &first{*by_type.at("Rz 60E1-500-1:12")};
+	auto const &second{*by_type.at("Rz 60E1-190-1:9")};
+	CHECK(first.hand == 1);
+	CHECK(first.direction == 1);
+	CHECK(second.hand == -1);
+	CHECK(second.direction == -1);
+	CHECK(glm::distance(geometry::plan_of(network.find(first.start)->position), glm::dvec2{0.0, 200.0}) < 1e-9);
+	CHECK(glm::distance(geometry::plan_of(network.find(second.start)->position), glm::dvec2{0.0, 450.0}) < 1e-9);
+	// each a record of its own with its main track; the rest of the block kept as written, why with it
+	std::vector<project::legacy_record const *> records;
+	for (auto const &record : project.legacy) {
+		if (record.mark == 'r') {
+			records.push_back(&record);
+		}
+	}
+	REQUIRE(records.size() == 3);
+	auto const &kept{*records[0]};
+	CHECK(kept.line == line_id::none);
+	CHECK(kept.lines == std::vector<std::string>{"# switches placed in the track editor, the simulation skips these lines", switches[2], switches[3], switches[4]});
+	CAPTURE(kept.why);
+	CHECK(kept.why.find("z3: Rz 60E1-500-1:12: its start lies on no line of the domain") != std::string::npos);
+	CHECK(kept.why.find("z4: no Rz of the catalogue") != std::string::npos);
+	CHECK(kept.why.find("c1: a connection of switches") != std::string::npos);
+	CHECK(records[1]->lines == std::vector<std::string>{switches[0]});
+	CHECK(records[1]->line == first.main);
+	CHECK(records[2]->lines == std::vector<std::string>{switches[1]});
+	CHECK(records[2]->line == second.main);
+	// all of the lines of the block in the project, written and read back the same
+	CHECK(editor_records::read_switches(kept.lines, {}, 0).size() == 3);
 	round_trip(project);
 }

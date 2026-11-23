@@ -28,8 +28,13 @@ http://mozilla.org/MPL/2.0/.
 //         kept as it was, with the line it became: the points clicked, the old norms, the pieces, the fit have no place in the domain.
 //   //$p  a grade line designed along such a line: its breaks with their vertical curves as the breaks of the line, the heights of its
 //         ends as those of the nodes. Not one with a break with no vertical curve, or along no line of an alignment. Kept as it was too.
-//   //$r  switches (E5), //$k the kilometrage of the railway lines, //$t the tracks fitted, //$w the tracks sharing a grade line, //$b
-//         the objects bound to the tracks (E6), //$s the stations (E7): no place in the domain yet, kept as they were.
+//   //$r  a switch, a double switch of the editor on a line made of an alignment, of a type of the catalogue (its type, rail, radius, ratio,
+//         a and b), along the line or against it, bent as its record says the line is: a turnout laid into the line, as the command lays
+//         it, the norms not refusing what the old line breaks already; its record kept on its own with the main track of the turnout.
+//         Not a slip nor a crossing (their records don't tell the side of the crossing track), a connection (the solver of the
+//         connections lays it anew), a lifted one, one of no type of the catalogue or on no line: kept in the block of the file, why with it.
+//   //$k  the kilometrage of the railway lines, //$t the tracks fitted, //$w the tracks sharing a grade line, //$b the objects bound to
+//         the tracks (E6), //$s the stations (E7): no place in the domain yet, kept as they were.
 //   //$c, //$o, //$z  the camera, the orthophoto and the area of the downloads: what the editor keeps of itself in the scenery, not the
 //         track geometry; not taken.
 namespace project

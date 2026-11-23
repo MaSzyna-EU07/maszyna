@@ -12,6 +12,9 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignment.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorRecords.hpp"
+#include "editor/editorSwitchDesign.hpp"
+#include "editor/layout/layoutCommands.hpp"
+#include "editor/layout/layoutTurnout.hpp"
 #include "editor/project/sceneryText.hpp"
 
 #include <algorithm>
@@ -19,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
 
 namespace project
@@ -120,6 +124,174 @@ struct profile_candidate
 	std::optional<editor_records::grade_profile> entry;
 	std::string why;
 };
+
+// the //$r lines of a file, the switches of the editor: kept as one record till they become turnouts
+struct switch_block
+{
+	std::size_t legacy{0};
+	std::string file;
+	scene::layer_context context;
+	std::vector<std::string> lines;
+};
+
+double constexpr kOnLine{0.01}; // m: the start of a switch lies on a line within this
+double constexpr kAlong{1e-3}; // of the sine: its direction runs along the line within this
+
+// the type of the catalogue the switch of the editor is of: its kind, type, rail, radius, ratio and a (and b of an ordinary one) as its record
+// gives them, the first of them in the order of the catalogue; empty where none is
+std::string catalogue_type(switch_store::record const &Record)
+{
+	for (auto const &entry : switch_design::catalogue_entries())
+	{
+		if (entry.type != Record.type || entry.rail != Record.rail || std::abs(entry.ratio - Record.ratio) > 0.01 || std::abs(entry.a - Record.a) > 0.002)
+			continue;
+		if (entry.type != "Skrz" && std::abs(entry.radius - Record.radius) > 0.5)
+			continue;
+		if ((entry.type == "Rz" || entry.type == "Rls") && std::abs(entry.b - Record.b) > 0.002)
+			continue;
+		return entry.name;
+	}
+	return {};
+}
+
+// the line of its own the switch starts on, along it or against it: its chainage there
+struct switch_place
+{
+	layout::line_id line{layout::line_id::none};
+	double chainage{0.0};
+	int direction{1};
+};
+
+std::optional<switch_place> place_of(layout::network const &Network, switch_store::record const &Record)
+{
+	glm::dvec2 const start{Record.start.x, Record.start.z};
+	for (auto const &[id, line] : Network.lines())
+	{
+		if (line.turnout != layout::turnout_id::none || false == line.solved.valid())
+			continue;
+		auto const &solved{line.solved};
+		auto s{0.0};
+		auto nearest{std::numeric_limits<double>::max()};
+		auto const count{std::max(2, static_cast<int>(std::ceil(solved.length / 2.0)))};
+		for (int i = 0; i <= count; ++i)
+			if (auto const d{glm::distance(solved.position(solved.length * i / count), start)}; d < nearest)
+			{
+				nearest = d;
+				s = solved.length * i / count;
+			}
+		for (int i = 0; i < 20; ++i)
+			s = std::clamp(s + glm::dot(start - solved.position(s), glm::normalize(solved.tangent(s))), 0.0, solved.length);
+		auto const tangent{glm::normalize(solved.tangent(s))};
+		if (glm::distance(solved.position(s), start) > kOnLine || std::abs(geometry::cross(tangent, Record.direction)) > kAlong)
+			continue;
+		return switch_place{id, s, glm::dot(tangent, Record.direction) > 0.0 ? 1 : -1};
+	}
+	return std::nullopt;
+}
+
+// the switch of the editor made a turnout of the domain where it can be: of a type of the catalogue, on a line of the domain, bent as that
+// line is; the main track of the turnout, or none and why not
+layout::line_id switch_turnout(layout::network &Network, switch_store::record const &Record, std::string &Why)
+{
+	if (Record.kind == "connection")
+	{
+		Why = "a connection of switches, which the solver of the connections lays anew";
+		return layout::line_id::none;
+	}
+	if (Record.lifted())
+	{
+		Why = "its outer track lifted, which the domain has no place for";
+		return layout::line_id::none;
+	}
+	auto const type{catalogue_type(Record)};
+	if (type.empty())
+	{
+		Why = std::format("no {} of the catalogue of {} R {:.0f} 1:{:.3f} a {:.3f} b {:.3f}", Record.type, Record.rail, Record.radius, Record.ratio, Record.a, Record.b);
+		return layout::line_id::none;
+	}
+	if (Record.hand != 'L' && Record.hand != 'R')
+	{
+		Why = std::format("{}: the side it leaves to isn't in its record", type);
+		return layout::line_id::none;
+	}
+	auto const place{place_of(Network, Record)};
+	if (false == place.has_value())
+	{
+		Why = std::format("{}: its start lies on no line of the domain, along it", type);
+		return layout::line_id::none;
+	}
+	// bent as its record says, the line under it bent so
+	auto const *line{Network.find(place->line)};
+	auto const length{layout::turnout_type_of(type)->length};
+	auto const curvature{std::abs(line->solved.curvature(std::clamp(place->chainage + place->direction * 0.5 * length, 0.0, line->solved.length)))};
+	if ((Record.main_radius == 0.0) != (curvature < 1e-6) || (Record.main_radius != 0.0 && std::abs(1.0 / curvature - std::abs(Record.main_radius)) > 0.05 * std::abs(Record.main_radius)))
+	{
+		Why = std::format("{}: bent to R {:.0f} m as written, where its line runs at R {:.0f} m", type, Record.main_radius, curvature > 1e-9 ? 1.0 / curvature : 0.0);
+		return layout::line_id::none;
+	}
+	layout::model model{Network};
+	auto const made{model.execute(layout::insert_turnout{place->line, place->chainage, type, Record.hand == 'L' ? 1 : -1, place->direction}, layout::edit_policy::no_new_block)};
+	if (false == made.done)
+	{
+		Why = type + ":";
+		for (auto const &reason : made.reasons)
+			Why += " " + reason + ";";
+		return layout::line_id::none;
+	}
+	Network = model.state();
+	return Network.find(made.turnouts.front())->main;
+}
+
+// the switches of the blocks of //$r lines made turnouts: each one which became one a record of its own with its main track, the rest kept
+// as it was in the block, why not with it
+void migrate_switches(document &Project, std::vector<switch_block> const &Blocks, std::vector<std::string> &Notes)
+{
+	// from the last block on, the records of one put in place of it
+	for (auto block{Blocks.rbegin()}; block != Blocks.rend(); ++block)
+	{
+		std::vector<std::string> kept;
+		std::vector<std::string> whys;
+		std::vector<legacy_record> made;
+		for (auto const &text : block->lines)
+		{
+			auto const records{editor_records::read_switches({text}, block->context, null_handle)};
+			if (records.empty())
+			{
+				kept.push_back(text);
+				continue;
+			}
+			std::string why;
+			auto const main{switch_turnout(Project.network, records.front(), why)};
+			if (main == layout::line_id::none)
+			{
+				kept.push_back(text);
+				whys.push_back(std::format("{}: {}", records.front().name, why));
+				continue;
+			}
+			made.push_back({'r', block->file, main, {}, {text}});
+			Notes.push_back(std::format("{}: switch {} became turnout {}", block->file, records.front().name, layout::number(Project.network.find(main)->turnout)));
+		}
+		auto &legacy{Project.legacy};
+		auto const at{legacy.begin() + static_cast<std::ptrdiff_t>(block->legacy)};
+		auto const switches_left{std::ranges::any_of(kept, [&](std::string const &Text) { return false == editor_records::read_switches({Text}, block->context, null_handle).empty(); })};
+		if (made.empty() || switches_left)
+		{
+			at->lines = kept;
+			for (auto const &why : whys)
+				at->why += (at->why.empty() ? "" : "; ") + why;
+			if (false == whys.empty())
+				Notes.push_back(std::format("{}: switches kept as they were: {}", block->file, at->why));
+			legacy.insert(at + 1, made.begin(), made.end());
+		}
+		else
+		{
+			// nothing but the comments left of the block: they go with the first switch which became a turnout
+			made.front().lines.insert(made.front().lines.begin(), kept.begin(), kept.end());
+			*at = made.front();
+			legacy.insert(at + 1, made.begin() + 1, made.end());
+		}
+	}
+}
 
 // what in the design the domain hasn't a place for, or lays otherwise; empty if nothing
 std::string unfit(alignment_candidate const &Candidate)
@@ -329,6 +501,7 @@ migration migrate(std::vector<marked_file> const &Files, norms::area_map const &
 	project.network.areas = Areas;
 	std::vector<alignment_candidate> alignments;
 	std::vector<profile_candidate> profiles;
+	std::vector<switch_block> switches;
 
 	// the records kept as they were, each kind of each file; the alignments and the grade lines one by one
 	for (auto const &file : Files)
@@ -367,7 +540,11 @@ migration migrate(std::vector<marked_file> const &Files, norms::area_map const &
 					profiles.push_back(std::move(candidate));
 				}
 			else
+			{
+				if (mark == 'r')
+					switches.push_back({project.legacy.size(), file.file, file.context, lines});
 				project.legacy.push_back({mark, file.file, layout::line_id::none, {}, lines});
+			}
 		}
 		for (auto const &[mark, lines] : file.lines)
 		{
@@ -474,6 +651,8 @@ migration migrate(std::vector<marked_file> const &Files, norms::area_map const &
 			project.legacy[profile.legacy].why = profile.why;
 			result.notes.push_back(std::format("{}: a grade line kept as it was: {}", project.legacy[profile.legacy].file, profile.why));
 		}
+	// the switches on the lines made of the alignments become their turnouts (E5)
+	migrate_switches(project, switches, result.notes);
 	return result;
 }
 
