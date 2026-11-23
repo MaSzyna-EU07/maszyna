@@ -223,6 +223,8 @@ set(SOURCES
 "editor/layout/layoutTurnout.cpp"
 "editor/layout/layoutGenerator.cpp"
 "editor/project/projectFile.cpp"
+"editor/project/projectGenerated.cpp"
+"editor/project/sceneryText.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
