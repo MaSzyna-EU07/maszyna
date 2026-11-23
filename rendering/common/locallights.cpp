@@ -269,7 +269,7 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 	m_gathertime = (m_gathertime == 0.0 ? elapsed : m_gathertime * 0.95 + elapsed * 0.05);
 }
 
-// the flashlight of the player (Global.flashlight): a cone of warm white light where the camera looks, from a little under it as
+// the flashlight of the player (Global.flashlight): a cone of neutral white light where the camera looks, from a little under it as
 // from a hand, by day as well. it casts no shadows (it has no shadow map of its own)
 void gfx::local_lights::add_flashlight()
 {
@@ -282,9 +282,9 @@ void gfx::local_lights::add_flashlight()
 	light flashlight;
 	flashlight.position = camera.Pos - up * 0.15;
 	flashlight.direction = glm::vec3{forward};
-	flashlight.color = to_linear(glm::vec3{1.f, 0.93f, 0.82f}) * 4.f;
-	flashlight.cos_outer = std::cos(glm::radians(24.f));
-	flashlight.cos_inner = std::cos(glm::radians(12.f));
+	flashlight.color = to_linear(glm::vec3{1.f, 0.98f, 0.95f}) * 4.f;
+	flashlight.cos_outer = std::cos(glm::radians(16.f));
+	flashlight.cos_inner = std::cos(glm::radians(8.f));
 	flashlight.range = light_range(flashlight.color);
 	flashlight.radius = 0.02f;
 	flashlight.cast_shadows = false;
