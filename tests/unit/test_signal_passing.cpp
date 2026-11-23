@@ -36,7 +36,7 @@ struct table_point {
 
 	// the head moves Metres on in steps of a metre
 	void run(double const Metres) {
-		for (auto moved{0.0}; moved < Metres; moved += 1.0) {
+		for (int moved{0}; moved < Metres; ++moved) {
 			move(1.0);
 		}
 	}
