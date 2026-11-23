@@ -1952,7 +1952,7 @@ void editor_mode::render_profile_body()
 		if (stored >= 0)
 		{
 			ImGui::TextDisabled(STR_C("Design kept in %s%s"), scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? STR_C(", changes go there on save") : "");
-			ImGui::SameLine();
+			same_line_if_fits(STR_C("Forget the design"));
 			if (ImGui::SmallButton(STR_C("Forget the design")))
 				profile_forget();
 		}
@@ -2994,7 +2994,7 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		auto const x{View.x_of(middle)};
 		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < 70.0f)
 			continue;
-		auto const text{format("%+.2f o/oo   L %.0f m", profile::grade_after(line, i) * 1000.0, points[i + 1].chainage - points[i].chainage)};
+		auto const text{format("%+.2f %s   L %.0f m", profile::grade_after(line, i) * 1000.0, STR_C("per mille"), points[i + 1].chainage - points[i].chainage)};
 		auto const size{ImGui::CalcTextSize(text.c_str())};
 		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < size.x + 30.0f)
 			continue;
@@ -3152,7 +3152,7 @@ void editor_mode::draw_profile_overlay() const
 		if (to - from < 5.0)
 			continue;
 		auto const grade{(points[k + 1].elevation - points[k].elevation) / std::max(1e-6, points[k + 1].chainage - points[k].chainage) * 1000.0};
-		label(on_line((from + to) * 0.5), format("%+.2f o/oo  L %.0f m", grade, points[k + 1].chainage - points[k].chainage), kGradeLine);
+		label(on_line((from + to) * 0.5), format("%+.2f %s  L %.0f m", grade, STR_C("per mille"), points[k + 1].chainage - points[k].chainage), kGradeLine);
 	}
 	// the vertical curves: their range along the track, the ends marked, the radius at the point
 	for (auto const &curve : curves)

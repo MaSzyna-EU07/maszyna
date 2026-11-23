@@ -373,7 +373,7 @@ void editor_mode::render_route_stored()
 		route.status = STR_C("The kept design is loaded, applying it lays the paths by it again");
 	}
 	item_tooltip("Loads the design kept in the scenery in place of the one read from the paths; nothing changes until it's applied");
-	ImGui::SameLine();
+	same_line_if_fits(STR_C("Forget the kept design"));
 	if (ImGui::SmallButton(STR_C("Forget the kept design")))
 	{
 		alignment_store::forget(route.departed);
@@ -1468,7 +1468,7 @@ void editor_mode::render_route_trace()
 		route_trace_end(true);
 	if (ImGui::Button(STR_C("Drop   Esc")))
 		route_trace_end(false);
-	ImGui::SameLine();
+	same_line_if_fits(STR_C("Take out the last point   Backspace"));
 	ImGui::BeginDisabled(trace.points.empty());
 	if (ImGui::Button(STR_C("Take out the last point   Backspace")))
 	{
@@ -1639,7 +1639,8 @@ void editor_mode::render_route_ui()
 	ImGui::TextDisabled(STR_P("%zu path, %.2f m", "%zu paths, %.2f m", route.chain.tracks.size()), route.chain.tracks.size(), route.chain.length);
 	auto const reset{STR_C("Reset design")};
 	auto const reset_width{ImGui::CalcTextSize(reset).x + ImGui::GetStyle().FramePadding.x * 2.0f};
-	ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - reset_width));
+	same_line_if_fits(reset_width);
+	ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - reset_width));
 	if (ImGui::Button(reset))
 	{
 		auto *track{route.chain.tracks[route.chain.tracks.size() / 2]};
@@ -1670,7 +1671,7 @@ void editor_mode::render_route_ui()
 			return;
 		}
 		item_tooltip("Every line of the scenery not digitized yet is kept in it with its straights, arcs and transition curves, the way the drawn tracks are kept; the paths stay as they are");
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Digitize the scenery"));
 		if (ImGui::Button(STR_C("Digitize the scenery")))
 		{
 			digitize_scenery(true);
@@ -2050,7 +2051,7 @@ bool editor_mode::render_route_vertices()
 	{
 		ImGui::Checkbox(STR_C("Keep to the points clicked"), &m_route.hold);
 		item_tooltip("The scenery keeps the points clicked when the line was laid: a curve whose transitions or cants are changed gets its radii fitted to them again, so it stays where it was seen on the photo");
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Fit all to them"));
 		if (ImGui::SmallButton(STR_C("Fit all to them")))
 		{
 			for (int i = 0; i < count; ++i)
@@ -2132,7 +2133,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			mark(part::whole, 0);
 			if (clicked >= 3)
 			{
-				ImGui::SameLine();
+				same_line_if_fits(STR_C("Fit to them"));
 				if (ImGui::SmallButton(STR_C("Fit to them")))
 					changed |= route_hold_clicks(Index);
 				item_tooltip("The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are");
@@ -2294,7 +2295,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		}
 		if (false == vertex.spirals)
 		{
-			ImGui::SameLine();
+			same_line_if_fits(STR_C("Transitions for these cants"));
 			if (ImGui::SmallButton(STR_C("Transitions for these cants")))
 				reshape([&] { alignment::norm_transitions(vertex, design.speed, design.norms); });
 			item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");

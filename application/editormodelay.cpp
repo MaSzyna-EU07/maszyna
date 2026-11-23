@@ -2348,7 +2348,6 @@ void editor_mode::render_lay_ui()
 	               {1, STR_C("Curve   Tab"), "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"}}) &&
 	    (mode == 1) != (tool.mode == lay_mode::curve))
 		lay_switch_mode();
-	ImGui::PushItemWidth(120.0f);
 	if (tool.mode == lay_mode::straights)
 	{
 		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
@@ -2365,7 +2364,6 @@ void editor_mode::render_lay_ui()
 	}
 	else
 	{
-		ImGui::PopItemWidth();
 		segmented("layradii", tool.radii,
 		          {{0, STR_C("Auto"), "As few radii as follow the points, up to three"}, {1, STR_C("1 R"), "One radius"}, {2, STR_C("2 R"), "A compound curve of two radii"}, {3, STR_C("3 R"), "A compound curve of three radii"}});
 		ImGui::Checkbox(STR_C("Two curves with a straight between them, where the points show one"), &tool.straights_between);
@@ -2384,13 +2382,17 @@ void editor_mode::render_lay_ui()
 			ImGui::TextDisabled("%s", STR_C("Click points along the middle of the track on the photo; the curve ends at the last one"));
 			ImGui::PopTextWrapPos();
 		}
-		ImGui::PushItemWidth(120.0f);
 	}
-	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+	// the name on the left of the field, as in the inspector, the values to pick with a click under it
+	if (begin_fields("##layspeed"))
+	{
+		field_row("Speed (km/h)");
+		ImGui::DragScalar("##velocity", ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+		ImGui::EndTable();
+	}
 	value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	ImGui::PopItemWidth();
 	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
 	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
@@ -2441,17 +2443,23 @@ void editor_mode::render_lay_ui()
 		return;
 	}
 	ImGui::TextDisabled("%s", STR_C("Dragged from a free end, or laid from a point to one"));
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+	if (begin_fields("##layradius"))
+	{
+		field_row("Curve radius (m)");
+		ImGui::DragScalar("##radius", ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+		ImGui::EndTable();
+	}
 	value_chips("radii", tool.radius, {190.0, 300.0, 500.0, 800.0, 1200.0, 2000.0}, "%.0f");
 	tool.radius = std::max(10.0, tool.radius);
-	ImGui::PopItemWidth();
 	ImGui::Spacing();
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+	if (begin_fields("##laypiece"))
+	{
+		field_row("Longest path (m)");
+		ImGui::DragScalar("##piece", ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+		ImGui::EndTable();
+	}
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
-	ImGui::PopItemWidth();
 	ImGui::TextDisabled("%s", STR_C("Look of the new track"));
 	int source{tool.copy_selected ? 1 : 0};
 	if (segmented("laylook", source,

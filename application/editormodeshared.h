@@ -58,6 +58,20 @@ inline void item_tooltip(char const *Text)
 		ImGui::SetTooltip("%s", STR_C(Text));
 }
 
+// the next item on the line of the one before it when it fits in what's left of the line, at the start of the next line
+// otherwise, where SameLine would put it past the edge of the panel and cut it off; Width is the width of the next item
+inline void same_line_if_fits(float const Width)
+{
+	ImGui::SameLine();
+	if (ImGui::GetContentRegionAvail().x < Width)
+		ImGui::NewLine();
+}
+// the same for a button (or a small button) with this label, as drawn
+inline void same_line_if_fits(char const *Label)
+{
+	same_line_if_fits(ImGui::CalcTextSize(Label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f);
+}
+
 // grid points without a height (or another value) take the one of the nearest point which has it (by steps along the grid)
 template <typename Value_> inline void fill_from_nearest(std::vector<Value_> &Heights, std::vector<char> &Found, std::size_t const Side)
 {
@@ -162,21 +176,64 @@ struct segment_option
 };
 inline bool segmented(char const *Id, int &Value, std::initializer_list<segment_option> Options)
 {
-	auto const count{static_cast<float>(Options.size())};
 	auto const width{ImGui::GetContentRegionAvail().x};
 	auto const height{ImGui::GetFrameHeight()};
 	auto const at{ImGui::GetCursorScreenPos()};
 	auto *draw{ImGui::GetWindowDrawList()};
 	auto const rounding{height * 0.5f};
-	draw->AddRectFilled(at, ImVec2(at.x + width, at.y + height), ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+	// the segments share the bar evenly while each name fits in its share; else the short names give up some of the room
+	// around them to the long ones, and the names which don't fit side by side even so go on in a bar under it
+	auto const room{std::round(ImGui::GetFontSize())};
+	std::vector<float> needs;
+	for (auto const &option : Options)
+		needs.push_back(ImGui::CalcTextSize(option.label).x + room);
+	std::vector<std::size_t> bars{0}; // the first option of each bar, and the end
+	float used{0.0f};
+	for (std::size_t i = 0; i < needs.size(); ++i)
+	{
+		if (i > bars.back() && used + needs[i] > width)
+		{
+			bars.push_back(i);
+			used = 0.0f;
+		}
+		used += needs[i];
+	}
+	bars.push_back(needs.size());
+	auto const gap{std::round(ImGui::GetStyle().ItemSpacing.y * 0.5f)};
+	std::vector<ImVec2> spans; // the left and the right of each segment
+	std::vector<float> tops;
+	for (std::size_t bar = 0; bar + 1 < bars.size(); ++bar)
+	{
+		auto const first{bars[bar]};
+		auto const last{bars[bar + 1]};
+		auto const count{static_cast<float>(last - first)};
+		auto const top{at.y + static_cast<float>(bar) * (height + gap)};
+		draw->AddRectFilled(ImVec2(at.x, top), ImVec2(at.x + width, top + height), ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+		float sum{0.0f};
+		bool even{true};
+		for (auto i{first}; i < last; ++i)
+		{
+			sum += needs[i];
+			even = even && needs[i] <= width / count;
+		}
+		auto left{at.x};
+		for (auto i{first}; i < last; ++i)
+		{
+			auto const share{even ? width / count : needs[i] + (width - sum) / count};
+			spans.emplace_back(std::round(left), i + 1 == last ? at.x + width : std::round(left + share));
+			tops.push_back(top);
+			left += share;
+		}
+	}
 	ImGui::PushID(Id);
 	bool changed{false};
-	float index{0.0f};
+	std::size_t index{0};
 	for (auto const &option : Options)
 	{
-		auto const left{std::round(at.x + width * index / count)};
-		auto const right{std::round(at.x + width * (index + 1.0f) / count)};
-		ImGui::SetCursorScreenPos(ImVec2(left, at.y));
+		auto const left{spans[index].x};
+		auto const right{spans[index].y};
+		auto const top{tops[index]};
+		ImGui::SetCursorScreenPos(ImVec2(left, top));
 		ImGui::PushID(option.value);
 		if (ImGui::InvisibleButton("##segment", ImVec2(std::max(1.0f, right - left), height)) && Value != option.value)
 		{
@@ -189,16 +246,16 @@ inline bool segmented(char const *Id, int &Value, std::initializer_list<segment_
 		ImGui::PopID();
 		auto const chosen{Value == option.value};
 		if (chosen || hovered)
-			draw->AddRectFilled(ImVec2(left + 2.0f, at.y + 2.0f), ImVec2(right - 2.0f, at.y + height - 2.0f), chosen ? family_colour(0, 0.8f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), rounding - 2.0f);
+			draw->AddRectFilled(ImVec2(left + 2.0f, top + 2.0f), ImVec2(right - 2.0f, top + height - 2.0f), chosen ? family_colour(0, 0.8f) : ImGui::GetColorU32(ImGuiCol_FrameBgHovered), rounding - 2.0f);
 		auto const text{ImGui::CalcTextSize(option.label)};
-		draw->PushClipRect(ImVec2(left + 4.0f, at.y), ImVec2(right - 4.0f, at.y + height), true);
-		draw->AddText(ImVec2(std::round(std::max(left + 6.0f, (left + right - text.x) * 0.5f)), std::round(at.y + (height - text.y) * 0.5f)), ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled), option.label);
+		draw->PushClipRect(ImVec2(left + 4.0f, top), ImVec2(right - 4.0f, top + height), true);
+		draw->AddText(ImVec2(std::round(std::max(left + 6.0f, (left + right - text.x) * 0.5f)), std::round(top + (height - text.y) * 0.5f)), ImGui::GetColorU32(chosen ? ImGuiCol_Text : ImGuiCol_TextDisabled), option.label);
 		draw->PopClipRect();
-		index += 1.0f;
+		++index;
 	}
 	ImGui::PopID();
 	ImGui::SetCursorScreenPos(at);
-	ImGui::Dummy(ImVec2(width, height));
+	ImGui::Dummy(ImVec2(width, tops.empty() ? height : tops.back() + height - at.y));
 	return changed;
 }
 
@@ -357,13 +414,30 @@ inline bool state_chip(char const *Label, ImVec4 const &Colour)
 // fields as rows of a table: the name wrapped in a column on the left, the field as wide as the rest of the panel;
 // field_row takes the untranslated "Name##id" (a literal: the translations are cached by the pointer, a name made at run
 // time goes with Translate false) and leaves the cursor where the field goes
-inline bool begin_fields(char const *Id, float const Names = 0.42f)
+inline bool begin_fields(char const *Id, float const Names = 0.42f, float const Width = 0.0f)
 {
-	if (false == ImGui::BeginTable(Id, 2, ImGuiTableFlags_SizingStretchProp))
+	if (false == ImGui::BeginTable(Id, 2, ImGuiTableFlags_SizingStretchProp, ImVec2(Width, 0.0f)))
 		return false;
 	ImGui::TableSetupColumn("##name", ImGuiTableColumnFlags_WidthStretch, Names);
 	ImGui::TableSetupColumn("##field", ImGuiTableColumnFlags_WidthStretch, 1.0f - Names);
 	return true;
+}
+// fields as begin_fields, in a block no wider than its widest name with a field of Field font sizes beside it, where the panel
+// is wider than that (a window docked across the bottom); Labels are the names of its rows as field_row takes them
+inline bool begin_fields_fitted(char const *Id, float const Names, std::initializer_list<char const *> Labels, float const Field = 10.0f)
+{
+	float widest{0.0f};
+	for (auto const *label : Labels)
+	{
+		auto const *text{STR_C(label)};
+		widest = std::max(widest, ImGui::CalcTextSize(text, std::strstr(text, "##")).x);
+	}
+	// the padding of the cells, and a little to spare so the widest name isn't wrapped
+	widest += ImGui::GetStyle().CellPadding.x * 2.0f + ImGui::GetFontSize();
+	auto const width{widest + std::round(ImGui::GetFontSize() * Field)};
+	if (width >= ImGui::GetContentRegionAvail().x)
+		return begin_fields(Id, Names);
+	return begin_fields(Id, widest / width, width);
 }
 inline void field_row(char const *Label, bool const Translate = true)
 {
