@@ -112,8 +112,11 @@ bool scenarioloader_mode::update() {
 	WriteLog( "Scenario loading time: " + std::to_string( std::chrono::duration_cast<std::chrono::seconds>( std::chrono::system_clock::now() - timestart ).count() ) + " seconds" );
 	// TODO: implement and use next mode cue
 
-	// the loading screen stays, saying the graphics are being prepared, until the programs are ready (above)
-	m_userinterface->set_progress(STR("Preparing the graphics (takes longer at the first start of a new version)"));
+	// the loading screen stays, saying the graphics are being prepared, until the programs are ready (above).
+	// at the top of the screen: the bottom is taken by the trivia and by the texts some backgrounds carry. the interface
+	// of this mode is always the loader's, made in the constructor
+	m_userinterface->set_progress(std::string{});
+	static_cast<scenarioloader_ui &>(*m_userinterface).set_notice(STR("Preparing the graphics (takes longer at the first start of a new version)"));
 	m_closing = 1;
 
     return true;
@@ -132,6 +135,8 @@ void scenarioloader_mode::enter() {
 
     Application.set_title( Global.AppName + " (" + Global.SceneryFile + ")" );
 	m_userinterface->set_progress(STR("Loading scenery"));
+	// the notice of a load before is gone
+	static_cast<scenarioloader_ui &>(*m_userinterface).set_notice({});
 }
 
 // maintenance method, called when the mode is deactivated
