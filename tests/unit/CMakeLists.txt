@@ -34,6 +34,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	# and the layout of the islands of the light and the dark palettes
+	"${CMAKE_SOURCE_DIR}/editor/editorIslands.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

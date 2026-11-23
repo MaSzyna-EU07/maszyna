@@ -700,6 +700,7 @@ void ui_layer::begin_ui_frame()
 		m_accent = accent();
 		rounded_colors(m_palette == 3, m_accent);
 	}
+	before_frame();
 	begin_ui_frame_internal();
 	render_dockspace();
 	m_dockspaceframe = ImGui::GetFrameCount();

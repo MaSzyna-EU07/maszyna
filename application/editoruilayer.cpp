@@ -22,9 +22,12 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorIcons.hpp"
 #include "application/uidescription.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <format>
 #include <limits>
+#include <string>
+#include <string_view>
 
 glm::vec2 editor_ui::m_viewmin{0.0f};
 glm::vec2 editor_ui::m_viewmax{0.0f};
@@ -57,12 +60,6 @@ void editor_ui::render_dockspace()
 	{
 		render_islands_dockspace(dockspace);
 		return;
-	}
-	if (m_islandsbefore)
-	{
-		// back from the islands: the windows go to their docks again
-		m_islandsbefore = false;
-		m_layoutreset = true;
 	}
 	if (m_layoutreset || ImGui::DockBuilderGetNode(dockspace) == nullptr)
 	{
@@ -128,18 +125,16 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 
 namespace
 {
-// sizes of the islands, in pixels at the scale of the user interface
+// the islands are laid out at the scale the tools of the editor are drawn at
 float island_scale()
 {
 	return std::max(1.0f, Global.ui_scale);
 }
-constexpr float island_margin{12.0f}; // from the edges of the window
-constexpr float island_gap{10.0f}; // between two islands
-constexpr float island_column{340.0f}; // the tool and the selection on the right
-constexpr float island_capsule{52.0f}; // height of the capsule
-constexpr float island_rail{48.0f}; // width of the rail
-constexpr float island_drawer{300.0f};
-constexpr float island_tray{250.0f}; // height of the tray
+
+ImVec2 to_imvec(glm::vec2 const Point)
+{
+	return {Point.x, Point.y};
+}
 
 // the part of the main window the islands are laid out in, under the menu
 ImVec2 work_min()
@@ -151,92 +146,53 @@ ImVec2 work_max()
 	auto const *viewport{ImGui::GetMainViewport()};
 	return {viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y};
 }
+
+// the dockspace of the editor no longer holds a layout worth putting back: it was left without docks
+bool docks_empty(unsigned int const Dockspace)
+{
+	auto const *node{ImGui::DockBuilderGetNode(Dockspace)};
+	return node == nullptr || node->IsLeafNode();
+}
 } // namespace
 
 bool editor_ui::islands()
 {
-	return ui_layer::rounded();
+	return layout_of(ui_layer::m_palette) == layout_mode::islands;
 }
 
-ImVec2 editor_ui::island_position(island const Which)
+editor_islands::rect const &editor_ui::island_rect(island const Which)
 {
-	auto const s{island_scale()};
-	auto const min{work_min()};
-	auto const max{work_max()};
-	auto const margin{island_margin * s};
-	auto const gap{island_gap * s};
-	auto const left{min.x + margin};
-	auto const right{max.x - margin - island_column * s};
-	auto const belowcapsule{min.y + margin + island_capsule * s + gap};
-	auto const besiderail{left + island_rail * s + gap};
 	switch (Which)
 	{
 	case island::capsule:
-		return {left, min.y + margin};
+		return m_islandlayout.capsule;
 	case island::rail:
-		return {left, belowcapsule};
+		return m_islandlayout.rail;
 	case island::tool:
-		return {right, min.y + margin};
+		return m_islandlayout.tool;
 	case island::inspector:
-		return {right, min.y + margin + island_size(island::tool).y + gap};
+		return m_islandlayout.inspector;
 	case island::drawer:
-		return {besiderail, belowcapsule};
+		return m_islandlayout.drawer;
 	case island::bank:
-		return {besiderail, max.y - margin - island_tray * s};
+		return m_islandlayout.bank;
 	case island::sets:
-		return {besiderail + island_size(island::bank).x + gap, max.y - margin - island_tray * s};
+		return m_islandlayout.sets;
 	}
-	return min;
-}
-
-ImVec2 editor_ui::island_size(island const Which)
-{
-	auto const s{island_scale()};
-	auto const min{work_min()};
-	auto const max{work_max()};
-	auto const margin{island_margin * s};
-	auto const gap{island_gap * s};
-	auto const height{max.y - min.y - 2.0f * margin};
-	auto const column{island_column * s};
-	// the tray between the rail and the column on the right
-	auto const trayleft{min.x + margin + island_rail * s + gap};
-	auto const traywidth{std::max(200.0f * s, max.x - margin - column - gap - trayleft)};
-	switch (Which)
-	{
-	case island::tool:
-	{
-		// as high as its content was, up to six tenths of the height; the selection has the rest
-		auto const wanted{m_toolheight > 0.0f ? m_toolheight : 300.0f * s};
-		return {column, std::clamp(wanted, 140.0f * s, std::max(140.0f * s, height * 0.6f))};
-	}
-	case island::inspector:
-		return {column, std::max(120.0f * s, height - island_size(island::tool).y - gap)};
-	case island::drawer:
-	{
-		auto bottom{max.y - margin};
-		if (m_trayshown)
-			bottom -= island_tray * s + gap;
-		auto const top{island_position(island::drawer).y};
-		return {island_drawer * s, std::clamp(bottom - top, 160.0f * s, 560.0f * s)};
-	}
-	case island::bank:
-		return {m_setsshown ? std::floor((traywidth - gap) * 0.58f) : traywidth, island_tray * s};
-	case island::sets:
-		return {std::max(160.0f * s, traywidth - gap - std::floor((traywidth - gap) * 0.58f)), island_tray * s};
-	default:
-		return {0.0f, 0.0f};
-	}
+	return m_islandlayout.view;
 }
 
 bool editor_ui::place_island(island const Which)
 {
 	if (false == islands())
 		return false;
+	auto const &rect{island_rect(Which)};
 	ImGui::SetNextWindowViewport(ImGui::GetMainViewport()->ID);
 	ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
-	ImGui::SetNextWindowPos(island_position(Which), ImGuiCond_Always);
+	ImGui::SetNextWindowPos(to_imvec(rect.min), ImGuiCond_Always);
+	// the capsule and the rail are as large as their content
 	if (Which != island::capsule && Which != island::rail)
-		ImGui::SetNextWindowSize(island_size(Which), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(to_imvec(rect.size()), ImGuiCond_Always);
 	return true;
 }
 
@@ -264,12 +220,73 @@ void editor_ui::island_shadow()
 	}
 }
 
+void editor_ui::before_frame()
+{
+	auto const now{islands()};
+	if (now == m_islandsbefore)
+		return;
+	m_islandsbefore = now;
+	if (now)
+	{
+		// the islands come: the layout of the docks is kept to be put back when they go. not before imgui.ini is read, which
+		// brings the one kept in an earlier session, nor over one kept already, nor when there are no docks to keep
+		auto const *context{ImGui::GetCurrentContext()};
+		if (context != nullptr && context->SettingsLoaded && m_docksnapshot.empty() && (false == docks_empty(m_dockspace) || false == m_autohide.empty()))
+			m_docksnapshot = ImGui::SaveIniSettingsToMemory();
+		m_islandsteardown = true;
+		return;
+	}
+	// the islands go: the windows go back to the docks they had, or to the default ones if none were kept
+	if (m_docksnapshot.empty())
+	{
+		m_layoutreset = true;
+		return;
+	}
+	// loading the settings clears the kept layout through its handler, so it is loaded from a copy
+	std::string const snapshot{std::move(m_docksnapshot)};
+	m_docksnapshot.clear();
+	ImGui::LoadIniSettingsFromMemory(snapshot.data(), snapshot.size());
+	ImGui::MarkIniSettingsDirty();
+	m_autohideshown = 0;
+	if (docks_empty(m_dockspace) && m_autohide.empty())
+		m_layoutreset = true;
+}
+
+std::string editor_ui::docks_report()
+{
+	auto const dock = [](char const *Name) -> unsigned int {
+		auto const *window{ImGui::FindWindowByName(Name)};
+		return window != nullptr ? window->DockId : 0u;
+	};
+	auto const *node{ImGui::DockBuilderGetNode(m_dockspace)};
+	std::string_view dockspace{"none"};
+	if (node != nullptr)
+		dockspace = node->IsLeafNode() ? "leaf" : "split";
+	return std::format("islands {} snapshot {} dockspace {} autohide {} tool 0x{:08X} inspector 0x{:08X} scene 0x{:08X} bank 0x{:08X} view {:.0f} {:.0f} {:.0f} {:.0f}", islands() ? 1 : 0, m_docksnapshot.size(),
+	                   dockspace, m_autohide.size(), dock("###tooloptions"), dock("###inspector"), dock("###scenetree"), dock("###Node bank"), m_viewmin.x, m_viewmin.y, m_viewmax.x, m_viewmax.y);
+}
+
+void editor_ui::lay_islands()
+{
+	editor_islands::input in;
+	auto const min{work_min()};
+	auto const max{work_max()};
+	in.work_min = {min.x, min.y};
+	in.work_max = {max.x, max.y};
+	in.scale = island_scale();
+	in.capsule_width = m_capsulewidth;
+	in.tool_content = m_toolheight;
+	in.tray = m_trayshown;
+	in.sets = m_setsshown;
+	m_islandlayout = editor_islands::compute(in);
+}
+
 void editor_ui::render_islands_dockspace(unsigned int const Dockspace)
 {
-	if (false == m_islandsbefore || ImGui::DockBuilderGetNode(Dockspace) == nullptr)
+	if (m_islandsteardown || ImGui::DockBuilderGetNode(Dockspace) == nullptr)
 	{
-		// the docks are taken apart once: their windows float, those of the islands are placed by place_island()
-		m_islandsbefore = true;
+		// the docks are taken apart once, their layout kept by before_frame(): their windows float, those of the islands are placed by place_island()
+		m_islandsteardown = false;
 		m_autohide.clear();
 		m_autohideshown = 0;
 		auto *viewport{ImGui::GetMainViewport()};
@@ -284,13 +301,10 @@ void editor_ui::render_islands_dockspace(unsigned int const Dockspace)
 	ImGui::DockSpaceOverViewport(Dockspace, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
 	auto const current{mode()};
 	m_trayshown = m_trayforced || current == nodebank_panel::ADD || current == nodebank_panel::BRUSH || current == nodebank_panel::FILL;
+	lay_islands();
 	// the overlays of the 3d view go between the islands
-	auto const s{island_scale()};
-	auto const gap{island_gap * s};
-	auto const rail{island_position(island::rail)};
-	auto const capsule{island_position(island::capsule)};
-	m_viewmin = {rail.x + island_rail * s + gap, capsule.y + island_capsule * s + gap};
-	m_viewmax = {island_position(island::tool).x - gap, m_trayshown ? island_position(island::bank).y - gap : work_max().y - island_margin * s};
+	m_viewmin = m_islandlayout.view.min;
+	m_viewmax = m_islandlayout.view.max;
 	// the 3d view is seen around the islands and between them too, so what's drawn over it goes as far as the window does
 	auto const workmin{work_min()};
 	auto const workmax{work_max()};
@@ -313,6 +327,8 @@ void editor_ui::render_capsule()
 		if (m_capsule)
 			m_capsule();
 	}
+	// the column on the right moves under the capsule when the capsule would reach into it, in the next frame
+	m_capsulewidth = ImGui::GetWindowSize().x;
 	ImGui::End();
 }
 
@@ -908,6 +924,36 @@ void editor_ui::register_settings()
 		}
 	};
 	ImGui::AddSettingsHandler(&handler);
+
+	// the layout of the docks kept while the islands are shown, a line of its own settings in each Line= entry
+	ImGuiSettingsHandler docks;
+	docks.TypeName = "MaSzynaDocks";
+	docks.TypeHash = ImHashStr(docks.TypeName);
+	docks.ClearAllFn = [](ImGuiContext *, ImGuiSettingsHandler *) { m_docksnapshot.clear(); };
+	docks.ReadOpenFn = [](ImGuiContext *, ImGuiSettingsHandler *, char const *Name) -> void * { return std::string_view{Name} == "Snapshot" ? &m_docksnapshot : nullptr; };
+	docks.ReadLineFn = [](ImGuiContext *, ImGuiSettingsHandler *, void *, char const *Line) {
+		constexpr std::string_view prefix{"Line="};
+		if (std::string_view const line{Line}; line.starts_with(prefix))
+		{
+			m_docksnapshot.append(line.substr(prefix.size()));
+			m_docksnapshot.push_back('\n');
+		}
+	};
+	docks.WriteAllFn = [](ImGuiContext *, ImGuiSettingsHandler *Handler, ImGuiTextBuffer *Buffer) {
+		if (m_docksnapshot.empty())
+			return;
+		Buffer->appendf("[%s][Snapshot]\n", Handler->TypeName);
+		std::string_view rest{m_docksnapshot};
+		while (false == rest.empty())
+		{
+			auto const end{std::min(rest.find('\n'), rest.size())};
+			auto const line{rest.substr(0, end)};
+			Buffer->appendf("Line=%.*s\n", static_cast<int>(line.size()), line.data());
+			rest.remove_prefix(std::min(end + 1, rest.size()));
+		}
+		Buffer->append("\n");
+	};
+	ImGui::AddSettingsHandler(&docks);
 }
 
 void editor_ui::render_()

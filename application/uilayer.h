@@ -178,6 +178,8 @@ protected:
 // methods
 	// render() subclass details
    virtual void render_() {}
+	// called before the frame of imgui starts, once its colours are set: the settings of imgui can be loaded there
+	virtual void before_frame() {}
 	// submitted right after the start of the frame, before any window that may be docked in it
 	virtual void render_dockspace() {}
     // draws background quad with specified earlier texture

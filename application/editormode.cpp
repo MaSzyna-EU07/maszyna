@@ -1784,7 +1784,7 @@ void editor_mode::render_settings()
                 EditorSettings.palette(palette);
                 EditorSettings.save();
             }
-            ui::rest_description(STR_C("The light and the dark colours lay the editor out as islands over the view: the docks are taken apart and their windows float. Back in the green or the amber colours the windows go to the docks of the first start; a layout of the docks of your own is not kept."));
+            ui::rest_description(STR_C("The light and the dark colours lay the editor out as islands over the view: the docks are taken apart and their windows float. Back in the green or the amber colours the windows go back to the docks they had before."));
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

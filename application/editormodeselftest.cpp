@@ -106,6 +106,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   spread <track> <stop 0..2> <reach>   logs the paths the spread from the track takes
 //   newscenery                           the editor starts again with the wizard of a new scenery
 //   mapstate                             logs the orthophoto, the top view and the //$o line of the scenery
+//   palette <0..3>                       the colours of the editor, not saved: 2 and 3 lay out the islands, 0 and 1 the docks
+//   docks                                logs the islands, the kept layout of the docks, the dock of each window of the editor and the free view
 //   trainset <track> <vehicle path> <skin> <facing> [km/h]  the trainset tool puts the vehicle in the middle of the track
 //   vehicles                             logs each vehicle: its head, facing, and what its couplers hold
 //   terrainmode                          the terrain field of work, with its texture browser

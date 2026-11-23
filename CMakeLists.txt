@@ -192,6 +192,7 @@ set(SOURCES
 "editor/editorModelSets.cpp"
 "editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
+"editor/editorIslands.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"
 "editor/editorTrackTrace.cpp"
