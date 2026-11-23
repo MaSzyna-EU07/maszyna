@@ -1,0 +1,37 @@
+{
+  "description": "A light EU07 on a line of its own beside td.scn, down a gradient of 20 per mille on a timetable: stops at the W4 of Dol 1500 m down the gradient, leaves at 10:38 and stops before the signal gr_sem at stop 1100 m further down. The EU07 alone brakes with its independent brake.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_downgrade_w4_signal.scn",
+  "timetable": "td_downgrade.txt",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 540,
+  "timeout": 900,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 150
+    },
+    {
+      "type": "max_speed",
+      "limit": 80,
+      "tolerance": 3
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 1500,
+      "max_distance": 1700
+    },
+    {
+      "type": "distance",
+      "min": 2550,
+      "max": 2750
+    }
+  ]
+}

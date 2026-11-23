@@ -1,0 +1,37 @@
+{
+  "description": "An SN61 railcar alone on the line of eu07_td_downgrade_w4_signal, down a gradient of 20 per mille: stops at the W4 of Dol, then before the signal at stop. The SN61 alone brakes with its independent brake.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_downgrade_w4_signal.scn",
+  "timetable": "td_downgrade.txt",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\sn61_v2 SN61-13 SN61_v1 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 540,
+  "timeout": 900,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 150
+    },
+    {
+      "type": "max_speed",
+      "limit": 80,
+      "tolerance": 3
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 1500,
+      "max_distance": 1700
+    },
+    {
+      "type": "distance",
+      "min": 2550,
+      "max": 2750
+    }
+  ]
+}
