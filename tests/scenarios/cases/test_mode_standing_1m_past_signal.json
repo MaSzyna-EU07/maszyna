@@ -1,0 +1,16 @@
+{
+  "description": "Test mode, no signal passed at danger for a train set past a signal: EU07 on td.scn standing with its head 1 m past the exit signal stacja1_j at stop (no route). Its driver finds the signal behind the head at its first look ahead, about 13 s in; a standing train passes nothing, so it isn't a signal passed at danger, and the case runs into its timeout.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_past_red_signal.scn",
+  "vars": {
+    "offset": "52.0",
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 60,
+  "timeout": 600,
+  "checks": [
+    { "type": "max_speed", "limit": 1 },
+    { "type": "distance", "max": 1 }
+  ]
+}

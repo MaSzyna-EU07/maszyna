@@ -135,7 +135,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. The 22 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. The 40 cases
   that aren't `slow` take about 30 s with `-j 4` and 2 minutes one at a time, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -259,6 +259,13 @@ standstill of 100 s ends the test although the traffic runs on (counting every v
 into the test timeout).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
+`test_mode_standing_1m_past_signal` and `test_mode_standing_4m_past_signal` (fragment `td_past_red_signal.scn`) set
+the td/rozklad train at a stand with its head 1 m and 4 m past the exit signal at stop (the memory cell of the
+signal is 51 m into `tor1k`). The driver finds the signal behind the head at its first look ahead, 13.6 s in, and a
+standing train passes nothing, so both run into their timeout. When a signal found up to 5 m behind the head
+still counted as one the head had ahead, standing or not, both ended as signals passed at danger at 13.6 s (a
+train set 6 m or 20 m past didn't). Starting at 0 km/h the driver doesn't wake up within the case, so they start at
+0.1 km/h, as `td_red_signal.scn` does.
 
 The `en57_2000_automatic_coupler_*` cases (issue #86) share `td_automatic_coupler_hit.scn`: an
 EN57-2000 unit without a driver runs at `vars.velocity` km/h into a standing one, from
