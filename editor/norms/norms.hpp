@@ -62,6 +62,8 @@ enum class parameter
 	grade, // per mille, at most
 	intermediate_length, // m: abrupt changes of the cant deficiency further apart are taken one by one (ST-T1-A6 tab. 9.16)
 	profile_boundary, // an arc running across the boundary of two profiles: to be settled (§6.4)
+	switch_straight, // m, at least: the element between two turnouts, their curves turning the opposite ways (ST-T1-A6 11.3 pkt 7); asked by the
+	                 // solver of the connections at the speed through them, not found along a line
 	count
 };
 
@@ -101,6 +103,7 @@ inline constexpr unsigned sag{1u << 12};
 inline constexpr unsigned short_stretch{1u << 13}; // a grade held for less than 500 m (ST-T1-A6 tab. 10.1 footnote 2)
 inline constexpr unsigned low_deficiency{1u << 14}; // I ≤ 75 mm on both sides of the abrupt change (TSI 4.2.4.4(2))
 inline constexpr unsigned abrupt{1u << 15}; // an arc with no transition curve at an end (AB-EBV AB 17 5.2.2)
+inline constexpr unsigned fast_line{1u << 16}; // a line of 160 km/h or more (ST-T1-A6 11.3 pkt 7e)
 } // namespace feature
 
 // the class of the line (§2): the highest speed, the slow trains, the traffic, main or side track, and what holds along all of it

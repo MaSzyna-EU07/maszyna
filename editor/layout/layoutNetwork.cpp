@@ -185,6 +185,7 @@ char const *parameter_name(norms::parameter const What)
 	case norms::parameter::grade: return "grade";
 	case norms::parameter::intermediate_length: return "element between steps";
 	case norms::parameter::profile_boundary: return "arc across a profile boundary";
+	case norms::parameter::switch_straight: return "element between turnouts";
 	default: return "value";
 	}
 }
@@ -522,6 +523,10 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 		auto const &owner{*Network.find(part.line)};
 		auto own{described(owner.solved, owner.category)};
 		auto const length{owner.solved.length};
+		// a line of a connection of the tracks, the track between the turnouts of a crossover, is judged as their tracks are
+		if ((owner.category.features & norms::feature::switch_track) != 0u)
+			for (auto &element : own.elements)
+				element.features |= norms::feature::switch_track;
 		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed; the tracks crossing at a slip or a crossing
 		// over its crossings (the slip curves its diverging tracks)
 		if (auto const *switched{owner_of(Network, owner.id)})

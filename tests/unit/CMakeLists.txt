@@ -64,6 +64,7 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutConnection.cpp"
 	# the project file of the domain, the tracks written kept by their checksums, the //$ lines migrated into it, the scenarios using a map (test_project_*.cpp, test_scenario_index.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/project/projectFile.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/projectGenerated.cpp"

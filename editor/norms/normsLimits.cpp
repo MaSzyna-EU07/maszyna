@@ -76,7 +76,8 @@ bool minimum(parameter const What)
 	case parameter::radius:
 	case parameter::cant_min:
 	case parameter::vertical_radius:
-	case parameter::intermediate_length: return true;
+	case parameter::intermediate_length:
+	case parameter::switch_straight: return true;
 	default: return false;
 	}
 }

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "editor/layout/layoutConnection.hpp"
 #include "editor/layout/layoutNetwork.hpp"
 
 #include <optional>
@@ -155,8 +156,10 @@ struct remove_turnout
 	turnout_id turnout{turnout_id::none};
 };
 
+// a crossover between two lines, as the solver of the connections plans it (layoutConnection.hpp): the two turnouts and the line between the
+// ends of their diverging tracks, one step; refused with the best which fits where the norms can't be met
 using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line, insert_vertex, remove_vertex, set_grades, set_line_class, set_line_profile, insert_turnout,
-                             move_turnout, change_turnout, remove_turnout>;
+                             move_turnout, change_turnout, remove_turnout, connect_tracks>;
 
 char const *command_name(command const &Command);
 

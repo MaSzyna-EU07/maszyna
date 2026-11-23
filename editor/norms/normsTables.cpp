@@ -201,6 +201,11 @@ constexpr std::array plk{
 	row{.what = intermediate_length, .prefer = none, .warn = none, .block = share(0.15), .place = "tab. 9.16", .needs = switch_track, .speed_above = 60, .speed_to = 100},
 	row{.what = intermediate_length, .prefer = none, .warn = none, .block = share(0.25), .place = "tab. 9.16", .needs = switch_track, .speed_above = 100, .speed_to = 200},
 	row{.what = intermediate_length, .prefer = none, .warn = none, .block = share(0.10), .place = "tab. 9.16", .excludes = switch_track, .tracks = side_track, .speed_to = 40},
+	// 11.3 pkt 7, the element between two turnouts whose curves turn the opposite ways, at the speed through them: in the running and the main
+	// tracks max(0.15 V; 6) m (lit. d, "should"), 30 m on new lines of 160 km/h or more (lit. e, "may not"); 6 m recommended elsewhere (lit. c)
+	row{.what = switch_straight, .prefer = share(0.15, 6.0), .warn = share(0.15, 6.0), .block = none, .place = "11.3 pkt 7d", .tracks = main_track},
+	row{.what = switch_straight, .prefer = at(30.0), .warn = at(30.0), .block = at(30.0), .place = "11.3 pkt 7e", .needs = fast_line, .tracks = main_track},
+	row{.what = switch_straight, .prefer = at(6.0), .warn = none, .block = none, .place = "11.3 pkt 7c", .tracks = side_track},
 };
 
 // the TSI rows the profile "TSI only" and the global hard limits share

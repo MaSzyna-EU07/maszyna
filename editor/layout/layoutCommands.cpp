@@ -1383,6 +1383,34 @@ reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 	return add_joined(Change, Result, Command, *from, *to, std::move(vertices), false, false);
 }
 
+reasons propose(transaction &Change, outcome &Result, connect_tracks const &Command)
+{
+	auto const plan{plan_connection(Change.view(), Command)};
+	if (false == plan.fits)
+		return plan.reasons;
+	auto why{lay_turnout(Change, Result, Command.from, Command.chainage, Command.type, plan.hand, Command.direction, {})};
+	if (false == why.empty())
+		return why;
+	auto const first{Result.turnouts.back()};
+	why = lay_turnout(Change, Result, Command.to, plan.chainage, Command.type, plan.hand2, plan.direction, {});
+	if (false == why.empty())
+		return why;
+	auto const second{Result.turnouts.back()};
+	// the line between the ends of their diverging tracks: a straight where they face each other on one, else one arc with no transitions nor
+	// cant, the element between the two turnouts; run at the speed of their diverging tracks
+	auto const &one{*Change.view().find(first)};
+	auto const &other{*Change.view().find(second)};
+	auto const speed{std::min(one.speed_diverging, other.speed_diverging)};
+	why = propose(Change, Result, join_ends{one.diverging_end, other.diverging_end, 0.0, 0.0, 0.0});
+	if (false == why.empty())
+		return why;
+	// a part of the connection of the tracks (połączenie torów) for the norms, as the tracks of the turnouts are
+	auto &between{Change.change(Result.lines.back())};
+	between.category.vmax = std::min(between.category.vmax, speed);
+	between.category.features |= norms::feature::switch_track;
+	return {};
+}
+
 reasons propose(transaction &Change, outcome &, delete_line const &Command)
 {
 	reasons why;
@@ -1410,7 +1438,8 @@ char const *command_name(command const &Command)
 {
 	static std::array<char const *, std::variant_size_v<command>> constexpr names{"create line", "move vertex",   "set vertex",     "split line",     "join ends",
 	                                                                               "delete line", "insert vertex", "remove vertex",  "set grades",     "set line class",
-	                                                                               "set line profile", "insert turnout", "move turnout", "change turnout", "remove turnout"};
+	                                                                               "set line profile", "insert turnout", "move turnout", "change turnout", "remove turnout",
+	                                                                               "connect tracks"};
 	return names[Command.index()];
 }
 
