@@ -139,14 +139,15 @@ vec3 ApplyAgX(vec3 linearColorRec709)
 
 vec4 tonemap(vec4 x)
 {
-	// Use AgX by default. Reinhard and ACES above are kept for reference.
+	// ACES, as 26.05 drew it. AgX and Reinhard above are kept for reference: AgX with its look crushed the dark
+	// end, so the night and everything in shadow went black (a night scene lost half its brightness).
 
 	// Last-line-of-defense sanitize so NaN/Inf/negative HDR values do not
 	// escape into log2()/pow() and produce black flashes or invalid output.
 	vec3 hdr = x.rgb;
 	hdr = mix(hdr, vec3(0.0), vec3(any(isnan(hdr)) || any(isinf(hdr))));
 	hdr = max(hdr, vec3(0.0));
-	return FBOUT(vec4(ApplyAgX(hdr), x.a));
-	//return FBOUT(vec4(ACESFilm(hdr), x.a));
+	return FBOUT(vec4(ACESFilm(hdr), x.a));
+	//return FBOUT(vec4(ApplyAgX(hdr), x.a));
 	//return FBOUT(vec4(reinhard(x.rgb), x.a));
 }
