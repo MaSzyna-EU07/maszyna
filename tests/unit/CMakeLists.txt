@@ -24,6 +24,8 @@ add_executable(${UNIT_TESTS_NAME}
 	editor_stubs.cpp
 	# the geometry of the lines the track editor designs, standing on its own
 	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
+	# and the line traced on the photo, its straights and curves recognised from the points clicked
+	"${CMAKE_SOURCE_DIR}/editor/editorTrace.cpp"
 	# and the heights of the tracks laid
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"

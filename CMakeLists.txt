@@ -198,6 +198,7 @@ set(SOURCES
 "editor/editorFouling.cpp"
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
+"editor/editorTrace.cpp"
 "editor/editorTrackShape.cpp"
 "editor/editorGroundFollow.cpp"
 "editor/editorAlignmentStore.cpp"
