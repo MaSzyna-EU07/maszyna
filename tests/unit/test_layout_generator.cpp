@@ -8,6 +8,7 @@
 #include "layout_fixture.h"
 #include "track_text.h"
 #include "editor/layout/layoutGenerator.hpp"
+#include "editor/project/projectFile.hpp"
 
 #include <algorithm>
 #include <set>
@@ -302,16 +303,48 @@ TEST_CASE("layout generator: the names come from the ids of the line and its ver
 	CHECK(layout::generate(model.state(), id).text() == after.text());
 }
 
-TEST_CASE("layout generator: the joints of old tracks as hard points of the pieces are stage E6, a line given them isn't made") {
+TEST_CASE("layout generator: the joints of old tracks as hard points of the pieces, their names, attributes and the way they ran kept") {
 	auto const model{laid(three_curves())};
 	auto const id{model.state().lines().begin()->first};
-	layout::generator_options options;
-	options.hard_splits[id] = {{350.0, "old_track"}};
-	auto const made{layout::generate(model.state(), id, options)};
-	CHECK(made.pieces.empty());
-	REQUIRE(made.errors.size() == 1);
-	CHECK(made.errors.front().find("E6") != std::string::npos);
-	std::vector<std::string> errors;
-	CHECK(layout::generate_all(model.state(), {}, errors).find("endtrack") != std::string::npos);
-	CHECK(errors.empty());
+	auto network{model.state()};
+	auto &line{const_cast<layout::line &>(*network.find(id))};
+	auto const length{line.solved.length};
+	// three old tracks: one of a name with its events and circuit, one of none, one of a name which ran against the line
+	layout::old_track first{"tor_a", "1.435 0.25 25.0 20 0 flat vis rail 4 bed 0.2 0.5 1.1", "velocity 60 event1 ev_a isolated obw_a", false, false};
+	layout::old_track second{"", "", "velocity 70 event2 ev_b", false, false};
+	layout::old_track third{"tor_c", "", "velocity 80 event1 ev_c", true, false};
+	line.hard_splits = {{0.0, first}, {350.0, second}, {length - 100.0, third}};
+	auto const made{layout::generate(network, id)};
+	REQUIRE(made.errors.empty());
+	// the pieces end at the joints
+	auto const ends_at = [&](double const Chainage) { return std::ranges::any_of(made.pieces, [&](layout::generated_piece const &Piece) { return std::abs(Piece.to - Chainage) < 1e-9; }); };
+	CHECK(ends_at(350.0));
+	CHECK(ends_at(length - 100.0));
+	std::map<std::string, std::string> texts;
+	for (auto const &piece : made.pieces) {
+		CHECK(texts.emplace(piece.name, piece.text).second);
+	}
+	// the first old track: its name on its first piece with all of its attributes, the others numbered on without its events
+	REQUIRE(texts.contains("tor_a"));
+	CHECK(texts["tor_a"].find("1.435 0.25 25.0 20 0 flat vis rail 4 bed 0.2 0.5 1.1") != std::string::npos);
+	CHECK(texts["tor_a"].ends_with(" velocity 60 event1 ev_a isolated obw_a endtrack\n"));
+	for (auto const &[name, text] : texts) {
+		if (name.starts_with("tor_a_")) {
+			CHECK(text.ends_with(" velocity 60 isolated obw_a endtrack\n"));
+		}
+	}
+	// of no name: named by the generator, its events on the first piece only
+	auto const events_b{std::ranges::count_if(texts, [](auto const &Each) { return Each.second.find("event2 ev_b") != std::string::npos; })};
+	CHECK(events_b == 1);
+	// the last one ran against the line: its piece written from the end of the line, the named one where it started
+	REQUIRE(texts.contains("tor_c"));
+	auto const named_c{std::ranges::find_if(made.pieces, [](layout::generated_piece const &Piece) { return Piece.name == "tor_c"; })};
+	CHECK(std::abs(named_c->to - length) < 1e-9);
+	CHECK(named_c->path.points[segment_data::point::start] == network.find(line.end)->position);
+	// written and read back as the line has them
+	project::document project;
+	project.network = network;
+	auto const read{project::read(project::write(project))};
+	REQUIRE(read.project.has_value());
+	CHECK(read.project->network.find(id)->hard_splits == line.hard_splits);
 }

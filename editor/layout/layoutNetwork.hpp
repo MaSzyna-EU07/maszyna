@@ -60,6 +60,29 @@ struct node
 	bool operator==(node const &) const = default;
 };
 
+// an old track a line was taken over from (stage E6, editor-tracks-domain.md §5 and §10): its name and what its entry had besides the path,
+// whether it ran against the line. The pieces the generator makes of the stretch of the line it covered carry them, so the names, the events
+// and the isolated circuits the scenarios rely on stay where they were
+struct old_track
+{
+	std::string name; // empty: one of no name (none), the pieces named by the generator
+	std::string surface; // the words between the length and the path: the width, the friction, ... the visibility and the materials
+	std::string attributes; // the words after the path up to endtrack: the speed, the events, the isolated circuits and the rest
+	bool reversed{false}; // it ran against the line
+	bool continued{false}; // a part of an old track a split cut off: named by the generator, its events left with the other part
+
+	bool operator==(old_track const &) const = default;
+};
+
+// a joint of an old track as a hard point of the pieces: where along the line the stretch of the old track begins; the pieces end there
+struct hard_split
+{
+	double chainage{0.0};
+	old_track track;
+
+	bool operator==(hard_split const &) const = default;
+};
+
 struct line
 {
 	line_id id{line_id::none};
@@ -73,6 +96,8 @@ struct line
 	double chainage_start{0.0}; // m, the kilometrage of the start of the line
 	norms::line_class category;
 	std::optional<norms::profile_id> profile; // of the norms, its own; none: the one of the area it lies in
+	// the old tracks it was taken over from, by the chainage each begins at, in order; none for a line laid in the editor
+	std::vector<hard_split> hard_splits;
 	// derived: the line laid between its nodes
 	solved_line solved;
 

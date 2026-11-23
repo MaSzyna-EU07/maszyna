@@ -35,6 +35,9 @@ http://mozilla.org/MPL/2.0/.
 //        turnout <id, 0 for a line of its own> profile <profile, - for the one of its place>
 //     vertex <id> at <x z> radius <m> in <m> out <m> cant <mm>
 //     grade <chainage> <elevation> <vertical radius>
+//     old <chainage> <name> reversed <0|1> continued <0|1> surface <words> attributes <words>   an old track the line was taken over from
+//                                                  (E6): where its stretch begins, its name, whether it ran against the line, whether it's
+//                                                  a part a split cut off, the words of its entry before the path and after it
 //   end
 //   turnouts
 //     turnout <id> type <name> hand <1|-1> direction <1|-1> start <node> main <line> <node> diverging <line> <node> chainage <m>

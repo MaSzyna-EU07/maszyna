@@ -27,15 +27,13 @@ http://mozilla.org/MPL/2.0/.
 // the numbers of its nodes, its velocity as the speed rule gives it, its frog and its blades as its type has them; a double switch, a slip
 // and a crossing the switch tracks and the plain tracks the switch tool of the editor makes of them, their joints inside the turnout the
 // numbers of the points of its lines there.
+//
+// A line taken over from old tracks (stage E6) keeps their joints as hard points of the pieces (line::hard_splits, §10 "stare złącza jako
+// twarde punkty podziału"): the pieces end at each, and the pieces of the stretch of an old track carry its name, its surface and its
+// attributes (the speed, the events, the isolated circuits), each written the way the old track ran; where the stretch takes more than one
+// piece, the one the old track ran into first keeps the name and the events, the others are <name>_2, <name>_3... with the rest.
 namespace layout
 {
-
-// a joint of an old track the pieces are to end at, the name of the old track kept for the piece before it (stage E6)
-struct hard_split
-{
-	double chainage{0.0};
-	std::string name;
-};
 
 struct generator_options
 {
@@ -46,9 +44,6 @@ struct generator_options
 	// what an entry has between the type and the path: the width, the friction, the sound distance, the quality, the damage, the
 	// environment and the visibility with the materials
 	std::string surface{"1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1"};
-	// the joints of the old tracks as hard points of the pieces, by line: stage E6 (§10, "stare złącza jako twarde punkty podziału").
-	// Not yet: a line given any is refused, so nothing is made which would lose the names and the events of the old tracks
-	std::map<line_id, std::vector<hard_split>> hard_splits;
 };
 
 struct generated_piece

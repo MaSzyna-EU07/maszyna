@@ -150,6 +150,32 @@ std::optional<glm::dvec2> crossing(glm::dvec2 const &A, glm::dvec2 const &AlongA
 	return A + AlongA * first;
 }
 
+// the joints of the old tracks of a line cut at the chainage: those past it go with the part after it; the old track cut in two keeps its
+// name and its events on the part it ran into first, the other part a stretch of it which the generator names, with the rest of what it had
+void split_old_tracks(std::vector<hard_split> const &All, double const Chainage, std::vector<hard_split> &Head, std::vector<hard_split> &Tail)
+{
+	Head.clear();
+	Tail.clear();
+	for (auto const &split : All)
+	{
+		if (split.chainage < Chainage - 1e-6)
+			Head.push_back(split);
+		else
+			Tail.push_back({std::max(0.0, split.chainage - Chainage), split.track});
+	}
+	if (Head.empty() || (false == Tail.empty() && Tail.front().chainage <= 1e-6))
+		return;
+	auto cut_off{Head.back().track};
+	cut_off.continued = true;
+	if (Head.back().track.reversed)
+	{
+		Tail.insert(Tail.begin(), {0.0, Head.back().track});
+		Head.back().track = cut_off;
+	}
+	else
+		Tail.insert(Tail.begin(), {0.0, cut_off});
+}
+
 // the new node and the new line a split made
 struct split_made
 {
@@ -290,6 +316,7 @@ reasons split_at(transaction &Change, line_id const Line, double const Chainage,
 		else if (point.chainage > s)
 			tail_line.shape.grades.push_back({point.chainage - s, point.elevation, point.vertical_radius});
 	}
+	split_old_tracks(original.hard_splits, s, head_line.hard_splits, tail_line.hard_splits);
 	// the node at the end of the line holds the end of the new one now
 	auto &last{Change.change(original.end)};
 	for (auto &end : last.ends)
@@ -354,6 +381,8 @@ bool merge_at(transaction &Change, node_id const Node)
 	merged.end_continues = second->end_continues;
 	for (auto const &point : second->shape.grades)
 		merged.shape.grades.push_back({point.chainage + a.length, point.elevation, point.vertical_radius});
+	for (auto const &split : second->hard_splits)
+		merged.hard_splits.push_back({split.chainage + a.length, split.track});
 	auto const &before{first->shape.vertices};
 	auto const &after{second->shape.vertices};
 	std::vector<std::vector<vertex>> candidates;

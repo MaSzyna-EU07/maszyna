@@ -48,6 +48,25 @@ std::string number_text(float const Value)
 	return std::format("{}", Value);
 }
 
+std::string point_text(glm::dvec3 const &Point)
+{
+	return std::format("{} {} {}", number_text(Point.x), number_text(Point.y), number_text(Point.z));
+}
+
+// a path as an entry has it: the start, its roll, the control vectors, the end, its roll, the radius
+std::string path_text(segment_data const &Path)
+{
+	auto const &p{Path.points};
+	return std::format("{} {} {} {} {} {} {}", point_text(p[segment_data::point::start]), number_text(Path.rolls[0]), point_text(p[segment_data::point::control1]),
+	                   point_text(p[segment_data::point::control2]), point_text(p[segment_data::point::end]), number_text(Path.rolls[1]), number_text(Path.radius));
+}
+
+// the entry of a plain track of the piece: its name, its length, the surface, its path and the attributes
+std::string entry_text(generated_piece const &Piece, std::string_view const Surface, std::string_view const Attributes)
+{
+	return std::format("node -1 0 {} track normal {:.3f} {} {} {} endtrack\n", Piece.name, std::abs(Piece.to - Piece.from), Surface, path_text(Piece.path), Attributes);
+}
+
 class cutter
 {
   public:
@@ -138,12 +157,15 @@ class cutter
 			result.push_back(stretch.from);
 			result.push_back(stretch.to);
 		}
+		auto const hard{hard_points()};
+		result.insert(result.end(), hard.begin(), hard.end());
 		std::ranges::sort(result);
 		std::erase_if(result, [&](double const Chainage) { return Chainage < 0.0 || Chainage > m_solved.length; });
 		auto const last{std::unique(result.begin(), result.end(), [](double const A, double const B) { return std::abs(A - B) < 1e-9; })};
 		result.erase(last, result.end());
 		result.front() = 0.0;
 		result.back() = m_solved.length;
+		auto const is_hard = [&result, &hard](std::size_t const At) { return At == 0 || At + 1 == result.size() || std::ranges::find(hard, result[At]) != hard.end(); };
 		for (std::size_t i = 0; i + 1 < result.size() && result.size() > 2;)
 		{
 			if (result[i + 1] - result[i] >= kShortestPiece)
@@ -151,9 +173,25 @@ class cutter
 				++i;
 				continue;
 			}
-			// the short stretch goes to its neighbour: the break after it goes, or the one before it at the end
-			result.erase(result.begin() + static_cast<std::ptrdiff_t>(i + 1 + 1 < result.size() ? i + 1 : i));
+			// the short stretch goes to its neighbour: the break after it goes, or the one before it; a joint of an old track stays, the
+			// short piece with it where both ends are
+			if (false == is_hard(i + 1))
+				result.erase(result.begin() + static_cast<std::ptrdiff_t>(i + 1));
+			else if (false == is_hard(i))
+				result.erase(result.begin() + static_cast<std::ptrdiff_t>(i));
+			else
+				++i;
 		}
+		return result;
+	}
+
+	// the joints of the old tracks inside the line
+	std::vector<double> hard_points() const
+	{
+		std::vector<double> result;
+		for (auto const &split : m_line.hard_splits)
+			if (split.chainage > 0.0 && split.chainage < m_solved.length)
+				result.push_back(split.chainage);
 		return result;
 	}
 
@@ -367,28 +405,74 @@ class cutter
 		piece.to = To.chainage;
 		piece.path = path;
 		piece.deviation = off;
-		auto const &p{path.points};
-		auto const point = [](glm::dvec3 const &Point) { return std::format("{} {} {}", number_text(Point.x), number_text(Point.y), number_text(Point.z)); };
-		piece.text = std::format("node -1 0 {} track normal {:.3f} {} {} {} {} {} {} {} {} velocity {} endtrack\n", piece.name, To.chainage - From.chainage, m_options.surface, point(p[segment_data::point::start]),
-		                         number_text(path.rolls[0]), point(p[segment_data::point::control1]), point(p[segment_data::point::control2]), point(p[segment_data::point::end]), number_text(path.rolls[1]),
-		                         number_text(path.radius), number_text(m_line.category.vmax));
+		piece.text = entry_text(piece, m_options.surface, std::format("velocity {}", number_text(m_line.category.vmax)));
 		Into.push_back(std::move(piece));
 	}
 
 	std::map<std::string, int> m_counts;
 };
 
-std::string point_text(glm::dvec3 const &Point)
+// the attributes of an old track without its events, for the pieces of its stretch which don't carry its name
+std::string without_events(std::string_view const Attributes)
 {
-	return std::format("{} {} {}", number_text(Point.x), number_text(Point.y), number_text(Point.z));
+	static constexpr std::array<std::string_view, 6> events{"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+	std::string result;
+	std::size_t at{0};
+	bool skip{false};
+	while (at < Attributes.size())
+	{
+		auto const start{Attributes.find_first_not_of(' ', at)};
+		if (start == std::string_view::npos)
+			break;
+		auto const end{std::min(Attributes.find(' ', start), Attributes.size())};
+		auto const word{Attributes.substr(start, end - start)};
+		at = end;
+		if (skip)
+			skip = false;
+		else if (std::ranges::find(events, word) != events.end())
+			skip = true;
+		else
+			result += (result.empty() ? "" : " ") + std::string{word};
+	}
+	return result;
 }
 
-// a path as an entry has it: the start, its roll, the control vectors, the end, its roll, the radius
-std::string path_text(segment_data const &Path)
+// the pieces of the stretches of the old tracks named and written as each old track was: its name on the piece it ran into first, with
+// its events, <name>_2... on the others, its surface and its attributes, the path the way it ran; a piece out of any stretch as the generator
+// names and writes it
+void keep_old_tracks(line const &Line, std::vector<generated_piece> &Pieces, generator_options const &Options)
 {
-	auto const &p{Path.points};
-	return std::format("{} {} {} {} {} {} {}", point_text(p[segment_data::point::start]), number_text(Path.rolls[0]), point_text(p[segment_data::point::control1]),
-	                   point_text(p[segment_data::point::control2]), point_text(p[segment_data::point::end]), number_text(Path.rolls[1]), number_text(Path.radius));
+	auto const &splits{Line.hard_splits};
+	auto const stretch_of = [&splits](generated_piece const &Piece) {
+		auto const after{std::ranges::upper_bound(splits, Piece.from + 1e-6, {}, &hard_split::chainage)};
+		return after == splits.begin() ? splits.size() : static_cast<std::size_t>(after - splits.begin()) - 1;
+	};
+	std::size_t first{0};
+	while (first < Pieces.size())
+	{
+		auto const stretch{stretch_of(Pieces[first])};
+		auto last{first + 1};
+		while (last < Pieces.size() && stretch_of(Pieces[last]) == stretch)
+			++last;
+		if (stretch < splits.size())
+		{
+			auto const &old{splits[stretch].track};
+			for (auto i = first; i < last; ++i)
+			{
+				auto &piece{Pieces[i]};
+				auto const order{old.reversed ? last - 1 - i : i - first};
+				if (false == old.name.empty() && false == old.continued)
+					piece.name = order == 0 ? old.name : std::format("{}_{}", old.name, order + 1);
+				if (old.reversed)
+					piece.path = geometry::reversed(piece.path);
+				auto attributes{order == 0 && false == old.continued ? old.attributes : without_events(old.attributes)};
+				if (old.attributes.empty())
+					attributes = std::format("velocity {}", number_text(Line.category.vmax));
+				piece.text = entry_text(piece, old.surface.empty() ? Options.surface : old.surface, attributes);
+			}
+		}
+		first = last;
+	}
 }
 
 // the path the pieces make, from the start of the first to the end of the last, for the versions of the simulator which know only the path:
@@ -516,13 +600,10 @@ generated_line generate(network const &Network, line_id const Line, generator_op
 		result.errors.push_back(std::format("line {} is a track of turnout {}, made with it", number(Line), number(owner->turnout)));
 		return result;
 	}
-	if (auto const hard{Options.hard_splits.find(Line)}; hard != Options.hard_splits.end() && false == hard->second.empty())
-	{
-		result.errors.push_back(std::format("line {}: the joints of old tracks as hard points of the pieces come with stage E6", number(Line)));
-		return result;
-	}
 	cutter pieces{Network, *owner, Options};
 	result.pieces = pieces.pieces(result.errors);
+	if (false == owner->hard_splits.empty())
+		keep_old_tracks(*owner, result.pieces, Options);
 	return result;
 }
 

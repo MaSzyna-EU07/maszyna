@@ -344,6 +344,9 @@ std::string write(document const &Project)
 			put(std::format("vertex {} at {} {} radius {} in {} out {} cant {}", layout::number(vertex.id), number(vertex.point.x), number(vertex.point.y), number(vertex.radius), number(vertex.transition_in), number(vertex.transition_out), number(vertex.cant)));
 		for (auto const &grade : line.shape.grades)
 			put(std::format("grade {} {} {}", number(grade.chainage), number(grade.elevation), number(grade.vertical_radius)));
+		for (auto const &split : line.hard_splits)
+			put(std::format("old {} {} reversed {} continued {} surface {} attributes {}", number(split.chainage), word(split.track.name), split.track.reversed ? 1 : 0, split.track.continued ? 1 : 0,
+			                word(split.track.surface), word(split.track.attributes)));
 		put("end");
 	}
 	put("turnouts");
@@ -584,6 +587,22 @@ read_result read(std::string_view const Text)
 				grade.vertical_radius = words.real("the vertical radius");
 				words.finish();
 				line->shape.grades.push_back(grade);
+			}
+			else if (keyword == "old")
+			{
+				layout::hard_split split;
+				split.chainage = words.real("the chainage");
+				split.track.name = unword(words.next("the name"));
+				words.expect("reversed");
+				split.track.reversed = words.choice("reversed", std::array<std::string_view, 2>{"0", "1"}) == 1;
+				words.expect("continued");
+				split.track.continued = words.choice("continued", std::array<std::string_view, 2>{"0", "1"}) == 1;
+				words.expect("surface");
+				split.track.surface = unword(words.next("the surface"));
+				words.expect("attributes");
+				split.track.attributes = unword(words.next("the attributes"));
+				words.finish();
+				line->hard_splits.push_back(std::move(split));
 			}
 			else if (keyword == "end")
 			{
