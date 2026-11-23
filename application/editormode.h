@@ -1902,9 +1902,20 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool own_speed{false}; // the speed of the style also where the track goes on from one with its own, the new tracks given it
 		std::string status;
 		double status_time{-100.0};
+		// what Tab switched to, told by the cursor a while: the step at the top of the panel says it for good
+		std::string hint;
+		double hint_time{-100.0};
 		std::string skew; // what Alt turned the straight to
 		double escape_time{-100.0}; // when Esc was pressed over points not laid: the second Esc drops them
 		std::size_t history{0}; // the step of the history the track laid last was begun at
+		// the panel: the settings opened from the line of their summary while the points are clicked, the details of the line shown, the
+		// notes of the line laid
+		bool settings_open{false};
+		bool details_open{false};
+		bool notes_open{false};
+		// the status tells of a line laid just now, as long as the history stays at the step it was laid with
+		bool laid_now{false};
+		std::size_t laid_step{0};
 		// the line laid last, told in the inspector while the last of its tracks stays the selection the laying left
 		struct laid_curve
 		{
@@ -1932,8 +1943,50 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_back();
 	void lay_escape();
 	std::size_t lay_pending() const; // the points clicked and not laid yet
+	// the states of the panel of the lay tool, each with a step of its own: nothing clicked yet, the points being clicked, a line laid
+	// just now (one line over the state of nothing clicked), the shape dragged out of a free end
+	enum class lay_state
+	{
+		ready,
+		clicking,
+		laid,
+		extending
+	};
+	lay_state lay_panel_state() const;
+	// the state of the panel of the lay tool in words, for the expectations of the self-test
+	std::string shown_lay_panel() const;
+	// the line shown at a glance: its length, its curves, the speed of the slowest one and how many are below the norms for the speed
+	// it's designed for
+	struct lay_quality
+	{
+		bool valid{false};
+		double length{0.0};
+		std::size_t curves{0};
+		double slowest{0.0};
+		std::size_t below{0};
+		double speed{0.0};
+	};
+	lay_quality lay_quality_now() const;
+	std::string lay_settings_summary() const;
+	// what the cursor tells of the leg drawn to it, in a line or two
+	std::vector<std::string> lay_leg() const;
+	// why the line shown can't be laid, or what's told of a leg not of a design; empty where it only breaks the norms, which the details
+	// of the panel list
+	std::string lay_error() const;
+	std::string lay_readout() const;
+	// the same of the shape dragged out of a free end with the lay tool on: of Length, the sharpest arc of Radius, joined to Joined,
+	// Warned of by the norms where it goes on from a switch
+	std::string extend_leg(double const Length, double const Radius, TTrack const *Joined, bool const Warned) const;
 	void render_lay_ui();
-	void render_lay_status();
+	void render_lay_step(lay_state const State);
+	void render_lay_settings();
+	void render_lay_quality();
+	void render_lay_details();
+	void render_lay_buttons();
+	void render_lay_more();
+	void render_lay_status(lay_state const State);
+	// a line laid by the lay tool, told in its panel: the length, the tracks, how to take it back
+	void lay_told(double const Length, std::size_t const Tracks);
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
 	void lay_cancel();

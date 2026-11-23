@@ -86,6 +86,7 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect statusline <holds\|lacks> <text>` | the status line of the editor (also shown in the layers window) holds the text, or doesn't |
 | `expect laycursor <x> <z> <tolerance>` | the point the line of the lay tool goes to from its last point clicked, in the plan |
 | `expect terrain <grow\|area\|prompt> <0\|1>` | the terrain model is made under the tracks as they're laid / around the camera within the download area / the question of the terrain of a new scenery is open |
+| `expect laypanel <ready\|clicking\|laid\|extending> <shown\|folded>` | the state of the panel of the lay tool, as the step at its top tells it, and whether its settings are shown or folded to the line of their summary |
 | `expect steps <count>` | the steps of the history Ctrl+Z takes back, the ones made together counted once: none made by a change refused |
 | `expect tool <name>` | the tool of the surroundings in use: `select`, `insert`, `brush`, `fill`, `copy`, or `track` while the field of work of the tracks is |
 | `expect window <shortcuts\|settings\|weather\|orthophoto> <0\|1>` | the window of the shortcuts (F1), of the settings of the editor, of the weather and the time, of the settings of the orthophoto is open |
@@ -132,3 +133,9 @@ and the consistency of the interface of the editor (P2 of the plan of the editor
 | --- | --- |
 | `c_1_bank_card_arms_insert` | a model of the node bank clicked with the select tool of the surroundings arms the insert tool with it; inserted where there's no ground under the cursor it stands at the height 0 where the cursor points, and the status says where |
 | `c_2_esc_closes_shortcuts` | Esc closes the window of the shortcuts, as F1 does, also in the tracks |
+
+and the flow of the lay tool, a step at a time:
+
+| case | fix |
+| --- | --- |
+| `lf_1_lay_panel_states` | the panel of the lay tool goes from ready, its settings shown, to clicking, its settings folded to a line, to the line laid told over the settings, and back to ready when it's taken back; the same in the mode of a curve traced |

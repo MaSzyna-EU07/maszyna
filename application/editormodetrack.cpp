@@ -15,6 +15,7 @@ http:
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
+#include "application/editorflow.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -2017,28 +2018,27 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	std::vector<key_hint> hints;
 	bool gizmo{false};
 	auto const *selected{selected_track()};
-	if (m_lay.active)
+	// the lay tool: the three gestures of its state first, those the bar under the view shows, the others after them for the card and F1;
+	// a shape dragged out of a free end tells its own
+	if (m_lay.active && false == m_extend.active)
 	{
 		bool const curve{m_lay.mode == lay_mode::curve};
-		auto const *tab{curve ? "back to the bends of straights" : "trace a curve on the photo"};
+		auto const *tab{curve ? "back to the straights" : "a curve from the photo"};
+		auto const *next{curve ? "the next point along the curve" : "the next bend"};
+		auto const *alt{"the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"};
 		if (m_lay.points.empty())
-			hints = {{"LMB", "start, on the ground or at a free end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Esc", "stop laying"}};
+			hints = {{"LMB", "the first point"}, {"LMB on a free end", "from the end"}, {"Tab", tab}, {"Drag from a free end", "lays the shape to the cursor"}, {"Shift+click a straight", "a parallel track (N)"}, {"Alt", alt}, {"Esc", "stop laying"}};
 		else if (m_lay.points.size() > 1)
-		{
 			// the points clicked are no track until Enter: it comes right after the click, where the bar at the bottom shows it
-			hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"Enter", "lay the points clicked"},
-			         {"Backspace", "take back the point"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"},
-			         {"Esc", "twice: drop the points not laid"}};
-		}
+			hints = {{"LMB", next}, {"Enter", "lay"}, {"Backspace", "take back"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}, {"Alt", alt}, {"Esc", "twice: drop the points not laid"}};
 		else
 		{
-			hints = {{"LMB", curve ? "a point along the middle of the curve, which ends at the last one" : "a bend of the straights, eased with a large curve"}, {"LMB on a free end", "join and lay"}, {"Tab", tab}};
+			hints = {{"LMB", next}, {"LMB on a free end", "join and lay"}, {"Backspace", "take back"}};
 			if (m_lay.mouse_snap.track != nullptr && m_lay.start.track != nullptr)
 				hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
 			else if (m_lay.mouse_snap.track != nullptr && curve)
 				hints.push_back({"Ctrl+wheel", "radius"});
-			hints.insert(hints.end(), {{"Alt", "the direction in steps of 15 degrees, or 1:9, 1:6.6... to a straight track"}, {"Enter", "stop laying"},
-			                           {"Backspace", "take back the point"}, {"Esc", "stop laying"}});
+			hints.insert(hints.end(), {{"Ctrl+Shift+wheel", "speed"}, {"Tab", tab}, {"Alt", alt}, {"Enter", "stop laying"}, {"Esc", "stop laying"}});
 		}
 	}
 	else if (false == m_straights.detour.empty())
@@ -2054,7 +2054,7 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			hints.insert(hints.end(), {{"Ctrl+wheel", "radius"}, {"Shift+wheel", "another shape"}});
 		else if (m_track_layout != track_layout::straight)
 			hints.push_back({"Ctrl+wheel", "radius"});
-		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}});
+		hints.insert(hints.end(), {{"Release", "build"}, {"Esc", "cancel"}, {"Ctrl+Shift+wheel", "speed"}});
 	}
 	else if (m_switch.placing && m_switch.free)
 		hints = m_switch.free_end.track != nullptr ? std::vector<key_hint>{{"Drag sideways", "side of the diverging track"},
@@ -2219,8 +2219,9 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 			*points = {"Drag an end", "a joint: the neighbours follow; a free end: a new track out of it, with Ctrl it moves"};
 		gizmo = false;
 	}
+	// the length typed goes after the three gestures of the lay tool, which the bar under the view keeps to
 	if (auto const *meaning{typed_meaning()}; meaning != nullptr)
-		hints.insert(hints.begin() + std::min<std::size_t>(1, hints.size()), {"0-9", meaning});
+		hints.insert(hints.begin() + std::min<std::size_t>(m_lay.active && false == m_extend.active ? 3 : 1, hints.size()), {"0-9", meaning});
 	if (All)
 	{
 		if (gizmo && m_gizmo_snap > 0.0f)
@@ -2278,6 +2279,9 @@ std::string editor_mode::track_readout() const
 			return link_summary(target, link, editor_track::branch_radius(m_extend.track->m_paths[1]));
 		if (snapped && pieces.empty())
 			return format(STR_C("no track fits to the end of %s"), name(target.track).c_str());
+		auto const warnings{switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces)};
+		if (m_lay.active)
+			return extend_leg(length, radius, snapped ? target.track : nullptr, false == warnings.empty()) + (reason.empty() ? std::string{} : "\n" + reason);
 		auto text{radius > 0.0 ? format("L %.2f m   R %.0f m", length, radius) + speed_of(radius, laying_norms()) : format("L %.2f m   %s", length, STR_C("straight"))};
 		if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
 			text += "\n" + eased;
@@ -2286,101 +2290,14 @@ std::string editor_mode::track_readout() const
 			text += "\n" + vertical;
 		if (snapped)
 			text += "\n" + format(STR_C("joins %s"), name(target.track).c_str());
-		for (auto const &warning : switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces))
+		for (auto const &warning : warnings)
 			text += "\n" + warning;
 		if (false == reason.empty())
 			text += "\n" + reason;
 		return text + "\n" + track_shaping(snapped);
 	}
 	if (m_lay.active)
-	{
-		auto const &lay{m_lay};
-		// of a list of warnings only the first one by the cursor, the panel lists them all; named, not told by its side, which the
-		// docks can change
-		auto const first_of = [](std::string const &Lines) {
-			auto const end{Lines.find('\n')};
-			if (end == std::string::npos)
-				return Lines;
-			auto const more{static_cast<std::size_t>(std::count(Lines.begin() + end, Lines.end(), '\n'))};
-			return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, listed in the tool options", "and %zu more, listed in the tool options", static_cast<long long>(more)), more);
-		};
-		std::string text;
-		if (lay.points.empty())
-			text = lay.mouse_snap.track != nullptr ? std::string{STR_C("goes on from this end of the track")} : std::string{STR_C("start")};
-		else if (false == lay.preview.empty() && lay.plan.shape.valid)
-		{
-			// the curve the cursor makes now: of the last bend, or the one traced
-			auto const &plan{lay.plan};
-			text = format("L %.1f m", lay.preview_length);
-			if (false == plan.shape.curves.empty())
-			{
-				auto const &curve{plan.shape.curves.back()};
-				text += "   " + curve_label(curve, laying_norms());
-				if (false == alignment::meets_norms(curve, plan.design))
-					text += "\n" + STR("this curve doesn't meet the norms, it's laid all the same");
-				// the curves next to the free ends going on from the curves of their tracks: the first and the last one
-				if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
-					text += "\n" + on;
-				if (auto const on{curve_goes_on(curve)}; plan.shape.curves.size() > 1 && false == on.empty())
-					text += "\n" + on;
-			}
-			if (lay.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
-			{
-				auto const &trace{plan.traces.back()};
-				text += "\n" + format(STR_C("%zu points, departure %.0f cm, at most %.0f cm"), trace.points.size(), trace.rms * 100.0, trace.worst * 100.0);
-			}
-			auto const [from, to]{laying_ends()};
-			text += "\n" + design_speed_of(from, to);
-			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
-				text += "\n" + vertical;
-		}
-		else if (false == lay.preview.empty())
-		{
-			double radius{0.0};
-			bool straight{false};
-			for (auto const &piece : lay.preview)
-			{
-				auto const r{piece_plan_radius(piece)};
-				if (r < 0.5)
-					straight = true;
-				else if (radius == 0.0 || r < radius)
-					radius = r;
-			}
-			if (m_eased_last.has_value() && false == m_eased_last->pieces.empty())
-				radius = m_eased_last->radius;
-			if (radius > 0.0)
-				text = (straight ? format("L %.1f m   %s + R %.0f m", lay.preview_length, STR_C("straight"), radius) : format("L %.1f m   R %.0f m", lay.preview_length, radius)) + speed_of(radius, laying_norms());
-			else
-				text = format("L %.1f m   %s", lay.preview_length, STR_C("straight"));
-			if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
-				text += "\n" + eased;
-			{
-				auto const [from, to]{laying_ends()};
-				text += "\n" + design_speed_of(from, to);
-			}
-			if (auto const vertical{vertical_of(lay.preview)}; false == vertical.empty())
-				text += "\n" + vertical;
-		}
-		for (auto const &warning : switch_exit_warnings(lay.start.track, lay.points.empty() ? lay.mouse : lay.points.front(), lay.mouse_snap.track, lay.mouse_snap.position, lay.preview))
-			text += "\n" + warning;
-		if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
-			text += "\n" + format(STR_C("joins %s"), name(lay.mouse_snap.track).c_str());
-		if (false == lay.preview_error.empty())
-			text += "\n" + first_of(lay.preview_error);
-		if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
-			text += "\n" + track_shaping(lay.start.track != nullptr);
-		// the bends are laid by default, the bar at the bottom tells of Tab: only the curve traced is named
-		if (lay.mode == lay_mode::curve)
-			text += "\n" + std::string{STR_C("Curve traced, Tab: the bends of straights")};
-		if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
-			text += "\n" + (lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), azimuth(lay.points.back(), lay.mouse)) : lay.skew);
-		// the warning of the first Esc leads, where it's read first
-		if (ImGui::GetTime() - lay.escape_time < 3.0)
-			text = lay.status + "\n" + text;
-		else if (false == lay.status.empty() && ImGui::GetTime() - lay.status_time < 4.0)
-			text += "\n" + first_of(lay.status);
-		return text;
-	}
+		return lay_readout();
 	auto const &state{m_straights};
 	if (state.tool_placed && state.tool_mouse)
 	{
@@ -2620,8 +2537,28 @@ void editor_mode::draw_track_hints()
 		readout += (readout.empty() ? "" : "\n") + std::string{"= "} + m_typed + "_   " + STR(meaning);
 	if (readout.empty() || ImGui::GetIO().WantCaptureMouse)
 		return;
+	// a line with the sign of a warning in it is drawn in the colour of one, the sign drawn at its end: the font has no glyph of it
+	std::vector<std::pair<std::string, bool>> lines;
+	std::size_t begin{0};
+	while (begin <= readout.size())
+	{
+		auto const end{std::min(readout.find('\n', begin), readout.size())};
+		auto line{readout.substr(begin, end - begin)};
+		auto const mark_at{line.find(editor_flow::kWarningMark)};
+		auto const warned{mark_at != std::string::npos};
+		if (warned)
+			line.erase(mark_at, editor_flow::kWarningMark.size());
+		lines.emplace_back(std::move(line), warned);
+		begin = end + 1;
+	}
+	auto const mark{std::round(ImGui::GetTextLineHeight() * 0.9f)};
+	ImVec2 size{0.0f, 0.0f};
+	for (auto const &[line, warned] : lines)
+	{
+		size.x = std::max(size.x, ImGui::CalcTextSize(line.c_str()).x + (warned ? mark * 1.6f : 0.0f));
+		size.y += ImGui::GetTextLineHeight();
+	}
 	auto *foreground{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
-	auto const size{ImGui::CalcTextSize(readout.c_str())};
 	// right below the cursor, or on its other side where the view ends: it doesn't cover the panels by the view
 	auto const low{editor_ui::view_min()};
 	auto const high{editor_ui::view_max()};
@@ -2634,7 +2571,13 @@ void editor_mode::draw_track_hints()
 	at.y = std::max(at.y, low.y + 10.0f);
 	foreground->AddRectFilled(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), IM_COL32(0, 0, 0, 190), 4.0f);
 	foreground->AddRect(ImVec2(at.x - 6.0f, at.y - 4.0f), ImVec2(at.x + size.x + 6.0f, at.y + size.y + 4.0f), overlay_color::marked, 4.0f);
-	foreground->AddText(at, IM_COL32(255, 255, 255, 255), readout.c_str());
+	for (auto const &[line, warned] : lines)
+	{
+		foreground->AddText(at, warned ? overlay_color::warning : IM_COL32(255, 255, 255, 255), line.c_str());
+		if (warned)
+			editor_flow::draw_warning(*foreground, ImVec2(at.x + ImGui::CalcTextSize(line.c_str()).x + mark * 0.9f, at.y + ImGui::GetTextLineHeight() * 0.5f), mark, overlay_color::warning);
+		at.y += ImGui::GetTextLineHeight();
+	}
 }
 
 void editor_mode::draw_blade_tips() const
@@ -3118,7 +3061,7 @@ void editor_mode::draw_build_overlay() const
 		{
 			for (auto const &curve : plan.shape.curves)
 				if (curve.vertex >= 0 && curve.vertex < static_cast<int>(plan.shape.vertex_chainages.size()))
-					label_at(alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position, curve_label(curve, laying_norms()),
+					label_at(alignment::evaluate(plan.shape, plan.shape.vertex_chainages[curve.vertex]).position, curve_short(curve, laying_norms()),
 					         alignment::meets_norms(curve, plan.design) ? overlay_color::marked : overlay_color::warning);
 			for (auto const &e : plan.shape.elements)
 				if (e.kind == alignment::element_kind::straight && e.length >= 20.0)

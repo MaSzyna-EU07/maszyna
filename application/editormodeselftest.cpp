@@ -241,6 +241,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect laycursor <x> <z> <tolerance> the point the line of the lay tool goes to from its last point, in the plan
 //   expect terrain <grow|area|prompt> <0|1>   the terrain model made under the tracks as they're laid / around the camera within the
 //                                        download area / the question of the terrain open
+//   expect laypanel <ready|clicking|laid|extending> <shown|folded>   the state of the panel of the lay tool, as its step tells it, and
+//                                        whether its settings are shown or folded to the line of their summary
 //   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code
