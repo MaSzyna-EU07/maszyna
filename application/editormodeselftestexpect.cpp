@@ -257,6 +257,26 @@ void expect_norm(std::string const &What, std::istringstream &Words, alignment::
 	expect_near(What, Norms.gauge, wanted, optional_number(Words, 0.5));
 }
 
+// expect findings <note|warning|block|any> <least> <most>: how many the last check of the norms found of the tier
+void expect_findings(std::string const &What, std::istringstream &Words, std::vector<norms_report::entry> const &Findings)
+{
+	std::string tier;
+	int least{0};
+	int most{0};
+	Words >> tier >> least >> most;
+	if (malformed(What, Words))
+		return;
+	std::map<std::string, norms::tier, std::less<>> const tiers{{"note", norms::tier::prefer}, {"warning", norms::tier::warn}, {"block", norms::tier::block}};
+	auto const wanted{tiers.find(tier)};
+	if (tier != "any" && wanted == tiers.end())
+	{
+		expectation(false, What, "no tier " + tier, "note, warning, block or any");
+		return;
+	}
+	auto const count{std::ranges::count_if(Findings, [&](norms_report::entry const &Entry) { return tier == "any" || Entry.finding.level == wanted->second; })};
+	expectation(count >= least && count <= most, What, std::to_string(count), format("%d to %d", least, most));
+}
+
 // expect height <track> <start|end> <m> <tolerance>, expect lift <track> <start|end> <label> <m> <tolerance>
 void expect_height(std::string const &What, std::string const &Kind, std::istringstream &Words, std::map<std::string, double> const &Marks)
 {
@@ -379,9 +399,11 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_includes(what, words);
 	else if (kind == "status")
 		expect_status(what, words, m_switch.status);
+	else if (kind == "findings")
+		expect_findings(what, words, m_norms.results());
 	else if (kind == "steps")
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
 	else
-		expectation(false, what, "no expectation " + kind, "cant, joint, records, speed, gauge, track, route, norms, height, lift, includes, status or steps");
+		expectation(false, what, "no expectation " + kind, "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status or steps");
 	return selftest_result::handled;
 }

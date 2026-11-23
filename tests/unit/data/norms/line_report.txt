@@ -1,0 +1,71 @@
+Norms: PLK ST-T1-A6, line 100 km/h, slow trains 60 km/h, mixed traffic, main track, 5 Tg a year, the speed of the tracks where they have one
+Line n01: 988.0 m, 11 elements, 19 findings
+       0.0    150.0  straight  100 km/h
+     150.0     60.0  transition R - -> 600  100 km/h
+     210.0    100.0  arc R 600  100 km/h
+     310.0     60.0  transition R 600 -> -  100 km/h
+     370.0     28.0  straight  100 km/h
+     398.0     80.0  arc R -400  60 km/h
+     478.0     10.0  straight  60 km/h
+     488.0     60.0  arc R 500  60 km/h
+     548.0    130.0  straight  100 km/h
+     678.0    150.0  arc R 1200  100 km/h
+     828.0    160.0  straight  100 km/h
+  cant (m: mm): 0.0: 0.0 150.0: 0.0 210.0: 60.0 310.0: 60.0 370.0: 0.0 648.0: 0.0 678.0: 90.0 828.0: 90.0 888.0: 0.0 988.0: 0.0
+  grade (m: per mille): 0.0: 0.00 598.0: 8.00 648.0: 0.00
+     150.0  note        cant deficiency change rate 63 mm/s, PLK recommends at most 55 mm/s (tab. 9.14)  [n02]
+     210.0  warning     cant deficiency 137 mm, PLK allows at most 130 mm (tab. 9.7)  [n03]
+     310.0  note        cant deficiency change rate 63 mm/s, PLK recommends at most 55 mm/s (tab. 9.14)  [n04]
+     370.0  warning     straight 28.0 m, PLK asks for at least 35.0 m (tab. 9.1)  [n05]
+     398.0  hard limit  abrupt change of the cant deficiency 106 mm, PLK allows at most 60 mm (tab. 9.15)  [n06]
+     398.0  note        radius 400 m, PLK recommends at least 600 m (tab. 9.2)  [n06]
+     478.0  hard limit  abrupt change of the cant deficiency 191 mm, PLK allows at most 60 mm (tab. 9.15)  [n07]
+     478.0  hard limit  straight 10.0 m, PLK asks for at least 20.0 m (tab. 9.1)  [n07]
+     488.0  note        radius 500 m, PLK recommends at least 600 m (tab. 9.2)  [n08]
+     548.0  hard limit  abrupt change of the cant deficiency 85 mm, PLK allows at most 60 mm (tab. 9.15)  [n09]
+     598.0  hard limit  break of the grade with no vertical curve, PLK asks for a radius of at least 2500 m (tab. 10.2)  [n10]
+     598.0  note        grade 8.0 per mille, PLK recommends at most 6.0 per mille (tab. 10.1)  [n10]
+     648.0  hard limit  cant ramp 3.00 mm/m, PLK allows at most 2.50 mm/m (tab. 9.12)  [n11]
+     648.0  hard limit  cant change rate 83 mm/s, PLK allows at most 60 mm/s (tab. 9.13)  [n11]
+     648.0  hard limit  cant deficiency change rate 83 mm/s, PLK allows at most 80 mm/s (tab. 9.14)  [n11]
+     648.0  hard limit  break of the grade with no vertical curve, PLK asks for a radius of at least 2500 m (tab. 10.2)  [n11]
+     678.0  hard limit  abrupt change of the cant deficiency 98 mm, PLK allows at most 50 mm (tab. 9.15)  [n12]
+     828.0  hard limit  abrupt change of the cant deficiency 98 mm, PLK allows at most 50 mm (tab. 9.15)  [n13]
+     828.0  note        cant change rate 42 mm/s, PLK recommends at most 35 mm/s (tab. 9.13)  [n13]
+
+Norms: TSI INF, line 100 km/h, slow trains 60 km/h, mixed traffic, main track, 5 Tg a year, the speed of the tracks where they have one
+Line n01: 988.0 m, 11 elements, 3 findings
+     598.0  hard limit  break of the grade with no vertical curve, TSI INF asks for a radius of at least 900 m (4.2.3.5(1))  [n10]
+     648.0  hard limit  cant ramp 3.00 mm/m, EN 13803-1 allows at most 2.50 mm/m (5.2.5)  [n11]
+     648.0  hard limit  break of the grade with no vertical curve, TSI INF asks for a radius of at least 500 m (4.2.3.5(1))  [n11]
+
+Norms: EN 13803, line 100 km/h, slow trains 60 km/h, mixed traffic, main track, 5 Tg a year, the speed of the tracks where they have one
+Line n01: 988.0 m, 11 elements, 10 findings
+     210.0  warning     cant deficiency 137 mm, EN 13803 allows at most 130 mm (5.2.3, tab. 1)  [n03]
+     398.0  warning     abrupt change of the cant deficiency 106 mm, EN 13803 allows at most 50 mm (EN 13803-2 7.1.3), the limit not confirmed  [n06]
+     478.0  warning     abrupt change of the cant deficiency 106 mm, EN 13803 allows at most 50 mm (EN 13803-2 7.1.3), the limit not confirmed  [n07]
+     488.0  warning     abrupt change of the cant deficiency 85 mm, EN 13803 allows at most 50 mm (EN 13803-2 7.1.3), the limit not confirmed  [n08]
+     548.0  warning     abrupt change of the cant deficiency 85 mm, EN 13803 allows at most 50 mm (EN 13803-2 7.1.3), the limit not confirmed  [n09]
+     598.0  hard limit  break of the grade with no vertical curve, TSI INF asks for a radius of at least 900 m (4.2.3.5(1))  [n10]
+     648.0  hard limit  cant ramp 3.00 mm/m, EN 13803 allows at most 2.50 mm/m (5.2.5)  [n11]
+     648.0  hard limit  break of the grade with no vertical curve, TSI INF asks for a radius of at least 500 m (4.2.3.5(1))  [n11]
+     678.0  warning     abrupt change of the cant deficiency 98 mm, EN 13803 allows at most 40 mm (EN 13803-2 7.1.3), the limit not confirmed  [n12]
+     828.0  warning     abrupt change of the cant deficiency 98 mm, EN 13803 allows at most 40 mm (EN 13803-2 7.1.3), the limit not confirmed  [n13]
+
+Norms: CH AB-EBV, line 100 km/h, slow trains 60 km/h, mixed traffic, main track, 5 Tg a year, the speed of the tracks where they have one
+Line n01: 988.0 m, 11 elements, 14 findings
+     150.0  warning     cant deficiency change rate 63 mm/s, AB-EBV allows at most 55 mm/s (AB 17 4.3.1)  [n02]
+     210.0  warning     cant deficiency 137 mm, AB-EBV allows at most 130 mm (AB 17 3.6.2.1)  [n03]
+     310.0  warning     cant deficiency change rate 63 mm/s, AB-EBV allows at most 55 mm/s (AB 17 4.3.1)  [n04]
+     398.0  warning     abrupt change of the cant deficiency 106 mm, AB-EBV allows at most 50 mm (AB 17 5.3.1)  [n06]
+     478.0  hard limit  abrupt change of the cant deficiency 191 mm, TSI INF allows at most 130 mm (4.2.4.4(1))  [n07]
+     478.0  hard limit  straight 10.0 m, AB-EBV asks for at least 11.7 m (AB 17 3.2)  [n07]
+     548.0  warning     abrupt change of the cant deficiency 85 mm, AB-EBV allows at most 50 mm (AB 17 5.3.1)  [n09]
+     598.0  hard limit  break of the grade with no vertical curve, AB-EBV asks for a radius of at least 1750 m (AB 17 7.2)  [n10]
+     648.0  hard limit  cant ramp 3.00 mm/m, AB-EBV allows at most 2.50 mm/m (AB 17 4.2.1)  [n11]
+     648.0  hard limit  cant change rate 83 mm/s, AB-EBV allows at most 60 mm/s (AB 17 4.3.2)  [n11]
+     648.0  warning     cant deficiency change rate 83 mm/s, AB-EBV allows at most 55 mm/s (AB 17 4.3.1)  [n11]
+     648.0  hard limit  break of the grade with no vertical curve, AB-EBV asks for a radius of at least 2500 m (AB 17 7.2)  [n11]
+     678.0  warning     abrupt change of the cant deficiency 98 mm, AB-EBV allows at most 44 mm (AB 17 5.3.1)  [n12]
+     828.0  warning     abrupt change of the cant deficiency 98 mm, AB-EBV allows at most 44 mm (AB 17 5.3.1)  [n13]
+

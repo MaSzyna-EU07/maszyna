@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodelineside.h"
 #include "application/editormodeparallel.h"
 #include "application/editormodespeed.h"
+#include "application/editormodenorms.h"
 #include "application/editormodesrk.h"
 #include "application/editormodekm.h"
 #include "application/editormodevehicle.h"
@@ -2235,7 +2236,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 15> const &track_modes();
+	static std::array<track_mode, 16> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	// a tool of the station: they share its schematic
 	bool srk_tab() const { return m_track_tab == track_tab::station || m_track_tab == track_tab::station_signals || m_track_tab == track_tab::line_block; }
@@ -2293,7 +2294,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_track_tool_options();
 	void render_track_selection();
 	void show_track_tab(track_tab const Wanted) override;
-	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
+	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
 	std::string track_mode_name() const;
@@ -3456,6 +3457,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	gauge_tool m_gauge{*this, *this, *this, *this};
 	speed_tool m_speed{*this, *this, *this, *this};
 	joints_tool m_joints{*this, *this, *this, *this};
+	norms_tool m_norms{*this, *this, *this};
 	vehicle_tool m_vehicle{*this, *this};
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
@@ -3464,7 +3466,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
 	minimap_tool m_minimap{*this, *this, m_ride};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_norms, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
 
 	void infra_rebase();
 	void render_infra_search();

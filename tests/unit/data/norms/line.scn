@@ -1,0 +1,29 @@
+// a line for the golden report of the norms, written by make_line.py
+// a straight, 150 m at 100 km/h
+node -1 0 n01 track normal 150 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 0 0 0 0 0 0 150 0 0 velocity 100 endtrack
+// a transition of 60 m into R 600 m to the left, the cant ramp 0 - 60 mm along it
+node -1 0 n02 track normal 60 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 150 0 0 0 20 1 0 -20 -1 0 210 2.292443 0 velocity 100 endtrack
+// the arc of R 600 m, 100 m, the cant 60 mm: I 137 mm at 100 km/h
+node -1 0 n03 track normal 100 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -1 0 210 2.292443 -1.665551 0 33.311024 7.168642 0 -32.573132 -14.274362 0 308.998306 2.292443 600 velocity 100 endtrack
+// the transition out of it, 60 m, the cant ramp 60 - 0 mm
+node -1 0 n04 track normal 60 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -14.274362 0 308.998306 2.292443 -4.304066 0 19.556968 5.268742 0 -19.293531 -29.115913 0 367.142337 0 0 velocity 100 endtrack
+// a straight of 28 m, shorter than 0.35 V
+node -1 0 n05 track normal 28 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -29.115913 0 367.142337 0 0 0 0 0 0 0 -36.492153 0 394.153281 0 0 velocity 100 endtrack
+// R 400 m to the right with no transition, 80 m at 60 km/h
+node -1 0 n06 track normal 80 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -36.492153 0 394.153281 0 -7.03085 0 25.746167 1.775727 0 -26.629772 -49.735181 0 472.914422 0 400 velocity 60 endtrack
+// a straight of 10 m between reverse curves
+node -1 0 n07 track normal 10 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -49.735181 0 472.914422 0 0 0 0 0 0 0 -50.400524 0 482.892263 0 0 velocity 60 endtrack
+// R 500 m to the left with no transition, 60 m at 60 km/h
+node -1 0 n08 track normal 60 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -50.400524 0 482.892263 0 -1.331085 0 19.961672 3.711168 0 -19.658773 -57.970721 0 542.376498 0 500 velocity 60 endtrack
+// a straight of 50 m, level
+node -1 0 n09 track normal 50 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -57.970721 0 542.376498 0 0 0 0 0 0 0 -67.245858 0 591.508685 0 0 velocity 100 endtrack
+// a straight of 50 m rising 8 per mille from a break of the grade
+node -1 0 n10 track normal 50 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -67.245858 0 591.508685 0 0 0 0 0 0 0 -76.520995 0.4 640.640873 0 0 velocity 100 endtrack
+// a straight of 30 m, level again, the cant ramp 0 - 90 mm along it, 3 mm/m
+node -1 0 n11 track normal 30 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -76.520995 0.4 640.640873 0 0 0 0 0 0 0 -82.086077 0.4 670.120185 3.439813 0 velocity 100 endtrack
+// R 1200 m to the left with no transition, 150 m, the cant 90 mm
+node -1 0 n12 track normal 150 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -82.086077 0.4 670.120185 3.439813 -9.278157 0 49.148187 15.333303 0 -47.607965 -119.039379 0.4 815.396377 3.439813 1200 velocity 100 endtrack
+// a straight of 60 m, the cant ramp 90 - 0 mm along it
+node -1 0 n13 track normal 60 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -119.039379 0.4 815.396377 3.439813 0 0 0 0 0 0 -137.433353 0.4 872.507336 0 0 velocity 100 endtrack
+// a straight of 100 m
+node -1 0 n14 track normal 100 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -137.433353 0.4 872.507336 0 0 0 0 0 0 0 -168.089976 0.4 967.692269 0 0 velocity 100 endtrack

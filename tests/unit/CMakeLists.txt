@@ -50,11 +50,12 @@ add_executable(${UNIT_TESTS_NAME}
 	track_stubs.cpp
 	# and the cant the track editor matches at the joints of the tracks
 	"${CMAKE_SOURCE_DIR}/editor/editorTrackShape.cpp"
-	# the norms of the track geometry, a module of its own (test_norms_*.cpp)
+	# the norms of the track geometry, a module of its own, and the report of the norms on the tracks laid (test_norms_*.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsTables.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsLimits.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsEngine.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsLine.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorNormsReport.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
