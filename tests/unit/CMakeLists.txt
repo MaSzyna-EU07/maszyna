@@ -64,6 +64,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
+	# the project file of the domain (test_project_file.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/project/projectFile.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

@@ -222,6 +222,7 @@ set(SOURCES
 "editor/layout/layoutCommands.cpp"
 "editor/layout/layoutTurnout.cpp"
 "editor/layout/layoutGenerator.cpp"
+"editor/project/projectFile.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"

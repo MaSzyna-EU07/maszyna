@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/layout/layoutLine.hpp"
 #include "editor/norms/norms.hpp"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
@@ -134,6 +135,26 @@ class network
 	end_ref const *end_of(line_id const Line, line_end const End) const;
 	// how the end of the line meets its node, for laying the line
 	end_condition condition(line const &Line, line_end const End) const;
+
+	// the last identifiers handed out, which the project file keeps so that none is handed out again after it's read
+	struct handed_out
+	{
+		std::uint32_t node{0};
+		std::uint32_t line{0};
+		std::uint32_t vertex{0};
+		std::uint32_t turnout{0};
+
+		bool operator==(handed_out const &) const = default;
+	};
+	handed_out handed() const { return {m_last_node, m_last_line, m_last_vertex, m_last_turnout}; }
+	// the identifiers up to these taken as handed out; none goes back below what was handed out already
+	void hand_out(handed_out const &Last)
+	{
+		m_last_node = std::max(m_last_node, Last.node);
+		m_last_line = std::max(m_last_line, Last.line);
+		m_last_vertex = std::max(m_last_vertex, Last.vertex);
+		m_last_turnout = std::max(m_last_turnout, Last.turnout);
+	}
 
   private:
 	friend class transaction;
