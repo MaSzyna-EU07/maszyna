@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorSwitchCurve.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorSpeed.hpp"
 #include "utilities/translation.h"
 
 #include <algorithm>
@@ -260,6 +261,42 @@ double curve_speed(double const Radius, double const Cant, double const Deficien
 	if (Radius <= 0.0)
 		return std::numeric_limits<double>::infinity();
 	return std::sqrt(std::max(0.0, Deficiency + Cant) * Radius / kDeficiencyFactor);
+}
+
+double basic_speed(double const Radius)
+{
+	if (Radius < 300.0)
+		return 40.0;
+	if (Radius < 500.0)
+		return 50.0;
+	if (Radius < 760.0)
+		return 60.0;
+	if (Radius < 1200.0)
+		return 80.0;
+	return Radius < 2500.0 ? 100.0 : 130.0;
+}
+
+branch_speed_report branch_speed(double const Basic, double const Ratio, double const Main, double const Cant, bool const Movable)
+{
+	branch_speed_report report;
+	// bent with the main track, one-sided where it turns the way the diverging track does, table 11.8
+	report.radius = Basic;
+	if (Main != 0.0)
+		report.radius = bent_radius(Main, Basic, Ratio);
+	// the cant with its sign: leaning into the turn of the diverging track, or against it where the bending turns it the other way
+	report.cant = report.radius >= 0.0 ? Cant : -Cant;
+	report.deficiency = switch_deficiency(Movable).normal;
+	report.formula = curve_speed(std::abs(report.radius), report.cant, report.deficiency);
+	// no more than the basic switch has: table 11.2, which the formula gives for a fixed frog
+	report.table = basic_speed(Basic);
+	report.rounded = std::isinf(report.formula) ? report.table : speed_check::suggested(report.formula);
+	report.speed = std::min(report.table, report.rounded);
+	return report;
+}
+
+double written_velocity(double const Main, double const Diverging)
+{
+	return Main > 0.0 && Main <= Diverging ? Main : -std::max(2.0, Diverging);
 }
 
 slip_report check_slip(std::vector<std::vector<track_point>> const &Tracks, std::vector<std::vector<track_point>> const &Curves, std::vector<track_point> const &Line, double const From, double const To)

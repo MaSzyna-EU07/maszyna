@@ -2116,26 +2116,22 @@ double editor_mode::branch_speed_of(TTrack const &Switch, double const Radius, d
 		return -1.0;
 	// bent with the main track, one-sided where it turns the way the diverging track does, table 11.8: signed the way the diverging track
 	// turns off it, below 0 the other way
-	auto radius{basic};
-	if (auto const bend{bent_main_radius(main)}; Radius > 0.5 && bend != 0.0)
-		radius = switch_curve::bent_radius((bend > 0.0) == (side > 0.0) ? std::abs(bend) : -std::abs(bend), Radius, Ratio);
-	// the cant of the line under it with its sign: above 0 leaning into the turn of the diverging track, below 0 against it. A roll above
-	// 0 leans the track to where the headings grow
+	auto const bend{Radius > 0.5 ? bent_main_radius(main) : 0.0};
+	auto const main_radius{bend != 0.0 ? ((bend > 0.0) == (side > 0.0) ? std::abs(bend) : -std::abs(bend)) : 0.0};
+	// the cant of the line under it with its sign, above 0 leaning to the side the diverging track leaves to. A roll above 0 leans the
+	// track to where the headings grow
 	auto const roll{0.5 * (static_cast<double>(diverging.rolls[0]) + static_cast<double>(diverging.rolls[1]))};
-	auto const cant{m_route.design.norms.gauge * std::sin(glm::radians(roll)) * (radius >= 0.0 ? side : -side)};
-	auto const deficiency{switch_curve::switch_deficiency(Switch.SwitchExtension != nullptr && Switch.SwitchExtension->m_movablenose).normal};
-	auto const formula{switch_curve::curve_speed(std::abs(radius), cant, deficiency)};
-	// no more than the basic switch has: table 11.2, which the formula gives for a fixed frog, a movable nose kept to it as Id-4 keeps it
-	auto const table{editor_track::diverging_speed(basic)};
-	auto const rounded{std::isinf(formula) ? table : speed_check::suggested(formula)};
-	auto const speed{std::min(table, rounded)};
+	auto const toward{m_route.design.norms.gauge * std::sin(glm::radians(roll)) * side};
+	// formula 9.9 with the deficiency of its frog, no more than table 11.2 gives the basic switch: the rule the domain model keeps too
+	auto const branch{switch_curve::branch_speed(basic, Ratio, main_radius, toward, Switch.SwitchExtension != nullptr && Switch.SwitchExtension->m_movablenose)};
+	auto const speed{branch.speed};
 	if (Why != nullptr)
 	{
 		*Why = format(STR_C("Speed on the diverging track %.0f km/h"), speed);
-		if (std::abs(radius - basic) > 0.5 || std::abs(cant) > 0.5)
-			*Why += format(STR_C(": R %.0f m, cant %+.0f mm into its turn, I up to %.0f mm (formula 9.9, table 9.7)"), std::abs(radius), cant, deficiency);
-		if (rounded > table)
-			*Why += format(STR_C(", no more than %.0f km/h of the basic switch (table 11.2)"), table);
+		if (std::abs(branch.radius - basic) > 0.5 || std::abs(branch.cant) > 0.5)
+			*Why += format(STR_C(": R %.0f m, cant %+.0f mm into its turn, I up to %.0f mm (formula 9.9, table 9.7)"), std::abs(branch.radius), branch.cant, branch.deficiency);
+		if (branch.rounded > branch.table)
+			*Why += format(STR_C(", no more than %.0f km/h of the basic switch (table 11.2)"), branch.table);
 	}
 	return speed;
 }
@@ -2148,7 +2144,7 @@ std::string editor_mode::write_switch_speed(TTrack &Switch, double const Radius,
 		return {};
 	// one value for both tracks of a switch: the own limit of the main track where it's the lower, for both, else the one of the diverging
 	// track for it alone, below 0
-	editor_track::velocity(Switch, Main > 0.0 && Main <= speed ? Main : -std::max(2.0, speed));
+	editor_track::velocity(Switch, switch_curve::written_velocity(Main, speed));
 	return why;
 }
 

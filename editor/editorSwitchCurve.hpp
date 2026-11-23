@@ -96,6 +96,30 @@ deficiency switch_deficiency(bool const Movable);
 // cant against the turn takes up all the deficiency already
 double curve_speed(double const Radius, double const Cant, double const Deficiency);
 
+// the speed on the diverging track of the basic switch of the Radius (m), table 11.2, km/h
+double basic_speed(double const Radius);
+
+// the speed on the diverging track of a switch: of the basic switch of Basic (m) and 1:Ratio, its main track bent to Main (m, signed as
+// bent_radius() takes it, 0 not bent) under the Cant (mm, above 0 leaning to the side the diverging track leaves to), by formula 9.9
+// with the normal cant deficiency of its frog (table 9.7), rounded down to the steps of the speed limits and no more than table 11.2
+// gives the basic switch; a movable nose kept to it as Id-4 keeps it. The editor writes it when a switch is laid, and so does the
+// domain model of the track geometry (editor/layout)
+struct branch_speed_report
+{
+	double speed{0.0}; // km/h
+	double radius{0.0}; // m, of the diverging track, bent by table 11.8, signed as bent_radius() gives it
+	double cant{0.0}; // mm, above 0 leaning into the turn of the diverging track, below 0 against it
+	double deficiency{0.0}; // mm, the normal one of the frog
+	double formula{0.0}; // km/h, of formula 9.9, infinite on a straight diverging track
+	double rounded{0.0}; // km/h, the formula rounded down to the steps of the speed limits
+	double table{0.0}; // km/h, of the basic switch, table 11.2
+};
+branch_speed_report branch_speed(double const Basic, double const Ratio, double const Main, double const Cant, bool const Movable);
+
+// the one velocity a switch keeps for both its tracks, km/h: the limit of the main track for both where it's the lower one, else the one
+// of the diverging track for it alone, below 0 (TTrack: -40 limits the diverging track only)
+double written_velocity(double const Main, double const Diverging);
+
 // a slip switch bent into a curve, as ST-T1-A6 sees it: none is bent (11.4 pkt 4b, the editor telling no main track from a side
 // one), the curvature of each track through it of one sign all along it (9.7 pkt 12), its slip curves no sharper than a side track may
 // be (table 9.2), the cant as over a switch bent, none recommended in a side track (9.3 pkt 5)
