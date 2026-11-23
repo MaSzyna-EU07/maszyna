@@ -30,6 +30,7 @@ ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
 int ui_layer::m_palette{0};
+float ui_layer::m_window_alpha{-1.0f};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
@@ -182,9 +183,10 @@ void create_viewport_window(ImGuiViewport *Viewport)
 }
 } // namespace
 
-void ui_layer::imgui_colors(int const Palette)
+void ui_layer::imgui_colors(int const Palette, float const WindowAlpha)
 {
 	m_palette = Palette;
+	m_window_alpha = WindowAlpha;
 	auto const rgb = [](int const Color, float const Alpha = 1.0f) {
 		return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
 	};
@@ -204,7 +206,7 @@ void ui_layer::imgui_colors(int const Palette)
 
 	colors[ImGuiCol_Text] = rgb(editor ? 0xe6e8eb : 0xffffff);
 	colors[ImGuiCol_TextDisabled] = rgb(editor ? 0x8a929c : 0xa0a0a2);
-	colors[ImGuiCol_WindowBg] = rgb(panel, Global.UIBgOpacity); // ui.bg.opacity from config file
+	colors[ImGuiCol_WindowBg] = rgb(panel, WindowAlpha); // ui.bg.opacity from config file, unless the ui has its own
 	colors[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	colors[ImGuiCol_PopupBg] = rgb(base, 0.98f);
 	colors[ImGuiCol_Border] = rgb(border);
@@ -261,7 +263,7 @@ void ui_layer::imgui_colors(int const Palette)
 
 void ui_layer::imgui_style()
 {
-	imgui_colors(0);
+	imgui_colors(0, Global.UIBgOpacity);
 
 	// flat, square elements with thin borders
 	auto &style = ImGui::GetStyle();
@@ -539,11 +541,16 @@ void ui_layer::render_internal()
 	}
 }
 
+float ui_layer::window_alpha() const
+{
+	return Global.UIBgOpacity;
+}
+
 void ui_layer::begin_ui_frame()
 {
 	// the colours follow the ui of the mode drawn
-	if (palette() != m_palette)
-		imgui_colors(palette());
+	if (palette() != m_palette || window_alpha() != m_window_alpha)
+		imgui_colors(palette(), window_alpha());
 	begin_ui_frame_internal();
 	render_dockspace();
 	m_dockspaceframe = ImGui::GetFrameCount();

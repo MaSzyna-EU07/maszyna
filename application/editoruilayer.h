@@ -214,6 +214,9 @@ class editor_ui : public ui_layer
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
+	// the panels of the editor are opaque: the 3d scene, drawn under the whole window, doesn't show through the docks around the view;
+	// a window over the view which wants to be seen through says so itself (SetNextWindowBgAlpha)
+	float window_alpha() const override { return 1.0f; }
 	void render_dockspace() override;
 	void render_() override;
 	// docks the windows of the editor in their default places
