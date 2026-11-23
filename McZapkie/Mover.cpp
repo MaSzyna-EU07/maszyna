@@ -1006,7 +1006,8 @@ void TMoverParameters::PantPressureSwitchTrip()
 	if (TrainType != dt_EZT)
 	{
 		// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
-		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV)
+		// (the genset of a dual-mode vehicle, when the selector is on it, doesn't need the pantographs)
+		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV && false == GensetSelected())
 		{
 			// TODO: check whether line breaker should be open EMU-wide
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
@@ -2472,6 +2473,7 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	LowVoltagePowerCheck(Deltatime);
 	// power sources
 	PantographsCheck(Deltatime);
+	GensetCheck(Deltatime);
 	// main circuit
 	MainsCheck(Deltatime);
 	// traction motors
@@ -2557,6 +2559,11 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 	{
 		break;
 	}
+	}
+	if (GensetSelected())
+	{
+		// the traction selector of a dual-mode vehicle on the genset isolates the pantographs
+		localvoltage = Genset.voltage;
 	}
 	// a line breaker closed ahead of the pantographs gets ready on the low voltage circuits
 	auto const maincircuitpowersupply{std::abs(localvoltage) > 0.1 || GetTrainsetHighVoltage() > 0.1 || (PantographsRequireMains && (Power24vIsAvailable || Power110vIsAvailable))};
@@ -2675,7 +2682,8 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 			case TPowerSource::Main:
 			{
 				// HACK: main circuit can be fed through couplers, so we explicitly check pantograph supply here
-				localvoltage = MainCircuitPowered() ? PantographVoltage : 0.0;
+				// (or the genset's, where the traction selector of a dual-mode vehicle is on it)
+				localvoltage = MainCircuitPowered() ? TractionSourceVoltage() : 0.0;
 				break;
 			}
 			default:
@@ -2684,10 +2692,10 @@ double TMoverParameters::LocalPowerVoltage(coupling const Coupling)
 			}
 			}
 		}
-		// high voltage power sources
+		// high voltage power sources: the pantographs, or the genset of a dual-mode vehicle, by its traction selector
 		if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector)
 		{
-			localvoltage = std::max(localvoltage, PantographVoltage);
+			localvoltage = std::max(localvoltage, TractionSourceVoltage());
 		}
 		break;
 	}
@@ -2994,7 +3002,7 @@ void TMoverParameters::HeatingCheck(double const /*Timestep*/)
 	}
 	case TPowerSource::Main:
 	{
-		voltage = MainCircuitPowered() ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		voltage = MainCircuitPowered() ? TractionSupplyVoltage() : 0.0;
 		break;
 	}
 	default:
@@ -3183,6 +3191,63 @@ void TMoverParameters::PantographsCheck(double const /*Timestep*/)
 		pantograph.is_active = valve.is_active && PantsValve.is_active && pantographexists;
 
 		pant_id++;
+	}
+}
+
+// the genset of a dual-mode vehicle: started on request with the battery on, it cranks for start_time, then runs at
+// idle and up to full revolutions with the traction demand; stopped, it coasts down. regulated voltage from idle up
+void TMoverParameters::GensetCheck(double const Deltatime)
+{
+	if (false == Genset.fitted())
+	{
+		return;
+	}
+	auto &genset{Genset};
+	auto const wasactive{genset.is_active};
+	auto const lowvoltagepower{Power24vIsAvailable || Power110vIsAvailable};
+	auto const requested{lowvoltagepower && false == genset.is_disabled && (genset.start_type == start_t::automatic ? GensetSelected() : genset.is_enabled)};
+	if (false == requested)
+	{
+		genset.is_active = false;
+		genset.is_cranking = false;
+		genset.timer = 0.0;
+	}
+	else if (false == genset.is_active)
+	{
+		genset.is_cranking = true;
+		genset.timer += Deltatime;
+		if (genset.timer >= genset.start_time)
+		{
+			genset.is_cranking = false;
+			genset.is_active = true;
+		}
+	}
+	// revolutions: the start brings them up to idle in start_time; running they follow the traction demand, stopped
+	// they coast down to 0, both with the time constant spinup_time
+	if (genset.is_cranking)
+	{
+		genset.revolutions = std::max(genset.revolutions, genset.revolutions_idle * std::min(1.0, genset.timer / std::max(genset.start_time, 0.01)));
+	}
+	else if (genset.is_active && false == wasactive)
+	{
+		genset.revolutions = std::max(genset.revolutions, genset.revolutions_idle);
+	}
+	else
+	{
+		auto const demand{GensetSelected() && Mains ? std::clamp(eimv_pr, 0.0, 1.0) : 0.0};
+		auto const target{genset.is_active ? genset.revolutions_idle + (genset.revolutions_max - genset.revolutions_idle) * demand : 0.0};
+		genset.revolutions += (target - genset.revolutions) * std::min(1.0, Deltatime / genset.spinup_time);
+		if (genset.revolutions < 0.001)
+		{
+			genset.revolutions = 0.0;
+		}
+	}
+	// no excitation while cranking; running or coasting down, regulated from idle up, proportional below it
+	genset.voltage = genset.is_cranking ? 0.0 : genset.voltage_nominal * std::clamp(genset.revolutions / genset.revolutions_idle, 0.0, 1.0);
+
+	if (genset.is_active != wasactive)
+	{
+		WriteLog("Genset of " + Name + (genset.is_active ? ": running" : ": stopped"));
 	}
 }
 
@@ -4654,6 +4719,11 @@ bool TMoverParameters::MainSwitchCheck() const
 		break;
 	}
 	}
+	if (GensetSelected())
+	{
+		// on the genset of a dual-mode vehicle the line breaker closes only on a running one, whatever the pantographs give
+		powerisavailable = Genset.is_active && Genset.voltage >= TractionSupplyMinVoltage();
+	}
 
 	return powerisavailable && (ScndCtrlPos == 0 || EngineType == ElectricInductionMotor) && MainsInitTimeCountdown <= 0.0 &&
 	       (ConvOvldFlag == false || ConverterOverloadRelayOffWhenMainIsOff) && true == GroundRelay && (true == NoVoltRelay || PantographsRequireMains) && true == OvervoltageRelay &&
@@ -4753,11 +4823,75 @@ void TMoverParameters::HeatingSwitch_(bool const State)
 	HeatingAllow = State;
 }
 
+// the traction selector of a dual-mode vehicle: moves only with the line breaker open, and only where a genset is
+bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t const Notify)
+{
+	auto const initialstate{TractionMode};
+
+	if (Genset.fitted() && false == Mains)
+	{
+		TractionMode = Mode;
+	}
+
+	if (Notify != range_t::local)
+	{
+		SendCtrlToNext("TractionMode", Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+	}
+
+	return TractionMode != initialstate;
+}
+
+// the start request of the genset of a dual-mode vehicle; one which starts on its own ignores it
+bool TMoverParameters::GensetSwitch(bool const State, range_t const Notify)
+{
+	if (Genset.start_type == start_t::automatic)
+	{
+		return false;
+	}
+
+	auto const initialstate{Genset.is_enabled};
+
+	Genset.is_enabled = State;
+
+	if (Notify != range_t::local)
+	{
+		SendCtrlToNext("GensetSwitch", State ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
+	}
+
+	return Genset.is_enabled != initialstate;
+}
+
+// the voltage of the vehicle's own source the traction selector picks: the catenary through the pantographs, or the
+// genset of a dual-mode vehicle
+double TMoverParameters::TractionSourceVoltage() const
+{
+	return GensetSelected() ? Genset.voltage : PantographVoltage;
+}
+
+// the voltage the traction circuit gets: from the vehicle's own source, or through the train's high voltage line
+double TMoverParameters::TractionSupplyVoltage() const
+{
+	return std::max(GetTrainsetHighVoltage(), TractionSourceVoltage());
+}
+
+// below it the undervoltage trip opens the line breaker
+double TMoverParameters::TractionSupplyMinVoltage() const
+{
+	return GensetSelected() ? 0.5 * Genset.voltage_nominal : EnginePowerSource.CollectorParameters.MinV;
+}
+
+// the power the traction may take [kW, at the wheels]: the genset's share at its present revolutions on the genset,
+// no limit otherwise
+double TMoverParameters::GensetTractionPowerLimit() const
+{
+	return GensetSelected() ? Genset.available_power() * Genset.traction_share : std::numeric_limits<double>::max();
+}
+
 // returns voltage of defined main engine power source
 double TMoverParameters::EnginePowerSourceVoltage() const
 {
 
-	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? std::max(GetTrainsetHighVoltage(), PantographVoltage) :
+	return EnginePowerSource.SourceType == TPowerSource::CurrentCollector ? TractionSupplyVoltage() :
 	       EnginePowerSource.SourceType == TPowerSource::Accumulator      ? Power24vVoltage :
 	                                                                        0.0;
 }
@@ -4778,7 +4912,7 @@ bool TMoverParameters::MainCircuitPowered() const
 	}
 	// closed ahead of the pantographs the line breaker holds without the voltage, which the undervoltage trip isn't
 	// there to vouch for
-	return EnginePowerSourceVoltage() >= EnginePowerSource.CollectorParameters.MinV;
+	return EnginePowerSourceVoltage() >= TractionSupplyMinVoltage();
 }
 
 // *************************************************************************************************
@@ -6247,7 +6381,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	} // bo nie dzialalo
 	else
 	{
-		EngineVoltage = Power > 1.0 ? std::max(GetTrainsetHighVoltage(), PantographVoltage) : 0.0;
+		EngineVoltage = Power > 1.0 ? TractionSupplyVoltage() : 0.0;
 	}
 
 	FTrain = Power > 0 ? TractionForce(dt) : 0;
@@ -7182,8 +7316,9 @@ void TMoverParameters::VoltageRelaysCheck()
 		// TODO: check if we can use instead the code for electricseriesmotor
 		// nie wchodzić w funkcję bez potrzeby
 		// (a line breaker closed ahead of the pantographs holds without voltage)
-		if (Mains && ((std::max(GetTrainsetHighVoltage(), PantographVoltage) < EnginePowerSource.CollectorParameters.MinV && false == PantographsRequireMains) ||
-			    std::max(GetTrainsetHighVoltage(), PantographVoltage) > EnginePowerSource.CollectorParameters.MaxV + 200))
+		// (the source by the traction selector of a dual-mode vehicle: the pantographs or the genset)
+		if (Mains && ((TractionSupplyVoltage() < TractionSupplyMinVoltage() && false == PantographsRequireMains) ||
+			    TractionSupplyVoltage() > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
 			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		}
@@ -7999,6 +8134,11 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	else
 	{
 		eimv[eimv_Pmax] = std::min(eimc[eimc_p_Pmax], 0.001 * EngineVoltage * (eimc[eimc_p_Imax] - eimc[eimc_f_I0]) * Pirazy2 * eimc[eimc_s_cim] / eimc[eimc_s_p] / eimc[eimc_s_cfu]);
+		if (GensetSelected())
+		{
+			// on the genset of a dual-mode vehicle the traction takes no more than the genset gives
+			eimv[eimv_Pmax] = std::min(eimv[eimv_Pmax], GensetTractionPowerLimit());
+		}
 	}
 	eimv[eimv_FMAXMAX] = 0.001 *
 	                     square(std::min(1.0, eimv[eimv_fkr] / std::max(abs(enrot) * eimc[eimc_s_p] + eimc[eimc_s_dfmax] * eimv[eimv_ks], eimc[eimc_s_dfmax])) * f_cfu / eimc[eimc_s_cfu]) *
@@ -8031,6 +8171,8 @@ void TMoverParameters::InductionMotorDrive(double dt)
 	Im = eimv[eimv_If];
 	if (eimv[eimv_Ipoj] >= 0)
 		Vadd *= 1.0 - 2.0 * dt;
+	else if (GensetSelected())
+		Vadd = 1.0; // the genset of a dual-mode vehicle takes nothing back: all the braking energy to the resistors
 	else if (std::abs(EngineVoltage) < EnginePowerSource.CollectorParameters.MaxV)
 		Vadd *= 1.0 - dt;
 	else
@@ -13375,6 +13517,11 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 		auto lookup = starts.find(extract_value("OilStart", line));
 		OilPump.start_type = lookup != starts.end() ? lookup->second : manual;
 	}
+	// genset of a dual-mode vehicle: Manual (the default) needs GensetSwitch, Automatic runs whenever the selector is on it
+	{
+		auto lookup = starts.find(extract_value("GensetStart", line));
+		Genset.start_type = lookup != starts.end() ? lookup->second : manual;
+	}
 	// water pump
 	{
 		auto lookup = starts.find(extract_value("WaterStart", line));
@@ -13502,9 +13649,38 @@ void TMoverParameters::LoadFIZ_Power(std::string const &Line)
 		// jeśli nie ma mocy, np. rozrządcze EZT
 		EnginePowerSource.SourceType = TPowerSource::NotDefined;
 	}
+	else
+	{
+		LoadFIZ_Genset(Line);
+	}
 
 	SystemPowerSource.SourceType = LoadFIZ_SourceDecode(extract_value("SystemPower", Line));
 	LoadFIZ_PowerParamsDecode(SystemPowerSource, "", Line);
+}
+
+// the genset of a dual-mode vehicle (eu07/maszyna#536), on the Power: line; all optional, no genset without GensetPower
+void TMoverParameters::LoadFIZ_Genset(std::string const &Line)
+{
+	extract_value(Genset.power, "GensetPower", Line, "");
+	if (false == Genset.fitted())
+	{
+		return;
+	}
+	extract_value(Genset.voltage_nominal, "GensetVoltage", Line, "");
+	if (Genset.voltage_nominal <= 0.0)
+	{
+		Genset.voltage_nominal = EnginePowerSource.MaxVoltage > 0.0 ? 0.65 * EnginePowerSource.MaxVoltage : 3000.0;
+	}
+	extract_value(Genset.revolutions_idle, "GensetIdleRPM", Line, "600");
+	extract_value(Genset.revolutions_max, "GensetMaxRPM", Line, "1800");
+	Genset.revolutions_max = std::max(Genset.revolutions_max, 1.0) / 60.0;
+	Genset.revolutions_idle = std::clamp(Genset.revolutions_idle / 60.0, 1.0 / 60.0, Genset.revolutions_max);
+	extract_value(Genset.start_time, "GensetStartTime", Line, "8");
+	extract_value(Genset.spinup_time, "GensetSpinUpTime", Line, "3");
+	extract_value(Genset.traction_share, "GensetPmaxRatio", Line, "1");
+	Genset.start_time = std::max(Genset.start_time, 0.0);
+	Genset.spinup_time = std::max(Genset.spinup_time, 0.01);
+	Genset.traction_share = std::clamp(Genset.traction_share, 0.0, 1.0);
 }
 
 void TMoverParameters::LoadFIZ_SpeedControl(std::string const &Line)
@@ -14264,6 +14440,13 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 
 	if (CompressorListPosNo > 0)
 		CompressorListPos = CompressorListDefPos;
+
+	// the genset of a dual-mode vehicle is a second source of the traction circuit of an induction motor vehicle
+	if (Genset.fitted() && (EngineType != TEngineType::ElectricInductionMotor || EnginePowerSource.SourceType != TPowerSource::CurrentCollector))
+	{
+		WriteLog("GensetPower ignored: a genset works only with EngineType=ElectricInductionMotor and EnginePower=CurrentCollector");
+		Genset = genset_device{};
+	}
 
 	// NOTE: legacy compatibility behaviour for vehicles without defined heating power source
 	if (EnginePowerSource.SourceType == TPowerSource::CurrentCollector && HeatingPowerSource.SourceType == TPowerSource::NotDefined)
@@ -15220,6 +15403,16 @@ bool TMoverParameters::RunPowerCommand(std::string const &Command, double CValue
 	else if (Command == "PantAllDown")
 	{
 		DropAllPantographs(CValue1 == 1, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "TractionMode")
+	{
+		TractionModeSwitch(CValue1 > 0.5 ? traction_mode::genset : traction_mode::catenary, range_t::local);
+		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
+	}
+	else if (Command == "GensetSwitch")
+	{
+		GensetSwitch(CValue1 > 0.5, range_t::local);
 		OK = SendCtrlToNext(Command, CValue1, CValue2, Couplertype);
 	}
 	else

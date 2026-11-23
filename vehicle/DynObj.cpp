@@ -3357,7 +3357,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                     if( MoverParameters->Pantographs[end::front].is_active
                      || MoverParameters->Pantographs[end::rear].is_active ) {
                         if( MoverParameters->Mains // Ra 15-01: logować tylko, jeśli WS załączony
-                         && MoverParameters->GetTrainsetHighVoltage() < 0.1f ) { // yB 16-03: i nie jest to asynchron zasilany z daleka
+                         && MoverParameters->GetTrainsetHighVoltage() < 0.1f // yB 16-03: i nie jest to asynchron zasilany z daleka
+                         && false == MoverParameters->GensetSelected() ) { // nor a dual-mode vehicle running on its genset
                             // Ra 15-01: bezwzględne współrzędne pantografu nie są dostępne więc lepiej się tego nie zaloguje
                             ErrorLog(
                                 "Bad traction: " + MoverParameters->Name
