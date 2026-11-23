@@ -145,7 +145,7 @@ The tests are written for the first two columns, and for what the game doesn't c
   - The messages of the log (`Failed to open file`, `Bad include`) are run, and not checked: the log of the tests is a stub.
   - A buffer type which is neither a file nor a text (the `default:` of the constructor) can't be given without an invalid value of the type.
 - **`utilities.cpp`:**
-  - `Now()`, `user_config_path()`, `user_cache_path()` and `true_random_seed()` depend on the clock, the environment and the entropy source of the system. The tests call them and check the shape of the result. The branches for a system without the variables or without an entropy source aren't run, and those of the other systems aren't compiled.
+  - `Now()`, `user_config_path()`, `user_cache_path()` and `true_random_seed()` depend on the clock, the environment and the entropy source of the system. The tests call them and check the shape of the result. The branches for a system without the variables or without an entropy source aren't run, and those of the other systems aren't compiled. The choice among the XDG variables and the home folder which Linux makes is apart from the environment (`xdg_base_directory()`) and tested on every system.
   - `FileCased()` looks through the working folder for a name given without a folder, and through the folder of the file elsewhere; on Windows it only asks whether the file is there. The search is run on Linux only.
 - **`ladderlogic.cpp`:** the two `return`s marked "not reachable" after the switches over the kind of an element.
 

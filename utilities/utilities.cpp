@@ -57,6 +57,17 @@ std::string Now()
 #endif
 }
 
+std::filesystem::path xdg_base_directory(char const *Variable, char const *Home, char const *Fallback)
+{
+	// as the spec has it: a variable which isn't set, is empty or holds a relative path counts as not set. absolute is
+	// said the way a posix system says it, so the answer is the same on every system the tests run on
+	if (Variable != nullptr && Variable[0] == '/')
+		return std::filesystem::path(Variable);
+	if (Home != nullptr && Home[0] != '\0')
+		return std::filesystem::path(Home) / Fallback;
+	return {};
+}
+
 std::filesystem::path user_config_path(const std::string &filename)
 {
 	namespace fs = std::filesystem;
@@ -67,8 +78,8 @@ std::filesystem::path user_config_path(const std::string &filename)
 	if (const char *home = std::getenv("HOME"))
 		return fs::path(home) / "Library" / "Application Support" / "MaSzyna" / filename;
 #else
-	if (const char *home = std::getenv("HOME"))
-		return fs::path(home) / ".config" / "MaSzyna" / filename;
+	if (auto const base{xdg_base_directory(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"), ".config")}; false == base.empty())
+		return base / "MaSzyna" / filename;
 #endif
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
@@ -83,10 +94,8 @@ std::filesystem::path user_cache_path(const std::string &filename)
 	if (const char *home = std::getenv("HOME"))
 		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
 #else
-	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
-		return fs::path(cache) / "MaSzyna" / filename;
-	if (const char *home = std::getenv("HOME"))
-		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+	if (auto const base{xdg_base_directory(std::getenv("XDG_CACHE_HOME"), std::getenv("HOME"), ".cache")}; false == base.empty())
+		return base / "MaSzyna" / filename;
 #endif
 	return {};
 }

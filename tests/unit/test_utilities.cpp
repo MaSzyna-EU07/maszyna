@@ -728,9 +728,45 @@ TEST_CASE("utilities: the folders of the user's settings and of the cache are na
 #if defined(_WIN32)
 	CHECK(user_config_path("eu07.ini").empty() == (std::getenv("APPDATA") == nullptr));
 	CHECK(user_cache_path("x").empty() == (std::getenv("LOCALAPPDATA") == nullptr));
-#else
+#elif defined(__APPLE__)
 	CHECK(user_config_path("eu07.ini").empty() == (std::getenv("HOME") == nullptr));
+#else
+	// the folders the XDG variables of this environment give, or the ones in the home folder
+	auto const expected{[](char const *Variable, char const *Fallback, char const *Filename) {
+		auto const base{xdg_base_directory(std::getenv(Variable), std::getenv("HOME"), Fallback)};
+		return base.empty() ? std::filesystem::path{} : base / "MaSzyna" / Filename;
+	}};
+	CHECK(user_config_path("eu07.ini") == expected("XDG_CONFIG_HOME", ".config", "eu07.ini"));
+	CHECK(user_cache_path("geoportal") == expected("XDG_CACHE_HOME", ".cache", "geoportal"));
 #endif
+}
+
+TEST_CASE("utilities: the folders of the XDG base directory spec, as Linux finds them") {
+	using path = std::filesystem::path;
+	SUBCASE("the variable, when it is set to an absolute path") {
+		CHECK(xdg_base_directory("/srv/config", "/home/user", ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/srv/config", nullptr, ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/srv/config", "", ".config") == path{"/srv/config"});
+		CHECK(xdg_base_directory("/", "/home/user", ".cache") == path{"/"});
+	}
+	SUBCASE("the folder in the home one, when the variable isn't set, is empty or holds a relative path") {
+		CHECK(xdg_base_directory(nullptr, "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("", "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("config", "/home/user", ".config") == path{"/home/user"} / ".config");
+		CHECK(xdg_base_directory("./cache", "/home/user", ".cache") == path{"/home/user"} / ".cache");
+		CHECK(xdg_base_directory("~/cache", "/home/user", ".cache") == path{"/home/user"} / ".cache");
+	}
+	SUBCASE("none, without the variable and without the home folder") {
+		CHECK(xdg_base_directory(nullptr, nullptr, ".config").empty());
+		CHECK(xdg_base_directory("", "", ".cache").empty());
+		CHECK(xdg_base_directory("relative", nullptr, ".cache").empty());
+	}
+	SUBCASE("the settings and the cache: each of its own variable, the same home") {
+		auto const config{xdg_base_directory("/xdg/config", "/home/user", ".config")};
+		auto const cache{xdg_base_directory(nullptr, "/home/user", ".cache")};
+		CHECK(config / "MaSzyna" / "eu07.ini" == path{"/xdg/config/MaSzyna/eu07.ini"});
+		CHECK(cache / "MaSzyna" / "geoportal" == path{"/home/user/.cache/MaSzyna/geoportal"});
+	}
 }
 
 // numbers -------------------------------------------------------------------------------------------------------------

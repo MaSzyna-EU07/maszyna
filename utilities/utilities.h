@@ -27,7 +27,12 @@ template <typename T> constexpr T sq(T v)
 	return v * v;
 }
 
-// returns the per-user config path for `filename` (platform-specific dir),
+// a base folder of the XDG base directory spec, of the values of its variable (XDG_CONFIG_HOME, XDG_CACHE_HOME) and
+// of HOME, either of them null when not set: the variable when it holds an absolute path, else `Fallback` (.config,
+// .cache) in the home folder, else an empty path. what Linux uses; apart from the environment, so tests can call it
+std::filesystem::path xdg_base_directory(char const *Variable, char const *Home, char const *Fallback);
+// returns the per-user config path for `filename` (platform-specific dir: %APPDATA%\MaSzyna,
+// ~/Library/Application Support/MaSzyna, $XDG_CONFIG_HOME/MaSzyna or ~/.config/MaSzyna),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
 // the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
