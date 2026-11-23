@@ -74,5 +74,14 @@ struct editor_model
 	std::string proposal; // the solver's best proposal for a crossover refused
 	std::pair<std::string, std::string> drag; // the switch dragged on a line of the model as it was tried: its command, why it's refused
 	double turnout_move{5.0}; // m, the distance the inspector moves a turnout by
+	// a handle of the route design dragged on a line of the model: its changes tried on a copy of the network as they're made, the line as
+	// the model lays it then and what the norms say of it, before the drag is let go
+	struct plan_preview
+	{
+		std::string key; // the design tried
+		bool refused{false};
+		std::string text; // why it's refused, or the norms' line
+		std::vector<glm::dvec3> points; // of the line as laid, 2 m apart
+	} preview;
 };
 

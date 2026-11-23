@@ -825,29 +825,40 @@ bool editor_mode::route_from_model(layout::line_id const Line)
 	return true;
 }
 
-bool editor_mode::model_plan_apply()
+bool editor_mode::model_plan_commands(layout::line_id const Line, std::vector<layout::command> &Commands, std::string &Why) const
 {
-	auto const line{model_plan_line()};
-	if (line == layout::line_id::none)
-		return false;
 	auto const &plan{model().plan};
 	auto const &design{m_route.design};
-	layout::outcome refusal;
-	if (design.vertices.size() != plan.vertices.size())
-		refusal.reasons.push_back(STR("Curves added or taken out: not yet for a line of the model, only their places, radii, transitions and cants"));
-	std::vector<layout::command> commands;
-	for (std::size_t i = 0; refusal.reasons.empty() && i < design.vertices.size(); ++i)
+	if (design.vertices.size() != plan.vertices.size() || plan.original.vertices.size() != plan.vertices.size())
 	{
-		auto const &was{plan.original.vertices[i]};
-		auto const &now{design.vertices[i]};
+		Why = "Curves added or taken out here aren't applied to a line of the model: add a curve or take one out with the buttons of the line";
+		return false;
+	}
+	// where the vertex is: the first and the last of two or more along the tangents of the ends, by their offsets, as the route design
+	// draws and drags them; the others where they are
+	auto const place = [](alignment::design const &Design, std::size_t const Index) {
+		auto const &vertex{Design.vertices[Index]};
+		auto const count{Design.vertices.size()};
+		if (count >= 2 && Index == 0 && glm::length(Design.start_direction) > 1e-9)
+			return glm::dvec2{Design.start.x, Design.start.z} + glm::normalize(Design.start_direction) * vertex.offset;
+		if (count >= 2 && Index + 1 == count && glm::length(Design.end_direction) > 1e-9)
+			return glm::dvec2{Design.end.x, Design.end.z} - glm::normalize(Design.end_direction) * vertex.offset;
+		return vertex.position;
+	};
+	for (std::size_t i = 0; i < design.vertices.size(); ++i)
+	{
+		auto was{plan.original.vertices[i]};
+		auto now{design.vertices[i]};
+		was.position = place(plan.original, i);
+		now.position = place(design, i);
 		if (now.compound || now.spirals || now.own_ramps())
 		{
-			refusal.reasons.push_back(STR("A compound curve, or one with cant ramps of its own, isn't laid by the model yet"));
-			break;
+			Why = "A compound curve, or one with cant ramps of its own, isn't laid by the model yet";
+			return false;
 		}
-		if (glm::distance(now.position, was.position) > 1e-4)
-			commands.push_back(layout::move_vertex{line, plan.vertices[i], now.position});
-		layout::set_vertex set{line, plan.vertices[i]};
+		// a vertex moved: move_vertex; its curve changed besides: one set_vertex with its place, one step for the vertex
+		auto const moved{glm::distance(now.position, was.position) > 1e-4};
+		layout::set_vertex set{Line, plan.vertices[i]};
 		if (now.radius != was.radius)
 			set.radius = now.radius;
 		if (now.transition_in != was.transition_in)
@@ -857,10 +868,28 @@ bool editor_mode::model_plan_apply()
 		if (now.cant != was.cant)
 			set.cant = now.cant;
 		if (set.radius || set.transition_in || set.transition_out || set.cant)
-			commands.push_back(set);
+		{
+			if (moved)
+				set.point = now.position;
+			Commands.push_back(set);
+		}
+		else if (moved)
+			Commands.push_back(layout::move_vertex{Line, plan.vertices[i], now.position});
 	}
-	if (false == refusal.reasons.empty())
+	return true;
+}
+
+bool editor_mode::model_plan_apply()
+{
+	auto const line{model_plan_line()};
+	if (line == layout::line_id::none)
+		return false;
+	model().preview = {};
+	std::vector<layout::command> commands;
+	if (std::string why; false == model_plan_commands(line, commands, why))
 	{
+		layout::outcome refusal;
+		refusal.reasons.push_back(why);
 		model_told(refusal, true);
 		return true;
 	}
@@ -1312,6 +1341,7 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		std::string name;
 		words >> name;
 		auto *track{resolve(name)};
+		show_track_tab(track_tab::route);
 		m_track_tab = track_tab::route;
 		m_route.single = false;
 		auto const loaded{track != nullptr && route_load(*track)};
@@ -1610,6 +1640,31 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 			for (auto const &each : found->shape.grades)
 				breaks += format(" %.1f/%.3f/R%.0f", each.chainage, each.elevation, each.vertical_radius);
 		expectation(found != nullptr && got == wanted, format("modelgrades %u", line), std::to_string(got) + breaks, std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelvertexat")
+	{
+		// where the vertex of the line of the model is, in the plan
+		unsigned line{0};
+		std::size_t index{0};
+		glm::dvec2 wanted{0.0};
+		double tolerance{0.01};
+		words >> line >> index >> wanted.x >> wanted.y >> tolerance;
+		auto const *found{model_network().find(static_cast<layout::line_id>(line))};
+		glm::dvec2 got{std::numeric_limits<double>::quiet_NaN()};
+		if (found != nullptr && index < found->shape.vertices.size())
+			got = found->shape.vertices[index].point;
+		expectation(glm::distance(got, wanted) <= tolerance, format("modelvertexat %u %zu", line, index), format("%.3f %.3f", got.x, got.y), format("%.3f %.3f within %.3f", wanted.x, wanted.y, tolerance));
+		return selftest_result::handled;
+	}
+	if (what == "modelpreview")
+	{
+		// a handle of the route design dragged on a line of the model: the line as the model would lay it tried, and told
+		std::string wanted;
+		words >> wanted;
+		auto const &preview{model().preview};
+		auto const got{preview.key.empty() ? std::string{"none"} : std::string{"shown"}};
+		expectation(got == wanted, "modelpreview " + wanted, got + (preview.key.empty() ? "" : (preview.refused ? " refused: " : ": ") + editor_selftest::one_line(preview.text)), wanted);
 		return selftest_result::handled;
 	}
 	if (what == "modelproposal")

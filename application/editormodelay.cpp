@@ -507,7 +507,8 @@ void editor_mode::point_drag_start(editor_track::point_ref const &Point)
 	auto *track{selected_track()};
 	m_track_point = Point;
 	m_point_drag = {};
-	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()))
+	// the points of a track of a line of the model aren't dragged by hand: the line is edited in the route design
+	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()) || model_track(track) != nullptr)
 		return;
 	auto const &io{ImGui::GetIO()};
 	m_point_drag.active = true;

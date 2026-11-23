@@ -1,0 +1,30 @@
+# Editing on the model (E4b): the vertex of a curve of a line of the model dragged on the map in the route design, the line as the model
+# would lay it tried as it's dragged; let go, one command of the model, one step. The first vertex of a line of two curves goes along the
+# tangent of the start. The empty ground east of k0..k3 (x 800..1400), the camera straight above the vertex at 800 200
+wait 5
+modelediting 1
+layclicks 0 600 800 -600 800 200 1400 800 1400 1600
+wait 2
+expect modellines 1
+expect steps 1
+modeltracks
+camera 800 500 200 800 0 200.5
+wait 3
+modelplan @1.0
+wait 3
+expect tool track
+mouseat 800 0 200
+wait 3
+button left press
+wait 2
+glide 800 0 180 8 2
+wait 2
+expect modelpreview shown
+button left release
+wait 5
+expect modelrefused 0
+expect modelvertexat 1 0 800 180 0.5
+expect steps 2
+expect modelends
+expect modelpreview none
+quit

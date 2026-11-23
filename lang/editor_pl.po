@@ -15110,6 +15110,15 @@ msgstr "Rozjazd %s: %s, %s, %.0f km/h na torze zwrotnym"
 msgid "Line %s of the model: its grade line, %zu breaks"
 msgstr "Linia %s modelu: jej niweleta, załomów: %zu"
 
+msgid "Refused, nothing changes:"
+msgstr "Odmowa, nic się nie zmieni:"
+
+msgid "Within the norms"
+msgstr "Zgodne z normami"
+
+msgid "Curves added or taken out here aren't applied to a line of the model: add a curve or take one out with the buttons of the line"
+msgstr "Łuki dodane lub usunięte tutaj nie trafiają do linii modelu: dodaj łuk albo go usuń przyciskami linii"
+
 msgid "line {1} at {2} m: {3}"
 msgstr "linia {1} w {2} m: {3}"
 

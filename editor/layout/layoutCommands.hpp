@@ -45,7 +45,7 @@ struct move_vertex
 	glm::dvec2 point{0.0};
 };
 
-// the radius, the transitions or the cant of the vertex, those given
+// the radius, the transitions, the cant or the place of the vertex, those given: a curve moved and changed at once is one edit
 struct set_vertex
 {
 	line_id line{line_id::none};
@@ -54,6 +54,7 @@ struct set_vertex
 	std::optional<double> transition_in;
 	std::optional<double> transition_out;
 	std::optional<double> cant;
+	std::optional<glm::dvec2> point;
 };
 
 // the line cut at the chainage by a new node: the part before it keeps the line, the part after it is a new line; the track stays as

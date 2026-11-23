@@ -1416,6 +1416,8 @@ void editor_mode::draw_route_overlay() const
 		}
 		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
 	}
+	// a handle of a line of the model dragged: the line as the model lays it, its norms by the mouse
+	draw_model_plan_preview();
 	// the points clicked when the line was laid, in the colours of their departure; how far each is, along the curve in focus
 	for (std::size_t i = 0; i < route.clicks.size() && i < route.click_states.size(); ++i)
 	{
@@ -1623,6 +1625,7 @@ void editor_mode::render_route_gizmo()
 				vertex.radius = std::max(10.0, std::round(distance / secant));
 		}
 		route_update();
+		model_plan_preview();
 		return;
 	}
 	auto &vertex{route.design.vertices[route.vertex]};
@@ -1637,6 +1640,7 @@ void editor_mode::render_route_gizmo()
 			vertex.position = point;
 	}
 	route_update();
+	model_plan_preview();
 }
 
 void editor_mode::render_route_ui()

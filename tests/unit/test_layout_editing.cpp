@@ -70,6 +70,24 @@ TEST_CASE("layout editing: the chainage of a point of the plan on a line, and ho
 	CHECK(std::isinf(distance));
 }
 
+TEST_CASE("layout editing: a vertex moved and its curve changed by one set_vertex, one step") {
+	layout::model model;
+	REQUIRE(model.execute(three_curves()).done);
+	auto const id{model.state().lines().begin()->first};
+	auto const vertex{model.state().find(id)->shape.vertices[1]};
+	auto const steps{model.undoable()};
+	layout::set_vertex set{id, vertex.id, vertex.radius + 100.0};
+	set.point = vertex.point + glm::dvec2{0.0, 5.0};
+	auto const done{model.execute(set)};
+	REQUIRE_MESSAGE(done.done, reasons_of(done));
+	CHECK(model.undoable() == steps + 1);
+	auto const &now{model.state().find(id)->shape.vertices[1]};
+	CHECK(now.point == vertex.point + glm::dvec2{0.0, 5.0});
+	CHECK(now.radius == vertex.radius + 100.0);
+	REQUIRE(model.undo());
+	CHECK(model.state().find(id)->shape.vertices[1] == vertex);
+}
+
 TEST_CASE("project session: the switch track of a turnout made by the session, the tracks of a line written into two files recorded") {
 	test::scratch_folder folder{"layout_editing_session"};
 	folder.write("mapa.scn", "// a new scenery\n");

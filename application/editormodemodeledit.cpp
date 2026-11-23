@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editormodemodel.h"
 #include "application/editormodeselftest.h"
+#include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
@@ -165,4 +166,74 @@ bool editor_mode::model_profile_apply()
 		state.error = model_shown();
 	WriteLog(format("Editor: model: the grade line of line %s, %zu breaks: %s", line_name(id).c_str(), command.grades.size(), editor_selftest::one_line(model_message()).c_str()), logtype::generic);
 	return true;
+}
+
+// a handle of the route design dragged on a line of the model: the line as the model lays it and the norms' line, before it's let go
+
+void editor_mode::model_plan_preview()
+{
+	auto &preview{model().preview};
+	auto const line{model_plan_line()};
+	if (line == layout::line_id::none || false == m_route_dragging)
+	{
+		preview = {};
+		return;
+	}
+	std::string key;
+	for (auto const &vertex : m_route.design.vertices)
+		key += format("%.4f %.4f %.3f %.3f %.3f %.1f;", vertex.position.x, vertex.position.y, vertex.radius, vertex.transition_in, vertex.transition_out, vertex.cant);
+	if (key == preview.key)
+		return;
+	preview = {};
+	preview.key = key;
+	std::vector<layout::command> commands;
+	if (std::string why; false == model_plan_commands(line, commands, why))
+	{
+		preview.refused = true;
+		preview.text = model_tr(why);
+		return;
+	}
+	// tried on a copy of the network, one after another as they'd be carried out
+	layout::model copy{model_network()};
+	std::vector<std::string> notices;
+	for (auto const &command : commands)
+	{
+		auto const outcome{copy.execute(command)};
+		if (false == outcome.done)
+		{
+			preview.refused = true;
+			preview.text = model_reasons_shown(outcome);
+			return;
+		}
+		for (auto const &notice : outcome.notices)
+			if (auto const text{model_notice_shown(notice)}; std::ranges::find(notices, text) == notices.end())
+				notices.push_back(text);
+	}
+	preview.text = notices.empty() ? std::string{STR_C("Within the norms")} : format(STR_P("The norms: %zu note", "The norms: %zu notes", static_cast<long long>(notices.size())), notices.size());
+	for (auto const &notice : notices)
+		preview.text += "\n" + notice;
+	if (auto const *laid{copy.state().find(line)}; laid != nullptr && laid->solved.valid())
+	{
+		auto const steps{std::clamp(static_cast<int>(laid->solved.length / 2.0), 1, 2000)};
+		for (int i = 0; i <= steps; ++i)
+			preview.points.push_back(laid->solved.point(laid->solved.length * i / steps));
+	}
+}
+
+void editor_mode::draw_model_plan_preview() const
+{
+	if (m_model == nullptr)
+		return;
+	auto const &preview{m_model->preview};
+	if (preview.key.empty())
+		return;
+	screen_projection const projection;
+	auto *drawlist{ImGui::GetForegroundDrawList(ImGui::GetMainViewport())};
+	auto const colour{preview.refused ? IM_COL32(255, 90, 70, 230) : IM_COL32(90, 220, 110, 230)};
+	for (std::size_t i = 0; i + 1 < preview.points.size(); ++i)
+		projection.line(drawlist, preview.points[i], preview.points[i + 1], colour, 2.0f);
+	// by the mouse: refused and why, or the norms' line
+	auto const &mouse{ImGui::GetIO().MousePos};
+	auto const text{(preview.refused ? std::string{STR_C("Refused, nothing changes:")} + "\n" : std::string{}) + preview.text};
+	drawlist->AddText(ImVec2(mouse.x + 18.0f, mouse.y + 18.0f), colour, text.c_str());
 }

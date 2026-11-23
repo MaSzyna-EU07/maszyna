@@ -159,6 +159,7 @@ reasons propose(transaction &Change, outcome &, set_vertex const &Command)
 	set->transition_in = Command.transition_in.value_or(set->transition_in);
 	set->transition_out = Command.transition_out.value_or(set->transition_out);
 	set->cant = Command.cant.value_or(set->cant);
+	set->point = Command.point.value_or(set->point);
 	return why;
 }
 
