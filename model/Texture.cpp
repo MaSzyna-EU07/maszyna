@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "winheaders.h"
 
 #include <bit>
+#include <utility>
 
 #define EU07_DEFERRED_TEXTURE_UPLOAD
 
@@ -356,6 +357,7 @@ GLint readback_format( GLint const Internalformat ) {
 
 std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> opengl_texture::units = { 0 };
 GLint opengl_texture::m_activeunit = -1;
+std::atomic<bool> opengl_texture::m_unitcachestale { false };
 
 std::unordered_map<GLint, int> texture_source::precompressed_formats =
 {
@@ -655,9 +657,104 @@ void opengl_texture::update_from_memory(size_t width, size_t height, const uint8
 		is_static = true;
 		is_ready = true;
 	}
-	// the name may be a new one, and the unit active took the texture past the unit cache
+	// the name may be a new one, and the unit active took the texture past the unit cache. this runs on the python upload
+	// thread too (python.threadedupload), so the cache is only marked here: clearing it outright raced the drawing thread
+	// filling it for a multi-bind, and an object got the texture of the one drawn before it for a frame
+	invalidate_unit_cache();
+}
+
+namespace
+{
+// gl objects of an image uploaded by another thread that was never put in place
+void delete_thread_upload(GLuint const Texture, GLsync const Fence)
+{
+	if (Fence != nullptr)
+		glDeleteSync(Fence);
+	glDeleteTextures(1, &Texture);
+}
+} // namespace
+
+void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8_t *raw)
+{
+	// a texture of its own each time: the one drawn from may be in use by the gpu for the drawing context, and writing it from
+	// here, with nothing to order the two contexts, could leave it incomplete or half written for a frame
+	texture_thread_upload upload;
+	upload.width = width;
+	upload.height = height;
+	glGenTextures(1, &upload.id);
+	glBindTexture(target, upload.id);
+	set_filtering();
+	glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
+	glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
+	if (!glGenerateMipmap)
+		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
+	glTexImage2D(target, 0, GL_SRGB8_ALPHA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, raw);
+	if (glGenerateMipmap)
+		glGenerateMipmap(target);
+	glBindTexture(target, 0);
+	if (glFenceSync)
+	{
+		upload.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	}
+	if (upload.fence == nullptr)
+	{
+		// no sync objects, or no fence made: the drawing context can only be sure of the image once the upload is done
+		glFinish();
+	}
+	else
+	{
+		// the drawing context asks for the fence, which signals only once it is on its way to the gpu
+		glFlush();
+	}
+
+	std::optional<texture_thread_upload> superseded;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		superseded = std::exchange(m_threadupload, upload);
+	}
+	if (superseded.has_value())
+	{
+		// the drawing thread didn't take it, so nothing drew from it
+		delete_thread_upload(superseded->id, superseded->fence);
+	}
+}
+
+bool opengl_texture::commit_thread_upload()
+{
+	texture_thread_upload upload;
+	{
+		std::scoped_lock lock{m_threaduploadmutex};
+		if (false == m_threadupload.has_value())
+			return true;
+		// asked without waiting. the image goes in place only once the upload is done, so every context binding it after
+		// has it whole: the extra viewports and the windows of python.displaywindows draw in contexts of their own
+		if (m_threadupload->fence != nullptr)
+		{
+			// a failed query (GL_WAIT_FAILED) isn't asked again: the image would never go in place
+			if (glClientWaitSync(m_threadupload->fence, 0, 0) == GL_TIMEOUT_EXPIRED)
+				return false;
+			glDeleteSync(m_threadupload->fence);
+		}
+		upload = *m_threadupload;
+		m_threadupload.reset();
+	}
+
+	if (id != invalid_id)
+		glDeleteTextures(1, &id);
+	id = upload.id;
+	data_width = static_cast<unsigned int>(upload.width);
+	data_height = static_cast<unsigned int>(upload.height);
+	data_format = GL_SRGB8_ALPHA8;
+	data_components = GL_RGBA;
+	if (type == "internalsrc:")
+	{
+		is_static = true;
+		is_ready = true;
+	}
+	// the name deleted may come back for another texture, and a deleted texture isn't bound any more
 	for (auto &unit : units)
 		unit = -1;
+	return true;
 }
 
 void
@@ -1190,6 +1287,7 @@ opengl_texture::bind(size_t unit) {
         return false;
     }
 
+    sync_unit_cache();
     if (units[unit] == id)
         return true;
     glBindTextureUnit(unit, id);
@@ -1550,6 +1648,25 @@ opengl_texture::reset_unit_cache() {
         unit = 0;
     }
     m_activeunit = -1;
+}
+
+void
+opengl_texture::invalidate_unit_cache() {
+
+    m_unitcachestale.store( true );
+}
+
+void
+opengl_texture::sync_unit_cache() {
+
+    // a plain load first: bind() calls this for every texture, and a read-modify-write each time would cost more
+    if( ( false == m_unitcachestale.load() )
+     || ( false == m_unitcachestale.exchange( false ) ) ) {
+        return;
+    }
+    for( auto &unit : units ) {
+        unit = -1;
+    }
 }
 
 void

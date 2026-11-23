@@ -36,6 +36,10 @@ void main()
         vec2 offset = velocity * (float(i) / float(nSamples - 1) - 0.5);
 
         vec2 coord = f_coords + offset;
+        // a sample off the picture would read its edge row again and again: a fast movement towards the bottom
+        // of the screen (the ground racing under a low free camera) smeared it into a bright band there
+        if (any(lessThan(coord, 0.5 * texelSize)) || any(greaterThan(coord, vec2(1.0) - 0.5 * texelSize)))
+            continue;
         float depth = texture(depth_tex, coord).x;
 
         if (abs(depth - ori_depth) < depth_diff)

@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/physicslog.h"
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
+#include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
 #include "world/mtable.h"
 #include "vehicle/DynObj.h"
@@ -211,6 +212,7 @@ void TSpeedPos::Clear()
 	fSectionVelocityDist = 0.0; //brak długości
     fPointDist = 0.0;
     fDist = 0.0;
+    bSeenAhead = false;
     vPos = glm::dvec3(0, 0, 0);
     trTrack = nullptr; // brak wskaźnika
 };
@@ -327,6 +329,9 @@ bool TSpeedPos::Update()
         // trzeba zazanaczyć, że minięty
         iFlags |= spElapsed;
     }
+    else {
+        bSeenAhead = true;
+    }
     if (iFlags & spTrack) {
         // road/track
         if (trTrack) {
@@ -412,9 +417,18 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
+// how far behind the head an event found in the scan may lie and still count as one the head had ahead [m]
+constexpr double SeenAheadTolerance { 5.0 };
+
 bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
 { // zapamiętanie zdarzenia
     fDist = dist;
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
+    // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
+    // may come out a few metres behind it: those still count as seen ahead. the price is that a train set less than
+    // the tolerance past a signal at stop is still reported to pass it; a train standing that close to a signal can't
+    // be told from one stopped just short of it, which really passes the signal if it goes on
+    bSeenAhead = ( dist >= -SeenAheadTolerance );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
@@ -915,6 +929,7 @@ void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbe
 {
     if( Passedbefore
      || false == TestFlag( Point.iFlags, spElapsed )
+     || false == Point.bSeenAhead // found already behind the head: the train stood across it, it didn't pass it
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
@@ -3749,7 +3764,7 @@ bool TController::DecBrake() {
                 // a position short of the first one brakes no weaker than that
                 deltaAcc = -AccDesired * BrakeAccFactor() - ( fBrake_a0[ 0 ] + 4 * std::max( 0.0, BrakeCtrlPosition - pos_diff ) * fBrake_a1[ 0 ] );
             }
-            if( bUphillStart ) {
+            if( bUphillStart && ( false == bUphillRelease ) ) {
                 // starting uphill the train brake holds the train until the power does
                 break;
             }
@@ -6547,24 +6562,35 @@ TController::determine_consist_state() {
     ConsistShade = 0.0;
     auto *p { pVehicles[ end::front ] }; // pojazd na czole składu
     double dy; // składowa styczna grawitacji, w przedziale <0,1>
+    // starting uphill the power is applied against the train brake on purpose, until the power holds the train and
+    // then while the brake releases
+    auto const heldforstart { bUphillStart };
+    auto released { true }; // the brakes are off, the hold of an uphill start not counted
+    auto mostapplied { 0.0 }; // the most applied brake, the hold of an uphill start not counted
+    auto momentum { 0.0 };
     while (p)
     { // sprawdzenie odhamowania wszystkich połączonych pojazdów
         auto *vehicle { p->MoverParameters };
         auto const bp { std::max( 0.0, vehicle->BrakePress - ( vehicle->SpeedCtrlUnit.Parking ? vehicle->MaxBrakePress[ 0 ] * vehicle->StopBrakeDecc : 0.0 ) ) };
-        // starting uphill the power is applied against the train brake on purpose, until the power holds the train
-        auto const heldforstart { bUphillStart };
-        if (Ready) {
+        momentum += vehicle->TotalMass * vehicle->V * ( p->DirectionGet() == iDirection ? 1 : -1 );
+        mostapplied = std::max( bp, mostapplied );
+        auto const wasready { Ready };
+        if( released || Ready ) {
             // bo jak coś nie odhamowane, to dalej nie ma co sprawdzać
-            if( auto const isbraking { TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on ) };
-                vehicle->Vel < 1.0 ?
+            auto const isbraking { TestFlagAny( vehicle->Hamulec->GetBrakeStatus(), b_hld | b_on ) };
+            if( vehicle->Vel < 1.0 ?
                     isbraking || bp > 0.4 : // ensure the brakes are sufficiently released when starting to move
                     // once in motion a brake down to 0.4 bar counts as released (UIC), even if its distributor
                     // is still in the lap position while the brake pipe recharges
                     ( isbraking && bp > 0.4 ) || vehicle->Fb > 10000.0 ) { // 10 kN
-                // ready all the same only at a standstill with the power going on against the brake on purpose;
-                // in motion a braking force left anywhere in the train (a hand brake) stops it as before
-                Ready = heldforstart && ( vehicle->Vel < 1.0 );
+                released = false;
+                // ready all the same with the power going on against the brake on purpose: at a standstill, and once
+                // the power holds the train, while the brake releases; otherwise in motion a braking force left
+                // anywhere in the train (a hand brake) stops it as before
+                Ready = Ready && heldforstart && ( bUphillRelease || ( vehicle->Vel < 1.0 ) );
             }
+        }
+        if( wasready ) {
             // Ra: odluźnianie przeładowanych lokomotyw, ciągniętych na zimno - prowizorka...
             if( bp >= 0.4 && (AIControllFlag || Global.AITrainman && mvOccupied->Vel < EU07_AI_NOMOVEMENT && !is_emu() && !is_dmu()) && BrakeCtrlPosition == gbh_RP // jest pozycja jazdy
 			    && false == TestFlag(vehicle->Hamulec->GetBrakeStatus(), b_dmg) // brake isn't broken
@@ -6581,7 +6607,8 @@ TController::determine_consist_state() {
 				vehicle->BrakeReleaser(0);
 			}
         }
-        fReady = std::max( heldforstart ? 0.0 : bp, fReady ); // szukanie najbardziej zahamowanego
+        // the brake held for the start counts again once it is being released
+        fReady = std::max( ( heldforstart && ( false == bUphillRelease ) ) ? 0.0 : bp, fReady ); // szukanie najbardziej zahamowanego
         if( ( dy = p->VectorFront().y ) != 0.0 ) {
             // istotne tylko dla pojazdów na pochyleniu
             // ciężar razy składowa styczna grawitacji
@@ -6677,6 +6704,10 @@ TController::determine_consist_state() {
      && fReady < 0.8 ) { // delikatniejszy warunek, obejmuje wszystkie wagony
         Ready = true; //żeby uznać za odhamowany
     }
+    // the same test without the hold of an uphill start
+    IsConsistReleased = released || ( fAccGravity < -0.05 && mostapplied < 0.8 );
+    // the frame of the vehicle the AI drives from, as for fAccGravity and AbsAccS
+    fConsistVelocity = 3.6 * momentum / std::max( 1.0, fMass ) * ( iDirection >= 0 ? 1 : -1 );
     auto const departblocked {
         AIControllFlag
      && mvOccupied->Vel < EU07_AI_NOMOVEMENT
@@ -8202,54 +8233,6 @@ uphill_coasting_speed( double const Distance, double const Gravity ) {
     return 3.6 * std::sqrt( 2.0 * std::max( 0.01, -Gravity ) * std::max( 0.0, Distance ) );
 }
 
-// resultant acceleration [m/s2] to ask for now so that a steady application of the pneumatic brake takes the train
-// from Velocity down to Target [km/h] over Distance [m], with the brake force following the speed the way the
-// consist brake table says it does (cast iron blocks grip harder as the train slows)
-struct consist_brake_table {
-    double const *a0; // deceleration at handle position 1, by speed
-    double const *a1; // deceleration added by each quarter of a position, by speed
-    int size; // entries, up to the vehicle's top speed
-    double vmax; // the vehicle's top speed [km/h]
-
-    // deceleration [m/s2] of a full service application at Kmh
-    double full_braking( double const Kmh ) const {
-        auto const index { std::clamp( static_cast<int>( size * Kmh / std::max( 1.0, vmax ) ), 1, size ) };
-        return std::max( 0.01, a0[ index ] + 12.0 * a1[ index ] ); }
-};
-
-static double
-shaped_braking_demand(
-    double const Velocity, double const Target, double const Distance, double const Gravity,
-    consist_brake_table const &Table ) {
-
-    auto const fullbraking = [&Table]( double const Kmh ) {
-        return Table.full_braking( Kmh ); };
-    auto const travel = [Velocity, Target, Gravity, &fullbraking]( double const Ratio ) {
-        auto const steps { 24 };
-        auto const step { ( Velocity - Target ) / steps };
-        auto distance { 0.0 };
-        for( auto i { 0 }; i < steps; ++i ) {
-            auto const kmh { Target + ( i + 0.5 ) * step };
-            auto const deceleration { Ratio * fullbraking( kmh ) - Gravity };
-            if( deceleration <= 0.001 ) {
-                return std::numeric_limits<double>::max();
-            }
-            distance += ( kmh / 3.6 ) * ( step / 3.6 ) / deceleration;
-        }
-        return distance; };
-
-    auto low { 0.0 };
-    auto high { 3.0 };
-    if( travel( high ) > Distance ) {
-        return Gravity - high * fullbraking( Velocity );
-    }
-    for( auto i { 0 }; i < 30; ++i ) {
-        auto const middle { 0.5 * ( low + high ) };
-        ( travel( middle ) > Distance ? low : high ) = middle;
-    }
-    return Gravity - high * fullbraking( Velocity );
-}
-
 // outside of max safe range: follow the braking curve down to the speed ahead, Vel is the present speed in the
 // direction of travel
 void
@@ -8276,43 +8259,19 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
         ( VelNext == 0.0 ) && is_train() && ( OrderCurrentGet() & Obey_train ) ?
             stopping_margin() : // the same stopping point as the final approach
             VelNext * braking_distance_multiplier( static_cast<float>( VelNext ) ) );
-    // a pneumatic brake acts on the state the train will be in once it has responded; while the
-    // train is still speeding up, plan the deceleration from there, so more is asked for at once
-    auto velocity { Vel };
-    auto distance { ActualProximityDist };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic )
-     && ( AbsAccS > 0.0 ) ) {
-        auto const horizon { brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ) };
-        velocity = Vel + 3.6 * horizon * AbsAccS;
-        distance = std::max( 0.5 * ActualProximityDist, ActualProximityDist - ( Vel + velocity ) * 0.5 / 3.6 * horizon );
-    }
-    auto const brakingroom {
-        std::max(
-            distance - brakingpointoffset,
-            std::min(
-                distance,
-                brakingpointoffset ) ) };
-    auto deceleration { ( VelNext * VelNext - velocity * velocity ) / ( 25.92 * brakingroom + 0.1 ) };
-    if( ( BrakeSystem == TBrakeSystem::Pneumatic ) && ( velocity > VelNext ) ) {
-        // follow the shape of the consist brake force over speed rather than assume a constant
-        // deceleration, over the distance left once the brake has had time to fill (while the
-        // train is still speeding up, the prediction above has taken that off already)
-        auto room { brakingroom };
-        if( ( AbsAccS <= 0.0 )
-         && ( BrakeCtrlPosition <= 0.0 ) ) { // only while the brake is still to be applied: once it acts, the room it needs to respond is behind
-            // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
-            // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
-            // independent brake, which leaves the train brake handle where it is, kept braking earlier
-            // and earlier the whole way in, to crawl the last tens of metres to the stop point
-            auto const brakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
-            room = std::max(
-                0.5 * brakingroom,
-                brakingroom - Vel / 3.6 * brake_response_horizon( mvOccupied, BrakeSystem, 1.0, brakea0 ) );
-        }
-        deceleration = shaped_braking_demand(
-            velocity, VelNext, room + 0.1 / 25.92, fAccGravity,
-            { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } );
-    }
+    // both plans of a pneumatic brake are made from the brake table of the consist; with none (in shunting it isn't
+    // worked out) the braking curve is the constant deceleration over the distance left, as before them
+    braking_curve::brake_table const braketable { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax };
+    // making for a passenger stop only the time the brake takes to fill: the look-ahead the horizon
+    // keeps as its floor was set for the stops at a signal, and a vehicle that brakes with its
+    // independent brake, which leaves the train brake handle where it is, kept braking earlier
+    // and earlier the whole way in, to crawl the last tens of metres to the stop point
+    auto const fillbrakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
+    braking_curve::approach const approach {
+        Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS, BrakeCtrlPosition > 0.0,
+        brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ),
+        brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fillbrakea0 ) };
+    auto const deceleration { braking_curve::demand( approach, BrakeSystem == TBrakeSystem::Pneumatic ? &braketable : nullptr ) };
     AccDesired = std::min( AccDesired, deceleration ); // najpierw hamuje mocniej, potem zluzuje
     if( Vel <= VelNext ) {
         return;
@@ -8363,7 +8322,7 @@ TController::adjust_desired_speed_for_final_approach( double const Vel ) {
     AccDesired = (
         BrakeSystem == TBrakeSystem::Pneumatic ?
             // cast iron blocks grip harder as the train comes to a stand
-            shaped_braking_demand(
+            braking_curve::shaped_demand(
                 Vel, VelNext, stoppingroom, fAccGravity,
                 { fBrake_a0, fBrake_a1, BrakeAccTableSize, mvOccupied->Vmax } ) :
             ( VelNext * VelNext - Vel * Vel ) / ( 25.92 * stoppingroom ) );
@@ -8787,6 +8746,12 @@ void TController::control_tractive_force() {
     if( AccDesired > EU07_AI_NOACCELERATION // don't add power if not asked for actual speed-up
 	    && (AbsAccS < AccDesired /*- std::min( 0.05, 0.01 * iDriverFailCount )*/ || mvOccupied->SpeedCtrlUnit.IsActive && velocity < mvOccupied->SpeedCtrlUnit.FullPowerVelocity) &&
 	    false == TestFlag(iDrivigFlags, movePress) &&
+	    // starting uphill against the releasing brake, the power that holds the train is enough: the brake coming off
+	    // speeds the train up, more power only drags the brake and slips the wheels. nor is a notch past that taken
+	    // back: the power got there in one notch from below, and the notch below doesn't hold the train
+	    ( false == bUphillRelease || fUphillTractiveForce < uphill_start::holding_force * fUphillHoldingForce ) &&
+	    // nor while the train brake is still being applied further to hold the train
+	    false == bUphillBrakeTopUp &&
 	    velocity < (VelDesired == 1.0 ? // work around for trains getting stuck on tracks with speed limit = 1
 	                    VelDesired :
 	                    VelDesired - fVelMinus) &&
@@ -8843,15 +8808,19 @@ void TController::control_uphill_start() {
          && ( false == is_emu() ) && ( false == is_dmu() ) // a multiple unit has no locomotive to hold a train behind it
          && ( fAccGravity < EU07_AI_UPHILLGRAVITY ) };
         false == uphill ) {
-        bUphillStart = false;
+        end_uphill_start();
         return;
     }
     if( false == bUphillStart ) {
         if( ( std::abs( velocity ) < EU07_AI_NOMOVEMENT )
+         // the whole train at a stand, not only its head stopped for a moment while the train rolls back
+         && ( fConsistVelocity > -0.5 )
          && ( AccDesired > EU07_AI_NOACCELERATION )
          && ( VelDesired > 0.0 )
          && ( BrakeCtrlPosition > 0.0 ) ) { // only with the train brake still applied to hold the train
             bUphillStart = true;
+            bUphillRelease = false;
+            UphillTopUp = {};
             fUphillStartTime = ElapsedTime;
         }
         else {
@@ -8860,31 +8829,86 @@ void TController::control_uphill_start() {
     }
     if( AccDesired <= EU07_AI_NOACCELERATION ) {
         // no longer to start: the standing rules take over
-        bUphillStart = false;
+        end_uphill_start();
         return;
     }
-    if( velocity < -0.5 ) {
-        // rolling back all the same: the rules for a train slipping back take over and apply the brakes
-        bUphillStart = false;
+    if( fConsistVelocity < -0.5 ) {
+        // the train rolls back all the same: the rules for a train slipping back take over and apply the brakes.
+        // the train as a whole, not its head: with the locomotive brake off, the locomotive and the first vehicles
+        // run back into the slack of a long train still held by its brake
+        end_uphill_start();
         return;
     }
-    if( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake )
-     && ( mvOccupied->LocalBrakePosA > 0.0 ) ) {
-        cue_action( driver_hint::independentbrakerelease );
-    }
-    auto tractiveforce { 0.0 };
+    fUphillTractiveForce = 0.0;
     for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
-        // Ft is signed in the vehicle's own frame
-        tractiveforce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) );
+        // Ft is signed in the vehicle's own frame, and turned into the direction of travel as AbsAccS is
+        fUphillTractiveForce += std::max( 0.0, vehicle->MoverParameters->Ft * ( vehicle->DirectionGet() == iDirection ? 1 : -1 ) * ( iDirection >= 0 ? 1 : -1 ) );
     }
-    auto const holdingforce { fMass * -fAccGravity };
-    if( ( velocity > 1.0 )
-     || ( tractiveforce > 1.1 * holdingforce )
-     // a locomotive that can't hold the train on its own power gets the brake off in the end all the same
-     || ( ElapsedTime - fUphillStartTime > 45.0 ) ) {
-        // the power holds the train: the train brake can be released
-        bUphillStart = false;
+    fUphillHoldingForce = fMass * -fAccGravity;
+    bUphillBrakeTopUp = false;
+    if( false == bUphillRelease ) {
+        bUphillBrakeTopUp = uphill_brake_top_up();
+        if( bUphillBrakeTopUp ) {
+            return;
+        }
+        if( ( mvOccupied->LocalBrake != TLocalBrake::ManualBrake )
+         && ( mvOccupied->LocalBrakePosA > 0.0 ) ) {
+            cue_action( driver_hint::independentbrakerelease );
+        }
+        if( ( velocity > 1.0 )
+         || ( fUphillTractiveForce > uphill_start::holding_force * fUphillHoldingForce )
+         // a locomotive that can't hold the train on its own power gets the brake off in the end all the same
+         || ( ElapsedTime - fUphillStartTime > 45.0 ) ) {
+            // the power holds the train: the train brake can be released
+            bUphillRelease = true;
+            fUphillReleaseTime = ElapsedTime;
+        }
+        return;
     }
+    // the train brake is being released with the power on. the start ends once the brakes are off: ended before,
+    // the brake still on takes the power off, the train rolls back and has to be braked to a stand again
+    if( IsConsistReleased
+     // a brake that doesn't come off (a hand brake) ends it all the same
+     || ( ElapsedTime - fUphillReleaseTime > EU07_AI_UPHILLRELEASETIME ) ) {
+        end_uphill_start();
+    }
+}
+
+// the locomotive brake comes off only once the brake of the rest of the train holds the train on its own: a train
+// stopped on a light application stands on the locomotive brake too, and rolls back as soon as it is off. until then
+// the train brake is applied further, a step at a time; true while it is
+bool TController::uphill_brake_top_up() {
+
+    auto trainbrakeforce { 0.0 };
+    auto haswagons { false };
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        if( vehicle->MoverParameters->Power < 0.01 ) {
+            trainbrakeforce += vehicle->MoverParameters->Fb;
+            haswagons = true;
+        }
+    }
+    if( false == haswagons ) {
+        return false;
+    }
+    auto const action { uphill_start::brake_top_up(
+        UphillTopUp, trainbrakeforce, fUphillHoldingForce, BrakeCtrlPosition, fBrakeHeldTime,
+        mvOccupied->BrakeDelay[ mvOccupied->BrakeDelayFlag > bdelay_G ? 1 : 3 ] ) };
+    if( action == uphill_start::top_up_action::none ) {
+        return false;
+    }
+    // the time for the power to hold the train starts once the brake does
+    fUphillStartTime = ElapsedTime;
+    if( action == uphill_start::top_up_action::step ) {
+        BrakeLevelAdd( BrakingLevelIncrease );
+    }
+    return true;
+}
+
+void TController::end_uphill_start() {
+
+    bUphillStart = false;
+    bUphillRelease = false;
+    bUphillBrakeTopUp = false;
 }
 
 void TController::increase_tractive_force() {
@@ -8958,10 +8982,17 @@ void TController::control_braking_force() {
     if( TestFlag( iDrivigFlags, movePress ) ) { return; }
 
     auto const velocity { DirectionalVel() };
+    // a train slipping back uphill is braked, also when it is to go on: released now it only rolls back further.
+    // its head, or the train as a whole: the locomotive may stop for a moment while the rest of the train runs into it
+    auto const slippingbackuphill {
+        ( fAccGravity < -0.05 )
+     && ( std::min( velocity, fConsistVelocity ) < -0.1 )
+     && ( false == bUphillStart ) };
 
     // jeśli przyspieszamy, to nie hamujemy
     if( AccDesired > 0.0 && OrderCurrentGet() != Disconnect // przy odłączaniu nie zwalniamy tu hamulca
-	    && false == TestFlag(iDrivigFlags, movePress) ) {
+	    && false == TestFlag(iDrivigFlags, movePress)
+	    && false == slippingbackuphill ) {
 		cue_action(driver_hint::brakingforcesetzero);
 	}
 
@@ -9016,7 +9047,7 @@ void TController::control_braking_force() {
     else {
         // a stara wersja w miarę dobrze działa na składy wagonowe
         if( (accdesiredresultant < fAccGravity - 0.1 && AbsAccS > accdesiredresultant + brake_increase_margin() // regular braking
-		     || fAccGravity < -0.05 && velocity < -0.1 && false == bUphillStart) && // also brake if uphill and slipping back
+		     || slippingbackuphill) && // also brake if uphill and slipping back
 		    (fBrakeTime < 0.0
 		     // the size of the brake demand decides whether to skip the reaction time, so the brake-only part
 		     // (on a descent a heavy train needs its brake built up at once, the gravity does not help it slow)

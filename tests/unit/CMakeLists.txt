@@ -34,6 +34,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# which textures the shadow maps draw without the alpha test
 	"${CMAKE_SOURCE_DIR}/rendering/common/texturealpha.cpp"
+	# and the http client the editor fetches its aids with
+	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

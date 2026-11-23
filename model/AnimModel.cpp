@@ -609,6 +609,10 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     if( Framestamp == m_framestamp ) { return; }
 
     auto const timedelta { Timer::GetDeltaTime() };
+    // the opacities change step by step from where they are, and they start at 1. the first time the instance is
+    // drawn its lights take their current state at once, whether it came from the definition or from an event since:
+    // a fade from 1 showed a light that is off as lit for a moment, the first time it came into view
+    bool const transition { m_transition && m_lightsanimated };
 
     // interpretacja ułamka zależnie od typu
     // case ls_Off: ustalenie czasu migotania, t<1s (f>1Hz), np. 0.1 => t=0.1 (f=10Hz)
@@ -649,12 +653,13 @@ void TAnimModel::RaAnimate( unsigned int const Framestamp ) {
     	const float transitionontime = std::min(0.25f, std::min(ontime, offtime) * 0.95f);
     	const float transitionofftime = std::min(0.45f, std::min(ontime, offtime) * 0.95f);
     	if (on)
-    		opacity += m_transition ? timedelta / transitionontime : 1.f; // increase to max value
+    		opacity = static_cast<float>( opacity + ( transition ? timedelta / transitionontime : 1.0 ) ); // increase to max value
     	else
-    		opacity -= m_transition ? timedelta / transitionofftime : 1.f; // reduce to zero
+    		opacity = static_cast<float>( opacity - ( transition ? timedelta / transitionofftime : 1.0 ) ); // reduce to zero
     	// Clamp the opacity
 		opacity = std::clamp(opacity, 0.f, 1.f);
     }
+    m_lightsanimated = true;
 
     // Ra 2F1I: to by można pomijać dla modeli bez animacji, których jest większość
 	for (const auto entry : m_animlist) {

@@ -9,9 +9,11 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <atomic>
 #include <istream>
 #include <chrono>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include "winheaders.h"
 #include "utilities/memorystats.h"
@@ -162,6 +164,14 @@ protected:
         on_failed() {}
 };
 
+// an image uploaded by another thread into a texture of its own, waiting for the drawing thread to put it in place
+struct texture_thread_upload {
+    GLuint id { 0 };
+    GLsync fence { nullptr }; // set after the upload in the uploading context; none where the driver has no sync objects
+    size_t width { 0 };
+    size_t height { 0 };
+};
+
 // a texture of the opengl renderer
 struct opengl_texture : public texture_source {
 // constructors
@@ -180,6 +190,13 @@ struct opengl_texture : public texture_source {
         alloc_rendertarget( GLint format, GLint components, int width, int height, int layers = 1, int samples = 1, GLint wrap = GL_CLAMP_TO_EDGE );
     static void
         reset_unit_cache();
+    // marks the unit cache as not to be trusted. safe to call from any thread: the cache itself is
+    // cleared by the thread drawing with it, the next time it binds textures (sync_unit_cache)
+    static void
+        invalidate_unit_cache();
+    // clears the unit cache if a thread marked it as not to be trusted since. called before the cache is read
+    static void
+        sync_unit_cache();
     // with gfx.resource.move, copies the gl texture back into the data before it's released. requires the texture bound
     bool read_back_compressed();
     void read_back_uncompressed();
@@ -188,6 +205,10 @@ struct opengl_texture : public texture_source {
         get_id() const override {
             return id; }
 	virtual void update_from_memory(size_t width, size_t height, const uint8_t *data) override;
+	// the image goes into a texture of its own, and the drawing thread swaps it in after the gpu has it (commit_thread_upload).
+	// the texture drawn from is never written by the uploading thread
+	void upload_from_thread(size_t width, size_t height, const uint8_t *data) override;
+	bool commit_thread_upload() override;
     bool
         resident() const override {
             return id != invalid_id; }
@@ -203,6 +224,11 @@ struct opengl_texture : public texture_source {
     GLenum target = GL_TEXTURE_2D;
     static std::array<GLuint, gl::MAX_TEXTURES + gl::HELPER_TEXTURES> units;
     static GLint m_activeunit;
+    // set by invalidate_unit_cache(), from the python upload thread too; the units themselves are touched only by the drawing thread
+    static std::atomic<bool> m_unitcachestale;
+
+    std::mutex m_threaduploadmutex;
+    std::optional<texture_thread_upload> m_threadupload; // guarded by m_threaduploadmutex
 
 public:
 // methods

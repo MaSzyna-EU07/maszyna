@@ -23,9 +23,13 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
 #include "utilities/crashdump.h"
+#include "utilities/crashsignals.h"
 #include "utilities/physicslog.h"
+#include "version_info.h"
 #include <cstdlib>
 #include <exception>
+#include <new>
+#include <stdexcept>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -50,15 +54,6 @@ int generate_nodebank_previews(int Argc, char *Argv[]);
 
 #include <string>
 #include <utilities/Globals.h>
-
-// lets the log service write what is still queued and stops it; does nothing once Application.exit() has done that
-static void stop_log_service()
-{
-	Global.applicationQuitOrder = true;
-	auto const it = Global.threads.find("LogService");
-	if (it != Global.threads.end() && it->second.joinable())
-		it->second.join();
-}
 
 namespace
 {
@@ -133,9 +128,13 @@ int main(int argc, char *argv[])
 {
 	raise_open_files_limit();
 	crashdump_install();
+	// on Linux, where no dump is written, the stack of a crash in the log and on the standard error
+	crash_signals::install(VERSION_INFO);
 	// init start timestamp
 	Global.startTimestamp = std::chrono::steady_clock::now();
 
+	// a start that failed ends with an error code, so whoever started the simulator (the starter) can tell it
+	// from a closing; how the simulator ends after a start that worked stays as it was
 	int exitcode{0};
 
 	// quick short-circuit for standalone e3d export
@@ -184,36 +183,51 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
+		// below 0 when the start failed (see eu07_application::init())
+		int initresult{0};
 		try
 		{
-			auto result{Application.init(argc, argv)};
-			if (result == 0)
+			initresult = Application.init(argc, argv);
+			if (initresult == 0)
 			{
-				result = Application.run();
+				Application.run();
 				Application.exit();
 			}
-			else
-			{
-				exitcode = result;
-			}
 		}
+		// an exception that ends the simulator is a crash, whether in the start or later: it says what it was in the
+		// log and ends with an error code
 		catch (std::bad_alloc const &Error)
 		{
 			ErrorLog("Critical error, memory allocation failure: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #ifdef _WIN32
 		catch (std::runtime_error const &Error)
 		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
 			std::string msg = "Simulator crash occured :(\n";
 			msg += Error.what();
 			MessageBoxA(nullptr, msg.c_str(), "Simulator crashed :(", MB_ICONERROR);
+			exitcode = 1;
+		}
+#else
+		// elsewhere one not caught here ends the simulator through std::terminate, with no word in the log. on
+		// Windows it is left to the crash report (utilities/crashdump.cpp), whose dump shows where it was thrown
+		catch (std::exception const &Error)
+		{
+			ErrorLog("Critical error: " + std::string(Error.what()));
+			exitcode = 1;
 		}
 #endif
 		// the last two seconds of the physics logs, also after an error caught above; Application.exit() stops them
 		// otherwise, and a second stop only writes what came since
 		PhysicsLogs.stop();
+		// after a failed start or an error caught above the log thread still runs, and what it hasn't written yet
+		// (why the start failed) would go with the process. after Application.exit() it has stopped already
+		finish_log();
+		if (initresult < 0)
+			exitcode = 1;
 	}
-	stop_log_service();
 #ifndef _WIN32
 	fflush(stdout);
 	fflush(stderr);

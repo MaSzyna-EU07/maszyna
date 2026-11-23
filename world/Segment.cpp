@@ -435,8 +435,10 @@ Math3D::vector3 TSegment::GetPoint(double const fDistance) const
 
 glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const {
     auto const field { track_uneven::field( Point ) };
-    glm::dvec3 result { field.x * Amount.side, field.y * Amount.up, field.z * Amount.side };
-    result *= track_uneven::stray_per_mm;
+    glm::dvec3 result {
+        field.x * Amount.side * track_uneven::stray_side_per_mm,
+        field.y * Amount.up * track_uneven::stray_up_per_mm,
+        field.z * Amount.side * track_uneven::stray_side_per_mm };
     result.y -= pOwner->joint_dip( Distance );
     return result;
 }
@@ -471,7 +473,7 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
         return;
     }
     auto const amount { pOwner->uneven_at( Distance, m_setting.path ) };
-    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_up_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
     Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance ) };
 }
 
@@ -510,7 +512,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
     auto const amount { pOwner->uneven_at( fDistance, m_setting.path ) };
-    rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
+    rotation.x += static_cast<float>( track_uneven::stray_up_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
       + amount.cross * track_uneven::level( position, across ) / gauge ) );
     position += track_uneven::across_only( stray( position, amount, fDistance ), across );

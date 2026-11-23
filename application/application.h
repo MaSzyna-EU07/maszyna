@@ -35,6 +35,7 @@ public:
 // constructors
     eu07_application() = default;
 // methods
+    // 0 when the simulator started, below 0 when its start failed, above 0 when the player closed it before it started
     int
         init( int Argc, char *Argv[] );
     int
