@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/layout/layoutNetwork.hpp"
+#include "editor/layout/layoutTurnout.hpp"
 #include "editor/editorGeometry.hpp"
 
 #include <algorithm>
@@ -53,13 +54,20 @@ seen_end seen(line const &Line, end_ref const &End)
 }
 
 // the node takes what the ends it holds tell: the heading of the only one, the curvature and the cant of the first one which doesn't go
-// on from it (one going on reads them), the grade of the first; true where the curvature or the cant changed
+// on from it (one going on reads them), the grade of the first; the end of the diverging track of a turnout first, which the turnout lays,
+// the start of one not at all, which leaves the node at the curvature of the main track. True where the curvature or the cant changed
 bool derive(network const &Network, node &Node)
 {
 	auto const before{std::make_pair(Node.curvature, Node.cant)};
 	bool graded{false};
 	bool curved{false};
+	std::vector<end_ref> ends;
 	for (auto const &end : Node.ends)
+		if (auto const *owner{owner_of(Network, end.line)}; owner != nullptr && owner->diverging == end.line && end.end == line_end::end)
+			ends.insert(ends.begin(), end);
+		else if (false == diverging_start(Network, end))
+			ends.push_back(end);
+	for (auto const &end : ends)
 	{
 		auto const *owner{Network.find(end.line)};
 		if (owner == nullptr || false == owner->solved.valid())
@@ -144,6 +152,12 @@ line const *network::find(line_id const Id) const
 	return found != m_lines.end() ? &found->second : nullptr;
 }
 
+turnout const *network::find(turnout_id const Id) const
+{
+	auto const found{m_turnouts.find(Id)};
+	return found != m_turnouts.end() ? &found->second : nullptr;
+}
+
 end_ref const *network::end_of(line_id const Line, line_end const End) const
 {
 	auto const *owner{find(Line)};
@@ -194,6 +208,17 @@ node &transaction::change(node_id const Id)
 	return m_network.m_nodes.at(Id);
 }
 
+turnout &transaction::change(turnout_id const Id)
+{
+	auto &kept{m_before.turnouts};
+	if (false == kept.contains(Id))
+	{
+		auto const found{m_network.m_turnouts.find(Id)};
+		kept[Id] = found != m_network.m_turnouts.end() ? std::optional<turnout>{found->second} : std::nullopt;
+	}
+	return m_network.m_turnouts.at(Id);
+}
+
 line &transaction::add(line Line)
 {
 	auto const id{Line.id};
@@ -208,6 +233,14 @@ node &transaction::add(node Node)
 	if (false == m_before.nodes.contains(id))
 		m_before.nodes[id] = m_network.find(id) != nullptr ? std::optional<node>{*m_network.find(id)} : std::nullopt;
 	return m_network.m_nodes[id] = std::move(Node);
+}
+
+turnout &transaction::add(turnout Turnout)
+{
+	auto const id{Turnout.id};
+	if (false == m_before.turnouts.contains(id))
+		m_before.turnouts[id] = m_network.find(id) != nullptr ? std::optional<turnout>{*m_network.find(id)} : std::nullopt;
+	return m_network.m_turnouts[id] = std::move(Turnout);
 }
 
 void transaction::erase(line_id const Id)
@@ -226,6 +259,14 @@ void transaction::erase(node_id const Id)
 	m_network.m_nodes.erase(Id);
 }
 
+void transaction::erase(turnout_id const Id)
+{
+	if (m_network.find(Id) == nullptr)
+		return;
+	change(Id);
+	m_network.m_turnouts.erase(Id);
+}
+
 std::set<line_id> transaction::touched_lines() const
 {
 	std::set<line_id> result;
@@ -242,6 +283,14 @@ std::set<node_id> transaction::touched_nodes() const
 	return result;
 }
 
+std::set<turnout_id> transaction::touched_turnouts() const
+{
+	std::set<turnout_id> result;
+	for (auto const &[id, before] : m_before.turnouts)
+		result.insert(id);
+	return result;
+}
+
 snapshot transaction::after() const
 {
 	snapshot result;
@@ -249,6 +298,8 @@ snapshot transaction::after() const
 		result.lines[id] = m_network.find(id) != nullptr ? std::optional<line>{*m_network.find(id)} : std::nullopt;
 	for (auto const &[id, before] : m_before.nodes)
 		result.nodes[id] = m_network.find(id) != nullptr ? std::optional<node>{*m_network.find(id)} : std::nullopt;
+	for (auto const &[id, before] : m_before.turnouts)
+		result.turnouts[id] = m_network.find(id) != nullptr ? std::optional<turnout>{*m_network.find(id)} : std::nullopt;
 	return result;
 }
 
@@ -276,6 +327,25 @@ void restore(network &Network, snapshot const &State)
 		else
 			change.erase(id);
 	}
+	for (auto const &[id, kept] : State.turnouts)
+	{
+		if (kept.has_value())
+			change.add(*kept);
+		else
+			change.erase(id);
+	}
+}
+
+turnout const *owner_of(network const &Network, line_id const Line)
+{
+	auto const *owner{Network.find(Line)};
+	return owner != nullptr && owner->turnout != turnout_id::none ? Network.find(owner->turnout) : nullptr;
+}
+
+bool diverging_start(network const &Network, end_ref const &End)
+{
+	auto const *owner{owner_of(Network, End.line)};
+	return owner != nullptr && owner->diverging == End.line && End.end == line_end::start;
 }
 
 void settle(transaction &Change)
@@ -284,20 +354,69 @@ void settle(transaction &Change)
 	for (auto const id : Change.touched_lines())
 		if (Change.view().find(id) != nullptr)
 			pending.insert(id);
+	std::set<turnout_id> turnouts;
+	for (auto const id : Change.touched_turnouts())
+		if (Change.view().find(id) != nullptr)
+			turnouts.insert(id);
 	// the nodes touched take the values of their ends too, the lines going on from them laid again where those changed; a few rounds
-	// settle it, each line going on from a curve depending on one node at each end
+	// settle it, each line going on from a curve depending on one node at each end, a diverging track on the start and the main track of
+	// its turnout
 	std::set<node_id> nodes{Change.touched_nodes()};
-	for (int round = 0; round < 8 && (false == pending.empty() || false == nodes.empty()); ++round)
+	for (int round = 0; round < 8 && (false == pending.empty() || false == nodes.empty() || false == turnouts.empty()); ++round)
 	{
+		std::set<line_id> next;
 		for (auto const id : pending)
 		{
+			if (auto const *owner{owner_of(Change.view(), id)}; owner != nullptr && owner->diverging == id)
+			{
+				turnouts.insert(owner->id);
+				continue;
+			}
 			auto &laid{Change.change(id)};
 			auto const &view{Change.view()};
 			laid.solved = solve(laid.shape, view.condition(laid, line_end::start), view.condition(laid, line_end::end));
 			nodes.insert(laid.start);
 			nodes.insert(laid.end);
 		}
-		std::set<line_id> next;
+		// the turnouts whose main track or start changed lay their diverging tracks, the node at the end of one where it ends now, and the
+		// lines going on from there laid again
+		for (auto const &[id, each] : Change.view().turnouts())
+			if (pending.contains(each.main) || nodes.contains(each.start))
+				turnouts.insert(id);
+		for (auto const id : turnouts)
+		{
+			auto const *existing{Change.view().find(id)};
+			if (existing == nullptr)
+				continue;
+			auto updated{*existing};
+			derive_turnout(Change.view(), updated);
+			if (updated != *existing)
+				Change.change(id) = updated;
+			auto const type{turnout_type_of(updated.type)};
+			auto const *track{Change.view().find(updated.diverging)};
+			if (false == type.has_value() || track == nullptr)
+				continue;
+			auto const laid{lay_diverging(frame_of(Change.view(), updated), *type, updated.hand)};
+			if (laid != track->solved)
+				Change.change(updated.diverging).solved = laid;
+			auto const *at{Change.view().find(updated.diverging_end)};
+			if (at == nullptr || false == laid.valid())
+				continue;
+			auto moved{*at};
+			moved.position = laid.end.position;
+			moved.heading = laid.end.heading;
+			moved.curvature = laid.end.curvature;
+			moved.cant = laid.end.cant;
+			moved.grade = laid.end.grade;
+			if (moved == *at)
+				continue;
+			Change.change(updated.diverging_end) = moved;
+			nodes.insert(updated.diverging_end);
+			for (auto const &end : moved.ends)
+				if (end.line != updated.diverging)
+					next.insert(end.line);
+		}
+		turnouts.clear();
 		for (auto const id : nodes)
 		{
 			auto const *existing{Change.view().find(id)};
@@ -326,15 +445,22 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 		return result;
 	result.push_back({Line, true});
 	auto const contains = [&](line_id const Id) { return std::ranges::any_of(result, [&](chain_part const &Part) { return Part.line == Id; }); };
-	// the other end at the node, where it holds two
+	// the other end at the node, where it holds two; at the start of a turnout the line it starts from runs on into its main track, its
+	// diverging track into none
 	auto const across = [&](node_id const At, line_id const From, line_end const End) -> end_ref const * {
 		auto const *at{Network.find(At)};
-		if (at == nullptr || at->ends.size() != 2)
+		if (at == nullptr || diverging_start(Network, {From, End, 1}))
 			return nullptr;
+		end_ref const *from{nullptr};
+		std::vector<end_ref const *> others;
 		for (auto const &end : at->ends)
-			if (end.line != From || end.end != End)
-				return &end;
-		return nullptr;
+			if (end.line == From && end.end == End)
+				from = &end;
+			else if (false == diverging_start(Network, end))
+				others.push_back(&end);
+		if (from == nullptr || others.size() != 1 || others.front()->side() == from->side())
+			return nullptr;
+		return others.front();
 	};
 	// on beyond the end of the last part
 	while (true)
@@ -370,6 +496,20 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 		auto const &owner{*Network.find(part.line)};
 		auto own{described(owner.solved, owner.category)};
 		auto const length{owner.solved.length};
+		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed
+		if (auto const *switched{owner_of(Network, owner.id)})
+		{
+			auto const diverging{switched->diverging == owner.id};
+			auto const features{norms::feature::switch_track | (switched->movable ? norms::feature::movable_frog : 0u) | (switched->bent() ? norms::feature::curved_switch : 0u) |
+			                    (diverging ? norms::feature::diverging : 0u)};
+			auto const speed{diverging ? switched->speed_diverging : switched->speed_main};
+			for (auto &element : own.elements)
+			{
+				element.features |= features;
+				if (speed > 0.0)
+					element.speed = std::min(element.speed > 0.0 ? element.speed : speed, speed);
+			}
+		}
 		result.starts.push_back(offset);
 		if (false == part.forward)
 		{
@@ -416,8 +556,24 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 		result.line.elements.front().open_start = true;
 		result.line.elements.back().open_end = true;
 	}
+	// an element cut by a turnout: its length isn't its own
+	auto &elements{result.line.elements};
+	for (std::size_t i = 1; i < elements.size(); ++i)
+		if ((elements[i - 1].features & norms::feature::switch_track) != (elements[i].features & norms::feature::switch_track))
+		{
+			elements[i - 1].open_end = true;
+			elements[i].open_start = true;
+		}
 	if (false == Chain.empty())
 		result.line.name = std::format("l{}", number(Chain.front().line));
+	return result;
+}
+
+std::vector<std::string> verdict::refusals() const
+{
+	auto result{reasons};
+	for (auto const &block : blocks)
+		result.push_back(block.turnout != turnout_id::none ? block.text : std::format("{} at {:.1f} m: {}", line_name(block.line), block.chainage, block.text));
 	return result;
 }
 
@@ -439,6 +595,12 @@ void check_line(network const &Network, line const &Line, verdict &Result)
 		Result.reasons.push_back(std::format("{}: {}", line_name(Line.id), error));
 	if (Line.start == Line.end)
 		Result.reasons.push_back(std::format("{} starts and ends at {}", line_name(Line.id), node_name(Line.start)));
+	if (Line.turnout != turnout_id::none)
+	{
+		auto const *owner{Network.find(Line.turnout)};
+		if (owner == nullptr || (owner->main != Line.id && owner->diverging != Line.id))
+			Result.reasons.push_back(std::format("{} is a track of turnout {}, which hasn't it", line_name(Line.id), number(Line.turnout)));
+	}
 	for (auto const end : {line_end::start, line_end::end})
 	{
 		if (Network.find(Line.node_at(end)) == nullptr)
@@ -453,9 +615,25 @@ void check_node(network const &Network, node const &Node, verdict &Result)
 {
 	if (Node.ends.empty())
 		Result.reasons.push_back(std::format("{} holds no end of a line", node_name(Node.id)));
-	if (Node.ends.size() > 2)
-		Result.reasons.push_back(std::format("{} holds {} ends; more than two meet only at a turnout", node_name(Node.id), Node.ends.size()));
-	if (Node.ends.size() == 2 && Node.ends[0].side() == Node.ends[1].side())
+	// the start of a turnout: its diverging track beside its main track, on its side of the node; one line at most on the other
+	std::vector<end_ref> ends;
+	for (auto const &end : Node.ends)
+	{
+		if (false == diverging_start(Network, end))
+		{
+			ends.push_back(end);
+			continue;
+		}
+		auto const *switched{owner_of(Network, end.line)};
+		auto const main{std::ranges::find_if(Node.ends, [&](end_ref const &Each) { return Each.line == switched->main; })};
+		if (switched->start != Node.id || main == Node.ends.end())
+			Result.reasons.push_back(std::format("{}: the diverging track of turnout {} starts there, its main track doesn't", node_name(Node.id), number(switched->id)));
+		else if (main->side() != end.side())
+			Result.reasons.push_back(std::format("{}: the tracks of turnout {} leave it to both sides", node_name(Node.id), number(switched->id)));
+	}
+	if (ends.size() > 2)
+		Result.reasons.push_back(std::format("{} holds {} ends; more than two meet only at the start of a turnout", node_name(Node.id), Node.ends.size()));
+	if (ends.size() == 2 && ends[0].side() == ends[1].side())
 		Result.reasons.push_back(std::format("{}: both lines lie on the same side of it", node_name(Node.id)));
 	for (auto const &end : Node.ends)
 	{
@@ -515,7 +693,7 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 			auto const chainage{chain[part].forward ? along : owner.solved.length - along};
 			auto const text{finding_text(finding)};
 			if (finding.level == norms::tier::block)
-				Result.reasons.push_back(std::format("{} at {:.1f} m: {}", line_name(owner.id), chainage, text));
+				Result.blocks.push_back({owner.id, chainage, finding, text});
 			else if (Lines.contains(owner.id))
 				Result.notices.push_back({owner.id, chainage, finding, text});
 		}
@@ -524,10 +702,14 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 
 } // namespace
 
-verdict check(network const &Network, std::set<line_id> const &Lines, std::set<node_id> const &Nodes)
+verdict check(network const &Network, std::set<line_id> const &Lines, std::set<node_id> const &Nodes, std::set<turnout_id> const &Turnouts)
 {
 	verdict result;
 	std::set<node_id> nodes{Nodes};
+	std::set<turnout_id> turnouts;
+	for (auto const id : Turnouts)
+		if (Network.find(id) != nullptr)
+			turnouts.insert(id);
 	for (auto const id : Lines)
 	{
 		auto const *owner{Network.find(id)};
@@ -536,12 +718,32 @@ verdict check(network const &Network, std::set<line_id> const &Lines, std::set<n
 		check_line(Network, *owner, result);
 		nodes.insert(owner->start);
 		nodes.insert(owner->end);
+		if (owner->turnout != turnout_id::none && Network.find(owner->turnout) != nullptr)
+			turnouts.insert(owner->turnout);
 	}
 	for (auto const id : nodes)
 		if (auto const *at{Network.find(id)}; at != nullptr)
+		{
 			check_node(Network, *at, result);
-	if (result.fine())
-		check_norms(Network, Lines, result);
+			// a turnout whose leg it is, and whose ramps it may come near
+			for (auto const &end : at->ends)
+				if (auto const *switched{owner_of(Network, end.line)})
+					turnouts.insert(switched->id);
+		}
+	// the lines of the turnouts touched are judged with them
+	std::set<line_id> lines{Lines};
+	for (auto const id : turnouts)
+	{
+		auto const &switched{*Network.find(id)};
+		lines.insert(switched.main);
+		lines.insert(switched.diverging);
+	}
+	if (false == result.reasons.empty())
+		return result;
+	for (auto const id : turnouts)
+		check_turnout(Network, *Network.find(id), result);
+	if (result.reasons.empty())
+		check_norms(Network, lines, result);
 	return result;
 }
 
@@ -549,11 +751,14 @@ verdict check_all(network const &Network)
 {
 	std::set<line_id> lines;
 	std::set<node_id> nodes;
+	std::set<turnout_id> turnouts;
 	for (auto const &[id, owner] : Network.lines())
 		lines.insert(id);
 	for (auto const &[id, at] : Network.nodes())
 		nodes.insert(id);
-	return check(Network, lines, nodes);
+	for (auto const &[id, each] : Network.turnouts())
+		turnouts.insert(id);
+	return check(Network, lines, nodes, turnouts);
 }
 
 } // namespace layout

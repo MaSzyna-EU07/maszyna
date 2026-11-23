@@ -6,10 +6,14 @@
 
 #include "doctest.h"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorSwitchCurve.hpp"
 #include "editor/layout/layoutCommands.hpp"
+#include "editor/layout/layoutTurnout.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace test::layout_fixture {
 
@@ -54,9 +58,19 @@ inline std::string reasons_of(layout::outcome const &Outcome) {
 	return result;
 }
 
+inline std::string reasons_of(layout::verdict const &Verdict) {
+	std::string result;
+	for (auto const &reason : Verdict.refusals()) {
+		result += reason + "; ";
+	}
+	return result;
+}
+
 // the invariants, checked here on their own: each line laid and running on from element to element, the cant running on, the ends at
-// their nodes and running on through them, the topology of the ends; and the model's own check, the norms along the chains with it
-inline void check_invariants(layout::network const &Network) {
+// their nodes and running on through them, the topology of the ends (two at a node, three at the start of a turnout: its two tracks on one
+// side of it); the turnouts whole, their main tracks as long as their types, their tracks from their start, their velocity by the speed rule;
+// and the model's own check, the norms along the chains and the rules of the turnouts with it (check_invariants; check_structure leaves it out)
+inline void check_structure(layout::network const &Network) {
 	for (auto const &[id, line] : Network.lines()) {
 		CAPTURE(layout::number(id));
 		auto const &solved{line.solved};
@@ -88,9 +102,23 @@ inline void check_invariants(layout::network const &Network) {
 	for (auto const &[id, node] : Network.nodes()) {
 		CAPTURE(layout::number(id));
 		REQUIRE_FALSE(node.ends.empty());
-		REQUIRE(node.ends.size() <= 2);
-		if (node.ends.size() == 2) {
-			CHECK(node.ends[0].side() != node.ends[1].side());
+		std::vector<layout::end_ref> through;
+		for (auto const &end : node.ends) {
+			if (layout::diverging_start(Network, end)) {
+				auto const *switched{layout::owner_of(Network, end.line)};
+				REQUIRE(switched != nullptr);
+				CHECK(switched->start == id);
+				auto const main{std::ranges::find_if(node.ends, [&](layout::end_ref const &Each) { return Each.line == switched->main; })};
+				REQUIRE(main != node.ends.end());
+				CHECK(main->side() == end.side());
+			}
+			else {
+				through.push_back(end);
+			}
+		}
+		REQUIRE(through.size() <= 2);
+		if (through.size() == 2) {
+			CHECK(through[0].side() != through[1].side());
 		}
 		for (auto const &end : node.ends) {
 			auto const *line{Network.find(end.line)};
@@ -104,11 +132,33 @@ inline void check_invariants(layout::network const &Network) {
 			CHECK(std::abs(values.grade * sense - node.grade) <= 0.002);
 		}
 	}
-	auto const verdict{layout::check_all(Network)};
-	std::string reasons;
-	for (auto const &reason : verdict.reasons) {
-		reasons += reason + "; ";
+	for (auto const &[id, turnout] : Network.turnouts()) {
+		CAPTURE(layout::number(id));
+		auto const type{layout::turnout_type_of(turnout.type)};
+		REQUIRE(type.has_value());
+		auto const *main{Network.find(turnout.main)};
+		auto const *diverging{Network.find(turnout.diverging)};
+		REQUIRE(main != nullptr);
+		REQUIRE(diverging != nullptr);
+		CHECK(main->turnout == id);
+		CHECK(diverging->turnout == id);
+		CHECK((turnout.direction > 0 ? main->start : main->end) == turnout.start);
+		CHECK((turnout.direction > 0 ? main->end : main->start) == turnout.main_end);
+		CHECK(diverging->start == turnout.start);
+		CHECK(diverging->end == turnout.diverging_end);
+		CHECK(main->solved.length == doctest::Approx(type->length).epsilon(1e-9));
+		CHECK(diverging->solved.start.position == Network.find(turnout.start)->position);
+		CHECK(diverging->solved.end.position == Network.find(turnout.diverging_end)->position);
+		CHECK(turnout.speed_diverging > 0.0);
+		CHECK(turnout.speed_main > 0.0);
+		CHECK(turnout.velocity == switch_curve::written_velocity(turnout.speed_main, turnout.speed_diverging));
 	}
+}
+
+inline void check_invariants(layout::network const &Network) {
+	check_structure(Network);
+	auto const verdict{layout::check_all(Network)};
+	auto const reasons{reasons_of(verdict)};
 	CAPTURE(reasons);
 	CHECK(verdict.fine());
 }

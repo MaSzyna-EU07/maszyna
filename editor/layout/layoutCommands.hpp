@@ -17,9 +17,9 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 
 // The edits of the track geometry (editor-tracks-domain.md §4, "Edycja = polecenie"; §8): each one is a command which proposes a new
-// state of the lines and the nodes it touches; what depends on them is laid again, the topology and the norms are checked (the module
-// of the norms: BLOCK refuses, WARN and PREFER are told), and the change is kept whole or refused with the reasons, the state left as it
-// was. Each one kept is one step to undo, the lines and nodes it touched restored as they were.
+// state of the lines, the nodes and the turnouts it touches; what depends on them is laid again, the topology, the rules of the turnouts
+// and the norms are checked (the module of the norms: BLOCK refuses, WARN and PREFER are told), and the change is kept whole or refused
+// with the reasons, the state left as it was. Each one kept is one step to undo, what it touched restored as it was.
 namespace layout
 {
 
@@ -82,7 +82,42 @@ struct delete_line
 	line_id line{line_id::none};
 };
 
-using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line>;
+// a turnout of the type of the catalogue laid into the line, its start at the chainage: the line cut at its legs, the part between them its
+// main track, its diverging track leaving it to the hand (1 left, -1 right) as it runs from its start, along the line (direction 1) or
+// against it (-1); bent as the line under it is. Refused with the reasons where a rule of the turnouts or a BLOCK limit of the norms is broken
+struct insert_turnout
+{
+	line_id line{line_id::none};
+	double chainage{0.0};
+	std::string type;
+	int hand{1};
+	int direction{1};
+};
+
+// the turnout moved along its line by the distance, above 0 toward the end of its main track: the lines on both sides of it one line again
+// and cut at its legs anew, the line going on from the end of its diverging track carried with it there; checked as when laid
+struct move_turnout
+{
+	turnout_id turnout{turnout_id::none};
+	double distance{0.0};
+};
+
+// the turnout of another type of the catalogue, its start where it is; the hand changed where given
+struct change_turnout
+{
+	turnout_id turnout{turnout_id::none};
+	std::string type;
+	std::optional<int> hand;
+};
+
+// the turnout taken out: its diverging track goes, the end of it with it where no line goes on from there; its main track and the lines
+// on both sides of it laid as one line again where they can be
+struct remove_turnout
+{
+	turnout_id turnout{turnout_id::none};
+};
+
+using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line, insert_turnout, move_turnout, change_turnout, remove_turnout>;
 
 char const *command_name(command const &Command);
 
@@ -93,6 +128,7 @@ struct outcome
 	std::vector<notice> notices; // what the norms warn of, or would prefer otherwise, on the lines changed
 	std::vector<line_id> lines; // made by it
 	std::vector<node_id> nodes;
+	std::vector<turnout_id> turnouts;
 };
 
 // the lines and the nodes with the commands which edited them, to undo and redo one by one

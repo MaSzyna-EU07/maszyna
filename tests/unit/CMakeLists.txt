@@ -27,8 +27,9 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the heights of the tracks laid
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
-	# and the switches laid into the curves
+	# and the switches laid into the curves, and the catalogue of the switches the turnouts of the domain are laid from
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDesign.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
@@ -61,6 +62,7 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLine.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutNetwork.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
 	${UNIT_TEST_CASES})
 

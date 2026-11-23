@@ -37,10 +37,15 @@ enum class vertex_id : std::uint32_t
 {
 	none = 0
 };
+enum class turnout_id : std::uint32_t
+{
+	none = 0
+};
 
 inline std::uint32_t number(node_id const Id) { return static_cast<std::uint32_t>(Id); }
 inline std::uint32_t number(line_id const Id) { return static_cast<std::uint32_t>(Id); }
 inline std::uint32_t number(vertex_id const Id) { return static_cast<std::uint32_t>(Id); }
+inline std::uint32_t number(turnout_id const Id) { return static_cast<std::uint32_t>(Id); }
 
 enum class transition_shape
 {
