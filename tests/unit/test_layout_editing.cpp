@@ -88,6 +88,56 @@ TEST_CASE("layout editing: a vertex moved and its curve changed by one set_verte
 	CHECK(model.state().find(id)->shape.vertices[1] == vertex);
 }
 
+TEST_CASE("layout editing: a line laid on from the free end of another one shares its node, its ends at the node's numbers") {
+	layout::model model;
+	REQUIRE(model.execute(straight_along_z(0.0, 0.0, 400.0)).done);
+	auto const first{last_line(model)};
+	auto const end{node_at(model.state(), {0.0, 10.0, 400.0})};
+
+	// on from the end, northward: the node holds both lines, one ahead and one behind
+	auto on{straight_along_z(0.0, 400.0, 700.0)};
+	on.start_node = end;
+	auto const laid{model.execute(on)};
+	REQUIRE_MESSAGE(laid.done, reasons_of(laid));
+	auto const second{last_line(model)};
+	CHECK(model.state().nodes().size() == 3);
+	auto const *node{model.state().find(end)};
+	REQUIRE(node != nullptr);
+	CHECK(node->ends.size() == 2);
+	CHECK(model.state().find(second)->start == end);
+	CHECK(model.state().find(second)->solved.start.position == node->position);
+	CHECK(model.state().find(first)->solved.end.position == node->position);
+	check_structure(model.state());
+	CHECK(layout::check_all(model.state()).fine());
+
+	// back from the start of the first one, southward: against the heading of its node
+	auto const start{node_at(model.state(), {0.0, 10.0, 0.0})};
+	auto back{straight_along_z(0.0, 0.0, -300.0)};
+	back.start_node = start;
+	auto const behind{model.execute(back)};
+	REQUIRE_MESSAGE(behind.done, reasons_of(behind));
+	CHECK(model.state().find(start)->ends.size() == 2);
+	CHECK(layout::check_all(model.state()).fine());
+
+	// a node with two ends is no free end; a kink at the node is refused, the network as it was
+	auto again{straight_along_z(5.0, 400.0, 900.0)};
+	again.start_node = end;
+	CHECK_FALSE(model.execute(again).done);
+	auto const &farthest{*std::prev(model.state().nodes().end())};
+	auto kinked{straight_along_z(0.0, 700.0, 900.0)};
+	kinked.end = {50.0, 10.0, 900.0};
+	kinked.start_node = farthest.first;
+	auto const before{model.state()};
+	CHECK_FALSE(model.execute(kinked).done);
+	CHECK(model.state().same(before));
+
+	// undone: the node free again
+	REQUIRE(model.undo());
+	REQUIRE(model.undo());
+	CHECK(model.state().find(end)->ends.size() == 1);
+	CHECK(model.state().nodes().size() == 2);
+}
+
 TEST_CASE("project session: the switch track of a turnout made by the session, the tracks of a line written into two files recorded") {
 	test::scratch_folder folder{"layout_editing_session"};
 	folder.write("mapa.scn", "// a new scenery\n");

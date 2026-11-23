@@ -15110,6 +15110,18 @@ msgstr "Rozjazd %s: %s, %s, %.0f km/h na torze zwrotnym"
 msgid "Line %s of the model: its grade line, %zu breaks"
 msgstr "Linia %s modelu: jej niweleta, załomów: %zu"
 
+msgid "Add a curve here"
+msgstr "Dodaj tu łuk"
+
+msgid "A new vertex of the tangents at the distance from the start of the line: no curve until its vertex is dragged off the line, then of the radius of the lay tool"
+msgstr "Nowy wierzchołek stycznych w tej odległości od początku linii: łuku nie ma, dopóki wierzchołek nie zostanie odciągnięty od linii; potem ma promień narzędzia układania"
+
+msgid "Take W%zu out"
+msgstr "Usuń W%zu"
+
+msgid "The curve taken out: the tangents of the vertices beside it meet with no curve of it"
+msgstr "Łuk usunięty: styczne sąsiednich wierzchołków spotykają się bez niego"
+
 msgid "Refused, nothing changes:"
 msgstr "Odmowa, nic się nie zmieni:"
 

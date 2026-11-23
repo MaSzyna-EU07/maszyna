@@ -28,4 +28,33 @@ wait 2
 expect modelrefused 1
 expect modelsame graded
 expect steps 2
+# a curve added at 300 m: a vertex on the line, no curve until it's moved; taken out again
+modelplan @1.0
+modelvertexadd 300
+wait 2
+expect modelrefused 0
+expect modelvertices 1 1
+expect steps 3
+expect modelends
+# bent: moved 2 m aside, its radius 5000 m, one command
+modelplan @1.0
+routemove 0 802 0
+routeradius 0 5000
+routeapply
+wait 2
+expect modelrefused 0
+expect modelvertexat 1 0 802 0 0.001
+expect modelvertex 1 0 radius 5000
+expect steps 4
+expect modelends
+modelplan @1.0
+modelvertexdel 0
+wait 2
+expect modelrefused 0
+expect modelvertices 1 0
+expect steps 5
+expect modelends
+undo
+wait 2
+expect modelvertices 1 1
 quit

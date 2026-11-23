@@ -69,34 +69,74 @@ void check_curve(std::optional<double> const &Radius, std::optional<double> cons
 		Why.emplace_back("a cant leaning out of the turn");
 }
 
-// the line laid between two new nodes at the points, its vertices given their ids; the ids made told in the outcome
-void add_line(transaction &Change, outcome &Result, glm::dvec3 const &Start, glm::dvec3 const &End, line Laid)
+// the line laid between two nodes at the points, new ones, or the free ends given (From, To), which then hold its end, the line leaving
+// them along their heading or against it as its leg there does; its vertices given their ids; the ids made told in the outcome
+void add_line(transaction &Change, outcome &Result, glm::dvec3 const &Start, glm::dvec3 const &End, line Laid, node const *From = nullptr, node const *To = nullptr)
 {
 	auto &ids{Change.ids()};
 	auto const id{ids.new_line()};
+	auto const start{From != nullptr ? From->position : Start};
+	auto const end{To != nullptr ? To->position : End};
+	// the sense of an end at a node shared: the line runs from it along its heading, or against it, as its leg there does
+	auto const plan = [](glm::dvec3 const &Point) { return glm::dvec2{Point.x, Point.z}; };
+	auto const &vertices{Laid.shape.vertices};
+	auto const first_leg{(vertices.empty() ? plan(end) : vertices.front().point) - plan(start)};
+	auto const last_leg{plan(end) - (vertices.empty() ? plan(start) : vertices.back().point)};
 	node first;
-	first.id = ids.new_node();
-	first.position = Start;
-	first.ends.push_back({id, line_end::start, 1});
+	if (From != nullptr)
+		Change.change(From->id).ends.push_back({id, line_end::start, glm::dot(first_leg, From->heading) >= 0.0 ? 1 : -1});
+	else
+	{
+		first.id = ids.new_node();
+		first.position = start;
+		first.ends.push_back({id, line_end::start, 1});
+	}
 	node last;
-	last.id = ids.new_node();
-	last.position = End;
-	last.ends.push_back({id, line_end::end, 1});
+	if (To != nullptr)
+		Change.change(To->id).ends.push_back({id, line_end::end, glm::dot(last_leg, To->heading) >= 0.0 ? 1 : -1});
+	else
+	{
+		last.id = ids.new_node();
+		last.position = end;
+		last.ends.push_back({id, line_end::end, 1});
+	}
 	Laid.id = id;
-	Laid.start = first.id;
-	Laid.end = last.id;
+	Laid.start = From != nullptr ? From->id : first.id;
+	Laid.end = To != nullptr ? To->id : last.id;
 	for (auto &vertex : Laid.shape.vertices)
 		vertex.id = ids.new_vertex();
 	Result.lines.push_back(id);
-	Result.nodes.push_back(first.id);
-	Result.nodes.push_back(last.id);
-	Change.add(std::move(first));
-	Change.add(std::move(last));
+	Result.nodes.push_back(Laid.start);
+	Result.nodes.push_back(Laid.end);
+	if (From == nullptr)
+		Change.add(std::move(first));
+	if (To == nullptr)
+		Change.add(std::move(last));
 	Change.add(std::move(Laid));
 }
 
 reasons propose(transaction &Change, outcome &Result, create_line const &Command)
 {
+	reasons why;
+	// a node given: the free end of a line of its own
+	auto const free_end = [&](node_id const Id) -> node const * {
+		if (Id == node_id::none)
+			return nullptr;
+		auto const *found{Change.view().find(Id)};
+		if (found == nullptr)
+			why.push_back(std::format("there's no {}", node_name(Id)));
+		else if (found->ends.size() != 1 || owner_of(Change.view(), found->ends.front().line) != nullptr)
+			why.push_back(std::format("{} isn't the free end of a line", node_name(Id)));
+		else
+			return found;
+		return nullptr;
+	};
+	auto const *from{free_end(Command.start_node)};
+	auto const *to{free_end(Command.end_node)};
+	if (Command.start_node != node_id::none && Command.start_node == Command.end_node)
+		why.push_back(std::format("the line would start and end at {}", node_name(Command.start_node)));
+	if (false == why.empty())
+		return why;
 	line laid;
 	laid.shape.vertices = Command.vertices;
 	laid.shape.grades = Command.grades;
@@ -104,7 +144,7 @@ reasons propose(transaction &Change, outcome &Result, create_line const &Command
 	laid.shape.ramp = Command.ramp;
 	laid.category = Command.category;
 	laid.chainage_start = Command.chainage_start;
-	add_line(Change, Result, Command.start, Command.end, std::move(laid));
+	add_line(Change, Result, Command.start, Command.end, std::move(laid), from, to);
 	return {};
 }
 

@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -168,6 +169,86 @@ bool editor_mode::model_profile_apply()
 	return true;
 }
 
+// the curves of a line of the model added and taken out in the route design
+
+void editor_mode::model_vertex_add(double const Chainage)
+{
+	auto const id{model_plan_line()};
+	auto const *line{model_network().find(id)};
+	if (line == nullptr || false == line->solved.valid())
+		return;
+	auto const at{std::clamp(Chainage, 0.0, line->solved.length)};
+	// after the vertex whose curve lies before the point, by the chainages of the tangent points of the curves
+	layout::vertex_id after{layout::vertex_id::none};
+	auto const &shape{line->shape};
+	glm::dvec2 const point{line->solved.position(at)};
+	auto const start{model_network().find(line->start)};
+	auto const end{model_network().find(line->end)};
+	if (start == nullptr || end == nullptr)
+		return;
+	// the polygon of the tangents: the new vertex goes onto the leg the point lies on, nearest of them
+	std::vector<glm::dvec2> corners{{start->position.x, start->position.z}};
+	for (auto const &vertex : shape.vertices)
+		corners.push_back(vertex.point);
+	corners.push_back({end->position.x, end->position.z});
+	double best{std::numeric_limits<double>::infinity()};
+	std::size_t leg{0};
+	for (std::size_t i = 0; i + 1 < corners.size(); ++i)
+	{
+		auto const a{corners[i]};
+		auto const b{corners[i + 1]};
+		auto const span{b - a};
+		auto const t{glm::dot(span, span) > 0.0 ? std::clamp(glm::dot(point - a, span) / glm::dot(span, span), 0.0, 1.0) : 0.0};
+		if (auto const distance{glm::distance(a + span * t, point)}; distance < best)
+		{
+			best = distance;
+			leg = i;
+		}
+	}
+	if (leg > 0)
+		after = shape.vertices[leg - 1].id;
+	// on the leg, where it runs nearest to the point of the line: no curve until it's moved off the leg
+	auto const a{corners[leg]};
+	auto const span{corners[leg + 1] - a};
+	auto const t{glm::dot(span, span) > 0.0 ? std::clamp(glm::dot(point - a, span) / glm::dot(span, span), 0.0, 1.0) : 0.0};
+	layout::vertex made;
+	made.point = a + span * t;
+	made.radius = m_lay.radius > 0.0 ? m_lay.radius : 600.0;
+	made.transition_in = 0.0;
+	made.transition_out = 0.0;
+	made.cant = 0.0;
+	model_context context;
+	context.done = [this, id](std::vector<TTrack *> const &) { model_plan_reload(id); };
+	model_run({layout::insert_vertex{id, after, made}}, context);
+}
+
+void editor_mode::model_vertex_remove(std::size_t const Index)
+{
+	auto const id{model_plan_line()};
+	auto const *line{model_network().find(id)};
+	if (line == nullptr || Index >= line->shape.vertices.size())
+		return;
+	model_context context;
+	context.done = [this, id](std::vector<TTrack *> const &) { model_plan_reload(id); };
+	model_run({layout::remove_vertex{id, line->shape.vertices[Index].id}}, context);
+}
+
+void editor_mode::model_plan_reload(layout::line_id const Line)
+{
+	// the route design read from the model again, what the command came to kept
+	auto const message{model().message};
+	auto const notices{model().notices};
+	auto const shown{model().shown};
+	auto const shown_notices{model().shown_notices};
+	auto const refused{model().refused};
+	route_from_model(Line);
+	model().message = message;
+	model().notices = notices;
+	model().shown = shown;
+	model().shown_notices = shown_notices;
+	model().refused = refused;
+}
+
 // a handle of the route design dragged on a line of the model: the line as the model lays it and the norms' line, before it's let go
 
 void editor_mode::model_plan_preview()
@@ -236,4 +317,46 @@ void editor_mode::draw_model_plan_preview() const
 	auto const &mouse{ImGui::GetIO().MousePos};
 	auto const text{(preview.refused ? std::string{STR_C("Refused, nothing changes:")} + "\n" : std::string{}) + preview.text};
 	drawlist->AddText(ImVec2(mouse.x + 18.0f, mouse.y + 18.0f), colour, text.c_str());
+}
+
+void editor_mode::render_model_curves()
+{
+	auto const line{model_plan_line()};
+	auto const *shape{model_network().find(line)};
+	if (shape == nullptr)
+		return;
+	// a handle dragged: the line as the model would lay it
+	if (auto const &preview{model().preview}; false == preview.key.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextColored(preview.refused ? ImVec4(1.0f, 0.35f, 0.3f, 1.0f) : ImVec4(0.45f, 0.85f, 0.55f, 1.0f), "%s", ((preview.refused ? std::string{STR_C("Refused, nothing changes:")} + "\n" : std::string{}) + preview.text).c_str());
+		ImGui::PopTextWrapPos();
+	}
+	// a curve added: a vertex on the tangents at the chainage, bent once its vertex is dragged; one taken out
+	auto &at{model().vertex_at};
+	if (at < 0.0 || at > shape->solved.length)
+		at = std::round(shape->solved.length * 0.5);
+	ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6.0f);
+	ImGui::InputDouble("##modelvertexat", &at, 0.0, 0.0, "%.1f m");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Add a curve here")))
+	{
+		model_vertex_add(at);
+		return;
+	}
+	item_tooltip("A new vertex of the tangents at the distance from the start of the line: no curve until its vertex is dragged off the line, then of the radius of the lay tool");
+	for (std::size_t i = 0; i < shape->shape.vertices.size(); ++i)
+	{
+		if (i > 0)
+			ImGui::SameLine();
+		ImGui::PushID(static_cast<int>(i));
+		if (ImGui::SmallButton(format(STR_C("Take W%zu out"), i + 1).c_str()))
+		{
+			ImGui::PopID();
+			model_vertex_remove(i);
+			return;
+		}
+		item_tooltip("The curve taken out: the tangents of the vertices beside it meet with no curve of it");
+		ImGui::PopID();
+	}
 }

@@ -3471,6 +3471,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the grade line of the line of the model the profile is open on read from the model, applied as its command (set_grades)
 	void model_profile_load();
 	bool model_profile_apply();
+	// the curves of the line of the model open in the route design: one added at the chainage, one taken out
+	void model_vertex_add(double const Chainage);
+	void model_vertex_remove(std::size_t const Index);
+	void model_plan_reload(layout::line_id const Line);
+	void render_model_curves();
 	// the commands the changes of the route design come to, or why they can't be (English, model_tr shows it)
 	bool model_plan_commands(layout::line_id const Line, std::vector<layout::command> &Commands, std::string &Why) const;
 	// a handle of the route design dragged on a line of the model: tried as it goes, drawn by the line and the mouse

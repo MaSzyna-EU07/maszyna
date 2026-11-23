@@ -193,4 +193,6 @@ and the rest of the editing on the model (E4b), with the setting on:
 | --- | --- |
 | `m_8_turnout` | a switch dragged on a line of the model is a turnout of the catalogue inserted by the model, one step, taken back and brought again; moved, given another type and the other side, taken out by Del, a step each; one bent into an arc 2 m off the end of a cant ramp refused (9.6 pkt 16), nothing changed; the switch track saved and found after a reopen, nothing changed by hand |
 | `m_9_crossover` | a crossover dragged between two lines of the model 4.75 m apart is the solver's, one step; between lines 4 m apart refused with the solver's proposal, nothing changed |
+| `m_10_grade_curves` | a break of the grade line put in the profile tool is the line's command, one step; one the model can't lay refused; a curve added in the route design, bent, taken out, a step each |
 | `m_11_vertex_drag` | the vertex of a curve dragged on the map with the mouse: the line as the model would lay it tried while it's dragged, one command let go |
+| `m_12_lay_from_end` | a line laid on from the free end of a line of the model shares its node, the ends to the bit before and after a reopen |

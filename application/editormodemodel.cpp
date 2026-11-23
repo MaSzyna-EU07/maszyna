@@ -757,6 +757,44 @@ bool editor_mode::model_lay(lay_line_plan const &Plan, editor_track::snap_target
 	}
 	line.transition = design.shape == alignment::transition_shape::clothoid ? layout::transition_shape::clothoid : layout::transition_shape::cubic_parabola;
 	line.category.vmax = design.speed;
+	// from the free end of a line of the model, or to one: the node of that end shared, the leg there on its tangent, so the line goes on
+	// from it with no kink
+	auto const free_node = [&](editor_track::snap_target const &Target) -> layout::node const * {
+		if (Target.track == nullptr || model_track(Target.track) == nullptr)
+			return nullptr;
+		double constexpr kReach{0.01}; // m
+		for (auto const &[id, node] : model_network().nodes())
+			if (node.ends.size() == 1 && layout::owner_of(model_network(), node.ends.front().line) == nullptr && glm::distance(node.position, Target.position) < kReach)
+				return &node;
+		return nullptr;
+	};
+	auto const on_tangent = [](layout::node const &Node, glm::dvec2 const &Point) {
+		glm::dvec2 const at{Node.position.x, Node.position.z};
+		return at + Node.heading * glm::dot(Point - at, Node.heading);
+	};
+	auto const *from{free_node(tool.start)};
+	auto const *to{free_node(End)};
+	if (from != nullptr && from == to)
+		to = nullptr;
+	if (from != nullptr)
+	{
+		line.start_node = from->id;
+		line.start = from->position;
+		if (false == line.vertices.empty())
+			line.vertices.front().point = on_tangent(*from, line.vertices.front().point);
+		else if (to == nullptr)
+		{
+			auto const end{on_tangent(*from, {line.end.x, line.end.z})};
+			line.end = {end.x, line.end.y, end.y};
+		}
+	}
+	if (to != nullptr)
+	{
+		line.end_node = to->id;
+		line.end = to->position;
+		if (false == line.vertices.empty())
+			line.vertices.back().point = on_tangent(*to, line.vertices.back().point);
+	}
 	model_context context;
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
 	if (style == nullptr && tool.copy_selected)
@@ -1033,6 +1071,10 @@ void editor_mode::render_model_plan()
 			ImGui::BulletText("%s", notice.c_str());
 		ImGui::PopTextWrapPos();
 	}
+	// its curves added and taken out; a handle dragged told
+	render_model_curves();
+	if (model_plan_line() != line)
+		return;
 	// split in two at the chainage, joined from a free end to the nearest free end of another line, deleted
 	auto &split{model().plan.split};
 	if (split < 0.0 || split > shape->solved.length)
@@ -1431,6 +1473,19 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		WriteLog(format("SELFTEST modelgrade %s %.1f %.3f R%.0f: %zu points, %s %s", name.c_str(), chainage, elevation, radius, points.size(), editor_selftest::one_line(state.status).c_str(), editor_selftest::one_line(state.error).c_str()));
 		return selftest_result::handled;
 	}
+	if (command == "modelvertexadd" || command == "modelvertexdel")
+	{
+		// a curve added to the line of the model open in the route design at the chainage, or the one of the index taken out, as the
+		// buttons of the line do it
+		double value{0.0};
+		words >> value;
+		if (command == "modelvertexadd")
+			model_vertex_add(value);
+		else
+			model_vertex_remove(static_cast<std::size_t>(std::max(0.0, value)));
+		WriteLog(format("SELFTEST %s %.1f: %s, %zu vertices in the route design", command.c_str(), value, editor_selftest::one_line(model().message).c_str(), m_route.design.vertices.size()));
+		return selftest_result::handled;
+	}
 	if (command == "modelturnoutside")
 	{
 		// the turnout of the switch track given the other side, as the inspector's button gives it
@@ -1627,6 +1682,15 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		expectation(marked.size() == wanted, "handlines", std::to_string(marked.size()) + lines, std::to_string(wanted));
 		return selftest_result::handled;
 	}
+	if (what == "modelnodes")
+	{
+		// the nodes of the model: a line laid on from the free end of another one shares the node there
+		std::size_t wanted{0};
+		words >> wanted;
+		auto const got{model_network().nodes().size()};
+		expectation(got == wanted, "modelnodes", std::to_string(got), std::to_string(wanted));
+		return selftest_result::handled;
+	}
 	if (what == "modelgrades")
 	{
 		// the breaks of the grade line of the line of the model
@@ -1640,6 +1704,17 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 			for (auto const &each : found->shape.grades)
 				breaks += format(" %.1f/%.3f/R%.0f", each.chainage, each.elevation, each.vertical_radius);
 		expectation(found != nullptr && got == wanted, format("modelgrades %u", line), std::to_string(got) + breaks, std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelvertices")
+	{
+		// the vertices of the line of the model
+		unsigned line{0};
+		std::size_t wanted{0};
+		words >> line >> wanted;
+		auto const *found{model_network().find(static_cast<layout::line_id>(line))};
+		auto const got{found != nullptr ? found->shape.vertices.size() : std::size_t{0}};
+		expectation(found != nullptr && got == wanted, format("modelvertices %u", line), std::to_string(got), std::to_string(wanted));
 		return selftest_result::handled;
 	}
 	if (what == "modelvertexat")

@@ -24,7 +24,9 @@ http://mozilla.org/MPL/2.0/.
 namespace layout
 {
 
-// a line laid between two new nodes, its vertices given with their radii, transitions and cants (the ids are given to them)
+// a line laid between two new nodes, its vertices given with their radii, transitions and cants (the ids are given to them); or going on
+// from the free end of another line, or ending at one: the node of that end shared, its place the node's, the line leaving it along the
+// heading of the node or against it as its first leg does (which has to lie on the tangent of the node)
 struct create_line
 {
 	glm::dvec3 start{0.0};
@@ -35,6 +37,8 @@ struct create_line
 	ramp_shape ramp{ramp_shape::linear};
 	norms::line_class category;
 	double chainage_start{0.0};
+	node_id start_node{node_id::none}; // a free end the line goes on from, none: a new node at start
+	node_id end_node{node_id::none}; // a free end the line ends at, none: a new node at end
 };
 
 // the vertex moved in the plan

@@ -74,6 +74,7 @@ struct editor_model
 	std::string proposal; // the solver's best proposal for a crossover refused
 	std::pair<std::string, std::string> drag; // the switch dragged on a line of the model as it was tried: its command, why it's refused
 	double turnout_move{5.0}; // m, the distance the inspector moves a turnout by
+	double vertex_at{-1.0}; // m, the chainage the route design adds a curve of a line of the model at, below 0 the middle of the line
 	// a handle of the route design dragged on a line of the model: its changes tried on a copy of the network as they're made, the line as
 	// the model lays it then and what the norms say of it, before the drag is let go
 	struct plan_preview
