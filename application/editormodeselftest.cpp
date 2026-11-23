@@ -245,6 +245,19 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        whether its settings are shown or folded to the line of their summary
 //   expect switchpanel <ready|dragging|placed|selected>   the state of the panel of the switch tool, as its step tells it
 //   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
+//   modelediting <0|1>                   the editing on the model on or off for the run (the setting isn't kept); then a track may be named
+//                                        @<line>.<index>, the track of the line of the model at the index from its start
+//   modelplan <track>, routeradius|routecant <vertex> <value>, routemove <vertex> <x> <z>   the route design opened on the line of the
+//                                        track, a field of a curve typed into, a vertex moved
+//   modelsplit <m>, modeljoin <x> <z> <x> <z>, modeldelete   the line of the model open in the route design split at the distance from
+//                                        its start, its free end at the first point joined to the free end of another line nearest the
+//                                        second, deleted; modelselect|modeldel <track>: selected, deleted as Del deletes it
+//   modelanswer <yes|no>                 the window asking answered
+//   modelmark <label>, modeltracks       the network of the model kept for expect modelsame / the lines and their tracks logged
+//   expect managed <track> <line|none|any>, expect modellines <count>, expect projectfile <present|absent|lines <count>>,
+//   expect modelends, expect modelrefused <0|1>, expect modelmessage <holds|lacks> <text>, expect modelvertex <line> <index>
+//   <radius|in|out|cant> <value>, expect modelsame <label>, expect hand <line> <0|1>, expect question <none|hand> [line]
+//                                        the editing on the model (editormodemodel.cpp, tests/editor/README.md)
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code
 //   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes

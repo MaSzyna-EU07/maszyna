@@ -14886,6 +14886,9 @@ msgstr "Utworzony przez model geometrii torów z jego linii: linię edytuje proj
 msgid "Refused, nothing changed:"
 msgstr "Odmowa, nic się nie zmieniło:"
 
+msgid "The change by hand is kept: the line isn't laid anew"
+msgstr "Zmiana ręczna zostaje: linia nie jest układana od nowa"
+
 msgid "%s: done"
 msgstr "%s: wykonano"
 
@@ -14898,6 +14901,21 @@ msgstr[2] "%s: linia %s, %zu torów"
 msgid "create line"
 msgstr "nowa linia"
 
+msgid "move vertex"
+msgstr "przesunięcie wierzchołka"
+
+msgid "set vertex"
+msgstr "zmiana łuku"
+
+msgid "split line"
+msgstr "podział linii"
+
+msgid "join ends"
+msgstr "połączenie końców"
+
+msgid "delete line"
+msgstr "usunięcie linii"
+
 msgid "The project of the map isn't saved: %s"
 msgstr "Projekt mapy nie został zapisany: %s"
 
@@ -14909,6 +14927,60 @@ msgstr "Łuk przedłużający łuk wolnego końca jest układany jako stary tor:
 
 msgid "A compound curve, or one with cant ramps of its own, is laid as an old track: the model doesn't lay it yet"
 msgstr "Łuk koszowy albo łuk z własnymi rampami przechyłki jest układany jako stary tor: model jeszcze go nie układa"
+
+msgid "Line %s of the model, %.0f m, %zu curve"
+msgid_plural "Line %s of the model, %.0f m, %zu curves"
+msgstr[0] "Linia %s modelu, %.0f m, %zu łuk"
+msgstr[1] "Linia %s modelu, %.0f m, %zu łuki"
+msgstr[2] "Linia %s modelu, %.0f m, %zu łuków"
+
+msgid "Curves added or taken out: not yet for a line of the model, only their places, radii, transitions and cants"
+msgstr "Dodane albo usunięte łuki: jeszcze nie dla linii modelu, tylko ich położenie, promienie, krzywe przejściowe i przechyłki"
+
+msgid "A compound curve, or one with cant ramps of its own, isn't laid by the model yet"
+msgstr "Łuku koszowego ani łuku z własnymi rampami przechyłki model jeszcze nie układa"
+
+msgid "The norms: %zu note"
+msgid_plural "The norms: %zu notes"
+msgstr[0] "Normy: %zu uwaga"
+msgstr[1] "Normy: %zu uwagi"
+msgstr[2] "Normy: %zu uwag"
+
+msgid "A line of the model of the track geometry: its changes are applied as commands of the model, checked against the norms, its tracks made anew"
+msgstr "Linia modelu geometrii torów: jej zmiany są stosowane jako polecenia modelu, sprawdzane z normami, a jej tory tworzone od nowa"
+
+msgid "Split the line here"
+msgstr "Podziel linię tutaj"
+
+msgid "The line cut in two at the distance from its start, the track kept as it is"
+msgstr "Linia przecięta na dwie w tej odległości od początku, tor zostaje taki, jaki jest"
+
+msgid "Join the %s to line %s (%.0f m)"
+msgstr "Połącz %s z linią %s (%.0f m)"
+
+msgid "A new line laid between the free end and the free end of the other line, its curves as the norms prefer"
+msgstr "Nowa linia ułożona między wolnym końcem a wolnym końcem drugiej linii, z łukami takimi, jakie zalecają normy"
+
+msgid "Delete line %s"
+msgstr "Usuń linię %s"
+
+msgid "The line and its tracks taken away. Ctrl+Z brings it back"
+msgstr "Linia i jej tory są usuwane. Ctrl+Z przywraca"
+
+msgid "Changed by hand"
+msgstr "Zmienione ręcznie"
+
+msgid "The tracks of line %s were changed by hand since the editor made them."
+msgstr "Tory linii %s zostały zmienione ręcznie, odkąd edytor je utworzył."
+
+msgid "Overwritten, they're made anew of the line as the model lays it and the change by hand is lost. Kept, the edit isn't made."
+msgstr "Nadpisane, zostaną utworzone od nowa z linii, tak jak układa ją model, a zmiana ręczna przepadnie. Zachowane: edycja nie zostanie wykonana."
+
+msgid "Keep the change by hand"
+msgstr "Zachowaj zmianę ręczną"
+
+msgid "Overwrite"
+msgstr "Nadpisz"
 
 msgid "A line through switches is applied to the old tracks: the switches go through the model later"
 msgstr "Linia przez rozjazdy jest stosowana do starych torów: rozjazdy przejdą przez model później"

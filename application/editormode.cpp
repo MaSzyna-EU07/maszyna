@@ -1802,8 +1802,9 @@ bool editor_mode::update()
     render_orthophoto_window();
     draw_selection_overlay();
     render_context_menu();
-    // the track geometry edited through the model: the project of the map
+    // the track geometry edited through the model: the project of the map, the questions waiting for an answer
     model_update();
+    render_model_windows();
     steps.step("windows");
 
     // --- ImGui: Editor Settings & History windows ---

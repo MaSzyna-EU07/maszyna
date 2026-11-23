@@ -252,6 +252,10 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 bool editor_mode::route_load(TTrack &Track)
 {
 	m_route.designed = 0;
+	// a line of the model: its curves as the model has them, applied as its commands
+	if (auto const *managed{model_track(&Track)})
+		return route_from_model(managed->line);
+	model_plan_drop();
 	if (false == (m_route.single ? route_from_curve(Track) : route_from_line(Track)))
 		return false;
 	route_read_stored(Track);
@@ -659,6 +663,8 @@ bool editor_mode::route_from_line(TTrack &Track)
 void editor_mode::route_apply()
 {
 	m_route.error.clear();
+	if (model_plan_apply())
+		return;
 	// old tracks made a line of the model, with the editing on the model
 	std::string oldway;
 	if (model_plan_convert(oldway))
@@ -1655,6 +1661,13 @@ void editor_mode::render_route_ui()
 		return;
 	}
 	item_tooltip("Reads the curves of the line from the scenery again, dropping the changes not applied");
+	// a line of the model: what its last command came to, its split, join and delete
+	if (model_plan_line() != layout::line_id::none)
+	{
+		render_model_plan();
+		if (route.chain.tracks.empty())
+			return;
+	}
 	auto changed{render_route_band()};
 	render_route_trace();
 	render_route_stored();

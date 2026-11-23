@@ -1890,6 +1890,9 @@ void editor_mode::delete_selected_track()
 		ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
 		return;
 	}
+	// with the editing on the model: a managed track takes its line away
+	if (model_delete(track))
+		return;
 	if (auto const set{double_of(*track)})
 	{
 		for (auto *part : {set->first, set->link, set->second})

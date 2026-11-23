@@ -118,16 +118,40 @@ void expectation(bool const Passed, std::string const &What, std::string const &
 
 } // namespace
 
+// what waits for the user's answer in a window of its own
+struct model_question
+{
+	enum class kind
+	{
+		none,
+		hand // the lines changed by hand: written over, or the change by hand kept
+	};
+	kind what{kind::none};
+	std::set<layout::line_id> lines;
+	std::function<void(bool)> answer; // true: written over
+	bool opened{false};
+};
+
 struct editor_model
 {
 	project::session session;
 	bool tried{false}; // the project opened for the scenery, or failed to
 	std::string error;
 	std::unordered_map<scene::basic_node const *, editor_mode::managed_track> tracks;
+	model_question question;
+	// the line the route design is open on, its vertices as the model has them
+	struct plan_link
+	{
+		layout::line_id line{layout::line_id::none};
+		std::vector<layout::vertex_id> vertices;
+		alignment::design original;
+		double split{-1.0}; // the chainage the split field holds, below 0 the middle of the line
+	} plan;
 	std::string message; // what the last command came to: why it was refused, or what the norms tell of it
 	bool refused{false};
 	std::vector<std::string> notices;
 	std::vector<std::pair<TTrack const *, std::string>> written; // by the save under way, the texts written
+	std::map<std::string, layout::network> marks; // the self-test's copies of the network, for expect modelsame
 };
 
 void editor_model_deleter::operator()(editor_model *Model) const
@@ -166,6 +190,11 @@ void editor_mode::model_forget(scene::basic_node const *Node)
 {
 	if (m_model != nullptr)
 		m_model->tracks.erase(Node);
+}
+
+void editor_mode::model_plan_drop()
+{
+	model().plan = {};
 }
 
 bool editor_mode::model_on() const
@@ -308,6 +337,29 @@ void editor_mode::model_run(std::vector<layout::command> Commands, model_context
 		if (false == effect.outcome.done)
 		{
 			model_told(effect.outcome, true);
+			return;
+		}
+		// a line changed by hand is written over only when the user says so
+		auto hand{session.hand_changed(effect, model_seen_changed())};
+		std::erase_if(hand, [&](layout::line_id const Line) { return Context.overwrite.contains(Line); });
+		if (false == hand.empty())
+		{
+			auto &question{model().question};
+			question = {};
+			question.what = model_question::kind::hand;
+			question.lines = hand;
+			question.answer = [this, Commands, Context, hand](bool const Overwrite) mutable {
+				if (false == Overwrite)
+				{
+					layout::outcome kept;
+					kept.reasons.push_back(STR("The change by hand is kept: the line isn't laid anew"));
+					model_told(kept, true);
+					return;
+				}
+				Context.overwrite.insert(hand.begin(), hand.end());
+				model_run(std::move(Commands), std::move(Context));
+			};
+			WriteLog(format("Editor: model: the line %s was changed by hand, the user asked", line_name(*hand.begin()).c_str()), logtype::generic);
 			return;
 		}
 		std::set<layout::line_id> overwrite;
@@ -535,9 +587,121 @@ bool editor_mode::model_lay(lay_line_plan const &Plan, editor_track::snap_target
 	return true;
 }
 
+layout::line_id editor_mode::model_plan_line() const
+{
+	auto const line{model().plan.line};
+	if (line == layout::line_id::none || false == model_on() || m_route.chain.tracks.empty())
+		return layout::line_id::none;
+	auto const tracks{model_line_tracks(line)};
+	if (tracks.empty() || m_route.from != tracks.front() || m_route.to != tracks.back())
+		return layout::line_id::none;
+	return line;
+}
+
+bool editor_mode::route_from_model(layout::line_id const Line)
+{
+	auto const *line{model().session.network().find(Line)};
+	auto const tracks{model_line_tracks(Line)};
+	model().plan = {};
+	if (line == nullptr || tracks.empty())
+		return false;
+	auto &route{m_route};
+	route.from = tracks.front();
+	route.to = tracks.back();
+	route.single = false;
+	route_reset();
+	if (route.chain.tracks.empty())
+		return false;
+	auto &design{route.design};
+	design.vertices.clear();
+	design.shape = line->shape.transition == layout::transition_shape::clothoid ? alignment::transition_shape::clothoid : alignment::transition_shape::cubic_parabola;
+	design.speed = line->category.vmax;
+	std::vector<layout::vertex_id> ids;
+	for (auto const &each : line->shape.vertices)
+	{
+		alignment::vertex vertex;
+		vertex.position = each.point;
+		vertex.radius = each.radius;
+		vertex.transition_in = each.transition_in;
+		vertex.transition_out = each.transition_out;
+		vertex.cant = each.cant;
+		design.vertices.push_back(vertex);
+		ids.push_back(each.id);
+	}
+	if (false == design.vertices.empty())
+	{
+		design.vertices.front().offset = std::max(0.0, glm::dot(design.vertices.front().position - glm::dvec2{design.start.x, design.start.z}, design.start_direction));
+		design.vertices.back().offset = std::max(0.0, glm::dot(glm::dvec2{design.end.x, design.end.z} - design.vertices.back().position, design.end_direction));
+	}
+	route.designed = static_cast<int>(design.vertices.size());
+	route.clicks.clear();
+	route_update();
+	model().plan.line = Line;
+	model().plan.vertices = std::move(ids);
+	model().plan.original = design;
+	route.status = format(STR_P("Line %s of the model, %.0f m, %zu curve", "Line %s of the model, %.0f m, %zu curves", static_cast<long long>(design.vertices.size())), line_name(Line).c_str(), line->solved.length, design.vertices.size());
+	return true;
+}
+
+bool editor_mode::model_plan_apply()
+{
+	auto const line{model_plan_line()};
+	if (line == layout::line_id::none)
+		return false;
+	auto const &plan{model().plan};
+	auto const &design{m_route.design};
+	layout::outcome refusal;
+	if (design.vertices.size() != plan.vertices.size())
+		refusal.reasons.push_back(STR("Curves added or taken out: not yet for a line of the model, only their places, radii, transitions and cants"));
+	std::vector<layout::command> commands;
+	for (std::size_t i = 0; refusal.reasons.empty() && i < design.vertices.size(); ++i)
+	{
+		auto const &was{plan.original.vertices[i]};
+		auto const &now{design.vertices[i]};
+		if (now.compound || now.spirals || now.own_ramps())
+		{
+			refusal.reasons.push_back(STR("A compound curve, or one with cant ramps of its own, isn't laid by the model yet"));
+			break;
+		}
+		if (glm::distance(now.position, was.position) > 1e-4)
+			commands.push_back(layout::move_vertex{line, plan.vertices[i], now.position});
+		layout::set_vertex set{line, plan.vertices[i]};
+		if (now.radius != was.radius)
+			set.radius = now.radius;
+		if (now.transition_in != was.transition_in)
+			set.transition_in = now.transition_in;
+		if (now.transition_out != was.transition_out)
+			set.transition_out = now.transition_out;
+		if (now.cant != was.cant)
+			set.cant = now.cant;
+		if (set.radius || set.transition_in || set.transition_out || set.cant)
+			commands.push_back(set);
+	}
+	if (false == refusal.reasons.empty())
+	{
+		model_told(refusal, true);
+		return true;
+	}
+	if (commands.empty())
+	{
+		model_told({}, false, STR("Nothing changed"));
+		return true;
+	}
+	model_context context;
+	context.done = [this, line](std::vector<TTrack *> const &) {
+		auto const message{model().message};
+		auto const notices{model().notices};
+		route_from_model(line);
+		model().message = message;
+		model().notices = notices;
+	};
+	model_run(std::move(commands), std::move(context));
+	return true;
+}
+
 bool editor_mode::model_plan_convert(std::string &Why)
 {
-	if (false == model_on())
+	if (false == model_on() || model_plan_line() != layout::line_id::none)
 		return false;
 	auto &route{m_route};
 	if (false == route.result.valid || route.chain.tracks.empty())
@@ -602,10 +766,172 @@ bool editor_mode::model_plan_convert(std::string &Why)
 		model_context context;
 		context.replaced = tracks;
 		context.surface = surface_of(*tracks.front());
-		context.done = [this](std::vector<TTrack *> const &) { route_drop(); };
+		context.done = [this](std::vector<TTrack *> const &Created) {
+			auto const message{model().message};
+			auto const notices{model().notices};
+			if (auto const *managed{Created.empty() ? nullptr : model_track(Created.front())})
+				route_from_model(managed->line);
+			else
+				route_drop();
+			model().message = message;
+			model().notices = notices;
+		};
 		model_run({line}, context);
 	}
 	return true;
+}
+
+void editor_mode::render_model_plan()
+{
+	auto const line{model_plan_line()};
+	auto const *shape{model().session.network().find(line)};
+	if (shape == nullptr)
+		return;
+	ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), "%s", format(STR_C("Line %s (managed)"), line_name(line).c_str()).c_str());
+	item_tooltip("A line of the model of the track geometry: its changes are applied as commands of the model, checked against the norms, its tracks made anew");
+	if (false == model().message.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		if (model().refused)
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", model().message.c_str());
+		else
+			ImGui::TextDisabled("%s", model().message.c_str());
+		ImGui::PopTextWrapPos();
+	}
+	// the quality line: what the norms warn of, or would have otherwise
+	if (false == model().notices.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.25f, 1.0f), "%s", format(STR_P("The norms: %zu note", "The norms: %zu notes", static_cast<long long>(model().notices.size())), model().notices.size()).c_str());
+		for (auto const &notice : model().notices)
+			ImGui::BulletText("%s", notice.c_str());
+		ImGui::PopTextWrapPos();
+	}
+	// split in two at the chainage, joined from a free end to the nearest free end of another line, deleted
+	auto &split{model().plan.split};
+	if (split < 0.0 || split > shape->solved.length)
+		split = std::round(shape->solved.length * 0.5);
+	ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6.0f);
+	ImGui::InputDouble("##modelsplit", &split, 0.0, 0.0, "%.1f m");
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Split the line here")))
+	{
+		model_context context;
+		context.done = [this, line](std::vector<TTrack *> const &) { route_from_model(line); };
+		model_run({layout::split_line{line, split}}, context);
+		return;
+	}
+	item_tooltip("The line cut in two at the distance from its start, the track kept as it is");
+	auto const &network{model().session.network()};
+	for (auto const end : {shape->start, shape->end})
+	{
+		auto const *node{network.find(end)};
+		if (node == nullptr || node->ends.size() != 1)
+			continue;
+		layout::node const *nearest{nullptr};
+		double distance{300.0};
+		for (auto const &[id, other] : network.nodes())
+			if (id != end && other.ends.size() == 1 && other.ends.front().line != line && glm::distance(other.position, node->position) < distance)
+			{
+				distance = glm::distance(other.position, node->position);
+				nearest = &other;
+			}
+		if (nearest == nullptr)
+			continue;
+		ImGui::PushID(static_cast<int>(layout::number(end)));
+		if (ImGui::Button(format(STR_C("Join the %s to line %s (%.0f m)"), end == shape->start ? STR_C("start") : STR_C("end"), line_name(nearest->ends.front().line).c_str(), distance).c_str()))
+		{
+			model_context context;
+			context.done = [this, line](std::vector<TTrack *> const &) { route_from_model(line); };
+			model_run({layout::join_ends{end, nearest->id}}, context);
+			ImGui::PopID();
+			return;
+		}
+		item_tooltip("A new line laid between the free end and the free end of the other line, its curves as the norms prefer");
+		ImGui::PopID();
+	}
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.15f, 1.0f));
+	if (ImGui::Button(format(STR_C("Delete line %s"), line_name(line).c_str()).c_str()))
+	{
+		ImGui::PopStyleColor();
+		model_delete_line(line);
+		return;
+	}
+	ImGui::PopStyleColor();
+	item_tooltip("The line and its tracks taken away. Ctrl+Z brings it back");
+}
+
+bool editor_mode::model_delete(TTrack *Track)
+{
+	if (false == model_on() || Track == nullptr)
+		return false;
+	auto const *managed{model_track(Track)};
+	if (managed == nullptr)
+		return false;
+	model_delete_line(managed->line);
+	return true;
+}
+
+void editor_mode::model_delete_line(layout::line_id const Line)
+{
+	model_context context;
+	context.done = [this, Line](std::vector<TTrack *> const &) {
+		if (model().plan.line == Line)
+		{
+			model().plan = {};
+			route_drop();
+		}
+		m_node = nullptr;
+		ui()->set_node(nullptr);
+		m_track_point = {};
+	};
+	model_run({layout::delete_line{Line}}, context);
+}
+
+void editor_mode::render_model_windows()
+{
+	auto &question{model().question};
+	if (question.what == model_question::kind::none)
+		return;
+	char const *ids[]{"", "###modelhand"};
+	auto const id{ids[static_cast<int>(question.what)]};
+	if (false == question.opened)
+	{
+		ImGui::OpenPopup(id);
+		question.opened = true;
+	}
+	auto const answer = [&](bool const Yes) {
+		auto const given{std::move(question.answer)};
+		question = {};
+		ImGui::CloseCurrentPopup();
+		if (given)
+			given(Yes);
+	};
+	ImGui::SetNextWindowSize(ImVec2(460.0f * Global.ui_scale, 0.0f), ImGuiCond_Appearing);
+	switch (question.what)
+	{
+	case model_question::kind::hand:
+	{
+		std::string lines;
+		for (auto const line : question.lines)
+			lines += (lines.empty() ? "" : ", ") + line_name(line);
+		if (ImGui::BeginPopupModal((std::string{STR_C("Changed by hand")} + id).c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings))
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextUnformatted(format(STR_C("The tracks of line %s were changed by hand since the editor made them."), lines.c_str()).c_str());
+			ImGui::TextDisabled("%s", STR_C("Overwritten, they're made anew of the line as the model lays it and the change by hand is lost. Kept, the edit isn't made."));
+			ImGui::PopTextWrapPos();
+			if (ImGui::Button(STR_C("Keep the change by hand")))
+				answer(false);
+			ImGui::SameLine();
+			if (ImGui::Button(STR_C("Overwrite")))
+				answer(true);
+			ImGui::EndPopup();
+		}
+		break;
+	}
+	default: break;
+	}
 }
 
 editor_mode::selftest_result editor_mode::selftest_model(std::string const &command, std::istringstream &words)
@@ -635,6 +961,20 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		WriteLog(format("SELFTEST modelediting %d: the project %s, %zu lines", on, model().session.is_open() ? "open" : "not open", model().session.network().lines().size()));
 		return selftest_result::handled;
 	}
+	if (command == "modelanswer")
+	{
+		std::string answer;
+		words >> answer;
+		auto &question{model().question};
+		WriteLog(format("SELFTEST modelanswer %s: the question %d", answer.c_str(), static_cast<int>(question.what)));
+		if (question.what == model_question::kind::none)
+			return selftest_result::handled;
+		auto const given{std::move(question.answer)};
+		question = {};
+		if (given)
+			given(answer == "yes");
+		return selftest_result::handled;
+	}
 	if (command == "modeltracks")
 	{
 		for (auto const &[id, line] : model().session.network().lines())
@@ -644,6 +984,108 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 				names += " " + track->name();
 			WriteLog(format("SELFTEST modeltracks %s: %.3f m, %zu vertices, tracks%s", line_name(id).c_str(), line.solved.length, line.shape.vertices.size(), names.c_str()));
 		}
+		return selftest_result::handled;
+	}
+	if (command == "modelmark")
+	{
+		std::string label;
+		words >> label;
+		model().marks[label] = model().session.network();
+		return selftest_result::handled;
+	}
+	if (command == "modelplan")
+	{
+		// the route design opened on the line of the track, as a click on it with the tool does
+		std::string name;
+		words >> name;
+		auto *track{resolve(name)};
+		m_track_tab = track_tab::route;
+		m_route.single = false;
+		auto const loaded{track != nullptr && route_load(*track)};
+		WriteLog(format("SELFTEST modelplan %s: %s, line %s, %zu vertices", name.c_str(), loaded ? "loaded" : "failed", line_name(model_plan_line()).c_str(), m_route.design.vertices.size()));
+		return selftest_result::handled;
+	}
+	if (command == "modelselect" || command == "modeldel")
+	{
+		// the track selected, as a click on it selects it; deleted as Del deletes it
+		std::string name;
+		words >> name;
+		auto *track{resolve(name)};
+		if (track != nullptr)
+		{
+			m_node = track;
+			m_track_point = {};
+			ui()->set_node(m_node);
+			if (command == "modeldel")
+				delete_selected_track();
+		}
+		WriteLog(format("SELFTEST %s %s: %s", command.c_str(), name.c_str(), track != nullptr ? track->name().c_str() : "no track"));
+		return selftest_result::handled;
+	}
+	if (command == "routeradius" || command == "routecant")
+	{
+		// the field of the curve in the route design typed into, the rest of it as it is
+		int index{0};
+		double value{0.0};
+		words >> index >> value;
+		if (index >= 0 && index < static_cast<int>(m_route.design.vertices.size()))
+		{
+			(command == "routeradius" ? m_route.design.vertices[index].radius : m_route.design.vertices[index].cant) = value;
+			route_update();
+		}
+		WriteLog(format("SELFTEST %s %d %.1f: valid %d", command.c_str(), index, value, m_route.result.valid ? 1 : 0));
+		return selftest_result::handled;
+	}
+	if (command == "routemove")
+	{
+		int index{0};
+		glm::dvec2 point{0.0};
+		words >> index >> point.x >> point.y;
+		if (index >= 0 && index < static_cast<int>(m_route.design.vertices.size()))
+		{
+			m_route.design.vertices[index].position = point;
+			route_update();
+		}
+		WriteLog(format("SELFTEST routemove %d: valid %d", index, m_route.result.valid ? 1 : 0));
+		return selftest_result::handled;
+	}
+	if (command == "modelsplit" || command == "modeldelete" || command == "modeljoin")
+	{
+		auto const line{model_plan_line()};
+		if (line == layout::line_id::none)
+		{
+			WriteLog("SELFTEST " + command + ": no line of the model open in the route design");
+			return selftest_result::handled;
+		}
+		model_context context;
+		context.done = [this, line](std::vector<TTrack *> const &) { route_from_model(line); };
+		if (command == "modelsplit")
+		{
+			double chainage{0.0};
+			words >> chainage;
+			model_run({layout::split_line{line, chainage}}, context);
+		}
+		else if (command == "modeldelete")
+			model_delete_line(line);
+		else
+		{
+			// from the free end of the line at the point to the free end of another one nearest the other point
+			glm::dvec2 from{0.0}, to{0.0};
+			words >> from.x >> from.y >> to.x >> to.y;
+			auto const nearest = [&](glm::dvec2 const &Point, bool const Own) {
+				layout::node const *found{nullptr};
+				for (auto const &[id, node] : model().session.network().nodes())
+					if (node.ends.size() == 1 && (node.ends.front().line == line) == Own &&
+					    (found == nullptr || glm::distance(glm::dvec2{node.position.x, node.position.z}, Point) < glm::distance(glm::dvec2{found->position.x, found->position.z}, Point)))
+						found = &node;
+				return found;
+			};
+			auto const *start{nearest(from, true)};
+			auto const *end{nearest(to, false)};
+			if (start != nullptr && end != nullptr)
+				model_run({layout::join_ends{start->id, end->id}}, context);
+		}
+		WriteLog("SELFTEST " + command + ": " + editor_selftest::one_line(model().message));
 		return selftest_result::handled;
 	}
 	if (command != "expect")
@@ -719,6 +1161,35 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		expectation(problems.empty() && checked > 0, "modelends", problems.empty() ? std::to_string(checked) + " lines" : problems, "the ends at the nodes and between the tracks the same to the bit");
 		return selftest_result::handled;
 	}
+	if (what == "question")
+	{
+		std::string kind;
+		words >> kind;
+		char const *names[]{"none", "hand"};
+		auto const &question{model().question};
+		auto got{std::string{names[static_cast<int>(question.what)]}};
+		if (question.what == model_question::kind::hand)
+			for (auto const line : question.lines)
+				got += " " + line_name(line);
+		std::string count;
+		words >> count;
+		auto const wanted{count.empty() ? kind : kind + " " + count};
+		expectation(got == wanted || (count.empty() && got.starts_with(kind)), "question " + wanted, got, wanted);
+		return selftest_result::handled;
+	}
+	if (what == "modelmessage")
+	{
+		std::string mode, text;
+		words >> mode;
+		std::getline(words, text);
+		text.erase(0, text.find_first_not_of(' '));
+		auto message{model().message};
+		for (auto const &notice : model().notices)
+			message += "\n" + notice;
+		auto const holds{message.find(text) != std::string::npos};
+		expectation(holds == (mode == "holds"), "modelmessage " + mode + " " + text, editor_selftest::one_line(message), (mode == "holds" ? "holding " : "lacking ") + text);
+		return selftest_result::handled;
+	}
 	if (what == "hand")
 	{
 		unsigned line{0};
@@ -727,6 +1198,40 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		auto const id{static_cast<layout::line_id>(line)};
 		auto const marked{model().session.project().hand_changed.contains(id) || model_seen_changed().contains(id)};
 		expectation(marked == (wanted != 0), format("hand %u", line), marked ? "1" : "0", std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelrefused")
+	{
+		int wanted{0};
+		words >> wanted;
+		expectation(model().refused == (wanted != 0), "modelrefused", (model().refused ? "1: " : "0: ") + editor_selftest::one_line(model().message), std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelvertex")
+	{
+		// a value of the vertex of the line of the model: radius, in, out, cant
+		unsigned line{0};
+		std::size_t index{0};
+		std::string key;
+		double wanted{0.0};
+		words >> line >> index >> key >> wanted;
+		auto const *found{model().session.network().find(static_cast<layout::line_id>(line))};
+		auto got{std::numeric_limits<double>::quiet_NaN()};
+		if (found != nullptr && index < found->shape.vertices.size())
+		{
+			auto const &vertex{found->shape.vertices[index]};
+			got = key == "radius" ? vertex.radius : key == "in" ? vertex.transition_in : key == "out" ? vertex.transition_out : vertex.cant;
+		}
+		expectation(std::abs(got - wanted) <= 1e-6, format("modelvertex %u %zu %s", line, index, key.c_str()), format("%.6f", got), format("%.6f", wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelsame")
+	{
+		std::string label;
+		words >> label;
+		auto const found{model().marks.find(label)};
+		auto const same{found != model().marks.end() && found->second.same(model().session.network())};
+		expectation(same, "modelsame " + label, same ? "the same" : "another network", "the network marked " + label);
 		return selftest_result::handled;
 	}
 	words.clear();

@@ -3349,8 +3349,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 
 	// the track geometry edited through the model (editor-tracks-domain.md §3, §4, §8, §9; stage E4, editormodemodel.cpp), with the
 	// setting "Editing on the model (trial)" on: the project of the map opened with the scenery and written with it, a line laid by the
-	// lay tool or the route design applied to old tracks a line of the model, its tracks made by the generator and marked as its, one step of
-	// the history. The old tracks stay as they are, edited by the old tools. Off, nothing of it runs
+	// lay tool or applied by the route design a line of the model, its tracks made by the generator and marked as its; the edits of such a
+	// line commands of the model, refused with the reasons or kept, one step of the history each; a line changed by hand written over only
+	// when the user says so. The old tracks stay as they are, edited by the old tools. Off, nothing of it runs
 	struct managed_track
 	{
 		layout::line_id line{layout::line_id::none};
@@ -3367,7 +3368,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::function<void(std::vector<TTrack *> const &)> done; // with the tracks the last command made
 		std::vector<TTrack *> replaced; // old tracks the line made takes the place of, taken away in its step
 	};
-	// the project, the managed tracks (editormodemodel.cpp); made as it's needed
+	// the project, the managed tracks, the question waiting for an answer (editormodemodel.cpp); made as it's needed
 	friend struct editor_model;
 	mutable std::unique_ptr<editor_model, editor_model_deleter> m_model;
 	editor_model &model() const;
@@ -3377,6 +3378,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<std::string> model_notices() const;
 	std::string model_error() const;
 	void model_forget(scene::basic_node const *Node);
+	void model_plan_drop();
 	// the setting is on and the project of the map is open
 	bool model_on() const;
 	// opens the project of the map once the scenery is there
@@ -3388,7 +3390,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> model_line_tracks(layout::line_id const Line) const;
 	// the lines whose tracks were changed by the other tools since they were made
 	std::set<layout::line_id> model_seen_changed() const;
-	// the commands carried out one after another, each one step of the history: a refusal ends the run with its reasons
+	// the commands carried out one after another, each one step of the history: a refusal ends the run with its reasons, a line changed by
+	// hand asks first
 	void model_run(std::vector<layout::command> Commands, model_context Context);
 	// the tracks of the lines the command changed made again, those of the lines gone taken away: one step of the history with its token
 	std::vector<TTrack *> model_tracks_after(std::uint64_t const Token, std::set<layout::line_id> const &Changed, std::set<layout::line_id> const &Removed, model_context const &Context);
@@ -3401,9 +3404,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the line the lay tool shows laid as a line of the model; false where it isn't one (not the straights, a curve the model doesn't lay
 	// yet), with why in Why, for the old way
 	bool model_lay(lay_line_plan const &Plan, editor_track::snap_target const &End, std::vector<TTrack *> &Created, std::string &Why);
+	// the route design open on the managed line, its curves as the model has them; its changes applied as commands of the model
+	bool route_from_model(layout::line_id const Line);
+	bool model_plan_apply();
 	// the route design applied to old tracks made a line of the model in their place, where the model lays it; false where it doesn't,
 	// with why in Why, for the old way
 	bool model_plan_convert(std::string &Why);
+	layout::line_id model_plan_line() const;
+	void render_model_plan();
+	// Del on a managed track takes its line away; true: taken care of here
+	bool model_delete(TTrack *Track);
+	void model_delete_line(layout::line_id const Line);
+	void render_model_windows();
 	std::string model_label(TTrack const *Track) const;
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();

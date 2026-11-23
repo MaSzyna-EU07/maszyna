@@ -6,6 +6,7 @@ modelediting 1
 route 0 150 0
 routeapply
 wait 2
+expect modelrefused 0
 expect modellines 1
 expect managed @1.0 1
 expect track a2 removed
