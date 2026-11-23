@@ -54,8 +54,9 @@ seen_end seen(line const &Line, end_ref const &End)
 }
 
 // the node takes what the ends it holds tell: the heading of the only one, the curvature and the cant of the first one which doesn't go
-// on from it (one going on reads them), the grade of the first; the end of the diverging track of a turnout first, which the turnout lays,
-// the start of one not at all, which leaves the node at the curvature of the main track. True where the curvature or the cant changed
+// on from it (one going on reads them), the grade of the first; a track a turnout lays first at a node of the turnout's own (the end of a
+// diverging track, the ends of a crossing track), which the turnout puts there, a branch of a turnout not at all (the start of a diverging
+// track, which leaves the node at the curvature of the main track). True where the curvature or the cant changed
 bool derive(network const &Network, node &Node)
 {
 	auto const before{std::make_pair(Node.curvature, Node.cant)};
@@ -63,9 +64,9 @@ bool derive(network const &Network, node &Node)
 	bool curved{false};
 	std::vector<end_ref> ends;
 	for (auto const &end : Node.ends)
-		if (auto const *owner{owner_of(Network, end.line)}; owner != nullptr && owner->diverging == end.line && end.end == line_end::end)
+		if (auto const *owner{owner_of(Network, end.line)}; owner != nullptr && owner->start != Node.id && laid_by_turnout(Network, end.line) && false == branch_end(Network, end))
 			ends.insert(ends.begin(), end);
-		else if (false == diverging_start(Network, end))
+		else if (false == branch_end(Network, end))
 			ends.push_back(end);
 	for (auto const &end : ends)
 	{
@@ -88,6 +89,56 @@ bool derive(network const &Network, node &Node)
 		}
 	}
 	return before != std::make_pair(Node.curvature, Node.cant);
+}
+
+// the turnout derives what it takes from the line under it again and lays its tracks, the nodes of its own where they end now; the lines
+// going on from those nodes laid again
+void settle_turnout(transaction &Change, turnout_id const Id, std::set<node_id> &Nodes, std::set<line_id> &Next)
+{
+	auto const *existing{Change.view().find(Id)};
+	if (existing == nullptr)
+		return;
+	auto updated{*existing};
+	derive_turnout(Change.view(), updated);
+	if (updated != *existing)
+		Change.change(Id) = updated;
+	auto const type{turnout_type_of(updated.type)};
+	if (false == type.has_value())
+		return;
+	auto const laid{lay_tracks(Change.view(), updated, *type)};
+	for (auto const &track : laid.tracks)
+	{
+		auto const *line{Change.view().find(track.line)};
+		if (line == nullptr)
+			continue;
+		if (track.solved != line->solved)
+			Change.change(track.line).solved = track.solved;
+		if (false == track.solved.valid())
+			continue;
+		for (auto const at_end : {false, true})
+		{
+			if (false == (at_end ? track.sets_end : track.sets_start))
+				continue;
+			auto const id{at_end ? track.end : track.start};
+			auto const &values{at_end ? track.solved.end : track.solved.start};
+			auto const *at{Change.view().find(id)};
+			if (at == nullptr)
+				continue;
+			auto moved{*at};
+			moved.position = values.position;
+			moved.heading = values.heading;
+			moved.curvature = values.curvature;
+			moved.cant = values.cant;
+			moved.grade = values.grade;
+			if (moved == *at)
+				continue;
+			Change.change(id) = moved;
+			Nodes.insert(id);
+			for (auto const &end : moved.ends)
+				if (end.line != track.line)
+					Next.insert(end.line);
+		}
+	}
 }
 
 norms::element reversed(norms::element Element, double const Length)
@@ -342,10 +393,13 @@ turnout const *owner_of(network const &Network, line_id const Line)
 	return owner != nullptr && owner->turnout != turnout_id::none ? Network.find(owner->turnout) : nullptr;
 }
 
-bool diverging_start(network const &Network, end_ref const &End)
+bool branch_end(network const &Network, end_ref const &End)
 {
 	auto const *owner{owner_of(Network, End.line)};
-	return owner != nullptr && owner->diverging == End.line && End.end == line_end::start;
+	if (owner == nullptr || (End.line != owner->diverging && End.line != owner->diverging2))
+		return false;
+	// a slip curve meets the crossing track or the main one at its end too
+	return End.end == line_end::start || owner->crossing != line_id::none;
 }
 
 void settle(transaction &Change)
@@ -359,17 +413,17 @@ void settle(transaction &Change)
 		if (Change.view().find(id) != nullptr)
 			turnouts.insert(id);
 	// the nodes touched take the values of their ends too, the lines going on from them laid again where those changed; a few rounds
-	// settle it, each line going on from a curve depending on one node at each end, a diverging track on the start and the main track of
-	// its turnout
+	// settle it, each line going on from a curve depending on one node at each end, a track a turnout lays on the start and the main track
+	// of its turnout
 	std::set<node_id> nodes{Change.touched_nodes()};
 	for (int round = 0; round < 8 && (false == pending.empty() || false == nodes.empty() || false == turnouts.empty()); ++round)
 	{
 		std::set<line_id> next;
 		for (auto const id : pending)
 		{
-			if (auto const *owner{owner_of(Change.view(), id)}; owner != nullptr && owner->diverging == id)
+			if (laid_by_turnout(Change.view(), id))
 			{
-				turnouts.insert(owner->id);
+				turnouts.insert(owner_of(Change.view(), id)->id);
 				continue;
 			}
 			auto &laid{Change.change(id)};
@@ -378,44 +432,13 @@ void settle(transaction &Change)
 			nodes.insert(laid.start);
 			nodes.insert(laid.end);
 		}
-		// the turnouts whose main track or start changed lay their diverging tracks, the node at the end of one where it ends now, and the
-		// lines going on from there laid again
+		// the turnouts whose main track or start changed lay their tracks, the nodes of their own where they end now, and the lines going on
+		// from there laid again
 		for (auto const &[id, each] : Change.view().turnouts())
-			if (pending.contains(each.main) || nodes.contains(each.start))
+			if (pending.contains(each.main) || pending.contains(each.main2) || nodes.contains(each.start) || nodes.contains(each.second))
 				turnouts.insert(id);
 		for (auto const id : turnouts)
-		{
-			auto const *existing{Change.view().find(id)};
-			if (existing == nullptr)
-				continue;
-			auto updated{*existing};
-			derive_turnout(Change.view(), updated);
-			if (updated != *existing)
-				Change.change(id) = updated;
-			auto const type{turnout_type_of(updated.type)};
-			auto const *track{Change.view().find(updated.diverging)};
-			if (false == type.has_value() || track == nullptr)
-				continue;
-			auto const laid{lay_diverging(frame_of(Change.view(), updated), *type, updated.hand)};
-			if (laid != track->solved)
-				Change.change(updated.diverging).solved = laid;
-			auto const *at{Change.view().find(updated.diverging_end)};
-			if (at == nullptr || false == laid.valid())
-				continue;
-			auto moved{*at};
-			moved.position = laid.end.position;
-			moved.heading = laid.end.heading;
-			moved.curvature = laid.end.curvature;
-			moved.cant = laid.end.cant;
-			moved.grade = laid.end.grade;
-			if (moved == *at)
-				continue;
-			Change.change(updated.diverging_end) = moved;
-			nodes.insert(updated.diverging_end);
-			for (auto const &end : moved.ends)
-				if (end.line != updated.diverging)
-					next.insert(end.line);
-		}
+			settle_turnout(Change, id, nodes, next);
 		turnouts.clear();
 		for (auto const id : nodes)
 		{
@@ -449,14 +472,14 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	// diverging track into none. Not into a line of another profile of its own
 	auto const across = [&](node_id const At, line_id const From, line_end const End) -> end_ref const * {
 		auto const *at{Network.find(At)};
-		if (at == nullptr || diverging_start(Network, {From, End, 1}))
+		if (at == nullptr || branch_end(Network, {From, End, 1}))
 			return nullptr;
 		end_ref const *from{nullptr};
 		std::vector<end_ref const *> others;
 		for (auto const &end : at->ends)
 			if (end.line == From && end.end == End)
 				from = &end;
-			else if (false == diverging_start(Network, end))
+			else if (false == branch_end(Network, end))
 				others.push_back(&end);
 		if (from == nullptr || others.size() != 1 || others.front()->side() == from->side())
 			return nullptr;
@@ -499,12 +522,14 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 		auto const &owner{*Network.find(part.line)};
 		auto own{described(owner.solved, owner.category)};
 		auto const length{owner.solved.length};
-		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed
+		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed; the tracks crossing at a slip or a crossing
+		// over its crossings (the slip curves its diverging tracks)
 		if (auto const *switched{owner_of(Network, owner.id)})
 		{
-			auto const diverging{switched->diverging == owner.id};
+			auto const diverging{switched->diverging == owner.id || switched->diverging2 == owner.id};
+			auto const crossing{switched->crossing != line_id::none && false == diverging};
 			auto const features{norms::feature::switch_track | (switched->movable ? norms::feature::movable_frog : 0u) | (switched->bent() ? norms::feature::curved_switch : 0u) |
-			                    (diverging ? norms::feature::diverging : 0u)};
+			                    (diverging ? norms::feature::diverging : 0u) | (crossing ? norms::feature::crossing : 0u)};
 			auto const speed{diverging ? switched->speed_diverging : switched->speed_main};
 			for (auto &element : own.elements)
 			{
@@ -617,7 +642,8 @@ void check_line(network const &Network, line const &Line, verdict &Result)
 	if (Line.turnout != turnout_id::none)
 	{
 		auto const *owner{Network.find(Line.turnout)};
-		if (owner == nullptr || (owner->main != Line.id && owner->diverging != Line.id))
+		auto const tracks{owner != nullptr ? tracks_of(*owner) : std::vector<line_id>{}};
+		if (std::ranges::find(tracks, Line.id) == tracks.end())
 			Result.reasons.push_back(std::format("{} is a track of turnout {}, which hasn't it", line_name(Line.id), number(Line.turnout)));
 	}
 	for (auto const end : {line_end::start, line_end::end})
@@ -634,24 +660,32 @@ void check_node(network const &Network, node const &Node, verdict &Result)
 {
 	if (Node.ends.empty())
 		Result.reasons.push_back(std::format("{} holds no end of a line", node_name(Node.id)));
-	// the start of a turnout: its diverging track beside its main track, on its side of the node; one line at most on the other
+	// a leg of a turnout: a branch of it (the start of a diverging track, the end of a slip curve) beside a track of it which carries the
+	// line through the node, on its side of the node; one line at most on the other
 	std::vector<end_ref> ends;
 	for (auto const &end : Node.ends)
 	{
-		if (false == diverging_start(Network, end))
+		if (false == branch_end(Network, end))
 		{
 			ends.push_back(end);
 			continue;
 		}
 		auto const *switched{owner_of(Network, end.line)};
-		auto const main{std::ranges::find_if(Node.ends, [&](end_ref const &Each) { return Each.line == switched->main; })};
-		if (switched->start != Node.id || main == Node.ends.end())
-			Result.reasons.push_back(std::format("{}: the diverging track of turnout {} starts there, its main track doesn't", node_name(Node.id), number(switched->id)));
-		else if (main->side() != end.side())
+		auto const carrying = [&](bool const SameSide) {
+			return std::ranges::any_of(Node.ends, [&](end_ref const &Each) {
+				auto const *owner{owner_of(Network, Each.line)};
+				return owner != nullptr && owner->id == switched->id && false == branch_end(Network, Each) && (Each.side() == end.side()) == SameSide;
+			});
+		};
+		if (carrying(true))
+			continue;
+		if (carrying(false))
 			Result.reasons.push_back(std::format("{}: the tracks of turnout {} leave it to both sides", node_name(Node.id), number(switched->id)));
+		else
+			Result.reasons.push_back(std::format("{}: a diverging track of turnout {} meets it, no other track of it does", node_name(Node.id), number(switched->id)));
 	}
 	if (ends.size() > 2)
-		Result.reasons.push_back(std::format("{} holds {} ends; more than two meet only at the start of a turnout", node_name(Node.id), Node.ends.size()));
+		Result.reasons.push_back(std::format("{} holds {} ends; more than two meet only at a leg of a turnout", node_name(Node.id), Node.ends.size()));
 	if (ends.size() == 2 && ends[0].side() == ends[1].side())
 		Result.reasons.push_back(std::format("{}: both lines lie on the same side of it", node_name(Node.id)));
 	for (auto const &end : Node.ends)
@@ -772,11 +806,8 @@ verdict check(network const &Network, std::set<line_id> const &Lines, std::set<n
 	// the lines of the turnouts touched are judged with them
 	std::set<line_id> lines{Lines};
 	for (auto const id : turnouts)
-	{
-		auto const &switched{*Network.find(id)};
-		lines.insert(switched.main);
-		lines.insert(switched.diverging);
-	}
+		for (auto const track : tracks_of(*Network.find(id)))
+			lines.insert(track);
 	if (false == result.reasons.empty())
 		return result;
 	for (auto const id : turnouts)

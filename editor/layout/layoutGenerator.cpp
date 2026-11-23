@@ -26,12 +26,14 @@ double constexpr kStraightened{0.02}; // m, TTrack::straightened: control vector
 double constexpr kShortestPiece{0.1}; // m: the simulation takes a path under 5 cm for one of no length
 int constexpr kDeepest{14}; // halvings of a piece, at most
 
-// a point of the line where a piece ends: at a node with the numbers of the node
+// a point of the line where a piece ends: at a node with the numbers of the node. A piece ending there arrives along the element before it,
+// which a secant blade turns off from (arriving: the heading of that element, the same where the line runs on in its heading)
 struct piece_end
 {
 	double chainage{0.0};
 	glm::dvec3 point{0.0};
 	glm::dvec2 heading{0.0, 1.0};
+	glm::dvec2 arriving{0.0, 1.0};
 	double grade{0.0};
 	double cant{0.0};
 };
@@ -61,19 +63,27 @@ class cutter
 			kept.chainage = chainage;
 			kept.point = at != nullptr ? at->position : m_solved.point(chainage);
 			kept.heading = at != nullptr ? at->heading * sense : m_solved.tangent(chainage);
+			kept.arriving = kept.heading;
 			kept.cant = at != nullptr ? at->cant * sense : m_solved.cant_at(chainage);
 			kept.grade = m_solved.grade(chainage);
 		}
 	}
 
-	std::vector<generated_piece> pieces(std::vector<std::string> &Errors)
+	std::vector<generated_piece> pieces(std::vector<std::string> &Errors) { return pieces(0.0, m_solved.length, Errors); }
+
+	// the pieces between the chainages: from the node at an end of the line, from the point of the line inside it
+	std::vector<generated_piece> pieces(double const From, double const To, std::vector<std::string> &Errors)
 	{
-		auto const cuts{breaks()};
+		auto cuts{breaks()};
+		std::erase_if(cuts, [&](double const Chainage) { return Chainage <= From + kShortestPiece * 0.5 || Chainage >= To - kShortestPiece * 0.5; });
+		cuts.insert(cuts.begin(), From);
+		cuts.push_back(To);
 		std::vector<generated_piece> result;
-		auto from{m_start};
+		auto from{From <= 0.0 ? m_start : end_at(From)};
+		auto const last{To >= m_solved.length ? m_end : end_at(To)};
 		for (std::size_t i = 1; i < cuts.size(); ++i)
 		{
-			auto const to{i + 1 == cuts.size() ? m_end : end_at(cuts[i])};
+			auto const to{i + 1 == cuts.size() ? last : end_at(cuts[i])};
 			// no piece longer than a track may be
 			auto const count{std::max(1, static_cast<int>(std::ceil((to.chainage - from.chainage) / geometry::longest_path - 1e-9)))};
 			auto start{from};
@@ -101,6 +111,11 @@ class cutter
 		result.chainage = Chainage;
 		result.point = m_solved.point(Chainage);
 		result.heading = glm::normalize(m_solved.tangent(Chainage));
+		result.arriving = result.heading;
+		// at the tip of a secant blade the element before heads another way
+		auto const &before{m_solved.elements[m_solved.element_at(std::max(0.0, Chainage - 1e-9))]};
+		if (auto const arriving{glm::normalize(before.tangent(std::clamp(Chainage - before.chainage, 0.0, before.length)))}; std::abs(geometry::signed_angle(arriving, result.heading)) > 1e-9)
+			result.arriving = arriving;
 		result.grade = m_solved.grade(Chainage);
 		result.cant = m_solved.cant_at(Chainage);
 		return result;
@@ -287,7 +302,7 @@ class cutter
 		path.radius = radius(From.chainage, To.chainage);
 		auto const p0{geometry::plan_of(From.point)};
 		auto const p3{geometry::plan_of(To.point)};
-		auto const turn{geometry::signed_angle(From.heading, To.heading)};
+		auto const turn{geometry::signed_angle(From.heading, To.arriving)};
 		auto const *single{only_element(From.chainage, To.chainage)};
 		// a straight of an even grade is drawn by the simulator as a straight of no control vectors
 		if (single != nullptr && single->kind == element_kind::straight && level_grade(From.chainage, To.chainage))
@@ -298,9 +313,9 @@ class cutter
 		auto const handle{chord / (3.0 * cosine * cosine)};
 		auto handles{std::make_pair(handle, handle)};
 		if (single == nullptr || single->kind != element_kind::arc)
-			handles = curvature_handles(p0, From.heading, p3, To.heading, curvature_inside(From.chainage, true), curvature_inside(To.chainage, false), handle);
+			handles = curvature_handles(p0, From.heading, p3, To.arriving, curvature_inside(From.chainage, true), curvature_inside(To.chainage, false), handle);
 		glm::dvec2 p1{p0 + From.heading * handles.first};
-		glm::dvec2 p2{p3 - To.heading * handles.second};
+		glm::dvec2 p2{p3 - To.arriving * handles.second};
 		if (single != nullptr)
 			parabola_controls(*single, From.chainage, To.chainage, p1, p2, p0, p3);
 		auto const y1{From.point.y + From.grade * glm::distance(p0, p1)};
@@ -511,6 +526,87 @@ generated_line generate(network const &Network, line_id const Line, generator_op
 	return result;
 }
 
+namespace
+{
+
+// the pieces of a track of the turnout between two chainages of its line, run from the node given: the pieces of a line running the other
+// way turned round. A joint inside the turnout is one chainage, the same number for the parts on both sides of it
+std::vector<generated_piece> run_of(network const &Network, line const &Track, node_id const From, double const A, double const B, generator_options const &Options, std::vector<std::string> &Errors)
+{
+	cutter cut{Network, Track, Options};
+	auto const forward{Track.start == From};
+	auto pieces{cut.pieces(std::min(A, B), std::max(A, B), Errors)};
+	if (false == forward)
+	{
+		std::ranges::reverse(pieces);
+		for (auto &piece : pieces)
+		{
+			piece.path = geometry::reversed(piece.path);
+			std::swap(piece.from, piece.to);
+		}
+	}
+	return pieces;
+}
+
+// the chainages of a track of the turnout at distances from the node it's run from, its ends exactly where it ends
+struct along_track
+{
+	double length{0.0};
+	bool forward{true};
+	along_track(line const &Track, node_id const From) : length{Track.solved.length}, forward{Track.start == From} {}
+	double at(double const Distance) const { return forward ? Distance : length - Distance; }
+	double from_end() const { return forward ? 0.0 : length; }
+	double to_end() const { return forward ? length : 0.0; }
+};
+
+// a switch track of two paths, each the pieces given
+generated_part switch_part(std::string const &Name, std::array<std::vector<generated_piece>, 2> Pieces, double const Length, double const Velocity, turnout_type const &Type, generator_options const &Options)
+{
+	generated_part result;
+	result.name = Name;
+	result.is_switch = true;
+	result.pieces = std::move(Pieces);
+	for (std::size_t i = 0; i < 2; ++i)
+		result.paths[i] = whole_path(result.pieces[i]);
+	auto text{std::format("node -1 0 {} track switch {:.3f} {} {} {} velocity {} frogs ", Name, Length, Options.surface, path_text(result.paths[0]), path_text(result.paths[1]), number_text(Velocity))};
+	if (Type.movable)
+		text += "movablenose ";
+	if (Type.heel > 0.0 || Type.bladethrow > 0.0)
+		text += std::format("blades {} {} ", number_text(Type.heel), number_text(Type.bladethrow));
+	for (std::size_t i = 0; i < 2; ++i)
+	{
+		if (result.pieces[i].size() < 2)
+			continue;
+		text += std::format("pieces{} {} ", i + 1, result.pieces[i].size());
+		for (auto const &piece : result.pieces[i])
+			text += path_text(piece.path) + " ";
+	}
+	result.text = text + "endtrack\n";
+	return result;
+}
+
+// a plain track of the turnout: each piece a track of its own, the first one of the name given, the next ones numbered on
+generated_part plain_part(std::string const &Name, std::vector<generated_piece> Pieces, double const Velocity, generator_options const &Options)
+{
+	generated_part result;
+	result.name = Name;
+	for (std::size_t i = 0; i < Pieces.size(); ++i)
+	{
+		auto &piece{Pieces[i]};
+		piece.name = i == 0 ? Name : std::format("{}_{}", Name, i + 1);
+		auto const &p{piece.path.points};
+		piece.text = std::format("node -1 0 {} track normal {:.3f} {} {} {} {} {} {} {} {} velocity {} endtrack\n", piece.name, std::abs(piece.to - piece.from), Options.surface, point_text(p[segment_data::point::start]),
+		                         number_text(piece.path.rolls[0]), point_text(p[segment_data::point::control1]), point_text(p[segment_data::point::control2]), point_text(p[segment_data::point::end]),
+		                         number_text(piece.path.rolls[1]), number_text(piece.path.radius), number_text(Velocity));
+		result.text += piece.text;
+	}
+	result.pieces[0] = std::move(Pieces);
+	result.paths[0] = whole_path(result.pieces[0]);
+	return result;
+}
+
+} // namespace
+
 generated_turnout generate(network const &Network, turnout_id const Turnout, generator_options const &Options)
 {
 	generated_turnout result;
@@ -529,45 +625,91 @@ generated_turnout generate(network const &Network, turnout_id const Turnout, gen
 	}
 	result.name = std::format("{}{}", Options.turnout_prefix, number(Turnout));
 	result.velocity = switched->velocity;
-	// the main track and the diverging one, each from the start of the turnout: the pieces of a line run the other way turned round
-	std::array<line_id, 2> const tracks{switched->main, switched->diverging};
-	for (std::size_t i = 0; i < 2; ++i)
-	{
-		auto const *track{Network.find(tracks[i])};
-		if (track == nullptr || false == track->solved.valid())
+	for (auto const id : tracks_of(*switched))
+		if (auto const *track{Network.find(id)}; track == nullptr || false == track->solved.valid())
 		{
-			result.errors.push_back(std::format("turnout {}: its {} track isn't laid", number(Turnout), i == 0 ? "main" : "diverging"));
+			result.errors.push_back(std::format("turnout {}: its track {} isn't laid", number(Turnout), number(id)));
 			return result;
 		}
-		cutter cut{Network, *track, Options};
-		auto pieces{cut.pieces(result.errors)};
-		if (track->start != switched->start)
-		{
-			std::ranges::reverse(pieces);
-			for (auto &piece : pieces)
-			{
-				piece.path = geometry::reversed(piece.path);
-				std::swap(piece.from, piece.to);
-			}
-		}
-		result.pieces[i] = std::move(pieces);
-		result.paths[i] = whole_path(result.pieces[i]);
-	}
-	auto text{std::format("node -1 0 {} track switch {:.3f} {} {} {} velocity {} frogs ", result.name, type->length, Options.surface, path_text(result.paths[0]), path_text(result.paths[1]),
-	                      number_text(result.velocity))};
-	if (type->movable)
-		text += "movablenose ";
-	if (type->heel > 0.0 || type->bladethrow > 0.0)
-		text += std::format("blades {} {} ", number_text(type->heel), number_text(type->bladethrow));
-	for (std::size_t i = 0; i < 2; ++i)
+	auto const &main{*Network.find(switched->main)};
+	auto const whole = [&](line const &Track, node_id const From) { return run_of(Network, Track, From, 0.0, Track.solved.length, Options, result.errors); };
+	auto const run = [&](line const &Track, node_id const From, double const A, double const B) { return run_of(Network, Track, From, A, B, Options, result.errors); };
+	switch (type->kind)
 	{
-		if (result.pieces[i].size() < 2)
-			continue;
-		text += std::format("pieces{} {} ", i + 1, result.pieces[i].size());
-		for (auto const &piece : result.pieces[i])
-			text += path_text(piece.path) + " ";
+	case turnout_kind::twofold:
+	{
+		// the first switch up to a short plain track before the second one, which the simulation joins to a switch only through a plain track
+		auto const &diverging{*Network.find(switched->diverging)};
+		auto const &main2{*Network.find(switched->main2)};
+		auto const &diverging2{*Network.find(switched->diverging2)};
+		along_track const along{main, switched->start};
+		auto const stagger{main.solved.length};
+		auto const joint{along.at(stagger - std::min(1.0, stagger * 0.5))};
+		result.parts.push_back(switch_part(result.name, {run(main, switched->start, along.from_end(), joint), whole(diverging, switched->start)}, stagger, result.velocity, *type, Options));
+		result.parts.push_back(plain_part(result.name + "_l", run(main, switched->start, joint, along.to_end()), switched->speed_main, Options));
+		result.parts.push_back(switch_part(result.name + "_2", {whole(main2, switched->second), whole(diverging2, switched->second)}, main2.solved.length, result.velocity, *type, Options));
+		break;
 	}
-	result.text = text + "endtrack\n";
+	case turnout_kind::slip:
+	{
+		// a switch at each leg a slip curve leaves, the tracks crossing and the middles of the slip curves plain tracks, their ends further
+		// from the crossing than the simulation joins ends (build_double_slip of the switch tool)
+		auto const &crossing{*Network.find(switched->crossing)};
+		auto const &slip{*Network.find(switched->diverging)};
+		auto const half{type->half};
+		auto const gap{std::max(0.25, 0.06 / std::sin(type->angle * 0.5))};
+		auto const slow{switched->speed_diverging};
+		along_track const along{main, switched->start};
+		auto const main_near{along.at(half - gap)};
+		auto const main_far{along.at(half + gap)};
+		auto const cross_near{half - gap};
+		auto const cross_far{half + gap};
+		auto const slip_length{slip.solved.length};
+		auto const slip_near{slip_length * 0.5 - gap};
+		auto const slip_far{slip_length * 0.5 + gap};
+		result.parts.push_back(switch_part(result.name + "_a", {run(main, switched->start, along.from_end(), main_near), run(slip, switched->start, 0.0, slip_near)}, half, result.velocity, *type, Options));
+		if (type->slip_curves >= 2)
+		{
+			// from B back along the main track and the second slip curve; from C along the crossing track and the second slip curve
+			auto const &slip2{*Network.find(switched->diverging2)};
+			auto const slip2_length{slip2.solved.length};
+			auto const slip2_near{slip2_length * 0.5 - gap};
+			auto const slip2_far{slip2_length * 0.5 + gap};
+			result.parts.push_back(switch_part(result.name + "_b", {run(main, switched->main_end, along.to_end(), main_far), run(slip2, switched->main_end, slip2_length, slip2_far)}, half, result.velocity, *type, Options));
+			result.parts.push_back(switch_part(result.name + "_c", {run(crossing, switched->cross_start, 0.0, cross_near), run(slip2, switched->cross_start, 0.0, slip2_near)}, half, result.velocity, *type, Options));
+			result.parts.push_back(plain_part(result.name + "_s2", run(slip2, switched->cross_start, slip2_near, slip2_far), slow, Options));
+		}
+		else
+		{
+			result.parts.push_back(plain_part(result.name + "_b", run(main, switched->start, main_far, along.to_end()), switched->speed_main, Options));
+			result.parts.push_back(plain_part(result.name + "_c", run(crossing, switched->cross_start, 0.0, cross_near), switched->speed_main, Options));
+		}
+		result.parts.push_back(switch_part(result.name + "_d", {run(crossing, switched->cross_end, crossing.solved.length, cross_far), run(slip, switched->cross_end, slip_length, slip_far)}, half, result.velocity, *type, Options));
+		result.parts.push_back(plain_part(result.name + "_m", run(main, switched->start, main_near, main_far), switched->speed_main, Options));
+		result.parts.push_back(plain_part(result.name + "_x", run(crossing, switched->cross_start, cross_near, cross_far), switched->speed_main, Options));
+		result.parts.push_back(plain_part(result.name + "_s1", run(slip, switched->start, slip_near, slip_far), slow, Options));
+		break;
+	}
+	case turnout_kind::crossing:
+		// two plain tracks crossing
+		result.parts.push_back(plain_part(result.name + "_1", whole(main, switched->start), switched->speed_main, Options));
+		result.parts.push_back(plain_part(result.name + "_2", whole(*Network.find(switched->crossing), switched->cross_start), switched->speed_main, Options));
+		break;
+	case turnout_kind::ordinary:
+	case turnout_kind::symmetric:
+	default:
+		// the main track and the diverging one, each from the start of the turnout
+		result.parts.push_back(switch_part(result.name, {whole(main, switched->start), whole(*Network.find(switched->diverging), switched->start)}, type->length, result.velocity, *type, Options));
+		break;
+	}
+	// the first switch track as the fields of a turnout of one have it
+	if (result.parts.front().is_switch)
+	{
+		result.pieces = result.parts.front().pieces;
+		result.paths = result.parts.front().paths;
+	}
+	for (auto const &part : result.parts)
+		result.text += part.text;
 	return result;
 }
 

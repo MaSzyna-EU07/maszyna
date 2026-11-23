@@ -39,7 +39,10 @@ http://mozilla.org/MPL/2.0/.
 //   turnouts
 //     turnout <id> type <name> hand <1|-1> direction <1|-1> start <node> main <line> <node> diverging <line> <node> chainage <m>
 //        radii <main> <diverging> cant <mm> speeds <main> <diverging> velocity <km/h> movable <0|1>
-//   end                                            the turnouts (E2b), their tracks lines of them; the diverging ones laid by the turnouts
+//        [second <node> <main track on> <diverging track> <node at its end>]   a double switch: its second switch (E5)
+//        [crossing <line> <node> <node> slip <line, 0 for none>]                a slip or a crossing: the crossing track, the second slip
+//                                                                                curve; the diverging track 0 0 of a crossing (E5)
+//   end                                            the turnouts (E2b), their tracks lines of them; the ones they lay laid by the turnouts
 //   anchors ... end                                kept for the anchors of the lineside objects (E6), as read; empty in version 1
 //   generated
 //     track <name> line <id> file <file> sum <16 hex digits>   a track written by the generator, the checksum of its text

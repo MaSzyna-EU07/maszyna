@@ -24,7 +24,9 @@ http://mozilla.org/MPL/2.0/.
 // the element. A piece ends at a node with the numbers of the node, the same on both sides of it; the names of the tracks come from the
 // identifiers of the line and of its vertices, so they don't change with a change of the shape which keeps its elements. A turnout is one
 // switch track of two paths, its main and its diverging track, each made of the pieces of its line (pieces1, pieces2), the ends of its legs
-// the numbers of its nodes, its velocity as the speed rule gives it, its frog and its blades as its type has them.
+// the numbers of its nodes, its velocity as the speed rule gives it, its frog and its blades as its type has them; a double switch, a slip
+// and a crossing the switch tracks and the plain tracks the switch tool of the editor makes of them, their joints inside the turnout the
+// numbers of the points of its lines there.
 namespace layout
 {
 
@@ -70,17 +72,33 @@ struct generated_line
 // the pieces of a line of its own; a track of a turnout is made with its turnout
 generated_line generate(network const &Network, line_id const Line, generator_options const &Options = {});
 
+// a track of the simulator a turnout is made of: a switch track of two paths, or a plain track (each of its pieces an entry)
+struct generated_part
+{
+	std::string name;
+	bool is_switch{false};
+	// of a switch the main and the diverging path from its start, each the pieces of its line, as the paths of the switch have them: the
+	// path the pieces make, whole, with them (none where one piece makes it); of a plain track its pieces
+	std::array<std::vector<generated_piece>, 2> pieces;
+	std::array<segment_data, 2> paths;
+	std::string text; // the entries
+};
+
 struct generated_turnout
 {
 	turnout_id turnout{turnout_id::none};
 	std::string name;
 	// the main and the diverging track from the start of the turnout, each the pieces of its line, as the paths of the switch have them:
-	// the path the pieces make, whole, with them (none where one piece makes it)
+	// the path the pieces make, whole, with them (none where one piece makes it); of its first switch track, where it has more
 	std::array<std::vector<generated_piece>, 2> pieces;
 	std::array<segment_data, 2> paths;
 	double velocity{0.0};
 	std::vector<std::string> errors;
-	std::string text; // the entry
+	// the tracks of the simulator it's made of: an ordinary or a symmetric switch one switch track; a double switch two and a short plain
+	// track between them (<name>, <name>_l, <name>_2); a slip a switch at each leg a slip curve leaves (<name>_a ... _d, plain tracks at the
+	// others), the tracks crossing and the middles of the slip curves plain ones (_m, _x, _s1, _s2); a crossing two plain tracks (_1, _2)
+	std::vector<generated_part> parts;
+	std::string text; // the entries, of all the parts
 };
 generated_turnout generate(network const &Network, turnout_id const Turnout, generator_options const &Options = {});
 

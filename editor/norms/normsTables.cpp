@@ -220,7 +220,7 @@ constexpr std::array tsi_rows{
 	row{.what = deficiency_jump, .block = at(125), .place = "4.2.4.4(1)", .speed_above = 60, .speed_to = 200},
 	row{.what = deficiency_jump, .block = at(85), .place = "4.2.4.4(1)", .speed_above = 200, .speed_to = 230},
 	row{.what = deficiency_jump, .block = at(25), .place = "4.2.4.4(1)", .speed_above = 230},
-	row{.what = radius, .block = at(150), .place = "4.2.3.4(1)"},
+	row{.what = radius, .block = at(150), .place = "4.2.3.4(1)", .excludes = switch_track},
 	row{.what = vertical_radius, .block = at(500), .place = "4.2.3.5(1)", .needs = crest},
 	row{.what = vertical_radius, .block = at(900), .place = "4.2.3.5(1)", .needs = sag},
 };

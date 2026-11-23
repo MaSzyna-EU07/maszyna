@@ -51,14 +51,30 @@ void record_generated(document &Project, layout::generated_turnout const &Turnou
 	if (turnout == nullptr)
 		return;
 	auto const main{turnout->main};
-	std::erase_if(Project.generated, [&](generated_node const &Node) { return Node.kind == "switch" && Node.line == main; });
-	generated_node node;
-	node.kind = "switch";
-	node.name = Turnout.name;
-	node.line = main;
-	node.file = File;
-	node.sum = checksum(Turnout.text);
-	Project.generated.push_back(std::move(node));
+	std::erase_if(Project.generated, [&](generated_node const &Node) { return Node.line == main; });
+	// each track of the simulator it's made of, by its main track: the switch tracks, and the plain tracks of a double switch, a slip or a
+	// crossing piece by piece
+	auto const keep = [&](std::string const &Kind, std::string const &Name, std::string const &Text) {
+		generated_node node;
+		node.kind = Kind;
+		node.name = Name;
+		node.line = main;
+		node.file = File;
+		node.sum = checksum(Text);
+		Project.generated.push_back(std::move(node));
+	};
+	if (Turnout.parts.empty())
+		keep("switch", Turnout.name, Turnout.text);
+	for (auto const &part : Turnout.parts)
+	{
+		if (part.is_switch)
+		{
+			keep("switch", part.name, part.text);
+			continue;
+		}
+		for (auto const &piece : part.pieces[0])
+			keep("track", piece.name, piece.text);
+	}
 	Project.hand_changed.erase(main);
 }
 

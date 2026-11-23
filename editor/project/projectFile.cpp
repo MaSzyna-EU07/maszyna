@@ -348,9 +348,18 @@ std::string write(document const &Project)
 	}
 	put("turnouts");
 	for (auto const &[id, turnout] : network.turnouts())
-		put(std::format("turnout {} type {} hand {} direction {} start {} main {} {} diverging {} {} chainage {} radii {} {} cant {} speeds {} {} velocity {} movable {}", layout::number(id), word(turnout.type), turnout.hand, turnout.direction,
-		                layout::number(turnout.start), layout::number(turnout.main), layout::number(turnout.main_end), layout::number(turnout.diverging), layout::number(turnout.diverging_end), number(turnout.chainage),
-		                number(turnout.main_radius), number(turnout.diverging_radius), number(turnout.cant), number(turnout.speed_main), number(turnout.speed_diverging), number(turnout.velocity), turnout.movable ? 1 : 0));
+	{
+		auto text{std::format("turnout {} type {} hand {} direction {} start {} main {} {} diverging {} {} chainage {} radii {} {} cant {} speeds {} {} velocity {} movable {}", layout::number(id), word(turnout.type), turnout.hand,
+		                      turnout.direction, layout::number(turnout.start), layout::number(turnout.main), layout::number(turnout.main_end), layout::number(turnout.diverging), layout::number(turnout.diverging_end),
+		                      number(turnout.chainage), number(turnout.main_radius), number(turnout.diverging_radius), number(turnout.cant), number(turnout.speed_main), number(turnout.speed_diverging),
+		                      number(turnout.velocity), turnout.movable ? 1 : 0)};
+		// the tracks and the legs of the double switches, the slips and the crossings, only where the turnout has them
+		if (turnout.second != node_id::none)
+			text += std::format(" second {} {} {} {}", layout::number(turnout.second), layout::number(turnout.main2), layout::number(turnout.diverging2), layout::number(turnout.diverging2_end));
+		if (turnout.crossing != line_id::none)
+			text += std::format(" crossing {} {} {} slip {}", layout::number(turnout.crossing), layout::number(turnout.cross_start), layout::number(turnout.cross_end), layout::number(turnout.diverging2));
+		put(text);
+	}
 	put("end");
 	put("anchors");
 	for (auto const &line : Project.anchors)
@@ -371,6 +380,30 @@ std::string write(document const &Project)
 	}
 	return text;
 }
+
+namespace
+{
+
+// the tracks of the turnout there and its, its legs there, the tracks it lays itself between its legs
+bool whole_turnout(layout::network const &Network, layout::turnout const &Turnout)
+{
+	auto const held = [&](node_id const Node) { return Node == node_id::none || Network.find(Node) != nullptr; };
+	auto const between = [&](line_id const Track, node_id const From, node_id const To) {
+		auto const *track{Network.find(Track)};
+		return Track == line_id::none || (track != nullptr && track->start == From && track->end == To);
+	};
+	auto const tracks{layout::tracks_of(Turnout)};
+	if (Network.find(Turnout.main) == nullptr || (Turnout.diverging == line_id::none && Turnout.crossing == line_id::none))
+		return false;
+	if (false == std::ranges::all_of(tracks, [&](line_id const Track) { return Network.find(Track) != nullptr && Network.find(Track)->turnout == Turnout.id; }))
+		return false;
+	auto const slip{Turnout.crossing != line_id::none};
+	return held(Turnout.start) && held(Turnout.main_end) && held(Turnout.diverging_end) && held(Turnout.second) && held(Turnout.diverging2_end) && held(Turnout.cross_start) &&
+	       held(Turnout.cross_end) && between(Turnout.diverging, Turnout.start, slip ? Turnout.cross_end : Turnout.diverging_end) &&
+	       between(Turnout.diverging2, slip ? Turnout.cross_start : Turnout.second, Turnout.diverging2_end) && between(Turnout.crossing, Turnout.cross_start, Turnout.cross_end);
+}
+
+} // namespace
 
 read_result read(std::string_view const Text)
 {
@@ -481,6 +514,25 @@ read_result read(std::string_view const Text)
 				turnout.velocity = words.real("the velocity");
 				words.expect("movable");
 				turnout.movable = words.choice("movable", std::array<std::string_view, 2>{"0", "1"}) == 1;
+				if (words.peek() == "second")
+				{
+					words.next("second");
+					turnout.second = static_cast<node_id>(words.id("the node of the second switch"));
+					turnout.main2 = static_cast<line_id>(words.id("the main track of the second switch"));
+					turnout.diverging2 = static_cast<line_id>(words.id("the diverging track of the second switch"));
+					turnout.diverging2_end = static_cast<node_id>(words.id("the node at the end of the diverging track of the second switch"));
+				}
+				if (words.peek() == "crossing")
+				{
+					words.next("crossing");
+					turnout.crossing = static_cast<line_id>(words.id("the crossing track"));
+					turnout.cross_start = static_cast<node_id>(words.id("the node at the start of the crossing track"));
+					turnout.cross_end = static_cast<node_id>(words.id("the node at the end of the crossing track"));
+					words.expect("slip");
+					turnout.diverging2 = static_cast<line_id>(words.id("the second slip curve"));
+					if (turnout.diverging2 != line_id::none)
+						turnout.diverging2_end = turnout.main_end;
+				}
 				words.finish();
 				if (false == words.failed())
 				{
@@ -796,25 +848,25 @@ read_result read(std::string_view const Text)
 				result.error = std::format("node {}: line {} doesn't end at it", layout::number(id), layout::number(end.line));
 				return result;
 			}
-	// the turnouts and their tracks, each of them of the other
+	// the turnouts and their tracks, each of them of the other; the tracks it lays itself between its legs as written
 	for (auto const &[id, turnout] : network.turnouts())
 	{
-		auto const *main{network.find(turnout.main)};
-		auto const *diverging{network.find(turnout.diverging)};
-		auto const held = [&](node_id const Node) { return network.find(Node) != nullptr; };
-		if (main == nullptr || diverging == nullptr || main->turnout != id || diverging->turnout != id || false == held(turnout.start) || false == held(turnout.main_end) || false == held(turnout.diverging_end) ||
-		    diverging->start != turnout.start || diverging->end != turnout.diverging_end)
+		if (false == whole_turnout(network, turnout))
 		{
 			result.error = std::format("turnout {}: its tracks or its legs aren't the ones written", layout::number(id));
 			return result;
 		}
 	}
 	for (auto const &[id, laid] : network.lines())
-		if (auto const *owner{network.find(laid.turnout)}; laid.turnout != turnout_id::none && (owner == nullptr || (owner->main != id && owner->diverging != id)))
+	{
+		auto const *owner{network.find(laid.turnout)};
+		auto const tracks{owner != nullptr ? layout::tracks_of(*owner) : std::vector<line_id>{}};
+		if (laid.turnout != turnout_id::none && std::ranges::find(tracks, id) == tracks.end())
 		{
 			result.error = std::format("line {}: turnout {} hasn't it", layout::number(id), layout::number(laid.turnout));
 			return result;
 		}
+	}
 	// the identifiers: none handed out again, whatever the record of them says
 	layout::network::handed_out last;
 	for (auto const &[id, node] : network.nodes())
@@ -836,14 +888,10 @@ read_result read(std::string_view const Text)
 		result.notes.push_back("the next identifiers written are lower than the ones in use, taken past them");
 	network.hand_out(*next);
 	network.hand_out(last);
-	// the lines laid between their nodes as read; the diverging tracks then, laid by their turnouts off their main tracks
-	auto const diverging = [&](layout::line const &Line) {
-		auto const *owner{network.find(Line.turnout)};
-		return owner != nullptr && owner->diverging == Line.id;
-	};
+	// the lines laid between their nodes as read; the tracks the turnouts lay themselves then, off their main tracks
 	for (auto const &[id, laid] : network.lines())
 	{
-		if (diverging(laid))
+		if (layout::laid_by_turnout(network, id))
 			continue;
 		auto solved{layout::solve(laid.shape, network.condition(laid, layout::line_end::start), network.condition(laid, layout::line_end::end))};
 		for (auto const &error : solved.errors)
@@ -859,10 +907,11 @@ read_result read(std::string_view const Text)
 			result.notes.push_back(std::format("turnout {}: {}", layout::number(id), why.empty() ? "no type " + turnout.type : why));
 			continue;
 		}
-		auto laid{layout::lay_diverging(layout::frame_of(network, turnout), *type, turnout.hand)};
+		auto const laid{layout::lay_tracks(network, turnout, *type)};
 		for (auto const &error : laid.errors)
 			result.notes.push_back(std::format("turnout {}: {}", layout::number(id), error));
-		change.change(turnout.diverging).solved = std::move(laid);
+		for (auto const &track : laid.tracks)
+			change.change(track.line).solved = track.solved;
 	}
 	result.project = std::move(project);
 	return result;

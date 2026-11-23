@@ -92,9 +92,20 @@ struct turnout
 	int direction{1}; // 1: its main track runs as the line it was laid into does, from the start of the turnout; -1 against it
 	node_id start{node_id::none};
 	node_id main_end{node_id::none};
-	node_id diverging_end{node_id::none};
+	node_id diverging_end{node_id::none}; // none of a crossing
 	line_id main{line_id::none};
-	line_id diverging{line_id::none};
+	line_id diverging{line_id::none}; // none of a crossing
+	// a double switch (layoutTurnout.hpp, "twofold"): the node where its second switch starts on the main track, the main track on from
+	// there to main_end, the diverging track of the second switch and the node at its end
+	node_id second{node_id::none};
+	line_id main2{line_id::none};
+	line_id diverging2{line_id::none};
+	node_id diverging2_end{node_id::none};
+	// a slip or a crossing: the crossing track and the nodes at its ends; the diverging track of a slip runs from the start to cross_end,
+	// the second one of a double slip (diverging2) from cross_start to main_end
+	line_id crossing{line_id::none};
+	node_id cross_start{node_id::none};
+	node_id cross_end{node_id::none};
 	// derived from the line under it
 	double chainage{0.0}; // m, the kilometrage of its start
 	double main_radius{0.0}; // m, of the main track, signed as table 11.8 takes it: above 0 bent the way the diverging track leaves, 0 straight
@@ -218,8 +229,9 @@ void settle(transaction &Change);
 
 // the turnout owning the line, none for a line of its own
 turnout const *owner_of(network const &Network, line_id const Line);
-// the end is the start of the diverging track of a turnout, which runs on into no line through its node and tells it nothing
-bool diverging_start(network const &Network, end_ref const &End);
+// the end of a track of a turnout which runs on into no line through its node and tells it nothing, another track of the turnout carrying
+// the line through there: the start of a diverging track, and the end of a slip curve
+bool branch_end(network const &Network, end_ref const &End);
 
 // a line running on through the nodes of two ends: the lines in their order, each forward or backward
 struct chain_part

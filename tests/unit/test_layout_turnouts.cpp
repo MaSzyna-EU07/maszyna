@@ -84,7 +84,7 @@ bool says(std::vector<std::string> const &Reasons, std::string const &What) {
 
 } // namespace
 
-TEST_CASE("layout turnouts: the ordinary switches of the catalogue are laid, double, symmetric and secant ones refused with the reason") {
+TEST_CASE("layout turnouts: the ordinary switches of the catalogue are laid, the double, symmetric and secant ones too (test_layout_turnout_kinds.cpp)") {
 	auto const names{layout::turnout_types()};
 	for (auto const *name : {"Rz 60E1-190-1:9", "Rz 60E1-300-1:9", "Rz 60E1-500-1:12", "Rz 60E1-760-1:14", "Rz 60E1-1200-1:18,5", "Rz 60E1-2500-1:26,5 movable nose", "Rz 49E1-500-1:14"}) {
 		CAPTURE(name);
@@ -102,13 +102,12 @@ TEST_CASE("layout turnouts: the ordinary switches of the catalogue are laid, dou
 	CHECK(type->diverging_length() == doctest::Approx(500.0 * std::atan(1.0 / 12.0)));
 	CHECK(layout::turnout_type_of("Rz 60E1-2500-1:26,5 movable nose")->movable);
 	std::string why;
-	CHECK_FALSE(layout::turnout_type_of("Rls 49E1-215-1:4,8", &why).has_value());
-	CHECK(why.find("symmetric") != std::string::npos);
-	CHECK_FALSE(layout::turnout_type_of("Rpd 49E1-190-1:9/1:9", &why).has_value());
-	CHECK(why.find("double") != std::string::npos);
-	CHECK_FALSE(layout::turnout_type_of("Rz S42-190-1:7", &why).has_value());
-	CHECK(why.find("angle") != std::string::npos);
+	for (auto const *name : {"Rls 49E1-215-1:4,8", "Rpd 49E1-190-1:9/1:9", "Rz S42-190-1:7"}) {
+		CAPTURE(name);
+		CHECK(layout::turnout_type_of(name, &why).has_value());
+	}
 	CHECK_FALSE(layout::turnout_type_of("Rz 60E1-999-1:99", &why).has_value());
+	CHECK(why.find("catalogue") != std::string::npos);
 }
 
 TEST_CASE("layout turnouts: the legs on a straight against the catalogue: the main track a + b, the centre at a, the diverging end at 1:n") {

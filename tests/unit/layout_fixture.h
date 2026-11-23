@@ -90,7 +90,9 @@ inline void check_structure(layout::network const &Network) {
 			auto const &a{solved.elements[i - 1]};
 			auto const &b{solved.elements[i]};
 			CHECK(glm::distance(a.position(a.length), b.origin) < 1e-6);
-			CHECK(std::abs(geometry::signed_angle(a.tangent(a.length), b.direction)) < 1e-9);
+			// a track a turnout lays may turn where its secant blades meet the stock rails, by less than 2 degrees
+			auto const kink{std::abs(geometry::signed_angle(a.tangent(a.length), b.direction))};
+			CHECK((kink < 1e-9 || (layout::laid_by_turnout(Network, id) && kink < 0.035)));
 			CHECK(a.end_chainage() == doctest::Approx(b.chainage).epsilon(1e-12));
 		}
 		for (std::size_t i = 1; i < solved.cant.size(); ++i) {
@@ -104,13 +106,14 @@ inline void check_structure(layout::network const &Network) {
 		REQUIRE_FALSE(node.ends.empty());
 		std::vector<layout::end_ref> through;
 		for (auto const &end : node.ends) {
-			if (layout::diverging_start(Network, end)) {
+			if (layout::branch_end(Network, end)) {
+				// a branch of a turnout beside a track of it carrying the line through the node, on its side
 				auto const *switched{layout::owner_of(Network, end.line)};
 				REQUIRE(switched != nullptr);
-				CHECK(switched->start == id);
-				auto const main{std::ranges::find_if(node.ends, [&](layout::end_ref const &Each) { return Each.line == switched->main; })};
-				REQUIRE(main != node.ends.end());
-				CHECK(main->side() == end.side());
+				CHECK(std::ranges::any_of(node.ends, [&](layout::end_ref const &Each) {
+					auto const *owner{layout::owner_of(Network, Each.line)};
+					return owner != nullptr && owner->id == switched->id && false == layout::branch_end(Network, Each) && Each.side() == end.side();
+				}));
 			}
 			else {
 				through.push_back(end);
@@ -134,24 +137,65 @@ inline void check_structure(layout::network const &Network) {
 	}
 	for (auto const &[id, turnout] : Network.turnouts()) {
 		CAPTURE(layout::number(id));
+		CAPTURE(turnout.type);
 		auto const type{layout::turnout_type_of(turnout.type)};
 		REQUIRE(type.has_value());
+		using layout::turnout_kind;
+		auto const kind{type->kind};
+		CHECK(layout::kind_of(turnout) == kind);
+		for (auto const track : layout::tracks_of(turnout)) {
+			auto const *line{Network.find(track)};
+			REQUIRE(line != nullptr);
+			CHECK(line->turnout == id);
+		}
 		auto const *main{Network.find(turnout.main)};
-		auto const *diverging{Network.find(turnout.diverging)};
-		REQUIRE(main != nullptr);
-		REQUIRE(diverging != nullptr);
-		CHECK(main->turnout == id);
-		CHECK(diverging->turnout == id);
-		CHECK((turnout.direction > 0 ? main->start : main->end) == turnout.start);
-		CHECK((turnout.direction > 0 ? main->end : main->start) == turnout.main_end);
-		CHECK(diverging->start == turnout.start);
-		CHECK(diverging->end == turnout.diverging_end);
-		CHECK(main->solved.length == doctest::Approx(type->length).epsilon(1e-9));
-		CHECK(diverging->solved.start.position == Network.find(turnout.start)->position);
-		CHECK(diverging->solved.end.position == Network.find(turnout.diverging_end)->position);
+		auto const between = [&](layout::line_id const Track, layout::node_id const From, layout::node_id const To, int const Direction) {
+			auto const *line{Network.find(Track)};
+			REQUIRE(line != nullptr);
+			CHECK((Direction > 0 ? line->start : line->end) == From);
+			CHECK((Direction > 0 ? line->end : line->start) == To);
+			CHECK(line->solved.start.position == Network.find(line->start)->position);
+			CHECK(line->solved.end.position == Network.find(line->end)->position);
+		};
+		switch (kind) {
+		case turnout_kind::twofold:
+			between(turnout.main, turnout.start, turnout.second, turnout.direction);
+			between(turnout.main2, turnout.second, turnout.main_end, turnout.direction);
+			between(turnout.diverging, turnout.start, turnout.diverging_end, 1);
+			between(turnout.diverging2, turnout.second, turnout.diverging2_end, 1);
+			CHECK(main->solved.length == doctest::Approx(type->stagger).epsilon(1e-9));
+			CHECK(Network.find(turnout.main2)->solved.length == doctest::Approx(type->length - type->stagger).epsilon(1e-9));
+			break;
+		case turnout_kind::symmetric:
+			between(turnout.main, turnout.start, turnout.main_end, 1);
+			between(turnout.diverging, turnout.start, turnout.diverging_end, 1);
+			break;
+		case turnout_kind::slip:
+		case turnout_kind::crossing:
+			between(turnout.main, turnout.start, turnout.main_end, turnout.direction);
+			between(turnout.crossing, turnout.cross_start, turnout.cross_end, 1);
+			if (kind == turnout_kind::slip) {
+				between(turnout.diverging, turnout.start, turnout.cross_end, 1);
+			}
+			if (turnout.diverging2 != layout::line_id::none) {
+				between(turnout.diverging2, turnout.cross_start, turnout.main_end, 1);
+			}
+			CHECK(main->solved.length == doctest::Approx(type->length).epsilon(1e-9));
+			break;
+		default:
+			between(turnout.main, turnout.start, turnout.main_end, turnout.direction);
+			between(turnout.diverging, turnout.start, turnout.diverging_end, 1);
+			CHECK(main->solved.length == doctest::Approx(type->length).epsilon(1e-9));
+			break;
+		}
 		CHECK(turnout.speed_diverging > 0.0);
 		CHECK(turnout.speed_main > 0.0);
-		CHECK(turnout.velocity == switch_curve::written_velocity(turnout.speed_main, turnout.speed_diverging));
+		if (kind == turnout_kind::crossing) {
+			CHECK(turnout.velocity == turnout.speed_main);
+		}
+		else {
+			CHECK(turnout.velocity == switch_curve::written_velocity(turnout.speed_main, turnout.speed_diverging));
+		}
 	}
 }
 
