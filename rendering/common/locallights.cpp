@@ -269,8 +269,8 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 	m_gathertime = (m_gathertime == 0.0 ? elapsed : m_gathertime * 0.95 + elapsed * 0.05);
 }
 
-// the flashlight of the player (Global.flashlight): a cone of neutral white light where the camera looks, from a little under it as
-// from a hand, by day as well. it casts shadows as the lamps of the scenery do (a cube map, made anew as it moves), so it doesn't
+// the flashlight of the player (Global.flashlight): a cone of neutral white light where the camera looks, from the right hand, by
+// day as well. it casts shadows as the lamps of the scenery do (a cube map, made anew as it moves), so it doesn't
 // light the snow or the ground through the walls of the vehicles and the houses; Global.flashlight names it to the shadow maps
 void gfx::local_lights::add_flashlight()
 {
@@ -280,8 +280,11 @@ void gfx::local_lights::add_flashlight()
 	// the line of sight: the -z axis of the view, in the world
 	auto const forward{glm::normalize(-glm::dvec3{view[0][2], view[1][2], view[2][2]})};
 	auto const up{glm::normalize(glm::dvec3{view[0][1], view[1][1], view[2][1]})};
+	auto const right{glm::normalize(glm::dvec3{view[0][0], view[1][0], view[2][0]})};
 	light flashlight;
-	flashlight.position = camera.Pos - up * 0.15;
+	// held in the right hand, low by the hip: off the eye, so the shadows of what it lights are seen beside the things (a light
+	// at the eye hides every shadow right behind the thing which casts it)
+	flashlight.position = camera.Pos - up * 0.35 + right * 0.25;
 	flashlight.direction = glm::vec3{forward};
 	flashlight.color = to_linear(glm::vec3{1.f, 0.98f, 0.95f}) * 4.f;
 	flashlight.cos_outer = std::cos(glm::radians(16.f));
