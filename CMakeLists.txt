@@ -242,6 +242,7 @@ set(SOURCES
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorPhotoRules.cpp"
 "editor/editorHttp.cpp"
 "editor/editorNmt.cpp"
 "editor/editorGeoMap.cpp"

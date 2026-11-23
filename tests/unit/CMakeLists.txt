@@ -37,6 +37,10 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
 	# and the //$ lines it keeps in the scenery files, and the descriptions of the templates (//$e)
 	"${CMAKE_SOURCE_DIR}/editor/editorRecords.cpp"
+	# the rules the aerial photo goes by: the origin, on or off, the download area grown, the tiles tried again, the 4K photos (test_photo_rules.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/editorPhotoRules.cpp"
+	# and the settings of the editor as their file keeps them, read and written through a stream (the user's file isn't touched)
+	"${CMAKE_SOURCE_DIR}/editor/editorSettings.cpp"
 	"${CMAKE_SOURCE_DIR}/scene/scenelayercontext.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorIncludeInfo.cpp"
 	# the tracks read from the text of the scenery files and written back, with no scene (test_track_text.cpp): the track and

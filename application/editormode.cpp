@@ -31,6 +31,7 @@ extern char **environ;
 #include "application/application.h"
 #include "editor/editorKilometrage.hpp"
 #include "editor/editorSettings.hpp"
+#include "editor/editorPhotoRules.hpp"
 #include "editor/editorModelSets.hpp"
 #include "editor/editorTrackPresets.hpp"
 #include "editor/editorIncludeInfo.hpp"
@@ -2564,32 +2565,43 @@ void editor_mode::load_orthophoto_settings()
     config.drape = stored.drape;
     config.lift = stored.lift;
     config.in_scene = stored.in_scene;
-    config.north = 0.0;
-    config.east = 0.0;
     m_georeference_read = false;
     read_georeference();
-    if (false == std::as_const(EditorSettings).orthophoto_origin(scenery, config.north, config.east) && m_georeference)
-    {
-        config.north = m_georeference_origin.x;
-        config.east = m_georeference_origin.y;
-    }
-    auto enabled{m_orthophoto.enabled()};
+    std::optional<glm::dvec2> remembered;
+    if (double north{0.0}, east{0.0}; std::as_const(EditorSettings).orthophoto_origin(scenery, north, east))
+        remembered = glm::dvec2{north, east};
+    // the scenery's own line: whether the photo is on, the wizard writes it on, and the origin the editor wrote along
+    std::optional<bool> scenery_on;
+    std::optional<glm::dvec2> marked_origin;
     m_orthophoto_mark.clear();
-    if (auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")}; false == marked.empty() && editor_orthophoto::read_mark(marked.front(), config, enabled))
+    if (auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")}; false == marked.empty())
     {
-        m_orthophoto_mark = marked.front();
-        m_orthophoto.enabled(enabled);
-        m_orthophoto_chosen = true;
-        WriteLog(format("Editor: the map settings of the scenery, orthophoto %s", enabled ? "on" : "off"));
+        editor_orthophoto::config mark;
+        bool on{false};
+        if (editor_orthophoto::read_mark(marked.front(), mark, on))
+        {
+            m_orthophoto_mark = marked.front();
+            scenery_on = on;
+            if (mark.north != 0.0 || mark.east != 0.0)
+                marked_origin = glm::dvec2{mark.north, mark.east};
+        }
     }
-    // the user's choice stands over the scenery's; turned on only where the scenery lies on the map, a fictional one has nothing to
-    // show, and there it's left to the terrain model once the scenery is placed
-    if (auto const on{stored.on}; on.has_value() && (false == *on || config.north != 0.0 || config.east != 0.0))
+    // //$g of the scenery file first: an origin the editor remembers for a scenery of the same name made elsewhere doesn't move it
+    auto const origin{photo_rules::choose_origin(m_georeference ? std::optional<glm::dvec2>{m_georeference_origin} : std::nullopt, marked_origin, remembered)};
+    config.north = origin.origin.x;
+    config.east = origin.origin.y;
+    m_georeference_differs = origin.differs > photo_rules::origin_tolerance ? origin.differs : 0.0;
+    if (m_georeference_differs > 0.0)
     {
-        m_orthophoto.enabled(*on);
-        m_orthophoto_chosen = true;
-        WriteLog(format("Editor: the orthophoto %s, as the user left it", *on ? "on" : "off"));
+        WriteLog(format("Editor: the orthophoto laid out by //$g of the scenery file, the origin kept before was %.1f m off it", m_georeference_differs));
+        ui()->set_status(format(STR_C("Photo: laid out by //$g of the scenery file; the origin kept before was %.0f m off it"), m_georeference_differs));
     }
+    // on or off as the user left it in this scenery, else as the scenery keeps it; nothing said, off, and the terrain model turns
+    // it on where the scenery lies on the map
+    auto const switched{photo_rules::photo_on(std::as_const(EditorSettings).orthophoto_on(scenery), scenery_on)};
+    m_orthophoto_chosen = switched.chosen;
+    m_orthophoto.enabled(switched.on);
+    WriteLog(format("Editor: the orthophoto %s%s", switched.on ? "on" : "off", false == switched.chosen ? ", nothing chosen in the scenery" : ""));
     m_orthophoto.settings(config);
     m_orthophoto_origin_edit = {config.north, config.east};
     // the area the imagery and the terrain model are downloaded in, none in a scenery which has none
@@ -2620,8 +2632,12 @@ void editor_mode::choose_orthophoto(bool const On)
 {
     m_orthophoto.enabled(On);
     m_orthophoto_chosen = true;
-    EditorSettings.orthophoto().on = On;
-    EditorSettings.save();
+    // the scenery's: the photo of another one, the wizard's turned on, isn't turned off by it
+    if (false == m_orthophoto_scenery.empty())
+    {
+        EditorSettings.orthophoto_on(m_orthophoto_scenery, On);
+        EditorSettings.save();
+    }
 }
 
 void editor_mode::keep_nmt_settings()
@@ -2691,7 +2707,8 @@ void editor_mode::render_orthophoto_ui()
         ImGui::TextDisabled(STR_C("in the scenery file: Y (easting) %.0f m, X (northing) %.0f m"), m_georeference_origin.y, m_georeference_origin.x);
         if (config.north != m_georeference_origin.x || config.east != m_georeference_origin.y)
         {
-            ImGui::SameLine();
+            // //$g goes first when the scenery is opened: an origin typed here is for this session
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("Opened again, the scenery is laid out by //$g of its file"));
             if (ImGui::SmallButton(STR_C("Use it")))
             {
                 m_orthophoto_origin_edit.x = m_georeference_origin.x;

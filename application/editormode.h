@@ -917,7 +917,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the user turned the orthophoto on or off, or the scenery keeps it so: the terrain model made, or the area drawn, leaves it as it
 	// is then, it turns it on only where nobody chose
 	bool m_orthophoto_chosen{false};
-	// the user turns the orthophoto on or off: kept with the editor, for every scenery
+	// the user turns the orthophoto on or off: kept with the editor, for the scenery
 	void choose_orthophoto(bool const On);
 	int m_orthophoto_frame{-10};
 	bool orthophoto_settings_open() const;
@@ -958,6 +958,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_georeference{false};
 	glm::dvec2 m_georeference_origin{0.0}; // northing, easting
 	std::string m_georeference_line;
+	// //$g and the origin remembered or the one of //$o were apart, by that many m; //$g taken. 0: they weren't
+	double m_georeference_differs{0.0};
 	void read_georeference();
 	void draw_orthophoto();
 	void draw_ortho_compass() const;

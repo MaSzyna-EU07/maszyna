@@ -15373,3 +15373,10 @@ msgstr "Szyny##setuplook"
 msgid "Trackbed##setuplook"
 msgstr "Podsypka##setuplook"
 
+# scenery editor: the aerial photo without fuss
+
+msgid "Photo: laid out by //$g of the scenery file; the origin kept before was %.0f m off it"
+msgstr "Zdjęcie: ułożone według //$g pliku scenerii; zapamiętany wcześniej początek układu był o %.0f m dalej"
+
+msgid "Opened again, the scenery is laid out by //$g of its file"
+msgstr "Po ponownym otwarciu sceneria będzie ułożona według //$g swojego pliku"

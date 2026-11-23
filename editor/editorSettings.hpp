@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <optional>
 #include <string>
@@ -21,12 +22,15 @@ public:
 
 	bool load();
 	bool save();
+	// the settings as the file keeps them, read and written
+	void read(std::istream &Stream);
+	void write(std::ostream &Stream) const;
 
 	movement_scheme movement() const { return m_movement; }
 	void movement(movement_scheme scheme) { m_movement = scheme; }
 
-	// geoportal orthophoto layer (editor_orthophoto), how it's shown and whether it's on; the origin is kept per scenery, and the
-	// scenery keeps it too
+	// geoportal orthophoto layer (editor_orthophoto), how it's shown; whether it's on and the origin are kept per scenery, and the
+	// scenery keeps them too
 	struct orthophoto_settings
 	{
 		int radius{2};
@@ -37,13 +41,16 @@ public:
 		bool drape{true};
 		float lift{0.05f};
 		bool in_scene{false};
-		// turned on or off by the user, for every scenery; none chosen yet: as the scenery keeps it, or the terrain model turns it on
-		std::optional<bool> on;
 	};
 	orthophoto_settings &orthophoto() { return m_orthophoto; }
 	// PUWG 1992 northing/easting of the scenery's (0,0,0) point; false when none was stored
 	bool orthophoto_origin(std::string const &Scenery, double &North, double &East) const;
 	void orthophoto_origin(std::string const &Scenery, double North, double East);
+	// the photo turned on or off by the user in the scenery; none: not chosen there yet, as the scenery keeps it
+	std::optional<bool> orthophoto_on(std::string const &Scenery) const;
+	void orthophoto_on(std::string const &Scenery, bool On);
+	// what's kept of the scenery's photo, its choice and its origin, forgotten
+	void orthophoto_forget(std::string const &Scenery);
 	// the WMS layers the user added under the scenery, over the orthophoto, the top one first: the address of the service, the
 	// layers asked of it, its title and terms as its capabilities gave them. Kept with the editor, not with the scenery
 	struct wms_layer
@@ -140,6 +147,7 @@ private:
 	orthophoto_settings m_orthophoto;
 	camera_settings m_camera;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
+	std::map<std::string, bool> m_orthophoto_on;
 	std::vector<wms_layer> m_wms_layers;
 	double m_platform_edge{1.725};
 	double m_signal_offset{2.25};

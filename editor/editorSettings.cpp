@@ -49,6 +49,7 @@ template <typename Type_> void parse(std::string const &Text, Type_ &Out)
 }
 
 const std::string origin_prefix{"ortho_origin@"};
+const std::string on_prefix{"ortho_on@"};
 const std::string offset_prefix{"nmt_offset@"};
 
 // settings are whitespace separated key/value pairs, so the scenery name used in the key can't contain spaces
@@ -107,7 +108,12 @@ bool editorSettings::load()
 	std::ifstream stream(path);
 	if (!stream.is_open())
 		return false;
+	read(stream);
+	return true;
+}
 
+void editorSettings::read(std::istream &stream)
+{
 	std::string key, value;
 	while (stream >> key >> value)
 	{
@@ -129,8 +135,10 @@ bool editorSettings::load()
 			parse(value, m_orthophoto.lift);
 		else if (key == "ortho_in_scene")
 			m_orthophoto.in_scene = (value == "1");
-		else if (key == "ortho_on")
-			m_orthophoto.on = (value == "1");
+		// the photo turned on or off for every scenery, as an older editor kept it, is left behind: it's the scenery's now, and a
+		// global off hid the photo of the sceneries the wizard made with it on
+		else if (key.rfind(on_prefix, 0) == 0)
+			m_orthophoto_on[key] = (value == "1");
 		else if (key == "platform_edge")
 			parse(value, m_platform_edge);
 		else if (key == "signal_offset")
@@ -238,7 +246,6 @@ bool editorSettings::load()
 			m_terrain_model_offsets[key] = {offset, value.substr(separator + 1) == "1"};
 		}
 	}
-	return true;
 }
 
 bool editorSettings::save()
@@ -253,7 +260,12 @@ bool editorSettings::save()
 		ErrorLog("failed to save editor settings");
 		return false;
 	}
+	write(stream);
+	return true;
+}
 
+void editorSettings::write(std::ostream &stream) const
+{
 	stream.imbue(std::locale::classic());
 	stream << "movement_scheme " << scheme_to_string(m_movement) << "\n";
 	stream << "ortho_radius " << m_orthophoto.radius << "\n";
@@ -264,8 +276,8 @@ bool editorSettings::save()
 	stream << "ortho_drape " << (m_orthophoto.drape ? 1 : 0) << "\n";
 	stream << "ortho_lift " << m_orthophoto.lift << "\n";
 	stream << "ortho_in_scene " << (m_orthophoto.in_scene ? 1 : 0) << "\n";
-	if (m_orthophoto.on.has_value())
-		stream << "ortho_on " << (*m_orthophoto.on ? 1 : 0) << "\n";
+	for (auto const &[key, on] : m_orthophoto_on)
+		stream << key << " " << (on ? 1 : 0) << "\n";
 	stream << "platform_edge " << m_platform_edge << "\n";
 	stream << "signal_offset " << m_signal_offset << "\n";
 	stream << "signal_plate_look " << m_signal_plate_look << "\n";
@@ -297,7 +309,25 @@ bool editorSettings::save()
 		stream << origin.first << " " << origin.second.first << ";" << origin.second.second << "\n";
 	for (auto const &offset : m_terrain_model_offsets)
 		stream << offset.first << " " << offset.second.first << ";" << (offset.second.second ? 1 : 0) << "\n";
-	return true;
+}
+
+std::optional<bool> editorSettings::orthophoto_on(std::string const &Scenery) const
+{
+	auto const lookup{m_orthophoto_on.find(scenery_key(on_prefix, Scenery))};
+	if (lookup == m_orthophoto_on.end())
+		return std::nullopt;
+	return lookup->second;
+}
+
+void editorSettings::orthophoto_on(std::string const &Scenery, bool const On)
+{
+	m_orthophoto_on[scenery_key(on_prefix, Scenery)] = On;
+}
+
+void editorSettings::orthophoto_forget(std::string const &Scenery)
+{
+	m_orthophoto_on.erase(scenery_key(on_prefix, Scenery));
+	m_orthophoto_origins.erase(scenery_key(origin_prefix, Scenery));
 }
 
 bool editorSettings::orthophoto_origin(std::string const &Scenery, double &North, double &East) const
