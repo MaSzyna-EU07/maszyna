@@ -15461,3 +15461,12 @@ msgstr "Wskaż miejsce…"
 
 msgid "In Terrain (F5): the middle of the scenery clicked on the map, then its terrain and photos can be loaded"
 msgstr "W dziale Teren (F5): kliknij środek scenerii na mapie, potem możesz wczytać jej teren i zdjęcia"
+
+msgid "Photos"
+msgstr "Zdjęcia"
+
+msgid "The aerial photos of geoportal.gov.pl, the same as under the scenery in the editor, once the map is zoomed in"
+msgstr "Zdjęcia lotnicze z geoportal.gov.pl, te same co pod scenerią w edytorze, po przybliżeniu mapy"
+
+msgid "Zoom in for the photos"
+msgstr "Przybliż, by zobaczyć zdjęcia"

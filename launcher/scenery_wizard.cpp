@@ -267,7 +267,8 @@ void ui::scenerywizard_panel::render_form()
 		wrapped(error_colour, m_status);
 
 	ImGui::Spacing();
-	wrapped_disabled(STR("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
+	// whose the picture of the map is: the photos of GUGiK zoomed in, the base map of OpenStreetMap further out
+	wrapped_disabled(m_map.photos_shown() ? STR("Imagery: GUGiK, geoportal.gov.pl") : STR("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
 }
 
 void ui::scenerywizard_panel::render_place()
