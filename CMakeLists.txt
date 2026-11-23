@@ -364,6 +364,7 @@ set(SOURCES
 "rendering/common/weatherstate.cpp"
 "rendering/common/exposure.cpp"
 "rendering/common/temporalaa.cpp"
+"rendering/common/freecameramotion.cpp"
 "rendering/common/screenreflections.cpp"
 "gl/buffer.cpp"
 "gl/fence.cpp"

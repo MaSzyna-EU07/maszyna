@@ -1584,9 +1584,15 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		render_ray_scene(vp);
 	}
 
+	// the camera with no vehicle of its own (freefly, the editor) blurs the world with its own movement, as a vehicle does with its
+	// (rendering/common/freecameramotion.h)
+	if (vp.main && (Global.pCamera.m_owner != nullptr))
+		m_freecamera.reset();
+	auto const freecameramovement{(vp.main && (Global.pCamera.m_owner == nullptr)) ? m_freecamera.next_frame(Global.pCamera.Pos) : glm::vec3{0.f}};
 	// the motion blur only when something in the view moves (see opengl46_renderer::Render_pass())
 	auto const motionblur{Global.gfx_postfx_motionblur_enabled && targets.motion &&
-	                      (m_vehiclesmoved || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
+	                      (m_vehiclesmoved || (freecameramovement != glm::vec3{0.f}) ||
+	                       ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
 
 	setup_matrices();
 	m_renderpass.draw_stats = {};
@@ -1601,6 +1607,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		auto const *vehicle = Global.pCamera.m_owner;
 		glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 		future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
+	}
+	else if (freecameramovement != glm::vec3{0.f})
+	{
+		// with the temporal anti-aliasing the velocities to the last frame hold the movement of the camera already
+		glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
+		future = glm::translate(mv, -freecameramovement) * glm::inverse(mv);
 	}
 
 	// the light clusters of the viewport (the buffers of the grid are taken by each viewport in turn), and the lights of the pass

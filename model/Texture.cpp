@@ -686,8 +686,6 @@ void opengl_texture::upload_from_thread(size_t width, size_t height, const uint8
 	set_filtering();
 	glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap_mode_s);
 	glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap_mode_t);
-	if (!glGenerateMipmap)
-		glTexParameteri(target, GL_GENERATE_MIPMAP, GL_TRUE);
 	glTexImage2D(target, 0, GL_SRGB8_ALPHA8, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, raw);
 	if (glGenerateMipmap)
 		glGenerateMipmap(target);
