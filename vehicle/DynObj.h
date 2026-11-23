@@ -201,6 +201,7 @@ class TDynamicObject { // klasa pojazdu
 
     friend opengl_renderer;
     friend opengl33_renderer;
+    friend class vehicle_table;
 
 public:
     static bool bDynamicRemove; // moved from ground
@@ -795,6 +796,9 @@ private:
     static constexpr std::size_t off_track_triangles { 400000 };
     bool m_offtrackplaced { false }; // placed off the track: placed on it again once it's back on the rails
     std::array<derailment::stretch, 2> m_pulledoff; // the distance the coupling of an end pulled the vehicle coupled there over the climbing limit
+    derailment::stretch m_struck; // on the rails: the distance a body off the track pushed it sideways over the climbing limit
+    // the model, the axes and the coupling points placed by the motion off the track
+    void place_off_track();
 public:
     void RenderSounds();
     // plays the sounds of the mirrors on the Side, of the occupied cab, starting the Event
@@ -1013,8 +1017,19 @@ private:
     // the air exchange through the brake and main reservoir hoses of the vehicles which stepped their physics, after all of them did
     void
         update_brake_pipes( double const Deltatime );
+    // physics.derailment new: the bodies of the vehicles off the track and those near them run into each other instead
+    // of into one another: the impulses of the hits, the bodies moved apart, a vehicle on the rails pushed off them;
+    // what the bodies overlap by goes to the log every second
+    void
+        update_off_track_contacts( double const Deltatime );
 
     double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
+    // the most the bodies overlapped by, of the vehicles of update_off_track_contacts(), since it was logged last [m], and
+    // which ones; till the next line in the log [s]; once all of them came to rest it is logged no more
+    double m_overlapmost { 0.0 };
+    std::string m_overlappair;
+    double m_overlapdue { 1.0 };
+    bool m_overlaplogged { false };
     std::vector<TMoverParameters *> m_brakepipes; // the vehicles of update_brake_pipes(), kept for the memory
 };
 

@@ -42,6 +42,11 @@
       "vehicles": "{{vehicle}}_off,{{vehicle}}_off_w1,{{vehicle}}_off_w2,{{vehicle}}_off_w3",
       "min_bend": 8,
       "min_folds": 2
+    },
+    {
+      "type": "no_overlap",
+      "max_transient": 0.2,
+      "max_at_rest": 0.05
     }
   ],
   "track_events": {

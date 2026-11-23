@@ -26,6 +26,11 @@
       "min_offset": 40,
       "min_distance": 150,
       "max_distance": 230
+    },
+    {
+      "type": "no_overlap",
+      "max_transient": 0.2,
+      "max_at_rest": 0.05
     }
   ]
 }

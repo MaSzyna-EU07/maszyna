@@ -813,3 +813,261 @@ TEST_CASE("derail motion: the scatter") {
 		}
 	}
 }
+
+// ---- the bodies running into each other
+
+namespace {
+
+// a body off the track and the speed its vehicle goes with along its heading, as TMoverParameters keeps it
+struct slider {
+	dm::body body;
+	double speed{0.0};
+};
+
+dm::footprint print_of(dm::body const &Body) {
+	return dm::footprint_of(Body.current(), Body.shape().length, Body.shape().width, Body.shape().height);
+}
+
+dm::contact_body contact_of(dm::body const &Body) {
+	dm::contact_body result;
+	result.mass = Body.shape().mass;
+	result.base = Body.base();
+	result.velocity = Body.velocity();
+	result.yaw_rate = Body.yaw_rate();
+	result.gyration = Body.gyration();
+	return result;
+}
+
+// the kinetic energy of the body per its motion along and about the vertical [J]
+double energy_of(dm::contact_body const &Body) {
+	return 0.5 * Body.mass * (glm::dot(Body.velocity, Body.velocity) + Body.gyration * Body.yaw_rate * Body.yaw_rate);
+}
+
+// the hit of two bodies as vehicle_table::update_off_track_contacts() takes it: the impulse, the kick of each, the two
+// moved apart by the overlap; the depth of it [m]
+double touch(slider &First, slider &Second) {
+	auto const hit{dm::collide(print_of(First.body), print_of(Second.body))};
+	if (false == hit.has_value()) {
+		return 0.0;
+	}
+	auto const first{contact_of(First.body)};
+	auto const second{contact_of(Second.body)};
+	auto const impulse{dm::contact_impulse(*hit, first, second)};
+	auto const [velocity, yawrate]{dm::impulse_change(first, -impulse, hit->point)};
+	auto const [othervelocity, otheryawrate]{dm::impulse_change(second, impulse, hit->point)};
+	if (glm::length(impulse) > 0.0) {
+		First.body.kick(velocity, yawrate);
+		First.speed = First.body.speed();
+		Second.body.kick(othervelocity, otheryawrate);
+		Second.speed = Second.body.speed();
+	}
+	auto const correction{dm::contact_correction * std::max(0.0, hit->depth - dm::contact_slop)};
+	First.body.nudge(-hit->normal * (0.5 * correction));
+	Second.body.nudge(hit->normal * (0.5 * correction));
+	return hit->depth;
+}
+
+void slide_on(slider &Item, double const Dt) {
+	auto const friction{dm::gravity * Item.body.friction()};
+	auto next{Item.speed};
+	if (std::abs(next) <= friction * Dt) {
+		next = 0.0;
+	}
+	else {
+		next -= (next > 0.0 ? 1.0 : -1.0) * friction * Dt;
+	}
+	auto const reversals{Item.body.reversals()};
+	Item.body.step(Dt, 0.5 * (Item.speed + next) * Dt, next, ballast);
+	Item.speed = (Item.body.reversals() - reversals) % 2 != 0 ? -next : next;
+}
+
+struct hit_outcome {
+	double most{0.0}; // the deepest the two went into each other [m]
+	double resting{0.0}; // at rest
+	double furthest{0.0}; // the furthest the first one got along +z [m]
+	glm::dvec3 first{0.0}; // where the bodies came to rest
+	glm::dvec3 second{0.0};
+	double second_yaw{0.0};
+};
+
+// a coach upright at Speed along +z into another one standing Distance ahead of it, turned by the Angle, offset
+// Across; the step Dt
+hit_outcome run_into(double const Speed, double const Angle, double const Across = 0.0, double const Dt = 0.01, double const Distance = 40.0) {
+	slider first;
+	first.body.begin(leaving(Speed, dm::cause::end_of_track), coach(), ballast);
+	first.speed = Speed;
+	slider second;
+	auto standing{leaving(0.0, dm::cause::end_of_track)};
+	standing.position = glm::dvec3{Across, 0.0, Distance};
+	standing.front = glm::dvec3{std::sin(Angle), 0.0, std::cos(Angle)};
+	second.body.begin(standing, coach(), ballast);
+	hit_outcome result;
+	for (double time = 0.0; time < 30.0; time += Dt) {
+		result.most = std::max(result.most, touch(first, second));
+		slide_on(first, Dt);
+		slide_on(second, Dt);
+		result.furthest = std::max(result.furthest, first.body.base().z);
+		if (first.body.at_rest() && second.body.at_rest()) {
+			break;
+		}
+	}
+	result.resting = touch(first, second);
+	result.first = first.body.base();
+	result.second = second.body.base();
+	result.second_yaw = second.body.yaw();
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("derail motion: the footprint of a body and two bodies in each other") {
+	dm::pose upright;
+	auto const print{dm::footprint_of(upright, 24.5, 2.8, 4.0)};
+	CHECK(print.half_length == doctest::Approx(12.25 - dm::buffer_length));
+	CHECK(print.half_width == doctest::Approx(1.4));
+	CHECK(print.low == doctest::Approx(0.0));
+	CHECK(print.high == doctest::Approx(4.0));
+	// on its side to the left: as wide on the ground as it is high, all of it to the left, as low as it is wide
+	dm::pose lying;
+	lying.left = glm::dvec3{0.0, -1.0, 0.0};
+	lying.up = glm::dvec3{1.0, 0.0, 0.0};
+	lying.position = glm::dvec3{0.0, 1.4, 0.0};
+	auto const side{dm::footprint_of(lying, 24.5, 2.8, 4.0)};
+	CHECK(side.half_width == doctest::Approx(2.0));
+	CHECK(side.centre.x == doctest::Approx(2.0));
+	CHECK(side.high - side.low == doctest::Approx(2.8));
+	// side by side 2.5 m apart: 0.3 m in each other, out of the first to the left (+x)
+	auto beside{print};
+	beside.centre.x = 2.5;
+	auto const hit{dm::collide(print, beside)};
+	REQUIRE(hit.has_value());
+	CHECK(hit->depth == doctest::Approx(0.3));
+	CHECK(hit->normal.x == doctest::Approx(1.0));
+	// apart, or one over the other: no contact
+	beside.centre.x = 3.0;
+	CHECK_FALSE(dm::collide(print, beside).has_value());
+	beside.centre.x = 2.5;
+	beside.low = 3.9;
+	beside.high = 7.0;
+	CHECK_FALSE(dm::collide(print, beside).has_value());
+	// the lying one beside the upright one, low as it is: they hit
+	CHECK(dm::collide(print, side).has_value());
+}
+
+TEST_CASE("derail motion: an impulse never adds energy") {
+	// two bodies meeting at all kinds of points and angles, turning or not, one of them on the rails or not
+	auto worst{-1e9};
+	for (int index = 0; index < 400; ++index) {
+		auto const draw = [index](int Which) { return std::sin(index * 12.9898 + Which * 78.233) * 0.5 + 0.5; };
+		dm::contact hit;
+		auto const angle{draw(1) * 2.0 * std::numbers::pi};
+		hit.normal = glm::dvec3{std::cos(angle), 0.0, std::sin(angle)};
+		hit.point = glm::dvec3{draw(2) * 20.0 - 10.0, 0.0, draw(3) * 6.0 - 3.0};
+		hit.depth = 0.1;
+		dm::contact_body first{40e3, glm::dvec3{0.0}, glm::dvec3{draw(4) * 40.0 - 20.0, 0.0, draw(5) * 40.0 - 20.0}, draw(6) - 0.5, 50.0};
+		dm::contact_body second{80e3, glm::dvec3{draw(7) * 6.0, 0.0, draw(8) * 6.0}, glm::dvec3{draw(9) * 10.0 - 5.0, 0.0, 0.0}, draw(10) - 0.5, 22.0};
+		if (index % 3 == 0) {
+			second.guided = true;
+			second.guide = glm::dvec3{1.0, 0.0, 0.0};
+			second.yaw_rate = 0.0;
+		}
+		auto const before{energy_of(first) + energy_of(second)};
+		auto const impulse{dm::contact_impulse(hit, first, second)};
+		auto const [velocity, yawrate]{dm::impulse_change(first, -impulse, hit.point)};
+		auto const [othervelocity, otheryawrate]{dm::impulse_change(second, impulse, hit.point)};
+		first.velocity += velocity;
+		first.yaw_rate += yawrate;
+		second.velocity += othervelocity;
+		second.yaw_rate += otheryawrate;
+		auto const after{energy_of(first) + energy_of(second)};
+		worst = std::max(worst, after - before);
+		CHECK(after <= before * (1.0 + 1e-9) + 1e-6);
+	}
+	MESSAGE(std::format("the most energy an impulse added: {:.3g} J", worst));
+}
+
+TEST_CASE("derail motion: a body running into another one doesn't go through it") {
+	SUBCASE("head on into the side of one standing across: it stops at it, pushes it, never through") {
+		auto const result{run_into(20.0, 0.5 * std::numbers::pi)};
+		MESSAGE(std::format("at 20 m/s into the side of a coach: {:.2f} m in at most, {:.3f} m at rest, its front got to z {:.1f} (the side of the other at {:.1f}), the other pushed to z {:.1f}", result.most, result.resting, result.furthest + 0.5 * coach().length, 40.0 - 0.5 * coach().width, result.second.z));
+		CHECK(result.most < 0.6);
+		CHECK(result.resting < 0.05);
+		// the first one stays behind the other one: its middle never gets past the other's
+		CHECK(result.furthest < result.second.z);
+		// the other one is pushed on
+		CHECK(result.second.z > 40.5);
+	}
+	SUBCASE("glancing off the end of one standing in line, offset: it goes past it, pushed aside, not into it") {
+		auto const result{run_into(15.0, 0.0, 2.0)};
+		MESSAGE(std::format("at 15 m/s, 2 m aside, into the end of a coach: {:.2f} m in at most, {:.3f} m at rest; at rest {:.1f} m apart across", result.most, result.resting, std::abs(result.second.x - result.first.x)));
+		CHECK(result.resting < 0.05);
+		CHECK(result.most < 0.6);
+	}
+	SUBCASE("the same with steps of 0.01, 0.03 and 0.05 s") {
+		auto const fine{run_into(20.0, 0.5 * std::numbers::pi, 0.0, 0.01)};
+		for (auto const dt : {0.03, 0.05}) {
+			CAPTURE(dt);
+			auto const coarse{run_into(20.0, 0.5 * std::numbers::pi, 0.0, dt)};
+			CHECK(coarse.second.z == doctest::Approx(fine.second.z).epsilon(0.03));
+			CHECK(coarse.first.z == doctest::Approx(fine.first.z).epsilon(0.03));
+			CHECK(coarse.resting < 0.05);
+		}
+	}
+}
+
+TEST_CASE("derail motion: two bodies folded past a right angle stay apart") {
+	// a coach turned 100 degrees off the next one, their ends together at the joint (in each other by a metre at the
+	// start), sliding on: they push apart within half a second, at rest not in each other
+	slider first;
+	auto start{leaving(10.0, dm::cause::end_of_track)};
+	first.body.begin(start, coach(), ballast);
+	first.speed = 10.0;
+	slider second;
+	auto const angle{100.0 * degree};
+	auto other{leaving(5.0, dm::cause::end_of_track)};
+	// its front end at the rear end of the first one, folded to the left
+	glm::dvec3 const front{std::sin(angle), 0.0, std::cos(angle)};
+	other.front = front;
+	other.position = glm::dvec3{0.0, 0.0, -0.5 * coach().length} - front * (0.5 * coach().length - 1.0);
+	second.body.begin(other, coach(), ballast);
+	second.speed = 5.0;
+	auto most{0.0};
+	for (double time = 0.0; time < 20.0; time += 0.01) {
+		auto const depth{touch(first, second)};
+		if (time > 0.5) {
+			most = std::max(most, depth);
+		}
+		slide_on(first, 0.01);
+		slide_on(second, 0.01);
+	}
+	auto const resting{touch(first, second)};
+	MESSAGE(std::format("folded 100 degrees: {:.2f} m in at most after half a second, {:.3f} m at rest", most, resting));
+	CHECK(resting < 0.05);
+	CHECK(most < 0.1);
+}
+
+TEST_CASE("derail motion: a body hitting one on the rails from the side") {
+	// a coach off the track at 10 m/s into the side of one standing on the rails (along x): the one on the rails takes
+	// none of it along them, the first stops against it (bounces off), and the push across the rails is over what
+	// its wheels hold
+	dm::contact hit;
+	hit.normal = glm::dvec3{0.0, 0.0, 1.0};
+	hit.point = glm::dvec3{0.0, 0.0, 0.0};
+	hit.depth = 0.05;
+	dm::contact_body first{40e3, glm::dvec3{0.0, 0.0, -10.0}, glm::dvec3{0.0, 0.0, 10.0}, 0.0, 50.0};
+	dm::contact_body second{40e3, glm::dvec3{0.0, 0.0, 1.4}, glm::dvec3{0.0}, 0.0, 50.0, true, glm::dvec3{1.0, 0.0, 0.0}};
+	auto const impulse{dm::contact_impulse(hit, first, second)};
+	auto const [velocity, yawrate]{dm::impulse_change(first, -impulse, hit.point)};
+	auto const [othervelocity, otheryawrate]{dm::impulse_change(second, impulse, hit.point)};
+	CHECK(glm::length(othervelocity) == doctest::Approx(0.0));
+	CHECK(first.velocity.z + velocity.z == doctest::Approx(-10.0 * dm::contact_restitution));
+	// the push across the rails over a frame of 0.05 s against the wheels of a coach of 40 t on 4 axles
+	auto const ratio{dm::pull_ratio(std::abs(impulse.z) / 0.05, 0.5 * std::numbers::pi, 40e3, 4)};
+	MESSAGE(std::format("the hit across the rails at 10 m/s: Y/Q {:.1f}", ratio));
+	CHECK(ratio > 3.0 * dr::climbing_limit);
+	// a hit at an angle along the rails pushes it along them
+	hit.normal = glm::normalize(glm::dvec3{1.0, 0.0, 1.0});
+	first.velocity = glm::dvec3{10.0, 0.0, 10.0};
+	auto const slanted{dm::contact_impulse(hit, first, second)};
+	CHECK(dm::impulse_change(second, slanted, hit.point).first.x > 0.5);
+}

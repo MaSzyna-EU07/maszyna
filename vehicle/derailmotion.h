@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -146,6 +147,62 @@ meeting meet(end_point const &First, end_point const &Second);
 // the force on the first end of the meeting, Compression [N] pushing it (negative: the coupling pulling it): through
 // the inner buffer of the bend, off the middle of the beam as far as the buffers meet and hold
 end_force force_on(meeting const &Meeting, double Compression);
+
+// ---- the bodies of two vehicles running into each other, one of them off the track at least
+
+// how far the buffers and the coupling stand out of the body at each end [m]: the body box is shorter by them, so two
+// ends meeting through their buffers (meet(), force_on()) don't touch as bodies until the buffers are pressed in by that
+inline constexpr double buffer_length{0.6};
+// the least overlap in height [m] two bodies run into each other with: lower, one goes over the other
+inline constexpr double height_overlap{0.2};
+// the bodies part after a hit with this share of the speed they met at
+inline constexpr double contact_restitution{0.2};
+// the friction of the side of one body sliding along the other
+inline constexpr double contact_friction{0.3};
+// the overlap left after a hit, taken out of it by moving the bodies apart: what is over the slop [m], this share of it
+// a step
+inline constexpr double contact_slop{0.02};
+inline constexpr double contact_correction{0.8};
+
+// where a body stands on the ground: the rectangle under its box (the box of the body, the buffers left out, rolled and
+// pitched as it lies, seen from above along its level axis), and the height it reaches from and to
+struct footprint {
+	glm::dvec3 centre{0.0}; // of the rectangle, level
+	glm::dvec3 axis{0.0, 0.0, 1.0}; // along the body, level
+	double half_length{10.0};
+	double half_width{1.5};
+	double low{0.0}; // [m] the lowest and the highest point of the box
+	double high{4.0};
+};
+struct pose;
+// the footprint of the body of Length (over the buffers), Width and Height (above the rails) in the Pose
+footprint footprint_of(pose const &Pose, double Length, double Width, double Height);
+// two bodies in each other: how deep (the least the rectangles overlap across any of their sides), the way out of the
+// first into the second (level), and the point they touch at
+struct contact {
+	double depth{0.0};
+	glm::dvec3 normal{1.0, 0.0, 0.0};
+	glm::dvec3 point{0.0};
+};
+std::optional<contact> collide(footprint const &First, footprint const &Second);
+// a body in a contact, for the impulse: its mass, the velocity of its middle (base) and how fast it turns; on the rails
+// it moves only along the track (Guided: along the Guide), not turning
+struct contact_body {
+	double mass{0.0}; // [kg], none: it doesn't move
+	glm::dvec3 base{0.0};
+	glm::dvec3 velocity{0.0};
+	double yaw_rate{0.0};
+	double gyration{30.0}; // the square of its radius of gyration about the vertical [m2]
+	bool guided{false};
+	glm::dvec3 guide{0.0, 0.0, 1.0};
+};
+// the velocity of the point of the body [m/s]
+glm::dvec3 velocity_at(contact_body const &Body, glm::dvec3 const &Point);
+// the impulse [N s] on the second body of the contact (the first gets the opposite one): it stops the two closing in on
+// each other at the point, parting them with the restitution, and the friction holds them sliding along each other
+glm::dvec3 contact_impulse(contact const &Contact, contact_body const &First, contact_body const &Second);
+// the change of the velocity [m/s] and of the yaw rate [rad/s] of the body by the impulse at the point
+std::pair<glm::dvec3, double> impulse_change(contact_body const &Body, glm::dvec3 const &Impulse, glm::dvec3 const &Point);
 
 // the distance [m] a vehicle slides from the speed [m/s] with the friction, on the grade (rise per metre along the
 // way); none when the grade doesn't let it stop
@@ -280,6 +337,16 @@ public:
 	pose const &current() const { return m_pose; }
 	// the middle of the vehicle on the ground, under it as it stands (not moved over to the side it tipped to)
 	glm::dvec3 const &base() const { return m_position; }
+	// the speed along the heading [m/s], and the velocity of the middle, level
+	double speed() const { return m_speed; }
+	glm::dvec3 velocity() const;
+	// the square of the radius of gyration about the vertical [m2]
+	double gyration() const { return m_yawgyration; }
+	// hit by another body: the velocity and the yaw rate change by these, the heading becomes the way it goes then
+	// (turned about where it goes rear first); the speed() after it is the one its vehicle goes on with
+	void kick(glm::dvec3 const &Velocity, double YawRate);
+	// moved over by the offset (level), out of another body it is in
+	void nudge(glm::dvec3 const &Offset);
 	// the friction along the heading now, of its weight: of the body sliding along itself, more the more askew it goes,
 	// up to the friction across it going sideways
 	double friction() const;

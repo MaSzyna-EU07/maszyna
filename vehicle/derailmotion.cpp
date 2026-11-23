@@ -186,6 +186,177 @@ end_force force_on(meeting const &Meeting, double const Compression) {
 	return result;
 }
 
+footprint footprint_of(pose const &Pose, double const Length, double const Width, double const Height) {
+	footprint result;
+	result.axis = level(Pose.front);
+	auto const left{left_of(result.axis)};
+	result.half_length = std::max(0.5 * Length - buffer_length, 0.5) * std::max(std::hypot(Pose.front.x, Pose.front.z), 0.1);
+	// the corners of its cross section, from the rails to the roof, as it is rolled
+	auto low{std::numeric_limits<double>::max()};
+	auto high{std::numeric_limits<double>::lowest()};
+	auto mostleft{std::numeric_limits<double>::lowest()};
+	auto mostright{std::numeric_limits<double>::max()};
+	for (auto const across : {-0.5 * Width, 0.5 * Width}) {
+		for (auto const up : {0.0, Height}) {
+			auto const corner{Pose.position + Pose.left * across + Pose.up * up};
+			auto const aside{glm::dot(corner - Pose.position, left)};
+			mostleft = std::max(mostleft, aside);
+			mostright = std::min(mostright, aside);
+			low = std::min(low, corner.y);
+			high = std::max(high, corner.y);
+		}
+	}
+	result.half_width = 0.5 * (mostleft - mostright);
+	result.centre = glm::dvec3{Pose.position.x, 0.0, Pose.position.z} + left * (0.5 * (mostleft + mostright));
+	// pitched, the ends rise and drop by the slope over half its length
+	auto const rise{std::abs(Pose.front.y) / std::max(std::hypot(Pose.front.x, Pose.front.z), 0.1) * result.half_length};
+	result.low = low - rise;
+	result.high = high + rise;
+	return result;
+}
+
+namespace {
+
+// the corners of the footprint, in turn round it
+std::array<glm::dvec3, 4> corners_of(footprint const &Print) {
+	auto const along{Print.axis * Print.half_length};
+	auto const across{left_of(Print.axis) * Print.half_width};
+	return {Print.centre + along + across, Print.centre + along - across, Print.centre - along - across, Print.centre - along + across};
+}
+
+// whether the point is inside the footprint (in the plan)
+bool inside(footprint const &Print, glm::dvec3 const &Point) {
+	glm::dvec3 const offset{Point.x - Print.centre.x, 0.0, Point.z - Print.centre.z};
+	return std::abs(glm::dot(offset, Print.axis)) <= Print.half_length && std::abs(glm::dot(offset, left_of(Print.axis))) <= Print.half_width;
+}
+
+double cross_up(glm::dvec3 const &Arm, glm::dvec3 const &Force) {
+	// about the vertical, to the left positive
+	return Arm.z * Force.x - Arm.x * Force.z;
+}
+
+// the inverse of the mass the body moves with at the point the way of the direction
+double inverse_mass(contact_body const &Body, glm::dvec3 const &Point, glm::dvec3 const &Direction) {
+	if (Body.mass <= 0.0) {
+		return 0.0;
+	}
+	if (Body.guided) {
+		auto const along{glm::dot(Direction, Body.guide)};
+		return along * along / Body.mass;
+	}
+	glm::dvec3 const arm{Point.x - Body.base.x, 0.0, Point.z - Body.base.z};
+	auto const turning{cross_up(arm, Direction)};
+	return (1.0 + turning * turning / std::max(Body.gyration, 1e-3)) / Body.mass;
+}
+
+} // namespace
+
+std::optional<contact> collide(footprint const &First, footprint const &Second) {
+	if (std::min(First.high, Second.high) - std::max(First.low, Second.low) < height_overlap) {
+		// one goes over the other
+		return std::nullopt;
+	}
+	// the separating axes: the sides of both rectangles; the one they overlap least across is the way out
+	auto const first{corners_of(First)};
+	auto const second{corners_of(Second)};
+	glm::dvec3 const apart{Second.centre.x - First.centre.x, 0.0, Second.centre.z - First.centre.z};
+	contact result;
+	result.depth = std::numeric_limits<double>::max();
+	for (auto const &axis : {First.axis, left_of(First.axis), Second.axis, left_of(Second.axis)}) {
+		auto spread = [&axis](std::array<glm::dvec3, 4> const &Corners) {
+			auto low{std::numeric_limits<double>::max()};
+			auto high{std::numeric_limits<double>::lowest()};
+			for (auto const &corner : Corners) {
+				auto const along{glm::dot(corner, axis)};
+				low = std::min(low, along);
+				high = std::max(high, along);
+			}
+			return std::pair{low, high};
+		};
+		auto const [low1, high1]{spread(first)};
+		auto const [low2, high2]{spread(second)};
+		auto const overlap{std::min(high1, high2) - std::max(low1, low2)};
+		if (overlap <= 0.0) {
+			return std::nullopt;
+		}
+		if (overlap < result.depth) {
+			result.depth = overlap;
+			result.normal = glm::dot(apart, axis) >= 0.0 ? axis : -axis;
+		}
+	}
+	// the point: the middle of the corners of each inside the other, or of where the overlap is
+	glm::dvec3 sum{0.0};
+	auto count{0};
+	for (auto const &corner : first) {
+		if (inside(Second, corner)) {
+			sum += corner;
+			++count;
+		}
+	}
+	for (auto const &corner : second) {
+		if (inside(First, corner)) {
+			sum += corner;
+			++count;
+		}
+	}
+	if (count > 0) {
+		result.point = sum / static_cast<double>(count);
+	}
+	else {
+		// crossed without a corner inside the other (two long sides across each other): between the middles
+		result.point = 0.5 * (First.centre + Second.centre);
+	}
+	result.point.y = 0.0;
+	return result;
+}
+
+glm::dvec3 velocity_at(contact_body const &Body, glm::dvec3 const &Point) {
+	if (Body.guided) {
+		return Body.velocity;
+	}
+	// turning about the vertical at the yaw rate: up x arm
+	glm::dvec3 const arm{Point.x - Body.base.x, 0.0, Point.z - Body.base.z};
+	return Body.velocity + Body.yaw_rate * glm::dvec3{arm.z, 0.0, -arm.x};
+}
+
+glm::dvec3 contact_impulse(contact const &Contact, contact_body const &First, contact_body const &Second) {
+	auto const &normal{Contact.normal};
+	auto const relative{velocity_at(Second, Contact.point) - velocity_at(First, Contact.point)};
+	auto const closing{glm::dot(relative, normal)};
+	if (closing >= 0.0) {
+		// parting already
+		return glm::dvec3{0.0};
+	}
+	auto const inverse{inverse_mass(First, Contact.point, normal) + inverse_mass(Second, Contact.point, normal)};
+	if (inverse <= 0.0) {
+		return glm::dvec3{0.0};
+	}
+	auto const push{-(1.0 + contact_restitution) * closing / inverse};
+	glm::dvec3 result{normal * push};
+	// the friction of the sides sliding along each other, no more than stops the sliding
+	auto const sliding{relative - normal * closing};
+	auto const slide{glm::length(sliding)};
+	if (slide > 1e-6) {
+		auto const along{sliding / slide};
+		auto const alonginverse{inverse_mass(First, Contact.point, along) + inverse_mass(Second, Contact.point, along)};
+		if (alonginverse > 0.0) {
+			result -= along * std::min(contact_friction * push, slide / alonginverse);
+		}
+	}
+	return result;
+}
+
+std::pair<glm::dvec3, double> impulse_change(contact_body const &Body, glm::dvec3 const &Impulse, glm::dvec3 const &Point) {
+	if (Body.mass <= 0.0) {
+		return {glm::dvec3{0.0}, 0.0};
+	}
+	if (Body.guided) {
+		return {Body.guide * (glm::dot(Impulse, Body.guide) / Body.mass), 0.0};
+	}
+	glm::dvec3 const arm{Point.x - Body.base.x, 0.0, Point.z - Body.base.z};
+	return {glm::dvec3{Impulse.x, 0.0, Impulse.z} / Body.mass, cross_up(arm, Impulse) / (Body.mass * std::max(Body.gyration, 1e-3))};
+}
+
 std::optional<double> stopping_distance(double const Speed, double const Friction, double const Grade) {
 	auto const angle{std::atan(Grade)};
 	auto const deceleration{gravity * (Friction * std::cos(angle) + std::sin(angle))};
@@ -538,6 +709,40 @@ double body::friction() const {
 		result += 0.5 * (m_scatter.dig_in_friction - 1.0) * friction_along();
 	}
 	return result;
+}
+
+glm::dvec3 body::velocity() const {
+	return m_front * m_speed + left_of_heading() * m_lateral;
+}
+
+void body::kick(glm::dvec3 const &Velocity, double const YawRate) {
+	if (false == m_active) {
+		return;
+	}
+	auto const moving{m_front * m_speed + glm::dvec3{Velocity.x, 0.0, Velocity.z}};
+	auto const speed{glm::length(moving)};
+	if (speed > 1e-6) {
+		m_front = moving / speed;
+		m_speed = speed;
+		if (glm::dot(m_front, m_axis) < 0.0) {
+			// it goes rear first
+			m_front = -m_front;
+			m_speed = -m_speed;
+			++m_reversals;
+		}
+	}
+	else {
+		m_speed = 0.0;
+	}
+	m_yawrate = std::clamp(m_yawrate + YawRate, -most_yaw_rate, most_yaw_rate);
+}
+
+void body::nudge(glm::dvec3 const &Offset) {
+	if (false == m_active) {
+		return;
+	}
+	m_position += glm::dvec3{Offset.x, 0.0, Offset.z};
+	place();
 }
 
 double body::yaw() const {

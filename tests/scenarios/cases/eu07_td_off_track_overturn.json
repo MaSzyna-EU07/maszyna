@@ -36,6 +36,11 @@
       "min_distance": 250,
       "max_distance": 420,
       "lying": true
+    },
+    {
+      "type": "no_overlap",
+      "max_transient": 0.2,
+      "max_at_rest": 0.05
     }
   ]
 }

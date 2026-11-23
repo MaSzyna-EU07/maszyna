@@ -453,6 +453,11 @@ the row instead, logged by builds from this branch on.
   black box, either way along) are `min_bend` degrees or more; with `alternate` neighbouring bends of that size turn
   opposite ways (a zigzag), with `both_sides` some of the vehicles rest on either side of the track. A vehicle that
   stayed on the rails has no bend with its neighbours.
+- `no_overlap` `max_transient`, `max_at_rest` (a check on the log): with `physics.derailment new` the bodies of the
+  vehicles off the track and of those near them don't go into each other. The simulator logs every second the most
+  any two of them overlapped by (`derailment: the bodies overlap by up to ... m (which two, how they are related)
+  over the last second, ... m now`), and once more when all vehicles off the track are at rest (`, all at rest`); the
+  most on the way is at most `max_transient` m, the overlap at rest at most `max_at_rest` m.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the

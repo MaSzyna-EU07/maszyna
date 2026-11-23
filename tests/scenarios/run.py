@@ -641,9 +641,35 @@ def check_log_lacks(log, pattern):
 
 
 # checks on the text of the run's log.txt rather than on the physicslog rows
+OVERLAP_LINE = re.compile(r"derailment: the bodies overlap by up to ([\d.]+) m(?: \((.*?)\))? over the last second, "
+                          r"([\d.]+) m now(, all at rest)?")
+
+
+def check_no_overlap(log, max_transient, max_at_rest):
+    """physics.derailment new: the bodies of the vehicles off the track (and of those near them) don't go into each
+    other: the log has the most they overlapped by every second; at most `max_transient` m at any time, and at most
+    `max_at_rest` m once all of them came to rest."""
+    lines = [m for m in (OVERLAP_LINE.search(line) for line in log.splitlines()) if m]
+    if not lines:
+        return False, "no line of the overlap of the bodies in the log"
+    worst = max(lines, key=lambda m: float(m.group(1)))
+    rest = next((m for m in reversed(lines) if m.group(4)), None)
+    detail = f"most {float(worst.group(1)):.2f} m" + (f" ({worst.group(2)})" if worst.group(2) else "")
+    if rest is None:
+        return False, detail + ", the vehicles never all came to rest"
+    detail += f", {float(rest.group(3)):.2f} m at rest"
+    failed = []
+    if float(worst.group(1)) > max_transient:
+        failed.append(f"over {max_transient} m on the way")
+    if float(rest.group(3)) > max_at_rest:
+        failed.append(f"over {max_at_rest} m at rest")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
 LOG_CHECKS = {
     "log_contains": check_log_contains,
     "log_lacks": check_log_lacks,
+    "no_overlap": check_no_overlap,
 }
 
 

@@ -46,6 +46,11 @@
       "type": "consist_folds",
       "vehicles": "{{vehicle}},{{vehicle}}_w1",
       "min_bend": 15
+    },
+    {
+      "type": "no_overlap",
+      "max_transient": 0.2,
+      "max_at_rest": 0.05
     }
   ]
 }

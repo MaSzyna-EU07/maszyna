@@ -31,6 +31,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <format>
 #include <iterator>
+#include <numbers>
 #include <optional>
 #include <string_view>
 #include <unordered_set>
@@ -3257,16 +3258,7 @@ void TDynamicObject::move_off_track( double const Distance ) {
         move_axles( std::exchange( m_offtrackaxles, 0.0 ) );
     }
 
-    vPosition = pose.position;
-    vFront = pose.front;
-    vLeft = pose.left;
-    vUp = pose.up;
-    modelRot.z = std::atan2( -vFront.x, vFront.z );
-    mMatrix = glm::inverse( BasisChange( vLeft, vUp, vFront ) );
-    auto const half { 0.5 * MoverParameters->Dim.L * vFront };
-    vCoulpler[ end::front ] = vPosition + half;
-    vCoulpler[ end::rear ] = vPosition - half;
-    m_offtrackplaced = true;
+    place_off_track();
 
     pull_neighbours( Distance );
 
@@ -3277,6 +3269,21 @@ void TDynamicObject::move_off_track( double const Distance ) {
         m_offtrackslowdue = 1.0;
         ErrorLog( std::format( "derailment: warning: moving {} off the track took {:.0f} ms in a frame of {:.3f} s", MoverParameters->Name, took * 1000.0, time ) );
     }
+}
+
+void TDynamicObject::place_off_track() {
+
+    auto const &pose { MoverParameters->OffTrack.current() };
+    vPosition = pose.position;
+    vFront = pose.front;
+    vLeft = pose.left;
+    vUp = pose.up;
+    modelRot.z = std::atan2( -vFront.x, vFront.z );
+    mMatrix = glm::inverse( BasisChange( vLeft, vUp, vFront ) );
+    auto const half { 0.5 * MoverParameters->Dim.L * vFront };
+    vCoulpler[ end::front ] = vPosition + half;
+    vCoulpler[ end::rear ] = vPosition - half;
+    m_offtrackplaced = true;
 }
 
 void TDynamicObject::pull_neighbours( double const Distance ) {
@@ -9651,6 +9658,8 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
 
     auto const totaltime { Deltatime * Iterationcount }; // całkowity czas
 
+    update_off_track_contacts( totaltime );
+
     for( auto *vehicle : m_items ) {
         // Ra 2015-01: tylko tu przelicza sieć trakcyjną
         vehicle->Update( Deltatime, totaltime );
@@ -9664,6 +9673,196 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     m_odometersavetimer += totaltime;
     if( m_odometersavetimer >= 60.0 ) {
         save_odometers();
+    }
+}
+
+namespace {
+
+// the body of the vehicle as it stands, for the contacts: off the track by its motion, on the track upright on it
+derail_motion::footprint footprint_of( TDynamicObject const &Vehicle ) {
+
+    auto const &mover { *Vehicle.MoverParameters };
+    derail_motion::pose pose;
+    if( mover.OffTrack.active() ) {
+        pose = mover.OffTrack.current();
+    }
+    else {
+        pose.position = Vehicle.GetPosition();
+        pose.front = Vehicle.VectorFront();
+        pose.left = Vehicle.VectorLeft();
+        pose.up = Vehicle.VectorUp();
+    }
+    auto const &shape { mover.OffTrack.shape() };
+    return derail_motion::footprint_of(
+        pose, mover.Dim.L,
+        mover.OffTrack.active() ? shape.width : ( mover.Dim.W > 0.5 ? mover.Dim.W : 3.0 ),
+        mover.OffTrack.active() ? shape.height : ( mover.Dim.H > 2.0 ? mover.Dim.H : 4.0 ) );
+}
+
+// the vehicle as a body in a contact
+derail_motion::contact_body contact_body_of( TDynamicObject const &Vehicle ) {
+
+    auto const &mover { *Vehicle.MoverParameters };
+    derail_motion::contact_body body;
+    body.mass = mover.TotalMass;
+    if( mover.OffTrack.active() ) {
+        body.base = mover.OffTrack.base();
+        body.velocity = mover.OffTrack.velocity();
+        body.yaw_rate = mover.OffTrack.yaw_rate();
+        body.gyration = mover.OffTrack.gyration();
+    }
+    else {
+        // on the rails it goes along them only
+        glm::dvec3 const front { Vehicle.VectorFront().x, 0.0, Vehicle.VectorFront().z };
+        auto const length { glm::length( front ) };
+        body.guided = true;
+        body.guide = length > 1e-6 ? front / length : glm::dvec3 { 0.0, 0.0, 1.0 };
+        body.base = Vehicle.GetPosition();
+        body.velocity = body.guide * mover.V;
+    }
+    return body;
+}
+
+// how the two came to overlap, for the log
+std::string_view overlap_kind( TDynamicObject const &First, TDynamicObject const &Second ) {
+
+    auto const offtrack { First.MoverParameters->OffTrack.active() && Second.MoverParameters->OffTrack.active() };
+    for( int end = end::front; end <= end::rear; ++end ) {
+        if( First.MoverParameters->Couplers[ end ].Connected == Second.MoverParameters
+         && First.MoverParameters->Couplers[ end ].CouplingFlag != coupling::faux ) {
+            return offtrack ? "coupled, both off the track" : "coupled, one on the rails";
+        }
+        if( First.MoverParameters->Neighbours[ end ].vehicle == &Second ) {
+            return offtrack ? "neighbours, both off the track" : "neighbours, one on the rails";
+        }
+    }
+    return offtrack ? "not neighbours, both off the track" : "not neighbours, one on the rails";
+}
+
+} // namespace
+
+void
+vehicle_table::update_off_track_contacts( double const Deltatime ) {
+
+    if( Global.derailment != global_settings::derailment_model::physical || Deltatime <= 0.0 ) {
+        return;
+    }
+    // by their places in the table: the order the pairs are taken in is the same in every run
+    std::vector<std::size_t> offtrack;
+    for( std::size_t index = 0; index < m_items.size(); ++index ) {
+        if( m_items[ index ]->bEnabled && m_items[ index ]->MoverParameters->OffTrack.active() ) {
+            offtrack.push_back( index );
+        }
+    }
+    if( offtrack.empty() ) {
+        return;
+    }
+    auto const started { off_track_clock::now() };
+    auto deepest { 0.0 };
+    std::string deepestpair;
+    auto resting { true };
+    for( auto const place : offtrack ) {
+        auto *vehicle { m_items[ place ] };
+        resting = resting && vehicle->MoverParameters->OffTrack.at_rest();
+        auto const print { footprint_of( *vehicle ) };
+        auto const reach { std::hypot( print.half_length, print.half_width ) };
+        for( std::size_t otherplace = 0; otherplace < m_items.size(); ++otherplace ) {
+            auto *other { m_items[ otherplace ] };
+            if( otherplace == place || false == other->bEnabled ) {
+                continue;
+            }
+            // each pair of two off the track once
+            auto const otheroff { other->MoverParameters->OffTrack.active() };
+            if( otheroff && otherplace < place ) {
+                continue;
+            }
+            // the bounding circles first
+            auto const apart { other->GetPosition() - vehicle->GetPosition() };
+            auto const otherreach { 0.5 * other->MoverParameters->Dim.L + std::max( other->MoverParameters->Dim.W, other->MoverParameters->Dim.H ) };
+            if( glm::length( glm::dvec3 { apart.x, 0.0, apart.z } ) > reach + otherreach + 1.0 ) {
+                continue;
+            }
+            auto const otherprint { footprint_of( *other ) };
+            auto const hit { derail_motion::collide( print, otherprint ) };
+            if( false == hit.has_value() ) {
+                continue;
+            }
+            if( hit->depth > deepest ) {
+                deepest = hit->depth;
+                deepestpair = std::format( "{} and {}, {}", vehicle->MoverParameters->Name, other->MoverParameters->Name, overlap_kind( *vehicle, *other ) );
+            }
+            auto const body { contact_body_of( *vehicle ) };
+            auto const otherbody { contact_body_of( *other ) };
+            auto const impulse { derail_motion::contact_impulse( *hit, body, otherbody ) };
+            // the one off the track: kicked, and moved out of the other one (half of the way when both are off it)
+            auto const [ velocity, yawrate ] { derail_motion::impulse_change( body, -impulse, hit->point ) };
+            auto &motion { vehicle->MoverParameters->OffTrack };
+            auto const share { otheroff ? 0.5 : 1.0 };
+            auto const correction { derail_motion::contact_correction * std::max( 0.0, hit->depth - derail_motion::contact_slop ) };
+            if( glm::length( impulse ) > 0.0 ) {
+                motion.kick( velocity, yawrate );
+                vehicle->MoverParameters->V = motion.speed();
+            }
+            if( correction > 0.0 ) {
+                motion.nudge( -hit->normal * ( share * correction ) );
+                vehicle->place_off_track();
+            }
+            if( otheroff ) {
+                auto const [ othervelocity, otheryawrate ] { derail_motion::impulse_change( otherbody, impulse, hit->point ) };
+                auto &othermotion { other->MoverParameters->OffTrack };
+                if( glm::length( impulse ) > 0.0 ) {
+                    othermotion.kick( othervelocity, otheryawrate );
+                    other->MoverParameters->V = othermotion.speed();
+                }
+                if( correction > 0.0 ) {
+                    othermotion.nudge( hit->normal * ( share * correction ) );
+                    other->place_off_track();
+                }
+                continue;
+            }
+            // one on the rails: along them into its speed, across them on its wheels, as a coupling pulls them off
+            auto &othermover { *other->MoverParameters };
+            othermover.V += glm::dot( impulse, otherbody.guide ) / std::max( othermover.TotalMass, 1.0 );
+            if( TestFlag( othermover.DamageFlag, dtrain_out ) ) {
+                continue;
+            }
+            glm::dvec3 const otherleft { otherbody.guide.z, 0.0, -otherbody.guide.x };
+            auto const across { glm::dot( impulse, otherleft ) / Deltatime };
+            auto const mass { othermover.TotalMass - othermover.Mred };
+            auto const ratio { derail_motion::pull_ratio( std::abs( across ), 0.5 * std::numbers::pi, mass, othermover.NAxles ) };
+            // held over the window of the climbing as the bodies slide along each other, or a hit three times as hard
+            // at once: the wheels jump the rail
+            auto const sliding { glm::length( derail_motion::velocity_at( body, hit->point ) - otherbody.velocity ) * Deltatime };
+            if( other->m_struck.update( ratio >= derailment::climbing_limit, sliding ) || ratio >= 3.0 * derailment::climbing_limit ) {
+                othermover.pull_off(
+                    across >= 0.0 ? 1 : -1,
+                    mass > 0.0 ? std::abs( across ) / mass : 0.0,
+                    std::format( "Y/Q {:.2f} from {} running into it, {:.0f} kN across", ratio, vehicle->MoverParameters->Name, std::abs( across ) / 1000.0 ) );
+                other->m_struck.reset();
+            }
+        }
+    }
+    // the log: every second the most the bodies overlapped by, once more when all of them are at rest
+    if( deepest > m_overlapmost ) {
+        m_overlapmost = deepest;
+        m_overlappair = deepestpair;
+    }
+    m_overlapdue -= Deltatime;
+    if( ( m_overlapdue <= 0.0 && false == resting ) || ( resting && false == m_overlaplogged ) ) {
+        WriteLog( std::format(
+            "derailment: the bodies overlap by up to {:.2f} m{} over the last second, {:.2f} m now{}",
+            m_overlapmost, m_overlapmost > 0.0 ? " (" + m_overlappair + ")" : std::string {}, deepest, resting ? ", all at rest" : "" ) );
+        m_overlapmost = 0.0;
+        m_overlappair.clear();
+        m_overlapdue = 1.0;
+        m_overlaplogged = resting;
+    }
+    if( false == resting ) {
+        m_overlaplogged = false;
+    }
+    auto const took { seconds_since( started ) };
+    if( took > off_track_slow ) {
+        ErrorLog( std::format( "derailment: warning: the contacts of {} vehicles off the track took {:.0f} ms", offtrack.size(), took * 1000.0 ) );
     }
 }
 
