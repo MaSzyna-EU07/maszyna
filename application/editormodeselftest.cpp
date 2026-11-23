@@ -124,7 +124,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   terrainfill <palette entry> <blur> <rotation> <x> <z> <x> <z> <x> <z>...   the area outlined filled, as the fill tool does it
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
-//   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
+//   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given; orthophoto off: turned
+//                                        off as the user does it, for the scenery; orthophoto forget: what the editor keeps of the photo of
+//                                        the scenery (whether it's on, its origin) forgotten
+//   toolbar <key|name>                   the button of the toolbar of the field of work with the key or the name clicked (toolbar ~: the photo)
 //   orthoarea <x> <z>... | clear         the download area through the points of the world, as drawn on the map; orthoareapause 0|1
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
@@ -179,7 +182,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it
 //   glide <x> <y> <z> <steps> <frames> [shot]   the cursor led to where the point is seen in steps, frames apart, a screenshot after each step with shot
 //   button <left|right|middle> <press|release>, wheel <offset>   the buttons and the wheel of the mouse, with the keys held
-//   press <key>, release <key>, tap <key>   a key held, let go, or both (ctrl, shift, alt, esc, enter, backspace, del, space, tab, a..z, 0..9, f1..f12)
+//   press <key>, release <key>, tap <key>   a key held, let go, or both (ctrl, shift, alt, esc, enter, backspace, del, space, tab, grave (~), a..z, 0..9, f1..f12)
 //   softcursor <0|1>                     the cursor drawn into the picture, for screenshots
 //   type <text>                          the characters typed into the text field with the focus
 //   screenshot

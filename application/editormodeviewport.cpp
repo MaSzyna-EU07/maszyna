@@ -264,6 +264,21 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	}
 }
 
+bool editor_mode::press_toolbar(std::string const &Name)
+{
+	std::vector<tool_button> buttons;
+	work_area_tools(buttons);
+	for (auto const &button : buttons)
+		if ((button.key != nullptr && Name == button.key) || Name == button.label)
+		{
+			if (false == button.enabled || false == static_cast<bool>(button.action))
+				return false;
+			button.action();
+			return true;
+		}
+	return false;
+}
+
 editor_mode::section_tool const &editor_mode::surroundings_tool(nodebank_panel::edit_mode const Mode)
 {
 	// in the order of the edit modes: select, copy to bank, insert, brush, area fill

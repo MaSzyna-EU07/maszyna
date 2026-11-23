@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "world/Track.h"
+#include "imgui/imgui.h"
 
 #include <algorithm>
 #include <cmath>
@@ -403,7 +404,10 @@ void expect_terrain(std::string const &What, std::istringstream &Words, std::map
 	auto const state{States.find(key)};
 	if (state == States.end())
 	{
-		expectation(false, What, "no state " + key, "grow, area or prompt");
+		std::string keys;
+		for (auto const &[name, value] : States)
+			keys += (keys.empty() ? "" : ", ") + name;
+		expectation(false, What, "no state " + key, keys);
 		return;
 	}
 	expectation(state->second == (wanted != 0), What, state->second ? "1" : "0", std::to_string(wanted));
@@ -488,7 +492,8 @@ struct shown_state
 	std::string refusal; // by the cursor, while it's shown
 	std::string status_line;
 	glm::dvec3 lay_cursor{0.0};
-	std::map<std::string, bool> terrain; // grow, area, prompt
+	std::map<std::string, bool> terrain; // grow, area, prompt, loading, question
+	std::map<std::string, bool> photo; // on, chosen, zoom4k, tracksover
 	std::string tool;
 	std::map<std::string, bool> windows; // shortcuts, settings, weather, orthophoto
 	std::optional<glm::dvec3> selected; // where the node selected stands
@@ -509,6 +514,8 @@ bool expect_shown(std::string const &Kind, std::string const &What, std::istring
 		expect_lay_cursor(What, Words, Shown.lay_cursor);
 	else if (Kind == "terrain")
 		expect_terrain(What, Words, Shown.terrain);
+	else if (Kind == "photo")
+		expect_terrain(What, Words, Shown.photo);
 	else if (Kind == "tool")
 		expect_tool(What, Words, Shown.tool);
 	else if (Kind == "window")
@@ -585,7 +592,13 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 	else
 	{
 		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
-		                  {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}, tool_name(ui()->mode()),
+		                  {{"grow", m_nmt_state.grow},
+		                   {"area", EditorSettings.terrain_model().area},
+		                   {"prompt", m_nmt_state.prompt},
+		                   {"loading", m_nmt_state.offer_loading},
+		                   {"question", ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)}},
+		                  {{"on", m_orthophoto.enabled()}, {"chosen", m_orthophoto_chosen}, {"zoom4k", m_orthophoto.zoom_hires()}, {"tracksover", m_track_lines_drawn > 0}},
+		                  tool_name(ui()->mode()),
 		                  {{"shortcuts", m_shortcuts_open}, {"settings", m_settings_open}, {"weather", m_environment_open}, {"orthophoto", m_orthophoto_window}}, std::nullopt,
 		                  shown_lay_panel(), shown_switch_panel()};
 		if (m_node != nullptr)

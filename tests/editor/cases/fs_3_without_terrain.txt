@@ -1,7 +1,8 @@
-# First steps: the answer Without terrain to the question of the terrain of a new empty scenery turns off the terrain made of the
+# First steps: Without terrain, the button of the line of the terrain of a new empty scenery, turns off the terrain made of the
 # terrain model by itself: under the tracks as they're laid (the checkbox of the layers) and around the camera within the download
-# area (the checkbox of the terrain panel), so nothing of the model is asked for. The question asked as the first L in an empty
-# scenery asks it (the fixture has tracks, so it isn't asked by itself)
+# area (the checkbox of the terrain panel), so nothing of the model is asked for. The line is shown as the first L in an empty
+# scenery shows it, in place of the question asked in a window before (the fixture has tracks, so it isn't shown by itself); the
+# fixture isn't placed on the map, so nothing is loaded meanwhile
 wait 5
 nmtsettings grow 1
 wait 2
@@ -9,6 +10,7 @@ expect terrain grow 1
 nmtquestion open
 wait 3
 expect terrain prompt 1
+expect terrain question 0
 nmtquestion flat
 wait 3
 expect terrain prompt 0

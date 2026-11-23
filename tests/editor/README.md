@@ -85,7 +85,8 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect refusal <holds\|lacks> <text>` | what the cursor tells while it's shown (a refusal or a warning) holds the text, or doesn't |
 | `expect statusline <holds\|lacks> <text>` | the status line of the editor (also shown in the layers window) holds the text, or doesn't |
 | `expect laycursor <x> <z> <tolerance>` | the point the line of the lay tool goes to from its last point clicked, in the plan |
-| `expect terrain <grow\|area\|prompt> <0\|1>` | the terrain model is made under the tracks as they're laid / around the camera within the download area / the question of the terrain of a new scenery is open |
+| `expect terrain <grow\|area\|prompt\|loading\|question> <0\|1>` | the terrain model is made under the tracks as they're laid / around the camera within the download area / the line of the terrain of a new scenery is shown in the panel of the laying / its terrain is being loaded in the background / a window asking (a modal popup) is open |
+| `expect photo <on\|chosen\|zoom4k\|tracksover> <0\|1>` | the aerial photo is shown / it was turned on or off by the user or the scenery (the terrain model leaves it be) / the 4K photos are asked for by themselves, the view zoomed in / the tracks were drawn over the view in the last frame (the top view) |
 | `expect laypanel <ready\|clicking\|laid\|extending> <shown\|folded>` | the state of the panel of the lay tool, as the step at its top tells it, and whether its settings are shown or folded to the line of their summary |
 | `expect switchpanel <ready\|dragging\|placed\|selected>` | the state of the panel of the switch tool, as the step at its top tells it |
 | `expect steps <count>` | the steps of the history Ctrl+Z takes back, the ones made together counted once: none made by a change refused |
@@ -162,7 +163,7 @@ and the first steps in the editor (P1 of the plan of the editor's interface):
 | --- | --- |
 | `fs_1_preview_over_panel` | while the pointer is over a panel the line the lay tool shows stays as it was, no leg following the pointer under the panel; back over the view it follows again |
 | `fs_2_switch_refusal_cleared` | a switch refused is told in the panel of the switch tool and by the cursor, not in the status line as well, and what it told goes once the next switch is laid |
-| `fs_3_without_terrain` | the answer Without terrain to the question of the terrain of a new scenery turns off the terrain made of the terrain model by itself: under the tracks as they're laid and around the camera within the download area |
+| `fs_3_without_terrain` | Without terrain, the button of the line of the terrain of a new scenery (no question in a window any more), turns off the terrain made of the terrain model by itself: under the tracks as they're laid and around the camera within the download area |
 
 and the consistency of the interface of the editor (P2 of the plan of the editor's interface):
 
@@ -202,6 +203,15 @@ and the rest of the editing on the model (E4b), with the setting on:
 | `m_12_lay_from_end` | a line laid on from the free end of a line of the model shares its node, the ends to the bit before and after a reopen |
 | `m_13_parallel` | the parallel tool beside a line of the model lays a line of the model, its arc concentric at the spacing, one step |
 | `m_14_layer_origin` | a line of the model saved into a file under an origin and opened again: nothing taken for changed by hand, also after a second save |
+
+and the aerial photo with no fuss (stage 3 of laying the tracks over the aerial photos):
+
+| case | checks |
+| --- | --- |
+| `ph_1_photo_per_scenery` | the photo turned on or off is the scenery's, kept with the editor: off over the wizard's `//$o on 1` after a reopen, on again after the next |
+| `ph_2_terrain_no_question` | the first L in a new scenery placed on the map asks nothing: the terrain loads in the background, the line in the panel of the laying tells it, Without terrain stops it |
+| `ph_3_tracks_over_photo` | in the top view zoomed in under 0.5 m a pixel the tracks are drawn over the photo; without the photo they aren't |
+| `ph_4_toolbar_toggle` | the photo button of the toolbar of the tracks and ~ turn the photo on and off as the user's choice, the terrain of the model doesn't turn it on again; F1 lists ~ |
 
 and the assumptions of the project and the norms enforced when laying (`editor-project-setup.md`):
 

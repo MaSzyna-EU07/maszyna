@@ -961,6 +961,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_viewport_overlays();
 	// the tools of the field of work, in the order of the toolbar
 	void work_area_tools(std::vector<editor_tool_button> &Buttons);
+	// the button of the toolbar of the key or the name given clicked, for the self-test; false: none such
+	bool press_toolbar(std::string const &Name);
 	// the tools of the field of work in the toolbar, as icons with their names
 	void render_toolbar_tools();
 	// what the row of the toolbar holds, written at its left end: the fields of work, the tools

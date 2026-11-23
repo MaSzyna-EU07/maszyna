@@ -63,6 +63,14 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			WriteLog("SELFTEST orthophoto off");
 			return selftest_result::handled;
 		}
+		if (words.str().find(" forget") != std::string::npos)
+		{
+			// what the editor keeps of the photo of the scenery forgotten: its choice and its origin, as for a scenery never opened
+			EditorSettings.orthophoto_forget(m_orthophoto_scenery);
+			EditorSettings.save();
+			WriteLog("SELFTEST orthophoto forget " + m_orthophoto_scenery);
+			return selftest_result::handled;
+		}
 		int fit{1};
 		int inscene{0};
 		float height{0.0f};
@@ -74,6 +82,15 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		m_orthophoto.settings(config);
 		m_orthophoto.enabled(true);
 		WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
+		return selftest_result::handled;
+	}
+	if (command == "toolbar")
+	{
+		// the button of the toolbar of the key or the name given clicked
+		std::string name;
+		words >> name;
+		auto const pressed{press_toolbar(name)};
+		WriteLog(format("SELFTEST toolbar %s: %s, orthophoto %d", name.c_str(), pressed ? "pressed" : "no such button", m_orthophoto.enabled() ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "orthoarea")

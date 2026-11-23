@@ -29,7 +29,7 @@ namespace
 int key_named(std::string const &Name)
 {
 	static std::map<std::string, int> const names{{"ctrl", GLFW_KEY_LEFT_CONTROL}, {"shift", GLFW_KEY_LEFT_SHIFT}, {"alt", GLFW_KEY_LEFT_ALT}, {"esc", GLFW_KEY_ESCAPE}, {"enter", GLFW_KEY_ENTER}, {"backspace", GLFW_KEY_BACKSPACE},
-	                                              {"del", GLFW_KEY_DELETE}, {"space", GLFW_KEY_SPACE}, {"tab", GLFW_KEY_TAB}};
+	                                              {"del", GLFW_KEY_DELETE}, {"space", GLFW_KEY_SPACE}, {"tab", GLFW_KEY_TAB}, {"grave", GLFW_KEY_GRAVE_ACCENT}};
 	if (auto const found{names.find(Name)}; found != names.end())
 		return found->second;
 	if (Name.size() == 1 && std::isalpha(static_cast<unsigned char>(Name[0])))
