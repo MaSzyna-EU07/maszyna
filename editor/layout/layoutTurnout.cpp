@@ -238,6 +238,12 @@ turnout_frame frame_at(network const &Network, node_id const Node, line_id const
 	auto const turn{geometry::signed_angle(solved.start.heading, solved.end.heading)};
 	auto const curvature{result.along * turn / solved.length};
 	result.curvature = std::abs(curvature) < kStraight ? 0.0 : curvature;
+	result.main = &solved;
+	result.main_from = result.along > 0 ? 0.0 : solved.length;
+	// the curvature changing under it: on a transition curve, or across the end of one
+	result.varying = std::ranges::any_of(solved.elements, [&](element const &Each) {
+		return std::abs(Each.curvature_start - Each.curvature_end) > kStraight || std::abs(Each.curvature_start * result.along - result.curvature) > kStraight;
+	});
 	result.valid = true;
 	return result;
 }
@@ -323,6 +329,146 @@ laid_tracks lay_slip(network const &Network, turnout const &Turnout, turnout_typ
 		result.tracks.push_back(slip);
 	}
 	return result;
+}
+
+// the square of the tangent of the basic switch, t = r tan(a/2), of table 11.8
+double tangent_squared(turnout_type const &Type)
+{
+	auto const tangent{Type.ratio > 0.0 ? Type.radius * std::tan(0.5 * std::atan(1.0 / Type.ratio)) : 0.0};
+	return tangent * tangent;
+}
+
+// the curvature of the diverging track of the curvature Basic in the basic switch, its main track bent to Main, by table 11.8 written for
+// the curvatures: r" = (R r -+ t^2) / (R +- r) is k" = (k + K) / (1 - k K t^2), the signs as they come; a straight goes with the main track
+double bent_curvature(double const Basic, double const Main, double const Squared)
+{
+	return (Basic + Main) / (1.0 - Basic * Main * Squared);
+}
+
+// the diverging track on a main track whose curvature changes under the turnout, a transition curve: laid on in steps, each one's curvature
+// at its ends by table 11.8 with the curvature of the main track at the station it runs by (the main track along the turnout, its heading off
+// the main one), each part as long as keeps its turn off the main track; the straights and the lead with the main track
+solved_line lay_on_transition(turnout_frame const &Frame, turnout_type const &Type, int const Hand)
+{
+	double constexpr kStep{2.0}; // m, the most a step of the diverging track runs on
+	solved_line result;
+	auto const hand{static_cast<double>(Hand)};
+	auto const squared{tangent_squared(Type)};
+	track_builder build{geometry::plan_of(Frame.position), Frame.heading};
+	auto station{0.0}; // along the main track from the start of the turnout
+	auto off{0.0}; // the heading of the diverging track off the main one's at the station
+	// the curvature of the diverging track of the curvature in the basic switch at the station
+	auto const bent = [&](double const Basic, double const Main) {
+		if (Basic == 0.0)
+			return Main;
+		if (std::abs(std::abs(Basic) - 1.0 / Type.radius) < 1e-12)
+		{
+			auto const radius{switch_curve::bent_radius(bending_of(Main, Hand), Type.radius, Type.ratio)};
+			return radius != 0.0 ? hand / radius : 0.0;
+		}
+		return bent_curvature(Basic, Main, squared);
+	};
+	auto const step = [&](double const From, double const To, double const Length) {
+		build.push(std::abs(From - To) < 1e-15 ? (std::abs(From) < 1e-15 ? make_straight({}, {1.0, 0.0}, Length) : make_arc({}, {1.0, 0.0}, From, Length))
+		                                       : make_spiral(element_kind::clothoid, {}, {1.0, 0.0}, From, To, Length));
+	};
+	// with the main track, as far
+	auto const along_main = [&](double const Length) {
+		auto const count{std::max(1, static_cast<int>(std::ceil(Length / kStep)))};
+		for (int i = 0; i < count; ++i)
+		{
+			auto const ds{Length / count};
+			auto const next{station + ds * std::cos(off)};
+			step(Frame.curvature_at(station), Frame.curvature_at(next), ds);
+			station = next;
+		}
+	};
+	if (Type.lead > 1e-9)
+		along_main(Type.lead);
+	if (Type.entry > 0.0)
+	{
+		build.turn(hand * Type.entry);
+		off += hand * Type.entry;
+	}
+	for (auto const &part : Type.parts)
+	{
+		auto const from{part.radius1 != 0.0 ? hand / part.radius1 : 0.0};
+		auto const to{part.radius2 != 0.0 ? hand / part.radius2 : 0.0};
+		if (from == 0.0 && to == 0.0)
+		{
+			along_main(part.length);
+			continue;
+		}
+		// the turn it keeps off the main track, the curvature of the basic switch by the share of it made
+		auto const turn{0.5 * (from + to) * part.length};
+		auto const basic_at = [&](double const Made) {
+			if (from == to)
+				return from;
+			// the curvature of the basic transition where it has turned by Made: k^2 = from^2 + 2 Made (to - from) / length
+			auto const squared_k{from * from + 2.0 * Made * (to - from) / part.length};
+			return std::copysign(std::sqrt(std::max(0.0, squared_k)), to != 0.0 ? to : from);
+		};
+		auto made{0.0};
+		for (int guard = 0; guard < 10000 && std::abs(turn - made) > 1e-12 * std::abs(turn); ++guard)
+		{
+			auto const main0{Frame.curvature_at(station)};
+			auto const k0{bent(basic_at(made), main0)};
+			auto const rate0{k0 - main0 * std::cos(off)};
+			if (rate0 * turn <= 0.0)
+			{
+				result.errors.push_back(std::format("{}: bent into R {:.0f} m its diverging curve doesn't turn off the main track", Type.name, 1.0 / std::max(1e-12, std::abs(main0))));
+				return result;
+			}
+			// the step's turn by the rates at both its ends; the last one fitted to the turn left
+			auto const last{(turn - made) / rate0 <= kStep};
+			auto ds{last ? (turn - made) / rate0 : kStep};
+			double k1{k0};
+			double turned{0.0};
+			for (int i = 0; i < 8; ++i)
+			{
+				auto const main1{Frame.curvature_at(station + ds * std::cos(off))};
+				auto const reached{std::clamp(made + rate0 * ds, std::min(0.0, turn), std::max(0.0, turn))};
+				k1 = bent(basic_at(reached), main1);
+				auto const rate1{k1 - main1 * std::cos(off)};
+				turned = 0.5 * (rate0 + rate1) * ds;
+				if (false == last && std::abs(made + turned) <= std::abs(turn))
+					break;
+				ds *= (turn - made) / turned;
+			}
+			step(k0, k1, ds);
+			station += ds * std::cos(off);
+			off += turned;
+			made = last ? turn : made + turned;
+		}
+	}
+	if (build.chainage() <= 0.0)
+	{
+		result.errors.push_back(std::format("{}: no diverging track", Type.name));
+		return result;
+	}
+	auto const rise{Frame.grade * build.chainage()};
+	return build.finish(Frame.position, Frame.heading, Frame.cant, Frame.grade, Frame.position.y + rise);
+}
+
+// why the curvature of the track changes its sign along it, empty where it doesn't: turning to the hand and the other way
+std::string sign_change_of(network const &Network, line_id const Id, int const Hand)
+{
+	auto const *track{Network.find(Id)};
+	if (track == nullptr)
+		return {};
+	auto toward{0.0};
+	auto away{0.0};
+	for (auto const &each : track->solved.elements)
+		for (auto const curvature : {each.curvature_start * Hand, each.curvature_end * Hand})
+		{
+			toward = std::max(toward, curvature);
+			away = std::max(away, -curvature);
+		}
+	if (toward <= kStraight || away <= kStraight)
+		return {};
+	return std::format("the curvature of the diverging track changes its sign within the turnout (KZW II), R {:.0f} m to the side it leaves to and R {:.0f} m the other way, which isn't allowed "
+	                   "(ST-T1-A6 9.7 pkt 12, 11.4 pkt 6)",
+	                   1.0 / toward, 1.0 / away);
 }
 
 // the type of the second switch of a double one, as an ordinary switch is laid
@@ -447,6 +593,14 @@ bool check_layout(network const &Network, turnout const &Turnout, turnout_type c
 
 } // namespace
 
+double turnout_frame::curvature_at(double const Along) const
+{
+	if (main == nullptr || false == varying)
+		return curvature;
+	auto const station{std::clamp(main_from + along * Along, 0.0, main->length)};
+	return along * main->curvature(station);
+}
+
 double turnout_type::diverging_length() const
 {
 	auto result{lead};
@@ -525,10 +679,14 @@ double bending_of(double const Curvature, int const Hand)
 
 solved_line lay_diverging(turnout_frame const &Frame, turnout_type const &Type, int const Hand)
 {
+	// a main track whose curvature changes under the turnout: each part bent by its curvature where it runs (table 11.8 taken exactly)
+	if (Frame.varying)
+		return lay_on_transition(Frame, Type, Hand);
 	solved_line result;
 	auto const curvature{Frame.curvature};
 	auto const bending{bending_of(curvature, Hand)};
 	auto const hand{static_cast<double>(Hand)};
+	auto const squared{tangent_squared(Type)};
 	track_builder build{geometry::plan_of(Frame.position), Frame.heading};
 	// along the main track, bent with it: the lead and the straights through the frog
 	auto const along_main = [curvature](double const Length) {
@@ -552,21 +710,38 @@ solved_line lay_diverging(turnout_frame const &Frame, turnout_type const &Type, 
 		}
 		if (from != to)
 		{
-			// a transition of the diverging track: the curvatures of the main track added
-			build.push(make_spiral(element_kind::clothoid, {}, {1.0, 0.0}, from + curvature, to + curvature, part.length));
+			// a transition of the diverging track: on a straight as it is; bent, its curvatures at its ends by table 11.8, as long as keeps
+			// its turn off the main track
+			if (curvature == 0.0)
+			{
+				build.push(make_spiral(element_kind::clothoid, {}, {1.0, 0.0}, from, to, part.length));
+				continue;
+			}
+			auto const start{bent_curvature(from, curvature, squared)};
+			auto const end{bent_curvature(to, curvature, squared)};
+			auto const relative{0.5 * (start + end) - curvature};
+			auto const turn{0.5 * (from + to) * part.length};
+			if (std::abs(relative) < 1e-12 || relative * turn <= 0.0)
+			{
+				result.errors.push_back(std::format("{}: bent into R {:.0f} m its diverging curve doesn't turn off the main track", Type.name, 1.0 / std::abs(curvature)));
+				return result;
+			}
+			build.push(make_spiral(element_kind::clothoid, {}, {1.0, 0.0}, start, end, turn / relative));
 			continue;
 		}
-		auto bent{from + curvature};
+		auto bent{from};
 		auto length{part.length};
 		if (curvature != 0.0)
 		{
-			// the curve of the basic switch bent by table 11.8, an arc of another radius by the sum of the curvatures; as long as keeps the
-			// turn off the main track, the angle of the frog
+			// the curve of the basic switch bent by table 11.8, an arc of another radius by its formula with the tangent of the basic switch;
+			// as long as keeps the turn off the main track, the angle of the frog
 			if (std::abs(std::abs(part.radius1) - Type.radius) < 0.5)
 			{
 				auto const radius{switch_curve::bent_radius(bending, Type.radius, Type.ratio)};
 				bent = radius != 0.0 ? hand / radius : 0.0;
 			}
+			else
+				bent = bent_curvature(from, curvature, squared);
 			auto const relative{bent - curvature};
 			auto const turn{from * part.length};
 			if (std::abs(relative) < 1e-12 || relative * turn <= 0.0)
@@ -745,7 +920,13 @@ void check_turnout(network const &Network, turnout const &Turnout, verdict &Resu
 			break;
 		}
 	// the ratio left out: the rule of the steep switches is the model's own, which knows a main track from a side one
-	auto const report{switch_curve::check(tracks[0], tracks[1], around, from, to, type->radius, 0.0)};
+	auto report{switch_curve::check(tracks[0], tracks[1], around, from, to, type->radius, 0.0)};
+	// the curvature of the diverging tracks of one sign all along them, from their elements rather than from the headings sampled
+	// (9.7 pkt 12, 11.4 pkt 6)
+	std::erase_if(report.refusals, [](std::string const &Refusal) { return Refusal.find("(KZW II)") != std::string::npos; });
+	for (auto const id : {Turnout.diverging, Turnout.diverging2})
+		if (auto const sign_change{sign_change_of(Network, id, Turnout.hand)}; false == sign_change.empty())
+			report.refusals.push_back(sign_change);
 	auto const told = [&](std::string const &Text, norms::tier const Level, std::vector<notice> &Into) {
 		notice found;
 		found.line = main->id;

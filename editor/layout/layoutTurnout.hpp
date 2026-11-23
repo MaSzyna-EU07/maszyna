@@ -107,6 +107,13 @@ struct turnout_frame
 	double cant{0.0}; // mm, above 0 leaning left
 	double grade{0.0};
 	bool valid{false};
+	// the main track the turnout lies on, the chainage of its start along it; its curvature changing under the turnout (a transition
+	// curve), which the diverging track is bent by where it runs, table 11.8 taken exactly
+	solved_line const *main{nullptr};
+	double main_from{0.0};
+	bool varying{false};
+	// 1/m, of the main track at the distance from the start of the turnout along it, signed as curvature is; the mean where it doesn't change
+	double curvature_at(double const Along) const;
 };
 turnout_frame frame_of(network const &Network, turnout const &Turnout);
 turnout_frame second_frame_of(network const &Network, turnout const &Turnout);
@@ -120,8 +127,10 @@ std::string bent_refusal(network const &Network, turnout const &Turnout, turnout
 double bending_of(double const Curvature, int const Hand);
 
 // the diverging track laid from the frame, to the hand: the lead and the straights through the frog along the main track, the curve of the
-// basic switch bent by table 11.8 over the length which keeps the angle of the frog, transitions by the sum of the curvatures; the cant
-// of the main track all along it, the grade of its start. Errors where it can't be laid so
+// basic switch bent by table 11.8 over the length which keeps the angle of the frog, its other curves and transitions by the formula of the
+// table with the tangent of the basic switch, k" = (k + K) / (1 - k K t^2), as long as keeps their turns; on a main track whose curvature
+// changes under it (a transition curve) bent in steps by its curvature where each runs; the cant of the main track all along it, the grade
+// of its start. Errors where it can't be laid so
 solved_line lay_diverging(turnout_frame const &Frame, turnout_type const &Type, int const Hand);
 
 // a track the turnout lays itself, not a part of the line it lies on: where it starts and ends, and the nodes it puts where it starts or
