@@ -220,6 +220,7 @@ set(SOURCES
 "editor/layout/layoutLine.cpp"
 "editor/layout/layoutNetwork.cpp"
 "editor/layout/layoutCommands.cpp"
+"editor/layout/layoutGenerator.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
