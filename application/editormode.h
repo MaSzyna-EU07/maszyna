@@ -204,6 +204,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void undo_one();
 	void drop_step(std::size_t const Step);
 	std::string refused(std::string Text);
+	// a switch not laid: told in the panel of the switch tool, which shows the text returned, and by the cursor
+	std::string switch_refused(std::string Text);
 	void redo_one();
 	// the changes of the heightmap terrain since the last step become a step of the history: a stroke of the brush,
 	// or what a frame did; the next change is recorded from now on
@@ -284,6 +286,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a lesson is done once all its steps are
 	bool tutorial_done(tutorial_lesson const &Lesson) const;
 	void render_first_steps();
+	// the first steps in the inspector with nothing selected: the lesson of the tool in use with its steps to try, the whole lesson
+	// in its window on request. false: hidden for good, or the window of the lesson is open
+	bool render_first_steps_card();
+	// the steps to try of a lesson, ticked as they're reached
+	void render_tutorial_steps(tutorial_lesson const &Lesson);
+	// a track laid where there's no ground lies flat at the height 0: told while the pointer is over the view where the terrain is to be
+	void render_ground_warning(tutorial_lesson const &Lesson);
 	// the steps reached by what the editor is doing now
 	void note_first_steps();
 	// the lesson of the tool in use: the first of its lessons not done yet, or none
@@ -298,7 +307,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_tutorial_pages();
 	void first_step_done(first_step const Step) override;
 	void open_kilometrage() override;
-	bool m_first_steps_open{false};
+	bool m_first_steps_open{false}; // the window of the lesson
+	int m_first_steps_shown{0}; // frames the window of the lesson was drawn since it opened, up to 3: it's placed anew as it opens
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
 	char const *m_tutorial_goto{nullptr}; // the lesson of this title opened by a button of a panel
@@ -645,6 +655,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the place picked in the terrain window: the terrain model and the orthophoto take it
 	void nmt_place_scenery(glm::dvec2 const &Point);
 	void nmt_accept_offer();
+	// the answer without terrain: the tracks lie on the plane, nothing of the terrain model is loaded by itself any more, under the
+	// tracks laid nor around the camera
+	void nmt_decline_offer();
 	// the whole scenery: tracks, includes and models, moved up or down as one undo step
 	std::size_t nmt_join_ends();
 	// the turntables as they lie, each with the ends of the tracks running up to it on its rim
@@ -1882,8 +1895,25 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string skew; // what Alt turned the straight to
 		double escape_time{-100.0}; // when Esc was pressed over points not laid: the second Esc drops them
 		std::size_t history{0}; // the step of the history the track laid last was begun at
+		// the line laid last, told in the inspector while the last of its tracks stays the selection the laying left
+		struct laid_curve
+		{
+			std::string label;
+			bool meets{true}; // the norms for the speed
+		};
+		struct laid_line
+		{
+			std::vector<TTrack *> tracks;
+			double length{0.0};
+			std::vector<laid_curve> curves;
+		};
+		laid_line laid;
 	};
 	lay_tool m_lay;
+	// the line laid last is told in the inspector in place of the sheet of its last track: that one is selected by the laying, not by
+	// a click
+	bool laid_shown() const;
+	void render_laid_summary();
 	alignment::limits laying_norms() const;
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
 	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From
@@ -2293,6 +2323,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
+	// the inspector with no track selected: in an empty scenery the one thing to do first, the first steps of the tutorial under it
+	void render_track_nothing_selected();
 	void show_track_tab(track_tab const Wanted) override;
 	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
@@ -3176,6 +3208,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string badge; // the mouse or the keys drawn over the view, for the clips of the tutorial
 		glm::vec2 badge_at{0.0f}; // its bottom left corner, in the pixels of the window
 		std::map<std::string, double> marks; // the heights of the ends of tracks kept by mark, for expect lift
+		std::optional<std::pair<bool, bool>> terrain_kept; // the terrain made while laying and around the camera before nmtquestion
 	};
 	selftest m_selftest;
 	using selftest_result = editor_selftest_result;

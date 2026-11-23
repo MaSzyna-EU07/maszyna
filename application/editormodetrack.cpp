@@ -132,6 +132,8 @@ void editor_mode::select_track(scene::basic_node *Node)
 	// a track out of the set ends it, the set is the selection only together with its tracks
 	if (false == in_track_set(track))
 		m_track_set.clear();
+	// selected by a click, the last track laid shows its sheet rather than what was laid with it
+	m_lay.laid = {};
 	m_node = track;
 	ui()->set_node(m_node);
 	if (ui()->mode() != nodebank_panel::TRACK)
@@ -799,27 +801,54 @@ void editor_mode::render_track_tool_options()
 	}
 }
 
+void editor_mode::render_track_nothing_selected()
+{
+	auto const &paths{simulation::Paths.sequence()};
+	if (std::ranges::none_of(paths, [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
+	{
+		// an empty scenery: one thing to do first, the tutorial a link under it
+		ImGui::TextDisabled("%s", STR_C("The scenery has no tracks yet"));
+		if (m_track_tab != track_tab::lay)
+		{
+			ImGui::Spacing();
+			if (main_button(STR_C("Lay the first track  (L)"), ImVec2(-FLT_MIN, tall_button_height())))
+				show_track_tab(track_tab::lay);
+		}
+	}
+	else
+	{
+		ImGui::TextDisabled("%s", STR_C("Nothing selected"));
+		if (m_track_tab == track_tab::path)
+		{
+			ImGui::Spacing();
+			gesture_rows({{"LMB on a track", "its properties show here"}, {"Ctrl+F", "finds a track by its name"}});
+			ImGui::Spacing();
+			if (ImGui::Button(STR_C("Lay a track  (L)"), ImVec2(-FLT_MIN, 0.0f)))
+				show_track_tab(track_tab::lay);
+		}
+	}
+	if (false == render_first_steps_card() && false == m_first_steps_open && m_track_tab == track_tab::path)
+	{
+		ImGui::Spacing();
+		if (ImGui::TextLink(STR_C("Tutorial")))
+			m_first_steps_open = true;
+	}
+}
+
 void editor_mode::render_track_selection()
 {
 	track_field_settle();
 	auto const tracks{selected_tracks()};
 	if (tracks.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("Nothing selected"));
-		if (m_track_tab != track_tab::path)
-			return;
-		ImGui::Spacing();
-		gesture_rows({{"LMB on a track", "its properties show here"}, {"Ctrl+F", "finds a track by its name"}});
-		ImGui::Spacing();
-		ImGui::Separator();
-		ImGui::Spacing();
-		ImGui::TextDisabled("%s", STR_C("Or start with:"));
-		auto const width{std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f)};
-		if (ImGui::Button(STR_C("Lay a track  (L)"), ImVec2(width, ImGui::GetFrameHeight() * 1.4f)))
-			show_track_tab(track_tab::lay);
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Tutorial"), ImVec2(width, ImGui::GetFrameHeight() * 1.4f)))
-			m_first_steps_open = true;
+		render_track_nothing_selected();
+		return;
+	}
+	// the line laid last, its last track selected by the laying rather than by a click: what was laid and what comes next, not the
+	// sheet of that one track
+	if (laid_shown())
+	{
+		render_laid_summary();
 		return;
 	}
 	// the properties belong to the select tool and to the switch tool, the other tools show the track they work with
@@ -897,8 +926,21 @@ void editor_mode::render_track_guide()
 		EditorSettings.save();
 	}
 	auto const hovered{ImGui::IsItemHovered()};
+	// what the lay tool is for is told over its title: under it, the paragraph pushed the settings of the tool out of the panel at
+	// 1366 x 768
+	auto const told_over{found != modes.end() && found->tab == track_tab::lay};
 	if (hovered)
+	{
 		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		if (told_over)
+		{
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(font * 30.0f));
+			ImGui::TextUnformatted(STR_C(found->tooltip));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+	}
 	ImGui::SetCursorScreenPos(below);
 	auto marker{right - pad};
 	if (found != modes.end() && found->key != nullptr)
@@ -922,7 +964,7 @@ void editor_mode::render_track_guide()
 	{
 		auto const wrap{right - pad};
 		ImGui::PushTextWrapPos(wrap - ImGui::GetWindowPos().x);
-		if (found != modes.end())
+		if (found != modes.end() && false == told_over)
 		{
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 			ImGui::TextWrapped("%s", STR_C(found->tooltip));
@@ -2204,13 +2246,14 @@ std::string editor_mode::track_readout() const
 	if (m_lay.active)
 	{
 		auto const &lay{m_lay};
-		// of a list of warnings only the first one by the cursor, the panel lists them all
+		// of a list of warnings only the first one by the cursor, the panel lists them all; named, not told by its side, which the
+		// docks can change
 		auto const first_of = [](std::string const &Lines) {
 			auto const end{Lines.find('\n')};
 			if (end == std::string::npos)
 				return Lines;
 			auto const more{static_cast<std::size_t>(std::count(Lines.begin() + end, Lines.end(), '\n'))};
-			return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, in the panel", "and %zu more, in the panel", static_cast<long long>(more)), more);
+			return Lines.substr(0, end) + "\n" + format(STR_P("and %zu more, listed in the tool options", "and %zu more, listed in the tool options", static_cast<long long>(more)), more);
 		};
 		std::string text;
 		if (lay.points.empty())

@@ -14,6 +14,7 @@ http:
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
+#include "application/editorgestures.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -145,7 +146,9 @@ void editor_mode::update_build_tools()
 		m_join_radius = 0.0;
 		m_join_variant = 0;
 	};
-	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
+	// the pointer over a panel points at no ground: the line shown stays as it was, rather than gaining a leg to where the pointer
+	// is under the panel. A drag begun in the view goes on over a panel, the panel doesn't take the mouse then
+	bool const pointing{m_cursor_override.has_value() || (ImGui::IsMousePosValid() && false == ImGui::GetIO().WantCaptureMouse)};
 	if (m_extend.active)
 	{
 		if (pointing)
@@ -189,12 +192,15 @@ void editor_mode::update_build_tools()
 	if (pointing)
 		lay.mouse = typed_lay(cursor_terrain(height));
 	auto const oncursor{lap()};
-	lay.skew.clear();
-	if (pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
-		lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
-	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	if (pointing)
+	{
+		lay.skew.clear();
+		if (ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
+			lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
+		lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	}
 	auto const snapping{lap()};
-	if (lay.mouse_snap.track == nullptr)
+	if (pointing && lay.mouse_snap.track == nullptr)
 		lay.mouse = lay_bed(lay.mouse);
 	auto const bedding{lap()};
 	if (false == m_extend.active)
@@ -2113,6 +2119,11 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
 	m_node = created.back();
 	ui()->set_node(m_node);
+	// what was laid, told in the inspector as long as the last track stays selected
+	tool.laid = {created, length, {}};
+	if (plan.shape.valid)
+		for (auto const &curve : plan.shape.curves)
+			tool.laid.curves.emplace_back(format("%d. %s", curve.vertex + 1, curve_label(curve, laying_norms()).c_str()), alignment::meets_norms(curve, plan.design));
 	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
@@ -2357,10 +2368,16 @@ void editor_mode::render_lay_ui()
 			m_first_steps_open = true;
 			m_tutorial_goto = "Radius of the curves at the bends";
 		}
-		item_tooltip("What it is: the lesson of the tutorial");
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
-		ImGui::PopTextWrapPos();
+		// the explanation over the button: under it, it pushed the speed and the height out of the panel at 1366 x 768
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(ImGui::GetFontSize() * 30.0f));
+			ImGui::TextUnformatted(STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
+			ImGui::TextDisabled("%s", STR_C("What it is: the lesson of the tutorial"));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
 	}
 	else
 	{
@@ -2393,8 +2410,6 @@ void editor_mode::render_lay_ui()
 	}
 	value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
-	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
@@ -2442,6 +2457,8 @@ void editor_mode::render_lay_ui()
 		render_lay_status();
 		return;
 	}
+	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
+	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	ImGui::TextDisabled("%s", STR_C("Dragged from a free end, or laid from a point to one"));
 	if (begin_fields("##layradius"))
 	{
@@ -2528,4 +2545,56 @@ void editor_mode::render_lay_status()
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", tool.preview_error.c_str());
 	if (false == tool.status.empty())
 		ImGui::TextWrapped("%s", tool.status.c_str());
+}
+
+bool editor_mode::laid_shown() const
+{
+	auto const &tracks{m_lay.laid.tracks};
+	return false == tracks.empty() && m_node == tracks.back() && m_track_set.empty() && std::ranges::none_of(tracks, [](TTrack const *Track) { return Track->m_editorremoved; });
+}
+
+void editor_mode::render_laid_summary()
+{
+	auto const &laid{m_lay.laid};
+	auto const below{std::ranges::any_of(laid.curves, [](lay_tool::laid_curve const &Curve) { return false == Curve.meets; })};
+	auto const warning{ImVec4(1.0f, 0.55f, 0.15f, 1.0f)};
+	ImGui::TextUnformatted(STR_C("Track laid"));
+	metric_tiles({{format("%zu", laid.tracks.size()), STR_C("tracks"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%.0f m", laid.length), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%zu", laid.curves.size()), STR_C("curves"), below ? ImGui::GetColorU32(warning) : ImGui::GetColorU32(ImGuiCol_Text)}});
+	if (false == laid.curves.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
+		for (auto const &curve : laid.curves)
+		{
+			if (curve.meets)
+				ImGui::TextUnformatted(curve.label.c_str());
+			else
+				ImGui::TextColored(warning, "%s", curve.label.c_str());
+		}
+		if (below)
+			ImGui::TextColored(warning, "%s", STR_C("Orange: below the norms for the speed, laid all the same"));
+		ImGui::PopTextWrapPos();
+	}
+	// what comes next: a switch into the line and the scenery saved
+	ImGui::SeparatorText(STR_C("Next"));
+	if (m_track_tab != track_tab::turnout)
+	{
+		if (ImGui::Button(STR_C("A switch  (T)")))
+			show_track_tab(track_tab::turnout);
+		item_tooltip("The switch tool: press on a straight and drag along it and to the side");
+		ImGui::SameLine();
+	}
+	ImGui::BeginDisabled(scene::Layers.empty());
+	if (ImGui::Button(STR_C("Save  (Ctrl+S)")))
+		save();
+	ImGui::EndDisabled();
+	ImGui::Spacing();
+	if (m_track_tab == track_tab::lay)
+		gesture_rows({{"LMB on a free end", "lays the track on from it"}, {"Esc", "stop laying"}});
+	else if (m_track_tab == track_tab::turnout)
+		gesture_rows({{"Drag on a track", "along: the direction, sideways: the side"}, {"LMB on a track", "its properties show here"}});
+	else
+		gesture_rows({{"LMB on a track", "its properties show here"}});
 }

@@ -871,6 +871,7 @@ void editor_mode::select_tracks(std::vector<TTrack *> const &Tracks)
 		m_track_set = tracks;
 	m_node = tracks.empty() ? nullptr : tracks.back();
 	m_track_point = {};
+	m_lay.laid = {};
 	ui()->set_node(m_node);
 }
 

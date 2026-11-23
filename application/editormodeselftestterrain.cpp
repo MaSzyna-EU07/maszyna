@@ -510,6 +510,31 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		WriteLog(format("SELFTEST nmtplace%s: X %.1f Y %.1f, %.6f N %.6f E", text.c_str(), point.y, point.x, degrees.x, degrees.y));
 		return selftest_result::handled;
 	}
+	if (command == "nmtquestion")
+	{
+		// the question of the terrain of a new scenery: open, as the first L in an empty scenery opens it, or answered without
+		// terrain, as its card does it; restore: the settings of the terrain made by itself as they were before the answer, which
+		// keeps them with the editor
+		std::string answer;
+		words >> answer;
+		auto &model{EditorSettings.terrain_model()};
+		if (answer == "open")
+			m_nmt_state.prompt = true;
+		else if (answer == "flat")
+		{
+			m_selftest.terrain_kept = std::pair{m_nmt_state.grow, model.area};
+			nmt_decline_offer();
+		}
+		else if (answer == "restore" && m_selftest.terrain_kept.has_value())
+		{
+			m_nmt_state.grow = m_selftest.terrain_kept->first;
+			model.area = m_selftest.terrain_kept->second;
+			EditorSettings.terrain_while_laying(m_nmt_state.grow);
+			EditorSettings.save();
+		}
+		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.grow ? 1 : 0, model.area ? 1 : 0));
+		return selftest_result::handled;
+	}
 	if (command == "nmtgrow")
 	{
 		// the cursor of a track laid at the place, its first point placed there unless "chosen" says the tool is only chosen: the terrain

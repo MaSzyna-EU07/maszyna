@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editormodeselftest.h"
+#include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
+#include "editor/editorSettings.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "scene/scenelayers.h"
@@ -345,6 +347,95 @@ void expect_status(std::string const &What, std::istringstream &Words, std::stri
 	expectation(Status.find(wanted) != std::string::npos, What, "\"" + Status + "\"", "a status holding \"" + wanted + "\"");
 }
 
+// expect statuslacks <text>: the status of the switch tool doesn't hold the text, the rest of the line
+void expect_status_lacks(std::string const &What, std::istringstream &Words, std::string const &Status)
+{
+	std::string unwanted;
+	std::getline(Words >> std::ws, unwanted);
+	if (unwanted.empty())
+	{
+		expectation(false, What, "malformed", "the text the status lacks");
+		return;
+	}
+	expectation(Status.find(unwanted) == std::string::npos, What, "\"" + Status + "\"", "a status without \"" + unwanted + "\"");
+}
+
+// expect refusal <holds|lacks> <text>, expect statusline <holds|lacks> <text>: what the cursor tells while it's shown, or the status
+// line of the editor, holds the text, the rest of the line, or doesn't
+void expect_told(std::string const &What, std::istringstream &Words, std::string const &Told)
+{
+	std::string state;
+	std::string text;
+	Words >> state;
+	std::getline(Words >> std::ws, text);
+	if ((state != "holds" && state != "lacks") || text.empty())
+	{
+		expectation(false, What, "malformed", "holds or lacks and the text");
+		return;
+	}
+	auto const holds{Told.find(text) != std::string::npos};
+	expectation(holds == (state == "holds"), What, "\"" + Told + "\"", (state == "holds" ? "a text holding \"" : "a text without \"") + text + "\"");
+}
+
+// expect laycursor <x> <z> <tolerance>: the point the line of the lay tool goes to from its last point clicked, in the plan
+void expect_lay_cursor(std::string const &What, std::istringstream &Words, glm::dvec3 const &Mouse)
+{
+	double x{0.0};
+	double z{0.0};
+	double tolerance{0.0};
+	Words >> x >> z >> tolerance;
+	if (malformed(What, Words))
+		return;
+	auto const distance{glm::length(glm::dvec2{Mouse.x - x, Mouse.z - z})};
+	expectation(distance <= tolerance, What, format("%.3f %.3f", Mouse.x, Mouse.z), format("%.3f %.3f within %.3f", x, z, tolerance));
+}
+
+// expect terrain <grow|area|prompt> <0|1>: the terrain model made under the tracks as they're laid, or around the camera within the
+// download area, the question of the terrain of a new scenery open
+void expect_terrain(std::string const &What, std::istringstream &Words, std::map<std::string, bool> const &States)
+{
+	std::string key;
+	int wanted{0};
+	Words >> key >> wanted;
+	if (malformed(What, Words))
+		return;
+	auto const state{States.find(key)};
+	if (state == States.end())
+	{
+		expectation(false, What, "no state " + key, "grow, area or prompt");
+		return;
+	}
+	expectation(state->second == (wanted != 0), What, state->second ? "1" : "0", std::to_string(wanted));
+}
+
+// what the editor shows, for the expectations of what the user sees
+struct shown_state
+{
+	std::string status; // of the switch tool
+	std::string refusal; // by the cursor, while it's shown
+	std::string status_line;
+	glm::dvec3 lay_cursor{0.0};
+	std::map<std::string, bool> terrain; // grow, area, prompt
+};
+
+// the expectations of what the editor shows; false: no expectation of the kind
+bool expect_shown(std::string const &Kind, std::string const &What, std::istringstream &Words, shown_state const &Shown)
+{
+	if (Kind == "statuslacks")
+		expect_status_lacks(What, Words, Shown.status);
+	else if (Kind == "refusal")
+		expect_told(What, Words, Shown.refusal);
+	else if (Kind == "statusline")
+		expect_told(What, Words, Shown.status_line);
+	else if (Kind == "laycursor")
+		expect_lay_cursor(What, Words, Shown.lay_cursor);
+	else if (Kind == "terrain")
+		expect_terrain(What, Words, Shown.terrain);
+	else
+		return false;
+	return true;
+}
+
 // expect steps <count>: the steps Ctrl+Z takes back, the ones made together counted once
 void expect_steps(std::string const &What, std::istringstream &Words, std::size_t const Steps)
 {
@@ -403,7 +494,10 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_findings(what, words, m_norms.results());
 	else if (kind == "steps")
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
-	else
-		expectation(false, what, "no expectation " + kind, "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status or steps");
+	else if (false == expect_shown(kind, what, words,
+	                               {m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
+	                                {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}}))
+		expectation(false, what, "no expectation " + kind,
+		            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain or steps");
 	return selftest_result::handled;
 }

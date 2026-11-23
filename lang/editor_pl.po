@@ -4599,8 +4599,8 @@ msgstr "R %.0f m nie sięga kursora, łuk przechodzi przez niego z R %.0f m"
 msgid "No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"
 msgstr "Pod kursorem nie ma terenu: tor trafia na płaszczyznę na wysokości 0, widoczną jako siatka. Teren: F5"
 
-msgid "Show when the editor opens"
-msgstr "Pokazuj po otwarciu edytora"
+msgid "Show the first steps in the inspector"
+msgstr "Pokazuj pierwsze kroki w inspektorze"
 
 msgid "L, LMB, LMB..."
 msgstr "L, LPM, LPM..."
@@ -6978,8 +6978,8 @@ msgstr "Ctrl+F"
 msgid "finds a track by its name"
 msgstr "szuka toru po nazwie"
 
-msgid "Or start with:"
-msgstr "Albo zacznij od:"
+msgid "Lay the first track  (L)"
+msgstr "Ułóż pierwszy tor  (L)"
 
 msgid "Lay a track  (L)"
 msgstr "Ułóż tor  (L)"
@@ -12101,11 +12101,11 @@ msgstr "z powrotem na osi"
 msgid "moves it, an end dropped on a free end joins it"
 msgstr "przesuwa go; koniec upuszczony na wolny koniec łączy się z nim"
 
-msgid "and %zu more, in the panel"
-msgid_plural "and %zu more, in the panel"
-msgstr[0] "i jeszcze %zu, lista w panelu po prawej"
-msgstr[1] "i jeszcze %zu, lista w panelu po prawej"
-msgstr[2] "i jeszcze %zu, lista w panelu po prawej"
+msgid "and %zu more, listed in the tool options"
+msgid_plural "and %zu more, listed in the tool options"
+msgstr[0] "i jeszcze %zu, lista w opcjach narzędzia"
+msgstr[1] "i jeszcze %zu, lista w opcjach narzędzia"
+msgstr[2] "i jeszcze %zu, lista w opcjach narzędzia"
 
 msgid "on the ground: the first point, then the bends of the line, the curves at them made by themselves"
 msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powstają same"
@@ -14262,7 +14262,7 @@ msgid "Ride along a track with Y"
 msgstr "Przejedź się po torze klawiszem Y"
 
 msgid "Cursor drawn into the picture (streams)"
-msgstr "Kursor rysowany w obrazie (stream)"
+msgstr "Kursor rysowany w obrazie (do transmisji)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
@@ -14493,3 +14493,111 @@ msgid_plural "%zu lines checked against %s: %d beyond the hard limits, %d warnin
 msgstr[0] "Sprawdzono %zu linię wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
 msgstr[1] "Sprawdzono %zu linie wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
 msgstr[2] "Sprawdzono %zu linii wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+
+# scenery editor: first steps, the line laid
+
+msgid "First steps"
+msgstr "Pierwsze kroki"
+
+msgid "Show the lesson"
+msgstr "Pokaż lekcję"
+
+msgid "The whole lesson in its window: a clip, the mouse and the keys, the lessons before and after"
+msgstr "Cała lekcja w swoim oknie: nagranie, mysz i klawisze, lekcje przed nią i po niej"
+
+msgid "The camera"
+msgstr "Kamera"
+
+msgid "The lesson of the camera: looking around, flying, the view from above"
+msgstr "Lekcja o kamerze: rozglądanie się, latanie, widok z góry"
+
+msgid "Hide"
+msgstr "Ukryj"
+
+msgid "Hides the first steps for good; Help > Tutorial opens the lessons, and its checkbox brings the first steps back"
+msgstr "Ukrywa pierwsze kroki na stałe; Pomoc > Samouczek otwiera lekcje, a jego pole wyboru przywraca pierwsze kroki"
+
+msgid "Track laid"
+msgstr "Ułożony tor"
+
+msgid "curves"
+msgstr "łuki"
+
+msgid "Orange: below the norms for the speed, laid all the same"
+msgstr "Pomarańczowe: poniżej norm dla prędkości, położone mimo to"
+
+msgid "Next"
+msgstr "Co dalej"
+
+msgid "A switch  (T)"
+msgstr "Rozjazd  (T)"
+
+msgid "The switch tool: press on a straight and drag along it and to the side"
+msgstr "Narzędzie Rozjazd: wciśnij na prostej i przeciągnij wzdłuż niej i w bok"
+
+msgid "Save  (Ctrl+S)"
+msgstr "Zapisz  (Ctrl+S)"
+
+msgid "lays the track on from it"
+msgstr "układa tor dalej od niego"
+
+# scenery editor: the period of the day, the season and the weather in Weather and time
+
+msgid "day"
+msgstr "dzień"
+
+msgid "night"
+msgstr "noc"
+
+msgid "winter"
+msgstr "zima"
+
+msgid "spring"
+msgstr "wiosna"
+
+msgid "summer"
+msgstr "lato"
+
+msgid "autumn"
+msgstr "jesień"
+
+msgid "clear"
+msgstr "bezchmurnie"
+
+msgid "scattered"
+msgstr "małe zachmurzenie"
+
+msgid "broken"
+msgstr "duże zachmurzenie"
+
+msgid "overcast"
+msgstr "całkowite zachmurzenie"
+
+msgid "rain"
+msgstr "deszcz"
+
+msgid "snow"
+msgstr "śnieg"
+
+# scenery editor: the types of the nodes in the inspector
+
+msgid "road"
+msgstr "droga"
+
+msgid "model"
+msgstr "model"
+
+msgid "vehicle"
+msgstr "pojazd"
+
+msgid "memory cell"
+msgstr "komórka pamięci"
+
+msgid "event launcher"
+msgstr "wyzwalacz eventów"
+
+msgid "sound"
+msgstr "dźwięk"
+
+msgid "bent model"
+msgstr "model wygięty"

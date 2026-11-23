@@ -81,6 +81,11 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect lift <track> <start\|end> <label> <m> <tolerance>` | how far the end is above the height `mark <label> <track> <start\|end>` kept |
 | `expect includes <track> <count>` | the includes whose parameters name the track: the model and the events of a turntable |
 | `expect status <text>` | the status of the switch tool, as its panel shows it, holds the text (the rest of the line) |
+| `expect statuslacks <text>` | the status of the switch tool doesn't hold the text |
+| `expect refusal <holds\|lacks> <text>` | what the cursor tells while it's shown (a refusal or a warning) holds the text, or doesn't |
+| `expect statusline <holds\|lacks> <text>` | the status line of the editor (also shown in the layers window) holds the text, or doesn't |
+| `expect laycursor <x> <z> <tolerance>` | the point the line of the lay tool goes to from its last point clicked, in the plan |
+| `expect terrain <grow\|area\|prompt> <0\|1>` | the terrain model is made under the tracks as they're laid / around the camera within the download area / the question of the terrain of a new scenery is open |
 | `expect steps <count>` | the steps of the history Ctrl+Z takes back, the ones made together counted once: none made by a change refused |
 
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
@@ -109,3 +114,11 @@ and the quick fixes of the switches (Q2 of the plan of the track editing):
 | `q2_1_switch_speed` | a switch laid, or given another template, gets the speed of its diverging track written: of its type, bent into a curve with the cant taken with its sign and the cant deficiency of its frog |
 | `q2_2_switch_refusals` | a switch with the cant changing within it or a ramp ending nearer than 6 m, a double switch or a slip bent, or the curvature of its diverging track turning from one side to the other isn't laid; 1:9.403 bent is only warned of |
 | `q2_3_switch_move` | a switch moved along its curve or its straight is judged as when it's laid: moved too near a cant ramp, or onto one, it stays |
+
+and the first steps in the editor (P1 of the plan of the editor's interface):
+
+| case | fix |
+| --- | --- |
+| `fs_1_preview_over_panel` | while the pointer is over a panel the line the lay tool shows stays as it was, no leg following the pointer under the panel; back over the view it follows again |
+| `fs_2_switch_refusal_cleared` | a switch refused is told in the panel of the switch tool and by the cursor, not in the status line as well, and what it told goes once the next switch is laid |
+| `fs_3_without_terrain` | the answer Without terrain to the question of the terrain of a new scenery turns off the terrain made of the terrain model by itself: under the tracks as they're laid and around the camera within the download area |

@@ -193,6 +193,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
 //                                        to it out along their lines from the rim, against the model there
 //   nmtstate                             logs how far the tracks going onto the terrain model are
+//   nmtquestion <open|flat|restore>      the question of the terrain of a new scenery opened, or answered without terrain as its card does;
+//                                        restore: the settings of the terrain made by itself put back as they were before that answer
 //   gradelines <file>                    the grade line each track shares written to the file, for a map of them
 //   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
 //   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
@@ -232,6 +234,12 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect lift <track> <start|end> <label> <m> <tolerance>   how far the end of the first path is above the height marked
 //   expect includes <track> <count>      the includes whose parameters name the track: the model and the events of a turntable
 //   expect status <text>                 the status of the switch tool, as its panel shows it, holds the text (the rest of the line)
+//   expect statuslacks <text>            the status of the switch tool doesn't hold the text
+//   expect refusal <holds|lacks> <text>  what the cursor tells while it's shown holds the text, or doesn't
+//   expect statusline <holds|lacks> <text>   the status line of the editor holds the text, or doesn't
+//   expect laycursor <x> <z> <tolerance> the point the line of the lay tool goes to from its last point, in the plan
+//   expect terrain <grow|area|prompt> <0|1>   the terrain model made under the tracks as they're laid / around the camera within the
+//                                        download area / the question of the terrain open
 //   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code

@@ -317,7 +317,7 @@ bool editor_mode::start_switch_placement()
 		auto *track{selected};
 		// the track that takes no switch blinks
 		auto const refuse = [&](std::string const &Text) {
-			tool.status = refused(Text);
+			tool.status = switch_refused(Text);
 			flash_switch_problem(Text, track->m_paths, {{ground, ""}});
 			return false;
 		};
@@ -461,8 +461,14 @@ void editor_mode::finish_switch_placement()
 	auto const side{direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1};
 	insert_switch(tool.line, tool.along, forward, side);
 	moved();
+	// why the branch wasn't led into the free end: in the panel with the switch laid; with none laid by the cursor too, as the other
+	// refusals of the tool, not in the status line, where it stayed after the next switch was laid
 	if (false == plan.reason.empty())
-		ui()->set_status(plan.reason, true);
+	{
+		tool.status += (tool.status.empty() ? "" : "\n") + plan.reason;
+		if (m_history.size() == steps)
+			switch_refused(tool.status);
+	}
 }
 
 void editor_mode::insert_switch(editor_track::straight const &Line, double const Along, int const Direction, int const Side)
@@ -578,7 +584,7 @@ void editor_mode::insert_free_switch()
 	// a click with no drag on the ground gives no direction; from a free end it's the end's
 	if (tool.free_end.track == nullptr && false == tool.free_heading.has_value())
 	{
-		tool.status = refused(STR_C("Drag along the main track of the switch, then sideways to the side of the diverging one"));
+		tool.status = switch_refused(STR_C("Drag along the main track of the switch, then sideways to the side of the diverging one"));
 		return;
 	}
 	auto const paths{bent ? bend.paths : free_switch_paths()};
@@ -587,7 +593,7 @@ void editor_mode::insert_free_switch()
 	// bent so as to break a hard rule: none laid
 	if (bent && false == bend.report.refusals.empty())
 	{
-		tool.status = refused(switch_refusal(bend.report.refusals, true));
+		tool.status = switch_refused(switch_refusal(bend.report.refusals, true));
 		flash_switch_problem(tool.status, {paths.begin(), paths.begin() + 2}, {{tool.point, ""}});
 		return;
 	}
@@ -628,6 +634,8 @@ void editor_mode::switch_placed(std::vector<TTrack *> const &Created)
 		return;
 	auto const slip{std::count_if(Created.begin(), Created.end(), [](TTrack const *Track) { return Track != nullptr && Track->eType == tt_Switch; }) > 1};
 	m_switch.placing = false;
+	// what the cursor told of a switch refused before goes with this one laid; the panel tells of this one
+	ui()->drop_refusal();
 	first_step_done(first_step::turnout);
 	m_track_point = {};
 	m_node = *found;
@@ -771,7 +779,7 @@ bool editor_mode::cut_straight(editor_track::straight const &Line, double const 
 	std::string reason;
 	if (false == tracks_editable(Line.tracks, reason))
 	{
-		m_switch.status = refused(reason);
+		m_switch.status = switch_refused(reason);
 		std::vector<segment_data> paths;
 		for (std::size_t i = 0; i < Line.tracks.size(); ++i)
 			paths.push_back(Line.tracks[i]->m_paths[Line.paths[i]]);
@@ -866,7 +874,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const &shape{Shape};
 	if (shape.length > Line.length - 0.02)
 	{
-		m_switch.status = refused(format(STR_C("The straight is %.1f m long, too short for the %.1f m switch"), Line.length, shape.length));
+		m_switch.status = switch_refused(format(STR_C("The straight is %.1f m long, too short for the %.1f m switch"), Line.length, shape.length));
 		if (auto const problem{straight_switch_problem(Line, shape.length, Along, Direction)})
 			flash_switch_problem(*problem);
 		return false;
@@ -878,7 +886,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 	auto const point = [&](double const Distance) { return Line.start + glm::dvec3{Line.direction.x, Line.grade, Line.direction.y} * Distance; };
 	if (auto const refusal{straight_switch_refusal(Line, point(from), point(to), true)}; false == refusal.empty())
 	{
-		m_switch.status = refused(refusal);
+		m_switch.status = switch_refused(refusal);
 		flash_switch_problem(refusal, {straight_path(point(from), point(to))}, {{point(origin), ""}});
 		return false;
 	}
@@ -891,7 +899,7 @@ bool editor_mode::place_switch_on_straight(editor_track::straight const &Line, e
 		// unless the tracks can't be changed, which it told
 		if (std::string reason; tracks_editable(Line.tracks, reason))
 		{
-			m_switch.status = refused(STR_C("The switch would overlap another switch, move it onto plain track"));
+			m_switch.status = switch_refused(STR_C("The switch would overlap another switch, move it onto plain track"));
 			flash_switch_problem(m_switch.status, {straight_path(point(from), point(to))});
 		}
 		return false;
@@ -930,7 +938,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 		auto *link{two == nullptr ? nullptr : Style != nullptr ? editor_track::create_path(*Style, Paths[4]) : editor_track::create_path(m_lay.style, Paths[4])};
 		if (link == nullptr)
 		{
-			m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
+			m_switch.status = switch_refused(STR_C("The switch couldn't be created from this template"));
 			return {};
 		}
 		auto const speed{write_switch_speed(*one, Shape.radius, Shape.ratio, main)};
@@ -943,7 +951,7 @@ std::vector<TTrack *> editor_mode::create_switch_set(editor_track::switch_templa
 	auto *track{switch_of(Shape, Paths, Name)};
 	if (track == nullptr)
 	{
-		m_switch.status = refused(STR_C("The switch couldn't be created from this template"));
+		m_switch.status = switch_refused(STR_C("The switch couldn't be created from this template"));
 		return {};
 	}
 	auto const speed{write_switch_speed(*track, Shape.radius, Shape.ratio, main)};
@@ -2436,7 +2444,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const total{tool.frame.back().station};
 	if (shape.length > total - 0.02)
 	{
-		tool.status = refused(format(STR_C("The curve is %.1f m long, too short for the %.1f m switch"), total, shape.length));
+		tool.status = switch_refused(format(STR_C("The curve is %.1f m long, too short for the %.1f m switch"), total, shape.length));
 		return;
 	}
 	auto const station{std::clamp(tool.along, Direction > 0 ? 0.0 : shape.length, Direction > 0 ? total - shape.length : total)};
@@ -2447,7 +2455,7 @@ void editor_mode::insert_curved_switch(int const Direction, int const Side)
 	auto const report{curved_switch_report(paths, tool.frame, station, Direction, &tool.frame_tracks)};
 	if (false == report.refusals.empty())
 	{
-		tool.status = refused(switch_refusal(report.refusals, true));
+		tool.status = switch_refused(switch_refusal(report.refusals, true));
 		flash_switch_problem(tool.status, {paths.begin(), paths.begin() + std::min<std::size_t>(2, paths.size())}, {{sample_at(tool.frame, station).position, ""}});
 		return;
 	}
@@ -2864,7 +2872,7 @@ void editor_mode::insert_curved_slip(int const Direction, int const Side)
 	curved_slip plan;
 	if (false == plan_curved_slip(shape, Direction, Side, plan))
 	{
-		tool.status = refused(plan.problem);
+		tool.status = switch_refused(plan.problem);
 		flash_switch_problem(plan.problem, {}, {{sample_at(tool.frame, tool.along).position, ""}});
 		return;
 	}
@@ -2872,7 +2880,7 @@ void editor_mode::insert_curved_slip(int const Direction, int const Side)
 	// bent into the curve: none laid, the tracks as they were (11.4 pkt 4b)
 	if (false == report.refusals.empty())
 	{
-		tool.status = refused(switch_refusal(report.refusals, true));
+		tool.status = switch_refused(switch_refusal(report.refusals, true));
 		flash_switch_problem(tool.status, curved_slip_lines(plan, shape.type), {{sample_at(tool.frame, plan.middle).position, ""}});
 		return;
 	}
