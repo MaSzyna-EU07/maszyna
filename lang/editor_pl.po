@@ -15420,11 +15420,26 @@ msgstr "pobieranie się nie udało"
 msgid "Retry##photos"
 msgstr "Ponów##photos"
 
+msgid "The aerial photo shown or hidden, kept with the scenery"
+msgstr "Zdjęcie lotnicze pokazane albo ukryte, zapamiętane dla scenerii"
+
+msgid "The photos of what the camera sees downloaded before the rest"
+msgstr "Zdjęcia tego, co widzi kamera, pobierane przed resztą"
+
 msgid "The terrain loaded by itself as the first track of a new scenery is laid"
 msgstr "Teren wczytywany sam przy układaniu pierwszego toru nowej scenerii"
 
 msgid "In the background, where the scenery lies on the map; the panel of the laying tells it, with the button to go without it"
 msgstr "W tle, tam gdzie sceneria leży na mapie; mówi o tym panel układania, z przyciskiem, by obejść się bez terenu"
+
+msgid "Photo"
+msgstr "Zdjęcie"
+
+msgid "The aerial photo of geoportal.gov.pl under the scenery, shown or hidden in this scenery"
+msgstr "Zdjęcie lotnicze z geoportal.gov.pl pod scenerią, pokazane albo ukryte w tej scenerii"
+
+msgid "How much the photo covers the scenery under it"
+msgstr "Jak mocno zdjęcie przykrywa scenerię pod nim"
 
 msgid "Without terrain: the tracks lie on the flat plane; the terrain can be loaded later in Terrain (F5)"
 msgstr "Bez terenu: tory leżą na płaszczyźnie; teren możesz wczytać później w dziale Teren (F5)"

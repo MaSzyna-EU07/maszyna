@@ -39,6 +39,10 @@ struct editor_tool_button
 	bool group{false}; // a gap before it, it starts another group
 	bool enabled{true};
 	ImU32 accent{0}; // the colour of the family of the tool, 0 if it has none
+	// a slider of the value 0..1 in its place, its label and the value in per cent in it: the action applies the value as it's
+	// dragged, Done once it's let go
+	float *value{nullptr};
+	std::function<void()> done;
 };
 
 namespace
@@ -174,6 +178,22 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::signals, true);
 		add(track_tab::kilometrage, false);
 		add(track_tab::lineside, false);
+		// the photo the tracks are laid over: shown or hidden for the scenery (~), and how much it covers, at hand
+		auto const photo{m_orthophoto.enabled()};
+		Buttons.push_back({icon::orthophoto, STR_C("Photo"), "~", STR_C("The aerial photo of geoportal.gov.pl under the scenery, shown or hidden in this scenery"), photo,
+		                   [this, photo]() { choose_orthophoto(false == photo); }, true});
+		if (photo && false == m_orthophoto.settings().in_scene)
+		{
+			static float opacity{0.6f};
+			opacity = m_orthophoto.settings().opacity;
+			Buttons.push_back({icon::count, STR_C("Opacity"), nullptr, STR_C("How much the photo covers the scenery under it"), false, [this]() {
+				                   auto config{m_orthophoto.settings()};
+				                   config.opacity = opacity;
+				                   m_orthophoto.settings(config);
+			                   }});
+			Buttons.back().value = &opacity;
+			Buttons.back().done = [this]() { save_orthophoto_settings(); };
+		}
 		auto const advanced{m_track_tab == track_tab::turntable || srk_tab() || vehicle || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_gauge.is_open()};
 		auto const more{EditorSettings.track_tools_more()};
 		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, stations and their signals, line block, trainset, profile, speed, joints, gauge"), more, [more]() {
@@ -416,6 +436,9 @@ void editor_mode::render_toolbar_tools()
 		return Button.picture == icon::count || Names == names::all || (Names == names::chosen && Button.chosen);
 	};
 	auto const width = [&](tool_button const &Button, names const Names) {
+		// a slider keeps its width, its label in it
+		if (Button.value != nullptr)
+			return std::round(std::max(96.0f * s, ImGui::CalcTextSize(Button.label).x + ImGui::CalcTextSize(" 100%").x + 2.0f * pad));
 		if (false == named(Button, Names))
 			return std::max(buttonheight, iconside + pad);
 		auto result{2.0f * pad + ImGui::CalcTextSize(Button.label).x};
@@ -451,6 +474,27 @@ void editor_mode::render_toolbar_tools()
 		}
 		auto const size{ImVec2(width(button, shown), buttonheight)};
 		ImVec2 const position{x, top};
+		if (button.value != nullptr)
+		{
+			// in the middle of the row, as high as a field
+			ImGui::SetCursorScreenPos(ImVec2(position.x, std::round(top + (buttonheight - ImGui::GetFrameHeight()) * 0.5f)));
+			ImGui::PushID(static_cast<int>(index));
+			ImGui::SetNextItemWidth(size.x);
+			int percent{static_cast<int>(std::lround(*button.value * 100.0f))};
+			if (ImGui::SliderInt("##value", &percent, 0, 100, (std::string{button.label} + " %d%%").c_str()))
+			{
+				*button.value = static_cast<float>(percent) / 100.0f;
+				if (button.action)
+					button.action();
+			}
+			if (ImGui::IsItemDeactivatedAfterEdit() && button.done)
+				button.done();
+			if (ImGui::IsItemHovered() && false == ImGui::IsItemActive())
+				button_tooltip(button);
+			ImGui::PopID();
+			x = position.x + size.x;
+			continue;
+		}
 		ImGui::SetCursorScreenPos(position);
 		ImGui::PushID(static_cast<int>(index));
 		auto const clicked{ImGui::InvisibleButton("##tool", size)};

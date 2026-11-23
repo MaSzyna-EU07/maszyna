@@ -6798,7 +6798,9 @@ void editor_mode::render_shortcuts_window()
 	      {"RMB held, W S A D", "Fly forwards, back, left, right (arrows in the legacy scheme)"},
 	      {"RMB held, E / Q", "Fly up / down (Page Up / Page Down in the legacy scheme)"},
 	      {"F", "Fly to the selected"},
-	      {"O", "Top view, orthographic"}}},
+	      {"O", "Top view, orthographic"},
+	      {"~", "The aerial photo shown or hidden, kept with the scenery"},
+	      {"Ctrl+~", "The photos of what the camera sees downloaded before the rest"}}},
 	    {"Ride along the track",
 	     {{"Y", "Ride along the track under the cursor, the tools working on; Y again leaves"},
 	      {"RMB held, W / S", "Drive; Shift faster, Ctrl+W / Ctrl+Down much faster"},
@@ -7994,7 +7996,8 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (false == anyModifier)
         {
-            m_orthophoto.enabled(false == m_orthophoto.enabled());
+            // as the button of the toolbar: the scenery's, and the terrain model doesn't turn it on again behind the user
+            choose_orthophoto(false == m_orthophoto.enabled());
             ui()->set_status(m_orthophoto.enabled() ? STR("Orthophoto on (~)") : STR("Orthophoto off (~)"));
         }
         break;
@@ -8692,7 +8695,7 @@ void editor_mode::render_camera_settings(bool const Window)
 void editor_mode::orthophoto_hurry()
 {
     if (false == m_orthophoto.enabled())
-        m_orthophoto.enabled(true);
+        choose_orthophoto(true);
     // what the camera sees of the ground: rays through a grid over the screen to the level of the ground under the camera, or as far
     // as the reach of the orthophoto along it where they don't come down to it (the sky)
     ImGuiIO const &io = ImGui::GetIO();
