@@ -117,12 +117,10 @@ class editor_orthophoto
 	void ground_source(ground_query Query) { m_ground = std::move(Query); }
 	void height_source(height_query Query) { m_height = std::move(Query); }
 	// the heights the ground will have where there's none yet, as of the terrain model on its way: a tile laid out before its
-	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above
+	// ground comes lies there, or level with the tiles beside, rather than at the height of the layer far below or above. A tile
+	// doesn't wait for its ground: with nothing to go by it lies flat at the height of the ground last found, and goes onto the
+	// ground once it comes
 	void guess_source(height_query Query) { m_guess = std::move(Query); }
-	// true while the ground under an XZ rectangle (Min/Max are x,z) is still to come. A new tile there waits for it, rather than
-	// being laid out at the height of the layer; elsewhere it lies on whatever ground there is, or on the guess, as without it
-	using coming_query = std::function<bool(glm::dvec2 const &Min, glm::dvec2 const &Max)>;
-	void coming_source(coming_query Query) { m_coming = std::move(Query); }
 	// the 4K photos asked for around the camera by themselves, the view zoomed in (see photo_rules::hires_wanted), besides the setting
 	// for them; the download area is put into the cache in the products of the setting alone
 	void zoom_hires(bool const Hires) { m_zoom_hires = Hires; }
@@ -251,6 +249,7 @@ class editor_orthophoto
 		float height_max{0.0f};
 		std::vector<glm::dvec3> surface;  // upward facing ground triangles clipped to the tile (3 vertices each)
 		bool guessed{false};              // no ground under it when sampled: the heights guessed, from the terrain model or the tiles beside
+		std::optional<float> flat;        // nothing at all to go by when sampled: flat at the height of the ground found last
 		// the points of the grid of the heights the ground didn't answer when sampled (rows north->south, as heights): filled from
 		// the points beside or guessed, and sampled again once the ground comes under one of them
 		std::vector<std::uint16_t> unanswered;
@@ -279,8 +278,6 @@ class editor_orthophoto
 	void sample_ground(tile_key const &Key, tile &Tile);
 	// the ground has come under a point of the tile which had none when it was sampled
 	bool ground_came(tile_key const &Key, tile const &Tile) const;
-	// a new tile isn't asked for yet: the ground under it is still to come
-	bool waits_for_ground(tile_key const &Key) const;
 	// the height of the ground sampled under a tile beside Own at the point, the tiles with guessed heights left out
 	bool sampled_height(tile_key const &Own, double const X, double const Z, float &Height) const;
 	void build_shape(tile_key const &Key, tile &Tile);
@@ -300,8 +297,9 @@ class editor_orthophoto
 	ground_query m_ground;
 	height_query m_height;
 	height_query m_guess;
-	coming_query m_coming;
 	bool m_zoom_hires{false};
+	// the height of the ground found last under a tile: a tile with no ground under it yet lies there
+	std::optional<float> m_known_height;
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles

@@ -65,6 +65,9 @@ bool hires_wanted(double MetresPerPixel, bool Now);
 
 // what a download that failed is told as, in plain words (an English message to be translated); the raw error is in the log
 std::string failure_reason(std::string const &Error);
+// of these, the failures of the connection and of the server alone, whatever was downloaded (the terrain model too); empty: the
+// error isn't one of them
+std::string connection_reason(std::string const &Error);
 
 // the download area grown to where the camera or the laying goes: the tiles of the polygon (PUWG easting, northing) and the square of
 // Reach tiles around the point, as one outline along the grid of the tiles, its holes filled. Only when the point is within Margin

@@ -186,23 +186,34 @@ bool hires_wanted(double const MetresPerPixel, bool const Now)
 	return MetresPerPixel <= (Now ? hires_until : hires_from);
 }
 
-std::string failure_reason(std::string const &Error)
+std::string connection_reason(std::string const &Error)
 {
 	auto const has = [&](char const *Text) { return Error.find(Text) != std::string::npos; };
-	if (has("12007") || has("resolve") || has("12005"))
+	// the errors of WinHTTP (12xxx) and of curl, and the status of HTTP
+	if (has("12007") || has("12005") || has("resolve"))
 		return "no connection to the internet: the name of the server isn't found";
 	if (has("12002") || has("imed out") || has("Timeout"))
 		return "the server didn't answer in time";
-	if (has("12029") || has("12030") || has("12031") || has("12152") || has("onnect"))
+	if (has("12029") || has("12030") || has("12031") || has("12152") || has("12017") || has("onnect"))
 		return "the server can't be reached";
-	if (has("12175") || has("12157") || has("12045") || has("SSL") || has("certificate"))
+	if (has("12175") || has("12157") || has("12045") || has("12037") || has("12038") || has("12044") || has("SSL") || has("certificate"))
 		return "the secure connection to the server failed";
 	if (has("HTTP 5"))
 		return "the server is busy or out of order";
-	if (has("HTTP 404"))
-		return "the server has no photo of the place";
 	if (has("HTTP 4"))
 		return "the server refused the request";
+	if (has("WinHTTP"))
+		return "the download failed";
+	return {};
+}
+
+std::string failure_reason(std::string const &Error)
+{
+	auto const has = [&](char const *Text) { return Error.find(Text) != std::string::npos; };
+	if (has("HTTP 404"))
+		return "the server has no photo of the place";
+	if (auto const connection{connection_reason(Error)}; false == connection.empty())
+		return connection;
 	if (has("unexpected response"))
 		return "the server sent an error in place of the photo";
 	if (has("decoding"))

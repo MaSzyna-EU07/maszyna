@@ -518,8 +518,10 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		std::string answer;
 		words >> answer;
 		auto &model{EditorSettings.terrain_model()};
+		// as the first L in a new scenery: the line of the offer in the panel of the laying, the terrain loaded in the background where
+		// the scenery is placed, no question asked
 		if (answer == "open")
-			m_nmt_state.prompt = true;
+			nmt_offer_start();
 		else if (answer == "flat")
 		{
 			m_selftest.terrain_kept = std::pair{m_nmt_state.grow, model.area};
@@ -532,7 +534,7 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			EditorSettings.terrain_while_laying(m_nmt_state.grow);
 			EditorSettings.save();
 		}
-		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.grow ? 1 : 0, model.area ? 1 : 0));
+		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, loading %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.offer_loading ? 1 : 0, m_nmt_state.grow ? 1 : 0, model.area ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "nmtgrow")

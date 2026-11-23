@@ -194,7 +194,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
 //                                        to it out along their lines from the rim, against the model there
 //   nmtstate                             logs how far the tracks going onto the terrain model are
-//   nmtquestion <open|flat|restore>      the question of the terrain of a new scenery opened, or answered without terrain as its card does;
+//   nmtquestion <open|flat|restore>      the terrain of a new scenery offered as the first L offers it (loaded in the background where the
+//                                        scenery is placed, the line in the panel of the laying), or gone without as its button does;
 //                                        restore: the settings of the terrain made by itself put back as they were before that answer
 //   gradelines <file>                    the grade line each track shares written to the file, for a map of them
 //   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height

@@ -645,10 +645,8 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
-	// with the heightmap terrain, a new tile waits while a chunk under it is still to come; where none is nor will be, or the walk of
-	// the chunks doesn't reach, it lies on the other ground or on the NMT guess as before. A scenery without it as before
-	Layer.coming_source([](glm::dvec2 const &Min, glm::dvec2 const &Max) { return EditorTerrain.active() && EditorTerrain.ground_coming(Min, Max); });
-	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
+	// a tile doesn't wait for the chunks of the heightmap terrain still to come under it: it lies flat meanwhile, and goes onto them as
+	// they come. The imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))
 			return true;
@@ -1797,7 +1795,6 @@ bool editor_mode::update()
     render_open_scenery_popup();
     render_shortcuts_window();
     render_first_steps();
-    render_nmt_prompt();
     render_nmt_banner();
     render_nmt_buried();
     render_empty_scenery_hint();
@@ -1932,6 +1929,15 @@ void editor_mode::render_terrain_loading()
         ImGui::SameLine();
         ImGui::TextDisabled("%s", STR_C("(within the download area, there is none)"));
     }
+    // no question asked: the terrain of a new scenery comes as its first track is laid, unless this is off
+    bool offer{EditorSettings.terrain_offer()};
+    if (ImGui::Checkbox(STR_C("The terrain loaded by itself as the first track of a new scenery is laid"), &offer))
+    {
+        EditorSettings.terrain_offer(offer);
+        EditorSettings.save();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("In the background, where the scenery lies on the map; the panel of the laying tells it, with the button to go without it"));
 }
 
 namespace
@@ -6482,8 +6488,7 @@ void editor_mode::render_first_steps()
 	}
 	note_first_steps();
 	follow_tutorial();
-	// the question of the terrain of a new scenery isn't drawn over the window: the window waits for the answer
-	if (false == m_first_steps_open || m_nmt_state.prompt)
+	if (false == m_first_steps_open)
 	{
 		m_first_steps_shown = 0;
 		return;

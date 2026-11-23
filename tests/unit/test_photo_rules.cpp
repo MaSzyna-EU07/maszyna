@@ -126,6 +126,17 @@ TEST_CASE("photo: what a download that failed is told as") {
 	CHECK(photo_rules::failure_reason("something else") == "the download failed");
 }
 
+TEST_CASE("photo: the failures of the connection told alike for the terrain model, its own messages left as they are") {
+	CHECK(photo_rules::connection_reason("WinHTTP error 12002") == "the server didn't answer in time");
+	CHECK(photo_rules::connection_reason("WinHTTP error 12007") == "no connection to the internet: the name of the server isn't found");
+	CHECK(photo_rules::connection_reason("WinHTTP error 12030") == "the server can't be reached");
+	CHECK(photo_rules::connection_reason("WinHTTP error 12175") == "the secure connection to the server failed");
+	CHECK(photo_rules::connection_reason("HTTP 503") == "the server is busy or out of order");
+	CHECK(photo_rules::connection_reason("HTTP 404") == "the server refused the request");
+	CHECK(photo_rules::connection_reason("WinHTTP error 12345") == "the download failed");
+	CHECK(photo_rules::connection_reason("The service gave no terrain model").empty());
+}
+
 TEST_CASE("photo: the download area grows by the square around the camera at its edge") {
 	// 4 x 4 tiles, the camera in the tile at the east edge
 	auto const area{block(0, 3)};

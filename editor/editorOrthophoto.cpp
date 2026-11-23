@@ -898,15 +898,6 @@ void editor_orthophoto::ground_arrived()
 	}
 }
 
-bool editor_orthophoto::waits_for_ground(tile_key const &Key) const
-{
-	// a tile laid out already stays, sampled again when its ground comes (ground_came)
-	if (!m_coming || m_tiles.contains(Key))
-		return false;
-	glm::dvec2 const corner = tile_corner(Key);
-	return m_coming(corner - glm::dvec2{tile_size}, corner);
-}
-
 bool editor_orthophoto::ground_came(tile_key const &Key, tile const &Tile) const
 {
 	glm::dvec2 const corner = tile_corner(Key);
@@ -1252,6 +1243,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 {
 	Tile.grounded = true;
 	Tile.guessed = false;
+	Tile.flat.reset();
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
@@ -1365,11 +1357,15 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 						heights[static_cast<std::size_t>(j) * samples + i] = y;
 				}
 		}
-		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
+		// nothing to go by yet: the tile lies flat at the height of the ground found last, or of the layer before any was, and is
+		// sampled again when something comes
 		Tile.guessed = true;
 		missing = std::count(heights.begin(), heights.end(), no_height);
 		if (missing == heights.size())
+		{
+			Tile.flat = m_known_height;
 			return;
+		}
 	}
 	while (missing > 0)
 	{
@@ -1405,6 +1401,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	auto const range = std::minmax_element(Tile.heights.begin(), Tile.heights.end());
 	Tile.height_min = *range.first;
 	Tile.height_max = *range.second;
+	m_known_height = 0.5f * (Tile.height_min + Tile.height_max);
 }
 
 void editor_orthophoto::remove_shape(tile &Tile)
@@ -1470,8 +1467,9 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	}
 	else
 	{
-		// flat quad at the layer height, triangles facing up like the draped surface
-		double const y = m_config.height;
+		// flat quad at the layer height, or at the height of the ground found last where there's none yet under it, triangles facing
+		// up like the draped surface
+		double const y = (m_config.drape && Tile.flat.has_value()) ? *Tile.flat : m_config.height;
 		glm::dvec3 const nw(corner.x, y, corner.y), ne(corner.x - tile_size, y, corner.y);
 		glm::dvec3 const sw(corner.x, y, corner.y - tile_size), se(corner.x - tile_size, y, corner.y - tile_size);
 		for (auto const &point : {nw, sw, ne, se, ne, sw})
@@ -1690,8 +1688,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				}
 				continue;
 			}
-			if (waits_for_ground(key))
-				continue;
+			// laid out at once, whether its ground has come or not: it lies flat till it does, then goes onto it
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
@@ -1915,7 +1912,8 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 			continue;
 
 		bool const draped = m_config.drape && !t.heights.empty();
-		double const flat = m_config.height;
+		// with no ground under it yet, laid onto the ground, at the height of the ground found last
+		double const flat = (m_config.drape && t.flat.has_value()) ? *t.flat : m_config.height;
 		double const lift = m_config.lift;
 		double const ylo = draped ? t.height_min + lift : flat;
 		double const yhi = draped ? t.height_max + lift : flat;

@@ -548,7 +548,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<glm::dvec3> anchors; // x, z of a place of the tracks, the formation there less the model
 		std::map<std::pair<int, int>, std::vector<std::size_t>> anchor_cells; // the anchors in squares of the plan
 		bool offered{false}; // the terrain was offered to the scenery begun without it
-		bool prompt{false}; // the offer is shown
+		bool prompt{false}; // the line of the offer is shown in the panel of the laying
+		bool offer_loading{false}; // and the terrain of the offer is being loaded
 		bool moving{false}; // the place being picked again
 		char place[96]{}; // typed: degrees or PUWG 1992
 		int shown{-1}; // the frame the terrain panel showed how far the work got
@@ -685,9 +686,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool nmt_busy() const;
 	// the terrain made so far stays, what's waiting is dropped, the grade lines not fitted yet are left
 	void nmt_stop();
-	// a scenery begun from nothing, with no tracks nor terrain, is asked as the first track is laid whether it wants the terrain
+	// a scenery begun from nothing, with no tracks nor terrain, has the terrain loaded in the background as the first track is laid,
+	// where it lies on the map, with no question in the way: a line of the panel of the laying tells it, with the button to go without
 	void nmt_offer();
-	void render_nmt_prompt();
+	void nmt_offer_start();
 	// the place picked in the terrain window: the terrain model and the orthophoto take it
 	void nmt_place_scenery(glm::dvec2 const &Point);
 	void nmt_accept_offer();
@@ -930,6 +932,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the tiles of the photo which failed: marked red in the view, counted in the status bar with the button trying them again
 	void draw_orthophoto_failures() const;
 	void render_orthophoto_status();
+	// the terrain loaded in the background as the first track of a new scenery is laid, told in a line of the panel of the laying with
+	// the button to go without it
+	void render_nmt_offer_line();
 	int m_orthophoto_frame{-10};
 	bool orthophoto_settings_open() const;
 	// view menu: the top view, the lanes of the roads, the structure gauge, the environment

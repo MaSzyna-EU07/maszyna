@@ -6060,23 +6060,11 @@ msgstr ". To za dużo: położenie scenerii jest pewnie złe, sprawdź ortofotom
 msgid "There's terrain there already"
 msgstr "Tam już jest teren"
 
-msgid "Terrain for the new scenery###nmtoffer"
-msgstr "Teren dla nowej scenerii###nmtoffer"
-
-msgid "The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."
-msgstr "Sceneria nie ma jeszcze terenu. Wczytać teren z map (NMT) i ortofotomapę wokół tego miejsca? Tory układane potem pójdą po nim"
-
 msgid "Where is it? PUWG 1992 of this point, X to the north and Y to the east, as geoportal.gov.pl gives them:"
 msgstr "Gdzie to jest? Współrzędne PUWG 1992 tego miejsca, X na północ i Y na wschód, jak podaje geoportal.gov.pl:"
 
-msgid "Load the terrain"
-msgstr "Wczytaj teren z map"
-
 msgid "Without terrain"
 msgstr "Bez terenu"
-
-msgid "Ask with every new scenery"
-msgstr "Pytaj przy każdej nowej scenerii"
 
 msgid "Fetching the terrain model under the tracks: %zu squares left"
 msgstr "Pobieranie NMT pod torami: zostało %zu kwadratów"
@@ -7289,9 +7277,6 @@ msgstr "pochylenie"
 
 msgid "cant"
 msgstr "przechyłka"
-
-msgid "The terrain model and the aerial photos of geoportal.gov.pl around here; the tracks go along the real ground"
-msgstr "Teren z map (NMT) i ortofotomapa z geoportal.gov.pl wokół tego miejsca; tory pójdą po prawdziwym terenie"
 
 msgid "Type where the scenery lies first"
 msgstr "Najpierw wpisz, gdzie leży sceneria"
@@ -10076,9 +10061,6 @@ msgstr "Kwadrat 2 km wokół kamery"
 
 msgid "The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too"
 msgstr "Ponownie prosi serwis o brakujące fragmenty NMT; samo dzieje się to też co 15 s"
-
-msgid "Pick where the scenery lies first"
-msgstr "Najpierw wskaż, gdzie leży sceneria"
 
 msgid "The scenery has no terrain yet"
 msgstr "Sceneria nie ma jeszcze terenu"
@@ -15437,3 +15419,30 @@ msgstr "pobieranie się nie udało"
 
 msgid "Retry##photos"
 msgstr "Ponów##photos"
+
+msgid "The terrain loaded by itself as the first track of a new scenery is laid"
+msgstr "Teren wczytywany sam przy układaniu pierwszego toru nowej scenerii"
+
+msgid "In the background, where the scenery lies on the map; the panel of the laying tells it, with the button to go without it"
+msgstr "W tle, tam gdzie sceneria leży na mapie; mówi o tym panel układania, z przyciskiem, by obejść się bez terenu"
+
+msgid "Without terrain: the tracks lie on the flat plane; the terrain can be loaded later in Terrain (F5)"
+msgstr "Bez terenu: tory leżą na płaszczyźnie; teren możesz wczytać później w dziale Teren (F5)"
+
+msgid "Terrain:"
+msgstr "Teren:"
+
+msgid "Terrain: loading..."
+msgstr "Teren: wczytuję…"
+
+msgid "The terrain model of geoportal.gov.pl around here, in the background: the tracks laid meanwhile go onto it once it's in, the photo lies flat till then"
+msgstr "Teren z map (NMT) z geoportal.gov.pl wokół tego miejsca, w tle: tory ułożone w tym czasie trafią na niego, gdy dojdzie, a zdjęcie do tego czasu leży płasko"
+
+msgid "Terrain: the scenery isn't placed on the map"
+msgstr "Teren: sceneria nie leży na mapie"
+
+msgid "Place it..."
+msgstr "Wskaż miejsce…"
+
+msgid "In Terrain (F5): the middle of the scenery clicked on the map, then its terrain and photos can be loaded"
+msgstr "W dziale Teren (F5): kliknij środek scenerii na mapie, potem możesz wczytać jej teren i zdjęcia"

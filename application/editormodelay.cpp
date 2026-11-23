@@ -2601,6 +2601,7 @@ void editor_mode::render_lay_ui()
 	auto &tool{m_lay};
 	auto const state{lay_panel_state()};
 	render_lay_step(state);
+	render_nmt_offer_line();
 	if (state == lay_state::clicking || state == lay_state::extending)
 	{
 		render_lay_quality();
