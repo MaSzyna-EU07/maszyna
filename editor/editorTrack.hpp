@@ -399,7 +399,8 @@ class editor_track
 	static route route_of(chain const &Chain);
 	// the speed most of the sampled route is laid for, by the length: a few tracks set faster or slower don't set the curves of
 	// all of it. 100 where none is set
-	static double route_speed(route const &Route);
+	// the speed most of the route has, by its length; Default where none of its tracks has one
+	static double route_speed(route const &Route, double const Default = 100.0);
 	struct route_sample
 	{
 		double chainage{0.0};
@@ -495,6 +496,7 @@ class editor_track
 		std::string rail{"rail_screw_used1"};
 		std::string ballast{"1435mm/tpbps-new2"};
 		std::string rail_profile;
+		double gauge{1.435}; // m
 	};
 	// the path goes to the layer receiving the items created in the editor
 	static TTrack *create_path(path_style const &Style, segment_data const &Path);

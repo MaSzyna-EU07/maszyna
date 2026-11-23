@@ -1046,7 +1046,7 @@ void editor_mode::profile_recognize()
 	auto const read = [&](profile::recognition const &Options) {
 		state.line = profile::recognize(chainages, elevations, grades, Options);
 		state.line.norms = norms;
-		state.line.speed = editor_track::route_speed(state.route);
+		state.line.speed = editor_track::route_speed(state.route, setup_now().speed);
 		state.selected = -1;
 		profile_check();
 	};
@@ -1075,7 +1075,7 @@ void editor_mode::profile_fit_ground()
 		return;
 	}
 	auto settings{state.line};
-	settings.speed = editor_track::route_speed(state.route);
+	settings.speed = editor_track::route_speed(state.route, setup_now().speed);
 	// the grade line is the rail top: it's fitted so the formation under it, not the rails, follows the ground
 	auto ground{state.terrain};
 	for (std::size_t i = 0; i < ground.size() && i < state.beds.size(); ++i)

@@ -340,6 +340,9 @@ void editor_mode::model_open()
 	WriteLog(format("Editor: the project of the map %s %s, %zu lines of the model", map.c_str(), opened.migrated ? "made of its //$ lines" : "read", model().session.network().lines().size()), logtype::generic);
 	for (auto const &note : opened.notes)
 		WriteLog("Editor: project: " + note, logtype::generic);
+	// the assumptions of the project go into its file from now on, the profile of the scenery with them
+	if (model_setup())
+		m_setup_changed = true;
 	for (auto const &change : opened.hand_changes)
 		WriteLog(format("Editor: project: the track %s of line %s in %s %s outside the editor", change.name.c_str(), line_name(change.line).c_str(), change.file.c_str(), change.missing ? "is gone" : "was changed"), logtype::generic);
 	// the tracks the generator wrote, found in the scene by their names; written again as the files have them while nothing changes them
@@ -728,6 +731,14 @@ void editor_mode::model_saved(bool const Success)
 	}()), logtype::generic);
 }
 
+bool editor_mode::model_setup()
+{
+	if (false == model_on() || false == m_setup.has_value())
+		return false;
+	model().session.setup(project_setup::record(*m_setup), m_setup->profile);
+	return true;
+}
+
 bool editor_mode::model_lay(lay_line_plan const &Plan, editor_track::snap_target const &End, std::vector<TTrack *> &Created, std::string &Why)
 {
 	if (false == model_on())
@@ -766,7 +777,8 @@ bool editor_mode::model_lay(lay_line_plan const &Plan, editor_track::snap_target
 		line.vertices.push_back(made);
 	}
 	line.transition = design.shape == alignment::transition_shape::clothoid ? layout::transition_shape::clothoid : layout::transition_shape::cubic_parabola;
-	line.category.vmax = design.speed;
+	// the class of the line of the assumptions of the project, at the speed it's designed for
+	line.category = project_setup::line_class(setup_now(), design.speed);
 	// from the free end of a line of the model, or to one: the node of that end shared, the leg there on its tangent, so the line goes on
 	// from it with no kink
 	auto const free_node = [&](editor_track::snap_target const &Target) -> layout::node const * {
@@ -1023,7 +1035,7 @@ bool editor_mode::model_plan_convert(std::string &Why)
 		line.vertices.push_back(made);
 	}
 	line.transition = design.shape == alignment::transition_shape::clothoid ? layout::transition_shape::clothoid : layout::transition_shape::cubic_parabola;
-	line.category.vmax = design.speed;
+	line.category = project_setup::line_class(setup_now(), design.speed);
 	auto const tracks{chain.tracks};
 	std::vector<std::string> names;
 	for (auto const *track : tracks)

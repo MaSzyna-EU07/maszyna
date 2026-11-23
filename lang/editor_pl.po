@@ -15259,3 +15259,117 @@ msgstr "łuk na granicy profili"
 
 msgid "element between turnouts"
 msgstr "wstawka między rozjazdami"
+
+# scenery editor: the assumptions of the project ("Co rysujesz?")
+
+msgid "What do you draw?"
+msgstr "Co rysujesz?"
+
+msgid "%d. What do you draw?"
+msgstr "%d. Co rysujesz?"
+
+msgid "The tracks are laid to these norms and this speed: a curve they don't allow can't be laid"
+msgstr "Tory układają się według tych norm i tej prędkości: łuku, na który normy nie pozwalają, nie da się ułożyć"
+
+msgid "The tracks are laid to these norms and this speed, a fictional scenery's too: a curve they don't allow can't be laid. Changed later in the editor: Assumptions of the project"
+msgstr "Tory układają się według tych norm i tej prędkości, także w scenerii fikcyjnej: łuku, na który normy nie pozwalają, nie da się ułożyć. Zmienisz to później w edytorze: Założenia projektu"
+
+msgid "Start drawing"
+msgstr "Zaczynam"
+
+msgid "Start: create and open in the editor"
+msgstr "Zaczynam: utwórz i otwórz w edytorze"
+
+msgid "Changed later in Assumptions of the project: Editor settings, or the line of them in Tracks"
+msgstr "Zmienisz to później w Założeniach projektu: Ustawienia edytora albo linijka założeń w dziale Tory"
+
+msgid "Assumptions: "
+msgstr "Założenia: "
+
+msgid "change"
+msgstr "zmień"
+
+msgid "The assumptions of the project: the norms, the speed of the line, the traffic, the track, the gauge, the rail"
+msgstr "Założenia projektu: normy, prędkość linii, rodzaj ruchu, tor, rozstaw, szyna"
+
+msgid "Assumptions of the project"
+msgstr "Założenia projektu"
+
+msgid "Assumptions of the project..."
+msgstr "Założenia projektu..."
+
+msgid "What the scenery is drawn to: the norms, the speed of the line, the traffic, the track, the gauge and the rail; the defaults of the tools"
+msgstr "Według czego rysujesz scenerię: normy, prędkość linii, rodzaj ruchu, tor, rozstaw i szyna; wartości domyślne narzędzi"
+
+msgid "The defaults of the laying, the plan, the switches and the profile; a field of a tool changes them for one line"
+msgstr "Wartości domyślne układania, Planu, rozjazdów i profilu; pole w panelu narzędzia zmienia je dla jednej linii"
+
+msgid "Checking the lines laid before against them..."
+msgstr "Sprawdzam z nimi wcześniej ułożone linie..."
+
+msgid "The lines laid before meet the norms of these assumptions"
+msgstr "Wcześniej ułożone linie spełniają normy tych założeń"
+
+msgid "%zu of the lines laid before don't meet these norms (%zu beyond the hard limits): the report is in the window of the norms. Nothing was changed"
+msgstr "Wcześniej ułożone linie niespełniające tych norm: %zu (ponad twarde granice: %zu); raport jest w oknie norm. Niczego nie zmieniono"
+
+msgid "Show the report"
+msgstr "Pokaż raport"
+
+msgid "A change doesn't alter what's laid: the tracks laid before stay as they are"
+msgstr "Zmiana niczego nie przerabia: wcześniej ułożone tory zostają, jakie są"
+
+msgid "PKP PLK Id-1 (ST-T1-A6): the values preferred, the normal and the extended limits"
+msgstr "PKP PLK Id-1 (ST-T1-A6): wartości zalecane, graniczne normalne i rozszerzone"
+
+msgid "TSI INF alone: the least the law of the EU allows, the loosest; its limits can't be passed either"
+msgstr "Tylko TSI INF: minimum, na które pozwala prawo UE, najluźniejsze; jego granic też nie da się przekroczyć"
+
+msgid "EN 13803: the normal limits warn, the exceptional ones can't be passed"
+msgstr "EN 13803: granice normalne ostrzegają, wyjątkowych nie da się przekroczyć"
+
+msgid "Swiss AB-EBV: the normal limits warn, the greatest ones can't be passed"
+msgstr "Szwajcarskie AB-EBV: granice normalne ostrzegają, maksymalnych nie da się przekroczyć"
+
+msgid "A map across two countries: the areas of the norms later, in the settings"
+msgstr "Dla mapy na dwa kraje obszary norm później w ustawieniach"
+
+msgid "passenger##traffic"
+msgstr "pasażerski##traffic"
+
+msgid "mixed##traffic"
+msgstr "mieszany##traffic"
+
+msgid "freight##traffic"
+msgstr "towarowy##traffic"
+
+msgid "main##track"
+msgstr "główny##track"
+
+msgid "side (station)##track"
+msgstr "boczny (stacyjny)##track"
+
+msgid "A running line or a main track of a station"
+msgstr "Tor szlakowy albo główny tor stacji"
+
+msgid "A siding of a station: the norms of the side tracks"
+msgstr "Tor boczny stacji: normy torów bocznych"
+
+msgid "Gauge"
+msgstr "Rozstaw"
+
+msgid "Rail"
+msgstr "Szyna"
+
+msgid "the switches of this rail first"
+msgstr "z tego domyślne rozjazdy"
+
+msgid "Look of the tracks laid: empty, rails and trackbed as now"
+msgstr "Wygląd układanych torów: puste pole to szyny i podsypka jak dziś"
+
+msgid "Rails##setuplook"
+msgstr "Szyny##setuplook"
+
+msgid "Trackbed##setuplook"
+msgstr "Podsypka##setuplook"
+

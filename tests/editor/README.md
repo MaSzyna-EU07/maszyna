@@ -121,6 +121,9 @@ tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the mod
 | `expect modelvertexat <line> <index> <x> <z> <tolerance>` | where the vertex of a line of the model is in the plan |
 | `expect modelpreview <shown\|none>` | a handle of the route design dragged on a line of the model: the line as the model would lay it is tried and told |
 | `expect modelspacing <line> <other> <m> <low> <high>` | how far the other line runs from the point of the line at the chainage |
+| `expect setup none`, `expect setup <key> <value>` | the assumptions of the project of the scenery: none said yet, or the value of a key as their record writes it (`norms`, `speed`, `traffic`, `track`, `gauge`, `rail`) |
+| `expect setupmark <present\|absent>` | the scenery holds the line of the assumptions (`//$u setup ...`), or not |
+| `expect layspeed <km/h>` | the speed the lay tool lays at |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
@@ -199,3 +202,10 @@ and the rest of the editing on the model (E4b), with the setting on:
 | `m_12_lay_from_end` | a line laid on from the free end of a line of the model shares its node, the ends to the bit before and after a reopen |
 | `m_13_parallel` | the parallel tool beside a line of the model lays a line of the model, its arc concentric at the spacing, one step |
 | `m_14_layer_origin` | a line of the model saved into a file under an origin and opened again: nothing taken for changed by hand, also after a second save |
+
+and the assumptions of the project and the norms enforced when laying (`editor-project-setup.md`):
+
+| case | checks |
+| --- | --- |
+| `ps_1_setup_saved` | a scenery with none has no assumptions; set as the card's Start sets them they're the defaults of the laying and of the norms, written into the scenery (`//$u`) and read back the same after a reopen |
+| `ps_2_setup_project` | with the editing on the model the assumptions go into the project file, none into the scenery, and are read from there after a reopen with the setting off |

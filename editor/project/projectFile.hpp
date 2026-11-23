@@ -28,6 +28,7 @@ http://mozilla.org/MPL/2.0/.
 //   eu07proj 1
 //   next node <n> line <n> vertex <n> turnout <n>  the identifiers handed out next; none is handed out again
 //   norms <profile>                                the profile of the scenery: plk, tsi, en13803, ch
+//   setup <key> <value>...                         the assumptions of the project (editorProjectSetup.hpp), as written there
 //   area <name> <profile> <count> <x z>...         a profile for an area outlined in the plan
 //   lineprofile <name> <profile>                   a profile for a line by name
 //   class <n> vmax <km/h> vmin <km/h> traffic <passenger|mixed|freight> track <main|side> load <Tg> features <flags>
@@ -103,6 +104,7 @@ struct document
 	std::set<layout::line_id> hand_changed;
 	std::vector<layout::anchor> anchors; // of the lineside objects
 	std::vector<legacy_record> legacy;
+	std::string setup; // the line of the assumptions of the project (editorProjectSetup.hpp), the keyword with it; empty: none
 };
 
 // the same contents: the lines and the nodes, the norms, the identifiers handed out and the rest

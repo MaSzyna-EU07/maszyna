@@ -112,7 +112,7 @@ void editor_mode::route_reset()
 	design.norms = route.design.norms;
 	design.shape = route.design.shape;
 	design.transition_pieces = route.design.transition_pieces;
-	design.speed = chain.velocity > 0.0 ? chain.velocity : 100.0;
+	design.speed = chain.velocity > 0.0 ? chain.velocity : setup_now().speed;
 	route.design = design;
 	route_bind_ends();
 	design = route.design;

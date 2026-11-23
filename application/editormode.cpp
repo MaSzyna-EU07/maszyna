@@ -1802,7 +1802,10 @@ bool editor_mode::update()
     render_orthophoto_window();
     draw_selection_overlay();
     render_context_menu();
-    // the track geometry edited through the model: the project of the map, the questions waiting for an answer
+    // the assumptions of the project read with the scenery; then the track geometry edited through the model: the project of the map,
+    // the questions waiting for an answer
+    setup_update();
+    render_setup_window();
     model_update();
     render_model_windows();
     steps.step("windows");
@@ -1866,6 +1869,14 @@ void editor_mode::render_settings()
 
         // the tracks laid and edited through the model of the track geometry, a trial: off, as the editor was
         ImGui::SeparatorText(STR_C("Tracks"));
+        // what the scenery is drawn to: the norms, the speed, the gauge, the rail
+        if (ImGui::Button(STR_C("Assumptions of the project...")))
+        {
+            m_setup_edit = setup_now();
+            m_setup_window = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", STR_C("What the scenery is drawn to: the norms, the speed of the line, the traffic, the track, the gauge and the rail; the defaults of the tools"));
         {
             bool model{EditorSettings.model_editing()};
             if (ImGui::Checkbox(STR_C("Editing on the model (trial)"), &model))
@@ -3412,6 +3423,7 @@ bool editor_mode::save()
 
     if (m_profile.changed)
         profile_store();
+    setup_store();
     switch_store::tidy();
     switch_store::settle();
     infra_store();

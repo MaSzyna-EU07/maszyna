@@ -111,6 +111,9 @@ class session
 	void mark_hand_changed(layout::line_id const Line);
 	// the project written next to the map, with the network as it is now and the records of the generated tracks of the lines gone taken out
 	bool save(std::string &Error);
+	// the assumptions of the project (editorProjectSetup.hpp), the line of their record, kept in the project from now on, written with it;
+	// the profile of the scenery the model judges the lines by with them, a change of it not a step of the history
+	void setup(std::string Line, norms::profile_id const Profile);
 
   private:
 	struct step

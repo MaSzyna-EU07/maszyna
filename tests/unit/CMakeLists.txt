@@ -57,6 +57,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsEngine.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/norms/normsLine.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorNormsReport.cpp"
+	# the assumptions of the project, what the tracks are laid to (test_project_setup.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/editorProjectSetup.cpp"
 	# the domain of the track geometry: the elements, the lines and the nodes, the commands editing them, the tracks made of them
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutElements.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLine.cpp"

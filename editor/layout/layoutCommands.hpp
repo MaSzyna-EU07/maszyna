@@ -215,6 +215,8 @@ class model
 	explicit model(network Network) : m_network{std::move(Network)} {}
 
 	network const &state() const { return m_network; }
+	// the profile of the norms of the scenery, where no area nor a line has its own: the assumptions of the project changed, not an edit
+	void scenery_profile(norms::profile_id const Profile) { m_network.areas.scenery = Profile; }
 	outcome execute(command const &Command, edit_policy const Policy = edit_policy::refuse_block);
 	bool undo();
 	bool redo();

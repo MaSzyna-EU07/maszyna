@@ -53,7 +53,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey, &editor_mode::selftest_model, &editor_mode::selftest_expect})
+	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey, &editor_mode::selftest_model, &editor_mode::selftest_setup, &editor_mode::selftest_expect})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	for (auto *tool : m_tools)
@@ -267,6 +267,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   <line> <other> <m> <low> <high>      the editing on the model of E4b (editormodemodel.cpp, tests/editor/README.md)
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code
+//   setup [<key> <value>]..., setupwindow [close]   the assumptions of the project set as the Start of their card sets them, the keys
+//                                        of their record over the ones there are (norms, speed, traffic, track, gauge, rail); their window
+//   expect setup none|<key> <value>, expect setupmark <present|absent>   the assumptions of the scenery, their line in it (editormodesetup.cpp)
+//   expect layspeed <km/h>               the speed the lay tool lays at
 //   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes
 void editor_mode::selftest_step()
 {

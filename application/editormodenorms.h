@@ -29,6 +29,13 @@ class norms_tool final : public editor_tool
 	void set_open(bool const Open) { m_state.open = Open; }
 	// what the last check found, for the expectations of the self-test
 	std::vector<norms_report::entry> const &results() const { return m_state.results; }
+	// the profile and the class of the line the checks are made against, as the assumptions of the project have them
+	void defaults(norms::profile_id const Profile, norms::line_class const &Line);
+	// the lines of the whole scenery checked against them, from now on, frame after frame, the window open on the report
+	void check_scenery();
+	bool checking() const { return false == m_state.queue.empty(); }
+	// the lines of the check done last with a finding of the tier or worse
+	std::size_t lines_beyond(norms::tier const Tier) const;
 
   private:
 	editor_selection &m_selection;

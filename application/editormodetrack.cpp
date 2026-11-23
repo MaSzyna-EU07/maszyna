@@ -830,12 +830,16 @@ void editor_mode::render_track_nothing_selected()
 				show_track_tab(track_tab::lay);
 		}
 	}
+	// a scenery with no assumptions of the project: what's drawn asked for first, in place of the first steps
+	if (render_setup_card())
+		return;
 	if (false == render_first_steps_card() && false == m_first_steps_open && m_track_tab == track_tab::path)
 	{
 		ImGui::Spacing();
 		if (ImGui::TextLink(STR_C("Tutorial")))
 			m_first_steps_open = true;
 	}
+	render_setup_line();
 }
 
 void editor_mode::render_track_selection()

@@ -44,6 +44,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
+#include "editor/editorProjectSetup.hpp"
 #include "editor/editorRecords.hpp"
 #include "editor/editorGroundFollow.hpp"
 #include "editor/editorInfra.hpp"
@@ -317,6 +318,32 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void first_step_done(first_step const Step) override;
 	void open_kilometrage() override;
 	bool m_first_steps_open{false}; // the window of the lesson
+	// the assumptions of the project ("Co rysujesz?"): none until they're said, the card of the inspector of the tracks asking for them;
+	// the defaults meanwhile. Kept with the map: in its project file where it has one, else in the scenery (//$u)
+	std::optional<project_setup::setup> m_setup;
+	project_setup::setup m_setup_edit; // the fields of the card and of the window
+	bool m_setup_read{false}; // read for the scenery open
+	bool m_setup_changed{false}; // to be written with the scenery
+	bool m_setup_marked{false}; // the scenery holds //$u lines
+	bool m_setup_window{false};
+	std::string m_setup_told; // what the change of them found among the lines laid before
+	bool m_setup_checking{false}; // the lines of the scenery being checked against the assumptions changed
+	project_setup::setup setup_now() const { return m_setup.value_or(project_setup::setup{}); }
+	void setup_update();
+	void setup_read();
+	// the assumptions taken: the defaults of the tools from now on; Changed: said by the user, to be written with the scenery, the lines
+	// laid before checked against them
+	void setup_apply(project_setup::setup const &Setup, bool const Changed);
+	// the defaults of the tools from the assumptions: the speed of the laying and of the plan, the gauge and the look of the tracks laid,
+	// the norms checked against, the rail and the usual switch of the switch tool
+	void setup_defaults(project_setup::setup const &Setup);
+	void setup_store();
+	bool render_setup_card();
+	void render_setup_window();
+	void render_setup_line();
+	// the assumptions into the project of the map where it's open, the profile of its scenery with them; false where it isn't
+	bool model_setup();
+	editor_selftest_result selftest_setup(std::string const &command, std::istringstream &words);
 	int m_first_steps_shown{0}; // frames the window of the lesson was drawn since it opened, up to 3: it's placed anew as it opens
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
@@ -1678,6 +1705,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int matching_template(switch_store::record const &Record, bool const Lengths, std::optional<bool> const Movable = std::nullopt) const;
 	// the template the switch was laid of, -1 if none: a switch of the scenery of its own shape, say
 	int switch_template_index(TTrack const &Switch) const;
+	// the usual switch of the rail for the speed on its diverging track, as the assumptions of the project ask for one: the closest speed,
+	// the skos usual for it; -1 for none
+	int usual_switch(std::string const &Rail, double const Speed) const;
 	// why the switch can't take another template here, empty when it can
 	std::string template_change_blocked(TTrack const &Switch) const;
 	// the template of the catalogue a slip or a crossing was laid of, of the rail before the others; -1 if none

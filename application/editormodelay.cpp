@@ -2381,6 +2381,7 @@ void editor_mode::route_drop()
 	auto const norms{m_route.design.norms};
 	m_route = {};
 	m_route.design.norms = norms;
+	m_route.design.speed = setup_now().speed;
 }
 
 alignment::limits editor_mode::laying_norms() const

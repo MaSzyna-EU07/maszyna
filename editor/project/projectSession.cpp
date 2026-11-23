@@ -214,4 +214,10 @@ bool session::save(std::string &Error)
 	return project::save(m_project, file(), Error);
 }
 
+void session::setup(std::string Line, norms::profile_id const Profile)
+{
+	m_project.setup = std::move(Line);
+	m_model.scenery_profile(Profile);
+}
+
 } // namespace project

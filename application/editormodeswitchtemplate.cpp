@@ -649,6 +649,22 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 	return picked == Chosen ? -1 : picked;
 }
 
+int editor_mode::usual_switch(std::string const &Rail, double const Speed) const
+{
+	auto const &templates{m_switch.templates};
+	int best{-1};
+	auto const score = [Speed](editor_track::switch_template const &Entry) { return std::make_pair(std::abs(speed_of(Entry) - Speed), std::abs(Entry.ratio - usual_ratio(speed_of(Entry)))); };
+	for (int i = 0; i < static_cast<int>(templates.size()); ++i)
+	{
+		auto const &entry{templates[i]};
+		if (entry.source != nullptr || entry.own || entry.double_slip || entry.twofold() || entry.type != "Rz" || entry.rail != Rail || speed_of(entry) <= 0.0)
+			continue;
+		if (best < 0 || score(entry) < score(templates[best]))
+			best = i;
+	}
+	return best;
+}
+
 void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 {
 	// a turnout of the model: its type, its side, moved or taken out by its commands

@@ -373,7 +373,7 @@ std::string unword(std::string_view const Word)
 bool same(document const &A, document const &B)
 {
 	return A.network.same(B.network) && A.network.handed() == B.network.handed() && same_areas(A.network.areas, B.network.areas) && A.generated == B.generated && A.hand_changed == B.hand_changed && A.anchors == B.anchors &&
-	       A.legacy == B.legacy;
+	       A.legacy == B.legacy && A.setup == B.setup;
 }
 
 std::string write(document const &Project)
@@ -390,6 +390,8 @@ std::string write(document const &Project)
 	auto const handed{network.handed()};
 	put(std::format("next node {} line {} vertex {} turnout {}", handed.node + 1ull, handed.line + 1ull, handed.vertex + 1ull, handed.turnout + 1ull));
 	put(std::format("norms {}", profile_name(network.areas.scenery)));
+	if (false == Project.setup.empty())
+		put(Project.setup);
 	for (auto const &area : network.areas.areas)
 	{
 		auto line{std::format("area {} {} {}", word(area.name), profile_name(area.profile), area.outline.size())};
@@ -768,6 +770,11 @@ read_result read(std::string_view const Text)
 		{
 			project.network.areas.scenery = words.profile("the profile of the scenery");
 			words.finish();
+		}
+		else if (keyword == "setup")
+		{
+			// the words are the assumptions' own, read by them: kept as they are written
+			project.setup = "setup " + words.rest();
 		}
 		else if (keyword == "area")
 		{

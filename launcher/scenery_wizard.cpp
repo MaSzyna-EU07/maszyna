@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "launcher/scenery_wizard.h"
 #include "application/application.h"
+#include "application/editorsetupui.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorGeometry.hpp"
@@ -251,12 +252,13 @@ void ui::scenerywizard_panel::render_form()
 		render_place();
 		render_range();
 	}
+	render_setup(m_realistic ? 4 : 2);
 
 	ImGui::Spacing();
 	ImGui::Separator();
 	auto const reason{missing(named, exists)};
 	ImGui::BeginDisabled(false == reason.empty());
-	if (ImGui::Button(STR_C("Create and open in the editor"), ImVec2(-1.f, ImGui::GetFrameHeight() * 1.4f)))
+	if (ImGui::Button(STR_C("Start: create and open in the editor"), ImVec2(-1.f, ImGui::GetFrameHeight() * 1.4f)))
 		create_scenery();
 	ImGui::EndDisabled();
 	if (false == reason.empty())
@@ -389,6 +391,13 @@ void ui::scenerywizard_panel::render_range()
 	wrapped_disabled(STR("It can be changed later in the editor: Map > Orthophoto settings... > Download area"));
 }
 
+void ui::scenerywizard_panel::render_setup(int const Step)
+{
+	ImGui::SeparatorText(format(STR_C("%d. What do you draw?"), Step).c_str());
+	wrapped_disabled(STR("The tracks are laid to these norms and this speed, a fictional scenery's too: a curve they don't allow can't be laid. Changed later in the editor: Assumptions of the project"));
+	setup_ui::fields("wizard", m_setup);
+}
+
 bool ui::scenerywizard_panel::create_scenery()
 {
 	std::string name{m_filename};
@@ -417,6 +426,9 @@ bool ui::scenerywizard_panel::create_scenery()
 	}
 	else
 		std::snprintf(reference, sizeof(reference), "fictional");
+	// what's drawn, the norms the tracks are laid to: a fictional scenery has them as any other
+	output << "//$u # the assumptions of the project: what the editor lays the tracks to\r\n";
+	output << "//$u " << project_setup::record(m_setup) << "\r\n";
 	if (m_title[0] != '\0')
 		output << "// " << m_title << "\r\n";
 	output << "// created in the editor " << date << "\r\n\r\n";
@@ -428,6 +440,7 @@ bool ui::scenerywizard_panel::create_scenery()
 		WriteLog(format("Scenery wizard: created %s at %s, the range of the photos %zu points, %.1f km2", file.c_str(), reference, area.size(), geometry::polygon_area(area) / 1.0e6));
 	else
 		WriteLog("Scenery wizard: created " + file + ", fictional");
+	WriteLog("Scenery wizard: the assumptions of the project: " + project_setup::record(m_setup));
 
 	Global.SceneryFile = file;
 	Global.local_start_vehicle = "ghostview";

@@ -140,6 +140,27 @@ void norms_tool::start()
 	state.history = m_history.history_revision();
 }
 
+void norms_tool::defaults(norms::profile_id const Profile, norms::line_class const &Line)
+{
+	m_state.profile = static_cast<int>(Profile);
+	m_state.options.profile = Profile;
+	m_state.options.line = Line;
+}
+
+void norms_tool::check_scenery()
+{
+	m_state.scope = 1;
+	m_state.open = true;
+	start();
+}
+
+std::size_t norms_tool::lines_beyond(norms::tier const Tier) const
+{
+	return static_cast<std::size_t>(std::ranges::count_if(m_state.lines, [Tier](norms_report::checked_line const &Line) {
+		return std::ranges::any_of(Line.entries, [Tier](norms_report::entry const &Entry) { return static_cast<int>(Entry.finding.level) >= static_cast<int>(Tier); });
+	}));
+}
+
 void norms_tool::update()
 {
 	auto &state{m_state};

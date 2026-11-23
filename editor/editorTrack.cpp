@@ -2568,7 +2568,7 @@ editor_track::route editor_track::route_of(chain const &Chain)
 	return result;
 }
 
-double editor_track::route_speed(route const &Route)
+double editor_track::route_speed(route const &Route, double const Default)
 {
 	std::vector<std::pair<double, double>> speeds;
 	auto total{0.0};
@@ -2583,7 +2583,7 @@ double editor_track::route_speed(route const &Route)
 	for (auto const &[speed, length] : speeds)
 		if ((passed += length) >= total * 0.5)
 			return speed;
-	return 100.0;
+	return Default;
 }
 
 std::vector<editor_track::route_sample> editor_track::sample_route(route &Route, double const Step)
@@ -3339,7 +3339,7 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
 	// the rails of the style on both paths, its ballast under the switch
-	text << "switch " << Template.length << " 1.435 0.15 10 20 0 flat vis " << Style.rail << " 6 " << Style.rail << " 0.2 0.5 1.1 ";
+	text << "switch " << Template.length << ' ' << Style.gauge << " 0.15 10 20 0 flat vis " << Style.rail << " 6 " << Style.rail << " 0.2 0.5 1.1 ";
 	write_points(text, Paths[0]);
 	write_points(text, Paths[1]);
 	text << "trackbed " << Style.ballast << ' ';
@@ -3779,7 +3779,7 @@ TTrack *editor_track::create_path(path_style const &Style, segment_data const &P
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
 	auto const length{glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end])};
-	text << "normal " << length << " 1.435 0.15 25 20 0 flat vis " << Style.rail << " 6 " << Style.ballast << " 0.2 0.5 1.1 ";
+	text << "normal " << length << ' ' << Style.gauge << " 0.15 25 20 0 flat vis " << Style.rail << " 6 " << Style.ballast << " 0.2 0.5 1.1 ";
 	write_points(text, Path);
 	if (Style.velocity > 0.0)
 		text << "velocity " << Style.velocity << ' ';
