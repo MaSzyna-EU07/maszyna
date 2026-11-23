@@ -82,6 +82,15 @@ bool legacy_derailed_slides(TMoverParameters const &Vehicle)
 	       Vehicle.Derailed == derailment::outcome::none;
 }
 
+// a derailed vehicle tears its brake hoses: the brake pipe vents and the rest of the train brakes in emergency
+void tear_brake_hoses(TMoverParameters &Vehicle)
+{
+	if (std::any_of(std::begin(Vehicle.Couplers), std::end(Vehicle.Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
+	{
+		Vehicle.AlarmChainFlag = true;
+	}
+}
+
 } // namespace
 
 int DirF(int CouplerN)
@@ -1605,6 +1614,9 @@ void TMoverParameters::derail_in_collision(DerailReason const Reason, std::strin
 	}
 	// upright, it slides on the sleepers and keeps passing the forces on
 	Derailed = derailment::outcome::off_rails;
+	DerailCause = derail_motion::cause::collision;
+	DerailAcceleration = 0.0;
+	DerailSide = 0;
 	CollisionDerail = Reason;
 	EventFlag = true;
 	MainSwitch(false, range_t::local);
@@ -1615,10 +1627,7 @@ void TMoverParameters::derail_in_collision(DerailReason const Reason, std::strin
 		SlippingWheels = false;
 	}
 	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
-	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
-	{
-		AlarmChainFlag = true;
-	}
+	tear_brake_hoses(*this);
 	derailment_monitor.reset();
 	pushed_off_monitor.reset();
 	ErrorLog(std::format("Bad driving: {} derailed in a collision, {}: {}", Name, Reason == COLLISION_OVERRIDE ? "overriding" : "pushed off the track", Why));
@@ -2082,13 +2091,14 @@ void TMoverParameters::derail(derailment::verdict const &Verdict, derailment::ve
 		return;
 	}
 	Derailed = Verdict.result;
+	DerailCause = Verdict.result == derailment::outcome::overturned ? derail_motion::cause::overturned : derail_motion::cause::off_rails;
+	// out of the curve; a buckle bending the line against the curve more than the curve does throws it into the curve
+	DerailAcceleration = std::abs(Track.radius) > 1e-3 && derailment::line_curvature(Track) < 0.0 ? -Verdict.acceleration : Verdict.acceleration;
+	DerailSide = 0;
 	EventFlag = true;
 	MainSwitch(false, range_t::local);
 	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
-	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
-	{
-		AlarmChainFlag = true;
-	}
+	tear_brake_hoses(*this);
 	ErrorLog("Bad driving: " + Name + " " + derailment::report(Verdict, Vehicle, Track, V, TrackName != nullptr ? *TrackName : std::string{}));
 	if (Track.buckle_curvature != 0.0)
 	{
@@ -2101,6 +2111,9 @@ void TMoverParameters::rerail()
 {
 	ClearFlag(DamageFlag, dtrain_out);
 	Derailed = derailment::outcome::none;
+	// and back on the track
+	OffTrack.reset();
+	DerailSide = 0;
 	derailment_monitor.reset();
 	derailment_distance = 0.0;
 	derailment_reported.reset();
@@ -2154,6 +2167,16 @@ void TMoverParameters::Derail(DerailReason const Reason)
 			nrot = 0.0;
 			SlippingWheels = false;
 		}
+		// physics.derailment new: off the end of the track the vehicle runs on straight on its wheels, sliding on the
+		// ground as the vehicles the criteria derail do, and its brake hoses tear
+		if (Reason == END_OF_TRACK && Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1))
+		{
+			Derailed = derailment::outcome::off_rails;
+			DerailCause = derail_motion::cause::end_of_track;
+			DerailAcceleration = 0.0;
+			DerailSide = 0;
+			tear_brake_hoses(*this);
+		}
 
 		// Print a message in the log.
 		if (Reason == END_OF_TRACK)
@@ -2169,6 +2192,30 @@ void TMoverParameters::Derail(DerailReason const Reason)
 		else if (Reason == TRAILED_SWITCH)
 			ErrorLog("Bad driving: " + Name + " derailed trailing through a switch with a movable nose set the other way");
 	}
+}
+
+bool TMoverParameters::leaves_track() const
+{
+	return Global.derailment == global_settings::derailment_model::physical && TestFlag(CategoryFlag, 1) && TestFlag(DamageFlag, dtrain_out) && Derailed != derailment::outcome::none &&
+	       false == OffTrack.active();
+}
+
+void TMoverParameters::pull_off(int const Side, double const Acceleration, std::string const &Why)
+{
+	if (Global.derailment != global_settings::derailment_model::physical || false == SetFlag(DamageFlag, dtrain_out))
+	{
+		return;
+	}
+	// upright, its flange climbs the rail the coupling pulls it over
+	Derailed = derailment::outcome::off_rails;
+	DerailCause = derail_motion::cause::pulled_off;
+	DerailAcceleration = Acceleration;
+	DerailSide = Side;
+	EventFlag = true;
+	MainSwitch(false, range_t::local);
+	tear_brake_hoses(*this);
+	derailment_monitor.reset();
+	ErrorLog(std::format("Bad driving: {} pulled off the track by the vehicle coupled to it, {}", Name, Why));
 }
 
 void TMoverParameters::change_train_velocity(double const Change)
@@ -2214,6 +2261,11 @@ double TMoverParameters::ComputeMovement(double dt, double dt1, const TTrackShap
 		//         ElectricTraction.TractionVoltage /*-
 		//         abs(ElectricTraction.TractionResistivity * Itot *
 		//             0)*/; // zasadniczo ED oporowe nie zmienia napięcia w sieci
+	}
+	else if (OffTrack.active())
+	{
+		// off the track the grade is that of the ground under it, along its heading
+		RunningShape.dHtrack = Shape.dHtrack;
 	}
 
 	if (CategoryFlag == 4)
@@ -6201,8 +6253,10 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	{
 		if (Derailed != derailment::outcome::none)
 		{
-			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side
-			FStand = derailment::sliding_friction(Derailed) * (TotalMass - Mred) * g;
+			// off the rails by the physical criteria: the vehicle slides on the sleepers and the ballast, or on its side;
+			// off the track on the ground, as far as it tipped over (physics.derailment new)
+			auto const friction{OffTrack.active() ? OffTrack.friction() : derailment::sliding_friction(Derailed)};
+			FStand = friction * (TotalMass - Mred) * g;
 		}
 		else if (legacy_derailed_slides(*this))
 		{
