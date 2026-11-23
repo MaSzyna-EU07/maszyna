@@ -373,6 +373,12 @@ class TTrain {
     static void OnCommand_oilfuelpumptoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpenable( TTrain *Train, command_data const &Command );
     static void OnCommand_oilpumpdisable( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodetoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodecatenary( TTrain *Train, command_data const &Command );
+    static void OnCommand_tractionmodegenset( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensettoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetenable( TTrain *Train, command_data const &Command );
+    static void OnCommand_gensetdisable( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakertoggle( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakerclose( TTrain *Train, command_data const &Command );
     static void OnCommand_waterheaterbreakeropen( TTrain *Train, command_data const &Command );
@@ -743,6 +749,8 @@ public: // reszta może by?publiczna
     TGauge ggFuelPumpButton; // fuel pump switch
     TGauge ggOilPumpButton; // oil pump switch
     TGauge ggOilFuelPumpButton; // joint oil and fuel pump switch
+    TGauge ggTractionModeSwitch; // traction selector of a dual-mode vehicle (catenary/genset)
+    TGauge ggGensetButton; // genset start switch of a dual-mode vehicle
     TGauge ggMotorBlowersFrontButton; // front traction motor fan switch
     TGauge ggMotorBlowersRearButton; // rear traction motor fan switch
     TGauge ggMotorBlowersAllOffButton; // motor fans shutdown switch

@@ -362,6 +362,12 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::oilfuelpumptoggle, &TTrain::OnCommand_oilfuelpumptoggle},
     {user_command::oilpumpenable, &TTrain::OnCommand_oilpumpenable},
     {user_command::oilpumpdisable, &TTrain::OnCommand_oilpumpdisable},
+    {user_command::tractionmodetoggle, &TTrain::OnCommand_tractionmodetoggle},
+    {user_command::tractionmodecatenary, &TTrain::OnCommand_tractionmodecatenary},
+    {user_command::tractionmodegenset, &TTrain::OnCommand_tractionmodegenset},
+    {user_command::gensettoggle, &TTrain::OnCommand_gensettoggle},
+    {user_command::gensetenable, &TTrain::OnCommand_gensetenable},
+    {user_command::gensetdisable, &TTrain::OnCommand_gensetdisable},
     {user_command::waterheaterbreakertoggle, &TTrain::OnCommand_waterheaterbreakertoggle},
     {user_command::waterheaterbreakerclose, &TTrain::OnCommand_waterheaterbreakerclose},
     {user_command::waterheaterbreakeropen, &TTrain::OnCommand_waterheaterbreakeropen},
@@ -4272,6 +4278,88 @@ void TTrain::OnCommand_oilfuelpumptoggle(TTrain *Train, command_data const &Comm
 	vehicle->FuelPumpSwitchOff(false == enable);
 	vehicle->OilPumpSwitch(enable);
 	vehicle->OilPumpSwitchOff(false == enable);
+}
+
+// the traction selector of a dual-mode vehicle (eu07/maszyna#536), a two-state switch
+void TTrain::OnCommand_tractionmodetoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (Train->mvControlled->GensetSelected())
+	{
+		OnCommand_tractionmodecatenary(Train, Command);
+	}
+	else
+	{
+		OnCommand_tractionmodegenset(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_tractionmodecatenary(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::catenary, range_t::consist);
+	if (false == Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(0.0, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_tractionmodegenset(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed, or without a genset: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::genset, range_t::consist);
+	if (Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(1.0, Train->dsbSwitch);
+	}
+}
+
+// the start request of the genset of a dual-mode vehicle, a two-state switch
+void TTrain::OnCommand_gensettoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		OnCommand_gensetenable(Train, Command);
+	}
+	else
+	{
+		OnCommand_gensetdisable(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_gensetenable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	Train->ggGensetButton.UpdateValue(1.0, Train->dsbSwitch);
+	Train->mvControlled->GensetSwitch(true, range_t::consist);
+}
+
+void TTrain::OnCommand_gensetdisable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	Train->ggGensetButton.UpdateValue(0.0, Train->dsbSwitch);
+	Train->mvControlled->GensetSwitch(false, range_t::consist);
 }
 
 void TTrain::OnCommand_waterheaterbreakertoggle(TTrain *Train, command_data const &Command)
@@ -10073,6 +10161,8 @@ bool TTrain::Update(double const Deltatime)
 	ggFuelPumpButton.Update();
 	ggOilPumpButton.Update();
 	ggOilFuelPumpButton.Update();
+	ggTractionModeSwitch.Update();
+	ggGensetButton.Update();
 	ggMotorBlowersFrontButton.Update();
 	ggMotorBlowersRearButton.Update();
 	ggMotorBlowersAllOffButton.Update();
@@ -11688,6 +11778,8 @@ void TTrain::clear_cab_controls()
 	ggFuelPumpButton.Clear();
 	ggOilPumpButton.Clear();
 	ggOilFuelPumpButton.Clear();
+	ggTractionModeSwitch.Clear();
+	ggGensetButton.Clear();
 	ggMotorBlowersFrontButton.Clear();
 	ggMotorBlowersRearButton.Clear();
 	ggMotorBlowersAllOffButton.Clear();
@@ -12047,6 +12139,12 @@ void TTrain::set_cab_controls(int const Cab)
 	{
 		ggOilFuelPumpButton.PutValue(mvControlled->OilFuelPumpsEnabled() ? 1.f : 0.f);
 	}
+	// traction selector and genset of a dual-mode vehicle
+	ggTractionModeSwitch.PutValue(mvControlled->GensetSelected() ? 1.f : 0.f);
+	if (ggGensetButton.type() != TGaugeType::push)
+	{
+		ggGensetButton.PutValue(mvControlled->Genset.is_enabled ? 1.f : 0.f);
+	}
 	// traction motor fans
 	if (ggMotorBlowersFrontButton.type() != TGaugeType::push)
 	{
@@ -12385,6 +12483,8 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"fuelpump_sw:", ggFuelPumpButton},
 	                                                          {"oilpump_sw:", ggOilPumpButton},
 	                                                          {"oilfuelpump_sw:", ggOilFuelPumpButton},
+	                                                          {"tractionmode_sw:", ggTractionModeSwitch},
+	                                                          {"genset_sw:", ggGensetButton},
 	                                                          {"oilpressb:", ggOilPressB},
 	                                                          {"motorblowersfront_sw:", ggMotorBlowersFrontButton},
 	                                                          {"motorblowersrear_sw:", ggMotorBlowersRearButton},
