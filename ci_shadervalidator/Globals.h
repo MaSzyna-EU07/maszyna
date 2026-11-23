@@ -9,6 +9,7 @@ struct _global
         bool gfx_shadergamma;
         bool gfx_usegles;
         int iMultisampling;
+        float gfx_headlights_beamwidth;
 };
 
 extern _global Global;

@@ -242,7 +242,13 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	float distance = length(light.pos - f_pos.xyz);
 	float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
 	atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
-	vec3 lights = textureProj(headlightmap, headlightpos).rgb * light.headlight_weights.rgb;
+	// gfx.headlights.beamwidth spreads the beam sideways around its middle (0.5 of the projected x), so the
+	// ground beside the track gets the light of the ballast; the brightness along the track stays as it was
+	vec4 beampos = headlightpos;
+#ifdef HEADLIGHT_BEAM_WIDTH
+	beampos.x = 0.5 * beampos.w + (beampos.x - 0.5 * beampos.w) / HEADLIGHT_BEAM_WIDTH;
+#endif
+	vec3 lights = textureProj(headlightmap, beampos).rgb * light.headlight_weights.rgb;
 	float lightintensity = max(max(lights.r, lights.g), lights.b);
 	return part * atten * lightintensity;
 }
