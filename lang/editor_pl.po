@@ -15131,6 +15131,15 @@ msgstr "Zgodne z normami"
 msgid "Curves added or taken out here aren't applied to a line of the model: add a curve or take one out with the buttons of the line"
 msgstr "Łuki dodane lub usunięte tutaj nie trafiają do linii modelu: dodaj łuk albo go usuń przyciskami linii"
 
+msgid "A line alongside line %s, %.2f m away"
+msgstr "Linia obok linii %s, w odległości %.2f m"
+
+msgid "In the curve at W%zu: %.3f m"
+msgstr "W łuku przy W%zu: %.3f m"
+
+msgid "A turnout has no line of its own: select a track of a line beside it"
+msgstr "Rozjazd nie ma własnej linii: zaznacz tor linii obok niego"
+
 msgid "line {1} at {2} m: {3}"
 msgstr "linia {1} w {2} m: {3}"
 

@@ -8,6 +8,8 @@
 #include "layout_fixture.h"
 #include "scratch.h"
 
+#include "editor/editorGauge.hpp"
+#include "editor/layout/layoutParallel.hpp"
 #include "editor/layout/layoutTurnout.hpp"
 #include "editor/project/projectSession.hpp"
 
@@ -136,6 +138,120 @@ TEST_CASE("layout editing: a line laid on from the free end of another one share
 	REQUIRE(model.undo());
 	CHECK(model.state().find(end)->ends.size() == 1);
 	CHECK(model.state().nodes().size() == 2);
+}
+
+TEST_CASE("layout editing: the line alongside a straight and alongside the curves, the arcs concentric, the spacing widened in the curves") {
+	layout::model model;
+	REQUIRE(model.execute(straight_along_z(0.0, 0.0, 400.0)).done);
+	auto const straight{last_line(model)};
+	// to the left of a line running along z: toward -x
+	auto const beside{layout::parallel_line(model.state(), straight, 4.5)};
+	REQUIRE(beside.valid);
+	CHECK(beside.command.start == glm::dvec3{-4.5, 10.0, 0.0});
+	CHECK(beside.command.end == glm::dvec3{-4.5, 10.0, 400.0});
+	CHECK(beside.command.vertices.empty());
+	CHECK_FALSE(layout::parallel_line(model.state(), straight, 0.0).valid);
+	CHECK_FALSE(layout::parallel_line(model.state(), line_id{99}, 4.0).valid);
+
+	REQUIRE(model.execute(three_curves()).done);
+	auto const curves{last_line(model)};
+	auto const &source{*model.state().find(curves)};
+	for (double const offset : {4.0, -4.0}) {
+		auto const plan{layout::parallel_line(model.state(), curves, offset)};
+		REQUIRE(plan.valid);
+		REQUIRE(plan.command.vertices.size() == source.shape.vertices.size());
+		REQUIRE(plan.spacings.size() == source.shape.vertices.size());
+		auto copy{model};
+		auto const laid{copy.execute(plan.command)};
+		REQUIRE_MESSAGE(laid.done, reasons_of(laid));
+		auto const &alongside{*copy.state().find(last_line(copy))};
+		for (std::size_t i = 0; i < source.shape.vertices.size(); ++i) {
+			auto const &vertex{source.shape.vertices[i]};
+			auto const &made{plan.command.vertices[i]};
+			// the inside of the curve the side it turns to: the radius less by the spacing and the widening of both gauges
+			auto const inner{std::abs(made.radius) < vertex.radius};
+			auto const widening{gauge::curve_widening(inner ? made.radius : vertex.radius, false) + gauge::curve_widening(inner ? vertex.radius : made.radius, true)};
+			CHECK(plan.spacings[i] == doctest::Approx(4.0 + widening).epsilon(1e-3));
+			CHECK(std::abs(made.radius - vertex.radius) == doctest::Approx(4.0 + widening).epsilon(1e-6));
+			CHECK(made.cant == vertex.cant);
+			// the arcs concentric: the middle of the arc alongside as far from the line's as the spacing in the curve, within 2 mm
+			double middle{-1.0};
+			for (auto const &e : source.solved.elements) {
+				if (e.role == layout::element_role::arc && e.vertex == layout::number(vertex.id)) {
+					middle = e.chainage + 0.5 * e.length;
+				}
+			}
+			REQUIRE(middle >= 0.0);
+			double distance{0.0};
+			layout::chainage_of(alongside.solved, source.solved.position(middle), &distance);
+			CHECK(distance == doctest::Approx(plan.spacings[i]).epsilon(0.002 / 4.0));
+		}
+		// on the straights, the spacing as asked
+		double distance{0.0};
+		layout::chainage_of(alongside.solved, source.solved.position(5.0), &distance);
+		CHECK(distance == doctest::Approx(4.0).epsilon(1e-6));
+	}
+}
+
+TEST_CASE("layout editing: alongside a curve under 250 m the spacing is widened by the gauges of both tracks, on the inside by a longer transition") {
+	// a siding of 30 km/h with a curve of R 200 m and transitions of 30 m: the gauge widens there (PLK tom II annex 1)
+	layout::create_line sharp;
+	sharp.start = {0.0, 0.0, 0.0};
+	sharp.end = {400.0, 0.0, 400.0};
+	sharp.category = line_class();
+	sharp.category.vmax = 30.0;
+	sharp.category.track = norms::track_kind::side;
+	layout::vertex corner;
+	corner.point = {0.0, 400.0};
+	corner.radius = 200.0;
+	corner.transition_in = corner.transition_out = 30.0;
+	sharp.vertices = {corner};
+	layout::model model;
+	auto const laid{model.execute(sharp)};
+	REQUIRE_MESSAGE(laid.done, reasons_of(laid));
+	auto const id{last_line(model)};
+	auto const &source{*model.state().find(id)};
+	// the curve turns from +z to +x: to the left of the line (above 0) is the outside of it
+	for (double const offset : {-4.0, 4.0}) {
+		auto const plan{layout::parallel_line(model.state(), id, offset)};
+		REQUIRE(plan.valid);
+		REQUIRE(plan.spacings.size() == 1);
+		auto const inner{plan.command.vertices.front().radius < 200.0};
+		// of the inner track on its outer side and of the outer one on its inner side, at their radii the spacing apart
+		auto const widening{inner ? gauge::curve_widening(196.0, false) + gauge::curve_widening(200.0, true) : gauge::curve_widening(200.0, false) + gauge::curve_widening(204.0, true)};
+		CHECK(widening > 0.1);
+		CHECK(plan.spacings.front() == doctest::Approx(4.0 + widening).epsilon(1e-6));
+		CHECK(plan.notes.empty());
+		// on the inside the transitions longer, keeping the arc concentric nearer the line; on the outside shorter
+		CHECK((plan.command.vertices.front().transition_in > 30.0) == inner);
+		auto copy{model};
+		auto const alongside{copy.execute(plan.command)};
+		REQUIRE_MESSAGE(alongside.done, reasons_of(alongside));
+		auto const &made{copy.state().find(last_line(copy))->solved};
+		double middle{0.0};
+		for (auto const &e : source.solved.elements) {
+			if (e.role == layout::element_role::arc) {
+				middle = e.chainage + 0.5 * e.length;
+			}
+		}
+		double distance{0.0};
+		layout::chainage_of(made, source.solved.position(middle), &distance);
+		CHECK(distance == doctest::Approx(plan.spacings.front()).epsilon(0.003 / 4.0));
+	}
+	// with no transitions to take it, the spacing isn't widened, and told why
+	auto plain{sharp};
+	plain.vertices.front().transition_in = plain.vertices.front().transition_out = 0.0;
+	plain.start.x += 1000.0;
+	plain.end.x += 1000.0;
+	plain.vertices.front().point.x += 1000.0;
+	layout::model other;
+	auto const plain_laid{other.execute(plain)};
+	if (plain_laid.done) {
+		auto const plan{layout::parallel_line(other.state(), last_line(other), -4.0)};
+		REQUIRE(plan.valid);
+		CHECK(plan.spacings.front() == doctest::Approx(4.0));
+		CHECK(plan.notes.size() == 1);
+	}
 }
 
 TEST_CASE("project session: the switch track of a turnout made by the session, the tracks of a line written into two files recorded") {

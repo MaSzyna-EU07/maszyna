@@ -326,6 +326,12 @@ void parallel_tool::parallel_update()
 void parallel_tool::parallel_build()
 {
 	auto &tool{m_parallel};
+	// beside a line of the model: a line of the model at the spacing, its curves concentric, checked by the norms
+	if (auto *source{parallel_source()}; source != nullptr && m_design.model_parallel(*source, tool.spacing, tool.side, tool.status, tool.error))
+	{
+		tool.built_for = nullptr;
+		return;
+	}
 	parallel_update();
 	if (tool.pieces.empty())
 		return;

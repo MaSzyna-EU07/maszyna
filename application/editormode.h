@@ -1406,6 +1406,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_switch_record(TTrack const &Track) const;
 	void route_store();
 	bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) override;
+	bool model_parallel(TTrack &Source, double const Spacing, int const Side, std::string &Status, std::string &Error) override;
 	bool digitize_chain(editor_track::chain const &Chain, std::string *Reason = nullptr, TTrack **Culprit = nullptr);
 	int digitize_parts(editor_track::chain const &Chain, std::string *Reason, int &Skipped);
 	// the lines kept, the paths left out

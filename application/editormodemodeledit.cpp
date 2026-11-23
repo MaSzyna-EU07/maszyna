@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
 #include "editor/editorFormat.hpp"
+#include "editor/layout/layoutParallel.hpp"
 #include "utilities/Logs.h"
 #include "utilities/translation.h"
 #include "world/Track.h"
@@ -359,4 +360,53 @@ void editor_mode::render_model_curves()
 		item_tooltip("The curve taken out: the tangents of the vertices beside it meet with no curve of it");
 		ImGui::PopID();
 	}
+}
+
+// a track laid alongside a line of the model by the parallel tool
+
+bool editor_mode::model_parallel(TTrack &Source, double const Spacing, int const Side, std::string &Status, std::string &Error)
+{
+	auto const *managed{model_track(&Source)};
+	if (managed == nullptr)
+		return false;
+	Status.clear();
+	Error.clear();
+	if (layout::owner_of(model_network(), managed->line) != nullptr)
+	{
+		Error = STR_C("A turnout has no line of its own: select a track of a line beside it");
+		return true;
+	}
+	// the side of the tool and the left of the model: the same offset of the axis
+	auto const plan{layout::parallel_line(model_network(), managed->line, Spacing * static_cast<double>(Side))};
+	if (false == plan.valid)
+	{
+		for (auto const &error : plan.errors)
+			Error += (Error.empty() ? "" : "\n") + model_tr(error);
+		return true;
+	}
+	model_context context;
+	context.surface = model_surface_of(Source);
+	auto const line{managed->line};
+	auto const spacings{plan.spacings};
+	context.done = [this, &Status, line, Spacing, spacings](std::vector<TTrack *> const &Created) {
+		if (false == Created.empty())
+		{
+			m_node = Created.back();
+			ui()->set_node(m_node);
+		}
+		Status = format(STR_C("A line alongside line %s, %.2f m away"), line_name(line).c_str(), Spacing);
+		for (std::size_t i = 0; i < spacings.size(); ++i)
+			if (spacings[i] > Spacing + 1e-4)
+				Status += "\n" + format(STR_C("In the curve at W%zu: %.3f m"), i + 1, spacings[i]);
+		Status += "\n" + model_shown();
+		for (auto const &notice : model_notices())
+			Status += "\n" + notice;
+	};
+	model_run({plan.command}, context);
+	if (model_refused())
+		Error = model_shown();
+	for (auto const &note : plan.notes)
+		(model_refused() ? Error : Status) += "\n" + model_tr(note);
+	WriteLog(format("Editor: model: a line alongside line %s, %.2f m to the %s: %s", line_name(line).c_str(), Spacing, Side > 0 ? "right" : "left", editor_selftest::one_line(model_message()).c_str()), logtype::generic);
+	return true;
 }

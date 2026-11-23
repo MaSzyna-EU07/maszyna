@@ -1682,6 +1682,20 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		expectation(marked.size() == wanted, "handlines", std::to_string(marked.size()) + lines, std::to_string(wanted));
 		return selftest_result::handled;
 	}
+	if (what == "modelspacing")
+	{
+		// how far the other line runs from the point of the line at the chainage, within the bounds
+		unsigned line{0}, other{0};
+		double chainage{0.0}, low{0.0}, high{0.0};
+		words >> line >> other >> chainage >> low >> high;
+		auto const *one{model_network().find(static_cast<layout::line_id>(line))};
+		auto const *two{model_network().find(static_cast<layout::line_id>(other))};
+		auto got{std::numeric_limits<double>::quiet_NaN()};
+		if (one != nullptr && two != nullptr && one->solved.valid() && two->solved.valid())
+			layout::chainage_of(two->solved, one->solved.position(std::clamp(chainage, 0.0, one->solved.length)), &got);
+		expectation(got >= low && got <= high, format("modelspacing %u %u %.1f", line, other, chainage), format("%.4f", got), format("%.4f .. %.4f", low, high));
+		return selftest_result::handled;
+	}
 	if (what == "modelnodes")
 	{
 		// the nodes of the model: a line laid on from the free end of another one shares the node there

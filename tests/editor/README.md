@@ -196,3 +196,4 @@ and the rest of the editing on the model (E4b), with the setting on:
 | `m_10_grade_curves` | a break of the grade line put in the profile tool is the line's command, one step; one the model can't lay refused; a curve added in the route design, bent, taken out, a step each |
 | `m_11_vertex_drag` | the vertex of a curve dragged on the map with the mouse: the line as the model would lay it tried while it's dragged, one command let go |
 | `m_12_lay_from_end` | a line laid on from the free end of a line of the model shares its node, the ends to the bit before and after a reopen |
+| `m_13_parallel` | the parallel tool beside a line of the model lays a line of the model, its arc concentric at the spacing, one step |

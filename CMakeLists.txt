@@ -223,6 +223,7 @@ set(SOURCES
 "editor/layout/layoutTurnout.cpp"
 "editor/layout/layoutGenerator.cpp"
 "editor/layout/layoutConnection.cpp"
+"editor/layout/layoutParallel.cpp"
 "editor/layout/layoutRecognition.cpp"
 "editor/layout/layoutLegacy.cpp"
 "editor/layout/layoutAnchors.cpp"

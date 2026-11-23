@@ -65,6 +65,7 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutConnection.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutParallel.cpp"
 	# the old tracks taken over: their recognition, the anchors of the lineside objects (test_takeover_*.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutRecognition.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLegacy.cpp"
