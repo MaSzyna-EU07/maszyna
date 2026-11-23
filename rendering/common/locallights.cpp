@@ -270,7 +270,8 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 }
 
 // the flashlight of the player (Global.flashlight): a cone of neutral white light where the camera looks, from a little under it as
-// from a hand, by day as well. it casts no shadows (it has no shadow map of its own)
+// from a hand, by day as well. it casts shadows as the lamps of the scenery do (a cube map, made anew as it moves), so it doesn't
+// light the snow or the ground through the walls of the vehicles and the houses; Global.flashlight names it to the shadow maps
 void gfx::local_lights::add_flashlight()
 {
 	auto const &camera{Global.pCamera};
@@ -287,7 +288,10 @@ void gfx::local_lights::add_flashlight()
 	flashlight.cos_inner = std::cos(glm::radians(8.f));
 	flashlight.range = light_range(flashlight.color);
 	flashlight.radius = 0.02f;
-	flashlight.cast_shadows = false;
+	flashlight.cast_shadows = true;
+	flashlight.shade_self = true;
+	flashlight.owner = &Global.flashlight;
+	flashlight.part = &Global.flashlight;
 	m_lights.emplace_back(flashlight);
 }
 
