@@ -156,10 +156,26 @@ struct remove_turnout
 	turnout_id turnout{turnout_id::none};
 };
 
+// lines laid as they were recognized from old tracks (stage E6, layoutLegacy.hpp), one step: each between two new nodes at the ends of its old
+// tracks, its vertices (their ids given), its grade line and the old tracks along it as given. The norms don't refuse it: an old track may
+// break them where nobody touched it, and the BLOCK limits it passes are told (outcome::broken); the invariants refuse it as any edit
+struct take_over
+{
+	struct taken
+	{
+		glm::dvec3 start{0.0};
+		glm::dvec3 end{0.0};
+		line_shape shape;
+		norms::line_class category;
+		std::vector<hard_split> hard_splits;
+	};
+	std::vector<taken> lines;
+};
+
 // a crossover between two lines, as the solver of the connections plans it (layoutConnection.hpp): the two turnouts and the line between the
 // ends of their diverging tracks, one step; refused with the best which fits where the norms can't be met
 using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line, insert_vertex, remove_vertex, set_grades, set_line_class, set_line_profile, insert_turnout,
-                             move_turnout, change_turnout, remove_turnout, connect_tracks>;
+                             move_turnout, change_turnout, remove_turnout, connect_tracks, take_over>;
 
 char const *command_name(command const &Command);
 
@@ -177,6 +193,7 @@ struct outcome
 	bool done{false};
 	std::vector<std::string> reasons; // why it was refused
 	std::vector<notice> notices; // what the norms warn of, or would prefer otherwise, on the lines changed
+	std::vector<notice> broken; // the BLOCK limits the old tracks a takeover laid as they are pass (stage E6): told, not refused
 	std::vector<line_id> lines; // made by it
 	std::vector<node_id> nodes;
 	std::vector<turnout_id> turnouts;

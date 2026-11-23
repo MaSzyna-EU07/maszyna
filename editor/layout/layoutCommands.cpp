@@ -69,35 +69,57 @@ void check_curve(std::optional<double> const &Radius, std::optional<double> cons
 		Why.emplace_back("a cant leaning out of the turn");
 }
 
-reasons propose(transaction &Change, outcome &Result, create_line const &Command)
+// the line laid between two new nodes at the points, its vertices given their ids; the ids made told in the outcome
+void add_line(transaction &Change, outcome &Result, glm::dvec3 const &Start, glm::dvec3 const &End, line Laid)
 {
 	auto &ids{Change.ids()};
 	auto const id{ids.new_line()};
 	node first;
 	first.id = ids.new_node();
-	first.position = Command.start;
+	first.position = Start;
 	first.ends.push_back({id, line_end::start, 1});
 	node last;
 	last.id = ids.new_node();
-	last.position = Command.end;
+	last.position = End;
 	last.ends.push_back({id, line_end::end, 1});
-	line laid;
-	laid.id = id;
-	laid.start = first.id;
-	laid.end = last.id;
-	laid.shape.vertices = Command.vertices;
-	for (auto &vertex : laid.shape.vertices)
+	Laid.id = id;
+	Laid.start = first.id;
+	Laid.end = last.id;
+	for (auto &vertex : Laid.shape.vertices)
 		vertex.id = ids.new_vertex();
+	Result.lines.push_back(id);
+	Result.nodes.push_back(first.id);
+	Result.nodes.push_back(last.id);
+	Change.add(std::move(first));
+	Change.add(std::move(last));
+	Change.add(std::move(Laid));
+}
+
+reasons propose(transaction &Change, outcome &Result, create_line const &Command)
+{
+	line laid;
+	laid.shape.vertices = Command.vertices;
 	laid.shape.grades = Command.grades;
 	laid.shape.transition = Command.transition;
 	laid.shape.ramp = Command.ramp;
 	laid.category = Command.category;
 	laid.chainage_start = Command.chainage_start;
-	Result.lines.push_back(id);
-	Result.nodes = {first.id, last.id};
-	Change.add(std::move(first));
-	Change.add(std::move(last));
-	Change.add(std::move(laid));
+	add_line(Change, Result, Command.start, Command.end, std::move(laid));
+	return {};
+}
+
+reasons propose(transaction &Change, outcome &Result, take_over const &Command)
+{
+	if (Command.lines.empty())
+		return {"no old tracks to take over"};
+	for (auto const &each : Command.lines)
+	{
+		line laid;
+		laid.shape = each.shape;
+		laid.category = each.category;
+		laid.hard_splits = each.hard_splits;
+		add_line(Change, Result, each.start, each.end, std::move(laid));
+	}
 	return {};
 }
 
@@ -1468,7 +1490,7 @@ char const *command_name(command const &Command)
 	static std::array<char const *, std::variant_size_v<command>> constexpr names{"create line", "move vertex",   "set vertex",     "split line",     "join ends",
 	                                                                               "delete line", "insert vertex", "remove vertex",  "set grades",     "set line class",
 	                                                                               "set line profile", "insert turnout", "move turnout", "change turnout", "remove turnout",
-	                                                                               "connect tracks"};
+	                                                                               "connect tracks", "take over"};
 	return names[Command.index()];
 }
 
@@ -1512,6 +1534,12 @@ outcome model::execute(command const &Command, edit_policy const Policy)
 					turnouts.insert(id);
 			auto const before{check(*earlier, lines, nodes, turnouts).blocks};
 			std::erase_if(judged.blocks, [&](notice const &Found) { return was_there(before, Found); });
+		}
+		// the old tracks taken over as they are may break the norms: told, not refused
+		if (std::holds_alternative<take_over>(Command))
+		{
+			result.broken = std::move(judged.blocks);
+			judged.blocks.clear();
 		}
 		why = judged.refusals();
 		result.notices = std::move(judged.notices);

@@ -5,8 +5,11 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "takeover_fixture.h"
+#include "editor/layout/layoutLegacy.hpp"
 
 #include <format>
+#include <numeric>
+#include <random>
 
 namespace {
 
@@ -82,6 +85,57 @@ TEST_CASE("takeover fit: three curves cut at random places, seeds 1101, 2202, 33
 		CAPTURE(described(back));
 		check_found(shape, back, true);
 		CHECK(back.measured.within(layout::takeover_tolerance{}));
+	}
+}
+
+TEST_CASE("takeover fit: the same line whichever old track the walk starts from, seeds 4401, 5502, 6603") {
+	auto const shape{three_curves()};
+	auto const old{cut(laid(shape, kStart, kEnd), 7707u, 8.0, 25.0, noise{0.003, 0.003, true})};
+	// the old tracks as a scenery lists them, each written the way it was
+	std::vector<layout::legacy_track> tracks;
+	for (std::size_t i = 0; i < old.chain.size(); ++i) {
+		layout::legacy_track track;
+		track.name = std::format("t{}", i);
+		track.paths = {old.chain[i].path};
+		track.attributes = "velocity 80";
+		tracks.push_back(std::move(track));
+	}
+	auto const take_all = [](std::vector<layout::legacy_track> const &Tracks) {
+		std::vector<std::size_t> result(Tracks.size());
+		std::iota(result.begin(), result.end(), std::size_t{0});
+		return result;
+	};
+	auto const first{layout::plan_takeover(tracks, take_all(tracks))};
+	REQUIRE(first.lines.size() == 1);
+	auto const &reference{first.lines.front().fit};
+	CAPTURE(described(reference));
+	REQUIRE(reference.valid());
+	for (unsigned const seed : {4401u, 5502u, 6603u}) {
+		CAPTURE(seed);
+		// the tracks in another order: the walk starts from another one of them, somewhere along the line
+		auto shuffled{tracks};
+		std::mt19937 random{seed};
+		std::ranges::shuffle(shuffled, random);
+		auto const plan{layout::plan_takeover(shuffled, take_all(shuffled))};
+		REQUIRE(plan.lines.size() == 1);
+		auto const &fit{plan.lines.front().fit};
+		CHECK(fit.start == reference.start);
+		CHECK(fit.end == reference.end);
+		REQUIRE(fit.shape.vertices.size() == reference.shape.vertices.size());
+		for (std::size_t k = 0; k < fit.shape.vertices.size(); ++k) {
+			CHECK(glm::distance(fit.shape.vertices[k].point, reference.shape.vertices[k].point) < 1e-6);
+			CHECK(fit.shape.vertices[k].radius == doctest::Approx(reference.shape.vertices[k].radius).epsilon(1e-9));
+			CHECK(fit.shape.vertices[k].transition_in == doctest::Approx(reference.shape.vertices[k].transition_in).epsilon(1e-9));
+			CHECK(fit.shape.vertices[k].transition_out == doctest::Approx(reference.shape.vertices[k].transition_out).epsilon(1e-9));
+		}
+		// the old tracks along it the same, by name
+		auto const &splits{plan.lines.front().hard_splits};
+		auto const &expected{first.lines.front().hard_splits};
+		REQUIRE(splits.size() == expected.size());
+		for (std::size_t k = 0; k < splits.size(); ++k) {
+			CHECK(splits[k].track.name == expected[k].track.name);
+			CHECK(splits[k].chainage == doctest::Approx(expected[k].chainage).epsilon(1e-9));
+		}
 	}
 }
 
