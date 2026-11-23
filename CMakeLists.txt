@@ -218,6 +218,8 @@ set(SOURCES
 "editor/norms/normsLine.cpp"
 "editor/layout/layoutElements.cpp"
 "editor/layout/layoutLine.cpp"
+"editor/layout/layoutNetwork.cpp"
+"editor/layout/layoutCommands.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"

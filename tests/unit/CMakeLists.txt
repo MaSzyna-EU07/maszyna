@@ -59,6 +59,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# the domain of the track geometry: the elements, the lines and the nodes, the commands editing them, the tracks made of them
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutElements.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLine.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutNetwork.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
