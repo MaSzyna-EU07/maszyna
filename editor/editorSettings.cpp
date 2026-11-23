@@ -145,6 +145,8 @@ bool editorSettings::load()
 			parse(value, m_palette);
 		else if (key == "first_steps")
 			m_first_steps = (value == "1");
+		else if (key == "model_editing")
+			m_model_editing = (value == "1");
 		else if (key == "terrain_offer")
 			m_terrain_offer = (value == "1");
 		else if (key == "terrain_buried_ask")
@@ -271,6 +273,7 @@ bool editorSettings::save()
 	stream << "nodebank_card " << m_nodebank_card << "\n";
 	stream << "colours " << m_palette << "\n";
 	stream << "first_steps " << (m_first_steps ? 1 : 0) << "\n";
+	stream << "model_editing " << (m_model_editing ? 1 : 0) << "\n";
 	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
 	stream << "terrain_buried_ask " << (m_terrain_buried_ask ? 1 : 0) << "\n";
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";

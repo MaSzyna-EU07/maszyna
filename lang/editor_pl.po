@@ -14861,3 +14861,21 @@ msgstr "Rozjazd %s wstawiony · Ctrl+Z cofa"
 
 msgid "Switch %s: drag it along its track to move it"
 msgstr "Rozjazd %s: przeciągnij go wzdłuż toru, aby przesunąć"
+
+msgid "Editing on the model (trial)"
+msgstr "Edycja na modelu (wersja próbna)"
+
+msgid "A line laid in the straights, or applied by the route design, becomes a line of the model of the track geometry: its tracks are made by the model, its edits checked against the norms and refused with the reasons, the project of the map kept next to it.\nThe tracks there were stay as they are, edited the old way. Off, the editor works as it did"
+msgstr "Linia ułożona prostymi albo zastosowana w projekcie trasy staje się linią modelu geometrii torów: jej tory tworzy model, jej zmiany są sprawdzane z normami i odrzucane z podaniem powodów, a projekt mapy leży obok niej.\nTory, które już były, zostają bez zmian i są edytowane po staremu. Wyłączone: edytor działa jak dotąd"
+
+msgid "The project of the map can't be opened: %s"
+msgstr "Nie można otworzyć projektu mapy: %s"
+
+msgid "The project of the map can't be opened: %s. The tracks are edited the old way"
+msgstr "Nie można otworzyć projektu mapy: %s. Tory są edytowane po staremu"
+
+msgid "Editing on the model: the project of the map is %s, %zu lines of the model"
+msgstr "Edycja na modelu: projekt mapy to %s, linii modelu: %zu"
+
+msgid "The project of the map isn't saved: %s"
+msgstr "Projekt mapy nie został zapisany: %s"

@@ -987,6 +987,7 @@ void editor_mode::nullify_history_pointers(scene::basic_node *node)
     infra_forget(node);
     for (auto *tool : m_tools)
         tool->forget(node);
+    model_forget(node);
 
     auto const followed = [node](infra::object_state const &State) { return State.saved.node == node; };
     for (auto &s : m_history)
@@ -1798,6 +1799,8 @@ bool editor_mode::update()
     render_orthophoto_window();
     draw_selection_overlay();
     render_context_menu();
+    // the track geometry edited through the model: the project of the map
+    model_update();
     steps.step("windows");
 
     // --- ImGui: Editor Settings & History windows ---
@@ -1856,6 +1859,23 @@ void editor_mode::render_settings()
         // the terrain made of the terrain model by itself, as the layers and the download area have it
         ImGui::SeparatorText(STR_C("Terrain"));
         render_terrain_loading();
+
+        // the tracks laid and edited through the model of the track geometry, a trial: off, as the editor was
+        ImGui::SeparatorText(STR_C("Tracks"));
+        {
+            bool model{EditorSettings.model_editing()};
+            if (ImGui::Checkbox(STR_C("Editing on the model (trial)"), &model))
+            {
+                EditorSettings.model_editing(model);
+                EditorSettings.save();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", STR_C("A line laid in the straights, or applied by the route design, becomes a line of the model of the track geometry: its tracks are made by the model, "
+                                              "its edits checked against the norms and refused with the reasons, the project of the map kept next to it.\n"
+                                              "The tracks there were stay as they are, edited the old way. Off, the editor works as it did"));
+            if (auto const error{model_error()}; model && false == error.empty())
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", format(STR_C("The project of the map can't be opened: %s"), error.c_str()).c_str());
+        }
 
         // as the history of the changes has it
         ImGui::SeparatorText(STR_C("Surroundings"));
@@ -3415,6 +3435,8 @@ bool editor_mode::save()
     if (placed == 0)
         starter_trainset(trailing);
     auto const result = scene::Layers.save(rootstatements, trailing, statements);
+    // the project of the map after the scenery: the tracks of its lines as they were written
+    model_saved(result.success);
     if (result.success && controls)
         m_turntable_included = true;
     if (result.success && noses)

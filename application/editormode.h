@@ -50,6 +50,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGauge.hpp"
 #include "editor/editorClips.hpp"
 #include "editor/editorIcons.hpp"
+#include "editor/layout/layoutCommands.hpp"
 #include "application/scriptedinput.h"
 #include "world/Sweep.h"
 
@@ -73,6 +74,13 @@ class TAnimModel;
 // a tool of a field of work of the editor, a button in the toolbar and over the 3d view
 struct editor_tool_button;
 class TTrack;
+
+// the state of the editing through the model of the track geometry, editormodemodel.cpp
+struct editor_model;
+struct editor_model_deleter
+{
+	void operator()(editor_model *Model) const;
+};
 
 class editor_mode : public application_mode, private editor_track::observer, private editor_services
 {
@@ -3335,6 +3343,39 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
 	// the expectations of the script, which make the run fail (editormodeselftestexpect.cpp)
 	selftest_result selftest_expect(std::string const &command, std::istringstream &words);
+	// the commands and the expectations of the editing through the model of the track geometry (editormodemodel.cpp)
+	selftest_result selftest_model(std::string const &command, std::istringstream &words);
+
+	// the track geometry edited through the model (editor-tracks-domain.md §3, §4, §8, §9; stage E4, editormodemodel.cpp), with the
+	// setting "Editing on the model (trial)" on: the project of the map opened with the scenery and written with it, the tracks the
+	// generator wrote marked as the tracks of their lines and written as it made them while nothing else changes them. Off, nothing of it
+	// runs
+	struct managed_track
+	{
+		layout::line_id line{layout::line_id::none};
+		std::size_t index{0}; // of the pieces of the line, from its start
+		std::string text; // its entry as written while it's as it was made: the generator's, or the file's it was read from
+		glm::dvec3 offset{0.0}; // of the placement the coordinates of the text are in
+		std::string baseline; // its own export as it was made: another one tells a change by the other tools
+	};
+	// the project, the managed tracks (editormodemodel.cpp); made as it's needed
+	friend struct editor_model;
+	mutable std::unique_ptr<editor_model, editor_model_deleter> m_model;
+	editor_model &model() const;
+	std::string model_error() const;
+	void model_forget(scene::basic_node const *Node);
+	// the setting is on and the project of the map is open
+	bool model_on() const;
+	// opens the project of the map once the scenery is there
+	void model_update();
+	void model_open();
+	// the managed track, nullptr for an old one
+	managed_track const *model_track(TTrack const *Track) const;
+	// the lines whose tracks were changed by the other tools since they were made
+	std::set<layout::line_id> model_seen_changed() const;
+	// the save: the text of a managed track as made, the project written after the scenery
+	std::optional<std::string> model_path_text(TTrack const &Track, glm::dvec3 const &Offset);
+	void model_saved(bool const Success);
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives

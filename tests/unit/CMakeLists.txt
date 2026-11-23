@@ -71,6 +71,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/project/projectMigration.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/sceneryText.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/scenarioIndex.cpp"
+	# the project of the map open in the editor, its commands kept as steps of the editor's history (test_project_session.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/project/projectSession.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along
