@@ -135,7 +135,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. The 40 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. The 42 cases
   that aren't `slow` take about 30 s with `-j 4` and 2 minutes one at a time, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -236,6 +236,11 @@ starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
+`td_shunt_red_signal.scn` is the same with no timetable, so the AI shunts (Shunt) towards the signal at
+stop, starting `vars.offset` m into `tdo_n1734`: `eu07_td_shunt_red_signal` alone and
+`eu07_td_shunt_push_red_signal` pushing three coaches, both from 30 km/h, have to stop before the signal,
+151 m from the start (the shunting AI used to coast up to it and pass it at about 28 km/h, fixed
+by #409). They stop after 145 m and 141 m.
 
 `eu07_td_departure_station_capitals` runs an EU07 from where `td_timetable.scn` puts it, with the W4 of Stacja1 about
 35 m ahead, on a timetable of its own (`td_departure_station_capitals.txt`, fragment `td_departure_station.scn`):
