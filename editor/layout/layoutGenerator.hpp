@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/layout/layoutNetwork.hpp"
 #include "world/Segment.h"
 
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,7 +22,9 @@ http://mozilla.org/MPL/2.0/.
 // within the tolerance of the element it follows (half a millimetre by default, the curve measured as the simulator draws it, a straight
 // of zero control vectors where it takes the curve for one), the rolls and the heights from the functions of the line, the radius from
 // the element. A piece ends at a node with the numbers of the node, the same on both sides of it; the names of the tracks come from the
-// identifiers of the line and of its vertices, so they don't change with a change of the shape which keeps its elements.
+// identifiers of the line and of its vertices, so they don't change with a change of the shape which keeps its elements. A turnout is one
+// switch track of two paths, its main and its diverging track, each made of the pieces of its line (pieces1, pieces2), the ends of its legs
+// the numbers of its nodes, its velocity as the speed rule gives it, its frog and its blades as its type has them.
 namespace layout
 {
 
@@ -35,6 +38,7 @@ struct hard_split
 struct generator_options
 {
 	std::string prefix{"l"}; // of the names of the tracks: <prefix><line>_<element><piece>
+	std::string turnout_prefix{"t"}; // of the names of the switch tracks: <turnout_prefix><turnout>
 	double tolerance{0.0005}; // m, the farthest a piece may lie from its line, in the plan and in the height
 	double cant_tolerance{2.0}; // mm the cant may differ from the line between the ends of a piece, where the simulator turns it evenly
 	// what an entry has between the type and the path: the width, the friction, the sound distance, the quality, the damage, the
@@ -63,8 +67,25 @@ struct generated_line
 	std::string text() const;
 };
 
+// the pieces of a line of its own; a track of a turnout is made with its turnout
 generated_line generate(network const &Network, line_id const Line, generator_options const &Options = {});
-// all the lines of the network, in the order of their identifiers; the errors of the lines which couldn't be made in Errors
+
+struct generated_turnout
+{
+	turnout_id turnout{turnout_id::none};
+	std::string name;
+	// the main and the diverging track from the start of the turnout, each the pieces of its line, as the paths of the switch have them:
+	// the path the pieces make, whole, with them (none where one piece makes it)
+	std::array<std::vector<generated_piece>, 2> pieces;
+	std::array<segment_data, 2> paths;
+	double velocity{0.0};
+	std::vector<std::string> errors;
+	std::string text; // the entry
+};
+generated_turnout generate(network const &Network, turnout_id const Turnout, generator_options const &Options = {});
+
+// all the lines of the network in the order of their identifiers, then all the turnouts; the errors of the ones which couldn't be made in
+// Errors
 std::string generate_all(network const &Network, generator_options const &Options, std::vector<std::string> &Errors);
 
 // the curve the simulator draws of the path: a straight where its control vectors are zero, or so close to the third of the chord that

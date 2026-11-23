@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/layout/layoutGenerator.hpp"
+#include "editor/layout/layoutTurnout.hpp"
 #include "editor/editorGeometry.hpp"
 
 #include <algorithm>
@@ -362,6 +363,51 @@ class cutter
 	std::map<std::string, int> m_counts;
 };
 
+std::string point_text(glm::dvec3 const &Point)
+{
+	return std::format("{} {} {}", number_text(Point.x), number_text(Point.y), number_text(Point.z));
+}
+
+// a path as an entry has it: the start, its roll, the control vectors, the end, its roll, the radius
+std::string path_text(segment_data const &Path)
+{
+	auto const &p{Path.points};
+	return std::format("{} {} {} {} {} {} {}", point_text(p[segment_data::point::start]), number_text(Path.rolls[0]), point_text(p[segment_data::point::control1]),
+	                   point_text(p[segment_data::point::control2]), point_text(p[segment_data::point::end]), number_text(Path.rolls[1]), number_text(Path.radius));
+}
+
+// the path the pieces make, from the start of the first to the end of the last, for the versions of the simulator which know only the path:
+// one curve between their headings, the sharpest radius of them
+segment_data whole_path(std::vector<generated_piece> const &Pieces)
+{
+	if (Pieces.size() == 1)
+		return Pieces.front().path;
+	segment_data result;
+	auto const &first{Pieces.front().path};
+	auto const &last{Pieces.back().path};
+	auto const start{first.points[segment_data::point::start]};
+	auto const end{last.points[segment_data::point::end]};
+	result.points[segment_data::point::start] = start;
+	result.points[segment_data::point::end] = end;
+	result.rolls = {first.rolls[0], last.rolls[1]};
+	auto const heading = [](drawn_curve const &Curve, bool const AtEnd) {
+		auto const vector{AtEnd ? Curve.p3 - Curve.p2 : Curve.p1 - Curve.p0};
+		return glm::normalize(geometry::plan_of(vector));
+	};
+	auto const handle{geometry::plan_distance(start, end) / 3.0};
+	auto const out{heading(drawn(first), false)};
+	auto const in{heading(drawn(last), true)};
+	auto const rise{(end.y - start.y) / 3.0};
+	result.points[segment_data::point::control1] = {out.x * handle, rise, out.y * handle};
+	result.points[segment_data::point::control2] = {-in.x * handle, -rise, -in.y * handle};
+	float sharpest{0.f};
+	for (auto const &piece : Pieces)
+		if (piece.path.radius > 0.f && (sharpest == 0.f || piece.path.radius < sharpest))
+			sharpest = piece.path.radius;
+	result.radius = sharpest;
+	return result;
+}
+
 } // namespace
 
 glm::dvec3 drawn_curve::point(double const T) const
@@ -450,6 +496,11 @@ generated_line generate(network const &Network, line_id const Line, generator_op
 		result.errors.push_back(std::format("line {} isn't laid", number(Line)));
 		return result;
 	}
+	if (owner->turnout != turnout_id::none)
+	{
+		result.errors.push_back(std::format("line {} is a track of turnout {}, made with it", number(Line), number(owner->turnout)));
+		return result;
+	}
 	if (auto const hard{Options.hard_splits.find(Line)}; hard != Options.hard_splits.end() && false == hard->second.empty())
 	{
 		result.errors.push_back(std::format("line {}: the joints of old tracks as hard points of the pieces come with stage E6", number(Line)));
@@ -460,14 +511,83 @@ generated_line generate(network const &Network, line_id const Line, generator_op
 	return result;
 }
 
+generated_turnout generate(network const &Network, turnout_id const Turnout, generator_options const &Options)
+{
+	generated_turnout result;
+	result.turnout = Turnout;
+	auto const *switched{Network.find(Turnout)};
+	if (switched == nullptr)
+	{
+		result.errors.push_back(std::format("there's no turnout {}", number(Turnout)));
+		return result;
+	}
+	auto const type{turnout_type_of(switched->type)};
+	if (false == type.has_value())
+	{
+		result.errors.push_back(std::format("turnout {}: no type {}", number(Turnout), switched->type));
+		return result;
+	}
+	result.name = std::format("{}{}", Options.turnout_prefix, number(Turnout));
+	result.velocity = switched->velocity;
+	// the main track and the diverging one, each from the start of the turnout: the pieces of a line run the other way turned round
+	std::array<line_id, 2> const tracks{switched->main, switched->diverging};
+	for (std::size_t i = 0; i < 2; ++i)
+	{
+		auto const *track{Network.find(tracks[i])};
+		if (track == nullptr || false == track->solved.valid())
+		{
+			result.errors.push_back(std::format("turnout {}: its {} track isn't laid", number(Turnout), i == 0 ? "main" : "diverging"));
+			return result;
+		}
+		cutter cut{Network, *track, Options};
+		auto pieces{cut.pieces(result.errors)};
+		if (track->start != switched->start)
+		{
+			std::ranges::reverse(pieces);
+			for (auto &piece : pieces)
+			{
+				piece.path = geometry::reversed(piece.path);
+				std::swap(piece.from, piece.to);
+			}
+		}
+		result.pieces[i] = std::move(pieces);
+		result.paths[i] = whole_path(result.pieces[i]);
+	}
+	auto text{std::format("node -1 0 {} track switch {:.3f} {} {} {} velocity {} frogs ", result.name, type->length, Options.surface, path_text(result.paths[0]), path_text(result.paths[1]),
+	                      number_text(result.velocity))};
+	if (type->movable)
+		text += "movablenose ";
+	if (type->heel > 0.0 || type->bladethrow > 0.0)
+		text += std::format("blades {} {} ", number_text(type->heel), number_text(type->bladethrow));
+	for (std::size_t i = 0; i < 2; ++i)
+	{
+		if (result.pieces[i].size() < 2)
+			continue;
+		text += std::format("pieces{} {} ", i + 1, result.pieces[i].size());
+		for (auto const &piece : result.pieces[i])
+			text += path_text(piece.path) + " ";
+	}
+	result.text = text + "endtrack\n";
+	return result;
+}
+
 std::string generate_all(network const &Network, generator_options const &Options, std::vector<std::string> &Errors)
 {
 	std::string result;
 	for (auto const &[id, owner] : Network.lines())
 	{
+		if (owner.turnout != turnout_id::none)
+			continue;
 		auto const made{generate(Network, id, Options)};
 		Errors.insert(Errors.end(), made.errors.begin(), made.errors.end());
 		result += made.text();
+	}
+	for (auto const &[id, each] : Network.turnouts())
+	{
+		auto const made{generate(Network, id, Options)};
+		Errors.insert(Errors.end(), made.errors.begin(), made.errors.end());
+		if (made.errors.empty())
+			result += made.text;
 	}
 	return result;
 }
