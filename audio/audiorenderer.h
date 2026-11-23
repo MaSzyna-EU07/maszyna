@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <atomic>
 #include <optional>
+#include <string_view>
 
 // Definicje dla OpenAL 1.25 jeśli brakuje
 #ifndef ALC_CONNECTED
@@ -151,6 +152,7 @@ private:
 
     bool init_caps();
     void init_extensions();
+    void log_output_following( std::string_view Version, bool Pinned ) const;
     std::vector<ALCint> device_attributes() const;
     int hrtf_index( std::string const &Name ) const;
     ALint resampler_index() const;

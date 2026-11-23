@@ -118,6 +118,25 @@ std::vector<std::string> split_name_list( ALCchar const *List ) {
     return names;
 }
 
+// returns: the file the OpenAL library the game plays through was loaded from, in UTF-8, or nothing where that can't
+// be told. the game takes OpenAL32.dll from its own folder before the one of the system, so this shows which one it got
+std::optional<std::string> openal_library_path() {
+#ifdef _WIN32
+    auto *module { ::GetModuleHandleW( L"OpenAL32.dll" ) };
+    if( module == nullptr ) { return std::nullopt; }
+    std::wstring path( 4096, wchar_t{} );
+    auto const length { static_cast<int>( ::GetModuleFileNameW( module, path.data(), static_cast<DWORD>( path.size() ) ) ) };
+    if( ( length <= 0 ) || ( length >= static_cast<int>( path.size() ) ) ) { return std::nullopt; }
+    auto const size { ::WideCharToMultiByte( CP_UTF8, 0, path.data(), length, nullptr, 0, nullptr, nullptr ) };
+    if( size <= 0 ) { return std::nullopt; }
+    std::string result( static_cast<std::size_t>( size ), char{} );
+    ::WideCharToMultiByte( CP_UTF8, 0, path.data(), length, result.data(), size, nullptr, nullptr );
+    return result;
+#else
+    return std::nullopt;
+#endif
+}
+
 } // namespace
 
 float const EU07_SOUND_CUTOFFRANGE { 3000.f }; // 2750 m = max expected emitter spawn range, plus safety margin
@@ -838,9 +857,11 @@ openal_renderer::init_caps() {
 
     // the version reported above is the OpenAL API spec level (always 1.1); the real implementation
     // version string (e.g. "1.1 ALSOFT 1.24.2") is only queryable once a context is current
+    std::string libraryversion;
     if( auto const *libversion { (char const *)::alGetString( AL_VERSION ) } ) {
         crashreport_add_info( "openal_lib_version", libversion );
         WriteLog( "sound: library version: " + std::string{ libversion } );
+        libraryversion = libversion;
     }
 
     // Initialize all extension function pointers
@@ -884,10 +905,33 @@ openal_renderer::init_caps() {
         WriteLog( "sound: warning: extension ALC_SOFT_system_events not found; a lost audio output is recovered, a change of the default one and the return of the device set in eu07.ini aren't followed" );
     }
     m_output.start( pinned, fallback, output_follower::clock::now() );
+    log_output_following( libraryversion, pinned );
 
     init_extensions();
 
     return true;
+}
+
+// says in one line which OpenAL library the game got and whether the sound follows the output device with it. an old
+// library (OpenAL Soft before 1.23, as the one the game came with) is left as it is: the sound plays on the device opened
+// at the start, as it always did, and only the log says why it doesn't move
+void
+openal_renderer::log_output_following( std::string_view const Version, bool const Pinned ) const {
+
+    auto const library { openal_library_path() };
+    auto const name { std::format( "\"{}\"{}", Version.empty() ? std::string_view{ "unknown" } : Version,
+        library.has_value() ? std::format( " from \"{}\"", *library ) : std::string{} ) };
+    if( ( m_alcReopenDeviceSOFT == nullptr ) || ( false == m_usedeviceevents ) ) {
+        WriteLog( std::format( "sound: warning: the OpenAL library {} is too old to follow a change of the audio output; "
+            "the sound stays on the device opened at the start. OpenAL Soft 1.23 or newer, as OpenAL32.dll in the game folder, follows it", name ) );
+        return;
+    }
+    if( Pinned ) {
+        WriteLog( std::format( "sound: the OpenAL library {} follows the audio output: the device set in eu07.ini (sound.openal.renderer), "
+            "the default output of the system while that one isn't there", name ) );
+        return;
+    }
+    WriteLog( std::format( "sound: the OpenAL library {} follows the audio output: the default output of the system", name ) );
 }
 
 // resolves the entry points of the context extensions the settings use: source resampler, EFX filters
