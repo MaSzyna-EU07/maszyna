@@ -251,12 +251,13 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        track, a field of a curve typed into, a vertex moved
 //   modelsplit <m>, modeljoin <x> <z> <x> <z>, modeldelete   the line of the model open in the route design split at the distance from
 //                                        its start, its free end at the first point joined to the free end of another line nearest the
-//                                        second, deleted; modelselect|modeldel <track>: selected, deleted as Del deletes it
-//   modelanswer <yes|no>                 the window asking answered
+//                                        second, deleted; modelselect|modeldel <track>: selected, deleted as Del deletes it;
+//                                        modelrename <track> <name>: renamed as the inspector renames it
+//   modelwait, modelanswer <yes|no>      until the scenarios of the map are looked through / the window asking answered
 //   modelmark <label>, modeltracks       the network of the model kept for expect modelsame / the lines and their tracks logged
 //   expect managed <track> <line|none|any>, expect modellines <count>, expect projectfile <present|absent|lines <count>>,
 //   expect modelends, expect modelrefused <0|1>, expect modelmessage <holds|lacks> <text>, expect modelvertex <line> <index>
-//   <radius|in|out|cant> <value>, expect modelsame <label>, expect hand <line> <0|1>, expect question <none|hand> [line]
+//   <radius|in|out|cant> <value>, expect modelsame <label>, expect hand <line> <0|1>, expect question <none|hand|waiting|scenarios> [what]
 //                                        the editing on the model (editormodemodel.cpp, tests/editor/README.md)
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code

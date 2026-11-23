@@ -14964,8 +14964,11 @@ msgstr "Nowa linia ułożona między wolnym końcem a wolnym końcem drugiej lin
 msgid "Delete line %s"
 msgstr "Usuń linię %s"
 
-msgid "The line and its tracks taken away. Ctrl+Z brings it back"
-msgstr "Linia i jej tory są usuwane. Ctrl+Z przywraca"
+msgid "The line and its tracks taken away; the scenarios naming its tracks are looked through first. Ctrl+Z brings it back"
+msgstr "Linia i jej tory są usuwane; najpierw przeglądane są scenariusze, które odwołują się do jej torów. Ctrl+Z przywraca"
+
+msgid "A line of the model goes by Del on one of its tracks, not in a set"
+msgstr "Linię modelu usuwa się klawiszem Del na jednym z jej torów, nie w zestawie"
 
 msgid "Changed by hand"
 msgstr "Zmienione ręcznie"
@@ -14982,6 +14985,60 @@ msgstr "Zachowaj zmianę ręczną"
 msgid "Overwrite"
 msgstr "Nadpisz"
 
+msgid "Checking the scenarios"
+msgstr "Sprawdzanie scenariuszy"
+
+msgid "Looking through the scenarios which use the map, before the track goes. On a big map it takes a few minutes, once."
+msgstr "Przeglądanie scenariuszy, które używają mapy, zanim tor zostanie usunięty. Na dużej mapie trwa to kilka minut, jednorazowo."
+
+msgid "Delete without checking"
+msgstr "Usuń bez sprawdzania"
+
+msgid "Track used by %zu scenario"
+msgid_plural "Track used by %zu scenarios"
+msgstr[0] "Tor używany przez %zu scenariusz"
+msgstr[1] "Tor używany przez %zu scenariusze"
+msgstr[2] "Tor używany przez %zu scenariuszy"
+
+msgid "Taken away, the scenarios lose what they name in the map:"
+msgstr "Po usunięciu scenariusze stracą to, do czego odwołują się w mapie:"
+
+msgid "%s: %s %s (%s:%zu)"
+msgstr "%s: %s %s (%s:%zu)"
+
+msgid "Delete anyway"
+msgstr "Usuń mimo to"
+
+msgid "trainset"
+msgstr "skład"
+
+msgid "event target"
+msgstr "cel eventu"
+
+msgid "condition"
+msgstr "warunek"
+
+msgid "copy source"
+msgstr "źródło kopii"
+
+msgid "multiple event"
+msgstr "event złożony"
+
+msgid "event launcher condition"
+msgstr "warunek wyzwalacza eventów"
+
+msgid "track event"
+msgstr "event toru"
+
+msgid "memory cell track"
+msgstr "tor komórki pamięci"
+
+msgid "isolated"
+msgstr "odcinek izolowany"
+
+msgid "named event"
+msgstr "event nazwany od toru"
+
 msgid "A line through switches is applied to the old tracks: the switches go through the model later"
 msgstr "Linia przez rozjazdy jest stosowana do starych torów: rozjazdy przejdą przez model później"
 
@@ -14996,3 +15053,15 @@ msgstr "Tory z eventami albo w odcinkach izolowanych są zmieniane jako stare to
 
 msgid "A line with a grade line of its own is applied to the old tracks: the model takes over the grade line later"
 msgstr "Linia z własną niweletą jest stosowana do starych torów: model przejmie niweletę później"
+
+msgid "Looking through the scenarios which use the map, before the track is renamed. On a big map it takes a few minutes, once."
+msgstr "Przeglądanie scenariuszy, które używają mapy, zanim nazwa toru się zmieni. Na dużej mapie trwa to kilka minut, jednorazowo."
+
+msgid "Rename without checking"
+msgstr "Zmień nazwę bez sprawdzania"
+
+msgid "Renamed, the scenarios lose what they name in the map:"
+msgstr "Po zmianie nazwy scenariusze stracą to, do czego odwołują się w mapie:"
+
+msgid "Rename anyway"
+msgstr "Zmień nazwę mimo to"

@@ -2,7 +2,7 @@
 // a map opened gets its project file; a command tried changes nothing, carried out tells the lines whose tracks go or are made again;
 // each command kept a step the editor's history takes back and brings again by its token, the marks of the lines changed by hand with it;
 // the tracks written with the scenery recorded, a track changed in the file afterwards marking its line, the line written over only when
-// the author decides
+// the author decides; the scenario index kept between the sessions (editor/project/scenarioIndexCache.cpp) and built once a fingerprint
 
 #include "stdafx.h"
 #include "doctest.h"
@@ -10,10 +10,14 @@
 #include "scratch.h"
 #include "editor/project/projectGenerated.hpp"
 #include "editor/project/projectSession.hpp"
+#include "editor/project/scenarioIndexCache.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -242,4 +246,107 @@ TEST_CASE("project session: the tracks written recorded, one changed in the file
 		CHECK(node.line == line_id{1});
 	}
 	CHECK(session.project().hand_changed.empty());
+}
+
+TEST_CASE("scenario index cache: written and read back, the users of a track, built once for the scenarios as they are, kept between the sessions") {
+	project::scenario_index index;
+	index.map = "mapa.scn";
+	index.tracks = {"a", "tor 1"};
+	index.events = {"e1"};
+	index.memcells = {"m1"};
+	project::scenario_use use;
+	use.scenario = "jazda.scn";
+	use.references.push_back({project::reference_kind::track, "tor 1", project::reference_use::trainset, "pociag", "jazda.scn", 4});
+	use.references.push_back({project::reference_kind::track, "a", project::reference_use::event_target, "e_vel", "jazda.scn", 9});
+	use.references.push_back({project::reference_kind::event, "e1", project::reference_use::launcher, "start", "jazda.scn", 12});
+	index.scenarios.push_back(use);
+	project::scenario_use other;
+	other.scenario = "inna.scn";
+	other.references.push_back({project::reference_kind::track, "a", project::reference_use::named_event, "a:event1", "inna.scn", 2});
+	index.scenarios.push_back(other);
+	index.problems.push_back("inna.scn: there's no file x.inc");
+	project::index_fingerprint fingerprint;
+	fingerprint.map = "mapa.scn";
+	fingerprint.files = {{"inna.scn", 120, 1000}, {"jazda.scn", 300, 2000}};
+
+	auto const stored{project::read_index(project::write_index(index, fingerprint))};
+	REQUIRE(stored.has_value());
+	CHECK(stored->fingerprint == fingerprint);
+	CHECK(stored->index.map == index.map);
+	CHECK(stored->index.tracks == index.tracks);
+	CHECK(stored->index.events == index.events);
+	CHECK(stored->index.memcells == index.memcells);
+	CHECK(stored->index.problems == index.problems);
+	REQUIRE(stored->index.scenarios.size() == 2);
+	CHECK(stored->index.scenarios[0].references == index.scenarios[0].references);
+	CHECK(stored->index.scenarios[1].references == index.scenarios[1].references);
+	CHECK_FALSE(project::read_index("eu07index 2\nend\n").has_value());
+	CHECK_FALSE(project::read_index("eu07index 1\nmap a\n").has_value());
+	CHECK_FALSE(project::read_index("eu07proj 1\n").has_value());
+
+	// the users of a track, by its name as the simulator compares it
+	auto const users{project::users_of(index, {"A"})};
+	REQUIRE(users.size() == 2);
+	CHECK(users[0].scenario == "jazda.scn");
+	REQUIRE(users[0].references.size() == 1);
+	CHECK(users[0].references[0].from == "e_vel");
+	CHECK(users[1].scenario == "inna.scn");
+	CHECK(project::users_of(index, {"tor 1", "b"}).size() == 1);
+	CHECK(project::users_of(index, {"e1"}).empty());
+
+	// built in the background once, given again while the scenarios are the files they were
+	test::scratch_folder folder{"scenario_index_cache"};
+	auto const store{folder.root() / "cache" / "mapa.txt"};
+	std::atomic<int> builds{0};
+	auto current{fingerprint};
+	auto const build = [&](std::filesystem::path const &, std::string const &Map) {
+		++builds;
+		auto result{index};
+		result.map = Map;
+		return result;
+	};
+	auto const fingerprinter = [&](std::filesystem::path const &, std::string const &) { return current; };
+	auto const wait = [](project::index_cache &Cache) {
+		for (int i = 0; i < 500; ++i) {
+			if (auto ready{Cache.ready()}) {
+				return ready;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+		return std::shared_ptr<project::scenario_index const>{};
+	};
+	{
+		project::index_cache cache{build, fingerprinter};
+		CHECK(cache.ready() == nullptr);
+		cache.request(folder.root(), "mapa.scn", store);
+		auto const first{wait(cache)};
+		REQUIRE(first != nullptr);
+		CHECK(builds == 1);
+		CHECK(first->scenarios.size() == 2);
+		CHECK(std::filesystem::exists(store));
+		cache.request(folder.root(), "mapa.scn", store);
+		CHECK_FALSE(cache.building());
+		CHECK(cache.ready() == first);
+		CHECK(builds == 1);
+		// a scenario changed: built again
+		current.files[1].size = 301;
+		cache.request(folder.root(), "mapa.scn", store);
+		REQUIRE(wait(cache) != nullptr);
+		CHECK(builds == 2);
+	}
+	{
+		// the next session: read from the file, not built
+		project::index_cache cache{build, fingerprinter};
+		cache.request(folder.root(), "mapa.scn", store);
+		CHECK_FALSE(cache.building());
+		auto const read{cache.ready()};
+		REQUIRE(read != nullptr);
+		CHECK(read->scenarios.size() == 2);
+		CHECK(builds == 2);
+		// of another map: built
+		cache.request(folder.root(), "inna.scn", store.parent_path() / "inna.txt");
+		REQUIRE(wait(cache) != nullptr);
+		CHECK(builds == 3);
+		CHECK(cache.ready()->map == "inna.scn");
+	}
 }

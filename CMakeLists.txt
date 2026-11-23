@@ -228,6 +228,7 @@ set(SOURCES
 "editor/project/projectMigration.cpp"
 "editor/project/sceneryText.cpp"
 "editor/project/scenarioIndex.cpp"
+"editor/project/scenarioIndexCache.cpp"
 "editor/project/projectSession.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"

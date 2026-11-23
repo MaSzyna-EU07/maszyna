@@ -96,7 +96,7 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 With the editing on the model (`modelediting 1`, the setting for the run only), a track may be named `@<line>.<index>`: the track of
 the line of the model at the index from its start. The commands `modelplan <track>` (the route design opened on the line),
 `routeradius|routecant <vertex> <value>`, `routemove <vertex> <x> <z>`, `modelsplit <m>`, `modeljoin <x> <z> <x> <z>`, `modeldelete`
-(of the line open in the route design), `modelselect|modeldel <track>`,
+(of the line open in the route design), `modelselect|modeldel <track>`, `modelrename <track> <name>`, `modelwait` (until the scenarios are looked through),
 `modelanswer <yes|no>` (the window asking), `modelmark <label>`, `modeltracks`; and the expectations:
 
 | expectation | checks |
@@ -109,7 +109,10 @@ the line of the model at the index from its start. The commands `modelplan <trac
 | `expect modelvertex <line> <index> <radius\|in\|out\|cant> <value>` | a value of a curve of a line of the model |
 | `expect modelsame <label>` | the lines and nodes of the model are the ones `modelmark` kept |
 | `expect hand <line> <0\|1>` | the line is taken for changed by hand |
-| `expect question <none\|hand> [line]` | the window asking the user |
+| `expect question <none\|hand\|waiting\|scenarios> [count or line]` | the window asking the user |
+
+Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
+the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
 
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
 on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
@@ -169,5 +172,6 @@ and the editing on the model of the track geometry (E4a of the plan of the track
 | `m_2_plan_refusal` | a curve changed in the route design past the norms is refused with the value, the limit and the paragraph, nothing changed; within them, laid in one step |
 | `m_3_model_undo` | Ctrl+Z takes a command of the model back with its tracks, Ctrl+Y brings it again, a split taken back; the project saved after an undo has the line as it was |
 | `m_4_hand_change` | a track of a line changed by another tool asks before the line is laid anew: kept, nothing changes; overwritten, laid anew; saved, found after a reopen |
+| `m_5_index_delete` | Del on a track a scenario names, or renaming it, waits for the scenario index and asks; cancelled it stays, confirmed it goes; a line of the model goes at once |
 | `m_6_split_join` | two lines joined with a new one, split and deleted from the route design, each a step |
-| `m_7_plan_converts` | the route design applied to old tracks makes them a line of the model; Ctrl+Z brings the old tracks back |
+| `m_7_plan_converts` | the route design applied to old tracks makes them a line of the model, after the scenarios are looked through; Ctrl+Z brings the old tracks back |

@@ -23,6 +23,7 @@ expect modellines 4
 expect modelends
 modelplan @3.0
 modeldelete
+modelwait
 wait 2
 expect modellines 3
 expect steps 5

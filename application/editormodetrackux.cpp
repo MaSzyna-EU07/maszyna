@@ -1938,6 +1938,9 @@ void editor_mode::draw_track_set() const
 void editor_mode::track_set_delete()
 {
 	track_set_prune();
+	// with the editing on the model: a track the scenarios name goes only when the user says so
+	if (model_delete_set(m_track_set))
+		return;
 	std::vector<TTrack *> removed;
 	// of crossovers taken out: the main tracks of their switches laid, the outer track brought down
 	std::vector<std::pair<TTrack *, editor_track::state>> states;

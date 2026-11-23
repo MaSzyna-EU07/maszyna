@@ -3351,7 +3351,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// setting "Editing on the model (trial)" on: the project of the map opened with the scenery and written with it, a line laid by the
 	// lay tool or applied by the route design a line of the model, its tracks made by the generator and marked as its; the edits of such a
 	// line commands of the model, refused with the reasons or kept, one step of the history each; a line changed by hand written over only
-	// when the user says so. The old tracks stay as they are, edited by the old tools. Off, nothing of it runs
+	// when the user says so; a track the scenarios name taken away only when the user says so. The old tracks stay as they are, edited by
+	// the old tools. Off, nothing of it runs
 	struct managed_track
 	{
 		layout::line_id line{layout::line_id::none};
@@ -3368,7 +3369,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::function<void(std::vector<TTrack *> const &)> done; // with the tracks the last command made
 		std::vector<TTrack *> replaced; // old tracks the line made takes the place of, taken away in its step
 	};
-	// the project, the managed tracks, the question waiting for an answer (editormodemodel.cpp); made as it's needed
+	// the project, the managed tracks, the question waiting for an answer, the scenario index (editormodemodel.cpp); made as it's needed
 	friend struct editor_model;
 	mutable std::unique_ptr<editor_model, editor_model_deleter> m_model;
 	editor_model &model() const;
@@ -3381,7 +3382,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void model_plan_drop();
 	// the setting is on and the project of the map is open
 	bool model_on() const;
-	// opens the project of the map once the scenery is there
+	// opens the project of the map once the scenery is there, and looks after the questions waiting for the scenario index
 	void model_update();
 	void model_open();
 	// the managed track, nullptr for an old one
@@ -3412,11 +3413,18 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool model_plan_convert(std::string &Why);
 	layout::line_id model_plan_line() const;
 	void render_model_plan();
-	// Del on a managed track takes its line away; true: taken care of here
+	// Del on a managed track takes its line away, a track the scenarios name goes only when the user says so; true: taken care of here
 	bool model_delete(TTrack *Track);
+	bool model_delete_set(std::vector<TTrack *> const &Tracks);
 	void model_delete_line(layout::line_id const Line);
+	// the tracks of the names go, or are renamed (Rename), only after the scenarios using the map are looked through, and the user says so
+	// where any names them
+	void model_check_users(std::vector<std::string> Names, std::function<void()> Then, bool const Rename = false);
+	// the track given the name (valid), as the inspector renames it: a name the scenarios use goes only when the user says so
+	void track_rename(TTrack &Track, std::string const &Name);
 	void render_model_windows();
 	std::string model_label(TTrack const *Track) const;
+	bool m_model_delete_confirmed{false}; // the old delete let through, the scenarios looked through
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives

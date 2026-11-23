@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSettings.hpp"
 #include "editor/project/projectGenerated.hpp"
 #include "editor/project/projectSession.hpp"
+#include "editor/project/scenarioIndexCache.hpp"
 #include "editor/project/sceneryText.hpp"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
@@ -124,11 +125,16 @@ struct model_question
 	enum class kind
 	{
 		none,
-		hand // the lines changed by hand: written over, or the change by hand kept
+		hand, // the lines changed by hand: written over, or the change by hand kept
+		waiting, // the scenarios using the map being looked through, before the tracks named go
+		scenarios // the scenarios naming the tracks: taken away anyway, or not
 	};
 	kind what{kind::none};
 	std::set<layout::line_id> lines;
-	std::function<void(bool)> answer; // true: written over
+	std::vector<std::string> names; // the tracks to go
+	std::vector<project::scenario_use> users;
+	std::function<void(bool)> answer; // true: written over, taken away anyway
+	bool rename{false}; // the tracks named are to be renamed, not taken away
 	bool opened{false};
 };
 
@@ -138,6 +144,8 @@ struct editor_model
 	bool tried{false}; // the project opened for the scenery, or failed to
 	std::string error;
 	std::unordered_map<scene::basic_node const *, editor_mode::managed_track> tracks;
+	project::index_cache index;
+	std::filesystem::path store; // the file the index is kept in between the sessions, none for the self-tests
 	model_question question;
 	// the line the route design is open on, its vertices as the model has them
 	struct plan_link
@@ -208,6 +216,25 @@ void editor_mode::model_update()
 		return;
 	if (false == model().tried && Global.editor_session && false == scene::Layers.empty())
 		model_open();
+	if (false == model_on())
+		return;
+	// the index built is taken, and kept between the sessions
+	auto const index{model().index.ready()};
+	auto &question{model().question};
+	if (question.what != model_question::kind::waiting || index == nullptr)
+		return;
+	question.users = project::users_of(*index, question.names);
+	WriteLog(format("Editor: the scenarios of the map looked through, %zu of %zu name the tracks %s", question.users.size(), index->scenarios.size(), question.names.empty() ? "" : question.names.front().c_str()));
+	if (false == question.users.empty())
+	{
+		question.what = model_question::kind::scenarios;
+		question.opened = false;
+		return;
+	}
+	auto const answer{std::move(question.answer)};
+	question = {};
+	if (answer)
+		answer(true);
 }
 
 void editor_mode::model_open()
@@ -258,6 +285,16 @@ void editor_mode::model_open()
 		model().tracks[track] = std::move(entry);
 	}
 	scene::Layers.path_writer = [this](TTrack const &Track, glm::dvec3 const &Offset) { return model_path_text(Track, Offset); };
+	// the scenario index of the map built in the background, kept between the sessions (not for the self-tests, which leave nothing behind)
+	auto &store{model().store};
+	store.clear();
+	if (selftest_script("EU07_EDITOR_SELFTEST") == nullptr)
+	{
+		auto name{map};
+		std::replace_if(name.begin(), name.end(), [](char const C) { return C == '/' || C == '\\' || C == ':'; }, '_');
+		store = user_cache_path("scenario_index/" + name + ".txt");
+	}
+	model().index.request(folder, map, store);
 	ui()->set_status(format(STR_C("Editing on the model: the project of the map is %s, %zu lines of the model"), project::path_of(map).generic_string().c_str(), model().session.network().lines().size()));
 }
 
@@ -762,7 +799,14 @@ bool editor_mode::model_plan_convert(std::string &Why)
 	line.transition = design.shape == alignment::transition_shape::clothoid ? layout::transition_shape::clothoid : layout::transition_shape::cubic_parabola;
 	line.category.vmax = design.speed;
 	auto const tracks{chain.tracks};
-	{
+	std::vector<std::string> names;
+	for (auto const *track : tracks)
+		if (false == track->name().empty() && track->name() != "none")
+			names.push_back(track->name());
+	// the old tracks named by a scenario go only when the user says so
+	model_check_users(names, [this, line, tracks]() {
+		if (std::ranges::any_of(tracks, [](TTrack const *Track) { return Track->m_editorremoved; }))
+			return;
 		model_context context;
 		context.replaced = tracks;
 		context.surface = surface_of(*tracks.front());
@@ -777,7 +821,7 @@ bool editor_mode::model_plan_convert(std::string &Why)
 			model().notices = notices;
 		};
 		model_run({line}, context);
-	}
+	});
 	return true;
 }
 
@@ -858,34 +902,103 @@ void editor_mode::render_model_plan()
 		return;
 	}
 	ImGui::PopStyleColor();
-	item_tooltip("The line and its tracks taken away. Ctrl+Z brings it back");
+	item_tooltip("The line and its tracks taken away; the scenarios naming its tracks are looked through first. Ctrl+Z brings it back");
 }
 
 bool editor_mode::model_delete(TTrack *Track)
 {
-	if (false == model_on() || Track == nullptr)
+	if (false == model_on() || Track == nullptr || m_model_delete_confirmed)
 		return false;
-	auto const *managed{model_track(Track)};
-	if (managed == nullptr)
+	if (auto const *managed{model_track(Track)})
+	{
+		model_delete_line(managed->line);
+		return true;
+	}
+	if (Track->name().empty() || Track->name() == "none")
 		return false;
-	model_delete_line(managed->line);
+	model_check_users({Track->name()}, [this, Track]() {
+		if (Track->m_editorremoved)
+			return;
+		m_node = Track;
+		ui()->set_node(m_node);
+		m_model_delete_confirmed = true;
+		delete_selected_track();
+		m_model_delete_confirmed = false;
+	});
+	return true;
+}
+
+bool editor_mode::model_delete_set(std::vector<TTrack *> const &Tracks)
+{
+	if (false == model_on() || m_model_delete_confirmed)
+		return false;
+	if (std::ranges::any_of(Tracks, [&](TTrack const *Track) { return model_track(Track) != nullptr; }))
+	{
+		ui()->set_status(STR_C("A line of the model goes by Del on one of its tracks, not in a set"), true);
+		return true;
+	}
+	std::vector<std::string> names;
+	for (auto const *track : Tracks)
+		if (false == track->name().empty() && track->name() != "none")
+			names.push_back(track->name());
+	if (names.empty())
+		return false;
+	model_check_users(names, [this, Tracks]() {
+		m_track_set.clear();
+		for (auto *track : Tracks)
+			if (false == track->m_editorremoved)
+				m_track_set.push_back(track);
+		if (m_track_set.empty())
+			return;
+		m_node = m_track_set.back();
+		ui()->set_node(m_node);
+		m_model_delete_confirmed = true;
+		track_set_delete();
+		m_model_delete_confirmed = false;
+	});
 	return true;
 }
 
 void editor_mode::model_delete_line(layout::line_id const Line)
 {
-	model_context context;
-	context.done = [this, Line](std::vector<TTrack *> const &) {
-		if (model().plan.line == Line)
-		{
-			model().plan = {};
-			route_drop();
-		}
-		m_node = nullptr;
-		ui()->set_node(nullptr);
-		m_track_point = {};
+	std::vector<std::string> names;
+	for (auto const *track : model_line_tracks(Line))
+		names.push_back(track->name());
+	model_check_users(names, [this, Line]() {
+		model_context context;
+		context.done = [this, Line](std::vector<TTrack *> const &) {
+			if (model().plan.line == Line)
+			{
+				model().plan = {};
+				route_drop();
+			}
+			m_node = nullptr;
+			ui()->set_node(nullptr);
+			m_track_point = {};
+		};
+		model_run({layout::delete_line{Line}}, context);
+	});
+}
+
+void editor_mode::model_check_users(std::vector<std::string> Names, std::function<void()> Then, bool const Rename)
+{
+	if (Names.empty())
+	{
+		Then();
+		return;
+	}
+	auto &question{model().question};
+	question = {};
+	question.what = model_question::kind::waiting;
+	question.names = std::move(Names);
+	question.rename = Rename;
+	question.answer = [Then](bool const Go) {
+		if (Go)
+			Then();
 	};
-	model_run({layout::delete_line{Line}}, context);
+	model().index.request(model().session.folder(), model().session.map(), model().store);
+	// the index ready already: answered now
+	model_update();
 }
 
 void editor_mode::render_model_windows()
@@ -893,7 +1006,7 @@ void editor_mode::render_model_windows()
 	auto &question{model().question};
 	if (question.what == model_question::kind::none)
 		return;
-	char const *ids[]{"", "###modelhand"};
+	char const *ids[]{"", "###modelhand", "###modelwaiting", "###modelusers"};
 	auto const id{ids[static_cast<int>(question.what)]};
 	if (false == question.opened)
 	{
@@ -930,6 +1043,43 @@ void editor_mode::render_model_windows()
 		}
 		break;
 	}
+	case model_question::kind::waiting:
+		if (ImGui::BeginPopupModal((std::string{STR_C("Checking the scenarios")} + id).c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings))
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextUnformatted(question.rename ? STR_C("Looking through the scenarios which use the map, before the track is renamed. On a big map it takes a few minutes, once.")
+			                                       : STR_C("Looking through the scenarios which use the map, before the track goes. On a big map it takes a few minutes, once."));
+			ImGui::PopTextWrapPos();
+			if (ImGui::Button(STR_C("Cancel")))
+				answer(false);
+			ImGui::SameLine();
+			if (ImGui::Button(question.rename ? STR_C("Rename without checking") : STR_C("Delete without checking")))
+				answer(true);
+			ImGui::EndPopup();
+		}
+		break;
+	case model_question::kind::scenarios:
+		if (ImGui::BeginPopupModal((format(STR_P("Track used by %zu scenario", "Track used by %zu scenarios", static_cast<long long>(question.users.size())), question.users.size()) + id).c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings))
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextUnformatted(question.rename ? STR_C("Renamed, the scenarios lose what they name in the map:") : STR_C("Taken away, the scenarios lose what they name in the map:"));
+			for (auto const &use : question.users)
+			{
+				ImGui::BulletText("%s", use.scenario.c_str());
+				ImGui::Indent();
+				for (auto const &reference : use.references)
+					ImGui::TextDisabled("%s", format(STR_C("%s: %s %s (%s:%zu)"), reference.name.c_str(), STR_C(project::use_name(reference.use)), reference.from.c_str(), reference.file.c_str(), reference.line).c_str());
+				ImGui::Unindent();
+			}
+			ImGui::PopTextWrapPos();
+			if (ImGui::Button(STR_C("Cancel")))
+				answer(false);
+			ImGui::SameLine();
+			if (ImGui::Button(question.rename ? STR_C("Rename anyway") : STR_C("Delete anyway")))
+				answer(true);
+			ImGui::EndPopup();
+		}
+		break;
 	default: break;
 	}
 }
@@ -960,6 +1110,12 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 			model_open();
 		WriteLog(format("SELFTEST modelediting %d: the project %s, %zu lines", on, model().session.is_open() ? "open" : "not open", model().session.network().lines().size()));
 		return selftest_result::handled;
+	}
+	if (command == "modelwait")
+	{
+		// the scenario index looked through for the question waiting on it
+		model_update();
+		return model().question.what == model_question::kind::waiting ? selftest_result::again : selftest_result::handled;
 	}
 	if (command == "modelanswer")
 	{
@@ -1020,6 +1176,18 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 				delete_selected_track();
 		}
 		WriteLog(format("SELFTEST %s %s: %s", command.c_str(), name.c_str(), track != nullptr ? track->name().c_str() : "no track"));
+		return selftest_result::handled;
+	}
+	if (command == "modelrename")
+	{
+		// the track renamed as the inspector renames it
+		std::string name, to;
+		words >> name >> to;
+		auto *track{resolve(name)};
+		std::string reason;
+		if (track != nullptr && editor_track::name_valid(*track, to, reason))
+			track_rename(*track, to);
+		WriteLog(format("SELFTEST modelrename %s %s: %s", name.c_str(), to.c_str(), track != nullptr ? reason.c_str() : "no track"));
 		return selftest_result::handled;
 	}
 	if (command == "routeradius" || command == "routecant")
@@ -1165,9 +1333,11 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 	{
 		std::string kind;
 		words >> kind;
-		char const *names[]{"none", "hand"};
+		char const *names[]{"none", "hand", "waiting", "scenarios"};
 		auto const &question{model().question};
 		auto got{std::string{names[static_cast<int>(question.what)]}};
+		if (question.what == model_question::kind::scenarios)
+			got += " " + std::to_string(question.users.size());
 		if (question.what == model_question::kind::hand)
 			for (auto const line : question.lines)
 				got += " " + line_name(line);

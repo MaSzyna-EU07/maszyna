@@ -1096,6 +1096,32 @@ void editor_mode::render_tool_card(tool_card const &Card)
 	list->ChannelsMerge();
 }
 
+void editor_mode::track_rename(TTrack &Track, std::string const &Name)
+{
+	auto const current{Track.name() == "none" ? std::string{} : Track.name()};
+	auto *track{&Track};
+	auto const rename = [this, track, Name, current]() {
+		if (track->m_editorremoved)
+			return;
+		auto const before{editor_track::capture(*track)};
+		editor_track::rename(*track, Name);
+		push_track_snapshot({{track, before}});
+		auto &edit{m_track_name};
+		edit.track = track;
+		edit.synced = track->name() == "none" ? std::string{} : track->name();
+		std::snprintf(edit.text, sizeof(edit.text), "%s", edit.synced.c_str());
+		edit.uses = editor_track::uses_of_name(*track);
+		edit.status = format(STR_C("Renamed from %s"), current.empty() ? STR_C("(no name)") : current.c_str());
+	};
+	// with the editing on the model: a name the scenarios of the map use goes only when the user says so
+	if (model_on() && false == current.empty() && Name != current)
+	{
+		model_check_users({current}, rename, true);
+		return;
+	}
+	rename();
+}
+
 void editor_mode::render_track_name(TTrack &Track)
 {
 	auto &edit{m_track_name};
@@ -1127,11 +1153,7 @@ void editor_mode::render_track_name(TTrack &Track)
 		std::string reason;
 		if (false == editor_track::name_valid(Track, name, reason))
 			return;
-		auto const before{editor_track::capture(Track)};
-		editor_track::rename(Track, name);
-		push_track_snapshot({{&Track, before}});
-		edit.status = format(STR_C("Renamed from %s"), current.empty() ? STR_C("(no name)") : current.c_str());
-		sync();
+		track_rename(Track, name);
 	};
 	if (begin_fields("##tracknamefields", 0.3f))
 	{
@@ -1890,7 +1912,7 @@ void editor_mode::delete_selected_track()
 		ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
 		return;
 	}
-	// with the editing on the model: a managed track takes its line away
+	// with the editing on the model: a managed track takes its line away, a track the scenarios name goes only when the user says so
 	if (model_delete(track))
 		return;
 	if (auto const set{double_of(*track)})

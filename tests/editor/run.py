@@ -5,7 +5,8 @@ A case (cases/<name>.txt) is a script of the editor's self-test commands (applic
 `expect` commands that log SELFTEST PASS or SELFTEST FAIL and make the editor end with a non-zero exit code when any of
 them failed. For each case the runner:
 
-  1. copies the fixture (scenery/autotest_editor.scn) into the game's scenery folder as autotest_editor_<case>.scn,
+  1. copies the fixture (scenery/autotest_editor.scn) into the game's scenery folder as autotest_editor_<case>.scn, and the
+     scenarios of its map (scenery/autotest_editor.<part>.scn) as autotest_editor_<case>_<part>.scn, naming that copy,
   2. starts the editor (eu07 -edit <scenery>) with the script in EU07_EDITOR_SELFTEST, its window hidden, a settings
      file of its own (-ini) and the one given with --ini over it, a limit of wall time and of memory,
   3. reads the exit code and the SELFTEST lines of log.txt, and prints PASS or FAIL for the case,
@@ -38,6 +39,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 CASES_DIR = HERE / "cases"
 FIXTURE = HERE / "scenery" / "autotest_editor.scn"
+# the scenarios of the map of the fixture, autotest_editor.<part>.scn: copied next to the copy of the fixture as
+# autotest_editor_<case>_<part>.scn, the name of the fixture in them made the name of its copy
+COMPANIONS = sorted((HERE / "scenery").glob("autotest_editor.*.scn"))
 OUT_DIR = HERE / "out"
 
 # a part of a script ends with quit before this line, the editor starts again on the scenery saved
@@ -263,6 +267,10 @@ def run_case(name: str, source: Path, exe: Path, game_dir: Path, user_ini: Path 
     if scenery in (entry.lower() for entry in before):
         sys.exit(f"{scenery_dir / scenery} is there already: a run before this one left it, delete it first")
     shutil.copyfile(FIXTURE, scenery_dir / scenery)
+    for companion in COMPANIONS:
+        part = companion.name[len("autotest_editor."):-len(".scn")]
+        text = companion.read_text(encoding="utf-8").replace(FIXTURE.name, scenery)
+        (scenery_dir / f"{stem}_{part}.scn").write_text(text, encoding="utf-8")
     passed = True
     expectations = 0
     seconds = 0.0
