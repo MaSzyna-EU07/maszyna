@@ -67,7 +67,14 @@ struct editor_model
 	std::string message; // what the last command came to: why it was refused, or what the norms tell of it
 	bool refused{false};
 	std::vector<std::string> notices;
-	std::vector<std::pair<TTrack const *, std::string>> written; // by the save under way, the texts written
+	// by the save under way, the texts written and the placement of the file each went into
+	struct written_track
+	{
+		TTrack const *track{nullptr};
+		std::string text;
+		glm::dvec3 offset{0.0};
+	};
+	std::vector<written_track> written;
 	std::map<std::string, layout::network> marks; // the self-test's copies of the network, for expect modelsame
 	std::string shown; // the message as the user reads it, in the language of the editor
 	std::vector<std::string> shown_notices; // the notices so

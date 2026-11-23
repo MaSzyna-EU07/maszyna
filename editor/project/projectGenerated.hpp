@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <string_view>
 #include <vector>
+#include <glm/glm.hpp>
 
 // The nodes of the simulator the generator wrote, kept in the project file by their names with the checksums of their text, and what the
 // scenery files hold of them now (editor-tracks-domain.md §9): a track changed outside the editor, or taken away, marks its line changed
@@ -50,5 +51,10 @@ std::vector<hand_change> find_hand_changes(document const &Project, std::functio
 std::set<layout::line_id> mark_hand_changes(document &Project, std::vector<hand_change> const &Changes);
 // the editor may write the tracks of the line again: none of them was changed by hand, or the author decided to write over them
 bool may_overwrite(document const &Project, layout::line_id const Line);
+
+// the entry of a track the generator wrote, a plain track or a switch track, as written into a file of another placement: the points of its
+// paths less Shift (the origin of the file the entry goes into less the one it was written for), the control vectors as they are,
+// relative to them; the words joined by one blank each. None where it isn't an entry of a track of the generator's
+std::optional<std::string> moved_entry(std::string_view const Text, glm::dvec3 const &Shift);
 
 } // namespace project

@@ -11,10 +11,12 @@
 #include "editor/editorGauge.hpp"
 #include "editor/layout/layoutParallel.hpp"
 #include "editor/layout/layoutTurnout.hpp"
+#include "editor/project/projectGenerated.hpp"
 #include "editor/project/projectSession.hpp"
 
 #include <cmath>
 #include <set>
+#include <sstream>
 
 namespace {
 
@@ -306,4 +308,45 @@ TEST_CASE("project session: the switch track of a turnout made by the session, t
 		records += node.line == line ? 1 : 0;
 	}
 	CHECK(records == 1);
+}
+
+TEST_CASE("project generated: the entry of a track of the generator moved for a file under an origin, its control vectors as they were") {
+	layout::model model;
+	REQUIRE(model.execute(three_curves()).done);
+	auto const line{model.state().lines().begin()->first};
+	auto const made{layout::generate(model.state(), line)};
+	REQUIRE(made.errors.empty());
+	auto const &piece{made.pieces[1]};
+	glm::dvec3 const shift{2000.0, -5.0, 300.25};
+	auto const moved{project::moved_entry(piece.text, shift)};
+	REQUIRE(moved.has_value());
+	auto const words = [](std::string const &Text) {
+		std::vector<std::string> result;
+		std::istringstream stream{Text};
+		for (std::string word; stream >> word;) {
+			result.push_back(word);
+		}
+		return result;
+	};
+	auto const before{words(piece.text)};
+	auto const after{words(*moved)};
+	REQUIRE(before.size() == after.size());
+	// node -1 0 name track normal length, 13 words of the surface, then the path: the start and its roll, two control vectors, the end
+	std::size_t const path{7 + 13};
+	for (std::size_t i = 0; i < before.size(); ++i) {
+		auto const offset{i >= path ? i - path : 99};
+		auto const axis{offset < 3 ? offset : offset >= 10 && offset < 13 ? offset - 10 : 99};
+		if (axis < 3) {
+			CHECK(std::stod(after[i]) == std::stod(before[i]) - shift[static_cast<glm::length_t>(axis)]);
+		}
+		else {
+			CHECK(after[i] == before[i]);
+		}
+	}
+	// not moved: the numbers as the generator wrote them, the checksum of the text the same
+	auto const same{project::moved_entry(piece.text, glm::dvec3{0.0})};
+	REQUIRE(same.has_value());
+	CHECK(project::checksum(*same) == project::checksum(piece.text));
+	// not an entry of the generator's
+	CHECK_FALSE(project::moved_entry("node -1 0 x model 0 0 0 0 a.t3d none", shift).has_value());
 }

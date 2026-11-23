@@ -13,7 +13,8 @@ them failed. For each case the runner:
   4. deletes the copy of the scenery and whatever the editor wrote next to it under its name.
 
 A line `#> reopen` in a script ends the editor there (the part before it ends with quit) and starts it again on the
-scenery as the part before saved it, for what has to be seen after a save and a load.
+scenery as the part before saved it, for what has to be seen after a save and a load. A line `#> append <text>` adds the
+text at the end of the copy of the fixture before the first run.
 
 The editor has to be built with -DWITH_EDITOR_SELFTESTS=ON; a build without it runs no script and is stopped at the
 time limit. The game data isn't in this repository, so this runs against a local game install only, not in CI.
@@ -46,6 +47,9 @@ OUT_DIR = HERE / "out"
 
 # a part of a script ends with quit before this line, the editor starts again on the scenery saved
 REOPEN = "#> reopen"
+# a line `#> append <text>` of a script: the text added at the end of the copy of the fixture, for a case needing the scenery a little
+# otherwise (an origin the editor adds its items under, say)
+APPEND = "#> append "
 # the exit code of a run whose expectations failed, editor_selftest::failed_exit_code
 FAILED_EXIT_CODE = 2
 
@@ -267,6 +271,10 @@ def run_case(name: str, source: Path, exe: Path, game_dir: Path, user_ini: Path 
     if scenery in (entry.lower() for entry in before):
         sys.exit(f"{scenery_dir / scenery} is there already: a run before this one left it, delete it first")
     shutil.copyfile(FIXTURE, scenery_dir / scenery)
+    appended = [line[len(APPEND):] for line in source.read_text(encoding="utf-8").splitlines() if line.startswith(APPEND)]
+    if appended:
+        with open(scenery_dir / scenery, "a", encoding="utf-8", newline="\n") as fixture:
+            fixture.write("\n" + "\n".join(appended) + "\n")
     for companion in COMPANIONS:
         part = companion.name[len("autotest_editor."):-len(".scn")]
         text = companion.read_text(encoding="utf-8").replace(FIXTURE.name, scenery)

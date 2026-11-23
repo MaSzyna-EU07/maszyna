@@ -667,12 +667,19 @@ std::optional<std::string> editor_mode::model_path_text(TTrack const &Track, glm
 	// changed by the other tools since it was made: its own export, a change by hand
 	if (export_of(Track) != entry.baseline)
 		return std::nullopt;
+	// into a file of another placement (a layer under an origin): its points as the file has them, the numbers of the generator moved
 	if (Offset != entry.offset)
 	{
-		WriteLog("Editor: model: the track " + Track.name() + " goes into a file of another placement, written by its own export", logtype::generic);
-		return std::nullopt;
+		auto moved{project::moved_entry(entry.text, Offset - entry.offset)};
+		if (false == moved.has_value())
+		{
+			WriteLog("Editor: model: the track " + Track.name() + " goes into a file of another placement, written by its own export", logtype::generic);
+			return std::nullopt;
+		}
+		model().written.push_back({&Track, *moved, Offset});
+		return moved;
 	}
-	model().written.emplace_back(&Track, entry.text);
+	model().written.push_back({&Track, entry.text, Offset});
 	return entry.text;
 }
 
@@ -690,13 +697,16 @@ void editor_mode::model_saved(bool const Success)
 	}
 	// the tracks written, by their lines, each with the file it went into
 	std::map<layout::line_id, std::vector<project::session::written_piece>> lines;
-	for (auto const &[track, text] : model().written)
+	for (auto const &[track, text, offset] : model().written)
 	{
 		auto const found{model().tracks.find(track)};
 		auto const *source{scene::Layers.source(track)};
 		if (found == model().tracks.end() || source == nullptr)
 			continue;
 		lines[found->second.line].push_back({track->name(), text, scene::Layers.layer(source->layer).name, found->second.kind});
+		// as the file has it now: written again so, as long as nothing changes it
+		found->second.text = text;
+		found->second.offset = offset;
 	}
 	model().written.clear();
 	for (auto const &[line, pieces] : lines)

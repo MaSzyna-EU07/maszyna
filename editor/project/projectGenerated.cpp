@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/project/sceneryText.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <format>
 #include <map>
 
 namespace project
@@ -108,6 +110,43 @@ std::set<layout::line_id> mark_hand_changes(document &Project, std::vector<hand_
 bool may_overwrite(document const &Project, layout::line_id const Line)
 {
 	return false == Project.hand_changed.contains(Line);
+}
+
+std::optional<std::string> moved_entry(std::string_view const Text, glm::dvec3 const &Shift)
+{
+	std::vector<std::string> words;
+	for (auto const &token : scenery_text::split(Text))
+		words.emplace_back(token.text);
+	// node <range> <range> <name> track <normal|switch> <length> <surface> <paths> ... endtrack; the surface of 13 words with the materials of
+	// a track seen (vis), of 7 of one not (unvis)
+	if (words.size() < 14 || words[0] != "node" || words[4] != "track" || (words[5] != "normal" && words[5] != "switch"))
+		return std::nullopt;
+	auto const surface{words[13] == "vis" ? std::size_t{13} : words[13] == "unvis" ? std::size_t{7} : std::size_t{0}};
+	if (surface == 0)
+		return std::nullopt;
+	// a path: the start and its roll, two control vectors, the end and its roll, the radius
+	std::size_t constexpr kPath{15};
+	auto const paths{words[5] == "switch" ? std::size_t{2} : std::size_t{1}};
+	auto const first{6 + 1 + surface};
+	if (words.size() < first + paths * kPath)
+		return std::nullopt;
+	// as the generator writes the numbers: the shortest form which reads back to the same double
+	auto const number = [](double const Value) { return std::format("{}", Value); };
+	for (std::size_t path = 0; path < paths; ++path)
+		for (auto const point : {std::size_t{0}, std::size_t{10}})
+			for (std::size_t axis = 0; axis < 3; ++axis)
+			{
+				auto &word{words[first + path * kPath + point + axis]};
+				char *end{nullptr};
+				auto const value{std::strtod(word.c_str(), &end)};
+				if (end == word.c_str() || *end != '\0')
+					return std::nullopt;
+				word = number(value - Shift[static_cast<glm::length_t>(axis)]);
+			}
+	std::string result;
+	for (auto const &word : words)
+		result += (result.empty() ? "" : " ") + word;
+	return result + "\n";
 }
 
 } // namespace project

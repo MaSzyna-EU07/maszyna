@@ -126,7 +126,8 @@ Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fi
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
 
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
-on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
+on the scenery as it was saved, for what has to be checked after a save and a load. A line `#> append <text>` adds the text at the end
+of the copy of the fixture before the first run (`m_14_layer_origin`: an origin the editor adds its items under). The editor's own `openscenery` starts a
 new editor without the script, so it isn't for the cases.
 
 ## The cases
@@ -197,3 +198,4 @@ and the rest of the editing on the model (E4b), with the setting on:
 | `m_11_vertex_drag` | the vertex of a curve dragged on the map with the mouse: the line as the model would lay it tried while it's dragged, one command let go |
 | `m_12_lay_from_end` | a line laid on from the free end of a line of the model shares its node, the ends to the bit before and after a reopen |
 | `m_13_parallel` | the parallel tool beside a line of the model lays a line of the model, its arc concentric at the spacing, one step |
+| `m_14_layer_origin` | a line of the model saved into a file under an origin and opened again: nothing taken for changed by hand, also after a second save |
