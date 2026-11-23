@@ -1,7 +1,9 @@
 // the turnouts of the track geometry (editor/layout, editor-tracks-domain.md §4 "Rozjazd", §7, §8): the types of the catalogue the
 // model lays, the legs of a turnout against the catalogue (a, b, the angle), the bending of table 11.8 and the speeds of Q2 as the model
 // computes them, the rules of Q2 and §11.4 refusing, the commands laying, moving, changing and taking out a turnout kept whole or refused
-// with the state as it was, one step to undo; random edits with turnouts, the seed in the name of the case
+// with the state as it was, one step to undo; the edits E2a left (a vertex put in and taken out, the grade line, the class and the profile
+// of a line, a line going on from the curve of a free end) and the edits which may add no BLOCK finding to an old track; random edits with
+// turnouts, the seed in the name of the case
 
 #include "stdafx.h"
 #include "doctest.h"
@@ -292,6 +294,7 @@ TEST_CASE("layout turnouts: moved along its line, changed, taken out with the li
 		// its tracks aren't edited as lines
 		CHECK_FALSE(model.execute(layout::split_line{turnout.main, 10.0}).done);
 		CHECK_FALSE(model.execute(layout::delete_line{turnout.diverging}).done);
+		CHECK_FALSE(model.execute(layout::set_grades{turnout.main, {}}).done);
 		CHECK(model.state().same(laid));
 		// moved 25 m on: the start 25 m further, its ids kept, the lines on both sides one step to undo
 		auto const moved{model.execute(layout::move_turnout{id, 25.0})};
@@ -381,13 +384,179 @@ TEST_CASE("layout turnouts: a line going on from the end of the diverging track 
 	CHECK(model.state().same(before));
 }
 
+TEST_CASE("layout commands: a vertex put in and taken out, the grade line, the class and the profile of a line") {
+	layout::model model;
+	REQUIRE(model.execute(straight_line()).done);
+	auto const line{only_line(model)};
+	auto const plain{model.state()};
+	// a vertex off the line with a curve of the radius the norms prefer: the line turns there; taken out, the straight again
+	auto bend{curve({500.0, 20.0}, 1500.0)};
+	auto const put{model.execute(layout::insert_vertex{line, layout::vertex_id::none, bend})};
+	CAPTURE(reasons_of(put));
+	REQUIRE(put.done);
+	REQUIRE(put.vertices.size() == 1);
+	check_invariants(model.state());
+	CHECK(model.state().find(line)->shape.vertices.size() == 1);
+	CHECK(model.state().find(line)->solved.elements.size() == 5);
+	// another after it, then the first one taken out
+	auto const second{model.execute(layout::insert_vertex{line, put.vertices.front(), curve({800.0, 0.0}, 1500.0)})};
+	CAPTURE(reasons_of(second));
+	REQUIRE(second.done);
+	CHECK(model.state().find(line)->shape.vertices.back().id == second.vertices.front());
+	REQUIRE(model.execute(layout::remove_vertex{line, second.vertices.front()}).done);
+	REQUIRE(model.execute(layout::remove_vertex{line, put.vertices.front()}).done);
+	CHECK(model.state().same(plain));
+	CHECK_FALSE(model.execute(layout::remove_vertex{line, put.vertices.front()}).done);
+	CHECK_FALSE(model.execute(layout::insert_vertex{line, layout::vertex_id{999}, bend}).done);
+	// the grade line: a break with its vertical curve; two overlapping, a break of no radius refused
+	REQUIRE(model.execute(layout::set_grades{line, {{400.0, 103.0, 10000.0}}}).done);
+	check_invariants(model.state());
+	CHECK(model.state().find(line)->solved.elevation(400.0) < 103.0);
+	auto const graded{model.state()};
+	CHECK_FALSE(model.execute(layout::set_grades{line, {{400.0, 103.0, 10000.0}, {420.0, 100.0, 10000.0}}}).done);
+	CHECK_FALSE(model.execute(layout::set_grades{line, {{400.0, 103.0, 0.0}}}).done);
+	CHECK(model.state().same(graded));
+	// the class: a curve fine at 80 km/h passes a BLOCK limit at 200; the profile of the line's own judges it
+	layout::model curved;
+	REQUIRE(curved.execute(three_curves()).done);
+	auto const id{only_line(curved)};
+	auto fast{line_class()};
+	fast.vmax = 200.0;
+	auto const before{curved.state()};
+	auto const refused{curved.execute(layout::set_line_class{id, fast})};
+	CHECK_FALSE(refused.done);
+	CHECK(curved.state().same(before));
+	auto slow{line_class()};
+	slow.vmax = 60.0;
+	REQUIRE(curved.execute(layout::set_line_class{id, slow}).done);
+	CHECK(curved.state().find(id)->category.vmax == 60.0);
+	// R 280 m at 80 km/h warns by PLK (P1 300 m), by the TSI alone it doesn't
+	REQUIRE(curved.execute(layout::set_line_class{id, line_class()}).done);
+	auto const tight{layout::preferred_curve(norms::profile_id::plk, line_class(), 280.0)};
+	auto const v2{curved.state().find(id)->shape.vertices[1].id};
+	auto const warned{curved.execute(layout::set_vertex{id, v2, 280.0, tight.transition, tight.transition, tight.cant})};
+	REQUIRE(warned.done);
+	auto const radius_warning = [](layout::outcome const &Outcome) {
+		return std::ranges::any_of(Outcome.notices, [](layout::notice const &Notice) { return Notice.finding.what == norms::parameter::radius && Notice.finding.level == norms::tier::warn; });
+	};
+	CHECK(radius_warning(warned));
+	auto const tsi{curved.execute(layout::set_line_profile{id, norms::profile_id::tsi})};
+	REQUIRE(tsi.done);
+	CHECK(curved.state().find(id)->profile == norms::profile_id::tsi);
+	CHECK_FALSE(radius_warning(tsi));
+	REQUIRE(curved.execute(layout::set_line_profile{id, std::nullopt}).done);
+	CHECK_FALSE(curved.state().find(id)->profile.has_value());
+}
+
+TEST_CASE("layout commands: a line joined to a free end in a curve goes on from its curve, the track as it was") {
+	layout::model model;
+	REQUIRE(model.execute(one_curve(800.0, 50.0)).done);
+	auto const line{only_line(model)};
+	auto const original{model.state().find(line)->solved};
+	auto const &vertex{model.state().find(line)->shape.vertices.front()};
+	auto const transition{vertex.transition_out};
+	// cut in the middle of the arc, the part after it taken away: a free end in the curve
+	auto const at{middle_of_arc(*model.state().find(line))};
+	auto const cut{model.execute(layout::split_line{line, at})};
+	REQUIRE(cut.done);
+	auto const end_point{model.state().find(cut.lines.front())->solved.end.position};
+	REQUIRE(model.execute(layout::delete_line{cut.lines.front()}).done);
+	auto const free_curve{cut.nodes.front()};
+	CHECK(model.state().find(free_curve)->curvature != 0.0);
+	// a line on along the tangent the curve ended on, its start free
+	auto const out{original.end.heading};
+	layout::create_line on;
+	on.start = end_point;
+	on.end = end_point + glm::dvec3{out.x, 0.0, out.y} * 200.0;
+	on.category = line_class();
+	auto const beyond{model.execute(on)};
+	REQUIRE(beyond.done);
+	auto const joined{model.execute(layout::join_ends{free_curve, model.state().find(beyond.lines.front())->start})};
+	CAPTURE(reasons_of(joined));
+	REQUIRE(joined.done);
+	check_invariants(model.state());
+	// the arc going on, the transition out as long as it was: the track the part taken away had
+	auto const &link{*model.state().find(joined.lines.front())};
+	CHECK(link.start_continues);
+	REQUIRE(link.shape.vertices.size() == 1);
+	CHECK(link.shape.vertices.front().radius == doctest::Approx(800.0));
+	CHECK(link.shape.vertices.front().transition_out == doctest::Approx(transition).epsilon(1e-6));
+	for (double s = 0.0; s <= link.solved.length; s += 5.0) {
+		CAPTURE(s);
+		CHECK(glm::distance(link.solved.point(s), original.point(at + s)) < 1e-6);
+	}
+	// both ends in curves: not yet
+	layout::model two;
+	REQUIRE(two.execute(three_curves()).done);
+	auto const id{only_line(two)};
+	auto const &curves{*two.state().find(id)};
+	auto const first{two.execute(layout::split_line{id, middle_of_arc(curves)})};
+	REQUIRE(first.done);
+	double second_arc{0.0};
+	for (auto const &e : two.state().find(first.lines.front())->solved.elements) {
+		if (e.role == layout::element_role::arc) {
+			second_arc = e.chainage + 0.5 * e.length;
+			break;
+		}
+	}
+	auto const second{two.execute(layout::split_line{first.lines.front(), second_arc})};
+	REQUIRE(second.done);
+	auto const a{two.state().find(first.lines.front())->start};
+	auto const b{two.state().find(first.lines.front())->end};
+	REQUIRE(two.execute(layout::delete_line{first.lines.front()}).done);
+	auto const both{two.execute(layout::join_ends{a, b})};
+	CHECK_FALSE(both.done);
+	CHECK(says(both.reasons, "both lie in curves"));
+}
+
+TEST_CASE("layout commands: an old track breaking the norms is edited with no BLOCK added, the BLOCK it had not refusing") {
+	// R 170 m at 40 km/h laid by the TSI alone (150 m), then judged by PLK: below its 180 m, a BLOCK there before any edit
+	norms::area_map lenient;
+	lenient.scenery = norms::profile_id::tsi;
+	layout::model laid{lenient};
+	auto line{one_curve(170.0, 60.0)};
+	line.category.vmax = 40.0;
+	line.vertices.front().transition_in = line.vertices.front().transition_out = 40.0;
+	auto const made{laid.execute(line)};
+	CAPTURE(reasons_of(made));
+	REQUIRE(made.done);
+	auto old{laid.state()};
+	old.areas.scenery = norms::profile_id::plk;
+	auto const existing{layout::check_all(old)};
+	REQUIRE_FALSE(existing.blocks.empty());
+	CHECK(std::ranges::any_of(existing.blocks, [](layout::notice const &Block) { return Block.finding.what == norms::parameter::radius; }));
+	layout::model model{old};
+	auto const id{only_line(model)};
+	auto const vertex{model.state().find(id)->shape.vertices.front().id};
+	auto const before{model.state()};
+	// refused when any BLOCK refuses, kept when it isn't one the edit adds
+	CHECK_FALSE(model.execute(layout::set_vertex{id, vertex, std::nullopt, std::nullopt, std::nullopt, 55.0}).done);
+	CHECK(model.state().same(before));
+	auto const kept{model.execute(layout::set_vertex{id, vertex, std::nullopt, std::nullopt, std::nullopt, 55.0}, layout::edit_policy::no_new_block)};
+	CAPTURE(reasons_of(kept));
+	CHECK(kept.done);
+	// a sharper curve makes it worse, a cant past (R - 50) / 1.5 adds one: refused; a wider one makes it better: kept
+	auto const now{model.state()};
+	CHECK_FALSE(model.execute(layout::set_vertex{id, vertex, 160.0}, layout::edit_policy::no_new_block).done);
+	auto const steep{model.execute(layout::set_vertex{id, vertex, std::nullopt, std::nullopt, std::nullopt, 100.0}, layout::edit_policy::no_new_block)};
+	CHECK_FALSE(steep.done);
+	CHECK(says(steep.reasons, "cant"));
+	CHECK(model.state().same(now));
+	auto const wider{model.execute(layout::set_vertex{id, vertex, 175.0}, layout::edit_policy::no_new_block)};
+	CAPTURE(reasons_of(wider));
+	CHECK(wider.done);
+	// the invariants refuse in any case
+	CHECK_FALSE(model.execute(layout::move_vertex{id, vertex, {0.0, 0.0}}, layout::edit_policy::no_new_block).done);
+}
+
 namespace {
 
 std::vector<std::string> const kTypes{"Rz 60E1-190-1:9", "Rz 60E1-300-1:9", "Rz 60E1-500-1:12", "Rz 60E1-760-1:14", "Rz 60E1-1200-1:18,5", "Rz 49E1-500-1:14"};
 
-// random edits with turnouts: laid, moved, changed and taken out, with the edits of the lines (vertices moved and set, splits, joins,
-// deletions), undoing and redoing; after each the invariants, a refusal changing nothing, an undo giving the state before
-void random_turnout_edits(unsigned const Seed, int const Count) {
+// random edits with turnouts: laid, moved, changed and taken out, with the edits of the lines (vertices moved and set, put in and taken
+// out, splits, joins, deletions), undoing and redoing; after each the invariants, a refusal changing nothing, an undo giving the state
+// before. Policy: of the norms; with no_new_block the network starts from one breaking them and no BLOCK finding is added
+void random_turnout_edits(unsigned const Seed, int const Count, layout::edit_policy const Policy = layout::edit_policy::refuse_block) {
 	std::mt19937 random{Seed};
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
 	auto const pick = [&](std::size_t const Size) { return std::uniform_int_distribution<std::size_t>{0, Size - 1}(random); };
@@ -395,7 +564,29 @@ void random_turnout_edits(unsigned const Seed, int const Count) {
 	std::vector<layout::network> history;
 	REQUIRE(model.execute(three_curves()).done);
 	REQUIRE(model.execute(straight_line({0.0, 100.0, -300.0}, 1200.0)).done);
-	auto const checked = [&](layout::network const &State) { check_invariants(State); };
+	if (Policy == layout::edit_policy::no_new_block) {
+		// the lines judged at 120 km/h, which they weren't laid for: an old track breaking the norms in its curves
+		auto old{model.state()};
+		layout::transaction faster{old};
+		auto fast{line_class()};
+		fast.vmax = 120.0;
+		for (auto const &[id, line] : model.state().lines()) {
+			faster.change(id).category = fast;
+		}
+		layout::settle(faster);
+		REQUIRE_FALSE(layout::check_all(old).blocks.empty());
+		model = layout::model{old};
+	}
+	// the invariants, and no BLOCK at all where the norms refuse any
+	auto const checked = [&](layout::network const &State) {
+		if (Policy == layout::edit_policy::refuse_block) {
+			check_invariants(State);
+		}
+		else {
+			check_structure(State);
+			CHECK(layout::check_all(State).reasons.empty());
+		}
+	};
 	history.push_back(model.state());
 	checked(model.state());
 	std::vector<layout::network> redone;
@@ -482,6 +673,21 @@ void random_turnout_edits(unsigned const Seed, int const Count) {
 			b += b >= a ? 1 : 0;
 			command = layout::join_ends{free[a], free[b]};
 		}
+		else if (roll < 0.92 && false == plain.empty()) {
+			// a vertex put into a straight line and taken out again
+			auto const &line{*state.find(plain[pick(plain.size())])};
+			if (line.shape.vertices.empty() && line.solved.length > 300.0) {
+				auto const s{uniform(100.0, line.solved.length - 100.0)};
+				auto const across{layout::left_of(line.solved.tangent(s)) * uniform(-15.0, 15.0)};
+				command = layout::insert_vertex{line.id, layout::vertex_id::none, curve(line.solved.position(s) + across, 2000.0)};
+			}
+			else if (false == line.shape.vertices.empty()) {
+				command = layout::remove_vertex{line.id, line.shape.vertices[pick(line.shape.vertices.size())].id};
+			}
+			else {
+				continue;
+			}
+		}
 		else if (false == plain.empty()) {
 			auto const &line{*state.find(plain[pick(plain.size())])};
 			command = layout::delete_line{line.id};
@@ -491,7 +697,8 @@ void random_turnout_edits(unsigned const Seed, int const Count) {
 		}
 		std::string const kind{layout::command_name(command)};
 		auto const before{model.state()};
-		auto const result{model.execute(command)};
+		auto const blocks_before{layout::check_all(before).blocks};
+		auto const result{model.execute(command, Policy)};
 		if (result.done) {
 			++tally[kind].first;
 			history.push_back(model.state());
@@ -503,6 +710,14 @@ void random_turnout_edits(unsigned const Seed, int const Count) {
 			CHECK(model.state().same(before));
 		}
 		checked(model.state());
+		if (Policy == layout::edit_policy::no_new_block) {
+			// no BLOCK finding added: each one there now was there before, of the parameter, on the same stretch, no worse
+			auto const now{layout::check_all(model.state())};
+			for (auto const &block : now.blocks) {
+				CAPTURE(block.text);
+				CHECK(std::ranges::any_of(blocks_before, [&](layout::notice const &Old) { return layout::same_finding(Old, block); }));
+			}
+		}
 	}
 	std::string summary;
 	for (auto const &[kind, counts] : tally) {
@@ -514,7 +729,13 @@ void random_turnout_edits(unsigned const Seed, int const Count) {
 	CHECK(tally["remove turnout"].first >= 1);
 	CHECK(tally["insert turnout"].second >= 1);
 	CHECK(tally["undo"].first >= 1);
-	CHECK(tally["move turnout"].first >= 2);
+	if (Policy == layout::edit_policy::refuse_block) {
+		CHECK(tally["move turnout"].first >= 2);
+	}
+	else {
+		// the old BLOCK findings didn't refuse every edit of the lines they're on
+		CHECK(tally["move vertex"].first + tally["set vertex"].first >= 1);
+	}
 }
 
 } // namespace
@@ -529,4 +750,8 @@ TEST_CASE("layout turnouts P: 250 random edits with turnouts, seed 31: the legs 
 
 TEST_CASE("layout turnouts P: 250 random edits with turnouts, seed 977: the legs and the nodes whole, no BLOCK, a refusal changes nothing") {
 	random_turnout_edits(977u, 250);
+}
+
+TEST_CASE("layout turnouts P: 250 random edits of an old track breaking the norms, seed 4242: no BLOCK added, a refusal changes nothing") {
+	random_turnout_edits(4242u, 250, layout::edit_policy::no_new_block);
 }

@@ -446,7 +446,7 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	result.push_back({Line, true});
 	auto const contains = [&](line_id const Id) { return std::ranges::any_of(result, [&](chain_part const &Part) { return Part.line == Id; }); };
 	// the other end at the node, where it holds two; at the start of a turnout the line it starts from runs on into its main track, its
-	// diverging track into none
+	// diverging track into none. Not into a line of another profile of its own
 	auto const across = [&](node_id const At, line_id const From, line_end const End) -> end_ref const * {
 		auto const *at{Network.find(At)};
 		if (at == nullptr || diverging_start(Network, {From, End, 1}))
@@ -459,6 +459,9 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 			else if (false == diverging_start(Network, end))
 				others.push_back(&end);
 		if (from == nullptr || others.size() != 1 || others.front()->side() == from->side())
+			return nullptr;
+		auto const *next{Network.find(others.front()->line)};
+		if (next == nullptr || next->profile != Network.find(From)->profile)
 			return nullptr;
 		return others.front();
 	};
@@ -567,6 +570,22 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 	if (false == Chain.empty())
 		result.line.name = std::format("l{}", number(Chain.front().line));
 	return result;
+}
+
+bool same_finding(notice const &Old, notice const &Found)
+{
+	if (Found.turnout != turnout_id::none || Old.turnout != turnout_id::none)
+		return Found.turnout == Old.turnout && Found.text == Old.text;
+	if (Old.finding.what != Found.finding.what)
+		return false;
+	auto const margin{1e-6 * std::max(1.0, std::abs(Old.finding.value))};
+	if (norms::minimum(Found.finding.what) ? Found.finding.value < Old.finding.value - margin : Found.finding.value > Old.finding.value + margin)
+		return false;
+	for (auto const &a : Old.along)
+		for (auto const &b : Found.along)
+			if (glm::distance(a, b) <= 1.5)
+				return true;
+	return false;
 }
 
 std::vector<std::string> verdict::refusals() const
@@ -681,7 +700,11 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 			continue;
 		auto const described{describe_chain(Network, chain)};
 		auto const &first{*Network.find(chain.front().line)};
-		for (auto const &finding : norms::evaluate(described.line, first.category, Network.areas))
+		// the profile of the lines' own wins over the areas: the lines of a chain have the same
+		auto areas{Network.areas};
+		if (first.profile.has_value())
+			areas.lines.insert(areas.lines.begin(), {described.line.name, *first.profile});
+		for (auto const &finding : norms::evaluate(described.line, first.category, areas))
 		{
 			if (finding.level == norms::tier::none)
 				continue;
@@ -693,7 +716,23 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 			auto const chainage{chain[part].forward ? along : owner.solved.length - along};
 			auto const text{finding_text(finding)};
 			if (finding.level == norms::tier::block)
-				Result.blocks.push_back({owner.id, chainage, finding, text});
+			{
+				// where along the chain: the element it's on, as points of the plan
+				auto const position_at = [&](double const At) {
+					auto index{static_cast<std::size_t>(std::upper_bound(described.starts.begin(), described.starts.end(), At + 1e-9) - described.starts.begin())};
+					index = index > 0 ? index - 1 : 0;
+					auto const &line{Network.find(chain[index].line)->solved};
+					auto const local{At - described.starts[index]};
+					return line.position(std::clamp(chain[index].forward ? local : line.length - local, 0.0, line.length));
+				};
+				notice found{owner.id, chainage, finding, text};
+				auto const &element{described.line.elements[std::min(finding.element, described.line.elements.size() - 1)]};
+				auto const count{std::clamp(static_cast<int>(std::ceil(element.length / 2.0)), 1, 256)};
+				for (int i = 0; i <= count; ++i)
+					found.along.push_back(position_at(element.start + element.length * i / count));
+				found.along.push_back(position_at(finding.chainage));
+				Result.blocks.push_back(std::move(found));
+			}
 			else if (Lines.contains(owner.id))
 				Result.notices.push_back({owner.id, chainage, finding, text});
 		}

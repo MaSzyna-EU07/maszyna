@@ -71,6 +71,7 @@ struct line
 	bool end_continues{false};
 	double chainage_start{0.0}; // m, the kilometrage of the start of the line
 	norms::line_class category;
+	std::optional<norms::profile_id> profile; // of the norms, its own; none: the one of the area it lies in
 	// derived: the line laid between its nodes
 	solved_line solved;
 
@@ -222,7 +223,12 @@ struct notice
 	norms::finding finding; // of a rule of a turnout: no parameter (norms::parameter::count), the tier
 	std::string text;
 	turnout_id turnout{turnout_id::none}; // a rule of the turnout
+	std::vector<glm::dvec2> along; // a BLOCK finding: the element it's on, as points of the plan 2 m apart at most
 };
+
+// the BLOCK finding Found is the one Old was: a rule of the same turnout telling the same, or a limit of the same parameter passed on the
+// same stretch of the track (their elements within a metre and a half of each other), by no more
+bool same_finding(notice const &Old, notice const &Found);
 
 struct verdict
 {

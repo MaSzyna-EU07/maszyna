@@ -66,7 +66,9 @@ struct split_line
 
 // a new line laid between two free ends, solved between the nodes: a straight where they face each other on one, a curve where their
 // tangents meet, two curves otherwise. The radius 0 takes the largest the norms prefer which fits, the transition and the cant below 0
-// the ones the norms prefer for the radius
+// the ones the norms prefer for the radius. An end in a curve (a line cut inside one) has the new line go on from its curve: the curve
+// where the tangents meet begins right at it, its arc or a transition from its curvature, and the transition at the other end long
+// enough for the curve to fit
 struct join_ends
 {
 	node_id from{node_id::none};
@@ -80,6 +82,42 @@ struct join_ends
 struct delete_line
 {
 	line_id line{line_id::none};
+};
+
+// a vertex put into the line after the one given (none: after its start), its radius, transitions and cant with it (the id is given to it)
+struct insert_vertex
+{
+	line_id line{line_id::none};
+	vertex_id after{vertex_id::none};
+	vertex shape;
+};
+
+// the vertex taken out of the line: the tangents of its neighbours meet with no curve of it
+struct remove_vertex
+{
+	line_id line{line_id::none};
+	vertex_id vertex{vertex_id::none};
+};
+
+// the grade line of the line: its breaks with their heights and vertical radii, from its start
+struct set_grades
+{
+	line_id line{line_id::none};
+	std::vector<grade_break> grades;
+};
+
+// the class of the line: its speed, its traffic, main or side track
+struct set_line_class
+{
+	line_id line{line_id::none};
+	norms::line_class category;
+};
+
+// the profile of the norms of the line's own, none: the one of the area it lies in
+struct set_line_profile
+{
+	line_id line{line_id::none};
+	std::optional<norms::profile_id> profile;
 };
 
 // a turnout of the type of the catalogue laid into the line, its start at the chainage: the line cut at its legs, the part between them its
@@ -117,9 +155,19 @@ struct remove_turnout
 	turnout_id turnout{turnout_id::none};
 };
 
-using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line, insert_turnout, move_turnout, change_turnout, remove_turnout>;
+using command = std::variant<create_line, move_vertex, set_vertex, split_line, join_ends, delete_line, insert_vertex, remove_vertex, set_grades, set_line_class, set_line_profile, insert_turnout,
+                             move_turnout, change_turnout, remove_turnout>;
 
 char const *command_name(command const &Command);
+
+// how the norms refuse an edit: any BLOCK limit passed along the lines it touches, or only one it adds (an old track, which may break the
+// norms where nobody touched it, stage E6): a BLOCK finding there before the edit, of the same parameter at the same place and no worse, isn't
+// one it adds. The invariants refuse in any case
+enum class edit_policy
+{
+	refuse_block,
+	no_new_block
+};
 
 struct outcome
 {
@@ -129,6 +177,7 @@ struct outcome
 	std::vector<line_id> lines; // made by it
 	std::vector<node_id> nodes;
 	std::vector<turnout_id> turnouts;
+	std::vector<vertex_id> vertices;
 };
 
 // the lines and the nodes with the commands which edited them, to undo and redo one by one
@@ -137,9 +186,11 @@ class model
   public:
 	model() = default;
 	explicit model(norms::area_map Areas) { m_network.areas = std::move(Areas); }
+	// the lines, the nodes and the turnouts taken over as they are, the norms not asked: the tracks of an old scenery (stage E6)
+	explicit model(network Network) : m_network{std::move(Network)} {}
 
 	network const &state() const { return m_network; }
-	outcome execute(command const &Command);
+	outcome execute(command const &Command, edit_policy const Policy = edit_policy::refuse_block);
 	bool undo();
 	bool redo();
 	std::size_t undoable() const { return m_undo.size(); }

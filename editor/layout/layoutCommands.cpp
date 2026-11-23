@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cmath>
 #include <format>
+#include <set>
 
 namespace layout
 {
@@ -324,7 +325,7 @@ solved_line const &lay(transaction &Change, line_id const Id)
 }
 
 // the two lines meeting at the node laid as one, the first one's: where the second goes on from the end of the first, nothing else meets
-// there, they're alike (the class, the transitions, the ramps, the grade going on) and the line laid so is the same track as
+// there, they're alike (the class, the profile, the transitions, the ramps, the grade going on) and the line laid so is the same track as
 // the two were, within a micrometre. False, nothing changed, where they can't be
 bool merge_at(transaction &Change, node_id const Node)
 {
@@ -341,7 +342,7 @@ bool merge_at(transaction &Change, node_id const Node)
 	auto const *second{view.find(second_end.line)};
 	if (first == nullptr || second == nullptr || first->id == second->id || second->end == first->start)
 		return false;
-	if (first->turnout != turnout_id::none || second->turnout != turnout_id::none || first->category != second->category ||
+	if (first->turnout != turnout_id::none || second->turnout != turnout_id::none || first->category != second->category || first->profile != second->profile ||
 	    first->shape.transition != second->shape.transition || first->shape.ramp != second->shape.ramp)
 		return false;
 	auto const &a{first->solved};
@@ -513,6 +514,7 @@ reasons lay_turnout(transaction &Change, outcome &Result, line_id const Line, do
 		track.start = made.start;
 		track.end = made.diverging_end;
 		track.category = category;
+		track.profile = view.find(made.main)->profile;
 		track.shape.transition = view.find(made.main)->shape.transition;
 		track.shape.ramp = view.find(made.main)->shape.ramp;
 		track.chainage_start = made.chainage;
@@ -669,6 +671,75 @@ reasons propose(transaction &Change, outcome &, remove_turnout const &Command)
 	return {};
 }
 
+reasons propose(transaction &Change, outcome &Result, insert_vertex const &Command)
+{
+	reasons why;
+	if (own_line(Change.view(), Command.line, why) == nullptr)
+		return why;
+	auto const &shape{Command.shape};
+	check_curve(shape.radius, shape.transition_in, shape.transition_out, shape.cant, why);
+	if (false == why.empty())
+		return why;
+	auto &vertices{Change.change(Command.line).shape.vertices};
+	auto at{vertices.begin()};
+	if (Command.after != vertex_id::none)
+	{
+		at = std::ranges::find_if(vertices, [&](vertex const &Each) { return Each.id == Command.after; });
+		if (at == vertices.end())
+			return {std::format("{} has no vertex {}", line_name(Command.line), number(Command.after))};
+		++at;
+	}
+	vertex made{shape};
+	made.id = Change.ids().new_vertex();
+	Result.vertices.push_back(made.id);
+	vertices.insert(at, made);
+	return {};
+}
+
+reasons propose(transaction &Change, outcome &, remove_vertex const &Command)
+{
+	reasons why;
+	if (vertex_of(Change, Command.line, Command.vertex, why) == nullptr)
+		return why;
+	std::erase_if(Change.change(Command.line).shape.vertices, [&](vertex const &Each) { return Each.id == Command.vertex; });
+	return {};
+}
+
+reasons propose(transaction &Change, outcome &, set_grades const &Command)
+{
+	reasons why;
+	if (own_line(Change.view(), Command.line, why) == nullptr)
+		return why;
+	for (std::size_t i = 0; i < Command.grades.size(); ++i)
+	{
+		if (Command.grades[i].vertical_radius <= 0.0)
+			why.push_back(std::format("the grade break at {:.1f} m has no vertical radius", Command.grades[i].chainage));
+		if (i > 0 && Command.grades[i].chainage <= Command.grades[i - 1].chainage)
+			why.push_back(std::format("the grade break at {:.1f} m isn't after the one before it", Command.grades[i].chainage));
+	}
+	if (why.empty())
+		Change.change(Command.line).shape.grades = Command.grades;
+	return why;
+}
+
+reasons propose(transaction &Change, outcome &, set_line_class const &Command)
+{
+	if (Change.view().find(Command.line) == nullptr)
+		return {std::format("there's no {}", line_name(Command.line))};
+	if (Command.category.vmax <= 0.0)
+		return {"a line of no speed"};
+	Change.change(Command.line).category = Command.category;
+	return {};
+}
+
+reasons propose(transaction &Change, outcome &, set_line_profile const &Command)
+{
+	if (Change.view().find(Command.line) == nullptr)
+		return {std::format("there's no {}", line_name(Command.line))};
+	Change.change(Command.line).profile = Command.profile;
+	return {};
+}
+
 // the free end at the node: the node, the end it holds and the heading a line joined there leaves it with, its curvature and its cant along
 // the new line
 struct free_end
@@ -710,11 +781,6 @@ std::optional<free_end> free_end_at(network const &Network, node_id const Id, bo
 	// the curvature stepping at the end of the turnout as the norms of the track connections allow (tab. 9.15)
 	if (auto const *switched{owner_of(Network, result.held.line)}; switched != nullptr && switched->diverging == result.held.line && result.held.end == line_end::end)
 		result.curvature = 0.0;
-	if (result.curved())
-	{
-		Why.push_back(std::format("{} lies in a curve; a line joined there would have to go on from it", node_name(Id)));
-		return std::nullopt;
-	}
 	return result;
 }
 
@@ -778,6 +844,131 @@ curve_fit join_fit(vertex const &Vertex, glm::dvec2 const &In, glm::dvec2 const 
 	return fit_curve(Shape, geometry::signed_angle(In, Out), Vertex.radius, Vertex.transition_in, Vertex.transition_out);
 }
 
+// a new line from the free ends, its vertices, how its ends go on from their nodes, the grade line meeting the grades of the ends: one
+// break where their tangents meet, or two with a grade between them
+reasons add_joined(transaction &Change, outcome &Result, join_ends const &Command, free_end const &From, free_end const &To, std::vector<vertex> Vertices, bool const StartContinues,
+                   bool const EndContinues)
+{
+	auto const &view{Change.view()};
+	auto const &neighbour{*view.find(From.held.line)};
+	auto const profile{view.areas.at({From.at->position.x, From.at->position.z}, {})};
+	auto &ids{Change.ids()};
+	line joined;
+	joined.id = ids.new_line();
+	joined.start = Command.from;
+	joined.end = Command.to;
+	joined.shape.vertices = std::move(Vertices);
+	for (auto &vertex : joined.shape.vertices)
+		vertex.id = ids.new_vertex();
+	joined.shape.transition = neighbour.shape.transition;
+	joined.shape.ramp = neighbour.shape.ramp;
+	joined.category = neighbour.category;
+	joined.profile = neighbour.profile;
+	joined.start_continues = StartContinues;
+	joined.end_continues = EndContinues;
+	auto const plan{solve(joined.shape, {From.at->position, StartContinues, From.curvature, From.cant}, {To.at->position, EndContinues, To.curvature, To.cant})};
+	if (false == plan.valid())
+		return {std::format("no line fits between {} and {}: {}", node_name(Command.from), node_name(Command.to), plan.errors.empty() ? std::string{} : plan.errors.front())};
+	auto const breaks{join_grades(plan.length, From.at->position.y, From.at->grade * From.sense, To.at->position.y, To.at->grade * To.sense, profile, neighbour.category)};
+	if (false == breaks.has_value())
+		return {std::format("no grade line fits between the grades of {} and {}", node_name(Command.from), node_name(Command.to))};
+	joined.shape.grades = *breaks;
+	Change.change(Command.from).ends.push_back({joined.id, line_end::start, From.sense});
+	Change.change(Command.to).ends.push_back({joined.id, line_end::end, To.sense});
+	Result.lines.push_back(joined.id);
+	Change.add(std::move(joined));
+	return {};
+}
+
+// a line going on from the curve of one of the ends (a line cut inside one), to a straight end: one curve where the tangents meet, which
+// begins right at the curved end, its arc going on or a transition from its curvature to one the norms prefer; the transition at the
+// straight end as long as makes the curve begin there
+reasons join_curved(transaction &Change, outcome &Result, join_ends const &Command, free_end const &From, free_end const &To)
+{
+	if (From.curved() && To.curved())
+		return {std::format("{} and {} both lie in curves: a line going on from both isn't solved yet", node_name(Command.from), node_name(Command.to))};
+	auto const &view{Change.view()};
+	auto const &neighbour{*view.find(From.held.line)};
+	auto const category{neighbour.category};
+	auto const shape{neighbour.shape.transition};
+	auto const profile{view.areas.at({From.at->position.x, From.at->position.z}, {})};
+	auto const p0{geometry::plan_of(From.at->position)};
+	auto const p1{geometry::plan_of(To.at->position)};
+	double along{0.0};
+	double back{0.0};
+	if (false == geometry::lines_cross(p0, From.heading, p1, To.heading, along, back) || along <= 0.0 || back >= 0.0)
+		return {std::format("the tangents of {} and {} don't meet ahead of them: no one curve going on from the curved end joins them", node_name(Command.from), node_name(Command.to))};
+	auto const corner{p0 + From.heading * along};
+	auto const deflection{geometry::signed_angle(From.heading, To.heading)};
+	auto const &curved{From.curved() ? From : To};
+	auto const held{From.curved() ? along : -back}; // the tangent which has to be the curve's own to the bit
+	auto const other{From.curved() ? -back : along};
+	if (curved.curvature * deflection <= 0.0 || curved.cant * deflection < -0.5)
+		return {std::format("the curve at {} turns the other way from the one the line would take", node_name(From.curved() ? Command.from : Command.to))};
+	// the radii tried: the curve going on, then the ones the norms prefer, the largest first
+	auto const going_on{1.0 / std::abs(curved.curvature)};
+	std::vector<double> radii{going_on};
+	for (auto const radius : {6000.0, 4000.0, 3000.0, 2000.0, 1500.0, 1200.0, 1000.0, 800.0, 600.0, 500.0, 400.0, 300.0})
+		if (radius != going_on)
+			radii.push_back(radius);
+	for (auto const radius : radii)
+	{
+		auto const preferred{preferred_curve(profile, category, radius)};
+		auto const going{radius == going_on};
+		auto const cant{going ? std::abs(curved.cant) : (Command.cant >= 0.0 ? Command.cant : preferred.cant)};
+		auto const leading{going ? 0.0 : std::max(1.0, Command.transition >= 0.0 ? Command.transition : preferred.transition)};
+		// a cubic parabola runs between a straight and an arc only
+		if (false == going && shape == transition_shape::cubic_parabola)
+			continue;
+		// the tangent at the curved end as the free transition at the other end is long
+		auto const tangent = [&](double const Free, bool &Fits) {
+			auto const fit{From.curved() ? fit_curve(shape, deflection, radius, leading, Free, From.curvature, 0.0) : fit_curve(shape, deflection, radius, Free, leading, 0.0, To.curvature)};
+			Fits = fit.error.empty() && false == fit.elements.empty();
+			return From.curved() ? fit.tangent_in : fit.tangent_out;
+		};
+		// the free transition from none up to 400 m, the first span whose ends lie on both sides of the tangent wanted
+		double low{0.0};
+		double high{-1.0};
+		bool fits{false};
+		auto last{tangent(0.0, fits) - held};
+		auto last_fits{fits};
+		for (double free = 2.0; free <= 400.0; free += 2.0)
+		{
+			auto const now{tangent(free, fits) - held};
+			if (fits && last_fits && (now == 0.0 || (now < 0.0) != (last < 0.0)))
+			{
+				low = free - 2.0;
+				high = free;
+				break;
+			}
+			last = now;
+			last_fits = fits;
+		}
+		if (high < 0.0)
+			continue;
+		bool low_side{(tangent(low, fits) - held) < 0.0};
+		for (int i = 0; i < 80; ++i)
+		{
+			auto const middle{0.5 * (low + high)};
+			(((tangent(middle, fits) - held) < 0.0) == low_side ? low : high) = middle;
+		}
+		auto const free{0.5 * (low + high)};
+		vertex made;
+		made.point = corner;
+		made.radius = radius;
+		made.cant = cant;
+		made.transition_in = From.curved() ? leading : free;
+		made.transition_out = From.curved() ? free : leading;
+		auto const fit{fit_curve(shape, deflection, radius, made.transition_in, made.transition_out, From.curved() ? From.curvature : 0.0, To.curved() ? To.curvature : 0.0)};
+		if (false == fit.error.empty() || (From.curved() ? fit.tangent_out : fit.tangent_in) > other)
+			continue;
+		auto const why{add_joined(Change, Result, Command, From, To, {made}, From.curved(), To.curved())};
+		if (why.empty())
+			return {};
+	}
+	return {std::format("no curve going on from {} fits between {} and {}", node_name(From.curved() ? Command.from : Command.to), node_name(Command.from), node_name(Command.to))};
+}
+
 reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 {
 	reasons why;
@@ -791,6 +982,8 @@ reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 	auto const &neighbour{*view.find(from->held.line)};
 	auto const category{neighbour.category};
 	auto const shape{neighbour.shape.transition};
+	if (from->curved() || to->curved())
+		return join_curved(Change, Result, Command, *from, *to);
 	auto const profile{view.areas.at({from->at->position.x, from->at->position.z}, {})};
 	auto const p0{geometry::plan_of(from->at->position)};
 	auto const p1{geometry::plan_of(to->at->position)};
@@ -869,30 +1062,7 @@ reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 			return {std::format("no two curves fit between {} and {}", node_name(Command.from), node_name(Command.to))};
 	}
 
-	auto &ids{Change.ids()};
-	line joined;
-	joined.id = ids.new_line();
-	joined.start = Command.from;
-	joined.end = Command.to;
-	joined.shape.vertices = std::move(vertices);
-	for (auto &vertex : joined.shape.vertices)
-		vertex.id = ids.new_vertex();
-	joined.shape.transition = shape;
-	joined.shape.ramp = neighbour.shape.ramp;
-	joined.category = category;
-	// the grade line meeting the grades of the ends: one break where their tangents meet, or two with a grade between them
-	auto const plan{solve(joined.shape, {from->at->position}, {to->at->position})};
-	if (false == plan.valid())
-		return {std::format("no line fits between {} and {}: {}", node_name(Command.from), node_name(Command.to), plan.errors.empty() ? std::string{} : plan.errors.front())};
-	auto const breaks{join_grades(plan.length, from->at->position.y, from->at->grade * from->sense, to->at->position.y, to->at->grade * to->sense, profile, category)};
-	if (false == breaks.has_value())
-		return {std::format("no grade line fits between the grades of {} and {}", node_name(Command.from), node_name(Command.to))};
-	joined.shape.grades = *breaks;
-	Change.change(Command.from).ends.push_back({joined.id, line_end::start, from->sense});
-	Change.change(Command.to).ends.push_back({joined.id, line_end::end, to->sense});
-	Result.lines.push_back(joined.id);
-	Change.add(std::move(joined));
-	return {};
+	return add_joined(Change, Result, Command, *from, *to, std::move(vertices), false, false);
 }
 
 reasons propose(transaction &Change, outcome &, delete_line const &Command)
@@ -920,20 +1090,53 @@ reasons propose(transaction &Change, outcome &, delete_line const &Command)
 
 char const *command_name(command const &Command)
 {
-	static std::array<char const *, std::variant_size_v<command>> constexpr names{"create line", "move vertex", "set vertex", "split line", "join ends", "delete line", "insert turnout",
-	                                                                               "move turnout", "change turnout", "remove turnout"};
+	static std::array<char const *, std::variant_size_v<command>> constexpr names{"create line", "move vertex",   "set vertex",     "split line",     "join ends",
+	                                                                               "delete line", "insert vertex", "remove vertex",  "set grades",     "set line class",
+	                                                                               "set line profile", "insert turnout", "move turnout", "change turnout", "remove turnout"};
 	return names[Command.index()];
 }
 
-outcome model::execute(command const &Command)
+namespace
+{
+
+// the BLOCK finding was there before the edit
+bool was_there(std::vector<notice> const &Earlier, notice const &Found)
+{
+	return std::ranges::any_of(Earlier, [&](notice const &Old) { return same_finding(Old, Found); });
+}
+
+} // namespace
+
+outcome model::execute(command const &Command, edit_policy const Policy)
 {
 	outcome result;
+	// the state before the edit, to tell the BLOCK findings it adds from the ones there were
+	std::optional<network> earlier;
+	if (Policy == edit_policy::no_new_block)
+		earlier = m_network;
 	transaction change{m_network};
 	auto why{std::visit([&](auto const &Each) { return propose(change, result, Each); }, Command)};
 	if (why.empty())
 	{
 		settle(change);
 		auto judged{check(m_network, change.touched_lines(), change.touched_nodes(), change.touched_turnouts())};
+		if (earlier.has_value() && judged.reasons.empty() && false == judged.blocks.empty())
+		{
+			std::set<line_id> lines;
+			std::set<node_id> nodes;
+			std::set<turnout_id> turnouts;
+			for (auto const id : change.touched_lines())
+				if (earlier->find(id) != nullptr)
+					lines.insert(id);
+			for (auto const id : change.touched_nodes())
+				if (earlier->find(id) != nullptr)
+					nodes.insert(id);
+			for (auto const id : change.touched_turnouts())
+				if (earlier->find(id) != nullptr)
+					turnouts.insert(id);
+			auto const before{check(*earlier, lines, nodes, turnouts).blocks};
+			std::erase_if(judged.blocks, [&](notice const &Found) { return was_there(before, Found); });
+		}
 		why = judged.refusals();
 		result.notices = std::move(judged.notices);
 	}
