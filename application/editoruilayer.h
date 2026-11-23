@@ -51,8 +51,15 @@ class editor_ui : public ui_layer
 	{
 		return m_nodebankpanel;
 	}
+	// a template was clicked in the node bank since the last call; the insert tool then inserts it, not a random one of its set
+	bool bank_picked();
 	// rotation settings widgets, for tools drawn by the editor mode
 	void render_rotation_controls();
+	// draws the card of the tool of the surroundings in use on top of its tool options (the cards are drawn by the editor mode)
+	void set_tool_card(std::function<void()> Renderer)
+	{
+		m_toolcard = std::move(Renderer);
+	}
 	// draws the area fill settings in its node bank tab (the fill state lives in the editor mode)
 	void set_fill_options(std::function<void()> Renderer)
 	{
@@ -201,6 +208,7 @@ class editor_ui : public ui_layer
 	void scene_rebuild();
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
+	void render_menus();
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
@@ -232,6 +240,7 @@ class editor_ui : public ui_layer
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
+	std::function<void()> m_toolcard;
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
@@ -246,6 +255,7 @@ class editor_ui : public ui_layer
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};
+	bool m_scenefocus{false}; // the scene window brought forward in the next frame
 	std::function<void(scene::basic_node *, bool)> m_sceneselect;
 	std::function<void()> m_tracktools;
 	std::function<void()> m_trackselection;

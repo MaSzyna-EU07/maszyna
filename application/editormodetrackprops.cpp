@@ -231,6 +231,8 @@ struct track_property
 	std::function<bool(TTrack const &)> applies;
 	bool off{false}; // the feature is turned off in eu07.ini: the field is shown greyed and nothing changes it
 	std::function<std::string(TTrack const &)> get;
+	// a line under the row, read only, of a track selected alone; empty: none
+	std::function<std::string(TTrack const &)> note;
 	// false: the text doesn't fit the track or changes nothing, the track stays as it was
 	std::function<bool(TTrack &, std::string const &)> set;
 };
@@ -291,6 +293,15 @@ std::vector<track_property> make_properties()
 				return false;
 			editor_track::velocity(Track, velocity);
 			return true;
+		};
+		// a switch keeps one speed for both its tracks: below 0 the limit of its diverging track alone, the main one keeping none, which
+		// the empty field says. The limit the diverging track has is told under it: the field alone said no limit while the switch
+		// laid from a template of 40 km/h has 40 km/h on its diverging track
+		property.note = [](TTrack const &Track) {
+			auto const velocity{editor_track::velocity(Track)};
+			if (Track.eType != tt_Switch || velocity > -2.0)
+				return std::string{};
+			return format(STR_C("The diverging track %.0f km/h, the main one no limit"), -velocity);
 		};
 	}
 	{
@@ -739,6 +750,21 @@ value_counts values_of(track_property const &Property, std::vector<TTrack *> con
 }
 
 // a value as the user reads it
+// the read-only line of a property under its row, for a track selected alone
+void note_row(track_property const &Property, std::vector<TTrack *> const &Tracks)
+{
+	if (false == static_cast<bool>(Property.note) || Tracks.size() != 1 || Tracks.front() == nullptr)
+		return;
+	auto const note{Property.note(*Tracks.front())};
+	if (note.empty())
+		return;
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(1);
+	ImGui::PushTextWrapPos(0.0f);
+	ImGui::TextDisabled("%s", note.c_str());
+	ImGui::PopTextWrapPos();
+}
+
 std::string shown_value(track_property const &Property, std::string const &Value)
 {
 	switch (Property.kind)
@@ -1509,6 +1535,7 @@ void editor_mode::render_track_properties(std::vector<TTrack *> const &Tracks)
 			if (list[i].off && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 				ImGui::SetTooltip("%s", STR_C("Turned on with frogs yes in eu07.ini"));
 			ImGui::PopID();
+			note_row(list[i], Tracks);
 			for (auto const &note : m_track_notes)
 				if (note.property == static_cast<int>(i))
 				{

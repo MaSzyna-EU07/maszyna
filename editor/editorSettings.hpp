@@ -104,9 +104,9 @@ public:
 	void terrain_model_offset(std::string const &Scenery, double Offset, bool Fitted);
 	bool track_tools_more() const { return m_track_tools_more; }
 	void track_tools_more(bool Show) { m_track_tools_more = Show; }
-	// the card of the track tool in use folded to its title row, for all the tools
-	bool track_card_folded() const { return m_track_card_folded; }
-	void track_card_folded(bool const Folded) { m_track_card_folded = Folded; }
+	// the card of the tool in use folded to its title row, for all the tools of all the fields of work
+	bool tool_card_folded() const { return m_tool_card_folded; }
+	void tool_card_folded(bool const Folded) { m_tool_card_folded = Folded; }
 	// the ballast of the railway drawn in the top view
 	int top_tracks() const { return m_top_tracks; }
 	void top_tracks(int const Tracks) { m_top_tracks = Tracks; }
@@ -147,7 +147,7 @@ private:
 	bool m_terrain_offer{true};
 	bool m_terrain_buried_ask{true};
 	bool m_track_tools_more{false};
-	bool m_track_card_folded{false};
+	bool m_tool_card_folded{true};
 	bool m_terrain_while_laying{true};
 	terrain_model_settings m_terrain_model;
 	std::map<std::string, std::pair<double, bool>> m_terrain_model_offsets;

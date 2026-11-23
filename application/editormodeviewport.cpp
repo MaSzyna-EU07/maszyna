@@ -141,23 +141,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	switch (current_work_area())
 	{
 	case work_area::surroundings:
-	{
-		struct mode
+		for (auto const which : {nodebank_panel::MODIFY, nodebank_panel::ADD, nodebank_panel::BRUSH, nodebank_panel::FILL, nodebank_panel::COPY})
 		{
-			icon picture;
-			char const *label;
-			char const *key;
-			nodebank_panel::edit_mode which;
-		};
-		mode const modes[] = {{icon::select, STR_C("Select"), "1", nodebank_panel::MODIFY},
-		                      {icon::insert, STR_C("Insert"), "2", nodebank_panel::ADD},
-		                      {icon::brush, STR_C("Brush"), "3", nodebank_panel::BRUSH},
-		                      {icon::area_fill, STR_C("Area fill"), "4", nodebank_panel::FILL},
-		                      {icon::copy_to_bank, STR_C("Copy to bank"), "5", nodebank_panel::COPY}};
-		for (auto const &entry : modes)
-			Buttons.push_back({entry.picture, entry.label, entry.key, nullptr, ui()->mode() == entry.which, [this, which = entry.which]() { choose_edit_mode(which); }});
+			auto const &tool{surroundings_tool(which)};
+			Buttons.push_back({tool.picture, STR_C(tool.label), tool.key, STR_C(tool.tooltip), ui()->mode() == which, [this, which]() { choose_edit_mode(which); }});
+		}
 		break;
-	}
 	case work_area::tracks:
 	{
 		auto const vehicle{m_track_tab == track_tab::lineside && m_vehicle.tab().open};
@@ -214,9 +203,11 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::roads:
 	{
 		auto &tool{m_roadtool};
-		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"), tool.tool == 0, [this]() { road_choose_tool(0); }});
-		Buttons.push_back({icon::road, STR_C("Build"), nullptr, STR_C("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"), tool.tool == 1, [this]() { road_choose_tool(1); }});
-		Buttons.push_back({icon::place, STR_C("Place"), nullptr, STR_C("Level crossings, and the points where vehicles appear on the roads or are taken off them"), tool.tool == 2, [this]() { road_choose_tool(2); }});
+		for (int index = 0; index < 3; ++index)
+		{
+			auto const entry{road_tool_entry(index)};
+			Buttons.push_back({entry.picture, STR_C(entry.label), entry.key, STR_C(entry.tooltip), tool.tool == index, [this, index]() { road_choose_tool(index); }});
+		}
 		if (tool.tool == 2)
 		{
 			// what the place tool puts
@@ -230,18 +221,12 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 	case work_area::terrain:
 	{
 		// what the left button does on the terrain
-		auto const choose = [this](terrain_tool const Tool) { return [this, Tool]() { m_terrain_tool = Tool; }; };
-		auto const chosen = [this](terrain_tool const Tool) { return m_terrain_tool == Tool; };
-		Buttons.push_back({icon::select, STR_C("Select"), nullptr, STR_C("LMB picks the models, as in the surroundings"), chosen(terrain_tool::none), choose(terrain_tool::none)});
-		Buttons.push_back({icon::sculpt, STR_C("Sculpt"), nullptr, STR_C("LMB raises the terrain under the brush, Shift+LMB lowers it"), chosen(terrain_tool::sculpt), choose(terrain_tool::sculpt)});
-		Buttons.push_back({icon::smooth, STR_C("Smooth"), nullptr, STR_C("LMB evens the terrain out under the brush"), chosen(terrain_tool::smooth), choose(terrain_tool::smooth)});
-		Buttons.push_back({icon::profile, STR_C("Level"), nullptr, STR_C("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
-		                   chosen(terrain_tool::level), choose(terrain_tool::level)});
-		Buttons.push_back({icon::brush, STR_C("Paint"), nullptr, STR_C("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"), chosen(terrain_tool::paint), choose(terrain_tool::paint)});
-		Buttons.push_back({icon::chunks, STR_C("Chunks"), nullptr, STR_C("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), chosen(terrain_tool::chunks), choose(terrain_tool::chunks)});
-		Buttons.push_back({icon::area_fill, STR_C("Water"), nullptr, STR_C("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"), chosen(terrain_tool::water), choose(terrain_tool::water)});
-		Buttons.push_back({icon::count, STR_C("Fill"), nullptr, STR_C("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"), chosen(terrain_tool::fill),
-		                   choose(terrain_tool::fill)});
+		auto const add = [this, &Buttons](terrain_tool const Tool, bool const Group) {
+			auto const &entry{terrain_tool_entry(Tool)};
+			Buttons.push_back({entry.picture, STR_C(entry.label), entry.key, STR_C(entry.tooltip), m_terrain_tool == Tool, [this, Tool]() { m_terrain_tool = Tool; }, Group});
+		};
+		for (auto const tool : {terrain_tool::none, terrain_tool::sculpt, terrain_tool::smooth, terrain_tool::level, terrain_tool::paint, terrain_tool::chunks, terrain_tool::water, terrain_tool::fill})
+			add(tool, false);
 		auto const orthophoto{m_orthophoto.enabled()};
 		Buttons.push_back({icon::orthophoto, STR_C("Orthophoto"), nullptr, STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"), orthophoto,
 		                   [this, orthophoto]() { choose_orthophoto(false == orthophoto); }, true});
@@ -250,18 +235,135 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		                   []() { terrain_tools_more = false == terrain_tools_more; }, true});
 		if (false == terrain_tools_more && false == advanced)
 			break;
-		Buttons.push_back({icon::count, STR_C("Point spacing"), nullptr, STR_C("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
-		                   chosen(terrain_tool::spacing), choose(terrain_tool::spacing), true});
-		Buttons.push_back({icon::joints, STR_C("Restore terrain"), nullptr, STR_C("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"), chosen(terrain_tool::restore),
-		                   choose(terrain_tool::restore)});
-		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, orthophoto_settings_open(), [this]() {
-			                   // among the base layers in the layers window
-			                   ui()->show_layers();
-			                   m_orthophoto_window = true;
-		                   }});
+		add(terrain_tool::spacing, true);
+		add(terrain_tool::restore, false);
+		// in a window of their own, the button opens it and closes it
+		Buttons.push_back({icon::count, STR_C("Orthophoto settings..."), nullptr, nullptr, m_orthophoto_window, [this]() { m_orthophoto_window = !m_orthophoto_window; }});
 		break;
 	}
 	}
+}
+
+editor_mode::section_tool const &editor_mode::surroundings_tool(nodebank_panel::edit_mode const Mode)
+{
+	// in the order of the edit modes: select, copy to bank, insert, brush, area fill
+	static std::array<section_tool, 5> const tools{{
+	    {icon::select,
+	     STRN("Select"),
+	     "1",
+	     STRN("Picks the models of the scenery: their properties show in the inspector, the gizmo moves them"),
+	     {{"LMB on a model", "selects it"},
+	      {"Shift+LMB", "adds a model to the selection, or takes it out"},
+	      {"F", "flies to the selected"},
+	      {"End", "drops the selected onto the ground"},
+	      {"Del", "deletes the selected"},
+	      {"Ctrl+C", "copies the selected, Ctrl+V pastes them at the cursor"},
+	      {"Ctrl+RMB", "the menu of the selection at the cursor"}}},
+	    {icon::copy_to_bank, STRN("Copy to bank"), "5", STRN("Takes a model of the scenery into the node bank, to insert it elsewhere"), {{"LMB on a model", "copies it to the node bank"}}},
+	    {icon::insert,
+	     STRN("Insert"),
+	     "2",
+	     STRN("Puts the model chosen in the node bank where the cursor points"),
+	     {{"LMB", "inserts the model at the cursor"}, {"Click in the node bank", "the model inserted next"}, {"1", "back to Select"}}},
+	    {icon::brush, STRN("Brush"), "3", STRN("Paints the models of the node bank or of a set along the path of the cursor"), {{"Hold LMB", "paints models along the cursor path"}, {"Click in the node bank", "the model painted"}}},
+	    {icon::area_fill, STRN("Area fill"), "4", STRN("Scatters the models of a set over an area outlined in the view"), {{"LMB", "adds a point of the outline"}, {"Backspace", "takes the last point back"}}},
+	}};
+	return tools[static_cast<std::size_t>(std::clamp(static_cast<int>(Mode), 0, static_cast<int>(tools.size()) - 1))];
+}
+
+editor_mode::section_tool editor_mode::road_tool_entry(int const Tool) const
+{
+	auto const &tool{m_roadtool};
+	if (Tool == 1)
+		return {icon::road, STRN("Build"), nullptr, STRN("LMB: start a road, then each next point; on a loose end, the side of a road or a junction it's joined to them"),
+		        tool.ring ? std::vector<key_hint>{{"LMB", "a roundabout around the cursor"}} :
+		                    std::vector<key_hint>{{"LMB", "the start, then each next point"}, {"Ctrl", "straight ahead"}, {"Esc", "finish the road"}, {"LMB on a road or a junction", "the new road is joined to it there"}}};
+	if (Tool == 2)
+	{
+		section_tool place{icon::place, STRN("Place"), nullptr, STRN("Level crossings, and the points where vehicles appear on the roads or are taken off them"), {}};
+		switch (std::clamp(tool.placekind, 0, 3))
+		{
+		case 0: place.hints = {{"LMB on a road", "where the rails cross it; the vehicles stop ahead of the rails while a train is coming"}}; break;
+		case 1: place.hints = {{"LMB on a lane", "the vehicles of the set appear there one by one and drive the way the lane goes"}}; break;
+		case 3: place.hints = {{"LMB on a road", "stripes are painted across it there"}}; break;
+		default: place.hints = {{"LMB on a lane", "the vehicles getting there are taken off the road; put one where the road leaves the scenery"}}; break;
+		}
+		return place;
+	}
+	return {icon::select,
+	        STRN("Select"),
+	        nullptr,
+	        STRN("LMB: a road piece, a junction, a point where pieces meet, a level crossing or a traffic point"),
+	        {{"LMB", "a road piece, a junction, a point or a crossing"}, {"Shift+LMB", "adds a point, or takes it out"}, {"K", "on a selected piece: a point at the cursor"}, {"Del", "deletes the selected"}}};
+}
+
+editor_mode::section_tool const &editor_mode::terrain_tool_entry(terrain_tool const Tool)
+{
+	// in the order of terrain_tool
+	static std::array<section_tool, 10> const tools{{
+	    {icon::select, STRN("Select"), nullptr, STRN("LMB picks the models, as in the surroundings"), {{"LMB", "picks a model, as in the surroundings"}}},
+	    {icon::chunks, STRN("Chunks"), nullptr, STRN("LMB adds a chunk next to the clicked one, Shift+LMB removes it"), {{"LMB", "adds a chunk next to the clicked one"}, {"Shift+LMB", "removes the chunk"}}},
+	    {icon::sculpt, STRN("Sculpt"), nullptr, STRN("LMB raises the terrain under the brush, Shift+LMB lowers it"), {{"LMB", "raises the terrain under the brush"}, {"Shift+LMB", "lowers it"}}},
+	    {icon::smooth, STRN("Smooth"), nullptr, STRN("LMB evens the terrain out under the brush"), {{"LMB", "evens the terrain out under the brush"}}},
+	    {icon::profile,
+	     STRN("Level"),
+	     nullptr,
+	     STRN("LMB leads the terrain under the brush to the target height, Ctrl+LMB takes the target height from what's under the cursor"),
+	     {{"LMB", "leads the terrain under the brush to the target height"}, {"Ctrl+LMB", "takes the target height from what's under the cursor"}}},
+	    {icon::brush,
+	     STRN("Paint"),
+	     nullptr,
+	     STRN("LMB paints the material chosen in the palette, Shift+LMB the first material of the palette"),
+	     {{"LMB", "paints the material chosen in the palette"}, {"Shift+LMB", "paints the first material of the palette"}}},
+	    {icon::count,
+	     STRN("Point spacing"),
+	     nullptr,
+	     STRN("LMB selects the clicked chunk, Ctrl+LMB adds one or takes it away; the tool options convert the point spacing of the selected"),
+	     {{"LMB", "selects the clicked chunk"}, {"Ctrl+LMB", "adds a chunk to the selection, or takes it out"}, {"Del", "removes the selected chunks"}}},
+	    {icon::count,
+	     STRN("Water"),
+	     nullptr,
+	     STRN("LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"),
+	     {{"LMB", "adds a point of the outline of a body of water"}, {"Shift+LMB", "takes the last point back"}}},
+	    {icon::joints,
+	     STRN("Restore terrain"),
+	     nullptr,
+	     STRN("LMB takes back the touch-ups made over the tracks: the terrain returns to the shape the tracks give it"),
+	     {{"LMB", "takes back the touch-ups made over the tracks"}}},
+	    {icon::area_fill,
+	     STRN("Area fill"),
+	     nullptr,
+	     STRN("LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"),
+	     {{"LMB", "adds a point of the outline of an area to fill with a material"}, {"Shift+LMB", "takes the last point back"}}},
+	}};
+	return tools[static_cast<std::size_t>(Tool)];
+}
+
+void editor_mode::render_section_card(section_tool const &Tool)
+{
+	tool_card card;
+	card.picture = Tool.picture;
+	card.name = STR_C(Tool.label);
+	card.key = Tool.key;
+	card.tooltip = Tool.tooltip;
+	card.hints = translated_hints(Tool.hints);
+	render_tool_card(card);
+	ImGui::Spacing();
+}
+
+void editor_mode::render_surroundings_card()
+{
+	render_section_card(surroundings_tool(ui()->mode()));
+}
+
+void editor_mode::render_road_card()
+{
+	render_section_card(road_tool_entry(m_roadtool.tool));
+}
+
+void editor_mode::render_terrain_card()
+{
+	render_section_card(terrain_tool_entry(m_terrain_tool));
 }
 
 void editor_mode::render_toolbar_caption(char const *Text)

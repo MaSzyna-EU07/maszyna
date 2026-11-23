@@ -2086,8 +2086,10 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 	ImGui::TextUnformatted(STR_C("Square around the camera:"));
 	for (auto const side : {1, 2, 5, 10})
 	{
-		ImGui::SameLine();
-		if (ImGui::SmallButton(format(STR_C("%d x %d km##areasquare"), side, side).c_str()))
+		// on to the next line where the panel ends: the last one was cut off at its edge
+		auto const label{format(STR_C("%d x %d km##areasquare"), side, side)};
+		same_line_if_fits(label.c_str());
+		if (ImGui::SmallButton(label.c_str()))
 		{
 			// the area there is, drawn with care, or one this large, replaced only with a yes
 			m_area_square = side;
@@ -2167,7 +2169,7 @@ void editor_mode::render_nmt_banner()
 	                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking))
 	{
 		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(STR_C("Loading the real terrain"));
+		ImGui::TextUnformatted(STR_C("Loading the terrain model"));
 		ImGui::SameLine();
 		render_nmt_progress(true);
 		bool again{false};
@@ -2334,10 +2336,7 @@ void editor_mode::render_outside_area_hint()
 			if (orthophoto_settings_open())
 				area_start();
 			else
-			{
-				ui()->show_layers();
 				m_orthophoto_window = true;
-			}
 		}
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"));

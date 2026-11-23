@@ -82,6 +82,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        centre), top (origin, bottom, top, edge), mode (bend, repeat), step,
 //                                        length (original, all, or metres), from, to, widen (0, 1), face (0, 1), tilt (0, 1)
 //   selectmodel <x> <z>                  the model instance nearest the point
+//   bankpick <index>                     the template of the node bank at the index (the headers of its groups left out) clicked
 //   bend <key>=<value>...                the selected model bent along a track: track (index on the list), axis (auto, z, x),
 //                                        turned (0, 1), along (start, origin, middle, end, point), side (origin, near, far,
 //                                        middle, point), height (origin, bottom, top, edge, point), point=<x>,<y>,<z>,

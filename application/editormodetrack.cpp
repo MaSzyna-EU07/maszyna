@@ -806,7 +806,9 @@ void editor_mode::render_track_nothing_selected()
 	auto const &paths{simulation::Paths.sequence()};
 	if (std::ranges::none_of(paths, [](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved; }))
 	{
-		// an empty scenery: one thing to do first, the tutorial a link under it
+		// an empty scenery: one thing to do first, the tutorial a link under it. The panel in the middle of the view, which said the
+		// same, gives way to it
+		m_empty_card_frame = ImGui::GetFrameCount();
 		ImGui::TextDisabled("%s", STR_C("The scenery has no tracks yet"));
 		if (m_track_tab != track_tab::lay)
 		{
@@ -882,12 +884,117 @@ void editor_mode::render_track_selection()
 
 void editor_mode::render_track_guide()
 {
-	// a card of the tool in use: what it is for, and how the mouse and the keys drive it, drawn
+	// the card of the tool in use: what it is for, and how the mouse and the keys drive it, drawn
 	auto const &modes{track_modes()};
 	auto const tab{false == m_track_window_open ? track_tab::path : m_track_tab == track_tab::route ? track_tab::straights : m_track_tab};
 	auto const found{std::find_if(modes.begin(), modes.end(), [&](track_mode const &Mode) { return Mode.tab == tab; })};
-	auto const family{found != modes.end() ? found->family : 0};
-	auto const accent{family_colour(family)};
+	tool_card card;
+	card.name = track_mode_name();
+	card.hints = track_key_hints(false);
+	if (found != modes.end())
+	{
+		card.picture = found->picture;
+		card.family = found->family;
+		card.key = found->key;
+		card.tooltip = found->tooltip;
+		// what the lay tool is for is told over its title: under it, the paragraph pushed the settings of the tool out of the panel
+		// at 1366 x 768
+		card.told_over = found->tab == track_tab::lay;
+	}
+	render_tool_card(card);
+	if (false == m_track_mode_notice.empty())
+	{
+		ImGui::Spacing();
+		ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x - 8.0f);
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", m_track_mode_notice.c_str());
+		ImGui::PopTextWrapPos();
+	}
+	ImGui::Spacing();
+}
+
+namespace
+{
+
+// the widest word of a text, which wrapping can't break
+float widest_word(std::string const &Text)
+{
+	float widest{0.0f};
+	for (std::size_t from{0}; from < Text.size();)
+	{
+		auto const end{std::min(Text.find(' ', from), Text.size())};
+		widest = std::max(widest, ImGui::CalcTextSize(Text.c_str() + from, Text.c_str() + end).x);
+		from = end + 1;
+	}
+	return widest;
+}
+
+// the marker of the fold of a card: pointing right while folded, down while open
+void fold_marker(ImDrawList &List, ImVec2 const Centre, float const Half, bool const Folded, ImU32 const Colour)
+{
+	if (Folded)
+		List.AddTriangleFilled(ImVec2(Centre.x - Half * 0.6f, Centre.y - Half), ImVec2(Centre.x - Half * 0.6f, Centre.y + Half), ImVec2(Centre.x + Half * 0.8f, Centre.y), Colour);
+	else
+		List.AddTriangleFilled(ImVec2(Centre.x - Half, Centre.y - Half * 0.6f), ImVec2(Centre.x + Half, Centre.y - Half * 0.6f), ImVec2(Centre.x, Centre.y + Half * 0.8f), Colour);
+}
+
+// a gesture of a card as the card is given it: the key and the action translated, the key as it was for its picture
+struct card_hint
+{
+	char const *key;
+	std::string const *action;
+	char const *raw;
+};
+
+// the gestures of a card, each drawn: the mouse with the button lit, the keys as caps, the name of the gesture and what it does
+// beside them, wrapped at Wrap
+void card_gestures(ImDrawList &List, std::vector<card_hint> const &Hints, float const Wrap)
+{
+	auto const font{ImGui::GetFontSize()};
+	auto const pad{std::round(font * 0.6f)};
+	auto const gesture{std::round(font * 1.25f)};
+	std::vector<std::vector<gesture_word>> drawn;
+	float column{0.0f};
+	for (auto const &hint : Hints)
+	{
+		drawn.push_back(gesture_picture(hint.raw != nullptr ? hint.raw : hint.key));
+		column = std::max(column, gesture_width(gesture, drawn.back()));
+	}
+	column = std::min(column, font * 6.0f);
+	if (false == Hints.empty())
+		ImGui::Dummy(ImVec2(0.0f, pad * 0.3f));
+	for (std::size_t i = 0; i < Hints.size() && i < 7; ++i)
+	{
+		auto const at{ImGui::GetCursorScreenPos()};
+		auto const line{ImGui::GetTextLineHeight()};
+		auto const height{std::max(gesture, line)};
+		List.PushClipRect(at, ImVec2(at.x + column, at.y + height), true);
+		gesture_draw(List, ImVec2(at.x, at.y + std::round((height - gesture) * 0.5f)), gesture, drawn[i], ImGui::GetColorU32(ImGuiCol_Text));
+		List.PopClipRect();
+		ImGui::Dummy(ImVec2(column, height));
+		ImGui::SameLine(0.0f, pad);
+		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - line) * 0.5f));
+		if (Hints[i].raw == nullptr || false == gesture_keys_only(Hints[i].raw))
+		{
+			auto const indent{ImGui::GetCursorPosX()};
+			ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", Hints[i].key);
+			ImGui::SameLine();
+			// after a long gesture the action goes under it, at its indent, rather than into a sliver of the row where it would break
+			// in the middle of its words
+			if (Wrap - ImGui::GetCursorScreenPos().x < std::max(font * 8.0f, widest_word(*Hints[i].action)))
+			{
+				ImGui::NewLine();
+				ImGui::SetCursorPosX(indent);
+			}
+		}
+		ImGui::TextWrapped("%s", Hints[i].action->c_str());
+	}
+}
+
+} // namespace
+
+void editor_mode::render_tool_card(tool_card const &Card)
+{
+	auto const accent{family_colour(Card.family)};
 	auto const font{ImGui::GetFontSize()};
 	auto const pad{std::round(font * 0.6f)};
 	auto *list{ImGui::GetWindowDrawList()};
@@ -901,125 +1008,70 @@ void editor_mode::render_track_guide()
 	ImGui::Indent(pad + 3.0f);
 	auto const row{ImGui::GetCursorScreenPos()};
 	auto const iconside{std::round(font * 1.7f)};
-	if (found != modes.end())
-		editor_icons::draw(list, found->picture, ImVec2(row.x + iconside * 0.5f, row.y + iconside * 0.5f), accent);
+	if (Card.picture != editor_icons::icon::count)
+		editor_icons::draw(list, Card.picture, ImVec2(row.x + iconside * 0.5f, row.y + iconside * 0.5f), accent);
 	ImGui::Dummy(ImVec2(iconside, iconside));
 	ImGui::SameLine(0.0f, pad);
 	ImGui::BeginGroup();
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 	ImGui::SetWindowFontScale(1.15f);
-	ImGui::TextUnformatted(track_mode_name().c_str());
+	ImGui::TextUnformatted(Card.name.c_str());
 	ImGui::SetWindowFontScale(1.0f);
 	ImGui::PopStyleColor();
 	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(accent));
-	ImGui::TextUnformatted(family_name(family));
+	ImGui::TextUnformatted(family_name(Card.family));
 	ImGui::PopStyleColor();
 	ImGui::EndGroup();
 	// a click on the title row folds the card to it and opens it again; kept with the settings of the editor, for all the tools
 	auto const below{ImGui::GetCursorScreenPos()};
 	ImGui::SetCursorScreenPos(row);
-	auto folded{EditorSettings.track_card_folded()};
-	if (ImGui::InvisibleButton("##trackguidefold", ImVec2(std::max(1.0f, right - row.x), std::max(1.0f, below.y - row.y - ImGui::GetStyle().ItemSpacing.y))))
+	auto folded{EditorSettings.tool_card_folded()};
+	if (ImGui::InvisibleButton("##toolcardfold", ImVec2(std::max(1.0f, right - row.x), std::max(1.0f, below.y - row.y - ImGui::GetStyle().ItemSpacing.y))))
 	{
 		folded = !folded;
-		EditorSettings.track_card_folded(folded);
+		EditorSettings.tool_card_folded(folded);
 		EditorSettings.save();
 	}
 	auto const hovered{ImGui::IsItemHovered()};
-	// what the lay tool is for is told over its title: under it, the paragraph pushed the settings of the tool out of the panel at
-	// 1366 x 768
-	auto const told_over{found != modes.end() && found->tab == track_tab::lay};
+	// what the tool is for over its title, folded or open, and what a click on it does
 	if (hovered)
 	{
 		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-		if (told_over)
-		{
-			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(std::round(font * 30.0f));
-			ImGui::TextUnformatted(STR_C(found->tooltip));
-			ImGui::PopTextWrapPos();
-			ImGui::EndTooltip();
-		}
+		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(std::round(font * 30.0f));
+		if (Card.tooltip != nullptr)
+			ImGui::TextUnformatted(STR_C(Card.tooltip));
+		ImGui::TextDisabled("%s", folded ? STR_C("Click: how the mouse and the keys drive the tool") : STR_C("Click: fold the card"));
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
 	}
 	ImGui::SetCursorScreenPos(below);
 	auto marker{right - pad};
-	if (found != modes.end() && found->key != nullptr)
+	if (Card.key != nullptr)
 	{
 		auto const height{std::round(font * 1.35f)};
-		auto const cap{std::max(std::round(ImGui::CalcTextSize(found->key).x + height * 0.6f), height)};
-		gesture_key(*list, ImVec2(right - pad - cap, row.y + std::round((iconside - height) * 0.5f)), height, found->key);
+		auto const cap{std::max(std::round(ImGui::CalcTextSize(Card.key).x + height * 0.6f), height)};
+		gesture_key(*list, ImVec2(right - pad - cap, row.y + std::round((iconside - height) * 0.5f)), height, Card.key);
 		marker -= cap + pad;
 	}
-	// the marker of the fold left of the key: pointing right while folded, down while open
-	{
-		auto const half{std::round(font * 0.3f)};
-		ImVec2 const centre{marker - half, row.y + std::round(iconside * 0.5f)};
-		auto const colour{ImGui::GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled)};
-		if (folded)
-			list->AddTriangleFilled(ImVec2(centre.x - half * 0.6f, centre.y - half), ImVec2(centre.x - half * 0.6f, centre.y + half), ImVec2(centre.x + half * 0.8f, centre.y), colour);
-		else
-			list->AddTriangleFilled(ImVec2(centre.x - half, centre.y - half * 0.6f), ImVec2(centre.x + half, centre.y - half * 0.6f), ImVec2(centre.x, centre.y + half * 0.8f), colour);
-	}
+	// the marker of the fold left of the key
+	auto const half{std::round(font * 0.3f)};
+	fold_marker(*list, ImVec2(marker - half, row.y + std::round(iconside * 0.5f)), half, folded, ImGui::GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled));
 	if (false == folded)
 	{
 		auto const wrap{right - pad};
 		ImGui::PushTextWrapPos(wrap - ImGui::GetWindowPos().x);
-		if (found != modes.end() && false == told_over)
+		if (Card.tooltip != nullptr && false == Card.told_over)
 		{
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-			ImGui::TextWrapped("%s", STR_C(found->tooltip));
+			ImGui::TextWrapped("%s", STR_C(Card.tooltip));
 			ImGui::PopStyleColor();
 		}
-		// the gestures, each drawn: the mouse with the button lit, the keys as caps
-		auto const hints{track_key_hints(false)};
-		auto const gesture{std::round(font * 1.25f)};
-		std::vector<std::vector<gesture_word>> drawn;
-		float column{0.0f};
-		for (auto const &hint : hints)
-		{
-			drawn.push_back(gesture_picture(hint.raw != nullptr ? hint.raw : hint.key));
-			column = std::max(column, gesture_width(gesture, drawn.back()));
-		}
-		column = std::min(column, font * 6.0f);
-		// the widest word of a text, which wrapping can't break
-		auto const widest_word = [](std::string const &Text) {
-			float widest{0.0f};
-			for (std::size_t from{0}; from < Text.size();)
-			{
-				auto const end{std::min(Text.find(' ', from), Text.size())};
-				widest = std::max(widest, ImGui::CalcTextSize(Text.c_str() + from, Text.c_str() + end).x);
-				from = end + 1;
-			}
-			return widest;
-		};
-		if (false == hints.empty())
-			ImGui::Dummy(ImVec2(0.0f, pad * 0.3f));
-		for (std::size_t i = 0; i < hints.size() && i < 7; ++i)
-		{
-			auto const at{ImGui::GetCursorScreenPos()};
-			auto const line{ImGui::GetTextLineHeight()};
-			auto const height{std::max(gesture, line)};
-			list->PushClipRect(at, ImVec2(at.x + column, at.y + height), true);
-			gesture_draw(*list, ImVec2(at.x, at.y + std::round((height - gesture) * 0.5f)), gesture, drawn[i], ImGui::GetColorU32(ImGuiCol_Text));
-			list->PopClipRect();
-			ImGui::Dummy(ImVec2(column, height));
-			ImGui::SameLine(0.0f, pad);
-			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - line) * 0.5f));
-			if (hints[i].raw == nullptr || false == gesture_keys_only(hints[i].raw))
-			{
-				auto const indent{ImGui::GetCursorPosX()};
-				ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", hints[i].key);
-				ImGui::SameLine();
-				// after a long gesture the action goes under it, at its indent, rather than into a sliver of the row where it
-				// would break in the middle of its words
-				if (wrap - ImGui::GetCursorScreenPos().x < std::max(font * 8.0f, widest_word(hints[i].action)))
-				{
-					ImGui::NewLine();
-					ImGui::SetCursorPosX(indent);
-				}
-			}
-			ImGui::TextWrapped("%s", hints[i].action.c_str());
-		}
+		std::vector<card_hint> hints;
+		hints.reserve(Card.hints.size());
+		for (auto const &hint : Card.hints)
+			hints.emplace_back(hint.key, &hint.action, hint.raw);
+		card_gestures(*list, hints, wrap);
 		ImGui::PopTextWrapPos();
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 		ImGui::TextUnformatted(STR_C("F1: all the shortcuts"));
@@ -1039,14 +1091,6 @@ void editor_mode::render_track_guide()
 	list->AddRect(top, ImVec2(right, bottom), (accent & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 70), rounding);
 	list->AddRectFilled(top, ImVec2(top.x + 4.0f, bottom), accent, rounding, ImDrawFlags_RoundCornersLeft);
 	list->ChannelsMerge();
-	if (false == m_track_mode_notice.empty())
-	{
-		ImGui::Spacing();
-		ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x - 8.0f);
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", m_track_mode_notice.c_str());
-		ImGui::PopTextWrapPos();
-	}
-	ImGui::Spacing();
 }
 
 void editor_mode::render_track_name(TTrack &Track)
@@ -2189,13 +2233,18 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints.push_back({"Ctrl+Y", "redo"});
 		hints.push_back({"L T G N U I X B P V J", "tools: lay, switch, plan, parallel, turntable, signals, kilometrage, posts, profile, speed, joints"});
 	}
-	for (auto &hint : hints)
+	return translated_hints(std::move(hints));
+}
+
+std::vector<editor_mode::key_hint> editor_mode::translated_hints(std::vector<key_hint> Hints)
+{
+	for (auto &hint : Hints)
 	{
 		hint.raw = hint.key;
 		hint.key = STR_C(hint.key);
 		hint.action = STR(hint.action);
 	}
-	return hints;
+	return Hints;
 }
 
 // values of the change in progress, shown next to the cursor
@@ -2460,6 +2509,10 @@ void editor_mode::draw_empty_scenery_hint()
 		return;
 	// the line of the empty scenery in the middle of the view says the same: it gives way to this one
 	m_empty_hint_frame = ImGui::GetFrameCount();
+	// and this one to the inspector, where the same is said with the button of the lay tool and the first steps under it; it's drawn
+	// only while the inspector isn't seen
+	if (ImGui::GetFrameCount() - m_empty_card_frame <= 1)
+		return;
 	auto *list{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
 	auto const low{editor_ui::view_min()};
 	auto const high{editor_ui::view_max()};

@@ -876,8 +876,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<std::string> m_openscenery_list;
 	std::string m_openscenery_choice;
 	void render_open_scenery_popup();
-	// the settings of the orthophoto, among the base layers in the layers window: asked to be opened there, the frame they were last
-	// drawn open in
+	// the window of the settings of the orthophoto open, and the frame it was last drawn open in
 	bool m_orthophoto_window{false};
 	// the user turned the orthophoto on or off, or the scenery keeps it so: the terrain model made, or the area drawn, leaves it as it
 	// is then, it turns it on only where nobody chose
@@ -890,13 +889,21 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_view_menu();
 	// View > Camera speed: the speed of the free camera, the Ctrl multiplier, in the top view as fast as it's zoomed; kept in the
 	// settings of the editor and handed to the camera
-	void render_camera_settings();
+	void render_camera_settings(bool const Window);
 	void apply_camera_settings();
 	// ~ (Ctrl): the orthophoto of what the camera sees downloaded before the rest, the ones which failed tried again at once
 	void orthophoto_hurry();
 	// time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor
 	void render_environment_window();
 	bool m_environment_open{false};
+	int m_environment_shown{0}; // frames since its window was opened, for its place
+	// the settings of the orthophoto in a window of their own, opened from the map menu, the terrain tools and the layers window
+	void render_orthophoto_window();
+	int m_orthophoto_shown{0};
+	int m_settings_shown{0};
+	int m_shortcuts_shown{0};
+	// the terrain of the terrain model made by itself, in the settings of the editor
+	void render_terrain_loading();
 	// over the 3d view: the tools of the field of work along its left edge, the modes of the gizmo at its top, the axes of the
 	// world and the top view in its top right corner
 	void render_viewport_overlays();
@@ -982,6 +989,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	int m_area_square{0};      // km, the side of the square around the camera waiting for its yes in place of the area there is
 	bool m_outside_area_closed{false}; // the note of the camera outside the area closed; open again once it's back inside
 	int m_empty_hint_frame{-10};       // the frame the panel of the empty scenery was last drawn in
+	int m_empty_card_frame{-10};       // the frame the inspector last said the scenery has no tracks yet
 	glm::dvec2 m_orthophoto_origin_edit{0.0};    // origin being typed in (northing, easting); applied when editing ends
 
 	// hierarchy management
@@ -995,6 +1003,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nullify_history_pointers(scene::basic_node *node);
 	void render_change_history();
 	void render_settings();
+	glm::dvec3 insert_point(std::string &Notice);
+	void render_placement_distance(bool const Fields);
 
 	// area fill: scatters models from a package over a polygon outlined in the viewport
 	void render_area_fill();
@@ -2360,7 +2370,42 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		char const *raw{nullptr}; // the key before it's translated, its gesture drawn from it
 	};
 	std::vector<key_hint> track_key_hints(bool const All) const;
+	// the keys and the actions of the hints in the language of the editor, the keys as they were kept for their pictures
+	static std::vector<key_hint> translated_hints(std::vector<key_hint> Hints);
+	// the card of the tool in use, the same in every field of work: its icon, name, family and key in its title row; unfolded, what
+	// it's for, how the mouse and the keys drive it and the link to all the shortcuts. Folded to its title row unless the user opened
+	// it, as the settings of the editor keep it for all the tools: the gestures are in the strip under the view as well
+	struct tool_card
+	{
+		editor_icons::icon picture{editor_icons::icon::count};
+		std::string name;
+		int family{0};
+		char const *key{nullptr};
+		char const *tooltip{nullptr}; // what the tool is for, untranslated
+		bool told_over{false}; // what it's for only over the title, not under it as well: there it pushed the settings down
+		std::vector<key_hint> hints; // translated
+	};
+	void render_tool_card(tool_card const &Card);
+	// the card of the track tool in use
 	void render_track_guide();
+	// a tool of the surroundings, the roads or the terrain: its button in the toolbar and its card in the tool options, the texts
+	// untranslated
+	struct section_tool
+	{
+		editor_icons::icon picture;
+		char const *label;
+		char const *key;
+		char const *tooltip;
+		std::vector<key_hint> hints;
+	};
+	static section_tool const &surroundings_tool(nodebank_panel::edit_mode const Mode);
+	section_tool road_tool_entry(int const Tool) const;
+	static section_tool const &terrain_tool_entry(terrain_tool const Tool);
+	void render_section_card(section_tool const &Tool);
+	// the card of the tool of the surroundings, the roads or the terrain in use, on top of its tool options
+	void render_surroundings_card();
+	void render_road_card();
+	void render_terrain_card();
 	std::string track_readout() const;
 	void draw_track_hints();
 	// a scenery with no tracks yet: in the middle of the view, how the first one is laid

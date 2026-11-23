@@ -87,6 +87,9 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect laycursor <x> <z> <tolerance>` | the point the line of the lay tool goes to from its last point clicked, in the plan |
 | `expect terrain <grow\|area\|prompt> <0\|1>` | the terrain model is made under the tracks as they're laid / around the camera within the download area / the question of the terrain of a new scenery is open |
 | `expect steps <count>` | the steps of the history Ctrl+Z takes back, the ones made together counted once: none made by a change refused |
+| `expect tool <name>` | the tool of the surroundings in use: `select`, `insert`, `brush`, `fill`, `copy`, or `track` while the field of work of the tracks is |
+| `expect window <shortcuts\|settings\|weather\|orthophoto> <0\|1>` | the window of the shortcuts (F1), of the settings of the editor, of the weather and the time, of the settings of the orthophoto is open |
+| `expect selected <x> <y> <z> <tolerance>` | the node selected stands at the point |
 
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
 on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
@@ -122,3 +125,10 @@ and the first steps in the editor (P1 of the plan of the editor's interface):
 | `fs_1_preview_over_panel` | while the pointer is over a panel the line the lay tool shows stays as it was, no leg following the pointer under the panel; back over the view it follows again |
 | `fs_2_switch_refusal_cleared` | a switch refused is told in the panel of the switch tool and by the cursor, not in the status line as well, and what it told goes once the next switch is laid |
 | `fs_3_without_terrain` | the answer Without terrain to the question of the terrain of a new scenery turns off the terrain made of the terrain model by itself: under the tracks as they're laid and around the camera within the download area |
+
+and the consistency of the interface of the editor (P2 of the plan of the editor's interface):
+
+| case | fix |
+| --- | --- |
+| `c_1_bank_card_arms_insert` | a model of the node bank clicked with the select tool of the surroundings arms the insert tool with it; inserted where there's no ground under the cursor it stands at the height 0 where the cursor points, and the status says where |
+| `c_2_esc_closes_shortcuts` | Esc closes the window of the shortcuts, as F1 does, also in the tracks |

@@ -1,0 +1,24 @@
+# Consistency: a model of the node bank clicked with the select tool of the surroundings arms the insert tool with it. A click in the
+# view where there's no ground under the cursor (the fixture has no terrain) puts the model at the height 0 where the cursor points,
+# and the status says where. The empty ground between the turntable tt1 and the curves (x 220..270), the camera straight above it
+wait 5
+tap f2
+wait 2
+tap 1
+wait 2
+expect tool select
+bankpick 0
+wait 3
+expect tool insert
+camera 245 120 150 245 0 150.5
+wait 3
+mouseat 245 0 150
+wait 3
+button left press
+wait 2
+button left release
+wait 15
+expect selected 245 0 150 1.0
+expect statusline holds (245, 150)
+undo
+quit

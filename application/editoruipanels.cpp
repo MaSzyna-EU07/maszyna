@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Event.h"
 #include "world/MemCell.h"
 #include "application/editoruilayer.h"
+#include "application/editormodeshared.h"
 #include "rendering/renderer.h"
 #include "simulation/simulation.h"
 #include "editor/editorModelSets.hpp"
@@ -474,13 +475,21 @@ void itemproperties_panel::render_name_editor()
 		m_namednode = m_node;
 		std::snprintf(m_namebuffer, sizeof(m_namebuffer), "%s", picked->name().c_str());
 	}
-	auto const entered{ImGui::InputTextWithHint(STR_C("name"), STR_C("(none)"), m_namebuffer, IM_ARRAYSIZE(m_namebuffer), ImGuiInputTextFlags_EnterReturnsTrue)};
+	// the name on the left, the field on the right, as in the inspector of the tracks
+	if (false == begin_fields("##nodenamefields", 0.3f))
+	{
+		return;
+	}
+	field_row("Name##nodename");
+	auto const entered{ImGui::InputTextWithHint("##nodename", STR_C("(none)"), m_namebuffer, IM_ARRAYSIZE(m_namebuffer), ImGuiInputTextFlags_EnterReturnsTrue)};
 	m_nameactive = ImGui::IsItemActive();
 	if (ImGui::IsItemHovered())
 	{
 		ImGui::SetTooltip(STR_C("Name the events can refer to the node by.\nNodes without a name load quicker, leave it empty unless something needs it"));
 	}
-	if (entered || ImGui::IsItemDeactivatedAfterEdit())
+	auto const deactivated{ImGui::IsItemDeactivatedAfterEdit()};
+	ImGui::EndTable();
+	if (entered || deactivated)
 	{
 		// names are lower case, like everything else the scenery parser hands over
 		std::string name{m_namebuffer};
@@ -530,12 +539,18 @@ void itemproperties_panel::render_transform_editor()
 		return;
 	}
 
+	// the names on the left, the fields on the right, as in the inspector of the tracks
+	if (false == begin_fields("##nodetransform", 0.3f))
+	{
+		return;
+	}
 	// Position — full double precision via DragScalarN. World coordinates can grow
 	// large; %.6f gives sub-millimetre resolution at typical scenario distances.
 	{
+		field_row("Position (m)");
 		glm::dvec3 location = picked->location();
 		double pos[3] = { location.x, location.y, location.z };
-		if (ImGui::DragScalarN(STR_C("position (m)"), ImGuiDataType_Double, pos, 3, 0.05f, nullptr, nullptr, "%.6f"))
+		if (ImGui::DragScalarN("##position", ImGuiDataType_Double, pos, 3, 0.05f, nullptr, nullptr, "%.6f"))
 		{
 			picked->location(glm::dvec3(pos[0], pos[1], pos[2]));
 		}
@@ -547,7 +562,8 @@ void itemproperties_panel::render_transform_editor()
 			clamp_circular(picked->Angles().x),
 			clamp_circular(picked->Angles().y),
 			clamp_circular(picked->Angles().z)};
-		if (ImGui::DragFloat3(STR_C("rotation (deg)"), &angles.x, 0.5f, 0.0f, 360.0f, "%.3f"))
+		field_row("Rotation (deg)");
+		if (ImGui::DragFloat3("##rotation", &angles.x, 0.5f, 0.0f, 360.0f, "%.3f"))
 		{
 			picked->Angles(angles);
 		}
@@ -556,15 +572,17 @@ void itemproperties_panel::render_transform_editor()
 	// Scale — per-axis float, 1.000 display. Clamped to a reasonable positive range.
 	{
 		glm::vec3 scale = picked->Scale();
-		if (ImGui::DragFloat3(STR_C("scale (x,y,z)"), &scale.x, 0.01f, 0.001f, 100.0f, "%.3f"))
+		field_row("Scale (x, y, z)");
+		if (ImGui::DragFloat3("##scale", &scale.x, 0.01f, 0.001f, 100.0f, "%.3f"))
 		{
 			picked->Scale(scale);
 		}
 	}
+	ImGui::EndTable();
 
-	if (ImGui::Button(STR_C("reset rotation"))) { picked->Angles(glm::vec3(0.0f)); }
+	if (ImGui::Button(STR_C("Reset rotation"))) { picked->Angles(glm::vec3(0.0f)); }
 	ImGui::SameLine();
-	if (ImGui::Button(STR_C("reset scale"))) { picked->Scale(glm::vec3(1.0f)); }
+	if (ImGui::Button(STR_C("Reset scale"))) { picked->Scale(glm::vec3(1.0f)); }
 }
 
 bool itemproperties_panel::render_group()
@@ -853,6 +871,7 @@ void nodebank_panel::render_cards(std::vector<std::pair<std::string, std::shared
 				if (card(cell, side, texture, placeholder, entry.first.c_str(), entry.second == m_selectedtemplate))
 				{
 					m_selectedtemplate = entry.second;
+					m_picked = true;
 				}
 				drag_entry(entry);
 				if (ImGui::IsItemHovered())
@@ -875,6 +894,7 @@ void nodebank_panel::render_list(std::vector<std::pair<std::string, std::shared_
 		if (list_item(label.c_str(), entry->second == m_selectedtemplate))
 		{
 			m_selectedtemplate = entry->second;
+			m_picked = true;
 		}
 		drag_entry(*entry);
 		preview_popup(*entry);
@@ -907,7 +927,10 @@ void nodebank_panel::render_templates_list(std::string const &Filter)
 		category = &entry.category;
 		auto const label{(entry.category.empty() ? " " : "   ") + entry.name + "  (" + data_name_to_utf8(entry.file) + ")##inc" + std::to_string(entryidx)};
 		if (list_item(label.c_str(), entry.statement == m_selectedtemplate))
+		{
 			m_selectedtemplate = entry.statement;
+			m_picked = true;
+		}
 		++listed;
 	}
 	if (listed == 0)
@@ -1029,7 +1052,8 @@ void nodebank_panel::render()
 		// properties are in the inspector: what's left here is the node bank itself
 		ImGui::Separator();
 		ImGui::PushItemWidth(-1);
-		ImGui::InputTextWithHint(STR_C("Search"), STR_C("Search node bank"), m_nodesearch, IM_ARRAYSIZE(m_nodesearch));
+		// no name beside the field, its hint says what it is: the name was cut to its first letter at the edge of the window
+		ImGui::InputTextWithHint("##nodesearch", STR_C("Search node bank"), m_nodesearch, IM_ARRAYSIZE(m_nodesearch));
 		// the list takes the rest of the window, but keeps a usable height when the sections above are expanded (the window scrolls then)
 		auto const listheight{std::max(ImGui::GetContentRegionAvail().y, ImGui::GetTextLineHeightWithSpacing() * 10.0f)};
 		if (previews)
@@ -1549,6 +1573,26 @@ void nodebank_panel::render_sets_window()
 	ImGui::EndGroup();
 
 	ImGui::End();
+}
+
+bool nodebank_panel::pick(std::size_t const Index)
+{
+	std::size_t index{0};
+	for (auto const &entry : m_nodebank)
+	{
+		// the headers of the groups have no definition
+		if (entry.second->empty())
+		{
+			continue;
+		}
+		if (index++ == Index)
+		{
+			m_selectedtemplate = entry.second;
+			m_picked = true;
+			return true;
+		}
+	}
+	return false;
 }
 
 void nodebank_panel::add_template(const std::string &desc)

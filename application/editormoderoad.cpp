@@ -2348,11 +2348,11 @@ void editor_mode::road_choose_tool(int const Tool)
 void editor_mode::render_road_tool_options()
 {
 	auto &tool{m_roadtool};
+	// the tools and what the place tool puts are chosen in the toolbar, the mouse and the keys of the one in use are on its card
+	render_road_card();
 	std::string reason;
 	if (false == editor_road::available(&reason))
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", STR(reason).c_str());
-
-	// the tools and what the place tool puts are chosen in the toolbar
 
 	if (tool.tool == 1)
 	{
@@ -2361,20 +2361,12 @@ void editor_mode::render_road_tool_options()
 		item_tooltip("A one-way road going around, with the lanes set below as the lanes along the axis.\nThen untick this and lead the roads out of its side, or into it");
 		if (tool.ring)
 		{
-			gesture_rows({{"LMB", "a roundabout around the cursor"}});
 			ImGui::SetNextItemWidth(120.0f);
 			if (ImGui::InputFloat(STR_C("Radius [m]##ring"), &tool.ringradius, 1.0f, 5.0f, "%.1f"))
 				tool.ringradius = std::clamp(tool.ringradius, 8.0f, 200.0f);
 			item_tooltip("Radius of the middle of the road going around");
 			render_road_material("Island in the middle", tool.island);
 			item_tooltip("What the middle is covered with; it's raised on a kerb as high as the kerbs of the road.\nNo texture: the middle is left as it is");
-		}
-		else
-		{
-			gesture_rows({{"LMB", "the start, then each next point"},
-			              {"Ctrl", "straight ahead"},
-			              {"Esc", "finish the road"},
-			              {"LMB on a road or a junction", "the new road is joined to it there"}});
 		}
 		if (tool.chain)
 		{
@@ -2405,14 +2397,6 @@ void editor_mode::render_road_tool_options()
 	else if (tool.tool == 2)
 	{
 		tool.placekind = std::clamp(tool.placekind, 0, 3);
-		switch (tool.placekind)
-		{
-		case 0: gesture_rows({{"LMB on a road", "where the rails cross it; the vehicles stop ahead of the rails while a train is coming"}}); break;
-		case 1: gesture_rows({{"LMB on a lane", "the vehicles of the set appear there one by one and drive the way the lane goes"}}); break;
-		case 3: gesture_rows({{"LMB on a road", "stripes are painted across it there"}}); break;
-		default: gesture_rows({{"LMB on a lane", "the vehicles getting there are taken off the road; put one where the road leaves the scenery"}}); break;
-		}
-		ImGui::Separator();
 		// what's set here is what the next points get
 		auto &placing{tool.placing[tool.placekind]};
 		placing.kind = point_kind(tool.placekind);

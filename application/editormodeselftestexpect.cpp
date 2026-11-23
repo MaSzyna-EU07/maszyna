@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -408,6 +409,63 @@ void expect_terrain(std::string const &What, std::istringstream &Words, std::map
 	expectation(state->second == (wanted != 0), What, state->second ? "1" : "0", std::to_string(wanted));
 }
 
+// the name of the tool of the surroundings in use, as the expectation names it
+std::string tool_name(nodebank_panel::edit_mode const Mode)
+{
+	switch (Mode)
+	{
+	case nodebank_panel::COPY: return "copy";
+	case nodebank_panel::ADD: return "insert";
+	case nodebank_panel::BRUSH: return "brush";
+	case nodebank_panel::FILL: return "fill";
+	case nodebank_panel::TRACK: return "track";
+	default: return "select";
+	}
+}
+
+// expect tool <name>: the tool of the surroundings in use, or track while the field of work of the tracks is
+void expect_tool(std::string const &What, std::istringstream &Words, std::string const &Tool)
+{
+	std::string wanted;
+	Words >> wanted;
+	if (malformed(What, Words))
+		return;
+	expectation(Tool == wanted, What, Tool, wanted);
+}
+
+// expect window <name> <0|1>: a window of the editor open: shortcuts, settings, weather, orthophoto
+void expect_window(std::string const &What, std::istringstream &Words, std::map<std::string, bool> const &Windows)
+{
+	std::string name;
+	int wanted{0};
+	Words >> name >> wanted;
+	if (malformed(What, Words))
+		return;
+	auto const window{Windows.find(name)};
+	if (window == Windows.end())
+	{
+		expectation(false, What, "no window " + name, "shortcuts, settings, weather or orthophoto");
+		return;
+	}
+	expectation(window->second == (wanted != 0), What, window->second ? "1" : "0", std::to_string(wanted));
+}
+
+// expect selected <x> <y> <z> <tolerance>: the node selected stands at the point
+void expect_selected(std::string const &What, std::istringstream &Words, std::optional<glm::dvec3> const &Selected)
+{
+	glm::dvec3 wanted{0.0};
+	double tolerance{0.0};
+	Words >> wanted.x >> wanted.y >> wanted.z >> tolerance;
+	if (malformed(What, Words))
+		return;
+	if (false == Selected.has_value())
+	{
+		expectation(false, What, "nothing selected", format("%.3f %.3f %.3f", wanted.x, wanted.y, wanted.z));
+		return;
+	}
+	expectation(glm::distance(*Selected, wanted) <= tolerance, What, format("%.3f %.3f %.3f", Selected->x, Selected->y, Selected->z), format("%.3f %.3f %.3f within %.3f", wanted.x, wanted.y, wanted.z, tolerance));
+}
+
 // what the editor shows, for the expectations of what the user sees
 struct shown_state
 {
@@ -416,6 +474,9 @@ struct shown_state
 	std::string status_line;
 	glm::dvec3 lay_cursor{0.0};
 	std::map<std::string, bool> terrain; // grow, area, prompt
+	std::string tool;
+	std::map<std::string, bool> windows; // shortcuts, settings, weather, orthophoto
+	std::optional<glm::dvec3> selected; // where the node selected stands
 };
 
 // the expectations of what the editor shows; false: no expectation of the kind
@@ -431,6 +492,12 @@ bool expect_shown(std::string const &Kind, std::string const &What, std::istring
 		expect_lay_cursor(What, Words, Shown.lay_cursor);
 	else if (Kind == "terrain")
 		expect_terrain(What, Words, Shown.terrain);
+	else if (Kind == "tool")
+		expect_tool(What, Words, Shown.tool);
+	else if (Kind == "window")
+		expect_window(What, Words, Shown.windows);
+	else if (Kind == "selected")
+		expect_selected(What, Words, Shown.selected);
 	else
 		return false;
 	return true;
@@ -494,10 +561,16 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_findings(what, words, m_norms.results());
 	else if (kind == "steps")
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
-	else if (false == expect_shown(kind, what, words,
-	                               {m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
-	                                {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}}))
-		expectation(false, what, "no expectation " + kind,
-		            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain or steps");
+	else
+	{
+		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
+		                  {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}, tool_name(ui()->mode()),
+		                  {{"shortcuts", m_shortcuts_open}, {"settings", m_settings_open}, {"weather", m_environment_open}, {"orthophoto", m_orthophoto_window}}, std::nullopt};
+		if (m_node != nullptr)
+			shown.selected = m_node->location();
+		if (false == expect_shown(kind, what, words, shown))
+			expectation(false, what, "no expectation " + kind,
+			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, selected or steps");
+	}
 	return selftest_result::handled;
 }
