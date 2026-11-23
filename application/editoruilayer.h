@@ -196,6 +196,8 @@ class editor_ui : public ui_layer
 	// what the cursor tells while it's shown, and the status line; for the expectations of the self-test
 	std::string refusal_shown() const;
 	std::string const &status_line() const { return m_layerspanel.status; }
+	// what the mode draws in the status bar after the status, a lasting state with a button of its own
+	void set_status_extra(std::function<void()> Renderer) { m_statusextra = std::move(Renderer); }
 
   private:
 	// methods
@@ -251,6 +253,7 @@ class editor_ui : public ui_layer
 	double m_refusaltime{-100.0};
 	bool m_refusalnotice{false}; // a warning rather than a refusal
 	double m_statustime{-100.0};
+	std::function<void()> m_statusextra;
 	int m_savequeued{0}; // the frame of a save asked for from a field being typed in
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};

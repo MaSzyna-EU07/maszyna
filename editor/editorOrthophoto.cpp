@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorHttp.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorPhotoRules.hpp"
 #include "editor/editorRecords.hpp"
 
 #include "rendering/renderer.h"
@@ -860,6 +861,7 @@ void editor_orthophoto::restart_prefetch()
 		m_prefetch = std::move(keys);
 		m_prefetch_next = 0;
 		m_prefetch_failed.clear();
+		m_prefetch_retry.clear();
 		m_prefetch_cached.clear();
 		m_prefetch_source = source{m_config.year, m_config.hires, m_config.service, m_config.layers};
 		++m_prefetch_generation;
@@ -978,8 +980,37 @@ void editor_orthophoto::retry_failed()
 		for (auto const &key : m_prefetch_failed)
 			m_prefetch.push_back(key);
 		m_prefetch_failed.clear();
+		m_prefetch_retry.clear();
+		m_last_error.clear();
 	}
 	m_wakeup.notify_all();
+}
+
+std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::failed() const
+{
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> result;
+	if (false == m_enabled)
+		return result;
+	std::set<tile_key> keys;
+	for (auto const &[key, t] : m_tiles)
+		if (t.failures > 0 && t.level == 0 && false == t.empty)
+			keys.insert(key);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		keys.insert(m_prefetch_failed.begin(), m_prefetch_failed.end());
+	}
+	for (auto const &key : keys)
+	{
+		glm::dvec2 const corner = tile_corner(key);
+		result.emplace_back(corner - glm::dvec2{tile_size}, corner);
+	}
+	return result;
+}
+
+std::string editor_orthophoto::last_failure() const
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return m_last_error.empty() ? std::string{} : photo_rules::failure_reason(m_last_error);
 }
 
 editor_orthophoto::statistics editor_orthophoto::stats() const
@@ -1088,7 +1119,7 @@ void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load()});
+		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires || m_zoom_hires, m_config.service, m_config.layers}, m_generation.load()});
 	}
 	Tile.requested = Level;
 	Tile.requested_alpha = Alpha;
@@ -1117,8 +1148,9 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 	{
 		if (current)
 		{
+			// tried again later and later, never given up: the service comes back, or the connection does
 			++t.failures;
-			t.retry_at = (t.failures >= 5) ? std::numeric_limits<double>::max() : Now + std::min(120.0, 5.0 * std::pow(2.0, t.failures - 1));
+			t.retry_at = Now + photo_rules::retry_delay(t.failures);
 		}
 		return 0;
 	}
@@ -1592,11 +1624,24 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		return;
 
 	tile_key const centre = camera_tile(Camera);
-	if (centre != m_camera_tile)
 	{
-		m_camera_tile = centre;
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_focus = centre;
+		if (centre != m_camera_tile)
+		{
+			m_camera_tile = centre;
+			m_focus = centre;
+		}
+		// the tiles of the area which failed, tried again once their time comes
+		bool again{false};
+		for (auto it = m_prefetch_retry.begin(); it != m_prefetch_retry.end(); ++it)
+			if (it->second.second <= now && m_prefetch_failed.erase(it->first) > 0)
+			{
+				m_prefetch.push_back(it->first);
+				it->second.second = std::numeric_limits<double>::max();
+				again = true;
+			}
+		if (again)
+			m_wakeup.notify_all();
 	}
 	int const radius = m_config.radius;
 	auto const distance = [&](tile_key const &Key) { return std::max(std::abs(Key.first - centre.first), std::abs(Key.second - centre.second)); };
@@ -1650,7 +1695,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires));
+			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires || m_zoom_hires));
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
@@ -1761,9 +1806,20 @@ void editor_orthophoto::worker()
 			if (prefetchgeneration == m_prefetch_generation)
 			{
 				if (ok)
+				{
 					m_prefetch_cached.insert(*prefetch);
+					m_prefetch_retry.erase(*prefetch);
+				}
 				else
+				{
+					// tried again later and later, up to 5 min apart, never given up
 					m_prefetch_failed.insert(*prefetch);
+					auto &retry{m_prefetch_retry[*prefetch]};
+					++retry.first;
+					retry.second = steady_seconds() + photo_rules::retry_delay(retry.first);
+					if (error != "cancelled")
+						m_last_error = error;
+				}
 			}
 			continue;
 		}
@@ -1794,7 +1850,14 @@ void editor_orthophoto::worker()
 		if (m_stop)
 			return;
 		if (!out.ok && error != "superseded")
+		{
 			ErrorLog(std::string("Editor orthophoto: tile ") + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+			if (error != "cancelled")
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_last_error = error;
+			}
+		}
 		if (out.ok && current.alpha < 255)
 			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
 				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
@@ -1975,7 +2038,7 @@ bool editor_orthophoto::hurry_tile(tile_key const &Key, int const Distance)
 		t.empty = true;
 	if (t.empty)
 		return false;
-	auto const level{first_level(t, level_for(Distance, m_config.hires))};
+	auto const level{first_level(t, level_for(Distance, m_config.hires || m_zoom_hires))};
 	t.retry_at = 0.0;
 	if (t.level == level && t.alpha == m_alpha)
 		return false; // already shown as it should be

@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -122,6 +123,14 @@ class editor_orthophoto
 	// being laid out at the height of the layer; elsewhere it lies on whatever ground there is, or on the guess, as without it
 	using coming_query = std::function<bool(glm::dvec2 const &Min, glm::dvec2 const &Max)>;
 	void coming_source(coming_query Query) { m_coming = std::move(Query); }
+	// the 4K photos asked for around the camera by themselves, the view zoomed in (see photo_rules::hires_wanted), besides the setting
+	// for them; the download area is put into the cache in the products of the setting alone
+	void zoom_hires(bool const Hires) { m_zoom_hires = Hires; }
+	bool zoom_hires() const { return m_zoom_hires; }
+	// the tiles around the camera, and the ones of the area, which failed and wait to be tried again: their rectangles (x, z)
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> failed() const;
+	// why the last download that failed did, in plain words (an English message, see photo_rules::failure_reason); empty: none failed
+	std::string last_failure() const;
 	// the area the imagery is downloaded in, a polygon of PUWG 1992 (easting, northing): its tiles go to the disk cache in the
 	// background, the products the settings ask for, and no tile outside it is asked for around the camera. Empty: no area, the
 	// tiles around the camera as before
@@ -292,6 +301,7 @@ class editor_orthophoto
 	height_query m_height;
 	height_query m_guess;
 	coming_query m_coming;
+	bool m_zoom_hires{false};
 	scene::basic_region *m_region{nullptr};                  // region the scene geometry was put into
 	std::multimap<std::size_t, gfx::geometry_handle> m_free_chunks; // geometry chunks by capacity, reused between tiles
 	// the scene opacity is baked into the textures, which means reading the tiles again; applied once the value settles
@@ -316,7 +326,10 @@ class editor_orthophoto
 	std::vector<tile_key> m_prefetch;
 	std::size_t m_prefetch_next{0};
 	std::set<tile_key> m_prefetch_failed;
+	// of the ones which failed, how many times they did and when they're tried again
+	std::map<tile_key, std::pair<int, double>> m_prefetch_retry;
 	std::set<tile_key> m_prefetch_cached;
+	std::string m_last_error; // the last failure, as the service or the connection told it
 	bool m_prefetch_paused{false};
 	source m_prefetch_source;
 	std::uint32_t m_prefetch_generation{0};

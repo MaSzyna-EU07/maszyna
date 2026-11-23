@@ -659,6 +659,8 @@ void editor_ui::render_()
 				else
 					ImGui::TextUnformatted(m_layerspanel.status.c_str());
 			}
+			if (m_statusextra)
+				m_statusextra();
 			if (m_node != nullptr)
 			{
 				auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};

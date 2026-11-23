@@ -15380,3 +15380,60 @@ msgstr "Zdjęcie: ułożone według //$g pliku scenerii; zapamiętany wcześniej
 
 msgid "Opened again, the scenery is laid out by //$g of its file"
 msgstr "Po ponownym otwarciu sceneria będzie ułożona według //$g swojego pliku"
+
+msgid "With the view zoomed in to 15 cm a pixel they come by themselves next to the camera"
+msgstr "Przy zbliżeniu widoku do 15 cm na piksel włączają się same przy kamerze"
+
+msgid "Photo: the download area is at its limit of %zu tiles; draw it again where it's needed, in Map > Orthophoto settings..."
+msgstr "Zdjęcie: obszar pobierania doszedł do limitu %zu kafli; narysuj go na nowo tam, gdzie trzeba, w Mapa > Ustawienia ortofotomapy..."
+
+msgid "Photo: the download area grown by %zu tile at its edge, %zu in all"
+msgid_plural "Photo: the download area grown by %zu tiles at its edge, %zu in all"
+msgstr[0] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafel, razem %zu"
+msgstr[1] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafle, razem %zu"
+msgstr[2] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafli, razem %zu"
+
+msgid "Photos: %zu tile not downloaded"
+msgid_plural "Photos: %zu tiles not downloaded"
+msgstr[0] "Zdjęcia: %zu kafla nie pobrano"
+msgstr[1] "Zdjęcia: %zu kafli nie pobrano"
+msgstr[2] "Zdjęcia: %zu kafli nie pobrano"
+
+msgid "They're marked red in the view and tried again by themselves, later and later, up to 5 min apart"
+msgstr "Są zaznaczone w widoku na czerwono i ponawiane same, coraz rzadziej, najwyżej co 5 min"
+
+msgid "no connection to the internet: the name of the server isn't found"
+msgstr "brak połączenia z internetem: nie znaleziono nazwy serwera"
+
+msgid "the server didn't answer in time"
+msgstr "serwer nie odpowiedział na czas"
+
+msgid "the server can't be reached"
+msgstr "nie można połączyć się z serwerem"
+
+msgid "the secure connection to the server failed"
+msgstr "nie udało się nawiązać bezpiecznego połączenia z serwerem"
+
+msgid "the server is busy or out of order"
+msgstr "serwer jest przeciążony albo nie działa"
+
+msgid "the server has no photo of the place"
+msgstr "serwer nie ma zdjęcia tego miejsca"
+
+msgid "the server refused the request"
+msgstr "serwer odrzucił żądanie"
+
+msgid "the server sent an error in place of the photo"
+msgstr "serwer przysłał błąd zamiast zdjęcia"
+
+msgid "the photo came damaged"
+msgstr "zdjęcie przyszło uszkodzone"
+
+msgid "the photo came too large"
+msgstr "zdjęcie przyszło za duże"
+
+msgid "the download failed"
+msgstr "pobieranie się nie udało"
+
+msgid "Retry##photos"
+msgstr "Ponów##photos"

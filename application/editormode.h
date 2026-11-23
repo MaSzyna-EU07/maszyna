@@ -919,6 +919,17 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_orthophoto_chosen{false};
 	// the user turns the orthophoto on or off: kept with the editor, for the scenery
 	void choose_orthophoto(bool const On);
+	// the 4K photos by themselves while the view is zoomed in to 15 cm a pixel; the m a pixel of the view, the top view's or of the
+	// ground under the camera
+	void orthophoto_zoom();
+	double view_metres_per_pixel() const;
+	// the download area carried along where the camera or the laying comes near its edge, told in the status line
+	void area_grow();
+	double m_area_grow_time{-100.0};
+	bool m_area_grow_limited{false};
+	// the tiles of the photo which failed: marked red in the view, counted in the status bar with the button trying them again
+	void draw_orthophoto_failures() const;
+	void render_orthophoto_status();
 	int m_orthophoto_frame{-10};
 	bool orthophoto_settings_open() const;
 	// view menu: the top view, the lanes of the roads, the structure gauge, the environment

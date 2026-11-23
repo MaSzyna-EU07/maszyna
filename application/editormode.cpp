@@ -633,6 +633,7 @@ editor_mode::editor_mode() {
 	road_select(nullptr);
 	ground_sources(m_orthophoto);
 	ui()->set_base_layers([this]() { render_base_layers(); });
+	ui()->set_status_extra([this]() { render_orthophoto_status(); });
 	editor_track::observe(this);
  }
 
@@ -1647,6 +1648,8 @@ bool editor_mode::update()
     m_ortho_resident = resident;
     m_ortho_waiting = waiting;
     steps.step("terrain");
+    orthophoto_zoom();
+    area_grow();
     m_orthophoto.update(Camera.Pos);
     steps.step("orthophoto");
     update_wms_layers();
@@ -1658,6 +1661,7 @@ bool editor_mode::update()
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
     background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
     draw_orthophoto();
+    draw_orthophoto_failures();
     draw_nmt_pending();
     area_update();
     draw_download_area();
@@ -2870,6 +2874,8 @@ void editor_mode::render_orthophoto_ui()
             changed = true;
             persist = true;
         }
+        if (false == config.hires)
+            ImGui::TextDisabled("%s", STR_C("With the view zoomed in to 15 cm a pixel they come by themselves next to the camera"));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(STR_C("4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\n"
                               "Areas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."));
@@ -2911,6 +2917,127 @@ void editor_mode::draw_orthophoto()
     // the WMS layers over it, the top one of the list last
     for (auto layer{m_wms.rbegin()}; layer != m_wms.rend(); ++layer)
         (*layer)->draw(projection, Camera.Pos, io.DisplaySize.x, io.DisplaySize.y);
+}
+
+double editor_mode::view_metres_per_pixel() const
+{
+    auto const &io{ImGui::GetIO()};
+    if (io.DisplaySize.y <= 0.0f)
+        return 0.0;
+    if (Global.EditorOrtho)
+        return 2.0 * static_cast<double>(Global.EditorOrthoExtent) / io.DisplaySize.y;
+    // in the 3d view the ground under the camera, as far below it as the terrain or the photo there is
+    double ground{static_cast<double>(m_orthophoto.settings().height)};
+    if (double height; EditorTerrain.height_at(Camera.Pos.x, Camera.Pos.z, height))
+        ground = height;
+    auto const above{Camera.Pos.y - ground};
+    if (above <= 0.0)
+        return 0.0;
+    return above * 2.0 * std::tan(glm::radians(Global.FieldOfView / Global.ZoomFactor) * 0.5) / io.DisplaySize.y;
+}
+
+void editor_mode::orthophoto_zoom()
+{
+    // the 4K photos of the tiles around the camera by themselves once the view shows the ground at 15 cm a pixel or finer; asked of the
+    // service as the setting for them asks, the few tiles next to the camera, a few at a time
+    auto const wanted{m_orthophoto.enabled() && photo_rules::hires_wanted(view_metres_per_pixel(), m_orthophoto.zoom_hires())};
+    if (wanted != m_orthophoto.zoom_hires())
+    {
+        m_orthophoto.zoom_hires(wanted);
+        WriteLog(format("Editor: the 4K photos around the camera %s, the view at %.3f m a pixel", wanted ? "on" : "off", view_metres_per_pixel()));
+    }
+}
+
+void editor_mode::area_grow()
+{
+    // the area is carried along where the photo is looked at or the tracks are laid, now and then: the tiles added go to the disk
+    // cache in the background, a few at a time, as the rest of the area
+    auto const now{ImGui::GetTime()};
+    if (now - m_area_grow_time < 5.0 || m_area_drawing.active || m_orthophoto.area().empty() || (false == m_orthophoto.enabled() && false == m_lay.active))
+        return;
+    auto const &config{m_orthophoto.settings()};
+    if (config.north == 0.0 && config.east == 0.0)
+        return;
+    std::vector<glm::dvec2> points{{Camera.Pos.x, Camera.Pos.z}};
+    if (m_lay.active)
+    {
+        points.emplace_back(m_lay.mouse.x, m_lay.mouse.z);
+        if (false == m_lay.points.empty())
+            points.emplace_back(m_lay.points.back().x, m_lay.points.back().z);
+    }
+    std::size_t constexpr limit{1600}; // tiles of 256 m: about 105 sq km
+    for (auto const &point : points)
+    {
+        auto const grown{photo_rules::grow_area(m_orthophoto.area(), m_orthophoto.to_puwg(point), editor_orthophoto::tile_size, 1, 2, limit)};
+        if (grown.limited)
+        {
+            if (false == m_area_grow_limited)
+            {
+                m_area_grow_limited = true;
+                m_area_grow_time = now;
+                ui()->set_status(format(STR_C("Photo: the download area is at its limit of %zu tiles; draw it again where it's needed, in Map > Orthophoto settings..."), limit));
+            }
+            return;
+        }
+        if (grown.polygon.empty())
+            continue;
+        m_area_grow_time = now;
+        m_orthophoto.area(grown.polygon);
+        WriteLog(format("Editor: the download area grown by %zu tiles at %.0f %.0f, %zu in all", grown.added, point.x, point.y, grown.total));
+        ui()->set_status(format(STR_P("Photo: the download area grown by %zu tile at its edge, %zu in all", "Photo: the download area grown by %zu tiles at its edge, %zu in all", grown.added), grown.added, grown.total));
+        return;
+    }
+}
+
+void editor_mode::draw_orthophoto_failures() const
+{
+    if (false == m_orthophoto.enabled())
+        return;
+    auto const failed{m_orthophoto.failed()};
+    if (failed.empty())
+        return;
+    // the tiles which failed outlined in red, with a cross over them: there's no photo there yet, it's tried again by itself
+    screen_projection const projection;
+    auto *drawlist{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
+    auto const height{static_cast<double>(m_orthophoto.settings().height)};
+    auto const colour{IM_COL32(240, 70, 60, 210)};
+    std::size_t drawn{0};
+    for (auto const &[low, high] : failed)
+    {
+        if (++drawn > 400)
+            break;
+        glm::dvec3 const corners[]{{low.x, height, low.y}, {high.x, height, low.y}, {high.x, height, high.y}, {low.x, height, high.y}};
+        for (int i = 0; i < 4; ++i)
+            projection.line(drawlist, corners[i], corners[(i + 1) % 4], colour, 2.0f);
+        projection.line(drawlist, corners[0], corners[2], (colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 110), 1.5f);
+        projection.line(drawlist, corners[1], corners[3], (colour & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 110), 1.5f);
+    }
+}
+
+void editor_mode::render_orthophoto_status()
+{
+    // in the status bar, after the status: the tiles which failed, why, and the button trying them again at once
+    if (false == m_orthophoto.enabled())
+        return;
+    auto const stats{m_orthophoto.stats()};
+    auto const count{static_cast<std::size_t>(stats.failed + stats.area_failed)};
+    if (count == 0)
+        return;
+    ImGui::SameLine(0.0f, ImGui::GetFontSize());
+    auto text{format(STR_P("Photos: %zu tile not downloaded", "Photos: %zu tiles not downloaded", count), count)};
+    if (auto const reason{m_orthophoto.last_failure()}; false == reason.empty())
+        text += std::string{" ("} + STR(reason) + ")";
+    ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f), "%s", text.c_str());
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("They're marked red in the view and tried again by themselves, later and later, up to 5 min apart"));
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", "\xc2\xb7");
+    ImGui::SameLine();
+    if (ImGui::SmallButton(STR_C("Retry##photos")))
+    {
+        m_orthophoto.retry_failed();
+        orthophoto_hurry();
+    }
 }
 
 void editor_mode::draw_ortho_compass() const
