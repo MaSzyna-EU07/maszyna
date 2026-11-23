@@ -332,6 +332,34 @@ brake of the Vectron switched on), and `event0` of the track gives the driver `O
 starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
 the pipe stays below 1 bar and the case ends as a standstill after 300 s.
 
+The `eu07_td_switch_*` cases (fragment `td_switch_thrown.scn`, the review of #289, point 2b) throw a switch of
+Stacja1 by an event under an EU07 with three coaches and check that the train keeps to the rails (`on_track`) and that
+the AI keeps to the route it is really on. Both switches of the station have their points towards the line and the
+way to track 2 straight (position 0), to track 1 curved (position 1); the ends of the two ways are 1.9 m apart, the
+tracks 4.6 m. `zwr01` at the west end is run through facing by a train running into the station, `zwr02` at the east
+end trailing by one leaving it. The throw is an event set off once, by the rear axle of the locomotive running onto a
+track (`event1`/`event2` of it, which only the vehicle with the driver sets off) or by a launcher 5 s after the start;
+a driver that stands cold gets its order (`vars.order`) from `event0` of its track, after the throw where the train
+stands over the switch. On track 1 a signal at stop of the case's own stands at z 1100: the train has to stop before
+it (`event0` of `tdo_n1725` passes the test, running onto `tdo_n1734` fails it); on track 2 the exit signal `stacja1_k`
+at stop. What they showed on `staging` of 2026-11-22 (f15ea405), where an axle on a switch keeps the way it ran onto
+(the segment it took when it got onto the switch) but leaves the switch by the way it is set to now, and the AI does
+not scan its route again for a switch that changed behind the head of the train:
+
+| case | throw | result |
+| --- | --- | --- |
+| `eu07_td_switch_facing_control` | none, set to track 1 from the start | passes: stops before the signal of track 1 |
+| `eu07_td_switch_thrown_facing_head` | `zwr01` to track 1 with the locomotive on the switch | `xfail`: the locomotive jumps sideways at the end of the switch (0.78 m off the track in the black box), the whole train goes to track 1, and the AI, still on the route of track 2, runs past the signal of track 1 at 40 km/h |
+| `eu07_td_switch_thrown_facing_behind` | `zwr01` to track 1 with the locomotive just past it | `xfail`: the locomotive runs on along track 2 and the coaches coupled to it along track 1, side by side, for 900 m |
+| `eu07_td_switch_thrown_standing_facing` | `zwr01` to track 1 under the standing train, which then leaves facing | `xfail`: the second coach runs with a bogie on each track, its body 2.3 m off both; the AI, which scans from the last vehicle, reads the signals of track 1 while it runs on track 2 (a signal passed at danger, `stacja1_j`) |
+| `eu07_td_switch_thrown_standing_trailing` | `zwr02` to track 1 under the standing train, which then leaves trailing | passes: the first wheels coming from track 2 push the switch back (as through any switch set against them from the frog end) |
+| `eu07_td_switch_thrown_trailing` | `zwr02` to track 2 under the coaches of the timetable train leaving track 1 | passes: the switch is pushed back, the train stops at Przystanek after 1402 m |
+
+Nothing derails in any of them with `physics.derailment monitor` (the default; the monitor reported nothing either),
+and the three `xfail` cases run with `physics.derailment new` came out the same to the metre: the criteria of
+derailment look at the curve, the cant and the speed of a vehicle, not at its bogies being on two tracks. Nor does the
+coupler between a locomotive and a coach 4.6 m beside it break.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
