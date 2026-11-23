@@ -517,7 +517,7 @@ std::vector<car> run_train(std::vector<std::pair<dm::start, dm::scatter>> const 
 	constexpr double stiffness{2e6};
 	auto const damping{0.3 * 2.0 * std::sqrt(stiffness * Shape.mass)};
 	constexpr double slack{0.05};
-	for (double time = 0.0; time < 30.0; time += Dt) {
+	for (int step = 0; step * Dt < 30.0; ++step) {
 		std::vector<std::array<dm::end_force, 2>> ends(train.size());
 		for (std::size_t index = 0; index + 1 < train.size(); ++index) {
 			auto &ahead{train[index]};
@@ -902,7 +902,7 @@ hit_outcome run_into(double const Speed, double const Angle, double const Across
 	standing.front = glm::dvec3{std::sin(Angle), 0.0, std::cos(Angle)};
 	second.body.begin(standing, coach(), ballast);
 	hit_outcome result;
-	for (double time = 0.0; time < 30.0; time += Dt) {
+	for (int step = 0; step * Dt < 30.0; ++step) {
 		result.most = std::max(result.most, touch(first, second));
 		slide_on(first, Dt);
 		slide_on(second, Dt);
@@ -1032,9 +1032,9 @@ TEST_CASE("derail motion: two bodies folded past a right angle stay apart") {
 	second.body.begin(other, coach(), ballast);
 	second.speed = 5.0;
 	auto most{0.0};
-	for (double time = 0.0; time < 20.0; time += 0.01) {
+	for (int step = 0; step < 2000; ++step) { // 20 s in steps of 0.01 s
 		auto const depth{touch(first, second)};
-		if (time > 0.5) {
+		if (step > 50) { // after half a second
 			most = std::max(most, depth);
 		}
 		slide_on(first, 0.01);

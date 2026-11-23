@@ -3698,23 +3698,34 @@ bool TDynamicObject::Update(double dt, double dt1)
         return true; // Ra: pauza
     // physics.derailment new: all of the update of a vehicle off the track, timed; a warning once a second at most when it
     // takes long, to find what makes a derailment slow
-    struct off_track_watch {
-        TDynamicObject &vehicle;
-        double frame;
-        off_track_clock::time_point started { off_track_clock::now() };
-        ~off_track_watch() {
-            auto const took { seconds_since( started ) };
-            vehicle.m_offtrackupdatedue -= frame;
-            if( took > off_track_slow && vehicle.m_offtrackupdatedue <= 0.0 ) {
-                vehicle.m_offtrackupdatedue = 1.0;
-                ErrorLog( std::format( "derailment: warning: the update of {} off the track took {:.0f} ms in a frame of {:.3f} s", vehicle.MoverParameters->Name, took * 1000.0, frame ) );
+    // (no vehicle when it is on the track: nothing is timed then)
+    class off_track_watch {
+    public:
+        off_track_watch( TDynamicObject *Vehicle, double const Frame ) :
+            vehicle { Vehicle }, frame { Frame } {
+            if( vehicle != nullptr ) {
+                started = off_track_clock::now();
             }
         }
+        off_track_watch( off_track_watch const & ) = delete;
+        off_track_watch &operator=( off_track_watch const & ) = delete;
+        ~off_track_watch() {
+            if( vehicle == nullptr ) {
+                return;
+            }
+            auto const took { seconds_since( started ) };
+            vehicle->m_offtrackupdatedue -= frame;
+            if( took > off_track_slow && vehicle->m_offtrackupdatedue <= 0.0 ) {
+                vehicle->m_offtrackupdatedue = 1.0;
+                ErrorLog( std::format( "derailment: warning: the update of {} off the track took {:.0f} ms in a frame of {:.3f} s", vehicle->MoverParameters->Name, took * 1000.0, frame ) );
+            }
+        }
+    private:
+        TDynamicObject *vehicle;
+        double frame;
+        off_track_clock::time_point started {};
     };
-    std::optional<off_track_watch> watch;
-    if( MoverParameters->OffTrack.active() ) {
-        watch.emplace( *this, dt1 );
-    }
+    off_track_watch const watch { MoverParameters->OffTrack.active() ? this : nullptr, dt1 };
     if (!MoverParameters->PhysicActivation &&
         !MechInside) { // to drugie, bo będąc w maszynowym blokuje się fizyka
         // physics.derailment new: a vehicle off the track stopped along its heading still settles: it slides down a

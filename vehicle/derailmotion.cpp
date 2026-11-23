@@ -105,7 +105,7 @@ double departure_angle(cause const Cause, double const Speed, double const Accel
 
 scatter draw_scatter(std::uint32_t const Seed) {
 	// the raw numbers of the engine are the same with every library, the distributions of <random> aren't
-	std::mt19937 engine{Seed};
+	std::mt19937 engine{Seed}; // NOSONAR: seeded on purpose, so that a derailment can be repeated; nothing secret is drawn
 	auto const uniform = [&engine](double const Low, double const High) { return Low + (High - Low) * ((static_cast<double>(engine()) + 0.5) / 4294967296.0); };
 	scatter result;
 	result.departure = uniform(-0.01, 0.01);
