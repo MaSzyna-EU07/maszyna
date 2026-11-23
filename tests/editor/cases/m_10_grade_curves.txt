@@ -1,0 +1,31 @@
+# Editing on the model (E4b): the grade line of a line of the model drawn in the profile tool is its command (set_grades), one step; a
+# curve added to the line in the route design and taken out again, a command each. The empty ground east of k0..k3 (x 800..1100)
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100
+wait 2
+expect modellines 1
+expect steps 1
+# a break 1 m up at 200 m of its 400 m, rounded by a vertical curve of R 10000 m
+modelgrade @1.0 200 1 10000
+wait 2
+expect modelrefused 0
+expect modelgrades 1 1
+expect steps 2
+expect modelends
+undo
+wait 2
+expect modelgrades 1 0
+expect steps 1
+redo
+wait 2
+expect modelgrades 1 1
+expect modelends
+# a break so near the end its vertical curve can't be laid there: refused by the model, nothing changes
+modelmark graded
+modelgrade @1.0 399.5 0.5 10000
+wait 2
+expect modelrefused 1
+expect modelsame graded
+expect steps 2
+quit

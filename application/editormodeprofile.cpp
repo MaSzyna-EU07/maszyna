@@ -784,6 +784,9 @@ void editor_mode::profile_open(TTrack *From, TTrack *To)
 
 void editor_mode::profile_open_run(TTrack &Track)
 {
+	// a line of the model: its whole line
+	if (model_profile_open(Track))
+		return;
 	auto &state{m_profile};
 	state.open = true;
 	state.status.clear();
@@ -872,6 +875,8 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 				state.origin = *km;
 		}
 	}
+	// a line of the model: its grade line as the model has it
+	model_profile_load();
 	profile_fit_view();
 }
 
@@ -1616,6 +1621,9 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	state.status.clear();
 	state.error.clear();
 	if (state.route.spans.empty() || state.line.points.size() < 2)
+		return;
+	// a line of the model: its grade line set by its command, the model the judge of it: refused with the reasons, or one step
+	if (model_profile_apply())
 		return;
 	auto const edits{m_track_edits};
 	if (state.changed && false == state.fitting ? errors_in_change(state.issues, state.line, state.line_read, state.samples) : has_errors(state.issues))

@@ -15107,6 +15107,9 @@ msgstr "Rozjazd %s (zarządzany)"
 msgid "Turnout %s: %s, %s, %.0f km/h on the diverging track"
 msgstr "Rozjazd %s: %s, %s, %.0f km/h na torze zwrotnym"
 
+msgid "Line %s of the model: its grade line, %zu breaks"
+msgstr "Linia %s modelu: jej niweleta, załomów: %zu"
+
 msgid "line {1} at {2} m: {3}"
 msgstr "linia {1} w {2} m: {3}"
 

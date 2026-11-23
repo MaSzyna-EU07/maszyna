@@ -3463,6 +3463,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string model_switch_trial() const;
 	void render_model_turnout(TTrack &Track);
 
+	// the rest of the editing of a line of the model (editormodemodeledit.cpp, stage E4b): the line of the model the profile is open on from
+	// end to end, whether the route runs against it
+	layout::line_id model_profile_line(bool &Reversed) const;
+	// the profile opened on the whole line of the model of the track; false for an old track
+	bool model_profile_open(TTrack &Track);
+	// the grade line of the line of the model the profile is open on read from the model, applied as its command (set_grades)
+	void model_profile_load();
+	bool model_profile_apply();
 	bool m_model_delete_confirmed{false}; // the old delete let through, the scenarios looked through
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();

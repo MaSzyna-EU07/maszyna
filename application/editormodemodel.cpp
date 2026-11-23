@@ -1374,6 +1374,33 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		WriteLog(format("SELFTEST routemove %d: valid %d", index, m_route.result.valid ? 1 : 0));
 		return selftest_result::handled;
 	}
+	if (command == "modelgrade")
+	{
+		// the profile opened on the line of the track, a break put into its grade line at the chainage from the start of the route with
+		// its height and vertical radius, applied as the button applies it
+		std::string name;
+		double chainage{0.0}, elevation{0.0}, radius{0.0};
+		words >> name >> chainage >> elevation >> radius;
+		auto *track{resolve(name)};
+		if (track == nullptr)
+		{
+			WriteLog("SELFTEST modelgrade: no track " + name);
+			return selftest_result::handled;
+		}
+		profile_open_run(*track);
+		auto &state{m_profile};
+		auto &points{state.line.points};
+		if (points.size() >= 2 && chainage > points.front().chainage && chainage < points.back().chainage)
+		{
+			auto const at{std::ranges::find_if(points, [&](profile::pvi const &Point) { return Point.chainage > chainage; })};
+			points.insert(at, profile::pvi{chainage, elevation, radius, false, false});
+			state.changed = true;
+			profile_check();
+			profile_apply(false);
+		}
+		WriteLog(format("SELFTEST modelgrade %s %.1f %.3f R%.0f: %zu points, %s %s", name.c_str(), chainage, elevation, radius, points.size(), editor_selftest::one_line(state.status).c_str(), editor_selftest::one_line(state.error).c_str()));
+		return selftest_result::handled;
+	}
 	if (command == "modelturnoutside")
 	{
 		// the turnout of the switch track given the other side, as the inspector's button gives it
@@ -1568,6 +1595,21 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		for (auto const line : marked)
 			lines += " " + line_name(line);
 		expectation(marked.size() == wanted, "handlines", std::to_string(marked.size()) + lines, std::to_string(wanted));
+		return selftest_result::handled;
+	}
+	if (what == "modelgrades")
+	{
+		// the breaks of the grade line of the line of the model
+		unsigned line{0};
+		std::size_t wanted{0};
+		words >> line >> wanted;
+		auto const *found{model_network().find(static_cast<layout::line_id>(line))};
+		auto const got{found != nullptr ? found->shape.grades.size() : std::size_t{0}};
+		std::string breaks;
+		if (found != nullptr)
+			for (auto const &each : found->shape.grades)
+				breaks += format(" %.1f/%.3f/R%.0f", each.chainage, each.elevation, each.vertical_radius);
+		expectation(found != nullptr && got == wanted, format("modelgrades %u", line), std::to_string(got) + breaks, std::to_string(wanted));
 		return selftest_result::handled;
 	}
 	if (what == "modelproposal")
