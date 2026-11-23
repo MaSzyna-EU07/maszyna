@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodemodel.h"
 #include "application/editormodeselftest.h"
 #include "application/editormodeshared.h"
 #include "application/editoruilayer.h"
@@ -43,6 +44,7 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <limits>
 #include <map>
+#include <regex>
 #include <sstream>
 
 namespace
@@ -119,48 +121,10 @@ void expectation(bool const Passed, std::string const &What, std::string const &
 
 } // namespace
 
-// what waits for the user's answer in a window of its own
-struct model_question
+std::string model_surface_of(TTrack const &Track)
 {
-	enum class kind
-	{
-		none,
-		hand, // the lines changed by hand: written over, or the change by hand kept
-		waiting, // the scenarios using the map being looked through, before the tracks named go
-		scenarios // the scenarios naming the tracks: taken away anyway, or not
-	};
-	kind what{kind::none};
-	std::set<layout::line_id> lines;
-	std::vector<std::string> names; // the tracks to go
-	std::vector<project::scenario_use> users;
-	std::function<void(bool)> answer; // true: written over, taken away anyway
-	bool rename{false}; // the tracks named are to be renamed, not taken away
-	bool opened{false};
-};
-
-struct editor_model
-{
-	project::session session;
-	bool tried{false}; // the project opened for the scenery, or failed to
-	std::string error;
-	std::unordered_map<scene::basic_node const *, editor_mode::managed_track> tracks;
-	project::index_cache index;
-	std::filesystem::path store; // the file the index is kept in between the sessions, none for the self-tests
-	model_question question;
-	// the line the route design is open on, its vertices as the model has them
-	struct plan_link
-	{
-		layout::line_id line{layout::line_id::none};
-		std::vector<layout::vertex_id> vertices;
-		alignment::design original;
-		double split{-1.0}; // the chainage the split field holds, below 0 the middle of the line
-	} plan;
-	std::string message; // what the last command came to: why it was refused, or what the norms tell of it
-	bool refused{false};
-	std::vector<std::string> notices;
-	std::vector<std::pair<TTrack const *, std::string>> written; // by the save under way, the texts written
-	std::map<std::string, layout::network> marks; // the self-test's copies of the network, for expect modelsame
-};
+	return surface_of(Track);
+}
 
 void editor_model_deleter::operator()(editor_model *Model) const
 {
@@ -186,12 +150,133 @@ std::string editor_mode::model_message() const
 
 std::vector<std::string> editor_mode::model_notices() const
 {
-	return model().notices;
+	return model().shown_notices;
 }
 
 std::string editor_mode::model_error() const
 {
 	return model().error;
+}
+
+layout::network const &editor_mode::model_network() const
+{
+	return model().session.network();
+}
+
+std::string editor_mode::model_shown() const
+{
+	return model().shown;
+}
+
+namespace
+{
+
+// the format of the catalogue of the editor with {1}, {2}... put in its place: the words of the message the model made
+std::string filled(std::string Format, std::vector<std::string> const &Arguments)
+{
+	for (std::size_t i = 0; i < Arguments.size(); ++i)
+	{
+		auto const mark{"{" + std::to_string(i + 1) + "}"};
+		for (auto at{Format.find(mark)}; at != std::string::npos; at = Format.find(mark, at + Arguments[i].size()))
+			Format.replace(at, mark.size(), Arguments[i]);
+	}
+	return Format;
+}
+
+// a message of the model as the editor shows it: the English of the model matched against its forms, the form of the catalogue of the
+// editor (STR) filled with the numbers and the names; the parts the forms leave as {sub} shown so in turn
+struct message_form
+{
+	std::regex pattern;
+	char const *format; // with {1}, {2}... for the groups of the pattern
+	std::vector<bool> nested; // the group is a message of its own, shown so
+};
+
+std::vector<message_form> const &message_forms()
+{
+	static std::vector<message_form> const forms{
+	    // the norms: a BLOCK limit along a line, a finding
+	    {std::regex{R"(^line (\d+) at ([-\d.]+) m: (.+)$)"}, STRN("line {1} at {2} m: {3}"), {false, false, true}},
+	    {std::regex{R"(^(.+?) ([-\d.e+]+), the limit ([-\d.e+]+) \((.+)\)$)"}, STRN("{1} {2}, the limit {3} ({4})"), {true, false, false, false}},
+	    {std::regex{R"(^(.+?) ([-\d.e+]+), the limit ([-\d.e+]+)$)"}, STRN("{1} {2}, the limit {3}"), {true, false, false}},
+	    // the turnouts
+	    {std::regex{R"(^turnout (\d+) \((.+?)\): (.+)$)"}, STRN("turnout {1} ({2}): {3}"), {false, false, true}},
+	    {std::regex{R"(^bent into R (\d+) m in a main track, where no switch of 1:9\.403 nor steeper than 1:9 is bent \(11\.4 pkt 4\)$)"},
+	     STRN("bent into R {1} m in a main track, where no switch of 1:9.403 nor steeper than 1:9 is bent (11.4 pkt 4)"), {false}},
+	    {std::regex{R"(^(.+) is ([\d.]+) m long: it doesn't fit into line (\d+) \(([\d.]+) m long\) with its start at ([-\d.]+) m$)"},
+	     STRN("{1} is {2} m long: it doesn't fit into line {3} ({4} m long) with its start at {5} m"), {false, false, false, false, false}},
+	    {std::regex{R"(^line (\d+) is a track of turnout (\d+): move it, change it or take it out$)"}, STRN("line {1} is a track of turnout {2}: move it, change it or take it out"), {false, false}},
+	    // the crossovers
+	    {std::regex{R"(^the second turnout doesn't fit into line (\d+) at ([-\d.]+) m$)"}, STRN("the second turnout doesn't fit into line {1} at {2} m"), {false, false}},
+	    {std::regex{R"(^the line between the turnouts is ([\d.]+) m long, the norms ask for ([\d.]+) m between two turnouts at ([\d.]+) km/h \(ST-T1-A6 11\.3 pkt 7\)$)"},
+	     STRN("the line between the turnouts is {1} m long, the norms ask for {2} m between two turnouts at {3} km/h (ST-T1-A6 11.3 pkt 7)"), {false, false, false}},
+	    {std::regex{R"(^the lines are ([\d.]+) m apart along the crossover \(to ([\d.]+) m\), (.+) needs ([\d.]+) m \(ST-T1-A6 tab\. 11\.2 and the straight between its turnouts\)$)"},
+	     STRN("the lines are {1} m apart along the crossover (to {2} m), {3} needs {4} m (ST-T1-A6 tab. 11.2 and the straight between its turnouts)"), {false, false, false, false}},
+	    {std::regex{R"(^no ordinary turnout of the catalogue fits lines ([\d.]+) m apart; (.+) needs them ([\d.]+) m apart$)"},
+	     STRN("no ordinary turnout of the catalogue fits lines {1} m apart; {2} needs them {3} m apart"), {false, false, false}},
+	    {std::regex{R"(^(.+) fits lines ([\d.]+) m apart, at ([\d.]+) km/h; (.+) needs them ([\d.]+) m apart$)"}, STRN("{1} fits lines {2} m apart, at {3} km/h; {4} needs them {5} m apart"),
+	     {false, false, false, false, false}},
+	    {std::regex{R"(^proposed: (.+)$)"}, STRN("proposed: {1}"), {true}},
+	    // the lines and the nodes
+	    {std::regex{R"(^line (\d+): (.+)$)"}, STRN("line {1}: {2}"), {false, true}},
+	    {std::regex{R"(^vertex (\d+): (.+)$)"}, STRN("vertex {1}: {2}"), {false, true}},
+	    {std::regex{R"(^([-\d.]+) m is inside a transition curve whose parts wouldn't be curves of its kind; split on a straight or an arc$)"},
+	     STRN("{1} m is inside a transition curve whose parts wouldn't be curves of its kind; split on a straight or an arc"), {false}},
+	    {std::regex{R"(^([-\d.]+) m is inside the vertical curve at ([-\d.]+) m$)"}, STRN("{1} m is inside the vertical curve at {2} m"), {false, false}},
+	    {std::regex{R"(^line (\d+) meets node (\d+) at an angle of ([\d.]+) deg$)"}, STRN("line {1} meets node {2} at an angle of {3} deg"), {false, false, false}},
+	    {std::regex{R"(^the grade breaks by ([\d.]+) per mille at node (\d+) with no vertical curve$)"}, STRN("the grade breaks by {1} per mille at node {2} with no vertical curve"), {false, false}},
+	    {std::regex{R"(^the cant steps by ([\d.]+) mm at node (\d+) where line (\d+) meets it$)"}, STRN("the cant steps by {1} mm at node {2} where line {3} meets it"), {false, false, false}},
+	    {std::regex{R"(^the grade break at ([-\d.]+) m isn't between the one before it and the end of the line, ([\d.]+) m long$)"},
+	     STRN("the grade break at {1} m isn't between the one before it and the end of the line, {2} m long"), {false, false}},
+	    {std::regex{R"(^the vertical curves at ([-\d.]+) m and ([-\d.]+) m overlap by ([\d.]+) m$)"}, STRN("the vertical curves at {1} m and {2} m overlap by {3} m"), {false, false, false}},
+	    {std::regex{R"(^the curves of vertex (\d+) and vertex (\d+) overlap by ([\d.]+) m$)"}, STRN("the curves of vertex {1} and vertex {2} overlap by {3} m"), {false, false, false}},
+	    {std::regex{R"(^the transition curves turn ([\d.]+) rad, more than the ([\d.]+) rad the tangents do$)"}, STRN("the transition curves turn {1} rad, more than the {2} rad the tangents do"),
+	     {false, false}},
+	    {std::regex{R"(^node (\d+) isn't the free end of a line$)"}, STRN("node {1} isn't the free end of a line"), {false}},
+	    // of the editor's own
+	    {std::regex{R"(^the end of the line at ([-\d.]+) m, its node at ([-\d.]+) m: a line of the model keeps the heights of its nodes$)"},
+	     STRN("the end of the line at {1} m, its node at {2} m: a line of the model keeps the heights of its nodes"), {false, false}},
+	    {std::regex{R"(^the spacing in the curve at vertex (\d+) isn't widened by (\d+) mm: its transitions can't take it$)"},
+	     STRN("the spacing in the curve at vertex {1} isn't widened by {2} mm: its transitions can't take it"), {false, false}},
+	    {std::regex{R"(^the curve at vertex (\d+) would be of a radius of ([-\d.]+) m alongside$)"}, STRN("the curve at vertex {1} would be of a radius of {2} m alongside"), {false, false}},
+	    {std::regex{R"(^a spacing of ([\d.]+) m$)"}, STRN("a spacing of {1} m"), {false}},
+	};
+	return forms;
+}
+
+} // namespace
+
+std::string editor_mode::model_tr(std::string const &Text)
+{
+	if (Text.empty())
+		return Text;
+	// a whole message the catalogue of the editor has
+	if (auto const whole{STR(Text)}; whole != Text)
+		return whole;
+	for (auto const &form : message_forms())
+	{
+		std::smatch found;
+		if (false == std::regex_match(Text, found, form.pattern))
+			continue;
+		std::vector<std::string> arguments;
+		for (std::size_t i = 1; i < found.size(); ++i)
+			arguments.push_back(i - 1 < form.nested.size() && form.nested[i - 1] ? model_tr(found[i].str()) : found[i].str());
+		return filled(STR(form.format), arguments);
+	}
+	return Text;
+}
+
+std::string editor_mode::model_reasons_shown(layout::outcome const &Outcome)
+{
+	std::string result;
+	for (auto const &reason : Outcome.reasons)
+		result += (result.empty() ? "" : "\n") + model_tr(reason);
+	return result;
+}
+
+std::string editor_mode::model_notice_shown(layout::notice const &Notice)
+{
+	return model_tr(Notice.text);
 }
 
 void editor_mode::model_forget(scene::basic_node const *Node)
@@ -348,18 +433,24 @@ void editor_mode::model_told(layout::outcome const &Outcome, bool const Refused,
 {
 	model().refused = Refused;
 	model().notices.clear();
+	model().shown_notices.clear();
 	if (Refused)
 	{
-		model().message = STR("Refused, nothing changed:");
+		model().message = "Refused, nothing changed:";
 		for (auto const &reason : Outcome.reasons)
 			model().message += "\n" + reason;
+		model().shown = STR("Refused, nothing changed:") + "\n" + model_reasons_shown(Outcome);
 		WriteLog("Editor: model: " + editor_selftest::one_line(model().message), logtype::generic);
 		return;
 	}
 	model().message = What;
+	model().shown = What;
 	for (auto const &notice : Outcome.notices)
 		if (std::ranges::find(model().notices, notice.text) == model().notices.end())
+		{
 			model().notices.push_back(notice.text);
+			model().shown_notices.push_back(model_notice_shown(notice));
+		}
 	WriteLog("Editor: model: " + What + (model().notices.empty() ? std::string{} : " · " + std::to_string(model().notices.size()) + " notices of the norms"), logtype::generic);
 }
 
@@ -509,6 +600,8 @@ void editor_mode::model_history(std::uint64_t const Token, bool const Undo)
 		WriteLog(format("Editor: model: the step %llu can't be %s: the history of the model went out of step with the editor's", static_cast<unsigned long long>(Token), Undo ? "taken back" : "brought again"), logtype::generic);
 	model().message.clear();
 	model().notices.clear();
+	model().shown.clear();
+	model().shown_notices.clear();
 	model().refused = false;
 }
 
@@ -728,9 +821,13 @@ bool editor_mode::model_plan_apply()
 	context.done = [this, line](std::vector<TTrack *> const &) {
 		auto const message{model().message};
 		auto const notices{model().notices};
+		auto const shown{model().shown};
+		auto const shown_notices{model().shown_notices};
 		route_from_model(line);
 		model().message = message;
 		model().notices = notices;
+		model().shown = shown;
+		model().shown_notices = shown_notices;
 	};
 	model_run(std::move(commands), std::move(context));
 	return true;
@@ -813,12 +910,16 @@ bool editor_mode::model_plan_convert(std::string &Why)
 		context.done = [this](std::vector<TTrack *> const &Created) {
 			auto const message{model().message};
 			auto const notices{model().notices};
+			auto const shown{model().shown};
+			auto const shown_notices{model().shown_notices};
 			if (auto const *managed{Created.empty() ? nullptr : model_track(Created.front())})
 				route_from_model(managed->line);
 			else
 				route_drop();
 			model().message = message;
 			model().notices = notices;
+			model().shown = shown;
+			model().shown_notices = shown_notices;
 		};
 		model_run({line}, context);
 	});
@@ -833,13 +934,13 @@ void editor_mode::render_model_plan()
 		return;
 	ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), "%s", format(STR_C("Line %s (managed)"), line_name(line).c_str()).c_str());
 	item_tooltip("A line of the model of the track geometry: its changes are applied as commands of the model, checked against the norms, its tracks made anew");
-	if (false == model().message.empty())
+	if (false == model().shown.empty())
 	{
 		ImGui::PushTextWrapPos(0.0f);
 		if (model().refused)
-			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", model().message.c_str());
+			ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", model().shown.c_str());
 		else
-			ImGui::TextDisabled("%s", model().message.c_str());
+			ImGui::TextDisabled("%s", model().shown.c_str());
 		ImGui::PopTextWrapPos();
 	}
 	// the quality line: what the norms warn of, or would have otherwise
@@ -847,7 +948,7 @@ void editor_mode::render_model_plan()
 	{
 		ImGui::PushTextWrapPos(0.0f);
 		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.25f, 1.0f), "%s", format(STR_P("The norms: %zu note", "The norms: %zu notes", static_cast<long long>(model().notices.size())), model().notices.size()).c_str());
-		for (auto const &notice : model().notices)
+		for (auto const &notice : model().shown_notices)
 			ImGui::BulletText("%s", notice.c_str());
 		ImGui::PopTextWrapPos();
 	}
@@ -1353,10 +1454,14 @@ editor_mode::selftest_result editor_mode::selftest_model(std::string const &comm
 		words >> mode;
 		std::getline(words, text);
 		text.erase(0, text.find_first_not_of(' '));
+		// as the model told it, or as the user reads it in the language of the editor
 		auto message{model().message};
 		for (auto const &notice : model().notices)
 			message += "\n" + notice;
-		auto const holds{message.find(text) != std::string::npos};
+		auto shown{model().shown};
+		for (auto const &notice : model().shown_notices)
+			shown += "\n" + notice;
+		auto const holds{message.find(text) != std::string::npos || shown.find(text) != std::string::npos};
 		expectation(holds == (mode == "holds"), "modelmessage " + mode + " " + text, editor_selftest::one_line(message), (mode == "holds" ? "holding " : "lacking ") + text);
 		return selftest_result::handled;
 	}

@@ -3424,6 +3424,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void track_rename(TTrack &Track, std::string const &Name);
 	void render_model_windows();
 	std::string model_label(TTrack const *Track) const;
+	layout::network const &model_network() const;
+	// what the last command came to as the user reads it: the reasons and the notes of the norms in the language of the editor
+	std::string model_shown() const;
+	// a message of the model or of the norms, English as they make it, in the language of the editor
+	static std::string model_tr(std::string const &Text);
+	// the reasons of a refusal as the user reads them, the BLOCK limits of the norms of them formatted here
+	static std::string model_reasons_shown(layout::outcome const &Outcome);
+	static std::string model_notice_shown(layout::notice const &Notice);
+
 	bool m_model_delete_confirmed{false}; // the old delete let through, the scenarios looked through
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();

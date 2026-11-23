@@ -2078,7 +2078,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		if (model_refused() || made.empty())
 		{
 			tool.laid_now = false;
-			tool.status = model_message();
+			tool.status = model_shown();
 			if (End.track != nullptr && false == tool.points.empty())
 			{
 				tool.points.pop_back();
@@ -2091,7 +2091,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		if (End.track != nullptr)
 			first_step_done(first_step::join);
 		lay_told(length, made.size());
-		tool.status += "\n" + model_message();
+		tool.status += "\n" + model_shown();
 		for (auto const &notice : model_notices())
 			tool.status += "\n" + notice;
 		m_node = made.back();

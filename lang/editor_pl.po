@@ -15065,3 +15065,125 @@ msgstr "Po zmianie nazwy scenariusze stracą to, do czego odwołują się w mapi
 
 msgid "Rename anyway"
 msgstr "Zmień nazwę mimo to"
+
+# scenery editor: the turnouts, the grade line, the curves and the parallel track of the lines of the model (E4b), the messages of the model
+
+msgid "line {1} at {2} m: {3}"
+msgstr "linia {1} w {2} m: {3}"
+
+msgid "{1} {2}, the limit {3} ({4})"
+msgstr "{1} {2}, limit {3} ({4})"
+
+msgid "{1} {2}, the limit {3}"
+msgstr "{1} {2}, limit {3}"
+
+msgid "turnout {1} ({2}): {3}"
+msgstr "rozjazd {1} ({2}): {3}"
+
+msgid "bent into R {1} m in a main track, where no switch of 1:9.403 nor steeper than 1:9 is bent (11.4 pkt 4)"
+msgstr "łukowany do R {1} m w torze głównym, gdzie nie łukuje się rozjazdów 1:9,403 ani bardziej stromych niż 1:9 (11.4 pkt 4)"
+
+msgid "{1} is {2} m long: it doesn't fit into line {3} ({4} m long) with its start at {5} m"
+msgstr "{1} ma {2} m: nie mieści się w linii {3} (długość {4} m) z początkiem w {5} m"
+
+msgid "line {1} is a track of turnout {2}: move it, change it or take it out"
+msgstr "linia {1} jest torem rozjazdu {2}: przesuń go, zmień albo usuń"
+
+msgid "the second turnout doesn't fit into line {1} at {2} m"
+msgstr "drugi rozjazd nie mieści się w linii {1} w {2} m"
+
+msgid "the line between the turnouts is {1} m long, the norms ask for {2} m between two turnouts at {3} km/h (ST-T1-A6 11.3 pkt 7)"
+msgstr "wstawka między rozjazdami ma {1} m, normy wymagają {2} m między dwoma rozjazdami przy {3} km/h (ST-T1-A6 11.3 pkt 7)"
+
+msgid "the lines are {1} m apart along the crossover (to {2} m), {3} needs {4} m (ST-T1-A6 tab. 11.2 and the straight between its turnouts)"
+msgstr "rozstaw linii wzdłuż połączenia {1} m (do {2} m), {3} wymaga {4} m (ST-T1-A6 tab. 11.2 i prosta między rozjazdami)"
+
+msgid "no ordinary turnout of the catalogue fits lines {1} m apart; {2} needs them {3} m apart"
+msgstr "żaden rozjazd zwyczajny z katalogu nie pasuje do rozstawu {1} m; {2} wymaga rozstawu {3} m"
+
+msgid "{1} fits lines {2} m apart, at {3} km/h; {4} needs them {5} m apart"
+msgstr "{1} pasuje do rozstawu {2} m, przy {3} km/h; {4} wymaga rozstawu {5} m"
+
+msgid "proposed: {1}"
+msgstr "propozycja: {1}"
+
+msgid "line {1}: {2}"
+msgstr "linia {1}: {2}"
+
+msgid "vertex {1}: {2}"
+msgstr "wierzchołek {1}: {2}"
+
+msgid "{1} m is inside a transition curve whose parts wouldn't be curves of its kind; split on a straight or an arc"
+msgstr "{1} m wypada w krzywej przejściowej, której części nie byłyby krzywymi tego rodzaju; dziel na prostej albo na łuku"
+
+msgid "{1} m is inside the vertical curve at {2} m"
+msgstr "{1} m wypada w łuku pionowym przy {2} m"
+
+msgid "line {1} meets node {2} at an angle of {3} deg"
+msgstr "linia {1} dochodzi do węzła {2} pod kątem {3}°"
+
+msgid "the grade breaks by {1} per mille at node {2} with no vertical curve"
+msgstr "pochylenie załamuje się o {1}‰ w węźle {2} bez łuku pionowego"
+
+msgid "the cant steps by {1} mm at node {2} where line {3} meets it"
+msgstr "przechyłka skacze o {1} mm w węźle {2}, gdzie dochodzi linia {3}"
+
+msgid "the grade break at {1} m isn't between the one before it and the end of the line, {2} m long"
+msgstr "załom niwelety w {1} m nie leży między poprzednim a końcem linii o długości {2} m"
+
+msgid "the vertical curves at {1} m and {2} m overlap by {3} m"
+msgstr "łuki pionowe w {1} m i {2} m zachodzą na siebie o {3} m"
+
+msgid "the curves of vertex {1} and vertex {2} overlap by {3} m"
+msgstr "łuki wierzchołków {1} i {2} zachodzą na siebie o {3} m"
+
+msgid "the transition curves turn {1} rad, more than the {2} rad the tangents do"
+msgstr "krzywe przejściowe skręcają o {1} rad, więcej niż {2} rad między stycznymi"
+
+msgid "node {1} isn't the free end of a line"
+msgstr "węzeł {1} nie jest wolnym końcem linii"
+
+msgid "the end of the line at {1} m, its node at {2} m: a line of the model keeps the heights of its nodes"
+msgstr "koniec linii na wysokości {1} m, jej węzeł na {2} m: linia modelu zachowuje wysokości swoich węzłów"
+
+msgid "the spacing in the curve at vertex {1} isn't widened by {2} mm: its transitions can't take it"
+msgstr "rozstaw w łuku przy wierzchołku {1} nie jest poszerzony o {2} mm: jego krzywe przejściowe na to nie pozwalają"
+
+msgid "the curve at vertex {1} would be of a radius of {2} m alongside"
+msgstr "łuk przy wierzchołku {1} miałby obok promień {2} m"
+
+msgid "a spacing of {1} m"
+msgstr "rozstaw {1} m"
+
+msgid "step of the cant deficiency"
+msgstr "skok niedomiaru przechyłki"
+
+msgid "rate of the cant change"
+msgstr "prędkość zmiany przechyłki"
+
+msgid "rate of the cant deficiency change"
+msgstr "prędkość zmiany niedomiaru przechyłki"
+
+msgid "element length"
+msgstr "długość elementu"
+
+msgid "transition length"
+msgstr "długość krzywej przejściowej"
+
+msgid "transition shift"
+msgstr "przesunięcie łuku"
+
+msgid "least cant"
+msgstr "najmniejsza przechyłka"
+
+msgid "vertical radius"
+msgstr "promień łuku pionowego"
+
+msgid "element between steps"
+msgstr "element między skokami"
+
+msgid "arc across a profile boundary"
+msgstr "łuk na granicy profili"
+
+msgid "element between turnouts"
+msgstr "wstawka między rozjazdami"
