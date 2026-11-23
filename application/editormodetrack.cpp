@@ -1234,7 +1234,11 @@ void editor_mode::render_turnout_ui()
 		        format(STR_C("First switch: diverging %s, end offset %.3f m"), offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
 	}
 	else
-		ImGui::Text(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
+		about = format(STR_C("Length %.3f m, diverging %s, end offset %.3f m"), length, offset > 0.0 ? STR_C("right") : STR_C("left"), std::abs(offset));
+	// the step: the switch laid just now and how to take it back, or how to move the one selected
+	auto const laid{just_laid(track)};
+	auto const step{laid ? format(STR_C("Switch %s inserted · Ctrl+Z undoes"), name_of(*track).c_str()) : format(STR_C("Switch %s: drag it along its track to move it"), name_of(*track).c_str())};
+	editor_flow::step_line(step.c_str());
 	{
 		// the switch in plan at one scale: the main track white, the diverging one yellow, the angle at its end, the length under
 		auto const font{ImGui::GetFontSize()};
@@ -1311,97 +1315,7 @@ void editor_mode::render_turnout_ui()
 		list->AddText(ImVec2(std::round(top.x + (width - size.x) * 0.5f), y), ImGui::GetColorU32(ImGuiCol_TextDisabled), text.c_str());
 	}
 	render_switch_template(*track, false);
-	// the name, the number, the rail and the kilometre of the switch, with what the scenery keeps of it
-	if (ImGui::CollapsingHeader(STR_C("Details##switchdetails")))
-	{
-		render_track_name(*track);
-		render_switch_record(*track);
-		if (angle > 1e-6)
-			ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
-	}
-	auto const drive_ui = [&](TTrack &Switch) {
-		ImGui::PushID(&Switch);
-		if (set.has_value())
-			ImGui::TextUnformatted(Switch.name().c_str());
-		if (false == EditorIncludes.scanned())
-			ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
-		else if (auto const drive{find_switch_drive(Switch, false)})
-		{
-			auto const family{drive->family};
-			auto const variant{drive->index};
-			// a drive not described for the editor is shown by its file
-			auto const described{family >= 0 && family < static_cast<int>(m_switch.drives.size())};
-			auto const &file{drive->standing.file};
-			auto const shown{described ? m_switch.drives[family].name : format("%s (%s)", file.substr(file.find_last_of('/') + 1).c_str(), STR_C("not described"))};
-			if (begin_fields("##standingdrive", 0.3f))
-			{
-				field_row("Drive##standing");
-				if (false == described)
-					ImGui::TextUnformatted(shown.c_str());
-				else if (ImGui::BeginCombo("##standing", shown.c_str()))
-				{
-					for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
-						if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
-							replace_switch_drive(Switch, i, false);
-					ImGui::EndCombo();
-				}
-				if (described && ImGui::IsItemHovered())
-					ImGui::SetTooltip("%s\n%s", STR_C("Puts another drive in place of the drive of this switch, on the same side"), format(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str()).c_str());
-				ImGui::EndTable();
-			}
-			int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
-			if (false == described)
-			{
-				ImGui::PushTextWrapPos(0.0f);
-				ImGui::TextDisabled("%s", STR_C("A drive not described for the editor, as the one of a double switch, which may also set the speed or carry the ballast of the switch: the editor keeps it as it is, it stays where it is when the switch is moved and goes when the last switch it throws is deleted"));
-				ImGui::PopTextWrapPos();
-			}
-			else if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
-			                                     {1, STR_C("other side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"}}))
-				flip_switch_drive(Switch);
-		}
-		else if ((simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr) || (m_track_name.track == &Switch && m_track_name.uses.includes > 0))
-			ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
-		else
-		{
-			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
-			render_switch_drive_choice();
-			if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
-				place_switch_drive(Switch);
-		}
-		ImGui::PopID();
-	};
-	drive_ui(*track);
-	if (set.has_value())
-		drive_ui(*set->second);
-	{
-		bool frogs{track->SwitchExtension->m_frogs};
-		bool movable{track->SwitchExtension->m_movablenose};
-		char const *const frogtip{"Cuts the rails of the switch at its frog and lays wing rails and check rails.\n"
-		                          "Off for a switch whose include has its own model of them"};
-		char const *const nosetip{"The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails"};
-		ImGui::BeginDisabled(false == Global.Frogs);
-		if (frogs)
-			toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}, {STR_C("Movable nose"), &movable, nosetip}});
-		else
-			toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}});
-		ImGui::EndDisabled();
-		if (false == Global.Frogs && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip("%s", STR_C("Turned on with frogs yes in eu07.ini"));
-		if (Global.Frogs && (frogs != track->SwitchExtension->m_frogs || movable != track->SwitchExtension->m_movablenose))
-		{
-			auto const before{editor_track::capture(*track)};
-			track->SwitchExtension->m_frogs = frogs;
-			track->SwitchExtension->m_movablenose = movable;
-			push_track_snapshot({{track, before}});
-			editor_track::commit_parameters(*track);
-		}
-	}
-	if (false == m_switch.status.empty())
-		ImGui::TextWrapped("%s", m_switch.status.c_str());
-
 	auto &tool{m_switch};
-	ImGui::Separator();
 	auto const finish_set = [&](std::string const &Status) {
 		switch_store::follow();
 		records_to_history();
@@ -1474,9 +1388,51 @@ void editor_mode::render_turnout_ui()
 		item_tooltip("Mirrors the switch: the diverging track goes to the other side");
 	double low{0.0}, high{0.0}, reach{length};
 	auto const slides{switch_slides(*track) && (set.has_value() ? switch_slides(*set->second) && double_room(*set, low, high, reach, m_switch.status) : switch_room(*track, low, high, m_switch.status))};
-	ImGui::PushID("turnout");
-	if (ImGui::TreeNode(STR_C("More settings")))
+	// a switch with no drive can't be switched in the game: told, and put right, over the details
+	auto const driveless = [this](TTrack &Switch) {
+		auto const named{simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr};
+		return EditorIncludes.scanned() && false == find_switch_drive(Switch, false).has_value() && false == named && (m_track_name.track != &Switch || m_track_name.uses.includes == 0);
+	};
+	std::vector<TTrack *> switches{track};
+	if (set.has_value())
+		switches.push_back(set->second);
+	for (auto *each : switches)
+		if (driveless(*each))
+			render_switch_drive(*each, set.has_value());
+	// the name, the number, the rail and the kilometre of the switch, with what the scenery keeps of it, its drive and its frog, how it
+	// slides along its track
+	if (ImGui::CollapsingHeader(STR_C("Details##switchdetails")))
 	{
+		render_track_name(*track);
+		render_switch_record(*track);
+		if (angle > 1e-6)
+			ImGui::Text(STR_C("Angle 1:%.2f (%.4f deg), R in the entry %.0f m"), 1.0 / std::tan(angle), glm::degrees(angle), diverging.radius);
+		for (auto *each : switches)
+			if (false == driveless(*each))
+				render_switch_drive(*each, set.has_value());
+		{
+			bool frogs{track->SwitchExtension->m_frogs};
+			bool movable{track->SwitchExtension->m_movablenose};
+			char const *const frogtip{"Cuts the rails of the switch at its frog and lays wing rails and check rails.\n"
+			                          "Off for a switch whose include has its own model of them"};
+			char const *const nosetip{"The nose of the frog moves with the blades over to the wing rail of the track set, leaving no gap; the frog has no check rails"};
+			ImGui::BeginDisabled(false == Global.Frogs);
+			if (frogs)
+				toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}, {STR_C("Movable nose"), &movable, nosetip}});
+			else
+				toggle_chips("switchfrogs", {{STR_C("Frog and check rails made from the rails"), &frogs, frogtip}});
+			ImGui::EndDisabled();
+			if (false == Global.Frogs && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", STR_C("Turned on with frogs yes in eu07.ini"));
+			if (Global.Frogs && (frogs != track->SwitchExtension->m_frogs || movable != track->SwitchExtension->m_movablenose))
+			{
+				auto const before{editor_track::capture(*track)};
+				track->SwitchExtension->m_frogs = frogs;
+				track->SwitchExtension->m_movablenose = movable;
+				push_track_snapshot({{track, before}});
+				editor_track::commit_parameters(*track);
+			}
+		}
 		if (slides)
 		{
 			ImGui::PushItemWidth(100.0f);
@@ -1491,7 +1447,7 @@ void editor_mode::render_turnout_ui()
 		}
 		else if (false == set.has_value())
 		{
-			// one bent into a curve slides along it, the tracks next to it keeping a metre; its curve found only while the settings are open
+			// one bent into a curve slides along it, the tracks next to it keeping a metre; its curve found only while the details are open
 			std::vector<curve_sample> bentframe;
 			std::array<TTrack *, 2> bentsides{};
 			double bentstation{0.0};
@@ -1511,11 +1467,70 @@ void editor_mode::render_turnout_ui()
 					                  format(STR_C("Room on the curve: %.2f m back, %.2f m ahead"), back, ahead).c_str());
 			}
 		}
-		ImGui::TreePop();
+		ImGui::TextDisabled("%s", STR_C("The textures, the speed and the other properties of the switch are in the inspector"));
+	}
+	// what the tool told of the switch: the step says it was laid, the rest of it here, a refusal in red
+	std::string_view told{m_switch.status};
+	if (auto const cut{told.find('\n')}; laid && told.substr(0, cut).find(track->name()) != std::string_view::npos)
+		told = cut == std::string_view::npos ? std::string_view{} : told.substr(cut + 1);
+	if (false == told.empty())
+		editor_flow::message_line(told, m_switch.status == m_switch.refusal ? editor_flow::kRefused : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+}
+
+// the drive of the switch: the one by it, which can be put in place of another one or on the other side of the track, or none, told so
+// with what puts one there; Double: the switch of a double one, named
+void editor_mode::render_switch_drive(TTrack &Switch, bool const Double)
+{
+	ImGui::PushID(&Switch);
+	if (Double)
+		ImGui::TextUnformatted(Switch.name().c_str());
+	if (false == EditorIncludes.scanned())
+		ImGui::TextDisabled("%s", STR_C("Looking for the templates..."));
+	else if (auto const drive{find_switch_drive(Switch, false)})
+	{
+		auto const family{drive->family};
+		auto const variant{drive->index};
+		// a drive not described for the editor is shown by its file
+		auto const described{family >= 0 && family < static_cast<int>(m_switch.drives.size())};
+		auto const &file{drive->standing.file};
+		auto const shown{described ? m_switch.drives[family].name : format("%s (%s)", file.substr(file.find_last_of('/') + 1).c_str(), STR_C("not described"))};
+		if (begin_fields("##standingdrive", 0.3f))
+		{
+			field_row("Drive##standing");
+			if (false == described)
+				ImGui::TextUnformatted(shown.c_str());
+			else if (ImGui::BeginCombo("##standing", shown.c_str()))
+			{
+				for (int i = 0; i < static_cast<int>(m_switch.drives.size()); ++i)
+					if (ImGui::Selectable(m_switch.drives[i].name.c_str(), family == i) && i != family)
+						replace_switch_drive(Switch, i, false);
+				ImGui::EndCombo();
+			}
+			if (described && ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s\n%s", STR_C("Puts another drive in place of the drive of this switch, on the same side"), format(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str()).c_str());
+			ImGui::EndTable();
+		}
+		int side{((variant >> 1) == (variant & 1)) ? 0 : 1};
+		if (false == described)
+		{
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextDisabled("%s", STR_C("A drive not described for the editor, as the one of a double switch, which may also set the speed or carry the ballast of the switch: the editor keeps it as it is, it stays where it is when the switch is moved and goes when the last switch it throws is deleted"));
+			ImGui::PopTextWrapPos();
+		}
+		else if (segmented("standingside", side, {{0, STR_C("diverging side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"},
+		                                     {1, STR_C("other side"), "Puts the drive of the switch on the other side of the track: the same drive, its variant for the other side"}}))
+			flip_switch_drive(Switch);
+	}
+	else if ((simulation::Events.FindEvent(Switch.name() + "+") != nullptr && simulation::Events.FindEvent(Switch.name() + "-") != nullptr) || (m_track_name.track == &Switch && m_track_name.uses.includes > 0))
+		ImGui::TextDisabled(STR_C("Drive: events %s+ and %s- switch it, also in the map"), Switch.name().c_str(), Switch.name().c_str());
+	else
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("No drive: the switch can't be switched during the game"));
+		render_switch_drive_choice();
+		if (m_switch.drive >= 0 && ImGui::Button(STR_C("Put the drive by the switch")))
+			place_switch_drive(Switch);
 	}
 	ImGui::PopID();
-	ImGui::Separator();
-	ImGui::TextDisabled("%s", STR_C("The textures, the speed and the other properties of the switch are in the inspector"));
 }
 
 void editor_mode::render_path_events(TTrack &Track)
@@ -2100,7 +2115,8 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 	else if (m_track_tab == track_tab::turnout && current_switch_kind() == switch_kind::slip)
 		hints = {{"Press+drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Press+drag at a crossing", "of two straights at the skos of the slip"}, {"Press+drag on a curve", "the slip bent into it, in a side track only (11.4 pkt 4b)"}};
 	else if (m_track_tab == track_tab::turnout)
-		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"List in the panel", "the type of the switch"}, {"Press+drag on another track", "a switch on it"}};
+		// the template is a line of the panel, its list behind the pencil: the gestures of the view first
+		hints = {{"Press+drag on the track", "along: direction, sideways: side"}, {"Press+drag on another track", "a switch on it"}, {"Press+drag from a free end", "a switch going on from the end of a track"}, {"List in the panel", "the type of the switch"}};
 	else if (m_track_tab == track_tab::profile && m_profile.route.spans.empty())
 		hints = {{"LMB on a track", "the grade line of its whole line"}, {"Shift+LMB on more tracks", "the route between the outermost ones"}, {"Shift+drag a box", "the route over the tracks in it"}};
 	else if (m_track_tab == track_tab::profile && m_profile.picking)

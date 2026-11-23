@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
 #include "application/editormodeshared.h"
+#include "application/editorflow.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -175,6 +176,15 @@ bool template_row(int const Index, editor_track::switch_template const &Template
 	}
 	ImGui::PopID();
 	return clicked;
+}
+
+// the template chosen in a line: its name and the speed on its diverging track
+std::string template_summary(editor_track::switch_template const &Template)
+{
+	if (Template.source != nullptr)
+		return Template.title();
+	auto const speed{Template.double_slip && Template.type == "Skrz" ? 0.0 : speed_of(Template)};
+	return switch_name_translated(Template.title()) + (speed > 0.0 ? format(" · %.0f km/h", speed) : std::string{});
 }
 
 // the height of a list of the rows in its window, as high as the panel lets it
@@ -489,7 +499,7 @@ bool editor_mode::change_switch_template(TTrack &Switch, int const Index)
 	return true;
 }
 
-int editor_mode::render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup)
+int editor_mode::render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup, std::string const &Unlisted)
 {
 	auto &tool{m_switch};
 	auto const &templates{tool.templates};
@@ -546,18 +556,36 @@ int editor_mode::render_template_picker(char const *Id, std::function<bool(edito
 	}
 	if (speeds.size() > 1)
 	{
-		ImGui::TextDisabled("%s", STR_C("Speed on the diverging track"));
+		ImGui::TextDisabled("%s", STR_C("Diverging speed (km/h)"));
 		item_tooltip("Picks the usual switch of the rail for the speed; the others of the same speed are on the list under it");
+		ImGui::SameLine();
 		int speed{Chosen >= 0 && Chosen < count ? static_cast<int>(speed_of(templates[Chosen])) : -1};
 		std::vector<std::string> labels;
 		for (auto const &[value, index] : speeds)
-			labels.push_back(format("%d km/h", value));
+			labels.push_back(format("%d", value));
 		std::vector<segment_option> options;
 		auto label{labels.begin()};
 		for (auto const &[value, index] : speeds)
 			options.push_back({value, (label++)->c_str()});
 		if (choice_chips("##speeds", speed, options))
 			picked = speeds[speed];
+	}
+	// in the panel the template chosen is a line, which opens the list of them; the list is open while none is chosen
+	if (false == Popup)
+	{
+		auto *open{ImGui::GetStateStorage()->GetBoolRef(ImGui::GetID("##listopen"), false)};
+		auto const known{Chosen >= 0 && Chosen < count};
+		auto summary{Unlisted.empty() ? std::string{STR_C("Pick a template")} : Unlisted};
+		if (known)
+			summary = template_summary(templates[Chosen]);
+		auto const tooltip{known ? template_tooltip(templates[Chosen]) : std::string{}};
+		if (editor_flow::summary_line("##chosen", summary, *open, tooltip.c_str()))
+			*open = !*open;
+		if (false == *open && (known || false == Unlisted.empty()))
+		{
+			ImGui::PopID();
+			return picked == Chosen ? -1 : picked;
+		}
 	}
 	// by the skos, the steepest first; the own templates and the one chosen from elsewhere after them
 	std::vector<std::pair<double, std::string>> groups;
@@ -676,18 +704,16 @@ void editor_mode::render_switch_template(TTrack &Track, bool const Combo)
 			ImGui::EndTable();
 		}
 	}
-	else
+	else if (false == blocked.empty())
 	{
 		ImGui::TextDisabled("%s", STR_C("Template"));
 		ImGui::SameLine();
 		ImGui::TextUnformatted(current >= 0 ? template_name(tool.templates[current]).c_str() : own().c_str());
-		if (false == blocked.empty())
-		{
-			ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", blocked.c_str());
-			return;
-		}
-		picked = render_template_picker("##turnout", fits, rail, current, false);
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", blocked.c_str());
+		return;
 	}
+	else
+		picked = render_template_picker("##turnout", fits, rail, current, false, own());
 	if (picked >= 0)
 		change_switch_template(Track, picked);
 }

@@ -243,6 +243,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        download area / the question of the terrain open
 //   expect laypanel <ready|clicking|laid|extending> <shown|folded>   the state of the panel of the lay tool, as its step tells it, and
 //                                        whether its settings are shown or folded to the line of their summary
+//   expect switchpanel <ready|dragging|placed|selected>   the state of the panel of the switch tool, as its step tells it
 //   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
 //                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
 //                                        makes the run end with editor_selftest::failed_exit_code

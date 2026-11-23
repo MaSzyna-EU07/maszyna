@@ -14829,3 +14829,35 @@ msgstr "cofnij"
 
 msgid "Ctrl+Shift+wheel"
 msgstr "Ctrl+Shift+kółko"
+
+# scenery editor: the flow of the switch tool, a step at a time
+
+msgid "Press on a straight and drag along it and to the side"
+msgstr "Wciśnij na prostej i przeciągnij wzdłuż niej i w bok"
+
+msgid "Press on a straight or at a crossing and drag"
+msgstr "Wciśnij na prostej albo na skrzyżowaniu i przeciągnij"
+
+msgid "Press at a crossing of two straights and drag"
+msgstr "Wciśnij na skrzyżowaniu dwóch prostych i przeciągnij"
+
+msgid "Press on a straight and drag onto the other track"
+msgstr "Wciśnij na prostej i przeciągnij na drugi tor"
+
+msgid "Slip"
+msgstr "Krzyżowy"
+
+msgid "Diverging speed (km/h)"
+msgstr "Prędkość zwrotna (km/h)"
+
+msgid "Pick a template"
+msgstr "Wybierz szablon"
+
+msgid "Let go to insert"
+msgstr "Puść, aby wstawić"
+
+msgid "Switch %s inserted · Ctrl+Z undoes"
+msgstr "Rozjazd %s wstawiony · Ctrl+Z cofa"
+
+msgid "Switch %s: drag it along its track to move it"
+msgstr "Rozjazd %s: przeciągnij go wzdłuż toru, aby przesunąć"

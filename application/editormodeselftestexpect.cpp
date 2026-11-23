@@ -466,8 +466,8 @@ void expect_selected(std::string const &What, std::istringstream &Words, std::op
 	expectation(glm::distance(*Selected, wanted) <= tolerance, What, format("%.3f %.3f %.3f", Selected->x, Selected->y, Selected->z), format("%.3f %.3f %.3f within %.3f", wanted.x, wanted.y, wanted.z, tolerance));
 }
 
-// expect laypanel <state> <shown|folded>: the state the panel of the lay tool is in, as the step at its top tells it, and whether its
-// settings are shown or folded to the line of their summary
+// expect laypanel <state> <shown|folded>, expect switchpanel <state>: the state the panel of the tool is in, as the step at its top
+// tells it, and whether the settings of the lay tool are shown or folded to the line of their summary
 void expect_panel(std::string const &What, std::istringstream &Words, std::string const &Got)
 {
 	std::string wanted;
@@ -493,6 +493,7 @@ struct shown_state
 	std::map<std::string, bool> windows; // shortcuts, settings, weather, orthophoto
 	std::optional<glm::dvec3> selected; // where the node selected stands
 	std::string lay_panel; // the state of the panel of the lay tool and whether its settings are shown
+	std::string switch_panel; // the state of the panel of the switch tool
 };
 
 // the expectations of what the editor shows; false: no expectation of the kind
@@ -516,6 +517,8 @@ bool expect_shown(std::string const &Kind, std::string const &What, std::istring
 		expect_selected(What, Words, Shown.selected);
 	else if (Kind == "laypanel")
 		expect_panel(What, Words, Shown.lay_panel);
+	else if (Kind == "switchpanel")
+		expect_panel(What, Words, Shown.switch_panel);
 	else
 		return false;
 	return true;
@@ -584,13 +587,13 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
 		                  {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}, tool_name(ui()->mode()),
 		                  {{"shortcuts", m_shortcuts_open}, {"settings", m_settings_open}, {"weather", m_environment_open}, {"orthophoto", m_orthophoto_window}}, std::nullopt,
-		                  shown_lay_panel()};
+		                  shown_lay_panel(), shown_switch_panel()};
 		if (m_node != nullptr)
 			shown.selected = m_node->location();
 		if (false == expect_shown(kind, what, words, shown))
 			expectation(false, what, "no expectation " + kind,
 			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, "
-			            "selected, laypanel or steps");
+			            "selected, laypanel, switchpanel or steps");
 	}
 	return selftest_result::handled;
 }
@@ -602,4 +605,14 @@ std::string editor_mode::shown_lay_panel() const
 	// the settings are shown before the first point and after the line is laid, folded to their line while the points are clicked
 	auto const shown{panel == lay_state::ready || panel == lay_state::laid || m_lay.settings_open};
 	return std::string{states[static_cast<int>(panel)]} + (shown ? " shown" : " folded");
+}
+
+std::string editor_mode::shown_switch_panel() const
+{
+	if (m_switch.placing)
+		return "dragging";
+	auto const *track{selected_track()};
+	if (track == nullptr || track->eType != tt_Switch)
+		return "ready";
+	return just_laid(track) ? "placed" : "selected";
 }

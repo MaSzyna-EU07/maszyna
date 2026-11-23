@@ -1580,6 +1580,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		glm::dvec3 mouse{0.0};
 		editor_track::straight line;
 		std::string status;
+		std::string refusal; // the last of the statuses which told a switch refused, told in red while it's the status
 		char name[64]{};
 		struct drive_family
 		{
@@ -1682,7 +1683,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the template to choose: the speeds on the diverging track as chips, the templates of the rail by their skos, all the others
 	// folded under. Fits: those of the kind wanted; Rail: of the track, empty when it doesn't tell; Popup: inside a combo, with no
 	// windows of its own. Gives the index picked, -1 while none is
-	int render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup);
+	// in the panel (not Popup) the template chosen is a line, Unlisted where it's of none of them, which opens the list
+	int render_template_picker(char const *Id, std::function<bool(editor_track::switch_template const &)> const &Fits, std::string const &Rail, int const Chosen, bool const Popup, std::string const &Unlisted = {});
 	// the template of the selected switch, slip or crossing, changed with a pick: in a combo for the inspector, else in full; nothing
 	// for another track
 	void render_switch_template(TTrack &Track, bool const Combo);
@@ -1953,8 +1955,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		extending
 	};
 	lay_state lay_panel_state() const;
-	// the state of the panel of the lay tool in words, for the expectations of the self-test
+	// the states of the panels of the lay tool and of the switch tool in words, for the expectations of the self-test
 	std::string shown_lay_panel() const;
+	std::string shown_switch_panel() const;
 	// the line shown at a glance: its length, its curves, the speed of the slowest one and how many are below the norms for the speed
 	// it's designed for
 	struct lay_quality
@@ -2022,6 +2025,14 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// how much more the curve at the cursor was turned last to reach it, the first one tried for the next line
 	mutable double m_turned_last{0.0};
 	void render_switch_ui();
+	// what the switch tool places, as a bar of its kinds
+	void render_switch_kinds(switch_kind const Kind);
+	// a switch dragged: the length of its template, the side its diverging track goes to and the speed on it, what keeps it from being
+	// laid; the side 1 the right
+	void render_switch_drag();
+	int switch_drag_side(std::string &Refusal) const;
+	// the track was made by the last step of the history, with those made together with it
+	bool just_laid(TTrack const *Track) const;
 	void render_switch_timbers();
 	void render_rail_profile_hint(TTrack &Track);
 	bool start_switch_placement();
@@ -2394,6 +2405,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
 	std::string track_mode_name() const;
 	void render_turnout_ui();
+	void render_switch_drive(TTrack &Switch, bool const Double);
 	struct track_name_edit
 	{
 		TTrack const *track{nullptr};

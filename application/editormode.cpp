@@ -1100,6 +1100,7 @@ std::string editor_mode::switch_refused(std::string Text)
 {
     // not in the status line as well: told there, it stayed after the next switch was laid
     ui()->set_refusal(Text);
+    m_switch.refusal = Text;
     return Text;
 }
 
