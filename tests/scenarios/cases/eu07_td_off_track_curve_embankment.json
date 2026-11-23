@@ -23,9 +23,9 @@
       "type": "leaves_track",
       "vehicle": "{{vehicle}}_off",
       "cause": "overturned",
-      "min_offset": 5,
-      "min_distance": 30,
-      "max_distance": 300,
+      "min_offset": 40,
+      "min_distance": 150,
+      "max_distance": 280,
       "lying": true
     }
   ]

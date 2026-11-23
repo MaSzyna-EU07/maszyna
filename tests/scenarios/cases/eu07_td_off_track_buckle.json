@@ -37,8 +37,15 @@
     {
       "type": "leaves_track",
       "vehicle": "{{vehicle}}",
-      "min_offset": 0.3,
-      "max_distance": 60
+      "min_offset": 3,
+      "max_distance": 45,
+      "min_distance": 15,
+      "lying": true
+    },
+    {
+      "type": "consist_folds",
+      "vehicles": "{{vehicle}},{{vehicle}}_w1",
+      "min_bend": 15
     }
   ]
 }

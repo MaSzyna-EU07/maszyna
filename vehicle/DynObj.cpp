@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <iterator>
@@ -3029,6 +3030,36 @@ glm::dvec3 level_left_of( glm::dvec3 const &Front ) {
     return glm::dvec3 { Front.z, 0.0, -Front.x };
 }
 
+// the end of the vehicle where it meets the one coupled to it: the middle of its buffer beam, the way it faces. off the
+// track, over its base on the ground as it stands: rolled over, its ends go with it as far as the coupling holds them,
+// and the buffers of the side it rolled to miss those of an upright one
+derail_motion::end_point end_point_of( TDynamicObject const &Vehicle, int const End ) {
+    auto const facing { End == end::front ? 1.0 : -1.0 };
+    auto const &motion { Vehicle.MoverParameters->OffTrack };
+    glm::dvec3 const front { Vehicle.VectorFront().x, 0.0, Vehicle.VectorFront().z };
+    auto const length { glm::length( front ) };
+    auto const axis { length > 1e-6 ? front / length : glm::dvec3 { 0.0, 0.0, 1.0 } };
+    auto const middle { motion.active() ? motion.base() : Vehicle.GetPosition() };
+    return derail_motion::end_point {
+        middle + glm::dvec3 { 0.0, derail_motion::buffer_height, 0.0 } + axis * ( facing * 0.5 * Vehicle.MoverParameters->Dim.L ),
+        axis * facing,
+        motion.active() ? motion.tipping() : 0.0 };
+}
+
+// the push of the buffers on the end of the vehicle [N], negative the pull of its coupling
+double compression_of( TMoverParameters const &Vehicle, int const End ) {
+    return ( End == end::front ? -1.0 : 1.0 ) * Vehicle.Couplers[ End ].CForce;
+}
+
+// the time spent off the track in a frame which makes it worth a warning [s]
+constexpr double off_track_slow { 0.02 };
+
+using off_track_clock = std::chrono::steady_clock;
+
+double seconds_since( off_track_clock::time_point const Start ) {
+    return std::chrono::duration<double>( off_track_clock::now() - Start ).count();
+}
+
 std::string_view side_name( int const Side ) {
     if( Side > 0 ) {
         return "left";
@@ -3037,6 +3068,15 @@ std::string_view side_name( int const Side ) {
 }
 
 } // namespace
+
+double TDynamicObject::off_track_gap( int const End ) const {
+
+    auto const *neighbour { MoverParameters->Neighbours[ End ].vehicle };
+    if( neighbour == nullptr ) {
+        return 0.0;
+    }
+    return derail_motion::meet( end_point_of( *this, End ), end_point_of( *neighbour, MoverParameters->Neighbours[ End ].vehicle_end ) ).gap;
+}
 
 double TDynamicObject::off_track_offset() const {
 
@@ -3093,13 +3133,31 @@ void TDynamicObject::gather_off_track_terrain( double const Reach ) {
     auto const &position { MoverParameters->OffTrack.active() ? MoverParameters->OffTrack.current().position : vPosition };
     m_offtrackmin = glm::dvec2 { position.x - Reach, position.z - Reach };
     m_offtrackmax = glm::dvec2 { position.x + Reach, position.z + Reach };
-    auto const triangles { scenery_ground( m_offtrackmin, m_offtrackmax ) };
+    auto const started { off_track_clock::now() };
+    auto triangles { scenery_ground( m_offtrackmin, m_offtrackmax ) };
+    m_offtrackgathered = m_offtracktotal;
+    if( triangles.size() > off_track_triangles ) {
+        // a scenery dense enough to make it slow: the triangles nearest to it are enough
+        std::nth_element( triangles.begin(), triangles.begin() + off_track_triangles, triangles.end(),
+            [ &position ]( auto const &Left, auto const &Right ) {
+                auto const distance = [ &position ]( auto const &Triangle ) {
+                    auto const middle { ( Triangle[ 0 ] + Triangle[ 1 ] + Triangle[ 2 ] ) / 3.0 };
+                    return std::max( std::abs( middle.x - position.x ), std::abs( middle.z - position.z ) ); };
+                return distance( Left ) < distance( Right ); } );
+        triangles.resize( off_track_triangles );
+        ErrorLog( std::format( "derailment: warning: {} found more than {} triangles of terrain around it, took the nearest", MoverParameters->Name, off_track_triangles ) );
+    }
     if( triangles.empty() ) {
         // a scenery without terrain: level with the top of the ballast
         m_offtrackterrain.reset();
-        return;
     }
-    m_offtrackterrain = std::make_shared<derail_motion::mesh_ground>( triangles, m_offtrackmin, m_offtrackmax );
+    else {
+        m_offtrackterrain = std::make_shared<derail_motion::mesh_ground>( triangles, m_offtrackmin, m_offtrackmax );
+    }
+    auto const took { seconds_since( started ) };
+    if( took > off_track_slow ) {
+        ErrorLog( std::format( "derailment: warning: gathering the terrain of {:.0f} m around {} took {:.0f} ms ({} triangles)", Reach, MoverParameters->Name, took * 1000.0, triangles.size() ) );
+    }
 }
 
 void TDynamicObject::begin_off_track() {
@@ -3113,6 +3171,7 @@ void TDynamicObject::begin_off_track() {
     shape.centre_of_gravity = mover.centre_of_gravity();
     shape.contact_spacing = derailment::contact_spacing( mover.TrackW );
     shape.base = std::max( static_cast<double>( fAxleDist ), 1.0 );
+    shape.mass = mover.TotalMass;
 
     derail_motion::start start;
     start.position = vPosition;
@@ -3125,11 +3184,16 @@ void TDynamicObject::begin_off_track() {
 
     // the terrain as far as it may slide, and some
     auto const slide { derail_motion::stopping_distance( mover.V, derailment::off_rails_friction ).value_or( 0.0 ) };
+    m_offtracktotal = 0.0;
     gather_off_track_terrain( std::min( slide + mover.Dim.L + 50.0, 600.0 ) );
     m_offtracksite = derail_motion::site { m_offtrackterrain.get(), track_bed() };
-    mover.OffTrack.begin( start, shape, m_offtracksite );
+    // each vehicle its own way of going off, from the seed of the run (the same seed, the same way)
+    auto const scatter { derail_motion::draw_scatter( derail_motion::seed_of( Global.random_seed, mover.Name ) ) };
+    mover.OffTrack.begin( start, shape, m_offtracksite, scatter );
     m_pulledoff = {};
     m_offtracklogdue = 0.0;
+    m_offtrackslowdue = 0.0;
+    m_offtrackaxles = 0.0;
 
     auto const heading { mover.OffTrack.heading() };
     auto const front { glm::dvec3 { vFront.x, 0.0, vFront.z } };
@@ -3142,14 +3206,20 @@ void TDynamicObject::begin_off_track() {
         "derailment: {} leaves the track at {:.0f} km/h on track {}, heading turned {:.1f} deg to the {}, the outside of the curve to the {}; {} around it",
         mover.Name, std::abs( mover.V ) * 3.6, MyTrack != nullptr ? MyTrack->name() : std::string { "(none)" },
         std::abs( glm::degrees( turn ) ), side_name( turn >= 0.0 ? 1 : -1 ), side_name( start.outward ), terrain ) );
+    WriteLog( std::format(
+        "derailment: {} scattered by {:+.2f} deg of departure, {:+.2f} deg of yaw at {:+.3f} rad/s, the friction under its ends x{:.2f} / x{:.2f}{}",
+        mover.Name, glm::degrees( scatter.departure ), glm::degrees( scatter.yaw ), scatter.yaw_rate, scatter.friction_front, scatter.friction_rear,
+        scatter.dig_in >= 0.0 ? std::format( ", its leading end digs in after {:.2f} s, x{:.2f} for {:.2f} s", scatter.dig_in, scatter.dig_in_friction, scatter.dig_in_time ) : std::string {} ) );
 }
 
 void TDynamicObject::move_off_track( double const Distance ) {
 
+    auto const started { off_track_clock::now() };
     auto &motion { MoverParameters->OffTrack };
     auto const time { std::exchange( m_offtracktime, 0.0 ) };
-    // near the edge of the terrain gathered, the terrain further on
-    if( m_offtrackterrain != nullptr && Distance != 0.0 ) {
+    m_offtracktotal += time;
+    // near the edge of the terrain gathered, the terrain further on; not more than once a second, whatever happens
+    if( m_offtrackterrain != nullptr && Distance != 0.0 && m_offtracktotal - m_offtrackgathered >= 1.0 ) {
         auto const &position { motion.current().position };
         constexpr double margin { 30.0 };
         if( position.x - margin < m_offtrackmin.x || position.x + margin > m_offtrackmax.x
@@ -3160,12 +3230,32 @@ void TDynamicObject::move_off_track( double const Distance ) {
         }
     }
     m_offtracksite.bed( track_bed() );
+    // the buffers and the couplings of its ends push and pull it, at an angle to it where the vehicle coupled there is
+    std::array<derail_motion::end_force, 2> ends {};
+    for( int end = end::front; end <= end::rear; ++end ) {
+        auto const *neighbour { MoverParameters->Neighbours[ end ].vehicle };
+        auto const compression { compression_of( *MoverParameters, end ) };
+        if( neighbour == nullptr || compression == 0.0 ) {
+            continue;
+        }
+        ends[ end ] = derail_motion::force_on(
+            derail_motion::meet( end_point_of( *this, end ), end_point_of( *neighbour, MoverParameters->Neighbours[ end ].vehicle_end ) ), compression );
+    }
     auto const before { motion.current().position };
-    motion.step( time, Distance, MoverParameters->V, m_offtracksite );
+    auto const reversals { motion.reversals() };
+    motion.step( time, Distance, MoverParameters->V, m_offtracksite, ends );
+    if( ( motion.reversals() - reversals ) % 2 != 0 ) {
+        // the body turned about against the way it goes: the vehicle goes rear first, its speed the other way along it
+        MoverParameters->V = -MoverParameters->V;
+    }
     auto const &pose { motion.current() };
     // the axles go along the track as far as the vehicle went along it, for the track nearest to it: the vehicles on it
-    // find it there, the events of the track are passed
-    move_axles( glm::dot( pose.position - before, track_front() ) );
+    // find it there, the events of the track are passed. by 10 cm at least: a body turning or rocking in place moves
+    // the axles back and forth by millimetres, which over the end of a track would fire its events every frame
+    m_offtrackaxles += glm::dot( pose.position - before, track_front() );
+    if( std::abs( m_offtrackaxles ) >= 0.1 ) {
+        move_axles( std::exchange( m_offtrackaxles, 0.0 ) );
+    }
 
     vPosition = pose.position;
     vFront = pose.front;
@@ -3179,6 +3269,14 @@ void TDynamicObject::move_off_track( double const Distance ) {
     m_offtrackplaced = true;
 
     pull_neighbours( Distance );
+
+    // what it cost: a frame of the vehicle off the track should take well under a millisecond
+    auto const took { seconds_since( started ) };
+    m_offtrackslowdue -= time;
+    if( took > off_track_slow && m_offtrackslowdue <= 0.0 ) {
+        m_offtrackslowdue = 1.0;
+        ErrorLog( std::format( "derailment: warning: moving {} off the track took {:.0f} ms in a frame of {:.3f} s", MoverParameters->Name, took * 1000.0, time ) );
+    }
 }
 
 void TDynamicObject::pull_neighbours( double const Distance ) {
@@ -3193,28 +3291,29 @@ void TDynamicObject::pull_neighbours( double const Distance ) {
         }
         auto &other { *neighbour->MoverParameters };
         auto const otherend { MoverParameters->Neighbours[ end ].vehicle_end };
-        // the coupling pulls (or the buffers push) the end of the other vehicle towards (from) the middle of this one,
-        // at an angle to its axis
-        auto const line { vPosition - neighbour->vCoulpler[ otherend ] };
-        glm::dvec3 const flat { line.x, 0.0, line.z };
         glm::dvec3 const otherfront { neighbour->vFront.x, 0.0, neighbour->vFront.z };
-        if( glm::length( flat ) < 0.1 || glm::length( otherfront ) < 1e-6 ) {
+        if( glm::length( otherfront ) < 1e-6 ) {
             continue;
         }
+        // the coupling pulls the end of the other vehicle towards the beam of this one, the buffers push it along the
+        // bisector of the bend between them: at an angle to its axis, the part across it on its leading wheels
+        auto const compression { compression_of( other, otherend ) };
+        auto const force { derail_motion::force_on( derail_motion::meet( end_point_of( *neighbour, otherend ), end_point_of( *this, end ) ), compression ).force };
         auto const axis { glm::normalize( otherfront ) };
-        auto const angle { std::acos( std::clamp( std::abs( glm::dot( glm::normalize( flat ), axis ) ), 0.0, 1.0 ) ) };
-        auto const force { other.Couplers[ otherend ].CForce };
+        auto const across { glm::dot( force, level_left_of( axis ) ) };
+        auto const angle { std::atan2( std::abs( across ), std::abs( glm::dot( force, axis ) ) ) };
+        auto const magnitude { glm::length( glm::dvec3 { force.x, 0.0, force.z } ) };
         auto const mass { other.TotalMass - other.Mred };
-        auto const ratio { derail_motion::pull_ratio( force, angle, mass, other.NAxles ) };
+        auto const ratio { derail_motion::pull_ratio( magnitude, angle, mass, other.NAxles ) };
         if( false == m_pulledoff[ end ].update( ratio >= derailment::climbing_limit, Distance ) ) {
             continue;
         }
-        // towards the side of the other vehicle this one is on
-        auto const side { glm::dot( flat, level_left_of( axis ) ) >= 0.0 ? 1 : -1 };
+        // the way the force across it goes: towards this one pulled, away from it pushed
+        auto const side { across >= 0.0 ? 1 : -1 };
         other.pull_off(
             side,
-            mass > 0.0 ? std::abs( force * std::sin( angle ) ) / mass : 0.0,
-            std::format( "Y/Q {:.2f} from the coupling with {} at {:.0f} deg, {:.0f} kN", ratio, MoverParameters->Name, glm::degrees( angle ), std::abs( force ) / 1000.0 ) );
+            mass > 0.0 ? std::abs( across ) / mass : 0.0,
+            std::format( "Y/Q {:.2f} from the {} of {} at {:.0f} deg, {:.0f} kN", ratio, compression > 0.0 ? "buffers" : "coupling", MoverParameters->Name, glm::degrees( angle ), magnitude / 1000.0 ) );
         m_pulledoff[ end ].reset();
     }
 }
@@ -3233,9 +3332,9 @@ void TDynamicObject::update_off_track( double const Deltatime ) {
     }
     m_offtracklogdue = ( resting ? -1.0 : 1.0 );
     WriteLog( std::format(
-        "derailment: {} {} {:.1f} m from where it left the rails, {:.1f} m from the axis of the track, at {:.1f} km/h, sliding sideways at {:.1f} m/s, tipped {:.0f} deg, roll {:.0f} deg{}",
+        "derailment: {} {} {:.1f} m from where it left the rails, {:.1f} m from the axis of the track, at {:.1f} km/h, sliding sideways at {:.1f} m/s, tipped {:.0f} deg, roll {:.0f} deg, yaw {:+.1f} deg turning at {:+.1f} deg/s{}",
         MoverParameters->Name, resting ? "came to rest" : "off the track", motion.travelled(), off_track_offset(), std::abs( MoverParameters->V ) * 3.6, motion.sideways(),
-        glm::degrees( motion.tipping() ), glm::degrees( motion.roll() ), motion.lying() ? ", lying on its side" : "" ) );
+        glm::degrees( motion.tipping() ), glm::degrees( motion.roll() ), glm::degrees( motion.yaw() ), glm::degrees( motion.yaw_rate() ), motion.lying() ? ", lying on its side" : "" ) );
 }
 
 void TDynamicObject::AttachNext(TDynamicObject *Object, int iType)
@@ -3590,6 +3689,25 @@ bool TDynamicObject::Update(double dt, double dt1)
 {
 	if (dt1 == 0.0)
         return true; // Ra: pauza
+    // physics.derailment new: all of the update of a vehicle off the track, timed; a warning once a second at most when it
+    // takes long, to find what makes a derailment slow
+    struct off_track_watch {
+        TDynamicObject &vehicle;
+        double frame;
+        off_track_clock::time_point started { off_track_clock::now() };
+        ~off_track_watch() {
+            auto const took { seconds_since( started ) };
+            vehicle.m_offtrackupdatedue -= frame;
+            if( took > off_track_slow && vehicle.m_offtrackupdatedue <= 0.0 ) {
+                vehicle.m_offtrackupdatedue = 1.0;
+                ErrorLog( std::format( "derailment: warning: the update of {} off the track took {:.0f} ms in a frame of {:.3f} s", vehicle.MoverParameters->Name, took * 1000.0, frame ) );
+            }
+        }
+    };
+    std::optional<off_track_watch> watch;
+    if( MoverParameters->OffTrack.active() ) {
+        watch.emplace( *this, dt1 );
+    }
     if (!MoverParameters->PhysicActivation &&
         !MechInside) { // to drugie, bo będąc w maszynowym blokuje się fizyka
         // physics.derailment new: a vehicle off the track stopped along its heading still settles: it slides down a
@@ -8190,6 +8308,11 @@ TDynamicObject::update_neighbours() {
 //            neighbour.vehicle = coupler.Connected;
 //            neighbour.vehicle_end = coupler.ConnectedNr;
             neighbour.distance = TMoverParameters::CouplerDist( MoverParameters, coupler.Connected );
+            if( MoverParameters->OffTrack.active() || neighbour.vehicle->MoverParameters->OffTrack.active() ) {
+                // physics.derailment new: off the track the bodies turn against each other, the ends meet where they are
+                // (the distance between the middles less the half lengths would press the buffers of a bent pair)
+                neighbour.distance = off_track_gap( end );
+            }
             // take into account potential adapters attached to the couplers
             auto const &othercoupler { neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] };
             neighbour.distance -= coupler.adapter_length;
@@ -8218,6 +8341,10 @@ TDynamicObject::update_neighbours() {
              && neighbour.distance < (neighbour.vehicle->MoverParameters->CategoryFlag == 2 ? 50 : 100) ) {
                 // at short distances (re)calculate range between couplers directly
                 neighbour.distance = TMoverParameters::CouplerDist( MoverParameters, neighbour.vehicle->MoverParameters );
+                if( MoverParameters->OffTrack.active() || neighbour.vehicle->MoverParameters->OffTrack.active() ) {
+                    // physics.derailment new: the ends where they are, as for a coupled pair
+                    neighbour.distance = off_track_gap( end );
+                }
                 // take into account potential adapters attached to the couplers
                 auto const &othercoupler { neighbour.vehicle->MoverParameters->Couplers[ neighbour.vehicle_end ] };
                 neighbour.distance -= coupler.adapter_length;

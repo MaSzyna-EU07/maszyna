@@ -811,9 +811,50 @@ def check_leaves_track(box, vehicle, cause=None, min_offset=None, max_offset=Non
     return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
 
 
+def check_consist_folds(box, vehicles, min_bend, min_folds=1, alternate=False, both_sides=False):
+    """The vehicles of a train (names, front to back, comma separated) left the track (physics.derailment new) and came
+    to rest folded up: at least `min_folds` of the bends between neighbours at rest (the angle between their headings,
+    either way along) are `min_bend` degrees or more; with `alternate` the bends of neighbouring joints turn opposite
+    ways, a zigzag; with `both_sides` some of them rest on one side of the track and some on the other."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    names = [name.strip() for name in vehicles.split(",") if name.strip()]
+    rests = []
+    for name in names:
+        number = numbers.get(name.lower())
+        rests.append(next((d for d in box.derailments if number is not None and d.vehicle == number and d.phase == 1), None))
+    if all(rest is None for rest in rests):
+        return False, f"none of {', '.join(names)} came to rest off the track"
+    bends = []
+    for first, second in zip(rests, rests[1:]):
+        if first is None or second is None:
+            bends.append(None)
+            continue
+        # either way along: a vehicle turned about in the train has its heading the other way
+        bends.append(math.degrees(math.remainder(math.remainder(second.heading - first.heading, 2 * math.pi), math.pi)))
+    folds = [bend for bend in bends if bend is not None and abs(bend) >= min_bend]
+    sides = {1 if rest.offset > 0 else -1 for rest in rests if rest is not None and abs(rest.offset) > 0.5}
+    detail = "at rest: " + "; ".join(
+        f"{name} " + ("on the track" if rest is None else
+                      f"{rest.travelled:.0f} m on, {rest.offset:+.1f} m, heading {math.degrees(rest.heading):+.0f} deg")
+        for name, rest in zip(names, rests))
+    detail += "; bends " + ", ".join("-" if bend is None else f"{bend:+.0f}" for bend in bends) + " deg"
+    failed = []
+    if len(folds) < min_folds:
+        failed.append(f"{len(folds)} bend(s) of {min_bend} deg or more, wanted {min_folds}")
+    if alternate:
+        pairs = [(a, b) for a, b in zip(bends, bends[1:]) if a is not None and b is not None
+                 and abs(a) >= min_bend and abs(b) >= min_bend]
+        if not pairs or any(a * b > 0 for a, b in pairs):
+            failed.append("the bends don't alternate")
+    if both_sides and len(sides) < 2:
+        failed.append("all on one side of the track")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
     "leaves_track": check_leaves_track,
+    "consist_folds": check_consist_folds,
     "couples": check_couples,
     "parts": check_parts,
     "driver_changes": check_driver_changes,

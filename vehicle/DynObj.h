@@ -753,6 +753,9 @@ private:
     // physics.derailment new, the vehicle off the track (vehicle/derailmotion.h): the offset of its body from the axis of
     // the track at the place nearest to it, to the left of its front positive [m]; 0 while it's on the track
     double off_track_offset() const;
+    // the gap between the ends of the vehicle and the one at its End, as they meet off the track [m]: negative the
+    // buffers pressed in
+    double off_track_gap( int End ) const;
 private:
     // the axles moved along their tracks by the distance
     void move_axles( double Distance );
@@ -783,6 +786,13 @@ private:
     derail_motion::site m_offtracksite;
     double m_offtracktime { 0.0 }; // of the frame, for the motion
     double m_offtracklogdue { 0.0 };
+    double m_offtracktotal { 0.0 }; // the time off the track [s]
+    double m_offtrackgathered { 0.0 }; // the time the terrain was gathered at [s]
+    double m_offtrackslowdue { 0.0 }; // till another warning of a slow frame [s]
+    double m_offtrackupdatedue { 0.0 }; // and of a slow update
+    double m_offtrackaxles { 0.0 }; // the move along the track the axles didn't make yet [m]
+    // the most triangles of terrain taken around the vehicle off the track
+    static constexpr std::size_t off_track_triangles { 400000 };
     bool m_offtrackplaced { false }; // placed off the track: placed on it again once it's back on the rails
     std::array<derailment::stretch, 2> m_pulledoff; // the distance the coupling of an end pulled the vehicle coupled there over the climbing limit
 public:

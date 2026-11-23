@@ -447,6 +447,12 @@ the row instead, logged by builds from this branch on.
   `physics.derailment new` the black box has the vehicle leave the track and come to rest off it; at rest its
   distance from the axis of the track (either side) and the distance it went on the ground are within the
   bounds, and it lies on its side, or not, as `lying` says.
+- `consist_folds` `vehicles` (the names of the train front to back, comma separated), `min_bend`, optional
+  `min_folds` (1), `alternate`, `both_sides`: with `physics.derailment new` the train came to rest folded up off
+  the track: at least `min_folds` of the bends between neighbours at rest (the angle between their headings in the
+  black box, either way along) are `min_bend` degrees or more; with `alternate` neighbouring bends of that size turn
+  opposite ways (a zigzag), with `both_sides` some of the vehicles rest on either side of the track. A vehicle that
+  stayed on the rails has no bend with its neighbours.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
