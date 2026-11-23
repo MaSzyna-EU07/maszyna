@@ -112,6 +112,8 @@ struct line_class
 	track_kind track{track_kind::main};
 	double load{5.0}; // Tg a year, for the cant excess (ST-T1-A6 tab. 9.8)
 	unsigned features{0}; // platform, station, ballastless, suburban, tilting
+
+	bool operator==(line_class const &) const = default;
 };
 
 // the speed of the slow trains of a line of the traffic and the highest speed given: the line type of ST-T1-A6 tab. 8.1 with the

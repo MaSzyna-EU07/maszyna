@@ -11,6 +11,7 @@ http:
 #include "editor/editorAlignment.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/layout/layoutElements.hpp"
 #include "utilities/translation.h"
 
 #include <algorithm>
@@ -44,64 +45,15 @@ double ceil_to(double const Value, double const Step)
 	return std::ceil(Value / Step - 1e-9) * Step;
 }
 
-struct local_point
-{
-	double x{0.0};
-	double y{0.0};
-	double angle{0.0};
-};
+using layout::blossom;
+using layout::local_point;
+using layout::spiral_point;
 
 local_point transition_point(transition_shape const Shape, double const Length, double const Radius, double const Parameter)
 {
-	if (Length <= 0.0 || Radius <= 0.0)
-		return {};
 	if (Shape == transition_shape::cubic_parabola)
-	{
-		auto const x{Length * Parameter};
-		return {x, x * x * x / (6.0 * Radius * Length), std::atan(x * x / (2.0 * Radius * Length))};
-	}
-	auto const distance{Length * Parameter};
-	auto const angle = [&](double const S) { return S * S / (2.0 * Radius * Length); };
-	// Simpson over 64 steps at most keeps a transition of a radian within a millimetre, however long
-	int const steps{std::clamp(static_cast<int>(std::ceil(distance / 0.5)) * 2, 8, 64)};
-	double const h{distance / steps};
-	double x{0.0};
-	double y{0.0};
-	for (int i = 0; i <= steps; ++i)
-	{
-		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
-		auto const a{angle(i * h)};
-		x += weight * std::cos(a);
-		y += weight * std::sin(a);
-	}
-	return {x * h / 3.0, y * h / 3.0, angle(distance)};
-}
-
-local_point spiral_point(double const Start, double const End, double const Length, double const Distance)
-{
-	if (Distance <= 0.0)
-		return {};
-	// an arc, or a straight, has its point at once
-	if (Start == End)
-	{
-		auto const angle{Start * Distance};
-		if (std::abs(angle) < 1e-9)
-			return {Distance, 0.0, 0.0};
-		return {std::sin(angle) / Start, (1.0 - std::cos(angle)) / Start, angle};
-	}
-	auto const heading = [&](double const S) { return Start * S + (End - Start) * S * S / (2.0 * std::max(Length, 1e-9)); };
-	int const steps{std::clamp(static_cast<int>(std::ceil(Distance / 0.5)) * 2, 8, 64)};
-	double const h{Distance / steps};
-	double x{0.0};
-	double y{0.0};
-	for (int i = 0; i <= steps; ++i)
-	{
-		double const weight = (i == 0 || i == steps) ? 1.0 : (i % 2 ? 4.0 : 2.0);
-		auto const a{heading(i * h)};
-		x += weight * std::cos(a);
-		y += weight * std::sin(a);
-	}
-	return {x * h / 3.0, y * h / 3.0, heading(Distance)};
+		return layout::parabola_point(Length, Radius, Parameter);
+	return layout::clothoid_point(Length, Radius, Parameter);
 }
 
 struct compound_curve
@@ -255,16 +207,6 @@ double signed_cant(result const &Result, element const &Element, double const Di
 	auto const previous{std::prev(next)};
 	auto const span{next->x - previous->x};
 	return span < 1e-9 ? next->y : previous->y + (next->y - previous->y) * (chainage - previous->x) / span;
-}
-
-glm::dvec2 blossom(std::array<glm::dvec2, 4> const &Points, double const A, double const B, double const C)
-{
-	glm::dvec2 r[3], s[2];
-	for (int i = 0; i < 3; ++i)
-		r[i] = glm::mix(Points[i], Points[i + 1], A);
-	for (int i = 0; i < 2; ++i)
-		s[i] = glm::mix(r[i], r[i + 1], B);
-	return glm::mix(s[0], s[1], C);
 }
 
 std::size_t element_pieces(element const &Element, transition_shape const Shape, int const Transitions, double const Arcangle)
