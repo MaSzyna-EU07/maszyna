@@ -341,9 +341,16 @@ double between_curves(double const Speed, double const Curvature0, double const 
 
 } // namespace
 
+double curve_speed(design const &Design, vertex const &Vertex)
+{
+	return Vertex.speed > 0.0 ? std::min(Design.speed, Vertex.speed) : Design.speed;
+}
+
 bool meets_norms(curve_report const &Curve, design const &Design)
 {
 	auto const &norms{Design.norms};
+	// at the speed the curve is laid for, a curve slowed down below the speed of the design at its own
+	auto const speed{Curve.speed > 0.0 ? Curve.speed : Design.speed};
 	auto sharpest{Curve.radius};
 	for (auto const radius : Curve.radii)
 		sharpest = std::min(sharpest, radius);
@@ -356,16 +363,16 @@ bool meets_norms(curve_report const &Curve, design const &Design)
 	if ((Curve.curvature_in > 0.0 || Curve.curvature_out > 0.0) && false == Curve.radii.empty() && Curve.cants.size() == Curve.radii.size())
 	{
 		auto const required = [&](double const Curvature, double const Cant, double const Radius, double const Arccant) {
-			return Curvature > 0.0 ? between_curves(Design.speed, Curvature, Cant, 1.0 / Radius, Arccant, norms) : transition_length(Design.speed, Radius, Arccant, norms);
+			return Curvature > 0.0 ? between_curves(speed, Curvature, Cant, 1.0 / Radius, Arccant, norms) : transition_length(speed, Radius, Arccant, norms);
 		};
 		return Curve.transition_in + 1e-6 >= required(Curve.curvature_in, Curve.cant_in, Curve.radii.front(), Curve.cants.front()) &&
 		       Curve.transition_out + 1e-6 >= required(Curve.curvature_out, Curve.cant_out, Curve.radii.back(), Curve.cants.back());
 	}
 	if (Curve.radii.size() > 1 && Curve.cants.size() == Curve.radii.size())
 		// a compound curve ramps the cant of its first arc in and the one of its last arc out
-		return Curve.transition_in + 1e-6 >= transition_length(Design.speed, Curve.radii.front(), Curve.cants.front(), norms) &&
-		       Curve.transition_out + 1e-6 >= transition_length(Design.speed, Curve.radii.back(), Curve.cants.back(), norms);
-	auto const required{transition_length(Design.speed, sharpest, Curve.cant, norms)};
+		return Curve.transition_in + 1e-6 >= transition_length(speed, Curve.radii.front(), Curve.cants.front(), norms) &&
+		       Curve.transition_out + 1e-6 >= transition_length(speed, Curve.radii.back(), Curve.cants.back(), norms);
+	auto const required{transition_length(speed, sharpest, Curve.cant, norms)};
 	return Curve.transition_in + 1e-6 >= required && Curve.transition_out + 1e-6 >= required;
 }
 
@@ -471,7 +478,7 @@ void make_cants(design const &Design, result &R)
 			in.to = std::max(in.from, middle);
 			out.from = std::min(out.to, middle);
 		}
-		auto const speed{std::max(1.0, Design.speed)};
+		auto const speed{std::max(1.0, curve_speed(Design, vertex))};
 		for (auto const *ramp : {&in, &out})
 			if (ramp->own && Design.norms.checked)
 				if (auto const required{ramp_length(speed, ramp->cant, Design.norms)}; ramp->to - ramp->from + 1e-6 < required)
@@ -932,7 +939,7 @@ result fit_between(design const &Design)
 		};
 		// the arc of the norms too short is told, with the radius all of it fits at: the transitions aren't given up for it, that would
 		// cost them their own length and the cant with it
-		auto const minimum{std::max(Design.norms.arc_min, Design.norms.arc_min_factor * Design.speed)};
+		auto const minimum{std::max(Design.norms.arc_min, Design.norms.arc_min_factor * curve_speed(Design, vertex))};
 		if (auto const arc{fit.radius * (fit.deflection - angles(1.0))}; arc < minimum - 1e-6)
 			r.warnings.emplace_back(format(STR_C("Vertex %zu: the circular arc is %.0f m, the norms ask for %.0f m; all of it fits from R %.0f m"), k + 1, arc, minimum, ((vertex.transition_in + vertex.transition_out) * 0.5 + minimum) / fit.deflection));
 		if (fit.transition_in < 1.0)
@@ -942,7 +949,7 @@ result fit_between(design const &Design)
 		auto const shortest{std::min(fit.transition_in, fit.transition_out)};
 		if (fit.cant <= 0.0 || (fit.transition_in >= vertex.transition_in - 1e-6 && fit.transition_out >= vertex.transition_out - 1e-6))
 			continue;
-		auto const speed{std::max(1.0, Design.speed)};
+		auto const speed{std::max(1.0, curve_speed(Design, vertex))};
 		auto const ramp{std::min(shortest * 1000.0 / (Design.norms.ramp_factor * speed), Design.norms.cant_rate * 3.6 * shortest / speed)};
 		if (ramp >= fit.cant)
 			continue;
@@ -956,6 +963,7 @@ result fit_between(design const &Design)
 	{
 		auto const &vertex{Design.vertices[k]};
 		auto const &fit{fits[k]};
+		auto const curvespeed{curve_speed(Design, vertex)};
 		auto const &position{polygon[k + 1]};
 		auto const directionin{glm::normalize(polygon[k + 1] - polygon[k])};
 		auto const directionout{glm::normalize(polygon[k + 2] - polygon[k + 1])};
@@ -1028,6 +1036,7 @@ result fit_between(design const &Design)
 
 			curve_report report;
 			report.vertex = static_cast<int>(k);
+			report.speed = curvespeed;
 			report.radius = fit.radius;
 			for (auto const &arc : fit.arcs)
 				report.radii.push_back(arc.radius);
@@ -1045,23 +1054,23 @@ result fit_between(design const &Design)
 			report.unbalanced = -std::numeric_limits<double>::max();
 			for (std::size_t i = 0; i < cants.size(); ++i)
 			{
-				report.unbalanced = std::max(report.unbalanced, unbalanced_acceleration(Design.speed, fit.arcs[i].radius, cants[i], Design.norms));
+				report.unbalanced = std::max(report.unbalanced, unbalanced_acceleration(curvespeed, fit.arcs[i].radius, cants[i], Design.norms));
 				report.cant = std::max(report.cant, cants[i]);
 			}
-			report.recommended = recommend(Design.speed, sharpest, Design.norms);
+			report.recommended = recommend(curvespeed, sharpest, Design.norms);
 			r.curves.push_back(report);
 			auto const &norms{Design.norms};
 			if (false == norms.checked)
 				continue;
 			if (sharpest < report.recommended.radius_min - 1e-6)
-				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, sharpest, report.recommended.radius_min, Design.speed));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, sharpest, report.recommended.radius_min, curvespeed));
 			if (report.unbalanced > norms.unbalanced + 1e-6)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2"), k + 1, report.unbalanced, norms.unbalanced));
 			if (report.cant > norms.cant_max + 1e-6)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: cant %.0f mm exceeds %.0f mm"), k + 1, report.cant, norms.cant_max));
 			// each transition long enough for the change of the curvature and of the cant along it, at the speed the sharpest arc
 			// allows, as the transitions of the norms are set between the arcs
-			auto const allowed{std::max(1.0, std::min(Design.speed, speed_limit(sharpest, norms)))};
+			auto const allowed{std::max(1.0, std::min(curvespeed, speed_limit(sharpest, norms)))};
 			// from the curve of an adjoining track, or into it, as between two arcs, at the speed the sharper of them allows
 			auto const slower = [&](double const Curvature) { return Curvature > 0.0 ? std::max(1.0, std::min(allowed, speed_limit(1.0 / Curvature, norms))) : allowed; };
 			auto const requiredin{fit.ends.from > 0.0 ? between_curves(slower(fit.ends.from), fit.ends.from, fit.ends.from_cant, 1.0 / fit.arcs.front().radius, cants.front(), norms) :
@@ -1157,6 +1166,7 @@ result fit_between(design const &Design)
 
 		curve_report report;
 		report.vertex = static_cast<int>(k);
+		report.speed = curvespeed;
 		report.radius = radius;
 		report.transition_in = lengthin;
 		report.transition_out = lengthout;
@@ -1164,9 +1174,9 @@ result fit_between(design const &Design)
 		report.arc_length = radius * std::max(0.0, arcangle);
 		report.tangent_in = glm::distance(position, curvestart);
 		report.tangent_out = glm::distance(position, curveend);
-		report.unbalanced = unbalanced_acceleration(Design.speed, radius, curve.cant, Design.norms);
+		report.unbalanced = unbalanced_acceleration(curvespeed, radius, curve.cant, Design.norms);
 		report.cant = curve.cant;
-		auto const speed{Design.speed / 3.6};
+		auto const speed{curvespeed / 3.6};
 		if (lengthin > 0.0)
 		{
 			report.cant_rate_in = curve.cant * speed / lengthin;
@@ -1177,7 +1187,7 @@ result fit_between(design const &Design)
 			report.cant_rate_out = curve.cant * speed / lengthout;
 			report.jerk_out = std::max(0.0, report.unbalanced) * speed / lengthout;
 		}
-		report.recommended = recommend(Design.speed, radius, Design.norms);
+		report.recommended = recommend(curvespeed, radius, Design.norms);
 		report.spirals = fit.spirals;
 		r.curves.push_back(report);
 
@@ -1188,18 +1198,18 @@ result fit_between(design const &Design)
 		{
 			// with no cant all the acceleration across is unbalanced
 			if (report.unbalanced > norms.unbalanced + 1e-6)
-				r.warnings.emplace_back(format(STR_C("Vertex %zu: the transition curves meet at R %.0f m, with no cant at least %.0f m for %.0f km/h"), k + 1, radius, Design.speed * Design.speed / (12.96 * norms.unbalanced), Design.speed));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: the transition curves meet at R %.0f m, with no cant at least %.0f m for %.0f km/h"), k + 1, radius, curvespeed * curvespeed / (12.96 * norms.unbalanced), curvespeed));
 		}
 		else
 		{
 			if (radius < report.recommended.radius_min - 1e-6)
-				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, radius, report.recommended.radius_min, Design.speed));
+				r.warnings.emplace_back(format(STR_C("Vertex %zu: R %.0f m is below the minimum %.0f m for %.0f km/h"), k + 1, radius, report.recommended.radius_min, curvespeed));
 			if (report.unbalanced > norms.unbalanced + 1e-6)
 				r.warnings.emplace_back(format(STR_C("Vertex %zu: unbalanced acceleration %.2f m/s2 exceeds %.2f m/s2 (cant at least %.0f mm)"), k + 1, report.unbalanced, norms.unbalanced, report.recommended.cant_min));
 		}
 		if (curve.cant > norms.cant_max + 1e-6)
 			r.warnings.emplace_back(format(STR_C("Vertex %zu: cant %.0f mm exceeds %.0f mm"), k + 1, curve.cant, norms.cant_max));
-		auto const required{transition_length(Design.speed, radius, curve.cant, norms)};
+		auto const required{transition_length(curvespeed, radius, curve.cant, norms)};
 		if (lengthin + 1e-6 < required || lengthout + 1e-6 < required)
 			r.warnings.emplace_back(format(STR_C("Vertex %zu: transition curves shorter than the required %.0f m"), k + 1, required));
 		if (curve.cant > 0.0 && (lengthin <= 0.0 || lengthout <= 0.0))

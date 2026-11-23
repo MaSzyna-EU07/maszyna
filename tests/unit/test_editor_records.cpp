@@ -110,6 +110,9 @@ TEST_CASE("editor records: the horizontal alignments (//$h) read and written bac
 		CHECK(vertex.first_cant == 70.0);
 		CHECK(vertex.arcs.front().cant == 50.0);
 		CHECK(vertex.ramp_out_length == 60.0);
+		// laid slower than the line, as a curve traced on the photo sharper than the norms allow at its speed
+		CHECK(vertex.speed == 70.0);
+		CHECK(record.design.vertices.front().speed == 0.0);
 		// the lines of the elements are the ones the designs make, as alignment_store makes them before it writes the records
 		for (auto &entry : records) {
 			entry.result = alignment::compute(entry.design);

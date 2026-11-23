@@ -111,6 +111,9 @@ std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::la
 		}
 		if (word == "ramps")
 			Line >> vertex.ramp_in_offset >> vertex.ramp_in_length >> vertex.ramp_out_offset >> vertex.ramp_out_length;
+		// the speed of a curve slowed down below the one of the line
+		if (word == "speed")
+			Line >> vertex.speed;
 	}
 	position = Context.to_world(position);
 	vertex.position = {position.x, position.z};
@@ -299,6 +302,8 @@ std::vector<std::string> alignment_lines(std::vector<alignment_store::record> co
 			}
 			if (vertex.own_ramps())
 				text += format(" ramps %.3f %.3f %.3f %.3f", vertex.ramp_in_offset, vertex.ramp_in_length, vertex.ramp_out_offset, vertex.ramp_out_length);
+			if (vertex.speed > 0.0)
+				text += format(" speed %.1f", vertex.speed);
 			lines.push_back(text);
 		}
 		for (auto const &click : entry.clicks)

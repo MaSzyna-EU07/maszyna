@@ -81,6 +81,9 @@ struct vertex
 	double ramp_in_length{-1.0};
 	double ramp_out_offset{0.0};
 	double ramp_out_length{-1.0};
+	// km/h the curve is laid for where it's slower than the design, the trains slowed down along it and its transitions: its cant and the
+	// norms it's checked by asked at it (a curve traced on the photo sharper than the norms allow at the speed of the line); 0 the design's
+	double speed{0.0};
 	bool own_ramps() const { return ramp_in_length >= 0.0 || ramp_out_length >= 0.0; }
 };
 
@@ -201,6 +204,7 @@ struct curve_report
 	double cant_in{0.0};
 	double curvature_out{0.0};
 	double cant_out{0.0};
+	double speed{0.0}; // km/h it was checked at: the one it's laid for
 };
 
 struct profile_point
@@ -394,7 +398,9 @@ void norm_transitions(vertex &Vertex, double const Speed, limits const &Limits);
 
 // the length of each of the two transition curves of a vertex with spirals, meeting at the curvature of the radius
 double spirals_length(transition_shape const Shape, double const Deflection, double const Radius);
-// the curve keeps to the norms at the speed of the design: the radius, the acceleration across, the transitions long enough
+// km/h the curve of the vertex is laid for: its own where it's slower than the design, else the design's
+double curve_speed(design const &Design, vertex const &Vertex);
+// the curve keeps to the norms at the speed it's laid for: the radius, the acceleration across, the transitions long enough
 bool meets_norms(curve_report const &Curve, design const &Design);
 
 // the radii the bends of the straights are eased with: the two transition curves meet at a radius from High down to Low, or above
