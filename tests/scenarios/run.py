@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import math
+import os
 import re
 import shutil
 import struct
@@ -199,9 +199,10 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         shutil.copyfile(CASES_DIR / case["timetable"], timetable_path(game_dir, case_name))
     # the simulator caches the scenery's static geometry in <name>.sbt and reads it instead of
     # the terrain in the .scn (tracks, events and trainsets always come from the .scn), so
-    # drop the cache once the base scenery has changed
+    # drop the cache once the base scenery, or the fragment of the case (its own terrain), has changed
     cache = scenery_cache(game_dir, case_name)
-    if cache.exists() and cache.stat().st_mtime < (scenery_dir / case["base_scenery"]).stat().st_mtime:
+    sources = [scenery_dir / case["base_scenery"]] + ([CASES_DIR / case["fragment"]] if "fragment" in case else [])
+    if cache.exists() and cache.stat().st_mtime < max(source.stat().st_mtime for source in sources):
         cache.unlink()
     return name
 
@@ -258,6 +259,8 @@ BLACKBOX_HEADER = 12  # the magic, the version of the format, two bytes reserved
 BLACKBOX_VEHICLE = 0x12  # a vehicle: its number and its name
 BLACKBOX_VEHICLES = 0x21  # once a second: the vehicles which moved, changed speed or got another driver
 BLACKBOX_COUPLING = 0x37  # a coupler of a vehicle coupled, uncoupled, or its hoses and cables changed
+BLACKBOX_DERAILMENT = 0x38  # a vehicle left the track, or came to rest off it (physics.derailment new)
+DERAILMENT_CAUSES = {1: "flange climbed", 2: "overturned", 3: "end of track", 4: "pulled off", 5: "collision"}
 COUPLING_COUPLER = 0x01  # of the bits telling what is coupled: the coupler itself
 BLACKBOX_DRIVERS = {"none": 0, "user": 1, "ai": 2}  # the driver byte of a vehicle state
 
@@ -285,9 +288,26 @@ class VehicleState:
 
 
 @dataclass
+class Derailment:
+    """A derailment record: a vehicle off the track as it left it (phase 0) or came to rest (phase 1)."""
+    time: float
+    vehicle: int
+    phase: int
+    cause: int  # DERAILMENT_CAUSES
+    position: tuple[float, float, float]
+    heading: float  # rad
+    speed: float  # km/h
+    offset: float  # m from the axis of the track, to the left of its front positive
+    roll: float  # rad, to the left positive
+    travelled: float  # m on the ground since it left the rails
+    lying: bool
+
+
+@dataclass
 class Blackbox:
     vehicles: dict[int, str] = field(default_factory=dict)  # names by number
     couplings: list[Coupling] = field(default_factory=list)  # in the order written
+    derailments: list[Derailment] = field(default_factory=list)  # in the order written
     states: dict[int, list[VehicleState]] = field(default_factory=dict)  # of each vehicle by number, in time order
     end_time: float = 0.0  # of the last `vehicles` record
 
@@ -341,6 +361,11 @@ def read_blackbox(path: Path | None) -> Blackbox | None:
             elif kind == BLACKBOX_COUPLING:
                 # the position of the coupler follows
                 box.couplings.append(Coupling(*struct.unpack_from("<dIBIBBBI", content)))
+            elif kind == BLACKBOX_DERAILMENT:
+                when, number, phase, cause, x, y, z, heading, speed, offset, roll, travelled, lying = \
+                    struct.unpack_from("<dIBB3dfffffB", content)
+                box.derailments.append(Derailment(when, number, phase, cause, (x, y, z), heading, speed, offset, roll,
+                                                  travelled, bool(lying)))
     except (struct.error, IndexError):
         return None  # a record shorter than its kind is
     return box
@@ -751,8 +776,44 @@ def check_moves(box, vehicle, min_speed, direction="front"):
     return True, f"{vehicle} runs {direction} end leading: {min_speed} km/h at t={first.time:.1f}s, up to {sign * fastest.speed:.1f} km/h"
 
 
+def check_leaves_track(box, vehicle, cause=None, min_offset=None, max_offset=None, min_distance=None, max_distance=None,
+                       lying=None):
+    """The vehicle leaves the track (physics.derailment new) and comes to rest off it: what derailed it, how far from
+    the axis of the track (either side) and how far it went on the ground, and whether it ends on its side."""
+    numbers = {name.lower(): number for number, name in box.vehicles.items()}
+    number = numbers.get(vehicle.lower())
+    if number is None:
+        return False, f"the black box has no vehicle {vehicle}"
+    records = [d for d in box.derailments if d.vehicle == number]
+    left = next((d for d in records if d.phase == 0), None)
+    if left is None:
+        return False, f"{vehicle} never left the track ({len(box.derailments)} derailment record(s) of others)"
+    rest = next((d for d in records if d.phase == 1 and d.time >= left.time), None)
+    detail = (f"{vehicle} left the track at t={left.time:.1f}s at {abs(left.speed):.0f} km/h "
+              f"({DERAILMENT_CAUSES.get(left.cause, left.cause)})")
+    if rest is None:
+        return False, detail + ", and never came to rest"
+    detail += (f", came to rest at t={rest.time:.1f}s {rest.travelled:.1f} m on, {rest.offset:+.1f} m from the axis of the "
+               f"track, roll {math.degrees(rest.roll):+.0f} deg{', on its side' if rest.lying else ''}")
+    failed = []
+    if cause is not None and DERAILMENT_CAUSES.get(left.cause) != cause:
+        failed.append(f"derailed by {DERAILMENT_CAUSES.get(left.cause, left.cause)}, wanted {cause}")
+    if min_offset is not None and abs(rest.offset) < min_offset:
+        failed.append(f"offset under {min_offset} m")
+    if max_offset is not None and abs(rest.offset) > max_offset:
+        failed.append(f"offset over {max_offset} m")
+    if min_distance is not None and rest.travelled < min_distance:
+        failed.append(f"went under {min_distance} m")
+    if max_distance is not None and rest.travelled > max_distance:
+        failed.append(f"went over {max_distance} m")
+    if lying is not None and rest.lying != lying:
+        failed.append("lying on its side" if rest.lying else "upright")
+    return not failed, detail + ("" if not failed else ": " + "; ".join(failed))
+
+
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
+    "leaves_track": check_leaves_track,
     "couples": check_couples,
     "parts": check_parts,
     "driver_changes": check_driver_changes,

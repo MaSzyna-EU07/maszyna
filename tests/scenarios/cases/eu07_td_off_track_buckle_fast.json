@@ -1,0 +1,44 @@
+{
+  "description": "physics.derailment new: an EU07 with three coaches and no driver runs at 133 km/h into the curve tdo_n222 of td.scn (R 600 m, cant 65 mm), buckled hard 600 mm over a main lobe of 8 m from the start (the buckle keyword of the track). The locomotive overturns on the buckle: it leaves the track, falls on its side within a second and slides on the ground to a stop some 170 m on, 30 m off the track; the coaches behind it go off and over as well.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_off_track.scn",
+  "vars": {
+    "track": "tdo_n157",
+    "offset": "60",
+    "velocity": "133",
+    "track_nodes": "",
+    "consist": [
+      "node -1 0 {{vehicle}}_off dynamic pkp\\4e_v1 4e-004 4e 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic"
+    ]
+  },
+  "ini": [
+    "gfxrenderer null",
+    "physics.derailment new",
+    "couplerphysics all"
+  ],
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "derailment: autotest_\\S+_off leaves the track"
+    },
+    {
+      "type": "leaves_track",
+      "vehicle": "{{vehicle}}_off",
+      "cause": "overturned",
+      "min_offset": 3,
+      "min_distance": 30,
+      "max_distance": 250,
+      "lying": true
+    }
+  ],
+  "track_events": {
+    "tdo_n222": "buckle 600;8"
+  }
+}

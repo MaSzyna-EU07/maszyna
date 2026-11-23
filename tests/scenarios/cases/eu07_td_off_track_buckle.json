@@ -1,0 +1,44 @@
+{
+  "description": "physics.derailment new: EU07 with three coaches on td.scn on the td/rozklad timetable; at 10:35, as it leaves, the curve tdo_n222 about 950 m ahead buckles hard with a trackbuckle event (600 mm out of the curve over a main lobe of 8 m). The AI runs into it at the 33-35 km/h it has there with the coaches (46 km/h alone): the locomotive overturns on the buckle, goes off the track towards the bulge, falls on its side and stops on the ground some 30 m on; the coupling pulls the first coach off the rails.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_buckle_event.scn",
+  "vars": {
+    "amplitude": "600 8",
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic"
+    ]
+  },
+  "ini": [
+    "gfxrenderer null",
+    "physics.derailment new",
+    "couplerphysics all"
+  ],
+  "expect": "timeout",
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "Track \\\"tdo_n222\\\" buckled \\(event autotest_buckle\\): 600 mm"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "derailment: autotest_\\S+ leaves the track"
+    },
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 150
+    },
+    {
+      "type": "leaves_track",
+      "vehicle": "{{vehicle}}",
+      "min_offset": 0.3,
+      "max_distance": 60
+    }
+  ]
+}

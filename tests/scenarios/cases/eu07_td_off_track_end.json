@@ -1,0 +1,41 @@
+{
+  "description": "physics.derailment new: an EU07 with three coaches and no driver runs at 60 km/h off the end of a track of 150 m laid on its own in the fields of td.scn (autotest_stub): it runs straight on, upright, on the ground, and stops some 30 m on (the friction of 0.3 against the 39 km/h left of its 60 km/h as it drops off the end of the rails, the coaches pushing it); the first coach follows it off the end.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_off_track.scn",
+  "vars": {
+    "track": "autotest_stub",
+    "offset": "100",
+    "velocity": "60",
+    "track_nodes": "node -1 0 autotest_stub track normal 150.0 1.435 0.15 25.0 20 0 flat vis\n rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1\n-150.0 0.2 600.0  0.0  //point 1\n0.0 0.0 0.0  //control vector 1\n0.0 0.0 0.0  //control vector 2\n-150.0 0.2 750.0  0.0  //point 2\n0\nendtrack",
+    "consist": [
+      "node -1 0 {{vehicle}}_off dynamic pkp\\4e_v1 4e-004 4e 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608011-6 BDHPUMN_NG_1 0 nobody 115 0 enddynamic",
+      "node -1 0 {{vehicle}}_off_w3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 115 0 enddynamic"
+    ]
+  },
+  "ini": [
+    "gfxrenderer null",
+    "physics.derailment new",
+    "couplerphysics all"
+  ],
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "derailment: autotest_\\S+_off leaves the track"
+    },
+    {
+      "type": "leaves_track",
+      "vehicle": "{{vehicle}}_off",
+      "cause": "end of track",
+      "max_offset": 0.5,
+      "min_distance": 5,
+      "max_distance": 60,
+      "lying": false
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "physics.derailment new: an EU07 without a driver runs at 150 km/h into a curve of R 300 m without cant, a track of 150 m laid on its own in the fields of td.scn (autotest_curve), on level ground (the grass of td.scn). Over its overturning speed (about 120 km/h) it overturns out of the curve: it slides on the grass out of the curve, falls on its side and stops.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_off_track_curve_flat.scn",
+  "vars": {
+    "velocity": "150"
+  },
+  "ini": [
+    "gfxrenderer null",
+    "physics.derailment new",
+    "couplerphysics all"
+  ],
+  "expect": "timeout",
+  "duration": 60,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_contains",
+      "pattern": "derailment: autotest_\\S+_off leaves the track"
+    },
+    {
+      "type": "leaves_track",
+      "vehicle": "{{vehicle}}_off",
+      "cause": "overturned",
+      "min_offset": 3,
+      "min_distance": 50,
+      "max_distance": 250,
+      "lying": true
+    }
+  ]
+}

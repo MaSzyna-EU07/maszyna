@@ -269,6 +269,21 @@ couple and neither shows up: the black box has to have the last car of the stand
 writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
 test timeout.
 
+The `eu07_td_off_track_*` cases run with `physics.derailment new`, where a derailed vehicle leaves the track and
+moves on the ground by itself (`vehicle/derailmotion.h`); they check what the black box records of it with
+`leaves_track`, and the log has a line of each vehicle off the track every second (`derailment: ... off the track`).
+`td_off_track.scn` keeps an EU07 with an AI driver standing on track 1 of Stacja1 to log its physics, and has the train
+of the case, without a driver, run at `vars.velocity` km/h from `vars.offset` m past point 1 of `vars.track`:
+`eu07_td_off_track_buckle_fast` (133 km/h, `tdo_n222` buckled 600 mm over 8 m from the start with the `buckle`
+keyword of the track) and `eu07_td_off_track_overturn` (190 km/h, over the overturning speed of the R 600 m curve)
+from `tdo_n157`, `eu07_td_off_track_end` off the end of a track of its own (`vars.track_nodes`).
+`eu07_td_off_track_buckle` is `td_buckle_event.scn` with an EU07 and three coaches on the timetable, at the 46 km/h
+of the AI. The `eu07_td_off_track_curve_*` cases have an EU07 overturn at 150 km/h on a track of R 300 m of their own,
+on level ground, on an embankment 4 m high and in a cutting, made of triangle strips in the fragment
+(`td_off_track_curve_*.scn`, written by `make_off_track_curves.py`: a curve of R 300 m from (-300, 400) about the
+centre (-600, 400), the cross section swept along it every 0.03 rad; the banks of the cutting rise 4 m at 1:1.5, then
+on at 1:5).
+
 `eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
 (`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
 so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
@@ -427,6 +442,11 @@ the row instead, logged by builds from this branch on.
   tell: the driver writes it, so it ends when the driver goes.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
+- `leaves_track` `vehicle`, optional `cause` (`flange climbed`, `overturned`, `end of track`, `pulled off`,
+  `collision`), `min_offset`, `max_offset`, `min_distance`, `max_distance`, `lying`: with
+  `physics.derailment new` the black box has the vehicle leave the track and come to rest off it; at rest its
+  distance from the axis of the track (either side) and the distance it went on the ground are within the
+  bounds, and it lies on its side, or not, as `lying` says.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
