@@ -570,6 +570,7 @@ set(CORE_SOURCES
 "vehicle/gaugewrap.cpp"
 "vehicle/drivingaid.cpp"
 "vehicle/brakingcurve.cpp"
+"vehicle/brakereleaser.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
 "vehicle/horn.cpp"
