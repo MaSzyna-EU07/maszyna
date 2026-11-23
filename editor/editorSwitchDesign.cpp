@@ -17,9 +17,15 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <iterator>
+#include <map>
+#include <optional>
 #include <sstream>
 
 namespace switch_design
@@ -209,18 +215,6 @@ void write_parts(std::ostream &Output, std::vector<part> const &Parts)
 		Output << ' ' << format("%.4f %.4f %.4f", part.length, part.radius1, part.radius2);
 }
 
-bool read_parts(std::istream &Input, std::vector<part> &Parts)
-{
-	std::size_t count{0};
-	Input >> count;
-	if (Input.fail() || count > 64)
-		return false;
-	Parts.resize(count);
-	for (auto &part : Parts)
-		Input >> part.length >> part.radius1 >> part.radius2;
-	return false == Input.fail();
-}
-
 } // namespace
 
 bool double_switch(std::string const &Type)
@@ -336,7 +330,7 @@ std::pair<double, double> secant_blade(std::string const &Rail, double const Rad
 {
 	if (Rail != "S42" || Ratio <= 0.0)
 		return {0.0, 0.0};
-	for (auto const &entry : catalogue())
+	for (auto const &entry : catalogue_entries())
 	{
 		if (entry.type != "Rz" || entry.rail != Rail || entry.entry <= 0.0 || entry.parts.empty() || std::abs(entry.parts.front().radius1 - Radius) > 0.5)
 			continue;
@@ -780,268 +774,603 @@ bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_f
 	return true;
 }
 
-std::vector<design> catalogue()
+namespace
 {
-	// the switches of the instruction Id-4 of PKP PLK, tables 8-1 (60E1), 8-2 (49E1) and 8-3 (S42): a from the start of the switch
-	// to its centre, b on from there along the main track, and along the diverging track where the scheme gives it another length
-	struct ordinary
-	{
-		char const *name;
-		char const *rail;
-		double radius;
-		double ratio; // at the end of the diverging track; of the two tracks parting, for a symmetric switch
-		double a; // 0: from the geometry
-		double b; // 0: the diverging track curved up to its end
-		double diverging{0.0}; // 0: the same as b
-		bool movable{false};
-		char const *type{"Rz"};
-		bool tangent{false}; // an S42 switch with blades lying tangent to the stock rails, its a too long for blades cutting into them at 25'
-	};
-	ordinary const ordinaries[] = {
-		{"Rz 60E1-190-1:9", "60E1", 190.0, 9.0, 10.523, 16.615},
-		{"Rz 60E1-300-1:9", "60E1", 300.0, 9.0, 16.615, 16.615},
-		{"Rz 60E1-500-1:12", "60E1", 500.0, 12.0, 20.797, 20.797},
-		{"Rz 60E1-500-1:12 movable nose", "60E1", 500.0, 12.0, 20.797, 20.797, 0.0, true},
-		{"Rz 60E1-760-1:14", "60E1", 760.0, 14.0, 27.108, 27.108},
-		{"Rz 60E1-1200-1:18,5", "60E1", 1200.0, 18.5, 32.409, 32.409},
-		{"Rz 60E1-1200-1:18,5 movable nose", "60E1", 1200.0, 18.5, 32.409, 32.409, 0.0, true},
-		{"Rz 60E1-2500-1:26,5 movable nose", "60E1", 2500.0, 26.5, 47.153, 47.153, 0.0, true},
-		{"Rz 49E1-190-1:7,5", "49E1", 190.0, 7.5, 12.611, 12.611},
-		{"Rz 49E1-190-1:7,5 long", "49E1", 190.0, 7.5, 12.611, 17.428},
-		{"Rz 49E1-190-1:9", "49E1", 190.0, 9.0, 10.523, 16.615},
-		{"Rz 49E1-190-1:9 gauge 1524", "49E1", 190.0, 9.0, 10.523, 17.417},
-		{"Rz 49E1-190-1:7,5/1:6,6", "49E1", 190.0, 6.6, 14.312, 10.910, 14.312},
-		{"Rz 49E1-300-1:9", "49E1", 300.0, 9.0, 16.615, 16.615},
-		{"Rz 49E1-300-1:9,403", "49E1", 300.0, 9.403, 15.907, 17.343, 17.322},
-		{"Rz 49E1-500-1:12", "49E1", 500.0, 12.0, 20.797, 20.797},
-		{"Rz 49E1-500-1:14", "49E1", 500.0, 14.0, 17.834, 24.537},
-		{"Rz 49E1-1200-1:18,5", "49E1", 1200.0, 18.5, 32.409, 32.409},
-		// table 3-2, without a scheme
-		{"Rls 49E1-215-1:4,8", "49E1", 215.0, 4.8, 0.0, 0.0, 0.0, false, "Rls"},
-		{"Rz S42-190-1:6,6", "S42", 190.0, 6.6, 13.374, 12.560, 14.172},
-		{"Rz S42-190-1:7", "S42", 190.0, 7.0, 12.573, 13.361},
-		{"Rz S42-190-1:7,5", "S42", 190.0, 7.5, 11.691, 14.243, 14.235},
-		{"Rz S42-205-1:9 I", "S42", 205.0, 9.0, 10.517, 16.500},
-		{"Rz S42-205-1:9 II", "S42", 205.0, 9.0, 10.517, 17.591},
-		{"Rz S42-230-1:9,51 I", "S42", 230.0, 9.51, 11.046, 16.008, 16.308},
-		{"Rz S42-230-1:9,51 II", "S42", 230.0, 9.51, 11.046, 18.342, 18.642},
-		{"Rz S42-230-1:9,51 III", "S42", 230.0, 9.51, 11.046, 16.008, 18.642},
-		{"Rz S42-265-1:10 I", "S42", 265.0, 10.0, 11.9692, 18.1508},
-		{"Rz S42-265-1:10 II", "S42", 265.0, 10.0, 11.9692, 19.1918},
-		{"Rz S42-500-1:9", "S42", 500.0, 9.0, 25.055, 13.743, 27.513},
-		{"Rz S42-500-1:12", "S42", 500.0, 12.0, 18.21526, 20.58234, 20.58202},
-		{"Rz S42-500-1:14", "S42", 500.0, 14.0, 15.288, 26.323},
-		{"Rz S42-70-1:5 industrial", "S42", 70.0, 5.0, 7.112, 8.708},
-		{"Rz S42-140-1:7 industrial", "S42", 140.0, 7.0, 7.670, 12.932},
-		{"Rls S42-140-1:5 industrial", "S42", 140.0, 5.0, 7.131, 8.715, 0.0, false, "Rls"},
-		{"Rls S42-200-1:7 industrial", "S42", 200.0, 7.0, 6.493, 12.148, 0.0, false, "Rls"},
-		{"Rz S42-205-1:6,6 industrial", "S42", 205.0, 6.6, 14.588, 13.602, 15.352},
-		{"Rz S42-205-1:7 industrial", "S42", 205.0, 7.0, 13.710, 14.480},
-		{"Rz S42-205-1:7,5 industrial", "S42", 205.0, 7.5, 12.754, 15.436, 15.427},
-		{"Rz S42-300-1:9 industrial", "S42", 300.0, 9.0, 16.615, 16.615, 0.0, false, "Rz", true},
-		{"Rz S42-205-1:9 gauge 1524", "S42", 205.0, 9.0, 10.513, 18.394},
-	};
-	auto const make = [](ordinary const &Ordinary) {
-		design entry;
-		entry.name = Ordinary.name;
-		entry.rail = Ordinary.rail;
-		entry.type = Ordinary.type;
-		entry.movable = Ordinary.movable;
-		auto const symmetric{symmetric_switch(entry.type)};
-		// each track of a symmetric switch turns by a half of the angle between them
-		auto const angle{std::atan(1.0 / Ordinary.ratio) * (symmetric ? 0.5 : 1.0)};
-		auto const radius{Ordinary.radius};
-		auto const tangent{radius * std::tan(angle * 0.5)};
-		auto const a{Ordinary.a > 0.0 ? Ordinary.a : tangent};
-		auto const across = [&](double const Entry) { return radius * (std::cos(Entry) - std::cos(angle)); };
-		// the centre nearer than the tangent of the arc: the blade meets the stock rail at an angle and the arc turns the rest of the way;
-		// further: the diverging track runs along the main one for a while
-		// within a couple of centimetres of the tangent the catalogue only rounds it
-		auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - across(Entry) / std::tan(angle); };
-		auto const fit = [&](double const Centre) {
-			auto low{0.0};
-			auto high{angle};
-			for (int i = 0; i < 60; ++i)
-			{
-				auto const middle{(low + high) * 0.5};
-				(centre(middle) > Centre ? low : high) = middle;
-			}
-			return (low + high) * 0.5; };
-		auto entryangle{0.0};
-		auto lead{a > tangent + 0.02 ? a - tangent : 0.0};
-		if (entry.rail == "S42" && false == Ordinary.tangent)
+
+// the catalogue as the build wrote it out of editor/data/turnouts.txt, the bytes of its text
+constexpr unsigned char kCatalogueText[]{
+#include "editor_turnouts_txt.inc"
+};
+
+// a switch of the catalogue as its line gives it: what the instruction tells of it, which its parts are made of
+struct ordinary
+{
+	std::string name;
+	std::string rail;
+	double radius{0.0};
+	double ratio{0.0}; // at the end of the diverging track; of the two tracks parting, for a symmetric switch
+	double a{0.0}; // 0: from the geometry
+	double b{0.0}; // 0: the diverging track curved up to its end
+	double diverging{0.0}; // 0: the same as b
+	bool movable{false};
+	std::string type{"Rz"};
+	bool secant{false}; // the blades cut into the stock rails at 25' (S42)
+	double cut{0.0}; // the cut tip of the blade from the start of the curve, 0: none told
+};
+
+design made_of(ordinary const &Ordinary)
+{
+	design entry;
+	entry.name = Ordinary.name;
+	entry.rail = Ordinary.rail;
+	entry.type = Ordinary.type;
+	entry.movable = Ordinary.movable;
+	auto const symmetric{symmetric_switch(entry.type)};
+	// each track of a symmetric switch turns by a half of the angle between them
+	auto const angle{std::atan(1.0 / Ordinary.ratio) * (symmetric ? 0.5 : 1.0)};
+	auto const radius{Ordinary.radius};
+	auto const tangent{radius * std::tan(angle * 0.5)};
+	auto const a{Ordinary.a > 0.0 ? Ordinary.a : tangent};
+	auto const across = [&](double const Entry) { return radius * (std::cos(Entry) - std::cos(angle)); };
+	// the centre nearer than the tangent of the arc: the blade meets the stock rail at an angle and the arc turns the rest of the way;
+	// further: the diverging track runs along the main one for a while
+	// within a couple of centimetres of the tangent the catalogue only rounds it
+	auto const centre = [&](double const Entry) { return radius * (std::sin(angle) - std::sin(Entry)) - across(Entry) / std::tan(angle); };
+	auto const fit = [&](double const Centre) {
+		auto low{0.0};
+		auto high{angle};
+		for (int i = 0; i < 60; ++i)
 		{
-			entryangle = glm::radians(kSecantAngle) * (symmetric ? 0.5 : 1.0);
-			lead = a - centre(entryangle);
-			if (lead <= 0.0)
-			{
-				lead = kSecantLead;
-				entryangle = fit(a - lead);
-			}
+			auto const middle{(low + high) * 0.5};
+			(centre(middle) > Centre ? low : high) = middle;
 		}
-		else if (a < tangent - 0.02)
-			entryangle = fit(a);
-		else if (auto const cut{cut_tip(entry.rail, radius)}; cut > 0.0 && false == symmetric)
-			entry.tip = lead + cut;
-		entry.entry = glm::degrees(entryangle);
-		entry.lead = lead;
-		entry.a = a;
-		auto const arcend{across(entryangle) / std::sin(angle)};
-		entry.b = Ordinary.b > 0.0 ? Ordinary.b : arcend;
-		entry.parts.push_back({radius * (angle - entryangle), radius, radius});
-		auto const rest{(Ordinary.diverging > 0.0 ? Ordinary.diverging : entry.b) - arcend};
-		if (rest > 0.05)
-			entry.parts.push_back({rest, 0.0, 0.0});
-		if (false == symmetric)
-			entry.main = a + entry.b;
-		if (Ordinary.a <= 0.0 || Ordinary.b <= 0.0)
-			entry.note = "(from the geometry)";
-		return entry;
-	};
-	std::vector<design> result;
-	for (auto const &ordinary : ordinaries)
-		result.push_back(make(ordinary));
-	// not of Id-4: the tangents as measured, too long for one arc alone
-	for (auto const &[name, kind] : {std::pair{"Rz S42-140-1:6,6 16/12", tangent_fit::straights}, std::pair{"Rz S42-140-1:6,6 16/12 KP", tangent_fit::transition}, std::pair{"Rz S42-140-1:6,6 16/12 łuk-prosta-łuk", tangent_fit::arc_straight_arc}})
+		return (low + high) * 0.5; };
+	auto entryangle{0.0};
+	auto lead{a > tangent + 0.02 ? a - tangent : 0.0};
+	if (Ordinary.secant)
 	{
-		design fitted;
-		fitted.name = name;
-		fitted.rail = "S42";
-		std::string problem;
-		if (fit_tangents(fitted, 140.0, 6.6, 16.0, 12.0, kind, problem))
-			result.push_back(fitted);
+		entryangle = glm::radians(kSecantAngle) * (symmetric ? 0.5 : 1.0);
+		lead = a - centre(entryangle);
+		if (lead <= 0.0)
+		{
+			lead = kSecantLead;
+			entryangle = fit(a - lead);
+		}
 	}
-	// double switches: the second one starts on the main track of the first, as far on as the schemes give it, a one sided double
-	// switch of Id-4 has its second switch on the diverging track of the first, here on the main one at the same place
-	ordinary const r190_75{"", "", 190.0, 7.5, 12.611, 12.611};
-	ordinary const r190_75long{"", "", 190.0, 7.5, 12.611, 12.611, 16.615};
-	ordinary const r190_9{"", "", 190.0, 9.0, 10.523, 16.615};
-	ordinary const r190_9tangent{"", "", 190.0, 9.0, 10.523, 16.615, 0.0, false, "Rz", true};
-	ordinary const r190_66{"", "", 190.0, 6.6, 14.312, 10.910, 14.312};
-	ordinary const r300_9{"", "", 300.0, 9.0, 16.615, 16.615};
-	ordinary const r500_12{"", "", 500.0, 12.0, 20.797, 20.797};
-	struct twofold
+	else if (a < tangent - 0.02)
+		entryangle = fit(a);
+	else if (Ordinary.cut > 0.0 && false == symmetric)
+		entry.tip = lead + Ordinary.cut;
+	entry.entry = glm::degrees(entryangle);
+	entry.lead = lead;
+	entry.a = a;
+	auto const arcend{across(entryangle) / std::sin(angle)};
+	entry.b = Ordinary.b > 0.0 ? Ordinary.b : arcend;
+	entry.parts.push_back({radius * (angle - entryangle), radius, radius});
+	auto const rest{(Ordinary.diverging > 0.0 ? Ordinary.diverging : entry.b) - arcend};
+	if (rest > 0.05)
+		entry.parts.push_back({rest, 0.0, 0.0});
+	if (false == symmetric)
+		entry.main = a + entry.b;
+	if (Ordinary.a <= 0.0 || Ordinary.b <= 0.0)
+		entry.note = "(from the geometry)";
+	return entry;
+}
+
+// the words of a line of the file: blanks between them, a word in quotes keeping its blanks; what follows the word source is the rest
+// of the line as it is
+struct line_words
+{
+	std::vector<std::string> words;
+	std::vector<bool> quoted;
+	std::string source;
+	bool sourced{false};
+};
+
+bool split_words(std::string_view const Line, line_words &Into, std::string &Error)
+{
+	std::size_t at{0};
+	while (at < Line.size())
 	{
-		char const *name;
-		char const *type;
-		char const *rail;
+		if (Line[at] == ' ' || Line[at] == '\t' || Line[at] == '\r')
+		{
+			++at;
+			continue;
+		}
+		if (Line[at] == '"')
+		{
+			auto const close{Line.find('"', at + 1)};
+			if (close == std::string_view::npos)
+			{
+				Error = "a quote not closed";
+				return false;
+			}
+			Into.words.emplace_back(Line.substr(at + 1, close - at - 1));
+			Into.quoted.push_back(true);
+			at = close + 1;
+			continue;
+		}
+		auto end{Line.find_first_of(" \t\r", at)};
+		if (end == std::string_view::npos)
+			end = Line.size();
+		auto const word{Line.substr(at, end - at)};
+		at = end;
+		if (word == "source" && Into.words.size() >= 2)
+		{
+			auto rest{Line.substr(std::min(at + 1, Line.size()))};
+			while (false == rest.empty() && (rest.back() == '\r' || rest.back() == ' '))
+				rest.remove_suffix(1);
+			Into.source = rest;
+			Into.sourced = true;
+			return true;
+		}
+		Into.words.emplace_back(word);
+		Into.quoted.push_back(false);
+	}
+	return true;
+}
+
+bool number_of(std::string_view const Text, double &Value)
+{
+	auto const *first{Text.data()};
+	auto const *last{Text.data() + Text.size()};
+	auto const [end, error]{std::from_chars(first, last, Value)};
+	return error == std::errc{} && end == last && std::isfinite(Value);
+}
+
+// the values of an entry by their keys, each key once
+class entry_values
+{
+  public:
+	std::string name;
+	std::string source;
+	std::vector<part> parts;
+	std::vector<part> parts2;
+	bool has_parts{false};
+	bool has_parts2{false};
+	double bending{0.0};
+	double bending_exception{0.0};
+
+	bool read(line_words const &Line, std::string &Error)
+	{
+		auto const &words{Line.words};
+		name = Line.quoted[1] ? words[1] : unword(words[1]);
+		source = Line.source;
+		std::size_t at{2};
+		while (at < words.size())
+		{
+			auto const &key{words[at++]};
+			if (m_values.contains(key) || ((key == "parts" || key == "parts2") && (key == "parts" ? has_parts : has_parts2)))
+			{
+				Error = std::format("{} given twice", key);
+				return false;
+			}
+			if (key == "parts" || key == "parts2")
+			{
+				if (false == read_parts(words, at, key == "parts" ? parts : parts2))
+				{
+					Error = std::format("{} not as many as said, or not numbers", key);
+					return false;
+				}
+				(key == "parts" ? has_parts : has_parts2) = true;
+				continue;
+			}
+			if (key == "bending")
+			{
+				if (false == read_bending(words, at))
+				{
+					Error = "bending is - or two radii";
+					return false;
+				}
+				m_values[key] = "";
+				continue;
+			}
+			if (false == known(key))
+			{
+				Error = std::format("'{}' isn't a key", key);
+				return false;
+			}
+			if (at >= words.size())
+			{
+				Error = std::format("{} has no value", key);
+				return false;
+			}
+			m_values[key] = words[at++];
+		}
+		return true;
+	}
+	bool has(std::string const &Key) const { return m_values.contains(Key); }
+	std::string text(std::string const &Key, std::string const &Otherwise = {}) const
+	{
+		auto const found{m_values.find(Key)};
+		return found != m_values.end() ? found->second : Otherwise;
+	}
+	// the number of the key, 0 where it isn't given or is -; false where it isn't a number
+	bool number(std::string const &Key, double &Value) const
+	{
+		Value = 0.0;
+		auto const found{m_values.find(Key)};
+		if (found == m_values.end() || found->second == "-")
+			return true;
+		return number_of(found->second, Value);
+	}
+
+  private:
+	std::map<std::string, std::string> m_values;
+
+	static bool known(std::string_view const Key)
+	{
+		static constexpr std::array<std::string_view, 35> keys{"type", "rail", "radius", "ratio", "a", "b", "diverging", "blades", "cut", "fit", "stagger", "radius2",
+		                                                       "ratio2", "a2", "b2", "diverging2", "blades2", "cut2", "middle", "note", "frog", "locks", "drive", "speed",
+		                                                       "spacing", "main", "lead", "entry", "tip", "lead2", "entry2", "tip2", "heel", "throw", "movable"};
+		return std::ranges::find(keys, Key) != keys.end();
+	}
+	static bool read_parts(std::vector<std::string> const &Words, std::size_t &At, std::vector<part> &Parts)
+	{
+		double count{0.0};
+		if (At >= Words.size() || false == number_of(Words[At++], count) || count < 0.0 || count > 64.0 || count != std::floor(count))
+			return false;
+		Parts.resize(static_cast<std::size_t>(count));
+		for (auto &each : Parts)
+		{
+			if (At + 3 > Words.size() || false == number_of(Words[At], each.length) || false == number_of(Words[At + 1], each.radius1) || false == number_of(Words[At + 2], each.radius2))
+				return false;
+			At += 3;
+		}
+		return true;
+	}
+	bool read_bending(std::vector<std::string> const &Words, std::size_t &At)
+	{
+		if (At < Words.size() && Words[At] == "-")
+		{
+			++At;
+			return true;
+		}
+		if (At + 2 > Words.size() || false == number_of(Words[At], bending) || false == number_of(Words[At + 1], bending_exception))
+			return false;
+		At += 2;
+		return true;
+	}
+};
+
+// the switch of the keys with the suffix: the first one of a double switch with none, its second one with 2
+bool ordinary_of(entry_values const &Values, std::string const &Suffix, ordinary &Result, std::string &Error)
+{
+	Result.rail = Values.text("rail", "-");
+	Result.type = Values.text("type", "Rz");
+	Result.movable = Values.text("frog") == "movable";
+	auto const blades{Values.text("blades" + Suffix, "tangent")};
+	if (blades != "tangent" && blades != "secant")
+	{
+		Error = "blades are tangent or secant";
+		return false;
+	}
+	Result.secant = blades == "secant";
+	if (false == Values.number("radius" + Suffix, Result.radius) || false == Values.number("ratio" + Suffix, Result.ratio) || false == Values.number("a" + Suffix, Result.a) ||
+	    false == Values.number("b" + Suffix, Result.b) || false == Values.number("diverging" + Suffix, Result.diverging) || false == Values.number("cut" + Suffix, Result.cut))
+	{
+		Error = "a value of the geometry isn't a number";
+		return false;
+	}
+	if (Result.radius < kMinRadius || Result.ratio <= 1.0)
+	{
+		Error = std::format("no radius{} of 10 m at least or no ratio{} above 1", Suffix, Suffix);
+		return false;
+	}
+	return true;
+}
+
+// the switch given by its parts, as the template editor makes it
+design explicit_of(entry_values const &Values, std::string &Error)
+{
+	design entry;
+	entry.type = Values.text("type", "Rz");
+	entry.rail = Values.text("rail", "-");
+	entry.parts = Values.parts;
+	entry.parts2 = Values.parts2;
+	struct numbered
+	{
+		char const *key;
+		double *value;
+	};
+	std::array const numbers{numbered{"main", &entry.main},   numbered{"stagger", &entry.stagger}, numbered{"a", &entry.a},          numbered{"b", &entry.b},
+	                         numbered{"lead", &entry.lead},   numbered{"entry", &entry.entry},     numbered{"tip", &entry.tip},      numbered{"heel", &entry.heel},
+	                         numbered{"throw", &entry.bladethrow}};
+	for (auto const &[key, value] : numbers)
+		if (false == Values.number(key, *value))
+			Error = std::format("{} isn't a number", key);
+	// of the second switch, negative: the same as the first
+	for (auto const &[key, value] : {numbered{"lead2", &entry.lead2}, numbered{"entry2", &entry.entry2}, numbered{"tip2", &entry.tip2}})
+		if (Values.has(key) && false == Values.number(key, *value))
+			Error = std::format("{} isn't a number", key);
+	return entry;
+}
+
+std::optional<design> design_of(entry_values const &Values, std::string &Error)
+{
+	auto const type{Values.text("type", "Rz")};
+	if (type != "Rz" && false == symmetric_switch(type) && false == double_switch(type) && false == slip_switch(type))
+	{
+		Error = std::format("no type {}", type);
+		return std::nullopt;
+	}
+	design made;
+	if (Values.has_parts)
+		made = explicit_of(Values, Error);
+	else if (Values.has("fit"))
+	{
+		auto const kind{Values.text("fit")};
+		std::array const kinds{std::pair{"straights", tangent_fit::straights}, std::pair{"transition", tangent_fit::transition}, std::pair{"arc_straight_arc", tangent_fit::arc_straight_arc},
+		                       std::pair{"two_arcs", tangent_fit::two_arcs}};
+		auto const found{std::ranges::find_if(kinds, [&](auto const &Each) { return kind == Each.first; })};
+		ordinary given;
+		if (found == kinds.end())
+			Error = std::format("no fit {}", kind);
+		else if (ordinary_of(Values, "", given, Error))
+		{
+			made.rail = given.rail;
+			if (false == fit_tangents(made, given.radius, given.ratio, given.a, given.b, found->second, Error))
+				return std::nullopt;
+			made.radius = given.radius;
+			made.ratio = given.ratio;
+		}
+	}
+	else if (slip_switch(type))
+	{
+		made.type = type;
+		made.rail = Values.text("rail", "-");
+		if (false == Values.number("radius", made.radius) || false == Values.number("ratio", made.ratio) || false == Values.number("middle", made.middle) ||
+		    false == Values.number("a", made.a))
+			Error = "a value of the geometry isn't a number";
+		else if (made.ratio <= 0.0 || made.a <= 0.0 || (type != "Skrz" && made.radius < kMinRadius))
+			Error = "a slip has a radius, a ratio and a half length a, a crossing a ratio and a";
+	}
+	else if (double_switch(type))
+	{
 		ordinary first;
 		ordinary second;
-		double stagger;
-		char const *note;
-	};
-	twofold const twofolds[] = {
-		{"Rpd 49E1-190-1:7,5/1:7,5", "Rpd", "49E1", r190_75long, r190_75, 10.523, ""},
-		{"Rpd 49E1-190-1:9/1:7,5", "Rpd", "49E1", r190_9, r190_75, 10.523, ""},
-		{"Rpd 49E1-190-1:9/1:9", "Rpd", "49E1", r190_9, r190_9, 10.523, ""},
-		{"Rpd 49E1-190-1:7,5/1:7,5/1:6,6", "Rpd", "49E1", r190_75, r190_66, 10.523, ""},
-		{"Rpd 49E1-190-1:7,5/1:6,6/1:7,5", "Rpd", "49E1", r190_66, r190_75, 10.523, ""},
-		{"Rpd 49E1-190-1:7,5/1:6,6/1:7,5/1:6,6", "Rpd", "49E1", r190_66, r190_66, 10.523, ""},
-		{"Rpd 49E1-190-1:9/1:7,5/1:6,6", "Rpd", "49E1", r190_9, r190_66, 10.523, ""},
-		{"Rpj 49E1-190-1:9", "Rpj", "49E1", r190_9, r190_9, 5.258, "(approx.)"},
-		{"Rpd S42-190-1:9", "Rpd", "S42", r190_9tangent, r190_9tangent, 10.523, ""},
-		{"Rpd S42-190-1:9 II", "Rpd", "S42", {"", "", 190.0, 9.0, 9.626, 15.500}, {"", "", 190.0, 9.0, 9.626, 17.591}, 9.5, ""},
-		{"Rpj S42-190/180-1:10", "Rpj", "S42", {"", "", 190.0, 10.0, 0.0, 19.192, 0.0, false, "Rz", true}, {"", "", 180.0, 10.0, 0.0, 19.192, 0.0, false, "Rz", true}, 5.504, "(approx.)"},
-		{"Rpj S42-140-1:9 industrial", "Rpj", "S42", {"", "", 140.0, 9.0, 9.274, 17.590, 0.0, false, "Rz", true}, {"", "", 140.0, 9.0, 9.274, 17.590, 0.0, false, "Rz", true}, 9.263, "(approx.)"},
-		{"Rpd S42-140-1:7 industrial", "Rpd", "S42", {"", "", 140.0, 7.0, 7.670, 12.932}, {"", "", 140.0, 7.0, 7.670, 12.932}, 6.9, ""},
-		// symmetric double switches, not in Id-4 but for its scheme: the same switch to both sides, the second one starting as close behind
-		// the first one as their blades let them, past the heel of the blades of the first one and the short track between the two
-		{"Rps 60E1-300-1:9", "Rps", "60E1", r300_9, r300_9, 14.2, "(designed)"},
-		{"Rps 60E1-500-1:12", "Rps", "60E1", r500_12, r500_12, 18.0, "(designed)"},
-	};
-	for (auto const &entry : twofolds)
-	{
-		auto first{entry.first};
-		auto other{entry.second};
-		first.rail = other.rail = entry.rail;
-		auto made{make(first)};
-		auto const second{make(other)};
-		made.name = entry.name;
-		made.rail = entry.rail;
-		made.type = entry.type;
-		made.stagger = entry.stagger;
-		if (made.type != "Rps")
+		double stagger{0.0};
+		if (ordinary_of(Values, "", first, Error) && (type == "Rps" || ordinary_of(Values, "2", second, Error)) && Values.number("stagger", stagger))
 		{
-			made.parts2 = second.parts;
-			made.lead2 = second.lead;
-			made.entry2 = second.entry;
-			made.tip2 = second.tip;
+			// the both switches of a symmetric double switch have the shape of the first one
+			if (type == "Rps")
+				second = first;
+			made = made_of(first);
+			auto const other{made_of(second)};
+			made.type = type;
+			made.stagger = stagger;
+			if (made.type != "Rps")
+			{
+				made.parts2 = other.parts;
+				made.lead2 = other.lead;
+				made.entry2 = other.entry;
+				made.tip2 = other.tip;
+			}
+			made.main = 0.0;
+			made.b = 0.0;
+			made.note.clear();
+			made.radius = first.radius;
+			made.ratio = first.ratio;
 		}
-		made.main = 0.0;
-		made.b = 0.0;
-		made.note = entry.note;
-		result.push_back(made);
 	}
+	else
+	{
+		ordinary given;
+		if (ordinary_of(Values, "", given, Error))
+		{
+			made = made_of(given);
+			made.radius = given.radius;
+			made.ratio = given.ratio;
+		}
+	}
+	if (false == Error.empty())
+		return std::nullopt;
+	made.name = Values.name;
+	if (Values.has("note"))
+		made.note = Values.text("note");
+	made.movable = Values.text("frog") == "movable" || Values.text("movable") == "1";
+	made.blades = Values.text("blades");
+	double locks{0.0};
+	if (false == Values.number("cut", made.cut) || false == Values.number("speed", made.speed) || false == Values.number("spacing", made.spacing) || false == Values.number("locks", locks))
+	{
+		Error = "cut, speed, spacing or locks isn't a number";
+		return std::nullopt;
+	}
+	made.locks = static_cast<int>(locks);
+	made.drive = Values.text("drive") == "-" ? std::string{} : Values.text("drive");
+	made.bending = Values.bending;
+	made.bending_exception = Values.bending_exception;
+	made.source = Values.source;
+	return made;
+}
+
+} // namespace
+
+bool slip_switch(std::string const &Type)
+{
+	return Type == "Rkp" || Type == "Rkpd" || Type == "Skrz";
+}
+
+glm::dvec2 slip_curve::point(double const Along) const
+{
+	auto const arc = [](glm::dvec2 const &From, double const Heading, double const Radius, double const Length) {
+		if (Radius <= 0.0)
+			return From + glm::dvec2{std::cos(Heading), std::sin(Heading)} * Length;
+		auto const to{Heading + Length / Radius};
+		return From + Radius * glm::dvec2{std::sin(to) - std::sin(Heading), std::cos(Heading) - std::cos(to)};
+	};
+	auto const along{Along - lead};
+	auto result{arc({0.0, 0.0}, 0.0, 0.0, std::min(Along, lead))};
+	if (along > 0.0)
+		result = arc(result, entry, radius, std::min(along, ends));
+	if (along > ends)
+		result = arc(result, heading(lead + ends), middle, std::min(along - ends, between));
+	if (along > ends + between)
+		result = arc(result, heading(lead + ends + between), radius, std::min(along - ends - between, ends));
+	if (along > 2.0 * ends + between)
+		result = arc(result, angle, 0.0, along - 2.0 * ends - between);
+	return result;
+}
+
+double slip_curve::heading(double const Along) const
+{
+	if (Along < lead)
+		return 0.0;
+	if (Along > length() - lead)
+		return angle;
+	auto const along{Along - lead};
+	auto const inside{std::clamp(along - ends, 0.0, between)};
+	return entry + (std::min(along, ends) + std::max(0.0, along - ends - between)) / radius + (middle > 0.0 ? inside / middle : 0.0);
+}
+
+double slip_curve::tangent() const
+{
+	auto const end{point(length())};
+	return end.x - end.y / std::tan(angle);
+}
+
+double slip_curve::offset() const
+{
+	return glm::distance(point(length() * 0.5), glm::dvec2{tangent(), 0.0});
+}
+
+slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead, double const Entry)
+{
+	if (Entry > 0.0 && Angle * 0.5 <= Entry + 1e-6)
+		return slip_of(Radius, Middle, Angle, Pass);
+	auto const make = [&](double const Turn) {
+		return slip_curve{Radius, Radius * Turn, Middle, Middle * (Angle - 2.0 * (Turn + Entry)), Angle, 0.0, Lead, Entry};
+	};
+	if (Middle < 0.0 && Angle >= 1e-6)
+	{
+		// a straight in the middle, as long as the arcs of Radius turning by a half of Angle pass the crossing as near
+		auto low{0.0};
+		auto high{4.0 * Pass / std::tan(Angle * 0.5)};
+		for (int i = 0; i < 60; ++i)
+		{
+			auto const between{(low + high) * 0.5};
+			(slip_curve{Radius, Radius * (Angle * 0.5 - Entry), 0.0, between, Angle, 0.0, Lead, Entry}.offset() > Pass ? high : low) = between;
+		}
+		return {Radius, Radius * (Angle * 0.5 - Entry), 0.0, (low + high) * 0.5, Angle, 0.0, Lead, Entry};
+	}
+	if (Middle <= 0.0 || Angle < 1e-6)
+		return make(Angle * 0.5 - Entry);
+	// the curve passes the crossing nearer as its end arcs turn further, the middle one being flatter
+	auto low{0.0};
+	auto high{Angle * 0.5 - Entry};
+	for (int i = 0; i < 60; ++i)
+	{
+		auto const turn{(low + high) * 0.5};
+		((make(turn).offset() > Pass) == (Middle > Radius) ? low : high) = turn;
+	}
+	return make((low + high) * 0.5);
+}
+
+std::vector<design> read_designs(std::string_view const Text, std::vector<std::string> *Errors)
+{
+	std::vector<design> result;
+	std::size_t start{0};
+	int number{0};
+	while (start < Text.size())
+	{
+		auto end{Text.find('\n', start)};
+		if (end == std::string_view::npos)
+			end = Text.size();
+		auto const line{Text.substr(start, end - start)};
+		start = end + 1;
+		++number;
+		line_words words;
+		std::string error;
+		if (false == split_words(line, words, error))
+		{
+			if (Errors != nullptr)
+				Errors->push_back(std::format("line {}: {}", number, error));
+			continue;
+		}
+		if (words.words.empty() || words.words.front().starts_with('#') || words.words.front() != "switch")
+			continue;
+		entry_values values;
+		if (words.words.size() < 2 || false == values.read(words, error))
+		{
+			if (Errors != nullptr)
+				Errors->push_back(std::format("line {}: {}", number, error.empty() ? "no name" : error));
+			continue;
+		}
+		auto made{design_of(values, error)};
+		if (false == made.has_value() || made->name.empty())
+		{
+			if (Errors != nullptr)
+				Errors->push_back(std::format("line {} ({}): {}", number, values.name, error.empty() ? "no name" : error));
+			continue;
+		}
+		result.push_back(std::move(*made));
+	}
+	return result;
+}
+
+std::string_view catalogue_text()
+{
+	static std::string const text{std::begin(kCatalogueText), std::end(kCatalogueText)};
+	return text;
+}
+
+std::vector<design> const &catalogue_entries()
+{
+	static std::vector<design> const entries{read_designs(catalogue_text())};
+	return entries;
+}
+
+std::vector<design> catalogue()
+{
+	std::vector<design> result;
+	for (auto const &entry : catalogue_entries())
+		if (false == slip_switch(entry.type))
+			result.push_back(entry);
+	return result;
+}
+
+std::vector<design> slips()
+{
+	std::vector<design> result;
+	for (auto const &entry : catalogue_entries())
+		if (slip_switch(entry.type))
+			result.push_back(entry);
 	return result;
 }
 
 std::vector<design> own()
 {
-	std::vector<design> result;
-	std::ifstream file{own_path()};
+	std::ifstream file{own_path(), std::ios::binary};
 	if (false == file.is_open())
-		return result;
-	std::string text;
-	while (std::getline(file, text))
-	{
-		if (text.empty() || text.front() == '#')
-			continue;
-		std::istringstream line{text};
-		design entry;
+		return {};
+	std::string const text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+	auto result{read_designs(text)};
+	// a template of the user is given by its parts; a line giving a switch the way the catalogue does is taken too
+	for (auto &entry : result)
 		entry.own = true;
-		std::string keyword;
-		std::string name;
-		line >> keyword >> name;
-		if (keyword != "switch")
-			continue;
-		entry.name = unword(name);
-		bool good{true};
-		while (good && line >> keyword)
-		{
-			if (keyword == "type")
-				line >> entry.type;
-			else if (keyword == "rail")
-			{
-				line >> entry.rail;
-				if (entry.rail.empty())
-					entry.rail = "-";
-			}
-			else if (keyword == "main")
-				line >> entry.main;
-			else if (keyword == "stagger")
-				line >> entry.stagger;
-			else if (keyword == "lead")
-				line >> entry.lead;
-			else if (keyword == "entry")
-				line >> entry.entry;
-			else if (keyword == "lead2")
-				line >> entry.lead2;
-			else if (keyword == "entry2")
-				line >> entry.entry2;
-			else if (keyword == "tip")
-				line >> entry.tip;
-			else if (keyword == "tip2")
-				line >> entry.tip2;
-			else if (keyword == "heel")
-				line >> entry.heel;
-			else if (keyword == "throw")
-				line >> entry.bladethrow;
-			else if (keyword == "a")
-				line >> entry.a;
-			else if (keyword == "b")
-				line >> entry.b;
-			else if (keyword == "parts")
-				good = read_parts(line, entry.parts);
-			else if (keyword == "parts2")
-				good = read_parts(line, entry.parts2);
-			else
-				good = false;
-			good = good && false == line.fail();
-		}
-		if (good && false == entry.name.empty())
-			result.push_back(std::move(entry));
-	}
 	return result;
+}
+
+std::string own_line(design const &Design)
+{
+	std::string line{"switch " + word(Design.name) + " type " + Design.type + " rail " + word(Design.rail) + ' ' +
+	                 format("main %.4f stagger %.4f a %.4f b %.4f lead %.4f entry %.4f tip %.4f", Design.main, Design.stagger, Design.a, Design.b, Design.lead, Design.entry, Design.tip)};
+	if (Design.lead2 >= 0.0 || Design.entry2 >= 0.0 || Design.tip2 >= 0.0)
+		line += format(" lead2 %.4f entry2 %.4f tip2 %.4f", Design.lead2, Design.entry2, Design.tip2);
+	if (Design.heel > 0.0 || Design.bladethrow > 0.0)
+		line += format(" heel %.4f throw %.4f", Design.heel, Design.bladethrow);
+	// only where it's so: the builds before this one leave out a template with a key they don't know
+	if (Design.movable)
+		line += " frog movable";
+	std::ostringstream parts;
+	parts << " parts";
+	write_parts(parts, Design.parts);
+	if (false == Design.parts2.empty())
+	{
+		parts << " parts2";
+		write_parts(parts, Design.parts2);
+	}
+	return line + parts.str();
 }
 
 bool save_own(std::vector<design> const &Designs, std::string &Error)
@@ -1056,25 +1385,11 @@ bool save_own(std::vector<design> const &Designs, std::string &Error)
 		Error = format(STR_C("Can't write %s"), path.string().c_str());
 		return false;
 	}
-	file << "# switch templates made in the track editor of MaSzyna\n";
-	file << "# switch <name> type <Rz|Rpd|Rpj> rail <rail> main <m> stagger <m> a <m> b <m> lead <m> entry <deg> tip <m> [lead2 <m> entry2 <deg> tip2 <m>] [heel <m> throw <m>] parts <count> (<length> <R at the start> <R at the end>)... parts2 <count> ...\n";
+	file << "# switch templates made in the track editor of MaSzyna, in the format of the catalogue of the editor (editor/data/turnouts.txt)\n";
+	file << "# switch <name> type <Rz|Rpd|Rpj> rail <rail> main <m> stagger <m> a <m> b <m> lead <m> entry <deg> tip <m> [lead2 <m> entry2 <deg> tip2 <m>] [heel <m> throw <m>] [frog movable] parts <count> (<length> <R at the start> <R at the end>)... parts2 <count> ...\n";
 	file << "# R 0 is a straight, the same R at both ends an arc, different ones a transition curve; 0 for main, a, b: from the geometry\n";
 	for (auto const &entry : Designs)
-	{
-		file << "switch " << word(entry.name) << " type " << entry.type << " rail " << word(entry.rail) << ' ' << format("main %.4f stagger %.4f a %.4f b %.4f lead %.4f entry %.4f tip %.4f", entry.main, entry.stagger, entry.a, entry.b, entry.lead, entry.entry, entry.tip);
-		if (entry.lead2 >= 0.0 || entry.entry2 >= 0.0 || entry.tip2 >= 0.0)
-			file << format(" lead2 %.4f entry2 %.4f tip2 %.4f", entry.lead2, entry.entry2, entry.tip2);
-		if (entry.heel > 0.0 || entry.bladethrow > 0.0)
-			file << format(" heel %.4f throw %.4f", entry.heel, entry.bladethrow);
-		file << " parts";
-		write_parts(file, entry.parts);
-		if (false == entry.parts2.empty())
-		{
-			file << " parts2";
-			write_parts(file, entry.parts2);
-		}
-		file << '\n';
-	}
+		file << own_line(entry) << '\n';
 	if (file.fail())
 	{
 		Error = format(STR_C("Can't write %s"), path.string().c_str());

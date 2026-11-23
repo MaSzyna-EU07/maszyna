@@ -491,6 +491,13 @@ file(READ "${EDITOR_ICONS}" EDITOR_ICONS_HEX HEX)
 string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
+# and so is the catalogue of the turnouts, a text file read when it's first needed, see editor/editorSwitchDesign.cpp
+set(EDITOR_TURNOUTS "${CMAKE_SOURCE_DIR}/editor/data/turnouts.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EDITOR_TURNOUTS}")
+file(READ "${EDITOR_TURNOUTS}" EDITOR_TURNOUTS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_TURNOUTS_HEX "${EDITOR_TURNOUTS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_TURNOUTS_HEX "${EDITOR_TURNOUTS_HEX}")
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_turnouts_txt.inc" CONTENT "${EDITOR_TURNOUTS_HEX}\n")
 
 set (PREFIX "")
 set (SUFFIX "")
