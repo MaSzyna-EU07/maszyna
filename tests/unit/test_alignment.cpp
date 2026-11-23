@@ -1162,3 +1162,27 @@ TEST_CASE("alignment: a curve traced on from a switch goes on at its radius, not
 	CHECK(two.vertices.front().arcs.front().radius == doctest::Approx(600.0).epsilon(0.1));
 	CHECK(two.rms < 0.1);
 }
+
+TEST_CASE("alignment: the cant ramp the norms ask for, which a track laid on from a canted joint takes its cant off along") {
+	alignment::limits const norms;
+	// no change, no ramp
+	CHECK(alignment::cant_ramp_length(100.0, 0.0, norms) == doctest::Approx(0.0));
+	// 120 mm at 100 km/h: along the track 0.12 * 10 * 100 = 120 m, longer than in time (100 * 120 / (3.6 * 35) = 95.2 m). The lay tool
+	// used to take any cant off at a fixed 1.5 mm a metre, over 80 m here, whatever the speed and the norms
+	CHECK(alignment::cant_ramp_length(100.0, 120.0, norms) == doctest::Approx(120.0));
+	// the cant taken off or put on alike
+	CHECK(alignment::cant_ramp_length(100.0, -120.0, norms) == doctest::Approx(120.0));
+	// slower, shorter: 0.12 * 10 * 40 = 48 m, to whole 5 m
+	CHECK(alignment::cant_ramp_length(40.0, 120.0, norms) == doctest::Approx(50.0));
+	// the norms of the route tool count: a gentler factor leaves the time the longer, 95.2 m to 100 m
+	auto gentle{norms};
+	gentle.ramp_factor = 5.0;
+	CHECK(alignment::cant_ramp_length(100.0, 120.0, gentle) == doctest::Approx(100.0));
+	// the ramp is never shorter at a higher speed
+	double previous{0.0};
+	for (double speed = 20.0; speed <= 200.0; speed += 10.0) {
+		auto const length{alignment::cant_ramp_length(speed, 80.0, norms)};
+		CHECK(length >= previous);
+		previous = length;
+	}
+}

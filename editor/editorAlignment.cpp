@@ -1348,6 +1348,11 @@ glm::dvec3 along_end(glm::dvec3 const &Point, glm::dvec2 const &Direction, doubl
 
 } // namespace
 
+double cant_ramp_length(double const Speed, double const Cant, limits const &Limits)
+{
+	return ramp_length(Speed, std::abs(Cant), Limits);
+}
+
 std::pair<double, double> end_curvatures(element const &Element)
 {
 	auto const own{Element.radius > 0.0 ? 1.0 / Element.radius : 0.0};

@@ -206,12 +206,13 @@ enum group : int
 	ride_sound,
 	frogs,
 	sleeper_placement, // spacing and shift of the sleepers and of the trackbed under them, apart from their models
+	gauge, // of its own: pasting how a track rides or sounds doesn't change its gauge
 	group_count
 };
 
-char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement"};
+char const *const kGroupLabels[group_count] = {"Speed", "Environment", "Overhead line", "Track circuits", "Rails", "Trackbed", "Shape of the trackbed", "Sleepers", "Ride and sound", "Frog and check rails", "Sleeper placement", "Gauge"};
 // the groups as the presets keep them in their file, by names which don't change with the order of the groups
-char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement"};
+char const *const kGroupKeys[group_count] = {"speed", "environment", "overhead", "circuits", "rails", "trackbed", "bedshape", "sleepers", "ride", "frogs", "sleeperplacement", "gauge"};
 
 struct track_property
 {
@@ -712,7 +713,7 @@ std::vector<track_property> make_properties()
 			return true;
 		};
 	}
-	add_float(list, "gauge", section::ride, group::ride_sound, "Gauge (m)", "Gauge of the track, 1.435 m for the standard gauge", &TTrack::fTrackWidth, 3, 0.01f, true);
+	add_float(list, "gauge", section::ride, group::gauge, "Gauge (m)", "Gauge of the track, 1.435 m for the standard gauge", &TTrack::fTrackWidth, 3, 0.01f, true);
 	list.back().applies = any;
 	return list;
 }
