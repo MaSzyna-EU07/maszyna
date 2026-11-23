@@ -64,11 +64,12 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
-	# the project file of the domain, the tracks written kept by their checksums, the //$ lines migrated into it (test_project_*.cpp)
+	# the project file of the domain, the tracks written kept by their checksums, the //$ lines migrated into it, the scenarios using a map (test_project_*.cpp, test_scenario_index.cpp)
 	"${CMAKE_SOURCE_DIR}/editor/project/projectFile.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/projectGenerated.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/projectMigration.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/project/sceneryText.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/scenarioIndex.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

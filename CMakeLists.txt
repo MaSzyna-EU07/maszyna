@@ -226,6 +226,7 @@ set(SOURCES
 "editor/project/projectGenerated.cpp"
 "editor/project/projectMigration.cpp"
 "editor/project/sceneryText.cpp"
+"editor/project/scenarioIndex.cpp"
 "editor/editorNormsReport.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"

@@ -1,0 +1,18 @@
+// a scenario of the map: its trainset on a track of the map, its own events calling the events of the map and acting on its tracks
+// and memory cells, a track of its own calling an event of the map, an event launcher
+time 6:00 5:00 20:00 endtime
+include mapa/mapa.scm end
+node -1 0 bocznica track normal 50.0 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 -50 0 0 0 0 0 0 0 0 0 0 0 velocity 20 event2 sem_a_sr2 endtrack
+event start_poranek multiple 0 none sem_a_s1 tor_1_zajety none_pominiete nieznane endevent
+event zwrotnica switch 1.0 zwr_1 1 endevent
+event komorka updatevalues 0 stacja_mem Jump_to_track 1 2 endevent
+event Tor_2:event1 multiple 0 none start_poranek endevent
+node -1 0 przycisk eventlauncher 0 0 0 5 h 0 sem_a_s1 condition sem_a_mem * 100 * end
+// trainset w_komentarzu tor_3 0 0
+FirstInit
+trainset rano tor_1 10.0 0.0
+node -1 0 loco dynamic pkp ep07 ep07 0 headdriver 3 0 enddynamic
+endtrainset
+trainset na_bocznicy bocznica 0.0 0.0
+node -1 0 wagon dynamic pkp 412z 412z 0 nobody 3 0 enddynamic
+endtrainset
