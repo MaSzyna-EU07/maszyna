@@ -1,10 +1,16 @@
 {
-  "description": "GE#536 stage 1: an E6ACTad (Dragon 2 last mile) on the td/rozklad timetable of td.scn, switched to its genset by the scenery before it leaves: PutValues MainSwitch 0, TractionMode 1, GensetSwitch 1 from event0 of its track, 1 s apart. The AI, which knows nothing of the genset, closes the line breaker once the genset runs and drives to Przystanek on at most 442 kW at the wheels (520 kW x 0.85). Needs the temporary variant e6actad_g6.fiz/.mmd in dynamic/pkp/e6act_v2 of the game (not in the SVN, see tests/scenarios/README.md).",
+  "description": "GE#536 stage 1: an E6ACTad (Dragon 2 last mile) on the td/rozklad timetable of td.scn, switched to its genset by the scenery before it leaves: PutValues MainSwitch 0, TractionMode 1, GensetSwitch 1 from event0 of its track, 1 s apart. The AI, which knows nothing of the genset, closes the line breaker once the genset runs and drives to Przystanek on at most 442 kW at the wheels (520 kW x 0.85). Makes its own E6ACTad for the run (vehicle_variants g6: e6acta.fiz.inc with the genset keys, the .mmd of e6actad).",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_timetable_genset.scn",
+  "vehicle_variants": [
+    { "name": "g6", "from": "pkp/e6act_v2/e6actad", "fiz_from": "pkp/e6act_v2/e6acta.fiz.inc", "replace": [
+      ["InactiveCabFlag=15", "InactiveCabFlag=15 GensetStart=Manual"],
+      ["PhysicalLayout=3", "PhysicalLayout=3 GensetPower=520 GensetVoltage=3000 GensetIdleRPM=700 GensetMaxRPM=1800 GensetStartTime=8 GensetSpinUpTime=3 GensetPmaxRatio=0.85"]
+    ] }
+  ],
   "vars": {
-    "consist": "node -1 0 {{vehicle}} dynamic pkp\\e6act_v2 e6actad-017 e6actad_g6 0 headdriver 0 0 enddynamic"
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\e6act_v2 e6actad-017 {{variant_g6}} 0 headdriver 0 0 enddynamic"
   },
   "ini": ["gfxrenderer null"],
   "track_events": {

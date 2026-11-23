@@ -177,11 +177,16 @@ def write_vehicle_variants(case: dict, game_dir: Path, case_name: str) -> None:
     files = {}
     for variant in case.get("vehicle_variants", []):
         source = game_dir / "dynamic" / variant["from"]
+        # the .fiz to copy: the vehicle's own, or another file named in full (fiz_from), e.g. the .fiz.inc a
+        # vehicle's .fiz only includes, as keys added after the include on a second line of the same section
+        # would load that section again
+        fiz_source = game_dir / "dynamic" / variant["fiz_from"] if "fiz_from" in variant else source.with_name(source.name + ".fiz")
+        fiz_name = variant.get("fiz_from", f"{variant['from']}.fiz")
         # .fiz files are cp1250 like the sceneries; latin-1 round-trips every byte
-        fiz = source.with_name(source.name + ".fiz").read_bytes().decode("latin-1")
+        fiz = fiz_source.read_bytes().decode("latin-1")
         for old, new in variant.get("replace", []):
             if old not in fiz:
-                sys.exit(f"vehicle_variants: {variant['from']}.fiz has no {old!r}")
+                sys.exit(f"vehicle_variants: {fiz_name} has no {old!r}")
             fiz = fiz.replace(old, new)
         mmd = source.with_name(source.name + ".mmd").read_bytes().decode("latin-1").replace("(p2)", source.name)
         fiz_path, mmd_path = variant_paths(game_dir, case_name, variant)
