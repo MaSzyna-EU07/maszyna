@@ -1,0 +1,19 @@
+# Editing on the model (E4a): the route design applied to old tracks makes them a line of the model in their place, one step, the
+# tracks made by the model marked as its.
+# Ctrl+Z brings the old tracks back. The straight a1, a2, a3 along x 0, z 0..300
+wait 5
+modelediting 1
+route 0 150 0
+routeapply
+wait 2
+expect modellines 1
+expect managed @1.0 1
+expect track a2 removed
+expect modelends
+expect steps 1
+undo
+wait 2
+expect modellines 0
+expect track a2 present
+expect managed a2 none
+quit

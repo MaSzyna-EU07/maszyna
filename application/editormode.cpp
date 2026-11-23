@@ -1128,6 +1128,8 @@ void editor_mode::undo_one()
     } const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = m_history.back();
     m_history.pop_back();
+    // a command of the model: the model takes it back, the step the tracks it made
+    model_history(snap.model_token, true);
 
     if (snap.action == EditorSnapshot::Action::Terrain)
     {
@@ -1304,6 +1306,7 @@ void editor_mode::redo_one()
     } const restoring{m_nmt_state.restoring};
     EditorSnapshot snap = g_redo.back();
     g_redo.pop_back();
+    model_history(snap.model_token, false);
 
     if (snap.action == EditorSnapshot::Action::Terrain)
     {

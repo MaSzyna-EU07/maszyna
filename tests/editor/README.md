@@ -93,6 +93,17 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect window <shortcuts\|settings\|weather\|orthophoto> <0\|1>` | the window of the shortcuts (F1), of the settings of the editor, of the weather and the time, of the settings of the orthophoto is open |
 | `expect selected <x> <y> <z> <tolerance>` | the node selected stands at the point |
 
+With the editing on the model (`modelediting 1`, the setting for the run only), a track may be named `@<line>.<index>`: the track of
+the line of the model at the index from its start; `modeltracks` logs the lines and their tracks. The expectations:
+
+| expectation | checks |
+| --- | --- |
+| `expect managed <track> <line\|none\|any>` | the track is made by the model of the line, or isn't |
+| `expect modellines <count>` | the lines of the model |
+| `expect projectfile <present\|absent>`, `expect projectfile lines <count>` | the project file next to the copy of the scenery, the lines it holds |
+| `expect modelends` | the tracks of each line end at the numbers of its nodes and at each other, to the bit |
+| `expect hand <line> <0\|1>` | the line is taken for changed by hand |
+
 A line `#> reopen` ends a run of the editor there (the part before it saves and ends with `quit`) and starts the editor again
 on the scenery as it was saved, for what has to be checked after a save and a load. The editor's own `openscenery` starts a
 new editor without the script, so it isn't for the cases.
@@ -141,3 +152,11 @@ and the flow of the lay and the switch tools, a step at a time:
 | --- | --- |
 | `lf_1_lay_panel_states` | the panel of the lay tool goes from ready, its settings shown, to clicking, its settings folded to a line, to the line laid told over the settings, and back to ready when it's taken back; the same in the mode of a curve traced |
 | `lf_2_switch_panel_states` | the panel of the switch tool stays ready after a switch refused, is placed after a switch laid, and tells a switch selected again after another one was laid |
+
+and the editing on the model of the track geometry (E4a of the plan of the track editing), with the setting on:
+
+| case | checks |
+| --- | --- |
+| `m_0_setting_off` | the setting off, a line laid is an old track and no project file is written |
+| `m_1_lay_managed` | a line laid in the straights is a line of the model, its tracks marked as its, the project file written with the scenery, the ends to the bit before and after a reopen |
+| `m_7_plan_converts` | the route design applied to old tracks makes them a line of the model; Ctrl+Z brings the old tracks back |

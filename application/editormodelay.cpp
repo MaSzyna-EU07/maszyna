@@ -2070,6 +2070,41 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		}
 		return;
 	}
+	// with the editing on the model, a line of the model: refused with the reasons, the points kept to be put right, or laid, its tracks
+	// made by the model and marked as its. What it doesn't lay yet is laid the old way, told why
+	std::string oldway;
+	if (std::vector<TTrack *> made; model_lay(plan, End, made, oldway))
+	{
+		if (model_refused() || made.empty())
+		{
+			tool.laid_now = false;
+			tool.status = model_message();
+			if (End.track != nullptr && false == tool.points.empty())
+			{
+				tool.points.pop_back();
+				lay_trim();
+			}
+			WriteLog("Editor: " + tool.status, logtype::generic);
+			return;
+		}
+		first_step_done(first_step::laid);
+		if (End.track != nullptr)
+			first_step_done(first_step::join);
+		lay_told(length, made.size());
+		tool.status += "\n" + model_message();
+		for (auto const &notice : model_notices())
+			tool.status += "\n" + notice;
+		m_node = made.back();
+		ui()->set_node(m_node);
+		tool.laid = {made, length, {}};
+		WriteLog("Editor: " + tool.status, logtype::generic);
+		tool.points.clear();
+		tool.modes.clear();
+		tool.start = {};
+		tool.laid_step = m_history.size();
+		straight_refresh();
+		return;
+	}
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
 	if (style == nullptr && tool.copy_selected)
 		style = selected_track();
@@ -2126,6 +2161,8 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
 		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
+	if (false == oldway.empty())
+		tool.status += "\n" + oldway;
 	m_node = created.back();
 	ui()->set_node(m_node);
 	// what was laid, told in the inspector as long as the last track stays selected

@@ -878,6 +878,8 @@ void editor_mode::render_track_selection()
 	{
 		ImGui::TextUnformatted(name_of(*track).c_str());
 		ImGui::TextDisabled("%s, %.2f m", STR_C(track_type_name(*track)), track->Length());
+		if (auto const label{model_label(track)}; false == label.empty())
+			ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), "%s", label.c_str());
 		return;
 	}
 	render_path_ui();
@@ -1657,6 +1659,12 @@ void editor_mode::render_path_ui()
 	}
 	render_track_name(*track);
 	ImGui::TextDisabled("%s, %.2f m", STR_C(track_type_name(*track)), track->Length());
+	// a track the model made of its line: edited through the route design, the other tools change it by hand
+	if (auto const label{model_label(track)}; false == label.empty())
+	{
+		ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), "%s", label.c_str());
+		item_tooltip("Made by the model of the track geometry of its line: the route design edits the line, checked against the norms. Changed here, it's a change by hand, which the model asks about before it lays the line anew");
+	}
 	if (track->eType == tt_Normal && false == track->m_paths.empty())
 	{
 		// the track at a glance: tiles of its length, radius, grade, cant and speed, going on to the next row at the edge

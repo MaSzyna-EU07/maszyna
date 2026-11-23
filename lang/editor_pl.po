@@ -14877,5 +14877,50 @@ msgstr "Nie można otworzyć projektu mapy: %s. Tory są edytowane po staremu"
 msgid "Editing on the model: the project of the map is %s, %zu lines of the model"
 msgstr "Edycja na modelu: projekt mapy to %s, linii modelu: %zu"
 
+msgid "Line %s (managed)"
+msgstr "Linia %s (zarządzana)"
+
+msgid "Made by the model of the track geometry of its line: the route design edits the line, checked against the norms. Changed here, it's a change by hand, which the model asks about before it lays the line anew"
+msgstr "Utworzony przez model geometrii torów z jego linii: linię edytuje projekt trasy, ze sprawdzeniem norm. Zmiana tutaj to zmiana ręczna, o którą model zapyta, zanim ułoży linię od nowa"
+
+msgid "Refused, nothing changed:"
+msgstr "Odmowa, nic się nie zmieniło:"
+
+msgid "%s: done"
+msgstr "%s: wykonano"
+
+msgid "%s: line %s, %zu track"
+msgid_plural "%s: line %s, %zu tracks"
+msgstr[0] "%s: linia %s, %zu tor"
+msgstr[1] "%s: linia %s, %zu tory"
+msgstr[2] "%s: linia %s, %zu torów"
+
+msgid "create line"
+msgstr "nowa linia"
+
 msgid "The project of the map isn't saved: %s"
 msgstr "Projekt mapy nie został zapisany: %s"
+
+msgid "A curve traced is laid as an old track: the model lays the straights for now"
+msgstr "Łuk po zdjęciu jest układany jako stary tor: model na razie układa proste"
+
+msgid "A curve going on from the curve of a free end is laid as an old track: the model doesn't lay it yet"
+msgstr "Łuk przedłużający łuk wolnego końca jest układany jako stary tor: model jeszcze go nie układa"
+
+msgid "A compound curve, or one with cant ramps of its own, is laid as an old track: the model doesn't lay it yet"
+msgstr "Łuk koszowy albo łuk z własnymi rampami przechyłki jest układany jako stary tor: model jeszcze go nie układa"
+
+msgid "A line through switches is applied to the old tracks: the switches go through the model later"
+msgstr "Linia przez rozjazdy jest stosowana do starych torów: rozjazdy przejdą przez model później"
+
+msgid "A curve going on from the curve of the track beyond is applied to the old tracks: the model doesn't lay it yet"
+msgstr "Łuk przedłużający łuk toru za końcem jest stosowany do starych torów: model jeszcze go nie układa"
+
+msgid "A compound curve, or one with cant ramps of its own, is applied to the old tracks: the model doesn't lay it yet"
+msgstr "Łuk koszowy albo łuk z własnymi rampami przechyłki jest stosowany do starych torów: model jeszcze go nie układa"
+
+msgid "Tracks with events or in isolated circuits are applied as old tracks: their events would be lost"
+msgstr "Tory z eventami albo w odcinkach izolowanych są zmieniane jako stare tory: ich eventy by przepadły"
+
+msgid "A line with a grade line of its own is applied to the old tracks: the model takes over the grade line later"
+msgstr "Linia z własną niweletą jest stosowana do starych torów: model przejmie niweletę później"

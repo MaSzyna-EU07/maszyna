@@ -659,7 +659,13 @@ bool editor_mode::route_from_line(TTrack &Track)
 void editor_mode::route_apply()
 {
 	m_route.error.clear();
+	// old tracks made a line of the model, with the editing on the model
+	std::string oldway;
+	if (model_plan_convert(oldway))
+		return;
 	route_lay();
+	if (false == oldway.empty())
+		m_route.status += (m_route.status.empty() ? "" : "\n") + oldway;
 	if (false == m_route.error.empty())
 		refused(m_route.error);
 }
@@ -1637,6 +1643,7 @@ void editor_mode::render_route_ui()
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextDisabled(STR_P("%zu path, %.2f m", "%zu paths, %.2f m", route.chain.tracks.size()), route.chain.tracks.size(), route.chain.length);
+
 	auto const reset{STR_C("Reset design")};
 	auto const reset_width{ImGui::CalcTextSize(reset).x + ImGui::GetStyle().FramePadding.x * 2.0f};
 	same_line_if_fits(reset_width);

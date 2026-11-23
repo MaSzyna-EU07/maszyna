@@ -484,6 +484,9 @@ class editor_track
 	// the switch of the scenery as a template of its own shape; none when its tracks don't start at one point
 	static std::optional<switch_template> template_of_switch(TTrack *Track);
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
+	// a path of the entry as the scenery has it from its type on ("normal ... endtrack"), in the layer receiving the items created in the
+	// editor, under the name unless another path has it already; committed by the caller
+	static TTrack *load_entry(std::string const &Text, std::string const &Name) { return load_text(Text, nullptr, Name); }
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path, std::string const &Name = {});
 	// parameters of a path laid where there's no other path to copy them from
 	struct path_style
