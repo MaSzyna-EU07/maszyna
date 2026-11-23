@@ -78,6 +78,8 @@ class local_lights
 	void gather(glm::dvec3 const &Camera, scene::basic_region &Region, gfx::geometrybank_manager const &Geometry, unsigned int const Framestamp);
 	// forgets the lights and everything kept about the scene, which is about to be replaced (a scenery being loaded)
 	void reset();
+	// the flashlight of the player, when it's on (Global.flashlight), added by gather()
+	void add_flashlight();
 	// the lights of models and vehicles, the most important (closest and brightest) first
 	std::vector<light> const &lights() const
 	{

@@ -182,6 +182,9 @@ struct global_settings {
     std::string GfxRenderer{ "default" };
     bool RenderShadows{ true };
 	bool applicationQuitOrder{false};
+	// the flashlight of the player is on: a cone of light from the camera where it looks (gfx::local_lights), switched with
+	// flashlighttoggle (Ctrl+Shift+L). off at the start, not kept between the runs
+	bool flashlight{false};
     int RenderCabShadowsRange{ 0 };
     struct shadowtune_t {
         unsigned int map_size{ 2048 };

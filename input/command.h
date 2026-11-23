@@ -421,6 +421,8 @@ enum class user_command
 	linebreakeropenc,
 	linebreakerclosec,
 	repaircoupler, // the broken coupler of the vehicle (payload) at the end (param1)
+	// the flashlight of the player (Global.flashlight), at the end so the numbers of the commands before it stay as they were
+	flashlighttoggle,
 	none = -1
 };
 

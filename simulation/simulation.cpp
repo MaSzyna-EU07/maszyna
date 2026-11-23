@@ -256,6 +256,9 @@ void state_manager::process_commands() {
 			if (commanddata.command == user_command::debugtoggle)
 				DebugModeFlag = !DebugModeFlag;
 
+			if (commanddata.command == user_command::flashlighttoggle)
+				Global.flashlight = !Global.flashlight;
+
 			if (commanddata.command == user_command::pausetoggle) {
 				if( Global.iPause & 1 ) {
 					// jeśli pauza startowa

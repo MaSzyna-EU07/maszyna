@@ -254,6 +254,11 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 			}
 		}
 
+		if (Global.flashlight)
+		{
+			add_flashlight();
+		}
+
 		// the most important lights first: when the light buffer or the list of a cluster fills up, the others are left out
 		std::sort(std::begin(m_lights), std::end(m_lights), [&Camera](light const &Left, light const &Right) {
 			return glm::length2(Left.position - Camera) / std::max(max_component(Left.color), 1e-6f) < glm::length2(Right.position - Camera) / std::max(max_component(Right.color), 1e-6f);
@@ -262,6 +267,28 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 
 	auto const elapsed{std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count()};
 	m_gathertime = (m_gathertime == 0.0 ? elapsed : m_gathertime * 0.95 + elapsed * 0.05);
+}
+
+// the flashlight of the player (Global.flashlight): a cone of warm white light where the camera looks, from a little under it as
+// from a hand, by day as well. it casts no shadows (it has no shadow map of its own)
+void gfx::local_lights::add_flashlight()
+{
+	auto const &camera{Global.pCamera};
+	glm::dmat4 view{1.0};
+	camera.SetMatrix(view);
+	// the line of sight: the -z axis of the view, in the world
+	auto const forward{glm::normalize(-glm::dvec3{view[0][2], view[1][2], view[2][2]})};
+	auto const up{glm::normalize(glm::dvec3{view[0][1], view[1][1], view[2][1]})};
+	light flashlight;
+	flashlight.position = camera.Pos - up * 0.15;
+	flashlight.direction = glm::vec3{forward};
+	flashlight.color = to_linear(glm::vec3{1.f, 0.93f, 0.82f}) * 4.f;
+	flashlight.cos_outer = std::cos(glm::radians(24.f));
+	flashlight.cos_inner = std::cos(glm::radians(12.f));
+	flashlight.range = light_range(flashlight.color);
+	flashlight.radius = 0.02f;
+	flashlight.cast_shadows = false;
+	m_lights.emplace_back(flashlight);
 }
 
 void gfx::local_lights::reset()
