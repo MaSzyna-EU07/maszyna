@@ -101,6 +101,9 @@ struct scenery
 // the scenery from the file Root, relative to the folder, with all its includes
 scenery read(std::filesystem::path const &Folder, std::string const &Root, read_options const &Options = {});
 
+// the text of the file, also where it's named in another case, as the game finds it (FileCased); none when it can't be read
+std::optional<std::string> file_text(std::filesystem::path const &Path);
+
 // the same names of files, the case and the slashes aside
 bool same_file(std::string_view const A, std::string_view const B);
 

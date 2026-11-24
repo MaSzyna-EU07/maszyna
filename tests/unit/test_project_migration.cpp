@@ -168,6 +168,16 @@ TEST_CASE("project migration: the golden //$ lines of data/records made into a p
 	CHECK(station->name == editor_records::read_station(files[7].lines.at('s')[1])->name);
 }
 
+TEST_CASE("project migration: a map with no //$ lines gets an empty project and no file next to it") {
+	test::scratch_folder folder{"project_migration_none"};
+	std::ofstream{folder.root() / "pusta.scm", std::ios::binary} << "node -1 0 t1 track normal 100 1.435 0.2 25 20 0 flat vis 0 0 0 0 0 0 0 0 0 0 100 0 endtrack\n";
+	auto const opened{project::open_project(folder.root(), "pusta.scm")};
+	REQUIRE_MESSAGE(opened.project.project.has_value(), opened.project.error);
+	CHECK(opened.project.project->network.lines().empty());
+	CHECK_FALSE(opened.migrated);
+	CHECK_FALSE(std::filesystem::exists(folder.root() / "pusta.eu07proj"));
+}
+
 TEST_CASE("project migration: a map opened for the first time gets its project of the //$ lines of its files; the files stay as they were") {
 	test::scratch_folder folder{"project_migration"};
 	auto const source{std::filesystem::path{EU07_UNIT_TESTS_DATA} / "project" / "migration"};

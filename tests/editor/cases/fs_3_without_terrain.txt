@@ -1,7 +1,8 @@
 # First steps: the answer Without terrain to the question of the terrain of a new empty scenery turns off the terrain made of the
 # terrain model by itself: under the tracks as they're laid (the checkbox of the layers) and around the camera within the download
-# area (the checkbox of the terrain panel), so nothing of the model is asked for. The question asked as the first L in an empty
-# scenery asks it (the fixture has tracks, so it isn't asked by itself)
+# area (the checkbox of the terrain panel), so nothing of the model is asked for. For this scenery only: the settings, kept for the
+# sceneries opened later, stay as they were (nmtquestion flat fails the run if they changed). The question asked as the first L
+# in an empty scenery asks it (the fixture has tracks, so it isn't asked by itself)
 wait 5
 nmtsettings grow 1
 wait 2
