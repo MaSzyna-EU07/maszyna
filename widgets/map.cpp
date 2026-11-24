@@ -700,7 +700,7 @@ void ui::map_panel::render_map_lines(
 
 	draw_cached_lines(m_cached_road_lines, IM_COL32(235, 165, 65, 255));
 	for (auto const &handle : m_colored_paths.future)
-		draw_geometry(handle, IM_COL32(180, 180, 65, 255));
+		draw_geometry(handle, IM_COL32(180, 180, 65, 255), 1.5f);
 	for (auto const &handle : m_colored_paths.switches)
 		draw_geometry(handle, IM_COL32(0, 255, 0, 255));
 	for (auto const &handle : m_colored_paths.occupied)
@@ -934,6 +934,31 @@ void ui::map_panel::render_map_lines(
 			glm::length2(glm::vec2(mouse_position.x - object_position.x, mouse_position.y - object_position.y)) <= 100.0f;
 		if (object_hovered)
 			m_hovered_map_object = object;
+
+		if (auto const launcher = std::dynamic_pointer_cast<map::launcher>(object);
+		    launcher && launcher->type == map::launcher::level_crossing)
+		{
+			draw_list->AddCircleFilled(object_position, 8.0f, IM_COL32(35, 40, 45, 240));
+			draw_list->AddLine(
+				ImVec2(object_position.x - 5.0f, object_position.y - 5.0f),
+				ImVec2(object_position.x + 5.0f, object_position.y + 5.0f),
+				IM_COL32(245, 245, 245, 255), 4.0f);
+			draw_list->AddLine(
+				ImVec2(object_position.x - 5.0f, object_position.y + 5.0f),
+				ImVec2(object_position.x + 5.0f, object_position.y - 5.0f),
+				IM_COL32(245, 245, 245, 255), 4.0f);
+			draw_list->AddLine(
+				ImVec2(object_position.x - 5.0f, object_position.y - 5.0f),
+				ImVec2(object_position.x + 5.0f, object_position.y + 5.0f),
+				IM_COL32(220, 55, 55, 255), 1.5f);
+			draw_list->AddLine(
+				ImVec2(object_position.x - 5.0f, object_position.y + 5.0f),
+				ImVec2(object_position.x + 5.0f, object_position.y - 5.0f),
+				IM_COL32(220, 55, 55, 255), 1.5f);
+			if (object_hovered)
+				draw_list->AddCircle(object_position, 11.0f, IM_COL32(120, 200, 255, 255), 0, 2.0f);
+			continue;
+		}
 
 		ImU32 color = IM_COL32(255, 220, 70, 255);
 		if (std::dynamic_pointer_cast<map::launcher>(object))
