@@ -773,6 +773,14 @@ TController::cue_action( driver_hint const Action, float const Actionparameter )
                     return mvPantographUnit->PantPress >= (is_emu() ? (mvPantographUnit->PantPressLockActive ? 4.6 : 2.6) : 4.2); } );
             break;
         }
+        case driver_hint::waitbrakecharge: {
+            // NOTE: this action doesn't have AI component: the ai waits through Ready and DecBrake()
+            hint(
+                Action,
+                [this](float const /*Parameter*/) {
+                    return IsConsistCharged; } );
+            break;
+        }
         case driver_hint::waitloadexchange: {
             // NOTE: this action doesn't have AI component
             hint(

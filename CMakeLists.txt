@@ -559,6 +559,8 @@ set(CORE_SOURCES
 "vehicle/brakesetting.cpp"
 "vehicle/brakingcurve.cpp"
 "vehicle/handover.cpp"
+"vehicle/uphillstart.cpp"
+"vehicle/brakecharge.cpp"
 "vehicle/horn.cpp"
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
