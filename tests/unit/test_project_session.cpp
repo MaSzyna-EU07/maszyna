@@ -64,9 +64,9 @@ TEST_CASE("project session: the map opened gets its project, a command tried cha
 	project::session session;
 	auto const opened{session.open(folder.root(), "mapa.scn")};
 	REQUIRE(opened.done);
-	// nothing to migrate: no file yet, it's written as the scenery is saved
+	// nothing to migrate, and the map has its project file all the same: the session writes it as the map is opened
 	CHECK_FALSE(opened.migrated);
-	CHECK_FALSE(std::filesystem::exists(folder.root() / "mapa.eu07proj"));
+	CHECK(std::filesystem::exists(folder.root() / "mapa.eu07proj"));
 	CHECK(session.file() == folder.root() / "mapa.eu07proj");
 	CHECK(session.network().lines().empty());
 
