@@ -62,11 +62,12 @@ void main()
 	float depth = max((weights > 0.0) ? sum / weights : own.x, 0.0);
 	// as snow_drift.comp: the snow on a track over what it keeps down, the rails buried under it no longer kept clean
 	bool buried = false;
-	if (here.z < NO_CAP)
+	bool capped = (here.z < NO_CAP) && (here.x < here.z + SNOW_CAP_OVER);
+	if (capped)
 	{
 		float kept = here.z - here.x;
 		depth = (here.w >= 0.0) ? max(clamp(kept, 0.0, depth), kept - 0.14 + here.w) : clamp(kept, 0.0, depth);
 		buried = here.w > 0.17;
 	}
-	snow_cells[index] = vec4(here.x + depth, depth, ((here.z < NO_CAP) && !buried) ? here.z : here.y, own.y);
+	snow_cells[index] = vec4(here.x + depth, depth, (capped && !buried) ? here.z : here.y, own.y);
 }

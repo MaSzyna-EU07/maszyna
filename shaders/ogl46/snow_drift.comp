@@ -119,6 +119,9 @@ float opening(ivec2 texel, float ceiling)
 	return clamp(open / 12.0, 0.0, 1.0);
 }
 
+// m a surface may stand over the height a track or a road keeps the snow below and still be kept down by it (as snow.glsl)
+const float SNOW_CAP_OVER = 0.3;
+
 void main()
 {
 	ivec2 texel = ivec2(gl_GlobalInvocationID.xy) + ivec2(0, map.w);
@@ -187,7 +190,9 @@ void main()
 	// a track or a road keeps it down. the snow on a track (w, m over the ground: what came since the trains last cleared it,
 	// TTrack::snow_at(); negative where it isn't known) lies over that as it comes, the drift of the place at most; once it's
 	// over the rails they're buried, and the track is the snow like the rest
-	if (here.z < NO_CAP)
+	// only what lies about as high as the track or the road is kept down: a surface standing well over it (a platform over a road
+	// laid under the whole station, a wall) holds its snow
+	if ((here.z < NO_CAP) && (height < here.z + SNOW_CAP_OVER))
 	{
 		// the track lies lower than the snow around: what the wind carries fills it up to that at least, also where the open
 		// ground is blown off (TTrack::snow_at() counts what it brought in)

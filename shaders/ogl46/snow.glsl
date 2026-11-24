@@ -12,6 +12,9 @@
 const float SNOW_NONE = -5000.0;
 const float SNOW_NO_CEILING = 5000.0;
 const float SNOW_TRACKED = 4.0;
+// m a surface may stand over the height a track or a road keeps the snow below and still be kept down by it (snow_drift.comp,
+// snow_settle.comp): higher than that is something else over its width, a platform, a wall, which holds its snow
+const float SNOW_CAP_OVER = 0.3;
 
 #ifdef SNOW_WRITE
 layout(std430, binding = SNOW_SSBO_BINDING) writeonly buffer snow_ssbo
