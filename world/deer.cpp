@@ -583,7 +583,7 @@ void simulation::deer_herd::update(double const Deltatime)
 	if ((Global.deer_interval > 0.0) && (m_travelled >= Global.deer_interval))
 	{
 		m_travelled = 0.0;
-		if ((Random(0.0, 1.0) < Global.deer_chance) && (false == spawn(*vehicle)))
+		if ((LocalRandom(0.0, 1.0) < Global.deer_chance) && (false == spawn(*vehicle)))
 		{
 			// no flat ground, a switch or a platform there: soon again
 			m_travelled = std::max(0.0, Global.deer_interval - Retrydistance);
@@ -669,8 +669,8 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	// across the path, a little askew, to the side with flat ground to run away over (one picked at random first)
 	deer animal;
 	animal.start = place.position;
-	auto const askew{Random(-25.0, 25.0) * std::numbers::pi / 180.0};
-	auto const first{Random(0.0, 1.0) < 0.5 ? -1.0 : 1.0};
+	auto const askew{LocalRandom(-25.0, 25.0) * std::numbers::pi / 180.0};
+	auto const first{LocalRandom(0.0, 1.0) < 0.5 ? -1.0 : 1.0};
 	auto found{false};
 	std::string reasons;
 	for (auto const side : {first, -first})
@@ -691,7 +691,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 		return false;
 	}
 	// grazing from a moment of its own
-	animal.frame = Random(0.0, Grazing.frames);
+	animal.frame = LocalRandom(0.0, Grazing.frames);
 	animal.time = Timer::GetTime();
 	animal.model = make_deer(Grazing, place.position, vat_turn(animal.heading, Grazing, 0, animal.frame, animal.time), false);
 	if (animal.model == nullptr)
