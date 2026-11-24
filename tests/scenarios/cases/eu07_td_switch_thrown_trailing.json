@@ -47,6 +47,10 @@
     {
       "type": "log_lacks",
       "pattern": "Bad driving"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "EVENT LAUNCHED.*: autotest_throw_done$"
     }
   ]
 }
