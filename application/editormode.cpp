@@ -2587,6 +2587,7 @@ void editor_mode::load_orthophoto_settings()
     // the scenery's own line: whether the photo is on, the wizard writes it on, and the origin the editor wrote along
     std::optional<bool> scenery_on;
     std::optional<glm::dvec2> marked_origin;
+    bool marked_aligned{false};
     m_orthophoto_mark.clear();
     if (auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")}; false == marked.empty())
     {
@@ -2598,12 +2599,15 @@ void editor_mode::load_orthophoto_settings()
             scenery_on = on;
             if (mark.north != 0.0 || mark.east != 0.0)
                 marked_origin = glm::dvec2{mark.north, mark.east};
+            marked_aligned = mark.aligned;
         }
     }
-    // //$g of the scenery file first: an origin the editor remembers for a scenery of the same name made elsewhere doesn't move it
-    auto const origin{photo_rules::choose_origin(m_georeference ? std::optional<glm::dvec2>{m_georeference_origin} : std::nullopt, marked_origin, remembered)};
+    // //$g of the scenery file first: an origin the editor remembers for a scenery of the same name made elsewhere doesn't move it. One
+    // aligned by hand in the editor, //$o says so, goes before it
+    auto const origin{photo_rules::choose_origin(m_georeference ? std::optional<glm::dvec2>{m_georeference_origin} : std::nullopt, marked_origin, remembered, marked_aligned)};
     config.north = origin.origin.x;
     config.east = origin.origin.y;
+    config.aligned = marked_aligned && origin.from == photo_rules::origin_source::mark;
     m_georeference_differs = origin.differs > photo_rules::origin_tolerance ? origin.differs : 0.0;
     if (m_georeference_differs > 0.0)
     {
@@ -2712,6 +2716,8 @@ void editor_mode::render_orthophoto_ui()
     {
         config.north = m_orthophoto_origin_edit.x;
         config.east = m_orthophoto_origin_edit.y;
+        // aligned by hand: kept so in //$o, which //$g of the scenery file doesn't override when the scenery is opened again
+        config.aligned = true;
         changed = true;
         persist = true;
     }
@@ -2721,14 +2727,16 @@ void editor_mode::render_orthophoto_ui()
         ImGui::TextDisabled(STR_C("in the scenery file: Y (easting) %.0f m, X (northing) %.0f m"), m_georeference_origin.y, m_georeference_origin.x);
         if (config.north != m_georeference_origin.x || config.east != m_georeference_origin.y)
         {
-            // //$g goes first when the scenery is opened: an origin typed here is for this session
-            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("Opened again, the scenery is laid out by //$g of its file"));
+            // //$g goes first when the scenery is opened, unless the origin was aligned here by hand, which //$o keeps
+            if (false == config.aligned)
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", STR_C("Opened again, the scenery is laid out by //$g of its file"));
             if (ImGui::SmallButton(STR_C("Use it")))
             {
                 m_orthophoto_origin_edit.x = m_georeference_origin.x;
                 config.north = m_orthophoto_origin_edit.x;
                 m_orthophoto_origin_edit.y = m_georeference_origin.y;
                 config.east = m_orthophoto_origin_edit.y;
+                config.aligned = false;
                 changed = true;
                 persist = true;
             }
@@ -2949,7 +2957,8 @@ double editor_mode::view_metres_per_pixel() const
 void editor_mode::orthophoto_zoom()
 {
     // the 4K photos of the tiles around the camera by themselves once the view shows the ground at 15 cm a pixel or finer; asked of the
-    // service as the setting for them asks, the few tiles next to the camera, a few at a time
+    // service as the setting for them asks, the tile under the camera alone (the setting for them takes the 3 x 3 around it), so the zoom
+    // doesn't take some 0.75 GB of the memory of the graphics card by itself
     auto const wanted{m_orthophoto.enabled() && photo_rules::hires_wanted(view_metres_per_pixel(), m_orthophoto.zoom_hires())};
     if (wanted != m_orthophoto.zoom_hires())
     {

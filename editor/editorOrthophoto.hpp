@@ -56,6 +56,7 @@ class editor_orthophoto
 	{
 		double north{0.0};      // PUWG 1992 X (northing) of the scenery origin
 		double east{0.0};       // PUWG 1992 Y (easting) of the scenery origin
+		bool aligned{false};    // the origin aligned by hand in the editor: //$o says so, and //$g of the scenery file doesn't override it
 		int radius{2};          // tiles loaded around the camera tile (Chebyshev distance)
 		float height{0.0f};     // world Y of the layer (with drape: only where no ground was found)
 		float opacity{0.6f};    // 0..1
@@ -261,7 +262,10 @@ class editor_orthophoto
 		bool scene_dirty{true};                 // the shape needs to be rebuilt
 	};
 
-	static int level_for(int Distance, bool Hires);
+	static int level_for(int Distance, int HiresReach);
+	// how many tiles away from the camera the 4K photos reach: 1 with the setting for them, the 3 x 3 tiles around it; 0 by the zoom
+	// alone, the tile under the camera, about 85 MB of the memory of the graphics card rather than 0.75 GB; -1 none
+	int hires_reach() const;
 	// the level a tile is asked for at first: a tile showing nothing yet takes the standard image before the 4K one
 	static int first_level(tile const &Tile, int Level);
 	// the tile is outside the download area set, which then has no imagery asked for it

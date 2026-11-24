@@ -138,9 +138,15 @@ std::vector<glm::dvec2> outline_of(std::set<square> const &Squares, double const
 
 } // namespace
 
-origin_choice choose_origin(std::optional<glm::dvec2> const &Georeference, std::optional<glm::dvec2> const &Mark, std::optional<glm::dvec2> const &Remembered)
+origin_choice choose_origin(std::optional<glm::dvec2> const &Georeference, std::optional<glm::dvec2> const &Mark, std::optional<glm::dvec2> const &Remembered, bool const MarkAligned)
 {
 	origin_choice result;
+	if (MarkAligned && known(Mark))
+	{
+		result.origin = *Mark;
+		result.from = origin_source::mark;
+		return result;
+	}
 	if (known(Georeference))
 	{
 		result.origin = *Georeference;

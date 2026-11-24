@@ -2,6 +2,7 @@
 #include "doctest.h"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorPhotoRules.hpp"
+#include "editor/editorRecords.hpp"
 #include "editor/editorSettings.hpp"
 
 #include <set>
@@ -92,6 +93,33 @@ TEST_CASE("photo: //$g wins over the origin remembered and the one of //$o, the 
 	CHECK(remembered.from == origin_source::remembered);
 	CHECK(remembered.origin == glm::dvec2{3.0, 4.0});
 	CHECK(photo_rules::choose_origin(std::nullopt, std::nullopt, std::nullopt).from == origin_source::none);
+
+	// a //$o aligned by hand goes before //$g: the user moved the photo off it on purpose
+	auto const aligned{photo_rules::choose_origin(g, glm::dvec2{500000.0, 600030.0}, glm::dvec2{510000.0, 600000.0}, true)};
+	CHECK(aligned.from == origin_source::mark);
+	CHECK(aligned.origin == glm::dvec2{500000.0, 600030.0});
+	CHECK(aligned.differs == doctest::Approx(0.0));
+}
+
+TEST_CASE("photo: //$o says the origin was aligned by hand, which a release before it passes over") {
+	auto const line{editor_records::orthophoto_line(true, true, 500000.0, 600030.0, true)};
+	CHECK(line == "on 1 origin 500000.00 600030.00 aligned");
+	bool on{false};
+	double north{0.0};
+	double east{0.0};
+	bool aligned{false};
+	REQUIRE(editor_records::read_orthophoto(line, on, north, east, &aligned));
+	CHECK(on);
+	CHECK(north == doctest::Approx(500000.0));
+	CHECK(east == doctest::Approx(600030.0));
+	CHECK(aligned);
+	// read as before without the word, and the word passed over where it isn't asked for
+	CHECK(editor_records::orthophoto_line(true, true, 500000.0, 600030.0) == "on 1 origin 500000.00 600030.00");
+	bool again{false};
+	REQUIRE(editor_records::read_orthophoto("on 1 origin 1.00 2.00", on, north, east, &again));
+	CHECK_FALSE(again);
+	REQUIRE(editor_records::read_orthophoto(line, on, north, east));
+	CHECK(east == doctest::Approx(600030.0));
 }
 
 TEST_CASE("photo: a tile which failed is tried again later and later, up to 5 min, never given up") {
