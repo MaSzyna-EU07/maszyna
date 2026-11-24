@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorHttp.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorRecords.hpp"
 
 #include "rendering/renderer.h"
 #include "scene/scene.h"
@@ -757,40 +758,15 @@ bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 	return Geometry.bank != 0 && std::find(scene_banks.begin(), scene_banks.end(), Geometry.bank) != scene_banks.end();
 }
 
+// the line of the scenery and its format: editor_records::orthophoto_line() and read_orthophoto()
 std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
 {
-	// how the imagery is shown is the user's, kept with the editor (EditorSettings); the scenery keeps whether it's on and where the
-	// scenery lies
-	char text[256];
-	std::snprintf(text, sizeof(text), "on %d", Enabled ? 1 : 0);
-	std::string result{text};
-	if (Origin)
-	{
-		std::snprintf(text, sizeof(text), " origin %.2f %.2f", Config.north, Config.east);
-		result += text;
-	}
-	return result;
+	return editor_records::orthophoto_line(Enabled, Origin, Config.north, Config.east);
 }
 
 bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool &Enabled)
 {
-	std::istringstream words{Text};
-	std::string key;
-	auto found{false};
-	// the year, opacity, radius and the rest the lines of the older sceneries carry are passed over: the user's settings stand
-	while (words >> key)
-	{
-		if (key == "on")
-			words >> Enabled;
-		else if (key == "origin")
-			words >> Config.north >> Config.east;
-		else
-			continue;
-		if (words.fail())
-			return found;
-		found = true;
-	}
-	return found;
+	return editor_records::read_orthophoto(Text, Enabled, Config.north, Config.east);
 }
 
 void editor_orthophoto::enabled(bool State)
@@ -891,35 +867,15 @@ void editor_orthophoto::restart_prefetch()
 	m_wakeup.notify_all();
 }
 
+// the lines of the scenery and their format: editor_records::area_lines() and read_area()
 std::vector<std::string> editor_orthophoto::area_lines(std::vector<glm::dvec2> const &Polygon)
 {
-	std::vector<std::string> lines;
-	if (Polygon.size() < 3)
-		return lines;
-	lines.emplace_back("# the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing");
-	for (auto const &point : Polygon)
-	{
-		char text[64];
-		std::snprintf(text, sizeof(text), "point %.2f %.2f", point.x, point.y);
-		lines.emplace_back(text);
-	}
-	return lines;
+	return editor_records::area_lines(Polygon);
 }
 
 std::vector<glm::dvec2> editor_orthophoto::read_area(std::vector<std::string> const &Lines)
 {
-	std::vector<glm::dvec2> polygon;
-	for (auto const &line : Lines)
-	{
-		std::istringstream words{line};
-		std::string keyword;
-		glm::dvec2 point{0.0};
-		if (words >> keyword && keyword == "point" && words >> point.x >> point.y)
-			polygon.push_back(point);
-	}
-	if (polygon.size() < 3)
-		polygon.clear();
-	return polygon;
+	return editor_records::read_area(Lines);
 }
 
 void editor_orthophoto::refit()

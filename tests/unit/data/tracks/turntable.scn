@@ -1,0 +1,2 @@
+// turntables, written the way the game writes them: read and written back each comes out the same
+node -1 0 turntable1 track turn 20 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 -10 0 0 0 0 0 0 0 0 0 10 0 0 0 0 velocity 10 endtrack

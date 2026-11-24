@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorAlignmentStore.hpp"
+#include "editor/editorRecords.hpp"
 
 #include "world/Track.h"
 #include "simulation/simulation.h"
@@ -19,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <cstdlib>
 #include <set>
 #include <sstream>
@@ -39,18 +41,7 @@ std::vector<record> g_base; // as they were before the changes not yet in the un
 bool g_changed{false};
 bool g_loaded{false};
 
-// format of the lines, coordinates in the space of the file:
-//   <switch|slip|crossing|double> <name> <type> <rail> <R> <n of 1:n> <hand L|R|-> <a> <b> <R of the main track, + right, - left, 0 straight>
-//     parts <count> <names>... shape <main end along, across> <diverging end along, across> start <x y z> dir <x z>
-//     km <km|-> number <label|-> source <designed|measured> [middle <R in the middle of the slip curves of a double slip>]
-std::string word(std::string const &Text)
-{
-	if (Text.empty())
-		return "-";
-	auto result{Text};
-	std::replace(result.begin(), result.end(), ' ', '_');
-	return result;
-}
+// the lines and their format: editor_records::read_switches() and switch_lines()
 
 glm::dvec2 direction_of(TTrack const &Track)
 {
@@ -102,40 +93,9 @@ void mark(scene::layer_handle const Layer)
 {
 	if (false == scene::Layers.valid(Layer))
 		return;
-	auto const &context{scene::Layers.layer(Layer).context_insert()};
-	std::vector<std::string> lines;
-	for (auto const &entry : g_records)
-	{
-		if (entry.layer != Layer)
-			continue;
-		if (lines.empty())
-			lines.emplace_back("# switches placed in the track editor, the simulation skips these lines");
-		auto const start{context.to_local(entry.start)};
-		auto const ahead{context.to_local(entry.start + glm::dvec3{entry.direction.x, 0.0, entry.direction.y})};
-		auto direction{plan_of(ahead - start)};
-		direction = glm::length(direction) > 1e-12 ? glm::normalize(direction) : entry.direction;
-		auto text{format("%s %s %s %s %.3f %.3f %c %.3f %.3f %.3f parts %zu", entry.kind.c_str(), word(entry.name).c_str(), word(entry.type).c_str(), word(entry.rail).c_str(), entry.radius, entry.ratio, entry.hand, entry.a, entry.b, entry.main_radius,
-		                 entry.parts.size())};
-		for (auto const &part : entry.parts)
-			text += ' ' + word(part);
-		if (entry.shaped)
-			text += format(" shape %.4f %.4f %.4f %.4f", entry.shape.x, entry.shape.y, entry.shape.z, entry.shape.w);
-		text += format(" start %.4f %.4f %.4f dir %.9f %.9f km ", start.x, start.y, start.z, direction.x, direction.y);
-		text += entry.km.has_value() ? format("%.3f", *entry.km / 1000.0) : std::string{"-"};
-		text += " number " + word(entry.number) + " source " + word(entry.source);
-		if (entry.middle > 0.0)
-			text += format(" middle %.3f", entry.middle);
-		if (entry.lift != 0.0 || entry.lift_end != 0.0)
-		{
-			auto const from{context.to_local(entry.lift_from)};
-			auto const to{context.to_local(entry.lift_to)};
-			text += format(" lift %.4f %.4f %.4f %.4f %.4f %.4f %.4f ramp %.3f", entry.lift, from.x, from.y, from.z, to.x, to.y, to.z, entry.ramp);
-			if (entry.lift_end != entry.lift)
-				text += format(" liftend %.4f", entry.lift_end);
-		}
-		lines.push_back(text);
-	}
-	scene::Layers.mark(Layer, kMark, std::move(lines));
+	std::vector<record> records;
+	std::copy_if(g_records.begin(), g_records.end(), std::back_inserter(records), [&](record const &Entry) { return Entry.layer == Layer; });
+	scene::Layers.mark(Layer, kMark, editor_records::switch_lines(records, scene::Layers.layer(Layer).context_insert()));
 }
 
 } // namespace
@@ -155,68 +115,8 @@ void load()
 	g_loaded = true;
 	g_records.clear();
 	for (auto const layer : scene::Layers.marked_layers(kMark))
-	{
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		for (auto const &text : scene::Layers.marked(layer, kMark))
-		{
-			std::istringstream line{text};
-			record entry;
-			entry.layer = layer;
-			std::string keyword;
-			std::string hand;
-			std::string km;
-			std::size_t count{0};
-			line >> entry.kind;
-			if (entry.kind != "switch" && entry.kind != "slip" && entry.kind != "crossing" && entry.kind != "double" && entry.kind != "connection")
-				continue;
-			line >> entry.name >> entry.type >> entry.rail >> entry.radius >> entry.ratio >> hand >> entry.a >> entry.b >> entry.main_radius >> keyword >> count;
-			if (line.fail() || keyword != "parts" || count == 0 || count > 64)
-				continue;
-			entry.hand = hand.empty() ? '-' : hand.front();
-			entry.parts.resize(count);
-			for (auto &part : entry.parts)
-				line >> part;
-			glm::dvec3 start{0.0};
-			glm::dvec3 ahead{0.0};
-			glm::dvec2 direction{0.0, 1.0};
-			line >> keyword;
-			if (keyword == "shape")
-			{
-				line >> entry.shape.x >> entry.shape.y >> entry.shape.z >> entry.shape.w >> keyword;
-				entry.shaped = true;
-			}
-			line >> start.x >> start.y >> start.z >> keyword >> direction.x >> direction.y >> keyword >> km >> keyword >> entry.number >> keyword >> entry.source;
-			if (line.fail())
-				continue;
-			while (line >> keyword)
-			{
-				if (keyword == "middle")
-					line >> entry.middle;
-				else if (keyword == "lift")
-				{
-					glm::dvec3 from{0.0}, to{0.0};
-					line >> entry.lift >> from.x >> from.y >> from.z >> to.x >> to.y >> to.z >> keyword >> entry.ramp;
-					entry.lift_end = entry.lift;
-					entry.lift_from = context.to_world(from);
-					entry.lift_to = context.to_world(to);
-				}
-				else if (keyword == "liftend")
-					line >> entry.lift_end;
-			}
-			entry.start = context.to_world(start);
-			ahead = context.to_world(start + glm::dvec3{direction.x, 0.0, direction.y});
-			entry.direction = plan_of(ahead - entry.start);
-			entry.direction = glm::length(entry.direction) > 1e-12 ? glm::normalize(entry.direction) : glm::dvec2{0.0, 1.0};
-			if (km != "-")
-			{
-				char *end{nullptr};
-				auto const value{std::strtod(km.c_str(), &end)};
-				if (end != km.c_str() && *end == '\0' && std::isfinite(value))
-					entry.km = value * 1000.0;
-			}
+		for (auto &entry : editor_records::read_switches(scene::Layers.marked(layer, kMark), scene::Layers.layer(layer).context_insert(), layer))
 			g_records.push_back(std::move(entry));
-		}
-	}
 	g_base = g_records;
 	g_changed = false;
 	if (false == g_records.empty())

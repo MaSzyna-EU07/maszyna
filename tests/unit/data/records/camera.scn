@@ -1,0 +1,2 @@
+// //$c: where the camera was at the last save, as editor_records::camera_line() writes it
+//$c 1234.500 56.250 -789.125 0.12500 -1.50000
