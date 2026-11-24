@@ -116,7 +116,8 @@ TEST_CASE("layout elements: an arc keeps its radius and its centre, points offse
 	auto const e{layout::make_arc({5.0, 7.0}, {0.0, 1.0}, -1.0 / R, 200.0)};
 	// turning right from heading +z: the centre to the right, at +x
 	glm::dvec2 const centre{5.0 + R, 7.0};
-	for (double s = 0.0; s <= 200.0; s += 25.0) {
+	for (int step{0}; step <= 8; ++step) {
+		auto const s{25.0 * step};
 		CAPTURE(s);
 		CHECK(glm::distance(e.position(s), centre) == doctest::Approx(R).epsilon(1e-12));
 		CHECK(e.curvature(s) == -1.0 / R);

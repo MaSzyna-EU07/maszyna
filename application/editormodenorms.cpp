@@ -233,8 +233,24 @@ void norms_tool::forget(scene::basic_node const *Node)
 		state.selected = -1;
 	for (auto &line : state.lines)
 		std::erase_if(line.entries, [Node](norms_report::entry const &Entry) { return Entry.track == Node; });
-	for (auto &line : state.queue)
-		std::erase_if(line.spans, [Node](norms_report::span const &Span) { return Span.track == Node; });
+	// the span whose findings alone are kept moves down by the spans taken out before it; a line whose own span went has nothing left
+	// to report
+	auto const gone = [Node](norms_report::span const &Span) { return Span.track == Node; };
+	auto line{state.queue.begin()};
+	while (line != state.queue.end())
+	{
+		if (line->own >= 0 && line->own < static_cast<int>(line->spans.size()))
+		{
+			if (gone(line->spans[line->own]))
+			{
+				line = state.queue.erase(line);
+				continue;
+			}
+			line->own -= static_cast<int>(std::count_if(line->spans.begin(), line->spans.begin() + line->own, gone));
+		}
+		std::erase_if(line->spans, gone);
+		++line;
+	}
 }
 
 void norms_tool::render_class()

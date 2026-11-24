@@ -286,6 +286,10 @@ TEST_CASE("project file: a newer schema is refused cleanly, and a file which isn
 	REQUIRE(lower.project.has_value());
 	CHECK(lower.project->network.handed() == layout::network::handed_out{5, 3, 2});
 	CHECK_FALSE(lower.notes.empty());
+	// next 0: the identifiers start at 1, so it isn't taken as the last one handed out wrapped round to 0xffffffff
+	auto const zero{with("next node 6 line 4 vertex 3 turnout 1", "next node 0 line 4 vertex 3 turnout 1")};
+	CHECK_FALSE(zero.project.has_value());
+	CHECK(zero.error.find("the next node 0") != std::string::npos);
 }
 
 TEST_CASE("project file: the identifiers aren't handed out again after deletions and a save and a load") {

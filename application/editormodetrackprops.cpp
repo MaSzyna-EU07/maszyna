@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/editormode.h"
 #include "application/editoruilayer.h"
+#include "application/editormodeselftest.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
@@ -2126,8 +2127,15 @@ editor_mode::selftest_result editor_mode::selftest_props(std::string const &Comm
 		// the set made of the tracks, also of one, and the last of them selected, as the set stays the selection only with it
 		m_track_set.clear();
 		for (std::string name; Words >> name;)
+		{
 			if (auto *track{simulation::Paths.find(name)}; track != nullptr && false == track->m_editorremoved)
+			{
 				m_track_set.push_back(track);
+				continue;
+			}
+			editor_selftest::fail();
+			WriteLog("SELFTEST FAIL tracksetdelete: no track " + name);
+		}
 		m_node = m_track_set.empty() ? nullptr : m_track_set.back();
 		m_track_point = {};
 		ui()->set_node(m_node);
