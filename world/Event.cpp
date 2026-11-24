@@ -2468,10 +2468,12 @@ event_manager::AddToQuery( basic_event *Event, TDynamicObject const *Owner, doub
 
     if( Event->m_passive )     { return false; } // jeśli może być dodany do kolejki (nie używany w skanowaniu)
     if( Event->m_inqueue > 0 ) { // jeśli nie dodany jeszcze do kolejki
-        // a call of another vehicle is lost, the event runs once, for whoever queued it first.
-        // logged once per stay in the queue, as a standing vehicle repeats its event0 call every frame
+        // a call of another train is lost, the event runs once, for whoever queued it first.
+        // logged once per stay in the queue, as a standing vehicle repeats its event0 call every frame,
+        // and not for the other vehicles of the same train, which repeat its eventall0 call
         if( Owner != Event->m_activator
-         && false == Event->m_lostcalllogged ) {
+         && false == Event->m_lostcalllogged
+         && false == ( Owner != nullptr && Owner->is_connected( Event->m_activator ) ) ) {
             Event->m_lostcalllogged = true;
             WriteLog( std::format(
                 "EVENT ALREADY IN QUEUE, NOT ADDED{}: {}{}",
