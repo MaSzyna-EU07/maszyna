@@ -3,13 +3,54 @@
 #include "../gl/glsl_common.h"
 #include "utilities/Globals.h"
 #include <iostream>
-#include <fstream>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <vector>
 #include <algorithm>
+#ifdef _WIN32
+#include <random>
+#else
+#include <unistd.h>
+#endif
 
 _global Global;
+
+// writes the text to a new file with a unique name in the temporary directory of the system and returns its path,
+// or an empty string when it cannot be written. the file is created exclusively, so nothing put in a shared /tmp
+// under a name known in advance (a file or a link) is written through
+std::string write_temp_file(std::string const &text)
+{
+	std::string path = (std::filesystem::temp_directory_path() / "maszyna-shader-XXXXXX").string();
+	std::FILE *file = nullptr;
+#ifdef _WIN32
+	// no mkstemp() in the CRT; a random name, opened with "x", which fails when the file is there already
+	std::random_device random;
+	for (int attempt = 0; attempt < 100 && file == nullptr; ++attempt) {
+		path.replace(path.size() - 6, 6, std::to_string(100000 + random() % 900000));
+		if (fopen_s(&file, path.c_str(), "wx") != 0)
+			file = nullptr;
+	}
+#else
+	int const descriptor = mkstemp(path.data());
+	if (descriptor != -1) {
+		file = fdopen(descriptor, "w");
+		if (file == nullptr) {
+			close(descriptor);
+			std::remove(path.c_str());
+		}
+	}
+#endif
+	if (file == nullptr)
+		return {};
+
+	bool const written = std::fwrite(text.data(), 1, text.size(), file) == text.size();
+	if (std::fclose(file) != 0 || !written) {
+		std::remove(path.c_str());
+		return {};
+	}
+	return path;
+}
 
 bool check_shader(std::string filename)
 {
@@ -46,17 +87,15 @@ bool check_shader(std::string filename)
 			source.second.insert(version_end + 1, gpu_shader5);
 	}
 
-	// in the temporary directory of the system, which is /tmp on linux
-	std::string const path = (std::filesystem::temp_directory_path() / "shader").string();
-	std::ofstream file(path);
-	file << source.second;
-	file.close();
-	if (!file) {
-		std::cout << "cannot write " << path << std::endl;
+	// the stage is given with -S, so the file needs no extension
+	std::string const path = write_temp_file(source.second);
+	if (path.empty()) {
+		std::cout << "cannot write the shader to the temporary directory" << std::endl;
 		return false;
 	}
 
 	int ret = system(("glslangValidator -S " + stage + " \"" + path + "\"").c_str());
+	std::remove(path.c_str());
 
 	return ret == 0;
 }
