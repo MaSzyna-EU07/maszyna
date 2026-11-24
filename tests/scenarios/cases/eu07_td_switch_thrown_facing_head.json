@@ -1,5 +1,5 @@
 {
-  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_facing_control, but the way is set to track 2 (keyctrl01) and zwr01 is thrown to track 1 when the locomotive has run onto the switch with both its bogies (event of the switch track, set off by its rear axle). The locomotive and the train behind it have to go on to track 1 and stay on the rails, and the AI has to stop before the signal at stop on track 1.",
+  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_facing_control, but the way is set to track 2 (keyctrl01) and zwr01 is thrown to track 1 when the locomotive has run onto the switch with both its bogies (event of the switch track, set off by its rear axle). The locomotive keeps the way it ran onto and goes on to track 2; the first coach comes to the points after the throw and takes track 1: it and the locomotive run forked, and physics.derailment monitor tells in the log that the coach derails (the coupled ends 0.45 m apart sideways). The AI scans its route again from the switch, along the way of the locomotive, and stops before the exit signal of track 2.",
   "base_scenery": "td.scn",
   "time": "10:34",
   "fragment": "td_switch_thrown.scn",
@@ -23,14 +23,7 @@
       "event1 autotest_throw",
       "event2 autotest_throw"
     ],
-    "tdo_n1725": [
-      "event2 autotest_signal1_info",
-      "event0 autotest_pass"
-    ],
-    "tdo_n1734": [
-      "eventall1 autotest_fail",
-      "eventall2 autotest_fail"
-    ]
+    "tdo_n109": "event0 autotest_pass"
   },
   "test_config": [
     "test.timeout 400",
@@ -46,12 +39,31 @@
     {
       "type": "on_track",
       "vehicles": "{{vehicle}}",
+      "exclude": "{{vehicle}}_c",
       "max_offset": 0.6
+    },
+    {
+      "type": "log_contains",
+      "pattern": "Switch \"zwr01\" thrown under \\S+_c1: running forked, it took way 1, \\S+ coupled at its \\w+ way 0"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "derailment monitor: \\S+_c1 derailed running forked, it and \\S+ coupled"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "detected switch change at zwr01"
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "tracing through track tor1p"
     },
     {
       "type": "log_lacks",
       "pattern": "Bad driving"
     }
   ],
-  "xfail": "#289 review 2b, as before the stack (TrkFoll reverted in c268673c): an axle keeps the way of the switch it ran onto but leaves by the way the switch is set to now, so the locomotive jumps 1.9 m sideways at the end of the switch, an axle at a time; and the AI keeps the route it scanned before the throw (a switch behind the head of the train is not scanned again), so on track 1 it brakes for the exit signal of track 2 and runs past the signal at stop of track 1 at 40 km/h"
+  "ini": [
+    "debuglog 11"
+  ]
 }

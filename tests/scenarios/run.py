@@ -869,16 +869,17 @@ def _coupled_pairs(box, chosen, upto):
             if flags & COUPLING_COUPLER and vehicle in chosen and other in chosen}
 
 
-def check_on_track(box, vehicles, max_offset=0.5, max_detour=5.0):
+def check_on_track(box, vehicles, max_offset=0.5, max_detour=5.0, exclude=None):
     """Every vehicle whose name starts with `vehicles` stays on the line of a track in every state the black box has of
     it, and the vehicles coupled to each other stay on one way: the way along the tracks from one to the other is no
     more than `max_detour` [m] longer than the straight line between them. A vehicle thrown sideways has its middle off
     any track; one with its bogies on two tracks that part too, once they are apart; and a train whose vehicles went
     two ways at a switch runs on with two coupled vehicles on two tracks, side by side, with the way between them back
-    through the switch."""
+    through the switch. Vehicles whose name starts with `exclude` are left out (a coach running forked, say)."""
     if not box.tracks:
         return False, "the black box has no map of the tracks"
-    chosen = {number: name for number, name in box.vehicles.items() if name.lower().startswith(vehicles.lower())}
+    chosen = {number: name for number, name in box.vehicles.items() if name.lower().startswith(vehicles.lower())
+              and not (exclude and name.lower().startswith(exclude.lower()))}
     if not chosen:
         return False, f"the black box has no vehicle named {vehicles}..."
     network = _TrackMap(box.tracks)
