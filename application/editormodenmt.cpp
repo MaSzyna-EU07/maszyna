@@ -1085,7 +1085,7 @@ void editor_mode::nmt_area_terrain()
 			WriteLog(std::string{"Editor: NMT - the terrain of the download area "} + (*Reason != '\0' ? std::string{"held: "} + Reason : std::string{"goes on"}), logtype::generic);
 		}
 	};
-	if (false == area.run_only.value_or(EditorSettings.terrain_model().area))
+	if (false == area.run_only.value_or(nmt_area()))
 		return held("turned off");
 	if (m_orthophoto.area().empty())
 		return held("no area");
@@ -1217,7 +1217,7 @@ void editor_mode::nmt_update()
 		m_nmt_prefetched = wanted;
 		// unless no terrain is made of the model by itself, as after the answer without terrain: what the terrain panel asks for then is
 		// downloaded as it's asked for
-		if (state.grow || EditorSettings.terrain_model().area)
+		if (state.grow || nmt_area())
 			m_nmt.prefetch(wanted);
 		// the terrain around the camera looked at again within the new area
 		m_area_terrain.listed = false;
@@ -2140,13 +2140,18 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 		}
 	}
 	auto &model{EditorSettings.terrain_model()};
-	if (ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &model.area))
+	// as it is for the scenery open: off after the answer Without terrain, and ticked, on again and kept so in the settings
+	if (bool area{nmt_area()}; ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &area))
+	{
+		m_nmt_state.declined = false;
+		model.area = area;
 		EditorSettings.save();
+	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Makes the terrain from the terrain model within the area, around the camera wherever it goes,\n"
 		                              "a chunk at a time while the editor is idle. The terrain there is already isn't touched.\n"
 		                              "The chunks made wait in memory until the scenery is saved (Ctrl+S)."));
-	if (model.area && m_area_terrain.made > 0)
+	if (nmt_area() && m_area_terrain.made > 0)
 	{
 		ImGui::SameLine();
 		ImGui::TextDisabled("%s", format(STR_P("%zu chunk made", "%zu chunks made", m_area_terrain.made), m_area_terrain.made).c_str());
@@ -2599,9 +2604,10 @@ void editor_mode::nmt_accept_offer()
 	state.offset = 0.0;
 	nmt_make(nmt_keys_around());
 	state.prompt = false;
-	// the terrain goes on under the tracks as they're laid and around the camera, as the answer says, also after the other answer was
-	// given for a scenery before; the model of the download area is put into the cache again if that answer stopped it
+	// the terrain goes on under the tracks as they're laid and around the camera, as the answer says, also where the settings had it
+	// off; the model of the download area is put into the cache again if it was stopped
 	state.grow = true;
+	state.declined = false;
 	EditorSettings.terrain_while_laying(true);
 	EditorSettings.terrain_model().area = true;
 	EditorSettings.save();
@@ -2615,14 +2621,18 @@ void editor_mode::nmt_decline_offer()
 	state.prompt = false;
 	// nothing of the model loaded any more: not under the tracks as they're laid, as the checkbox of the layers turns it off, nor around
 	// the camera within the download area, as the checkbox of the terrain panel does, nor the squares of the download area into the
-	// cache. Kept on, they went on being loaded, and where there's no network their requests failed in the log
+	// cache. Kept on, they went on being loaded, and where there's no network their requests failed in the log. For this scenery only:
+	// the settings stay as they were, for the sceneries opened later
 	state.grow = false;
-	EditorSettings.terrain_while_laying(false);
-	EditorSettings.terrain_model().area = false;
-	EditorSettings.save();
+	state.declined = true;
 	m_nmt.prefetch({});
 	// nor the squares asked for meanwhile, as the aerial photos asked for them to lie on
 	m_nmt.cancel();
+}
+
+bool editor_mode::nmt_area() const
+{
+	return false == m_nmt_state.declined && EditorSettings.terrain_model().area;
 }
 
 void editor_mode::render_nmt_prompt()

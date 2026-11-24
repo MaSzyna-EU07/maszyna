@@ -105,7 +105,8 @@ norms::element reversed(norms::element Element, double const Length)
 // the elements run on alike: the same kind, the curvature going on as it did
 bool runs_on(norms::element const &A, norms::element const &B)
 {
-	if (A.kind != B.kind || std::abs(A.curvature_end - B.curvature_start) > kCurvature || A.speed != B.speed || A.features != B.features)
+	// two halves of Bloss curves make no Bloss curve
+	if (A.kind != B.kind || A.bloss || B.bloss || std::abs(A.curvature_end - B.curvature_start) > kCurvature || A.speed != B.speed || A.features != B.features)
 		return false;
 	if (A.kind != norms::element_kind::transition)
 		return std::abs(A.curvature_start - B.curvature_end) <= kCurvature;
@@ -470,6 +471,8 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	{
 		auto const &last{result.back()};
 		auto const *owner{Network.find(last.line)};
+		if (owner == nullptr)
+			break;
 		auto const beyond{last.forward ? line_end::end : line_end::start};
 		auto const *other{across(owner->node_at(beyond), last.line, beyond)};
 		if (other == nullptr || contains(other->line) || Network.find(other->line) == nullptr)
@@ -481,6 +484,8 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	{
 		auto const &head{result.front()};
 		auto const *owner{Network.find(head.line)};
+		if (owner == nullptr)
+			break;
 		auto const behind{head.forward ? line_end::start : line_end::end};
 		auto const *other{across(owner->node_at(behind), head.line, behind)};
 		if (other == nullptr || contains(other->line) || Network.find(other->line) == nullptr)
@@ -496,7 +501,12 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 	double offset{0.0};
 	for (auto const &part : Chain)
 	{
-		auto const &owner{*Network.find(part.line)};
+		// the chain is made of the lines of the network: one gone is a chain out of date, of which the rest is described
+		auto const *found{Network.find(part.line)};
+		result.starts.push_back(offset);
+		if (found == nullptr)
+			continue;
+		auto const &owner{*found};
 		auto own{described(owner.solved, owner.category)};
 		auto const length{owner.solved.length};
 		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed
@@ -513,7 +523,6 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 					element.speed = std::min(element.speed > 0.0 ? element.speed : speed, speed);
 			}
 		}
-		result.starts.push_back(offset);
 		if (false == part.forward)
 		{
 			for (auto &element : own.elements)
@@ -644,7 +653,12 @@ void check_node(network const &Network, node const &Node, verdict &Result)
 			continue;
 		}
 		auto const *switched{owner_of(Network, end.line)};
-		auto const main{std::ranges::find_if(Node.ends, [&](end_ref const &Each) { return Each.line == switched->main; })};
+		if (switched == nullptr)
+		{
+			ends.push_back(end);
+			continue;
+		}
+		auto const main{std::ranges::find_if(Node.ends, [switched](end_ref const &Each) { return Each.line == switched->main; })};
 		if (switched->start != Node.id || main == Node.ends.end())
 			Result.reasons.push_back(std::format("{}: the diverging track of turnout {} starts there, its main track doesn't", node_name(Node.id), number(switched->id)));
 		else if (main->side() != end.side())
@@ -694,12 +708,13 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 		for (auto const &part : chain)
 		{
 			done.insert(part.line);
-			laid = laid && Network.find(part.line)->solved.valid();
+			auto const *line{Network.find(part.line)};
+			laid = laid && line != nullptr && line->solved.valid();
 		}
 		if (false == laid)
 			continue;
 		auto const described{describe_chain(Network, chain)};
-		auto const &first{*Network.find(chain.front().line)};
+		auto const &first{*Network.find(chain.front().line)}; // NOSONAR: every line of the chain was found just above
 		// the profile of the lines' own wins over the areas: the lines of a chain have the same
 		auto areas{Network.areas};
 		if (first.profile.has_value())
@@ -711,7 +726,7 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 			// the line it's on, by the chainage along the chain
 			auto part{static_cast<std::size_t>(std::upper_bound(described.starts.begin(), described.starts.end(), finding.chainage + 1e-9) - described.starts.begin())};
 			part = part > 0 ? part - 1 : 0;
-			auto const &owner{*Network.find(chain[part].line)};
+			auto const &owner{*Network.find(chain[part].line)}; // NOSONAR: every line of the chain was found just above
 			auto const along{finding.chainage - described.starts[part]};
 			auto const chainage{chain[part].forward ? along : owner.solved.length - along};
 			auto const text{finding_text(finding)};
@@ -721,7 +736,7 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 				auto const position_at = [&](double const At) {
 					auto index{static_cast<std::size_t>(std::upper_bound(described.starts.begin(), described.starts.end(), At + 1e-9) - described.starts.begin())};
 					index = index > 0 ? index - 1 : 0;
-					auto const &line{Network.find(chain[index].line)->solved};
+					auto const &line{Network.find(chain[index].line)->solved}; // NOSONAR: every line of the chain was found above
 					auto const local{At - described.starts[index]};
 					return line.position(std::clamp(chain[index].forward ? local : line.length - local, 0.0, line.length));
 				};
@@ -771,16 +786,18 @@ verdict check(network const &Network, std::set<line_id> const &Lines, std::set<n
 		}
 	// the lines of the turnouts touched are judged with them
 	std::set<line_id> lines{Lines};
+	// the turnouts are the owners of lines found in the network
+	std::erase_if(turnouts, [&Network](turnout_id const Id) { return Network.find(Id) == nullptr; });
 	for (auto const id : turnouts)
 	{
-		auto const &switched{*Network.find(id)};
+		auto const &switched{*Network.find(id)}; // NOSONAR: the turnouts not found were taken out above
 		lines.insert(switched.main);
 		lines.insert(switched.diverging);
 	}
 	if (false == result.reasons.empty())
 		return result;
 	for (auto const id : turnouts)
-		check_turnout(Network, *Network.find(id), result);
+		check_turnout(Network, *Network.find(id), result); // NOSONAR: the turnouts not found were taken out above
 	if (result.reasons.empty())
 		check_norms(Network, lines, result);
 	return result;
