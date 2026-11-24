@@ -492,7 +492,7 @@ void hold_end(transaction &Change, node_id const Node, line_id const Line, line_
 
 // a track the turnout lays itself, between the nodes, of the class of the line it lies on; a node of its own made where there's none yet,
 // holding the ends given
-void own_track(transaction &Change, line_id const Id, turnout_id const Turnout, node_id const From, node_id const To, line const &Like)
+void own_track(transaction &Change, line_id const Id, turnout const &Made, node_id const From, node_id const To, line const &Like)
 {
 	auto const &view{Change.view()};
 	if (view.find(Id) != nullptr)
@@ -500,14 +500,16 @@ void own_track(transaction &Change, line_id const Id, turnout_id const Turnout, 
 		auto &track{Change.change(Id)};
 		track.start = From;
 		track.end = To;
-		track.turnout = Turnout;
+		track.turnout = Made.id;
 		return;
 	}
 	line track;
 	track.id = Id;
-	track.turnout = Turnout;
+	track.turnout = Made.id;
 	track.start = From;
 	track.end = To;
+	// the kilometrage of the start of the turnout, as a diverging track has always had
+	track.chainage_start = Made.chainage;
 	track.category = Like.category;
 	track.profile = Like.profile;
 	track.shape.transition = Like.shape.transition;
@@ -559,8 +561,8 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 	{
 	case turnout_kind::twofold:
 	{
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
-		own_track(Change, Made.diverging2, Made.id, Made.second, Made.diverging2_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging2, Made, Made.second, Made.diverging2_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		own_node(Change, Made.diverging2_end, {{Made.diverging2, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
@@ -570,18 +572,18 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 	case turnout_kind::slip:
 	case turnout_kind::crossing:
 	{
-		own_track(Change, Made.crossing, Made.id, Made.cross_start, Made.cross_end, Like);
+		own_track(Change, Made.crossing, Made, Made.cross_start, Made.cross_end, Like);
 		std::vector<end_ref> at_start{{Made.crossing, line_end::start, 1}};
 		std::vector<end_ref> at_end{{Made.crossing, line_end::end, 1}};
 		if (Type.slip_curves >= 1)
 		{
-			own_track(Change, Made.diverging, Made.id, Made.start, Made.cross_end, Like);
+			own_track(Change, Made.diverging, Made, Made.start, Made.cross_end, Like);
 			at_end.push_back({Made.diverging, line_end::end, 1});
 			hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		}
 		if (Type.slip_curves >= 2)
 		{
-			own_track(Change, Made.diverging2, Made.id, Made.cross_start, Made.main_end, Like);
+			own_track(Change, Made.diverging2, Made, Made.cross_start, Made.main_end, Like);
 			at_start.push_back({Made.diverging2, line_end::start, 1});
 			hold_end(Change, Made.main_end, Made.diverging2, line_end::end, side_at(view, Made.main, Made.main_end));
 		}
@@ -590,13 +592,13 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 		break;
 	}
 	case turnout_kind::symmetric:
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		break;
 	case turnout_kind::ordinary:
 	default:
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		break;
@@ -665,7 +667,7 @@ reasons lay_symmetric(transaction &Change, outcome &Result, line const &Line, do
 	made.main = given(Change, Ids.main);
 	made.main_end = given(Change, Ids.main_end);
 	own_ids(Change, made, Kind, Ids);
-	own_track(Change, made.main, made.id, made.start, made.main_end, Line);
+	own_track(Change, made.main, made, made.start, made.main_end, Line);
 	own_node(Change, made.main_end, {{made.main, line_end::end, 1}});
 	hold_end(Change, made.start, made.main, line_end::start, side);
 	add_own_tracks(Change, made, Kind, Line);

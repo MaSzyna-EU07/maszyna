@@ -294,10 +294,20 @@ TEST_CASE("project migration: the //$r switches on the lines made of the alignme
 	REQUIRE(by_type.contains("Rz 60E1-190-1:9"));
 	auto const &first{*by_type.at("Rz 60E1-500-1:12")};
 	auto const &second{*by_type.at("Rz 60E1-190-1:9")};
-	CHECK(first.hand == 1);
+	// the hands as the records have them: L to the negative cross of the direction of the switch, R to the positive one, as
+	// switch_store::classify() tells them; checked where the diverging track ends, not only by the number
+	CHECK(first.hand == -1);
 	CHECK(first.direction == 1);
-	CHECK(second.hand == -1);
+	CHECK(second.hand == 1);
 	CHECK(second.direction == -1);
+	auto const side = [&network](layout::turnout const &Turnout, glm::dvec2 const &Direction) {
+		auto const &diverging{network.find(Turnout.diverging)->solved};
+		auto const start{geometry::plan_of(network.find(Turnout.start)->position)};
+		// the diverging track is laid from the start of the turnout
+		return geometry::cross(Direction, geometry::plan_of(diverging.end.position) - start);
+	};
+	CHECK(side(first, {0.0, 1.0}) < 0.0);  // z1, L
+	CHECK(side(second, {0.0, -1.0}) > 0.0); // z2, R
 	CHECK(glm::distance(geometry::plan_of(network.find(first.start)->position), glm::dvec2{0.0, 200.0}) < 1e-9);
 	CHECK(glm::distance(geometry::plan_of(network.find(second.start)->position), glm::dvec2{0.0, 450.0}) < 1e-9);
 	// each a record of its own with its main track; the rest of the block kept as written, why with it

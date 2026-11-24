@@ -431,7 +431,7 @@ solved_line lay_on_transition(turnout_frame const &Frame, turnout_type const &Ty
 				k1 = bent(basic_at(reached), main1);
 				auto const rate1{k1 - main1 * std::cos(off)};
 				turned = 0.5 * (rate0 + rate1) * ds;
-				if (false == last && std::abs(made + turned) <= std::abs(turn))
+				if ((false == last && std::abs(made + turned) <= std::abs(turn)) || std::abs(turned) < 1e-15)
 					break;
 				ds *= (turn - made) / turned;
 			}
