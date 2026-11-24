@@ -20,8 +20,9 @@ namespace {
 nlohmann::ordered_json ep09_rlist_with_scndact(std::string const &Scndact) {
 	std::ifstream file{std::string{EU07_UNIT_TESTS_DATA} + "/fiz/ep09_v2/104e.json"};
 	REQUIRE(file.good());
-	auto const ep09{nlohmann::ordered_json::parse(file)};
-	auto rows{ep09.at("RList").at("rows")};
+	// '=' rather than braces: GCC takes a json in braces for an initializer list, an array holding it
+	auto const ep09 = nlohmann::ordered_json::parse(file);
+	auto rows = ep09.at("RList").at("rows");
 	REQUIRE(rows.size() > 1);
 	rows[1][5] = Scndact;
 	return rows;
