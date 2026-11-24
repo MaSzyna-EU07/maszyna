@@ -4348,8 +4348,12 @@ void TTrain::OnCommand_gensetenable(TTrain *Train, command_data const &Command)
 	{
 		return;
 	}
-	Train->ggGensetButton.UpdateValue(1.0, Train->dsbSwitch);
+	// ignored by a genset which starts on its own: then the switch doesn't move
 	Train->mvControlled->GensetSwitch(true, range_t::consist);
+	if (Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(1.0, Train->dsbSwitch);
+	}
 }
 
 void TTrain::OnCommand_gensetdisable(TTrain *Train, command_data const &Command)
@@ -4358,8 +4362,11 @@ void TTrain::OnCommand_gensetdisable(TTrain *Train, command_data const &Command)
 	{
 		return;
 	}
-	Train->ggGensetButton.UpdateValue(0.0, Train->dsbSwitch);
 	Train->mvControlled->GensetSwitch(false, range_t::consist);
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(0.0, Train->dsbSwitch);
+	}
 }
 
 void TTrain::OnCommand_waterheaterbreakertoggle(TTrain *Train, command_data const &Command)

@@ -2963,6 +2963,7 @@ class TMoverParameters
 	double TractionSupplyVoltage() const; // what the traction circuit gets: the own source's, or the train's high voltage line's
 	double TractionSupplyMinVoltage() const; // below it the line breaker opens (undervoltage)
 	double GensetTractionPowerLimit() const; // [kW] at the wheels, the largest double unless running on the genset
+	double CatenaryCurrent() const; // [A] what the vehicle draws through its pantographs, if they touch the wire
 	// whether the main circuit feeds what runs on it (the converter, a compressor, the heating, the motor and resistor
 	// blowers, the traction motors): the line breaker closed, and where it closes ahead of the pantographs and holds
 	// without traction voltage (PantographsRequireMains) also the voltage there, at least the one the undervoltage

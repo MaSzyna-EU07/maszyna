@@ -4827,13 +4827,15 @@ void TMoverParameters::HeatingSwitch_(bool const State)
 bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t const Notify)
 {
 	auto const initialstate{TractionMode};
+	// refused with the line breaker closed, and then not passed on either, so the train stays on one source
+	auto const accepted{false == Mains};
 
-	if (Genset.fitted() && false == Mains)
+	if (Genset.fitted() && accepted)
 	{
 		TractionMode = Mode;
 	}
 
-	if (Notify != range_t::local)
+	if (Notify != range_t::local && accepted)
 	{
 		SendCtrlToNext("TractionMode", Mode == traction_mode::genset ? 1 : 0, CabActive, Notify == range_t::unit ? coupling::control | coupling::permanent : coupling::control);
 	}
@@ -4841,17 +4843,16 @@ bool TMoverParameters::TractionModeSwitch(traction_mode const Mode, range_t cons
 	return TractionMode != initialstate;
 }
 
-// the start request of the genset of a dual-mode vehicle; one which starts on its own ignores it
+// the start request of the genset of a dual-mode vehicle; one which starts on its own ignores it, but passes it on to
+// the cars behind, which may start theirs on request
 bool TMoverParameters::GensetSwitch(bool const State, range_t const Notify)
 {
-	if (Genset.start_type == start_t::automatic)
-	{
-		return false;
-	}
-
 	auto const initialstate{Genset.is_enabled};
 
-	Genset.is_enabled = State;
+	if (Genset.start_type != start_t::automatic)
+	{
+		Genset.is_enabled = State;
+	}
 
 	if (Notify != range_t::local)
 	{
@@ -4885,6 +4886,18 @@ double TMoverParameters::TractionSupplyMinVoltage() const
 double TMoverParameters::GensetTractionPowerLimit() const
 {
 	return GensetSelected() ? Genset.available_power() * Genset.traction_share : std::numeric_limits<double>::max();
+}
+
+// the current the vehicle draws through its pantographs [A], if they touch the wire: the traction's (none while
+// braking on the resistors) and the heating's. on the genset the genset feeds the traction circuit, so only a heating
+// fed straight from the pantographs is left
+double TMoverParameters::CatenaryCurrent() const
+{
+	if (GensetSelected())
+	{
+		return HeatingPowerSource.SourceType == TPowerSource::CurrentCollector ? TotalCurrent : 0.0;
+	}
+	return (DynamicBrakeFlag && ResistorsFlag ? 0 : std::abs(Itot) * IsVehicleEIMBrakingFactor()) + TotalCurrent;
 }
 
 // returns voltage of defined main engine power source

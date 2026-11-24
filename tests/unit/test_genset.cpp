@@ -574,6 +574,74 @@ TEST_CASE("genset: the selector command travels along the train") {
 	CHECK_FALSE(second.GensetSelected());
 }
 
+TEST_CASE("genset: a selector command refused with the line breaker closed isn't passed on") {
+	auto const coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+	consist train;
+	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 1).mover()};
+	auto &second{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 0, coupling).mover()};
+	REQUIRE(test::start_up(test::driving(train), wire));
+	REQUIRE(first.Mains);
+	// the second one's line breaker opened by itself, the lead's is closed
+	second.MainSwitch(false, range_t::local);
+	REQUIRE_FALSE(second.Mains);
+	CHECK_FALSE(first.TractionModeSwitch(traction_mode::genset, range_t::consist));
+	CHECK_FALSE(first.GensetSelected());
+	CHECK_FALSE(second.GensetSelected());
+	// with the lead's open it goes along
+	first.MainSwitch(false, range_t::local);
+	CHECK(first.TractionModeSwitch(traction_mode::genset, range_t::consist));
+	CHECK(first.GensetSelected());
+	CHECK(second.GensetSelected());
+}
+
+TEST_CASE("genset: a lead which starts its genset on its own passes the start switch on") {
+	auto const coupling{coupling::coupler | coupling::brakehose | coupling::mainhose | coupling::control};
+	consist train;
+	auto &first{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47).set("Cntrl", "GensetStart", "Automatic"), 1).mover()};
+	auto &second{train.add(dragon_genset().set("BuffCoupl", "AllowedFlag", 47), 0, coupling).mover()};
+	wake(first);
+	train.run(1.0, no_wire);
+	// ignored by the lead, so its cab switch doesn't move, but the car behind starts on it
+	CHECK_FALSE(first.GensetSwitch(true, range_t::consist));
+	CHECK_FALSE(first.Genset.is_enabled);
+	CHECK(second.Genset.is_enabled);
+	CHECK_FALSE(first.GensetSwitch(false, range_t::consist));
+	CHECK_FALSE(second.Genset.is_enabled);
+}
+
+TEST_CASE("genset: on the genset the pantographs carry no traction current") {
+	SUBCASE("on the genset") {
+		vehicle dragon6{dragon_genset(), 0.0, "test", 1};
+		auto &cab{dragon6.mover()};
+		REQUIRE(start_on_genset(dragon6));
+		notch_up(cab);
+		run(dragon6, 10.0);
+		REQUIRE(cab.Itot > 50.0);
+		CHECK(cab.CatenaryCurrent() == 0.0);
+		// only a heating fed straight from the pantographs takes from the wire
+		cab.TotalCurrent = 40.0;
+		cab.HeatingPowerSource.SourceType = TPowerSource::CurrentCollector;
+		CHECK(cab.CatenaryCurrent() == 40.0);
+		cab.HeatingPowerSource.SourceType = TPowerSource::Main;
+		CHECK(cab.CatenaryCurrent() == 0.0);
+	}
+	SUBCASE("on the catenary the traction current goes through them, the check the genset is spared") {
+		vehicle dragon6{dragon_genset(), 0.0, "test", 1};
+		auto &cab{dragon6.mover()};
+		REQUIRE(test::start_up(test::driving(dragon6), wire));
+		test::release_brakes(cab);
+		run(dragon6, 5.0, wire);
+		notch_up(cab);
+		for (auto step_count = 0L; step_count < 60000 && cab.Vel < 30.0; ++step_count) {
+			step(dragon6, step_count, wire);
+		}
+		CAPTURE(cab.Vel);
+		REQUIRE(cab.Itot > 50.0);
+		CHECK(cab.CatenaryCurrent() == std::abs(cab.Itot) * cab.IsVehicleEIMBrakingFactor() + cab.TotalCurrent);
+		CHECK(cab.CatenaryCurrent() > 50.0);
+	}
+}
+
 TEST_CASE("genset: a scenery command reaches the selector") {
 	vehicle dragon6{dragon_genset(), 0.0, "test", 1};
 	auto &cab{dragon6.mover()};
