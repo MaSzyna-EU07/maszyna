@@ -2568,6 +2568,7 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 		case TEngineType::Dumb:
 		case TEngineType::DieselElectric:
 		case TEngineType::ElectricInductionMotor:
+		case TEngineType::SteamEngine:
 		{
 			if (CtrlSpeed > 1)
 			{
@@ -2749,6 +2750,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 					case TEngineType::Dumb:
 					case TEngineType::DieselElectric:
 					case TEngineType::ElectricInductionMotor:
+					case TEngineType::SteamEngine:
 					{
 						if ((CtrlSpeed == 1 && EngineType != TEngineType::DieselElectric) || (CtrlSpeed == 1 && EngineType == TEngineType::DieselElectric))
 						{
@@ -4607,7 +4609,12 @@ void TMoverParameters::CompressorCheck(double dt)
 	}
 
 	// the main circuit, also for a compressor driven by the engine, otherwise the low voltage
-	auto const compressorpower{CompressorPower == 0 || CompressorPower == 3 ? MainCircuitPowered() : Power110vIsAvailable};
+	auto compressorpower{CompressorPower == 0 || CompressorPower == 3 ? MainCircuitPowered() : Power110vIsAvailable};
+	if (EngineType == TEngineType::SteamEngine && CompressorPower == 3)
+	{
+		// the air pump of a steam locomotive runs on the steam of its boiler
+		compressorpower = Steam.pressure() > steam::air_pump_pressure;
+	}
 	CompressorPowerTime = compressorpower ? CompressorPowerTime + dt : 0.0;
 	auto const compressorready{compressorpower && CompressorPowerTime >= CompressorStartDelay};
 	// TBD: split CompressorAllow into separate enable/disable flags, inherit compressor from basic_device
@@ -5250,7 +5257,9 @@ void TMoverParameters::ComputeTotalForce(double dt)
 	// McZapkie-031103: sprawdzanie czy warto liczyc fizyke i inne updaty
 	// ABu 300105: cos tu mieszalem , dziala teraz troche lepiej, wiec zostawiam
 	{
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		// a steam locomotive's boiler and fire go on with no one in the cab
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU ||
+		                           steam_InSteam()};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
 		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
@@ -5942,6 +5951,12 @@ double TMoverParameters::TractionForce(double dt)
 		dmoment = dizel_Momentum(dizel_fill, dtrans * nrot * DirActive, dt); // oblicza tez enrot
 		break;
 	}
+	case TEngineType::SteamEngine:
+	{
+		enrot = Transmision.Ratio * nrot;
+		steam_Update(dt);
+		break;
+	}
 	default:
 	{
 		enrot = Transmision.Ratio * nrot;
@@ -6165,6 +6180,14 @@ double TMoverParameters::TractionForce(double dt)
 			}
 			break;
 		} // Dumb
+
+		case TEngineType::SteamEngine:
+		{
+			// the steam pushes the way the valve gear is set
+			Ft = Steam.force * DirAbsolute;
+			EnginePower = Steam.power / 1000.0;
+			break;
+		}
 
 		case TEngineType::WheelsDriven:
 		{
@@ -8495,6 +8518,39 @@ double TMoverParameters::dizel_fillcheck(int mcp, double dt)
 	return std::clamp(realfill, 0.0, 1.0);
 }
 
+double TMoverParameters::steam_Regulator() const
+{
+	return MainCtrlPosNo > 0 ? std::clamp(static_cast<double>(MainCtrlPos) / MainCtrlPosNo, 0.0, 1.0) : 0.0;
+}
+
+double TMoverParameters::steam_Cutoff() const
+{
+	// the secondary controller notches up the valve gear from full gear to the shortest cutoff
+	if (ScndCtrlPosNo <= 0)
+	{
+		return SteamParameters.cutoff_max;
+	}
+	auto const notching{std::clamp(static_cast<double>(ScndCtrlPos) / ScndCtrlPosNo, 0.0, 1.0)};
+	return std::lerp(SteamParameters.cutoff_max, SteamParameters.cutoff_min, notching);
+}
+
+void TMoverParameters::steam_Update(double const Deltatime)
+{
+	SteamControls.regulator = steam_Regulator();
+	// mid gear with the reverser in neutral
+	SteamControls.cutoff = DirActive != 0 ? steam_Cutoff() : 0.0;
+	SteamControls.auxiliary_flow = CompressorFlag ? SteamParameters.air_pump_flow : 0.0;
+	SteamCrankAngle = std::fmod(SteamCrankAngle + 2.0 * M_PI * std::abs(nrot) * Deltatime, 2.0 * M_PI);
+	steam::update(SteamParameters, Steam, SteamControls, nrot, SteamCrankAngle, Deltatime);
+	// the smoke of the chimney follows the exhaust (rendering/particles.cpp)
+	dizel_fill = std::clamp(0.1 + 0.9 * Steam.exhaust_flow / SteamParameters.steam_rate, 0.0, 1.0);
+}
+
+bool TMoverParameters::steam_InSteam() const
+{
+	return EngineType == TEngineType::SteamEngine && (Steam.fire_mass > 0.0 || Steam.pressure() > 0.0);
+}
+
 // *************************************************************************************************
 // Q: 20160715
 // Oblicza moment siły wytwarzany przez silnik spalinowy
@@ -10617,6 +10673,14 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former b
 			continue;
 		}
 
+		if (issection("Steam:", inputline))
+		{
+			startBPT = false;
+			fizlines.try_emplace("Steam", inputline);
+			steam::load(SteamParameters, inputline);
+			continue;
+		}
+
 		if (issection("Switches:", inputline))
 		{
 			startBPT = false;
@@ -12522,7 +12586,7 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	Sand = SandCapacity;
 
 	// NOTE: for diesel-powered vehicles we automatically convert legacy "main" power source to more accurate "engine"
-	if (CompressorPower == 0 && (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric))
+	if (CompressorPower == 0 && (EngineType == TEngineType::DieselEngine || EngineType == TEngineType::DieselElectric || EngineType == TEngineType::SteamEngine))
 	{
 		CompressorPower = 3;
 	}
@@ -12748,6 +12812,13 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	{
 		HeatingPowerSource.SourceType = TPowerSource::PowerCable;
 		HeatingPowerSource.PowerType = TPowerType::ElectricPower;
+	}
+
+	if (EngineType == TEngineType::SteamEngine)
+	{
+		// in steam, as the other locomotives come with their engines ready to be started
+		SteamParameters.wheel_diameter = WheelDiameter;
+		Steam = steam::in_steam(SteamParameters);
 	}
 
 	// checking ready flag

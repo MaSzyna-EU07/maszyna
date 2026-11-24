@@ -711,6 +711,7 @@ set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
+"McZapkie/steam.cpp"
 "McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
