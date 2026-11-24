@@ -62,7 +62,7 @@ const float SNOW_FILM_DRY = 0.15;
 // how fast slush slides down a vertical glass, how fast dry powder goes with the air (a share of the speed of the air along the
 // glass), how fast the film of water runs down a vertical glass and goes with the air, m/s
 const float SNOW_SLIDE = 0.03;
-const float SNOW_BLOW = 0.001;
+const float SNOW_BLOW = 0.0005;
 const float SNOW_RUN = 0.02;
 const float SNOW_RUN_AIR = 0.002;
 
@@ -195,7 +195,7 @@ vec4 snow_motion(ivec2 texel, vec4 state)
 	float wet = state.y / (state.y + state.x * density + 1e-4);
 	// slush: wet and heavy enough to go; dry powder: loose and thin enough to be blown
 	float slide = SNOW_SLIDE * smoothstep(0.25, 0.7, wet) * smoothstep(2.0, 8.0, state.x);
-	float blow = SNOW_BLOW * smoothstep(10.0, 25.0, wind) * (1.0 - state.z) * (1.0 - smoothstep(0.1, 0.3, wet)) * (1.0 - smoothstep(0.2, 0.6, state.x));
+	float blow = SNOW_BLOW * smoothstep(10.0, 25.0, wind) * (1.0 - state.z) * (1.0 - smoothstep(0.1, 0.3, wet)) * (1.0 - smoothstep(0.08, 0.25, state.x));
 	vec3 snow = slope * slide + air * blow;
 	// the film of water runs where there's enough of it, not the water soaked into the snow
 	float film = (1.0 - smoothstep(0.5, 3.0, state.x));
@@ -313,7 +313,7 @@ void main()
 	// water stay
 	// (only on a bare glass: a flake sticks to the snow already there)
 	float dry = (1.0 - smoothstep(0.1, 0.4, wet)) * (1.0 - smoothstep(-3.0, 0.0, water_up.w)) * (1.0 - smoothstep(0.05, 0.3, state.x));
-	float sticking = 1.0 - 0.4 * smoothstep(5.0, 25.0, speed) * dry;
+	float sticking = 1.0 - 0.15 * smoothstep(5.0, 25.0, speed) * dry;
 	float landings = water_snow.x * SNOW_FALL_SHARE / max(water_air.w, 0.1) * facing * area * seconds * sticking;
 	vec4 random = water_random(place, snow_slot, water_counts.x, 0x5e0du);
 	float count = min(floor(landings) + ((random.x < fract(landings)) ? 1.0 : 0.0), 4.0);
