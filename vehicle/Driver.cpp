@@ -591,10 +591,19 @@ bool TController::TableSwitchThrownUnder( TTrack const *Track ) const
         // running onto it from the frog end set it to their own way
         return TableTrainPath( Track ) >= 0;
     }
-    // none on it: the head of the train runs onto it yet, unless its axles ran over it before (the train is past it)
-    auto const *head { pVehicles[ end::front ] };
-    return false == head->Axle0.PathOf( Track ).has_value()
-        && false == head->Axle1.PathOf( Track ).has_value();
+    // none on it: the head of the train runs onto it yet, unless the train is past it, and then the axles that ran over
+    // it last remember it. an axle keeps only the last few switches, so in a long train past a ladder of switches the
+    // head may have forgotten one its rear has only just left: the vehicles nearest the switch decide
+    for( auto const *vehicle { pVehicles[ end::front ] }; vehicle != nullptr; vehicle = vehicle->Next() ) {
+        if( vehicle->Axle0.PathOf( Track ).has_value()
+         || vehicle->Axle1.PathOf( Track ).has_value() ) {
+            return false;
+        }
+        if( vehicle == pVehicles[ end::rear ] ) {
+            break;
+        }
+    }
+    return true;
 }
 
 void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
