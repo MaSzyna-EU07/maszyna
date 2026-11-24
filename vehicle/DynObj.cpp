@@ -5800,16 +5800,16 @@ void TDynamicObject::RenderSounds() {
     MoverParameters->SoundFlag = 0;
     // McZapkie! - koniec obslugi dzwiekow z mover.pas
 
-    // physics.derailment new: off the track the vehicle scrapes along the ground until it stops
-    if( MoverParameters->OffTrack.active() ) {
-        if( false == MoverParameters->OffTrack.at_rest() ) {
-            if( false == rsDerailment.is_playing() ) {
-                rsDerailment.play( sound_flags::exclusive | sound_flags::looping );
-            }
+    // physics.derailment new: off the track the vehicle scrapes along the ground until it stops, or until it is put back
+    // on the rails (rerail()) while still sliding
+    if( MoverParameters->OffTrack.active() && false == MoverParameters->OffTrack.at_rest() ) {
+        if( false == rsDerailment.is_playing() ) {
+            rsDerailment.play( sound_flags::exclusive | sound_flags::looping );
         }
-        else if( rsDerailment.is_playing() ) {
-            rsDerailment.stop();
-        }
+        m_offtrackscraping = true;
+    }
+    else if( std::exchange( m_offtrackscraping, false ) && rsDerailment.is_playing() ) {
+        rsDerailment.stop();
     }
 
 // special events
