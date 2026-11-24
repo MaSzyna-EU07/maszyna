@@ -1,0 +1,16 @@
+# First steps: a switch the switch tool refuses is told in its panel and by the cursor, not in the status line as well, and what
+# it told goes once a switch is dragged in after it. i0: a straight taking the cant of 60 mm on along all of it (a switch there
+# breaks 11.4 pkt 7); a2: a plain straight of line a, x 0, z 100..200
+wait 5
+curvedswitch i0 300 -40 302 -20 Rz_60E1-300-1:9
+expect track z1 removed
+expect status 11.4 pkt 7
+expect refusal holds 11.4 pkt 7
+expect statusline lacks 11.4 pkt 7
+curvedswitch a2 0 140 3 160 Rz_60E1-300-1:9
+expect track z1 present
+expect status z1
+expect statuslacks 11.4 pkt 7
+expect refusal lacks 11.4 pkt 7
+expect statusline lacks 11.4 pkt 7
+quit

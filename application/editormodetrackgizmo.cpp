@@ -698,7 +698,8 @@ void editor_mode::track_gizmo_moved_point(TTrack &Track, glm::dvec3 const &Posit
 void editor_mode::render_track_gizmo()
 {
 	auto *track = selected_track();
-	if (track == nullptr || false == editable(*track))
+	// a track of a line of the model is edited through the line, not moved by hand
+	if (track == nullptr || false == editable(*track) || model_track(track) != nullptr)
 	{
 		m_track_gizmo_using = false;
 		return;

@@ -1,0 +1,23 @@
+# PR #450: the gauge is a paste group of its own, off by default: pasting how a track rides or sounds no longer changes
+# its gauge.
+# g1: a track of 1000 mm gauge, g2: one of the standard gauge
+wait 5
+expect gauge g1 1.000
+expect gauge g2 1.435
+trackstyle copy g1
+tracksel g2
+# the groups ticked at first: the gauge isn't among them
+trackstyle paste
+expect gauge g2 1.435
+# ride and sound alone (group 8), which the gauge was a part of
+trackstyle groups 8
+trackstyle paste
+expect gauge g2 1.435
+# with the gauge ticked (group 11)
+trackstyle groups 8 11
+trackstyle paste
+expect gauge g2 1.000
+expect gauge g1 1.000
+undo
+expect gauge g2 1.435
+quit

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorKilometrage.hpp"
+#include "editor/editorPhotoRules.hpp"
 #include "editor/editorSettings.hpp"
 #include "model/AnimModel.h"
 #include "utilities/Globals.h"
@@ -68,84 +69,17 @@ bool rail(TTrack const &Track)
 	return geometry::plan_distance(path.points[segment_data::point::start], path.points[segment_data::point::end]) <= broken_path;
 }
 
-// a choice of the new scenery as a card: a sketch of the ground a track lies on, the name and what it means; true when clicked.
-// the real terrain: hills under an aerial photo, the track along them; none: the flat plane at 0 drawn as a grid
-bool ground_card(char const *Id, char const *Title, char const *Text, bool const Hills, bool const Enabled, float const Width)
+// why the model wasn't fetched: a failure of the connection or of the service told in plain words, as the photo tells its own, as
+// a sentence of its own (the code of WinHTTP is in the log); the messages of the model itself as they are
+std::string nmt_error_text(std::string const &Error)
 {
-	auto const font{ImGui::GetFontSize()};
-	auto const pad{std::round(font * 0.6f)};
-	auto const sketch{std::round(font * 4.0f)};
-	auto const wrap{Width - 2.0f * pad};
-	auto const title{ImGui::CalcTextSize(Title, nullptr, false, wrap)};
-	auto const text{ImGui::CalcTextSize(Text, nullptr, false, wrap)};
-	auto const height{pad + sketch + pad * 0.6f + title.y + pad * 0.3f + text.y + pad};
-	auto const top{ImGui::GetCursorScreenPos()};
-	ImGui::BeginDisabled(false == Enabled);
-	auto const clicked{ImGui::InvisibleButton(Id, ImVec2(Width, height))};
-	ImGui::EndDisabled();
-	auto const hovered{Enabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)};
-	auto *list{ImGui::GetWindowDrawList()};
-	ImVec2 const bottom{top.x + Width, top.y + height};
-	auto const rounding{std::round(font * 0.4f)};
-	auto const accent{family_colour(0)};
-	list->AddRectFilled(top, bottom, ImGui::GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg), rounding);
-	list->AddRect(top, bottom, hovered ? accent : ImGui::GetColorU32(ImGuiCol_Border), rounding, 0, hovered ? 2.0f : 1.0f);
-	auto const alpha{Enabled ? 1.0f : 0.35f};
-	auto const tint = [&](ImU32 const Colour) { return (Colour & ~IM_COL32_A_MASK) | (static_cast<ImU32>(((Colour >> IM_COL32_A_SHIFT) & 0xFF) * alpha) << IM_COL32_A_SHIFT); };
-	ImVec2 const low{top.x + pad, top.y + pad};
-	ImVec2 const high{top.x + Width - pad, top.y + pad + sketch};
-	list->AddRectFilled(low, high, tint(IM_COL32(20, 26, 34, 255)), rounding * 0.6f);
-	list->PushClipRect(low, high, true);
-	int constexpr steps{48};
-	auto const x_of = [&](float const Share) { return low.x + (high.x - low.x) * Share; };
-	if (Hills)
-	{
-		auto const ground = [](float const Share) { return 0.45f + 0.18f * std::sin(Share * 7.0f + 0.4f) + 0.08f * std::sin(Share * 17.0f); };
-		std::vector<ImVec2> line;
-		for (int i = 0; i <= steps; ++i)
-		{
-			auto const share{static_cast<float>(i) / steps};
-			line.emplace_back(x_of(share), low.y + (high.y - low.y) * ground(share));
-		}
-		// the strips under the line drawn without the soft edges, else seams show between them
-		auto const flags{list->Flags};
-		list->Flags &= ~ImDrawListFlags_AntiAliasedFill;
-		for (int i = 0; i < steps; ++i)
-			list->AddQuadFilled(line[i], line[i + 1], ImVec2(line[i + 1].x, high.y), ImVec2(line[i].x, high.y), tint(IM_COL32(70, 110, 55, 200)));
-		list->Flags = flags;
-		list->AddPolyline(line.data(), static_cast<int>(line.size()), tint(IM_COL32(150, 200, 110, 255)), 0, 1.5f);
-		// the track goes along the ground, a little above it on embankments, below it in cuttings
-		std::vector<ImVec2> track;
-		for (int i = 0; i <= steps; ++i)
-		{
-			auto const share{static_cast<float>(i) / steps};
-			auto const smooth{0.45f + 0.09f * std::sin(share * 7.0f + 0.4f)};
-			track.emplace_back(x_of(share), low.y + (high.y - low.y) * smooth - 2.0f);
-		}
-		list->AddPolyline(track.data(), static_cast<int>(track.size()), tint(IM_COL32(235, 235, 235, 255)), 0, 2.5f);
-	}
-	else
-	{
-		auto const horizon{low.y + (high.y - low.y) * 0.35f};
-		auto const grid{tint(IM_COL32(120, 130, 150, 120))};
-		for (int i = 0; i <= 4; ++i)
-		{
-			auto const t{static_cast<float>(i) / 4.0f};
-			auto const y{horizon + (high.y - horizon) * t * t};
-			list->AddLine(ImVec2(low.x, y), ImVec2(high.x, y), grid);
-		}
-		auto const middle{(low.x + high.x) * 0.5f};
-		for (int i = -6; i <= 6; ++i)
-			list->AddLine(ImVec2(middle + i * (high.x - low.x) * 0.06f, horizon), ImVec2(middle + i * (high.x - low.x) * 0.22f, high.y), grid);
-		auto const level{horizon + (high.y - horizon) * 0.45f};
-		list->AddLine(ImVec2(low.x, level), ImVec2(high.x, level), tint(IM_COL32(235, 235, 235, 255)), 2.5f);
-	}
-	list->PopClipRect();
-	auto y{high.y + pad * 0.6f};
-	list->AddText(nullptr, 0.0f, ImVec2(low.x, y), tint(ImGui::GetColorU32(ImGuiCol_Text)), Title, nullptr, wrap);
-	y += title.y + pad * 0.3f;
-	list->AddText(nullptr, 0.0f, ImVec2(low.x, y), tint(ImGui::GetColorU32(ImGuiCol_TextDisabled)), Text, nullptr, wrap);
-	return clicked && Enabled;
+	auto const reason{photo_rules::connection_reason(Error)};
+	if (reason.empty())
+		return STR(Error);
+	auto text{STR(reason)};
+	if (false == text.empty() && text.front() >= 'a' && text.front() <= 'z')
+		text.front() = static_cast<char>(text.front() - 'a' + 'A');
+	return text;
 }
 
 // what a way of putting the tracks and the terrain together does, drawn along a track: onto, the track goes along the hills of
@@ -1085,7 +1019,7 @@ void editor_mode::nmt_area_terrain()
 			WriteLog(std::string{"Editor: NMT - the terrain of the download area "} + (*Reason != '\0' ? std::string{"held: "} + Reason : std::string{"goes on"}), logtype::generic);
 		}
 	};
-	if (false == area.run_only.value_or(EditorSettings.terrain_model().area))
+	if (false == area.run_only.value_or(nmt_area()))
 		return held("turned off");
 	if (m_orthophoto.area().empty())
 		return held("no area");
@@ -1215,7 +1149,10 @@ void editor_mode::nmt_update()
 	if (auto const &wanted{m_orthophoto.area()}; wanted != m_nmt_prefetched)
 	{
 		m_nmt_prefetched = wanted;
-		m_nmt.prefetch(wanted);
+		// unless no terrain is made of the model by itself, as after the answer without terrain: what the terrain panel asks for then is
+		// downloaded as it's asked for
+		if (state.grow || nmt_area())
+			m_nmt.prefetch(wanted);
 		// the terrain around the camera looked at again within the new area
 		m_area_terrain.listed = false;
 		m_area_terrain.empty.clear();
@@ -2083,8 +2020,10 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 	ImGui::TextUnformatted(STR_C("Square around the camera:"));
 	for (auto const side : {1, 2, 5, 10})
 	{
-		ImGui::SameLine();
-		if (ImGui::SmallButton(format(STR_C("%d x %d km##areasquare"), side, side).c_str()))
+		// on to the next line where the panel ends: the last one was cut off at its edge
+		auto const label{format(STR_C("%d x %d km##areasquare"), side, side)};
+		same_line_if_fits(label.c_str());
+		if (ImGui::SmallButton(label.c_str()))
 		{
 			// the area there is, drawn with care, or one this large, replaced only with a yes
 			m_area_square = side;
@@ -2137,13 +2076,18 @@ void editor_mode::render_download_area_ui(editor_orthophoto::statistics const &S
 		}
 	}
 	auto &model{EditorSettings.terrain_model()};
-	if (ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &model.area))
+	// as it is for the scenery open: off after the answer Without terrain, and ticked, on again and kept so in the settings
+	if (bool area{nmt_area()}; ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &area))
+	{
+		m_nmt_state.declined = false;
+		model.area = area;
 		EditorSettings.save();
+	}
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Makes the terrain from the terrain model within the area, around the camera wherever it goes,\n"
 		                              "a chunk at a time while the editor is idle. The terrain there is already isn't touched.\n"
 		                              "The chunks made wait in memory until the scenery is saved (Ctrl+S)."));
-	if (model.area && m_area_terrain.made > 0)
+	if (nmt_area() && m_area_terrain.made > 0)
 	{
 		ImGui::SameLine();
 		ImGui::TextDisabled("%s", format(STR_P("%zu chunk made", "%zu chunks made", m_area_terrain.made), m_area_terrain.made).c_str());
@@ -2164,13 +2108,13 @@ void editor_mode::render_nmt_banner()
 	                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking))
 	{
 		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(STR_C("Loading the real terrain"));
+		ImGui::TextUnformatted(STR_C("Loading the terrain model"));
 		ImGui::SameLine();
 		render_nmt_progress(true);
 		bool again{false};
 		if (auto const error{m_nmt.error(&again)}; false == error.empty())
 		{
-			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR(error).c_str());
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", nmt_error_text(error).c_str());
 			if (again)
 			{
 				ImGui::SameLine();
@@ -2331,10 +2275,7 @@ void editor_mode::render_outside_area_hint()
 			if (orthophoto_settings_open())
 				area_start();
 			else
-			{
-				ui()->show_layers();
 				m_orthophoto_window = true;
-			}
 		}
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", STR_C("The range is the download area in Map > Orthophoto settings...; drawn again it can take this place in"));
@@ -2547,7 +2488,7 @@ void editor_mode::render_nmt_ui()
 	if (auto const error{m_nmt.error(&again)}; false == error.empty())
 	{
 		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", STR(error).c_str());
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", nmt_error_text(error).c_str());
 		ImGui::PopTextWrapPos();
 		if (again && ImGui::Button(STR_C("Try again")))
 			m_nmt.retry();
@@ -2583,8 +2524,20 @@ void editor_mode::nmt_offer()
 	state.offered = true;
 	if (m_streamer.resident() > 0 || std::any_of(simulation::Paths.sequence().begin(), simulation::Paths.sequence().end(), [](TTrack const *Track) { return Track != nullptr && rail(*Track); }))
 		return;
+	nmt_offer_start();
+}
+
+void editor_mode::nmt_offer_start()
+{
+	auto &state{m_nmt_state};
 	nmt_locate();
+	// no question in the way of the first track: where the scenery lies on the map the terrain loads in the background, and the photo
+	// lies flat meanwhile; the line in the panel of the laying tells it, with the button to go without
 	state.prompt = true;
+	state.offer_loading = false;
+	if (m_nmt.placed())
+		nmt_accept_offer();
+	WriteLog(format("Editor: NMT - the terrain of the new scenery %s", state.offer_loading ? "loaded in the background" : "not loaded, the scenery isn't placed on the map"), logtype::generic);
 }
 
 void editor_mode::nmt_accept_offer()
@@ -2595,49 +2548,74 @@ void editor_mode::nmt_accept_offer()
 	// no tracks to fit to: the heights of the model as they are
 	state.offset = 0.0;
 	nmt_make(nmt_keys_around());
-	state.prompt = false;
+	state.offer_loading = true;
+	// the terrain goes on under the tracks as they're laid and around the camera, also after the scenery before went without it; the
+	// model of the download area is put into the cache again if that stopped it
+	state.grow = true;
+	state.declined = false;
+	EditorSettings.terrain_while_laying(true);
+	EditorSettings.terrain_model().area = true;
+	EditorSettings.save();
+	if (m_nmt.prefetched().total == 0 && false == m_nmt_prefetched.empty())
+		m_nmt.prefetch(m_nmt_prefetched);
 }
 
-void editor_mode::render_nmt_prompt()
+void editor_mode::nmt_decline_offer()
+{
+	auto &state{m_nmt_state};
+	state.prompt = false;
+	state.offer_loading = false;
+	// nothing of the model loaded any more: not under the tracks as they're laid, as the checkbox of the layers turns it off, nor around
+	// the camera within the download area, as the checkbox of the terrain panel does, nor the squares of the download area into the
+	// cache. Kept on, they went on being loaded, and where there's no network their requests failed in the log. For this scenery only:
+	// the settings stay as they were, for the sceneries opened later
+	state.grow = false;
+	state.declined = true;
+	m_nmt.prefetch({});
+	// nor the squares asked for meanwhile, as the aerial photos asked for them to lie on, nor the chunks waiting for them
+	m_nmt.cancel();
+	state.pending.clear();
+	state.status = STR("Without terrain: the tracks lie on the flat plane; the terrain can be loaded later in Terrain (F5)");
+}
+
+bool editor_mode::nmt_area() const
+{
+	return false == m_nmt_state.declined && EditorSettings.terrain_model().area;
+}
+
+void editor_mode::render_nmt_offer_line()
 {
 	auto &state{m_nmt_state};
 	if (false == state.prompt)
 		return;
-	char const *const title{STR_C("Terrain for the new scenery###nmtoffer")};
-	if (false == ImGui::IsPopupOpen(title))
-		ImGui::OpenPopup(title);
-	ImGui::SetNextWindowSize(ImVec2(520.0f * Global.ui_scale, 0.0f));
-	if (false == ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoResize))
-		return;
-	ImGui::TextWrapped("%s", STR_C("The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."));
-	bool const placed{m_nmt.placed()};
-	if (false == placed)
-		render_nmt_place(false, false);
-	auto const known{placed || m_nmt_map.picked()};
-	ImGui::Spacing();
-	auto const gap{std::round(ImGui::GetFontSize() * 0.6f)};
-	auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
-	if (ground_card("##terrain", STR_C("Load the terrain"), STR_C("The terrain model and the aerial photos of geoportal.gov.pl around here; the tracks go along the real ground"), true, known, width))
+	if (state.offer_loading && false == nmt_busy() && state.pending.empty())
 	{
-		nmt_accept_offer();
-		ImGui::CloseCurrentPopup();
-	}
-	if (false == known)
-		item_tooltip("Pick where the scenery lies first");
-	ImGui::SameLine(0.0f, gap);
-	if (ground_card("##flat", STR_C("Without terrain"), STR_C("The tracks lie on the flat plane at the height 0; the terrain can be loaded later in Terrain (F5)"), false, true, width))
-	{
+		// in: the line goes, the terrain is there to be seen
 		state.prompt = false;
-		ImGui::CloseCurrentPopup();
+		state.offer_loading = false;
+		return;
 	}
-	ImGui::Spacing();
-	bool ask{EditorSettings.terrain_offer()};
-	if (ImGui::Checkbox(STR_C("Ask with every new scenery"), &ask))
+	ImGui::AlignTextToFramePadding();
+	if (state.offer_loading)
 	{
-		EditorSettings.terrain_offer(ask);
-		EditorSettings.save();
+		if (auto const error{m_nmt.error()}; false == error.empty())
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "%s %s", STR_C("Terrain:"), nmt_error_text(error).c_str());
+		else
+			ImGui::TextDisabled("%s", STR_C("Terrain: loading..."));
+		item_tooltip("The terrain model of geoportal.gov.pl around here, in the background: the tracks laid meanwhile go onto it once it's in, the photo lies flat till then");
 	}
-	ImGui::EndPopup();
+	else
+	{
+		ImGui::TextDisabled("%s", STR_C("Terrain: the scenery isn't placed on the map"));
+		ImGui::SameLine();
+		if (ImGui::SmallButton(STR_C("Place it...")))
+			choose_work_area(work_area::terrain);
+		item_tooltip("In Terrain (F5): the middle of the scenery clicked on the map, then its terrain and photos can be loaded");
+	}
+	ImGui::SameLine();
+	if (ImGui::SmallButton(STR_C("Without terrain")))
+		nmt_decline_offer();
+	item_tooltip("The tracks lie on the flat plane at the height 0; the terrain can be loaded later in Terrain (F5)");
 }
 
 std::size_t editor_mode::nmt_join_ends()

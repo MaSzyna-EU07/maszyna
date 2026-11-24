@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "launcher/scenery_wizard.h"
 #include "application/application.h"
+#include "application/editorsetupui.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeoMap.hpp"
 #include "editor/editorGeometry.hpp"
@@ -203,7 +204,7 @@ std::string ui::scenerywizard_panel::missing(bool const Named, bool const Exists
 		return STR("Finish drawing the area: Done (step 3)");
 	auto const area{range()};
 	if (area.empty())
-		return STR("Draw the area of the aerial photos on the map (step 3)");
+		return STR("Draw the range of the orthophoto on the map (step 3)");
 	if (geometry::polygon_crosses_itself(area))
 		return STR("The edges of the area cross each other: draw it again (step 3)");
 	return {};
@@ -251,12 +252,13 @@ void ui::scenerywizard_panel::render_form()
 		render_place();
 		render_range();
 	}
+	render_setup(m_realistic ? 4 : 2);
 
 	ImGui::Spacing();
 	ImGui::Separator();
 	auto const reason{missing(named, exists)};
 	ImGui::BeginDisabled(false == reason.empty());
-	if (ImGui::Button(STR_C("Create and open in the editor"), ImVec2(-1.f, ImGui::GetFrameHeight() * 1.4f)))
+	if (ImGui::Button(STR_C("Start: create and open in the editor"), ImVec2(-1.f, ImGui::GetFrameHeight() * 1.4f)))
 		create_scenery();
 	ImGui::EndDisabled();
 	if (false == reason.empty())
@@ -265,7 +267,8 @@ void ui::scenerywizard_panel::render_form()
 		wrapped(error_colour, m_status);
 
 	ImGui::Spacing();
-	wrapped_disabled(STR("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
+	// whose the picture of the map is: the photos of GUGiK zoomed in, the base map of OpenStreetMap further out
+	wrapped_disabled(m_map.photos_shown() ? STR("Imagery: GUGiK, geoportal.gov.pl") : STR("Map: (c) OpenStreetMap contributors, served by geoportal.gov.pl"));
 }
 
 void ui::scenerywizard_panel::render_place()
@@ -303,7 +306,7 @@ void ui::scenerywizard_panel::render_place()
 
 void ui::scenerywizard_panel::render_range()
 {
-	ImGui::SeparatorText(STR_C("3. Range of the aerial photos"));
+	ImGui::SeparatorText(STR_C("3. Range of the orthophoto"));
 	wrapped_disabled(STR("The editor downloads the aerial photos and the shape of the ground only inside this area, blue on the map. Outside it there are no photos."));
 	// the area is given around the centre: without it the clicks on the map would go to the corners of an area, not to the centre
 	auto const placed{m_map.picked()};
@@ -389,6 +392,13 @@ void ui::scenerywizard_panel::render_range()
 	wrapped_disabled(STR("It can be changed later in the editor: Map > Orthophoto settings... > Download area"));
 }
 
+void ui::scenerywizard_panel::render_setup(int const Step)
+{
+	ImGui::SeparatorText(format(STR_C("%d. What do you draw?"), Step).c_str());
+	wrapped_disabled(STR("The tracks are laid to these norms and this speed, a fictional scenery's too: a curve they don't allow can't be laid. Changed later in the editor: Assumptions of the project"));
+	setup_ui::fields("wizard", m_setup);
+}
+
 bool ui::scenerywizard_panel::create_scenery()
 {
 	std::string name{m_filename};
@@ -417,6 +427,9 @@ bool ui::scenerywizard_panel::create_scenery()
 	}
 	else
 		std::snprintf(reference, sizeof(reference), "fictional");
+	// what's drawn, the norms the tracks are laid to: a fictional scenery has them as any other
+	output << "//$u # the assumptions of the project: what the editor lays the tracks to\r\n";
+	output << "//$u " << project_setup::record(m_setup) << "\r\n";
 	if (m_title[0] != '\0')
 		output << "// " << m_title << "\r\n";
 	output << "// created in the editor " << date << "\r\n\r\n";
@@ -428,6 +441,7 @@ bool ui::scenerywizard_panel::create_scenery()
 		WriteLog(format("Scenery wizard: created %s at %s, the range of the photos %zu points, %.1f km2", file.c_str(), reference, area.size(), geometry::polygon_area(area) / 1.0e6));
 	else
 		WriteLog("Scenery wizard: created " + file + ", fictional");
+	WriteLog("Scenery wizard: the assumptions of the project: " + project_setup::record(m_setup));
 
 	Global.SceneryFile = file;
 	Global.local_start_vehicle = "ghostview";

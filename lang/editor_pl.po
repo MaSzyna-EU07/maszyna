@@ -1921,7 +1921,7 @@ msgid "Orthophoto settings..."
 msgstr "Ustawienia ortofotomapy..."
 
 msgid "Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"
-msgstr "Zdjęcia lotnicze z geoportal.gov.pl pod scenerią, ułożone według punktu odniesienia scenerii"
+msgstr "Ortofotomapa (zdjęcia lotnicze z geoportal.gov.pl) pod scenerią, ułożona według punktu odniesienia scenerii"
 
 msgid "in the scenery file: Y (easting) %.0f m, X (northing) %.0f m"
 msgstr "w pliku scenerii: Y (wschód) %.0f m, X (północ) %.0f m"
@@ -2880,15 +2880,6 @@ msgstr "%+.2f m wzdłuż toru"
 
 # scenery editor: general mode, toolset, layers, settings
 
-msgid "LMB: select node   F: focus   End: drop to ground   Del: delete"
-msgstr "LPM: zaznacz obiekt   F: pokaż   End: opuść na ziemię   Del: usuń"
-
-msgid "LMB: copy the clicked model to the node bank"
-msgstr "LPM: skopiuj kliknięty model do banku obiektów"
-
-msgid "LMB: insert a model at the cursor"
-msgstr "LPM: wstaw model w miejscu kursora"
-
 msgid "Random model from set"
 msgstr "Losowy model z zestawu"
 
@@ -2897,9 +2888,6 @@ msgstr "Szablonów w zestawie: %zu%s"
 
 msgid "Inserts the template selected in the node bank"
 msgstr "Wstawia szablon zaznaczony w banku obiektów"
-
-msgid "Hold LMB: paint models along the cursor path"
-msgstr "Przytrzymaj LPM: maluj modele wzdłuż drogi kursora"
 
 msgid "Node properties"
 msgstr "Właściwości obiektu"
@@ -2928,16 +2916,16 @@ msgstr "Nazwa, po której eventy mogą odwołać się do obiektu.\nObiekty bez n
 msgid "Transform"
 msgstr "Przekształcenie"
 
-msgid "rotation (deg)"
+msgid "Rotation (deg)"
 msgstr "Obrót (°)"
 
-msgid "scale (x,y,z)"
-msgstr "Skala (x,y,z)"
+msgid "Scale (x, y, z)"
+msgstr "Skala (x, y, z)"
 
-msgid "reset rotation"
+msgid "Reset rotation"
 msgstr "Przywróć obrót"
 
-msgid "reset scale"
+msgid "Reset scale"
 msgstr "Przywróć skalę"
 
 msgid "Parent Group"
@@ -2951,9 +2939,6 @@ msgstr "Maluje szablonem zaznaczonym w banku obiektów"
 
 msgid "Reload node bank"
 msgstr "Wczytaj ponownie bank obiektów"
-
-msgid "Search"
-msgstr "Szukaj"
 
 msgid "Search node bank"
 msgstr "Szukaj w banku obiektów"
@@ -3199,7 +3184,7 @@ msgid "Refit"
 msgstr "Dopasuj ponownie"
 
 msgid "Samples the ground again, after it was edited"
-msgstr "Dopasowuje zdjęcia od nowa, po zmianach terenu"
+msgstr "Dopasowuje ortofotomapę od nowa, po zmianach terenu"
 
 msgid "Lift above ground (m)"
 msgstr "Uniesienie nad grunt (m)"
@@ -3208,7 +3193,7 @@ msgid "Height (m)"
 msgstr "Wysokość (m)"
 
 msgid "Show the photos"
-msgstr "Pokaż zdjęcia"
+msgstr "Pokaż ortofotomapę"
 
 msgid "Over the view"
 msgstr "Na wierzchu widoku"
@@ -3220,19 +3205,19 @@ msgid "A flat sheet in the scene"
 msgstr "Płaska plansza w scenie"
 
 msgid "The photos lie on the terrain as its surface: tracks and models standing on them cover them, the scene lights them, and fully opaque the mouse places objects on them as on the ground."
-msgstr "Zdjęcia leżą na terenie jak jego powierzchnia: tory i modele, które na nich stoją, zasłaniają je, scena je oświetla, a przy pełnym kryciu mysz stawia na nich obiekty jak na gruncie."
+msgstr "Ortofotomapa leży na terenie jak jego powierzchnia: tory i modele, które na niej stoją, zasłaniają ją, scena ją oświetla, a przy pełnym kryciu mysz stawia na niej obiekty jak na gruncie."
 
 msgid "One flat sheet at the height below, in the scene: for a scenery with no terrain yet. Where there is terrain, it cuts through the sheet."
 msgstr "Jedna płaska plansza na wysokości podanej niżej, w scenie: dla scenerii, która nie ma jeszcze terenu. Tam, gdzie teren jest, przecina planszę."
 
 msgid "Raises the photos above the ground.\nWhatever is lower than this, the rails and the sleepers too, ends up under them: keep it small."
-msgstr "Unosi zdjęcia nad grunt.\nWszystko, co jest niżej, także szyny i podkłady, znajdzie się pod nimi: trzymaj je małe."
+msgstr "Unosi ortofotomapę nad grunt.\nWszystko, co jest niżej, także szyny i podkłady, znajdzie się pod nią: trzymaj to małe."
 
 msgid "The Better Renderer doesn't show them in the scene: pick \"Over the view\""
 msgstr "Better Renderer nie pokazuje ich w scenie: wybierz „Na wierzchu widoku”"
 
 msgid "The photos are drawn over the whole view, over the tracks and models as well: lower the opacity to see what's under them. The quickest way to compare the scenery with the map."
-msgstr "Zdjęcia są rysowane na całym widoku, także na torach i modelach: zmniejsz krycie, żeby widzieć, co pod nimi. Najszybszy sposób, by porównać scenerię z mapą."
+msgstr "Ortofotomapa jest rysowana na całym widoku, także na torach i modelach: zmniejsz krycie, żeby widzieć, co pod nią. Najszybszy sposób, by porównać scenerię z mapą."
 
 msgid "Height where there's no ground (m)"
 msgstr "Wysokość tam, gdzie nie ma gruntu (m)"
@@ -3250,7 +3235,7 @@ msgid "4K tiles where available"
 msgstr "Użyj kafli 4K, gdzie są"
 
 msgid "4096 px tiles (~6 cm/px) from the high-resolution orthophoto, for the tiles around the camera.\nAreas it doesn't cover use the standard imagery. Each 4K tile takes ~85 MB of video memory."
-msgstr "Kafle 4096 px (~6 cm/px) z ortofotomapy wysokiej rozdzielczości, dla kafli wokół kamery.\nTam, gdzie jej nie ma, zwykłe zdjęcia. Każdy kafel 4K zajmuje ~85 MB pamięci karty."
+msgstr "Kafle 4096 px (~6 cm/px) z ortofotomapy wysokiej rozdzielczości, dla kafli wokół kamery.\nTam, gdzie jej nie ma, zwykła ortofotomapa. Każdy kafel 4K zajmuje ~85 MB pamięci karty."
 
 msgid "Tiles: %d shown, %d loading, %d failed"
 msgstr "Kafle: wyświetlane %d, wczytywane %d, nieudane %d"
@@ -3271,16 +3256,13 @@ msgid "Deletes downloaded tiles from disk. They are fetched again around the cam
 msgstr "Usuwa pobrane kafle z dysku. Wokół kamery pobierają się od nowa"
 
 msgid "Imagery: GUGiK, geoportal.gov.pl"
-msgstr "Zdjęcia: GUGiK, geoportal.gov.pl"
+msgstr "Ortofotomapa: GUGiK, geoportal.gov.pl"
 
 msgid "Put all instances of the selected model on the ground"
 msgstr "Postaw na ziemi wszystkie kopie zaznaczonego modelu"
 
 msgid "Select a model in the scene. Every instance of the same model file is moved straight up or down\nto the ground under it: terrain, large models and terrain made in the editor."
 msgstr "Zaznacz model w scenie. Każda kopia tego samego pliku modelu przesuwa się pionowo\nna grunt pod nią: teren, duże modele i teren zrobiony w edytorze"
-
-msgid "LMB: add outline point   Backspace: remove last point"
-msgstr "LPM: dodaj punkt obrysu   Backspace: usuń ostatni punkt"
 
 msgid "Remove last point"
 msgstr "Usuń ostatni punkt"
@@ -4599,8 +4581,8 @@ msgstr "R %.0f m nie sięga kursora, łuk przechodzi przez niego z R %.0f m"
 msgid "No ground under the cursor: track goes onto the level 0 plane, drawn as a grid. Terrain: F5"
 msgstr "Pod kursorem nie ma terenu: tor trafia na płaszczyznę na wysokości 0, widoczną jako siatka. Teren: F5"
 
-msgid "Show when the editor opens"
-msgstr "Pokazuj po otwarciu edytora"
+msgid "Show the first steps in the inspector"
+msgstr "Pokazuj pierwsze kroki w inspektorze"
 
 msgid "L, LMB, LMB..."
 msgstr "L, LPM, LPM..."
@@ -6061,7 +6043,7 @@ msgid "The tracks lie %+.2f m against the terrain model (%zu places, they differ
 msgstr "Tory leżą %+.2f m względem NMT (%zu miejsc, rozrzut %.2f m)"
 
 msgid "Terrain model (NMT)"
-msgstr "Prawdziwy teren z map (NMT)"
+msgstr "Teren z map (NMT)"
 
 msgid "No tracks to fit the terrain model to: its heights are taken as they are"
 msgstr "Brak torów do dopasowania: wysokości NMT bez przesunięcia"
@@ -6078,23 +6060,11 @@ msgstr ". To za dużo: położenie scenerii jest pewnie złe, sprawdź ortofotom
 msgid "There's terrain there already"
 msgstr "Tam już jest teren"
 
-msgid "Terrain for the new scenery###nmtoffer"
-msgstr "Teren dla nowej scenerii###nmtoffer"
-
-msgid "The scenery has no terrain yet. Load the terrain model and the aerial photos around here? The tracks laid then go along the real ground."
-msgstr "Sceneria nie ma jeszcze terenu. Wczytać prawdziwy teren i zdjęcia lotnicze wokół tego miejsca? Tory układane potem pójdą po nim"
-
 msgid "Where is it? PUWG 1992 of this point, X to the north and Y to the east, as geoportal.gov.pl gives them:"
 msgstr "Gdzie to jest? Współrzędne PUWG 1992 tego miejsca, X na północ i Y na wschód, jak podaje geoportal.gov.pl:"
 
-msgid "Load the terrain"
-msgstr "Wczytaj teren"
-
 msgid "Without terrain"
 msgstr "Bez terenu"
-
-msgid "Ask with every new scenery"
-msgstr "Pytaj przy każdej nowej scenerii"
 
 msgid "Fetching the terrain model under the tracks: %zu squares left"
 msgstr "Pobieranie NMT pod torami: zostało %zu kwadratów"
@@ -6329,9 +6299,6 @@ msgstr "Woda"
 
 msgid "LMB adds a point of the outline of a body of water, Shift+LMB takes the last one back"
 msgstr "LPM dodaje punkt obrysu zbiornika wody, Shift+LPM cofa ostatni"
-
-msgid "Fill"
-msgstr "Wypełnienie"
 
 msgid "LMB adds a point of the outline of an area to fill with a material, Shift+LMB takes the last one back"
 msgstr "LPM dodaje punkt obrysu obszaru do wypełnienia materiałem, Shift+LPM cofa ostatni"
@@ -6568,7 +6535,7 @@ msgid " (selected)"
 msgstr " (zaznaczony)"
 
 msgid "Lays the imagery onto the ground geometry (terrain shapes, terrain tile models, heightmap terrain).\nPlaces without any ground use the height below."
-msgstr "Kładzie zdjęcia na geometrii terenu (kształty terenu, modele kafli terenu, teren z mapy wysokości).\nMiejsca bez żadnego terenu używają wysokości poniżej."
+msgstr "Kładzie ortofotomapę na geometrii terenu (kształty terenu, modele kafli terenu, teren z mapy wysokości).\nMiejsca bez żadnego terenu używają wysokości poniżej."
 
 msgid "%d chunks made"
 msgstr "Utworzono kafli: %d"
@@ -6673,10 +6640,10 @@ msgid "Chunks: %zu of %zu"
 msgstr "Kafle: %zu z %zu"
 
 msgid "Terrain model loading"
-msgstr "Wczytywanie NMT"
+msgstr "Wczytywanie terenu z map"
 
 msgid "Orthophoto loading"
-msgstr "Wczytywanie zdjęć lotniczych"
+msgstr "Wczytywanie ortofotomapy"
 
 msgid "No tracks to draw the terrain to"
 msgstr "Brak torów, do których można dociągnąć teren"
@@ -6724,7 +6691,7 @@ msgid "Tracks and terrain"
 msgstr "Tory i teren"
 
 msgid "First the place of the scenery on the map: F5 Terrain, Terrain model (NMT), step 1"
-msgstr "Najpierw położenie scenerii na mapie: F5 Teren, Prawdziwy teren z map (NMT), krok 1"
+msgstr "Najpierw położenie scenerii na mapie: F5 Teren, Teren z map (NMT), krok 1"
 
 msgid "All the tracks go down or up onto the terrain model, which is loaded along them by itself"
 msgstr "Wszystkie tory układają się na prawdziwym terenie, który wczyta się sam wzdłuż nich"
@@ -6978,8 +6945,8 @@ msgstr "Ctrl+F"
 msgid "finds a track by its name"
 msgstr "szuka toru po nazwie"
 
-msgid "Or start with:"
-msgstr "Albo zacznij od:"
+msgid "Lay the first track  (L)"
+msgstr "Ułóż pierwszy tor  (L)"
 
 msgid "Lay a track  (L)"
 msgstr "Ułóż tor  (L)"
@@ -6988,7 +6955,7 @@ msgid "embankment and cutting"
 msgstr "nasyp i wykop"
 
 msgid "the terrain model"
-msgstr "model terenu"
+msgstr "teren z map (NMT)"
 
 msgid "The profile tool (P)"
 msgstr "Narzędzie Profil (P)"
@@ -7029,17 +6996,14 @@ msgstr "Przesuń albo dodaj punkt"
 msgid "Apply it: the tracks take the new heights"
 msgstr "Zastosuj: tory przyjmą nowe wysokości"
 
-msgid "Terrain from the terrain model"
-msgstr "Prawdziwy teren"
-
-msgid "Opens Terrain; the real ground (the terrain model) is in its panel"
-msgstr "Otwiera dział Teren; prawdziwy teren (model terenu) jest w jego panelu"
+msgid "Opens Terrain; the terrain model (NMT) is in its panel"
+msgstr "Otwiera dział Teren; teren z map (NMT) jest w jego panelu"
 
 msgid "Open Terrain (F5)"
 msgstr "Otwórz dział Teren (F5)"
 
-msgid "Load the real ground"
-msgstr "Wczytaj prawdziwy teren"
+msgid "Load the terrain model"
+msgstr "Wczytaj teren z map"
 
 msgid "Sceneries made before"
 msgstr "Starsze scenerie"
@@ -7158,9 +7122,6 @@ msgstr "promień o 5%"
 msgid "the length by 5 m"
 msgstr "długość o 5 m"
 
-msgid "Plan of a curve"
-msgstr "Plan łuku"
-
 msgid "G, LMB on a curve"
 msgstr "G, LPM na łuku"
 
@@ -7193,9 +7154,6 @@ msgstr "Przeciągnij na pasku krzywizny"
 
 msgid "R up and down, transitions sideways"
 msgstr "R w górę i w dół, przejściowe w bok"
-
-msgid "Correcting a curve"
-msgstr "Poprawianie łuku"
 
 msgid "Turns Plan on. Click a curve to see how it is built; its corner point and its size can be dragged in the view"
 msgstr "Włącza narzędzie Plan. Kliknij łuk, żeby zobaczyć, z czego się składa; jego wierzchołek i wielkość przeciągniesz w widoku"
@@ -7319,9 +7277,6 @@ msgstr "pochylenie"
 
 msgid "cant"
 msgstr "przechyłka"
-
-msgid "The terrain model and the aerial photos of geoportal.gov.pl around here; the tracks go along the real ground"
-msgstr "Model terenu i zdjęcia lotnicze z geoportal.gov.pl wokół tego miejsca; tory pójdą po prawdziwym terenie"
 
 msgid "Type where the scenery lies first"
 msgstr "Najpierw wpisz, gdzie leży sceneria"
@@ -9178,7 +9133,7 @@ msgid "How far from the tracks, on both sides, the terrain model is loaded"
 msgstr "Jak daleko od torów, po obu stronach, wczytuje się NMT"
 
 msgid "Loads the terrain model, the real relief of the ground, around the camera"
-msgstr "Wczytuje wokół kamery numeryczny model terenu (NMT), czyli prawdziwą rzeźbę terenu"
+msgstr "Wczytuje wokół kamery teren z map (NMT), czyli prawdziwą rzeźbę terenu"
 
 msgid "Load along the tracks"
 msgstr "Wczytaj wzdłuż torów"
@@ -9412,7 +9367,7 @@ msgid "\"%s\" can't be edited: %s"
 msgstr "\"%s\" nie da się edytować: %s"
 
 msgid "The scenery has no terrain yet. Make an empty one, or load it from the terrain model below"
-msgstr "Sceneria nie ma jeszcze terenu: utwórz pusty albo wczytaj go z modelu terenu (NMT) poniżej"
+msgstr "Sceneria nie ma jeszcze terenu: utwórz pusty albo wczytaj teren z map (NMT) poniżej"
 
 msgid "Kept in the folder terrain/<name of the scenery>/ and written there with the scenery (Ctrl+S)"
 msgstr "Trzymany w folderze terrain/<nazwa scenerii>/ i zapisywany tam razem ze scenerią (Ctrl+S)"
@@ -9439,7 +9394,7 @@ msgid "PUWG 1992 (EPSG:2180): the coordinate system of the maps of Poland, in me
 msgstr "PUWG 1992 (EPSG:2180): układ współrzędnych map Polski, w metrach; liczby jak na geoportal.gov.pl"
 
 msgid "Photo year"
-msgstr "Rok zdjęć"
+msgstr "Rok ortofotomapy"
 
 msgid "Include of \"%s\" was removed from the saved scenery, this can't be taken back"
 msgstr "Include \"%s\" został usunięty z zapisanej scenerii, tego nie da się cofnąć"
@@ -9537,15 +9492,6 @@ msgstr "Odstęp punktów, przywracanie terenu, ustawienia ortofotomapy"
 msgid "Restore terrain"
 msgstr "Przywracanie terenu"
 
-msgid "Scene Hierarchy"
-msgstr "Lista obiektów"
-
-msgid "Registered nodes: %zu"
-msgstr "Obiektów: %zu"
-
-msgid "UUID: %s\nNode type: %s"
-msgstr "UUID: %s\nTyp obiektu: %s"
-
 msgid "a name can't hold spaces, semicolons or quotes"
 msgstr "nazwa nie może zawierać spacji, średników ani cudzysłowów"
 
@@ -9558,8 +9504,8 @@ msgstr "to słowo ma własne znaczenie w plikach scenerii"
 msgid "another model instance goes by this name"
 msgstr "inny model ma już tę nazwę"
 
-msgid "position (m)"
-msgstr "położenie (m)"
+msgid "Position (m)"
+msgstr "Położenie (m)"
 
 msgid "Location: %.2f, %.2f, %.2f (distance %.1f m)"
 msgstr "Położenie: %.2f, %.2f, %.2f (odległość %.1f m)"
@@ -9928,7 +9874,7 @@ msgid "Looking for the templates..."
 msgstr "Szukam szablonów..."
 
 msgid "Terrain model"
-msgstr "Teren z NMT"
+msgstr "Teren z map (NMT)"
 
 msgid "The ground of the terrain model (NMT) as it was measured, before the earthworks; its squares along the route are still being fetched"
 msgstr "Teren z modelu NMT taki, jak go zmierzono, sprzed robót ziemnych; jego kwadraty wzdłuż trasy jeszcze się pobierają"
@@ -10068,8 +10014,8 @@ msgstr "Przerwij"
 msgid "Stops loading: the terrain made so far stays"
 msgstr "Przerywa wczytywanie: teren zrobiony do tej pory zostaje"
 
-msgid "Loading the real terrain"
-msgstr "Wczytywanie prawdziwego terenu"
+msgid "Loading the terrain model"
+msgstr "Wczytywanie terenu z map (NMT)"
 
 msgid "Try again"
 msgstr "Spróbuj ponownie"
@@ -10115,9 +10061,6 @@ msgstr "Kwadrat 2 km wokół kamery"
 
 msgid "The squares of the model the service didn't give are asked for again; it happens by itself every 15 s too"
 msgstr "Ponownie prosi serwis o brakujące fragmenty NMT; samo dzieje się to też co 15 s"
-
-msgid "Pick where the scenery lies first"
-msgstr "Najpierw wskaż, gdzie leży sceneria"
 
 msgid "The scenery has no terrain yet"
 msgstr "Sceneria nie ma jeszcze terenu"
@@ -10207,7 +10150,7 @@ msgid "Measure"
 msgstr "Miarka"
 
 msgid "Trace the curve on the photo"
-msgstr "Odrysuj łuk ze zdjęcia"
+msgstr "Odrysuj łuk z ortofotomapy"
 
 msgid "Click points along the middle of the track on the orthophoto: after each click the curve takes the radius, or the radii of a compound curve and their shares, which follow the points best. The straights and the transition curves stay"
 msgstr "Klikaj punkty po środku toru na ortofotomapie: po każdym kliknięciu łuk dobiera promień, albo promienie łuku koszowego i ich udziały, tak żeby szedł po punktach. Proste i krzywe przejściowe zostają"
@@ -10231,7 +10174,7 @@ msgid "A compound curve of three radii"
 msgstr "Łuk koszowy z trzech promieni"
 
 msgid "Click points along the middle of the track on the photo, spread over the whole curve; a few on the straights at its ends help too"
-msgstr "Klikaj punkty po środku toru na zdjęciu, rozłożone na cały łuk; kilka na prostych przy jego końcach też pomaga"
+msgstr "Klikaj punkty po środku toru na ortofotomapie, rozłożone na cały łuk; kilka na prostych przy jego końcach też pomaga"
 
 msgid "points"
 msgstr "punktów"
@@ -10255,7 +10198,7 @@ msgid "Click: take this point out"
 msgstr "LPM: usuń ten punkt"
 
 msgid "Click: a point in the middle of the track on the photo. Enter: apply, Esc: drop"
-msgstr "LPM: punkt na środku toru na zdjęciu. Enter: zastosuj, Esc: porzuć"
+msgstr "LPM: punkt na środku toru na ortofotomapie. Enter: zastosuj, Esc: porzuć"
 
 msgid "Click: one more point, the curve follows. Ctrl+click: take a point out"
 msgstr "LPM: kolejny punkt, łuk idzie za nimi. Ctrl+LPM: usuń punkt"
@@ -11783,7 +11726,7 @@ msgid "Curve: click points along the middle of the track, the last two on the st
 msgstr "Łuk: klikaj punkty po środku toru, dwa ostatnie na prostej za łukiem. Tab: z powrotem proste"
 
 msgid "Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo"
-msgstr "Proste: każdy kliknięty punkt to załamanie prostych, wyokrąglone dużym łukiem. Tab: łuk odrysowany ze zdjęcia"
+msgstr "Proste: każdy kliknięty punkt to załamanie prostych, wyokrąglone dużym łukiem. Tab: łuk odrysowany z ortofotomapy"
 
 msgid "Straights   Tab"
 msgstr "Proste   Tab"
@@ -11795,7 +11738,7 @@ msgid "Each point clicked is a bend of the straights: the bend eased with two tr
 msgstr "Każdy kliknięty punkt to załamanie prostych: wyokrąglone dwiema stycznymi krzywymi przejściowymi bez przechyłki, o dużym promieniu; gdzie się nie mieszczą, łukiem z krzywymi przejściowymi i przechyłką według norm, tak dużym, jak się mieści"
 
 msgid "Click points along the middle of a curve seen on the photo, the last two on the straight after it: the curve, compound or with a straight in it, is fitted to them. It comes from the straight before it, of the points clicked before or of the free end"
-msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
+msgstr "Klikaj punkty po środku łuku widocznego na ortofotomapie, dwa ostatnie na prostej za nim: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem"
 
 msgid "Radius of the curves at the bends"
 msgstr "Promień łuków na załamaniach"
@@ -11819,7 +11762,7 @@ msgid "The points along the curve may make two curves, turning the same way or n
 msgstr "Punkty wzdłuż łuku mogą dać dwa łuki, w tę samą stronę albo przeciwne, z prostą między nimi, gdy trzymają się punktów dużo lepiej niż jeden łuk"
 
 msgid "Click points along the middle of the track on the photo, the last two on the straight after the curve"
-msgstr "Klikaj punkty po środku toru na zdjęciu, dwa ostatnie na prostej za łukiem"
+msgstr "Klikaj punkty po środku toru na ortofotomapie, dwa ostatnie na prostej za łukiem"
 
 msgid "Curves of the track laid"
 msgstr "Łuki kładzionego toru"
@@ -11849,7 +11792,7 @@ msgid "back to the bends of straights"
 msgstr "z powrotem załamania prostych"
 
 msgid "trace a curve on the photo"
-msgstr "odrysuj łuk ze zdjęcia"
+msgstr "odrysuj łuk z ortofotomapy"
 
 msgid "a point along the middle of the curve, the last two on the straight after it"
 msgstr "punkt po środku łuku, dwa ostatnie na prostej za nim"
@@ -11867,7 +11810,7 @@ msgid "Tab while laying"
 msgstr "Tab przy układaniu"
 
 msgid "The points clicked next go along the middle of a curve seen on the photo, the last two on the straight after it; Tab again: back to the bends"
-msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, dwa ostatnie na prostej za nim; ponownie Tab: z powrotem załamania"
+msgstr "Następne punkty idą po środku łuku widocznego na ortofotomapie, dwa ostatnie na prostej za nim; ponownie Tab: z powrotem załamania"
 
 msgid "Type the length of the next straight, Enter puts the point"
 msgstr "Wpisz długość następnej prostej, Enter stawia punkt"
@@ -11930,7 +11873,7 @@ msgid "Keep to the points clicked"
 msgstr "Trzymaj się kliknięć"
 
 msgid "The scenery keeps the points clicked when the line was laid: a curve whose transitions or cants are changed gets its radii fitted to them again, so it stays where it was seen on the photo"
-msgstr "Sceneria pamięta punkty kliknięte przy kładzeniu linii: łuk ze zmienioną przejściówką albo przechyłką dostaje promienie dopasowane do nich od nowa, więc zostaje tam, gdzie był widoczny na zdjęciu"
+msgstr "Sceneria pamięta punkty kliknięte przy kładzeniu linii: łuk ze zmienioną przejściówką albo przechyłką dostaje promienie dopasowane do nich od nowa, więc zostaje tam, gdzie był widoczny na ortofotomapie"
 
 msgid "Fit all to them"
 msgstr "Dopasuj wszystkie"
@@ -12101,11 +12044,11 @@ msgstr "z powrotem na osi"
 msgid "moves it, an end dropped on a free end joins it"
 msgstr "przesuwa go; koniec upuszczony na wolny koniec łączy się z nim"
 
-msgid "and %zu more, in the panel"
-msgid_plural "and %zu more, in the panel"
-msgstr[0] "i jeszcze %zu, lista w panelu po prawej"
-msgstr[1] "i jeszcze %zu, lista w panelu po prawej"
-msgstr[2] "i jeszcze %zu, lista w panelu po prawej"
+msgid "and %zu more, listed in the tool options"
+msgid_plural "and %zu more, listed in the tool options"
+msgstr[0] "i jeszcze %zu, lista w opcjach narzędzia"
+msgstr[1] "i jeszcze %zu, lista w opcjach narzędzia"
+msgstr[2] "i jeszcze %zu, lista w opcjach narzędzia"
 
 msgid "on the ground: the first point, then the bends of the line, the curves at them made by themselves"
 msgstr "na terenie: pierwszy punkt, potem załamania linii; łuki na nich powstają same"
@@ -12162,13 +12105,13 @@ msgid "Every place where the line turns gets a curve, as big as fits. An orange 
 msgstr "Każde miejsce, w którym linia skręca, dostaje łuk, tak duży, jak się zmieści. Pomarańczowy opis znaczy, że łuk nie spełnia przepisów dla prędkości ustawionej w panelu"
 
 msgid "A curve seen on the photo: click points along its middle, the last two on the straight after it; one of two or three radii comes out a compound curve"
-msgstr "Łuk widoczny na zdjęciu: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
+msgstr "Łuk widoczny na ortofotomapie: klikaj punkty wzdłuż jego środka, dwa ostatnie na prostej za nim; łuk o dwóch albo trzech promieniach wychodzi jako koszowy"
 
 msgid "Lay a track that turns"
 msgstr "Ułóż tor, który skręca"
 
 msgid "Press Tab to copy a curve from the photo"
-msgstr "Naciśnij Tab, żeby odrysować łuk ze zdjęcia"
+msgstr "Naciśnij Tab, żeby odrysować łuk z ortofotomapy"
 
 msgid "Change the size of the joining curve with Ctrl+wheel"
 msgstr "Zmień wielkość łuku łączącego Ctrl+kółkiem"
@@ -12341,20 +12284,20 @@ msgstr "Ustawiony na wprost: przekłada go na bok. Tylko w edytorze, żeby zobac
 msgid "Throw the selected switch over to its other path, in the editor only"
 msgstr "Przekłada zaznaczony rozjazd na drugi tor, tylko w edytorze"
 
-msgid "To copy a curve from the aerial photo: press Tab, then click points along the middle of the curve; it ends at the last one"
-msgstr "Żeby odrysować łuk ze zdjęcia lotniczego: naciśnij Tab i klikaj punkty wzdłuż środka łuku; łuk skończy się na ostatnim"
+msgid "To copy a curve from the orthophoto: press Tab, then click points along the middle of the curve; it ends at the last one"
+msgstr "Żeby odrysować łuk z ortofotomapy: naciśnij Tab i klikaj punkty wzdłuż środka łuku; łuk skończy się na ostatnim"
 
 msgid "The points clicked next go along the middle of a curve seen on the photo, which ends at the last one; Tab again: back to the bends"
-msgstr "Następne punkty idą po środku łuku widocznego na zdjęciu, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
+msgstr "Następne punkty idą po środku łuku widocznego na ortofotomapie, który kończy się na ostatnim; ponownie Tab: z powrotem załamania"
 
 msgid "Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights"
 msgstr "Łuk: klikaj punkty po środku toru, łuk kończy się na ostatnim. Tab: z powrotem proste"
 
 msgid "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"
-msgstr "Klikaj punkty po środku łuku widocznego na zdjęciu: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany i kończy się na ostatnim, w kierunku, w jakim tam biegną. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem, a gdy punkty skręcają w stronę łuku wolnego końca, także rozjazdu, ten łuk idzie dalej"
+msgstr "Klikaj punkty po środku łuku widocznego na ortofotomapie: łuk, także koszowy albo z prostą w środku, zostanie do nich dopasowany i kończy się na ostatnim, w kierunku, w jakim tam biegną. Wychodzi z prostej przed nim, wyznaczonej punktami klikniętymi wcześniej albo wolnym końcem, a gdy punkty skręcają w stronę łuku wolnego końca, także rozjazdu, ten łuk idzie dalej"
 
 msgid "Click points along the middle of the track on the photo; the curve ends at the last one"
-msgstr "Klikaj punkty po środku toru na zdjęciu; łuk kończy się na ostatnim"
+msgstr "Klikaj punkty po środku toru na ortofotomapie; łuk kończy się na ostatnim"
 
 msgid "a point along the middle of the curve, which ends at the last one"
 msgstr "punkt po środku łuku, który kończy się na ostatnim"
@@ -12564,7 +12507,7 @@ msgid "Down"
 msgstr "W dół"
 
 msgid "Orthophoto (geoportal.gov.pl)"
-msgstr "Zdjęcia lotnicze (geoportal.gov.pl)"
+msgstr "Ortofotomapa (geoportal.gov.pl)"
 
 msgid "Add a WMS layer"
 msgstr "Dodaj warstwę WMS"
@@ -12706,8 +12649,8 @@ msgid "Click Laying on the toolbar or press L, then click the points of the trac
 msgstr "Kliknij Układanie na pasku narzędzi albo naciśnij L, a potem klikaj punkty toru"
 
 # the lesson of the radius of the curves at the bends
-msgid "There is no ground under the mouse: the track will lie flat at height 0. Real ground: F5"
-msgstr "Pod myszą nie ma terenu: tor położy się płasko na wysokości 0. Prawdziwy teren: F5"
+msgid "There is no ground under the mouse: the track will lie flat at height 0. Terrain model: F5"
+msgstr "Pod myszą nie ma terenu: tor położy się płasko na wysokości 0. Teren z map: F5"
 
 msgid "R %.0f m: %s"
 msgstr "R %.0f m: %s"
@@ -12884,7 +12827,7 @@ msgid "Click off the view..."
 msgstr "Wyklikaj z widoku..."
 
 msgid "Measures a switch off the orthophoto: click its points in the view, in the top view (O) they're best seen. The orthophoto is turned on in the layers"
-msgstr "Mierzy rozjazd z ortofoto: klikaj jego punkty w widoku, najlepiej widać z góry (O). Ortofoto włączasz w warstwach"
+msgstr "Mierzy rozjazd z ortofotomapy: klikaj jego punkty w widoku, najlepiej widać z góry (O). Ortofotomapę włączasz w warstwach"
 
 msgid "1. The start of the switch"
 msgstr "1. Początek rozjazdu"
@@ -12932,7 +12875,7 @@ msgid "Show on the view"
 msgstr "Pokaż na widoku"
 
 msgid "The chosen template drawn in the view where the switch was clicked, as it changes: to be compared with the orthophoto under it"
-msgstr "Wybrany szablon rysowany w widoku w miejscu wyklikanego rozjazdu, na bieżąco ze zmianami: do porównania z ortofoto pod nim"
+msgstr "Wybrany szablon rysowany w widoku w miejscu wyklikanego rozjazdu, na bieżąco ze zmianami: do porównania z ortofotomapą pod nim"
 
 msgid "length %.2f m"
 msgstr "długość %.2f m"
@@ -12983,16 +12926,16 @@ msgid "Backspace: back, Esc: stop"
 msgstr "Backspace: cofnij, Esc: przerwij"
 
 msgid "Orthophoto..."
-msgstr "Ortofoto..."
+msgstr "Ortofotomapa..."
 
 msgid "The photo to click the switch off isn't turned on"
-msgstr "Zdjęcie, z którego wyklikujesz rozjazd, nie jest włączone"
+msgstr "Ortofotomapa, z której wyklikujesz rozjazd, nie jest włączona"
 
 msgid "In Switch, the Template editor... button: ready switch shapes and your own. Point at a number to see on the drawing what it means"
 msgstr "W narzędziu Rozjazd przycisk Edytuj szablony...: gotowe kształty rozjazdów i własne. Wskaż liczbę, a na rysunku zobaczysz, co oznacza"
 
-msgid "To copy a switch from the aerial photo: Click off the view..., then click where the switch starts, the end of its straight track, the end of its branching track and one point further along that branch"
-msgstr "Żeby odrysować rozjazd ze zdjęcia lotniczego: Wyklikaj z widoku..., potem kliknij początek rozjazdu, koniec jego prostego toru, koniec toru odbijającego i jeden punkt dalej na tym torze"
+msgid "To copy a switch from the orthophoto: Click off the view..., then click where the switch starts, the end of its straight track, the end of its branching track and one point further along that branch"
+msgstr "Żeby odrysować rozjazd z ortofotomapy: Wyklikaj z widoku..., potem kliknij początek rozjazdu, koniec jego prostego toru, koniec toru odbijającego i jeden punkt dalej na tym torze"
 
 msgid "Then at least 3 points along the branching track: its shape and size follow them"
 msgstr "Potem co najmniej 3 punkty wzdłuż toru odbijającego: jego kształt i wielkość dopasują się do nich"
@@ -13000,11 +12943,11 @@ msgstr "Potem co najmniej 3 punkty wzdłuż toru odbijającego: jego kształt i 
 msgid "Removes the last point; Esc stops clicking"
 msgstr "Usuwa ostatni punkt; Esc przerywa klikanie"
 
-msgid "The view from above; the aerial photo is turned on in the Layers panel"
-msgstr "Widok z góry; zdjęcie lotnicze włączasz w panelu Warstwy"
+msgid "The view from above; the orthophoto is turned on in the Layers panel"
+msgstr "Widok z góry; ortofotomapę włączasz w panelu Warstwy"
 
 msgid "Make the template: the new switch lies on the photo where it was clicked and changes as its numbers change"
-msgstr "Utwórz szablon: nowy rozjazd leży na zdjęciu tam, gdzie został wyklikany, i zmienia się razem z jego liczbami"
+msgstr "Utwórz szablon: nowy rozjazd leży na ortofotomapie tam, gdzie został wyklikany, i zmienia się razem z jego liczbami"
 
 msgid "Open the template editor"
 msgstr "Otwórz edytor szablonów"
@@ -14080,13 +14023,13 @@ msgid "Click the centre of the scenery on the map (step 2)"
 msgstr "Kliknij na mapie środek scenerii (krok 2)"
 
 msgid "The centre is outside Poland: the aerial photos cover Poland only (step 2)"
-msgstr "Środek leży poza Polską: zdjęcia lotnicze obejmują tylko Polskę (krok 2)"
+msgstr "Środek leży poza Polską: ortofotomapa obejmuje tylko Polskę (krok 2)"
 
 msgid "Finish drawing the area: Done (step 3)"
 msgstr "Dokończ rysowanie obszaru przyciskiem Gotowe (krok 3)"
 
-msgid "Draw the area of the aerial photos on the map (step 3)"
-msgstr "Narysuj na mapie obszar zdjęć lotniczych (krok 3)"
+msgid "Draw the range of the orthophoto on the map (step 3)"
+msgstr "Narysuj na mapie zasięg ortofotomapy (krok 3)"
 
 msgid "The edges of the area cross each other: draw it again (step 3)"
 msgstr "Krawędzie obszaru przecinają się: narysuj go od nowa (krok 3)"
@@ -14109,11 +14052,11 @@ msgstr "X %.0f, Y %.0f w PUWG 1992; punkt 0 0 0 scenerii"
 msgid "Zoom the map in with the wheel, to put the centre exactly"
 msgstr "Przybliż mapę kółkiem myszy, żeby dokładnie wskazać środek"
 
-msgid "3. Range of the aerial photos"
-msgstr "3. Zasięg zdjęć lotniczych"
+msgid "3. Range of the orthophoto"
+msgstr "3. Zasięg ortofotomapy (zdjęć lotniczych)"
 
 msgid "The editor downloads the aerial photos and the shape of the ground only inside this area, blue on the map. Outside it there are no photos."
-msgstr "Edytor pobiera zdjęcia lotnicze i ukształtowanie terenu tylko w tym obszarze, zaznaczonym na mapie na niebiesko. Poza nim zdjęć nie będzie."
+msgstr "Edytor pobiera ortofotomapę i ukształtowanie terenu tylko w tym obszarze, zaznaczonym na mapie na niebiesko. Poza nim ortofotomapy nie będzie."
 
 msgid "A square around the centre"
 msgstr "Kwadrat wokół środka"
@@ -14133,13 +14076,13 @@ msgid "Undo the corner"
 msgstr "Cofnij narożnik"
 
 msgid "About %.1f sq km, %zu photos of 256 x 256 m"
-msgstr "Około %.1f km², %zu zdjęć po 256 × 256 m"
+msgstr "Około %.1f km², %zu kafli ortofotomapy po 256 × 256 m"
 
 msgid "The edges of the area cross each other: draw it again, clicking the corners in turn around it"
 msgstr "Krawędzie obszaru przecinają się: narysuj go od nowa, klikając narożniki po kolei dookoła"
 
 msgid "The centre of the scenery is outside the area: there will be no photos under it"
-msgstr "Środek scenerii leży poza obszarem: pod nim nie będzie zdjęć"
+msgstr "Środek scenerii leży poza obszarem: pod nim nie będzie ortofotomapy"
 
 msgid "A large area: the download takes long and needs a lot of disk space. It goes on in the background, the editor can be used meanwhile."
 msgstr "Duży obszar: pobieranie potrwa długo i zajmie dużo miejsca na dysku. Idzie w tle, w tym czasie można pracować w edytorze."
@@ -14156,20 +14099,20 @@ msgid "The range is the download area in Map > Orthophoto settings...; drawn aga
 msgstr "Zasięg to obszar pobierania w Mapa > Ustawienia ortofotomapy...; narysowany od nowa może objąć to miejsce"
 
 msgid "None: the photos are downloaded around the camera, wherever it goes"
-msgstr "Brak: zdjęcia są pobierane wokół kamery, gdziekolwiek się znajdzie"
+msgstr "Brak: ortofotomapa jest pobierana wokół kamery, gdziekolwiek się znajdzie"
 
 msgid "The aerial photos and the shape of the ground are downloaded only inside it; outside it there are none"
-msgstr "Zdjęcia lotnicze i ukształtowanie terenu są pobierane tylko w jego obrębie; poza nim ich nie ma"
+msgstr "Ortofotomapa i ukształtowanie terenu są pobierane tylko w jego obrębie; poza nim ich nie ma"
 
 msgid "No range: the photos around the camera, wherever it goes. The photos downloaded already stay on the disk"
-msgstr "Bez zasięgu: zdjęcia wokół kamery, gdziekolwiek się znajdzie. Pobrane zdjęcia zostają na dysku"
+msgstr "Bez zasięgu: ortofotomapa wokół kamery, gdziekolwiek się znajdzie. Pobrane kafle zostają na dysku"
 
 msgid "Square around the camera:"
 msgstr "Kwadrat wokół kamery:"
 
 
 msgid "The range of the photos a square of %d x %d km, the camera in its middle"
-msgstr "Zasięg zdjęć: kwadrat %d × %d km z kamerą pośrodku"
+msgstr "Zasięg ortofotomapy: kwadrat %d × %d km z kamerą pośrodku"
 
 msgid "%d x %d km##side"
 msgstr "%d × %d km##side"
@@ -14187,7 +14130,7 @@ msgid "%d x %d km##areasquare"
 msgstr "%d × %d km##areasquare"
 
 msgid "The range of the photos a square of %d x %d km around the camera?"
-msgstr "Zasięg zdjęć: kwadrat %d × %d km wokół kamery?"
+msgstr "Zasięg ortofotomapy: kwadrat %d × %d km wokół kamery?"
 
 msgid "It replaces the area there is now, which can't be taken back"
 msgstr "Zastąpi obecny obszar, tego nie da się cofnąć"
@@ -14199,7 +14142,7 @@ msgid "Replace"
 msgstr "Zastąp"
 
 msgid "The camera is outside the range: no aerial photos and no terrain model here"
-msgstr "Kamera jest poza zasięgiem: tutaj nie ma zdjęć lotniczych ani terenu z NMT"
+msgstr "Kamera jest poza zasięgiem: tutaj nie ma ortofotomapy ani terenu z map (NMT)"
 
 msgid "Range settings..."
 msgstr "Ustawienia zasięgu..."
@@ -14262,7 +14205,7 @@ msgid "Ride along a track with Y"
 msgstr "Przejedź się po torze klawiszem Y"
 
 msgid "Cursor drawn into the picture (streams)"
-msgstr "Kursor rysowany w obrazie (stream)"
+msgstr "Kursor rysowany w obrazie (do transmisji)"
 
 msgid "The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\nor a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"
 msgstr "Wskaźnik rysowany przez edytor w klatce zamiast systemowego: widać go w streamie\ni w nagraniu okna (Discord, OBS, przechwytywanie systemowe), które pomijają wskaźnik systemu"
@@ -14292,13 +14235,1238 @@ msgid "As it was"
 msgstr "Przywróć domyślne"
 
 msgid "Orthophoto on (~)"
-msgstr "Ortofoto włączone (~)"
+msgstr "Ortofotomapa włączona (~)"
 
 msgid "Orthophoto off (~)"
-msgstr "Ortofoto wyłączone (~)"
+msgstr "Ortofotomapa wyłączona (~)"
 
 msgid "Orthophoto: %zu tiles of the view downloaded first (Ctrl+~)"
-msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
+msgstr "Ortofotomapa: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
-msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
+msgstr "Ortofotomapa: cały widok jest już pokazany (Ctrl+~)"
+
+# scenery editor: switch rules and the norms of the track geometry
+
+msgid "The crossover there can't be taken out"
+msgstr "Tego połączenia nie da się tam wyjąć"
+
+msgid "The crossover is taken out whole, its switches replaced by their main tracks"
+msgstr "Połączenie jest wyjmowane w całości, a jego rozjazdy zastępują tory zasadnicze"
+
+msgid "Other switches of a connection##connectionsecond"
+msgstr "Pozostałe rozjazdy połączenia##connectionsecond"
+
+msgid "The switch isn't laid: %s"
+msgstr "Rozjazd nie został wstawiony: %s"
+
+msgid "The switch stays as it is: %s"
+msgstr "Rozjazd zostaje bez zmian: %s"
+
+msgid "Speed on the diverging track %.0f km/h"
+msgstr "Prędkość na kierunek zwrotny %.0f km/h"
+
+msgid ": R %.0f m, cant %+.0f mm into its turn, I up to %.0f mm (formula 9.9, table 9.7)"
+msgstr ": R %.0f m, przechyłka %+.0f mm w stronę jego łuku, niedomiar I do %.0f mm (wzór 9.9, tabela 9.7)"
+
+msgid ", no more than %.0f km/h of the basic switch (table 11.2)"
+msgstr ", nie więcej niż %.0f km/h rozjazdu podstawowego (tabela 11.2)"
+
+msgid "Bent into R %.0f m: no double switch, slip nor crossing is bent (11.4 pkt 4)"
+msgstr "Łukowany do R %.0f m: rozjazdów podwójnych, krzyżowych ani skrzyżowań się nie łukuje (11.4 pkt 4)"
+
+msgid "The curvature of the diverging track turns from one side to the other within the switch (KZW II), R %.0f m one way and R %.0f m the other, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zwrotnego zmienia znak w obrębie rozjazdu (KZW II), R %.0f m w jedną stronę i R %.0f m w drugą, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "The curvature of the main track turns from one side to the other within the switch, R %.0f m one way and R %.0f m the other, which isn't allowed (9.7 pkt 12)"
+msgstr "Krzywizna toru zasadniczego zmienia znak w obrębie rozjazdu, R %.0f m w jedną stronę i R %.0f m w drugą, co jest niedozwolone (9.7 pkt 12)"
+
+msgid "A switch of 1:%.3f isn't bent in the running and the main tracks: none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4). The editor doesn't tell a main track from a side one, so it only warns"
+msgstr "Rozjazdu 1:%.3f nie łukuje się w torach szlakowych i głównych: ani 1:9,403, ani o skosie większym niż 1:9 (11.4 pkt 4). Edytor nie odróżnia toru głównego od bocznego, więc tylko ostrzega"
+
+msgid "passenger traffic"
+msgstr "ruch pasażerski"
+
+msgid "mixed traffic"
+msgstr "ruch mieszany"
+
+msgid "freight traffic"
+msgstr "ruch towarowy"
+
+msgid "main track"
+msgstr "tor główny"
+
+msgid "siding"
+msgstr "tor boczny"
+
+msgid "arc R %s"
+msgstr "łuk R %s"
+
+msgid "transition R %s -> %s"
+msgstr "krzywa przejściowa R %s -> %s"
+
+msgid "note"
+msgstr "uwaga"
+
+msgid "warning"
+msgstr "ostrzeżenie"
+
+msgid "hard limit"
+msgstr "granica twarda"
+
+msgid "cant deficiency"
+msgstr "niedomiar przechyłki"
+
+msgid "cant excess"
+msgstr "nadmiar przechyłki"
+
+msgid "abrupt change of the cant deficiency"
+msgstr "nagła zmiana niedomiaru przechyłki"
+
+msgid "cant deficiency change rate"
+msgstr "zmiana niedomiaru przechyłki w czasie"
+
+msgid "shift of the arc by its transition"
+msgstr "przesunięcie łuku przez krzywą przejściową"
+
+msgid "vertical curve"
+msgstr "łuk pionowy"
+
+msgid "profile boundary"
+msgstr "granica profili"
+
+msgid "%.1f per mille"
+msgstr "%.1f ‰"
+
+msgid "arc across the boundary of %s and %s, to be settled"
+msgstr "łuk na granicy %s i %s, do rozstrzygnięcia"
+
+msgid "break of the grade with no vertical curve, %s asks for a radius of at least %s (%s)"
+msgstr "załom niwelety bez łuku pionowego, %s wymaga promienia co najmniej %s (%s)"
+
+msgid "%s %s, %s allows at most %s (%s)"
+msgstr "%s %s, %s pozwala na najwyżej %s (%s)"
+
+msgid "%s %s, %s asks for at least %s (%s)"
+msgstr "%s %s, %s wymaga co najmniej %s (%s)"
+
+msgid "%s %s, %s recommends at most %s (%s)"
+msgstr "%s %s, %s zaleca najwyżej %s (%s)"
+
+msgid "%s %s, %s recommends at least %s (%s)"
+msgstr "%s %s, %s zaleca co najmniej %s (%s)"
+
+msgid ", the limit not confirmed"
+msgstr ", wartość graniczna niepotwierdzona"
+
+msgid "Norms: %s, line %.0f km/h, slow trains %.0f km/h, %s, %s, %.0f Tg a year"
+msgstr "Normy: %s, linia %.0f km/h, pociągi wolne %.0f km/h, %s, %s, %.0f Tg/rok"
+
+msgid ", the speed of the tracks where they have one"
+msgstr ", prędkość torów tam, gdzie ją mają"
+
+msgid "The speed of the tracks where they have one"
+msgstr "Prędkość torów tam, gdzie ją mają"
+
+msgid "Line %s: %.1f m, %zu elements, %zu findings"
+msgstr "Linia %s: %.1f m, elementów: %zu, uwag: %zu"
+
+msgid "  cant (m: mm):"
+msgstr "  przechyłka (m: mm):"
+
+msgid "  grade (m: per mille):"
+msgstr "  pochylenie (m: ‰):"
+
+msgid "Line class: %.0f km/h, slow trains %.0f km/h, %s, %s"
+msgstr "Klasa linii: %.0f km/h, pociągi wolne %.0f km/h, %s, %s"
+
+msgid "Tracks at a platform"
+msgstr "Tory przy peronach"
+
+msgid "Change the class, then Check again"
+msgstr "Zmień klasę, potem sprawdź ponownie"
+
+msgid "Checks the geometry of the tracks against the norms of a profile: what is beyond them is listed, nothing is changed"
+msgstr "Sprawdza geometrię torów według norm profilu: wypisuje, co je przekracza, niczego nie zmienia"
+
+msgid "Above the recommended values too"
+msgstr "Także ponad wartościami zalecanymi"
+
+msgid "PLK: P0 recommended, beyond P1 a warning, beyond P2 the hard limit. The limits of the TSI hold in every profile"
+msgstr "PLK: P0 zalecane, ponad P1 ostrzeżenie, ponad P2 granica twarda. Granice TSI obowiązują w każdym profilu"
+
+msgid "Line speed (km/h)"
+msgstr "Prędkość linii (km/h)"
+
+msgid "For the tracks with no speed of their own, or for all of them"
+msgstr "Dla torów bez własnej prędkości albo dla wszystkich"
+
+msgid "Slow trains (km/h)"
+msgstr "Pociągi wolne (km/h)"
+
+msgid "The cant excess is checked at this speed. 0: by the type of the line, ST-T1-A6 tab. 8.1"
+msgstr "Przy tej prędkości sprawdzany jest nadmiar przechyłki. 0: według typu linii, ST-T1-A6 tab. 8.1"
+
+msgid "Load (Tg a year)"
+msgstr "Obciążenie (Tg/rok)"
+
+msgid "The tonnage over the track a year, for the cant excess of ST-T1-A6 tab. 9.8"
+msgstr "Natężenie przewozów po torze w roku, do nadmiaru przechyłki wg ST-T1-A6 tab. 9.8"
+
+msgid "The radius, the cant and its deficiency and excess, their changes along the ramps and the transitions and at the joints, the lengths of the straights, arcs and transitions, the vertical curves and the grades"
+msgstr "Promień, przechyłka, jej niedomiar i nadmiar, ich zmiany na rampach, krzywych przejściowych i złączach, długości prostych, łuków i krzywych przejściowych, łuki pionowe i pochylenia"
+
+msgid "Tier"
+msgstr "Próg"
+
+msgid "Parameter"
+msgstr "Parametr"
+
+msgid "Value"
+msgstr "Wartość"
+
+msgid "Source"
+msgstr "Źródło"
+
+msgid "The geometry of the tracks against the norms of a profile (PLK, TSI, EN 13803, AB-EBV): what is beyond them, read only"
+msgstr "Geometria torów według norm profilu (PLK, TSI, EN 13803, AB-EBV): co je przekracza, tylko odczyt"
+
+msgid "%zu line checked against %s: %d beyond the hard limits, %d warnings, %d above the recommended values"
+msgid_plural "%zu lines checked against %s: %d beyond the hard limits, %d warnings, %d above the recommended values"
+msgstr[0] "Sprawdzono %zu linię wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+msgstr[1] "Sprawdzono %zu linie wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+msgstr[2] "Sprawdzono %zu linii wg %s: %d ponad granicami twardymi, %d ostrzeżeń, %d ponad wartościami zalecanymi"
+
+# scenery editor: first steps, the line laid
+
+msgid "First steps"
+msgstr "Pierwsze kroki"
+
+msgid "Show the lesson"
+msgstr "Pokaż lekcję"
+
+msgid "The whole lesson in its window: a clip, the mouse and the keys, the lessons before and after"
+msgstr "Cała lekcja w swoim oknie: nagranie, mysz i klawisze, lekcje przed nią i po niej"
+
+msgid "The camera"
+msgstr "Kamera"
+
+msgid "The lesson of the camera: looking around, flying, the view from above"
+msgstr "Lekcja o kamerze: rozglądanie się, latanie, widok z góry"
+
+msgid "Hide"
+msgstr "Ukryj"
+
+msgid "Hides the first steps for good; Help > Tutorial opens the lessons, and its checkbox brings the first steps back"
+msgstr "Ukrywa pierwsze kroki na stałe; Pomoc > Samouczek otwiera lekcje, a jego pole wyboru przywraca pierwsze kroki"
+
+msgid "Track laid"
+msgstr "Ułożony tor"
+
+msgid "curves"
+msgstr "łuki"
+
+msgid "Orange: below the norms for the speed, laid all the same"
+msgstr "Pomarańczowe: poniżej norm dla prędkości, położone mimo to"
+
+msgid "Next"
+msgstr "Co dalej"
+
+msgid "A switch  (T)"
+msgstr "Rozjazd  (T)"
+
+msgid "The switch tool: press on a straight and drag along it and to the side"
+msgstr "Narzędzie Rozjazd: wciśnij na prostej i przeciągnij wzdłuż niej i w bok"
+
+msgid "Save  (Ctrl+S)"
+msgstr "Zapisz  (Ctrl+S)"
+
+msgid "lays the track on from it"
+msgstr "układa tor dalej od niego"
+
+# scenery editor: the period of the day, the season and the weather in Weather and time
+
+msgid "day"
+msgstr "dzień"
+
+msgid "night"
+msgstr "noc"
+
+msgid "winter"
+msgstr "zima"
+
+msgid "spring"
+msgstr "wiosna"
+
+msgid "summer"
+msgstr "lato"
+
+msgid "autumn"
+msgstr "jesień"
+
+msgid "clear"
+msgstr "bezchmurnie"
+
+msgid "scattered"
+msgstr "małe zachmurzenie"
+
+msgid "broken"
+msgstr "duże zachmurzenie"
+
+msgid "overcast"
+msgstr "całkowite zachmurzenie"
+
+msgid "rain"
+msgstr "deszcz"
+
+msgid "snow"
+msgstr "śnieg"
+
+# scenery editor: the types of the nodes in the inspector
+
+msgid "road"
+msgstr "droga"
+
+msgid "model"
+msgstr "model"
+
+msgid "vehicle"
+msgstr "pojazd"
+
+msgid "memory cell"
+msgstr "komórka pamięci"
+
+msgid "event launcher"
+msgstr "wyzwalacz eventów"
+
+msgid "sound"
+msgstr "dźwięk"
+
+msgid "bent model"
+msgstr "model wygięty"
+
+# scenery editor: the cards of the tools of the surroundings, the roads and the terrain
+
+msgid "Click: how the mouse and the keys drive the tool"
+msgstr "Kliknij: jak obsługiwać narzędzie myszą i klawiszami"
+
+msgid "Click: fold the card"
+msgstr "Kliknij: zwiń kartę"
+
+msgid "Picks the models of the scenery: their properties show in the inspector, the gizmo moves them"
+msgstr "Zaznacza modele scenerii: ich właściwości pokazuje inspektor, a gizmo je przesuwa"
+
+msgid "LMB on a model"
+msgstr "LPM na modelu"
+
+msgid "adds a model to the selection, or takes it out"
+msgstr "dodaje model do zaznaczenia albo go z niego wyjmuje"
+
+msgid "flies to the selected"
+msgstr "leci do zaznaczonego"
+
+msgid "drops the selected onto the ground"
+msgstr "opuszcza zaznaczone na ziemię"
+
+msgid "deletes the selected"
+msgstr "usuwa zaznaczone"
+
+msgid "copies the selected, Ctrl+V pastes them at the cursor"
+msgstr "kopiuje zaznaczone, Ctrl+V wkleja je w miejscu kursora"
+
+msgid "the menu of the selection at the cursor"
+msgstr "menu zaznaczenia przy kursorze"
+
+msgid "Takes a model of the scenery into the node bank, to insert it elsewhere"
+msgstr "Bierze model ze scenerii do banku obiektów, żeby wstawić go gdzie indziej"
+
+msgid "copies it to the node bank"
+msgstr "kopiuje go do banku obiektów"
+
+msgid "Puts the model chosen in the node bank where the cursor points"
+msgstr "Stawia model wybrany w banku obiektów tam, gdzie wskazuje kursor"
+
+msgid "inserts the model at the cursor"
+msgstr "wstawia model w miejscu kursora"
+
+msgid "Click in the node bank"
+msgstr "Kliknij w banku obiektów"
+
+msgid "the model inserted next"
+msgstr "model, który zostanie wstawiony"
+
+msgid "Paints the models of the node bank or of a set along the path of the cursor"
+msgstr "Maluje modelami z banku obiektów albo z zestawu wzdłuż drogi kursora"
+
+msgid "Hold LMB"
+msgstr "Przytrzymaj LPM"
+
+msgid "paints models along the cursor path"
+msgstr "maluje modelami wzdłuż drogi kursora"
+
+msgid "the model painted"
+msgstr "model, którym się maluje"
+
+msgid "Scatters the models of a set over an area outlined in the view"
+msgstr "Rozrzuca modele z zestawu po obszarze obrysowanym w widoku"
+
+msgid "adds a point of the outline"
+msgstr "dodaje punkt obrysu"
+
+msgid "takes the last point back"
+msgstr "cofa ostatni punkt"
+
+msgid "a road piece, a junction, a point or a crossing"
+msgstr "odcinek drogi, skrzyżowanie, punkt albo przejazd"
+
+msgid "picks a model, as in the surroundings"
+msgstr "zaznacza model, jak w Otoczeniu"
+
+msgid "adds a chunk next to the clicked one"
+msgstr "dodaje kafel obok klikniętego"
+
+msgid "removes the chunk"
+msgstr "usuwa kafel"
+
+msgid "raises the terrain under the brush"
+msgstr "podnosi teren pod pędzlem"
+
+msgid "lowers it"
+msgstr "obniża go"
+
+msgid "evens the terrain out under the brush"
+msgstr "wygładza teren pod pędzlem"
+
+msgid "leads the terrain under the brush to the target height"
+msgstr "doprowadza teren pod pędzlem do wysokości docelowej"
+
+msgid "Ctrl+LMB"
+msgstr "Ctrl+LPM"
+
+msgid "takes the target height from what's under the cursor"
+msgstr "bierze wysokość docelową z tego, co jest pod kursorem"
+
+msgid "paints the material chosen in the palette"
+msgstr "maluje materiałem wybranym w palecie"
+
+msgid "paints the first material of the palette"
+msgstr "maluje pierwszym materiałem palety"
+
+msgid "selects the clicked chunk"
+msgstr "zaznacza kliknięty kafel"
+
+msgid "adds a chunk to the selection, or takes it out"
+msgstr "dodaje kafel do zaznaczenia albo go z niego wyjmuje"
+
+msgid "removes the selected chunks"
+msgstr "usuwa zaznaczone kafle"
+
+msgid "adds a point of the outline of a body of water"
+msgstr "dodaje punkt obrysu zbiornika wodnego"
+
+msgid "takes back the touch-ups made over the tracks"
+msgstr "cofa poprawki zrobione nad torami"
+
+msgid "adds a point of the outline of an area to fill with a material"
+msgstr "dodaje punkt obrysu obszaru do wypełnienia materiałem"
+
+# scenery editor: the windows of their own, the one list of the objects, the node bank, the settings in one place
+
+msgid "Name##nodename"
+msgstr "Nazwa##nodename"
+
+msgid "Orthophoto settings"
+msgstr "Ustawienia ortofotomapy"
+
+msgid "Settings..."
+msgstr "Ustawienia..."
+
+msgid "(within the download area, there is none)"
+msgstr "(w obszarze pobierania, którego nie ma)"
+
+msgid "How far from the camera, in metres, the models are inserted and picked in the view"
+msgstr "Jak daleko od kamery, w metrach, wstawia się i zaznacza modele w widoku"
+
+msgid "The objects of the scenery by layer and group, found by name or uuid: a click selects one, a double click flies to it"
+msgstr "Obiekty scenerii według warstw i grup, wyszukiwane po nazwie albo uuid: klik zaznacza, podwójny klik leci do obiektu"
+
+msgid "Insert: LMB puts the model clicked in the node bank where the cursor points"
+msgstr "Wstawianie: LPM stawia model kliknięty w banku obiektów tam, gdzie wskazuje kursor"
+
+msgid "No ground under the cursor: the model stands at the height 0 where the cursor points (%.0f, %.0f)"
+msgstr "Pod kursorem nie ma ziemi: model stoi na wysokości 0 tam, gdzie wskazuje kursor (%.0f, %.0f)"
+
+msgid "No ground under the cursor: the model stands %.0f m in front of the camera (%.0f, %.0f)"
+msgstr "Pod kursorem nie ma ziemi: model stoi %.0f m przed kamerą (%.0f, %.0f)"
+
+msgid "The diverging track %.0f km/h, the main one no limit"
+msgstr "Tor zwrotny %.0f km/h, zasadniczy bez ograniczenia"
+
+# scenery editor: the flow of the lay tool, a step at a time
+
+msgid "Click on the ground or at a free end of a track"
+msgstr "Kliknij na terenie albo na wolnym końcu toru"
+
+msgid "Click the next bends"
+msgstr "Klikaj kolejne załamania"
+
+msgid "Click points along the curve on the photo"
+msgstr "Klikaj punkty wzdłuż łuku na ortofotomapie"
+
+msgid "Enter lays · Backspace takes back a point · Esc drops"
+msgstr "Enter układa · Backspace cofa punkt · Esc porzuca"
+
+msgid "Backspace takes back the point · Esc drops"
+msgstr "Backspace cofa punkt · Esc porzuca"
+
+msgid "Drag to lay from the end; let go to lay it"
+msgstr "Przeciągnij, aby ułożyć od końca; puść, aby położyć"
+
+msgid "Laid %.0f m (%zu track) · Ctrl+Z undoes"
+msgid_plural "Laid %.0f m (%zu tracks) · Ctrl+Z undoes"
+msgstr[0] "Ułożono %.0f m (%zu tor) · Ctrl+Z cofa"
+msgstr[1] "Ułożono %.0f m (%zu tory) · Ctrl+Z cofa"
+msgstr[2] "Ułożono %.0f m (%zu torów) · Ctrl+Z cofa"
+
+msgid "notes"
+msgstr "uwagi"
+
+msgid "Straights"
+msgstr "Proste"
+
+msgid "along the ground"
+msgstr "po terenie"
+
+msgid "through the points"
+msgstr "przez punkty"
+
+msgid "level"
+msgstr "poziomo"
+
+msgid "Length %.0f m · straight"
+msgstr "Długość %.0f m · prosta"
+
+msgid "Length %.0f m · %zu curve"
+msgid_plural "Length %.0f m · %zu curves"
+msgstr[0] "Długość %.0f m · %zu łuk"
+msgstr[1] "Długość %.0f m · %zu łuki"
+msgstr[2] "Długość %.0f m · %zu łuków"
+
+msgid " · slowest %.0f km/h"
+msgstr " · najwolniej %.0f km/h"
+
+msgid "meets the norms"
+msgstr "zgodne z normami"
+
+msgid "%zu curve below the norms for %.0f km/h"
+msgid_plural "%zu curves below the norms for %.0f km/h"
+msgstr[0] "%zu łuk poniżej norm dla %.0f km/h"
+msgstr[1] "%zu łuki poniżej norm dla %.0f km/h"
+msgstr[2] "%zu łuków poniżej norm dla %.0f km/h"
+
+msgid "details"
+msgstr "szczegóły"
+
+msgid "Drop"
+msgstr "Porzuć"
+
+msgid "Drops the points not laid yet; Esc twice does the same"
+msgstr "Porzuca punkty jeszcze nieułożone; to samo robi dwa razy Esc"
+
+msgid "curve R %s m · up to %.0f km/h"
+msgstr "łuk R %s m · do %.0f km/h"
+
+msgid "curve R %s m"
+msgstr "łuk R %s m"
+
+msgid "R %s · up to %.0f km/h"
+msgstr "R %s · do %.0f km/h"
+
+msgid "Curve traced on the photo, Tab: the straights"
+msgstr "Łuk odrysowany z ortofotomapy, Tab: proste"
+
+msgid "Straights, Tab: a curve traced on the photo"
+msgstr "Proste, Tab: łuk odrysowany z ortofotomapy"
+
+msgid "the first point"
+msgstr "pierwszy punkt"
+
+msgid "from the end"
+msgstr "od końca"
+
+msgid "a curve from the photo"
+msgstr "łuk z ortofotomapy"
+
+msgid "back to the straights"
+msgstr "z powrotem proste"
+
+msgid "the next bend"
+msgstr "następne załamanie"
+
+msgid "the next point along the curve"
+msgstr "następny punkt łuku"
+
+msgid "take back"
+msgstr "cofnij"
+
+msgid "Ctrl+Shift+wheel"
+msgstr "Ctrl+Shift+kółko"
+
+# scenery editor: the flow of the switch tool, a step at a time
+
+msgid "Press on a straight and drag along it and to the side"
+msgstr "Wciśnij na prostej i przeciągnij wzdłuż niej i w bok"
+
+msgid "Press on a straight or at a crossing and drag"
+msgstr "Wciśnij na prostej albo na skrzyżowaniu i przeciągnij"
+
+msgid "Press at a crossing of two straights and drag"
+msgstr "Wciśnij na skrzyżowaniu dwóch prostych i przeciągnij"
+
+msgid "Press on a straight and drag onto the other track"
+msgstr "Wciśnij na prostej i przeciągnij na drugi tor"
+
+msgid "Slip"
+msgstr "Krzyżowy"
+
+msgid "Diverging speed (km/h)"
+msgstr "Prędkość zwrotna (km/h)"
+
+msgid "Pick a template"
+msgstr "Wybierz szablon"
+
+msgid "Let go to insert"
+msgstr "Puść, aby wstawić"
+
+msgid "Switch %s inserted · Ctrl+Z undoes"
+msgstr "Rozjazd %s wstawiony · Ctrl+Z cofa"
+
+msgid "Switch %s: drag it along its track to move it"
+msgstr "Rozjazd %s: przeciągnij go wzdłuż toru, aby przesunąć"
+
+msgid "Editing on the model (trial)"
+msgstr "Edycja na modelu (wersja próbna)"
+
+msgid "A line laid in the straights, or applied by the route design, becomes a line of the model of the track geometry: its tracks are made by the model, its edits checked against the norms and refused with the reasons, the project of the map kept next to it.\nThe tracks there were stay as they are, edited the old way. Off, the editor works as it did"
+msgstr "Linia ułożona prostymi albo zastosowana w projekcie trasy staje się linią modelu geometrii torów: jej tory tworzy model, jej zmiany są sprawdzane z normami i odrzucane z podaniem powodów, a projekt mapy leży obok niej.\nTory, które już były, zostają bez zmian i są edytowane po staremu. Wyłączone: edytor działa jak dotąd"
+
+msgid "The project of the map can't be opened: %s"
+msgstr "Nie można otworzyć projektu mapy: %s"
+
+msgid "The project of the map can't be opened: %s. The tracks are edited the old way"
+msgstr "Nie można otworzyć projektu mapy: %s. Tory są edytowane po staremu"
+
+msgid "Editing on the model: the project of the map is %s, %zu lines of the model"
+msgstr "Edycja na modelu: projekt mapy to %s, linii modelu: %zu"
+
+msgid "Line %s (managed)"
+msgstr "Linia %s (zarządzana)"
+
+msgid "Made by the model of the track geometry of its line: the route design edits the line, checked against the norms. Changed here, it's a change by hand, which the model asks about before it lays the line anew"
+msgstr "Utworzony przez model geometrii torów z jego linii: linię edytuje projekt trasy, ze sprawdzeniem norm. Zmiana tutaj to zmiana ręczna, o którą model zapyta, zanim ułoży linię od nowa"
+
+msgid "Refused, nothing changed:"
+msgstr "Odmowa, nic się nie zmieniło:"
+
+msgid "The change by hand is kept: the line isn't laid anew"
+msgstr "Zmiana ręczna zostaje: linia nie jest układana od nowa"
+
+msgid "%s: done"
+msgstr "%s: wykonano"
+
+msgid "%s: line %s, %zu track"
+msgid_plural "%s: line %s, %zu tracks"
+msgstr[0] "%s: linia %s, %zu tor"
+msgstr[1] "%s: linia %s, %zu tory"
+msgstr[2] "%s: linia %s, %zu torów"
+
+msgid "create line"
+msgstr "nowa linia"
+
+msgid "move vertex"
+msgstr "przesunięcie wierzchołka"
+
+msgid "set vertex"
+msgstr "zmiana łuku"
+
+msgid "split line"
+msgstr "podział linii"
+
+msgid "join ends"
+msgstr "połączenie końców"
+
+msgid "delete line"
+msgstr "usunięcie linii"
+
+msgid "The project of the map isn't saved: %s"
+msgstr "Projekt mapy nie został zapisany: %s"
+
+msgid "A curve traced is laid as an old track: the model lays the straights for now"
+msgstr "Łuk po zdjęciu jest układany jako stary tor: model na razie układa proste"
+
+msgid "A curve going on from the curve of a free end is laid as an old track: the model doesn't lay it yet"
+msgstr "Łuk przedłużający łuk wolnego końca jest układany jako stary tor: model jeszcze go nie układa"
+
+msgid "A compound curve, or one with cant ramps of its own, is laid as an old track: the model doesn't lay it yet"
+msgstr "Łuk koszowy albo łuk z własnymi rampami przechyłki jest układany jako stary tor: model jeszcze go nie układa"
+
+msgid "Line %s of the model, %.0f m, %zu curve"
+msgid_plural "Line %s of the model, %.0f m, %zu curves"
+msgstr[0] "Linia %s modelu, %.0f m, %zu łuk"
+msgstr[1] "Linia %s modelu, %.0f m, %zu łuki"
+msgstr[2] "Linia %s modelu, %.0f m, %zu łuków"
+
+msgid "Curves added or taken out: not yet for a line of the model, only their places, radii, transitions and cants"
+msgstr "Dodane albo usunięte łuki: jeszcze nie dla linii modelu, tylko ich położenie, promienie, krzywe przejściowe i przechyłki"
+
+msgid "A compound curve, or one with cant ramps of its own, isn't laid by the model yet"
+msgstr "Łuku koszowego ani łuku z własnymi rampami przechyłki model jeszcze nie układa"
+
+msgid "The norms: %zu note"
+msgid_plural "The norms: %zu notes"
+msgstr[0] "Normy: %zu uwaga"
+msgstr[1] "Normy: %zu uwagi"
+msgstr[2] "Normy: %zu uwag"
+
+msgid "A line of the model of the track geometry: its changes are applied as commands of the model, checked against the norms, its tracks made anew"
+msgstr "Linia modelu geometrii torów: jej zmiany są stosowane jako polecenia modelu, sprawdzane z normami, a jej tory tworzone od nowa"
+
+msgid "Split the line here"
+msgstr "Podziel linię tutaj"
+
+msgid "The line cut in two at the distance from its start, the track kept as it is"
+msgstr "Linia przecięta na dwie w tej odległości od początku, tor zostaje taki, jaki jest"
+
+msgid "Join the %s to line %s (%.0f m)"
+msgstr "Połącz %s z linią %s (%.0f m)"
+
+msgid "A new line laid between the free end and the free end of the other line, its curves as the norms prefer"
+msgstr "Nowa linia ułożona między wolnym końcem a wolnym końcem drugiej linii, z łukami takimi, jakie zalecają normy"
+
+msgid "Delete line %s"
+msgstr "Usuń linię %s"
+
+msgid "The line and its tracks taken away; the scenarios naming its tracks are looked through first. Ctrl+Z brings it back"
+msgstr "Linia i jej tory są usuwane; najpierw przeglądane są scenariusze, które odwołują się do jej torów. Ctrl+Z przywraca"
+
+msgid "A line of the model goes by Del on one of its tracks, not in a set"
+msgstr "Linię modelu usuwa się klawiszem Del na jednym z jej torów, nie w zestawie"
+
+msgid "Changed by hand"
+msgstr "Zmienione ręcznie"
+
+msgid "The tracks of line %s were changed by hand since the editor made them."
+msgstr "Tory linii %s zostały zmienione ręcznie, odkąd edytor je utworzył."
+
+msgid "Overwritten, they're made anew of the line as the model lays it and the change by hand is lost. Kept, the edit isn't made."
+msgstr "Nadpisane, zostaną utworzone od nowa z linii, tak jak układa ją model, a zmiana ręczna przepadnie. Zachowane: edycja nie zostanie wykonana."
+
+msgid "Keep the change by hand"
+msgstr "Zachowaj zmianę ręczną"
+
+msgid "Overwrite"
+msgstr "Nadpisz"
+
+msgid "Checking the scenarios"
+msgstr "Sprawdzanie scenariuszy"
+
+msgid "Looking through the scenarios which use the map, before the track goes. On a big map it takes a few minutes, once."
+msgstr "Przeglądanie scenariuszy, które używają mapy, zanim tor zostanie usunięty. Na dużej mapie trwa to kilka minut, jednorazowo."
+
+msgid "Delete without checking"
+msgstr "Usuń bez sprawdzania"
+
+msgid "Track used by %zu scenario"
+msgid_plural "Track used by %zu scenarios"
+msgstr[0] "Tor używany przez %zu scenariusz"
+msgstr[1] "Tor używany przez %zu scenariusze"
+msgstr[2] "Tor używany przez %zu scenariuszy"
+
+msgid "Taken away, the scenarios lose what they name in the map:"
+msgstr "Po usunięciu scenariusze stracą to, do czego odwołują się w mapie:"
+
+msgid "%s: %s %s (%s:%zu)"
+msgstr "%s: %s %s (%s:%zu)"
+
+msgid "Delete anyway"
+msgstr "Usuń mimo to"
+
+msgid "trainset"
+msgstr "skład"
+
+msgid "event target"
+msgstr "cel eventu"
+
+msgid "condition"
+msgstr "warunek"
+
+msgid "copy source"
+msgstr "źródło kopii"
+
+msgid "multiple event"
+msgstr "event złożony"
+
+msgid "event launcher condition"
+msgstr "warunek wyzwalacza eventów"
+
+msgid "track event"
+msgstr "event toru"
+
+msgid "memory cell track"
+msgstr "tor komórki pamięci"
+
+msgid "isolated"
+msgstr "odcinek izolowany"
+
+msgid "named event"
+msgstr "event nazwany od toru"
+
+msgid "A line through switches is applied to the old tracks: the switches go through the model later"
+msgstr "Linia przez rozjazdy jest stosowana do starych torów: rozjazdy przejdą przez model później"
+
+msgid "A curve going on from the curve of the track beyond is applied to the old tracks: the model doesn't lay it yet"
+msgstr "Łuk przedłużający łuk toru za końcem jest stosowany do starych torów: model jeszcze go nie układa"
+
+msgid "A compound curve, or one with cant ramps of its own, is applied to the old tracks: the model doesn't lay it yet"
+msgstr "Łuk koszowy albo łuk z własnymi rampami przechyłki jest stosowany do starych torów: model jeszcze go nie układa"
+
+msgid "Tracks with events or in isolated circuits are applied as old tracks: their events would be lost"
+msgstr "Tory z eventami albo w odcinkach izolowanych są zmieniane jako stare tory: ich eventy by przepadły"
+
+msgid "A line with a grade line of its own is applied to the old tracks: the model takes over the grade line later"
+msgstr "Linia z własną niweletą jest stosowana do starych torów: model przejmie niweletę później"
+
+msgid "Looking through the scenarios which use the map, before the track is renamed. On a big map it takes a few minutes, once."
+msgstr "Przeglądanie scenariuszy, które używają mapy, zanim nazwa toru się zmieni. Na dużej mapie trwa to kilka minut, jednorazowo."
+
+msgid "Rename without checking"
+msgstr "Zmień nazwę bez sprawdzania"
+
+msgid "Renamed, the scenarios lose what they name in the map:"
+msgstr "Po zmianie nazwy scenariusze stracą to, do czego odwołują się w mapie:"
+
+msgid "Rename anyway"
+msgstr "Zmień nazwę mimo to"
+
+# scenery editor: the turnouts, the grade line, the curves and the parallel track of the lines of the model (E4b), the messages of the model
+
+msgid " · bent R %.0f m"
+msgstr " · łukowany R %.0f m"
+
+msgid "%s isn't of the catalogue of the turnouts: a line of the model takes the types of the catalogue"
+msgstr "%s nie jest z katalogu rozjazdów: linia modelu przyjmuje tylko typy z katalogu"
+
+msgid "%s · %s · %.0f / %.0f km/h"
+msgstr "%s · %s · %.0f / %.0f km/h"
+
+msgid "A turnout of the model of the track geometry: moved, given another type or side, or taken out by its commands, checked against the norms; its tracks made anew"
+msgstr "Rozjazd modelu geometrii torów: przesuwany, zmieniany na inny typ lub stronę albo usuwany jego poleceniami, ze sprawdzeniem norm; jego tory powstają od nowa"
+
+msgid "Its diverging track goes, the line under it is one line again where it can be. Ctrl+Z brings it back"
+msgstr "Tor zwrotny znika, a linia pod rozjazdem znów staje się jedną linią, jeśli to możliwe. Ctrl+Z go przywraca"
+
+msgid "Move"
+msgstr "Przesuń"
+
+msgid "Moved along its line by the distance, above 0 toward the end of its main track: checked as when it's laid"
+msgstr "Przesunięty wzdłuż linii o odległość, dodatnią w stronę końca toru zasadniczego: sprawdzany jak przy wstawianiu"
+
+msgid "Other side"
+msgstr "Druga strona"
+
+msgid "Proposal: %s"
+msgstr "Propozycja: %s"
+
+msgid "Take the turnout out"
+msgstr "Usuń rozjazd"
+
+msgid "The diverging track to the other side, the start of the turnout where it is"
+msgstr "Tor zwrotny na drugą stronę, początek rozjazdu bez zmian"
+
+msgid "Turnout %s (managed)"
+msgstr "Rozjazd %s (zarządzany)"
+
+msgid "Turnout %s: %s, %s, %.0f km/h on the diverging track"
+msgstr "Rozjazd %s: %s, %s, %.0f km/h na torze zwrotnym"
+
+msgid "Line %s of the model: its grade line, %zu breaks"
+msgstr "Linia %s modelu: jej niweleta, załomów: %zu"
+
+msgid "Add a curve here"
+msgstr "Dodaj tu łuk"
+
+msgid "A new vertex of the tangents at the distance from the start of the line: no curve until its vertex is dragged off the line, then of the radius of the lay tool"
+msgstr "Nowy wierzchołek stycznych w tej odległości od początku linii: łuku nie ma, dopóki wierzchołek nie zostanie odciągnięty od linii; potem ma promień narzędzia układania"
+
+msgid "Take W%zu out"
+msgstr "Usuń W%zu"
+
+msgid "The curve taken out: the tangents of the vertices beside it meet with no curve of it"
+msgstr "Łuk usunięty: styczne sąsiednich wierzchołków spotykają się bez niego"
+
+msgid "Refused, nothing changes:"
+msgstr "Odmowa, nic się nie zmieni:"
+
+msgid "Within the norms"
+msgstr "Zgodne z normami"
+
+msgid "Curves added or taken out here aren't applied to a line of the model: add a curve or take one out with the buttons of the line"
+msgstr "Łuki dodane lub usunięte tutaj nie trafiają do linii modelu: dodaj łuk albo go usuń przyciskami linii"
+
+msgid "A line alongside line %s, %.2f m away"
+msgstr "Linia obok linii %s, w odległości %.2f m"
+
+msgid "In the curve at W%zu: %.3f m"
+msgstr "W łuku przy W%zu: %.3f m"
+
+msgid "A turnout has no line of its own: select a track of a line beside it"
+msgstr "Rozjazd nie ma własnej linii: zaznacz tor linii obok niego"
+
+msgid "line {1} at {2} m: {3}"
+msgstr "linia {1} w {2} m: {3}"
+
+msgid "{1} {2}, the limit {3} ({4})"
+msgstr "{1} {2}, limit {3} ({4})"
+
+msgid "{1} {2}, the limit {3}"
+msgstr "{1} {2}, limit {3}"
+
+msgid "turnout {1} ({2}): {3}"
+msgstr "rozjazd {1} ({2}): {3}"
+
+msgid "bent into R {1} m in a main track, where no switch of 1:9.403 nor steeper than 1:9 is bent (11.4 pkt 4)"
+msgstr "łukowany do R {1} m w torze głównym, gdzie nie łukuje się rozjazdów 1:9,403 ani bardziej stromych niż 1:9 (11.4 pkt 4)"
+
+msgid "{1} is {2} m long: it doesn't fit into line {3} ({4} m long) with its start at {5} m"
+msgstr "{1} ma {2} m: nie mieści się w linii {3} (długość {4} m) z początkiem w {5} m"
+
+msgid "line {1} is a track of turnout {2}: move it, change it or take it out"
+msgstr "linia {1} jest torem rozjazdu {2}: przesuń go, zmień albo usuń"
+
+msgid "the second turnout doesn't fit into line {1} at {2} m"
+msgstr "drugi rozjazd nie mieści się w linii {1} w {2} m"
+
+msgid "the line between the turnouts is {1} m long, the norms ask for {2} m between two turnouts at {3} km/h (ST-T1-A6 11.3 pkt 7)"
+msgstr "wstawka między rozjazdami ma {1} m, normy wymagają {2} m między dwoma rozjazdami przy {3} km/h (ST-T1-A6 11.3 pkt 7)"
+
+msgid "the lines are {1} m apart along the crossover (to {2} m), {3} needs {4} m (ST-T1-A6 tab. 11.2 and the straight between its turnouts)"
+msgstr "rozstaw linii wzdłuż połączenia {1} m (do {2} m), {3} wymaga {4} m (ST-T1-A6 tab. 11.2 i prosta między rozjazdami)"
+
+msgid "no ordinary turnout of the catalogue fits lines {1} m apart; {2} needs them {3} m apart"
+msgstr "żaden rozjazd zwyczajny z katalogu nie pasuje do rozstawu {1} m; {2} wymaga rozstawu {3} m"
+
+msgid "{1} fits lines {2} m apart, at {3} km/h; {4} needs them {5} m apart"
+msgstr "{1} pasuje do rozstawu {2} m, przy {3} km/h; {4} wymaga rozstawu {5} m"
+
+msgid "proposed: {1}"
+msgstr "propozycja: {1}"
+
+msgid "line {1}: {2}"
+msgstr "linia {1}: {2}"
+
+msgid "vertex {1}: {2}"
+msgstr "wierzchołek {1}: {2}"
+
+msgid "{1} m is inside a transition curve whose parts wouldn't be curves of its kind; split on a straight or an arc"
+msgstr "{1} m wypada w krzywej przejściowej, której części nie byłyby krzywymi tego rodzaju; dziel na prostej albo na łuku"
+
+msgid "{1} m is inside the vertical curve at {2} m"
+msgstr "{1} m wypada w łuku pionowym przy {2} m"
+
+msgid "line {1} meets node {2} at an angle of {3} deg"
+msgstr "linia {1} dochodzi do węzła {2} pod kątem {3}°"
+
+msgid "the grade breaks by {1} per mille at node {2} with no vertical curve"
+msgstr "pochylenie załamuje się o {1}‰ w węźle {2} bez łuku pionowego"
+
+msgid "the cant steps by {1} mm at node {2} where line {3} meets it"
+msgstr "przechyłka skacze o {1} mm w węźle {2}, gdzie dochodzi linia {3}"
+
+msgid "the grade break at {1} m isn't between the one before it and the end of the line, {2} m long"
+msgstr "załom niwelety w {1} m nie leży między poprzednim a końcem linii o długości {2} m"
+
+msgid "the vertical curves at {1} m and {2} m overlap by {3} m"
+msgstr "łuki pionowe w {1} m i {2} m zachodzą na siebie o {3} m"
+
+msgid "the curves of vertex {1} and vertex {2} overlap by {3} m"
+msgstr "łuki wierzchołków {1} i {2} zachodzą na siebie o {3} m"
+
+msgid "the transition curves turn {1} rad, more than the {2} rad the tangents do"
+msgstr "krzywe przejściowe skręcają o {1} rad, więcej niż {2} rad między stycznymi"
+
+msgid "node {1} isn't the free end of a line"
+msgstr "węzeł {1} nie jest wolnym końcem linii"
+
+msgid "the end of the line at {1} m, its node at {2} m: a line of the model keeps the heights of its nodes"
+msgstr "koniec linii na wysokości {1} m, jej węzeł na {2} m: linia modelu zachowuje wysokości swoich węzłów"
+
+msgid "the spacing in the curve at vertex {1} isn't widened by {2} mm: its transitions can't take it"
+msgstr "rozstaw w łuku przy wierzchołku {1} nie jest poszerzony o {2} mm: jego krzywe przejściowe na to nie pozwalają"
+
+msgid "the curve at vertex {1} would be of a radius of {2} m alongside"
+msgstr "łuk przy wierzchołku {1} miałby obok promień {2} m"
+
+msgid "a spacing of {1} m"
+msgstr "rozstaw {1} m"
+
+msgid "step of the cant deficiency"
+msgstr "skok niedomiaru przechyłki"
+
+msgid "rate of the cant change"
+msgstr "prędkość zmiany przechyłki"
+
+msgid "rate of the cant deficiency change"
+msgstr "prędkość zmiany niedomiaru przechyłki"
+
+msgid "element length"
+msgstr "długość elementu"
+
+msgid "transition length"
+msgstr "długość krzywej przejściowej"
+
+msgid "transition shift"
+msgstr "przesunięcie łuku"
+
+msgid "least cant"
+msgstr "najmniejsza przechyłka"
+
+msgid "vertical radius"
+msgstr "promień łuku pionowego"
+
+msgid "element between steps"
+msgstr "element między skokami"
+
+msgid "arc across a profile boundary"
+msgstr "łuk na granicy profili"
+
+msgid "element between turnouts"
+msgstr "wstawka między rozjazdami"
+
+# scenery editor: the assumptions of the project ("Co rysujesz?")
+
+msgid "What do you draw?"
+msgstr "Co rysujesz?"
+
+msgid "%d. What do you draw?"
+msgstr "%d. Co rysujesz?"
+
+msgid "The tracks are laid to these norms and this speed: a curve they don't allow can't be laid"
+msgstr "Tory układają się według tych norm i tej prędkości: łuku, na który normy nie pozwalają, nie da się ułożyć"
+
+msgid "The tracks are laid to these norms and this speed, a fictional scenery's too: a curve they don't allow can't be laid. Changed later in the editor: Assumptions of the project"
+msgstr "Tory układają się według tych norm i tej prędkości, także w scenerii fikcyjnej: łuku, na który normy nie pozwalają, nie da się ułożyć. Zmienisz to później w edytorze: Założenia projektu"
+
+msgid "Start drawing"
+msgstr "Zaczynam"
+
+msgid "Start: create and open in the editor"
+msgstr "Zaczynam: utwórz i otwórz w edytorze"
+
+msgid "Changed later in Assumptions of the project: Editor settings, or the line of them in Tracks"
+msgstr "Zmienisz to później w Założeniach projektu: Ustawienia edytora albo linijka założeń w dziale Tory"
+
+msgid "Assumptions: "
+msgstr "Założenia: "
+
+msgid "change"
+msgstr "zmień"
+
+msgid "The assumptions of the project: the norms, the speed of the line, the traffic, the track, the gauge, the rail"
+msgstr "Założenia projektu: normy, prędkość linii, rodzaj ruchu, tor, rozstaw, szyna"
+
+msgid "Assumptions of the project"
+msgstr "Założenia projektu"
+
+msgid "Assumptions of the project..."
+msgstr "Założenia projektu..."
+
+msgid "What the scenery is drawn to: the norms, the speed of the line, the traffic, the track, the gauge and the rail; the defaults of the tools"
+msgstr "Według czego rysujesz scenerię: normy, prędkość linii, rodzaj ruchu, tor, rozstaw i szyna; wartości domyślne narzędzi"
+
+msgid "The defaults of the laying, the plan, the switches and the profile; a field of a tool changes them for one line"
+msgstr "Wartości domyślne układania, Planu, rozjazdów i profilu; pole w panelu narzędzia zmienia je dla jednej linii"
+
+msgid "Checking the lines laid before against them..."
+msgstr "Sprawdzam z nimi wcześniej ułożone linie..."
+
+msgid "The lines laid before meet the norms of these assumptions"
+msgstr "Wcześniej ułożone linie spełniają normy tych założeń"
+
+msgid "%zu of the lines laid before don't meet these norms (%zu beyond the hard limits): the report is in the window of the norms. Nothing was changed"
+msgstr "Wcześniej ułożone linie niespełniające tych norm: %zu (ponad twarde granice: %zu); raport jest w oknie norm. Niczego nie zmieniono"
+
+msgid "Show the report"
+msgstr "Pokaż raport"
+
+msgid "A change doesn't alter what's laid: the tracks laid before stay as they are"
+msgstr "Zmiana niczego nie przerabia: wcześniej ułożone tory zostają, jakie są"
+
+msgid "PKP PLK Id-1 (ST-T1-A6): the values preferred, the normal and the extended limits"
+msgstr "PKP PLK Id-1 (ST-T1-A6): wartości zalecane, graniczne normalne i rozszerzone"
+
+msgid "TSI INF alone: the least the law of the EU allows, the loosest; its limits can't be passed either"
+msgstr "Tylko TSI INF: minimum, na które pozwala prawo UE, najluźniejsze; jego granic też nie da się przekroczyć"
+
+msgid "EN 13803: the normal limits warn, the exceptional ones can't be passed"
+msgstr "EN 13803: granice normalne ostrzegają, wyjątkowych nie da się przekroczyć"
+
+msgid "Swiss AB-EBV: the normal limits warn, the greatest ones can't be passed"
+msgstr "Szwajcarskie AB-EBV: granice normalne ostrzegają, maksymalnych nie da się przekroczyć"
+
+msgid "A map across two countries: the areas of the norms later, in the settings"
+msgstr "Dla mapy na dwa kraje obszary norm później w ustawieniach"
+
+msgid "passenger##traffic"
+msgstr "pasażerski##traffic"
+
+msgid "mixed##traffic"
+msgstr "mieszany##traffic"
+
+msgid "freight##traffic"
+msgstr "towarowy##traffic"
+
+msgid "main##track"
+msgstr "główny##track"
+
+msgid "side (station)##track"
+msgstr "boczny (stacyjny)##track"
+
+msgid "A running line or a main track of a station"
+msgstr "Tor szlakowy albo główny tor stacji"
+
+msgid "A siding of a station: the norms of the side tracks"
+msgstr "Tor boczny stacji: normy torów bocznych"
+
+msgid "Gauge"
+msgstr "Rozstaw"
+
+msgid "Rail"
+msgstr "Szyna"
+
+msgid "the switches of this rail first"
+msgstr "z tego domyślne rozjazdy"
+
+msgid "Look of the tracks laid: empty, rails and trackbed as now"
+msgstr "Wygląd układanych torów: puste pole to szyny i podsypka jak dziś"
+
+msgid "Rails##setuplook"
+msgstr "Szyny##setuplook"
+
+msgid "Trackbed##setuplook"
+msgstr "Podsypka##setuplook"
+
+# scenery editor: the aerial photo without fuss
+
+msgid "Photo: laid out by //$g of the scenery file; the origin kept before was %.0f m off it"
+msgstr "Zdjęcie: ułożone według //$g pliku scenerii; zapamiętany wcześniej początek układu był o %.0f m dalej"
+
+msgid "Opened again, the scenery is laid out by //$g of its file"
+msgstr "Po ponownym otwarciu sceneria będzie ułożona według //$g swojego pliku"
+
+msgid "With the view zoomed in to 15 cm a pixel they come by themselves next to the camera"
+msgstr "Przy zbliżeniu widoku do 15 cm na piksel włączają się same przy kamerze"
+
+msgid "Photo: the download area is at its limit of %zu tiles; draw it again where it's needed, in Map > Orthophoto settings..."
+msgstr "Zdjęcie: obszar pobierania doszedł do limitu %zu kafli; narysuj go na nowo tam, gdzie trzeba, w Mapa > Ustawienia ortofotomapy..."
+
+msgid "Photo: the download area grown by %zu tile at its edge, %zu in all"
+msgid_plural "Photo: the download area grown by %zu tiles at its edge, %zu in all"
+msgstr[0] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafel, razem %zu"
+msgstr[1] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafle, razem %zu"
+msgstr[2] "Zdjęcie: obszar pobierania powiększony przy krawędzi o %zu kafli, razem %zu"
+
+msgid "Photos: %zu tile not downloaded"
+msgid_plural "Photos: %zu tiles not downloaded"
+msgstr[0] "Zdjęcia: %zu kafla nie pobrano"
+msgstr[1] "Zdjęcia: %zu kafli nie pobrano"
+msgstr[2] "Zdjęcia: %zu kafli nie pobrano"
+
+msgid "They're marked red in the view and tried again by themselves, later and later, up to 5 min apart"
+msgstr "Są zaznaczone w widoku na czerwono i ponawiane same, coraz rzadziej, najwyżej co 5 min"
+
+msgid "no connection to the internet: the name of the server isn't found"
+msgstr "brak połączenia z internetem: nie znaleziono nazwy serwera"
+
+msgid "the server didn't answer in time"
+msgstr "serwer nie odpowiedział na czas"
+
+msgid "the server can't be reached"
+msgstr "nie można połączyć się z serwerem"
+
+msgid "the secure connection to the server failed"
+msgstr "nie udało się nawiązać bezpiecznego połączenia z serwerem"
+
+msgid "the server is busy or out of order"
+msgstr "serwer jest przeciążony albo nie działa"
+
+msgid "the server has no photo of the place"
+msgstr "serwer nie ma zdjęcia tego miejsca"
+
+msgid "the server refused the request"
+msgstr "serwer odrzucił żądanie"
+
+msgid "the server sent an error in place of the photo"
+msgstr "serwer przysłał błąd zamiast zdjęcia"
+
+msgid "the photo came damaged"
+msgstr "zdjęcie przyszło uszkodzone"
+
+msgid "the photo came too large"
+msgstr "zdjęcie przyszło za duże"
+
+msgid "the download failed"
+msgstr "pobieranie się nie udało"
+
+msgid "Retry##photos"
+msgstr "Ponów##photos"
+
+msgid "The aerial photo shown or hidden, kept with the scenery"
+msgstr "Zdjęcie lotnicze pokazane albo ukryte, zapamiętane dla scenerii"
+
+msgid "The photos of what the camera sees downloaded before the rest"
+msgstr "Zdjęcia tego, co widzi kamera, pobierane przed resztą"
+
+msgid "The terrain loaded by itself as the first track of a new scenery is laid"
+msgstr "Teren wczytywany sam przy układaniu pierwszego toru nowej scenerii"
+
+msgid "In the background, where the scenery lies on the map; the panel of the laying tells it, with the button to go without it"
+msgstr "W tle, tam gdzie sceneria leży na mapie; mówi o tym panel układania, z przyciskiem, by obejść się bez terenu"
+
+msgid "Photo"
+msgstr "Zdjęcie"
+
+msgid "The aerial photo of geoportal.gov.pl under the scenery, shown or hidden in this scenery"
+msgstr "Zdjęcie lotnicze z geoportal.gov.pl pod scenerią, pokazane albo ukryte w tej scenerii"
+
+msgid "How much the photo covers the scenery under it"
+msgstr "Jak mocno zdjęcie przykrywa scenerię pod nim"
+
+msgid "Without terrain: the tracks lie on the flat plane; the terrain can be loaded later in Terrain (F5)"
+msgstr "Bez terenu: tory leżą na płaszczyźnie; teren możesz wczytać później w dziale Teren (F5)"
+
+msgid "Terrain:"
+msgstr "Teren:"
+
+msgid "Terrain: loading..."
+msgstr "Teren: wczytuję…"
+
+msgid "The terrain model of geoportal.gov.pl around here, in the background: the tracks laid meanwhile go onto it once it's in, the photo lies flat till then"
+msgstr "Teren z map (NMT) z geoportal.gov.pl wokół tego miejsca, w tle: tory ułożone w tym czasie trafią na niego, gdy dojdzie, a zdjęcie do tego czasu leży płasko"
+
+msgid "Terrain: the scenery isn't placed on the map"
+msgstr "Teren: sceneria nie leży na mapie"
+
+msgid "Place it..."
+msgstr "Wskaż miejsce…"
+
+msgid "In Terrain (F5): the middle of the scenery clicked on the map, then its terrain and photos can be loaded"
+msgstr "W dziale Teren (F5): kliknij środek scenerii na mapie, potem możesz wczytać jej teren i zdjęcia"
+
+msgid "Photos"
+msgstr "Zdjęcia"
+
+msgid "The aerial photos of geoportal.gov.pl, the same as under the scenery in the editor, once the map is zoomed in"
+msgstr "Zdjęcia lotnicze z geoportal.gov.pl, te same co pod scenerią w edytorze, po przybliżeniu mapy"
+
+msgid "Zoom in for the photos"
+msgstr "Przybliż, by zobaczyć zdjęcia"

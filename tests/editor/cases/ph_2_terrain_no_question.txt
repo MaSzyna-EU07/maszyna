@@ -1,0 +1,31 @@
+# The first L in a new scenery asks nothing: where the scenery lies on the map the terrain loads in the background and a line in the
+# panel of the laying tells it, with the button to go without; no window in the way of the laying. The fixture has tracks, so the
+# offer is started as the first L starts it (nmtquestion open), after the scenery was placed on the map (in Warsaw, the photo of one tile)
+wait 5
+nmtsettings grow 1
+wait 2
+tap f3
+wait 2
+tap l
+wait 3
+orthophoto 482500 634000 0 1 0
+wait 3
+nmtquestion open
+wait 5
+expect terrain question 0
+expect terrain prompt 1
+expect terrain loading 1
+expect laypanel ready shown
+# the photo doesn't wait for the terrain: it's on and its tile asked for while the terrain is still to come
+expect photo on 1
+# Without terrain: nothing of the model loaded any more, the line gone
+nmtquestion flat
+wait 3
+expect terrain prompt 0
+expect terrain loading 0
+expect terrain grow 0
+expect terrain area 0
+nmtquestion restore
+wait 2
+orthophoto forget
+quit

@@ -204,6 +204,7 @@ set(SOURCES
 "editor/editorSwitchStore.cpp"
 "editor/editorSwitchCurve.cpp"
 "editor/editorKilometrage.cpp"
+"editor/editorRecords.cpp"
 "editor/editorStation.cpp"
 "editor/editorSwitchDesign.cpp"
 "editor/editorConnections.cpp"
@@ -211,11 +212,37 @@ set(SOURCES
 "application/editormodeconnectioncurve.cpp"
 "application/editormodedigitize.cpp"
 "editor/editorSpeed.cpp"
+"editor/norms/normsTables.cpp"
+"editor/norms/normsLimits.cpp"
+"editor/norms/normsEngine.cpp"
+"editor/norms/normsLine.cpp"
+"editor/layout/layoutElements.cpp"
+"editor/layout/layoutLine.cpp"
+"editor/layout/layoutNetwork.cpp"
+"editor/layout/layoutCommands.cpp"
+"editor/layout/layoutTurnout.cpp"
+"editor/layout/layoutGenerator.cpp"
+"editor/layout/layoutConnection.cpp"
+"editor/layout/layoutParallel.cpp"
+"editor/layout/layoutRecognition.cpp"
+"editor/layout/layoutLegacy.cpp"
+"editor/layout/layoutAnchors.cpp"
+"editor/project/legacyScenery.cpp"
+"editor/project/projectFile.cpp"
+"editor/project/projectGenerated.cpp"
+"editor/project/projectMigration.cpp"
+"editor/project/sceneryText.cpp"
+"editor/project/scenarioIndex.cpp"
+"editor/project/scenarioIndexCache.cpp"
+"editor/project/projectSession.cpp"
+"editor/editorNormsReport.cpp"
+"editor/editorProjectSetup.cpp"
 "editor/editorProfile.cpp"
 "editor/editorGauge.cpp"
 "editor/editorInfra.cpp"
 "editor/editorTerrainStreamer.cpp"
 "editor/editorOrthophoto.cpp"
+"editor/editorPhotoRules.cpp"
 "editor/editorHttp.cpp"
 "editor/editorNmt.cpp"
 "editor/editorGeoMap.cpp"
@@ -227,6 +254,8 @@ set(SOURCES
 "application/editormoderoute.cpp"
 "application/editormodestraights.cpp"
 "application/editormodelay.cpp"
+"application/editorsetupui.cpp"
+"application/editormodesetup.cpp"
 "application/editormodeswitchplace.cpp"
 "application/editormodetrackgizmo.cpp"
 "application/editormoderecords.cpp"
@@ -248,6 +277,10 @@ set(SOURCES
 "application/editormodeminimap.cpp"
 "application/editormodeinfra.cpp"
 "application/editormodespeed.cpp"
+"application/editormodenorms.cpp"
+"application/editormodemodel.cpp"
+"application/editormodemodelturnout.cpp"
+"application/editormodemodeledit.cpp"
 "application/editormodesrk.cpp"
 "application/editormodekm.cpp"
 "application/editormodejoints.cpp"
@@ -270,6 +303,7 @@ set(SOURCES
 "application/editormodeselftestterrain.cpp"
 "application/editormodeselftestrails.cpp"
 "application/editormodeselftestmonkey.cpp"
+"application/editormodeselftestexpect.cpp"
 "application/scriptedinput.cpp"
 "input/editormouseinput.cpp"
 "application/editoruilayer.cpp"
@@ -278,6 +312,7 @@ set(SOURCES
 "application/scenarioloaderuilayer.cpp"
 "scene/scenenodegroups.cpp"
 "scene/scenelayers.cpp"
+"scene/scenelayercontext.cpp"
 "scene/scenelayerssave.cpp"
 "scene/sceneterrain.cpp"
 "scene/heightmapterrain.cpp"
@@ -471,6 +506,13 @@ file(READ "${EDITOR_ICONS}" EDITOR_ICONS_HEX HEX)
 string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
+# and so is the catalogue of the turnouts, a text file read when it's first needed, see editor/editorSwitchDesign.cpp
+set(EDITOR_TURNOUTS "${CMAKE_SOURCE_DIR}/editor/data/turnouts.txt")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${EDITOR_TURNOUTS}")
+file(READ "${EDITOR_TURNOUTS}" EDITOR_TURNOUTS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_TURNOUTS_HEX "${EDITOR_TURNOUTS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_TURNOUTS_HEX "${EDITOR_TURNOUTS_HEX}")
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_turnouts_txt.inc" CONTENT "${EDITOR_TURNOUTS_HEX}\n")
 
 set (PREFIX "")
 set (SUFFIX "")

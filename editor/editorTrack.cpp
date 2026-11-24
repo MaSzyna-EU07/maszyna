@@ -2568,7 +2568,7 @@ editor_track::route editor_track::route_of(chain const &Chain)
 	return result;
 }
 
-double editor_track::route_speed(route const &Route)
+double editor_track::route_speed(route const &Route, double const Default)
 {
 	std::vector<std::pair<double, double>> speeds;
 	auto total{0.0};
@@ -2583,7 +2583,7 @@ double editor_track::route_speed(route const &Route)
 	for (auto const &[speed, length] : speeds)
 		if ((passed += length) >= total * 0.5)
 			return speed;
-	return 100.0;
+	return Default;
 }
 
 std::vector<editor_track::route_sample> editor_track::sample_route(route &Route, double const Step)
@@ -3176,81 +3176,6 @@ std::optional<editor_track::switch_template> editor_track::template_of(switch_de
 	return entry;
 }
 
-glm::dvec2 editor_track::slip_curve::point(double const Along) const
-{
-	auto const arc = [](glm::dvec2 const &From, double const Heading, double const Radius, double const Length) {
-		if (Radius <= 0.0)
-			return From + glm::dvec2{std::cos(Heading), std::sin(Heading)} * Length;
-		auto const to{Heading + Length / Radius};
-		return From + Radius * glm::dvec2{std::sin(to) - std::sin(Heading), std::cos(Heading) - std::cos(to)};
-	};
-	auto const along{Along - lead};
-	auto result{arc({0.0, 0.0}, 0.0, 0.0, std::min(Along, lead))};
-	if (along > 0.0)
-		result = arc(result, entry, radius, std::min(along, ends));
-	if (along > ends)
-		result = arc(result, heading(lead + ends), middle, std::min(along - ends, between));
-	if (along > ends + between)
-		result = arc(result, heading(lead + ends + between), radius, std::min(along - ends - between, ends));
-	if (along > 2.0 * ends + between)
-		result = arc(result, angle, 0.0, along - 2.0 * ends - between);
-	return result;
-}
-
-double editor_track::slip_curve::heading(double const Along) const
-{
-	if (Along < lead)
-		return 0.0;
-	if (Along > length() - lead)
-		return angle;
-	auto const along{Along - lead};
-	auto const inside{std::clamp(along - ends, 0.0, between)};
-	return entry + (std::min(along, ends) + std::max(0.0, along - ends - between)) / radius + (middle > 0.0 ? inside / middle : 0.0);
-}
-
-double editor_track::slip_curve::tangent() const
-{
-	auto const end{point(length())};
-	return end.x - end.y / std::tan(angle);
-}
-
-double editor_track::slip_curve::offset() const
-{
-	return glm::distance(point(length() * 0.5), glm::dvec2{tangent(), 0.0});
-}
-
-editor_track::slip_curve editor_track::slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead, double const Entry)
-{
-	if (Entry > 0.0 && Angle * 0.5 <= Entry + 1e-6)
-		return slip_of(Radius, Middle, Angle, Pass);
-	auto const make = [&](double const Turn) {
-		return slip_curve{Radius, Radius * Turn, Middle, Middle * (Angle - 2.0 * (Turn + Entry)), Angle, 0.0, Lead, Entry};
-	};
-	if (Middle < 0.0 && Angle >= 1e-6)
-	{
-		// a straight in the middle, as long as the arcs of Radius turning by a half of Angle pass the crossing as near
-		auto low{0.0};
-		auto high{4.0 * Pass / std::tan(Angle * 0.5)};
-		for (int i = 0; i < 60; ++i)
-		{
-			auto const between{(low + high) * 0.5};
-			(slip_curve{Radius, Radius * (Angle * 0.5 - Entry), 0.0, between, Angle, 0.0, Lead, Entry}.offset() > Pass ? high : low) = between;
-		}
-		return {Radius, Radius * (Angle * 0.5 - Entry), 0.0, (low + high) * 0.5, Angle, 0.0, Lead, Entry};
-	}
-	if (Middle <= 0.0 || Angle < 1e-6)
-		return make(Angle * 0.5 - Entry);
-	// the curve passes the crossing nearer as its end arcs turn further, the middle one being flatter
-	auto low{0.0};
-	auto high{Angle * 0.5 - Entry};
-	for (int i = 0; i < 60; ++i)
-	{
-		auto const turn{(low + high) * 0.5};
-		((make(turn).offset() > Pass) == (Middle > Radius) ? low : high) = turn;
-	}
-	return make((low + high) * 0.5);
-}
-
 std::string editor_track::rail_of(TTrack const *Track)
 {
 	if (Track == nullptr || (Track->iCategoryFlag & 15) != 1)
@@ -3283,95 +3208,27 @@ std::vector<editor_track::switch_template> editor_track::standard_switch_templat
 		entry->design = static_cast<int>(i);
 		result.push_back(std::move(*entry));
 	}
-	// the slips and crossings of Id-4: the angle comes from the straights clicked, the half length from the crossing to the joint
-	// to a and the label; the slips with the blades outside of the diamond have a straight in the middle of their curves, along which
-	// the near rails touch. The asymmetric slips of Id-4 (1:9/1:7,5, 1:9/1:6,6) are left out, both of their curves being the same here
-	struct slipping
-	{
-		char const *type;
-		char const *name;
-		double radius;
-		double middle;
-		double half;
-	};
-	slipping const slips[] = {
-		{"Rkp", "60E1-190-1:9", 190.0, 0.0, 16.615},
-		{"Rkp", "49E1-190-1:9", 190.0, 0.0, 16.615},
-		{"Rkp", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
-		{"Rkp", "49E1-300-1:9", 300.0, -1.0, 22.639},
-		{"Rkp", "49E1-500-1:9", 500.0, -1.0, 27.693},
-		{"Rkp", "S42-230-1:9,51", 230.0, 0.0, 18.642},
-		{"Rkp", "S42-265-1:10", 265.0, 0.0, 19.192},
-		{"Rkpd", "60E1-190-1:9", 190.0, 0.0, 16.615},
-		{"Rkpd", "49E1-190-1:9", 190.0, 0.0, 16.615},
-		{"Rkpd", "49E1-190-1:6,6", 190.0, -1.0, 17.396},
-		{"Rkpd", "49E1-300-1:9", 300.0, -1.0, 22.639},
-		{"Rkpd", "49E1-500-1:9", 500.0, -1.0, 27.693},
-		{"Rkpd", "49E1-190-1:9 gauge 1524", 190.0, 0.0, 17.420},
-		{"Rkpd", "S42-205-1:9", 205.0, 0.0, 17.591},
-		{"Rkpd", "S42-205-1:9 II", 205.0, 0.0, 18.394},
-		{"Rkpd", "S42-230-1:9,51", 230.0, 0.0, 18.642},
-		{"Rkpd", "S42-230-1:9,51 Ia", 230.0, 0.0, 18.342},
-		{"Rkpd", "S42-265-1:10", 265.0, 0.0, 19.192},
-	};
-	auto const ratio_of = [](std::string const &Name) {
-		auto const at{Name.find("1:")};
-		auto number{Name.substr(at + 2)};
-		std::replace(number.begin(), number.end(), ',', '.');
-		return std::stod(number);
-	};
-	for (auto const &entry : slips)
+	// the slips and crossings of the catalogue (Id-4): the angle comes from the straights clicked, the half length from the crossing to the
+	// joint to a and the label; the slips with the blades outside of the diamond have a straight in the middle of their curves, along
+	// which the near rails touch
+	for (auto const &entry : switch_design::slips())
 	{
 		switch_template slip;
 		slip.double_slip = true;
 		slip.type = entry.type;
 		slip.radius = entry.radius;
 		slip.middle = entry.middle;
-		slip.a = entry.half;
-		slip.ratio = ratio_of(entry.name);
-		slip.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
-		slip.label = std::string{entry.type} + ' ' + entry.name + format("  a %.3f", entry.half) + (slip.type == "Rkp" ? " single slip" : " double slip") +
-		             (entry.middle < 0.0 ? ", the blades outside of the diamond" : "") +
-		             (slip.type == "Rkp" ? " (click at a crossing of two straights, on the side of the joined tracks, or drag it out on a straight)" : " (click at a crossing of two straights, or drag it out on a straight)");
+		slip.a = entry.a;
+		slip.ratio = entry.ratio;
+		slip.rail = entry.rail;
+		// the name of the catalogue after its type, which the label puts before it
+		auto const name{entry.name.starts_with(entry.type + ' ') ? entry.name.substr(entry.type.size() + 1) : entry.name};
+		if (slip.type == "Skrz")
+			slip.label = std::string{"Skrz "} + name + format("  a %.3f", entry.a) + " crossing (click at a crossing of two straights, or drag it out on a straight)";
+		else
+			slip.label = slip.type + ' ' + name + format("  a %.3f", entry.a) + (slip.type == "Rkp" ? " single slip" : " double slip") + (entry.middle < 0.0 ? ", the blades outside of the diamond" : "") +
+			             (slip.type == "Rkp" ? " (click at a crossing of two straights, on the side of the joined tracks, or drag it out on a straight)" : " (click at a crossing of two straights, or drag it out on a straight)");
 		result.push_back(slip);
-	}
-	struct crossing
-	{
-		char const *name;
-		double half;
-	};
-	crossing const crossings[] = {
-		{"60E1-1:9", 16.615},
-		{"60E1-1:4,444", 10.907},
-		{"49E1-1:2,9008", 6.904},
-		{"49E1-1:3,224", 7.920},
-		{"49E1-1:3,683", 9.881},
-		{"49E1-1:4,44", 10.907},
-		{"49E1-1:6,6", 17.396},
-		{"49E1-1:7,5", 18.512},
-		{"49E1-1:9", 16.615},
-		{"49E1-1:9 long", 17.016},
-		{"49E1-1:18,5", 32.409},
-		{"S42-1:2", 5.743},
-		{"S42-1:2,9008", 8.250},
-		{"S42-1:3,429", 9.681},
-		{"S42-1:3,43", 8.421},
-		{"S42-1:4,44", 11.788},
-		{"S42-1:4,444 gauge 1524", 12.189},
-		{"S42-1:7", 12.932},
-		{"S42-1:9", 17.591},
-		{"S42-1:10", 19.192},
-	};
-	for (auto const &entry : crossings)
-	{
-		switch_template plain;
-		plain.double_slip = true;
-		plain.type = "Skrz";
-		plain.a = entry.half;
-		plain.ratio = ratio_of(entry.name);
-		plain.rail = std::string{entry.name}.substr(0, std::string{entry.name}.find('-'));
-		plain.label = std::string{"Skrz "} + entry.name + format("  a %.3f", entry.half) + " crossing (click at a crossing of two straights, or drag it out on a straight)";
-		result.push_back(plain);
 	}
 	return result;
 }
@@ -3482,7 +3339,7 @@ TTrack *editor_track::create_switch(switch_template const &Template, std::vector
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
 	// the rails of the style on both paths, its ballast under the switch
-	text << "switch " << Template.length << " 1.435 0.15 10 20 0 flat vis " << Style.rail << " 6 " << Style.rail << " 0.2 0.5 1.1 ";
+	text << "switch " << Template.length << ' ' << Style.gauge << " 0.15 10 20 0 flat vis " << Style.rail << " 6 " << Style.rail << " 0.2 0.5 1.1 ";
 	write_points(text, Paths[0]);
 	write_points(text, Paths[1]);
 	text << "trackbed " << Style.ballast << ' ';
@@ -3922,7 +3779,7 @@ TTrack *editor_track::create_path(path_style const &Style, segment_data const &P
 	std::ostringstream text;
 	text.precision(std::numeric_limits<double>::digits10);
 	auto const length{glm::distance(Path.points[segment_data::point::start], Path.points[segment_data::point::end])};
-	text << "normal " << length << " 1.435 0.15 25 20 0 flat vis " << Style.rail << " 6 " << Style.ballast << " 0.2 0.5 1.1 ";
+	text << "normal " << length << ' ' << Style.gauge << " 0.15 25 20 0 flat vis " << Style.rail << " 6 " << Style.ballast << " 0.2 0.5 1.1 ";
 	write_points(text, Path);
 	if (Style.velocity > 0.0)
 		text << "velocity " << Style.velocity << ' ';

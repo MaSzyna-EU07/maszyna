@@ -1,0 +1,19 @@
+# PR #450: deleting a track of the line open in the route tool keeps the laying norms. They went back to the defaults,
+# and every later lay, extend and join used those.
+# a1, a2, a3: straights joined one after another
+wait 5
+expect norms gauge 1500
+# the line of a2 opened in the route tool, the rail axes distance of its norms set to 1000 mm there
+routegauge 1000 a2
+expect route a2 in
+expect norms gauge 1000
+deletetrack a2
+expect track a2 removed
+# the line is let go of, the norms stay
+expect route a1 out
+expect norms gauge 1000
+# a track laid on from the end the delete left free is laid to them
+lay a1 end 0 160
+expect joint a1 end 0.001 0.01 1
+expect norms gauge 1000
+quit

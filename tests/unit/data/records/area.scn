@@ -1,0 +1,5 @@
+// //$z: the area the orthophoto and the terrain model are downloaded in, as editor_records::area_lines() writes it
+//$z # the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing
+//$z point 645000.00 512000.00
+//$z point 646000.00 512000.00
+//$z point 646000.50 513000.25

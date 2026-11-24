@@ -112,7 +112,7 @@ void editor_mode::route_reset()
 	design.norms = route.design.norms;
 	design.shape = route.design.shape;
 	design.transition_pieces = route.design.transition_pieces;
-	design.speed = chain.velocity > 0.0 ? chain.velocity : 100.0;
+	design.speed = chain.velocity > 0.0 ? chain.velocity : setup_now().speed;
 	route.design = design;
 	route_bind_ends();
 	design = route.design;
@@ -252,6 +252,10 @@ alignment::vertex editor_mode::route_vertex_of(editor_track::curve const &Curve)
 bool editor_mode::route_load(TTrack &Track)
 {
 	m_route.designed = 0;
+	// a line of the model: its curves as the model has them, applied as its commands
+	if (auto const *managed{model_track(&Track)})
+		return route_from_model(managed->line);
+	model_plan_drop();
 	if (false == (m_route.single ? route_from_curve(Track) : route_from_line(Track)))
 		return false;
 	route_read_stored(Track);
@@ -373,7 +377,7 @@ void editor_mode::render_route_stored()
 		route.status = STR_C("The kept design is loaded, applying it lays the paths by it again");
 	}
 	item_tooltip("Loads the design kept in the scenery in place of the one read from the paths; nothing changes until it's applied");
-	ImGui::SameLine();
+	same_line_if_fits(STR_C("Forget the kept design"));
 	if (ImGui::SmallButton(STR_C("Forget the kept design")))
 	{
 		alignment_store::forget(route.departed);
@@ -659,7 +663,15 @@ bool editor_mode::route_from_line(TTrack &Track)
 void editor_mode::route_apply()
 {
 	m_route.error.clear();
+	if (model_plan_apply())
+		return;
+	// old tracks made a line of the model, with the editing on the model
+	std::string oldway;
+	if (model_plan_convert(oldway))
+		return;
 	route_lay();
+	if (false == oldway.empty())
+		m_route.status += (m_route.status.empty() ? "" : "\n") + oldway;
 	if (false == m_route.error.empty())
 		refused(m_route.error);
 }
@@ -1404,6 +1416,8 @@ void editor_mode::draw_route_overlay() const
 		}
 		drawlist->AddText(ImVec2(screen.x + 9.0f, screen.y - 18.0f), overlay_color::marked, format("W%d", i + 1).c_str());
 	}
+	// a handle of a line of the model dragged: the line as the model lays it, its norms by the mouse
+	draw_model_plan_preview();
 	// the points clicked when the line was laid, in the colours of their departure; how far each is, along the curve in focus
 	for (std::size_t i = 0; i < route.clicks.size() && i < route.click_states.size(); ++i)
 	{
@@ -1468,7 +1482,7 @@ void editor_mode::render_route_trace()
 		route_trace_end(true);
 	if (ImGui::Button(STR_C("Drop   Esc")))
 		route_trace_end(false);
-	ImGui::SameLine();
+	same_line_if_fits(STR_C("Take out the last point   Backspace"));
 	ImGui::BeginDisabled(trace.points.empty());
 	if (ImGui::Button(STR_C("Take out the last point   Backspace")))
 	{
@@ -1611,6 +1625,7 @@ void editor_mode::render_route_gizmo()
 				vertex.radius = std::max(10.0, std::round(distance / secant));
 		}
 		route_update();
+		model_plan_preview();
 		return;
 	}
 	auto &vertex{route.design.vertices[route.vertex]};
@@ -1625,6 +1640,7 @@ void editor_mode::render_route_gizmo()
 			vertex.position = point;
 	}
 	route_update();
+	model_plan_preview();
 }
 
 void editor_mode::render_route_ui()
@@ -1637,9 +1653,11 @@ void editor_mode::render_route_ui()
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextDisabled(STR_P("%zu path, %.2f m", "%zu paths, %.2f m", route.chain.tracks.size()), route.chain.tracks.size(), route.chain.length);
+
 	auto const reset{STR_C("Reset design")};
 	auto const reset_width{ImGui::CalcTextSize(reset).x + ImGui::GetStyle().FramePadding.x * 2.0f};
-	ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - reset_width));
+	same_line_if_fits(reset_width);
+	ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - reset_width));
 	if (ImGui::Button(reset))
 	{
 		auto *track{route.chain.tracks[route.chain.tracks.size() / 2]};
@@ -1647,6 +1665,13 @@ void editor_mode::render_route_ui()
 		return;
 	}
 	item_tooltip("Reads the curves of the line from the scenery again, dropping the changes not applied");
+	// a line of the model: what its last command came to, its split, join and delete
+	if (model_plan_line() != layout::line_id::none)
+	{
+		render_model_plan();
+		if (route.chain.tracks.empty())
+			return;
+	}
 	auto changed{render_route_band()};
 	render_route_trace();
 	render_route_stored();
@@ -1670,7 +1695,7 @@ void editor_mode::render_route_ui()
 			return;
 		}
 		item_tooltip("Every line of the scenery not digitized yet is kept in it with its straights, arcs and transition curves, the way the drawn tracks are kept; the paths stay as they are");
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Digitize the scenery"));
 		if (ImGui::Button(STR_C("Digitize the scenery")))
 		{
 			digitize_scenery(true);
@@ -2050,7 +2075,7 @@ bool editor_mode::render_route_vertices()
 	{
 		ImGui::Checkbox(STR_C("Keep to the points clicked"), &m_route.hold);
 		item_tooltip("The scenery keeps the points clicked when the line was laid: a curve whose transitions or cants are changed gets its radii fitted to them again, so it stays where it was seen on the photo");
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Fit all to them"));
 		if (ImGui::SmallButton(STR_C("Fit all to them")))
 		{
 			for (int i = 0; i < count; ++i)
@@ -2132,7 +2157,7 @@ bool editor_mode::render_route_vertex(int const Index)
 			mark(part::whole, 0);
 			if (clicked >= 3)
 			{
-				ImGui::SameLine();
+				same_line_if_fits(STR_C("Fit to them"));
 				if (ImGui::SmallButton(STR_C("Fit to them")))
 					changed |= route_hold_clicks(Index);
 				item_tooltip("The radii of the curve and their shares fitted again to the points clicked, the transitions and the cants as they are");
@@ -2294,7 +2319,7 @@ bool editor_mode::render_route_vertex(int const Index)
 		}
 		if (false == vertex.spirals)
 		{
-			ImGui::SameLine();
+			same_line_if_fits(STR_C("Transitions for these cants"));
 			if (ImGui::SmallButton(STR_C("Transitions for these cants")))
 				reshape([&] { alignment::norm_transitions(vertex, design.speed, design.norms); });
 			item_tooltip("The transition curves as long as the norms ask for at these radii and cants, the cants staying: a cant lowered asks for longer ones");

@@ -201,13 +201,6 @@ std::string explain(verdict const &Verdict, options const &Options)
 	return text;
 }
 
-double suggested(double const Safe)
-{
-	if (Safe >= 40.0)
-		return std::floor(Safe / 10.0) * 10.0;
-	return std::max(5.0, std::floor(Safe / 5.0) * 5.0);
-}
-
 double path_velocity(TTrack const &Track, int const Path)
 {
 	auto const velocity{editor_track::velocity(Track)};

@@ -53,7 +53,7 @@ http://mozilla.org/MPL/2.0/.
 
 editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &command, std::istringstream &words)
 {
-	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey})
+	for (auto const group : {&editor_mode::selftest_scene, &editor_mode::selftest_sleepers, &editor_mode::selftest_sweep, &editor_mode::selftest_track, &editor_mode::selftest_switch, &editor_mode::selftest_rails, &editor_mode::selftest_join, &editor_mode::selftest_signal, &editor_mode::selftest_terrain, &editor_mode::selftest_props, &editor_mode::selftest_monkey, &editor_mode::selftest_model, &editor_mode::selftest_setup, &editor_mode::selftest_expect})
 		if (auto const result{(this->*group)(command, words)}; result != selftest_result::unhandled)
 			return result;
 	for (auto *tool : m_tools)
@@ -82,6 +82,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        centre), top (origin, bottom, top, edge), mode (bend, repeat), step,
 //                                        length (original, all, or metres), from, to, widen (0, 1), face (0, 1), tilt (0, 1)
 //   selectmodel <x> <z>                  the model instance nearest the point
+//   bankpick <index>                     the template of the node bank at the index (the headers of its groups left out) clicked
 //   bend <key>=<value>...                the selected model bent along a track: track (index on the list), axis (auto, z, x),
 //                                        turned (0, 1), along (start, origin, middle, end, point), side (origin, near, far,
 //                                        middle, point), height (origin, bottom, top, edge, point), point=<x>,<y>,<z>,
@@ -123,7 +124,10 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   terrainfill <palette entry> <blur> <rotation> <x> <z> <x> <z> <x> <z>...   the area outlined filled, as the fill tool does it
 //   terrainturn <palette entry> <degrees>  the textures of the palette entry turned
 //   terrainwater <index> <material> [size]    material and repeat of a body of water; terrainwaterdefault <material>
-//   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given
+//   orthophoto <north> <east> <radius> <fit 0|1> [in scene 0|1]   the imagery layer on, placed and fitted as given; orthophoto off: turned
+//                                        off as the user does it, for the scenery; orthophoto forget: what the editor keeps of the photo of
+//                                        the scenery (whether it's on, its origin) forgotten
+//   toolbar <key|name>                   the button of the toolbar of the field of work with the key or the name clicked (toolbar ~: the photo)
 //   orthoarea <x> <z>... | clear         the download area through the points of the world, as drawn on the map; orthoareapause 0|1
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
@@ -151,6 +155,9 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        a line of known curves, the points along them clicked as a curve traced, the line they make logged
 //   laychain <layout> <R> <x> <z> | b | u | r | e | t | p...   the points clicked, Backspace, undo, redo, Enter, Tab, the line logged
 //   joints <x> <z>...                    the joints check over the scenery, the issues around the points logged, every issue with free ends without points
+//   normsreport <file> [scope 0|1] [plk|tsi|en|ch] [km/h]   the tracks checked against the norms of the profile, the line through the
+//                                        selected path (0) or the whole scenery (1), the speed of the line class where the tracks have none:
+//                                        the report written to the file, its counts logged
 //   route <x> <z> <single 0|1>          the route design of the path nearest the point, a curve or the whole line
 //   routevertex <i> <R> <L in> <L out> <cant>, routearc <i> <R> <L> <share>, routeshare <i> <share>, routekm <km>
 //   routeapply, routetake                as the buttons of the route design do it
@@ -159,6 +166,8 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   splitkind <kind>, nudgekind <kind> <dx> <dz>   the first path over an element of the kind split in two, or moved
 //   switchplace <template> <x> <z> <direction> <side>   the catalogue template whose label starts so put into the straight
 //                                        nearest the point, or into the curve (switchcurve); slipplace <template> <x> <z>
+//   switchslide <name|selected> <metres|back|ahead>   the switch moved along its straight or the curve it's bent into, as dragged
+//   switchreplace <name|selected> <template>   the switch given the catalogue template whose label starts so, as the inspector gives it
 //   switchpieces <R> <n> [name]          logs the diverging path made of pieces of each switch: length, the arc R of 1:n against the axis
 //   switchbreak [name]                   the first piece of the diverging path moved off its neighbour, the switch committed
 //   switches                             logs the switches kept in the scenery and the speed of each diverging track
@@ -173,7 +182,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   mouse <x> <y>, mouseat <x> <y> <z>   the cursor moved to the point of the window, or to where the point of the scene is seen, as the mouse moves it
 //   glide <x> <y> <z> <steps> <frames> [shot]   the cursor led to where the point is seen in steps, frames apart, a screenshot after each step with shot
 //   button <left|right|middle> <press|release>, wheel <offset>   the buttons and the wheel of the mouse, with the keys held
-//   press <key>, release <key>, tap <key>   a key held, let go, or both (ctrl, shift, alt, esc, enter, backspace, del, space, tab, a..z, 0..9, f1..f12)
+//   press <key>, release <key>, tap <key>   a key held, let go, or both (ctrl, shift, alt, esc, enter, backspace, del, space, tab, grave (~), a..z, 0..9, f1..f12)
 //   softcursor <0|1>                     the cursor drawn into the picture, for screenshots
 //   type <text>                          the characters typed into the text field with the focus
 //   screenshot
@@ -188,6 +197,9 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   turntables                           the height of each turntable and of the model in its pit, and the heights of the tracks running up
 //                                        to it out along their lines from the rim, against the model there
 //   nmtstate                             logs how far the tracks going onto the terrain model are
+//   nmtquestion <open|flat|restore>      the terrain of a new scenery offered as the first L offers it (loaded in the background where the
+//                                        scenery is placed, the line in the panel of the laying), or gone without as its button does;
+//                                        restore: the terrain made by itself as it was before that answer, which leaves the settings be
 //   gradelines <file>                    the grade line each track shares written to the file, for a map of them
 //   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
 //   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back
@@ -208,7 +220,63 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   rideahead, rideprobe, rideleave      logs the switch ahead from its blades / logs the place of the ride / ends the ride
 //   minimap <0|1|2>, stations            the minimap shown or hidden (2: the whole scenery in it) / logs the stations the W4 name with their stops
 //   station <text>, minimapclick <x> <z> the camera to the next stop of the station whose name holds the text / as a click on the map there
-//   quit
+//   trackcant <track> <path> <start mm> <end mm>   the cant typed into the field of the inspector: the tracks joined at the ends follow,
+//                                        in the same undo step
+//   routegauge <mm> [track]              the rail axes distance of the norms set as the route tool sets it, the line of the track opened in
+//                                        it first unless it's open already
+//   tracksetdelete <name>...             the tracks made the set, one too, and deleted as Del deletes the set
+//   mark <label> <track> <start|end>     the height of the end of the first path kept, for expect lift
+//   expect cant <track> <start|end> <mm> <tolerance mm>   the cant at the end of the first path, as the inspector shows it
+//   expect joint <track> <start|end> <gap m> <angle deg> <cant step mm>   the end of the first path against the end of another track
+//                                        nearest to it within 1 m: the gap, the kink and the step of the cant between them, each at most
+//   expect records <name> <count> [kind] the records of the switch store of the name, with the connections having the switch among theirs
+//   expect shaped <switch> <yes|no>      the switch keeps the shape its record says, or was bent out of it
+//   expect speed <track> <km/h> [tolerance], expect gauge <track> <m> [tolerance]   as editor_track::velocity gives it / the gauge
+//   expect track <name> <present|removed>
+//   expect route <track> <in|out>        the track is a part of the line open in the route tool, or not
+//   expect norms gauge <mm> [tolerance]  the rail axes distance of the norms the tracks are laid to
+//   expect findings <note|warning|block|any> <least> <most>   how many of the tier the last check of the norms found (normsreport)
+//   expect height <track> <start|end> <m> <tolerance>   the height of the end of the first path
+//   expect lift <track> <start|end> <label> <m> <tolerance>   how far the end of the first path is above the height marked
+//   expect includes <track> <count>      the includes whose parameters name the track: the model and the events of a turntable
+//   expect status <text>                 the status of the switch tool, as its panel shows it, holds the text (the rest of the line)
+//   expect statuslacks <text>            the status of the switch tool doesn't hold the text
+//   expect refusal <holds|lacks> <text>  what the cursor tells while it's shown holds the text, or doesn't
+//   expect statusline <holds|lacks> <text>   the status line of the editor holds the text, or doesn't
+//   expect laycursor <x> <z> <tolerance> the point the line of the lay tool goes to from its last point, in the plan
+//   expect terrain <grow|area|prompt> <0|1>   the terrain model made under the tracks as they're laid / around the camera within the
+//                                        download area / the question of the terrain open
+//   expect laypanel <ready|clicking|laid|extending> <shown|folded>   the state of the panel of the lay tool, as its step tells it, and
+//                                        whether its settings are shown or folded to the line of their summary
+//   expect switchpanel <ready|dragging|placed|selected>   the state of the panel of the switch tool, as its step tells it
+//   expect steps <count>                 the steps of the history Ctrl+Z takes back, the ones made together counted once
+//   modelediting <0|1>                   the editing on the model on or off for the run (the setting isn't kept); then a track may be named
+//                                        @<line>.<index>, the track of the line of the model at the index from its start
+//   modelplan <track>, routeradius|routecant <vertex> <value>, routemove <vertex> <x> <z>   the route design opened on the line of the
+//                                        track, a field of a curve typed into, a vertex moved
+//   modelsplit <m>, modeljoin <x> <z> <x> <z>, modeldelete   the line of the model open in the route design split at the distance from
+//                                        its start, its free end at the first point joined to the free end of another line nearest the
+//                                        second, deleted; modelselect|modeldel <track>: selected, deleted as Del deletes it;
+//                                        modelrename <track> <name>: renamed as the inspector renames it
+//   modelwait, modelanswer <yes|no>      until the scenarios of the map are looked through / the window asking answered
+//   modelmark <label>, modeltracks       the network of the model kept for expect modelsame / the lines and their tracks logged
+//   expect managed <track> <line|none|any>, expect modellines <count>, expect projectfile <present|absent|lines <count>>,
+//   expect modelends, expect modelrefused <0|1>, expect modelmessage <holds|lacks> <text>, expect modelvertex <line> <index>
+//   <radius|in|out|cant> <value>, expect modelsame <label>, expect hand <line> <0|1>, expect question <none|hand|waiting|scenarios> [what]
+//                                        the editing on the model (editormodemodel.cpp, tests/editor/README.md)
+//   modelturnoutside <track>, modelgrade <track> <m> <height> <vertical radius>, modelvertexadd <m>, modelvertexdel <index>   a turnout
+//                                        given the other side, a break of the grade line put in the profile and applied, a curve added
+//                                        to the line open in the route design or taken out (E4b)
+//   expect handlines <count>, expect modelnodes <count>, expect modelproposal <holds|lacks> <text>, expect modelgrades|modelvertices
+//   <line> <count>, expect modelvertexat <line> <index> <x> <z> <tolerance>, expect modelpreview <shown|none>, expect modelspacing
+//   <line> <other> <m> <low> <high>      the editing on the model of E4b (editormodemodel.cpp, tests/editor/README.md)
+//                                        each expect logs SELFTEST PASS or SELFTEST FAIL; a failed one, or a command no group takes,
+//                                        makes the run end with editor_selftest::failed_exit_code
+//   setup [<key> <value>]..., setupwindow [close]   the assumptions of the project set as the Start of their card sets them, the keys
+//                                        of their record over the ones there are (norms, speed, traffic, track, gauge, rail); their window
+//   expect setup none|<key> <value>, expect setupmark <present|absent>   the assumptions of the scenery, their line in it (editormodesetup.cpp)
+//   expect layspeed <km/h>               the speed the lay tool lays at
+//   quit                                 logs SELFTEST result: <failed> failed of <expectations>, the editor closes
 void editor_mode::selftest_step()
 {
 	auto &test{m_selftest};
@@ -221,8 +289,13 @@ void editor_mode::selftest_step()
 		std::ifstream stream(file);
 		std::string line;
 		while (std::getline(stream, line))
-			if (false == line.empty() && line.front() != '#')
-				test.lines.push_back(line);
+		{
+			// an indented comment or a line of blanks is no command either
+			auto const first{line.find_first_not_of(" \t\r")};
+			if (first == std::string::npos || line[first] == '#')
+				continue;
+			test.lines.push_back(line.substr(first));
+		}
 		WriteLog("SELFTEST: " + std::to_string(test.lines.size()) + " steps from " + file);
 	}
 	++editor_selftest::frames();
@@ -262,7 +335,8 @@ void editor_mode::selftest_step()
 			words >> test.wait;
 			return;
 		}
-		if (auto const result{selftest_dispatch(command, words)}; result == selftest_result::pause || result == selftest_result::again)
+		auto const result{selftest_dispatch(command, words)};
+		if (result == selftest_result::pause || result == selftest_result::again)
 		{
 			if (result == selftest_result::again)
 				--test.next;
@@ -272,6 +346,7 @@ void editor_mode::selftest_step()
 		{
 			if (false == test.quitting)
 			{
+				WriteLog(format("SELFTEST result: %zu failed of %zu", editor_selftest::failures(), editor_selftest::expectations()));
 				WriteLog("SELFTEST done");
 				test.quitting = true;
 				test.wait = 30;
@@ -280,6 +355,13 @@ void editor_mode::selftest_step()
 			}
 			Application.queue_quit(true);
 			return;
+		}
+		// a command no group took does nothing: a script mistyped, whose expectations after it would pass for nothing
+		if (result == selftest_result::unhandled)
+		{
+			++editor_selftest::expectations();
+			++editor_selftest::failures();
+			WriteLog("SELFTEST FAIL " + command + ": no group took the command");
 		}
 	}
 }

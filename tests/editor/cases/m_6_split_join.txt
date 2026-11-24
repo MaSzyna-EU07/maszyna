@@ -1,0 +1,34 @@
+# Editing on the model (E4a): split, join and delete of the lines of the model from the route design, each a command of the model and a
+# step of the history. Two straights on one line apart (x 800, z -300..0 and 300..600) joined into one with a straight between them;
+# the one in the middle split and deleted
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 0
+wait 2
+layclicks 0 600 800 300 800 600
+wait 2
+expect modellines 2
+modelplan @1.0
+modeljoin 800 0 800 300
+wait 2
+expect modelrefused 0
+expect modellines 3
+expect managed @3.0 3
+expect modelends
+expect steps 3
+modelplan @3.0
+modelsplit 150
+wait 2
+expect modellines 4
+expect modelends
+modelplan @3.0
+modeldelete
+modelwait
+wait 2
+expect modellines 3
+expect steps 5
+undo
+wait 2
+expect modellines 4
+expect modelends
+quit

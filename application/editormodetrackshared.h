@@ -102,6 +102,24 @@ inline std::string curve_label(alignment::curve_report const &Curve, alignment::
 	return text + speed_of(curve_sharpest(Curve), Limits);
 }
 
+// the radius of a curve, the radii of a compound one one after another
+inline std::string curve_radii(alignment::curve_report const &Curve)
+{
+	if (Curve.radii.empty())
+		return format("%.0f", Curve.radius);
+	std::string text;
+	for (std::size_t i = 0; i < Curve.radii.size(); ++i)
+		text += format(i == 0 ? "%.0f" : "/%.0f", Curve.radii[i]);
+	return text;
+}
+
+// a curve of the line laid in a few words, for its label in the view: the radius and the speed its sharpest arc lets the trains through at
+inline std::string curve_short(alignment::curve_report const &Curve, alignment::limits const &Limits)
+{
+	auto const speed{std::floor(alignment::speed_limit(curve_sharpest(Curve), Limits) / 5.0) * 5.0};
+	return speed > 0.0 ? format(STR_C("R %s · up to %.0f km/h"), curve_radii(Curve).c_str(), speed) : "R " + curve_radii(Curve);
+}
+
 inline std::string lines_of(std::vector<std::string> const &Texts)
 {
 	std::string text;
