@@ -399,9 +399,11 @@ the row instead, logged by builds from this branch on.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
-- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`: after
-  reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the distances,
-  that stop has to be between them (metres travelled, as in `distance`).
+- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`, `max_time`,
+  `nth`: after reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the
+  distances, that stop has to be between them (metres travelled, as in `distance`), with `max_time`
+  it has to begin by then (seconds of the physicslog). `nth` (default 1) takes a later stop: each
+  stop after the first counts once the train has reached `moving_speed` again.
 - `stays_stopped` `moving_speed`, `stop_speed`: after moving off and stopping, never goes
   above `stop_speed` again.
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the

@@ -29,6 +29,16 @@
       "max_distance": 1700
     },
     {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 2550,
+      "max_distance": 2750,
+      "max_time": 355,
+      "nth": 2
+    },
+    {
       "type": "distance",
       "min": 2550,
       "max": 2750
