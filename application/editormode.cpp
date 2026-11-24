@@ -652,7 +652,7 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 			return true;
 		// asked for, the tile goes onto it once it comes; not where no terrain is to be made of the model, as after the answer without
 		// terrain
-		if (m_nmt.placed() && (m_nmt_state.grow || EditorSettings.terrain_model().area))
+		if (m_nmt.placed() && (m_nmt_state.grow || nmt_area()))
 			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
 		return false;
 	});
@@ -6404,7 +6404,7 @@ void editor_mode::render_ground_warning(tutorial_lesson const &Lesson)
 	// over a panel the pointer is over no ground, and in a scenery laid without terrain no ground is to be there
 	if (Lesson.action != tutorial_lesson::trial::lay || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse || false == ImGui::IsMousePosValid())
 		return;
-	auto const expected{m_streamer.resident() > 0 || ((m_nmt_state.grow || EditorSettings.terrain_model().area) && m_nmt.placed())};
+	auto const expected{m_streamer.resident() > 0 || ((m_nmt_state.grow || nmt_area()) && m_nmt.placed())};
 	if (expected && false == GfxRenderer->Mouse_Hit())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("There is no ground under the mouse: the track will lie flat at height 0. Terrain model: F5"));
 }

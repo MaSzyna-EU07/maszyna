@@ -111,6 +111,19 @@ TEST_CASE("layout turnouts: the ordinary switches of the catalogue are laid, dou
 	CHECK_FALSE(layout::turnout_type_of("Rz 60E1-999-1:99", &why).has_value());
 }
 
+TEST_CASE("layout turnouts: no diverging track is laid from a main track that isn't laid") {
+	auto const type{layout::turnout_type_of("Rz 60E1-300-1:9")};
+	REQUIRE(type.has_value());
+	// a frame left as it is when the main track isn't solved: at the origin, along x
+	layout::turnout_frame frame;
+	frame.heading = {1.0, 0.0};
+	REQUIRE_FALSE(frame.valid);
+	auto const laid{layout::lay_diverging(frame, *type, 1)};
+	CHECK_FALSE(laid.valid());
+	REQUIRE_FALSE(laid.errors.empty());
+	CHECK(laid.errors.front().find("main track isn't laid") != std::string::npos);
+}
+
 TEST_CASE("layout turnouts: the legs on a straight against the catalogue: the main track a + b, the centre at a, the diverging end at 1:n") {
 	for (auto const *name : {"Rz 60E1-190-1:9", "Rz 60E1-500-1:12", "Rz 60E1-1200-1:18,5", "Rz 49E1-500-1:14"}) {
 		for (auto const hand : {1, -1}) {
@@ -335,7 +348,8 @@ TEST_CASE("layout turnouts: moved along its line, changed, taken out with the li
 		auto const &again{model.state().lines().begin()->second.solved};
 		auto const &original{whole.find(line)->solved};
 		CHECK(again.length == doctest::Approx(original.length).epsilon(1e-12));
-		for (double s = 0.0; s <= original.length; s += 3.7) {
+		for (int i{0}; i * 3.7 <= original.length; ++i) {
+			auto const s{i * 3.7};
 			CAPTURE(s);
 			CHECK(glm::distance(again.point(s), original.point(s)) < 1e-6);
 			CHECK(std::abs(again.cant_at(s) - original.cant_at(s)) < 1e-6);
@@ -481,7 +495,8 @@ TEST_CASE("layout commands: a line joined to a free end in a curve goes on from 
 	REQUIRE(link.shape.vertices.size() == 1);
 	CHECK(link.shape.vertices.front().radius == doctest::Approx(800.0));
 	CHECK(link.shape.vertices.front().transition_out == doctest::Approx(transition).epsilon(1e-6));
-	for (double s = 0.0; s <= link.solved.length; s += 5.0) {
+	for (int i{0}; i * 5.0 <= link.solved.length; ++i) {
+		auto const s{i * 5.0};
 		CAPTURE(s);
 		CHECK(glm::distance(link.solved.point(s), original.point(at + s)) < 1e-6);
 	}
@@ -557,7 +572,7 @@ std::vector<std::string> const kTypes{"Rz 60E1-190-1:9", "Rz 60E1-300-1:9", "Rz 
 // out, splits, joins, deletions), undoing and redoing; after each the invariants, a refusal changing nothing, an undo giving the state
 // before. Policy: of the norms; with no_new_block the network starts from one breaking them and no BLOCK finding is added
 void random_turnout_edits(unsigned const Seed, int const Count, layout::edit_policy const Policy = layout::edit_policy::refuse_block) {
-	std::mt19937 random{Seed};
+	std::mt19937 random{Seed}; // NOSONAR: seeded for repeatable tests, nothing secret is drawn
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
 	auto const pick = [&](std::size_t const Size) { return std::uniform_int_distribution<std::size_t>{0, Size - 1}(random); };
 	layout::model model;

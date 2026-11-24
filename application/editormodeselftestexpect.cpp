@@ -189,6 +189,24 @@ void expect_records(std::string const &What, std::istringstream &Words)
 	expectation(count == wanted, What, std::to_string(count), std::to_string(wanted));
 }
 
+// expect shaped <switch> <yes|no>: the switch keeps the shape its record says, or was bent out of it
+void expect_shaped(std::string const &What, std::istringstream &Words)
+{
+	std::string name;
+	std::string wanted;
+	Words >> name >> wanted;
+	if (malformed(What, Words))
+		return;
+	auto const *track{simulation::Paths.find(name)};
+	if (track == nullptr || track->m_editorremoved)
+	{
+		expectation(false, What, "no track " + name, "a switch");
+		return;
+	}
+	auto const shaped{switch_store::of(*track).has_value()};
+	expectation(shaped == (wanted == "yes"), What, shaped ? "yes" : "no", wanted);
+}
+
 // expect speed <track> <km/h> [tolerance], expect gauge <track> <m> [tolerance]
 void expect_track_value(std::string const &What, std::string const &Kind, std::istringstream &Words)
 {
@@ -543,6 +561,8 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_joint(what, words, &editor_mode::cant_of_roll);
 	else if (kind == "records")
 		expect_records(what, words);
+	else if (kind == "shaped")
+		expect_shaped(what, words);
 	else if (kind == "speed" || kind == "gauge")
 		expect_track_value(what, kind, words);
 	else if (kind == "track")
@@ -564,13 +584,13 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 	else
 	{
 		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
-		                  {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}, tool_name(ui()->mode()),
+		                  {{"grow", m_nmt_state.grow}, {"area", nmt_area()}, {"prompt", m_nmt_state.prompt}}, tool_name(ui()->mode()),
 		                  {{"shortcuts", m_shortcuts_open}, {"settings", m_settings_open}, {"weather", m_environment_open}, {"orthophoto", m_orthophoto_window}}, std::nullopt};
 		if (m_node != nullptr)
 			shown.selected = m_node->location();
 		if (false == expect_shown(kind, what, words, shown))
 			expectation(false, what, "no expectation " + kind,
-			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, selected or steps");
+			            "cant, joint, records, shaped, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, selected or steps");
 	}
 	return selftest_result::handled;
 }

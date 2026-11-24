@@ -61,7 +61,7 @@ std::vector<marked_file> marked_files(std::filesystem::path const &Folder, std::
 struct opened
 {
 	read_result project;
-	bool migrated{false}; // there was no project file: it was made of the //$ lines and written
+	bool migrated{false}; // there was no project file: it was made of the //$ lines and written; with none of them, nothing is written
 	std::vector<std::string> notes;
 };
 // the project of the map: its file read, or made of the //$ lines of the files of the map where there's none yet and written next to it;

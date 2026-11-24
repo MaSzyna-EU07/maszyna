@@ -149,16 +149,15 @@ TEST_CASE("norms report: the cant of a curve laid by the editor leans into it, b
 				}
 			}
 			CHECK(curved > 50);
-			// so at 80 km/h the arc falls short by 11.8 V^2 / R - 80 mm, not by more
+			// so at 90 km/h the arc falls short by 11.8 V^2 / R - 80 mm, not by more: 159 mm, past the 110 mm of a finding (at 80 km/h
+			// the 108.8 mm would make none, and the check would never run)
 			norms_report::options options;
-			options.line.vmax = 80.0;
+			options.line.vmax = 90.0;
 			options.track_speeds = false;
 			auto const checked{norms_report::check(spans, options)};
-			for (auto const &found : checked.entries) {
-				if (found.finding.what == norms::parameter::cant_deficiency && found.kind == norms::element_kind::arc) {
-					CHECK(found.finding.value == doctest::Approx(11.8 * 80 * 80 / 400.0 - 80.0).epsilon(0.02));
-				}
-			}
+			auto const deficient{std::ranges::find_if(checked.entries, [](auto const &Found) { return Found.finding.what == norms::parameter::cant_deficiency && Found.kind == norms::element_kind::arc; })};
+			REQUIRE(deficient != checked.entries.end());
+			CHECK(deficient->finding.value == doctest::Approx(11.8 * 90 * 90 / 400.0 - 80.0).epsilon(0.02));
 		}
 	}
 }

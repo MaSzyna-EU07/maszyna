@@ -491,9 +491,8 @@ std::vector<marked_file> marked_files(std::filesystem::path const &Folder, std::
 		// the templates (*.inc) are a part of the layer including them, their own lines are the descriptions (//$e)
 		if (scenery_text::lowered(file.name).ends_with(".inc"))
 			continue;
-		std::ifstream input{Folder / file.name, std::ios::binary};
-		std::string const text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-		auto lines{marked_lines(text)};
+		auto const text{scenery_text::file_text(Folder / file.name)};
+		auto lines{marked_lines(text.value_or(std::string{}))};
 		if (lines.empty())
 			continue;
 		result.push_back({file.name, file.context, std::move(lines)});
@@ -505,13 +504,20 @@ opened open_project(std::filesystem::path const &Folder, std::string const &Map,
 {
 	opened result;
 	auto const path{path_of(Folder / Map)};
-	if (std::filesystem::exists(path))
+	if (std::error_code error; std::filesystem::exists(path, error))
 	{
 		result.project = load(path);
 		return result;
 	}
 	auto made{migrate(marked_files(Folder, Map), Areas)};
 	result.notes = std::move(made.notes);
+	// no //$ lines: no file is written next to the map, which would be one more stray file in a working copy of the data. The project,
+	// empty, is written as the editor saves the scenery once it has something
+	if (made.project.network.lines().empty() && made.project.network.nodes().empty())
+	{
+		result.project.project = std::move(made.project);
+		return result;
+	}
 	std::string error;
 	if (false == save(made.project, path, error))
 	{
