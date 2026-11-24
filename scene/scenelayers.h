@@ -12,9 +12,13 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
+
+class TTrack;
 
 namespace scene
 {
@@ -353,6 +357,17 @@ class node_layers
 	// Rootstatements: additional statements to place at the end of the scenario file; Statements: the same for other layers
 	save_result save(std::vector<std::string> const &Rootstatements = {}, std::vector<std::string> const &Trailingstatements = {}, std::map<layer_handle, std::vector<std::string>> const &Statements = {});
 	std::string check_sources() const;
+	// the text a track is saved with in place of its own export, for a track made of what the editor keeps elsewhere (the tracks of the
+	// lines of the track geometry, written as the generator made them): given the track and the offset of the place of the file it goes
+	// to, none for its own export
+	std::function<std::optional<std::string>(TTrack const &Track, glm::dvec3 const &Offset)> path_writer;
+	// where the node is defined: the file and the placement there, since the load or the last save; nullptr for a node made in the editor
+	// and not saved yet
+	node_source const *source(basic_node const *Node) const
+	{
+		auto const found{m_sources.find(Node)};
+		return found != m_sources.end() ? &found->second : nullptr;
+	}
 
   private:
 	// types

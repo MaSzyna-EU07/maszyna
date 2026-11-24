@@ -51,8 +51,15 @@ class editor_ui : public ui_layer
 	{
 		return m_nodebankpanel;
 	}
+	// a template was clicked in the node bank since the last call; the insert tool then inserts it, not a random one of its set
+	bool bank_picked();
 	// rotation settings widgets, for tools drawn by the editor mode
 	void render_rotation_controls();
+	// draws the card of the tool of the surroundings in use on top of its tool options (the cards are drawn by the editor mode)
+	void set_tool_card(std::function<void()> Renderer)
+	{
+		m_toolcard = std::move(Renderer);
+	}
 	// draws the area fill settings in its node bank tab (the fill state lives in the editor mode)
 	void set_fill_options(std::function<void()> Renderer)
 	{
@@ -159,6 +166,12 @@ class editor_ui : public ui_layer
 		m_workspacetools[static_cast<std::size_t>(Workspace)] = std::move(Tools);
 		m_workspaceselection[static_cast<std::size_t>(Workspace)] = std::move(Selection);
 	}
+	// the first steps of the tutorial on top of the inspector outside the track mode, which draws them with its selection; the editor
+	// mode draws them when nothing is selected
+	void set_first_steps(std::function<void()> Renderer)
+	{
+		m_firststeps = std::move(Renderer);
+	}
 	// selection of a node in the scene window; Focus is set when the camera is to fly to it
 	void set_scene_select(std::function<void(scene::basic_node *, bool)> Select)
 	{
@@ -178,6 +191,11 @@ class editor_ui : public ui_layer
 	void set_notice(std::string const &Notice);
 	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back
 	void drop_refusal() { m_refusal.clear(); }
+	// a refusal told by the cursor only, the tool that refused telling it in its own panel: not in the status line as well
+	void set_refusal(std::string const &Refusal);
+	// what the cursor tells while it's shown, and the status line; for the expectations of the self-test
+	std::string refusal_shown() const;
+	std::string const &status_line() const { return m_layerspanel.status; }
 
   private:
 	// methods
@@ -190,6 +208,7 @@ class editor_ui : public ui_layer
 	void scene_rebuild();
 	void scene_row(std::size_t const Entry);
 	void render_menu_contents() override;
+	void render_menus();
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
@@ -221,6 +240,7 @@ class editor_ui : public ui_layer
 	bool m_insertrandom{false}; // insert mode picks a random template from m_insertset
 	model_set_ref m_insertset;
 	std::function<void()> m_filloptions;
+	std::function<void()> m_toolcard;
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
@@ -235,9 +255,11 @@ class editor_ui : public ui_layer
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};
+	bool m_scenefocus{false}; // the scene window brought forward in the next frame
 	std::function<void(scene::basic_node *, bool)> m_sceneselect;
 	std::function<void()> m_tracktools;
 	std::function<void()> m_trackselection;
+	std::function<void()> m_firststeps;
 	int m_toolmode{-1}; // edit mode or field of work the tool options were drawn for the last time
 	workspace m_workspace{workspace::none};
 	std::array<std::function<void()>, static_cast<std::size_t>(workspace::count_)> m_workspacetools;

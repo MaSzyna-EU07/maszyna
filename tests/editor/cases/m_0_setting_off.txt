@@ -1,0 +1,11 @@
+# Editing on the model (E4a), the setting off: a line laid is an old track as before, no project file is written next to the scenery
+# and none of the tracks is a line of the model. The empty ground east of k0..k3 (x 800..1100)
+wait 5
+modelediting 0
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+expect steps 1
+save
+wait 5
+expect projectfile absent
+quit

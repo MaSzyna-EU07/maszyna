@@ -447,6 +447,9 @@ std::string editor_mode::connection_readout(connection::result const &Plan) cons
 
 void editor_mode::insert_connection()
 {
+	// a crossover between two lines of the model: the solver's, a command of the model
+	if (model_connection())
+		return;
 	auto &tool{m_switch};
 	connection::request request;
 	connection::result plan;

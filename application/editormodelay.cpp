@@ -14,6 +14,8 @@ http:
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
+#include "application/editorgestures.h"
+#include "application/editorflow.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -145,7 +147,9 @@ void editor_mode::update_build_tools()
 		m_join_radius = 0.0;
 		m_join_variant = 0;
 	};
-	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
+	// the pointer over a panel points at no ground: the line shown stays as it was, rather than gaining a leg to where the pointer
+	// is under the panel. A drag begun in the view goes on over a panel, the panel doesn't take the mouse then
+	bool const pointing{m_cursor_override.has_value() || (ImGui::IsMousePosValid() && false == ImGui::GetIO().WantCaptureMouse)};
 	if (m_extend.active)
 	{
 		if (pointing)
@@ -189,12 +193,15 @@ void editor_mode::update_build_tools()
 	if (pointing)
 		lay.mouse = typed_lay(cursor_terrain(height));
 	auto const oncursor{lap()};
-	lay.skew.clear();
-	if (pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
-		lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
-	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	if (pointing)
+	{
+		lay.skew.clear();
+		if (ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
+			lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
+		lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	}
 	auto const snapping{lap()};
-	if (lay.mouse_snap.track == nullptr)
+	if (pointing && lay.mouse_snap.track == nullptr)
 		lay.mouse = lay_bed(lay.mouse);
 	auto const bedding{lap()};
 	if (false == m_extend.active)
@@ -500,7 +507,8 @@ void editor_mode::point_drag_start(editor_track::point_ref const &Point)
 	auto *track{selected_track()};
 	m_track_point = Point;
 	m_point_drag = {};
-	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()))
+	// the points of a track of a line of the model aren't dragged by hand: the line is edited in the route design
+	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()) || model_track(track) != nullptr)
 		return;
 	auto const &io{ImGui::GetIO()};
 	m_point_drag.active = true;
@@ -967,6 +975,13 @@ void editor_mode::finish_extend()
 	ui()->set_node(m_node);
 	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	m_nmt_state.laying = false;
+	if (m_lay.active)
+	{
+		double length{0.0};
+		for (auto const &piece : pieces)
+			length += bezier{piece}.plan_length();
+		lay_told(length, created.size());
+	}
 	straight_refresh();
 }
 
@@ -1991,15 +2006,15 @@ void editor_mode::lay_switch_mode()
 	m_track_layout = tool.mode == lay_mode::curve ? track_layout::arc_straight : track_layout::straight;
 	if (tool.mode == lay_mode::curve)
 		first_step_done(first_step::trace);
-	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
-	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
-	tool.status_time = ImGui::GetTime();
+	tool.hint = tool.mode == lay_mode::curve ? STR("Curve traced on the photo, Tab: the straights") : STR("Straights, Tab: a curve traced on the photo");
+	tool.hint_time = ImGui::GetTime();
 }
 
 void editor_mode::lay_click()
 {
 	auto &tool{m_lay};
 	tool.status.clear();
+	tool.laid_now = false;
 	lay_trim();
 	auto const snap{tool.mouse_snap};
 	if (snap.track != nullptr && false == tool.points.empty() && glm::distance(snap.position, tool.points.front()) > 1.0)
@@ -2047,12 +2062,48 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.status_time = ImGui::GetTime();
 	if (pieces.empty())
 	{
+		tool.laid_now = false;
 		tool.status = error.empty() ? std::string{STR_C("Click at least two points")} : error;
 		if (End.track != nullptr && false == tool.points.empty())
 		{
 			tool.points.pop_back();
 			lay_trim();
 		}
+		return;
+	}
+	// with the editing on the model, a line of the model: refused with the reasons, the points kept to be put right, or laid, its tracks
+	// made by the model and marked as its. What it doesn't lay yet is laid the old way, told why
+	std::string oldway;
+	if (std::vector<TTrack *> made; model_lay(plan, End, made, oldway))
+	{
+		if (model_refused() || made.empty())
+		{
+			tool.laid_now = false;
+			tool.status = model_shown();
+			if (End.track != nullptr && false == tool.points.empty())
+			{
+				tool.points.pop_back();
+				lay_trim();
+			}
+			WriteLog("Editor: " + tool.status, logtype::generic);
+			return;
+		}
+		first_step_done(first_step::laid);
+		if (End.track != nullptr)
+			first_step_done(first_step::join);
+		lay_told(length, made.size());
+		tool.status += "\n" + model_shown();
+		for (auto const &notice : model_notices())
+			tool.status += "\n" + notice;
+		m_node = made.back();
+		ui()->set_node(m_node);
+		tool.laid = {made, length, {}};
+		WriteLog("Editor: " + tool.status, logtype::generic);
+		tool.points.clear();
+		tool.modes.clear();
+		tool.start = {};
+		tool.laid_step = m_history.size();
+		straight_refresh();
 		return;
 	}
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
@@ -2078,7 +2129,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		first_step_done(first_step::bend);
 	if (End.track != nullptr)
 		first_step_done(first_step::join);
-	tool.status = format(STR_P("Laid %.1f m of track in %zu piece, Ctrl+Z takes it back", "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back", static_cast<long long>(created.size())), length, created.size());
+	lay_told(length, created.size());
 	if (false == error.empty())
 		tool.status += "\n" + error;
 	if (eased.has_value() && eased->compound)
@@ -2111,8 +2162,15 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
 		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
+	if (false == oldway.empty())
+		tool.status += "\n" + oldway;
 	m_node = created.back();
 	ui()->set_node(m_node);
+	// what was laid, told in the inspector as long as the last track stays selected
+	tool.laid = {created, length, {}};
+	if (plan.shape.valid)
+		for (auto const &curve : plan.shape.curves)
+			tool.laid.curves.emplace_back(format("%d. %s", curve.vertex + 1, curve_label(curve, laying_norms()).c_str()), alignment::meets_norms(curve, plan.design));
 	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
@@ -2121,7 +2179,18 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.points.clear();
 	tool.modes.clear();
 	tool.start = {};
+	tool.laid_step = history_top();
 	straight_refresh();
+}
+
+void editor_mode::lay_told(double const Length, std::size_t const Tracks)
+{
+	auto &tool{m_lay};
+	tool.status = format(STR_P("Laid %.0f m (%zu track) · Ctrl+Z undoes", "Laid %.0f m (%zu tracks) · Ctrl+Z undoes", static_cast<long long>(Tracks)), Length, Tracks);
+	tool.status_time = ImGui::GetTime();
+	tool.laid_now = true;
+	tool.notes_open = false;
+	tool.laid_step = history_top();
 }
 
 void editor_mode::lay_enter()
@@ -2163,6 +2232,8 @@ void editor_mode::lay_cancel()
 	tool.preview.clear();
 	tool.plan = {};
 	tool.status.clear();
+	tool.laid_now = false;
+	tool.settings_open = false;
 }
 
 std::size_t editor_mode::lay_pending() const
@@ -2310,6 +2381,7 @@ void editor_mode::route_drop()
 	auto const norms{m_route.design.norms};
 	m_route = {};
 	m_route.design.norms = norms;
+	m_route.design.speed = setup_now().speed;
 }
 
 alignment::limits editor_mode::laying_norms() const
@@ -2319,80 +2391,310 @@ alignment::limits editor_mode::laying_norms() const
 	return norms;
 }
 
-void editor_mode::render_lay_ui()
+std::uint64_t editor_mode::history_top() const
 {
-	auto &tool{m_lay};
-	// the points clicked are no track until they're laid: said first, with the keys as buttons
-	if (tool.points.size() > 1)
+	return m_history.empty() ? 0 : m_history.back().serial;
+}
+
+editor_mode::lay_state editor_mode::lay_panel_state() const
+{
+	if (m_extend.active)
+		return lay_state::extending;
+	if (false == m_lay.points.empty())
+		return lay_state::clicking;
+	if (m_lay.laid_now && m_lay.laid_step == history_top())
+		return lay_state::laid;
+	return lay_state::ready;
+}
+
+namespace
+{
+
+// the speed an arc lets the trains through at, in steps of 5 km/h as the labels tell it
+double arc_speed(double const Radius, alignment::limits const &Norms)
+{
+	return Radius > 0.0 ? std::floor(alignment::speed_limit(Radius, Norms) / 5.0) * 5.0 : 0.0;
+}
+
+// the length of the pieces and the radius of the sharpest arc among them, the one of the layout eased in its place where there's one
+std::pair<double, double> pieces_measure(std::vector<segment_data> const &Pieces, std::optional<alignment::lay_result> const &Eased)
+{
+	double length{0.0};
+	double radius{0.0};
+	for (auto const &piece : Pieces)
 	{
-		auto const pending{lay_pending()};
-		ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", format(STR_P("Not laid yet: %zu point", "Not laid yet: %zu points", static_cast<long long>(pending)), pending).c_str());
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.22f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.56f, 0.28f, 1.0f));
-		if (ImGui::Button(STR_C("Lay  (Enter)")))
-		{
-			// the cursor is over the panel: no free end under it to join
-			tool.mouse_snap = {};
-			lay_enter();
-		}
-		ImGui::PopStyleColor(2);
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Drop the points")))
-			lay_cancel();
-		item_tooltip("Esc twice does the same");
-		ImGui::Separator();
+		length += bezier{piece}.plan_length();
+		if (auto const r{piece_plan_radius(piece)}; r >= 0.5 && (radius == 0.0 || r < radius))
+			radius = r;
 	}
-	if (int mode{tool.mode == lay_mode::curve ? 1 : 0};
-	    segmented("laymode", mode,
-	              {{0, STR_C("Straights   Tab"), "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"},
-	               {1, STR_C("Curve   Tab"), "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"}}) &&
-	    (mode == 1) != (tool.mode == lay_mode::curve))
-		lay_switch_mode();
-	ImGui::PushItemWidth(120.0f);
-	if (tool.mode == lay_mode::straights)
+	if (Eased.has_value() && false == Eased->pieces.empty())
+		radius = Eased->radius;
+	return {length, radius};
+}
+
+// the leg the cursor draws as a curve: its radius, the speed it lets the trains through at, the sign of a warning where that's below
+// the norms
+std::string curve_leg(std::string const &Radii, double const Speed, bool const Meets)
+{
+	auto text{Speed > 0.0 ? format(STR_C("curve R %s m · up to %.0f km/h"), Radii.c_str(), Speed) : format(STR_C("curve R %s m"), Radii.c_str())};
+	if (false == Meets)
+		text += editor_flow::kWarningMark;
+	return text;
+}
+
+// how far a curve traced is from the points clicked along it: green within 10 cm, yellow within 30 cm, red farther
+ImU32 departure_colour(double const Departure)
+{
+	if (Departure <= 0.1)
+		return IM_COL32(90, 220, 110, 255);
+	if (Departure <= 0.3)
+		return IM_COL32(255, 200, 60, 255);
+	return IM_COL32(255, 90, 70, 255);
+}
+
+std::string first_line(std::string const &Text)
+{
+	return Text.substr(0, Text.find('\n'));
+}
+
+} // namespace
+
+editor_mode::lay_quality editor_mode::lay_quality_now() const
+{
+	auto const &lay{m_lay};
+	auto const norms{laying_norms()};
+	lay_quality quality;
+	auto const [from, to]{laying_ends()};
+	quality.speed = design_speed(from, to);
+	if (false == m_extend.active && lay.plan.shape.valid && false == lay.preview.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
-		ImGui::SameLine();
-		if (ImGui::SmallButton("?##corners"))
+		quality.length = lay.preview_length;
+		quality.speed = lay.plan.design.speed;
+		for (auto const &curve : lay.plan.shape.curves)
 		{
-			m_first_steps_open = true;
-			m_tutorial_goto = "Radius of the curves at the bends";
+			auto const speed{arc_speed(curve_sharpest(curve), norms)};
+			quality.slowest = quality.curves == 0 ? speed : std::min(quality.slowest, speed);
+			++quality.curves;
+			if (false == alignment::meets_norms(curve, lay.plan.design))
+				++quality.below;
 		}
-		item_tooltip("What it is: the lesson of the tutorial");
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
-		ImGui::PopTextWrapPos();
 	}
 	else
 	{
-		ImGui::PopItemWidth();
+		auto const [length, radius]{pieces_measure(m_extend.active ? extend_preview() : lay.preview, m_eased_last)};
+		quality.length = m_extend.active ? length : lay.preview_length;
+		if (radius > 0.0)
+		{
+			quality.curves = 1;
+			quality.slowest = arc_speed(radius, norms);
+			quality.below = quality.slowest > 0.0 && quality.slowest < quality.speed ? 1 : 0;
+		}
+	}
+	quality.valid = quality.length > 0.0;
+	return quality;
+}
+
+std::string editor_mode::lay_settings_summary() const
+{
+	auto const &lay{m_lay};
+	std::string text{lay.mode == lay_mode::curve ? STR_C("Curve") : STR_C("Straights")};
+	if (lay.mode == lay_mode::curve)
+	{
+		static char const *const radii[]{"Auto", "1 R", "2 R", "3 R"};
+		text += std::string{" · "} + STR_C(radii[std::clamp(lay.radii, 0, 3)]);
+	}
+	auto const [from, to]{laying_ends()};
+	text += format(" · %.0f km/h", design_speed(from, to));
+	static char const *const heights[]{"along the ground", "through the points", "level"};
+	return text + " · " + STR_C(heights[std::clamp(static_cast<int>(EditorSettings.heights()), 0, 2)]);
+}
+
+std::vector<std::string> editor_mode::lay_leg() const
+{
+	auto const &lay{m_lay};
+	auto const norms{laying_norms()};
+	std::vector<std::string> lines;
+	if (lay.plan.shape.valid)
+	{
+		// the straight the cursor is at the end of, and the curve of the last bend before it
+		auto const &shape{lay.plan.shape};
+		if (false == shape.elements.empty() && shape.elements.back().kind == alignment::element_kind::straight)
+			lines.push_back(format(STR_C("straight %.0f m"), shape.elements.back().length));
+		if (false == shape.curves.empty())
+		{
+			auto const &curve{shape.curves.back()};
+			lines.push_back(curve_leg(curve_radii(curve), arc_speed(curve_sharpest(curve), norms), alignment::meets_norms(curve, lay.plan.design)));
+		}
+		return lines;
+	}
+	if (lay.preview.empty())
+		return lines;
+	if (auto const radius{pieces_measure(lay.preview, m_eased_last).second}; radius > 0.0)
+	{
+		auto const [from, to]{laying_ends()};
+		auto const speed{arc_speed(radius, norms)};
+		lines.push_back(curve_leg(format("%.0f", radius), speed, speed <= 0.0 || speed >= design_speed(from, to)));
+	}
+	else
+		lines.push_back(format(STR_C("straight %.0f m"), lay.preview_length));
+	return lines;
+}
+
+std::string editor_mode::extend_leg(double const Length, double const Radius, TTrack const *Joined, bool const Warned) const
+{
+	auto const speed{arc_speed(Radius, laying_norms())};
+	auto text{Radius > 0.0 ? curve_leg(format("%.0f", Radius), speed, false == Warned && (speed <= 0.0 || speed >= design_speed(m_extend.track, Joined))) : format(STR_C("straight %.0f m"), Length)};
+	if (Radius <= 0.0 && Warned)
+		text += editor_flow::kWarningMark;
+	if (Joined != nullptr)
+		text += " · " + format(STR_C("joins %s"), name_of(*Joined).c_str());
+	// the shape of a curve, of the layout chosen or of the join; a straight says it all
+	if (Radius <= 0.0)
+		return text;
+	return text + "\n" + first_line(track_shaping(Joined != nullptr));
+}
+
+std::string editor_mode::lay_error() const
+{
+	auto const &lay{m_lay};
+	// a line of a design laid with the norms broken is told so by its curves, in orange, and by the badge of the panel
+	if (lay.preview_error.empty() || (false == lay.preview.empty() && lay.plan.shape.valid))
+		return {};
+	return lay.preview_error;
+}
+
+std::string editor_mode::lay_readout() const
+{
+	auto const &lay{m_lay};
+	auto const now{ImGui::GetTime()};
+	std::vector<std::string> lines;
+	if (lay.points.empty())
+		lines.emplace_back(lay.mouse_snap.track != nullptr ? STR_C("goes on from this end of the track") : STR_C("start"));
+	else
+		lines = lay_leg();
+	// where the leg ends: the free end it joins, the shape of the track joined to it
+	if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
+	{
+		auto const joins{format(STR_C("joins %s"), name_of(*lay.mouse_snap.track).c_str())};
+		if (lines.empty())
+			lines.push_back(joins);
+		else
+			lines.front() += " · " + joins;
+	}
+	if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
+		lines.push_back(first_line(track_shaping(lay.start.track != nullptr)));
+	if (auto const error{lay_error()}; false == error.empty())
+		lines.push_back(first_line(error));
+	if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
+	{
+		auto const offset{plan_of(lay.mouse - lay.points.back())};
+		auto const degrees{std::fmod(glm::degrees(std::atan2(offset.x, offset.y)) + 360.0, 360.0)};
+		lines.push_back(lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), degrees) : lay.skew);
+	}
+	// the warning of the first Esc leads, where it's read first; what was laid, and what Tab switched to, a while after
+	if (now - lay.escape_time < 3.0)
+		lines.insert(lines.begin(), first_line(lay.status));
+	else if (false == lay.status.empty() && now - lay.status_time < 4.0)
+		lines.push_back(first_line(lay.status));
+	if (false == lay.hint.empty() && now - lay.hint_time < 4.0)
+		lines.push_back(lay.hint);
+	return lines_of(lines);
+}
+
+void editor_mode::render_lay_ui()
+{
+	auto &tool{m_lay};
+	auto const state{lay_panel_state()};
+	render_lay_step(state);
+	if (state == lay_state::clicking || state == lay_state::extending)
+	{
+		render_lay_quality();
+		if (state == lay_state::clicking)
+			render_lay_buttons();
+		// the settings as the line of their summary while the points are clicked: it opens them
+		auto const [from, to]{laying_ends()};
+		auto const speed{from != nullptr || to != nullptr ? design_speed_of(from, to) : std::string{}};
+		if (editor_flow::summary_line("##laysettings", lay_settings_summary(), tool.settings_open, speed.c_str()))
+			tool.settings_open = !tool.settings_open;
+		if (tool.settings_open)
+			render_lay_settings();
+		render_lay_status(state);
+		// the details under it all: opened, they don't push the buttons out of the panel
+		if (tool.details_open)
+			render_lay_details();
+		return;
+	}
+	// the line laid just now, told in one line over the settings
+	if (state == lay_state::laid)
+		render_lay_status(state);
+	tool.settings_open = false;
+	tool.details_open = false;
+	render_lay_settings();
+	if (state != lay_state::laid)
+		render_lay_status(state);
+}
+
+void editor_mode::render_lay_step(lay_state const State)
+{
+	auto const curve{m_lay.mode == lay_mode::curve};
+	switch (State)
+	{
+	case lay_state::extending: editor_flow::step_line(STR_C("Drag to lay from the end; let go to lay it")); break;
+	case lay_state::clicking:
+		editor_flow::step_line(curve ? STR_C("Click points along the curve on the photo") : STR_C("Click the next bends"),
+		                       m_lay.points.size() > 1 ? STR_C("Enter lays · Backspace takes back a point · Esc drops") : STR_C("Backspace takes back the point · Esc drops"));
+		break;
+	default: editor_flow::step_line(curve ? STR_C("Click points along the curve on the photo") : STR_C("Click on the ground or at a free end of a track")); break;
+	}
+}
+
+void editor_mode::render_lay_settings()
+{
+	auto &tool{m_lay};
+	// the shape, what it makes of the points under the question mark beside it
+	if (ImGui::BeginTable("##layshape", 2, ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("##choice", ImGuiTableColumnFlags_WidthStretch);
+		ImGui::TableSetupColumn("##why", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableNextColumn();
+		if (int mode{tool.mode == lay_mode::curve ? 1 : 0};
+		    segmented("laymode", mode,
+		              {{0, STR_C("Straights   Tab"), "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"},
+		               {1, STR_C("Curve   Tab"), "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"}}) &&
+		    (mode == 1) != (tool.mode == lay_mode::curve))
+			lay_switch_mode();
+		ImGui::TableNextColumn();
+		auto const curve{tool.mode == lay_mode::curve};
+		if (ImGui::SmallButton("?##layshape"))
+		{
+			m_first_steps_open = true;
+			m_tutorial_goto = curve ? "Curves" : "Radius of the curves at the bends";
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(ImGui::GetFontSize() * 30.0f));
+			ImGui::TextUnformatted(curve ? STR_C("Click points along the middle of the track on the photo; the curve ends at the last one")
+			                             : STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
+			ImGui::TextDisabled("%s", STR_C("What it is: the lesson of the tutorial"));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		ImGui::EndTable();
+	}
+	if (tool.mode == lay_mode::curve)
 		segmented("layradii", tool.radii,
 		          {{0, STR_C("Auto"), "As few radii as follow the points, up to three"}, {1, STR_C("1 R"), "One radius"}, {2, STR_C("2 R"), "A compound curve of two radii"}, {3, STR_C("3 R"), "A compound curve of three radii"}});
-		ImGui::Checkbox(STR_C("Two curves with a straight between them, where the points show one"), &tool.straights_between);
-		item_tooltip("The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve");
-		if (auto const &traces{tool.plan.traces}; false == traces.empty() && false == traces.back().offsets.empty())
-		{
-			auto const &trace{traces.back()};
-			auto const colour = [](double const Departure) { return Departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : Departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255); };
-			metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
-			              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), colour(trace.rms)},
-			              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), colour(trace.worst)}});
-		}
-		else
-		{
-			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled("%s", STR_C("Click points along the middle of the track on the photo; the curve ends at the last one"));
-			ImGui::PopTextWrapPos();
-		}
-		ImGui::PushItemWidth(120.0f);
+	// the name on the left of the field, as in the inspector, the values to pick with a click under it
+	if (begin_fields("##layspeed"))
+	{
+		field_row("Speed (km/h)");
+		ImGui::DragScalar("##velocity", ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+		ImGui::EndTable();
 	}
-	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
 	value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	ImGui::PopItemWidth();
-	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
-	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
@@ -2405,53 +2707,151 @@ void editor_mode::render_lay_ui()
 		EditorSettings.heights(static_cast<editorSettings::lay_heights>(heights));
 		EditorSettings.save();
 	}
-	// the curves of the line shown, those below the norms in the colour of a warning: they're laid all the same
-	if (auto const &plan{tool.plan}; tool.active && plan.shape.valid && false == plan.shape.curves.empty())
+	render_lay_more();
+}
+
+void editor_mode::render_lay_quality()
+{
+	auto &tool{m_lay};
+	auto const quality{lay_quality_now()};
+	if (false == quality.valid)
+		return;
+	// the length, the curves and the slowest of them in a line, the norms as a badge; the curves one by one and what they break in the
+	// details it opens
+	auto line{quality.curves == 0 ? format(STR_C("Length %.0f m · straight"), quality.length)
+	                              : format(STR_P("Length %.0f m · %zu curve", "Length %.0f m · %zu curves", static_cast<long long>(quality.curves)), quality.length, quality.curves)};
+	if (quality.curves > 0 && quality.slowest > 0.0)
+		line += format(STR_C(" · slowest %.0f km/h"), quality.slowest);
+	ImGui::TextWrapped("%s", line.c_str());
+	auto const badge{quality.below == 0 ? std::string{STR_C("meets the norms")}
+	                                    : format(STR_P("%zu curve below the norms for %.0f km/h", "%zu curves below the norms for %.0f km/h", static_cast<long long>(quality.below)), quality.below, quality.speed)};
+	editor_flow::quality_badge("##layquality", badge.c_str(), quality.below == 0, STR_C("details"), tool.details_open);
+}
+
+void editor_mode::render_lay_details()
+{
+	auto const &tool{m_lay};
+	auto const &plan{tool.plan};
+	auto const warning{editor_flow::kBelow};
+	ImGui::Indent();
+	ImGui::PushTextWrapPos(0.0f);
+	// the curves one by one, those below the norms in the colour of a warning: they're laid all the same; what each breaks, and what its
+	// label says, by the cursor over it
+	if (false == m_extend.active && plan.shape.valid)
 	{
-		ImGui::SeparatorText(STR_C("Curves of the track laid"));
-		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
 		for (auto const &curve : plan.shape.curves)
 		{
-			auto const meets{alignment::meets_norms(curve, plan.design)};
 			auto const text{format("%d. %s", curve.vertex + 1, curve_label(curve, laying_norms()).c_str())};
-			if (meets)
+			if (alignment::meets_norms(curve, plan.design))
 				ImGui::TextUnformatted(text.c_str());
 			else
-				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.15f, 1.0f), "%s", text.c_str());
-			if (ImGui::IsItemHovered())
-			{
-				std::string notes;
-				auto const tag{format(STR_C("Vertex %zu"), static_cast<std::size_t>(curve.vertex + 1))};
-				for (auto const &warning : plan.shape.warnings)
-					if (warning.rfind(tag + ":", 0) == 0)
-						notes += (notes.empty() ? "" : "\n") + warning;
-				ImGui::SetTooltip("%s", notes.empty() ? STR_C("Meets the norms for the speed") : notes.c_str());
-			}
+				ImGui::TextColored(warning, "%s", text.c_str());
+			if (false == ImGui::IsItemHovered())
+				continue;
+			std::string notes;
+			auto const tag{format(STR_C("Vertex %zu"), static_cast<std::size_t>(curve.vertex + 1))};
+			for (auto const &note : plan.shape.warnings)
+				if (note.rfind(tag + ":", 0) == 0)
+					notes += (notes.empty() ? "" : "\n") + note;
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(ImGui::GetFontSize() * 32.0f));
+			ImGui::TextUnformatted(notes.empty() ? STR_C("Meets the norms for the speed") : notes.c_str());
+			ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		// what the curves break, in the words of the norms, and what else the line shown was told
+		for (auto const &note : plan.shape.warnings)
+			ImGui::TextColored(warning, "%s", note.c_str());
+		if (false == tool.preview_error.empty() && tool.preview_error != lines_of(plan.shape.warnings))
+			ImGui::TextColored(warning, "%s", tool.preview_error.c_str());
+		if (false == plan.shape.curves.empty())
+		{
+			if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
+				ImGui::TextDisabled("%s", on.c_str());
+			if (auto const on{curve_goes_on(plan.shape.curves.back())}; plan.shape.curves.size() > 1 && false == on.empty())
+				ImGui::TextDisabled("%s", on.c_str());
+		}
+		// how close a curve traced follows the points clicked along it
+		if (tool.mode == lay_mode::curve && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
+		{
+			auto const &trace{plan.traces.back()};
+			metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
+			              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), departure_colour(trace.rms)},
+			              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), departure_colour(trace.worst)}});
 		}
 	}
-	if (auto *track{selected_track()}; track != nullptr)
+	else if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+		ImGui::TextDisabled("%s", eased.c_str());
+	// the speed it's designed for, the grades, what the norms say of it where it goes on from a switch
+	auto const [from, to]{laying_ends()};
+	ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
+	auto const pieces{m_extend.active ? extend_preview() : tool.preview};
+	if (auto const vertical{pieces.empty() ? std::string{} : vertical_of(pieces)}; false == vertical.empty())
+		ImGui::TextDisabled("%s", vertical.c_str());
+	std::vector<std::string> exits;
+	if (m_extend.active)
 	{
-		std::string reason;
-		if (editor_track::can_edit_geometry(*track, reason))
-			render_extend_ui();
+		editor_track::snap_target target;
+		auto const snapped{extend_snap(target) && target.track != nullptr};
+		exits = switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces);
 	}
+	else
+		exits = switch_exit_warnings(tool.start.track, tool.points.empty() ? tool.mouse : tool.points.front(), tool.mouse_snap.track, tool.mouse_snap.position, pieces);
+	for (auto const &exit : exits)
+		ImGui::TextColored(warning, "%s", exit.c_str());
+	ImGui::PopTextWrapPos();
+	ImGui::Unindent();
+}
+
+void editor_mode::render_lay_buttons()
+{
+	auto &tool{m_lay};
+	// the points clicked are no track until they're laid: Enter lays them, a single point is none
+	ImGui::BeginDisabled(tool.points.size() < 2);
+	if (main_button(STR_C("Lay  (Enter)"), ImVec2(0.0f, 0.0f)))
+	{
+		// the cursor is over the panel: no free end under it to join
+		tool.mouse_snap = {};
+		lay_enter();
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Drop")))
+		lay_cancel();
+	item_tooltip("Drops the points not laid yet; Esc twice does the same");
+}
+
+void editor_mode::render_lay_more()
+{
+	auto &tool{m_lay};
 	if (false == ImGui::TreeNode(STR_C("More settings")))
-	{
-		render_lay_status();
 		return;
+	if (tool.mode == lay_mode::curve)
+	{
+		ImGui::Checkbox(STR_C("Two curves with a straight between them, where the points show one"), &tool.straights_between);
+		item_tooltip("The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve");
 	}
+	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
+	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	ImGui::TextDisabled("%s", STR_C("Dragged from a free end, or laid from a point to one"));
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+	if (begin_fields("##layradius"))
+	{
+		field_row("Curve radius (m)");
+		ImGui::DragScalar("##radius", ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+		ImGui::EndTable();
+	}
 	value_chips("radii", tool.radius, {190.0, 300.0, 500.0, 800.0, 1200.0, 2000.0}, "%.0f");
 	tool.radius = std::max(10.0, tool.radius);
-	ImGui::PopItemWidth();
 	ImGui::Spacing();
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+	if (begin_fields("##laypiece"))
+	{
+		field_row("Longest path (m)");
+		ImGui::DragScalar("##piece", ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+		ImGui::EndTable();
+	}
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
-	ImGui::PopItemWidth();
 	ImGui::TextDisabled("%s", STR_C("Look of the new track"));
 	int source{tool.copy_selected ? 1 : 0};
 	if (segmented("laylook", source,
@@ -2507,17 +2907,96 @@ void editor_mode::render_lay_ui()
 		texture_row(0, STR_C("Rails"), tool.style.rail);
 		texture_row(1, STR_C("Trackbed"), tool.style.ballast);
 	}
+	// pieces added at the free end of the selected track, one by one
+	if (auto const *track{selected_track()}; track != nullptr)
+	{
+		std::string reason;
+		if (editor_track::can_edit_geometry(*track, reason))
+			render_extend_ui();
+	}
 	ImGui::TreePop();
-	render_lay_status();
 }
 
-void editor_mode::render_lay_status()
+void editor_mode::render_lay_status(lay_state const State)
 {
-	auto const &tool{m_lay};
+	auto &tool{m_lay};
 	if (scene::Layers.active() == null_handle)
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), STR_C("The scenery isn't opened for editing: new track won't be saved"));
-	if (tool.active && false == tool.preview_error.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", tool.preview_error.c_str());
-	if (false == tool.status.empty())
-		ImGui::TextWrapped("%s", tool.status.c_str());
+		editor_flow::message_line(STR_C("The scenery isn't opened for editing: new track won't be saved"), ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	if (auto const error{lay_error()}; tool.active && State == lay_state::clicking && false == error.empty())
+		editor_flow::message_line(error, tool.preview.empty() ? editor_flow::kRefused : ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	if (tool.status.empty())
+		return;
+	if (State != lay_state::laid)
+	{
+		// a line laid before, taken back or gone on from since, isn't told any more
+		if (false == tool.laid_now)
+			editor_flow::message_line(tool.status, ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+		return;
+	}
+	// the line laid: one line of it, what else there is to tell of it under the link beside it
+	auto const end{tool.status.find('\n')};
+	editor_flow::message_line(tool.status.substr(0, end), editor_flow::kGood);
+	if (end == std::string::npos)
+		return;
+	same_line_if_fits(ImGui::CalcTextSize(STR_C("notes")).x + ImGui::GetFontSize() * 1.2f);
+	editor_flow::fold_link("##laynotes", STR_C("notes"), tool.notes_open);
+	if (false == tool.notes_open)
+		return;
+	ImGui::Indent();
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("%s", tool.status.c_str() + end + 1);
+	ImGui::PopStyleColor();
+	ImGui::Unindent();
+}
+
+bool editor_mode::laid_shown() const
+{
+	auto const &tracks{m_lay.laid.tracks};
+	return false == tracks.empty() && m_node == tracks.back() && m_track_set.empty() && std::ranges::none_of(tracks, [](TTrack const *Track) { return Track->m_editorremoved; });
+}
+
+void editor_mode::render_laid_summary()
+{
+	auto const &laid{m_lay.laid};
+	auto const below{std::ranges::any_of(laid.curves, [](lay_tool::laid_curve const &Curve) { return false == Curve.meets; })};
+	auto const warning{ImVec4(1.0f, 0.55f, 0.15f, 1.0f)};
+	ImGui::TextUnformatted(STR_C("Track laid"));
+	metric_tiles({{format("%zu", laid.tracks.size()), STR_C("tracks"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%.0f m", laid.length), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%zu", laid.curves.size()), STR_C("curves"), below ? ImGui::GetColorU32(warning) : ImGui::GetColorU32(ImGuiCol_Text)}});
+	if (false == laid.curves.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
+		for (auto const &curve : laid.curves)
+		{
+			if (curve.meets)
+				ImGui::TextUnformatted(curve.label.c_str());
+			else
+				ImGui::TextColored(warning, "%s", curve.label.c_str());
+		}
+		if (below)
+			ImGui::TextColored(warning, "%s", STR_C("Orange: below the norms for the speed, laid all the same"));
+		ImGui::PopTextWrapPos();
+	}
+	// what comes next: a switch into the line and the scenery saved
+	ImGui::SeparatorText(STR_C("Next"));
+	if (m_track_tab != track_tab::turnout)
+	{
+		if (ImGui::Button(STR_C("A switch  (T)")))
+			show_track_tab(track_tab::turnout);
+		item_tooltip("The switch tool: press on a straight and drag along it and to the side");
+		ImGui::SameLine();
+	}
+	ImGui::BeginDisabled(scene::Layers.empty());
+	if (ImGui::Button(STR_C("Save  (Ctrl+S)")))
+		save();
+	ImGui::EndDisabled();
+	ImGui::Spacing();
+	if (m_track_tab == track_tab::lay)
+		gesture_rows({{"LMB on a free end", "lays the track on from it"}, {"Esc", "stop laying"}});
+	else if (m_track_tab == track_tab::turnout)
+		gesture_rows({{"Drag on a track", "along: the direction, sideways: the side"}, {"LMB on a track", "its properties show here"}});
+	else
+		gesture_rows({{"LMB on a track", "its properties show here"}});
 }

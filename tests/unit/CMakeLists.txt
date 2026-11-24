@@ -27,13 +27,63 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the heights of the tracks laid
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
-	# and the switches laid into the curves
+	# and the switches laid into the curves, and the catalogue of the switches the turnouts of the domain are laid from
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDesign.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	# and the //$ lines it keeps in the scenery files, and the descriptions of the templates (//$e)
+	"${CMAKE_SOURCE_DIR}/editor/editorRecords.cpp"
+	"${CMAKE_SOURCE_DIR}/scene/scenelayercontext.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorIncludeInfo.cpp"
+	# the tracks read from the text of the scenery files and written back, with no scene (test_track_text.cpp): the track and
+	# what reading and writing it takes, the rest of the engine it reaches for stood in by track_stubs.cpp
+	"${CMAKE_SOURCE_DIR}/world/Track.cpp"
+	"${CMAKE_SOURCE_DIR}/world/Segment.cpp"
+	"${CMAKE_SOURCE_DIR}/world/TrackUneven.cpp"
+	"${CMAKE_SOURCE_DIR}/world/MemCell.cpp"
+	"${CMAKE_SOURCE_DIR}/scene/scenenode.cpp"
+	"${CMAKE_SOURCE_DIR}/utilities/Timer.cpp"
+	"${CMAKE_SOURCE_DIR}/rendering/geometrybank.cpp"
+	track_stubs.cpp
+	# and the cant the track editor matches at the joints of the tracks
+	"${CMAKE_SOURCE_DIR}/editor/editorTrackShape.cpp"
+	# the norms of the track geometry, a module of its own, and the report of the norms on the tracks laid (test_norms_*.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/norms/normsTables.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/norms/normsLimits.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/norms/normsEngine.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/norms/normsLine.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorNormsReport.cpp"
+	# the assumptions of the project, what the tracks are laid to (test_project_setup.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/editorProjectSetup.cpp"
+	# the domain of the track geometry: the elements, the lines and the nodes, the commands editing them, the tracks made of them
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutElements.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLine.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutNetwork.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutCommands.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutTurnout.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutGenerator.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutConnection.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutParallel.cpp"
+	# the old tracks taken over: their recognition, the anchors of the lineside objects (test_takeover_*.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutRecognition.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutLegacy.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/layout/layoutAnchors.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/legacyScenery.cpp"
+	# and the kinds of the lineside objects by their names, as the binding of the editor tells them
+	"${CMAKE_SOURCE_DIR}/editor/editorInfra.cpp"
+	# the project file of the domain, the tracks written kept by their checksums, the //$ lines migrated into it, the scenarios using a map (test_project_*.cpp, test_scenario_index.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/project/projectFile.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/projectGenerated.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/projectMigration.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/sceneryText.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/scenarioIndex.cpp"
+	# the project of the map open in the editor, its commands kept as steps of the editor's history, and the scenario index kept between the sessions (test_project_session.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/project/projectSession.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/project/scenarioIndexCache.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

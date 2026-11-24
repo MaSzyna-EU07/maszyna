@@ -1,0 +1,17 @@
+# The assumptions of the project kept in its project file where the map has one (the editing on the model): written there with the
+# scenery, none of them in the scenery, read back from there when the map is opened again, the editing on the model off then
+wait 5
+modelediting 1
+expect projectfile present
+setup speed 120 traffic passenger
+save
+wait 5
+expect setupmark absent
+quit
+#> reopen
+wait 5
+expect setup speed 120
+expect setup traffic passenger
+expect setupmark absent
+expect layspeed 120
+quit

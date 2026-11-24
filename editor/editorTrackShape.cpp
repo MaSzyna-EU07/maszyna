@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorTrack.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorGroundFollow.hpp"
+#include "editor/editorSwitchCurve.hpp"
 
 #include "world/Track.h"
 #include "utilities/Globals.h"
@@ -409,15 +410,7 @@ double editor_track::reverse_insert(double const Speed)
 
 double editor_track::diverging_speed(double const Radius)
 {
-	if (Radius < 300.0)
-		return 40.0;
-	if (Radius < 500.0)
-		return 50.0;
-	if (Radius < 760.0)
-		return 60.0;
-	if (Radius < 1200.0)
-		return 80.0;
-	return Radius < 2500.0 ? 100.0 : 130.0;
+	return switch_curve::basic_speed(Radius);
 }
 
 namespace

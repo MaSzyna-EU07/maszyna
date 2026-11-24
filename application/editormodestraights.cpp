@@ -10,6 +10,7 @@ http:
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "application/editormodemodel.h"
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
@@ -752,6 +753,9 @@ void editor_mode::cancel_track_tools()
 		m_route_dragging = false;
 		m_route.design = m_route_drag_from;
 		route_update();
+		// the line the model would lay and its text by the mouse go with the drag
+		if (m_model != nullptr)
+			m_model->preview = {};
 	}
 	if (m_point_drag.active)
 	{

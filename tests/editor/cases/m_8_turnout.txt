@@ -1,0 +1,86 @@
+# Editing on the model (E4b): a switch dragged on a line of the model is a turnout of the catalogue inserted into the line, its switch
+# track made by the generator, one step; Ctrl+Z takes it back with its tracks, Ctrl+Y brings it again. Moved along the line, given another
+# type, the other side, or taken out by Del: a command of the model each, one step. One with a cant ramp inside it is refused, the tool
+# telling why, and nothing changes. The empty ground east of k0..k3 (x 800..1300)
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100
+wait 2
+expect modellines 1
+expect steps 1
+# dragged on the straight as the mouse drags it: 100 m from its start, the diverging track to -x
+curvedswitch l1_se1 800 -200 797 -180 Rz_60E1-300-1:9
+wait 2
+modeltracks
+expect modelrefused 0
+expect modellines 4
+expect steps 2
+expect managed t1 any
+expect switchpanel placed
+expect modelends
+undo
+wait 2
+expect modellines 1
+expect steps 1
+expect track t1 removed
+expect modelends
+redo
+wait 2
+expect modellines 4
+expect track t1 present
+expect modelends
+# moved 20 m on along its line, given another type, the other side: a step each
+switchslide t1 20
+wait 2
+expect modelrefused 0
+expect steps 3
+expect modelends
+switchreplace t1 Rz_60E1-500-1:12
+wait 2
+expect modelrefused 0
+expect steps 4
+expect modelends
+modelturnoutside t1
+wait 2
+expect modelrefused 0
+expect steps 5
+expect modelends
+modeltracks
+# taken out by Del, once the scenarios of the map are looked through (none names it): the line one line again
+modeldel t1
+modelwait
+wait 2
+expect modelrefused 0
+expect steps 6
+expect track t1 removed
+expect modellines 1
+expect modelends
+# a line with a curve, its transition and cant ramp from 22 m of its start to 122 m, its arc on from there: a turnout bent into the arc
+# 2 m past the end of the ramp is refused (the ramp ends 6 m off a turnout at least, ST-T1-A6 9.6 pkt 16), nothing changes
+layclicks 0 600 900 -300 900 100 1200 400
+wait 2
+modeltracks
+modelmark curve
+switchcurve Rz_60E1-300-1:9 902.2 -176 1 1
+wait 2
+expect modelrefused 1
+expect modelsame curve
+expect steps 7
+expect status 9.6 pkt 16
+# laid again and saved: the switch track written as the generator made it and recorded, found so after the scenery is opened again
+switchplace Rz_60E1-300-1:9 800 -200 1 1
+wait 2
+expect modelrefused 0
+expect managed t2 any
+save
+wait 5
+expect handlines 0
+quit
+#> reopen
+wait 5
+modelediting 1
+modeltracks
+expect managed t2 any
+expect modelends
+expect handlines 0
+quit

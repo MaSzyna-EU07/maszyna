@@ -1,0 +1,5 @@
+// //$r: switches placed in the track editor, as editor_records::switch_lines() writes them
+//$r # switches placed in the track editor, the simulation skips these lines
+//$r switch z1 Rz 60E1 500.000 12.000 L 15.550 15.550 0.000 parts 1 z1 shape 33.2300 0.0000 33.1000 1.8000 start 100.0000 0.0000 200.0000 dir 0.000000000 1.000000000 km 12.345 number 1 source designed
+//$r connection c1 Rz 60E1 500.000 12.000 R 15.550 15.550 -1200.000 parts 2 z3 z4 start 110.0000 0.0000 210.0000 dir 0.600000000 0.800000000 km - number - source measured lift 0.0600 110.0000 0.0000 210.0000 150.0000 0.0000 240.0000 ramp 60.000 liftend 0.0400
+//$r slip s1 Rkpd 49E1 190.000 9.000 - 16.615 16.615 0.000 parts 4 s1a s1b s1c s1d start 0.0000 0.0000 0.0000 dir 1.000000000 0.000000000 km 0.500 number 5ab source designed middle 300.000

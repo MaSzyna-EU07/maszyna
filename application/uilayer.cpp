@@ -518,7 +518,6 @@ void ui_layer::render()
 	render_tooltip();
 	render_menu();
 	render_quit_widget();
-	render_hierarchy();
 	// template method implementation
 	render_();
 
@@ -574,54 +573,6 @@ void ui_layer::render_quit_widget()
 	ImGui::End();
 }
 
-void ui_layer::render_hierarchy(){
-	if(!m_editor_hierarchy)
-		return;
-
-	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
-	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
-	ImGui::Text(STR_C("Registered nodes: %zu"), scene::Hierarchy.size());
-    ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
-
-	for (auto &entry : scene::Hierarchy)
-        {
-        	const std::string &uuid = entry.first;
-            scene::basic_node *node = entry.second;
-
-            if (node)
-            {
-                char buf[512];
-                std::snprintf(buf, sizeof(buf), "%s | %s (%.1f, %.1f, %.1f)",
-                            node->name().c_str(),
-                            uuid.c_str(),
-                            node->location().x,
-                            node->location().y,
-                            node->location().z);
-
-                if (ImGui::Selectable(buf, false))
-                {
-                    // Focus camera on selected node
-                    auto const node_pos = node->location();
-                    auto const camera_offset = glm::dvec3(0.0, 10.0, -20.0);
-					editor_mode::set_focus_active(false);
-					TCamera &camera = editor_mode::get_camera(); 
-					camera.Pos = node_pos + camera_offset;
-				
-                }
-
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"), uuid.c_str(), typeid(*node).name());
-                }
-            }
-        }
-
-    ImGui::EndChild();
-    ImGui::End();
-
-}
- 
 void ui_layer::set_cursor(int const Mode)
 {
 	// the cursor drawn into the picture: the one of the system hidden, so only that one shows, also in a capture of the window
@@ -733,7 +684,7 @@ void ui_layer::render_menu_contents()
 			GfxRenderer->Debug_Ui_State(ret);
 		}
 		if(EditorModeFlag){
-			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
+			// the objects of the scenery are listed in the window Scene of the editor, in the windows of the editor below
 			bool change_history_enabled = editor_mode::change_history();
 			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{

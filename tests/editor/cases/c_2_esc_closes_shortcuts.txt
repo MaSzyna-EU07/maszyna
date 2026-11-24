@@ -1,0 +1,24 @@
+# Consistency: Esc closes the window of the shortcuts as F1 does, before it does anything else, in the tracks too
+wait 5
+tap f1
+wait 3
+expect window shortcuts 1
+tap esc
+wait 2
+expect window shortcuts 0
+tap f1
+wait 2
+tap f1
+wait 2
+expect window shortcuts 0
+tap f3
+wait 2
+tap l
+wait 2
+tap f1
+wait 2
+tap esc
+wait 2
+expect window shortcuts 0
+expect tool track
+quit

@@ -1,0 +1,13 @@
+// another scenario of the map, which includes it through a file of its own: a trainset, a vehicle standing on its own, an isolated
+// circuit, the conditions of the events and the cells copied
+include wieczor/wstep.scm end
+node -1 0 moja_mem memcell 0 0 0 none 0 0 tor_3 endmemcell
+isolated odc_1 tor_1 Tor_2 endisolated
+event kopia copyvalues 0 moja_mem stacja_mem 7 endevent
+event warunek multiple 0 sem_a_mem sem_a_s1 condition memcompare * 100 * endevent
+event zajetosc multiple 0 tor_3 sem_a_sr2 condition trackoccupied endevent
+FirstInit
+node -1 0 stojak dynamic pkp 412z 412z tor_2 50.0 nobody 0 0 enddynamic
+trainset wieczorny tor_3 0.0 0.0
+node -1 0 loco dynamic pkp ep07 ep07 0 headdriver 3 0 enddynamic
+endtrainset
