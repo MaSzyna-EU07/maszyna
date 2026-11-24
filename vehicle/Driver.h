@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/uphillstart.h"
+#include "vehicle/brakecharge.h"
 #include "vehicle/blackbox.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
@@ -341,6 +342,8 @@ private:
     void control_uphill_start();
     void end_uphill_start();
     bool uphill_brake_top_up();
+    void secure_standing_train();
+    double locomotive_brake_force() const;
     std::pair<double, double> train_proximity_margins( bool const Passengerstop ) const;
 
     void update_timers( double const dt );
@@ -452,6 +455,13 @@ private:
     double fUphillTractiveForce = 0.0; // the tractive force of the consist while starting uphill [N]
     double fUphillHoldingForce = 0.0; // the grade force on the consist while starting uphill [N]
     bool IsConsistReleased = true; // the brakes of the consist are off, the hold of an uphill start not counted
+    bool IsConsistCharged = true; // standing, the brake pipe and the auxiliary reservoirs are charged to start (or stopped charging)
+    brake_charge::state BrakeCharge; // standing, how the charge of the brakes rose
+    // the next start waits for the brakes to charge: the first after the train was prepared standing, or one with the
+    // pipe near empty. cleared once the train runs
+    bool bBrakeChargeStart = false;
+    bool bHasRun = false; // the train has moved (above 1 km/h) since it was placed
+    bool bBrakeChargeHold = false; // charging, the train stands on a light application of the train brake as well
     double fConsistVelocity = 0.0; // the mass-weighted speed of the consist, positive in the direction of travel [km/h]
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
