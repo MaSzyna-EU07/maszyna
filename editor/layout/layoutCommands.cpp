@@ -25,6 +25,7 @@ namespace
 {
 
 double constexpr kParallel{1e-9}; // rad: tangents within this run alike
+double constexpr kTouching{1e-6}; // m: a cut this close to the end of an element is at the end
 double constexpr kShortest{0.1}; // m: no part of a line split shorter; the simulation takes a path under 5 cm for one of no length
 
 using reasons = std::vector<std::string>;
@@ -216,13 +217,18 @@ reasons split_at(transaction &Change, line_id const Line, double const Chainage,
 		auto const next{k + 1 == count ? geometry::plan_of(Change.view().find(original.end)->position) : vertices[k + 1].point};
 		auto const in{glm::normalize(curve.point - previous)};
 		auto const out{glm::normalize(next - curve.point)};
-		if (std::abs(geometry::signed_angle(in, cut.heading)) <= kParallel && std::abs(cut.curvature) < 1e-12)
+		// at the start or the end of the curve: where its transition leaves the straight, or at the tangent point of an arc with none,
+		// whose curvature there is already the arc's
+		auto const straight_there{std::abs(cut.curvature) < 1e-12};
+		auto const arc_starts{e.role == element_role::arc && u < kTouching};
+		auto const arc_ends{e.role == element_role::arc && u > e.length - kTouching};
+		if (std::abs(geometry::signed_angle(in, cut.heading)) <= kParallel && (straight_there || arc_starts))
 		{
 			// right at the start of the curve
 			take(0, k, before);
 			take(k, count, after);
 		}
-		else if (std::abs(geometry::signed_angle(cut.heading, out)) <= kParallel && std::abs(cut.curvature) < 1e-12)
+		else if (std::abs(geometry::signed_angle(cut.heading, out)) <= kParallel && (straight_there || arc_ends))
 		{
 			take(0, k + 1, before);
 			take(k + 1, count, after);
@@ -486,7 +492,7 @@ void hold_end(transaction &Change, node_id const Node, line_id const Line, line_
 
 // a track the turnout lays itself, between the nodes, of the class of the line it lies on; a node of its own made where there's none yet,
 // holding the ends given
-void own_track(transaction &Change, line_id const Id, turnout_id const Turnout, node_id const From, node_id const To, line const &Like)
+void own_track(transaction &Change, line_id const Id, turnout const &Made, node_id const From, node_id const To, line const &Like)
 {
 	auto const &view{Change.view()};
 	if (view.find(Id) != nullptr)
@@ -494,14 +500,16 @@ void own_track(transaction &Change, line_id const Id, turnout_id const Turnout, 
 		auto &track{Change.change(Id)};
 		track.start = From;
 		track.end = To;
-		track.turnout = Turnout;
+		track.turnout = Made.id;
 		return;
 	}
 	line track;
 	track.id = Id;
-	track.turnout = Turnout;
+	track.turnout = Made.id;
 	track.start = From;
 	track.end = To;
+	// the kilometrage of the start of the turnout, as a diverging track has always had
+	track.chainage_start = Made.chainage;
 	track.category = Like.category;
 	track.profile = Like.profile;
 	track.shape.transition = Like.shape.transition;
@@ -553,8 +561,8 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 	{
 	case turnout_kind::twofold:
 	{
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
-		own_track(Change, Made.diverging2, Made.id, Made.second, Made.diverging2_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging2, Made, Made.second, Made.diverging2_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		own_node(Change, Made.diverging2_end, {{Made.diverging2, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
@@ -564,18 +572,18 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 	case turnout_kind::slip:
 	case turnout_kind::crossing:
 	{
-		own_track(Change, Made.crossing, Made.id, Made.cross_start, Made.cross_end, Like);
+		own_track(Change, Made.crossing, Made, Made.cross_start, Made.cross_end, Like);
 		std::vector<end_ref> at_start{{Made.crossing, line_end::start, 1}};
 		std::vector<end_ref> at_end{{Made.crossing, line_end::end, 1}};
 		if (Type.slip_curves >= 1)
 		{
-			own_track(Change, Made.diverging, Made.id, Made.start, Made.cross_end, Like);
+			own_track(Change, Made.diverging, Made, Made.start, Made.cross_end, Like);
 			at_end.push_back({Made.diverging, line_end::end, 1});
 			hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		}
 		if (Type.slip_curves >= 2)
 		{
-			own_track(Change, Made.diverging2, Made.id, Made.cross_start, Made.main_end, Like);
+			own_track(Change, Made.diverging2, Made, Made.cross_start, Made.main_end, Like);
 			at_start.push_back({Made.diverging2, line_end::start, 1});
 			hold_end(Change, Made.main_end, Made.diverging2, line_end::end, side_at(view, Made.main, Made.main_end));
 		}
@@ -584,13 +592,13 @@ void add_own_tracks(transaction &Change, turnout const &Made, turnout_type const
 		break;
 	}
 	case turnout_kind::symmetric:
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		break;
 	case turnout_kind::ordinary:
 	default:
-		own_track(Change, Made.diverging, Made.id, Made.start, Made.diverging_end, Like);
+		own_track(Change, Made.diverging, Made, Made.start, Made.diverging_end, Like);
 		own_node(Change, Made.diverging_end, {{Made.diverging, line_end::end, 1}});
 		hold_end(Change, Made.start, Made.diverging, line_end::start, main_side);
 		break;
@@ -659,7 +667,7 @@ reasons lay_symmetric(transaction &Change, outcome &Result, line const &Line, do
 	made.main = given(Change, Ids.main);
 	made.main_end = given(Change, Ids.main_end);
 	own_ids(Change, made, Kind, Ids);
-	own_track(Change, made.main, made.id, made.start, made.main_end, Line);
+	own_track(Change, made.main, made, made.start, made.main_end, Line);
 	own_node(Change, made.main_end, {{made.main, line_end::end, 1}});
 	hold_end(Change, made.start, made.main, line_end::start, side);
 	add_own_tracks(Change, made, Kind, Line);
@@ -1250,8 +1258,10 @@ reasons join_curved(transaction &Change, outcome &Result, join_ends const &Comma
 		bool fits{false};
 		auto last{tangent(0.0, fits) - held};
 		auto last_fits{fits};
-		for (double free = 2.0; free <= 400.0; free += 2.0)
+		for (int step{1}; step <= 200; ++step)
 		{
+			// every 2 m, as exact as the sum of the steps was
+			auto const free{2.0 * step};
 			auto const now{tangent(free, fits) - held};
 			if (fits && last_fits && (now == 0.0 || (now < 0.0) != (last < 0.0)))
 			{
@@ -1295,7 +1305,8 @@ reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 		return {"a line can't join a node to itself"};
 	auto const from{free_end_at(view, Command.from, true, why)};
 	auto const to{free_end_at(view, Command.to, false, why)};
-	if (false == why.empty())
+	// an end not found says why in Why
+	if (false == from.has_value() || false == to.has_value())
 		return why;
 	auto const &neighbour{*view.find(from->held.line)};
 	auto const category{neighbour.category};

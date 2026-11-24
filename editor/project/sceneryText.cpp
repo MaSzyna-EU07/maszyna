@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/project/sceneryText.hpp"
+#include "utilities/utilities.h"
 
 #include <algorithm>
 #include <array>
@@ -93,13 +94,6 @@ std::string normalized(std::string_view const Name)
 	return result;
 }
 
-std::optional<std::string> file_text(std::filesystem::path const &Path)
-{
-	std::ifstream file{Path, std::ios::binary};
-	if (false == file.is_open())
-		return std::nullopt;
-	return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-}
 
 // (p1), (p2)... put in place by the parameters of the include, a missing one as none (cParser::substituteParameters())
 void substitute(std::string &Text, std::vector<std::string> const &Parameters)
@@ -440,6 +434,22 @@ std::optional<std::string> node_text(std::string_view const Text, std::string_vi
 		i = last;
 	}
 	return std::nullopt;
+}
+
+std::optional<std::string> file_text(std::filesystem::path const &Path)
+{
+	std::ifstream file{Path, std::ios::binary};
+	if (false == file.is_open())
+	{
+		// named in another case, as the game finds it on Linux
+		auto const cased{FileCased(Path)};
+		if (cased.empty())
+			return std::nullopt;
+		file.open(cased, std::ios::binary);
+		if (false == file.is_open())
+			return std::nullopt;
+	}
+	return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
 bool same_file(std::string_view const A, std::string_view const B)

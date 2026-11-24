@@ -34,7 +34,8 @@ track_points along(layout::network const &Network, std::vector<line_id> const &L
 	track_points result;
 	for (auto const id : Lines) {
 		auto const &solved{Network.find(id)->solved};
-		for (double s = 0.0; s < solved.length; s += Step) {
+		for (int i{0}; i * Step < solved.length; ++i) {
+			auto const s{i * Step};
 			result.points.push_back(solved.point(s));
 			result.cants.push_back(solved.cant_at(s));
 		}
@@ -58,7 +59,8 @@ void check_same_track(layout::network const &Before, line_id const Whole, layout
 	auto const &first{After.find(First)->solved};
 	auto const &second{After.find(Second)->solved};
 	CHECK(first.length + second.length == doctest::Approx(whole.length).epsilon(1e-9));
-	for (double s = 0.0; s <= whole.length; s += 7.3) {
+	for (int i{0}; i * 7.3 <= whole.length; ++i) {
+		auto const s{i * 7.3};
 		CAPTURE(s);
 		auto const &part{s < first.length ? first : second};
 		auto const local{s < first.length ? s : s - first.length};
@@ -200,6 +202,34 @@ TEST_CASE("layout commands: a line split on a straight, in an arc and in a cloth
 	}
 }
 
+TEST_CASE("layout commands: a line split right at the tangent points of an arc with no transitions keeps the track") {
+	// one gentle curve with neither transitions nor cant, so its curvature jumps at the tangent points
+	for (auto const share : {0.0, 1.0}) {
+		CAPTURE(share);
+		layout::model model;
+		layout::create_line gentle;
+		gentle.start = {0.0, 100.0, 0.0};
+		gentle.end = {1200.0, 100.0, 50.0};
+		layout::vertex bend;
+		bend.point = {600.0, 0.0};
+		bend.radius = 4000.0;
+		gentle.vertices = {bend};
+		gentle.category = line_class();
+		auto const made{model.execute(gentle)};
+		CAPTURE(reasons_of(made));
+		REQUIRE(made.done);
+		auto const before{model.state()};
+		auto const &line{only_line(model)};
+		auto const id{line.id};
+		auto const chainage{inside(line, layout::element_role::arc, layout::number(line.shape.vertices[0].id), share)};
+		auto const split{model.execute(layout::split_line{id, chainage})};
+		CAPTURE(reasons_of(split));
+		REQUIRE(split.done);
+		check_invariants(model.state());
+		check_same_track(before, id, model.state(), id, split.lines.front());
+	}
+}
+
 TEST_CASE("layout commands: a split inside a vertical curve or a Bloss transition is refused; outside them it's kept") {
 	layout::model model;
 	REQUIRE(model.execute(three_curves(layout::transition_shape::bloss)).done);
@@ -281,7 +311,7 @@ namespace {
 
 // random edits of the network: moved vertices, new radii, transitions and cants, splits, joins, deletions, undoing and redoing
 void random_edits(unsigned const Seed, int const Count) {
-	std::mt19937 random{Seed};
+	std::mt19937 random{Seed}; // NOSONAR: seeded for repeatable tests, nothing secret is drawn
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
 	auto const pick = [&](std::size_t const Size) { return std::uniform_int_distribution<std::size_t>{0, Size - 1}(random); };
 	layout::model model;
