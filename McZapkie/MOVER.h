@@ -2637,6 +2637,8 @@ class TMoverParameters
 	bool CabDeactivisation(bool const Enforce = false);
 	bool CabActivisationAuto(bool const Enforce = false);
 	bool CabDeactivisationAuto(bool const Enforce = false);
+	// whether the cab mirrors fold (or stay folded): above MirrorVelClose, in an inactive cab when InactiveCabFlag says so, or switched off
+	bool MirrorsFold() const;
 
 	/*! funkcje zwiekszajace/zmniejszajace nastawniki*/
 	/*! glowny nastawnik:*/

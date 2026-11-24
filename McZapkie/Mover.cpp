@@ -3895,6 +3895,11 @@ bool TMoverParameters::CabDeactivisationAuto(bool const Enforce)
 	return OK;
 }
 
+bool TMoverParameters::MirrorsFold() const
+{
+	return (Vel > MirrorVelClose) || (CabActive == 0 && (InactiveCabFlag & activation::mirrors) != 0) || MirrorForbidden;
+}
+
 // *************************************************************************************************
 // Q: 20160710
 // Siła napędzająca drezynę po naciśnięciu wajhy
