@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "application/editortool.h"
+#include "editor/editorRecords.hpp"
 #include "editor/editorStation.hpp"
 #include "scene/scenelayers.h"
 
@@ -84,13 +85,8 @@ class srk_tool final : public editor_tool
 	editor_templates &m_templates;
 	editor_signals &m_signals;
 	editor_guide &m_guide;
-	// the block of a line out of the station
-	enum class block_kind
-	{
-		semi, // semi-automatic: a warning disc before the entry signal
-		three, // the automatic one of three aspects: the block sections no shorter than the braking distance
-		four // of four aspects, the warning two signals ahead: the sections no shorter than half of it
-	};
+	// the block of a line out of the station: semi-automatic, the automatic one of three aspects, of four, as the //$s lines keep it
+	using block_kind = editor_records::block_kind;
 	// where the block of a line out of the station comes from
 	enum class block_reason
 	{

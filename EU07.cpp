@@ -19,6 +19,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 #include "stdafx.h"
 
 #include "application/application.h"
+#include "application/editormodeselftest.h"
 #include "simulation/simulationtest.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
@@ -279,6 +280,10 @@ int main(int argc, char *argv[])
 		finish_log();
 		if (initresult < 0)
 			exitcode = 1;
+		// a self-test script of the editor whose expectations failed ends with a code of its own, for the runner of the scripts;
+		// without a script there's none
+		else if (exitcode == 0 && editor_selftest::failures() > 0)
+			exitcode = editor_selftest::failed_exit_code;
 	}
 #ifndef _WIN32
 	fflush(stdout);

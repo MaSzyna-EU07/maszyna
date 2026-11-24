@@ -1,0 +1,21 @@
+# PR #450: the cant typed into the inspector at an end of a track goes on into the track joined there, as the gizmo and
+# the joints tool do it, and the neighbour goes into the same undo step. The joint stepped before.
+# a1, a2, a3: straights joined one after another, no cant
+wait 5
+expect cant a1 end 0 0.5
+expect cant a2 start 0 0.5
+trackcant a1 0 0 80
+expect cant a1 end 80 0.5
+# the track joined at the end has the cant at the joint too: the joint doesn't step
+expect cant a2 start 80 0.5
+expect joint a1 end 0.001 0.01 1
+# its other end stays as it was
+expect cant a2 end 0 0.5
+# the free end of a1 too
+expect cant a1 start 0 0.5
+# one undo puts both tracks back
+undo
+expect cant a1 end 0 0.5
+expect cant a2 start 0 0.5
+expect joint a1 end 0.001 0.01 1
+quit

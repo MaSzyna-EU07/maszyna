@@ -1,0 +1,42 @@
+# Q2: a switch breaking a hard rule of ST-T1-A6 isn't laid, the scenery left as it was, the switch tool telling why: the cant
+# changing within it (11.4 pkt 7), the end of a cant ramp nearer than 6 m (9.6 pkt 16), a double switch or a slip bent (11.4 pkt 4),
+# the curvature of the diverging track turning from one side to the other (9.7 pkt 12). A switch of 1:9.403 bent is only warned of:
+# the rule holds in the main tracks, which the editor doesn't tell. Before, all of them were laid with warnings, or none.
+# i0: a straight taking the cant of 60 mm on along all of it into i1..i8, a curve of R 600 m turning to +x; k1, k2: 60 m of R 2000 m
+# and 60 m of R 400 m turning the same way, without cant
+wait 5
+# on the straight i0: the cant changing within the switch
+switchplace Rz_60E1-300-1:9 300 -40 1 1
+expect track z1 removed
+expect steps 0
+expect status 11.4 pkt 7
+expect track i0 present
+# into the curve 3 m past the end of the ramp on i0
+switchcurve Rz_60E1-300-1:9 300.0075 3 1 -1
+expect track z1 removed
+expect steps 0
+expect status 3.0 m
+expect status (9.6 pkt 16)
+# a double switch into the curve
+switchcurve Rpd_49E1-190-1:9/1:9 308.32 99.54 1 -1
+expect track z1 removed
+expect track z1b removed
+expect steps 0
+expect status no double switch, slip nor crossing is bent (11.4 pkt 4)
+# a double slip into the curve
+switchcurve Rkpd_60E1-190-1:9 308.32 99.54 1 -1
+expect track editor_dks1_a removed
+expect steps 0
+expect status (11.4 pkt 4)
+# Rz 60E1-1200-1:18,5 over the change from R 2000 m to R 400 m, its diverging track out of the curve: R 3000 m one way, R 600 m the other
+switchcurve Rz_60E1-1200-1:18,5 600.225 80 1 1
+expect track z1 removed
+expect steps 0
+expect status (KZW II)
+expect status (9.7 pkt 12)
+# Rz 49E1-300-1:9,403 into the curve: laid, with the warning
+switchcurve Rz_49E1-300-1:9,403 308.32 99.54 1 -1
+expect track z1 present
+expect steps 1
+expect status none of 1:9.403 nor steeper than 1:9 (11.4 pkt 4)
+quit

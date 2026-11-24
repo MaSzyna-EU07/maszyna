@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -68,8 +70,14 @@ struct verdict
 std::string explain(verdict const &Verdict, options const &Options);
 
 verdict check(TTrack &Track, int const Path, options const &Options);
-// the safe speed rounded down to the usual steps of the speed limits
-double suggested(double const Safe);
+// the safe speed rounded down to the usual steps of the speed limits; inline, so the speed of the switches (editorSwitchCurve) takes it
+// where the checks of the speed aren't built
+inline double suggested(double const Safe)
+{
+	if (Safe >= 40.0)
+		return std::floor(Safe / 10.0) * 10.0;
+	return std::max(5.0, std::floor(Safe / 5.0) * 5.0);
+}
 // speed limit in force on the path, -1 for none. a switch keeps one for both its tracks: positive applies to both,
 // -2 and below only to the diverging one, its main track having no limit then
 double path_velocity(TTrack const &Track, int const Path);

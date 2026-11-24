@@ -185,7 +185,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::signals, true);
 		add(track_tab::kilometrage, false);
 		add(track_tab::lineside, false);
-		auto const advanced{m_track_tab == track_tab::turntable || srk_tab() || vehicle || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_gauge.is_open()};
+		auto const advanced{m_track_tab == track_tab::turntable || srk_tab() || vehicle || m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_gauge.is_open()};
 		auto const more{EditorSettings.track_tools_more()};
 		Buttons.push_back({icon::more, more ? STR_C("Less") : STR_C("More"), nullptr, STR_C("Turntable, stations and their signals, line block, trainset, profile, speed, joints, gauge"), more, [more]() {
 			                   EditorSettings.track_tools_more(false == more);
@@ -205,6 +205,7 @@ void editor_mode::work_area_tools(std::vector<tool_button> &Buttons)
 		add(track_tab::profile, true);
 		add(track_tab::speed, false);
 		add(track_tab::joints, false);
+		add(track_tab::norms, false);
 		Buttons.push_back({icon::gauge, STR_C("Structure gauge"), nullptr, STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"), m_gauge.is_open(),
 		                   [this]() { m_gauge.toggle(); }});
 		Buttons.back().accent = family_colour(2);
