@@ -147,7 +147,13 @@ void windscreen_water::assign(bool const Assigned)
 	}
 	for (std::size_t slot = 0; slot < m_glasscount; ++slot)
 	{
-		auto const &glass{m_glasses[slot]};
+		auto &glass{m_glasses[slot]};
+		// the material of the glass as the cab has it now: the renderer may give the glass a fresh copy of its material (after the
+		// weather changed), which takes the slot then
+		if (Assigned && (glass.submodel != nullptr) && (glass.submodel->m_material != glass.material) && is_glass(m_host.material(glass.submodel->m_material)))
+		{
+			glass.material = glass.submodel->m_material;
+		}
 		if (auto *material{m_host.material(glass.material)}; is_glass(material))
 		{
 			material->params[SLOT_PARAM].z = (Assigned && glass.baked ? static_cast<float>(slot + 1) : 0.f);
@@ -295,6 +301,10 @@ void windscreen_water::build(TModel3d &Cab)
 		auto &glass{m_glasses[m_glasscount]};
 		glass = windscreen_water::glass{};
 		glass.material = material;
+		visit_submodels(root, [&](TSubModel *Submodel) {
+			if ((glass.submodel == nullptr) && (Submodel->m_material == material) && (Submodel->eType == GL_TRIANGLES))
+				glass.submodel = Submodel;
+		});
 		auto const *opengl{m_host.material(material)};
 		glass.snow = is_snow_glass(opengl);
 		glass.mask = opengl->textures[opengl->shader->texture_conf.at("wipermask").id];
