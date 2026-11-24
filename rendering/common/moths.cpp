@@ -116,7 +116,10 @@ void gfx::moths::update(std::vector<local_lights::light> const &Lights, glm::dve
 			lookup->second.seen = Framestamp;
 		}
 	}
-	// the swarms of the lamps lit in this frame are shown
+	// the swarms of the lamps lit in this frame are shown. a swarm shown before stays so while its lamp is out of the lights of the
+	// frame by its distance (the range of the swarm, as of its node, hides it there): it changes, and the version of the state of
+	// the nodes with it, only when its lamp goes out, not each time the camera passes the range of the lights
+	auto const keepbeyond{static_cast<double>(Global.moths_range) * 0.9};
 	m_shown = 0;
 	for (auto &lamp : m_lamps)
 	{
@@ -125,7 +128,7 @@ void gfx::moths::update(std::vector<local_lights::light> const &Lights, glm::dve
 		{
 			continue;
 		}
-		auto const shown{flying && (entry.seen == Framestamp)};
+		auto const shown{flying && ((entry.seen == Framestamp) || (entry.model->visible() && (glm::length(entry.position - Camera) > keepbeyond)))};
 		entry.model->visible(shown);
 		m_shown += (shown ? 1 : 0);
 	}
