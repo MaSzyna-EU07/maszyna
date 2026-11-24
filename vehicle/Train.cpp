@@ -11915,9 +11915,9 @@ void TTrain::set_cab_controls(int const Cab)
 	// converter
 	if (mvOccupied->ConvSwitchType != "impulse")
 	{
-		ggConverterButton.PutValue(mvControlled->ConverterAllow ? 1.f : 0.f);
+		ggConverterButton.PutValue(mvOccupied->ConverterAllow ? 1.f : 0.f);
 	}
-	ggConverterLocalButton.PutValue(mvControlled->ConverterAllowLocal ? 1.f : 0.f);
+	ggConverterLocalButton.PutValue(mvOccupied->ConverterAllowLocal ? 1.f : 0.f);
 	// compressor
 	ggCompressorButton.PutValue(mvControlled->CompressorAllow ? 1.f : 0.f);
 	ggCompressorLocalButton.PutValue(mvControlled->CompressorAllowLocal ? 1.f : 0.f);
