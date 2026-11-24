@@ -102,6 +102,15 @@ struct scenery
 // the scenery from the file Root, relative to the folder, with all its includes
 scenery read(std::filesystem::path const &Folder, std::string const &Root, read_options const &Options = {});
 
+// the name of the file as the strings of the game hold it, none where the code page can't (Windows): generic_string() throws there,
+// and the game couldn't open such a file by its name either
+std::optional<std::string> name_of(std::filesystem::path const &Path);
+// the file has the extension, in any case, without its name being made a string
+bool has_extension(std::filesystem::path const &Path, std::u8string_view const Extension);
+
+// the text of the file, also where it's named in another case, as the game finds it (FileCased); none when it can't be read
+std::optional<std::string> file_text(std::filesystem::path const &Path);
+
 // the same names of files, the case and the slashes aside
 bool same_file(std::string_view const A, std::string_view const B);
 

@@ -49,11 +49,14 @@ index_fingerprint fingerprint_of(std::filesystem::path const &Folder, std::strin
 	std::error_code error;
 	for (std::filesystem::directory_iterator file{Folder, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
 	{
-		auto const name{file->path().filename().generic_string()};
-		if (false == file->is_regular_file(error) || false == scenery_text::lowered(name).ends_with(".scn"))
+		// the extension looked at before the name is made a string, which throws on Windows outside of the code page
+		if (false == scenery_text::has_extension(file->path(), u8".scn") || false == file->is_regular_file(error))
+			continue;
+		auto name{scenery_text::name_of(file->path())};
+		if (false == name.has_value())
 			continue;
 		index_fingerprint::file entry;
-		entry.name = name;
+		entry.name = std::move(*name);
 		entry.size = file->file_size(error);
 		entry.time = std::chrono::duration_cast<std::chrono::seconds>(file->last_write_time(error).time_since_epoch()).count();
 		result.files.push_back(std::move(entry));

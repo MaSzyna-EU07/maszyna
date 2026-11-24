@@ -287,7 +287,7 @@ namespace {
 // other type, taken out, with splits, joins and deletions of the lines, undoing and redoing; after each the invariants, a refusal changing
 // nothing, an undo giving the state before
 void random_kind_edits(unsigned const Seed, int const Count) {
-	std::mt19937 random{Seed};
+	std::mt19937 random{Seed}; // NOSONAR: seeded for repeatable tests, nothing secret is drawn
 	auto const uniform = [&](double const Low, double const High) { return std::uniform_real_distribution<double>{Low, High}(random); };
 	auto const pick = [&](std::size_t const Size) { return std::uniform_int_distribution<std::size_t>{0, Size - 1}(random); };
 	auto const types{layout::turnout_types()};

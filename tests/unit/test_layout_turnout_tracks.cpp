@@ -247,7 +247,8 @@ TEST_CASE("layout generator G: the diverging track of Rz 60E1-2500-1:26,5 within
 	CHECK(std::abs(diverging.length() - 2500.0 * std::atan(1.0 / 26.5)) < 0.001);
 	double least{1.0};
 	double most{0.0};
-	for (double s = 0.0; s + 30.0 <= diverging.length(); s += 1.0) {
+	for (int metre{0}; metre + 30.0 <= diverging.length(); ++metre) {
+		auto const s{static_cast<double>(metre)};
 		auto const a{diverging.at(s)};
 		auto const b{diverging.at(s + 30.0)};
 		auto const middle{diverging.at(s + 15.0)};

@@ -261,9 +261,11 @@ void editor_mode::model_plan_preview()
 		preview = {};
 		return;
 	}
+	// the first and the last vertex of two or more are dragged along the tangents of the ends by their offsets, which their positions
+	// don't follow (model_plan_commands places them so): without the offset the preview stayed as its first frame showed it
 	std::string key;
 	for (auto const &vertex : m_route.design.vertices)
-		key += format("%.4f %.4f %.3f %.3f %.3f %.1f;", vertex.position.x, vertex.position.y, vertex.radius, vertex.transition_in, vertex.transition_out, vertex.cant);
+		key += format("%.4f %.4f %.4f %.3f %.3f %.3f %.1f;", vertex.position.x, vertex.position.y, vertex.offset, vertex.radius, vertex.transition_in, vertex.transition_out, vertex.cant);
 	if (key == preview.key)
 		return;
 	preview = {};

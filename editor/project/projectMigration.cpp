@@ -137,21 +137,34 @@ struct switch_block
 double constexpr kOnLine{0.01}; // m: the start of a switch lies on a line within this
 double constexpr kAlong{1e-3}; // of the sine: its direction runs along the line within this
 
-// the type of the catalogue the switch of the editor is of: its kind, type, rail, radius, ratio and a (and b of an ordinary one) as its record
-// gives them, the first of them in the order of the catalogue; empty where none is
-std::string catalogue_type(switch_store::record const &Record)
+// the entry of the catalogue is of the type, rail, radius, ratio and a (and b of an ordinary one) the record gives. A switch bent into a
+// curve is written as Rlj or Rld (switch_store::classify) with the radius of the ordinary switch it's bent from, an Rz of the catalogue
+bool same_type(switch_design::design const &Entry, switch_store::record const &Record)
 {
+	auto const kind{Record.type == "Rlj" || Record.type == "Rld" ? std::string_view{"Rz"} : std::string_view{Record.type}};
+	if (Entry.type != kind || Entry.rail != Record.rail || std::abs(Entry.ratio - Record.ratio) > 0.01 || std::abs(Entry.a - Record.a) > 0.002)
+		return false;
+	if (Entry.type != "Skrz" && std::abs(Entry.radius - Record.radius) > 0.5)
+		return false;
+	return (Entry.type != "Rz" && Entry.type != "Rls") || std::abs(Entry.b - Record.b) <= 0.002;
+}
+
+// the type of the catalogue the switch of the editor is of; empty where none is, or where the record fits more than one, Why told then.
+// A frog with a movable nose isn't in the record: the ordinary frog is taken where the catalogue has both
+std::string catalogue_type(switch_store::record const &Record, std::string &Why)
+{
+	std::vector<switch_design::design const *> found;
 	for (auto const &entry : switch_design::catalogue_entries())
+		if (same_type(entry, Record))
+			found.push_back(&entry);
+	if (std::ranges::any_of(found, [](switch_design::design const *Entry) { return false == Entry->movable; }))
+		std::erase_if(found, [](switch_design::design const *Entry) { return Entry->movable; });
+	if (found.size() > 1)
 	{
-		if (entry.type != Record.type || entry.rail != Record.rail || std::abs(entry.ratio - Record.ratio) > 0.01 || std::abs(entry.a - Record.a) > 0.002)
-			continue;
-		if (entry.type != "Skrz" && std::abs(entry.radius - Record.radius) > 0.5)
-			continue;
-		if ((entry.type == "Rz" || entry.type == "Rls") && std::abs(entry.b - Record.b) > 0.002)
-			continue;
-		return entry.name;
+		Why = std::format("{} fits {} types of the catalogue, {} and {}, which the record doesn't tell apart", Record.type, found.size(), found[0]->name, found[1]->name);
+		return {};
 	}
-	return {};
+	return found.empty() ? std::string{} : found.front()->name;
 }
 
 // the line of its own the switch starts on, along it or against it: its chainage there
@@ -203,7 +216,14 @@ layout::line_id switch_turnout(layout::network &Network, switch_store::record co
 		Why = "its outer track lifted, which the domain has no place for";
 		return layout::line_id::none;
 	}
-	auto const type{catalogue_type(Record)};
+	if (Record.kind == "slip" || Record.kind == "crossing")
+	{
+		Why = std::format("a {}, whose record doesn't tell the side of its crossing track", Record.kind);
+		return layout::line_id::none;
+	}
+	auto const type{catalogue_type(Record, Why)};
+	if (false == Why.empty())
+		return layout::line_id::none;
 	if (type.empty())
 	{
 		Why = std::format("no {} of the catalogue of {} R {:.0f} 1:{:.3f} a {:.3f} b {:.3f}", Record.type, Record.rail, Record.radius, Record.ratio, Record.a, Record.b);
@@ -222,7 +242,13 @@ layout::line_id switch_turnout(layout::network &Network, switch_store::record co
 	}
 	// bent as its record says, the line under it bent so
 	auto const *line{Network.find(place->line)};
-	auto const length{layout::turnout_type_of(type)->length};
+	auto const catalogued{layout::turnout_type_of(type)};
+	if (line == nullptr || false == catalogued.has_value())
+	{
+		Why = std::format("{}: not a type the domain lays", type);
+		return layout::line_id::none;
+	}
+	auto const length{catalogued->length};
 	auto const curvature{std::abs(line->solved.curvature(std::clamp(place->chainage + place->direction * 0.5 * length, 0.0, line->solved.length)))};
 	if ((Record.main_radius == 0.0) != (curvature < 1e-6) || (Record.main_radius != 0.0 && std::abs(1.0 / curvature - std::abs(Record.main_radius)) > 0.05 * std::abs(Record.main_radius)))
 	{
@@ -230,7 +256,9 @@ layout::line_id switch_turnout(layout::network &Network, switch_store::record co
 		return layout::line_id::none;
 	}
 	layout::model model{Network};
-	auto const made{model.execute(layout::insert_turnout{place->line, place->chainage, type, Record.hand == 'L' ? 1 : -1, place->direction}, layout::edit_policy::no_new_block)};
+	// the store writes R where the diverging end lies to the positive cross of the direction (switch_store::classify), the side of
+	// hand 1 of the domain, whose curvature above 0 turns that way
+	auto const made{model.execute(layout::insert_turnout{place->line, place->chainage, type, Record.hand == 'R' ? 1 : -1, place->direction}, layout::edit_policy::no_new_block)};
 	if (false == made.done)
 	{
 		Why = type + ":";
@@ -670,9 +698,8 @@ std::vector<marked_file> marked_files(std::filesystem::path const &Folder, std::
 		// the templates (*.inc) are a part of the layer including them, their own lines are the descriptions (//$e)
 		if (scenery_text::lowered(file.name).ends_with(".inc"))
 			continue;
-		std::ifstream input{Folder / file.name, std::ios::binary};
-		std::string const text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-		auto lines{marked_lines(text)};
+		auto const text{scenery_text::file_text(Folder / file.name)};
+		auto lines{marked_lines(text.value_or(std::string{}))};
 		if (lines.empty())
 			continue;
 		result.push_back({file.name, file.context, std::move(lines)});
@@ -684,13 +711,20 @@ opened open_project(std::filesystem::path const &Folder, std::string const &Map,
 {
 	opened result;
 	auto const path{path_of(Folder / Map)};
-	if (std::filesystem::exists(path))
+	if (std::error_code error; std::filesystem::exists(path, error))
 	{
 		result.project = load(path);
 		return result;
 	}
 	auto made{migrate(marked_files(Folder, Map), Areas)};
 	result.notes = std::move(made.notes);
+	// no //$ lines: no file is written next to the map, which would be one more stray file in a working copy of the data. The project,
+	// empty, is written as the editor saves the scenery once it has something
+	if (made.project.network.lines().empty() && made.project.network.nodes().empty())
+	{
+		result.project.project = std::move(made.project);
+		return result;
+	}
 	std::string error;
 	if (false == save(made.project, path, error))
 	{

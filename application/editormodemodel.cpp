@@ -464,6 +464,18 @@ void editor_mode::model_run(std::vector<layout::command> Commands, model_context
 {
 	std::vector<TTrack *> created;
 	auto &session{model().session};
+	// more than one: all of them tried on a copy first, one after another, so one refused leaves none of them carried out. Run one by one,
+	// the radius of the first vertex stayed changed when the cant of the second was refused, under "Refused, nothing changed"
+	if (Commands.size() > 1)
+	{
+		layout::model copy{session.network()};
+		for (auto const &command : Commands)
+			if (auto const outcome{copy.execute(command)}; false == outcome.done)
+			{
+				model_told(outcome, true);
+				return;
+			}
+	}
 	while (false == Commands.empty())
 	{
 		auto const &command{Commands.front()};
@@ -1166,13 +1178,18 @@ bool editor_mode::model_delete(TTrack *Track)
 	}
 	if (Track->name().empty() || Track->name() == "none")
 		return false;
-	model_check_users({Track->name()}, [this, Track]() {
+	// Shift as it was at the key press, not as it is at the click on "go on": Shift+Del of a double switch takes it all away
+	auto const shift{Global.shiftState};
+	model_check_users({Track->name()}, [this, Track, shift]() {
 		if (Track->m_editorremoved)
 			return;
 		m_node = Track;
 		ui()->set_node(m_node);
 		m_model_delete_confirmed = true;
+		auto const now{Global.shiftState};
+		Global.shiftState = shift;
 		delete_selected_track();
+		Global.shiftState = now;
 		m_model_delete_confirmed = false;
 	});
 	return true;

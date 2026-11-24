@@ -51,6 +51,13 @@ inline std::size_t &failures()
 	return count;
 }
 
+// a command whose subject isn't there, a track name mistyped, fails the run as an expectation does
+inline void fail()
+{
+	++expectations();
+	++failures();
+}
+
 // apart from the 1 of a start which failed or of an error which ended the editor
 inline constexpr int failed_exit_code{2};
 
