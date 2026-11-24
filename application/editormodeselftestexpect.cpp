@@ -186,6 +186,24 @@ void expect_records(std::string const &What, std::istringstream &Words)
 	expectation(count == wanted, What, std::to_string(count), std::to_string(wanted));
 }
 
+// expect shaped <switch> <yes|no>: the switch keeps the shape its record says, or was bent out of it
+void expect_shaped(std::string const &What, std::istringstream &Words)
+{
+	std::string name;
+	std::string wanted;
+	Words >> name >> wanted;
+	if (malformed(What, Words))
+		return;
+	auto const *track{simulation::Paths.find(name)};
+	if (track == nullptr || track->m_editorremoved)
+	{
+		expectation(false, What, "no track " + name, "a switch");
+		return;
+	}
+	auto const shaped{switch_store::of(*track).has_value()};
+	expectation(shaped == (wanted == "yes"), What, shaped ? "yes" : "no", wanted);
+}
+
 // expect speed <track> <km/h> [tolerance], expect gauge <track> <m> [tolerance]
 void expect_track_value(std::string const &What, std::string const &Kind, std::istringstream &Words)
 {
@@ -385,6 +403,8 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_joint(what, words, &editor_mode::cant_of_roll);
 	else if (kind == "records")
 		expect_records(what, words);
+	else if (kind == "shaped")
+		expect_shaped(what, words);
 	else if (kind == "speed" || kind == "gauge")
 		expect_track_value(what, kind, words);
 	else if (kind == "track")
@@ -404,6 +424,6 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 	else if (kind == "steps")
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
 	else
-		expectation(false, what, "no expectation " + kind, "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status or steps");
+		expectation(false, what, "no expectation " + kind, "cant, joint, records, shaped, speed, gauge, track, route, norms, findings, height, lift, includes, status or steps");
 	return selftest_result::handled;
 }
