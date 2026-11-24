@@ -362,6 +362,20 @@ TEST_CASE("derail motion: the ground of the scenery") {
 		CHECK_FALSE(terrain.height(50.0, 5.0, 8.0).has_value());
 		CHECK(terrain.covers(14.0, -4.0));
 		CHECK_FALSE(terrain.covers(16.0, 0.0));
+		// the area of another vehicle: inside the one gathered or not
+		CHECK(terrain.covers(glm::dvec2{-5.0, -5.0}, glm::dvec2{15.0, 15.0}));
+		CHECK(terrain.covers(glm::dvec2{0.0, 2.0}, glm::dvec2{10.0, 12.0}));
+		CHECK_FALSE(terrain.covers(glm::dvec2{0.0, 2.0}, glm::dvec2{10.0, 16.0}));
+		CHECK_FALSE(terrain.covers(glm::dvec2{-6.0, 0.0}, glm::dvec2{0.0, 1.0}));
+		// cut down to the ground under a vehicle at rest: the triangles reaching into it, the same height there
+		auto const under{terrain.cropped(glm::dvec2{6.0, 0.0}, glm::dvec2{9.0, 4.0})};
+		CHECK(under.size() == 2);
+		CHECK(*under.height(7.5, 2.5, 8.0) == doctest::Approx(3.5));
+		CHECK(under.covers(6.0, 4.0));
+		CHECK_FALSE(under.covers(5.0, 2.0));
+		CHECK_FALSE(under.height(5.0, 2.0, 8.0).has_value());
+		CHECK(terrain.cropped(glm::dvec2{0.5, 0.5}, glm::dvec2{1.0, 1.0}).size() == 3);
+		CHECK(terrain.cropped(glm::dvec2{20.0, 20.0}, glm::dvec2{30.0, 30.0}).size() == 0);
 	}
 	SUBCASE("the bed of the track over the terrain, level ground without one") {
 		dm::formation bed;

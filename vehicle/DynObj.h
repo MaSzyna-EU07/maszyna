@@ -766,8 +766,11 @@ private:
     void begin_off_track();
     // the vehicle off the track moved on the ground, by the distance along its heading, in the time of the frame
     void move_off_track( double Distance );
-    // the terrain of the scenery within Reach [m] around the vehicle off the track, for the ground under it
-    void gather_off_track_terrain( double Reach );
+    // the terrain of the scenery around the vehicle off the track, as far as it may slide, for the ground under it: the
+    // one gathered for another vehicle where it covers that, gathered anew where it doesn't
+    void gather_off_track_terrain();
+    // at rest it keeps only the terrain under it, the rest of what was gathered (shared with others, perhaps) let go
+    void crop_off_track_terrain();
     // the bed of the track at the axles, the level direction of the track there, and the side the derailment throws the
     // vehicle to (1 the left of the front, -1 the right, 0 none): out of the curve of the track as designed, into it
     // where a buckle bends the line the other way more (McZapkie/derailment.h); on a straight track out of the turn of
@@ -781,9 +784,10 @@ private:
     // the scraping of the vehicle off the track, until it stops, and its state to the log every second
     void update_off_track( double Deltatime );
 
-    std::shared_ptr<derail_motion::ground> m_offtrackterrain; // none in a scenery without terrain
+    std::shared_ptr<derail_motion::mesh_ground const> m_offtrackterrain; // none in a scenery without terrain
     glm::dvec2 m_offtrackmin { 0.0 }; // what the terrain was gathered for
     glm::dvec2 m_offtrackmax { 0.0 };
+    bool m_offtrackcropped { false }; // the terrain cut down to the one under it at rest
     derail_motion::site m_offtracksite;
     double m_offtracktime { 0.0 }; // of the frame, for the motion
     double m_offtracklogdue { 0.0 };
@@ -1008,6 +1012,13 @@ public:
     // records the odometer states of the vehicles and saves them for the next sessions
     void
         save_odometers();
+    // physics.derailment new: the terrain gathered for a vehicle off the track which covers the rectangle from Min to Max
+    // (x, z), shared by the vehicles which slide over it; none where no vehicle has one. it lives as long as one of them
+    // keeps it
+    std::shared_ptr<derail_motion::mesh_ground const>
+        off_track_terrain( glm::dvec2 const &Min, glm::dvec2 const &Max );
+    void
+        share_off_track_terrain( std::shared_ptr<derail_motion::mesh_ground const> const &Terrain );
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
@@ -1034,6 +1045,7 @@ private:
     double m_overlapdue { 1.0 };
     bool m_overlaplogged { false };
     std::vector<TMoverParameters *> m_brakepipes; // the vehicles of update_brake_pipes(), kept for the memory
+    std::vector<std::weak_ptr<derail_motion::mesh_ground const>> m_offtrackterrains; // of off_track_terrain()
 };
 
 

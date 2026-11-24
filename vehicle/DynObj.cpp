@@ -3133,15 +3133,40 @@ int TDynamicObject::outward_side() const {
     return turn > 0.0 ? -1 : 1;
 }
 
-void TDynamicObject::gather_off_track_terrain( double const Reach ) {
+void TDynamicObject::gather_off_track_terrain() {
 
-    auto const &position { MoverParameters->OffTrack.active() ? MoverParameters->OffTrack.current().position : vPosition };
-    m_offtrackmin = glm::dvec2 { position.x - Reach, position.z - Reach };
-    m_offtrackmax = glm::dvec2 { position.x + Reach, position.z + Reach };
+    auto const &mover { *MoverParameters };
+    auto const &position { mover.OffTrack.active() ? mover.OffTrack.current().position : vPosition };
+    // as far as it may slide, and some
+    auto const slide { derail_motion::stopping_distance( mover.V, derailment::off_rails_friction ).value_or( 0.0 ) };
+    auto const reach { std::min( slide + mover.Dim.L + 50.0, 600.0 ) };
+    m_offtrackgathered = m_offtracktotal;
+    m_offtrackcropped = false;
+    // the terrain of another vehicle, where it covers the way this one goes: around it and around where it stops going
+    // straight on, by its length and the margin the terrain is gathered again at
+    glm::dvec3 heading { vFront.x, 0.0, vFront.z };
+    if( mover.OffTrack.active() ) {
+        heading = mover.OffTrack.heading();
+    }
+    auto const length { glm::length( heading ) };
+    auto const stop { length > 1e-6 ? position + heading * ( std::copysign( std::max( reach - mover.Dim.L - 50.0, 0.0 ), mover.V ) / length ) : position };
+    auto const margin { mover.Dim.L + 30.0 };
+    if( auto shared { simulation::Vehicles.off_track_terrain(
+            glm::dvec2 { std::min( position.x, stop.x ) - margin, std::min( position.z, stop.z ) - margin },
+            glm::dvec2 { std::max( position.x, stop.x ) + margin, std::max( position.z, stop.z ) + margin } ) };
+        shared != nullptr ) {
+        m_offtrackterrain = std::move( shared );
+        m_offtrackmin = m_offtrackterrain->minimum();
+        m_offtrackmax = m_offtrackterrain->maximum();
+        m_offtracksite.terrain( m_offtrackterrain.get() );
+        return;
+    }
+    m_offtrackmin = glm::dvec2 { position.x - reach, position.z - reach };
+    m_offtrackmax = glm::dvec2 { position.x + reach, position.z + reach };
     auto const started { off_track_clock::now() };
     auto triangles { scenery_ground( m_offtrackmin, m_offtrackmax ) };
-    m_offtrackgathered = m_offtracktotal;
-    if( triangles.size() > off_track_triangles ) {
+    auto const trimmed { triangles.size() > off_track_triangles };
+    if( trimmed ) {
         // a scenery dense enough to make it slow: the triangles nearest to it are enough
         std::nth_element( triangles.begin(), triangles.begin() + off_track_triangles, triangles.end(),
             [ &position ]( auto const &Left, auto const &Right ) {
@@ -3157,12 +3182,32 @@ void TDynamicObject::gather_off_track_terrain( double const Reach ) {
         m_offtrackterrain.reset();
     }
     else {
-        m_offtrackterrain = std::make_shared<derail_motion::mesh_ground>( triangles, m_offtrackmin, m_offtrackmax );
+        m_offtrackterrain = std::make_shared<derail_motion::mesh_ground const>( triangles, m_offtrackmin, m_offtrackmax );
+        // the vehicles sliding over it take it as it is; the nearest triangles of a dense scenery are its own
+        if( false == trimmed ) {
+            simulation::Vehicles.share_off_track_terrain( m_offtrackterrain );
+        }
     }
+    m_offtracksite.terrain( m_offtrackterrain.get() );
     auto const took { seconds_since( started ) };
     if( took > off_track_slow ) {
-        ErrorLog( std::format( "derailment: warning: gathering the terrain of {:.0f} m around {} took {:.0f} ms ({} triangles)", Reach, MoverParameters->Name, took * 1000.0, triangles.size() ) );
+        ErrorLog( std::format( "derailment: warning: gathering the terrain of {:.0f} m around {} took {:.0f} ms ({} triangles)", reach, MoverParameters->Name, took * 1000.0, triangles.size() ) );
     }
+}
+
+void TDynamicObject::crop_off_track_terrain() {
+
+    if( m_offtrackcropped || m_offtrackterrain == nullptr ) {
+        return;
+    }
+    m_offtrackcropped = true;
+    // the ground under it, and as far around as it gathers the terrain anew once it moves again
+    auto const &position { MoverParameters->OffTrack.current().position };
+    auto const reach { 0.5 * MoverParameters->Dim.L + 40.0 };
+    m_offtrackmin = glm::dvec2 { position.x - reach, position.z - reach };
+    m_offtrackmax = glm::dvec2 { position.x + reach, position.z + reach };
+    m_offtrackterrain = std::make_shared<derail_motion::mesh_ground const>( m_offtrackterrain->cropped( m_offtrackmin, m_offtrackmax ) );
+    m_offtracksite.terrain( m_offtrackterrain.get() );
 }
 
 void TDynamicObject::begin_off_track() {
@@ -3188,9 +3233,8 @@ void TDynamicObject::begin_off_track() {
     start.acceleration = mover.DerailAcceleration;
 
     // the terrain as far as it may slide, and some
-    auto const slide { derail_motion::stopping_distance( mover.V, derailment::off_rails_friction ).value_or( 0.0 ) };
     m_offtracktotal = 0.0;
-    gather_off_track_terrain( std::min( slide + mover.Dim.L + 50.0, 600.0 ) );
+    gather_off_track_terrain();
     m_offtracksite = derail_motion::site { m_offtrackterrain.get(), track_bed() };
     // each vehicle its own way of going off, from the seed of the run (the same seed, the same way)
     auto const scatter { derail_motion::draw_scatter( derail_motion::seed_of( Global.random_seed, mover.Name ) ) };
@@ -3206,7 +3250,7 @@ void TDynamicObject::begin_off_track() {
     auto const turn { std::asin( std::clamp( glm::dot( heading, level_left_of( glm::normalize( front ) ) ), -1.0, 1.0 ) ) };
     std::string terrain { "no terrain, level ground" };
     if( m_offtrackterrain != nullptr ) {
-        terrain = std::format( "{} triangles of terrain", static_cast<derail_motion::mesh_ground const &>( *m_offtrackterrain ).size() );
+        terrain = std::format( "{} triangles of terrain", m_offtrackterrain->size() );
     }
     WriteLog( std::format(
         "derailment: {} leaves the track at {:.0f} km/h on track {}, heading turned {:.1f} deg to the {}, the outside of the curve to the {}; {} around it",
@@ -3230,9 +3274,7 @@ void TDynamicObject::move_off_track( double const Distance ) {
         constexpr double margin { 30.0 };
         if( position.x - margin < m_offtrackmin.x || position.x + margin > m_offtrackmax.x
          || position.z - margin < m_offtrackmin.y || position.z + margin > m_offtrackmax.y ) {
-            auto const slide { derail_motion::stopping_distance( MoverParameters->V, derailment::off_rails_friction ).value_or( 0.0 ) };
-            gather_off_track_terrain( std::min( slide + MoverParameters->Dim.L + 50.0, 600.0 ) );
-            m_offtracksite.terrain( m_offtrackterrain.get() );
+            gather_off_track_terrain();
         }
     }
     m_offtracksite.bed( track_bed() );
@@ -3264,6 +3306,9 @@ void TDynamicObject::move_off_track( double const Distance ) {
     }
 
     place_off_track();
+    if( motion.at_rest() ) {
+        crop_off_track_terrain();
+    }
 
     pull_neighbours( Distance );
 
@@ -3731,6 +3776,11 @@ bool TDynamicObject::Update(double dt, double dt1)
         off_track_clock::time_point started {};
     };
     off_track_watch const watch { MoverParameters->OffTrack.active() ? this : nullptr, dt1 };
+    if( m_offtrackterrain != nullptr && false == MoverParameters->OffTrack.active() ) {
+        // physics.derailment new: back on the rails (rerail()), the terrain it slid over is let go
+        m_offtrackterrain.reset();
+        m_offtracksite.terrain( nullptr );
+    }
     if (!MoverParameters->PhysicActivation &&
         !MechInside) { // to drugie, bo będąc w maszynowym blokuje się fizyka
         // physics.derailment new: a vehicle off the track stopped along its heading still settles: it slides down a
@@ -9876,6 +9926,26 @@ vehicle_table::update_off_track_contacts( double const Deltatime ) {
     auto const took { seconds_since( started ) };
     if( took > off_track_slow ) {
         ErrorLog( std::format( "derailment: warning: the contacts of {} vehicles off the track took {:.0f} ms", offtrack.size(), took * 1000.0 ) );
+    }
+}
+
+std::shared_ptr<derail_motion::mesh_ground const>
+vehicle_table::off_track_terrain( glm::dvec2 const &Min, glm::dvec2 const &Max ) {
+
+    std::erase_if( m_offtrackterrains, []( auto const &Terrain ) { return Terrain.expired(); } );
+    for( auto const &terrain : m_offtrackterrains ) {
+        if( auto shared { terrain.lock() }; shared != nullptr && shared->covers( Min, Max ) ) {
+            return shared;
+        }
+    }
+    return {};
+}
+
+void
+vehicle_table::share_off_track_terrain( std::shared_ptr<derail_motion::mesh_ground const> const &Terrain ) {
+
+    if( Terrain != nullptr ) {
+        m_offtrackterrains.emplace_back( Terrain );
     }
 }
 

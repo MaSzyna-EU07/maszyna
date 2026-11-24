@@ -242,6 +242,10 @@ public:
 	std::optional<double> height(double X, double Z, double Ceiling) const override;
 	// whether the point is inside the rectangle the triangles were taken for
 	bool covers(double X, double Z) const;
+	// whether the rectangle from Min to Max (x, z) is inside the one the triangles were taken for
+	bool covers(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
+	// the ground of a smaller area: the triangles which reach into the rectangle from Min to Max (x, z)
+	mesh_ground cropped(glm::dvec2 const &Min, glm::dvec2 const &Max) const;
 	std::size_t size() const { return m_triangles.size(); }
 	glm::dvec2 const &minimum() const { return m_min; }
 	glm::dvec2 const &maximum() const { return m_max; }

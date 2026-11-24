@@ -411,6 +411,14 @@ bool mesh_ground::covers(double const X, double const Z) const {
 	return X >= m_min.x && X <= m_max.x && Z >= m_min.y && Z <= m_max.y;
 }
 
+bool mesh_ground::covers(glm::dvec2 const &Min, glm::dvec2 const &Max) const {
+	return Min.x >= m_min.x && Min.y >= m_min.y && Max.x <= m_max.x && Max.y <= m_max.y;
+}
+
+mesh_ground mesh_ground::cropped(glm::dvec2 const &Min, glm::dvec2 const &Max) const {
+	return mesh_ground{m_triangles, Min, Max, m_cell};
+}
+
 std::optional<std::size_t> mesh_ground::cell_of(double const X, double const Z) const {
 	if (false == covers(X, Z) || m_cells.empty()) {
 		return std::nullopt;
