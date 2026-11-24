@@ -89,6 +89,7 @@ class windscreen_water
 	struct glass
 	{
 		material_handle material{null_handle};
+		TSubModel *submodel{nullptr}; // the first piece of the glass in the cab, for the material it has now
 		texture_handle mask{null_handle};
 		float densest{0.f}; // the most metres squared a unit of the uv holds
 		float area{0.f}; // metres squared of the glass
