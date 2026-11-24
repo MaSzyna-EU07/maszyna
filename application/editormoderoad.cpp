@@ -973,7 +973,8 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 			auto const centre{road != nullptr ? road->definition().point(t) : junction->definition().centre};
 			// seen from the junction the road comes from where it's being led from
 			glm::dvec2 const from{tool.point.x - centre.x, tool.point.z - centre.z};
-			if (false == (road != nullptr ? editor_road::branch_from(*road, t, from, arriving, leaving, lanewidth, plan.end, plan.error) : editor_road::branch_from(*junction, from, arriving, leaving, lanewidth, plan.end, plan.error)))
+			if (false == (road != nullptr ? editor_road::branch_from(*road, t, from, arriving, leaving, lanewidth, layout.surfacetype, plan.end, plan.error) :
+			                                editor_road::branch_from(*junction, from, arriving, leaving, lanewidth, layout.surfacetype, plan.end, plan.error)))
 				return plan;
 			plan.hasend = true;
 			auto const &arm{plan.end.layout.arms[plan.end.arm]};
@@ -1004,8 +1005,9 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 			return plan;
 		}
 		// the axis of the road goes away from the junction, so the lanes going against it are the ones leading into the junction
-		if (false == (tool.branchroad != nullptr ? editor_road::branch_from(*tool.branchroad, tool.branchat, away, layout.backward, layout.forward, lanewidth, plan.start, plan.error) :
-		                                           editor_road::branch_from(*tool.branchjunction, away, layout.backward, layout.forward, lanewidth, plan.start, plan.error)))
+		if (false == (tool.branchroad != nullptr ?
+		                  editor_road::branch_from(*tool.branchroad, tool.branchat, away, layout.backward, layout.forward, lanewidth, layout.surfacetype, plan.start, plan.error) :
+		                  editor_road::branch_from(*tool.branchjunction, away, layout.backward, layout.forward, lanewidth, layout.surfacetype, plan.start, plan.error)))
 			return plan;
 		plan.hasstart = true;
 		auto const &arm{plan.start.layout.arms[plan.start.arm]};
@@ -1038,7 +1040,7 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 		plan.error = STR_C("Too far from the last point");
 		return plan;
 	}
-	plan.pieces = editor_road::plan(start, hasdirection ? &direction : nullptr, target, tied ? &enddirection : nullptr, Global.ctrlState, plan.error);
+	plan.pieces = editor_road::plan(start, hasdirection ? &direction : nullptr, target, tied ? &enddirection : nullptr, Global.ctrlState, layout.surfacetype, plan.error);
 	road_profile(plan.pieces, hasgrade ? &startgrade : nullptr, tied ? &endgrade : nullptr, Fresh);
 	return plan;
 }
@@ -2076,6 +2078,28 @@ bool editor_mode::render_road_layout(road_node::state &State)
 
 	// appearance
 	ImGui::Separator();
+	// what the road is made of sets how tight it can be laid out, and a road made dirt gets the look of a field road
+	char const *surfacetypes[]{STR_C("paved"), STR_C("dirt")};
+	int surfacetype{State.surfacetype == road_surface_type::dirt ? 1 : 0};
+	ImGui::SetNextItemWidth(120.0f);
+	if (ImGui::Combo(STR_C("Road type"), &surfacetype, surfacetypes, 2))
+	{
+		auto const previous{State.surfacetype};
+		State.surfacetype = (surfacetype == 1 ? road_surface_type::dirt : road_surface_type::paved);
+		if (State.surfacetype != previous)
+		{
+			// a surface left as the other type has it goes with the type, a surface picked by hand stays
+			if (State.surface == road_surface::default_material(previous))
+				State.surface = road_surface::default_material(State.surfacetype);
+			if (State.surfacetype == road_surface_type::dirt && State.markings == road_node::marking_colour::white)
+				State.markings = road_node::marking_colour::none;
+			changed = true;
+		}
+	}
+	item_tooltip("Paved: asphalt, concrete or setts, with the bends and the junction angles of a built road.\n"
+	             "Dirt: a track between fields or through a forest. It bends tighter (3 m radius instead of 6 m), can be shorter (1 m instead of 2 m),\n"
+	             "leaves other roads at sharper angles (15 degrees instead of 30) and can turn back in a hairpin.\n"
+	             "Made dirt, a road with the default asphalt gets the field road texture and loses the white lines");
 	char const *colours[]{STR_C("no markings"), STR_C("white"), STR_C("orange")};
 	int colour{State.markings == road_node::marking_colour::white ? 1 : State.markings == road_node::marking_colour::orange ? 2 : 0};
 	ImGui::SetNextItemWidth(120.0f);

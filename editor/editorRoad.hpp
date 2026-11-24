@@ -142,11 +142,14 @@ class editor_road
 	// width shared by all lanes of the road at specified value of the curve parameter of its axis. returns: false if the lanes differ in width
 	static bool lane_width(road_node::state const &State, double const T, float &Width);
 	// lays out a junction for a road leaving the side of specified piece at specified value of the curve parameter of its axis.
-	// Direction: the way the road leaves; Incoming, Outgoing: lanes of that road leading into the junction and out of it.
+	// Direction: the way the road leaves; Incoming, Outgoing: lanes of that road leading into the junction and out of it;
+	// Type: what that road is made of, which sets how sharp an angle it can leave at.
 	// nothing is changed until the result is carried out. returns: false if it can't be done, with the reason in Error
-	static bool branch_from(road_node &Road, double const T, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error);
+	static bool branch_from(road_node &Road, double const T, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, road_surface_type const Type, branch &Result,
+	                        std::string &Error);
 	// the same for a road leaving a junction between its arms, which gives the junction another arm
-	static bool branch_from(junction_node &Junction, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error);
+	static bool branch_from(junction_node &Junction, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, road_surface_type const Type, branch &Result,
+	                        std::string &Error);
 	// makes the junction laid out for a branch, or gives the existing one its new arm, and cuts the roads to fit. what it does is added to Record.
 	// returns: the junction
 	static junction_node *carry_out(branch const &Branch, record &Record);
@@ -156,8 +159,10 @@ class editor_road
 	static loose_end find_end(glm::dvec3 const &Point, double const Radius, bool const Junctions = true);
 	// lays out axes of the pieces for a road leading from a point to another. the directions are optional requirements
 	// for the road at its ends; without them it starts straight at the target, with them it bends to meet them.
+	// Type: what the road is made of, which sets how tight it can bend and how short it can be.
 	// returns: the axes in order, or nothing if there's no reasonable road to make, with the reason in Error
-	static std::vector<segment_data> plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight, std::string &Error);
+	static std::vector<segment_data> plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight,
+	                                      road_surface_type const Type, std::string &Error);
 	// cuts the pieces so none is longer than specified
 	static std::vector<segment_data> refine(std::vector<segment_data> const &Pieces, double const Length);
 	// gives a string of pieces a smooth profile running through provided heights.
