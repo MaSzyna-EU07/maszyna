@@ -36,6 +36,11 @@ public:
 		m_line.elements.back().features = Features;
 		return *this;
 	}
+	// the last transition a Bloss curve
+	line_builder &bloss() {
+		m_line.elements.back().bloss = true;
+		return *this;
+	}
 	norms::line done() {
 		if (m_line.grades.empty()) {
 			m_line.grades.push_back({0.0, m_end, 0.0, 0.0});
@@ -237,6 +242,21 @@ TEST_CASE("norms engine: the abrupt changes over a straight shorter than tab. 9.
 	}
 }
 
+TEST_CASE("norms engine: TSI and EN, which say nothing of jumps close together, take them together over the intermediate length of the other profiles") {
+	// the reverse curves of the test above, 10 m apart: each jump of 106.2 mm passes the TSI, their 212.4 mm don't
+	auto const each{11.8 * 60 * 60 / 400.0};
+	for (auto const profile : {profile_id::tsi, profile_id::en13803}) {
+		CAPTURE(static_cast<int>(profile));
+		line_builder builder;
+		builder.straight(100, 60).arc(400, 80, 60).straight(10.0, 60).arc(-400, 80, 60).straight(100, 60);
+		auto const found{of(evaluate(builder.done(), mixed_main(60), profile), parameter::deficiency_jump)};
+		auto const summed{std::ranges::find_if(found, [](norms::finding const &Finding) { return std::abs(Finding.chainage - 180.0) < 1e-6; })};
+		REQUIRE(summed != found.end());
+		CHECK(summed->value == doctest::Approx(2.0 * each));
+		CHECK(summed->length == doctest::Approx(10.0));
+	}
+}
+
 TEST_CASE("norms engine: the gradient and the rate of change of the cant along a ramp, the rate of change of the deficiency along a transition") {
 	// 100 mm over 50 m at 120 km/h: 2 mm/m, 66.7 mm/s
 	line_builder ramp;
@@ -268,6 +288,39 @@ TEST_CASE("norms engine: the gradient and the rate of change of the cant along a
 	REQUIRE(change.size() == 2);
 	CHECK(change.front().value == doctest::Approx(11.8 * 80 * 80 / 500.0 * 80 / (3.6 * 40.0)));
 	CHECK(change.front().level == tier::block);
+}
+
+TEST_CASE("norms engine: a Bloss transition changes the cant deficiency fastest in its middle, and moves the arc in by L^2 / 40R") {
+	// 60 m into R 600 m at 100 km/h, the cant evenly up to 60 mm: 136.7 mm of deficiency, 63.3 mm/s along an even transition, and
+	// 1.5 * 196.7 - 60 = 235 mm per its length in the middle of a Bloss curve, 108.8 mm/s, past the 80 mm/s of the hard limit
+	auto const findings = [](bool const Bloss) {
+		line_builder curve;
+		curve.straight(100, 100).transition(0, 600, 60, 100);
+		if (Bloss)
+			curve.bloss();
+		curve.arc(600, 100, 100).transition(600, 0, 60, 100);
+		if (Bloss)
+			curve.bloss();
+		curve.straight(100, 100);
+		curve.cant(0, 0).cant(100, 0).cant(160, 60).cant(260, 60).cant(320, 0);
+		return evaluate(curve.done(), mixed_main(100));
+	};
+	auto const fastest = [](std::vector<norms::finding> const &Found) {
+		double result{0.0};
+		for (auto const &finding : of(Found, parameter::deficiency_rate))
+			result = std::max(result, finding.value);
+		return result;
+	};
+	auto const even{findings(false)};
+	auto const bloss{findings(true)};
+	CHECK(fastest(even) == doctest::Approx((11.8 * 100 * 100 / 600.0 - 60.0) * 100 / (3.6 * 60.0)).epsilon(0.01));
+	// seen as eight pieces, a little below the peak of the curve
+	CHECK(fastest(bloss) > 100.0);
+	CHECK(fastest(bloss) < 109.0);
+	auto const blocked{of(bloss, parameter::deficiency_rate)};
+	CHECK(std::ranges::any_of(blocked, [](norms::finding const &Finding) { return Finding.level == tier::block; }));
+	for (auto const &finding : of(bloss, parameter::transition_shift))
+		CHECK(finding.value == doctest::Approx(60.0 * 60.0 / (600.0 * 40.0)));
 }
 
 TEST_CASE("norms engine: the lengths of the elements, the transition curves and the radius") {

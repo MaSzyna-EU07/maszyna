@@ -105,7 +105,8 @@ norms::element reversed(norms::element Element, double const Length)
 // the elements run on alike: the same kind, the curvature going on as it did
 bool runs_on(norms::element const &A, norms::element const &B)
 {
-	if (A.kind != B.kind || std::abs(A.curvature_end - B.curvature_start) > kCurvature || A.speed != B.speed || A.features != B.features)
+	// two halves of Bloss curves make no Bloss curve
+	if (A.kind != B.kind || A.bloss || B.bloss || std::abs(A.curvature_end - B.curvature_start) > kCurvature || A.speed != B.speed || A.features != B.features)
 		return false;
 	if (A.kind != norms::element_kind::transition)
 		return std::abs(A.curvature_start - B.curvature_end) <= kCurvature;
@@ -470,6 +471,8 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	{
 		auto const &last{result.back()};
 		auto const *owner{Network.find(last.line)};
+		if (owner == nullptr)
+			break;
 		auto const beyond{last.forward ? line_end::end : line_end::start};
 		auto const *other{across(owner->node_at(beyond), last.line, beyond)};
 		if (other == nullptr || contains(other->line) || Network.find(other->line) == nullptr)
@@ -481,6 +484,8 @@ std::vector<chain_part> chain_of(network const &Network, line_id const Line)
 	{
 		auto const &head{result.front()};
 		auto const *owner{Network.find(head.line)};
+		if (owner == nullptr)
+			break;
 		auto const behind{head.forward ? line_end::start : line_end::end};
 		auto const *other{across(owner->node_at(behind), head.line, behind)};
 		if (other == nullptr || contains(other->line) || Network.find(other->line) == nullptr)
@@ -496,7 +501,12 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 	double offset{0.0};
 	for (auto const &part : Chain)
 	{
-		auto const &owner{*Network.find(part.line)};
+		// the chain is made of the lines of the network: one gone is a chain out of date, of which the rest is described
+		auto const *found{Network.find(part.line)};
+		result.starts.push_back(offset);
+		if (found == nullptr)
+			continue;
+		auto const &owner{*found};
 		auto own{described(owner.solved, owner.category)};
 		auto const length{owner.solved.length};
 		// a track of a turnout: a connection of tracks, its frog, bent or not, its own speed
@@ -513,7 +523,6 @@ described_chain describe_chain(network const &Network, std::vector<chain_part> c
 					element.speed = std::min(element.speed > 0.0 ? element.speed : speed, speed);
 			}
 		}
-		result.starts.push_back(offset);
 		if (false == part.forward)
 		{
 			for (auto &element : own.elements)
@@ -694,12 +703,13 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 		for (auto const &part : chain)
 		{
 			done.insert(part.line);
-			laid = laid && Network.find(part.line)->solved.valid();
+			auto const *line{Network.find(part.line)};
+			laid = laid && line != nullptr && line->solved.valid();
 		}
 		if (false == laid)
 			continue;
 		auto const described{describe_chain(Network, chain)};
-		auto const &first{*Network.find(chain.front().line)};
+		auto const &first{*Network.find(chain.front().line)}; // NOSONAR: every line of the chain was found just above
 		// the profile of the lines' own wins over the areas: the lines of a chain have the same
 		auto areas{Network.areas};
 		if (first.profile.has_value())
@@ -711,7 +721,7 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 			// the line it's on, by the chainage along the chain
 			auto part{static_cast<std::size_t>(std::upper_bound(described.starts.begin(), described.starts.end(), finding.chainage + 1e-9) - described.starts.begin())};
 			part = part > 0 ? part - 1 : 0;
-			auto const &owner{*Network.find(chain[part].line)};
+			auto const &owner{*Network.find(chain[part].line)}; // NOSONAR: every line of the chain was found just above
 			auto const along{finding.chainage - described.starts[part]};
 			auto const chainage{chain[part].forward ? along : owner.solved.length - along};
 			auto const text{finding_text(finding)};

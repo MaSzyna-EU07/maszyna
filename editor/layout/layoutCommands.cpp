@@ -25,6 +25,7 @@ namespace
 {
 
 double constexpr kParallel{1e-9}; // rad: tangents within this run alike
+double constexpr kTouching{1e-6}; // m: a cut this close to the end of an element is at the end
 double constexpr kShortest{0.1}; // m: no part of a line split shorter; the simulation takes a path under 5 cm for one of no length
 
 using reasons = std::vector<std::string>;
@@ -216,13 +217,18 @@ reasons split_at(transaction &Change, line_id const Line, double const Chainage,
 		auto const next{k + 1 == count ? geometry::plan_of(Change.view().find(original.end)->position) : vertices[k + 1].point};
 		auto const in{glm::normalize(curve.point - previous)};
 		auto const out{glm::normalize(next - curve.point)};
-		if (std::abs(geometry::signed_angle(in, cut.heading)) <= kParallel && std::abs(cut.curvature) < 1e-12)
+		// at the start or the end of the curve: where its transition leaves the straight, or at the tangent point of an arc with none,
+		// whose curvature there is already the arc's
+		auto const straight_there{std::abs(cut.curvature) < 1e-12};
+		auto const arc_starts{e.role == element_role::arc && u < kTouching};
+		auto const arc_ends{e.role == element_role::arc && u > e.length - kTouching};
+		if (std::abs(geometry::signed_angle(in, cut.heading)) <= kParallel && (straight_there || arc_starts))
 		{
 			// right at the start of the curve
 			take(0, k, before);
 			take(k, count, after);
 		}
-		else if (std::abs(geometry::signed_angle(cut.heading, out)) <= kParallel && std::abs(cut.curvature) < 1e-12)
+		else if (std::abs(geometry::signed_angle(cut.heading, out)) <= kParallel && (straight_there || arc_ends))
 		{
 			take(0, k + 1, before);
 			take(k + 1, count, after);
@@ -977,7 +983,8 @@ reasons propose(transaction &Change, outcome &Result, join_ends const &Command)
 		return {"a line can't join a node to itself"};
 	auto const from{free_end_at(view, Command.from, true, why)};
 	auto const to{free_end_at(view, Command.to, false, why)};
-	if (false == why.empty())
+	// an end not found says why in Why
+	if (false == from.has_value() || false == to.has_value())
 		return why;
 	auto const &neighbour{*view.find(from->held.line)};
 	auto const category{neighbour.category};

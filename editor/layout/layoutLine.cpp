@@ -463,6 +463,7 @@ norms::line described(solved_line const &Line, norms::line_class const &Class, s
 		element.length = e.length;
 		element.curvature_start = e.curvature(0.0);
 		element.curvature_end = e.curvature(e.length);
+		element.bloss = e.kind == element_kind::bloss;
 		element.speed = Class.vmax;
 		auto const from{e.position(0.0)};
 		auto const to{e.position(e.length)};
