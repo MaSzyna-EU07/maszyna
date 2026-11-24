@@ -83,16 +83,20 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	// widths in pixels the windows need, as parts of the room there is
 	auto const width{std::max(viewport->WorkSize.x, 1.0f)};
 	auto const height{std::max(viewport->WorkSize.y, 1.0f)};
-	auto const left_width{std::min(400.0f * Global.ui_scale, width * 0.3f)};
-	auto const right_width{std::min(460.0f * Global.ui_scale, width * 0.3f)};
+	// the side columns a share of the width, not narrower than 300 px nor wider than they need: at 1366 px they left the view about
+	// 520 px of it
+	auto const side = [width](float const Most) { return std::min({std::max(width * 0.22f, 300.0f * Global.ui_scale), Most * Global.ui_scale, width * 0.3f}); };
+	auto const left_width{side(400.0f)};
+	auto const right_width{side(460.0f)};
 	auto const bottom_height{std::min(280.0f * Global.ui_scale, height * 0.35f)};
 	ImGuiID center{Dockspace};
 	auto const right{ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, right_width / width, nullptr, &center)};
 	auto const left{ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_width / (width - right_width), nullptr, &center)};
 	auto const bottom{ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, bottom_height / height, nullptr, &center)};
-	// left: settings of the tool in use above, the scenery below
+	// left: settings of the tool in use above, taller, the scenery below. In a window under 800 px high the scenery is a tab beside the
+	// settings, which take the whole column: at 1366 x 768 the panel of the lay tool didn't fit half of it
 	ImGuiID lefttop{left};
-	auto const leftbottom{ImGui::DockBuilderSplitNode(lefttop, ImGuiDir_Down, 0.5f, nullptr, &lefttop)};
+	auto const leftbottom{height < 800.0f * Global.ui_scale ? left : ImGui::DockBuilderSplitNode(lefttop, ImGuiDir_Down, 0.4f, nullptr, &lefttop)};
 	// windows are found by the stable part of their names, after ###
 	ImGui::DockBuilderDockWindow("###tooloptions", lefttop);
 	for (auto const *window : {"###scenetree", "###Layers", "###scenehierarchy"})
@@ -105,6 +109,11 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory"})
 		ImGui::DockBuilderDockWindow(window, bottomleft);
 	ImGui::DockBuilderDockWindow("###modelsets", bottomright);
+	// the scenery a tab beside the settings of the tool, these are the tab shown, as imgui.ini keeps the tab chosen: the tab of a window
+	// is the hash of "#TAB" seeded with the id of the window
+	if (leftbottom == lefttop)
+		if (auto *node{ImGui::DockBuilderGetNode(lefttop)}; node != nullptr)
+			node->SelectedTabId = ImHashStr("#TAB", 0, ImHashStr("###tooloptions"));
 	ImGui::DockBuilderFinish(Dockspace);
 }
 
@@ -778,7 +787,12 @@ void editor_ui::render_tool_options()
 				m_tracktools();
 		}
 		else
+		{
+			// the line of the keys goes on under itself at the edge of the panel, narrower in a small window
+			ImGui::PushTextWrapPos(0.0f);
 			render_mode_options(current);
+			ImGui::PopTextWrapPos();
+		}
 		if (ImGui::CollapsingHeader(STR_C("Gizmo")))
 		{
 			if (m_gizmooptions)
@@ -803,6 +817,8 @@ void editor_ui::render_inspector()
 			ImGui::End();
 			return;
 		}
+		if (m_firststeps)
+			m_firststeps();
 		if (auto const &selection{m_workspaceselection[static_cast<std::size_t>(m_workspace)]})
 		{
 			selection();
@@ -1079,6 +1095,22 @@ void editor_ui::set_notice(std::string const &Notice)
 	m_refusal = Notice;
 	m_refusaltime = ImGui::GetTime();
 	m_refusalnotice = true;
+}
+
+void editor_ui::set_refusal(std::string const &Refusal)
+{
+	if (Refusal.empty() || ImGui::GetCurrentContext() == nullptr)
+		return;
+	m_refusal = Refusal;
+	m_refusaltime = ImGui::GetTime();
+	m_refusalnotice = false;
+}
+
+std::string editor_ui::refusal_shown() const
+{
+	if (ImGui::GetCurrentContext() == nullptr || ImGui::GetTime() - m_refusaltime > (m_refusalnotice ? 7.0 : 4.0))
+		return {};
+	return m_refusal;
 }
 
 void editor_ui::render_refusal()

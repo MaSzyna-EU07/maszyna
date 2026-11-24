@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "editor/editorRecords.hpp"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -75,7 +76,8 @@ std::string editor_mode::grade_line_key(std::string const &Name, TTrack const &T
 	return format("%s@%lld,%lld", Name.c_str(), static_cast<long long>(std::llround(start.x)), static_cast<long long>(std::llround(start.z)));
 }
 
-// the grade lines shared go to the scenery files as "//$w" comment lines, by those keys
+// the grade lines shared go to the scenery files as "//$w" comment lines, by those keys: editor_records::read_grade_lines() and
+// grade_line_lines()
 void editor_mode::grade_lines_load()
 {
 	auto &state{m_nmt_state};
@@ -83,18 +85,11 @@ void editor_mode::grade_lines_load()
 		return;
 	state.grade_lines_loaded = true;
 	for (auto const layer : scene::Layers.marked_layers(kGradeLineMark))
-		for (auto const &text : scene::Layers.marked(layer, kGradeLineMark))
+		for (auto const &entry : editor_records::read_grade_lines(scene::Layers.marked(layer, kGradeLineMark)))
 		{
-			std::istringstream line{text};
-			std::string keyword, name, hand;
-			int number{0};
-			line >> keyword >> name >> number;
-			if (keyword == "gradeline" && false == line.fail())
-			{
-				state.grade_lines[name] = number;
-				if (line >> hand && hand == "hand")
-					state.grade_lines_hand.insert(name);
-			}
+			state.grade_lines[entry.key] = entry.number;
+			if (entry.hand)
+				state.grade_lines_hand.insert(entry.key);
 		}
 }
 
@@ -102,7 +97,7 @@ void editor_mode::grade_lines_store()
 {
 	if (scene::Layers.empty())
 		return;
-	std::map<scene::layer_handle, std::vector<std::string>> lines;
+	std::map<scene::layer_handle, std::vector<editor_records::grade_line>> lines;
 	for (auto const layer : scene::Layers.marked_layers(kGradeLineMark))
 		lines[layer];
 	for (auto const *track : simulation::Paths.sequence())
@@ -117,14 +112,11 @@ void editor_mode::grade_lines_store()
 		auto layer{scene::Layers.resolve(track->layer())};
 		if (false == scene::Layers.valid(layer) || false == scene::Layers.accepts(layer))
 			layer = scene::Layers.active();
-		auto &those{lines[layer]};
-		if (those.empty())
-			those.emplace_back("# the tracks sharing a grade line, each with the number of it; the simulation skips these lines");
-		those.push_back(format("gradeline %s %d%s", key.c_str(), found->second, hand ? " hand" : ""));
+		lines[layer].push_back({key, found->second, hand});
 	}
 	for (auto &[layer, those] : lines)
 		if (scene::Layers.valid(layer))
-			scene::Layers.mark(layer, kGradeLineMark, std::move(those));
+			scene::Layers.mark(layer, kGradeLineMark, editor_records::grade_line_lines(those));
 }
 
 bool editor_mode::on_route_grade_line(TTrack const &Track)

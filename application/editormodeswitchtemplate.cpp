@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorSpeed.hpp"
 #include "simulation/simulation.h"
 #include "utilities/translation.h"
 #include "world/Track.h"
@@ -366,6 +367,8 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 		return false;
 	auto const &main{first.m_paths[0]};
 	auto const &diverging{first.m_paths[1]};
+	// the own limit of the main track, kept where it's lower than the speed of the diverging track of the new template
+	auto const limit{speed_check::path_velocity(first, 0)};
 	if (set.has_value() || false == has_controls(main))
 	{
 		// along the straight: the start and the direction of the switch kept
@@ -435,6 +438,10 @@ bool editor_mode::apply_switch_template(TTrack &Switch, editor_track::switch_tem
 			extension->m_bladethrow = Shape.bladethrow;
 			editor_track::commit_parameters(*track);
 		}
+	// the speed on the diverging track of the new template, as it lies, none of the old one kept
+	for (auto *track : {&first, set.has_value() ? set->second : nullptr})
+		if (track != nullptr)
+			write_switch_speed(*track, Shape.radius, Shape.ratio, limit);
 	if (set.has_value())
 		record_double(*set->first, *set->second, Shape);
 	else

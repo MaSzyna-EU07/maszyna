@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "editor/editorKilometrage.hpp"
+#include "editor/editorRecords.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
@@ -66,47 +67,16 @@ void drop_axes()
 
 using span = editor_track::route_span;
 
-std::string word(std::string const &Text)
-{
-	return Text.empty() ? std::string{"-"} : Text;
-}
-
-// format of the lines, coordinates in the space of the file:
-//   mark <line> <x y z> way <x z> km <km> [beyond <km>]
-//   via <line> <x y z>
+// the lines and their format: editor_records::read_kilometrage() and kilometrage_lines()
 void store(scene::layer_handle const Layer)
 {
 	if (false == scene::Layers.valid(Layer))
 		return;
-	auto const &context{scene::Layers.layer(Layer).context_insert()};
-	std::vector<std::string> lines;
-	auto const heading = [&]() {
-		if (lines.empty())
-			lines.emplace_back("# kilometrage of the lines set in the track editor, the simulation skips these lines");
-	};
-	for (auto const &entry : g_marks)
-	{
-		if (entry.layer != Layer)
-			continue;
-		heading();
-		auto const point{context.to_local(entry.point)};
-		auto const ahead{context.to_local(entry.point + glm::dvec3{entry.way.x, 0.0, entry.way.y})};
-		auto way{plan_of(ahead - point)};
-		way = glm::length(way) > 1e-12 ? glm::normalize(way) : entry.way;
-		auto text{format("mark %s %.4f %.4f %.4f way %.9f %.9f km %.3f", word(entry.line).c_str(), point.x, point.y, point.z, way.x, way.y, entry.km)};
-		if (entry.beyond.has_value())
-			text += format(" beyond %.3f", *entry.beyond);
-		lines.push_back(text);
-	}
-	for (auto const &entry : g_vias)
-	{
-		if (entry.layer != Layer)
-			continue;
-		heading();
-		auto const point{context.to_local(entry.point)};
-		lines.push_back(format("via %s %.4f %.4f %.4f", word(entry.line).c_str(), point.x, point.y, point.z));
-	}
-	scene::Layers.mark(Layer, kMark, std::move(lines));
+	std::vector<mark> marks;
+	std::copy_if(g_marks.begin(), g_marks.end(), std::back_inserter(marks), [&](mark const &Entry) { return Entry.layer == Layer; });
+	std::vector<via> vias;
+	std::copy_if(g_vias.begin(), g_vias.end(), std::back_inserter(vias), [&](via const &Entry) { return Entry.layer == Layer; });
+	scene::Layers.mark(Layer, kMark, editor_records::kilometrage_lines(marks, vias, scene::Layers.layer(Layer).context_insert()));
 }
 
 void changed(std::set<scene::layer_handle> const &Layers)
@@ -606,47 +576,7 @@ void load()
 	g_vias.clear();
 	drop_axes();
 	for (auto const layer : scene::Layers.marked_layers(kMark))
-	{
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		for (auto const &text : scene::Layers.marked(layer, kMark))
-		{
-			std::istringstream line{text};
-			std::string keyword;
-			mark entry;
-			entry.layer = layer;
-			glm::dvec3 point{0.0};
-			glm::dvec2 way{0.0, 1.0};
-			line >> keyword;
-			if (keyword == "via")
-			{
-				via entry;
-				entry.layer = layer;
-				glm::dvec3 point{0.0};
-				line >> entry.line >> point.x >> point.y >> point.z;
-				if (line.fail() || entry.line.empty())
-					continue;
-				entry.point = context.to_world(point);
-				g_vias.push_back(std::move(entry));
-				continue;
-			}
-			if (keyword != "mark")
-				continue;
-			line >> entry.line >> point.x >> point.y >> point.z >> keyword >> way.x >> way.y >> keyword >> entry.km;
-			if (line.fail() || entry.line.empty() || false == std::isfinite(entry.km))
-				continue;
-			while (line >> keyword)
-				if (keyword == "beyond")
-				{
-					double beyond{0.0};
-					if (line >> beyond)
-						entry.beyond = beyond;
-				}
-			entry.point = context.to_world(point);
-			entry.way = plan_of(context.to_world(point + glm::dvec3{way.x, 0.0, way.y}) - entry.point);
-			entry.way = glm::length(entry.way) > 1e-12 ? glm::normalize(entry.way) : glm::dvec2{0.0, 1.0};
-			g_marks.push_back(std::move(entry));
-		}
-	}
+		editor_records::read_kilometrage(scene::Layers.marked(layer, kMark), scene::Layers.layer(layer).context_insert(), layer, g_marks, g_vias);
 	g_base = current();
 	g_changed = false;
 	if (false == g_marks.empty())

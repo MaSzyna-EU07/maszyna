@@ -1,0 +1,4 @@
+// //$s: stations described in the signalling tool, as editor_records::station_lines() writes them; the names in windows-1250
+//$s # stations described in the track editor, the simulation skips these lines
+//$s station MMz line 91 km 12.345 from left anchor z1 braking 700 blocks bpd_a=sbl4,bpd_b=semi ways bpd_a=2 joints +100.000/0.000/200.000,-110.500/0.000/205.250 name £Ûdü Kaliska
+//$s station - line - km - from right anchor z7 blocks x=sbl name Stacja
