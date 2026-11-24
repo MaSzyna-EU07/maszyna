@@ -1041,6 +1041,10 @@ bool vulkan14_renderer::Render()
 
 bool vulkan14_renderer::make_viewport_targets(std::size_t const Index)
 {
+	if (m_context == nullptr)
+	{
+		return false;
+	}
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	if (scene.targets.size() < m_viewports.size())

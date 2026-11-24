@@ -2539,7 +2539,8 @@ void vulkan14_renderer::list_prewarm_pipelines()
 
 // the pipelines the scene loaded will draw with, made while the loading screen is shown: by the background threads where they run,
 // otherwise here, for about Milliseconds a call. a pipeline made for a draw instead would leave the draw out for a few frames (the
-// background threads) or hold the frame while it's made. the pipelines of the list of the last session are waited for as well
+// background threads) or hold the frame while it's made. the pipelines of the list of the last session are waited for as well,
+// and counted in what's returned
 std::pair<std::size_t, std::size_t> vulkan14_renderer::Prewarm_Shaders(double const Milliseconds)
 {
 	if (m_context == nullptr)
@@ -2581,16 +2582,21 @@ std::pair<std::size_t, std::size_t> vulkan14_renderer::Prewarm_Shaders(double co
 		}
 	}
 	auto const done{static_cast<std::size_t>(std::ranges::count_if(ctx.prewarm, [](context::prewarm_pipeline const &Pipeline) { return has_scene_pipeline(*Pipeline.program, Pipeline.key); }))};
-	// one more step: the background threads idle, the list of the last session made too
+	// the pipelines of the list of the last session count too, up to 4096 of them from any scenery played before: with a cold
+	// cache of the driver they take most of the time, and the bar moves with them. then one more step: the background threads
+	// idle, which ends the wait whatever the counts say (a task dropped is never counted as done)
+	auto const listed{ctx.warm_queued.load()};
+	auto const warmed{std::min(ctx.warm_finished.load(), listed)};
 	auto const idle{(false == background) || (ctx.background.pending() == 0)};
-	auto const total{ctx.prewarm.size() + 1};
+	auto const total{ctx.prewarm.size() + listed + 1};
 	if (idle && (done == ctx.prewarm.size()))
 	{
 		// all made: the programs aren't held past the loading screen
 		ctx.prewarm.clear();
 		ctx.prewarm_next = 0;
+		return {total, total};
 	}
-	return {done + (idle ? 1 : 0), total};
+	return {done + warmed, total};
 }
 
 // the pipelines of the list of the last session made ahead by the background threads, after the ones the draws wait for
@@ -2629,6 +2635,7 @@ void vulkan14_renderer::context::warm_scene_pipelines()
 	}
 	vk14::log_info("pipelines of the last session made ahead: " + std::to_string(records.size()));
 	auto const layout{ctx.scene.scene_layout};
+	ctx.warm_queued += records.size();
 	for (auto const &record : records)
 	{
 		ctx.background.add(
@@ -2647,6 +2654,7 @@ void vulkan14_renderer::context::warm_scene_pipelines()
 				    // the shader went or changed meanwhile
 				    vk14::log_info(std::string("a pipeline of the last session can't be made ahead: ") + Exception.what());
 			    }
+			    ++ctx.warm_finished;
 		    },
 		    false);
 	}

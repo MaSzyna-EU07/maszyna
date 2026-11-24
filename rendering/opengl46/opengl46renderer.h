@@ -664,6 +664,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 		std::unique_ptr<gl::renderbuffer> depth;
 		std::unique_ptr<gl::renderbuffer> motion;
 		std::unique_ptr<gl::framebuffer> target;
+		// one model block for the variants of the multi draws, which read theirs from a storage buffer (MODEL_DRAW_SSBO_BINDING)
+		std::unique_ptr<gl::ssbo> draws;
 		gfx::geometrybank_handle bank{};
 		gfx::geometry_handle triangle{};
 	};

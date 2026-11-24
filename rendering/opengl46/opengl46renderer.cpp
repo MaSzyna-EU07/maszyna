@@ -5791,6 +5791,13 @@ std::pair<std::size_t, std::size_t> opengl46_renderer::Prewarm_Shaders( double c
 		gfx::userdata_array userdata;
 		prewarm.bank = Create_Bank();
 		prewarm.triangle = Insert( vertices, userdata, prewarm.bank, GL_TRIANGLES );
+		if( false == m_multidrawprograms.empty() ) {
+			// the variants of the multi draws read the model block of the draw from a storage buffer, which the frames bind for
+			// their multi draws only. drawn here with a plain draw, they read the block of the draw 0; without a buffer there
+			// the draw would be undefined
+			prewarm.draws = std::make_unique<gl::ssbo>( static_cast<GLsizeiptr>( sizeof( gl::model_ubs ) ), gl::MODEL_DRAW_SSBO_BINDING );
+			prewarm.draws->update( model_ubs );
+		}
 		if( false == prewarm.target->is_complete() ) {
 			ErrorLog( "the programs of the materials weren't prepared: the target of the drawing can't be made" );
 			prewarm.next = prewarm.programs.size();
@@ -5817,6 +5824,10 @@ std::pair<std::size_t, std::size_t> opengl46_renderer::Prewarm_Shaders( double c
 	::glViewport( 0, 0, 4, 4 );
 	::glEnable( GL_DEPTH_TEST );
 	model_ubo->update( model_ubs );
+	if( prewarm.draws != nullptr ) {
+		// every multi draw of a frame binds its own blocks there afterwards (Bind_Indirect_Blocks())
+		prewarm.draws->bind_base();
+	}
 	while( ( prewarm.next < prewarm.programs.size() ) && ( std::chrono::steady_clock::now() < until ) ) {
 		prewarm.programs[ prewarm.next ]->bind();
 		// as the opaque things are drawn, and as the translucent ones are

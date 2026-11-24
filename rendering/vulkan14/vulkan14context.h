@@ -579,6 +579,10 @@ struct vulkan14_renderer::context
 	std::vector<vk14::scene_pipeline_record> warm_records;
 	std::unordered_set<std::string> warm_lines;
 	std::atomic<std::size_t> warm_made{0};
+	// the pipelines of the list of the last session handed to the background threads, and those of them done with, made or not:
+	// the progress of the loading screen (vulkan14_renderer::Prewarm_Shaders())
+	std::atomic<std::size_t> warm_queued{0};
+	std::atomic<std::size_t> warm_finished{0};
 	std::atomic<std::size_t> pipelines_late{0};
 	// the pipelines made behind the loading screen once the scenery is loaded (vulkan14_renderer::Prewarm_Shaders()): each with the
 	// key bind_scene_pipeline() looks it up by in the map of its program, and the next one made on the main thread without the
