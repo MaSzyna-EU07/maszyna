@@ -938,8 +938,10 @@ reasons join_curved(transaction &Change, outcome &Result, join_ends const &Comma
 		bool fits{false};
 		auto last{tangent(0.0, fits) - held};
 		auto last_fits{fits};
-		for (double free = 2.0; free <= 400.0; free += 2.0)
+		for (int step{1}; step <= 200; ++step)
 		{
+			// every 2 m, as exact as the sum of the steps was
+			auto const free{2.0 * step};
 			auto const now{tangent(free, fits) - held};
 			if (fits && last_fits && (now == 0.0 || (now < 0.0) != (last < 0.0)))
 			{

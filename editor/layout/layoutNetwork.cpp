@@ -653,7 +653,12 @@ void check_node(network const &Network, node const &Node, verdict &Result)
 			continue;
 		}
 		auto const *switched{owner_of(Network, end.line)};
-		auto const main{std::ranges::find_if(Node.ends, [&](end_ref const &Each) { return Each.line == switched->main; })};
+		if (switched == nullptr)
+		{
+			ends.push_back(end);
+			continue;
+		}
+		auto const main{std::ranges::find_if(Node.ends, [switched](end_ref const &Each) { return Each.line == switched->main; })};
 		if (switched->start != Node.id || main == Node.ends.end())
 			Result.reasons.push_back(std::format("{}: the diverging track of turnout {} starts there, its main track doesn't", node_name(Node.id), number(switched->id)));
 		else if (main->side() != end.side())
@@ -731,7 +736,7 @@ void check_norms(network const &Network, std::set<line_id> const &Lines, verdict
 				auto const position_at = [&](double const At) {
 					auto index{static_cast<std::size_t>(std::upper_bound(described.starts.begin(), described.starts.end(), At + 1e-9) - described.starts.begin())};
 					index = index > 0 ? index - 1 : 0;
-					auto const &line{Network.find(chain[index].line)->solved};
+					auto const &line{Network.find(chain[index].line)->solved}; // NOSONAR: every line of the chain was found above
 					auto const local{At - described.starts[index]};
 					return line.position(std::clamp(chain[index].forward ? local : line.length - local, 0.0, line.length));
 				};
@@ -781,16 +786,18 @@ verdict check(network const &Network, std::set<line_id> const &Lines, std::set<n
 		}
 	// the lines of the turnouts touched are judged with them
 	std::set<line_id> lines{Lines};
+	// the turnouts are the owners of lines found in the network
+	std::erase_if(turnouts, [&Network](turnout_id const Id) { return Network.find(Id) == nullptr; });
 	for (auto const id : turnouts)
 	{
-		auto const &switched{*Network.find(id)};
+		auto const &switched{*Network.find(id)}; // NOSONAR: the turnouts not found were taken out above
 		lines.insert(switched.main);
 		lines.insert(switched.diverging);
 	}
 	if (false == result.reasons.empty())
 		return result;
 	for (auto const id : turnouts)
-		check_turnout(Network, *Network.find(id), result);
+		check_turnout(Network, *Network.find(id), result); // NOSONAR: the turnouts not found were taken out above
 	if (result.reasons.empty())
 		check_norms(Network, lines, result);
 	return result;
