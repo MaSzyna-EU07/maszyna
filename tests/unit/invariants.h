@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "mover/TMoverParameters.h"
+#include "McZapkie/TMoverParameters.h"
 
 namespace test {
 

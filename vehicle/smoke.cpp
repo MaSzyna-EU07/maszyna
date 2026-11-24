@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/smoke.h"
 
-#include "mover/TMoverParameters.h"
+#include "../McZapkie/TMoverParameters.h"
 
 namespace smoke {
 

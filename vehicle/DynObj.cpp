@@ -14,10 +14,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/DynObj.h"
-#include "mover/TCoupling.h"
-#include "mover/TCurrentCollector.h"
-#include "mover/TBrakePressure.h"
-#include "mover/core.h"
+#include "../McZapkie/TCoupling.h"
+#include "McZapkie/TCurrentCollector.h"
+#include "../McZapkie/TBrakePressure.h"
+#include "../McZapkie/core.h"
 
 #include "vehicle/lightsprogrammer.h"
 

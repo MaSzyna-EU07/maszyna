@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 using test::definition;
 using test::vehicle;

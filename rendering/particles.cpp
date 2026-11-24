@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/particles.h"
-#include "mover/core.h"
+#include "../McZapkie/core.h"
 
 #include "utilities/Timer.h"
 #include "utilities/Globals.h"

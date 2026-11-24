@@ -7,7 +7,7 @@
 #include "consist.h"
 
 #include "McZapkie/hamulce.h"
-#include "mover/TBrakePressure.h"
+#include "McZapkie/TBrakePressure.h"
 
 using test::definition;
 using test::vehicle;

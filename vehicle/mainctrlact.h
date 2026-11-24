@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "mover/TMoverParameters.h"
+#include "../McZapkie/TMoverParameters.h"
 
 using mover::TEngineType;
 using mover::TMoverParameters;

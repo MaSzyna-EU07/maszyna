@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "consist.h"
 
-#include "mover/core.h"
-#include "mover/neighbour_data.h"
+#include "McZapkie/core.h"
+#include "McZapkie/neighbour_data.h"
 #include "vehicle/DynObj.h"
 
 namespace test {

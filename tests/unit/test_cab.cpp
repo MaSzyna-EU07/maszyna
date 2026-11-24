@@ -5,8 +5,8 @@
 #include "drive.h"
 
 #include "McZapkie/hamulce.h"
-#include "mover/TSecuritySystem.h"
-#include "mover/core.h"
+#include "McZapkie/TSecuritySystem.h"
+#include "McZapkie/core.h"
 #include "utilities/utilities.h"
 
 // characterisation of what the cab (Train.cpp) and the AI (Driver.cpp, driverhints.cpp) call on a vehicle

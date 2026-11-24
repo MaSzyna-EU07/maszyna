@@ -2,7 +2,7 @@
 #include "doctest.h"
 #include "scenario.h"
 #include "vehicle.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 // the door closure signalling (SOD, the i-door_blocked lamp of a cab): the state of each vehicle's doors and of the
 // whole train, the most severe of its vehicles, as the driver gathers it for the lamp (eu07/maszyna#288)

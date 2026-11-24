@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "widgets/vehicleparams.h"
-#include "mover/core.h"
+#include "../McZapkie/core.h"
 #include "simulation/simulation.h"
 #include "application/driveruipanels.h"
 #include "vehicle/Driver.h"

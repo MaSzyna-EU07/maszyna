@@ -20,8 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
-#include "mover/TBrakePressure.h"
-#include "mover/core.h"
+#include "../McZapkie/TBrakePressure.h"
+#include "../McZapkie/core.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/blackboxrecorder.h"

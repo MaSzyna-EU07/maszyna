@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "mover/TMoverParameters.h"
+#include "McZapkie/TMoverParameters.h"
 
 namespace test {
 

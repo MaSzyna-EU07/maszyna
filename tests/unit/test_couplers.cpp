@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "mover/TCoupling.h"
-#include "mover/core.h"
+#include "McZapkie/TCoupling.h"
+#include "McZapkie/core.h"
 #include "utilities/Globals.h"
 
 using test::definition;

@@ -19,9 +19,9 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
-#include "mover/TBrakePressure.h"
-#include "mover/TLocation.h"
-#include "mover/neighbour_data.h"
+#include "../McZapkie/TBrakePressure.h"
+#include "../McZapkie/TLocation.h"
+#include "../McZapkie/neighbour_data.h"
 
 using mover::TBrakeSystem;
 using mover::TEngineType;

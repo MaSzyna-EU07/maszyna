@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/driveruipanels.h"
 
-#include "mover/TCoupling.h"
-#include "mover/core.h"
+#include "../McZapkie/TCoupling.h"
+#include "../McZapkie/core.h"
 #include "utilities/Globals.h"
 #include "application/application.h"
 #include "utilities/translation.h"

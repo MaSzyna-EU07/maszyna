@@ -6,7 +6,7 @@
 #include <initializer_list>
 #include <utility>
 
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 namespace test {
 

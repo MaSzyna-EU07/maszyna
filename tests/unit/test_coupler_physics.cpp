@@ -3,7 +3,7 @@
 #include "vehicle.h"
 #include "consist.h"
 #include "McZapkie/couplerphysics.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 #include "utilities/Globals.h"
 
 #include <algorithm>

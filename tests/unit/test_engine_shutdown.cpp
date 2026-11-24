@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 // stopping the engine of a diesel shunter like the SM03 (eu07/maszyna#427): its fuel pump starts on its own with the
 // engine and the engine runs the converter which feeds the low voltage circuit, so neither the fuel pump switch nor the

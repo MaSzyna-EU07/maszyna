@@ -12,7 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
-#include "mover/core.h"
+#include "../McZapkie/core.h"
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"

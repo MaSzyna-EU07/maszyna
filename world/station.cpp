@@ -9,7 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/station.h"
-#include "mover/core.h"
+#include "../McZapkie/core.h"
 
 using mover::dtrain_out;
 #include "utilities/utilities.h"

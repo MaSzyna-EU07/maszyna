@@ -2,7 +2,7 @@
 #include "doctest.h"
 #include "vehicle.h"
 
-#include "mover/core.h"
+#include "McZapkie/core.h"
 #include "vehicle/handover.h"
 
 using test::definition;

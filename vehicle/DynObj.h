@@ -26,12 +26,12 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <memory>
 
-#include "mover/TMoverParameters.h"
+#include "../McZapkie/TMoverParameters.h"
 
+using mover::coupling;
 using mover::TTrackParam;
 using mover::TTrackShape;
 using mover::TTractionParam;
-using mover::coupling;
 using mover::end;
 using mover::side;
 

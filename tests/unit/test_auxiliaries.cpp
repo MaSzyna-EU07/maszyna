@@ -2,7 +2,7 @@
 #include "doctest.h"
 #include "scenario.h"
 #include "drive.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 // characterisation of the auxiliary circuits of vehicles: the battery drained and charged, and the air of the
 // pantographs kept in their own tank, whose pressure switch opens the line breaker, each in a scenario on real

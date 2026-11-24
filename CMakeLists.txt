@@ -541,8 +541,8 @@ add_library(eu07_settings INTERFACE)
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
-"mover/TMoverParameters.cpp"
-"mover/TSecuritySystem.cpp"
+"McZapkie/TMoverParameters.cpp"
+"McZapkie/TSecuritySystem.cpp"
 "McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"

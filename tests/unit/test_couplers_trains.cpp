@@ -3,7 +3,7 @@
 #include "consist.h"
 #include "scenario.h"
 
-#include "mover/core.h"
+#include "McZapkie/core.h"
 #include "utilities/utilities.h"
 
 // characterisation of the couplers between vehicles: coupling and uncoupling by hand (Attach, DettachStatus,

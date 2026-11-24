@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
-#include "mover/TBrakePressure.h"
-#include "mover/core.h"
+#include "McZapkie/TBrakePressure.h"
+#include "McZapkie/core.h"
 #include "drive.h"
 
 using test::definition;

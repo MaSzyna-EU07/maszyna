@@ -12,7 +12,7 @@
 #include <sstream>
 
 #include "McZapkie/hamulce.h"
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 namespace test {
 

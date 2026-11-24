@@ -10,8 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/enginestart.h"
 
-#include "mover/core.h"
-#include "mover/TMoverParameters.h"
+#include "../McZapkie/core.h"
+#include "../McZapkie/TMoverParameters.h"
 #include "utilities/utilities.h"
 
 namespace engine_start {

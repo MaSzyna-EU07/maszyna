@@ -2,9 +2,9 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "consist.h"
-#include "mover/TBrakePressure.h"
+#include "McZapkie/TBrakePressure.h"
 
-#include "mover/core.h"
+#include "McZapkie/core.h"
 
 using test::definition;
 using test::vehicle;

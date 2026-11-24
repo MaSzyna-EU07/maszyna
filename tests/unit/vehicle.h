@@ -9,7 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "mover/TMoverParameters.h"
+#include "McZapkie/TMoverParameters.h"
 
 
 namespace test {
