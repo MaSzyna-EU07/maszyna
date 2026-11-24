@@ -1,6 +1,23 @@
 #include "stdafx.h"
 #include "glsl_common.h"
 
+#include <locale>
+#include <sstream>
+
+namespace
+{
+// a float the way glsl reads it, whatever the locale of the program
+std::string glsl_float(float const Value)
+{
+    std::ostringstream text;
+    text.imbue(std::locale::classic());
+    text.setf(std::ios::fixed);
+    text.precision(3);
+    text << Value;
+    return text.str();
+}
+} // namespace
+
 std::string gl::glsl_common;
 
 void gl::glsl_common_setup()
@@ -12,6 +29,7 @@ void gl::glsl_common_setup()
     "#define POSTFX_ENABLED " + std::to_string((int)!Global.gfx_skippipeline) + "\n" +
     "#define EXTRAEFFECTS_ENABLED " + std::to_string((int)Global.gfx_extraeffects) + "\n" +
     "#define ALPHA_TO_COVERAGE_ENABLED " + std::to_string((int)(Global.iMultisampling > 0)) + "\n" +
+    "#define HEADLIGHT_BEAM_WIDTH " + glsl_float(Global.gfx_headlights_beamwidth) + "\n" +
     "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "U\n" +
     "#define MAX_CASCADES " + std::to_string(MAX_CASCADES) + "U\n" +
     "#define MAX_PARAMS " + std::to_string(MAX_PARAMS) + "U\n" +
