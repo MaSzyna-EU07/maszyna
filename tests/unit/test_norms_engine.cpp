@@ -237,6 +237,21 @@ TEST_CASE("norms engine: the abrupt changes over a straight shorter than tab. 9.
 	}
 }
 
+TEST_CASE("norms engine: TSI and EN, which say nothing of jumps close together, take them together over the intermediate length of the other profiles") {
+	// the reverse curves of the test above, 10 m apart: each jump of 106.2 mm passes the TSI, their 212.4 mm don't
+	auto const each{11.8 * 60 * 60 / 400.0};
+	for (auto const profile : {profile_id::tsi, profile_id::en13803}) {
+		CAPTURE(static_cast<int>(profile));
+		line_builder builder;
+		builder.straight(100, 60).arc(400, 80, 60).straight(10.0, 60).arc(-400, 80, 60).straight(100, 60);
+		auto const found{of(evaluate(builder.done(), mixed_main(60), profile), parameter::deficiency_jump)};
+		auto const summed{std::ranges::find_if(found, [](norms::finding const &Finding) { return std::abs(Finding.chainage - 180.0) < 1e-6; })};
+		REQUIRE(summed != found.end());
+		CHECK(summed->value == doctest::Approx(2.0 * each));
+		CHECK(summed->length == doctest::Approx(10.0));
+	}
+}
+
 TEST_CASE("norms engine: the gradient and the rate of change of the cant along a ramp, the rate of change of the deficiency along a transition") {
 	// 100 mm over 50 m at 120 km/h: 2 mm/m, 66.7 mm/s
 	line_builder ramp;
