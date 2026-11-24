@@ -792,6 +792,7 @@ private:
     double m_offtrackslowdue { 0.0 }; // till another warning of a slow frame [s]
     double m_offtrackupdatedue { 0.0 }; // and of a slow update
     double m_offtrackaxles { 0.0 }; // the move along the track the axles didn't make yet [m]
+    glm::dvec3 m_offtrackfrom { 0.0 }; // where the body was when its move went into the axles last
     bool m_offtrackscraping { false }; // the scraping of the vehicle off the track plays, looped
     // the most triangles of terrain taken around the vehicle off the track
     static constexpr std::size_t off_track_triangles { 400000 };

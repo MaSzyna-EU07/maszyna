@@ -3199,6 +3199,7 @@ void TDynamicObject::begin_off_track() {
     m_offtracklogdue = 0.0;
     m_offtrackslowdue = 0.0;
     m_offtrackaxles = 0.0;
+    m_offtrackfrom = mover.OffTrack.current().position;
 
     auto const heading { mover.OffTrack.heading() };
     auto const front { glm::dvec3 { vFront.x, 0.0, vFront.z } };
@@ -3246,7 +3247,6 @@ void TDynamicObject::move_off_track( double const Distance ) {
         ends[ end ] = derail_motion::force_on(
             derail_motion::meet( end_point_of( *this, end ), end_point_of( *neighbour, MoverParameters->Neighbours[ end ].vehicle_end ) ), compression );
     }
-    auto const before { motion.current().position };
     auto const reversals { motion.reversals() };
     motion.step( time, Distance, MoverParameters->V, m_offtracksite, ends );
     if( ( motion.reversals() - reversals ) % 2 != 0 ) {
@@ -3256,8 +3256,9 @@ void TDynamicObject::move_off_track( double const Distance ) {
     auto const &pose { motion.current() };
     // the axles go along the track as far as the vehicle went along it, for the track nearest to it: the vehicles on it
     // find it there, the events of the track are passed. by 10 cm at least: a body turning or rocking in place moves
-    // the axles back and forth by millimetres, which over the end of a track would fire its events every frame
-    m_offtrackaxles += glm::dot( pose.position - before, track_front() );
+    // the axles back and forth by millimetres, which over the end of a track would fire its events every frame. from
+    // where it was the last time, so the moves out of the other bodies between the frames go into the axles too
+    m_offtrackaxles += glm::dot( pose.position - std::exchange( m_offtrackfrom, pose.position ), track_front() );
     if( std::abs( m_offtrackaxles ) >= 0.1 ) {
         move_axles( std::exchange( m_offtrackaxles, 0.0 ) );
     }
