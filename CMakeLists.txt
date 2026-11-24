@@ -38,7 +38,6 @@ set(CMAKE_CXX_STANDARD 20)
 file(GLOB HEADERS "*.h"
 "Console/*.h"
 "McZapkie/*.h"
-"mover/*.h"
 "gl/*.h"
 "network/*.h"
 "vr/*.h"
