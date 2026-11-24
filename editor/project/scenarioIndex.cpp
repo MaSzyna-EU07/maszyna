@@ -13,9 +13,13 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -26,6 +30,8 @@ namespace
 {
 
 using scenery_text::statement;
+
+
 
 // the files the files include, by a quick look at their words, each file looked at once for all the scenarios: a scenario whose includes
 // don't reach the file of the map doesn't use it, and isn't read as a whole
@@ -62,9 +68,8 @@ class include_graph
 		auto found{m_includes.find(Key)};
 		if (found != m_includes.end())
 			return found->second;
-		std::ifstream file{m_folder / Name, std::ios::binary};
-		std::string const text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-		return m_includes.emplace(Key, scenery_text::includes_in(text)).first->second;
+		auto const text{scenery_text::file_text(m_folder / Name)};
+		return m_includes.emplace(Key, scenery_text::includes_in(text.value_or(std::string{}))).first->second;
 	}
 
 	std::filesystem::path m_folder;
@@ -242,9 +247,10 @@ scenario_index index_scenarios(std::filesystem::path const &Folder, std::string 
 	std::error_code error;
 	for (std::filesystem::directory_iterator file{Folder, std::filesystem::directory_options::skip_permission_denied, error}, end; file != end; file.increment(error))
 	{
-		auto const name{file->path().filename().generic_string()};
-		if (file->is_regular_file(error) && scenery_text::lowered(name).ends_with(".scn"))
-			scenarios.push_back(name);
+		if (false == scenery_text::has_extension(file->path(), u8".scn") || false == file->is_regular_file(error))
+			continue;
+		if (auto name{scenery_text::name_of(file->path())})
+			scenarios.push_back(std::move(*name));
 	}
 	std::ranges::sort(scenarios, [](std::string const &A, std::string const &B) { return scenery_text::lowered(A) < scenery_text::lowered(B); });
 

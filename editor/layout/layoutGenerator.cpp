@@ -479,6 +479,9 @@ void keep_old_tracks(line const &Line, std::vector<generated_piece> &Pieces, gen
 // one curve between their headings, the sharpest radius of them
 segment_data whole_path(std::vector<generated_piece> const &Pieces)
 {
+	// a track the cutter gave no pieces of, its errors told: no path
+	if (Pieces.empty())
+		return {};
 	if (Pieces.size() == 1)
 		return Pieces.front().path;
 	segment_data result;

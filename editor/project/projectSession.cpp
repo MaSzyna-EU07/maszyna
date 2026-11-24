@@ -15,6 +15,9 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <set>
+#include <string>
+#include <vector>
 
 namespace project
 {
@@ -172,7 +175,18 @@ void session::record_written(layout::line_id const Line, std::vector<written_pie
 		entry.text = piece.text;
 		written.pieces.push_back(std::move(entry));
 	}
+	// the scenery writes only the tracks changed since it was saved: the records of the other tracks the line still has stay as they
+	// were, or after a track moved and moved back the line would keep a record of that one track alone, and own only it when opened
+	std::set<std::string> current;
+	for (auto const &piece : generate(Line).pieces)
+		current.insert(piece.name);
+	auto const written_now = [&Pieces](std::string const &Name) { return std::ranges::any_of(Pieces, [&Name](written_piece const &Piece) { return Piece.name == Name; }); };
+	std::vector<generated_node> kept;
+	for (auto const &node : m_project.generated)
+		if (node.kind == "track" && node.line == Line && current.contains(node.name) && false == written_now(node.name))
+			kept.push_back(node);
 	record_generated(m_project, written, File);
+	m_project.generated.insert(m_project.generated.end(), kept.begin(), kept.end());
 }
 
 void session::mark_hand_changed(layout::line_id const Line)

@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <charconv>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -30,6 +31,13 @@ namespace
 using layout::line_id;
 using layout::node_id;
 using layout::turnout_id;
+
+// the path for a message, as UTF-8: generic_string() throws on Windows for a name the code page can't hold
+std::string shown(std::filesystem::path const &Path)
+{
+	auto const text{Path.generic_u8string()};
+	return std::string(text.begin(), text.end());
+}
 using layout::vertex_id;
 
 // the shortest form which reads back to the same double
@@ -169,6 +177,14 @@ class record
 		if (false == failed() && value > 0xffffffffu)
 			fail(std::format("{} {} is out of range", What, value));
 		return static_cast<std::uint32_t>(value);
+	}
+	// the identifier handed out last, of the next one written: they start at 1, so 0 would wrap around
+	std::uint32_t next_id(std::string_view const What)
+	{
+		auto const value{id(What)};
+		if (false == failed() && value == 0u)
+			fail(std::format("{} 0: the identifiers start at 1", What));
+		return value > 0u ? value - 1u : 0u;
 	}
 	// one of the names, the index of it
 	template <std::size_t Count>
@@ -754,13 +770,13 @@ read_result read(std::string_view const Text)
 		{
 			layout::network::handed_out last;
 			words.expect("node");
-			last.node = words.id("the next node") - 1u;
+			last.node = words.next_id("the next node");
 			words.expect("line");
-			last.line = words.id("the next line") - 1u;
+			last.line = words.next_id("the next line");
 			words.expect("vertex");
-			last.vertex = words.id("the next vertex") - 1u;
+			last.vertex = words.next_id("the next vertex");
 			words.expect("turnout");
-			last.turnout = words.id("the next turnout") - 1u;
+			last.turnout = words.next_id("the next turnout");
 			words.finish();
 			next = last;
 		}
@@ -1034,7 +1050,7 @@ read_result load(std::filesystem::path const &Path)
 	if (false == file.is_open())
 	{
 		read_result result;
-		result.error = "there's no project file " + Path.generic_string();
+		result.error = "there's no project file " + shown(Path);
 		return result;
 	}
 	std::string const text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -1050,13 +1066,18 @@ bool save(document const &Project, std::filesystem::path const &Path, std::strin
 		std::ofstream file{temporary, std::ios::binary | std::ios::trunc};
 		if (false == file.is_open())
 		{
-			Error = "can't write " + temporary.generic_string();
+			Error = "can't write " + shown(temporary);
 			return false;
 		}
 		file.write(text.data(), static_cast<std::streamsize>(text.size()));
-		if (false == file.good())
+		// closed before it's looked at: the last of the text is written by the flush of the close, and a file cut short there must not
+		// take the place of the project
+		file.close();
+		if (file.fail())
 		{
-			Error = "can't write " + temporary.generic_string();
+			Error = "can't write " + shown(temporary);
+			std::error_code ignored;
+			std::filesystem::remove(temporary, ignored);
 			return false;
 		}
 	}
@@ -1064,7 +1085,7 @@ bool save(document const &Project, std::filesystem::path const &Path, std::strin
 	std::filesystem::rename(temporary, Path, error);
 	if (error)
 	{
-		Error = "can't put " + temporary.generic_string() + " in the place of the project file: " + error.message();
+		Error = "can't put " + shown(temporary) + " in the place of the project file: " + error.message();
 		std::filesystem::remove(temporary, error);
 		return false;
 	}

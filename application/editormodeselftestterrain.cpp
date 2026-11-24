@@ -513,26 +513,31 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 	if (command == "nmtquestion")
 	{
 		// the question of the terrain of a new scenery: open, as the first L in an empty scenery opens it, or answered without
-		// terrain, as its card does it; restore: the settings of the terrain made by itself as they were before the answer, which
-		// keeps them with the editor
+		// terrain, as its card does it; restore: the terrain made by itself as it was before the answer. The answer keeps to the
+		// scenery open, so the settings of the tester aren't written
 		std::string answer;
 		words >> answer;
-		auto &model{EditorSettings.terrain_model()};
+		auto const &model{EditorSettings.terrain_model()};
 		if (answer == "open")
 			m_nmt_state.prompt = true;
 		else if (answer == "flat")
 		{
-			m_selftest.terrain_kept = std::pair{m_nmt_state.grow, model.area};
+			auto const kept{std::pair{EditorSettings.terrain_while_laying(), model.area}};
+			m_selftest.terrain_kept = std::pair{m_nmt_state.grow, m_nmt_state.declined};
 			nmt_decline_offer();
+			// the settings as they were: the answer is for this scenery alone
+			if (std::pair{EditorSettings.terrain_while_laying(), model.area} != kept)
+			{
+				editor_selftest::fail();
+				WriteLog("SELFTEST FAIL nmtquestion flat: the settings of the terrain changed");
+			}
 		}
 		else if (answer == "restore" && m_selftest.terrain_kept.has_value())
 		{
 			m_nmt_state.grow = m_selftest.terrain_kept->first;
-			model.area = m_selftest.terrain_kept->second;
-			EditorSettings.terrain_while_laying(m_nmt_state.grow);
-			EditorSettings.save();
+			m_nmt_state.declined = m_selftest.terrain_kept->second;
 		}
-		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.grow ? 1 : 0, model.area ? 1 : 0));
+		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.grow ? 1 : 0, nmt_area() ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "nmtgrow")

@@ -286,8 +286,10 @@ connection_plan plan_connection(network const &Network, connect_tracks const &Re
 	// the spacing along the crossover: from the start of the first turnout as far as the start of the second one lies along the first line
 	auto const reach{plan.straight * std::cos(std::abs(end.angle)) + 2.0 * end.along};
 	plan.spacing_least = std::numeric_limits<double>::max();
-	for (double s = 0.0; s <= reach + 1e-9; s += kStep)
+	for (int step{0}; step * kStep <= reach + 1e-9; ++step)
 	{
+		// whole metres, as exact as the sum of the steps was
+		auto const s{step * kStep};
 		auto const station{std::clamp(s1 + Request.direction * s, 0.0, a.length)};
 		auto const point{a.position(station)};
 		auto const spacing{glm::distance(point, b.position(nearest_on(b, point)))};
