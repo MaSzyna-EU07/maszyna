@@ -9,7 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+namespace mover
+{
 class TMoverParameters;
+}
 
 // the smoke of a vehicle's engine, let out by the smoke sources of its model (rendering/particles.h)
 namespace smoke {
@@ -26,6 +29,6 @@ struct spawn_rate {
 // source, plus a share which grows with the work of its engine. a vehicle taken off the tracks (Ontracks false: gone through a portal, or waiting in the pool of the road
 // traffic) puffs no more, the particles it already let out fade away as usual
 // an engine the starter turns but which hasn't fired yet (TMoverParameters::dizel_FiringCountdown) lets out no smoke either
-float vehicle_spawn_count(TMoverParameters const &Mover, bool Ontracks, spawn_rate const &Rate, double Timedelta);
+float vehicle_spawn_count(mover::TMoverParameters const &Mover, bool Ontracks, spawn_rate const &Rate, double Timedelta);
 
 } // namespace smoke

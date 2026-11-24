@@ -31,7 +31,11 @@ class TTraction; // drut
 class TTractionPowerSource; // zasilanie drutów
 class TCamera;
 class scenario_time;
+namespace mover
+{
 class TMoverParameters;
+}
+using TMoverParameters = mover::TMoverParameters;
 class ui_layer;
 class editor_ui;
 class itemproperties_panel;

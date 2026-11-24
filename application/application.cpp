@@ -1701,7 +1701,7 @@ int eu07_application::init_data()
 		std::pair<std::string, float> weightpair;
 		loadweights >> weightpair.first >> weightpair.second;
 		weightpair.first.erase(weightpair.first.end() - 1); // trim trailing ':' from the key
-		simulation::Weights.emplace(weightpair.first, weightpair.second);
+		mover::simulation::Weights.emplace(weightpair.first, weightpair.second);
 	}
 	cParser override_parser("data/sound_overrides.txt", cParser::buffer_FILE);
 	deserialize_map(simulation::Sound_overrides, override_parser);

@@ -11,7 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 
+namespace mover
+{
 class TMoverParameters;
+}
 
 // the brake setting (G/P/R/Mg) the virtual wagon inspector (TController::AutoRewident) chooses for every
 // vehicle of a train, by the rules of the brake instruction Cw-1 (Mw56), §18 and §19 (eu07/maszyna#350)
@@ -78,11 +81,11 @@ bool at_standstill(double Velocity);
 std::vector<int> choose_legacy(std::vector<vehicle> const &Consist);
 
 // the brake of the vehicle is cut out (b_dmg), whoever did it
-bool is_cut_out(TMoverParameters const &Vehicle);
+bool is_cut_out(mover::TMoverParameters const &Vehicle);
 
 // what choose() needs to know of the vehicle. a brake the inspector cut out itself doesn't count as
 // cut out: the inspector decides about it anew
-vehicle describe(TMoverParameters const &Vehicle, bool Driven);
+vehicle describe(mover::TMoverParameters const &Vehicle, bool Driven);
 
 // the inspector puts the vehicle on Setting, as choose() gives it. cut_out cuts the brake out the way
 // the scenery's '0' does: b_dmg, which cuts the distributor off the brake pipe (as the cab's cut-out,
@@ -94,6 +97,6 @@ vehicle describe(TMoverParameters const &Vehicle, bool Driven);
 // setting as it is). A brake cut out by anyone else stays cut out.
 // Returns true when a cut-out was left for later because the train was moving: the inspector has to look
 // at the train again once it stands (TController::reinspect_brakes() does)
-bool apply(TMoverParameters &Vehicle, int Setting, bool Standstill);
+bool apply(mover::TMoverParameters &Vehicle, int Setting, bool Standstill);
 
 } // namespace brake_setting
