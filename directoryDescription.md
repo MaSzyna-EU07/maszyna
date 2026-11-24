@@ -21,3 +21,4 @@
 | utilities/ | Logging, timing, parsing, math, globals, crash reporter |
 | world/ | Tracks, traction, events, memory cells, stations | 
 | vehicle/ | Train, dynamic objects, driver, gauges, camera |
+| docs/ | Documentation: track unevenness, local changes of the bundled ImGui |
