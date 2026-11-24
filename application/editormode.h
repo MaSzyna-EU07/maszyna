@@ -54,6 +54,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Sweep.h"
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <tuple>
 #include <chrono>
@@ -1141,6 +1142,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// false, with the reason, when one of the paths can't be changed, its file not taking the changes back
 	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
+	// the serial of the step on top of the history, 0 with none
+	std::uint64_t history_top() const;
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	// changes of the kept alignments and switches go into the last step of the history, made just before them
 	void records_to_history();
@@ -1920,9 +1923,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool settings_open{false};
 		bool details_open{false};
 		bool notes_open{false};
-		// the status tells of a line laid just now, as long as the history stays at the step it was laid with
+		// the status tells of a line laid just now, as long as the history stays at the step it was laid with: the serial of the step on
+		// top then, not the size of the history, which an undo and another step make the same again
 		bool laid_now{false};
-		std::size_t laid_step{0};
+		std::uint64_t laid_step{0};
 		// the line laid last, told in the inspector while the last of its tracks stays the selection the laying left
 		struct laid_curve
 		{
