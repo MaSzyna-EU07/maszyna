@@ -57,9 +57,19 @@ constexpr char sprite_metatable[]{"eu07.sprite"};
 // the address is the key of the program in the registry of its state
 constexpr char program_key{0};
 
-// what set_lua_screen_memory_limit() set, and what lua_screen_memory_peak() gives
-std::atomic<std::size_t> memory_limit_setting{max_screen_memory};
-std::atomic<std::size_t> memory_peak{0};
+// what set_lua_screen_memory_limit() set
+std::atomic<std::size_t> &memory_limit_setting()
+{
+	static std::atomic<std::size_t> setting{max_screen_memory};
+	return setting;
+}
+
+// what lua_screen_memory_peak() gives
+std::atomic<std::size_t> &memory_peak()
+{
+	static std::atomic<std::size_t> peak{0};
+	return peak;
+}
 
 // the memory of a screen: what its Lua heap holds and the pixels of its images, fonts and sprites, which the objects
 // keep outside the heap
@@ -86,9 +96,11 @@ void note_peak(screen_memory &Memory)
 		return;
 	}
 	Memory.peak = held;
-	auto seen{memory_peak.load(std::memory_order_relaxed)};
-	while (held > seen && false == memory_peak.compare_exchange_weak(seen, held, std::memory_order_relaxed))
+	auto &peak{memory_peak()};
+	auto seen{peak.load()};
+	while (held > seen && false == peak.compare_exchange_weak(seen, held))
 	{
+		// a failed exchange put the value another screen stored in seen; try again while held is still more
 	}
 }
 
@@ -1236,7 +1248,7 @@ bool lua_program::start()
 		return false;
 	}
 	// the screen's allocator in front of LuaJIT's own, counting from what the state holds already
-	memory.limit = memory_limit_setting.load();
+	memory.limit = memory_limit_setting().load();
 	memory.collect_at = memory.limit;
 	memory.heap = static_cast<std::size_t>(lua_gc(m_state, LUA_GCCOUNT, 0)) * 1024 + static_cast<std::size_t>(lua_gc(m_state, LUA_GCCOUNTB, 0));
 	memory.base = lua_getallocf(m_state, &memory.base_data);
@@ -1348,13 +1360,13 @@ class lua_runtime_host final : public runtime
 
 void set_lua_screen_memory_limit(std::size_t const Bytes)
 {
-	memory_limit_setting.store(Bytes);
-	memory_peak.store(0);
+	memory_limit_setting().store(Bytes);
+	memory_peak().store(0);
 }
 
 std::size_t lua_screen_memory_peak()
 {
-	return memory_peak.load();
+	return memory_peak().load();
 }
 
 std::unique_ptr<runtime> make_lua_runtime()
