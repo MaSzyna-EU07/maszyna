@@ -151,6 +151,8 @@ bool editorSettings::load()
 			m_terrain_buried_ask = (value == "1");
 		else if (key == "track_tools_all")
 			m_track_tools_more = (value == "1");
+		else if (key == "track_card_folded")
+			m_track_card_folded = (value == "1");
 		else if (key == "terrain_while_laying")
 			m_terrain_while_laying = (value == "1");
 		else if (key == "nmt_band")
@@ -270,6 +272,7 @@ bool editorSettings::save()
 	stream << "terrain_offer " << (m_terrain_offer ? 1 : 0) << "\n";
 	stream << "terrain_buried_ask " << (m_terrain_buried_ask ? 1 : 0) << "\n";
 	stream << "track_tools_all " << (m_track_tools_more ? 1 : 0) << "\n";
+	stream << "track_card_folded " << (m_track_card_folded ? 1 : 0) << "\n";
 	stream << "terrain_while_laying " << (m_terrain_while_laying ? 1 : 0) << "\n";
 	stream << "nmt_band " << m_terrain_model.band << "\n";
 	stream << "nmt_around " << m_terrain_model.around << "\n";

@@ -124,6 +124,23 @@ int card_columns(ImVec2 const &Cell)
 	auto const &style{ImGui::GetStyle()};
 	return std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / (Cell.x + style.ItemSpacing.x)));
 }
+// the kind of a node as the scenery file names it, translated; one not known shown as the file has it
+char const *node_type_name(std::string const &Type)
+{
+	static std::array<std::pair<std::string_view, char const *>, 9> const names{{{"track", STRN("track")},
+	                                                                            {"road", STRN("road")},
+	                                                                            {"model", STRN("model")},
+	                                                                            {"dynamic", STRN("vehicle")},
+	                                                                            {"traction", STRN("traction")},
+	                                                                            {"memcell", STRN("memory cell")},
+	                                                                            {"eventlauncher", STRN("event launcher")},
+	                                                                            {"sound", STRN("sound")},
+	                                                                            {"sweep", STRN("bent model")}}};
+	for (auto const &[key, text] : names)
+		if (key == Type)
+			return STR_C(text);
+	return Type.c_str();
+}
 } // namespace
 
 void itemproperties_panel::update(scene::basic_node *Node)
@@ -166,7 +183,7 @@ void itemproperties_panel::update(scene::basic_node *Node)
 	        }
 	    }
 	*/
-	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : data_name_to_utf8(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node->node_type.c_str());
+	textline = format(STR_C("Name: %s"), (node->name().empty() ? std::string{STR_C("(no name)")} : data_name_to_utf8(node->name())).c_str()) + "\n" + format(STR_C("Type: %s"), node_type_name(node->node_type));
 	text_lines.emplace_back(textline, Global.UITextColor);
 	textline = format(STR_C("Location: %.2f, %.2f, %.2f (distance %.1f m)"), node->location().x, node->location().y, node->location().z,
 	                  glm::length(glm::dvec3{node->location().x, 0.0, node->location().z} - glm::dvec3{camera.Pos.x, 0.0, camera.Pos.z})) +

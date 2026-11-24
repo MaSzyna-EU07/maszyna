@@ -1,0 +1,4 @@
+// //$w: the tracks sharing a grade line, as editor_records::grade_line_lines() writes them
+//$w # the tracks sharing a grade line, each with the number of it; the simulation skips these lines
+//$w gradeline tor_1@100,200 3
+//$w gradeline tor_2@-50,7 3 hand

@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormodelineside.h"
 #include "application/editormodeparallel.h"
 #include "application/editormodespeed.h"
+#include "application/editormodenorms.h"
 #include "application/editormodesrk.h"
 #include "application/editormodekm.h"
 #include "application/editormodevehicle.h"
@@ -43,6 +44,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
 #include "editor/editorProfile.hpp"
+#include "editor/editorRecords.hpp"
 #include "editor/editorGroundFollow.hpp"
 #include "editor/editorInfra.hpp"
 #include "editor/editorGauge.hpp"
@@ -130,7 +132,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool picking;
 	};
 
-	struct stored_profile;
+	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
+	using stored_profile = editor_records::grade_profile;
 	struct EditorSnapshot
 	{
 		enum class Action { Move, Rotate, Scale, Add, Delete, TrackEdit, Other, RoadEdit, Array, Bend, Terrain, Kilometrage };
@@ -201,6 +204,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void undo_one();
 	void drop_step(std::size_t const Step);
 	std::string refused(std::string Text);
+	// a switch not laid: told in the panel of the switch tool, which shows the text returned, and by the cursor
+	std::string switch_refused(std::string Text);
 	void redo_one();
 	// the changes of the heightmap terrain since the last step become a step of the history: a stroke of the brush,
 	// or what a frame did; the next change is recorded from now on
@@ -281,6 +286,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// a lesson is done once all its steps are
 	bool tutorial_done(tutorial_lesson const &Lesson) const;
 	void render_first_steps();
+	// the first steps in the inspector with nothing selected: the lesson of the tool in use with its steps to try, the whole lesson
+	// in its window on request. false: hidden for good, or the window of the lesson is open
+	bool render_first_steps_card();
+	// the steps to try of a lesson, ticked as they're reached
+	void render_tutorial_steps(tutorial_lesson const &Lesson);
+	// a track laid where there's no ground lies flat at the height 0: told while the pointer is over the view where the terrain is to be
+	void render_ground_warning(tutorial_lesson const &Lesson);
 	// the steps reached by what the editor is doing now
 	void note_first_steps();
 	// the lesson of the tool in use: the first of its lessons not done yet, or none
@@ -295,7 +307,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void render_tutorial_pages();
 	void first_step_done(first_step const Step) override;
 	void open_kilometrage() override;
-	bool m_first_steps_open{false};
+	bool m_first_steps_open{false}; // the window of the lesson
+	int m_first_steps_shown{0}; // frames the window of the lesson was drawn since it opened, up to 3: it's placed anew as it opens
 	std::array<bool, static_cast<std::size_t>(first_step::count)> m_first_steps_done{};
 	int m_tutorial_page{0};
 	char const *m_tutorial_goto{nullptr}; // the lesson of this title opened by a button of a panel
@@ -372,6 +385,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double band{300.0}; // m from the tracks the chunks made along them reach
 		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
 		bool grow{true}; // while a track is laid, the terrain is made around the cursor where there's none
+		// the answer Without terrain for the scenery open: nothing of the model is made around the camera by itself, whatever the
+		// settings, which stay as they were for the other sceneries
+		bool declined{false};
 		bool laying{false}; // the tracks committed are being laid: they leave the terrain as it is
 		bool follow{true}; // a track with its formation edited takes it along, the formation led anew
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
@@ -642,6 +658,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the place picked in the terrain window: the terrain model and the orthophoto take it
 	void nmt_place_scenery(glm::dvec2 const &Point);
 	void nmt_accept_offer();
+	// the answer without terrain: the tracks lie on the plane, nothing of the terrain model is loaded by itself any more, under the
+	// tracks laid nor around the camera, in the scenery open; the settings stay as they are for the other sceneries
+	void nmt_decline_offer();
+	// the terrain of the download area made around the camera by itself: as the settings have it, unless declined for this scenery
+	bool nmt_area() const;
 	// the whole scenery: tracks, includes and models, moved up or down as one undo step
 	std::size_t nmt_join_ends();
 	// the turntables as they lie, each with the ends of the tracks running up to it on its rim
@@ -1086,6 +1107,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::vector<TTrack *> const &track_set() const override;
 	editor_track_tab current_track_tab() const override;
 	void render_path_ui();
+	// the cant at an end of a path [mm] from its roll [deg] and back, as the inspector shows and takes it: over 1500 mm between the
+	// rail axes
+	static float cant_of_roll(float const Roll);
+	static float roll_of_cant(float const Cant);
+	// the cant of the track changed goes on into the tracks joined at its ends, as with the gizmo and the joints tool: the joints would
+	// step otherwise. The track, whose state before the change is Before, and its neighbours go into one undo step
+	void track_cant_commit(TTrack &Track, editor_track::state const &Before);
 	void draw_track_overlay() const;
 	editor_track::point_ref track_handle_hit() const;
 	void select_track(scene::basic_node *Node);
@@ -1872,8 +1900,25 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string skew; // what Alt turned the straight to
 		double escape_time{-100.0}; // when Esc was pressed over points not laid: the second Esc drops them
 		std::size_t history{0}; // the step of the history the track laid last was begun at
+		// the line laid last, told in the inspector while the last of its tracks stays the selection the laying left
+		struct laid_curve
+		{
+			std::string label;
+			bool meets{true}; // the norms for the speed
+		};
+		struct laid_line
+		{
+			std::vector<TTrack *> tracks;
+			double length{0.0};
+			std::vector<laid_curve> curves;
+		};
+		laid_line laid;
 	};
 	lay_tool m_lay;
+	// the line laid last is told in the inspector in place of the sheet of its last track: that one is selected by the laying, not by
+	// a click
+	bool laid_shown() const;
+	void render_laid_summary();
 	alignment::limits laying_norms() const;
 	glm::dvec3 lay_angle_snap(glm::dvec3 const &Mouse, std::string &Label) const;
 	// the straight track Alt turns the laid straight to: the nearest one the straight from From to To crosses, or one along From
@@ -1965,6 +2010,11 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	std::string straight_end_note(editor_track::straight const &Line, bool const Far) const;
 	std::optional<switch_problem> switch_drag_problem() const;
 	std::optional<switch_problem> straight_switch_problem(editor_track::straight const &Line, double const Length, double const Along, int const Direction) const;
+	// the hard rules of ST-T1-A6 the switch breaks, for the status: not Laid, or kept as it is when moved or given another template
+	static std::string switch_refusal(std::vector<std::string> const &Refusals, bool const Laid);
+	// the switch lying along the straight From to To, the cant of the line under it and near it (11.4 pkt 7, 9.6 pkt 16): what it breaks,
+	// empty for nothing. Moving: the tracks of the switch moved along the straight, which the line is taken without
+	std::string straight_switch_refusal(editor_track::straight const &Line, glm::dvec3 const &From, glm::dvec3 const &To, bool const Laid, std::vector<TTrack const *> const &Moving = {}) const;
 	void flash_switch_problem(switch_problem Problem);
 	void flash_switch_problem(std::string const &Text, std::vector<segment_data> Paths, std::vector<std::pair<glm::dvec3, std::string>> Marks = {});
 	void draw_switch_problem(switch_problem const &Problem) const;
@@ -1995,13 +2045,30 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	static curve_sample sample_at(std::vector<curve_sample> const &Frame, double const Station);
 	// the curve a switch goes into as the norms look at it: its headings and its cant along it
 	std::vector<switch_curve::track_point> frame_points(std::vector<curve_sample> const &Frame) const;
+	// the line of the chain as the norms look at it, the first path of each track the way the chain runs, and on over the plain tracks
+	// joined past its ends as far as Beyond: the ends of the cant ramps near a switch; Offset: the station the chain starts at
+	std::vector<switch_curve::track_point> line_points(editor_track::chain const &Chain, double const Beyond, double &Offset) const;
+	// the tracks of the frame as a chain, each run the way the frame goes
+	static editor_track::chain frame_chain(std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks);
+	// the tracks of the straight along their first paths as a chain, from its start on
+	static editor_track::chain straight_chain(editor_track::straight const &Line);
+	// the speed on the diverging track of the switch as it lies, km/h: the basic switch of Radius and 1:Ratio bent as its main track is
+	// (table 11.8), the cant of its line with its sign, the cant deficiency its frog takes (formula 9.9, table 9.7), no more than the
+	// basic switch has (table 11.2); Why receives how, for the status
+	double branch_speed_of(TTrack const &Switch, double const Radius, double const Ratio, std::string *Why = nullptr) const;
+	// that speed written into the switch for its diverging track, a lower limit of the main track kept for both; returns how, for the
+	// status
+	std::string write_switch_speed(TTrack &Switch, double const Radius, double const Ratio, double const Main);
+	// a switch of the scenery bent into the curve of the Frame along its Tracks, its Paths where it's moved to, as ST-T1-A6 sees it
+	switch_curve::switch_report bent_switch_report(TTrack const &Switch, std::vector<curve_sample> const &Frame, std::vector<TTrack *> const &Tracks, std::vector<segment_data> const &Paths) const;
 	// the way the switch being placed into a curve goes along it and the side its diverging track leaves to, from the drag
 	void curved_switch_pose(int &Direction, int &Side) const;
 	// the start of the switch being placed into a curve: where it was pressed, drawn to where the switch meets an end of a cant ramp or
 	// keeps 6 m off it; What receives which
 	double curved_switch_start(int const Direction, std::string *What = nullptr) const;
-	// the switch made of the paths, laid into the curve at the station, as ST-T1-A6 sees it
-	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction) const;
+	// the switch made of the paths, laid into the curve at the station, as ST-T1-A6 sees it; with the Tracks of the frame its cant is
+	// looked at on past the ends of the curve too
+	switch_curve::switch_report curved_switch_report(std::vector<segment_data> const &Paths, std::vector<curve_sample> const &Frame, double const Station, int const Direction, std::vector<TTrack *> const *Tracks = nullptr) const;
 	static double nearest_station(std::vector<curve_sample> const &Frame, glm::dvec3 const &Point);
 	static std::vector<segment_data> curved_switch_paths(editor_track::switch_template const &Shape, std::vector<curve_sample> const &Frame, double const Station, int const Direction, int const Side);
 	// the path of a switch template laid into the curve: x of the template across the main track to the Side, z along it from the
@@ -2204,7 +2271,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		editor_icons::icon picture;
 		int family; // 0 builds the track, 1 equips it, 2 checks it
 	};
-	static std::array<track_mode, 15> const &track_modes();
+	static std::array<track_mode, 16> const &track_modes();
 	bool track_plan_tab() const { return m_track_tab == track_tab::straights || m_track_tab == track_tab::route; }
 	// a tool of the station: they share its schematic
 	bool srk_tab() const { return m_track_tab == track_tab::station || m_track_tab == track_tab::station_signals || m_track_tab == track_tab::line_block; }
@@ -2261,8 +2328,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the track tools in the tool options window, and the selected path in the inspector
 	void render_track_tool_options();
 	void render_track_selection();
+	// the inspector with no track selected: in an empty scenery the one thing to do first, the first steps of the tutorial under it
+	void render_track_nothing_selected();
 	void show_track_tab(track_tab const Wanted) override;
-	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::infra; }
+	bool track_analysis_tab() const { return m_track_tab == track_tab::profile || m_track_tab == track_tab::speed || m_track_tab == track_tab::joints || m_track_tab == track_tab::norms || m_track_tab == track_tab::infra; }
 	bool track_shortcut(int const Key);
 	bool track_busy() const; // something going on in the mode, which Esc drops before it leaves the mode
 	std::string track_mode_name() const;
@@ -3143,6 +3212,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		scripted_input input;
 		std::string badge; // the mouse or the keys drawn over the view, for the clips of the tutorial
 		glm::vec2 badge_at{0.0f}; // its bottom left corner, in the pixels of the window
+		std::map<std::string, double> marks; // the heights of the ends of tracks kept by mark, for expect lift
+		std::optional<std::pair<bool, bool>> terrain_kept; // the terrain made while laying, and the answer without it, before nmtquestion
 	};
 	selftest m_selftest;
 	using selftest_result = editor_selftest_result;
@@ -3157,6 +3228,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	selftest_result selftest_terrain(std::string const &command, std::istringstream &words);
 	selftest_result selftest_props(std::string const &command, std::istringstream &words);
 	selftest_result selftest_monkey(std::string const &command, std::istringstream &words);
+	// the expectations of the script, which make the run fail (editormodeselftestexpect.cpp)
+	selftest_result selftest_expect(std::string const &command, std::istringstream &words);
 	selftest_result selftest_dispatch(std::string const &command, std::istringstream &words);
 	void selftest_step();
 	// a value typed during a gesture, taken instead of the one the cursor gives
@@ -3250,16 +3323,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string error;
 	};
 	profile_state m_profile;
-	// grade lines designed in the editor, kept in the scenery files as "//$p" comment lines
-	struct stored_profile
-	{
-		scene::layer_handle layer{null_handle};
-		double length{0.0};
-		glm::dvec3 start{0.0}, end{0.0}, middle{0.0}; // of the route, world space
-		double origin{0.0};
-		profile::line line;
-		double departure{-1.0}; // of the track from the design when it was kept; -1 as kept by an older editor
-	};
 	std::vector<stored_profile> m_profiles;
 	bool m_profiles_loaded{false};
 	void profile_library_load();
@@ -3432,6 +3495,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	gauge_tool m_gauge{*this, *this, *this, *this};
 	speed_tool m_speed{*this, *this, *this, *this};
 	joints_tool m_joints{*this, *this, *this, *this};
+	norms_tool m_norms{*this, *this, *this};
 	vehicle_tool m_vehicle{*this, *this};
 	hekto_tool m_hekto{*this, *this, *this, *this, *this, *this};
 	fouling_tool m_fouling{*this, *this, *this, *this, *this};
@@ -3440,7 +3504,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	km_tool m_km{*this, *this, *this, *this};
 	track_ride m_ride;
 	minimap_tool m_minimap{*this, *this, m_ride};
-	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
+	std::vector<editor_tool *> m_tools{&m_gauge, &m_speed, &m_joints, &m_norms, &m_vehicle, &m_hekto, &m_fouling, &m_parallel, &m_srk, &m_km, &m_ride, &m_minimap};
 
 	void infra_rebase();
 	void render_infra_search();

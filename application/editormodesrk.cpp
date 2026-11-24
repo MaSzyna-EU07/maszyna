@@ -110,11 +110,6 @@ std::string word_of(std::string const &Text)
 	return result.empty() ? std::string{"-"} : result;
 }
 
-std::string shown(std::string const &Word)
-{
-	return Word == "-" ? std::string{} : Word;
-}
-
 // the number of the switch of a unit: of its name once named after the station, of its record, else of its place
 std::string unit_number(station::unit const &Unit, std::string const &Stem, std::size_t const Index)
 {
@@ -875,76 +870,28 @@ void srk_tool::load()
 	m_records.clear();
 	if (scene::Layers.empty())
 		return;
+	// the lines and their format: editor_records::read_station() and station_lines()
 	for (auto const layer : scene::Layers.marked_layers(kMark))
 		for (auto const &text : scene::Layers.marked(layer, kMark))
 		{
-			std::istringstream words{text};
-			std::string word;
-			if ((words >> word).fail() || word != "station")
+			auto read{editor_records::read_station(text)};
+			if (false == read.has_value())
 				continue;
 			record entry;
 			entry.layer = layer;
-			words >> entry.code;
-			while (words >> word)
-			{
-				if (word == "line")
-					words >> entry.line;
-				else if (word == "km")
-					words >> entry.km;
-				else if (word == "from")
-					entry.reversed = (words >> word) && word == "right";
-				else if (word == "braking")
-					words >> entry.braking;
-				else if (word == "blocks" && words >> word)
-					for (std::size_t from = 0; from < word.size();)
-					{
-						auto const comma{std::min(word.find(',', from), word.size())};
-						auto const item{word.substr(from, comma - from)};
-						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
-						{
-							auto const kind{item.substr(equals + 1)};
-							entry.blocks[item.substr(0, equals)] = kind == "sbl4" ? block_kind::four : kind == "sbl" || kind == "sbl3" ? block_kind::three : block_kind::semi;
-						}
-						from = comma + 1;
-					}
-				else if (word == "ways" && words >> word)
-					for (std::size_t from = 0; from < word.size();)
-					{
-						auto const comma{std::min(word.find(',', from), word.size())};
-						auto const item{word.substr(from, comma - from)};
-						if (auto const equals{item.find('=')}; equals != std::string::npos && equals > 0)
-							entry.ways[item.substr(0, equals)] = item.substr(equals + 1) == "2";
-						from = comma + 1;
-					}
-				else if (word == "joints" && words >> word)
-					// +x/y/z for one put by hand, -x/y/z for a planned one taken away
-					for (std::size_t from = 0; from < word.size();)
-					{
-						auto const comma{std::min(word.find(',', from), word.size())};
-						auto const item{word.substr(from, comma - from)};
-						glm::dvec3 point{0.0};
-						if (item.size() > 1 && (item.front() == '+' || item.front() == '-') && std::sscanf(item.c_str() + 1, "%lf/%lf/%lf", &point.x, &point.y, &point.z) == 3)
-							(item.front() == '+' ? entry.joints_added : entry.joints_removed).push_back(point);
-						from = comma + 1;
-					}
-				else if (word == "anchor")
-					words >> entry.anchor;
-				else if (word == "name")
-				{
-					std::getline(words, entry.name);
-					entry.name.erase(0, entry.name.find_first_not_of(' '));
-					// windows-1250 like the rest of the scenery file; earlier builds wrote it in utf-8, which stays as it is
-					if (std::u32string decoded; false == utf8_to_utf32(entry.name, decoded))
-						entry.name = win1250_to_utf8(entry.name);
-					break;
-				}
-			}
-			entry.code = shown(entry.code);
-			entry.line = shown(entry.line);
-			entry.km = shown(entry.km);
+			entry.anchor = std::move(read->anchor);
+			entry.code = std::move(read->code);
+			entry.name = std::move(read->name);
+			entry.line = std::move(read->line);
+			entry.km = std::move(read->km);
+			entry.reversed = read->reversed;
+			entry.braking = read->braking;
+			entry.blocks = std::move(read->blocks);
+			entry.ways = std::move(read->ways);
+			entry.joints_added = std::move(read->joints_added);
+			entry.joints_removed = std::move(read->joints_removed);
 			entry.track = simulation::Paths.find(entry.anchor);
-			if (false == entry.anchor.empty())
-				m_records.push_back(std::move(entry));
+			m_records.push_back(std::move(entry));
 		}
 }
 
@@ -959,29 +906,11 @@ void srk_tool::store()
 			layers.push_back(entry.layer);
 	for (auto const layer : layers)
 	{
-		std::vector<std::string> lines;
+		std::vector<editor_records::station> stations;
 		for (auto const &entry : m_records)
-		{
-			if (entry.layer != layer)
-				continue;
-			if (lines.empty())
-				lines.emplace_back("# stations described in the track editor, the simulation skips these lines");
-			auto const braking{entry.braking > 0 ? format(" braking %d", entry.braking) : std::string{}};
-			std::string blocks;
-			for (auto const &[signal, kind] : entry.blocks)
-				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
-					blocks += (blocks.empty() ? " blocks " : ",") + signal + (kind == block_kind::four ? "=sbl4" : kind == block_kind::three ? "=sbl" : "=semi");
-			std::string ways;
-			for (auto const &[signal, both] : entry.ways)
-				if (false == signal.empty() && signal.find_first_of(" ,=\t") == std::string::npos)
-					ways += (ways.empty() ? " ways " : ",") + signal + (both ? "=2" : "=1");
-			std::string joints;
-			for (auto const *list : {&entry.joints_added, &entry.joints_removed})
-				for (auto const &point : *list)
-					joints += (joints.empty() ? " joints " : ",") + format("%c%.3f/%.3f/%.3f", list == &entry.joints_added ? '+' : '-', point.x, point.y, point.z);
-			lines.push_back(format("station %s line %s km %s from %s anchor %s%s%s%s%s name %s", word_of(entry.code).c_str(), word_of(entry.line).c_str(), word_of(entry.km).c_str(), entry.reversed ? "right" : "left", anchor_of(entry).c_str(), braking.c_str(), blocks.c_str(), ways.c_str(), joints.c_str(), utf8_to_win1250(entry.name).c_str()));
-		}
-		scene::Layers.mark(layer, kMark, std::move(lines));
+			if (entry.layer == layer)
+				stations.push_back({anchor_of(entry), entry.code, entry.name, entry.line, entry.km, entry.reversed, entry.braking, entry.blocks, entry.ways, entry.joints_added, entry.joints_removed});
+		scene::Layers.mark(layer, kMark, editor_records::station_lines(stations));
 	}
 }
 

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <regex>
 #include <optional>
 #include "application/editormode.h"
+#include "editor/editorRecords.hpp"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
 #include "scene/scenenodegroups.h"
@@ -558,6 +559,12 @@ editor_mode::editor_mode() {
 	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
 	ui()->set_workspace_bank(editor_ui::workspace::terrain, [this]() { render_texture_browser(); }, STR("Textures"));
+	// the first steps on top of the inspector of the surroundings, the roads and the terrain, with nothing selected there; the
+	// tracks draw them with their own selection
+	ui()->set_first_steps([this]() {
+		if (m_node == nullptr && m_roadtool.marker == nullptr && m_roadtool.points.empty())
+			render_first_steps_card();
+	});
 	// a node picked in the scene window is selected as if clicked in the view; a double click flies the camera to it
 	ui()->set_scene_select([this](scene::basic_node *Node, bool const Focus) {
 		if (Focus)
@@ -608,8 +615,9 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))
 			return true;
-		// asked for, the tile goes onto it once it comes
-		if (m_nmt.placed())
+		// asked for, the tile goes onto it once it comes; not where no terrain is to be made of the model, as after the answer without
+		// terrain
+		if (m_nmt.placed() && (m_nmt_state.grow || nmt_area()))
 			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
 		return false;
 	});
@@ -1050,6 +1058,13 @@ void editor_mode::undo_last()
 std::string editor_mode::refused(std::string Text)
 {
     ui()->set_status(Text, true);
+    return Text;
+}
+
+std::string editor_mode::switch_refused(std::string Text)
+{
+    // not in the status line as well: told there, it stayed after the next switch was laid
+    ui()->set_refusal(Text);
     return Text;
 }
 
@@ -1675,6 +1690,8 @@ bool editor_mode::update()
         steps.step("speed");
         m_joints.update();
         steps.step("joints");
+        m_norms.update();
+        steps.step("norms");
         if (m_nmt_state.grade_lines_dirty)
         {
             m_nmt_state.grade_lines_dirty = false;
@@ -1692,6 +1709,7 @@ bool editor_mode::update()
         draw_infra_overlay();
         m_speed.draw_overlay();
         m_joints.draw_overlay();
+        m_norms.draw_overlay();
         m_srk.draw_overlay();
         m_km.draw_overlay();
         steps.step("overlays");
@@ -3267,7 +3285,7 @@ bool editor_mode::save()
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
-        scene::Layers.mark(scene::layer_handle{1}, "//$c", {format("%.3f %.3f %.3f %.5f %.5f", Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, Camera.Angle.x, Camera.Angle.y)});
+        scene::Layers.mark(scene::layer_handle{1}, "//$c", {editor_records::camera_line({glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle}})});
     }
     if (auto const map{editor_orthophoto::mark(m_orthophoto.settings(), m_orthophoto.enabled(), m_orthophoto.settings().north != 0.0 || m_orthophoto.settings().east != 0.0)}; false == m_orthophoto_scenery.empty() && map != m_orthophoto_mark && (m_orthophoto.enabled() || false == m_orthophoto_mark.empty()))
     {
@@ -4294,6 +4312,33 @@ void editor_mode::render_view_menu()
     ImGui::EndMenu();
 }
 
+namespace
+{
+
+// the name of the period of the day, of the season or of the weather as the environment keeps it, translated; it ends with a colon,
+// being a key of other lookups. One not known is shown as it is, without the colon
+std::string environment_name(std::string_view const Key)
+{
+    static std::array<std::pair<std::string_view, char const *>, 12> const names{{{"day:", STRN("day")},
+                                                                               {"night:", STRN("night")},
+                                                                               {"winter:", STRN("winter")},
+                                                                               {"spring:", STRN("spring")},
+                                                                               {"summer:", STRN("summer")},
+                                                                               {"autumn:", STRN("autumn")},
+                                                                               {"clear:", STRN("clear")},
+                                                                               {"scattered:", STRN("scattered")},
+                                                                               {"broken:", STRN("broken")},
+                                                                               {"overcast:", STRN("overcast")},
+                                                                               {"rain:", STRN("rain")},
+                                                                               {"snow:", STRN("snow")}}};
+    for (auto const &[key, text] : names)
+        if (key == Key)
+            return STR_C(text);
+    return std::string{Key.ends_with(':') ? Key.substr(0, Key.size() - 1) : Key};
+}
+
+} // namespace
+
 void editor_mode::render_environment_window()
 {
     if (false == m_environment_open)
@@ -4313,19 +4358,13 @@ void editor_mode::render_environment_window()
             }
             simulation::Environment.update_moon();
         };
-        // the names of the period, season and weather end with a colon, being keys of other lookups
-        auto const name = [](std::string Text) {
-            if (false == Text.empty() && Text.back() == ':')
-                Text.pop_back();
-            return Text;
-        };
         auto const &time{simulation::Time.data()};
         auto minute{time.wHour * 60 + time.wMinute};
-        auto const clock{format("%02d:%02d (%s)", time.wHour, time.wMinute, name(Global.Period).c_str())};
+        auto const clock{format("%02d:%02d (%s)", time.wHour, time.wMinute, environment_name(Global.Period).c_str())};
         if (ImGui::SliderInt((std::string(STR_C("Time of day")) + "###timeofday").c_str(), &minute, 0, 1439, clock.c_str()))
             set_date_time(static_cast<int>(std::round(Global.fMoveLight)), std::clamp(minute, 0, 1439));
         auto yearday{Global.fMoveLight};
-        auto const day{format("%.0f (%s)", Global.fMoveLight, name(Global.Season).c_str())};
+        auto const day{format("%.0f (%s)", Global.fMoveLight, environment_name(Global.Season).c_str())};
         if (ImGui::SliderFloat((std::string(STR_C("Day of the year")) + "###dayofyear").c_str(), &yearday, 0.0f, 364.0f, day.c_str()))
             set_date_time(static_cast<int>(std::round(std::clamp(yearday, 0.0f, 365.0f))), time.wHour * 60 + time.wMinute);
         ImGui::Separator();
@@ -4337,7 +4376,7 @@ void editor_mode::render_environment_window()
             simulation::Environment.compute_weather();
         }
         auto overcast{Global.Overcast};
-        auto const clouds{format("%.2f (%s)", Global.Overcast, name(Global.Weather).c_str())};
+        auto const clouds{format("%.2f (%s)", Global.Overcast, environment_name(Global.Weather).c_str())};
         if (ImGui::SliderFloat((std::string(STR_C("Clouds")) + "###overcast").c_str(), &overcast, 0.0f, 2.0f, clouds.c_str()))
         {
             Global.Overcast = std::clamp(overcast, 0.0f, 2.0f);
@@ -4346,7 +4385,8 @@ void editor_mode::render_environment_window()
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", STR_C("Up to 1 the sky clouds over, past it rain or snow falls, by the air temperature"));
         auto temperature{Global.AirTemperature};
-        auto const air{format("%.1f °C", Global.AirTemperature)};
+        // the degree sign as UTF-8 bytes: the literal itself goes into the build in the ANSI code page, which ImGui shows as '?'
+        auto const air{format("%.1f \xc2\xb0" "C", Global.AirTemperature)};
         if (ImGui::SliderFloat((std::string(STR_C("Air temperature")) + "###airtemperature").c_str(), &temperature, -35.0f, 40.0f, air.c_str()))
         {
             Global.AirTemperature = std::clamp(temperature, -35.0f, 40.0f);
@@ -6053,6 +6093,9 @@ char const *editor_mode::tutorial_of_tool()
 	case track_tab::station_signals:
 	case track_tab::line_block:
 		return undone({"A whole line, step by step"});
+	case track_tab::path:
+		// a scenery opened in Tracks starts with laying a track, not with the camera, the first lesson
+		return undone({"Laying track"});
 	default:
 		return "";
 	}
@@ -6079,8 +6122,12 @@ void editor_mode::follow_tutorial()
 	}
 	m_tutorial_page = std::clamp(m_tutorial_page, 0, static_cast<int>(lessons.size()) - 1);
 	auto const &lesson{lessons[m_tutorial_page]};
-	if (lesson.clip == nullptr)
-		m_tutorial_clip.close();
+	// the clip only for the window of the lesson; the card of the first steps has none
+	if (lesson.clip == nullptr || false == m_first_steps_open)
+	{
+		if (false == m_tutorial_clip.path().empty())
+			m_tutorial_clip.close();
+	}
 	else if (auto const path{std::string{"lang/editor_tutorial/"} + lesson.clip + ".gif"}; path != m_tutorial_clip.path())
 	{
 		m_tutorial_clip.open(path);
@@ -6088,23 +6135,62 @@ void editor_mode::follow_tutorial()
 	}
 }
 
+namespace
+{
+
+// a window kept in the room between the rows of the menu and the tools and the status line: not under them, where its title bar
+// with the close button was out of reach, nor past the edge of the screen. A docked one is left where its dock is
+void keep_in_work_area(char const *Name)
+{
+	auto const *window{ImGui::FindWindowByName(Name)};
+	if (window == nullptr || window->DockIsActive)
+		return;
+	auto const *viewport{ImGui::GetMainViewport()};
+	auto const low{viewport->WorkPos};
+	ImVec2 const high{low.x + viewport->WorkSize.x, low.y + viewport->WorkSize.y};
+	ImVec2 position{window->Pos};
+	position.x = std::max(low.x, std::min(position.x, high.x - window->Size.x));
+	position.y = std::max(low.y, std::min(position.y, high.y - window->Size.y));
+	if (position.x != window->Pos.x || position.y != window->Pos.y)
+		ImGui::SetNextWindowPos(position);
+}
+
+} // namespace
+
 void editor_mode::render_first_steps()
 {
-	if (false == m_first_steps_open)
+	// the card of the first steps in the inspector follows the lesson of the tool as the window does, with the window closed too
+	if (false == m_first_steps_open && false == EditorSettings.first_steps())
 	{
+		m_first_steps_shown = 0;
 		if (false == m_tutorial_clip.path().empty())
 			m_tutorial_clip.close();
 		return;
 	}
 	note_first_steps();
 	follow_tutorial();
+	// the question of the terrain of a new scenery isn't drawn over the window: the window waits for the answer
+	if (false == m_first_steps_open || m_nmt_state.prompt)
+	{
+		m_first_steps_shown = 0;
+		return;
+	}
 	auto const &lessons{tutorial_lessons()};
 	auto const &lesson{lessons[m_tutorial_page]};
 	auto const scale{Global.ui_scale};
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+	auto const *viewport{ImGui::GetMainViewport()};
+	// opened, it goes into the corner of the view by the inspector, below the rows of the tools, for its first frames, as its size
+	// comes after it's drawn once (placed by the size it had then, it lay over the panels); moved, it stays between the rows and the
+	// status line. It's as high as the room there at most, its lesson scrolled inside
+	auto const pad{std::round(8.0f * scale)};
+	auto const *window{ImGui::FindWindowByName("###tutorial")};
+	if (m_first_steps_shown < 3 && (window == nullptr || false == window->DockIsActive))
+		ImGui::SetNextWindowPos(ImVec2(editor_ui::view_max().x - pad, viewport->WorkPos.y + pad), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+	else
+		keep_in_work_area("###tutorial");
+	m_first_steps_shown = std::min(m_first_steps_shown + 1, 3);
 	ImGui::SetNextWindowBgAlpha(1.0f);
-	ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y - 60.0f));
-	keep_on_screen("###tutorial");
+	ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(FLT_MAX, std::max(100.0f, viewport->WorkSize.y - 2.0f * pad)));
 	if (ImGui::Begin((std::string(STR_C("Tutorial")) + "###tutorial").c_str(), &m_first_steps_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
 	{
 		// floating it's as wide as the clips; docked it takes the width of its dock, the texts wrapped to it
@@ -6165,6 +6251,12 @@ void editor_mode::render_tutorial_goals(tutorial_lesson const &Lesson)
 		tutorial_input(entry.keys, entry.text, 150.0f * Global.ui_scale);
 	if (false == Lesson.goals.empty())
 		ImGui::SeparatorText(STR_C("Try it"));
+	render_tutorial_steps(Lesson);
+	render_ground_warning(Lesson);
+}
+
+void editor_mode::render_tutorial_steps(tutorial_lesson const &Lesson)
+{
 	for (auto const &entry : Lesson.goals)
 	{
 		bool const reached{m_first_steps_done[static_cast<std::size_t>(entry.step)]};
@@ -6175,8 +6267,73 @@ void editor_mode::render_tutorial_goals(tutorial_lesson const &Lesson)
 		else
 			ImGui::TextWrapped("%s", STR_C(entry.text));
 	}
-	if (Lesson.action == tutorial_lesson::trial::lay && ui()->mode() == nodebank_panel::TRACK && false == GfxRenderer->Mouse_Hit())
+}
+
+void editor_mode::render_ground_warning(tutorial_lesson const &Lesson)
+{
+	// over a panel the pointer is over no ground, and in a scenery laid without terrain no ground is to be there
+	if (Lesson.action != tutorial_lesson::trial::lay || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse || false == ImGui::IsMousePosValid())
+		return;
+	auto const expected{m_streamer.resident() > 0 || ((m_nmt_state.grow || nmt_area()) && m_nmt.placed())};
+	if (expected && false == GfxRenderer->Mouse_Hit())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("There is no ground under the mouse: the track will lie flat at height 0. Real ground: F5"));
+}
+
+bool editor_mode::render_first_steps_card()
+{
+	if (false == EditorSettings.first_steps() || m_first_steps_open)
+		return false;
+	auto const &lessons{tutorial_lessons()};
+	auto const page{std::clamp(m_tutorial_page, 0, static_cast<int>(lessons.size()) - 1)};
+	auto const &lesson{lessons[page]};
+	auto const font{ImGui::GetFontSize()};
+	ImGui::Spacing();
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::round(font * 0.6f), std::round(font * 0.5f)));
+	if (ImGui::BeginChild("##firststeps", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding))
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextUnformatted(STR_C("First steps"));
+		ImGui::SameLine();
+		ImGui::TextDisabled(STR_C("Lesson %d of %d"), page + 1, static_cast<int>(lessons.size()));
+		ImGui::TextColored(ImVec4(0.55f, 0.8f, 1.0f, 1.0f), "%s", STR_C(lesson.title));
+		render_tutorial_steps(lesson);
+		render_ground_warning(lesson);
+		ImGui::PopTextWrapPos();
+		ImGui::Spacing();
+		if (ImGui::TextLink(STR_C("Show the lesson")))
+			m_first_steps_open = true;
+		item_tooltip("The whole lesson in its window: a clip, the mouse and the keys, the lessons before and after");
+		// a scenery opened in Tracks starts with laying a track: the camera, the first lesson, stays a click away
+		if (page != 0)
+		{
+			same_line_if_fits(STR_C("The camera"));
+			if (ImGui::TextLink(STR_C("The camera")))
+			{
+				m_first_steps_open = true;
+				m_tutorial_goto = lessons.front().title;
+			}
+			item_tooltip("The lesson of the camera: looking around, flying, the view from above");
+		}
+		// hidden for good, as the checkbox of the window of the lessons hides it
+		auto const *hide{STR_C("Hide")};
+		ImGui::SameLine();
+		auto const right{ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(hide).x};
+		if (right > ImGui::GetCursorPosX())
+			ImGui::SetCursorPosX(right);
+		else
+			ImGui::NewLine();
+		if (ImGui::TextLink(hide))
+		{
+			EditorSettings.first_steps(false);
+			EditorSettings.save();
+		}
+		item_tooltip("Hides the first steps for good; Help > Tutorial opens the lessons, and its checkbox brings the first steps back");
+	}
+	ImGui::EndChild();
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor();
+	return true;
 }
 
 void editor_mode::render_tutorial_trial(tutorial_lesson const &Lesson)
@@ -6280,8 +6437,9 @@ void editor_mode::render_tutorial_pages()
 	}
 	else if (ImGui::Button(STR_C("Close")))
 		m_first_steps_open = false;
+	// the window doesn't open by itself any more: the first steps are the card in the inspector with nothing selected
 	bool show{EditorSettings.first_steps()};
-	if (ImGui::Checkbox(STR_C("Show when the editor opens"), &show))
+	if (ImGui::Checkbox(STR_C("Show the first steps in the inspector"), &show))
 	{
 		EditorSettings.first_steps(show);
 		EditorSettings.save();
@@ -7030,21 +7188,15 @@ void editor_mode::enter()
     {
         m_opened_at_track = true;
         auto const saved{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$c")};
-        if (false == saved.empty())
+        if (auto const camera{editor_records::read_camera(saved)})
         {
-            std::istringstream values(saved.front());
-            glm::dvec3 position{0.0};
-            glm::vec3 angle{0.0f};
-            if (values >> position.x >> position.y >> position.z >> angle.x >> angle.y)
-            {
-                Camera.Pos = position;
-                Camera.Angle = angle;
-                Camera.m_owner = nullptr;
-                FreeFlyModeFlag = true;
-                Global.pCamera = Camera;
-                m_saved_camera = {position, angle};
-                WriteLog("Editor: camera where it was at the last save");
-            }
+            Camera.Pos = camera->position;
+            Camera.Angle = camera->angle;
+            Camera.m_owner = nullptr;
+            FreeFlyModeFlag = true;
+            Global.pCamera = Camera;
+            m_saved_camera = {camera->position, camera->angle};
+            WriteLog("Editor: camera where it was at the last save");
         }
         for (auto *track : simulation::Paths.sequence())
         {
@@ -7084,7 +7236,7 @@ void editor_mode::enter()
             choose_work_area(work_area::tracks);
             WriteLog("Editor: camera over the origin of the empty scenery");
         }
-        m_first_steps_open = EditorSettings.first_steps();
+        // the window of the lessons isn't opened by itself over the view: the first steps are a card in the inspector
     }
 
     Global.ControlPicking = true;
