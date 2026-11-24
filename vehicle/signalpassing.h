@@ -21,7 +21,12 @@ inline constexpr double moving_tolerance { 5.0 };
 // whether a point the scan finds Distance [m] ahead of the head (negative: behind it) counts as one the head had
 // ahead. a moving train may be just passing it, so a point up to moving_tolerance behind counts. a standing train
 // isn't passing anything: a point found behind its head was passed before (a train set or stopped past a signal),
-// and counts only once an update finds it ahead
+// and counts only once an update finds it ahead.
+// known gap: the distance can be off by about half a metre (GetDistanceToEvent() takes the nearest of samples a
+// metre apart), so a train standing a few decimetres short of a signal may find it just behind the head, and if it
+// then runs past it at stop, that isn't reported. a tolerance for a standing train wouldn't close it: the first
+// update marks a point behind the head elapsed (TSpeedPos::Update()), so such a train would be reported as passing
+// the signal at once, while it stands short of it. the AI stops 8-15 m short of a signal
 bool seen_ahead_when_found( double Distance, bool Standing );
 
 // whether the head had the point ahead, after an update finds it Distance [m] ahead of the head
