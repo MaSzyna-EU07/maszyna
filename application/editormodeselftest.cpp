@@ -220,6 +220,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   expect joint <track> <start|end> <gap m> <angle deg> <cant step mm>   the end of the first path against the end of another track
 //                                        nearest to it within 1 m: the gap, the kink and the step of the cant between them, each at most
 //   expect records <name> <count> [kind] the records of the switch store of the name, with the connections having the switch among theirs
+//   expect shaped <switch> <yes|no>      the switch keeps the shape its record says, or was bent out of it
 //   expect speed <track> <km/h> [tolerance], expect gauge <track> <m> [tolerance]   as editor_track::velocity gives it / the gauge
 //   expect track <name> <present|removed>
 //   expect route <track> <in|out>        the track is a part of the line open in the route tool, or not
@@ -244,8 +245,13 @@ void editor_mode::selftest_step()
 		std::ifstream stream(file);
 		std::string line;
 		while (std::getline(stream, line))
-			if (false == line.empty() && line.front() != '#')
-				test.lines.push_back(line);
+		{
+			// an indented comment or a line of blanks is no command either
+			auto const first{line.find_first_not_of(" \t\r")};
+			if (first == std::string::npos || line[first] == '#')
+				continue;
+			test.lines.push_back(line.substr(first));
+		}
 		WriteLog("SELFTEST: " + std::to_string(test.lines.size()) + " steps from " + file);
 	}
 	++editor_selftest::frames();
