@@ -581,6 +581,14 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog("SELFTEST memcell " + name + (cell != nullptr ? format(": %s %.1f %.1f", cell->Text().c_str(), cell->Value1(), cell->Value2()) : std::string{": none"}));
 		return selftest_result::handled;
 	}
+	if (command == "bankpick")
+	{
+		// a click on the card of the template of the node bank at the index
+		std::size_t index{0};
+		words >> index;
+		WriteLog(ui()->nodebank().pick(index) ? format("SELFTEST bankpick %zu", index) : format("SELFTEST bankpick %zu: no template there", index));
+		return selftest_result::handled;
+	}
 	if (command == "newscenerypopup")
 	{
 		m_newscenery_asked = true;

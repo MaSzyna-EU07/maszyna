@@ -78,6 +78,10 @@ public:
 	// the tutorial (Help > Tutorial) opens by itself when an editor session starts
 	bool first_steps() const { return m_first_steps; }
 	void first_steps(bool Show) { m_first_steps = Show; }
+	// the tracks laid and edited through the model of the track geometry, its commands and the project file of the map (stage E4,
+	// a trial): off, the editor works as it did
+	bool model_editing() const { return m_model_editing; }
+	void model_editing(bool const On) { m_model_editing = On; }
 	// a scenery begun with no terrain is offered the terrain model as the first track is laid
 	bool terrain_offer() const { return m_terrain_offer; }
 	void terrain_offer(bool Offer) { m_terrain_offer = Offer; }
@@ -104,6 +108,9 @@ public:
 	void terrain_model_offset(std::string const &Scenery, double Offset, bool Fitted);
 	bool track_tools_more() const { return m_track_tools_more; }
 	void track_tools_more(bool Show) { m_track_tools_more = Show; }
+	// the card of the tool in use folded to its title row, for all the tools of all the fields of work
+	bool tool_card_folded() const { return m_tool_card_folded; }
+	void tool_card_folded(bool const Folded) { m_tool_card_folded = Folded; }
 	// the ballast of the railway drawn in the top view
 	int top_tracks() const { return m_top_tracks; }
 	void top_tracks(int const Tracks) { m_top_tracks = Tracks; }
@@ -141,9 +148,11 @@ private:
 	int m_nodebank_card{96};
 	int m_palette{0};
 	bool m_first_steps{true};
+	bool m_model_editing{false};
 	bool m_terrain_offer{true};
 	bool m_terrain_buried_ask{true};
 	bool m_track_tools_more{false};
+	bool m_tool_card_folded{true};
 	bool m_terrain_while_laying{true};
 	terrain_model_settings m_terrain_model;
 	std::map<std::string, std::pair<double, bool>> m_terrain_model_offsets;

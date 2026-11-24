@@ -1,0 +1,44 @@
+# PR #450: deleting a switch of a crossover takes the crossover out whole, as the connection tools do: the outer track
+# of a crossover on a curve comes down by its lift and the record of the connection goes. Alone, the switch left the outer
+# track up for good, and the connection to the next switch given its name.
+# i0..i9 and o0..o9: curves of 600 and 604.5 m side by side, 4.5 m apart, canted 60 mm
+wait 5
+mark o2e o2 end
+mark o4s o4 start
+mark o6s o6 start
+# from the inner curve over to the outer one: z1 on the inner, z2 on the outer, which goes up onto the plane of the inner
+connection crossover 304.316 71.828 307.512 120.096 Rz_60E1-300-1:9
+expect records z1 1 switch
+expect records z2 1 switch
+expect records z1 1 connection
+expect records z2 1 connection
+# 4.5 m across the cant of 60 mm in 1500 mm, level between the switches, along ramps outside them
+expect lift o4 start o4s 0.180 0.005
+expect lift o2 end o2e 0.158 0.005
+expect lift o6 start o6s 0.172 0.005
+# Del on the second switch
+deletetrack z2
+expect track z1 removed
+expect track z2 removed
+expect records z1 0
+expect records z2 0
+# the outer track down again, the lines whole without steps
+expect lift o4 start o4s 0 0.002
+expect lift o2 end o2e 0 0.002
+expect lift o6 start o6s 0 0.002
+expect joint i3 end 0.001 0.01 1
+expect joint o4 end 0.001 0.01 1
+# a new switch given the name freed doesn't take the connection over
+switchplace Rz_60E1-300-1:9 40 150 1 1
+expect track z1 present
+expect records z1 1
+expect records z1 0 connection
+# the new switch undone, then the delete in one step: the crossover is back whole, the outer track up
+undo
+undo
+expect track z1 present
+expect track z2 present
+expect records z1 1 connection
+expect records z2 1 connection
+expect lift o4 start o4s 0.180 0.005
+quit

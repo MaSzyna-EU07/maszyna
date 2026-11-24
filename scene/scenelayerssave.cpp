@@ -965,7 +965,13 @@ save_result node_layers::save(std::vector<std::string> const &Rootstatements, st
 	}
 	std::vector<TTrack *> savedpaths;
 	std::vector<TTrack const *> droppedpaths;
-	auto const path_text = [](TTrack &Path, glm::dvec3 const &Offset) {
+	auto const path_text = [this](TTrack &Path, glm::dvec3 const &Offset) {
+		if (path_writer)
+			if (auto own{path_writer(Path, Offset)})
+			{
+				own->erase(own->find_last_not_of(" \t\r\n") + 1);
+				return std::move(*own);
+			}
 		auto const paths{Path.m_paths};
 		for (auto &path : Path.m_paths)
 			path.translate(-Offset);

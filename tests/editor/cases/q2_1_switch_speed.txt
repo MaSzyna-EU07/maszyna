@@ -1,0 +1,30 @@
+# Q2: a switch laid gets the speed of its diverging track written, of its type (table 11.2) and of its bend into a curve, the cant
+# taken with its sign and the cant deficiency of its frog (formula 9.9, table 9.7); a template changed writes it anew. Before, a switch
+# was laid without one, or with the one of the track or the switch it was copied from.
+# s1..s3, a1..a3, d1..d3: straights; i1..i8: a curve of R 600 m turning to +x, canted 60 mm
+wait 5
+# Rz 60E1-300-1:9 on a straight: 50 km/h, on the diverging track alone (below 0)
+switchplace Rz_60E1-300-1:9 40 150 1 1
+expect speed z1 -50
+expect status Speed on the diverging track 50 km/h
+# given the template of 1:12: 60 km/h
+switchreplace z1 Rz_60E1-500-1:12
+expect speed z1 -60
+# the movable nose of the 2500-1:26,5 would take 166 km/h, table 11.2 keeps it to 130
+switchplace Rz_60E1-2500-1:26,5 0 100 1 1
+expect speed z2 -130
+expect status no more than 130 km/h of the basic switch (table 11.2)
+# a double slip on a straight: its slip curves of R 190 m, 40 km/h
+slipplace Rkpd_60E1-190-1:9 80 150 1 1
+expect speed editor_dks1_a -40
+expect speed editor_dks1_d -40
+# Rz 60E1-190-1:9 bent into the curve, its diverging track out of it: two-sided, R 278 m, the cant of 60 mm against its turn,
+# 34 km/h, 30 km/h written (the cant taken without its sign would give 63)
+switchcurve Rz_60E1-190-1:9 308.32 99.54 1 1
+expect speed z3 -30
+expect status R 278 m, cant -60 mm into its turn, I up to 110 mm (formula 9.9, table 9.7)
+# the same into the curve: one-sided, R 144 m, the cant into its turn, 46 km/h, no more than the 40 km/h of the basic switch
+switchcurve Rz_60E1-190-1:9 321.21 158.11 1 -1
+expect speed z4 -40
+expect status R 144 m, cant +60 mm into its turn
+quit

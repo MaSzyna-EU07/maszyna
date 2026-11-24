@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "world/Segment.h"
@@ -17,7 +18,8 @@ http://mozilla.org/MPL/2.0/.
 // switches described by their geometry, of the catalogue and made by the user in the template editor: the main track is a
 // straight, the diverging track a chain of parts of linearly changing curvature from the start of the switch; a symmetric
 // switch (Rls) has both tracks turning by the same parts to both sides; a double switch (Rpd to both sides, Rpj to one side)
-// is two switches, the second starting on the main track of the first
+// is two switches, the second starting on the main track of the first. The catalogue is a data file (editor/data/turnouts.txt,
+// built into the executable), the templates of the user a file of the same format; the slips and the crossings are in it too
 namespace switch_design
 {
 
@@ -50,10 +52,56 @@ struct design
 	std::string note; // shown after the name on the list
 	bool own{false}; // made in the template editor, kept in the file of the user
 	bool movable{false}; // the frog with a movable nose
+	// what the catalogue tells of the type besides its geometry (editor-tracks-domain.md §7); 0 or empty where it doesn't
+	std::string blades; // "tangent": the diverging track leaves the main one tangentially; "secant": the blades cut into the stock rails
+	double cut{0.0}; // m, the cut tip of the blade from the start of the curve, as the sheets of the rail give it
+	int locks{0}; // of the blades (Id-4 tab. 14-3)
+	std::string drive; // the family of the point machine
+	double speed{0.0}; // km/h on the diverging track of the basic switch, ST-T1-A6 tab. 11.2
+	double bending{0.0}; // m, the least radius of the main track bent one-sided, ST-T1-A6 tab. 11.9; 0: not bent
+	double bending_exception{0.0}; // m, the one allowed by way of exception
+	double spacing{0.0}; // m, the least spacing of the tracks for a single crossover, ST-T1-A6 tab. 11.2
+	std::string source; // where the values come from, what is unconfirmed said so
+	// the radius of the curve and the ratio 1:n as the catalogue gives them, of the first switch of a double one, 0 for a template of the
+	// user; of a slip (Rkp, Rkpd) or a diamond crossing (Skrz) the radius of the slip curves and the ratio of the crossing, a its half
+	// length from the crossing to the joints, and the middle of the slip curves: 0 one arc, below 0 a straight there, above 0 an arc of
+	// that radius
+	double radius{0.0};
+	double ratio{0.0};
+	double middle{0.0};
 };
 
 bool double_switch(std::string const &Type);
 bool symmetric_switch(std::string const &Type);
+// a single or a double slip, or a diamond crossing
+bool slip_switch(std::string const &Type);
+
+// the diverging curve of a slip turning by Angle: arcs of Radius at both ends, each Ends long, and the arc of Middle, Between long,
+// between them; a straight when Middle is 0. With blades cutting into the stock rails the curve starts and ends with a straight Lead
+// long along them, the arcs of Radius meeting it at Entry. The curve starts at the origin heading along x and turns towards y
+struct slip_curve
+{
+	double radius{0.0};
+	double ends{0.0};
+	double middle{0.0};
+	double between{0.0};
+	double angle{0.0};
+	double tip{0.0}; // of the blades from each end of the curve, 0: where the blades get as thin as they may
+	double lead{0.0};
+	double entry{0.0}; // radians
+	double length() const { return 2.0 * (lead + ends) + between; }
+	// the point and the heading at Along of the curve; the heading at the ends of the leads is the one of the arcs
+	glm::dvec2 point(double const Along) const;
+	double heading(double const Along) const;
+	// from the start of the curve to the crossing of its tangents
+	double tangent() const;
+	// from the middle of the curve to the crossing of its tangents
+	double offset() const;
+	slip_curve scaled(double const Factor) const { return {radius * Factor, ends * Factor, middle * Factor, between * Factor, angle, Factor == 1.0 ? tip : 0.0, lead * Factor, entry}; }
+};
+// one arc of Radius, or with Middle the slip curves of a double slip with the blades outside of the diamond, their near rails touching
+// in its middle: Pass from the crossing, half of the gauge and the width of the head; a straight there when Middle < 0
+slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0);
 
 // diverging track of the chain of parts from the start, with the first direction along +z and turning to +x
 struct path
@@ -120,9 +168,20 @@ struct clicks_fit
 };
 bool fit_clicks(design &Design, std::vector<glm::dvec2> const &Clicks, tangent_fit Kind, double First, clicks_fit &Result, std::string &Error);
 
+// the designs of the text of a file of the catalogue's format, in its order; a line which isn't one is left out, why in Errors
+std::vector<design> read_designs(std::string_view Text, std::vector<std::string> *Errors = nullptr);
+// the text of the catalogue built into the executable, editor/data/turnouts.txt
+std::string_view catalogue_text();
+// all the types of the catalogue, read once: the switches, then the slips and the crossings
+std::vector<design> const &catalogue_entries();
+// the switches of the catalogue (Rz, Rls, Rpd, Rpj, Rps), as the designer and the switch tool list them
 std::vector<design> catalogue();
-// templates of the user, kept in eu07_switch_templates.txt in the configuration directory
+// the slips and the diamond crossings of the catalogue
+std::vector<design> slips();
+// templates of the user, kept in eu07_switch_templates.txt in the configuration directory, in the format of the catalogue
 std::vector<design> own();
 bool save_own(std::vector<design> const &Designs, std::string &Error);
+// a template of the user as a line of that file
+std::string own_line(design const &Design);
 
 } // namespace switch_design
