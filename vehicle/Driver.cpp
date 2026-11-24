@@ -8266,7 +8266,12 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
     // independent brake and leaves the train brake handle in running, so that brake counts as well
     braking_curve::approach const approach {
         Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS,
-        braking_curve::brake_acting( BrakeCtrlPosition, mvOccupied->LocalBrakePosA ),
+        braking_curve::brake_acting(
+            BrakeCtrlPosition,
+            // IncLocalBrakeLevel() moves the independent brake handle on a vehicle without one too
+            ( mvOccupied->LocalBrake == TLocalBrake::PneumaticBrake || mvOccupied->LocalBrake == TLocalBrake::HydraulicBrake ) ?
+                mvOccupied->LocalBrakePosA :
+                0.0 ),
         brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ),
         brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fillbrakea0 ) };
     auto const deceleration { braking_curve::demand( approach, BrakeSystem == TBrakeSystem::Pneumatic ? &braketable : nullptr ) };
