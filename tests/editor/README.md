@@ -129,6 +129,7 @@ tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the mod
 | `expect laid radius <curve> <R>[/<R>...] <tolerance %>`, `expect laid speed <curve> <km/h>`, `expect laid nearly <curve> <0\|1>` | a curve of it: the radii of its arcs, the speed it's laid for, nearly straight (R 5 km and more) |
 | `expect laid slowtracks <km/h> <at least>`, `expect laid joined <0\|1>` | its tracks given the speed of a curve slowed down; its first track joined at its start to the one it goes on from |
 | `expect laykeys <tabs> <enters>`, `expect laycontinue <0\|1>` | the shapes switched with Tab and the lines laid with Enter so far; the lay tool goes on from the end of the line laid |
+| `expect laid steepest <per mille>`, `expect laywait <0\|1>`, `expect layguessed <count>` | the steepest grade of the tracks of the line laid last; the line waits for the terrain under its points to be laid; the points clicked whose height is a guess, no ground under them yet |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
@@ -227,6 +228,7 @@ as on the photo):
 | `tr_3_compound` | a compound curve of R 600 and 400 m clicked along it: one curve of two radii, each within 3 % |
 | `tr_4_below_norms` | a curve of R 300 m on a line of 120 km/h laid slowed down to 70 km/h, its tracks given it; one of R 150 m, below the least radius of a main track, not laid |
 | `tr_5_continue` | after Enter the next clicks carry the line on from its end, joined to it; Esc ends it |
+| `tr_6_terrain_late` | the points clicked before the terrain under them came (the NMT held back with `nmtsettings hold 1`, the terrain made by the case with `terrainadd`, `terrainlevel`: no network, nothing waited for by the time): Enter waits for it with a line in the panel, Esc gives the wait up keeping the points, the line laid by itself once the terrain came; a first point clicked before it takes its height, no jump in the grade at the second point |
 
 and the assumptions of the project and the norms enforced when laying (`editor-project-setup.md`):
 

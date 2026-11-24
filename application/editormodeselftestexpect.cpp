@@ -564,6 +564,24 @@ void expect_laid(std::string const &What, std::istringstream &Words, std::vector
 			got += (got.empty() ? "" : ", ") + trace::radii_text(curve);
 		expectation(line.curves.size() == count, What, format("%zu (%s)", line.curves.size(), got.c_str()), std::to_string(count));
 	}
+	else if (which == "steepest")
+	{
+		// the steepest grade of the tracks laid, from end to end of each: a point at a height guessed leaves a jump in it
+		double most{0.0};
+		Words >> most;
+		if (malformed(What, Words))
+			return;
+		double steepest{0.0};
+		for (auto const *track : Tracks)
+			for (auto const &path : track->m_paths)
+			{
+				auto const &from{path.points[segment_data::point::start]};
+				auto const &to{path.points[segment_data::point::end]};
+				if (auto const run{std::hypot(to.x - from.x, to.z - from.z)}; run > 0.5)
+					steepest = std::max(steepest, std::abs(to.y - from.y) / run * 1000.0);
+			}
+		expectation(steepest <= most, What, format("%.1f per mille", steepest), format("at most %.1f", most));
+	}
 	else if (which == "clicks")
 	{
 		std::size_t most{0};
@@ -721,6 +739,23 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		if (false == malformed(what, words))
 			expectation(m_lay.continuing == (wanted != 0), what, m_lay.continuing ? "1" : "0", wanted != 0 ? "1" : "0");
 	}
+	else if (kind == "laywait")
+	{
+		// the line waits for the terrain under its points to be laid
+		int wanted{0};
+		words >> wanted;
+		if (false == malformed(what, words))
+			expectation(lay_waiting() == (wanted != 0), what, lay_waiting() ? "1" : "0", wanted != 0 ? "1" : "0");
+	}
+	else if (kind == "layguessed")
+	{
+		// the points clicked whose height is a guess, no ground under them yet
+		std::size_t wanted{0};
+		words >> wanted;
+		auto const guessed{click_heights::guessed_count(m_lay.heights)};
+		if (false == malformed(what, words))
+			expectation(guessed == wanted, what, format("%zu of %zu", guessed, m_lay.points.size()), std::to_string(wanted));
+	}
 	else
 	{
 		shown_state shown{m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
@@ -738,7 +773,7 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		if (false == expect_shown(kind, what, words, shown))
 			expectation(false, what, "no expectation " + kind,
 			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, "
-			            "selected, laypanel, switchpanel, steps, laid, laykeys or laycontinue");
+			            "selected, laypanel, switchpanel, steps, laid, laykeys, laycontinue, laywait or layguessed");
 	}
 	return selftest_result::handled;
 }

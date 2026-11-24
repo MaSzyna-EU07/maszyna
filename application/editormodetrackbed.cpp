@@ -161,12 +161,24 @@ ground_follow::grading editor_mode::laying_grading(TTrack const *Style) const
 	return grading;
 }
 
-glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
+glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point, click_heights::source *Source)
 {
 	auto const &tool{m_lay};
 	// level: on at the height the laying goes on from, the first point on the ground
 	if (EditorSettings.heights() == editorSettings::lay_heights::level && false == tool.points.empty())
+	{
+		if (Source != nullptr)
+			*Source = click_heights::source::level;
 		return {Point.x, tool.points.back().y, Point.z};
+	}
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
-	return {Point.x, bed_height(Point, tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back()), style), Point.z};
+	auto const direction{tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back())};
+	// no ground there yet, nor the model of it: the height a guess, taken again once the terrain comes
+	auto const height{bed_heights({Point}, {direction}, style).front()};
+	if (Source != nullptr)
+		*Source = std::isnan(height) ? click_heights::source::none : click_heights::source::ground;
+	if (false == std::isnan(height))
+		return {Point.x, height, Point.z};
+	auto const nearby{nearby_ground(Point)};
+	return {Point.x, std::isnan(nearby) ? Point.y : nearby + trackbed(style).first, Point.z};
 }

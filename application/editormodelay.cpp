@@ -207,11 +207,18 @@ void editor_mode::update_build_tools()
 	}
 	auto const snapping{lap()};
 	if (pointing && lay.mouse_snap.track == nullptr)
-		lay.mouse = lay_bed(lay.mouse);
+		lay.mouse = lay_bed(lay.mouse, &lay.mouse_height);
+	else if (lay.mouse_snap.track != nullptr)
+		lay.mouse_height = click_heights::source::fixed;
 	auto const bedding{lap()};
 	if (false == m_extend.active)
 		joining(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
 	lay_trim();
+	// the terrain came under the points clicked before it: they take its height, and the line shown with them; Enter waiting for it
+	// lays the line once it's there
+	lay_settle_heights();
+	if (lay_waiting())
+		lay_wait_end();
 	lay.plan = {};
 	if (lay.points.empty())
 	{
@@ -2225,6 +2232,7 @@ void editor_mode::lay_trim()
 	auto &tool{m_lay};
 	tool.modes.resize(tool.points.size(), lay_mode::straights);
 	tool.sigmas.resize(tool.points.size(), 0.0);
+	tool.heights.resize(tool.points.size(), click_heights::source::fixed);
 }
 
 void editor_mode::lay_switch_mode()
@@ -2258,6 +2266,9 @@ void editor_mode::lay_shape_default()
 void editor_mode::lay_click()
 {
 	auto &tool{m_lay};
+	// the line waits for the terrain under its points to be laid: Esc or Enter first
+	if (lay_waiting())
+		return;
 	tool.status.clear();
 	tool.laid_now = false;
 	lay_trim();
@@ -2267,7 +2278,7 @@ void editor_mode::lay_click()
 		// reaching a free end finishes the track there, in line with the path it joins
 		tool.points.push_back(snap.position);
 		tool.modes.push_back(tool.mode);
-		lay_finish(snap);
+		lay_finish_on_ground(snap);
 		return;
 	}
 	if (tool.points.empty())
@@ -2286,6 +2297,7 @@ void editor_mode::lay_click()
 		tool.points.push_back(point);
 		tool.modes.push_back(tool.mode);
 		tool.sigmas.push_back(click_sigma_at(point));
+		tool.heights.push_back(snap.track != nullptr ? click_heights::source::fixed : tool.mouse_height);
 		// the photo is traced from above: the view turns to it at the first point
 		if (lay_traced() && false == Global.EditorOrtho)
 			toggle_ortho();
@@ -2299,6 +2311,7 @@ void editor_mode::lay_click()
 	tool.points.push_back(point);
 	tool.modes.push_back(tool.mode);
 	tool.sigmas.push_back(click_sigma_at(point));
+	tool.heights.push_back(tool.mouse_height);
 	tool.continuing = false;
 	if (lay_traced() && tool.points.size() >= 3)
 		first_step_done(first_step::trace_points);
@@ -2509,6 +2522,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.points.clear();
 	tool.modes.clear();
 	tool.sigmas.clear();
+	tool.heights.clear();
 	tool.start = {};
 	tool.laid_step = m_history.size();
 	straight_refresh();
@@ -2530,6 +2544,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 			tool.points = {free.position};
 			tool.modes = {lay_mode::traced};
 			tool.sigmas = {sigma};
+			tool.heights = {click_heights::source::fixed};
 			tool.continuing = true;
 		}
 	}
@@ -2549,6 +2564,12 @@ void editor_mode::lay_enter()
 {
 	auto &tool{m_lay};
 	++tool.enters;
+	// Enter again while the line waits for the terrain under its points: laid at once, at the heights there are
+	if (lay_waiting())
+	{
+		lay_wait_end(true);
+		return;
+	}
 	if (false == m_typed.empty())
 	{
 		lay_click();
@@ -2562,7 +2583,7 @@ void editor_mode::lay_enter()
 	{
 		tool.points.push_back(end.position);
 		tool.modes.push_back(tool.mode);
-		lay_finish(end);
+		lay_finish_on_ground(end);
 		return;
 	}
 	// a single point is no track: the end of the line laid last it goes on from is left by Enter, one clicked is told
@@ -2580,7 +2601,77 @@ void editor_mode::lay_enter()
 	}
 	// the laying ends with the track laid: the next click starts anew where it's made, a click on the free end left goes on from
 	// it. Going on by itself, a click made elsewhere afterwards led a loop out of that end to it
-	lay_finish({});
+	lay_finish_on_ground({});
+}
+
+void editor_mode::lay_finish_on_ground(editor_track::snap_target const &End)
+{
+	auto &tool{m_lay};
+	lay_settle_heights();
+	// a point clicked before the terrain under it came, the terrain still on its way: laid once it's there, not at the height guessed
+	if (lay_terrain_coming())
+	{
+		tool.terrain_wait = ImGui::GetTime();
+		tool.wait_end = End;
+		tool.status.clear();
+		WriteLog(format("Editor: the laying waits for the terrain under %zu point(s) clicked before it came", click_heights::guessed_count(tool.heights)), logtype::generic);
+		return;
+	}
+	lay_finish(End);
+}
+
+void editor_mode::lay_wait_end(bool const Now)
+{
+	auto &tool{m_lay};
+	if (false == lay_waiting())
+		return;
+	auto const waited{ImGui::GetTime() - tool.terrain_wait};
+	if (false == Now && click_heights::wait_on(tool.heights, [&](std::size_t const Index) { return lay_terrain_coming_at(Index); }, waited))
+		return;
+	auto const end{tool.wait_end};
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
+	WriteLog(format("Editor: the laying waited %.1f s for the terrain under the points%s, %zu left at a guessed height", waited, Now ? ", Enter again" : "", click_heights::guessed_count(tool.heights)), logtype::generic);
+	lay_finish(end);
+}
+
+void editor_mode::lay_settle_heights()
+{
+	auto &tool{m_lay};
+	lay_trim();
+	if (false == click_heights::guessed(tool.heights))
+		return;
+	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
+	auto const &points{tool.points};
+	// read from above, as the cursor reads the ground: the terrain come may lie far over the height guessed
+	auto const above{static_cast<double>(Global.pCamera.Pos.y)};
+	auto const changed{click_heights::settle(tool.points, tool.heights, [&](std::size_t const Index) {
+		auto const &point{points[Index]};
+		auto const direction{Index > 0 ? plan_of(point - points[Index - 1]) : Index + 1 < points.size() ? plan_of(points[Index + 1] - point) : glm::dvec2{0.0}};
+		return bed_heights({glm::dvec3{point.x, std::max(point.y, above), point.z}}, {direction}, style).front();
+	})};
+	if (changed > 0)
+		WriteLog(format("Editor: the terrain came under %zu point(s) clicked before it, their heights taken from it", changed), logtype::generic);
+}
+
+bool editor_mode::lay_terrain_coming_at(std::size_t const Index) const
+{
+	auto const &tool{m_lay};
+	auto const &state{m_nmt_state};
+	if (Index >= tool.points.size() || false == state.grow || false == m_nmt.placed())
+		return false;
+	auto const &point{tool.points[Index]};
+	auto const chunk{heightmap::chunk_at(point.x, point.z)};
+	if (std::find(state.pending.begin(), state.pending.end(), chunk) != state.pending.end())
+		return true;
+	// not asked for yet: the terrain grows around the cursor every half a second, within the area the terrain is downloaded for
+	auto const at{plan_of(point)};
+	return false == m_streamer.exists(chunk) && false == state.given_up.contains(chunk) && in_download_area(at - glm::dvec2{1.0}, at + glm::dvec2{1.0});
+}
+
+bool editor_mode::lay_terrain_coming() const
+{
+	return click_heights::waiting(m_lay.heights, [&](std::size_t const Index) { return lay_terrain_coming_at(Index); });
 }
 
 void editor_mode::lay_cancel()
@@ -2589,6 +2680,9 @@ void editor_mode::lay_cancel()
 	tool.points.clear();
 	tool.modes.clear();
 	tool.sigmas.clear();
+	tool.heights.clear();
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
 	tool.continuing = false;
 	tool.start = {};
 	tool.preview.clear();
@@ -2608,6 +2702,20 @@ void editor_mode::lay_escape()
 {
 	auto &tool{m_lay};
 	lay_trim();
+	// the wait for the terrain under the points given up: nothing laid, the points stay, the free end reached left
+	if (lay_waiting())
+	{
+		if (tool.wait_end.track != nullptr && false == tool.points.empty())
+		{
+			tool.points.pop_back();
+			lay_trim();
+		}
+		tool.terrain_wait = -1.0;
+		tool.wait_end = {};
+		tool.status = STR_C("Not laid: the points stay, Enter lays them");
+		tool.status_time = ImGui::GetTime();
+		return;
+	}
 	// the points clicked are no track yet and nothing brings them back: a slip of Esc only warns, the second one drops them
 	auto const pending{lay_pending()};
 	if (tool.points.size() < 2 || (tool.continuing && tool.points.size() < 2) || ImGui::GetTime() - tool.escape_time < 3.0)
@@ -2640,17 +2748,21 @@ void editor_mode::lay_back()
 {
 	auto &tool{m_lay};
 	lay_trim();
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
 	// the points not laid yet, the last one first; the tracks laid go back with Ctrl+Z
 	if (tool.points.size() > 1)
 	{
 		tool.points.pop_back();
 		tool.modes.pop_back();
 		tool.sigmas.pop_back();
+		tool.heights.pop_back();
 		return;
 	}
 	tool.points.clear();
 	tool.modes.clear();
 	tool.sigmas.clear();
+	tool.heights.clear();
 	tool.continuing = false;
 	tool.start = {};
 }
@@ -3016,6 +3128,11 @@ void editor_mode::render_lay_ui()
 void editor_mode::render_lay_step(lay_state const State)
 {
 	auto const traced{m_lay.mode == lay_mode::traced};
+	if (lay_waiting())
+	{
+		editor_flow::step_line(STR_C("Waiting for the terrain under the points..."), STR_C("Esc cancels · Enter lays without waiting"));
+		return;
+	}
 	switch (State)
 	{
 	case lay_state::extending: editor_flow::step_line(STR_C("Drag to lay from the end; let go to lay it")); break;

@@ -38,6 +38,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorTrace.hpp"
+#include "editor/editorClickHeights.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorSwitchCurve.hpp"
@@ -433,6 +434,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double slope{1.5};
 		double reach{60.0};
 		std::vector<heightmap::chunk_key> pending; // chunks to make once their model is in
+		// the self-test holds the terrain back: the chunks waiting aren't made, the model isn't read for the ground, till it lets go
+		bool held{false};
 		// of the chunks waiting, those there already with flat ground, made without the model: the model fills their ground
 		std::set<heightmap::chunk_key> refill;
 		std::set<heightmap::chunk_key> given_up; // chunks the growing gave up, next to terrain not from the model: not asked for again
@@ -1929,6 +1932,13 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::vector<glm::dvec3> points;
 		std::vector<lay_mode> modes; // of the points, as each was clicked
 		std::vector<double> sigmas; // m, the noise of each click: two pixels of the view at it
+		// where the height of each point came from: one clicked before the terrain under it came takes it again once it's there
+		std::vector<click_heights::source> heights;
+		click_heights::source mouse_height{click_heights::source::ground}; // of the cursor, the next point
+		// Enter waits for the terrain still coming under the points of a guessed height: since when (below 0: it doesn't), the free
+		// end the line is to be laid to
+		double terrain_wait{-1.0};
+		editor_track::snap_target wait_end;
 		double sigma_given{0.0}; // m, the noise of the clicks of a self-test, where above 0
 		lay_mode mode{lay_mode::straights};
 		// the shape the user chose with Tab or in the panel; until then it follows the photo: traced where it's on, the bends where not
@@ -2075,6 +2085,15 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void lay_told(double const Length, std::size_t const Tracks);
 	void lay_click();
 	void lay_finish(editor_track::snap_target const &End);
+	// the line laid once the terrain under its points of a guessed height is there, or at once if none is coming; Enter again doesn't wait
+	void lay_finish_on_ground(editor_track::snap_target const &End);
+	// the points clicked before the terrain under them came take its height, once a frame; the terrain still coming under one of them
+	void lay_settle_heights();
+	bool lay_terrain_coming() const;
+	bool lay_terrain_coming_at(std::size_t Index) const;
+	bool lay_waiting() const { return m_lay.terrain_wait >= 0.0; }
+	// the wait over: the terrain came, none is coming any more, or it took too long; Now: Enter again, laid without waiting
+	void lay_wait_end(bool Now = false);
 	void lay_cancel();
 	void lay_enter();
 	// Tab: the bends of straights or the line traced on the photo, for the points clicked so far and from now on
@@ -2680,7 +2699,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the grade lines of the tracks shown while they're laid are fitted on a thread of their own, not to hold up the frames
 	mutable ground_follow::fitter m_fitter;
 	mutable bool m_follow_preview{false};
-	glm::dvec3 lay_bed(glm::dvec3 const &Point);
+	glm::dvec3 lay_bed(glm::dvec3 const &Point, click_heights::source *Source = nullptr);
 	std::optional<glm::dvec3> m_cursor_override;
 	bool sweep_grabs(glm::dvec3 const &Point);
 	// menu of the path a click of the right mouse button lands on

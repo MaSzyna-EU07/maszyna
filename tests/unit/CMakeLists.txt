@@ -26,8 +26,9 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
 	# and the line traced on the photo, its straights and curves recognised from the points clicked
 	"${CMAKE_SOURCE_DIR}/editor/editorTrace.cpp"
-	# and the heights of the tracks laid
+	# and the heights of the tracks laid, and of the points clicked laying them
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
+	"${CMAKE_SOURCE_DIR}/editor/editorClickHeights.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorProfile.cpp"
 	# and the switches laid into the curves, and the catalogue of the switches the turnouts of the domain are laid from
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"

@@ -15514,3 +15514,14 @@ msgstr "Enter, LPM... przy układaniu po zdjęciu"
 
 msgid "The line laid goes on from its end with the next clicks; Esc ends it"
 msgstr "Kolejne kliknięcia ciągną ułożoną linię od jej końca; Esc ją kończy"
+
+# scenery editor: the points clicked before the terrain came under them
+
+msgid "Waiting for the terrain under the points..."
+msgstr "Czekam na teren pod punktami…"
+
+msgid "Esc cancels · Enter lays without waiting"
+msgstr "Esc anuluje · Enter układa bez czekania"
+
+msgid "Not laid: the points stay, Enter lays them"
+msgstr "Nie ułożono: punkty zostają, Enter je układa"

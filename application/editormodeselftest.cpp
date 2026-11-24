@@ -132,8 +132,9 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //   orthohires 0|1                       the 4K tiles on or off; orthostats logs the tiles, the area and the requests made
 //   orthosettings [on|radius|opacity|lift|height|year|hires|drape|scene <value>]...   the settings of the orthophoto changed as its
 //                                        panel and its checkbox change them, kept with the editor, and logged with the origin of the scenery
-//   nmtsettings [band|around|shape|common|follow|grow|offset|fitted <value>]...   the settings of the terrain model changed as the terrain
-//                                        panel changes them, and logged with the offset of the model to the scenery
+//   nmtsettings [band|around|shape|common|follow|grow|offset|fitted|hold <value>]...   the settings of the terrain model changed as the
+//                                        terrain panel changes them, and logged with the offset of the model to the scenery; hold 1: the
+//                                        terrain held back as if still on its way, the chunks waiting not made, the model not read
 //   join <x> <z> <x> <z> [radius] [variant] [transitions 0|1]   the free ends at the points joined, as a drag from one to the other
 //   layto <x> <z> <x> <z> <layout 0..3> <radius>   from the free end at the first point towards the second, as a drag in the layout
 //   layclicks <layout 0..3> <radius> <x> <z>...   clicks of the lay tool at the points, a free end within 3 m joined

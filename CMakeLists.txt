@@ -199,6 +199,7 @@ set(SOURCES
 "editor/editorRoad.cpp"
 "editor/editorAlignment.cpp"
 "editor/editorTrace.cpp"
+"editor/editorClickHeights.cpp"
 "editor/editorTrackShape.cpp"
 "editor/editorGroundFollow.cpp"
 "editor/editorAlignmentStore.cpp"

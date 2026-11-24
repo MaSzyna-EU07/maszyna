@@ -200,7 +200,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			auto const ground{ground_heights({point}, true, &found)};
 			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
-			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+			m_lay.mouse_height = click_heights::source::fixed;
+			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point, &m_lay.mouse_height);
 			lay_click();
 		}
 		if (false == points.empty())

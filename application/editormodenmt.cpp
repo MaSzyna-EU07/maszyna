@@ -805,6 +805,8 @@ bool editor_mode::nmt_ahead(double const X, double const Z, double &Height) cons
 
 bool editor_mode::nmt_ground(double const X, double const Z, double &Height) const
 {
+	if (m_nmt_state.held)
+		return false;
 	if (nmt_ahead(X, Z, Height))
 		return true;
 	if (false == m_nmt.placed() || false == m_nmt.height(X, Z, Height))
@@ -1182,6 +1184,9 @@ void editor_mode::nmt_update()
 			camera_above_ground();
 		return;
 	}
+	// the self-test holds the terrain back: the chunks wait as they are
+	if (state.held)
+		return;
 	state.camera_check = true;
 	// the terrain of the scenery opened, or begun, for the chunks grown under the track laid as well: they don't need terrain there before
 	if (false == ensure_terrain())
