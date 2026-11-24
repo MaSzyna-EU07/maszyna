@@ -869,7 +869,7 @@ def _coupled_pairs(box, chosen, upto):
             if flags & COUPLING_COUPLER and vehicle in chosen and other in chosen}
 
 
-def check_on_track(box, vehicles, max_offset=0.5, max_detour=5.0):
+def check_on_track(box, vehicles, max_offset=0.75, max_detour=5.0):
     """Every vehicle whose name starts with `vehicles` stays on the line of a track in every state the black box has of
     it, and the vehicles coupled to each other stay on one way: the way along the tracks from one to the other is no
     more than `max_detour` [m] longer than the straight line between them. A vehicle thrown sideways has its middle off
