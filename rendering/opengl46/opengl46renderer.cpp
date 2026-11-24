@@ -1747,13 +1747,20 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if (vp.main && !vp.custom_backbuffer) // TODO: update window sizes also for extra viewports
             target_size = Global.fb_size;
 
-		// the motion blur only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last frame.
+		// the camera with no vehicle of its own (freefly, the editor) blurs the world with its own movement, as a vehicle does with
+		// its (rendering/common/freecameramotion.h)
+		if (vp.main && (Global.pCamera.m_owner != nullptr))
+			m_freecamera.reset();
+		auto const freecameramovement{(vp.main && (Global.pCamera.m_owner == nullptr)) ? m_freecamera.next_frame(Global.pCamera.Pos) : glm::vec3{0.f}};
+		// the motion blur only when something in the view moves: the vehicle of the camera, the camera with no vehicle of its own,
+		// or a vehicle drawn in the last frame.
 		// with nothing moving the velocity is zero everywhere, the blur takes a single sample of each pixel and gives back the
 		// image it was given, so the velocity target, its resolve and the blur are left out and the picture stays the same.
 		// a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel
 		auto const motionblur{
 		    Global.gfx_postfx_motionblur_enabled
 		    && (m_vehiclesmoved
+		        || (freecameramovement != glm::vec3{0.f})
 		        || ((Global.pCamera.m_owner != nullptr) && (Global.pCamera.m_owner->get_future_movement() != glm::dvec3{0.0})))};
 
 		if (!Global.gfx_skippipeline)
@@ -1813,6 +1820,12 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			auto const *vehicle = Global.pCamera.m_owner;
 			glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 			future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
+		}
+		else if (freecameramovement != glm::vec3{0.f})
+		{
+			// with the temporal anti-aliasing the velocities to the last frame hold the movement of the camera already
+			glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
+			future = glm::translate(mv, -freecameramovement) * glm::inverse(mv);
 		}
 
         // the cluster grid and its lists of lights are kept up only while something reads them: the shading or the heatmap.
@@ -3406,6 +3419,8 @@ void opengl46_renderer::Bind_Material( material_handle const Material, TSubModel
 			return;
 		}
 
+		// the cache may have been marked stale by the python upload thread
+		opengl_texture::sync_unit_cache();
 		GLuint lastdiff = 0;
 		size_t i;
 		for (i = 0; i < gl::MAX_TEXTURES; i++)

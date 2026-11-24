@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/common/shadowfit.h"
 #include "rendering/common/gpuparticles.h"
 #include "rendering/common/temporalaa.h"
+#include "rendering/common/freecameramotion.h"
 #include "rendering/common/screenreflections.h"
 #include "rendering/particles.h"
 #include "model/material.h"
@@ -567,6 +568,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool m_vehiclesmoved{true};
 	// the temporal anti-aliasing of the main viewport (gfx.antialiasing taa), whose jitter and history dlss takes too
 	gfx::temporal_aa m_taa;
+	// the movement of the camera with no vehicle of its own in the main view, for the motion blur
+	gfx::free_camera_motion m_freecamera;
 	// dlss of the main viewport (gfx.antialiasing dlss): the size the scene is drawn at and the window it's upscaled to, planned at
 	// the start (0: dlss is off); the next frame starts its history anew
 	glm::ivec2 m_dlssrender{0};

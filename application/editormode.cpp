@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <fstream>
 #include <regex>
+#include <optional>
 #include "application/editormode.h"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
@@ -604,6 +605,9 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 		gather_ground_triangles(Min, Max, true, 50.0f, Out, true, Heightmap);
 	});
 	Layer.height_source([](double const X, double const Z, double &Height) { return EditorTerrain.height_at(X, Z, Height); });
+	// with the heightmap terrain, a new tile waits while a chunk under it is still to come; where none is nor will be, or the walk of
+	// the chunks doesn't reach, it lies on the other ground or on the NMT guess as before. A scenery without it as before
+	Layer.coming_source([](glm::dvec2 const &Min, glm::dvec2 const &Max) { return EditorTerrain.active() && EditorTerrain.ground_coming(Min, Max); });
 	// the imagery often comes before the terrain made from the model: it lies where the terrain will be
 	Layer.guess_source([this](double const X, double const Z, double &Height) {
 		if (nmt_ground(X, Z, Height))
@@ -618,6 +622,8 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 editor_mode::~editor_mode()
 {
 	editor_track::observe(nullptr);
+	// the capabilities of a WMS service being read are given up rather than waited for to their timeouts
+	m_wms_adding.closing = true;
 }
 
 std::vector<double> editor_mode::ground_heights(std::vector<glm::dvec3> const &Points, bool const Fresh, std::vector<char> *Found) const
@@ -1415,6 +1421,15 @@ bool editor_mode::update()
                 ui()->set_status(text, false);
                 WriteLog("Editor: " + text, logtype::generic);
             }
+            // the drives left without their switches are told once, as the scenery is opened
+            if (auto const stray{stray_drives().size()}; stray > 0)
+            {
+                auto const text{format(STR_P("%zu switch drive has no switch of its name: it's listed in the switch tool and marked red in the view",
+                                             "%zu switch drives have no switch of their names: they're listed in the switch tool and marked red in the view", static_cast<long long>(stray)),
+                                       stray)};
+                ui()->set_notice(text);
+                WriteLog("Editor: " + text, logtype::generic);
+            }
         }
     }
     // after the tool has told its own status
@@ -1660,6 +1675,7 @@ bool editor_mode::update()
         draw_build_overlay();
         steps.step("laying drawn");
         draw_blade_tips();
+        draw_stray_drives();
         draw_track_intent();
         draw_tape();
         steps.step("track drawn");
@@ -3445,7 +3461,7 @@ void editor_mode::toggle_include(scene::instance_handle const Instance)
         return;
     }
     scene::Layers.removed(Instance, false == included.removed);
-    m_drives_standing.reset();
+    drives_changed();
     ui()->set_status(format(included.removed ? STR_C("Include of \"%s\" removed") : STR_C("Include of \"%s\" restored"), included.file->c_str()));
 }
 
@@ -3482,7 +3498,7 @@ void editor_mode::restore_includes(EditorSnapshot &Snapshot)
         }
         scene::Layers.removed(instance, false == scene::Layers.instance(instance).removed);
     }
-    m_drives_standing.reset();
+    drives_changed();
     for (auto &entry : Snapshot.directives)
     {
         auto current = scene::Layers.directive(entry.first);
@@ -3527,7 +3543,7 @@ void editor_mode::select_include(scene::instance_handle const Instance)
 
 void editor_mode::set_include_directive(scene::instance_handle const Instance, std::string const &Directive)
 {
-    m_drives_standing.reset();
+    drives_changed();
     std::string file;
     std::vector<std::string> values;
     if (scene::Layers.tracked(Instance) && editor_includes::parse_directive(Directive, file, values) && scene::Layers.instance(Instance).file != nullptr &&
@@ -4341,7 +4357,7 @@ void editor_mode::render_wms_adding()
         adding.info.reset();
         adding.ticked.clear();
         adding.service = url;
-        adding.reading = std::async(std::launch::async, [url]() { return editor_orthophoto::describe(url); });
+        adding.reading = std::async(std::launch::async, [url, closing = &adding.closing]() { return editor_orthophoto::describe(url, [closing]() { return closing->load(); }); });
     }
     if (adding.reading.valid())
     {
@@ -4502,6 +4518,11 @@ void editor_mode::render_view_menu()
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The tracks of the track mode coloured by their radius, speed or grade, with the legend in the corner"));
+    if (ImGui::BeginMenu(STR_C("Camera speed")))
+    {
+        render_camera_settings();
+        ImGui::EndMenu();
+    }
     ImGui::MenuItem(STR_C("Track labels in the top view"), nullptr, &m_track_labels);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"));
@@ -7536,6 +7557,8 @@ void editor_mode::enter()
     simulation::Blackbox.close();
     // the cursor drawn into the picture is the editor's: back on when it comes back, if it was chosen
     ui_layer::draw_cursor(m_draw_cursor);
+    apply_camera_settings();
+    Global.EditorCameraOn = true;
 
     if (simulation::Region != nullptr)
     {
@@ -7637,6 +7660,7 @@ void editor_mode::exit()
     track_sleepers::lay_in_background(true);
     // the driver's view has no menu to switch the drawn cursor off: the system one there
     ui_layer::draw_cursor(false);
+    Global.EditorCameraOn = false;
     Global.editor_tracks = false;
     EditorModeFlag = false;
     Global.ControlPicking = m_statebackup.picking;
@@ -8050,6 +8074,22 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         // laying: the bends of straights or a curve traced, for the points clicked from now on
         if (is_press(Action) && false == anyModifier && ui()->mode() == nodebank_panel::TRACK && m_lay.active && false == ImGui::GetIO().WantTextInput)
             lay_switch_mode();
+        break;
+
+    case GLFW_KEY_GRAVE_ACCENT:
+        // ~ (left of 1): the orthophoto shown or hidden; with Ctrl what the camera sees downloaded before anything else
+        if (false == is_press(Action) || ImGui::GetIO().WantTextInput)
+            break;
+        if (Mods & GLFW_MOD_CONTROL)
+        {
+            orthophoto_hurry();
+            break;
+        }
+        if (false == anyModifier)
+        {
+            m_orthophoto.enabled(false == m_orthophoto.enabled());
+            ui()->set_status(m_orthophoto.enabled() ? STR("Orthophoto on (~)") : STR("Orthophoto off (~)"));
+        }
         break;
 
     case GLFW_KEY_BACKSPACE:
@@ -8672,4 +8712,114 @@ void editor_mode::render_top_tracks_choice(bool const Combo)
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The colour of the rails, to stand out on the imagery and the map"));
+}
+
+void editor_mode::apply_camera_settings()
+{
+    auto const &camera{EditorSettings.camera()};
+    Global.EditorCameraSpeed = camera.speed;
+    Global.EditorCameraFast = camera.fast;
+    Global.EditorCameraZoomed = camera.zoomed;
+}
+
+void editor_mode::render_camera_settings()
+{
+    auto &camera{EditorSettings.camera()};
+    auto changed{false};
+    auto release{false};
+    ImGui::PushItemWidth(180.0f * Global.ui_scale);
+    auto speed{static_cast<float>(camera.speed)};
+    if (ImGui::SliderFloat(STR_C("Speed of the camera"), &speed, 0.05f, 10.0f, "x %.2f", ImGuiSliderFlags_Logarithmic))
+    {
+        camera.speed = speed;
+        changed = true;
+    }
+    release |= ImGui::IsItemDeactivatedAfterEdit();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("How fast the arrows or WSAD move the camera, Shift a bit faster; 1 as it was"));
+    auto fast{static_cast<float>(camera.fast)};
+    if (ImGui::SliderFloat(STR_C("Ctrl speeds it up"), &fast, 1.0f, 30.0f, "x %.1f", ImGuiSliderFlags_Logarithmic))
+    {
+        camera.fast = fast;
+        changed = true;
+    }
+    release |= ImGui::IsItemDeactivatedAfterEdit();
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("How many times faster the camera goes with Ctrl held, Ctrl+Shift too; 30 as it was"));
+    ImGui::PopItemWidth();
+    if (ImGui::Checkbox(STR_C("In the top view as fast as the view is zoomed"), &camera.zoomed))
+        changed = release = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", STR_C("Zoomed in the map moves slowly, zoomed out fast: across the screen at the same pace whatever the zoom"));
+    ImGui::Separator();
+    if (ImGui::MenuItem(STR_C("As it was")))
+    {
+        camera = {};
+        changed = release = true;
+    }
+    if (changed)
+        apply_camera_settings();
+    if (release)
+        EditorSettings.save();
+}
+
+void editor_mode::orthophoto_hurry()
+{
+    if (false == m_orthophoto.enabled())
+        m_orthophoto.enabled(true);
+    // what the camera sees of the ground: rays through a grid over the screen to the level of the ground under the camera, or as far
+    // as the reach of the orthophoto along it where they don't come down to it (the sky)
+    ImGuiIO const &io = ImGui::GetIO();
+    if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f)
+        return;
+    auto const inverse = glm::inverse(editor_mode::projection_matrix(io.DisplaySize.x / io.DisplaySize.y) * GfxRenderer->Camera_View_Matrix());
+    auto const camera{GfxRenderer->Camera_Position()};
+    // the level of the ground under the camera: the terrain, else the scenery; with neither the rays go as far as the reach
+    std::optional<double> level;
+    // only a level below the camera: one above it (in a tunnel, or flown under the terrain) would put the hits behind it
+    if (double ground{0.0}; m_streamer.active() && m_streamer.height_at(camera.x, camera.z, ground) && ground < camera.y)
+        level = ground;
+    else if (std::vector<char> found; Global.EditorOrtho == false)
+    {
+        auto const heights{ground_heights({camera}, true, &found)};
+        if (false == found.empty() && found.front() != 0 && heights.front() < camera.y)
+            level = heights.front();
+    }
+    double constexpr reach{2500.0};
+    glm::dvec2 low{camera.x, camera.z};
+    glm::dvec2 high{camera.x, camera.z};
+    for (int j = 0; j <= 6; ++j)
+        for (int i = 0; i <= 6; ++i)
+        {
+            glm::vec2 const ndc{static_cast<float>(i) / 3.0f - 1.0f, static_cast<float>(j) / 3.0f - 1.0f};
+            auto const point = [&inverse, &ndc](float const Depth) {
+                auto const clip = inverse * glm::vec4(ndc, Depth, 1.0f);
+                return glm::dvec3{glm::vec3{clip} / clip.w};
+            };
+            if (Global.EditorOrtho)
+            {
+                // the view straight down: the corners of the screen are where it reaches on the ground
+                auto const corner{camera + point(0.0f)}; // the view matrix is camera-relative
+                low = glm::min(low, glm::dvec2{corner.x, corner.z});
+                high = glm::max(high, glm::dvec2{corner.x, corner.z});
+                continue;
+            }
+            auto direction = point(0.5f) - point(0.0f);
+            if (glm::length(direction) < 1e-9)
+                continue;
+            direction = glm::normalize(direction);
+            glm::dvec2 flat{direction.x, direction.z};
+            auto distance{reach};
+            if (level && direction.y < -1e-6)
+                distance = std::min(reach, (camera.y - *level) / -direction.y * glm::length(flat));
+            if (glm::length(flat) < 1e-6)
+                continue;
+            flat = glm::normalize(flat) * distance;
+            glm::dvec2 const hit{camera.x + flat.x, camera.z + flat.y};
+            low = glm::min(low, hit);
+            high = glm::max(high, hit);
+        }
+    auto const count{m_orthophoto.hurry(low, high, camera)};
+    ui()->set_status(count > 0 ? format(STR_C("Orthophoto: %zu tiles of the view downloaded first (Ctrl+~)"), count)
+                               : std::string{STR("Orthophoto: the view is all shown already (Ctrl+~)")});
 }

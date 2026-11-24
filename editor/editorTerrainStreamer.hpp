@@ -89,6 +89,10 @@ class terrain_streamer
 	bool removed(chunk_key const &Key) const { return m_removed.count(Key) > 0; }
 	// the chunk in memory, or nullptr; Load: read from its pack file if it isn't in memory yet
 	editor_terrain *chunk(chunk_key const &Key, bool const Load = false);
+	// true while a chunk over an XZ rectangle (Low/High are x,z) is still to come at this distance of the camera: being loaded, or
+	// within the walk around the camera and in its pack or with its pack not read yet. False where all of them are in memory, where
+	// none is nor will be, and where the walk doesn't reach
+	bool ground_coming(glm::dvec2 const &Low, glm::dvec2 const &High) const;
 
 	// editing; the chunks changed are written to the files by save()
 	heightmap::manifest const &manifest() const { return m_manifest; }
@@ -268,6 +272,11 @@ class terrain_streamer
 		scene::basic_section *section{nullptr};
 		scene::basic_cell *cell{nullptr};
 	};
+
+	// within the circle of chunks the last walk of update() asked for
+	bool in_walk(chunk_key const &Key) const;
+	// the chunk is still to come at this distance of the camera (see ground_coming)
+	bool chunk_coming(chunk_key const &Key) const;
 
 	void start_workers();
 	void stop_workers();

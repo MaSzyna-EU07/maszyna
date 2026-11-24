@@ -64,7 +64,12 @@ inline long Round(double const f)
 }
 
 double Random(double a, double b);
-int Random(int min, int max);
+// whole numbers from min to max, both included. a name of its own keeps the calls of Random() with whole-number
+// bounds (the wind, the wheel flats, the truck hunting, the tachometer) on Random(double, double), which draws the
+// real number in between that they expect. drawn from the local engine, as up to 26.05.1 from an engine of its own: it
+// picks what one machine shows (the trivia of the loading screen), and a draw from the engine of the run's seed would
+// put that engine out of step with the other machines of a network session
+int RandomInt(int min, int max);
 // the engine Random() draws from in the calling thread, in place of Global.random_engine, or none for that one again. the threads
 // of worker_pool have engines of their own: the one of the simulation can't be shared between threads
 void set_thread_random_engine(std::mt19937 *Engine); // NOSONAR: randomness of the simulation, not of anything security-relevant
@@ -285,17 +290,18 @@ template <typename T> bool is_equal(T const &Left, T const &Right, T const Epsil
 	return Left == Right;
 }
 
-// Tolerant clamp. Unlike std::clamp, this does NOT invoke undefined behaviour when
-// the bounds are inverted (Lo > Hi) - it normalizes them instead. This restores the
-// pre-refactor behaviour of the old custom clamp() for code paths where the bounds are
-// computed at runtime and can legitimately cross (e.g. AI acceleration/braking limits,
-// physics jolt calculations), where std::clamp's UB produced wrong results.
+// Tolerant clamp, the old custom clamp() of the project (up to 26.05.1). Unlike
+// std::clamp, this does NOT invoke undefined behaviour when the bounds are inverted
+// (Lo > Hi): the lower bound is applied first and the upper one last, so inverted
+// bounds give the upper bound, as the old clamp() did. Every call of the old clamp()
+// whose bounds can cross (they come from the .fiz, the .mmd or the window, or are
+// computed from such values) uses it, so it gives what it gave before the move to
+// std::clamp. Where the code keeps the bounds in order, std::clamp gives the same.
+// New code uses std::clamp.
 template <typename Type_>
 constexpr Type_ safe_clamp( Type_ const Value, Type_ const Lo, Type_ const Hi )
 {
-	return ( Hi < Lo )
-		? std::clamp( Value, Hi, Lo )
-		: std::clamp( Value, Lo, Hi );
+	return std::min( std::max( Value, Lo ), Hi );
 }
 
 // keeps the provided value in specified range 0-Range, as if the range was circular buffer

@@ -52,6 +52,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46shadowfit.h"
 #include "rendering/common/scenewalk.h"
 #include "rendering/common/temporalaa.h"
+#include "rendering/common/freecameramotion.h"
 #include "rendering/common/screenreflections.h"
 
 // bare-bones render controller, in lack of anything better yet
@@ -873,6 +874,8 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	std::unique_ptr<gl::postfx> m_pfx_motionblur;
 	std::unique_ptr<gl::postfx> m_pfx_taa;
 	gfx::temporal_aa m_taa;
+	// the movement of the camera with no vehicle of its own in the main view, for the motion blur
+	gfx::free_camera_motion m_freecamera;
 	std::unique_ptr<gl::postfx> m_pfx_tonemapping;
   std::unique_ptr<gl::postfx> m_pfx_chromaticaberration;
 
