@@ -268,6 +268,7 @@ the train rolls back meanwhile.
 | `st43_steel_td_downgrade12_long` | `td_downgrade12_long.scn`: 900 m level, 6500 m down 12 per mille, no wire, the signal 6000 m down | ST43, 45 coil wagons 425S, G | passes: holds 35-37.5 km/h of the 40 all the way down, never below 20 km/h, stops at the signal |
 | `et41_coal_td_upgrade_start` | `td_upgrade_signal_start.scn`: 600 m level, 2500 m up 10 per mille, a signal 1000 m up that clears at 10:42, another 2300 m up | the ET41 with 25 coal wagons | passes: stops at the first signal with the whole train on the gradient, moves off 4.7 s after it clears, 10 km/h after 52 s, rolls back 0.04 m |
 | `eu07a_coaches_td_upgrade_long` | `td_upgrade_long.scn`: 600 m level, 5500 m up 10 per mille, the signal 5300 m up | EU07A (303E), 8 coaches (about 360 t), passenger timetable at 80 km/h | passes: 80 km/h at 1430 m, never below 73.8 km/h on the climb |
+| `et41_coal_td_slippery_start` | `td_level_signal.scn`: 2100 m level, the signal 1000 m ahead | ET41, 25 coal wagons with 60 t each (about 2170 t), `friction 0.3` | passes with the fix of this branch: gets going and stops at the signal (1082 m, at 392 s); before it, 395 slips in 1500 s and 75 m |
 
 What the AI still does with heavy trains, without a case that fails on it:
 
@@ -281,7 +282,8 @@ What the AI still does with heavy trains, without a case that fails on it:
   starts at full power, without taking up the slack first.
 - The AI doesn't know the adhesion of the rails: it plans braking with `Global.FrictionWeatherFactor` alone, and the
   result of its running brake test (`adjust_desired_speed_for_braking_test`) is shown in the debug panel only. It sands
-  ahead of a slip only at a high motor current (`control_wheelslip()`).
+  ahead of a slip only at a high motor current, and, since the fix of `et41_coal_td_slippery_start`, through the rest of
+  a start that has slipped (`control_wheelslip()`); not before a hard brake, nor before the first slip of a start.
 
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from

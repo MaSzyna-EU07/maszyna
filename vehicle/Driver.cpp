@@ -6742,15 +6742,37 @@ TController::determine_consist_state() {
 
 void
 TController::control_wheelslip() {
+    // a start that has slipped once keeps the sand on until the train is under way. with the sand off as soon as the
+    // wheels grip again, the next notch slips again, and a heavy train on poor rails slips, grips and snatches over
+    // and over, and may never get going (#187)
+    auto const velocity { std::abs( mvOccupied->Vel ) };
+    if( mvControlling->SlippingWheels
+     && velocity < EU07_AI_SANDEDSTARTVELOCITY
+     && false == mvControlling->IsMainCtrlNoPowerPos() ) {
+        bSandedStart = true;
+    }
+    else if( velocity >= EU07_AI_SANDEDSTARTVELOCITY
+          || ( velocity < EU07_AI_NOMOVEMENT && VelDesired == 0.0 ) ) {
+        bSandedStart = false;
+    }
     // wheel slip
     if( mvControlling->SlippingWheels ) {
         cue_action( driver_hint::sandingon ); // piasku!
-        cue_action( driver_hint::tractiveforcedecrease );
+        if( false == bSandedStart ) {
+            cue_action( driver_hint::tractiveforcedecrease );
+            cue_action( driver_hint::antislip );
+        }
+        else if( ElapsedTime - fSandedStartDecreaseTime >= 1.0 ) {
+            // starting, a step down at a time, and no anti-slip brake: taking the power off at once and braking the
+            // locomotive brings a heavy train that has just got moving to a stand again, and the start begins anew
+            cue_action( driver_hint::tractiveforcedecrease );
+            fSandedStartDecreaseTime = ElapsedTime;
+        }
         cue_action( driver_hint::brakingforcedecrease );
-        cue_action( driver_hint::antislip );
         ++iDriverFailCount;
     }
-    else if( std::fabs( mvControlling->Im ) > 0.75 * mvControlling->ImaxHi ) {
+    else if( ( std::fabs( mvControlling->Im ) > 0.75 * mvControlling->ImaxHi )
+          || ( bSandedStart && false == mvControlling->IsMainCtrlNoPowerPos() ) ) {
         cue_action( driver_hint::sandingon ); // piaskujemy tory, coby się nie ślizgać
     }
     else {
