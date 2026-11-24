@@ -24,8 +24,10 @@ layout(location = 1) out vec4 out_motion;
 
 void main()
 {
-	// no texture: the diffuse colour alone makes the albedo, apply_lights() applies it to the white base
-	vec4 tex_color = vec4(1.0, 1.0, 1.0, param[0].a);
+	// no texture: the diffuse colour, linearised, stands in for the texture, and apply_lights() scales it by the
+	// colour once more, as 26.05 did (c^2.2 * c); on a white base a dark grey of an untextured car came out
+	// tens of times lighter than in 26.05: tyres, bumpers and glass grey instead of near black
+	vec4 tex_color = vec4(pow(max(param[0].rgb, vec3(0.0)), vec3(2.2)), param[0].a);
 
 //	if (tex_color.a < opacity)
 //		discard;
