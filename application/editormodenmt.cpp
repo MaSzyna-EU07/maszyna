@@ -3658,7 +3658,7 @@ void editor_mode::nmt_merge_laid(std::unordered_set<TTrack const *> &Laid)
 bool editor_mode::nmt_fit_laid(std::size_t const From, glm::dvec3 const End)
 {
 	auto &state{m_nmt_state};
-	if (EditorSettings.heights() != editorSettings::lay_heights::fitted || state.stage != nmt_state::automatic::idle || false == m_nmt.placed() || From >= m_history.size())
+	if (lay_heights_now() != editorSettings::lay_heights::fitted || state.stage != nmt_state::automatic::idle || false == m_nmt.placed() || From >= m_history.size())
 		return false;
 	std::unordered_set<TTrack const *> laid;
 	for (auto step{From}; step < m_history.size(); ++step)

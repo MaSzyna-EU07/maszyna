@@ -1939,6 +1939,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		// end the line is to be laid to
 		double terrain_wait{-1.0};
 		editor_track::snap_target wait_end;
+		// the user chose the heights in this run: traced on the photo too, else that one is fitted to the ground
+		bool heights_chosen{false};
 		double sigma_given{0.0}; // m, the noise of the clicks of a self-test, where above 0
 		lay_mode mode{lay_mode::straights};
 		// the shape the user chose with Tab or in the panel; until then it follows the photo: traced where it's on, the bends where not
@@ -2092,6 +2094,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool lay_terrain_coming() const;
 	bool lay_terrain_coming_at(std::size_t Index) const;
 	bool lay_waiting() const { return m_lay.terrain_wait >= 0.0; }
+	// the heights the line is laid at, the setting or, traced on the photo, fitted to the ground till the user chooses (click_heights)
+	editorSettings::lay_heights lay_heights_now() const;
 	// the wait over: the terrain came, none is coming any more, or it took too long; Now: Enter again, laid without waiting
 	void lay_wait_end(bool Now = false);
 	void lay_cancel();

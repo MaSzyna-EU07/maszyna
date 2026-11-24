@@ -747,6 +747,16 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		if (false == malformed(what, words))
 			expectation(lay_waiting() == (wanted != 0), what, lay_waiting() ? "1" : "0", wanted != 0 ? "1" : "0");
 	}
+	else if (kind == "layheights")
+	{
+		// the heights the line is laid at now: fitted to the ground, through the points clicked, level
+		static char const *const names[]{"fitted", "points", "level"};
+		std::string wanted;
+		words >> wanted;
+		auto const now{names[std::clamp(static_cast<int>(lay_heights_now()), 0, 2)]};
+		if (false == malformed(what, words))
+			expectation(wanted == now, what, now, wanted);
+	}
 	else if (kind == "layguessed")
 	{
 		// the points clicked whose height is a guess, no ground under them yet
@@ -773,7 +783,7 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		if (false == expect_shown(kind, what, words, shown))
 			expectation(false, what, "no expectation " + kind,
 			            "cant, joint, records, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain, tool, window, "
-			            "selected, laypanel, switchpanel, steps, laid, laykeys, laycontinue, laywait or layguessed");
+			            "selected, laypanel, switchpanel, steps, laid, laykeys, laycontinue, laywait, layguessed or layheights");
 	}
 	return selftest_result::handled;
 }

@@ -129,7 +129,7 @@ double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direct
 void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
 {
 	// from point to point or level the heights lead from one end to the other, whatever the ground between
-	if (EditorSettings.heights() != editorSettings::lay_heights::fitted)
+	if (lay_heights_now() != editorSettings::lay_heights::fitted)
 	{
 		ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
 		return;
@@ -165,7 +165,7 @@ glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point, click_heights::source *
 {
 	auto const &tool{m_lay};
 	// level: on at the height the laying goes on from, the first point on the ground
-	if (EditorSettings.heights() == editorSettings::lay_heights::level && false == tool.points.empty())
+	if (lay_heights_now() == editorSettings::lay_heights::level && false == tool.points.empty())
 	{
 		if (Source != nullptr)
 			*Source = click_heights::source::level;

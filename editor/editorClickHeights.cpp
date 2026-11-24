@@ -75,4 +75,9 @@ bool wait_on(std::vector<source> const &Sources, std::function<bool(std::size_t)
 	return Waited < wait_longest && waiting(Sources, Coming);
 }
 
+editorSettings::lay_heights heights_for(editorSettings::lay_heights const Setting, bool const Traced, bool const Chosen)
+{
+	return Traced && false == Chosen ? editorSettings::lay_heights::fitted : Setting;
+}
+
 } // namespace click_heights

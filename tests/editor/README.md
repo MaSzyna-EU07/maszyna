@@ -129,6 +129,7 @@ tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the mod
 | `expect laid radius <curve> <R>[/<R>...] <tolerance %>`, `expect laid speed <curve> <km/h>`, `expect laid nearly <curve> <0\|1>` | a curve of it: the radii of its arcs, the speed it's laid for, nearly straight (R 5 km and more) |
 | `expect laid slowtracks <km/h> <at least>`, `expect laid joined <0\|1>` | its tracks given the speed of a curve slowed down; its first track joined at its start to the one it goes on from |
 | `expect laykeys <tabs> <enters>`, `expect laycontinue <0\|1>` | the shapes switched with Tab and the lines laid with Enter so far; the lay tool goes on from the end of the line laid |
+| `expect layheights <fitted\|points\|level>` | the heights the line is laid at now: fitted to the ground (from the photo by itself till the heights are chosen), through the points clicked, level |
 | `expect laid steepest <per mille>`, `expect laywait <0\|1>`, `expect layguessed <count>` | the steepest grade of the tracks of the line laid last; the line waits for the terrain under its points to be laid; the points clicked whose height is a guess, no ground under them yet |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
@@ -223,7 +224,7 @@ as on the photo):
 
 | case | checks |
 | --- | --- |
-| `tr_1_three_curves` | a line of 3.2 km with three curves, clicked in 20 points at most, no Tab, one Enter: the three curves found, their radii within 3 %, laid at the speed of the line |
+| `tr_1_three_curves` | a line of 3.2 km with three curves, clicked in 20 points at most, no Tab, one Enter: the three curves found, their radii within 3 %, laid at the speed of the line; the heights fitted to the ground by themselves |
 | `tr_2_nearly_straight` | a curve of R 9 km over 800 m, clicked every 200 m: a curve, nearly straight, its radius within 10 % |
 | `tr_3_compound` | a compound curve of R 600 and 400 m clicked along it: one curve of two radii, each within 3 % |
 | `tr_4_below_norms` | a curve of R 300 m on a line of 120 km/h laid slowed down to 70 km/h, its tracks given it; one of R 150 m, below the least radius of a main track, not laid |

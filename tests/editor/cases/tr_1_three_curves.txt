@@ -7,6 +7,8 @@ wait 2
 tap l
 wait 2
 laymode traced
+# from the photo the heights are fitted to the ground by themselves, nothing chosen in this run
+expect layheights fitted
 laysigma 0.2
 laysample 2000 2000 0 500 300 160 0.15 30 1200 1130 -40 900 1130 25 1500 600
 wait 2

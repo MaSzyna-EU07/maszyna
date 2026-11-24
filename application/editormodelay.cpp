@@ -156,7 +156,7 @@ void editor_mode::update_build_tools()
 			m_extend.mouse = cursor_terrain(m_extend.point.y);
 		m_extend.snap = m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 		if (m_extend.snap.track == nullptr)
-			m_extend.mouse.y = EditorSettings.heights() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
+			m_extend.mouse.y = lay_heights_now() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
 		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
@@ -262,7 +262,7 @@ void editor_mode::update_build_tools()
 	{
 		for (auto const &point : points)
 			traced_key.insert(traced_key.end(), {point.x, point.y, point.z});
-		traced_key.insert(traced_key.end(), {end.track != nullptr ? 1.0 : 0.0, static_cast<double>(m_track_edits), static_cast<double>(EditorSettings.heights()), lay.style.velocity});
+		traced_key.insert(traced_key.end(), {end.track != nullptr ? 1.0 : 0.0, static_cast<double>(m_track_edits), static_cast<double>(lay_heights_now()), lay.style.velocity});
 		if (lay.shown.has_value() && traced_key == lay.traced_key)
 		{
 			auto const &shown{*lay.shown};
@@ -1330,7 +1330,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : End.track != nullptr ? End.track : tool.copy_selected ? selected_track() : nullptr};
 	auto const grade0{tool.start.track != nullptr ? -grade_of(tool.start.direction) : unknown};
 	auto const grade1{End.track != nullptr ? grade_of(End.direction) : unknown};
-	if (EditorSettings.heights() == editorSettings::lay_heights::fitted)
+	if (lay_heights_now() == editorSettings::lay_heights::fitted)
 		follow_ground(pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
 		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
@@ -2669,6 +2669,11 @@ bool editor_mode::lay_terrain_coming_at(std::size_t const Index) const
 	return false == m_streamer.exists(chunk) && false == state.given_up.contains(chunk) && in_download_area(at - glm::dvec2{1.0}, at + glm::dvec2{1.0});
 }
 
+editorSettings::lay_heights editor_mode::lay_heights_now() const
+{
+	return click_heights::heights_for(EditorSettings.heights(), m_lay.mode == lay_mode::traced, m_lay.heights_chosen);
+}
+
 bool editor_mode::lay_terrain_coming() const
 {
 	return click_heights::waiting(m_lay.heights, [&](std::size_t const Index) { return lay_terrain_coming_at(Index); });
@@ -2980,7 +2985,7 @@ std::string editor_mode::lay_settings_summary() const
 	auto const [from, to]{laying_ends()};
 	text += format(" · %.0f km/h", design_speed(from, to));
 	static char const *const heights[]{"along the ground", "through the points", "level"};
-	return text + " · " + STR_C(heights[std::clamp(static_cast<int>(EditorSettings.heights()), 0, 2)]);
+	return text + " · " + STR_C(heights[std::clamp(static_cast<int>(lay_heights_now()), 0, 2)]);
 }
 
 std::vector<std::string> editor_mode::lay_leg() const
@@ -3200,7 +3205,7 @@ void editor_mode::render_lay_settings()
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
-	if (int heights{static_cast<int>(EditorSettings.heights())};
+	if (int heights{static_cast<int>(lay_heights_now())};
 	    segmented("layheights", heights,
 	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"},
 	               {1, STR_C("Point to point"), "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"},
@@ -3208,6 +3213,7 @@ void editor_mode::render_lay_settings()
 	{
 		EditorSettings.heights(static_cast<editorSettings::lay_heights>(heights));
 		EditorSettings.save();
+		tool.heights_chosen = true;
 	}
 	render_lay_more();
 }

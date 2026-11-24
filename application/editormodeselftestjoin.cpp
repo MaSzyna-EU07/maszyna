@@ -412,6 +412,8 @@ editor_mode::selftest_result editor_mode::selftest_join(std::string const &comma
 		std::string which;
 		words >> which;
 		EditorSettings.heights(which == "points" ? editorSettings::lay_heights::points : which == "level" ? editorSettings::lay_heights::level : editorSettings::lay_heights::fitted);
+		// as the user chooses them: traced on the photo too
+		m_lay.heights_chosen = true;
 		WriteLog("SELFTEST layheights: " + which);
 		return selftest_result::handled;
 	}

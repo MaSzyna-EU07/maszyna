@@ -14,6 +14,8 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "editor/editorSettings.hpp"
+
 // The heights of the points clicked while a track is laid, and where each came from. The terrain is made around the cursor as the track
 // is laid: the first point clicked in an empty place has no ground under it yet, its height a guess, and the terrain comes a moment
 // later. Such a point takes its height again once the ground under it is there, before the line is laid, and the line shown with it;
@@ -46,5 +48,9 @@ double constexpr wait_longest{10.0};
 
 // the line waits on: the terrain is still coming under a point, and the wait began less than wait_longest ago
 bool wait_on(std::vector<source> const &Sources, std::function<bool(std::size_t)> const &Coming, double Waited);
+
+// The heights the line is laid at. Traced on the photo the points are sparse, the ground rising and falling between them: the grade
+// line fitted to the ground within the norms, unless the user chose the heights in this run. The bends clicked keep the setting
+editorSettings::lay_heights heights_for(editorSettings::lay_heights Setting, bool Traced, bool Chosen);
 
 } // namespace click_heights

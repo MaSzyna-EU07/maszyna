@@ -108,3 +108,18 @@ TEST_CASE("Enter waits for the terrain on its way under a point of a guessed hei
 	std::vector<source> settled{source::ground, source::level, source::fixed};
 	CHECK_FALSE(click_heights::waiting(settled, coming));
 }
+
+TEST_CASE("traced on the photo the line is fitted to the ground unless the heights were chosen, the bends keep the setting")
+{
+	using heights = editorSettings::lay_heights;
+	for (auto const setting : {heights::fitted, heights::points, heights::level})
+	{
+		// from the photo, nothing chosen in this run: the grade line fitted to the ground whatever the setting kept
+		CHECK(click_heights::heights_for(setting, true, false) == heights::fitted);
+		// chosen in this run: as chosen, from the photo too
+		CHECK(click_heights::heights_for(setting, true, true) == setting);
+		// the bends clicked: the setting, chosen or not
+		CHECK(click_heights::heights_for(setting, false, false) == setting);
+		CHECK(click_heights::heights_for(setting, false, true) == setting);
+	}
+}
