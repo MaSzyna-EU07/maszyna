@@ -550,6 +550,7 @@ set(CORE_SOURCES
 "McZapkie/derailment.cpp"
 "McZapkie/collision.cpp"
 "world/TrackCheck.cpp"
+"world/switchfork.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
