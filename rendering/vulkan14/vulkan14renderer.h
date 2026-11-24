@@ -571,6 +571,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// the rain the glass met so far and how wet it is (scene_ubs::rain_state)
 	double m_wiperrain{0.0};
 	double m_glasswet{0.0};
+	double m_glasssteptime{-1.0}; // the time of the frame the glass last met the insects and the rain in
 	gl::light_data light_data{};
 	std::uint32_t m_lightcount{1}; // lights written to light_data
 	// the copies of the light buffer in the ring of the frame since the lights were last written, by the header and the sun

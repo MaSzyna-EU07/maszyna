@@ -862,6 +862,7 @@ class opengl46_renderer : public gfx_renderer, public gfx::scene_walk {
 	// the rain the glass met so far and how wet it is (scene_ubs::rain_state)
 	double m_wiperrain{0.0};
 	double m_glasswet{0.0};
+	double m_glasssteptime{-1.0}; // the time of the frame the glass last met the insects and the rain in
 	gl::light_data light_data;
 
 	std::unordered_map<std::string, std::shared_ptr<gl::program>> m_shaders;

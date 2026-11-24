@@ -1659,6 +1659,9 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			// the insects the vehicle meets (mat_bugs_windscreen): none below 20 km/h, above it the more the faster, counted in seconds of
 			// driving at 100 km/h. none in winter, and the rain or the snow washes them off: once it stops (and out of winter) the glass
 			// gets them anew from none, and what the blades left of them before is forgotten
+			// the glass meets the insects and the rain once a frame, not once a view (the views of a frame have its time)
+			auto const glassstep{(scene_ubs.time != m_glasssteptime) ? Timer::GetDeltaTime() : 0.0};
+			m_glasssteptime = scene_ubs.time;
 			auto const insects{(Global.Season != "winter:") && (Global.Weather != "rain:") && (Global.Weather != "snow:")};
 			if (false == insects)
 			{
@@ -1670,7 +1673,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 				m_wiperbugs = 0.0;
 			}
 			else if (owner != nullptr)
-				m_wiperbugs += Timer::GetDeltaTime() * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
+				m_wiperbugs += glassstep * std::max(std::abs(owner->MoverParameters->V) * 3.6 - 20.0, 0.0) / 80.0;
 			scene_ubs.rain_wind.w = static_cast<float>(m_wiperbugs);
 			// the rain the glass meets (mat_rain_windscreen): counted in seconds of the heaviest rain standing still, more at speed (the
 			// glass runs into it). the glass fills with it up to as many drops as it gets (a lighter rain only fills it more slowly) while
@@ -1678,7 +1681,7 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			{
 				constexpr double fill_rate{0.3};      // per second of the heaviest rain: 95% full in 10 s (20 s at cloud cover 1.5)
 				constexpr double fill_speed{1.5};     // at 100 km/h and more the glass meets x (1 + fill_speed) as much rain
-				auto const dt{Timer::GetDeltaTime()};
+				auto const dt{glassstep};
 				auto const speed{(owner != nullptr) ? std::min(std::abs(owner->MoverParameters->V) * 3.6 / 100.0, 1.0) : 0.0};
 				auto const meet{static_cast<double>(percipitation_intensity) * (1.0 + fill_speed * speed)};
 				m_wiperrain += dt * meet;
