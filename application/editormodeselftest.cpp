@@ -194,7 +194,7 @@ editor_mode::selftest_result editor_mode::selftest_dispatch(std::string const &c
 //                                        to it out along their lines from the rim, against the model there
 //   nmtstate                             logs how far the tracks going onto the terrain model are
 //   nmtquestion <open|flat|restore>      the question of the terrain of a new scenery opened, or answered without terrain as its card does;
-//                                        restore: the settings of the terrain made by itself put back as they were before that answer
+//                                        restore: the terrain made by itself as it was before that answer, which leaves the settings be
 //   gradelines <file>                    the grade line each track shares written to the file, for a map of them
 //   fitreport <file>                     to the file: the tracks off the terrain model, the switches off their plane, the rails on common timbers apart in height
 //   gradeline <lift m|off|on|whole 0/1|state>   the common grade line of the route open in the profile tool: its design lifted and applied, the route taken off it and back

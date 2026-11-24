@@ -516,7 +516,7 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
 	else if (false == expect_shown(kind, what, words,
 	                               {m_switch.status, ui()->refusal_shown(), ui()->status_line(), m_lay.mouse,
-	                                {{"grow", m_nmt_state.grow}, {"area", EditorSettings.terrain_model().area}, {"prompt", m_nmt_state.prompt}}}))
+	                                {{"grow", m_nmt_state.grow}, {"area", nmt_area()}, {"prompt", m_nmt_state.prompt}}}))
 		expectation(false, what, "no expectation " + kind,
 		            "cant, joint, records, shaped, speed, gauge, track, route, norms, findings, height, lift, includes, status, statuslacks, refusal, statusline, laycursor, terrain or steps");
 	return selftest_result::handled;
