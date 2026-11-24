@@ -118,10 +118,10 @@ void editor_mode::setup_defaults(project_setup::setup const &Setup)
 	// the speed of the laying and of the plan, the look and the gauge of the tracks laid, the norms
 	m_lay.style.velocity = Setup.speed;
 	m_lay.style.gauge = Setup.gauge / 1000.0;
-	if (false == Setup.rails.empty())
-		m_lay.style.rail = Setup.rails;
-	if (false == Setup.ballast.empty())
-		m_lay.style.ballast = Setup.ballast;
+	// a texture left empty is the lay tool's own: also where the field was cleared after another one was typed, which stayed
+	editor_track::path_style const own;
+	m_lay.style.rail = Setup.rails.empty() ? own.rail : Setup.rails;
+	m_lay.style.ballast = Setup.ballast.empty() ? own.ballast : Setup.ballast;
 	m_route.design.norms.gauge = project_setup::rail_axes(Setup);
 	if (m_route.chain.tracks.empty())
 		m_route.design.speed = Setup.speed;
@@ -154,9 +154,15 @@ void editor_mode::setup_store()
 			scene::Layers.mark(scene::layer_handle{1}, "//$u", {});
 		m_setup_marked = false;
 	};
+	auto const kept_in_scenery = [this, &line]() {
+		scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", line});
+		m_setup_marked = true;
+	};
 	if (model_setup())
 	{
-		moved_out();
+		// the project of the model is written after the scenery, and may fail to be: the scenery keeps the line as well, the project's
+		// one read first. Taken out of it, the assumptions were gone with a project not saved
+		kept_in_scenery();
 		return;
 	}
 	std::error_code error;
@@ -176,8 +182,7 @@ void editor_mode::setup_store()
 				WriteLog("Editor: the assumptions of the project not written into its file: " + why, logtype::generic);
 		}
 	}
-	scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", line});
-	m_setup_marked = true;
+	kept_in_scenery();
 }
 
 bool editor_mode::render_setup_card()
