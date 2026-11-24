@@ -1624,6 +1624,32 @@ void TMoverParameters::derail_in_collision(DerailReason const Reason, std::strin
 	ErrorLog(std::format("Bad driving: {} derailed in a collision, {}: {}", Name, Reason == COLLISION_OVERRIDE ? "overriding" : "pushed off the track", Why));
 }
 
+void TMoverParameters::derail_forked(int const Side, std::string const &Why)
+{
+	if (false == SetFlag(DamageFlag, dtrain_out))
+	{
+		return;
+	}
+	// upright, the flange climbed the rail: it slides on the sleepers as one derailed by the criteria of derailment.h
+	Derailed = derailment::outcome::off_rails;
+	ForkSide = Side;
+	EventFlag = true;
+	MainSwitch(false, range_t::local);
+	if (Vel < 5.0)
+	{
+		// HACK: prevent permanent axle spin in static vehicle after a collision
+		nrot = 0.0;
+		SlippingWheels = false;
+	}
+	// the brake hoses tear: the brake pipe vents and the rest of the train brakes in emergency
+	if (std::any_of(std::begin(Couplers), std::end(Couplers), [](auto const &Coupler) { return (Coupler.CouplingFlag & coupling::brakehose) == coupling::brakehose; }))
+	{
+		AlarmChainFlag = true;
+	}
+	derailment_monitor.reset();
+	ErrorLog(std::format("Bad driving: {} derailed running forked, {}", Name, Why));
+}
+
 namespace
 {
 
@@ -2104,8 +2130,9 @@ void TMoverParameters::rerail()
 	derailment_monitor.reset();
 	derailment_distance = 0.0;
 	derailment_reported.reset();
-	// nor derailed in a collision
+	// nor derailed in a collision, or running forked
 	CollisionDerail = NONE;
+	ForkSide = 0;
 	pushed_off_monitor.reset();
 	// back on the axis of the track, which the derailment shifted the vehicle off aside and down (a road vehicle keeps
 	// its place on the road)
@@ -12604,6 +12631,7 @@ void TMoverParameters::LoadFIZ_Wheels(std::string const &line)
 
 	extract_value(ADist, "Ad", line, "");
 	extract_value(BDist, "Bd", line, "");
+	extract_value(Rmin, "Rmin", line, "");
 
 	if (AxleInertialMoment <= 0.0)
 	{
