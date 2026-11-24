@@ -182,6 +182,22 @@ TEST_CASE("track text: what the game writes otherwise than it was given, the sam
 // what doesn't survive yet: each fails until it does, then doctest reports the test passing against should_fail, and the entry goes
 // over to the files of the entries which come out the same
 
+// what those tests start from, checked apart from them: under should_fail a missing file or entry would pass for a loss
+TEST_CASE("track text: the entries known to be lost are there, with what they're about, and read") {
+	track_reading const reading;
+	struct known {
+		char const *name;
+		char const *about;
+	};
+	for (auto const &[name, about] : {known{"angles", " angle1 15 "}, known{"fouling", " fouling1 ukres_a "}, known{"tor1@iso1", "tor1@iso1"}, known{"digits", " digits "}}) {
+		CAPTURE(name);
+		auto const text{entry("known_lost.scn", name)};
+		REQUIRE(false == text.empty());
+		CHECK(text.find(about) != std::string::npos);
+		CHECK(read_track(text) != nullptr);
+	}
+}
+
 TEST_CASE("track text: the angles the ends are cut at are written back (known lost: read and dropped)" * doctest::should_fail()) {
 	track_reading const reading;
 	round_trip const trip{entry("known_lost.scn", "angles")};

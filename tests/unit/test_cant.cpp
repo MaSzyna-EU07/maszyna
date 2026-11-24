@@ -1,8 +1,9 @@
 // the cant of the tracks the editor lays and joins: from mm to the roll of the paths and back, signed with the turn, and matched
 // across the joints of the tracks
 //
-// the inspector of the editor shows and takes the cant on a base of 1500 mm in lambdas of its own (application/editormodetrack.cpp);
-// named, as editor_mode::cant_of_roll() and roll_of_cant(), they come with the quick fixes of the track editing, and their tests with them
+// the inspector of the editor shows and takes the cant on a base of 1500 mm through editor_mode::cant_of_roll() and roll_of_cant()
+// (application/editormodetrack.cpp). They live in the editor, which the unit tests don't link, so the self-test cases check them
+// through the inspector: tests/editor/cases/1_inspector_cant.txt
 
 #include "stdafx.h"
 #include "doctest.h"
