@@ -415,11 +415,17 @@ def line_block(d):
     line(d, [(31, 44), (31, 62)], W - 10)
 
 
+def norms(d):
+    # a curve of the track and a set square: its geometry measured against the norms
+    arc(d, 60, 60, 46, 180, 270)
+    poly(d, [(8, 34), (8, 58), (32, 58)], outline=True, width=W - 6)
+
+
 ICONS = [select, insert, brush, area_fill, copy_to_bank, translate, rotate, scale,
          local_space, ortho, perspective, sculpt, smooth, chunks, orthophoto, road,
          place, lanes, lay_track, switch, straight, curve, signal, objects,
          vehicle, profile, speed, joints, infra, gauge, turntable, parallel, station, kilometrage, more, work_surroundings,
-         work_tracks, work_roads, work_terrain, station_signals, line_block]
+         work_tracks, work_roads, work_terrain, station_signals, line_block, norms]
 
 
 def cutouts(name, d):

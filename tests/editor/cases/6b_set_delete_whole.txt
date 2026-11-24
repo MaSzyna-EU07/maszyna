@@ -1,0 +1,42 @@
+# PR #450: in a set deleted, a double switch, a slip and a crossover go whole, with their records, as Del takes them out.
+# d1, d2, d3 and s1, s2, s3: straights joined one after another; p1..p3 and q1..q3: two such lines 4.5 m apart
+wait 5
+# a double switch: z1 and z1b, one record of both
+switchplace Rpd_49E1-190-1:9/1:9 80 150 1 1
+expect records z1 1 double
+tracksetdelete z1b
+expect track z1 removed
+expect track z1b removed
+expect records z1 0
+undo
+expect track z1 present
+expect track z1b present
+expect records z1 1 double
+# a double slip: four switches, one record
+slipplace Rkpd_60E1-190-1:9 40 150 1 1
+expect records editor_dks1 1 slip
+tracksetdelete editor_dks1_c
+expect track editor_dks1_a removed
+expect track editor_dks1_b removed
+expect track editor_dks1_c removed
+expect track editor_dks1_d removed
+expect records editor_dks1 0
+undo
+expect track editor_dks1_a present
+expect track editor_dks1_d present
+expect records editor_dks1 1 slip
+# a crossover between the straights: z2 and z3, the record of the connection with theirs
+connection crossover 120 120 124.5 160 Rz_60E1-300-1:9
+expect records z2 1 connection
+expect records z3 2
+tracksetdelete z3 p1
+expect track z2 removed
+expect track z3 removed
+expect track p1 removed
+expect records z2 0
+expect records z3 0
+undo
+expect track z2 present
+expect track z3 present
+expect records z2 1 connection
+quit

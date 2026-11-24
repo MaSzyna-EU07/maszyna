@@ -1,0 +1,6 @@
+// paths made of pieces (pieces1, pieces2), kept after the path itself for the versions which know only the path: read and written back
+// each comes out the same
+// a plain track of two pieces
+node -1 0 pieced track normal 60 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 0 0 0 0 0 0 60 0 0 pieces1 2 0 0 0 0 0 0 0 0 0 0 0 0 30 0 0 0 0 30 0 0 0 0 0 0 0 0 0 60 0 0 endtrack
+// a switch whose diverging path is made of two pieces joining its ends
+node -1 0 piecedswitch track switch 33.23 1.435 0.25 10 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 11 0 0 -11 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 pieces2 2 0 0 0 0 0 0 5 0 0 -5 0.25 0 15 0 600 0.25 0 15 0 0.5 0 5 1.2 0 -5 1.8 0 33.1 0 300 endtrack
