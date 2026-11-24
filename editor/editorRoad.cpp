@@ -275,7 +275,9 @@ bool follow(road_node &Road, double const T, bool const Forward, double const Di
 		auto const lengths{stations(state)};
 		auto const here{station_at(lengths, from)};
 		auto const available{forward ? lengths.back() - here : here};
-		if (remaining <= 0.0 || available >= remaining + kShortestRoad)
+		// what's left of a piece of a roundabout carries on round, so it can be shorter than a road of its own
+		auto const shortest{state.roundabout ? editor_ring::shortest_piece : kShortestRoad};
+		if (remaining <= 0.0 || available >= remaining + shortest)
 		{
 			// the cut is put here; with nothing left to go the piece is kept whole
 			Cut.road = piece;

@@ -34,12 +34,18 @@ double straight_reach(double const Halfwidth, double const Branchhalfwidth, doub
 	return (Branchhalfwidth + (Lean ? 1.0 : -1.0) * Halfwidth * std::cos(Angle)) / std::sin(Angle);
 }
 
-// whether the roads leaving straight out at the angles, all around the ring, each get a junction: the junctions with what's left between them
-bool fit(double const Radius, int const Roads, bool const Bend) {
+// whether the roads leaving straight out, evenly all around the ring, each get a junction: the junctions with what's left between them.
+// Bend: the room measured on the ring, rather than as on a straight road; Shortest: the shortest piece left between two junctions.
+// Arcs: a junction next to the end of an arc of the ring takes the rest of the arc when less than the shortest piece would be left
+// of it, so in the worst case it grows by as much
+bool fit(double const Radius, int const Roads, bool const Bend, double const Shortest, bool const Arcs) {
 	auto const side{Bend ? room(Radius, 0.0, true) : straight_reach(kRingHalfwidth, kRoadHalfwidth, pi / 2.0, true)};
 	auto const junction{2.0 * (side + kCornerRoom)};
-	return Roads * (junction + kShortestRoad) <= 2.0 * pi * Radius;
+	return Roads * (junction + Shortest + (Arcs ? Shortest : 0.0)) <= 2.0 * pi * Radius;
 }
+bool fit(double const Radius, int const Roads, bool const Bend) { return fit(Radius, Roads, Bend, kShortestRoad, false); }
+// as the editor has it now, wherever the roads join the ring
+bool fits(double const Radius, int const Roads) { return fit(Radius, Roads, true, editor_ring::shortest_piece, true); }
 
 } // namespace
 
@@ -115,4 +121,23 @@ TEST_CASE("ring room: roads joined to roundabouts of the radii the editor allows
 	// and more on the large ones
 	CHECK(fit(50.0, 8, true));
 	CHECK(fit(200.0, 30, true));
+}
+
+TEST_CASE("ring room: a short piece of the ring is left between junctions, so small roundabouts take three or four roads") {
+	// the ring goes on past a piece of it, which can be much shorter than a road of its own
+	CHECK(editor_ring::shortest_piece < kShortestRoad);
+	CHECK(editor_ring::shortest_piece > 0.25); // further apart than ends taken for joined
+	// with the shortest road left between them, and a junction growing by as much next to the end of an arc, three roads
+	// didn't always fit on the smallest roundabout, nor four on one of 10 m
+	CHECK_FALSE(fit(8.0, 3, true, kShortestRoad, true));
+	CHECK_FALSE(fit(10.0, 4, true, kShortestRoad, false));
+	// they do now, wherever they join the ring
+	CHECK(fits(8.0, 3));
+	CHECK(fits(10.0, 4));
+	CHECK(fits(9.6, 4));
+	// four on the smallest one would take smaller corners
+	CHECK_FALSE(fits(8.0, 4));
+	// and the larger ones take more
+	CHECK(fits(15.0, 6));
+	CHECK(fits(25.0, 8));
 }

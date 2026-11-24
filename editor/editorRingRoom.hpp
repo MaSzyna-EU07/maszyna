@@ -20,6 +20,11 @@ http://mozilla.org/MPL/2.0/.
 namespace editor_ring
 {
 
+// the shortest piece of the ring a junction leaves before the next junction, or before the end of the arc it's cut from.
+// the ring goes on past it, so it can be much shorter than a road of its own; a junction which would leave less takes
+// the rest of the arc, and the shorter this is the less a junction grows next to the end of an arc
+double constexpr shortest_piece{0.5};
+
 // how far along the axis of the ring, from the point a road leaves it, the edge of that road meets the outer edge of the ring.
 // Centre: of the ring, Radius: of its axis, Point: where the axis of the road leaving meets the axis of the ring,
 // Direction: the way the road leaves, Along: the way along the ring the room is measured, Halfwidth: of the ring,
