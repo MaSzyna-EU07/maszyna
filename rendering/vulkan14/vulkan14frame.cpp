@@ -1720,6 +1720,11 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 		render_ray_scene(vp);
 	}
 
+	// the camera with no vehicle of its own (freefly, the editor) blurs the world with its own movement, as a vehicle does with its
+	// (rendering/common/freecameramotion.h)
+	if (vp.main && (Global.pCamera.m_owner != nullptr))
+		m_freecamera.reset();
+	auto const freecameramovement{(vp.main && (Global.pCamera.m_owner == nullptr)) ? m_freecamera.next_frame(Global.pCamera.Pos) : glm::vec3{0.f}};
 	// the motion blurred only when something in the view moves (see opengl46_renderer::Render_pass()); the pass runs anyway
 	auto const motionblur{Global.gfx_postfx_motionblur_enabled && targets.motion &&
 	                      (m_vehiclesmoved || (freecameramovement != glm::vec3{0.f}) ||

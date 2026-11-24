@@ -348,6 +348,17 @@ bool driver_mode::update()
 		simulation::Lights.update();
 		Timer::subsystem.sim_lights.stop();
 		simulation::Deer.update(deltatime);
+		{
+			// where the user looks from, for the black box
+			auto const &camera{DebugCameraFlag ? DebugCamera : Camera};
+			auto const mode{DebugCameraFlag      ? blackbox::camera_modes::debug :
+			                false == FreeFlyModeFlag ? blackbox::camera_modes::cab :
+			                m_externalview       ? blackbox::camera_modes::external :
+			                                       blackbox::camera_modes::free};
+			simulation::Blackbox.camera(blackbox_camera(camera, mode, mode == blackbox::camera_modes::external ? m_externalviewmode : 0),
+			    DebugCameraFlag ? nullptr : camera.m_owner);
+		}
+		simulation::Blackbox.update(deltatime);
 
 		if (Global.test.enabled && simulation::is_ready)
 		{
