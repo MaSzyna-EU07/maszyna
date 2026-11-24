@@ -163,6 +163,8 @@ struct solved_line
 	double elevation(double const Chainage) const;
 	double grade(double const Chainage) const;
 	glm::dvec3 point(double const Chainage) const;
+	// the chainage of the point of the line nearest to the point of the plan
+	double nearest(glm::dvec2 const &Point) const;
 };
 
 // the line laid between the end conditions; the vertices and the breaks as given, the ends from the nodes

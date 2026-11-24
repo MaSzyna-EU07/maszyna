@@ -78,7 +78,7 @@ inline segment_data path_between(layout::solved_line const &Line, glm::dvec3 con
 inline old_line cut(layout::solved_line const &Line, unsigned const Seed, double const Shortest, double const Longest, noise const &Noise) {
 	old_line result;
 	result.line = Line;
-	std::mt19937 random{Seed};
+	std::mt19937 random{Seed}; // NOSONAR: seeded for repeatable tests, nothing secret is drawn
 	std::uniform_real_distribution<double> length{Shortest, Longest};
 	std::uniform_real_distribution<double> shake{-1.0, 1.0};
 	std::bernoulli_distribution backwards{0.3};

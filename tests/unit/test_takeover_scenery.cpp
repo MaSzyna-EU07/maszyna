@@ -99,7 +99,7 @@ TEST_CASE("takeover scenery: the plain tracks taken over as three lines within t
 	// line a: the curve of R 500 m, its clothoids of 60 m and 80 mm read back; held at the switch, in its heading
 	auto const *a{line_with(plan, scenery, "a_1")};
 	REQUIRE(a != nullptr);
-	CHECK(a->chain.links.size() == 26);
+	CHECK(a->chain.links.size() == 26); // NOSONAR: REQUIRE above ends the test on none
 	CHECK(a->chain.end.kind == layout::legacy_end_kind::held);
 	CHECK(a->chain.start.kind == layout::legacy_end_kind::free);
 	REQUIRE(a->fit.shape.vertices.size() == 1);
@@ -191,19 +191,28 @@ TEST_CASE("takeover scenery: the tracks made again end at the old joints with th
 	auto const piece{std::ranges::find_if(made.pieces, [](layout::generated_piece const &Each) { return Each.name == "a_3"; })};
 	REQUIRE(piece != made.pieces.end());
 	CHECK(geometry::plan_distance(piece->path.points[segment_data::point::start], a3.paths.front().points[segment_data::point::start]) < 0.02);
-	// the curve made wider by 20 m: the lines laid again, the old tracks where they were along it
+	// the curve made wider by 20 m: the lines laid again, the old tracks where they were on the ground, each joint at the point of the
+	// new line nearest to where it was; the line shorter, none of them past its end
+	auto const before{network.find(id)->solved};
 	auto const splits{network.find(id)->hard_splits};
 	auto const &vertex{network.find(id)->shape.vertices.front()};
 	auto const changed{model.execute(layout::set_vertex{id, vertex.id, vertex.radius + 20.0, {}, {}, {}}, layout::edit_policy::no_new_block)};
 	REQUIRE_MESSAGE(changed.done, first_reason(changed));
-	CHECK(model.state().find(id)->hard_splits == splits);
+	auto const &widened{*model.state().find(id)};
+	REQUIRE(widened.hard_splits.size() == splits.size());
+	for (std::size_t i = 0; i < splits.size(); ++i) {
+		CAPTURE(i);
+		CHECK(widened.hard_splits[i].track == splits[i].track);
+		CHECK(widened.hard_splits[i].chainage <= widened.solved.length);
+		CHECK(widened.hard_splits[i].chainage == doctest::Approx(widened.solved.nearest(before.position(splits[i].chainage))));
+	}
 	check_made(model.state());
 	// written into the project file and read back the same
 	project::document document;
 	document.network = model.state();
 	auto const read{project::read(project::write(document))};
 	REQUIRE(read.project.has_value());
-	CHECK(read.project->network.find(id)->hard_splits == splits);
+	CHECK(read.project->network.find(id)->hard_splits == widened.hard_splits);
 }
 
 TEST_CASE("takeover scenery: the anchors of the lineside objects, with their confidence, follow a change of their line") {

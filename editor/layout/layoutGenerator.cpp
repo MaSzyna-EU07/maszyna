@@ -13,8 +13,12 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorGeometry.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
+#include <iterator>
+#include <optional>
+#include <string>
 
 namespace layout
 {
@@ -412,10 +416,30 @@ class cutter
 	std::map<std::string, int> m_counts;
 };
 
-// the attributes of an old track without its events, for the pieces of its stretch which don't carry its name
-std::string without_events(std::string_view const Attributes)
+// which of the events of an old track a piece of its stretch takes (TTrack::m_events*, TrkFoll.cpp): event0 and eventall0, of a vehicle
+// standing on the track, each piece; event2 and eventall2, of one entering the track at its Point1, the piece at that end; event1 and
+// eventall1, entering it at its Point2, the piece at the other end
+struct piece_events
 {
-	static constexpr std::array<std::string_view, 6> events{"event0", "event1", "event2", "eventall0", "eventall1", "eventall2"};
+	bool standing{false};
+	bool at_point1{false};
+	bool at_point2{false};
+};
+
+// the attributes of an old track with the events the piece takes; the keywords in any case, as the simulator lowers its tokens
+std::string attributes_of_piece(std::string_view const Attributes, piece_events const Kept)
+{
+	auto const kept = [Kept](std::string_view const Word) -> std::optional<bool> {
+		std::string lower;
+		std::ranges::transform(Word, std::back_inserter(lower), [](char const C) { return static_cast<char>(std::tolower(static_cast<unsigned char>(C))); });
+		if (lower == "event0" || lower == "eventall0")
+			return Kept.standing;
+		if (lower == "event2" || lower == "eventall2")
+			return Kept.at_point1;
+		if (lower == "event1" || lower == "eventall1")
+			return Kept.at_point2;
+		return std::nullopt;
+	};
 	std::string result;
 	std::size_t at{0};
 	bool skip{false};
@@ -427,14 +451,21 @@ std::string without_events(std::string_view const Attributes)
 		auto const end{std::min(Attributes.find(' ', start), Attributes.size())};
 		auto const word{Attributes.substr(start, end - start)};
 		at = end;
+		auto const event{kept(word)};
 		if (skip)
 			skip = false;
-		else if (std::ranges::find(events, word) != events.end())
-			skip = true;
+		else if (event.has_value() && false == *event)
+			skip = true; // the event and its name after it
 		else
 			result += (result.empty() ? "" : " ") + std::string{word};
 	}
 	return result;
+}
+
+// the attributes of an old track without its events, for a part of it a split cut off
+std::string without_events(std::string_view const Attributes)
+{
+	return attributes_of_piece(Attributes, {});
 }
 
 // the pieces of the stretches of the old tracks named and written as each old track was: its name on the piece it ran into first, with
@@ -457,15 +488,17 @@ void keep_old_tracks(line const &Line, std::vector<generated_piece> &Pieces, gen
 		if (stretch < splits.size())
 		{
 			auto const &old{splits[stretch].track};
+			auto const count{last - first};
 			for (auto i = first; i < last; ++i)
 			{
 				auto &piece{Pieces[i]};
+				// 0 at the Point1 of the old track
 				auto const order{old.reversed ? last - 1 - i : i - first};
 				if (false == old.name.empty() && false == old.continued)
 					piece.name = order == 0 ? old.name : std::format("{}_{}", old.name, order + 1);
 				if (old.reversed)
 					piece.path = geometry::reversed(piece.path);
-				auto attributes{order == 0 && false == old.continued ? old.attributes : without_events(old.attributes)};
+				auto attributes{old.continued ? without_events(old.attributes) : attributes_of_piece(old.attributes, {true, order == 0, order + 1 == count})};
 				if (old.attributes.empty())
 					attributes = std::format("velocity {}", number_text(Line.category.vmax));
 				piece.text = entry_text(piece, old.surface.empty() ? Options.surface : old.surface, attributes);

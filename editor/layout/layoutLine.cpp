@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <optional>
 
 namespace layout
@@ -214,6 +215,30 @@ glm::dvec3 solved_line::point(double const Chainage) const
 {
 	auto const plan{position(Chainage)};
 	return {plan.x, elevation(Chainage), plan.y};
+}
+
+double solved_line::nearest(glm::dvec2 const &Point) const
+{
+	auto best{0.0};
+	auto closest{std::numeric_limits<double>::max()};
+	auto const count{std::max(2, static_cast<int>(std::ceil(length / 2.0)))};
+	for (int i = 0; i <= count; ++i)
+	{
+		auto const s{length * i / count};
+		if (auto const d{glm::distance(position(s), Point)}; d < closest)
+		{
+			closest = d;
+			best = s;
+		}
+	}
+	for (int i = 0; i < 20; ++i)
+	{
+		auto const shift{glm::dot(Point - position(best), glm::normalize(tangent(best)))};
+		best = std::clamp(best + shift, 0.0, length);
+		if (std::abs(shift) < 1e-12)
+			break;
+	}
+	return best;
 }
 
 solved_line solve(line_shape const &Shape, end_condition const &Start, end_condition const &End)

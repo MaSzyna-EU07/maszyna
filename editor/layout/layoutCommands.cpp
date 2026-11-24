@@ -16,7 +16,9 @@ http://mozilla.org/MPL/2.0/.
 #include <array>
 #include <cmath>
 #include <format>
+#include <optional>
 #include <set>
+#include <type_traits>
 
 namespace layout
 {
@@ -1514,6 +1516,39 @@ bool was_there(std::vector<notice> const &Earlier, notice const &Found)
 	return std::ranges::any_of(Earlier, [&](notice const &Old) { return same_finding(Old, Found); });
 }
 
+// the line whose vertices the command edits, which lays it anew in place: none for the other commands
+std::optional<line_id> reshaped(command const &Command)
+{
+	return std::visit(
+	    [](auto const &Each) -> std::optional<line_id> {
+		    using kind = std::decay_t<decltype(Each)>;
+		    if constexpr (std::is_same_v<kind, move_vertex> || std::is_same_v<kind, set_vertex> || std::is_same_v<kind, insert_vertex> || std::is_same_v<kind, remove_vertex>)
+			    return Each.line;
+		    else
+			    return std::nullopt;
+	    },
+	    Command);
+}
+
+// the joints of the old tracks of a line laid anew stay where they were on the ground: each at the point of the new line nearest to where it
+// was, in their order. Kept at their chainages, a curve made wider, which shortens the line, put a joint near its end past it, and the old
+// track there went with its name, events and isolated circuit
+void follow_joints(transaction &Change, line_id const Id, solved_line const &Before)
+{
+	auto const *now{Change.view().find(Id)};
+	if (now == nullptr || now->hard_splits.empty() || false == Before.valid() || false == now->solved.valid() || now->solved == Before)
+		return;
+	auto splits{now->hard_splits};
+	double previous{0.0};
+	for (auto &split : splits)
+	{
+		split.chainage = std::max(previous, now->solved.nearest(Before.position(std::clamp(split.chainage, 0.0, Before.length))));
+		previous = split.chainage;
+	}
+	if (splits != now->hard_splits)
+		Change.change(Id).hard_splits = std::move(splits);
+}
+
 } // namespace
 
 outcome model::execute(command const &Command, edit_policy const Policy)
@@ -1523,11 +1558,18 @@ outcome model::execute(command const &Command, edit_policy const Policy)
 	std::optional<network> earlier;
 	if (Policy == edit_policy::no_new_block)
 		earlier = m_network;
+	// the line laid as it was, for its joints of old tracks to follow it
+	auto const line{reshaped(Command)};
+	std::optional<solved_line> before;
+	if (auto const *shaped{line.has_value() ? m_network.find(*line) : nullptr}; shaped != nullptr && false == shaped->hard_splits.empty())
+		before = shaped->solved;
 	transaction change{m_network};
 	auto why{std::visit([&](auto const &Each) { return propose(change, result, Each); }, Command)};
 	if (why.empty())
 	{
 		settle(change);
+		if (before.has_value())
+			follow_joints(change, *line, *before);
 		auto judged{check(m_network, change.touched_lines(), change.touched_nodes(), change.touched_turnouts())};
 		if (earlier.has_value() && judged.reasons.empty() && false == judged.blocks.empty())
 		{

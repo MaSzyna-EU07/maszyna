@@ -35,26 +35,7 @@ int constexpr kIterations{40};
 // the nearest point of the line to the point of the plan: its chainage
 double nearest_on(solved_line const &Line, glm::dvec2 const &Point)
 {
-	auto best{0.0};
-	auto nearest{std::numeric_limits<double>::max()};
-	auto const count{std::max(2, static_cast<int>(std::ceil(Line.length / 2.0)))};
-	for (int i = 0; i <= count; ++i)
-	{
-		auto const s{Line.length * i / count};
-		if (auto const d{glm::distance(Line.position(s), Point)}; d < nearest)
-		{
-			nearest = d;
-			best = s;
-		}
-	}
-	for (int i = 0; i < 20; ++i)
-	{
-		auto const shift{glm::dot(Point - Line.position(best), glm::normalize(Line.tangent(best)))};
-		best = std::clamp(best + shift, 0.0, Line.length);
-		if (std::abs(shift) < 1e-12)
-			break;
-	}
-	return best;
+	return Line.nearest(Point);
 }
 
 // the end of the diverging track of the type laid on a straight from the origin along x: how far along, how far aside, its angle
