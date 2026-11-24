@@ -1879,9 +1879,13 @@ void editor_mode::render_terrain_loading()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; "
                                       "the chunks there are stay as they are. Off, it's made only when asked for"));
-    auto &model{EditorSettings.terrain_model()};
-    if (ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &model.area))
+    // as it is for the scenery open: off after the answer Without terrain, and ticked, on again and kept so in the settings
+    if (bool area{nmt_area()}; ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &area))
+    {
+        m_nmt_state.declined = false;
+        EditorSettings.terrain_model().area = area;
         EditorSettings.save();
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Makes the terrain from the terrain model within the area, around the camera wherever it goes,\n"
                                       "a chunk at a time while the editor is idle. The terrain there is already isn't touched.\n"
