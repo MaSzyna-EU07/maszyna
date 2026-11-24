@@ -1040,7 +1040,8 @@ editor_mode::road_plan editor_mode::road_preview(bool const Fresh)
 		plan.error = STR_C("Too far from the last point");
 		return plan;
 	}
-	plan.pieces = editor_road::plan(start, hasdirection ? &direction : nullptr, target, tied ? &enddirection : nullptr, Global.ctrlState, layout.surfacetype, plan.error);
+	plan.pieces = editor_road::plan(start, hasdirection ? &direction : nullptr, target, tied ? &enddirection : nullptr, Global.ctrlState, layout.surfacetype,
+	                                0.5 * std::max(layout.span(0.0), layout.span(1.0)), plan.error);
 	road_profile(plan.pieces, hasgrade ? &startgrade : nullptr, tied ? &endgrade : nullptr, Fresh);
 	return plan;
 }

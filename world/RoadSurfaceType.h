@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <string>
+#include <string_view>
 
 // what a road is made of, as far as laying it out goes. a paved road (asphalt, concrete, setts) keeps to the bends and the angles
 // of a built road; a dirt road (a track between fields, through a forest) turns tighter, comes in shorter stretches
@@ -31,7 +32,7 @@ inline char const *name(road_surface_type const Type)
 }
 
 // the type going by specified word. returns: false if there's no such type, with Type left as it was
-inline bool from_name(std::string const &Name, road_surface_type &Type)
+inline bool from_name(std::string_view const Name, road_surface_type &Type)
 {
 	if (Name == "paved")
 	{

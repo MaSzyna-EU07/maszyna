@@ -159,10 +159,11 @@ class editor_road
 	static loose_end find_end(glm::dvec3 const &Point, double const Radius, bool const Junctions = true);
 	// lays out axes of the pieces for a road leading from a point to another. the directions are optional requirements
 	// for the road at its ends; without them it starts straight at the target, with them it bends to meet them.
-	// Type: what the road is made of, which sets how tight it can bend and how short it can be.
+	// Type: what the road is made of, which sets how tight it can bend and how short it can be; Halfwidth: of the road on each side
+	// of its axis, which no bend is tighter than (with some room).
 	// returns: the axes in order, or nothing if there's no reasonable road to make, with the reason in Error
 	static std::vector<segment_data> plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight,
-	                                      road_surface_type const Type, std::string &Error);
+	                                      road_surface_type const Type, double const Halfwidth, std::string &Error);
 	// cuts the pieces so none is longer than specified
 	static std::vector<segment_data> refine(std::vector<segment_data> const &Pieces, double const Length);
 	// gives a string of pieces a smooth profile running through provided heights.

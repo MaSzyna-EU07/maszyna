@@ -72,9 +72,9 @@ TEST_CASE("road surface type: a paved road keeps the limits every road had befor
 TEST_CASE("road surface type: a dirt road is laid out more freely in every respect") {
 	auto const paved{road_limits_for(road_surface_type::paved)};
 	auto const dirt{road_limits_for(road_surface_type::dirt)};
-	// a bend a tractor makes on a single lane track, still wider than the half of such a road
+	// a bend a tractor makes on a single lane track
 	CHECK(dirt.tightest_radius < paved.tightest_radius);
-	CHECK(dirt.tightest_radius >= 1.5);
+	CHECK(dirt.tightest_radius > 0.0);
 	CHECK(dirt.shortest_road < paved.shortest_road);
 	CHECK(dirt.shortest_road > 0.0);
 	CHECK(dirt.sharpest_branch < paved.sharpest_branch);
@@ -85,6 +85,20 @@ TEST_CASE("road surface type: a dirt road is laid out more freely in every respe
 	// a hairpin: the arc may turn past a half circle
 	CHECK(dirt.widest_turn > glm::radians(180.0));
 	CHECK(dirt.widest_turn < glm::radians(360.0));
+}
+
+TEST_CASE("road surface type: no bend is tighter than the road is wide") {
+	auto const paved{road_limits_for(road_surface_type::paved)};
+	auto const dirt{road_limits_for(road_surface_type::dirt)};
+	// a single 3 m lane: the limit of the type
+	CHECK(editor_road_limits::tightest_bend(dirt, 1.5) == doctest::Approx(dirt.tightest_radius));
+	// the layout the tool starts with, a 3.5 m lane each way: the inner edge 3.5 m from the axis keeps its room from the centre
+	CHECK(editor_road_limits::tightest_bend(dirt, 3.5) == doctest::Approx(3.5 + editor_road_limits::inner_edge_room));
+	CHECK(editor_road_limits::tightest_bend(dirt, 3.5) > dirt.tightest_radius);
+	// a paved road of that layout keeps the limit it had
+	CHECK(editor_road_limits::tightest_bend(paved, 3.5) == doctest::Approx(paved.tightest_radius));
+	// and a wide one is held to its width
+	CHECK(editor_road_limits::tightest_bend(paved, 7.0) == doctest::Approx(7.0 + editor_road_limits::inner_edge_room));
 }
 
 TEST_CASE("road surface type: the types go by their scenery names") {

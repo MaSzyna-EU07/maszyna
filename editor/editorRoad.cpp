@@ -1369,12 +1369,13 @@ editor_road::loose_end editor_road::find_end(glm::dvec3 const &Point, double con
 }
 
 std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight,
-                                            road_surface_type const Type, std::string &Error)
+                                            road_surface_type const Type, double const Halfwidth, std::string &Error)
 {
 	std::vector<segment_data> pieces;
 	glm::dvec2 const chord{Target.x - Start.x, Target.z - Start.z};
 	auto const span{glm::length(chord)};
 	auto const limits{road_limits_for(Type)};
+	auto const tightest{editor_road_limits::tightest_bend(limits, Halfwidth)};
 	if (span < limits.shortest_road)
 	{
 		Error = "Too short";
@@ -1413,7 +1414,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 			straight(Target);
 			return pieces;
 		}
-		if (radius < limits.tightest_radius)
+		if (radius < tightest)
 		{
 			Error = "The bend is too tight";
 			return pieces;
@@ -1426,7 +1427,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 	{
 		// only the far end is tied: the same road as the one leading back from there, turned around
 		glm::dvec2 const back{-*Enddirection};
-		auto reversed{plan(Target, &back, Start, nullptr, Straight, Type, Error)};
+		auto reversed{plan(Target, &back, Start, nullptr, Straight, Type, Halfwidth, Error)};
 		for (auto &piece : reversed)
 		{
 			std::swap(piece.points[segment_data::point::start], piece.points[segment_data::point::end]);
@@ -1463,7 +1464,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 		Error = "The road would have to turn back to reach the target";
 		return pieces;
 	}
-	if (std::abs(radius) < limits.tightest_radius)
+	if (std::abs(radius) < tightest)
 	{
 		Error = "The bend is too tight";
 		return pieces;
