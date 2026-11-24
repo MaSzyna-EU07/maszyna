@@ -215,7 +215,7 @@ jobs:
           $pinned = [System.Collections.Generic.List[string]]::new()
 
           # the file of the URL with the given SHA-256: the one kept by a run before, else downloaded. named by its
-          # SHA-256 and the last part of its path, without the query: several license texts are named the same
+          # SHA-256 and the last part of its path, without the query
           function Get-Pinned([string] $Url, [string] $Sha256) {
             $name = "$Sha256-$([uri]::new($Url).Segments[-1])"
             $pinned.Add($name)
@@ -224,7 +224,6 @@ jobs:
               Write-Host "$Url kept by a run before"
               return $file
             }
-            # not a browser's user agent, which Debian's server answers with a challenge page
             Invoke-WebRequest -Uri $Url -OutFile $file -UserAgent 'ci-download' -MaximumRetryCount 3 -RetryIntervalSec 10 -TimeoutSec 120
             $hash = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant()
             if ($hash -ne $Sha256) {

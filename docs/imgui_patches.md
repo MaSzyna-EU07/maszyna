@@ -38,6 +38,12 @@ it was taken from isn't recorded. Changed in 344034ec7 for the ImGui API of 1.91
 - `IMGUI_DEFINE_MATH_OPERATORS` is defined before the first `#include "imgui.h"` (ImGui 1.86 and later want it so).
 - `ImGui::CaptureMouseFromApp()` is replaced by `ImGui::SetNextFrameWantCaptureMouse(true)` (six places).
 
+And since 5a39ed519, for the ImGui of the time:
+
+- A compatibility shim, `#define ImAbs(X)` when `ImAbs` isn't a macro (`ImGuizmo.cpp:42-44`). ImGui 1.91 has `ImAbs`
+  as an inline function in `imgui_internal.h`, so the macro is always defined now and hides that function in
+  `ImGuizmo.cpp`. It can be dropped.
+
 ## Checking an update
 
 Download the files of the new tag (`imgui*.cpp`, `imgui*.h`, `imstb_*.h`, `imconfig.h`, and from `backends/`
