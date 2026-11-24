@@ -1641,7 +1641,7 @@ void TDynamicObject::ABuCheckMyTrack()
 
 // Ra: w poniższej funkcji jest problem ze sprzęgami
 TDynamicObject *
-TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const
+TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler, bool const InLine ) const
 { // Zwraca wskaźnik najbliższego obiektu znajdującego się
     // na torze w określonym kierunku, ale tylko wtedy, kiedy
     // obiekty mogą się zderzyć, tzn. nie mijają się.
@@ -1683,6 +1683,10 @@ TDynamicObject::ABuFindObject( int &Foundcoupler, double &Distance, TTrack const
     for( auto dynamic : Track->Dynamics ) {
 
         if( dynamic == this ) { continue; } // szukający się nie liczy
+        // physics.derailment new: one of the two off the track beside the other one, they don't meet
+        if( InLine && ( MoverParameters->OffTrack.active() || dynamic->MoverParameters->OffTrack.active() ) && false == in_line_with( *dynamic ) ) {
+            continue;
+        }
 /*
         if( ( ( dynamic == PrevConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::front ].CouplingFlag != coupling::faux ) )
          || ( ( dynamic == NextConnected ) && ( MoverParameters->Couplers[ TMoverParameters::side::rear  ].CouplingFlag != coupling::faux ) )  ){
@@ -8342,15 +8346,12 @@ TDynamicObject::update_neighbours() {
             neighbour = neighbour_data();
             // 10m ~= 140 km/h at 4 fps + safety margin, potential distance between outer axles of involved vehicles
             auto const scanrange { std::max( 10.0, std::abs( MoverParameters->V ) ) + 40.0 };
-            auto const lookup { find_vehicle( end, scanrange ) };
+            // physics.derailment new: a vehicle off the track beside the other one doesn't run into it, the scan goes on
+            // past it to the vehicles beyond
+            auto const lookup { find_vehicle( end, scanrange, true ) };
 
             if( false == std::get<bool>( lookup ) ) { continue; }
 
-            // physics.derailment new: a vehicle off the track beside the other one doesn't run into it
-            if( auto const *found { std::get<TDynamicObject *>( lookup ) };
-                ( MoverParameters->OffTrack.active() || found->MoverParameters->OffTrack.active() ) && false == in_line_with( *found ) ) {
-                continue;
-            }
             neighbour.vehicle = std::get<TDynamicObject *>( lookup );
             neighbour.vehicle_end = std::get<int>( lookup );
             neighbour.distance = std::get<double>( lookup );
@@ -8385,7 +8386,7 @@ TDynamicObject::in_line_with( TDynamicObject const &Other ) const {
 // locates potential collision source within specified range, scanning track in specified direction. returns: true if neighbour was located, false otherwise
 // NOTE: reuses legacy code. TBD, TODO: review, refactor?
 std::tuple<TDynamicObject *, int, double, bool>
-TDynamicObject::find_vehicle( int const Direction, double const Distance ) const {
+TDynamicObject::find_vehicle( int const Direction, double const Distance, bool const InLine ) const {
 
     auto direction { ( Direction == end::front ? 1 : -1 ) };
     auto const initialdirection { direction }; // zapamiętanie kierunku poszukiwań na torze początkowym, względem sprzęgów
@@ -8400,7 +8401,7 @@ TDynamicObject::find_vehicle( int const Direction, double const Distance ) const
     auto const mycoupler { ( initialdirection < 0 ? end::rear : end::front ) }; // numer sprzęgu do podłączenia w obiekcie szukajacym
     auto foundcoupler { -1 }; // numer sprzęgu w znalezionym obiekcie (znaleziony wypełni)
     auto distance { 0.0 }; // przeskanowana odleglość; odległość do zawalidrogi
-    auto *foundobject { ABuFindObject( foundcoupler, distance, track, direction, mycoupler ) }; // zaczynamy szukać na tym samym torze
+    auto *foundobject { ABuFindObject( foundcoupler, distance, track, direction, mycoupler, InLine ) }; // zaczynamy szukać na tym samym torze
 
     if( foundobject == nullptr ) {
         // jeśli nie ma na tym samym, szukamy po okolicy szukanie najblizszego toru z jakims obiektem
@@ -8437,7 +8438,7 @@ TDynamicObject::find_vehicle( int const Direction, double const Distance ) const
             }
             if (track) {
                 // jesli jest kolejny odcinek toru
-                foundobject = ABuFindObject(foundcoupler, distance, track, direction, mycoupler); // przejrzenie pojazdów tego toru
+                foundobject = ABuFindObject(foundcoupler, distance, track, direction, mycoupler, InLine); // przejrzenie pojazdów tego toru
                 if (foundobject) {
                     break;
                 }

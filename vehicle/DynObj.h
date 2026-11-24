@@ -656,7 +656,7 @@ private:
     std::string asModel;
 
   private:
-    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler ) const;
+    TDynamicObject *ABuFindObject( int &Foundcoupler, double &Distance, TTrack const *Track, int const Direction, int const Mycoupler, bool const InLine = false ) const;
     void ABuCheckMyTrack();
 
     std::string rTypeName; // nazwa typu pojazdu
@@ -907,8 +907,9 @@ public:
     // physics.derailment new: the vehicle and the other one, one of them off the track, are in line, close enough
     // across to run into each other
     bool in_line_with( TDynamicObject const &Other ) const;
-    // locates potential collision source within specified range, scanning its route in specified direction
-    auto find_vehicle( int const Direction, double const Range ) const -> std::tuple<TDynamicObject *, int, double, bool>;
+    // locates potential collision source within specified range, scanning its route in specified direction. InLine:
+    // physics.derailment new, the scan goes on past a vehicle off the track beside the line (or beside this one off it)
+    auto find_vehicle( int const Direction, double const Range, bool const InLine = false ) const -> std::tuple<TDynamicObject *, int, double, bool>;
     // locates potential vehicle connected with specific coupling type and satisfying supplied predicate
     template <typename Predicate_>
     auto find_vehicle( coupling const Coupling, Predicate_ const Predicate ) -> TDynamicObject *;
