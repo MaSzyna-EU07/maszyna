@@ -9,7 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "McZapkie/MOVER.h"
+#include "mover/MOVER.h"
 
 namespace test {
 

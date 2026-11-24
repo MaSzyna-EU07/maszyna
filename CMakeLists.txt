@@ -38,6 +38,7 @@ set(CMAKE_CXX_STANDARD 20)
 file(GLOB HEADERS "*.h"
 "Console/*.h"
 "McZapkie/*.h"
+"mover/*.h"
 "gl/*.h"
 "network/*.h"
 "vr/*.h"
@@ -540,7 +541,7 @@ add_library(eu07_settings INTERFACE)
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
-"McZapkie/Mover.cpp"
+"mover/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"

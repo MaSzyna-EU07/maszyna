@@ -14,7 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
-#include "MOVER.h"
+#include "mover/MOVER.h"
 #include "world/TrkFoll.h"
 #include "vehicle/Button.h"
 #include "vehicle/AirCoupler.h"

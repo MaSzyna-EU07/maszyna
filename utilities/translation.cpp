@@ -15,7 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "utilities/Logs.h"
 #include "utilities/Globals.h"
-#include "MOVER.h"
+#include "mover/MOVER.h"
 
 void locale::init()
 {

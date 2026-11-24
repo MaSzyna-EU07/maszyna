@@ -13,7 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
-#include "MOVER.h"
+#include "mover/MOVER.h"
 #include "audio/sound.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"

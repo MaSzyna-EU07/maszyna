@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "McZapkie/MOVER.h"
+#include "mover/MOVER.h"
 #include "figures.h"
 #include "invariants.h"
 

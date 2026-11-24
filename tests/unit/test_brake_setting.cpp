@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "McZapkie/MOVER.h"
+#include "mover/MOVER.h"
 #include "McZapkie/hamulce.h"
 #include "vehicle.h"
 #include "vehicle/brakesetting.h"
