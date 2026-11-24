@@ -237,6 +237,16 @@ and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
 
+The `traxx_*` cases run a Traxx (E186, `p160dc`), whose driver's brake handle (MHZ_6P) has a time
+chamber, like the MHZ_K5P, M394, Knorr, St113, FVel6 and FVE408 handles, which no other case has: the
+AI getting such a locomotive ready has a rule of its own for releasing the train brake (5775493b2,
+#444). `traxx_td_timetable` is the timetable run from a trainset ready to depart,
+`traxx_td_timetable_cold` the same from a cold start (`td_cold_timetable.scn`, the handle in its
+holding position, the brake pipe low), and `traxx_td_crew_add` the locomotive standing ready to depart
+with nobody in it, the handle in its holding position and the brake pipe charged, until a driver is
+put in (`td_crew.scn`, as `eu07_td_crew_add`). In all three the driver puts the handle to running
+within a second of starting and leaves.
+
 `eu07_td_departure_station_capitals` runs an EU07 from where `td_timetable.scn` puts it, with the W4 of Stacja1 about
 35 m ahead, on a timetable of its own (`td_departure_station_capitals.txt`, fragment `td_departure_station.scn`):
 its first row, the station of departure, gives no arrival time and is written in capitals (`STACJA1`), the relation
