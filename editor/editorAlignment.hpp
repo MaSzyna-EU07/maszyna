@@ -134,6 +134,9 @@ struct recommendation
 };
 recommendation recommend(double const Speed, double const Radius, limits const &Limits);
 double transition_length(double const Speed, double const Radius, double const Cant, limits const &Limits);
+// the length of a straight cant ramp the norms ask for to change the cant by Cant [mm] at Speed [km/h]: slow enough in time and
+// along the track [m], 0 for no change
+double cant_ramp_length(double const Speed, double const Cant, limits const &Limits);
 // the transition curve from the curvature and the cant of one arc to those of the next one, 0 for a straight; the curvature positive
 // turning one way, the cant with the same sign as the curvature it leans into
 double transition_between(double const Speed, double const Curvature0, double const Cant0, double const Curvature1, double const Cant1, limits const &Limits);

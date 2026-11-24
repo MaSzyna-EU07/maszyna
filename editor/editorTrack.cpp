@@ -1226,11 +1226,16 @@ double editor_track::velocity(TTrack const &Track)
 {
 	if (Track.SwitchExtension && Track.eType == tt_Switch)
 		return Track.SwitchExtension->fVelocity;
+	// a turntable keeps the limit of its file where a switch does, and it's that one which is saved
+	if (Track.SwitchExtension && Track.eType == tt_Table && Track.SwitchExtension->fVelocity != -1.0f)
+		return Track.SwitchExtension->fVelocity;
 	return Track.fVelocity;
 }
 
 void editor_track::velocity(TTrack &Track, double const Velocity)
 {
+	if (Track.SwitchExtension && Track.eType == tt_Table)
+		Track.SwitchExtension->fVelocity = static_cast<float>(Velocity);
 	if (Track.SwitchExtension && Track.eType == tt_Switch)
 	{
 		Track.SwitchExtension->fVelocity = static_cast<float>(Velocity);

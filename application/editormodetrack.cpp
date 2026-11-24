@@ -1589,7 +1589,25 @@ void editor_mode::render_path_ui()
 					if (std::array<float, 2> cants{lift(path.rolls[0]), lift(path.rolls[1])}; ImGui::DragFloat2("##roll", cants.data(), 0.5f, -388.0f, 388.0f, "%.0f") && std::isfinite(cants[0]) && std::isfinite(cants[1]))
 						path.rolls = {roll(cants[0]), roll(cants[1])};
 					item_tooltip("Cant at the start and at the end: how much higher one rail is, + raises the left rail looking along the path");
-					finish_edit(rebuild::geometry);
+					// the cant typed at an end goes on into the track joined there, as with the gizmo and the joints tool: the joint
+					// would step otherwise. the neighbours go into the same undo step
+					if (ImGui::IsItemActivated())
+						m_track_field_before = before;
+					if (ImGui::IsItemDeactivatedAfterEdit())
+					{
+						std::vector<std::pair<TTrack *, editor_track::state>> states{{track, m_track_field_before}};
+						std::vector<TTrack *> changed{track};
+						auto const joints{editor_track::joints(*track)};
+						for (auto const &joint : joints)
+							if (std::find(changed.begin(), changed.end(), joint.other) == changed.end())
+							{
+								states.emplace_back(joint.other, editor_track::capture(*joint.other));
+								changed.push_back(joint.other);
+							}
+						editor_track::match_rolls(*track, joints);
+						push_track_snapshot(std::move(states));
+						editor_track::commit(changed);
+					}
 					field_row("Radius");
 					if (auto radius{path.radius}; ImGui::InputFloat("##radius", &radius, 0.0f, 0.0f, "%.1f") && std::isfinite(radius))
 						path.radius = radius;
@@ -1711,7 +1729,7 @@ void editor_mode::delete_selected_track()
 		push_track_snapshot({}, created, {set->first, set->link, set->second});
 		drives_deleted({set->first, set->second});
 		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return Each == set->first || Each == set->link || Each == set->second; }))
-			m_route = {};
+			route_drop();
 		m_node = nullptr;
 		ui()->set_node(nullptr);
 		m_track_point = {};
@@ -1742,16 +1760,62 @@ void editor_mode::delete_selected_track()
 		push_track_snapshot({}, created, slip->parts);
 		drives_deleted(slip->switches);
 		if (std::any_of(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), [&](TTrack const *Each) { return std::find(slip->parts.begin(), slip->parts.end(), Each) != slip->parts.end(); }))
-			m_route = {};
+			route_drop();
 		m_node = nullptr;
 		ui()->set_node(nullptr);
 		m_track_point = {};
 		straight_refresh();
 		return;
 	}
-	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step
+	// a switch of a crossover takes the whole crossover out, as the connection tools do: its switches leave their main tracks, the
+	// insert goes and the outer track of a crossover on a curve comes down by the lift it went up by. Alone, the switch would leave
+	// the record of the connection behind, the outer track up, and the next switch given its name would take the connection over
+	if (auto const crossover{crossover_of(*track)})
+	{
+		for (auto const *part : {crossover->first, crossover->second, crossover->insert})
+			if (false == part->Dynamics.empty())
+			{
+				ui()->set_status(STR_C("The track can't be deleted while vehicles stand on it"), true);
+				return;
+			}
+		profile_library_load();
+		auto library{m_profiles};
+		std::vector<std::pair<TTrack *, editor_track::state>> states;
+		std::vector<TTrack *> created;
+		std::vector<TTrack *> removed;
+		TTrack *first{nullptr};
+		TTrack *second{nullptr};
+		if (false == take_out_crossover(*crossover, states, created, removed, first, second))
+		{
+			ui()->set_status(STR_C("The crossover there can't be taken out"), true);
+			return;
+		}
+		switch_store::follow();
+		auto status{std::string{STR_C("The crossover is taken out whole, its switches replaced by their main tracks")}};
+		if (auto const note{designs_trimmed(removed)}; false == note.empty())
+			status += "\n" + note;
+		auto const chained{std::any_of(removed.begin(), removed.end(), [&](TTrack const *Each) { return std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), Each) != m_route.chain.tracks.end(); })};
+		push_track_snapshot(std::move(states), std::move(created), removed);
+		drives_deleted(removed);
+		records_to_history();
+		if (crossover->record.lifted())
+			profiles_to_history(std::move(library));
+		if (chained)
+			route_drop();
+		ui()->set_status(status, false);
+		m_node = nullptr;
+		ui()->set_node(nullptr);
+		m_track_point = {};
+		straight_refresh();
+		return;
+	}
+	// retired first, so the infrastructure it carried and moves elsewhere is in the same undo step. A switch bent out of the shape of
+	// its record isn't found by the shape, so by its name
 	if (auto const known{switch_store::of(*track)})
 		switch_store::forget(known->name);
+	else if (track->eType == tt_Switch)
+		if (auto const named{switch_store::named(*track)})
+			switch_store::forget(named->name);
 	editor_track::retire(*track);
 	// a switch leaves its main track behind, so the line isn't broken, unless Shift asks for all of it
 	std::vector<TTrack *> created;
@@ -1775,7 +1839,7 @@ void editor_mode::delete_selected_track()
 			m_history.back().instances.push_back(instance);
 		}
 	if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
-		m_route = {};
+		route_drop();
 	m_node = nullptr;
 	ui()->set_node(nullptr);
 	m_track_point = {};

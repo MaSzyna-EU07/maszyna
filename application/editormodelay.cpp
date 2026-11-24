@@ -649,16 +649,16 @@ namespace
 
 // the cant of a track joined goes on into the track laid, whatever shape that one has: its difference fades along the pieces from the
 // joint, over as many of them as the cant takes at the ramp a transition curve has at the least, or over all of them where they're shorter
-void lead_cant(std::vector<segment_data> &Pieces, double const Roll, double const Gauge, bool const From_start)
+void lead_cant(std::vector<segment_data> &Pieces, double const Roll, alignment::limits const &Norms, double const Speed, bool const From_start)
 {
-	double constexpr ramp_slope{1.5}; // mm of the cant to a metre
 	if (Pieces.empty())
 		return;
 	auto const here{From_start ? Pieces.front().rolls[0] : Pieces.back().rolls[1]};
 	auto const difference{Roll - static_cast<double>(here)};
 	if (std::abs(difference) < 1e-3)
 		return;
-	auto const wanted{Gauge * std::abs(std::sin(glm::radians(difference))) / ramp_slope};
+	// the ramp the norms ask for at the speed, as a transition curve has it; over all the pieces where they're shorter
+	auto const wanted{alignment::cant_ramp_length(Speed, Norms.gauge * std::abs(std::sin(glm::radians(difference))), Norms)};
 	std::vector<double> lengths;
 	auto reach{0.0};
 	for (std::size_t i = 0; i < Pieces.size(); ++i)
@@ -730,7 +730,7 @@ std::vector<segment_data> editor_mode::extend_pieces() const
 	auto pieces{eased.has_value() && false == eased->pieces.empty() ? eased->pieces : editor_track::layout_pieces(m_track_layout, tool.point, tool.direction, tool.grade, tool.mouse, radius)};
 	follow_ground(pieces, tool.point.y, tool.grade, tool.mouse.y, std::numeric_limits<double>::quiet_NaN(), tool.track);
 	if (tool.track != nullptr)
-		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), laying_norms().gauge, true);
+		lead_cant(pieces, -editor_track::joint_roll(*tool.track, {tool.path, tool.atend ? editor_track::point_kind::end : editor_track::point_kind::start}), laying_norms(), design_speed(tool.track, nullptr), true);
 	return pieces;
 }
 
@@ -1189,7 +1189,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 			Length += bezier{piece}.plan_length();
 		if (pieces.empty())
 			Error = STR_C("The track can't be laid through these points");
-		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), laying_norms().gauge, false);
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), laying_norms(), design_speed(End.track, nullptr), false);
 		return pieces;
 	}
 	m_join_last = {};
@@ -1285,9 +1285,9 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	else
 		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
 	if (tool.start.track != nullptr)
-		lead_cant(pieces, -editor_track::joint_roll(*tool.start.track, tool.start.point), design.norms.gauge, true);
+		lead_cant(pieces, -editor_track::joint_roll(*tool.start.track, tool.start.point), design.norms, design.speed, true);
 	if (End.track != nullptr)
-		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), design.norms.gauge, false);
+		lead_cant(pieces, editor_track::joint_roll(*End.track, End.point), design.norms, design.speed, false);
 	if (Plan != nullptr)
 		*Plan = std::move(plan);
 	return pieces;
@@ -2302,6 +2302,14 @@ track_hover editor_mode::split_spot() const
 	if (selected == nullptr || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse)
 		return {};
 	return track_under_cursor(selected, 20.0f);
+}
+
+void editor_mode::route_drop()
+{
+	// the lay, extend and join tools take their norms from here: emptied with the line, they'd go back to the defaults unseen
+	auto const norms{m_route.design.norms};
+	m_route = {};
+	m_route.design.norms = norms;
 }
 
 alignment::limits editor_mode::laying_norms() const

@@ -1939,22 +1939,99 @@ void editor_mode::track_set_delete()
 {
 	track_set_prune();
 	std::vector<TTrack *> removed;
+	// of crossovers taken out: the main tracks of their switches laid, the outer track brought down
+	std::vector<std::pair<TTrack *, editor_track::state>> states;
+	std::vector<TTrack *> created;
+	bool crossovers{false};
+	bool lifted{false};
+	profile_library_load();
+	auto library{m_profiles};
 	std::size_t kept{0};
+	auto const gone = [&](TTrack const *Track) { return std::find(removed.begin(), removed.end(), Track) != removed.end(); };
+	auto const blocked = [](TTrack const *Track) { return false == Track->Dynamics.empty() || false == scene::Layers.editable(Track); };
+	// as Del does with each: a double switch, a slip and a crossover go whole, the records of the switches go with them
 	for (auto *track : m_track_set)
 	{
-		if (false == track->Dynamics.empty() || false == scene::Layers.editable(track))
+		if (gone(track))
+			continue;
+		if (blocked(track))
 		{
 			++kept;
 			continue;
 		}
+		if (auto const set{double_of(*track)})
+		{
+			if (blocked(set->first) || blocked(set->link) || blocked(set->second))
+			{
+				++kept;
+				continue;
+			}
+			if (auto const known{switch_store::named(*set->first)})
+				switch_store::forget(known->name);
+			for (auto *part : {set->first, set->link, set->second})
+				if (false == gone(part))
+				{
+					editor_track::retire(*part);
+					removed.push_back(part);
+				}
+			continue;
+		}
+		if (auto const slip{slip_of(*track)})
+		{
+			if (std::any_of(slip->parts.begin(), slip->parts.end(), blocked))
+			{
+				++kept;
+				continue;
+			}
+			slip_taken_out(*slip, false);
+			for (auto *part : slip->parts)
+				if (false == gone(part))
+					removed.push_back(part);
+			continue;
+		}
+		if (auto const crossover{crossover_of(*track)})
+		{
+			if (blocked(crossover->first) || blocked(crossover->second) || blocked(crossover->insert))
+			{
+				++kept;
+				continue;
+			}
+			TTrack *first{nullptr};
+			TTrack *second{nullptr};
+			if (take_out_crossover(*crossover, states, created, removed, first, second))
+			{
+				crossovers = true;
+				lifted = lifted || crossover->record.lifted();
+				continue;
+			}
+		}
+		if (auto const known{switch_store::of(*track)})
+			switch_store::forget(known->name);
+		else if (track->eType == tt_Switch)
+			if (auto const named{switch_store::named(*track)})
+				switch_store::forget(named->name);
 		editor_track::retire(*track);
 		removed.push_back(track);
-		if (std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), track) != m_route.chain.tracks.end())
-			m_route = {};
 	}
+	if (std::any_of(removed.begin(), removed.end(), [&](TTrack const *Each) { return std::find(m_route.chain.tracks.begin(), m_route.chain.tracks.end(), Each) != m_route.chain.tracks.end(); }))
+		route_drop();
+	if (crossovers)
+		switch_store::follow();
 	auto const designs{designs_trimmed(removed)};
-	push_track_snapshot({}, {}, removed);
+	push_track_snapshot(std::move(states), std::move(created), removed);
 	drives_deleted(removed);
+	// the model and the events of a turntable can't stay without its track
+	for (auto const *track : removed)
+		if (track->eType == tt_Table)
+			for (auto const instance : turntable_includes(*track))
+			{
+				scene::Layers.removed(instance, true);
+				m_history.back().instances.push_back(instance);
+			}
+	if (crossovers)
+		records_to_history();
+	if (lifted)
+		profiles_to_history(std::move(library));
 	m_track_set.clear();
 	m_node = nullptr;
 	ui()->set_node(nullptr);
