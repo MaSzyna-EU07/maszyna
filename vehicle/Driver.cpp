@@ -6744,11 +6744,12 @@ void
 TController::control_wheelslip() {
     // a start that has slipped once keeps the sand on until the train is under way. with the sand off as soon as the
     // wheels grip again, the next notch slips again, and a heavy train on poor rails slips, grips and snatches over
-    // and over, and may never get going (#187)
+    // and over, and may never get going (#187). a vehicle without sand starts as before
     auto const velocity { std::abs( mvOccupied->Vel ) };
     if( mvControlling->SlippingWheels
      && velocity < EU07_AI_SANDEDSTARTVELOCITY
-     && false == mvControlling->IsMainCtrlNoPowerPos() ) {
+     && false == mvControlling->IsMainCtrlNoPowerPos()
+     && mvControlling->Sand > 0.0 ) {
         bSandedStart = true;
     }
     else if( velocity >= EU07_AI_SANDEDSTARTVELOCITY
