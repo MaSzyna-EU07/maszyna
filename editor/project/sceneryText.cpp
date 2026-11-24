@@ -13,10 +13,12 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <set>
+#include <system_error>
 #include <utility>
 
 namespace scenery_text
@@ -434,6 +436,24 @@ std::optional<std::string> node_text(std::string_view const Text, std::string_vi
 		i = last;
 	}
 	return std::nullopt;
+}
+
+std::optional<std::string> name_of(std::filesystem::path const &Path)
+{
+	try
+	{
+		return Path.filename().generic_string();
+	}
+	catch (std::system_error const &)
+	{
+		return std::nullopt;
+	}
+}
+
+bool has_extension(std::filesystem::path const &Path, std::u8string_view const Extension)
+{
+	auto const extension{Path.extension().u8string()};
+	return extension.size() == Extension.size() && std::ranges::equal(extension, Extension, [](char8_t const A, char8_t const B) { return std::tolower(static_cast<unsigned char>(A)) == std::tolower(static_cast<unsigned char>(B)); });
 }
 
 std::optional<std::string> file_text(std::filesystem::path const &Path)
