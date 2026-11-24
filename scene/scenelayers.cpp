@@ -32,34 +32,7 @@ namespace scene
 
 node_layers Layers;
 
-// converts world space location to the one which produces it when loaded with this context in effect
-glm::dvec3 layer_context::to_local(glm::dvec3 Location) const
-{
-	// reverse of the transformation done by the scenery loader: rotation around the vertical axis, then scale, then offset
-	Location -= offset;
-	Location /= glm::dvec3{scale};
-	if (rotation != glm::vec3{0.f})
-	{
-		Location = glm::rotateY<double>(Location, -glm::radians(static_cast<double>(rotation.y)));
-	}
-	return Location;
-}
-
-glm::dvec3 layer_context::to_world(glm::dvec3 Location) const
-{
-	if (rotation != glm::vec3{0.f})
-	{
-		Location = glm::rotateY<double>(Location, glm::radians(static_cast<double>(rotation.y)));
-	}
-	Location *= glm::dvec3{scale};
-	Location += offset;
-	return Location;
-}
-
-bool layer_context::matches(layer_context const &Other) const
-{
-	return glm::all(glm::epsilonEqual(offset, Other.offset, 1e-4)) && glm::all(glm::epsilonEqual(rotation, Other.rotation, 1e-4f)) && glm::all(glm::epsilonEqual(scale, Other.scale, 1e-5f));
-}
+// layer_context: scene/scenelayercontext.cpp, which the unit tests of the //$ lines of the editor link alone
 
 std::size_t basic_layer::item_count() const
 {

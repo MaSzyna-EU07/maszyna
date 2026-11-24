@@ -1,0 +1,16 @@
+# PR #450: the speed of a turntable set in the editor is the one saved. The editor changed the speed the turntable runs
+# at, while the file keeps the limit it was loaded with.
+# tt1: a turntable with velocity 10 in the scenery file
+wait 5
+expect speed tt1 10
+tracksel tt1
+trackprop speed 20
+expect speed tt1 20
+save
+wait 5
+quit
+#> reopen
+# the scenery as saved, loaded again
+wait 5
+expect speed tt1 20
+quit

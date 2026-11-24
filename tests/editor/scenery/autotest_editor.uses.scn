@@ -1,0 +1,8 @@
+// A scenario of the map of the editor's self-tests, naming its tracks: the runner copies it next to the copy of the map of each case as
+// autotest_editor_<case>_uses.scn, the name of the map put in place of autotest_editor.scn, so the scenario index of the map finds it
+// (the case m_5_index_delete). Its trainset starts on s1, its event sets the speed of d2.
+include autotest_editor.scn end
+trainset none s1 10 0
+node -1 0 autotest_uses_wmb10 dynamic pkp/wmb10_v1 wmb10-6457 wmb10 0 nobody 0 0 enddynamic
+endtrainset
+event autotest_uses_vel trackvel 0 d2 40 endevent

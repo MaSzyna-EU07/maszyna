@@ -1,0 +1,21 @@
+# PR #450: a switch bent out of the shape of its record is found by its name when deleted, and its record goes with it.
+# s1, s2, s3: straights joined one after another
+wait 5
+switchplace Rz_60E1-300-1:9 40 150 1 1
+expect records z1 1 switch
+expect shaped z1 yes
+# the end of the diverging path of z1 moved aside with the gizmo: z1 no longer has the shape its record says
+select z1
+gizmo begin translate 1 end
+gizmo offset 0.5 0 0
+gizmo end
+# the drag went through: without it the case would only delete a switch which kept its shape
+expect shaped z1 no
+expect records z1 1 switch
+deletetrack z1
+expect track z1 removed
+expect records z1 0
+undo
+expect track z1 present
+expect records z1 1 switch
+quit

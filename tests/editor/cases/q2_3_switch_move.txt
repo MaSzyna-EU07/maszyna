@@ -1,0 +1,34 @@
+# Q2: a switch moved along its line is judged as when it's laid there: moved into a place breaking a hard rule it stays as it is,
+# the switch tool telling why. Before, a switch moved anywhere along its line with no check.
+# i0: a straight taking the cant of 60 mm on along all of it into i1..i8, a curve of R 600 m turning to +x;
+# r1..r3: a straight taking the cant of 60 mm on along r2, from 100 m to 160 m of it
+wait 5
+# bent into the curve 20 m past the end of the ramp on i0
+switchcurve Rz_60E1-300-1:9 300.3333 19.9963 1 -1
+expect track z1 present
+expect steps 1
+# 17 m back along the curve: 3 m off the end of the ramp
+switchslide z1 -17
+expect steps 1
+expect status 3.0 m
+expect status (9.6 pkt 16)
+# 20 m back: it starts where the ramp ends
+switchslide z1 -20
+expect steps 2
+# on the straight r 20 m from its start
+switchplace Rz_60E1-300-1:9 440 20 1 1
+expect track z2 present
+expect steps 3
+# 45 m on: its end 1.8 m off the start of the ramp
+switchslide z2 45
+expect steps 3
+expect status 1.8 m
+expect status (9.6 pkt 16)
+# 70 m on: onto the ramp, the cant changing within it
+switchslide z2 70
+expect steps 3
+expect status (11.4 pkt 7)
+# 30 m on: 16.8 m off the ramp
+switchslide z2 30
+expect steps 4
+quit

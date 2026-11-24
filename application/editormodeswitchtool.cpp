@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editormode.h"
 #include "application/editorgestures.h"
 #include "application/editormodeshared.h"
+#include "application/editorflow.h"
 #include "editor/editorConnections.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorTrack.hpp"
@@ -177,68 +178,36 @@ void editor_mode::render_switch_ui()
 {
 	auto &tool{m_switch};
 	auto const kind{current_switch_kind()};
-
-	// what to place, each with the templates and the options of its own only
-	struct choice
+	// dragged: what it lays as it's let go, and what keeps it from being laid
+	if (tool.placing)
 	{
-		switch_kind kind;
-		char const *label;
-		char const *tooltip;
-	};
-	choice const choices[] = {{switch_kind::single, "Switch", "A switch in a straight or a curve"},
-	                          {switch_kind::slip, "Slip switch", "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"},
-	                          {switch_kind::crossing, "Crossing", "A crossing of two straights"}};
-	{
-		auto const gap{std::round(ImGui::GetFontSize() * 0.4f)};
-		auto const width{std::floor((ImGui::GetContentRegionAvail().x - gap) * 0.5f)};
-		int shown{0};
-		for (auto const &entry : choices)
-		{
-			if (entry.kind != switch_kind::single && false == switch_kind_offered(entry.kind))
-				continue;
-			if (shown % 2 == 1)
-				ImGui::SameLine(0.0f, gap);
-			else if (shown > 0)
-				ImGui::Dummy(ImVec2(0.0f, gap * 0.25f));
-			if (kind_tile(entry.label, STR_C(entry.label), static_cast<int>(&entry - choices), kind == entry.kind, width) && kind != entry.kind)
-				choose_switch_kind(entry.kind);
-			item_tooltip(entry.tooltip);
-			++shown;
-		}
+		render_switch_drag();
+		return;
 	}
-	// how to place it with the mouse
-	std::vector<std::pair<char const *, char const *>> how;
-	switch (kind)
-	{
-	case switch_kind::slip:
-		how = {{"Drag on a straight", "the slip with its crossing track, through the quarter of the cursor"}, {"Drag at a crossing", "of two straights at the skos of the slip: it goes there"}, {"Drag on a curve", "bent into it, in a side track only (11.4 pkt 4b)"}};
-		break;
-	case switch_kind::crossing: how = {{"Drag at a crossing", "of two straights: it goes there"}}; break;
-	case switch_kind::connection:
-		how = {{"Drag", "from a straight onto the other track"}, {"Shift+wheel", "the kind"}, {"Ctrl+wheel", "R of the aligning curve"}};
-		if (tool.connection == static_cast<int>(connection::kind::double_crossover))
-			how.push_back({"Alt+wheel", "where they meet"});
-		break;
-	default:
-		how = {{"Drag on a track", "along: the direction, sideways: the side"},
-		       {"Drag onto the other track", "a crossover; over a crossover the other way a double or a scissors one, across tracks a ladder"},
-		       {"Drag from a free end", "a switch going on from the end of a track"}};
-		break;
-	}
-	gesture_rows(how);
+	char const *step{STR_C("Press on a straight and drag along it and to the side")};
+	if (kind == switch_kind::slip)
+		step = STR_C("Press on a straight or at a crossing and drag");
+	else if (kind == switch_kind::crossing)
+		step = STR_C("Press at a crossing of two straights and drag");
+	else if (kind == switch_kind::connection)
+		step = STR_C("Press on a straight and drag onto the other track");
+	editor_flow::step_line(step);
+	// a switch refused: why, in one message in red under the step, where it's read first
+	if (false == tool.status.empty())
+		editor_flow::message_line(tool.status, tool.status == tool.refusal ? editor_flow::kRefused : ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	render_switch_kinds(kind);
 
-	// the templates of the kind: by the speed, by the skos for the rail of the selected track, all of them under; the lengths and the
-	// rest of the label in the tooltip
-	ImGui::TextDisabled("%s", STR_C(kind == switch_kind::connection ? "The first switch" : "Template"));
+	// the template: the rail and the speed on the diverging track as chips, the one they pick as a line which opens the list of them all;
+	// the lengths and the rest of the label in the tooltip
 	auto const rail{editor_track::rail_of(selected_track())};
 	if (false == rail.empty())
-	{
-		ImGui::SameLine();
 		ImGui::TextDisabled(STR_C("rail of the track %s"), rail.c_str());
-	}
 	else if (auto *track{selected_track()}; track != nullptr && (track->iCategoryFlag & 15) == 1 && track->m_profile1.first.empty())
+	{
+		ImGui::TextDisabled("%s", STR_C("Template"));
 		render_rail_profile_hint(*track);
-	if (auto const picked{render_template_picker("##place", [&](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }, rail, tool.armed, false)}; picked >= 0)
+	}
+	if (auto const picked{render_template_picker("##place", [kind](editor_track::switch_template const &Template) { return of_kind(Template, static_cast<int>(kind)); }, rail, tool.armed, false)}; picked >= 0)
 	{
 		tool.last = picked;
 		tool.armed = picked;
@@ -273,20 +242,114 @@ void editor_mode::render_switch_ui()
 		}
 		item_tooltip("Looks for the switches of the scenery, to use their shapes as the templates");
 		render_switch_timbers();
+		if (ImGui::Button(STR_C("Template editor...")))
+			m_switch_designer.open = true;
+		item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
-	if (false == tool.status.empty())
-	{
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", tool.status.c_str());
-		ImGui::PopTextWrapPos();
-	}
 	render_stray_drives();
+}
 
-	if (ImGui::Button(STR_C("Template editor...")))
-		m_switch_designer.open = true;
-	item_tooltip("Own switch templates: diverging tracks of straights, arcs and transition curves, double switches");
+void editor_mode::render_switch_kinds(switch_kind const Kind)
+{
+	// what to place, each with the templates and the options of its own only; the slips and the crossings where there are templates of them
+	segment_option const single{static_cast<int>(switch_kind::single), STR_C("Switch"), "A switch in a straight or a curve"};
+	segment_option const slip{static_cast<int>(switch_kind::slip), STR_C("Slip"),
+	                          "Rkp or Rkpd dragged out on one straight with its crossing track, at a crossing of two straights at its skos, or bent into a curve of a side track"};
+	segment_option const crossing{static_cast<int>(switch_kind::crossing), STR_C("Crossing"), "A crossing of two straights"};
+	auto const slips{switch_kind_offered(switch_kind::slip)};
+	auto const crossings{switch_kind_offered(switch_kind::crossing)};
+	// a connection of tracks is chosen among the settings: none of these lit then
+	int chosen{Kind == switch_kind::connection ? -1 : static_cast<int>(Kind)};
+	bool changed{false};
+	if (slips && crossings)
+		changed = segmented("switchkind", chosen, {single, slip, crossing});
+	else if (slips)
+		changed = segmented("switchkind", chosen, {single, slip});
+	else if (crossings)
+		changed = segmented("switchkind", chosen, {single, crossing});
+	if (changed)
+		choose_switch_kind(static_cast<switch_kind>(chosen));
+}
+
+int editor_mode::switch_drag_side(std::string &Refusal) const
+{
+	auto const &tool{m_switch};
+	Refusal.clear();
+	if (tool.free)
+	{
+		if (free_bend bend; free_switch_bend(bend))
+		{
+			if (false == bend.report.refusals.empty())
+				Refusal = bend.report.refusals.front();
+			else if (false == bend.problem.empty())
+				Refusal = bend.problem;
+			return bend.side;
+		}
+		glm::dvec3 start;
+		glm::dvec2 heading;
+		int side{1};
+		double grade{0.0};
+		free_switch_pose(start, heading, side, grade);
+		return side;
+	}
+	if (tool.curved)
+	{
+		int forward{1};
+		int side{1};
+		curved_switch_pose(forward, side);
+		if (tool.connection >= 0 || tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()) || tool.templates[tool.armed].double_slip)
+			return side;
+		if (auto const preview{switch_preview()}; preview.size() >= 2)
+		{
+			auto const report{curved_switch_report(preview, tool.frame, curved_switch_start(forward), forward, &tool.frame_tracks)};
+			if (false == report.refusals.empty())
+				Refusal = report.refusals.front();
+		}
+		return side;
+	}
+	glm::dvec2 const offset{tool.mouse.x - tool.point.x, tool.mouse.z - tool.point.z};
+	auto const forward{glm::dot(offset, tool.line.direction) >= 0.0 ? 1 : -1};
+	glm::dvec2 const direction{tool.line.direction * static_cast<double>(forward)};
+	return direction.x * offset.y - direction.y * offset.x >= 0.0 ? 1 : -1;
+}
+
+void editor_mode::render_switch_drag()
+{
+	auto const &tool{m_switch};
+	editor_flow::step_line(STR_C("Let go to insert"));
+	if (tool.armed < 0 || tool.armed >= static_cast<int>(tool.templates.size()))
+		return;
+	// the length, the side of the diverging track, the speed on it; what keeps it from being laid in one line in red, what it's moved by
+	// to stay on its track in orange
+	auto const &shape{tool.templates[tool.armed]};
+	std::string refusal;
+	auto const side{switch_drag_side(refusal)};
+	auto line{format("%.1f m · %s", shape.length, side > 0 ? STR_C("right") : STR_C("left"))};
+	if (auto const speed{shape.radius > 0.0 ? editor_track::diverging_speed(shape.radius) : 0.0}; speed > 0.0)
+		line += format(" · %.0f km/h", speed);
+	ImGui::TextUnformatted(line.c_str());
+	if (false == refusal.empty())
+		editor_flow::message_line(refusal, editor_flow::kRefused);
+	else if (auto const problem{switch_drag_problem()}; problem.has_value())
+		editor_flow::message_line(problem->text, ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	// a branch let go at a track it doesn't fit into: the switch is laid, the branch not led into the track
+	if (switch_link plan; false == tool.free && tool.connection < 0 && false == plan_switch_link(plan) && false == plan.reason.empty())
+		editor_flow::message_line(plan.reason, ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+}
+
+bool editor_mode::just_laid(TTrack const *Track) const
+{
+	// the last step of the history, with those made together with it
+	for (auto step{m_history.rbegin()}; step != m_history.rend(); ++step)
+	{
+		if (std::ranges::find(step->created, Track) != step->created.end())
+			return true;
+		if (false == step->joined)
+			break;
+	}
+	return false;
 }
 
 // the timbers of all the switches and crossings of the scenery at once: a button for each model of timbers of the scenery data

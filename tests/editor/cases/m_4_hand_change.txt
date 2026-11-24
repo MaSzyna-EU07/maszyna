@@ -1,0 +1,51 @@
+# Editing on the model (E4a): a track of a line of the model changed by another tool (its speed in the inspector) is a change by hand:
+# a command laying the line anew asks first, in a window naming the line. Kept, nothing changes; overwritten, the line is laid anew and
+# isn't taken for changed by hand any more. A change by hand saved is found in the files after the scenery is opened again
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+save
+wait 5
+modelselect @1.1
+trackprop speed 60
+expect hand 1 1
+modelmark changed
+modelplan @1.0
+routeradius 0 800
+routeapply
+wait 2
+expect question hand L1
+modelanswer no
+expect question none
+expect modelrefused 1
+expect modelsame changed
+expect hand 1 1
+routeapply
+wait 2
+expect question hand L1
+modelanswer yes
+wait 2
+expect question none
+expect modelrefused 0
+expect modelvertex 1 0 radius 800
+expect hand 1 0
+expect modelends
+# changed by hand again and saved: found so when the scenery is opened again
+modelselect @1.0
+trackprop speed 50
+save
+wait 5
+quit
+#> reopen
+wait 5
+modelediting 1
+expect hand 1 1
+modelplan @1.0
+routeradius 0 820
+routeapply
+wait 2
+expect question hand L1
+modelanswer no
+expect modelvertex 1 0 radius 800
+quit
