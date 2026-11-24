@@ -16,12 +16,35 @@ layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 1) uniform sampler2D veloc
 layout(set = POST_SET, binding = POST_TEXTURE_FIRST + 2) uniform sampler2D depth_tex;
 
 
+#include "rain_windscreen_haze.glsl"
+
 void main()
 {
+    // the wet windscreen (mat_rain_windscreen.frag): its drops and haze done here without the taa, left as they are when the taa
+    // did them (marked in the alpha)
+    vec2 rawv = texture(velocity_tex, f_coords).xy;
+    if (wsIsDrop(rawv))
+    {
+        vec4 picture = texture(color_tex, f_coords);
+        out_color = vec4(wsWasHazed(picture.a) ? picture.rgb
+                                                              : wsDropRefraction(color_tex, velocity_tex, depth_tex, f_coords, rawv), 1.0);
+        return;
+    }
+    float blurAmt = wsBlur(rawv);
+    if (blurAmt > 0.0)
+    {
+        vec4 picture = texture(color_tex, f_coords);
+        out_color = vec4(wsWasHazed(picture.a) ? picture.rgb : wsHaze(color_tex, velocity_tex, f_coords, blurAmt), 1.0);
+        return;
+    }
+
     float ori_depth = texture(depth_tex, f_coords).x;
 
     vec2 texelSize = 1.0 / vec2(textureSize(color_tex, 0));
-    vec2 velocity = texture(velocity_tex, f_coords).xy * param[0].x;
+    vec2 velocity = rawv * param[0].x;
+    // edge pixels of the windscreen can carry a fraction of a request: never use that as motion
+    if (any(greaterThan(abs(rawv), vec2(WS_FLOOR * WS_ENC))))
+        velocity = vec2(0.0);
     
     float speed = length(velocity / texelSize);
     int nSamples = clamp(int(speed), 1, 32);

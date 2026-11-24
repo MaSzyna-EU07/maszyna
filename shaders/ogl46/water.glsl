@@ -53,6 +53,91 @@ layout(std430, binding = WATER_SSBO_BINDING) readonly buffer water_ssbo
 	uint water_cells[];
 };
 
+// the snow on a glass of the snow (water_snow.comp, mat_snow_windscreen.frag): two maps of WATER_MAP x WATER_MAP texels after the
+// wetted paths in water_cells, two uint a texel (halves: x the snow, mm, y the water, mm, z how packed the snow is 0 .. 1, w random
+// 0 .. 1, the shape of its flakes); a step reads one and writes the other, the header of the glass says which one is the latest
+// (z 1 when there's a map of the snow, w the map)
+uint water_snow_base(uint slot, uint map)
+{
+	return uint(WATER_SLOTS * WATER_GRID * WATER_GRID * (1 + WATER_CELL_DROPS)) + uint(WATER_SLOTS * WATER_TRAIL * WATER_TRAIL) + (map * uint(WATER_SLOTS) + slot) * uint(WATER_MAP * WATER_MAP * 2);
+}
+
+// a texel of a map of the snow, nothing outside the map
+vec4 water_snow_texel(uint slot, uint map, ivec2 texel)
+{
+	if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, ivec2(WATER_MAP))))
+		return vec4(0.0);
+	uint index = water_snow_base(slot, map) + 2u * uint(texel.y * WATER_MAP + texel.x);
+	return vec4(unpackHalf2x16(water_cells[index]), unpackHalf2x16(water_cells[index + 1u]));
+}
+
+// the snow of a glass laid together (water_snowlayer.comp, read by mat_snow_windscreen.frag), after the maps of the snow: eight
+// uint of every glass (the rectangle of its uv the layer takes: the corner and the size, floats; the texels of the layer across
+// and down, 0 when the glass has no layer: the cab has one, for its first glass of the snow), then the layer, WATER_LAYER_TEXELS
+// texels of four uint each: the sprites of the snow coming within the texel, in the order they are laid (snow_sprites.glsl,
+// snList)
+void water_layer_rect(uint slot, out vec4 rect, out uvec2 size)
+{
+	uint info = water_snow_base(0u, 2u) + slot * 8u;
+	rect = uintBitsToFloat(uvec4(water_cells[info], water_cells[info + 1u], water_cells[info + 2u], water_cells[info + 3u]));
+	size = uvec2(water_cells[info + 4u], water_cells[info + 5u]);
+}
+
+uint water_layer_base()
+{
+	return water_snow_base(0u, 2u) + uint(WATER_SLOTS) * 8u;
+}
+
+// whether the glass has the layer of the snow
+bool water_layer_of(uint slot)
+{
+	vec4 rect;
+	uvec2 size;
+	water_layer_rect(slot, rect, size);
+	return (size.x > 0u) && (size.y > 0u) && all(greaterThan(rect.zw, vec2(0.0)));
+}
+
+// the sprites of the snow of a glass at UV, as its layer holds them for the texel there (Refs, see snow_sprites.glsl), and the
+// centre of that texel (CentreUV); false outside the layer
+bool water_layer_refs(uint slot, vec2 uv, out uvec4 refs, out vec2 centreUV)
+{
+	refs = uvec4(0u);
+	centreUV = uv;
+	vec4 rect;
+	uvec2 size;
+	water_layer_rect(slot, rect, size);
+	if ((size.x == 0u) || (size.y == 0u) || any(lessThanEqual(rect.zw, vec2(0.0))))
+		return false;
+	ivec2 t = ivec2(floor((uv - rect.xy) / rect.zw * vec2(size)));
+	if (any(lessThan(t, ivec2(0))) || any(greaterThanEqual(t, ivec2(size))))
+		return false;
+	centreUV = rect.xy + (vec2(t) + 0.5) / vec2(size) * rect.zw;
+	uint index = water_layer_base() + 4u * (uint(t.y) * size.x + uint(t.x));
+	refs = uvec4(water_cells[index], water_cells[index + 1u], water_cells[index + 2u], water_cells[index + 3u]);
+	return true;
+}
+
+// the latest map of the snow of a glass; false when there's none yet
+bool water_snow_map(uint slot, out uint map)
+{
+	vec4 header = water_header[slot];
+	map = (header.w > 0.5) ? 1u : 0u;
+	return header.z > 0.5;
+}
+
+// the latest map of the snow filtered between the texels at a place of the glass
+vec4 water_snow_at(uint slot, uint map, vec2 uv)
+{
+	vec2 p = uv * float(WATER_MAP) - 0.5;
+	ivec2 i = ivec2(floor(p));
+	vec2 f = p - vec2(i);
+	vec4 a = water_snow_texel(slot, map, i);
+	vec4 b = water_snow_texel(slot, map, i + ivec2(1, 0));
+	vec4 c = water_snow_texel(slot, map, i + ivec2(0, 1));
+	vec4 d = water_snow_texel(slot, map, i + ivec2(1, 1));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 // the radius of the footprint of a drop holding Volume mm3 of water, metres: a cap of a sphere meeting the glass at 40 degrees
 float water_radius(float volume)
 {

@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <glm/glm.hpp>
 
@@ -79,16 +80,22 @@ class windscreen_water
 	virtual bool gpu_bake(std::size_t Slot, texture_handle Mask, gl::water_ubs const &Block) = 0;
 	// the step of the simulation of the glasses Block says are simulated; Tries: the most landings tried on a glass
 	virtual void gpu_step(gl::water_ubs const &Block, std::uint32_t Tries) = 0;
+	// the snow of a glass of the snow laid together from the sprites of its atlas into its layer, after the step
+	// (water_snowlayer.comp; Block.counts: z the glass, w the step); Atlas, Normal: the atlas of the snow and its normal map (textures
+	// of the renderer); false when they aren't ready yet
+	virtual bool gpu_snow_layer(std::size_t Slot, texture_handle Atlas, texture_handle Normal, gl::water_ubs const &Block) = 0;
 
   private:
 	struct glass
 	{
 		material_handle material{null_handle};
+		TSubModel *submodel{nullptr}; // the first piece of the glass in the cab, for the material it has now
 		texture_handle mask{null_handle};
 		float densest{0.f}; // the most metres squared a unit of the uv holds
 		float area{0.f}; // metres squared of the glass
 		double landings{0.0}; // the share of a landing left over from the steps before
 		bool baked{false};
+		bool snow{false}; // a glass of the snow (mat_snow_windscreen), else of the water
 	};
 
 	// the glasses of the model of a cab found and set up
@@ -97,17 +104,34 @@ class windscreen_water
 	void rasterize(TSubModel *Submodel, material_handle Material, glm::vec3 const &Inside, std::vector<glm::vec4> &Axes) const;
 	// the slots given to the materials of the glasses (every frame: a material made anew takes its default params)
 	void assign(bool Assigned);
+	// the snow of the glasses of the snow Block says are simulated laid together, after the step
+	void lay_snow(gl::water_ubs const &Block);
+
+  protected:
+	// where the layer of the snow of a glass lies (water.glsl): the rectangle of the uv its map holds the glass in (the corner and
+	// the size, the bits of floats) and the texels of the layer across and down, as the glass is wide and high in metres (0 when
+	// the map holds no glass or the glass has no layer)
+	// the eight uint the renderer puts at gl::WATER_LAYER_INFO_OFFSET for the glass of Slot (set up with its map Axes): the cab has
+	// one layer, for its first glass of the snow, the others get none (zeros)
+	std::array<std::uint32_t, 8> layer_info(std::size_t Slot, std::vector<glm::vec4> const &Axes);
+
+  private:
 
 	host m_host;
 	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
 	TDynamicObject const *m_vehicle{nullptr};
 	TModel3d const *m_cab{nullptr};
+	std::vector<std::pair<material_handle, int>> m_kinds; // the materials of the cab with a mask of the wipers, what kind of glass they were
 	std::array<glass, gl::WATER_SLOTS> m_glasses{};
 	std::size_t m_glasscount{0};
+	int m_layerslot{-1}; // the glass with the layer of the snow, -1 none
+	std::array<int, gl::WATER_SLOTS> m_logged{-1, -1, -1, -1}; // what the log last said of each glass (baked, snow, the shader, simulated)
+	int m_layerlogged{-1}; // what the log last said of the layer of the snow
 	glm::vec4 m_bladesbefore{-1.f};
 	double m_time{0.0}; // seconds the simulation runs
 	std::uint32_t m_step{0};
 	std::uint32_t m_tries{0}; // landings tried in the last step, all glasses
+	int m_snowmap{0}; // the map of the snow of the glasses the next step reads (0, 1)
 };
 
 } // namespace gfx

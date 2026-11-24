@@ -369,7 +369,13 @@ void vulkan14_renderer::render_headlight_shadow(std::size_t const Slot, light_ar
 	camera.update_frustum(glm::perspective(fieldofview, 1.f, nearplane, reach));
 	setup_matrices();
 	auto const colorprojection{scene_ubs.projection};
+	auto const colorinvview{scene_ubs.inv_view};
+	auto const colorcamerahi{scene_ubs.camera_hi};
+	auto const colorcameralo{scene_ubs.camera_lo};
 	scene_ubs.projection = projection;
+	// the rotation and the place of the projector, as the ones of the sun in its shadows (walk_cascade())
+	scene_ubs.inv_view = glm::inverse(glm::mat4{glm::mat3{camera.modelview()}});
+	gl::set_camera_place(scene_ubs, camera.position());
 	lamps.begin_headlight(Slot, projector, rotation, projection, Light.direction, m_framestamp);
 	begin_local_shadow_rendering();
 	// the instances culled on the gpu, each slot with a culling of its own; the occupied cab, within the reach
@@ -391,6 +397,9 @@ void vulkan14_renderer::render_headlight_shadow(std::size_t const Slot, light_ar
 		lamps.end_headlight(static_cast<std::uint32_t>(m_renderpass.draw_stats.drawcalls));
 	}
 	scene_ubs.projection = colorprojection;
+	scene_ubs.inv_view = colorinvview;
+	scene_ubs.camera_hi = colorcamerahi;
+	scene_ubs.camera_lo = colorcameralo;
 	m_renderpass = m_colorpass;
 }
 
