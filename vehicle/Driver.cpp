@@ -14,6 +14,27 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Driver.h"
+#include "mover/TCoupling.h"
+#include "mover/TCommand.h"
+#include "mover/core.h"
+
+using mover::ConversionError;
+using mover::ManualBrakePosNo;
+using mover::TCouplerType;
+using mover::TBrakeHandle;
+using mover::TBrakeSubSystem;
+using mover::TCommand;
+using mover::TLocalBrake;
+using mover::TPowerSource;
+using mover::bom_PN;
+using mover::control_t;
+using mover::dt_ET41;
+using mover::dt_ET42;
+using mover::dt_SN61;
+using mover::light;
+using mover::range_t;
+using mover::start_t;
+using enum mover::TBrakeHandle;
 
 #include "utilities/Globals.h"
 #include "utilities/translation.h"

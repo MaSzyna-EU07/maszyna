@@ -14,7 +14,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
-#include "mover/MOVER.h"
 #include "world/TrkFoll.h"
 #include "vehicle/Button.h"
 #include "vehicle/AirCoupler.h"
@@ -26,6 +25,15 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 #include <memory>
+
+#include "mover/TMoverParameters.h"
+
+using mover::TTrackParam;
+using mover::TTrackShape;
+using mover::TTractionParam;
+using mover::coupling;
+using mover::end;
+using mover::side;
 
 class script_screen; // scripting/scriptscreens.h
 enum class script_language; // scripting/scriptscreens.h

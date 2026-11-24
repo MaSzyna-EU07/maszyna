@@ -9,9 +9,14 @@
 
 #include <nlohmann/json.hpp>
 
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
+
 
 namespace test {
+
+using mover::TMoverParameters;
+using mover::TLocation;
+using mover::coupling;
 
 // reseeds the random number engines of the simulation, as before every test case. a test making several
 // vehicles in a loop reseeds before each, so each one is the same whatever comes before it

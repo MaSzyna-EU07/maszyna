@@ -1,10 +1,16 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "mover/TBrakePressure.h"
+#include "mover/core.h"
 #include "drive.h"
 
 using test::definition;
 using test::vehicle;
+using mover::TBrakeSystem;
+using mover::eimc_p_Pmax;
+using mover::end;
+using mover::light;
 
 TEST_CASE("definition: the wagon from data/wagon.json loads with its values") {
 	vehicle wagon{definition::load("wagon")};

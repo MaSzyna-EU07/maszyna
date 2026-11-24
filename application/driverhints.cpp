@@ -9,8 +9,19 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/Driver.h"
+#include "mover/TCoupling.h"
+#include "mover/core.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+
+using mover::ManualBrakePosNo;
+using mover::TCouplerType;
+using mover::TLocalBrake;
+using mover::control_t;
+using mover::light;
+using mover::operation_t;
+using mover::relay_t;
+using mover::start_t;
 
 void
 TController::hint( driver_hint const Value, hintpredicate const Predicate, float const Predicateparameter ) {

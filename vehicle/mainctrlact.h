@@ -9,7 +9,10 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
+
+using mover::TEngineType;
+using mover::TMoverParameters;
 
 // the position the controller position marker of the cab (mainctrlact:) shows
 namespace main_ctrl_act {

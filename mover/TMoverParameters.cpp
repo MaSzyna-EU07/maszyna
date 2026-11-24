@@ -8,7 +8,7 @@ http://mozilla.org/MPL/2.0/.
 */
 
 #include "stdafx.h"
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
 #include "mover/coupler_sound_input.h"
 
 #include "vehicle/DynObj.h"

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/particles.h"
+#include "mover/core.h"
 
 #include "utilities/Timer.h"
 #include "utilities/Globals.h"
@@ -17,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "vehicle/smoke.h"
 
+using mover::TEngineType;
 
 void
 smoke_source::particle_emitter::deserialize( cParser &Input ) {

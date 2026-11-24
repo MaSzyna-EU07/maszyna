@@ -10,10 +10,16 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/enginestart.h"
 
-#include "mover/MOVER.h"
+#include "mover/core.h"
+#include "mover/TMoverParameters.h"
 #include "utilities/utilities.h"
 
 namespace engine_start {
+
+using mover::TMoverParameters;
+using mover::coupling;
+using mover::end;
+using mover::range_t;
 
 namespace {
 

@@ -15,7 +15,6 @@ Copyright (C) 2007-2014 Maciej Cierniak
 #include "stdafx.h"
 #include "hamulce.h"
 #include <typeinfo>
-#include "mover/MOVER.h"
 #include "utilities/utilities.h"
 
 //---FUNKCJE OGOLNE---

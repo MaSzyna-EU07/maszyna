@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "mover/core.h"
 
 using test::definition;
 using test::vehicle;
+using mover::start_t;
 
 // the compressor waiting a while after getting its power before it starts (CompressorStartDelay,
 // MaSzyna-EU07/maszyna#67): in a diesel it starts some time after the engine, rather than with it

@@ -1,10 +1,16 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "mover/TCoupling.h"
+#include "mover/core.h"
 #include "utilities/Globals.h"
 
 using test::definition;
 using test::vehicle;
+using mover::TCouplerType;
+using mover::TEngineType;
+using mover::coupling;
+using mover::dtrain_out;
 
 namespace {
 

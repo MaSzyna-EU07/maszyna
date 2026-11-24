@@ -7,9 +7,11 @@
 #include "consist.h"
 
 #include "McZapkie/hamulce.h"
+#include "mover/TBrakePressure.h"
 
 using test::definition;
 using test::vehicle;
+using mover::TBrakeHandle;
 
 // characterisation of the driver's brake handles and the local brake handles of the real locomotives and
 // units: every position of the handle, with the main reservoir kept full, followed in golden traces

@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "application/driveruipanels.h"
 
+#include "mover/TCoupling.h"
+#include "mover/core.h"
 #include "utilities/Globals.h"
 #include "application/application.h"
 #include "utilities/translation.h"
@@ -39,6 +41,11 @@ http://mozilla.org/MPL/2.0/.
 #endif
 
 #include <format>
+
+using mover::ManualBrakePosNo;
+using mover::TCouplerType;
+using mover::TPowerSource;
+using mover::start_t;
 
 namespace {
 

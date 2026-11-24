@@ -2263,7 +2263,7 @@ void trail_switch( TTrack &Track, int const i, TDynamicObject const *o ) {
     Track.Switch(i); // jeśli się tu nie przełączy, to każdy pojazd powtórzy event rozrprucia
     if( Track.SwitchExtension->m_movablenose && o != nullptr ) {
         // the wheels can't push the nose of the frog over, the vehicle runs off the rails at it
-        o->MoverParameters->Derail( TRAILED_SWITCH );
+        o->MoverParameters->Derail( mover::TRAILED_SWITCH );
     }
 }
 

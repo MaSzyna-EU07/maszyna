@@ -1,9 +1,14 @@
 #include "stdafx.h"
 #include "consist.h"
 
+#include "mover/core.h"
+#include "mover/neighbour_data.h"
 #include "vehicle/DynObj.h"
 
 namespace test {
+
+using mover::end;
+using mover::neighbour_data;
 
 consist::consist() = default;
 consist::~consist() = default;

@@ -10,9 +10,11 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/handover.h"
 
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
 
 namespace handover {
+
+using mover::TMoverParameters;
 
 void release_ai_controls(TMoverParameters &Occupied, TMoverParameters &Controlling) {
 	// the AI's hornoff action touches the horn only while the AI drives

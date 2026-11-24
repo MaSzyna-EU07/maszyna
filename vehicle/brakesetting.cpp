@@ -10,7 +10,6 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/brakesetting.h"
 
-#include "mover/MOVER.h"
 #include "McZapkie/hamulce.h"
 #include "vehicle/Driver.h"
 

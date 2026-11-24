@@ -6,7 +6,11 @@
 #include <initializer_list>
 #include <utility>
 
+#include "mover/core.h"
+
 namespace test {
+
+using mover::TEngineType;
 
 namespace {
 

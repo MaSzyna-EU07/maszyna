@@ -3,6 +3,7 @@
 #include "consist.h"
 
 #include "vehicle/enginestart.h"
+#include "mover/core.h"
 
 // starting the engines of the vehicles in multiple from the cab (eu07/maszyna#80): the cab's own switch (main_*) works
 // all of them unless Engine:JointEngineStart=No keeps it to its own vehicle, and the switches mainb_* and mainc_* start
@@ -11,6 +12,8 @@
 
 using test::consist;
 using test::definition;
+using mover::coupling;
+using mover::range_t;
 
 namespace {
 

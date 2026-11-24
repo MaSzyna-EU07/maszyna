@@ -12,8 +12,11 @@
 #include <sstream>
 
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 
 namespace test {
+
+using mover::side;
 
 namespace channels {
 

@@ -11,7 +11,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 
-#include "mover/MOVER.h"
+#include "mover/core.h"
+
 
 // the lights the light preset selector (programmer) of the occupied cab gives one vehicle of the consist
 namespace lights_programmer {
@@ -29,12 +30,12 @@ struct consist_lights {
 // Coupled: whether another vehicle is coupled at the vehicle's end::front / end::rear; an end with a coupled
 // vehicle stays dark
 inline consist_lights vehicle_lights(std::array<int, 2> const &Cablights, bool const Cabfacinghead, int const Direction, std::array<bool, 2> const &Coupled) {
-	auto const headlights{Cablights[Cabfacinghead ? end::front : end::rear]};
-	auto const rearlights{Cablights[Cabfacinghead ? end::rear : end::front]};
+	auto const headlights{Cablights[Cabfacinghead ? mover::end::front : mover::end::rear]};
+	auto const rearlights{Cablights[Cabfacinghead ? mover::end::rear : mover::end::front]};
 	// the head lights go to the vehicle's end towards the head of the consist whichever way the cab faces,
 	// so the coupling which keeps them dark is the one at that same end (eu07/maszyna#395)
-	auto const headend{Direction > 0 ? end::front : end::rear};
-	auto const rearend{Direction > 0 ? end::rear : end::front};
+	auto const headend{Direction > 0 ? mover::end::front : mover::end::rear};
+	auto const rearend{Direction > 0 ? mover::end::rear : mover::end::front};
 	return {Coupled[headend] ? 0 : headlights, Coupled[rearend] ? 0 : rearlights};
 }
 

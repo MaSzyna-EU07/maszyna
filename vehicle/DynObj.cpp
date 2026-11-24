@@ -14,6 +14,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "vehicle/DynObj.h"
+#include "mover/TCoupling.h"
+#include "mover/TCurrentCollector.h"
+#include "mover/TBrakePressure.h"
+#include "mover/core.h"
 
 #include "vehicle/lightsprogrammer.h"
 
@@ -40,6 +44,34 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "vehicle/doorwings.h"
 #include "rendering/renderer.h"
+
+using mover::ConversionError;
+using mover::TBrakeHandle;
+using mover::TCouplerType;
+using mover::TLocalBrake;
+using mover::TPantType;
+using mover::TPowerSource;
+using mover::TPowerType;
+using mover::activation;
+using mover::control_t;
+using mover::ctrain_passenger;
+using mover::ctrain_pneumatic;
+using mover::ctrain_scndpneumatic;
+using mover::dtrain_out;
+using mover::eimc_p_Fh;
+using mover::eimc_p_Vh1;
+using mover::eimc_p_abed;
+using mover::eimc_p_eped;
+using mover::eimv_Fful;
+using mover::eimv_Fmax;
+using mover::bom_MED;
+using mover::light;
+using mover::operation_t;
+using mover::range_t;
+using mover::sound;
+using mover::start_t;
+using mover::TRotation;
+using enum mover::TBrakeHandle;
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
 #include "application/application.h"

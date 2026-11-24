@@ -5,6 +5,8 @@
 #include "drive.h"
 
 #include "McZapkie/hamulce.h"
+#include "mover/TSecuritySystem.h"
+#include "mover/core.h"
 #include "utilities/utilities.h"
 
 // characterisation of what the cab (Train.cpp) and the AI (Driver.cpp, driverhints.cpp) call on a vehicle
@@ -18,6 +20,9 @@ using test::definition;
 using test::scenario;
 using test::vehicle;
 using namespace test::channels;
+using mover::TSecuritySystem;
+using mover::coupling;
+using mover::dtrain_engine;
 
 TEST_CASE("cab: the engine rotation of up to three vehicles in multiple, on the tachometers of the SN61") {
 	consist train;

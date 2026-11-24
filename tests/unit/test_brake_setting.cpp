@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "mover/MOVER.h"
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 #include "vehicle.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/Driver.h"
@@ -12,6 +12,7 @@
 
 namespace {
 
+using mover::ManualBrakePosNo;
 using brake_setting::train_setting;
 
 constexpr int G{bdelay_G};

@@ -3,6 +3,7 @@
 #include "vehicle.h"
 #include "consist.h"
 #include "McZapkie/couplerphysics.h"
+#include "mover/core.h"
 #include "utilities/Globals.h"
 
 #include <algorithm>
@@ -13,6 +14,8 @@
 
 using test::definition;
 using test::vehicle;
+using mover::dtrain_coupling;
+using mover::dtrain_out;
 namespace cp = coupler_physics;
 
 namespace {

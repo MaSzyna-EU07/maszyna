@@ -9,7 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "scene/scene.h"
+#include "mover/core.h"
 
+using mover::dtrain_pantograph;
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "vehicle/Camera.h"

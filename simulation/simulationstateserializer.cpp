@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "simulation/simulationstateserializer.h"
 
+#include "mover/core.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/simulationtime.h"
@@ -33,6 +34,8 @@ http://mozilla.org/MPL/2.0/.
 #include "world/RoadPoint.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
+
+using mover::light;
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 #include "editor/editorTerrainStreamer.hpp"

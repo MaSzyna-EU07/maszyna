@@ -13,13 +13,24 @@ http://mozilla.org/MPL/2.0/.
 #include <string_view>
 #include "utilities/Classes.h"
 #include "utilities/utilities.h"
-#include "mover/MOVER.h"
 #include "audio/sound.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
+#include "mover/TBrakePressure.h"
+#include "mover/TLocation.h"
+#include "mover/neighbour_data.h"
+
+using mover::TBrakeSystem;
+using mover::TEngineType;
+using mover::TLocation;
+using mover::dt_DMU;
+using mover::dt_EZT;
+using mover::door_closure_t;
+using mover::end;
+using mover::neighbour_data;
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;

@@ -10,8 +10,17 @@
 #include <stdexcept>
 
 #include "utilities/Globals.h"
+#include "mover/core.h"
+#include "mover/neighbour_data.h"
 
 namespace test {
+
+using mover::TEngineType;
+using mover::TLocalBrake;
+using mover::TPowerSource;
+using mover::TRotation;
+using mover::neighbour_data;
+using enum mover::TEngineType;
 
 namespace {
 

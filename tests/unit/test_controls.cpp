@@ -4,6 +4,7 @@
 #include "drive.h"
 
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 #include "utilities/utilities.h"
 
 // characterisation of the controls a driver and a crew use besides driving and braking: doors, direction and
@@ -13,6 +14,10 @@
 
 using test::scenario;
 using namespace test::channels;
+using mover::coupling;
+using mover::dtrain_out;
+using mover::range_t;
+using mover::side;
 
 namespace {
 

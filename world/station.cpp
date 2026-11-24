@@ -9,7 +9,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/station.h"
+#include "mover/core.h"
 
+using mover::dtrain_out;
 #include "utilities/utilities.h"
 #include "vehicle/DynObj.h"
 #include "world/mtable.h"

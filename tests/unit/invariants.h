@@ -5,9 +5,11 @@
 #include <string_view>
 #include <vector>
 
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
 
 namespace test {
+
+using mover::TMoverParameters;
 
 // what the rules over time need of the step before
 struct snapshot {

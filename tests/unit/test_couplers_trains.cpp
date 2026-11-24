@@ -3,6 +3,7 @@
 #include "consist.h"
 #include "scenario.h"
 
+#include "mover/core.h"
 #include "utilities/utilities.h"
 
 // characterisation of the couplers between vehicles: coupling and uncoupling by hand (Attach, DettachStatus,
@@ -13,6 +14,11 @@ using test::consist;
 using test::definition;
 using test::scenario;
 using namespace test::channels;
+using mover::coupling;
+using mover::dtrain_coupling;
+using mover::dtrain_out;
+using mover::end;
+using mover::sound;
 
 TEST_CASE("couplers: coupled by hand, touching or apart, of the same kind or not") {
 	consist train;

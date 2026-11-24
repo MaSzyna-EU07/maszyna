@@ -12,6 +12,7 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include "vehicle/DynObj.h"
 #include "vehicle/Driver.h"
+#include "mover/core.h"
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"
@@ -23,6 +24,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/dictionary.h"
 
 #undef snprintf // pyint.h->python
+
+using mover::end;
 
 // typedef enum {st_Off, st_Starting, st_On, st_ShuttingDown} T4State;
 

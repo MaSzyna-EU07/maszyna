@@ -1,9 +1,13 @@
 #include "stdafx.h"
 #include "doctest.h"
 #include "vehicle.h"
+#include "mover/core.h"
 
 using test::definition;
 using test::vehicle;
+using mover::dt_ET22;
+using mover::dt_EZT;
+using mover::start_t;
 
 // the Cntrl. section of the vehicle definition, as read by TMoverParameters::LoadFIZ_Cntrl()
 

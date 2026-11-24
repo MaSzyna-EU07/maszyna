@@ -5,8 +5,18 @@
 #include "doctest.h"
 
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 
 namespace test {
+
+using mover::ManualBrakePosNo;
+using mover::TEngineType;
+using mover::TPowerSource;
+using mover::dt_EZT;
+using mover::end;
+using mover::operation_t;
+using mover::relay_t;
+using mover::start_t;
 
 void mark(trace *Trace, std::string const &Event) {
 	if (Trace != nullptr) {

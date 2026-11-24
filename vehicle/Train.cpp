@@ -20,6 +20,8 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/odometer.h"
 #include "vehicle/mainctrlact.h"
 
+#include "mover/TBrakePressure.h"
+#include "mover/core.h"
 #include "utilities/Globals.h"
 #include "simulation/simulation.h"
 #include "simulation/blackboxrecorder.h"
@@ -41,6 +43,34 @@ http://mozilla.org/MPL/2.0/.
 #include <cmath>
 #include <algorithm>
 #include <format>
+
+using mover::TBrakeHandle;
+using mover::TBrakeSubSystem;
+using mover::TLocalBrake;
+using mover::TPowerSource;
+using mover::activation;
+using mover::control_t;
+using mover::dt_ET41;
+using mover::dt_ET42;
+using mover::dt_ET40;
+using mover::dt_EP05;
+using mover::dt_ET22;
+using mover::eimv_Fful;
+using mover::eimv_Fmax;
+using mover::eimv_If;
+using mover::eimv_U;
+using mover::eimc_p_Pmax;
+using mover::front;
+using mover::light;
+using mover::operation_t;
+using mover::rear;
+using mover::range_t;
+using mover::relay_t;
+using mover::start_t;
+using mover::control;
+using enum mover::TBrakeHandle;
+using enum mover::operation_t;
+
 /*
 namespace input {
 

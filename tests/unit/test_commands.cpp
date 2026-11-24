@@ -9,6 +9,7 @@
 #include <functional>
 
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 
 // characterisation of the commands vehicles pass each other along the couplers (RunCommand): what each of them
 // does to every real vehicle, recorded in golden traces (data/golden/commands/), how they travel through a train of
@@ -16,6 +17,12 @@
 
 using test::definition;
 using test::vehicle;
+using mover::TLocation;
+using mover::coupling;
+using mover::end;
+using mover::operation_t;
+using mover::range_t;
+using mover::side;
 
 namespace {
 

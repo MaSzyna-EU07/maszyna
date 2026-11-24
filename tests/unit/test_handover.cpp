@@ -2,10 +2,13 @@
 #include "doctest.h"
 #include "vehicle.h"
 
+#include "mover/core.h"
 #include "vehicle/handover.h"
 
 using test::definition;
 using test::vehicle;
+using mover::end;
+using mover::light;
 
 // what the human driver gets when taking a vehicle over from the AI (Q key). the AI operates some controls
 // directly and only the AI ever released them, so the player inherited e.g. a horn blowing forever.

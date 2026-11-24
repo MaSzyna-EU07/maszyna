@@ -15,7 +15,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "rendering/lightarray.h"
+#include "mover/core.h"
 #include "vehicle/DynObj.h"
+
+using mover::light;
 
 void
 light_array::insert( TDynamicObject const *Owner ) {

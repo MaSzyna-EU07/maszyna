@@ -5,12 +5,14 @@
 #include "real_vehicles.h"
 
 #include "McZapkie/hamulce.h"
+#include "mover/core.h"
 
 #include <array>
 #include <map>
 
 using test::definition;
 using test::vehicle;
+using mover::ManualBrakePosNo;
 
 // characterisation of the brakes of every real vehicle: the brake pipe driven through a whole cycle, as the
 // locomotive of a train would drive it, and the distributor valve, the cylinders and the reservoirs followed

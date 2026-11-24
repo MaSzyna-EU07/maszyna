@@ -2,9 +2,14 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "consist.h"
+#include "mover/TBrakePressure.h"
+
+#include "mover/core.h"
 
 using test::definition;
 using test::vehicle;
+using mover::TBrakeValve;
+using mover::coupling;
 
 // the brake pipe of a lone wagon is held at a pressure the way a coupled locomotive would hold it.
 // pressures are in bar, the brake pipe runs at 5.0, a 1.5 bar reduction is a full service application.

@@ -3,9 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "mover/MOVER.h"
+#include "mover/TMoverParameters.h"
 
 namespace test {
+
+using mover::TMoverParameters;
 
 // the key figures of a vehicle's run, for each part of it between two events of the test: the speeds, the
 // distance, the time to stop, the brake pipe's lowest pressure and the time it took to get back, the brake
