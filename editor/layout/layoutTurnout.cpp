@@ -169,6 +169,13 @@ double bending_of(double const Curvature, int const Hand)
 solved_line lay_diverging(turnout_frame const &Frame, turnout_type const &Type, int const Hand)
 {
 	solved_line result;
+	// the main track not laid: no place to lay the diverging one from, which would otherwise start at the origin and take its end
+	// node there
+	if (false == Frame.valid)
+	{
+		result.errors.push_back(std::format("{}: the main track isn't laid, so the diverging track has nowhere to start", Type.name));
+		return result;
+	}
 	auto const curvature{Frame.curvature};
 	auto const bending{bending_of(curvature, Hand)};
 	auto const hand{static_cast<double>(Hand)};

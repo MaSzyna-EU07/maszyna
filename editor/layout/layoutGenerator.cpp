@@ -550,6 +550,11 @@ generated_turnout generate(network const &Network, turnout_id const Turnout, gen
 				std::swap(piece.from, piece.to);
 			}
 		}
+		if (pieces.empty())
+		{
+			result.errors.push_back(std::format("turnout {}: its {} track gave no pieces", number(Turnout), i == 0 ? "main" : "diverging"));
+			return result;
+		}
 		result.pieces[i] = std::move(pieces);
 		result.paths[i] = whole_path(result.pieces[i]);
 	}
