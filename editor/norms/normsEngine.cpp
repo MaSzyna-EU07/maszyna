@@ -28,6 +28,7 @@ namespace
 
 double constexpr kC{11.8};
 double constexpr kSame{1e-6}; // m: points closer along the line are one
+int constexpr kBlossPieces{8}; // a Bloss transition seen as this many pieces, as the cant ramps of the same shape are
 double constexpr kCurve{1.0 / 50000.0}; // 1/m: a curve, not a straight
 double constexpr kJumpCurvature{1e-6}; // 1/m
 double constexpr kStep{0.5}; // mm: a smaller step of the cant isn't one
@@ -86,7 +87,8 @@ double curvature_at(element const &Element, double const Chainage)
 {
 	if (Element.length <= kSame)
 		return Element.curvature_end;
-	return std::lerp(Element.curvature_start, Element.curvature_end, std::clamp((Chainage - Element.start) / Element.length, 0.0, 1.0));
+	auto const t{std::clamp((Chainage - Element.start) / Element.length, 0.0, 1.0)};
+	return std::lerp(Element.curvature_start, Element.curvature_end, Element.bloss ? t * t * (3.0 - 2.0 * t) : t);
 }
 
 // a point inside an element where the curvature and the cant are known from inside it
@@ -192,6 +194,16 @@ class checker
 				continue;
 			result.push_back({point.chainage, curvature_at(Element, point.chainage), point.cant});
 		}
+		// the curvature of a Bloss curve doesn't change evenly: eight pieces of it, for its steeper middle to be seen
+		if (Element.bloss)
+		{
+			for (int i = 1; i < kBlossPieces; ++i)
+			{
+				auto const chainage{Element.start + Element.length * i / kBlossPieces};
+				result.push_back({chainage, curvature_at(Element, chainage), cant_at(m_line.cant, chainage, true)});
+			}
+			std::ranges::sort(result, {}, &station::chainage);
+		}
 		result.push_back({end, Element.curvature_end, cant_at(m_line.cant, end, false)});
 		return result;
 	}
@@ -291,8 +303,9 @@ class checker
 		if (element.kind == element_kind::transition)
 		{
 			check(parameter::transition_length, element.length, Index, Here, element.start, element.length);
-			// the arc moved in by a cubic parabola or a clothoid: L^2 / 24 times the change of the curvature (ST-T1-A6 tab. 9.11)
-			auto const shift{element.length * element.length * std::abs(element.curvature_end - element.curvature_start) / 24.0};
+			// the arc moved in by a cubic parabola or a clothoid: L^2 / 24 times the change of the curvature (ST-T1-A6 tab. 9.11), by a
+			// Bloss curve L^2 / 40
+			auto const shift{element.length * element.length * std::abs(element.curvature_end - element.curvature_start) / (element.bloss ? 40.0 : 24.0)};
 			check(parameter::transition_shift, shift, Index, Here, element.start, element.length);
 			return;
 		}
