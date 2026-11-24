@@ -33,6 +33,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the switches laid into the curves, and the catalogue of the switches the turnouts of the domain are laid from
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchCurve.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorSwitchDesign.cpp"
+	# and the crossing panels CBP made of their drawings (test_crossing_panels.cpp)
+	"${CMAKE_SOURCE_DIR}/world/CrossingPanels.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
