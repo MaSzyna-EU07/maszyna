@@ -154,15 +154,15 @@ void editor_mode::setup_store()
 			scene::Layers.mark(scene::layer_handle{1}, "//$u", {});
 		m_setup_marked = false;
 	};
-	auto const kept_in_scenery = [this, &line]() {
-		scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", line});
-		m_setup_marked = true;
-	};
 	if (model_setup())
 	{
-		// the project of the model is written after the scenery, and may fail to be: the scenery keeps the line as well, the project's
-		// one read first. Taken out of it, the assumptions were gone with a project not saved
-		kept_in_scenery();
+		// the project of the model is written after the scenery, and may fail to be: model_saved() puts them back into the scenery then,
+		// and they stay there till the project is saved
+		m_setup_moving = true;
+		if (m_setup_unsaved)
+			setup_keep_in_scenery();
+		else
+			moved_out();
 		return;
 	}
 	std::error_code error;
@@ -182,7 +182,29 @@ void editor_mode::setup_store()
 				WriteLog("Editor: the assumptions of the project not written into its file: " + why, logtype::generic);
 		}
 	}
-	kept_in_scenery();
+	setup_keep_in_scenery();
+}
+
+void editor_mode::setup_keep_in_scenery()
+{
+	if (false == m_setup.has_value())
+		return;
+	scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", project_setup::record(*m_setup)});
+	m_setup_marked = true;
+}
+
+void editor_mode::setup_project_saved(bool const Saved)
+{
+	if (false == m_setup_moving)
+		return;
+	m_setup_moving = false;
+	m_setup_unsaved = false == Saved;
+	// not saved: the assumptions go back into the scenery, written with its next save, rather than be in neither of them; saved while the
+	// scenery holds them still: taken out of it with the next save
+	if (false == Saved)
+		setup_keep_in_scenery();
+	if (false == Saved || m_setup_marked)
+		m_setup_changed = true;
 }
 
 bool editor_mode::render_setup_card()
