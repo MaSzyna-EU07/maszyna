@@ -415,10 +415,12 @@ TEST_CASE("derail motion: the vehicle leaves the track with physics.derailment n
 		}
 		auto const deceleration{(start - eu07vehicle->V) / 0.2};
 		CHECK(deceleration == doctest::Approx(dm::guided_friction * dr::gravity * 80.0 / 96.0).epsilon(0.1));
-		// back on the rails, not off the track any more
+		// back on the rails, not off the track any more, and what derailed it forgotten
 		eu07vehicle->repair_damage();
 		CHECK_FALSE(eu07vehicle->OffTrack.active());
 		CHECK_FALSE(eu07vehicle->leaves_track());
+		CHECK(eu07vehicle->DerailCause == dm::cause::off_rails);
+		CHECK(eu07vehicle->DerailAcceleration == 0.0);
 	}
 	SUBCASE("new: off the end of the track it slides on its wheels, straight on") {
 		model_setting const physical{global_settings::derailment_model::physical};
@@ -439,6 +441,10 @@ TEST_CASE("derail motion: the vehicle leaves the track with physics.derailment n
 		CHECK(pulled->DerailCause == dm::cause::pulled_off);
 		CHECK(pulled->DerailSide == -1);
 		CHECK(pulled->leaves_track());
+		pulled->repair_damage();
+		CHECK(pulled->DerailCause == dm::cause::off_rails);
+		CHECK(pulled->DerailAcceleration == 0.0);
+		CHECK(pulled->DerailSide == 0);
 	}
 }
 

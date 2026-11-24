@@ -2111,8 +2111,10 @@ void TMoverParameters::rerail()
 {
 	ClearFlag(DamageFlag, dtrain_out);
 	Derailed = derailment::outcome::none;
-	// and back on the track
+	// and back on the track; what derailed it before has no say in how it leaves the track the next time
 	OffTrack.reset();
+	DerailCause = derail_motion::cause::off_rails;
+	DerailAcceleration = 0.0;
 	DerailSide = 0;
 	derailment_monitor.reset();
 	derailment_distance = 0.0;
