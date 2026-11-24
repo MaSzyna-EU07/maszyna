@@ -1816,11 +1816,16 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
         if (vp.main && !vp.custom_backbuffer) // TODO: update window sizes also for extra viewports
             target_size = Global.fb_size;
 
-		// the motion is blurred only when something in the view moves: the vehicle of the camera, or a vehicle drawn in the last
-		// frame (a vehicle setting off is blurred from its second frame, when its velocity is still far below a pixel). the pass
-		// itself runs in every frame: the windscreens (mat_rain_windscreen, mat_bugs_windscreen) ask it in the velocity target for
-		// the picture in their drops and the haze, also standing still, with the motion blur off and with any anti-aliasing (the
-		// motion is then blurred by 0)
+		// the camera with no vehicle of its own (freefly, the editor) blurs the world with its own movement, as a vehicle does with
+		// its (rendering/common/freecameramotion.h)
+		if (vp.main && (Global.pCamera.m_owner != nullptr))
+			m_freecamera.reset();
+		auto const freecameramovement{(vp.main && (Global.pCamera.m_owner == nullptr)) ? m_freecamera.next_frame(Global.pCamera.Pos) : glm::vec3{0.f}};
+		// the motion is blurred only when something in the view moves: the vehicle of the camera, the camera with no vehicle of its
+		// own, or a vehicle drawn in the last frame (a vehicle setting off is blurred from its second frame, when its velocity is
+		// still far below a pixel). the pass itself runs in every frame: the windscreens (mat_rain_windscreen, mat_bugs_windscreen)
+		// ask it in the velocity target for the picture in their drops and the haze, also standing still, with the motion blur off
+		// and with any anti-aliasing (the motion is then blurred by 0)
 		auto const moving{
 		    Global.gfx_postfx_motionblur_enabled
 		    && (m_vehiclesmoved
