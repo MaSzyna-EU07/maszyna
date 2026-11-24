@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
+#include "vehicle/bones.h"
 #include "scripting/scriptscreenrules.h"
 
 #include <vector>
@@ -338,6 +339,25 @@ private:
     std::vector<slottedlever_data> m_slottedlevers;
     static double slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle );
     void update_slottedlevers();
+    // bones of the model (bonepoint:, bone: of the .mmd, see vehicle/bones.h): the rods of a steam locomotive, the
+    // couplers following the next vehicle
+    struct bone_wheel {
+        int animation { -1 }; // of the wheel a crank point goes round with
+        bones::wheel_turn turn;
+    };
+    bones::rig m_rig;
+    std::vector<bones::binding> m_bonebindings;
+    std::vector<bone_wheel> m_bonewheels;
+    bool m_bonesbound { false };
+    std::vector<bones::chain_state> m_chainstates; // of the chains of the rig, simulated in the world frame
+    void load_bonepoint( cParser &Parser );
+    void load_bonechain( cParser &Parser );
+    void simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
+    void load_bone( cParser &Parser );
+    void bind_bones();
+    bones::drive bone_drive( bool const Future ) const;
+    std::optional<glm::dvec3> coupler_shift( bones::point const &Point ) const;
+    void update_bones();
     // Winger 160204 - pantografy
     double pantspeedfactor;
     // animacje typu przesuw

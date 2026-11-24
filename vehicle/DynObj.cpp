@@ -617,6 +617,203 @@ void TDynamicObject::update_slottedlevers() {
     }
 }
 
+void TDynamicObject::load_bonepoint( cParser &Parser ) {
+
+    Parser.getTokens( 2, false );
+    std::string name;
+    std::string kind;
+    Parser >> name >> kind;
+    std::vector<std::string> words { name, kind };
+    for( auto word { 0 }; word < bones::point_words( kind ); ++word ) {
+        Parser.getTokens( 1, false );
+        std::string value;
+        Parser >> value;
+        words.emplace_back( value );
+    }
+    if( auto const error { bones::add_point( m_rig, words ) }; false == error.empty() ) {
+        ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bonepoint " + name + ": " + error, logtype::model );
+    }
+}
+
+void TDynamicObject::load_bone( cParser &Parser ) {
+
+    Parser.getTokens( 3, false );
+    std::vector<std::string> words( 3 );
+    Parser >> words[ 0 ] >> words[ 1 ] >> words[ 2 ];
+    if( auto const error { bones::add_bone( m_rig, words ) }; false == error.empty() ) {
+        ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bone: " + error, logtype::model );
+    }
+}
+
+void TDynamicObject::load_bonechain( cParser &Parser ) {
+
+    Parser.getTokens( 4, false );
+    std::vector<std::string> words( 4 );
+    Parser >> words[ 0 ] >> words[ 1 ] >> words[ 2 ] >> words[ 3 ];
+    auto const nodes { std::clamp( std::atoi( words[ 3 ].c_str() ), 0, 32 ) };
+    for( auto word { 0 }; word < 3 * nodes; ++word ) {
+        Parser.getTokens( 1, false );
+        std::string value;
+        Parser >> value;
+        words.emplace_back( value );
+    }
+    if( auto const error { bones::add_chain( m_rig, words ) }; false == error.empty() ) {
+        ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bonechain: " + error, logtype::model );
+    }
+}
+
+namespace {
+
+// where the submodel is and how it's turned, in the frame of the model file: the loaded model has its own
+// (float4x4::InitialRotate()), into which the matrices of the submodels take it
+bones::binding model_file_placement( TSubModel *Submodel ) {
+
+    float4x4 matrix;
+    Submodel->ParentMatrix( &matrix );
+    auto const placement { glm::dmat4( glm::make_mat4( matrix.readArray() ) ) };
+    auto const frame { bones::model_file_frame() };
+    return { Submodel, frame * glm::dvec3( placement[ 3 ] ), frame * glm::dmat3( placement ) };
+}
+
+} // namespace
+
+void TDynamicObject::bind_bones() {
+
+    m_bonesbound = true;
+    m_bonewheels.assign( m_rig.points.size(), bone_wheel {} );
+    for( std::size_t index { 0 }; index < m_rig.points.size(); ++index ) {
+        auto const &point { m_rig.points[ index ] };
+        if( point.kind != bones::point_kind::crank ) { continue; }
+        auto *wheel { GetSubmodelFromName( mdModel, point.wheel ) };
+        auto const animation { std::ranges::find( pAnimations, wheel, &TAnim::smAnimated ) };
+        if( wheel == nullptr || animation == pAnimations.end() || animation - pAnimations.begin() >= iAnimType[ ANIM_WHEELS ] ) {
+            ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bonepoint " + point.name + ": no turning wheel " + point.wheel, logtype::model );
+            continue;
+        }
+        auto const placement { model_file_placement( wheel ) };
+        // the wheel animation turns it about its own X axis (UpdateAxle())
+        m_bonewheels[ index ] = { static_cast<int>( animation - pAnimations.begin() ), { placement.origin, placement.rotation * glm::dvec3( 1.0, 0.0, 0.0 ), 0.0 } };
+    }
+    m_bonebindings.clear();
+    for( auto const &bone : m_rig.bones ) {
+        auto *submodel { GetSubmodelFromName( mdModel, bone.submodel ) };
+        if( submodel == nullptr ) {
+            ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - missed submodel " + bone.submodel + " of a bone", logtype::model );
+            m_bonebindings.emplace_back();
+            continue;
+        }
+        submodel->WillBeAnimated();
+        m_bonebindings.emplace_back( model_file_placement( submodel ) );
+    }
+}
+
+std::optional<glm::dvec3> TDynamicObject::coupler_shift( bones::point const &Point ) const {
+
+    auto const &neighbour { MoverParameters->Neighbours[ Point.end ] };
+    if( neighbour.vehicle == nullptr
+     || false == TestFlag( MoverParameters->Couplers[ Point.end ].CouplingFlag, coupling::coupler ) ) {
+        return std::nullopt;
+    }
+    // the point is where the next vehicle's hook stands with the two straight in line: as far past our end as it is
+    // inside theirs. find it in their frame, the vehicles facing each other end to end (front of the model file +y),
+    // and bring it into ours
+    auto const frame { bones::model_file_frame() };
+    auto const ours { Point.end == end::front ? 1.0 : -1.0 };
+    auto const theirs { neighbour.vehicle_end == end::front ? 1.0 : -1.0 };
+    auto const beyond { Point.rest - glm::dvec3 { 0.0, ours * 0.5 * MoverParameters->Dim.L, 0.0 } };
+    auto const inside { glm::dvec3 { -ours * theirs * beyond.x, -ours * theirs * beyond.y, beyond.z } };
+    auto const there { glm::dvec3 { 0.0, theirs * 0.5 * neighbour.vehicle->MoverParameters->Dim.L, 0.0 } + inside };
+    auto const world { neighbour.vehicle->GetWorldPosition( frame * there ) };
+    auto const here { frame * glm::dvec3( glm::inverse( mMatrix ) * glm::dvec4( world - vPosition, 0.0 ) ) };
+    return here - Point.rest;
+}
+
+bones::drive TDynamicObject::bone_drive( bool const Future ) const {
+
+    bones::drive drive;
+    drive.wheels.resize( m_rig.points.size() );
+    drive.couplers.resize( m_rig.points.size() );
+    for( std::size_t index { 0 }; index < m_rig.points.size(); ++index ) {
+        auto const &point { m_rig.points[ index ] };
+        if( point.kind == bones::point_kind::coupler ) {
+            drive.couplers[ index ] = coupler_shift( point );
+        }
+        if( point.kind != bones::point_kind::crank || m_bonewheels[ index ].animation < 0 ) { continue; }
+        auto const wheelid { pAnimations[ m_bonewheels[ index ].animation ].dWheelAngle };
+        drive.wheels[ index ] = m_bonewheels[ index ].turn;
+        drive.wheels[ index ].angle = dWheelAngle[ wheelid ] + ( Future ? m_future_wheels_angle[ wheelid ] : 0.0 );
+    }
+    return drive;
+}
+
+namespace {
+
+bones::animation bone_animation( bones::rig const &Rig, bones::bone const &Bone, bones::binding const &Binding, std::vector<glm::dvec3> const &Positions ) {
+
+    std::optional<glm::dvec3> aimrest;
+    std::optional<glm::dvec3> aimnow;
+    if( Bone.aim >= 0 ) {
+        aimrest = Rig.points[ Bone.aim ].rest;
+        aimnow = Positions[ Bone.aim ];
+    }
+    auto const motion { bones::bone_motion( Rig.points[ Bone.anchor ].rest, Positions[ Bone.anchor ], aimrest, aimnow ) };
+    return bones::localise( motion, Binding.origin, Binding.rotation );
+}
+
+} // namespace
+
+// the chains swing in the world, their ends where the points of the vehicle are; their nodes are brought back to the
+// frame of the model file for the bones, the same for the pose a frame ahead
+void TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
+
+    auto const frame { bones::model_file_frame() };
+    auto const inverse { glm::inverse( mMatrix ) };
+    auto const toworld = [ this, &frame ]( glm::dvec3 const &Point ) { return GetWorldPosition( frame * Point ); };
+    auto const tomodel = [ this, &frame, &inverse ]( glm::dvec3 const &Point ) { return frame * glm::dvec3( inverse * glm::dvec4( Point - vPosition, 0.0 ) ); };
+    // a long frame, or the vehicle left alone while far, isn't taken in one: the chain would jump
+    auto const deltatime { std::min( Timer::GetDeltaRenderTime(), 0.1 ) };
+    m_chainstates.resize( m_rig.chains.size() );
+    for( std::size_t index { 0 }; index < m_rig.chains.size(); ++index ) {
+        auto const &chain { m_rig.chains[ index ] };
+        auto &state { m_chainstates[ index ] };
+        auto const start { toworld( Now[ chain.start ] ) };
+        auto const end { toworld( Now[ chain.end ] ) };
+        if( false == state.started ) {
+            std::vector<glm::dvec3> nodes;
+            for( auto const node : chain.nodes ) {
+                nodes.emplace_back( toworld( m_rig.points[ node ].rest ) );
+            }
+            bones::start_chain( state, nodes, start, end );
+        }
+        bones::simulate( chain.lengths, state, start, end, deltatime );
+        for( std::size_t node { 0 }; node < chain.nodes.size(); ++node ) {
+            Now[ chain.nodes[ node ] ] = tomodel( state.now[ node ] );
+            Next[ chain.nodes[ node ] ] = Now[ chain.nodes[ node ] ];
+        }
+    }
+}
+
+void TDynamicObject::update_bones() {
+
+    if( m_rig.empty() || mdModel == nullptr ) { return; }
+    if( false == m_bonesbound ) {
+        bind_bones();
+    }
+    auto now { bones::pose( m_rig, bone_drive( false ) ) };
+    auto next { bones::pose( m_rig, bone_drive( true ) ) };
+    simulate_chains( now, next );
+    for( std::size_t index { 0 }; index < m_bonebindings.size(); ++index ) {
+        auto const &binding { m_bonebindings[ index ] };
+        if( binding.submodel == nullptr ) { continue; }
+        auto const &bone { m_rig.bones[ index ] };
+        auto const current { bone_animation( m_rig, bone, binding, now ) };
+        auto const future { bone_animation( m_rig, bone, binding, next ) };
+        binding.submodel->SetTranslate( current.translation );
+        binding.submodel->SetRotateXYZ( current.angles );
+        binding.submodel->future_transform = glm::inverse( current.matrix ) * future.matrix;
+    }
+}
+
 namespace {
 
 // the position of the door the animated wing belongs to: its shift or angle from closed
@@ -915,6 +1112,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             }
         }
         update_slottedlevers();
+        update_bones();
 
         if( mdModel != nullptr
          && ObjSqrDist < 50 * 50 ) {
@@ -5884,6 +6082,18 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
                     else {
                         ErrorLog( "Bad model: " + asFileName + " - missed submodel " + asAnimName, logtype::model );
                     }
+                }
+
+                else if( token == "bonepoint:" ) {
+                    load_bonepoint( parser );
+                }
+
+                else if( token == "bone:" ) {
+                    load_bone( parser );
+                }
+
+                else if( token == "bonechain:" ) {
+                    load_bonechain( parser );
                 }
 
 				else if( token == "animdoorprefix:" ) {
