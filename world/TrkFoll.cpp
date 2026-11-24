@@ -61,12 +61,15 @@ int TTrackFollower::LeavingPath() const
 
 int TTrackFollower::JoinedEnd(int const End) const
 {
-    if( auto const path { LeavingPath() }; path >= 0 ) {
-        // the switch was thrown under the axle: the end of its own way is joined to the next track
-        auto const &extension { *pCurrentTrack->SwitchExtension };
-        return End ? extension.iNextDirection[ path ] : extension.iPrevDirection[ path ];
+    // the axle is on a track here (SetCurrentTrack() leaves it)
+    auto const &track { *pCurrentTrack };
+    if( track.eType == tt_Switch && track.SwitchExtension != nullptr ) {
+        if( auto const path { switch_fork::leaving_path( iPath, track.SwitchExtension->CurrentIndex ) }; path >= 0 ) {
+            // the switch was thrown under the axle: the end of its own way is joined to the next track
+            return End ? track.SwitchExtension->iNextDirection[ path ] : track.SwitchExtension->iPrevDirection[ path ];
+        }
     }
-    return End ? pCurrentTrack->iNextDirection : pCurrentTrack->iPrevDirection;
+    return End ? track.iNextDirection : track.iPrevDirection;
 }
 
 TTrack * TTrackFollower::SetCurrentTrack(TTrack *pTrack, int end)

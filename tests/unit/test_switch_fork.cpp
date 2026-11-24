@@ -84,7 +84,11 @@ TEST_CASE("switch fork: the way an axle leaves a switch by") {
 }
 
 TEST_CASE("switch fork: the ways an axle remembers") {
-	int a{}, b{}, c{}, d{}, e{};
+	int a{};
+	int b{};
+	int c{};
+	int d{};
+	int e{};
 	sf::path_memory memory;
 	CHECK(memory.path_of(&a) == std::nullopt);
 	memory.record(&a, 0);
@@ -206,7 +210,8 @@ TEST_CASE("switch fork: the coach forked on the switch of td.scn") {
 	auto constexpr tightest{80.0};
 	auto previous{0.0};
 	std::optional<double> derails;
-	for (auto rear = 0.5; rear <= 34.0; rear += 0.5) {
+	for (int step = 1; step <= 68; ++step) {
+		auto const rear{0.5 * step};
 		auto const front{straight_way(rear + pivots)};
 		auto const forked{turns(front, pivots, [](double S) { return curved_way(S); }, rear)};
 		auto const state{sf::bogies(forked.front, forked.rear, pivots, tightest)};
@@ -226,10 +231,12 @@ TEST_CASE("switch fork: the coach forked on the switch of td.scn") {
 	REQUIRE(derails.has_value());
 	// without Rmin in its definition (150 m), sooner
 	std::optional<double> plain;
-	for (auto rear = 0.25; rear <= 34.0 && false == plain.has_value(); rear += 0.25) {
+	for (int step = 1; step <= 136; ++step) {
+		auto const rear{0.25 * step};
 		auto const forked{turns(straight_way(rear + pivots), pivots, [](double S) { return curved_way(S); }, rear)};
 		if (sf::bogies(forked.front, forked.rear, pivots).past()) {
 			plain = rear;
+			break;
 		}
 	}
 	REQUIRE(plain.has_value());
@@ -237,10 +244,12 @@ TEST_CASE("switch fork: the coach forked on the switch of td.scn") {
 	// the EU07, its pivots closer, sooner
 	auto constexpr eu07{8.55};
 	std::optional<double> eu07derails;
-	for (auto rear = 0.25; rear <= 34.0 && false == eu07derails.has_value(); rear += 0.25) {
+	for (int step = 1; step <= 136; ++step) {
+		auto const rear{0.25 * step};
 		auto const forked{turns(straight_way(rear + eu07), eu07, [](double S) { return curved_way(S); }, rear)};
 		if (sf::bogies(forked.front, forked.rear, eu07, tightest).past()) {
 			eu07derails = rear;
+			break;
 		}
 	}
 	REQUIRE(eu07derails.has_value());
@@ -254,11 +263,13 @@ TEST_CASE("switch fork: coupled vehicles forked on the switch of td.scn") {
 	auto constexpr overhang{3.65};
 	auto constexpr pivots{19.5};
 	std::optional<double> derails;
-	for (auto front = 0.5; front <= 34.0 && false == derails.has_value(); front += 0.5) {
+	for (int step = 1; step <= 68; ++step) {
+		auto const front{0.5 * step};
 		auto const pivot{curved_way(front)};
 		// the body of the coach: its rear pivot on the curve too, or before the switch on the straight line before it
 		auto const rearway = [](double S) { return S >= 0.0 ? curved_way(S) : place{0.0, S, 0.0}; };
-		auto low{front - pivots - 1.0}, high{front};
+		auto low{front - pivots - 1.0};
+		auto high{front};
 		for (int i = 0; i < 80; ++i) {
 			auto const middle{0.5 * (low + high)};
 			auto const rear{rearway(middle)};
@@ -274,6 +285,7 @@ TEST_CASE("switch fork: coupled vehicles forked on the switch of td.scn") {
 		if (sf::coupling(offset).past()) {
 			derails = front;
 			MESSAGE("the coupled coach derails with its front bogie " << front << " m into the switch, its end " << offset << " m off the other end");
+			break;
 		}
 	}
 	REQUIRE(derails.has_value());
