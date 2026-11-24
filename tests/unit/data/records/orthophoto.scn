@@ -1,0 +1,3 @@
+// //$o: the orthophoto on, with where the scenery lies, and off, where it lies nowhere, as editor_records::orthophoto_line() writes it
+//$o on 1 origin 512345.67 645678.90
+//$o on 0

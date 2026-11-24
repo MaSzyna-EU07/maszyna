@@ -1,0 +1,23 @@
+# First steps: while the pointer is over a panel, the line the lay tool shows stays as it was: no leg follows the pointer under
+# the panel to where it points through it. Back over the view, the line follows the pointer again. The points go on the empty
+# ground between the turntable tt1 and the curves (x 220..270), the camera straight above them
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+camera 245 200 150 245 0 150.5
+wait 3
+layp 225 120 235 165
+mouseat 255 0 175
+wait 3
+expect laycursor 255 175 0.5
+# over the tool options at the left
+mouse 40 200
+wait 3
+expect laycursor 255 175 0.5
+# back over the view
+mouseat 250 0 135
+wait 3
+expect laycursor 250 135 0.5
+quit

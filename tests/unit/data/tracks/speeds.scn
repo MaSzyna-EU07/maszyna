@@ -1,0 +1,13 @@
+// the speeds of tracks, switches and turntables: a limit, a limit of the diverging track (below 0), a limit below 1 km/h and none (0)
+// read and written back each comes out the same
+node -1 0 v40 track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 velocity 40 endtrack
+node -1 0 vminus40 track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 velocity -40 endtrack
+node -1 0 vhalf track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 velocity 0.5 endtrack
+node -1 0 vzero track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 velocity 0 endtrack
+node -1 0 vnone track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 endtrack
+node -1 0 sw40 track switch 33.23 1.435 0.25 10 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 velocity 40 endtrack
+node -1 0 swminus40 track switch 33.23 1.435 0.25 10 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 velocity -40 endtrack
+node -1 0 swhalf track switch 33.23 1.435 0.25 10 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 velocity 0.5 endtrack
+node -1 0 swzero track switch 33.23 1.435 0.25 10 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 velocity 0 endtrack
+node -1 0 tthalf track turn 20 1.435 0.15 25 20 0 flat unvis -10 0 0 0 0 0 0 0 0 0 10 0 0 0 0 velocity 0.5 endtrack
+node -1 0 ttzero track turn 20 1.435 0.15 25 20 0 flat unvis -10 0 0 0 0 0 0 0 0 0 10 0 0 0 0 velocity 0 endtrack
