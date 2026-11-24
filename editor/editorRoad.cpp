@@ -1877,7 +1877,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	auto const reach{edge_reach(halfwidth, branchhalfwidth, angle) + kCornerRoom};
 	auto const branchreach{edge_reach(branchhalfwidth, halfwidth, angle) + kCornerRoom};
 	// how far the junction takes the road back along it and ahead of the centre
-	double reaches[2]{reach, reach};
+	std::array<double, 2> reaches{reach, reach};
 	glm::dvec2 ringcentre{0.0};
 	double ringradius{0.0};
 	if (layout.roundabout && ring_circle(layout, T, ringcentre, ringradius))
