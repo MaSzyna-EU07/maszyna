@@ -3090,7 +3090,6 @@ void TDynamicObject::fork_past( fork_watch &Watch, int const Side, std::string c
         case global_settings::derailment_model::monitor: {
             // the vehicle runs on forked, as it did before; the log tells what physics.derailment new does
             Watch.told = true;
-            ++MoverParameters->fork_reports;
             WriteLog( "derailment monitor: " + MoverParameters->Name + " derailed running forked, " + Why );
             break;
         }

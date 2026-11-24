@@ -182,8 +182,6 @@ enum DerailReason
 	COLLISION_OVERRIDE = 7, // najechanie
 	/// <summary>Pushed off the track by the force pressing its end (physics.collisions new).</summary>
 	COLLISION_PUSHED_OFF = 8, // wyciśnięcie z toru
-	/// <summary>Running forked: a switch thrown under it put its bogies, or it and the vehicle coupled to it, on two ways (physics.derailment new).</summary>
-	FORK = 9, // jazda widłowa
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/
@@ -2584,8 +2582,6 @@ class TMoverParameters
 	// how the vehicle left the rails running forked: the side of its front the other way of the switch lay on (1 the
 	// left, -1 the right), 0 when it didn't
 	int ForkSide{0};
-	// physics.derailment monitor: how many times the log told of a vehicle running forked past what it takes
-	int fork_reports{0};
 	bool DirectionForward();
 	bool DirectionBackward(void); /*! kierunek ruchu*/
 	bool EIMDirectionChangeAllow(void) const;
