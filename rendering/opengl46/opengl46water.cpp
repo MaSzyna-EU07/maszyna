@@ -45,8 +45,21 @@ bool opengl46_windscreen_water::gpu_init()
 		                                                  "water_snowlayer.comp"};
 		for (std::size_t i = 0; i < names.size(); ++i)
 		{
-			gl::shader shader(names[i]);
-			m_programs[i] = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+			try
+			{
+				gl::shader shader(names[i]);
+				m_programs[i] = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+			}
+			catch (gl::shader_exception const &e)
+			{
+				if (i < pass::snow)
+					throw;
+				// the passes of the snow are optional: without them the glasses of the snow stay clear, the rain works on
+				ErrorLog("windscreen water: can't use " + std::string(names[i]) + ", the glasses of the snow stay clear: " + std::string(e.what()));
+				m_programs[pass::snow].reset();
+				m_programs[pass::snowlayer].reset();
+				break;
+			}
 		}
 	}
 	catch (gl::shader_exception const &e)
@@ -142,7 +155,7 @@ bool opengl46_windscreen_water::gpu_bake(std::size_t const Slot, texture_handle 
 
 bool opengl46_windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle const Atlas, texture_handle const Normal, gl::water_ubs const &Block)
 {
-	if ((!m_storage) || (Slot >= gl::WATER_SLOTS) || (Atlas == null_handle) || (Normal == null_handle))
+	if ((!m_storage) || (!m_programs[pass::snowlayer]) || (Slot >= gl::WATER_SLOTS) || (Atlas == null_handle) || (Normal == null_handle))
 		return false;
 	auto &atlas{GfxRenderer->Texture(Atlas)};
 	auto &normal{GfxRenderer->Texture(Normal)};
@@ -194,7 +207,7 @@ void opengl46_windscreen_water::gpu_step(gl::water_ubs const &Block, std::uint32
 	run(pass::clear, cell_groups);
 	run(pass::grid, drop_groups);
 	// the snow of the glasses of the snow, a texel of their maps a thread
-	if (Block.snow_slots != glm::vec4{0.f})
+	if ((Block.snow_slots != glm::vec4{0.f}) && m_programs[pass::snow])
 		run(pass::snow, groups(static_cast<std::size_t>(gl::WATER_MAP) * gl::WATER_MAP));
 	gl::program::unbind();
 }
