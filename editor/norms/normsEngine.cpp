@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/norms/norms.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <tuple>
 
@@ -374,15 +375,22 @@ class checker
 		return result;
 	}
 
-	// the shortest element between two jumps for them to be taken apart: the longest the profiles of the element between them ask for
+	// the shortest element between two jumps for them to be taken apart: the longest the profiles of the element between them ask for.
+	// TSI INF and EN 13803 limit the jump but say nothing of jumps close together, so with only them there the longest any profile
+	// asks for is taken: otherwise two jumps a metre apart would each pass a limit their sum breaks
 	double intermediate(std::size_t const Index, double const Speed) const
 	{
 		auto const &element{m_line.elements[Index]};
-		double result{0.0};
-		for (auto const profile : profiles(element))
-			if (auto const bound{limits(profile, parameter::intermediate_length, where(element, Speed, 0.0)).block})
-				result = std::max(result, bound->value);
-		return result;
+		auto const longest = [this, &element, Speed](auto const &Profiles) {
+			double result{0.0};
+			for (auto const profile : Profiles)
+				if (auto const bound{limits(profile, parameter::intermediate_length, where(element, Speed, 0.0)).block})
+					result = std::max(result, bound->value);
+			return result;
+		};
+		if (auto const own{longest(profiles(element))}; own > 0.0)
+			return own;
+		return longest(std::array{profile_id::plk, profile_id::tsi, profile_id::en13803, profile_id::ch});
 	}
 
 	// ST-T1-A6 9.11 pkt 8 - 13: the jumps closer than the intermediate length, changing the cant deficiency the same way, are taken
