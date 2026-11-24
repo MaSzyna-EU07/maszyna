@@ -326,6 +326,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool m_setup_read{false}; // read for the scenery open
 	bool m_setup_changed{false}; // to be written with the scenery
 	bool m_setup_marked{false}; // the scenery holds //$u lines
+	bool m_setup_moving{false}; // the assumptions given to the project of the model, which isn't saved yet
+	bool m_setup_unsaved{false}; // the project of the model failed to be saved with them: the scenery keeps them till it is
 	bool m_setup_window{false};
 	std::string m_setup_told; // what the change of them found among the lines laid before
 	bool m_setup_checking{false}; // the lines of the scenery being checked against the assumptions changed
@@ -339,6 +341,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the norms checked against, the rail and the usual switch of the switch tool
 	void setup_defaults(project_setup::setup const &Setup);
 	void setup_store();
+	void setup_keep_in_scenery();
+	// the project of the model saved, or not, after the scenery: where the assumptions are kept
+	void setup_project_saved(bool const Saved);
 	bool render_setup_card();
 	void render_setup_window();
 	void render_setup_line();

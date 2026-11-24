@@ -59,6 +59,10 @@ session::open_result session::open(std::filesystem::path const &Folder, std::str
 	m_model = layout::model{m_project.network};
 	m_open = true;
 	result.done = true;
+	// a map edited on the model has its project file from the start, also with nothing to migrate, of which open_project() writes none
+	if (std::error_code missing; false == std::filesystem::exists(file(), missing))
+		if (std::string error; false == save(error))
+			result.notes.push_back("the project file isn't written: " + error);
 	return result;
 }
 

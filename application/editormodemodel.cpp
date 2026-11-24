@@ -708,6 +708,7 @@ void editor_mode::model_saved(bool const Success)
 	if (false == Success)
 	{
 		model().written.clear();
+		setup_project_saved(false);
 		return;
 	}
 	// the tracks written, by their lines, each with the file it went into
@@ -733,8 +734,10 @@ void editor_mode::model_saved(bool const Success)
 	{
 		ui()->set_status(format(STR_C("The project of the map isn't saved: %s"), error.c_str()), true);
 		WriteLog("Editor: the project of the map isn't saved: " + error, logtype::generic);
+		setup_project_saved(false);
 		return;
 	}
+	setup_project_saved(true);
 	WriteLog(format("Editor: the project of the map saved, %zu lines, %zu tracks of them written now", model().session.network().lines().size(), [&] {
 		std::size_t count{0};
 		for (auto const &entry : lines)
