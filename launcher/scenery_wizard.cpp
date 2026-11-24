@@ -203,7 +203,7 @@ std::string ui::scenerywizard_panel::missing(bool const Named, bool const Exists
 		return STR("Finish drawing the area: Done (step 3)");
 	auto const area{range()};
 	if (area.empty())
-		return STR("Draw the area of the aerial photos on the map (step 3)");
+		return STR("Draw the range of the orthophoto on the map (step 3)");
 	if (geometry::polygon_crosses_itself(area))
 		return STR("The edges of the area cross each other: draw it again (step 3)");
 	return {};
@@ -303,7 +303,7 @@ void ui::scenerywizard_panel::render_place()
 
 void ui::scenerywizard_panel::render_range()
 {
-	ImGui::SeparatorText(STR_C("3. Range of the aerial photos"));
+	ImGui::SeparatorText(STR_C("3. Range of the orthophoto"));
 	wrapped_disabled(STR("The editor downloads the aerial photos and the shape of the ground only inside this area, blue on the map. Outside it there are no photos."));
 	// the area is given around the centre: without it the clicks on the map would go to the corners of an area, not to the centre
 	auto const placed{m_map.picked()};

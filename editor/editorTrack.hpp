@@ -470,33 +470,12 @@ class editor_track
 		// the full label gives
 		std::string title() const;
 	};
-	// the diverging curve of a slip turning by Angle: arcs of Radius at both ends, each Ends long, and the arc of Middle,
-	// Between long, between them; a straight when Middle is 0. With blades cutting into the stock rails the curve starts and ends
-	// with a straight Lead long along them, the arcs of Radius meeting it at Entry
-	struct slip_curve
+	// the diverging curve of a slip, of the catalogue (switch_design), which the domain model lays its slips with too
+	using slip_curve = switch_design::slip_curve;
+	static slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0)
 	{
-		double radius{0.0};
-		double ends{0.0};
-		double middle{0.0};
-		double between{0.0};
-		double angle{0.0};
-		double tip{0.0}; // of the blades from each end of the curve, 0: where the blades get as thin as they may
-		double lead{0.0};
-		double entry{0.0}; // radians
-		double length() const { return 2.0 * (lead + ends) + between; }
-		// the point and the heading at Along of the curve starting at the origin along x and turning towards y; the heading at the ends
-		// of the leads is the one of the arcs
-		glm::dvec2 point(double const Along) const;
-		double heading(double const Along) const;
-		// from the start of the curve to the crossing of its tangents
-		double tangent() const;
-		// from the middle of the curve to the crossing of its tangents
-		double offset() const;
-		slip_curve scaled(double const Factor) const { return {radius * Factor, ends * Factor, middle * Factor, between * Factor, angle, Factor == 1.0 ? tip : 0.0, lead * Factor, entry}; }
-	};
-	// one arc of Radius, or with Middle the slip curves of a double slip with the blades outside of the diamond, their near rails
-	// touching in its middle: Pass from the crossing, half of the gauge and the width of the head; a straight there when Middle < 0
-	static slip_curve slip_of(double const Radius, double const Middle, double const Angle, double const Pass, double const Lead = 0.0, double const Entry = 0.0);
+		return switch_design::slip_of(Radius, Middle, Angle, Pass, Lead, Entry);
+	}
 	static std::vector<switch_template> standard_switch_templates();
 	// the rail of the switch templates fitting the track, by the rail profile it's laid with; empty where the profile doesn't tell
 	static std::string rail_of(TTrack const *Track);
@@ -505,6 +484,9 @@ class editor_track
 	// the switch of the scenery as a template of its own shape; none when its tracks don't start at one point
 	static std::optional<switch_template> template_of_switch(TTrack *Track);
 	static TTrack *load_path(std::string const &Text, TTrack const &Template, std::string const &Name = {});
+	// a path of the entry as the scenery has it from its type on ("normal ... endtrack"), in the layer receiving the items created in the
+	// editor, under the name unless another path has it already; committed by the caller
+	static TTrack *load_entry(std::string const &Text, std::string const &Name) { return load_text(Text, nullptr, Name); }
 	static TTrack *create_path(TTrack const &Style, segment_data const &Path, std::string const &Name = {});
 	// parameters of a path laid where there's no other path to copy them from
 	struct path_style

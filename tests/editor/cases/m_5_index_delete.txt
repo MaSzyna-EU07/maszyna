@@ -1,0 +1,49 @@
+# Editing on the model (E4a): a track the scenarios of the map name goes only when the user says so. The scenario index of the map is
+# built in the background as the map is opened; Del waits for it, then a window tells the scenarios naming the track (autotest_editor.
+# uses.scn starts a trainset on s1): cancelled, the track stays; confirmed, it goes; renamed the same (d2, which its event names). A
+# track no scenario names, and a line of the model, go at once. The scenario of the map itself names v1, its trainset's
+wait 5
+modelediting 1
+deletetrack s1
+modelwait
+expect question scenarios 1
+modelanswer no
+expect track s1 present
+deletetrack s1
+modelwait
+expect question scenarios 1
+modelanswer yes
+wait 2
+expect track s1 removed
+undo
+wait 2
+expect track s1 present
+# renamed the same: d2, which an event of the scenario names
+modelrename d2 d2x
+modelwait
+expect question scenarios 1
+modelanswer no
+expect track d2 present
+modelrename d2 d2x
+modelwait
+modelanswer yes
+wait 2
+expect track d2x present
+expect track d2 removed
+deletetrack a3
+modelwait
+expect question none
+expect track a3 removed
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+expect modellines 1
+modeldel @1.0
+modelwait
+expect question none
+expect modellines 0
+undo
+wait 2
+expect modellines 1
+expect managed @1.0 1
+expect modelends
+quit

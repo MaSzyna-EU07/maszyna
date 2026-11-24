@@ -1,0 +1,18 @@
+# Laying flow: the panel of the switch tool goes through its states, each with its step at its top. A plain track selected: ready. A
+# switch refused leaves it ready, the refusal told. A switch laid: placed, told so until another step of the history. Another switch
+# laid after it and the first one selected again: selected. i0: a straight taking the cant of 60 mm on along all of it (a switch there
+# breaks 11.4 pkt 7); a2 and s2: plain straights of the lines a and s, x 0 and x 40, z 100..200
+wait 5
+curvedswitch i0 300 -40 302 -20 Rz_60E1-300-1:9
+expect switchpanel ready
+expect status 11.4 pkt 7
+curvedswitch a2 0 140 3 160 Rz_60E1-300-1:9
+expect track z1 present
+expect switchpanel placed
+curvedswitch s2 40 140 43 160 Rz_60E1-300-1:9
+expect track z2 present
+expect switchpanel placed
+select z1
+wait 2
+expect switchpanel selected
+quit

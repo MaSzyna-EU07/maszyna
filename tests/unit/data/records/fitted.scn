@@ -1,0 +1,4 @@
+// //$t: the tracks whose grade line was fitted, as editor_records::fitted_lines() writes them
+//$t # the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines
+//$t fitted tor_1 00ff00ff12345678
+//$t fitted tor_2 0123456789abcdef hand

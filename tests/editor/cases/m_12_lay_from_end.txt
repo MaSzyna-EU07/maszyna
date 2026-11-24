@@ -1,0 +1,32 @@
+# Editing on the model (E4b): a line laid with the lay tool from the free end of a line of the model goes on from the node of that end,
+# shared by both lines, not a free node of its own: the tracks of both end at the numbers of the node to the bit, before the save and
+# after the scenery is opened again. The empty ground east of k0..k3 (x 800..1100)
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100
+wait 2
+expect modellines 1
+expect modelnodes 2
+# on from its end at 800 100, northward
+layclicks 0 600 800 100 800 400
+wait 2
+modeltracks
+expect modelrefused 0
+expect modellines 2
+expect modelnodes 3
+expect managed @2.0 2
+expect modelends
+expect steps 2
+save
+wait 5
+quit
+#> reopen
+wait 5
+modelediting 1
+modeltracks
+expect modellines 2
+expect modelnodes 3
+expect modelends
+expect hand 1 0
+expect hand 2 0
+quit

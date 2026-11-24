@@ -1,0 +1,31 @@
+# Editing on the model (E4a): a curve of a line of the model changed in the route design goes through the commands of the model. One
+# the norms refuse (a cant of 200 mm) changes nothing, the scene and the model as they were, no step; the reason is told with its value,
+# its limit and its paragraph. One they let through is laid, one step, the line's tracks made anew
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+expect modellines 1
+modelmark laid
+modelplan @1.0
+routecant 0 200
+routeapply
+wait 2
+expect modelrefused 1
+expect modelmessage holds cant 200
+expect modelmessage holds the limit
+expect modelsame laid
+expect steps 1
+expect modelends
+# the design read from the model again, the curve made wider
+modelplan @1.0
+expect modelvertex 1 0 radius 791
+routeradius 0 820
+routeapply
+wait 2
+expect modelrefused 0
+expect modelvertex 1 0 radius 820
+expect steps 2
+expect managed @1.0 1
+expect modelends
+quit

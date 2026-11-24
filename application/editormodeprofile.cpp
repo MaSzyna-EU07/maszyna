@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include "imgui/imgui.h"
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <cstdio>
 #include <limits>
 #include <map>
@@ -154,12 +155,7 @@ bool sampled_chainage(std::vector<editor_track::route_sample> const &Samples, gl
 
 }
 
-// format of the lines, coordinates in the space of the file:
-//   profile <route length> <start x y z> <end x y z> <middle x y z>
-//   speed <km/h> origin <chainage of the start> join <start 0/1> <end 0/1>
-//   norms <grade max> <grade over switches max> <k of R >= k*V^2> <R min> <change needing a curve> <constant grade min> <fixed tolerance>
-//   point <chainage> <elevation> <vertical curve R> <automatic R 0/1>
-//   end
+// the lines and their format: editor_records::read_profiles() and profile_lines()
 void editor_mode::profile_library_load()
 {
 	if (m_profiles_loaded)
@@ -167,72 +163,8 @@ void editor_mode::profile_library_load()
 	m_profiles_loaded = true;
 	m_profiles.clear();
 	for (auto const layer : scene::Layers.marked_layers(kProfileMark))
-	{
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		auto const height = [&](double const Local) { return context.to_world({0.0, Local, 0.0}).y; };
-		std::optional<stored_profile> current;
-		for (auto const &text : scene::Layers.marked(layer, kProfileMark))
-		{
-			std::istringstream line{text};
-			std::string keyword;
-			line >> keyword;
-			if (keyword == "profile")
-			{
-				stored_profile entry;
-				entry.layer = layer;
-				glm::dvec3 start;
-				glm::dvec3 end;
-				glm::dvec3 middle;
-				line >> entry.length >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z >> middle.x >> middle.y >> middle.z;
-				if (line.fail())
-				{
-					current.reset();
-					continue;
-				}
-				entry.start = context.to_world(start);
-				entry.end = context.to_world(end);
-				entry.middle = context.to_world(middle);
-				current = entry;
-				continue;
-			}
-			if (false == current.has_value())
-				continue;
-			auto &entry{*current};
-			std::string word;
-			if (keyword == "speed")
-			{
-				int start{1};
-				int end{1};
-				line >> entry.line.speed >> word >> entry.origin >> word >> start >> end;
-				entry.line.join_start = (start != 0);
-				entry.line.join_end = (end != 0);
-			}
-			else if (keyword == "norms")
-			{
-				auto &norms{entry.line.norms};
-				line >> norms.grade_max >> norms.grade_switch_max >> norms.radius_factor >> norms.radius_min >> norms.curve_threshold >> norms.element_min >> norms.fixed_tolerance;
-			}
-			else if (keyword == "departure")
-				line >> entry.departure;
-			else if (keyword == "point")
-			{
-				profile::pvi point;
-				int automatic{0};
-				line >> point.chainage >> point.elevation >> point.radius >> automatic;
-				if (line.fail())
-					continue;
-				point.elevation = height(point.elevation);
-				point.automatic = (automatic != 0);
-				entry.line.points.push_back(point);
-			}
-			else if (keyword == "end")
-			{
-				if (entry.line.points.size() >= 2 && entry.length > 0.0)
-					m_profiles.push_back(entry);
-				current.reset();
-			}
-		}
-	}
+		for (auto &entry : editor_records::read_profiles(scene::Layers.marked(layer, kProfileMark), scene::Layers.layer(layer).context_insert(), layer))
+			m_profiles.push_back(std::move(entry));
 	if (false == m_profiles.empty())
 		WriteLog("Editor: " + std::to_string(m_profiles.size()) + " vertical profile design(s) read from the scenery", logtype::generic);
 }
@@ -245,29 +177,9 @@ void editor_mode::profile_library_mark(std::vector<scene::layer_handle> Layers)
 	{
 		if (false == scene::Layers.valid(layer))
 			continue;
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		auto const local = [&](glm::dvec3 const &Point) {
-			auto const point{context.to_local(Point)};
-			return format("%.4f %.4f %.4f", point.x, point.y, point.z);
-		};
-		std::vector<std::string> lines;
-		for (auto const &entry : m_profiles)
-		{
-			if (entry.layer != layer)
-				continue;
-			if (lines.empty())
-				lines.emplace_back("# vertical profiles (grade lines) designed in the track editor, the simulation skips these lines");
-			lines.push_back(format("profile %.4f ", entry.length) + local(entry.start) + ' ' + local(entry.end) + ' ' + local(entry.middle));
-			lines.push_back(format("speed %.1f origin %.4f join %d %d", entry.line.speed, entry.origin, entry.line.join_start ? 1 : 0, entry.line.join_end ? 1 : 0));
-			auto const &norms{entry.line.norms};
-			lines.push_back(format("norms %.4f %.4f %.4f %.1f %.4f %.2f %.4f", norms.grade_max, norms.grade_switch_max, norms.radius_factor, norms.radius_min, norms.curve_threshold, norms.element_min, norms.fixed_tolerance));
-			if (entry.departure >= 0.0)
-				lines.push_back(format("departure %.4f", entry.departure));
-			for (auto const &point : entry.line.points)
-				lines.push_back(format("point %.4f %.4f %.1f %d", point.chainage, context.to_local({0.0, point.elevation, 0.0}).y, point.radius, point.automatic ? 1 : 0));
-			lines.emplace_back("end");
-		}
-		scene::Layers.mark(layer, kProfileMark, std::move(lines));
+		std::vector<stored_profile> profiles;
+		std::copy_if(m_profiles.begin(), m_profiles.end(), std::back_inserter(profiles), [&](stored_profile const &Entry) { return Entry.layer == layer; });
+		scene::Layers.mark(layer, kProfileMark, editor_records::profile_lines(profiles, scene::Layers.layer(layer).context_insert()));
 	}
 }
 
@@ -312,18 +224,8 @@ void editor_mode::fitted_load()
 	m_fitted_loaded = true;
 	m_fitted.clear();
 	for (auto const layer : scene::Layers.marked_layers(kFittedMark))
-		for (auto const &text : scene::Layers.marked(layer, kFittedMark))
-		{
-			std::istringstream line{text};
-			std::string keyword, name, shape, kind;
-			line >> keyword >> name >> shape;
-			if (keyword == "fitted" && false == line.fail())
-			{
-				line >> kind;
-				auto const value{std::strtoull(shape.c_str(), nullptr, 16)};
-				m_fitted[{name, value}] = {layer, value, kind == "hand"};
-			}
-		}
+		for (auto const &fitted : editor_records::read_fitted(scene::Layers.marked(layer, kFittedMark)))
+			m_fitted[{fitted.name, fitted.shape}] = {layer, fitted.shape, fitted.hand};
 }
 
 void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Hand)
@@ -362,16 +264,11 @@ void editor_mode::fitted_set(std::vector<TTrack *> const &Tracks, bool const Han
 	{
 		if (false == scene::Layers.valid(layer))
 			continue;
-		std::vector<std::string> lines;
+		std::vector<editor_records::fitted_track> tracks;
 		for (auto const &[key, mark] : m_fitted)
-		{
-			if (mark.layer != layer || false == standing.contains(key))
-				continue;
-			if (lines.empty())
-				lines.emplace_back("# the tracks whose grade line was fitted in the track editor, with their shape then; the simulation skips these lines");
-			lines.push_back(format("fitted %s %016llx%s", key.first.c_str(), static_cast<unsigned long long>(mark.shape), mark.hand ? " hand" : ""));
-		}
-		scene::Layers.mark(layer, kFittedMark, std::move(lines));
+			if (mark.layer == layer && standing.contains(key))
+				tracks.push_back({key.first, mark.shape, mark.hand});
+		scene::Layers.mark(layer, kFittedMark, editor_records::fitted_lines(tracks));
 	}
 }
 
@@ -887,6 +784,9 @@ void editor_mode::profile_open(TTrack *From, TTrack *To)
 
 void editor_mode::profile_open_run(TTrack &Track)
 {
+	// a line of the model: its whole line
+	if (model_profile_open(Track))
+		return;
 	auto &state{m_profile};
 	state.open = true;
 	state.status.clear();
@@ -975,6 +875,8 @@ void editor_mode::profile_take(editor_track::route Route, TTrack *From, TTrack *
 				state.origin = *km;
 		}
 	}
+	// a line of the model: its grade line as the model has it
+	model_profile_load();
 	profile_fit_view();
 }
 
@@ -1720,6 +1622,9 @@ void editor_mode::profile_apply(bool const Terrain, std::vector<profile::departu
 	state.error.clear();
 	if (state.route.spans.empty() || state.line.points.size() < 2)
 		return;
+	// a line of the model: its grade line set by its command, the model the judge of it: refused with the reasons, or one step
+	if (model_profile_apply())
+		return;
 	auto const edits{m_track_edits};
 	if (state.changed && false == state.fitting ? errors_in_change(state.issues, state.line, state.line_read, state.samples) : has_errors(state.issues))
 	{
@@ -1952,7 +1857,7 @@ void editor_mode::render_profile_body()
 		if (stored >= 0)
 		{
 			ImGui::TextDisabled(STR_C("Design kept in %s%s"), scene::Layers.layer(m_profiles[stored].layer).name.c_str(), state.changed ? STR_C(", changes go there on save") : "");
-			ImGui::SameLine();
+			same_line_if_fits(STR_C("Forget the design"));
 			if (ImGui::SmallButton(STR_C("Forget the design")))
 				profile_forget();
 		}
@@ -2994,7 +2899,7 @@ void editor_mode::draw_profile_canvas(profile_view const &View, ImDrawList &Draw
 		auto const x{View.x_of(middle)};
 		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < 70.0f)
 			continue;
-		auto const text{format("%+.2f o/oo   L %.0f m", profile::grade_after(line, i) * 1000.0, points[i + 1].chainage - points[i].chainage)};
+		auto const text{format("%+.2f %s   L %.0f m", profile::grade_after(line, i) * 1000.0, STR_C("per mille"), points[i + 1].chainage - points[i].chainage)};
 		auto const size{ImGui::CalcTextSize(text.c_str())};
 		if (View.x_of(points[i + 1].chainage) - View.x_of(points[i].chainage) < size.x + 30.0f)
 			continue;
@@ -3152,7 +3057,7 @@ void editor_mode::draw_profile_overlay() const
 		if (to - from < 5.0)
 			continue;
 		auto const grade{(points[k + 1].elevation - points[k].elevation) / std::max(1e-6, points[k + 1].chainage - points[k].chainage) * 1000.0};
-		label(on_line((from + to) * 0.5), format("%+.2f o/oo  L %.0f m", grade, points[k + 1].chainage - points[k].chainage), kGradeLine);
+		label(on_line((from + to) * 0.5), format("%+.2f %s  L %.0f m", grade, STR_C("per mille"), points[k + 1].chainage - points[k].chainage), kGradeLine);
 	}
 	// the vertical curves: their range along the track, the ends marked, the radius at the point
 	for (auto const &curve : curves)

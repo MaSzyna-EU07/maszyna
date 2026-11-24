@@ -55,11 +55,12 @@ TEST_CASE("switch on a curve: the curvatures of its tracks on a transition curve
 	// turning off to the outside of the curve: against it all along, the case KZW I
 	CHECK(report.branch_start < 0.0);
 	CHECK(report.branch_end < 0.0);
-	CHECK(false == says(report.warnings, "KZW II"));
-	// laid on the ramp, the cant changing under it
+	CHECK(false == says(report.refusals, "KZW II"));
+	// laid on the ramp, the cant changing under it: not laid so (11.4 pkt 7)
 	CHECK(report.cant_start == doctest::Approx(25.0).epsilon(0.02));
 	CHECK(report.cant_end == doctest::Approx(40.0).epsilon(0.02));
-	CHECK(says(report.warnings, "The cant changes within the switch"));
+	CHECK(says(report.refusals, "The cant changes within the switch"));
+	CHECK(false == says(report.warnings, "The cant changes within the switch"));
 }
 
 TEST_CASE("switch on a curve: the diverging track turning from one side to the other is the case KZW II") {
@@ -69,7 +70,12 @@ TEST_CASE("switch on a curve: the diverging track turning from one side to the o
 	auto const report{switch_curve::check(main, branch, track, 125.0, 155.0, 500.0, 12.0)};
 	CHECK(report.branch_start < 0.0);
 	CHECK(report.branch_end > 0.0);
-	CHECK(says(report.warnings, "KZW II"));
+	// refused, with the radii it turns with either way
+	CHECK(says(report.refusals, "KZW II"));
+	CHECK(says(report.refusals, "(9.7 pkt 12)"));
+	CHECK(false == says(report.warnings, "KZW II"));
+	// the main track, on the transition curve alone, turns one way all along
+	CHECK(false == says(report.refusals, "main track"));
 }
 
 TEST_CASE("switch on a curve: the ends of a cant ramp at the ends of the switch or 6 m off it") {
@@ -83,10 +89,13 @@ TEST_CASE("switch on a curve: the ends of a cant ramp at the ends of the switch 
 		auto const [main, branch] {laid(track, From, 30.0, 500.0, 1)};
 		return switch_curve::check(main, branch, track, From, From + 30.0, 500.0, 12.0);
 	};
-	CHECK(says(at(210.0).warnings, "within the switch"));
-	CHECK(says(at(222.0).warnings, "6 m at least"));
-	CHECK(false == says(at(220.0).warnings, "within the switch"));
+	// within it or nearer than 6 m: not laid so
+	CHECK(says(at(210.0).refusals, "within the switch"));
+	CHECK(says(at(222.0).refusals, "6 m at least"));
+	CHECK(says(at(222.0).refusals, "2.0 m off the switch"));
+	CHECK(false == says(at(220.0).refusals, "within the switch"));
 	CHECK(says(at(220.0).notes, "at an end of the switch"));
+	CHECK(at(230.0).refusals.empty());
 	CHECK(false == says(at(230.0).warnings, "cant ramp"));
 
 	// the start pressed near those places drawn to them
@@ -119,7 +128,7 @@ TEST_CASE("switch on a curve: one with a straight frog bent up to the frog, both
 		CHECK(report.curved);
 		// the curvature of the bent part only: no transition curve under it, the diverging track turning one way all along
 		CHECK_FALSE(report.transition);
-		CHECK(false == says(report.warnings, "KZW II"));
+		CHECK(false == says(report.refusals, "KZW II"));
 		CHECK(says(report.warnings, "Bent up to the frog"));
 	}
 }
@@ -131,7 +140,9 @@ TEST_CASE("switch on a curve: none of 1:9.403 nor steeper than 1:9 bent in the r
 		CAPTURE(Ratio);
 		auto const report{switch_curve::check(main, branch, track, 150.0, 183.0, 300.0, Ratio)};
 		REQUIRE(report.curved);
-		return says(report.warnings, "(11.4 pkt 4)");
+		// the editor tells no main track from a side one: a warning, which says so, not a refusal
+		CHECK(report.refusals.empty());
+		return says(report.warnings, "(11.4 pkt 4)") && says(report.warnings, "only warns");
 	};
 	// 1:9 of the catalogue and as read off the angle of the tracks
 	CHECK_FALSE(banned(9.0));
@@ -172,7 +183,8 @@ switch_curve::slip_report bent_slip(std::vector<switch_curve::track_point> const
 TEST_CASE("slip bent into a curve: in a side track only, its slip curve bent the way of the curve no sharper than a side track takes") {
 	auto const sharp{bent_slip(line(0.0, 0.0, 400.0, 800.0, 0.0), 150.0, 1.0 / 800.0)};
 	CHECK(sharp.curved);
-	CHECK(says(sharp.warnings, "11.4 pkt 4b"));
+	// none bent, the editor telling no main track from a side one
+	CHECK(says(sharp.refusals, "R 800 m: no double switch, slip nor crossing is bent (11.4 pkt 4)"));
 	CHECK(sharp.first == doctest::Approx(1.0 / 800.0).epsilon(0.02));
 	CHECK(sharp.second == doctest::Approx(std::cos(std::atan(1.0 / 9.0)) / 800.0).epsilon(0.02));
 	REQUIRE(sharp.curves.size() == 2);
@@ -186,7 +198,7 @@ TEST_CASE("slip bent into a curve: in a side track only, its slip curve bent the
 	// R 4000 m: the slip curve of 1/190 + 1/4000, R 181.4 m, still within the side tracks
 	auto const gentle{bent_slip(line(0.0, 0.0, 400.0, 4000.0, 0.0), 150.0, 1.0 / 4000.0)};
 	CHECK(gentle.curved);
-	CHECK(says(gentle.warnings, "11.4 pkt 4b"));
+	CHECK(says(gentle.refusals, "(11.4 pkt 4)"));
 	CHECK(false == says(gentle.warnings, "table 9.2"));
 	CHECK(gentle.notes.empty());
 
@@ -194,6 +206,7 @@ TEST_CASE("slip bent into a curve: in a side track only, its slip curve bent the
 	auto const straight{bent_slip(line(400.0, 0.0, 0.0, 1000.0, 0.0), 150.0, 0.0)};
 	CHECK_FALSE(straight.curved);
 	CHECK(straight.warnings.empty());
+	CHECK(straight.refusals.empty());
 }
 
 TEST_CASE("slip bent into a curve: the cant of the side track, a track through it turning from one side to the other") {
@@ -201,7 +214,7 @@ TEST_CASE("slip bent into a curve: the cant of the side track, a track through i
 	auto const canted{bent_slip(line(0.0, 0.0, 400.0, 1000.0, 30.0), 150.0, 1.0 / 1000.0)};
 	CHECK(canted.cant_start == doctest::Approx(30.0));
 	CHECK(canted.cant_end == doctest::Approx(30.0));
-	CHECK(false == says(canted.warnings, "The cant changes"));
+	CHECK(false == says(canted.refusals, "The cant changes"));
 	CHECK(says(canted.notes, "9.3 pkt 5"));
 
 	// a reverse curve under it
@@ -212,7 +225,7 @@ TEST_CASE("slip bent into a curve: the cant of the side track, a track through i
 			point.heading = 16.6 / 1000.0 - (point.station - 16.6) / 1000.0;
 	auto const angle{std::atan(1.0 / 9.0)};
 	auto const report{switch_curve::check_slip({first, arc(33.2, angle, 1.0 / 1000.0)}, {arc(21.0, 0.0, 1.0 / 190.0)}, curve, 150.0, 183.2)};
-	CHECK(says(report.warnings, "9.7 pkt 12"));
+	CHECK(says(report.refusals, "9.7 pkt 12"));
 }
 
 TEST_CASE("switch exit: a curve right behind a straight frog, its sudden changes of the cant deficiency apart or together") {
@@ -243,4 +256,142 @@ TEST_CASE("switch exit: a curve right behind a straight frog, its sudden changes
 	auto const on{switch_curve::check_exit(1.0 / 300.0, 0.0, {{30.0, 1.0 / 300.0, 1.0 / 300.0}}, 50.0)};
 	CHECK(on.apart < 0.0);
 	CHECK(on.warnings.empty());
+}
+
+TEST_CASE("switch on a curve: a double switch isn't bent, nor is a slip or a crossing (11.4 pkt 4)") {
+	auto const track{line(0.0, 1.0, 400.0, 1500.0, 0.0)};
+	auto const [main, branch] {laid(track, 150.0, 30.0, 190.0, 1)};
+	auto const bent{switch_curve::check(main, branch, track, 150.0, 180.0, 190.0, 9.0, 0.0, true)};
+	REQUIRE(bent.curved);
+	CHECK(says(bent.refusals, "Bent into R 1500 m: no double switch, slip nor crossing is bent (11.4 pkt 4)"));
+	// a single one of the same shape is
+	CHECK(switch_curve::check(main, branch, track, 150.0, 180.0, 190.0, 9.0).refusals.empty());
+	// and a double one on a straight
+	auto const straight{line(400.0, 0.0, 0.0, 1000.0, 0.0)};
+	auto const [smain, sbranch] {laid(straight, 150.0, 30.0, 190.0, 1)};
+	auto const on_straight{switch_curve::check(smain, sbranch, straight, 150.0, 180.0, 190.0, 9.0, 0.0, true)};
+	CHECK_FALSE(on_straight.curved);
+	CHECK(on_straight.refusals.empty());
+}
+
+TEST_CASE("switch on a straight: the cant of the line over it, no ramp within it nor nearer than 6 m (11.4 pkt 7, 9.6 pkt 16)") {
+	// a straight of 100 m, a ramp of 60 m up to 60 mm, then 100 m of 60 mm
+	std::vector<switch_curve::track_point> straight;
+	for (int k = 0; k * 0.5 <= 260.0 + 1e-9; ++k) {
+		auto const s{k * 0.5};
+		straight.push_back({s, 0.0, s <= 100.0 ? 0.0 : s <= 160.0 ? (s - 100.0) : 60.0});
+	}
+	auto const at = [&](double const From) { return switch_curve::check_line(straight, From, From + 33.2); };
+	CHECK(at(20.0).refusals.empty());
+	CHECK(at(60.0).refusals.empty());
+	// 1.8 m off the start of the ramp
+	CHECK(says(at(65.0).refusals, "1.8 m off the switch, 6 m at least (9.6 pkt 16)"));
+	// on it: the cant changing under it, the start of the ramp within it
+	auto const on{at(90.0)};
+	CHECK(says(on.refusals, "The cant changes within the switch, 0 to 23 mm: it's to stay the same over it (11.4 pkt 7)"));
+	CHECK(says(on.refusals, "10.0 m from its start"));
+	// ending right where the ramp starts, and of the cant all along
+	CHECK(at(100.0 - 33.2).refusals.empty());
+	CHECK(says(at(100.0 - 33.2).notes, "at an end of the switch"));
+	CHECK(at(180.0).refusals.empty());
+	CHECK(at(180.0).cant_start == doctest::Approx(60.0));
+}
+
+TEST_CASE("table 11.8: the diverging track of a switch bent one-sided and two-sided, the tangent t correcting the sum of the curvatures") {
+	// Rz 60E1-500-1:12: t = 500 tan(atan(1/12) / 2) = 20.797 m, as a of the catalogue
+	// a) two-sided, the main track bent to R 1200 against the diverging one: r" = (R r + t^2) / (R - r)
+	CHECK(switch_curve::bent_radius(-1200.0, 500.0, 12.0) == doctest::Approx((1200.0 * 500.0 + 20.797 * 20.797) / 700.0).epsilon(1e-5));
+	CHECK(switch_curve::bent_radius(-1200.0, 500.0, 12.0) == doctest::Approx(857.76).epsilon(1e-5));
+	// b) one-sided, the main track bent to R 1200 with it: r" = (R r - t^2) / (R + r)
+	CHECK(switch_curve::bent_radius(1200.0, 500.0, 12.0) == doctest::Approx(352.69).epsilon(1e-5));
+	// near the plain sums of the curvatures, 1 / (1/500 -+ 1/1200)
+	CHECK(switch_curve::bent_radius(-1200.0, 500.0, 12.0) == doctest::Approx(857.14).epsilon(1e-3));
+	CHECK(switch_curve::bent_radius(1200.0, 500.0, 12.0) == doctest::Approx(352.94).epsilon(1e-3));
+	// b) bent from the diverging track: the main track sharper than it takes it past straight, r" = (R r + t^2) / (r - R), the other way
+	CHECK(switch_curve::bent_radius(-400.0, 500.0, 12.0) == doctest::Approx(-2004.33).epsilon(1e-5));
+	// the main track as sharp as the diverging curve against it: the diverging track straight; not bent: the basic switch
+	CHECK(switch_curve::bent_radius(-500.0, 500.0, 12.0) == 0.0);
+	CHECK(switch_curve::bent_radius(0.0, 500.0, 12.0) == 500.0);
+}
+
+TEST_CASE("table 11.9: the least radii of the switches bent one-sided, the diverging track of the least main radius by table 11.8") {
+	struct row {
+		double radius;
+		double ratio;
+		double branch; // the limiting curvature, 1/km
+		double least_branch; // m
+		double least_main; // m
+		double branch_exception;
+		double least_branch_exception;
+		double least_main_exception;
+	};
+	// the values in the brackets for 300 and 500, allowed by way of exception
+	row const rows[]{{300.0, 9.0, 4.000, 250.0, 1505.522, 4.673, 214.0, 749.722},
+	                 {500.0, 12.0, 4.000, 250.0, 501.730, 4.673, 214.0, 375.638},
+	                 {760.0, 14.0, 3.333, 300.0, 497.250, 3.333, 300.0, 497.250},
+	                 {1200.0, 18.5, 2.169, 461.0, 750.001, 2.169, 461.0, 750.001},
+	                 {2500.0, 26.5, 1.063, 941.0, 1510.0, 1.063, 941.0, 1510.0}};
+	for (auto const &entry : rows) {
+		CAPTURE(entry.radius);
+		auto const limit{switch_curve::bent_limit_of(entry.radius)};
+		REQUIRE(limit.has_value());
+		CHECK(limit->branch * 1000.0 == doctest::Approx(entry.branch));
+		CHECK(limit->main == doctest::Approx(entry.least_main));
+		CHECK(limit->branch_exception * 1000.0 == doctest::Approx(entry.branch_exception));
+		CHECK(limit->main_exception == doctest::Approx(entry.least_main_exception));
+		// the least main radius bends the diverging track one-sided to the least radius the table gives it
+		CHECK(switch_curve::bent_radius(entry.least_main, entry.radius, entry.ratio) == doctest::Approx(entry.least_branch).epsilon(0.001));
+		CHECK(switch_curve::bent_radius(entry.least_main_exception, entry.radius, entry.ratio) == doctest::Approx(entry.least_branch_exception).epsilon(0.001));
+	}
+	CHECK_FALSE(switch_curve::bent_limit_of(190.0).has_value());
+}
+
+TEST_CASE("table 9.7: the cant deficiency over a switch, fixed frog and movable nose") {
+	auto const fixed{switch_curve::switch_deficiency(false)};
+	CHECK(fixed.recommended == 90.0);
+	CHECK(fixed.normal == 110.0);
+	CHECK(fixed.limit == 110.0);
+	auto const movable{switch_curve::switch_deficiency(true)};
+	CHECK(movable.recommended == 100.0);
+	CHECK(movable.normal == 130.0);
+	CHECK(movable.limit == 130.0);
+}
+
+TEST_CASE("formula 9.9 and table 9.7: the speeds of table 11.2 on the diverging tracks of the basic switches with a fixed frog") {
+	// V = sqrt(I R / 11.8) at the normal 110 mm, rounded down to 10 km/h: 190 40, 300 (1:9 and 1:9.403) 50, 500 60, 760 80, 1200 100
+	auto const table = [](double const Radius) { return std::floor(switch_curve::curve_speed(Radius, 0.0, switch_curve::switch_deficiency(false).normal) / 10.0) * 10.0; };
+	CHECK(table(190.0) == 40.0);
+	CHECK(table(300.0) == 50.0);
+	CHECK(table(500.0) == 60.0);
+	CHECK(table(760.0) == 80.0);
+	CHECK(table(1200.0) == 100.0);
+	// the 2500-1:26.5 with a movable nose would take 166 km/h; table 11.2 and Id-4 give it 130, which the editor keeps
+	CHECK(switch_curve::curve_speed(2500.0, 0.0, switch_curve::switch_deficiency(true).normal) == doctest::Approx(166.0).epsilon(0.001));
+	// a straight track takes any speed, a cant against the turn as large as the deficiency none
+	CHECK(std::isinf(switch_curve::curve_speed(0.0, 0.0, 110.0)));
+	CHECK(switch_curve::curve_speed(500.0, -110.0, 110.0) == 0.0);
+	CHECK(switch_curve::curve_speed(500.0, -150.0, 110.0) == 0.0);
+}
+
+TEST_CASE("formula 9.9: the speed on the diverging track of a bent switch, the cant with its sign, the frog by table 9.7") {
+	// the example of the review: Rz 60E1-500-1:12 bent outward into R 1200 m with 60 mm of cant, two-sided, r" = 857.8 m. The cant
+	// leans against the diverging track: with I up to 100 mm, the 0.65 m/s2 the editor took for the switch branches, about 54 km/h,
+	// where the cant taken without its sign gave 107
+	auto const radius{switch_curve::bent_radius(-1200.0, 500.0, 12.0)};
+	CHECK(switch_curve::curve_speed(radius, -60.0, 100.0) == doctest::Approx(53.9).epsilon(0.002));
+	CHECK(switch_curve::curve_speed(radius, 60.0, 100.0) == doctest::Approx(107.8).epsilon(0.002));
+	// by its frog, table 9.7: fixed, 90 recommended and 110 normal; movable nose, 100 and 130
+	auto const fixed{switch_curve::switch_deficiency(false)};
+	auto const movable{switch_curve::switch_deficiency(true)};
+	CHECK(switch_curve::curve_speed(radius, -60.0, fixed.recommended) == doctest::Approx(46.7).epsilon(0.002));
+	CHECK(switch_curve::curve_speed(radius, -60.0, fixed.normal) == doctest::Approx(60.3).epsilon(0.002));
+	CHECK(switch_curve::curve_speed(radius, -60.0, movable.recommended) == doctest::Approx(53.9).epsilon(0.002));
+	CHECK(switch_curve::curve_speed(radius, -60.0, movable.normal) == doctest::Approx(71.3).epsilon(0.002));
+	// bent inward, one-sided into R 1200: r" = 352.7 m, the cant leaning into its turn, 71 km/h at 110 mm
+	CHECK(switch_curve::curve_speed(switch_curve::bent_radius(1200.0, 500.0, 12.0), 60.0, fixed.normal) == doctest::Approx(71.3).epsilon(0.002));
+	// Rz 60E1-190-1:9 in the curve R 600 m with 60 mm of the self-test scenery: outward 278.3 m and 34.3 km/h, inward 144.2 m and 45.6 km/h
+	CHECK(switch_curve::bent_radius(-600.0, 190.0, 9.0) == doctest::Approx(278.3).epsilon(0.001));
+	CHECK(switch_curve::curve_speed(switch_curve::bent_radius(-600.0, 190.0, 9.0), -60.0, fixed.normal) == doctest::Approx(34.3).epsilon(0.002));
+	CHECK(switch_curve::bent_radius(600.0, 190.0, 9.0) == doctest::Approx(144.2).epsilon(0.001));
+	CHECK(switch_curve::curve_speed(switch_curve::bent_radius(600.0, 190.0, 9.0), 60.0, fixed.normal) == doctest::Approx(45.6).epsilon(0.002));
 }

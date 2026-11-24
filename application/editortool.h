@@ -36,7 +36,7 @@ enum class editor_selftest_result
 
 enum class editor_first_step { tracks, lay, laid, wheel, join, turnout, undo, save, drive, look, top, select, shape, profile, profile_point, profile_apply, terrain, nmt, plan, plan_band, plan_apply, signal, posts, bend, trace, gizmo, vector, template_open, template_clicked, ride, count };
 
-enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, signals, station, station_signals, line_block, kilometrage };
+enum class editor_track_tab { straights, route, path, turnout, profile, speed, joints, infra, lay, lineside, turntable, parallel, signals, station, station_signals, line_block, kilometrage, norms };
 
 struct track_hover
 {
@@ -262,6 +262,10 @@ class editor_track_design
 	virtual alignment::limits const &route_norms() const = 0;
 	virtual bool digitize_drawn(std::vector<TTrack *> const &Created, bool const Alone = true) = 0;
 	virtual void straight_refresh() = 0;
+	// a track laid alongside a line of the model by its command, with the editing on the model: false where the source isn't a track of one,
+	// for the old way. Status: what came of it; Error: why it was refused. Side: 1 to the right of the line, -1 to the left, as the parallel
+	// tool takes them
+	virtual bool model_parallel(TTrack &Source, double const Spacing, int const Side, std::string &Status, std::string &Error) = 0;
 
   protected:
 	~editor_track_design() = default;
