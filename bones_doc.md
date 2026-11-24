@@ -79,6 +79,18 @@ bone: waz_3 waz.2 waz.3
 bone: waz_4 waz.3 spotkanie
 ```
 
+A hose of an existing model, made in one piece (the EU07's `pneumatic2_On`, hanging from its cock on the buffer beam to
+its coupling at the end of the vehicle), swings as a whole about its cock: it faces the node of a chain of one node,
+which hangs between the cock and where the couplings of the two vehicles meet. No change to the model:
+
+```
+bonepoint: kurek_pneumatic2 fixed 0.57 -7.47 1.07
+bonepoint: kurek_pneumatic2_sasiada coupler rear 0.57 -8.445 1.07
+bonepoint: spotkanie_pneumatic2 mid kurek_pneumatic2 kurek_pneumatic2_sasiada
+bonechain: waz_pneumatic2 kurek_pneumatic2 spotkanie_pneumatic2 1 0.62 -7.99 0.49
+bone: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1
+```
+
 ## Still to do
 
 - The valve gear (Heusinger / Walschaerts): the expansion link swung by the eccentric rod, the radius rod lifted by
