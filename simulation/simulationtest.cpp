@@ -62,6 +62,10 @@ void apply_test_mode_settings()
 	Global.local_start_vehicle = "ghostview";
 	Global.GfxRenderer = "null";
 	Global.NvRenderer = false;
+	// the flags of the gfxrenderer line read from the settings go with it: the legacy one picks the colours of the sky,
+	// and with them the light level the lamps and the AI go by, so a test run would depend on the renderer of the ini
+	Global.LegacyRenderer = false;
+	Global.BasicRenderer = false;
 	Global.bSoundEnabled = false;
 	Global.python_enabled = false;
 	Global.bInactivePause = false;
