@@ -361,7 +361,8 @@ track it stands on). The first of them may be the one to couple (`Shunt -2 -3`):
 first order is `Connect` releases the hand brake a cold locomotive starts with
 (`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
-The cases and what they showed on master of 2026-11-11:
+The cases and what they showed on master of 2026-11-11 (the two L053 poranek rows also on
+staging f15ea405 of 2026-11-23):
 
 | case | report | result |
 | --- | --- | --- |
