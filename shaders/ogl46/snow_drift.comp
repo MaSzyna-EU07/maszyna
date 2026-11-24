@@ -184,8 +184,9 @@ void main()
 		exposure = clamp(lee * 2.0 - exposed, -1.0, 1.0) * worked;
 	}
 
-	// under a roof or a bridge only what blows in under its edge
-	if ((here.y < NO_CEILING) && (here.y - height < 25.0))
+	// under a roof or a bridge only what blows in under its edge. a ceiling the map holds under the surface (the underside or the
+	// foot of a platform made of triangles, 0.7 m under its top) roofs nothing: the snow lies on the top as in the open
+	if ((here.y < NO_CEILING) && (here.y > height) && (here.y - height < 25.0))
 		depth *= opening(texel, here.y) * 0.5;
 	// a track or a road keeps it down. the snow on a track (w, m over the ground: what came since the trains last cleared it,
 	// TTrack::snow_at(); negative where it isn't known) lies over that as it comes, the drift of the place at most; once it's
