@@ -47,6 +47,9 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     vec3 view_dir = normalize(-f_pos.xyz);
     float NdotV = max(dot(fragnormal, view_dir), 0.0);
     vec3 F0 = mix(vec3(0.04), texturecolor, metalic);
+    // A metal gives up its diffuse term only as far as its reflection mask lets the environment take its place
+    // (the same as apply_lights in light_common.glsl).
+    float metal_diffuse_loss = metalic * clamp(reflectivity, 0.0, 1.0);
     vec3 fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
     const float MAX_REFLECTION_LOD = 8.0;
@@ -64,7 +67,7 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * env_spec_w);
 
     if (lights_count == 0U)
-        return fragcolor * texturecolor * (1.0 - metalic)
+        return fragcolor * texturecolor * (1.0 - metal_diffuse_loss)
              + emissioncolor * texturecolor
              + envcolor * env_spec * reflectivity;
 
@@ -95,11 +98,11 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     // Env reflection gated by env BRDF (roughness-attenuated, F0-tinted).
     vec3 env_reflection = envcolor * env_spec * reflectivity;
 
-    // Physically-based metal/rough combine (matches apply_lights / Substance):
-    // dielectric -> light-coloured highlight + full diffuse; metal -> albedo-tinted
-    // highlight, no diffuse term. Highlight strength left unchanged.
-    vec3 diffuse_albedo = texturecolor * (1.0 - metalic);
-    vec3 spec_tint      = mix(vec3(1.0), texturecolor, metalic);
+    // Metal/rough combine, the same as apply_lights: the direct highlight is tinted by
+    // the albedo (as 26.05 drew it), a metal drops its diffuse term only where its
+    // reflection mask is full. Highlight strength left unchanged.
+    vec3 diffuse_albedo = texturecolor * (1.0 - metal_diffuse_loss);
+    vec3 spec_tint      = texturecolor;
 
     vec3 result = fragcolor      * diffuse_albedo
                 + specularcolor  * spec_tint
