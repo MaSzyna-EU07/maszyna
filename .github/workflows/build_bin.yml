@@ -409,37 +409,39 @@ jobs:
         with:
           python-version: "3.14"
 
-      # A mirror that stops answering used to hold this step for over an hour.
-      # Time out each download, retry it, and give up on the whole step early.
+      # The packages are kept in the Actions cache (.github/actions/apt-install): the mirror of the runners has been
+      # too slow to download them every time. The timeout is a safety net.
+      # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
+      # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
+      # The X11 packages are the ones GLFW (ref/glfw, 3.4) looks for; xorg-dev brought ~45 more. The game loads the
+      # X11 and Wayland libraries of the system, none of them is bundled (CMake_modules/bundle_runtime_libs.cmake).
       - name: Install Linux dependencies
         timeout-minutes: 15
-        run: |
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "60";' \
-            'Acquire::https::Timeout "60";' \
-            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
-          sudo apt-get update
-
-          # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
-          # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
-          sudo apt-get install -y \
-            build-essential \
-            libasound2-dev \
-            libpulse-dev \
-            libpipewire-0.3-dev \
-            libgl1-mesa-dev \
-            libglew-dev \
-            libglfw3-dev \
-            libpng-dev \
-            libopenal-dev \
-            libluajit-5.1-dev \
-            libserialport-dev \
-            libsndfile1-dev \
-            libcurl4-openssl-dev \
-            xorg-dev \
-            libxkbcommon-dev \
-            libwayland-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            build-essential
+            pkg-config
+            libasound2-dev
+            libpulse-dev
+            libpipewire-0.3-dev
+            libgl1-mesa-dev
+            libglew-dev
+            libglfw3-dev
+            libpng-dev
+            libopenal-dev
+            libluajit-5.1-dev
+            libserialport-dev
+            libsndfile1-dev
+            libcurl4-openssl-dev
+            libx11-dev
+            libxcursor-dev
+            libxext-dev
+            libxi-dev
+            libxinerama-dev
+            libxrandr-dev
+            libxkbcommon-dev
+            libwayland-dev
             wayland-protocols
 
       #

@@ -1,0 +1,127 @@
+# Installs Ubuntu packages, with the downloaded .deb files kept in the Actions cache.
+#
+# The Ubuntu mirror of the hosted runners has been slow: about 150 kB/s, with stalls of 30 s on single files,
+# so 130 small packages took over 13 minutes to download. The .deb files of the last install are kept in the
+# cache, under a key of the runner image and the package list:
+# - the same image and list (the usual case): the cached files are installed as they are, without the mirror
+#   and without `apt-get update`; should that fail, the next way is taken
+# - otherwise: `apt-get update`, then `apt-get install`, which takes the cached files of the same version
+#   (checked against the index) and downloads the rest; the files of this install are cached for the next run
+#
+# Caches of a pull request are seen only by that pull request; the pushes to staging and master (Build binaries)
+# fill the ones every pull request starts from.
+
+name: Install apt packages
+description: apt-get install, with the downloaded packages kept in the Actions cache
+
+inputs:
+  packages:
+    description: The packages to install, separated by spaces or new lines
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # the key: the runner image (its packages are what the cached files were resolved against) and the list,
+    # sorted, so neither its order nor its line breaks change it. Without ImageVersion (not a GitHub-hosted
+    # runner) the image isn't known, so the cached files are never installed as they are
+    - name: Cache key of the packages
+      id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        set -euo pipefail
+        printf '%s\n' "$PACKAGES" | tr -s '[:space:]' '\n' | sed '/^$/d' | sort -u > "$RUNNER_TEMP/apt-packages.txt"
+        os="${ImageOS:-$(. /etc/os-release && echo "${ID}${VERSION_ID}")}"
+        image="${ImageVersion:-unknown}"
+        prefix="apt-v1-${os}-$(dpkg --print-architecture)-"
+        list_hash="$(sha256sum < "$RUNNER_TEMP/apt-packages.txt" | cut -c1-16)"
+        {
+          echo "key=${prefix}${image}-${list_hash}"
+          echo "image-prefix=${prefix}${image}-"
+          echo "prefix=${prefix}"
+          echo "known-image=$([ -n "${ImageVersion:-}" ] && echo true || echo false)"
+        } >> "$GITHUB_OUTPUT"
+        cat "$RUNNER_TEMP/apt-packages.txt"
+
+    # a cache of another list (another workflow) or of an older image is taken too: the files apt finds there
+    # in the version it wants aren't downloaded again
+    - name: Restore the downloaded packages
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: /tmp/apt-archives
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: |
+          ${{ steps.key.outputs.image-prefix }}
+          ${{ steps.key.outputs.prefix }}
+
+    # /tmp rather than the runner's temp folder: apt downloads as the user _apt, who has to reach the folder.
+    # Recommended packages are left out: the build needs the headers and libraries the packages depend on
+    - name: Install the packages
+      shell: bash
+      env:
+        EXACT_HIT: ${{ steps.restore.outputs.cache-hit == 'true' && steps.key.outputs.known-image == 'true' }}
+      run: |
+        set -euo pipefail
+        archives=/tmp/apt-archives
+        mkdir -p "$archives/partial"
+
+        # a mirror that stops answering used to hold this step for over an hour: time out each download and
+        # retry it. The translations of the package descriptions aren't needed
+        printf '%s\n' \
+          'Acquire::Retries "3";' \
+          'Acquire::http::Timeout "60";' \
+          'Acquire::https::Timeout "60";' \
+          'Acquire::Languages "none";' \
+          | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+
+        mapfile -t packages < "$RUNNER_TEMP/apt-packages.txt"
+        apt=(sudo apt-get -y --no-install-recommends -o "Dir::Cache::Archives=$archives/")
+
+        all_installed() {
+          local package
+          for package in "${packages[@]}"; do
+            [[ "$(dpkg-query -W -f '${db:Status-Abbrev}' "$package" 2> /dev/null)" == ii* ]] || return 1
+          done
+        }
+
+        done=false
+        fix=()
+        if [ "$EXACT_HIT" = true ] && compgen -G "$archives/*.deb" > /dev/null; then
+          echo "::group::Install the $(ls "$archives"/*.deb | wc -l) cached packages"
+          if "${apt[@]}" install "$archives"/*.deb && all_installed; then
+            done=true
+          else
+            echo "::warning::The cached packages didn't install; installing from the mirror"
+            fix=(--fix-broken)
+          fi
+          echo "::endgroup::"
+        fi
+
+        if [ "$done" != true ]; then
+          sudo apt-get update
+          "${apt[@]}" "${fix[@]}" install "${packages[@]}"
+          all_installed
+        fi
+
+        # only the files of the packages now installed are kept, in the version installed: the cached files then
+        # are exactly this install, and the next run on this image can install them as they are
+        sudo rm -rf "$archives/partial" "$archives/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$archives"
+        installed="$(dpkg-query -W -f '${db:Status-Abbrev}|${Package}|${Version}|${Architecture}\n' \
+          | awk -F'|' '$1 ~ /^ii/ { print $2 "|" $3 "|" $4 }')"
+        for deb in "$archives"/*.deb; do
+          [ -e "$deb" ] || continue
+          id="$(dpkg-deb --show --showformat='${Package}|${Version}|${Architecture}' "$deb")"
+          grep -qxF -- "$id" <<< "$installed" || rm -f "$deb"
+        done
+        echo "Cached packages: $(find "$archives" -maxdepth 1 -name '*.deb' | wc -l), $(du -sh "$archives" | cut -f1)"
+
+    - name: Save the downloaded packages
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: /tmp/apt-archives
+        key: ${{ steps.key.outputs.key }}
