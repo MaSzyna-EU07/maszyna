@@ -207,7 +207,8 @@ enum class element_kind
 	arc
 };
 
-// an element of the line in the plan: the curvature changes evenly along it from its start to its end, signed, positive turning left
+// an element of the line in the plan: the curvature changes evenly along it from its start to its end (or as a Bloss curve does),
+// signed, positive turning left
 struct element
 {
 	element_kind kind{element_kind::straight};
@@ -215,6 +216,9 @@ struct element
 	double length{0.0};
 	double curvature_start{0.0}; // 1/m
 	double curvature_end{0.0};
+	// a transition whose curvature follows the Bloss curve, 3t^2 - 2t^3 of the change: gentle at its ends, 1.5 times as fast as an
+	// even one in its middle, the arc moved in by L^2 / 40R instead of L^2 / 24R
+	bool bloss{false};
 	double speed{0.0}; // km/h, the highest on it; 0: the one of the line class
 	unsigned features{0}; // switch_track, movable_frog, curved_switch, crossing, expansion, diverging, platform, station
 	// the element is cut by the end of the line or by a switch: its length isn't its own

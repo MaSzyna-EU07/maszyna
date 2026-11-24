@@ -652,7 +652,7 @@ void editor_mode::ground_sources(editor_orthophoto &Layer)
 			return true;
 		// asked for, the tile goes onto it once it comes; not where no terrain is to be made of the model, as after the answer without
 		// terrain
-		if (m_nmt.placed() && (m_nmt_state.grow || EditorSettings.terrain_model().area))
+		if (m_nmt.placed() && (m_nmt_state.grow || nmt_area()))
 			m_nmt.request({X - 1.0, Z - 1.0}, {X + 1.0, Z + 1.0});
 		return false;
 	});
@@ -1904,9 +1904,13 @@ void editor_mode::render_terrain_loading()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Where the terrain of the scenery ends, the terrain model is made under the tracks as they're laid, around the cursor from the first point placed; "
                                       "the chunks there are stay as they are. Off, it's made only when asked for"));
-    auto &model{EditorSettings.terrain_model()};
-    if (ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &model.area))
+    // as it is for the scenery open: off after the answer Without terrain, and ticked, on again and kept so in the settings
+    if (bool area{nmt_area()}; ImGui::Checkbox(STR_C("The terrain of the scenery around the camera"), &area))
+    {
+        m_nmt_state.declined = false;
+        EditorSettings.terrain_model().area = area;
         EditorSettings.save();
+    }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Makes the terrain from the terrain model within the area, around the camera wherever it goes,\n"
                                       "a chunk at a time while the editor is idle. The terrain there is already isn't touched.\n"
@@ -6431,7 +6435,7 @@ void editor_mode::render_ground_warning(tutorial_lesson const &Lesson)
 	// over a panel the pointer is over no ground, and in a scenery laid without terrain no ground is to be there
 	if (Lesson.action != tutorial_lesson::trial::lay || ui()->mode() != nodebank_panel::TRACK || ImGui::GetIO().WantCaptureMouse || false == ImGui::IsMousePosValid())
 		return;
-	auto const expected{m_streamer.resident() > 0 || ((m_nmt_state.grow || EditorSettings.terrain_model().area) && m_nmt.placed())};
+	auto const expected{m_streamer.resident() > 0 || ((m_nmt_state.grow || nmt_area()) && m_nmt.placed())};
 	if (expected && false == GfxRenderer->Mouse_Hit())
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "%s", STR_C("There is no ground under the mouse: the track will lie flat at height 0. Terrain model: F5"));
 }

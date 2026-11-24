@@ -55,6 +55,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Sweep.h"
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <tuple>
 #include <chrono>
@@ -394,6 +395,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		double band{300.0}; // m from the tracks the chunks made along them reach
 		bool shape{true}; // the formation and the slopes of the tracks as modifiers of the terrain
 		bool grow{true}; // while a track is laid, the terrain is made around the cursor where there's none
+		// the answer Without terrain for the scenery open: nothing of the model is made around the camera by itself, whatever the
+		// settings, which stay as they were for the other sceneries
+		bool declined{false};
 		bool laying{false}; // the tracks committed are being laid: they leave the terrain as it is
 		bool follow{true}; // a track with its formation edited takes it along, the formation led anew
 		bool grown{false}; // the chunks waiting were all asked for by growing: the formations aren't made anew after them
@@ -665,8 +669,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void nmt_place_scenery(glm::dvec2 const &Point);
 	void nmt_accept_offer();
 	// the answer without terrain: the tracks lie on the plane, nothing of the terrain model is loaded by itself any more, under the
-	// tracks laid nor around the camera
+	// tracks laid nor around the camera, in the scenery open; the settings stay as they are for the other sceneries
 	void nmt_decline_offer();
+	// the terrain of the download area made around the camera by itself: as the settings have it, unless declined for this scenery
+	bool nmt_area() const;
 	// the whole scenery: tracks, includes and models, moved up or down as one undo step
 	std::size_t nmt_join_ends();
 	// the turntables as they lie, each with the ends of the tracks running up to it on its rim
@@ -1145,6 +1151,8 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// false, with the reason, when one of the paths can't be changed, its file not taking the changes back
 	static bool tracks_editable(std::vector<TTrack *> const &Tracks, std::string &Reason);
 	void trim_history();
+	// the serial of the step on top of the history, 0 with none
+	std::uint64_t history_top() const;
 	void restore_track_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	// changes of the kept alignments and switches go into the last step of the history, made just before them
 	void records_to_history();
@@ -1925,9 +1933,10 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		bool settings_open{false};
 		bool details_open{false};
 		bool notes_open{false};
-		// the status tells of a line laid just now, as long as the history stays at the step it was laid with
+		// the status tells of a line laid just now, as long as the history stays at the step it was laid with: the serial of the step on
+		// top then, not the size of the history, which an undo and another step make the same again
 		bool laid_now{false};
-		std::size_t laid_step{0};
+		std::uint64_t laid_step{0};
 		// the line laid last, told in the inspector while the last of its tracks stays the selection the laying left
 		struct laid_curve
 		{
@@ -3328,7 +3337,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::string badge; // the mouse or the keys drawn over the view, for the clips of the tutorial
 		glm::vec2 badge_at{0.0f}; // its bottom left corner, in the pixels of the window
 		std::map<std::string, double> marks; // the heights of the ends of tracks kept by mark, for expect lift
-		std::optional<std::pair<bool, bool>> terrain_kept; // the terrain made while laying and around the camera before nmtquestion
+		std::optional<std::pair<bool, bool>> terrain_kept; // the terrain made while laying, and the answer without it, before nmtquestion
 	};
 	selftest m_selftest;
 	using selftest_result = editor_selftest_result;
