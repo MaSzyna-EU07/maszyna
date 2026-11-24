@@ -105,6 +105,7 @@ class windscreen_water : public gfx::windscreen_water
 	bool m_raincelltried{false};
 	bool m_full{false}; // the storage is as large as the simulation needs (else a stand-in, the glasses make their water up)
 	bool m_cleared{false};
+	bool m_snowkernels{true}; // the passes of the snow made (they are optional: without them the glasses of the snow stay clear)
 };
 
 } // namespace vk14

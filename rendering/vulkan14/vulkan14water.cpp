@@ -89,6 +89,7 @@ void windscreen_water::destroy()
 	m_storage.reset();
 	m_device = VK_NULL_HANDLE;
 	m_cleared = false;
+	m_snowkernels = true;
 	reset();
 }
 
@@ -105,9 +106,23 @@ bool windscreen_water::gpu_init()
 		                                                  "water_snowlayer.comp"};
 		for (std::size_t i = 0; i < names.size(); ++i)
 		{
-			if (false == m_kernels[i].create(m_device, *m_pipelines, m_shaders->get(names[i]), m_passlayout, {}, names[i]))
+			try
 			{
-				throw gfx::shader_exception(std::string("no compute pipeline of ") + names[i]);
+				if (false == m_kernels[i].create(m_device, *m_pipelines, m_shaders->get(names[i]), m_passlayout, {}, names[i]))
+				{
+					throw gfx::shader_exception(std::string("no compute pipeline of ") + names[i]);
+				}
+			}
+			catch (gfx::shader_exception const &e)
+			{
+				if (i < pass::snow)
+				{
+					throw;
+				}
+				// the passes of the snow are optional: without them the glasses of the snow stay clear, the rain works on
+				ErrorLog("windscreen water: can't use " + std::string(names[i]) + ", the glasses of the snow stay clear: " + std::string(e.what()));
+				m_snowkernels = false;
+				break;
 			}
 		}
 	}
@@ -271,7 +286,7 @@ bool windscreen_water::gpu_bake(std::size_t const Slot, texture_handle const Mas
 bool windscreen_water::gpu_snow_layer(std::size_t const Slot, texture_handle const Atlas, texture_handle const Normal, gl::water_ubs const &Block)
 {
 	auto const commands{m_host.commands()};
-	if ((commands == nullptr) || (false == m_full) || (Slot >= gl::WATER_SLOTS))
+	if ((commands == nullptr) || (false == m_full) || (false == m_snowkernels) || (Slot >= gl::WATER_SLOTS))
 	{
 		return false;
 	}
@@ -341,7 +356,7 @@ void windscreen_water::gpu_step(gl::water_ubs const &Block, std::uint32_t const 
 	run(pass::clear, cell_groups);
 	run(pass::grid, drop_groups);
 	// the snow of the glasses of the snow, a texel of their maps a thread
-	if (Block.snow_slots != glm::vec4{0.f})
+	if ((Block.snow_slots != glm::vec4{0.f}) && m_snowkernels)
 	{
 		run(pass::snow, groups(static_cast<std::size_t>(gl::WATER_MAP) * gl::WATER_MAP));
 	}
