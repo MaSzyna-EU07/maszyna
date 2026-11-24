@@ -99,7 +99,8 @@ terrain_streamer::~terrain_streamer()
 
 std::string terrain_streamer::pack_path(heightmap::pack_key const &Key) const
 {
-	return m_directory + heightmap::pack_file_name(Key);
+	// read and written as it's named on the disk
+	return FileOnDisk(m_directory + heightmap::pack_file_name(Key));
 }
 
 bool terrain_streamer::open(std::string const &Name)
@@ -110,7 +111,7 @@ bool terrain_streamer::open(std::string const &Name)
 	m_directory = FileOnDiskToWrite("terrain/" + Name) + "/";
 	m_manifest = heightmap::manifest();
 	m_manifestchanged = false;
-	auto const manifestpath{m_directory + "terrain.yaml"};
+	auto const manifestpath{FileOnDisk(m_directory + "terrain.yaml")};
 	std::error_code ec;
 	if (std::filesystem::exists(manifestpath, ec))
 	{
@@ -1858,7 +1859,8 @@ bool terrain_streamer::save(std::string *Error)
 		return false;
 	};
 	std::error_code ec;
-	auto const manifestpath{m_directory + "terrain.yaml"};
+	// written over as it's named on the disk, not joined by a second one next to it
+	auto const manifestpath{FileOnDisk(m_directory + "terrain.yaml")};
 	if (m_manifestchanged || modified() || false == std::filesystem::exists(manifestpath, ec))
 	{
 		std::string error;

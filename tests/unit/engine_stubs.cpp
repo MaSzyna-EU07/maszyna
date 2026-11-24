@@ -8,9 +8,12 @@
 #include "utilities/Logs.h"
 #include "scene/scenenodegroups.h"
 #include "scene/scenelayers.h"
+#include "logcapture.h"
 
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
+#include <optional>
 
 // settings ---------------------------------------------------------------------------------------
 
@@ -27,13 +30,56 @@ bool log_enabled() {
 	static bool const enabled{std::getenv("EU07_UNIT_TESTS_LOG") != nullptr};
 	return enabled;
 }
+
+// the lines kept for the test::log_capture alive, none without one
+struct captured_log {
+	std::mutex mutex;
+	std::optional<std::vector<std::string>> lines;
+};
+
+captured_log &captured() {
+	static captured_log log;
+	return log;
+}
 } // namespace
 
 void WriteLog(const char *str, logtype const, bool const isError) {
-	if (log_enabled() && str != nullptr) {
+	if (str == nullptr) {
+		return;
+	}
+	{
+		auto &log{captured()};
+		std::scoped_lock const lock{log.mutex};
+		if (log.lines) {
+			log.lines->emplace_back(str);
+		}
+	}
+	if (log_enabled()) {
 		(isError ? std::cerr : std::cout) << str << "\n";
 	}
 }
+
+namespace test {
+
+log_capture::log_capture() {
+	auto &log{captured()};
+	std::scoped_lock const lock{log.mutex};
+	log.lines.emplace();
+}
+
+log_capture::~log_capture() {
+	auto &log{captured()};
+	std::scoped_lock const lock{log.mutex};
+	log.lines.reset();
+}
+
+std::vector<std::string> log_capture::lines() const {
+	auto &log{captured()};
+	std::scoped_lock const lock{log.mutex};
+	return log.lines.value_or(std::vector<std::string>{});
+}
+
+} // namespace test
 
 void WriteLog(const std::string &str, logtype const Type) {
 	WriteLog(str.c_str(), Type, false);

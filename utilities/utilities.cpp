@@ -665,7 +665,11 @@ bool cased_folder_path(std::string const &Folder, std::string &Cased)
 } // namespace
 #endif
 
-std::string FileCased(std::filesystem::path const &Filename)
+namespace
+{
+
+// FileCased(), the file found only in another case written to the log when Report
+std::string file_cased(std::filesystem::path const &Filename, [[maybe_unused]] bool const Report)
 {
 	std::error_code error;
 	if (std::filesystem::exists(Filename, error))
@@ -697,7 +701,6 @@ std::string FileCased(std::filesystem::path const &Filename)
 		return {};
 	std::string cased;
 	auto const asked{folder + file};
-	bool report{false};
 	{
 		std::scoped_lock const lock{cased_mutex};
 		if (false == cased_folder_path(folder, cased))
@@ -706,17 +709,40 @@ std::string FileCased(std::filesystem::path const &Filename)
 		if (name.empty())
 			return {};
 		cased += name;
-		report = (cased != asked) && cased_reported().insert(asked).second;
 	}
 	if (false == std::filesystem::exists(cased, error))
 		return {};
-	if (report)
+	if (Report && (cased != asked))
 	{
-		// the list for the authors of the data, to name the files as the sceneries and the vehicles ask for them
-		WriteLog("File \"" + asked + "\" found as \"" + cased + "\", named in another case", logtype::file);
+		// marked as reported once it's known to be there, and written to the log outside of the lock
+		std::unique_lock lock{cased_mutex};
+		auto const first{cased_reported().insert(asked).second};
+		lock.unlock();
+		// the parser asks for the names in lowercase, so these are mostly the files not named in lowercase on the disk
+		if (first)
+			WriteLog("File \"" + asked + "\" is \"" + cased + "\" on disk, in another case", logtype::file);
 	}
 	return cased;
 #endif
+}
+
+// FileOnDiskToWrite(), the file found only in another case written to the log when Report; the folders never are
+std::string on_disk_to_write(std::string const &Filename, bool const Report)
+{
+	if (auto const cased{file_cased(Filename, Report)}; false == cased.empty())
+		return cased;
+	// a new file: its folder as it's named on the disk, or the nearest one on the way to it which is there, the rest as given
+	auto const split{Filename.find_last_of("/\\")};
+	if ((split == std::string::npos) || (split == 0))
+		return Filename;
+	return on_disk_to_write(Filename.substr(0, split), false) + '/' + Filename.substr(split + 1);
+}
+
+} // namespace
+
+std::string FileCased(std::filesystem::path const &Filename)
+{
+	return file_cased(Filename, true);
 }
 
 std::string FileOnDisk(std::string const &Filename)
@@ -727,13 +753,7 @@ std::string FileOnDisk(std::string const &Filename)
 
 std::string FileOnDiskToWrite(std::string const &Filename)
 {
-	if (auto const cased{FileCased(Filename)}; false == cased.empty())
-		return cased;
-	// a new file: its folder as it's named on the disk, or the nearest one on the way to it which is there, the rest as given
-	auto const split{Filename.find_last_of("/\\")};
-	if ((split == std::string::npos) || (split == 0))
-		return Filename;
-	return FileOnDiskToWrite(Filename.substr(0, split)) + '/' + Filename.substr(split + 1);
+	return on_disk_to_write(Filename, true);
 }
 
 std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)
