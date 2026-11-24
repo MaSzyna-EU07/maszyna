@@ -35,7 +35,7 @@ void main()
 	vec3 fragcolor = ambient;
 	vec3 fragnormal = normalize(f_normal);
 	float reflectivity = param[1].z;
-	float specularity = dot(pow(param[0].rgb, vec3(2.2)), vec3(0.5));
+	float specularity = dot(tex_color.rgb, vec3(0.5));
 	glossiness = abs(param[1].w);
 	
 	fragcolor = apply_lights(fragcolor, fragnormal, tex_color.rgb, reflectivity, specularity, shadow_tone);

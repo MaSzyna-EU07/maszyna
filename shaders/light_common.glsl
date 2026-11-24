@@ -296,6 +296,8 @@ vec3 material_diffuse()
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
+    // the sun highlight is tinted by the texture alone, as 26.05 drew it, not by the diffuse colour too
+    vec3 highlight_tint = texturecolor;
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
     texturecolor *= material_diffuse();
     float weathered = (param[3].w > 0.0 ? clamp(param[3].w * UserData.x, 0.0, 1.0) : 0.0);
@@ -399,7 +401,7 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     // The highlight *strength* (specularamount) is deliberately left untouched so
     // existing material tuning is preserved.
     vec3 diffuse_albedo = texturecolor * (1.0 - metal_diffuse_loss);
-    vec3 spec_tint      = texturecolor;
+    vec3 spec_tint      = highlight_tint;
 
     vec3 result = fragcolor      * diffuse_albedo   // sun + ambient + headlight diffuse
                 + specularcolor  * spec_tint        // direct sun highlight

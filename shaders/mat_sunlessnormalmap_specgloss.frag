@@ -37,6 +37,7 @@ uniform sampler2D specgloss;
 vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
     // diffuse colour applied once, to the albedo (see material_diffuse() in light_common.glsl)
+    vec3 highlight_tint = texturecolor;
     texturecolor *= material_diffuse();
     // Cab interior: dim ambient less than the exterior path - ambient
     // is the dominant indoor illumination, but it was still too bright.
@@ -102,7 +103,7 @@ vec3 apply_lights_sunless(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, fl
     // the albedo (as 26.05 drew it), a metal drops its diffuse term only where its
     // reflection mask is full. Highlight strength left unchanged.
     vec3 diffuse_albedo = texturecolor * (1.0 - metal_diffuse_loss);
-    vec3 spec_tint      = texturecolor;
+    vec3 spec_tint      = highlight_tint;
 
     vec3 result = fragcolor      * diffuse_albedo
                 + specularcolor  * spec_tint
