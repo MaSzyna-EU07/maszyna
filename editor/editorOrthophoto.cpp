@@ -762,12 +762,12 @@ bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 // the line of the scenery and its format: editor_records::orthophoto_line() and read_orthophoto()
 std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
 {
-	return editor_records::orthophoto_line(Enabled, Origin, Config.north, Config.east);
+	return editor_records::orthophoto_line(Enabled, Origin, Config.north, Config.east, Config.aligned);
 }
 
 bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool &Enabled)
 {
-	return editor_records::read_orthophoto(Text, Enabled, Config.north, Config.east);
+	return editor_records::read_orthophoto(Text, Enabled, Config.north, Config.east, &Config.aligned);
 }
 
 void editor_orthophoto::enabled(bool State)
@@ -1044,16 +1044,23 @@ bool editor_orthophoto::outside_area(tile_key const &Key) const
 	return false == m_area.empty() && 0 == m_area_tiles.count(Key);
 }
 
-int editor_orthophoto::level_for(int Distance, bool Hires)
+int editor_orthophoto::level_for(int Distance, int HiresReach)
 {
 	// coarser imagery further away keeps the memory use of large radii in check
-	if (Distance <= 1)
-		return Hires ? hires_pixels : standard_pixels;
+	if (Distance <= HiresReach)
+		return hires_pixels;
 	if (Distance <= 3)
 		return standard_pixels;
 	if (Distance <= 6)
 		return standard_pixels / 2;
 	return standard_pixels / 4;
+}
+
+int editor_orthophoto::hires_reach() const
+{
+	if (m_config.hires)
+		return 1;
+	return m_zoom_hires ? 0 : -1;
 }
 
 editor_orthophoto::tile_key editor_orthophoto::camera_tile(glm::dvec3 const &Camera) const
@@ -1692,7 +1699,7 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires || m_zoom_hires));
+			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), hires_reach()));
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
@@ -2036,7 +2043,7 @@ bool editor_orthophoto::hurry_tile(tile_key const &Key, int const Distance)
 		t.empty = true;
 	if (t.empty)
 		return false;
-	auto const level{first_level(t, level_for(Distance, m_config.hires || m_zoom_hires))};
+	auto const level{first_level(t, level_for(Distance, hires_reach()))};
 	t.retry_at = 0.0;
 	if (t.level == level && t.alpha == m_alpha)
 		return false; // already shown as it should be

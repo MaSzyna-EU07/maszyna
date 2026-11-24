@@ -876,7 +876,7 @@ std::string camera_line(camera const &Camera)
 // //$o -------------------------------------------------------------------------------------------------------------------------------
 // format of the line: on <0/1> [origin <north> <east>]
 
-std::string orthophoto_line(bool const Enabled, bool const Origin, double const North, double const East)
+std::string orthophoto_line(bool const Enabled, bool const Origin, double const North, double const East, bool const Aligned)
 {
 	// how the imagery is shown is the user's, kept with the editor (EditorSettings); the scenery keeps whether it's on and where the
 	// scenery lies
@@ -887,11 +887,13 @@ std::string orthophoto_line(bool const Enabled, bool const Origin, double const 
 	{
 		std::snprintf(text, sizeof(text), " origin %.2f %.2f", North, East);
 		result += text;
+		if (Aligned)
+			result += " aligned";
 	}
 	return result;
 }
 
-bool read_orthophoto(std::string const &Line, bool &Enabled, double &North, double &East)
+bool read_orthophoto(std::string const &Line, bool &Enabled, double &North, double &East, bool *Aligned)
 {
 	std::istringstream words{Line};
 	std::string key;
@@ -903,6 +905,8 @@ bool read_orthophoto(std::string const &Line, bool &Enabled, double &North, doub
 			words >> Enabled;
 		else if (key == "origin")
 			words >> North >> East;
+		else if (key == "aligned" && Aligned != nullptr)
+			*Aligned = true;
 		else
 			continue;
 		if (words.fail())

@@ -136,8 +136,10 @@ std::string camera_line(camera const &Camera);
 
 // //$o, whether the orthophoto is on and, with Origin, where the scenery lies on the map, PUWG 1992 northing and easting; the settings
 // the older sceneries carry besides are passed over. returns: false if the line says none of it
-std::string orthophoto_line(bool const Enabled, bool const Origin, double const North, double const East);
-bool read_orthophoto(std::string const &Line, bool &Enabled, double &North, double &East);
+// Aligned: the origin was aligned by hand in the editor, which //$g of the scenery file doesn't override; a release before it passes the
+// word over
+std::string orthophoto_line(bool const Enabled, bool const Origin, double const North, double const East, bool const Aligned = false);
+bool read_orthophoto(std::string const &Line, bool &Enabled, double &North, double &East, bool *Aligned = nullptr);
 
 // //$z, the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing: none, below 3 points
 std::vector<std::string> area_lines(std::vector<glm::dvec2> const &Polygon);

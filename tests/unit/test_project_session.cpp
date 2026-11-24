@@ -16,6 +16,7 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -63,7 +64,8 @@ TEST_CASE("project session: the map opened gets its project, a command tried cha
 	project::session session;
 	auto const opened{session.open(folder.root(), "mapa.scn")};
 	REQUIRE(opened.done);
-	CHECK(opened.migrated);
+	// nothing to migrate, and the map has its project file all the same: the session writes it as the map is opened
+	CHECK_FALSE(opened.migrated);
 	CHECK(std::filesystem::exists(folder.root() / "mapa.eu07proj"));
 	CHECK(session.file() == folder.root() / "mapa.eu07proj");
 	CHECK(session.network().lines().empty());
@@ -162,6 +164,34 @@ TEST_CASE("project session: each command a step the editor takes back and brings
 	sharp.vertices[1].radius = 120.0;
 	CHECK(session.execute(sharp).token == 0);
 	CHECK(session.undoable() == 2);
+}
+
+TEST_CASE("project session: a save writing one track of a line keeps the records of its other tracks") {
+	test::scratch_folder folder{"project_session_partial"};
+	folder.write("mapa.scn", "// a new scenery\n");
+	project::session session;
+	REQUIRE(session.open(folder.root(), "mapa.scn").done);
+	REQUIRE(session.execute(three_curves()).outcome.done);
+	write_tracks(session, folder, "mapa.scn", {line_id{1}});
+	auto const of_line = [&session]() {
+		std::set<std::string> names;
+		for (auto const &node : session.project().generated)
+			if (node.line == line_id{1})
+				names.insert(node.name);
+		return names;
+	};
+	auto const all{of_line()};
+	REQUIRE(all.size() > 1);
+	// a track moved and moved back (Ctrl+Z): the scenery writes that one alone
+	auto const piece{session.generate(line_id{1}).pieces.front()};
+	session.record_written(line_id{1}, {{piece.name, piece.text}}, "mapa.scn");
+	CHECK(of_line() == all);
+	std::string error;
+	REQUIRE(session.save(error));
+	auto const opened{session.open(folder.root(), "mapa.scn")};
+	REQUIRE(opened.done);
+	CHECK(opened.hand_changes.empty());
+	CHECK(of_line() == all);
 }
 
 TEST_CASE("project session: the tracks written recorded, one changed in the file marks its line, written over only when the author decides") {

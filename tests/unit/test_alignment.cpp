@@ -1180,7 +1180,8 @@ TEST_CASE("alignment: the cant ramp the norms ask for, which a track laid on fro
 	CHECK(alignment::cant_ramp_length(100.0, 120.0, gentle) == doctest::Approx(100.0));
 	// the ramp is never shorter at a higher speed
 	double previous{0.0};
-	for (double speed = 20.0; speed <= 200.0; speed += 10.0) {
+	for (int step{0}; step <= 18; ++step) {
+		auto const speed{20.0 + 10.0 * step};
 		auto const length{alignment::cant_ramp_length(speed, 80.0, norms)};
 		CHECK(length >= previous);
 		previous = length;

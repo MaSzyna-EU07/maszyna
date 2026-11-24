@@ -39,8 +39,9 @@ struct origin_choice
 };
 
 // //$g goes first, as the file of the scenery says where it lies: an origin remembered by the editor for a scenery of the same name
-// elsewhere, or one written into //$o with it, can't move it. Without //$g the editor's own //$o, then the one remembered
-origin_choice choose_origin(std::optional<glm::dvec2> const &Georeference, std::optional<glm::dvec2> const &Mark, std::optional<glm::dvec2> const &Remembered);
+// elsewhere, or one written into //$o with it, can't move it. Without //$g the editor's own //$o, then the one remembered. A //$o the
+// user aligned by hand (MarkAligned, the word aligned in it) goes before //$g: the user moved the photo off it on purpose
+origin_choice choose_origin(std::optional<glm::dvec2> const &Georeference, std::optional<glm::dvec2> const &Mark, std::optional<glm::dvec2> const &Remembered, bool const MarkAligned = false);
 // the origins further apart than that are told of
 double constexpr origin_tolerance{1.0};
 

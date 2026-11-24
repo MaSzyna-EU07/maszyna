@@ -35,26 +35,7 @@ int constexpr kIterations{40};
 // the nearest point of the line to the point of the plan: its chainage
 double nearest_on(solved_line const &Line, glm::dvec2 const &Point)
 {
-	auto best{0.0};
-	auto nearest{std::numeric_limits<double>::max()};
-	auto const count{std::max(2, static_cast<int>(std::ceil(Line.length / 2.0)))};
-	for (int i = 0; i <= count; ++i)
-	{
-		auto const s{Line.length * i / count};
-		if (auto const d{glm::distance(Line.position(s), Point)}; d < nearest)
-		{
-			nearest = d;
-			best = s;
-		}
-	}
-	for (int i = 0; i < 20; ++i)
-	{
-		auto const shift{glm::dot(Point - Line.position(best), glm::normalize(Line.tangent(best)))};
-		best = std::clamp(best + shift, 0.0, Line.length);
-		if (std::abs(shift) < 1e-12)
-			break;
-	}
-	return best;
+	return Line.nearest(Point);
 }
 
 // the end of the diverging track of the type laid on a straight from the origin along x: how far along, how far aside, its angle
@@ -286,8 +267,10 @@ connection_plan plan_connection(network const &Network, connect_tracks const &Re
 	// the spacing along the crossover: from the start of the first turnout as far as the start of the second one lies along the first line
 	auto const reach{plan.straight * std::cos(std::abs(end.angle)) + 2.0 * end.along};
 	plan.spacing_least = std::numeric_limits<double>::max();
-	for (double s = 0.0; s <= reach + 1e-9; s += kStep)
+	for (int step{0}; step * kStep <= reach + 1e-9; ++step)
 	{
+		// whole metres, as exact as the sum of the steps was
+		auto const s{step * kStep};
 		auto const station{std::clamp(s1 + Request.direction * s, 0.0, a.length)};
 		auto const point{a.position(station)};
 		auto const spacing{glm::distance(point, b.position(nearest_on(b, point)))};

@@ -59,7 +59,7 @@ void check_found(layout::line_shape const &Original, layout::recognized_line con
 		CAPTURE(vertex.radius);
 		auto const *match{nearest(Found.shape, vertex.point, 5.0)};
 		REQUIRE(match != nullptr);
-		CHECK(std::abs(match->radius - vertex.radius) < vertex.radius * 0.01);
+		CHECK(std::abs(match->radius - vertex.radius) < vertex.radius * 0.01); // NOSONAR: REQUIRE above ends the test on none
 		CHECK(same_transition(Turned ? match->transition_out : match->transition_in, vertex.transition_in, vertex.radius));
 		CHECK(same_transition(Turned ? match->transition_in : match->transition_out, vertex.transition_out, vertex.radius));
 		CHECK(std::abs(match->cant - vertex.cant) < 3.0);
@@ -114,7 +114,7 @@ TEST_CASE("takeover fit: the same line whichever old track the walk starts from,
 		CAPTURE(seed);
 		// the tracks in another order: the walk starts from another one of them, somewhere along the line
 		auto shuffled{tracks};
-		std::mt19937 random{seed};
+		std::mt19937 random{seed}; // NOSONAR: seeded for repeatable tests, nothing secret is drawn
 		std::ranges::shuffle(shuffled, random);
 		auto const plan{layout::plan_takeover(shuffled, take_all(shuffled))};
 		REQUIRE(plan.lines.size() == 1);

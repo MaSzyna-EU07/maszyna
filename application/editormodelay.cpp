@@ -2398,7 +2398,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		tool.points.clear();
 		tool.modes.clear();
 		tool.start = {};
-		tool.laid_step = m_history.size();
+		tool.laid_step = history_top();
 		straight_refresh();
 		return;
 	}
@@ -2524,7 +2524,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	tool.sigmas.clear();
 	tool.heights.clear();
 	tool.start = {};
-	tool.laid_step = m_history.size();
+	tool.laid_step = history_top();
 	straight_refresh();
 	// traced on the photo, the line goes on from the end laid till Esc: the next click carries it on, no need to hit the end. The end
 	// found in the plan: the grade line fitted to the terrain may have lifted or lowered it
@@ -2557,7 +2557,7 @@ void editor_mode::lay_told(double const Length, std::size_t const Tracks)
 	tool.status_time = ImGui::GetTime();
 	tool.laid_now = true;
 	tool.notes_open = false;
-	tool.laid_step = m_history.size();
+	tool.laid_step = history_top();
 }
 
 void editor_mode::lay_enter()
@@ -2874,16 +2874,21 @@ alignment::limits editor_mode::laying_norms() const
 	return norms;
 }
 
+std::uint64_t editor_mode::history_top() const
+{
+	return m_history.empty() ? 0 : m_history.back().serial;
+}
+
 editor_mode::lay_state editor_mode::lay_panel_state() const
 {
 	if (m_extend.active)
 		return lay_state::extending;
 	// the line laid just now goes on from its end: told as laid till another point is clicked
-	if (m_lay.continuing && m_lay.points.size() == 1 && m_lay.laid_now && m_lay.laid_step == m_history.size())
+	if (m_lay.continuing && m_lay.points.size() == 1 && m_lay.laid_now && m_lay.laid_step == history_top())
 		return lay_state::laid;
 	if (false == m_lay.points.empty())
 		return lay_state::clicking;
-	if (m_lay.laid_now && m_lay.laid_step == m_history.size())
+	if (m_lay.laid_now && m_lay.laid_step == history_top())
 		return lay_state::laid;
 	return lay_state::ready;
 }

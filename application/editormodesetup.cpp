@@ -118,10 +118,10 @@ void editor_mode::setup_defaults(project_setup::setup const &Setup)
 	// the speed of the laying and of the plan, the look and the gauge of the tracks laid, the norms
 	m_lay.style.velocity = Setup.speed;
 	m_lay.style.gauge = Setup.gauge / 1000.0;
-	if (false == Setup.rails.empty())
-		m_lay.style.rail = Setup.rails;
-	if (false == Setup.ballast.empty())
-		m_lay.style.ballast = Setup.ballast;
+	// a texture left empty is the lay tool's own: also where the field was cleared after another one was typed, which stayed
+	editor_track::path_style const own;
+	m_lay.style.rail = Setup.rails.empty() ? own.rail : Setup.rails;
+	m_lay.style.ballast = Setup.ballast.empty() ? own.ballast : Setup.ballast;
 	m_route.design.norms.gauge = project_setup::rail_axes(Setup);
 	if (m_route.chain.tracks.empty())
 		m_route.design.speed = Setup.speed;
@@ -156,7 +156,13 @@ void editor_mode::setup_store()
 	};
 	if (model_setup())
 	{
-		moved_out();
+		// the project of the model is written after the scenery, and may fail to be: model_saved() puts them back into the scenery then,
+		// and they stay there till the project is saved
+		m_setup_moving = true;
+		if (m_setup_unsaved)
+			setup_keep_in_scenery();
+		else
+			moved_out();
 		return;
 	}
 	std::error_code error;
@@ -176,8 +182,29 @@ void editor_mode::setup_store()
 				WriteLog("Editor: the assumptions of the project not written into its file: " + why, logtype::generic);
 		}
 	}
-	scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", line});
+	setup_keep_in_scenery();
+}
+
+void editor_mode::setup_keep_in_scenery()
+{
+	if (false == m_setup.has_value())
+		return;
+	scene::Layers.mark(scene::layer_handle{1}, "//$u", {"# the assumptions of the project: what the editor lays the tracks to", project_setup::record(*m_setup)});
 	m_setup_marked = true;
+}
+
+void editor_mode::setup_project_saved(bool const Saved)
+{
+	if (false == m_setup_moving)
+		return;
+	m_setup_moving = false;
+	m_setup_unsaved = false == Saved;
+	// not saved: the assumptions go back into the scenery, written with its next save, rather than be in neither of them; saved while the
+	// scenery holds them still: taken out of it with the next save
+	if (false == Saved)
+		setup_keep_in_scenery();
+	if (false == Saved || m_setup_marked)
+		m_setup_changed = true;
 }
 
 bool editor_mode::render_setup_card()
