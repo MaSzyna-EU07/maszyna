@@ -575,15 +575,21 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     }
     else {
         if( iTableDirection == 0 ) { return; }
-        // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table
-        if( SemNextIndex != npos
-         && SemNextIndex >= sSpeedTable.size() ) {
-            SemNextIndex = npos;
-        }
-        if( SemNextStopIndex != npos
-         && SemNextStopIndex >= sSpeedTable.size() ) {
-            SemNextStopIndex = npos;
-        }
+        // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table.
+        // nothing is known to do that any more, so say so when it happens
+        auto const dropstaleindex = [this, fDistance]( std::size_t &Index, std::string_view const Name ) {
+            if( Index == npos
+             || Index < sSpeedTable.size() ) {
+                return;
+            }
+            ErrorLog( std::format(
+                "Speed table for {}: {} {} points past the end of the table ({} records), last track {} at {:.1f} m, scan range {:.1f} m; reset",
+                OwnerName(), Name, Index, sSpeedTable.size(),
+                ( iLast >= 0 && sSpeedTable[ iLast ].trTrack != nullptr ? sSpeedTable[ iLast ].trTrack->name() : "none" ),
+                ( iLast >= 0 ? sSpeedTable[ iLast ].fDist : 0.0 ), fDistance ) );
+            Index = npos; };
+        dropstaleindex( SemNextIndex, "SemNextIndex" );
+        dropstaleindex( SemNextStopIndex, "SemNextStopIndex" );
         // kontynuacja skanowania od ostatnio sprawdzonego toru (w ostatniej pozycji zawsze jest tor)
         if( SemNextStopIndex != npos
          && sSpeedTable[SemNextStopIndex].fVelNext == 0.0 ) {
