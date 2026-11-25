@@ -287,6 +287,42 @@ and drives the timetable on it, at most 520 kW x 0.85 = 442 kW at the wheels (`t
 `e6actad_catenary_td_timetable` is the same variant without the events: it stays on the catenary and takes several
 times that, which shows the check tells the two apart.
 
+### Heavy trains
+
+The heavy train cases (#187, #199, #263, #265) run on lines of their own beside the tracks of td.scn, at x = -3000, as
+the `*_td_downgrade_w4_signal` cases of #479 do: 100 m tracks, an overhead wire fed by a substation of its own (none for
+the diesel case) and signals at stop that are a memory cell with `SetVelocity 0 0` and the event that reads it, with no
+model. Each train starts on a level stretch long enough for the whole consist, with its head 10 m before the W4 of Gora,
+which is where the distances in the checks start from. A freight train leaves a station of its timetable as soon as it
+stands there (`IsCargoTrain` in `TController`), so the freight trains leave Gora at once, not at 10:35. The checks that
+look for a train that comes to a stand use the vehicle speed (`keeps_moving`), as the wheels of a heavy train starting
+on poor rails spin while it stands; `starts_again` checks a start from a signal that clears at a given time, and how far
+the train rolls back meanwhile.
+
+| case | fragment | train | what it shows |
+| --- | --- | --- | --- |
+| `et41_coal_td_downgrade_restriction` | `td_downgrade_restriction.scn`: 600 m level, 3500 m down 20 per mille, 20 km/h from 1500 to 1900 m down, the signal 3000 m down | ET41, 25 coal wagons 412W with 40 t each, G (about 1670 t) | passes: through the restriction at 10.5 km/h at the lowest, stops at the signal (3078 m) |
+| `et22_764_td_downgrade_restriction` | the same | ET22, 20 heavy wagons 764 with 84 t each (about 2650 t) | `xfail`: dips to 8.5 km/h in the 20 km/h restriction (below the 10 km/h #263 counts as a defect); it doesn't stop |
+| `st43_steel_td_downgrade12_long` | `td_downgrade12_long.scn`: 900 m level, 6500 m down 12 per mille, no wire, the signal 6000 m down | ST43, 45 coil wagons 425S, G | passes: holds 35-37.5 km/h of the 40 all the way down, never below 20 km/h, stops at the signal |
+| `et41_coal_td_upgrade_start` | `td_upgrade_signal_start.scn`: 600 m level, 2500 m up 10 per mille, a signal 1000 m up that clears at 10:42, another 2300 m up | the ET41 with 25 coal wagons | passes: stops at the first signal with the whole train on the gradient, moves off 4.7 s after it clears, 10 km/h after 52 s, rolls back 0.04 m |
+| `eu07a_coaches_td_upgrade_long` | `td_upgrade_long.scn`: 600 m level, 5500 m up 10 per mille, the signal 5300 m up | EU07A (303E), 8 coaches (about 360 t), passenger timetable at 80 km/h | passes: 80 km/h at 1430 m, never below 73.8 km/h on the climb |
+| `et41_coal_td_slippery_start` | `td_level_signal.scn`: 2100 m level, the signal 1000 m ahead | ET41, 25 coal wagons with 60 t each (about 2170 t), `friction 0.3` | passes with the fix of this branch: gets going and stops at the signal (1082 m, at 392 s); before it, 395 slips in 1500 s and 75 m |
+
+What the AI still does with heavy trains, without a case that fails on it:
+
+- On a steep descent into a restriction a heavy G train holds the speed by applying and releasing the train brake in
+  turn. Its brake takes 10-15 s to release, so it falls well below the limit before the brake lets go: 10.5-12 km/h
+  for the ET41 with coal wagons, 8.5 km/h for the ET22 with the 764 wagons (the `xfail` above), in a 20 km/h
+  restriction. #263 reported this train stopping before the restriction in 10 of 12 runs; on staging it no longer
+  does, also with `friction 0.5` and with the wagons fully loaded.
+- Starting uphill, a heavy train pulls against its train brake while the brake releases (#265): in
+  `et41_coal_td_upgrade_start` about 13 s at about 200 kN with the head moving by the slack of the couplers alone. It
+  starts at full power, without taking up the slack first.
+- The AI doesn't know the adhesion of the rails: it plans braking with `Global.FrictionWeatherFactor` alone, and the
+  result of its running brake test (`adjust_desired_speed_for_braking_test`) is shown in the debug panel only. It sands
+  ahead of a slip only at a high motor current, and, since the fix of `et41_coal_td_slippery_start`, through the rest of
+  a start that has slipped (`control_wheelslip()`); not before a hard brake, nor before the first slip of a start.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -314,6 +350,12 @@ couple and neither shows up: the black box has to have the last car of the stand
 writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
 test timeout.
 
+`et21_td_no_wire_reports` (issue #421, fragment `td_no_wire.scn`) adds a 200 m track of its own,
+with no overhead wire, 400 m off the line of td.scn (every track of td.scn is under the wire), with
+an ET21 and its AI driver on it. The pantographs go up and find no wire, so the locomotive can't
+start: the driver has to say so in the log, once, naming the locomotive and where it stands, and
+not mistake it for a wire without voltage. It ends on the standstill.
+
 `eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
 (`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
 so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
@@ -331,6 +373,21 @@ event of `vars.amplitude` at 10:35. Both have `physics.derailment new` in `ini`:
 Przystanek whatever the buckle. With 600 mm over a main lobe of 8 m the locomotive overturns on
 the buckle at 46 km/h, 1036 m from the start (`Bad driving: ... derailed on buckled track`); with
 30 mm it keeps on the rails and stops at Przystanek after 1400 m.
+
+`sm42_td_uncouple_past_signal` (fragment `td_uncouple_past_signal.scn`) is the uncoupling of the SM42 at Debica on
+L053 poranek (step 10 of `deb_sm42_stat`) on td.scn. An SM42 with no timetable stands turned at the far end of `tor1k`,
+three wagons loaded with gravel (51 m of train) behind it towards the exit signal `stacja1_j`, which stays at stop (no
+route). `tdo_n1734`, the track behind `tor1k`, is closed (`trackvel 0`) from the start. `event0` of `tor1k` gives the
+driver `Shunt -1 0`: it pulls the wagons back for 47 m and stops in front of the closed track, with the far end of the
+last wagon 2 m past the signal's memory cell (the `distance` check keeps it 0-4 m past). The pull leaves the screw
+coupler stretched, 0.019 m apart at the buffers, and a screw coupler is let go only with the buffers pressed together
+(under 0.01 m). At the first stand `event0` gives `Shunt 0 0`: brake the wagons, change direction, push the buffers in,
+uncouple. After the direction change the driver counts `stacja1_j` as passed at its first move, so its speed is capped
+at 0. The driver used to work the brake releaser only while it wanted to speed up, so the locomotive stayed braked by
+the wagons' brake application and never closed the gap: no `uncoupled` in the log, and the case ran into its timeout.
+Now the locomotive is released, eases into the wagons and uncouples within a second. The wagons are loaded so that the
+stop leaves the gap above 0.01 m: with a coach and an empty wagon the buffers came to rest 0.009 m apart and the
+coupler let go at once.
 
 The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
 `putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
@@ -435,10 +492,13 @@ so those cases run variants of the vehicles made for the run (`vehicle_variants`
   pantograph runs under the piece of wire.
 - `et42_td_converter_interlock_cold`: an ET42 with `LineContactorsInterlock=Converter` in both sections
   stands cold (`td_cold_timetable.scn`) and is ordered to run the timetable: the AI starts the converters,
-  leaves (20 km/h after 74 s) and stops at Przystanek (1393 m). That the variant takes effect shows with a
-  converter that starts 60 s after it is switched on (`ConverterStartDelay=60`, a trial run, not a case):
-  with the interlock the train reaches 20 km/h 6 s later than without it. `et42_td_converter_interlock` is
-  the same from the timetable start.
+  leaves (20 km/h after 74 s) and stops at Przystanek (1393 m). It and `et42_td_converter_interlock`, the
+  same from the timetable start, check that the AI gets such a train going; a plain ET42 passes them too.
+- `et42_td_converter_interlock_slow_converter`: the check that the interlock takes effect. The same cold ET42
+  with a converter that starts 60 s after it is switched on (`ConverterStartDelay=60`): the line contactors
+  wait for it, and the train reaches 20 km/h at 80.0 s; `starts` with `after: 77` fails it earlier. With the
+  same converter and no interlock it gets there at 73.8 s, as fast as without the slow converter (a copy of
+  the case without the key, run once, not kept).
 - `ep05_td_interlock_dead_section_cold`: #272 and #276 together, an EP05 with `LineContactorsInterlock=Converter`
   added, standing cold, with the span without voltage on its way: the pantographs can go up only through the
   closed line breaker, so the AI has to close it first, then start the converter; it leaves (20 km/h after
@@ -488,8 +548,8 @@ staging f15ea405 of 2026-11-23):
 | `wrzosy_pxe336080_couples` | #524 | passes: ordered to, the locomotive couples to the rake (`couples`, 262 s) and takes it out of the depot (696 s). The scenery itself gives no such order |
 | `baltyk_skm1_roj55324_shunting_signal` | #525 | passes, with four seeds: the unit on the siding is let into the platforms 4 minutes after the start, once the shunter beside it has done its first moves, and leaves at 10:42 |
 | `baltyk_skm1_roj55321_departure` | #525 | passes, with three seeds: the unit in the platform leaves at 10:34 |
-| `l053_poranek_tme222158_debica` | #421 | `xfail`: on master of 2026-11-11 the station jammed 4 minutes after the start, the AI of EP07-338'16 passed the shunting signal Tm4 at stop at 29 km/h. Since #409 (staging f15ea405, 2026-11-23) the EP07 stops at the checkpoint and TME222158 gets to Debica, but the station's SM42-1096 jams it: ordered to uncouple at step 10 of `deb_sm42_stat` it pushes its cut past `debica_k_sem_info` at danger and never gets the coupler off, so the station never sends TME222158 on |
-| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: on master of 2026-11-11, with an ET21 as in the report, the locomotive stopped for good at Debica Towarowa, on the headshunt 20 m past the end of the overhead wire, and its driver never got out of `Prepare_engine`. Since #409 (staging f15ea405) the ET21 gets through Debica Towarowa (steps 1-5 of `dt_tme222158_stat`) to Debica, then fails on the SM42 as `l053_poranek_tme222158_debica` does |
+| `l053_poranek_tme222158_debica` | #421 | passes: TME222158 gets the exit signal to Sandomierz (step 6 of `deb_tme222158_stat`) after 4086.2 s. On master of 2026-11-11 the station jammed 4 minutes after the start, the AI of EP07-338'16 passed the shunting signal Tm4 at stop at 29 km/h; #409 fixed that. On staging f15ea405 (2026-11-23) the station's SM42-1096 jammed it next: ordered to uncouple at step 10 of `deb_sm42_stat`, with its cut standing across `debica_k_sem_info` at stop, it stayed braked and never got the coupler off (standstill after 4347 s), until the AI kept the locomotive released while it pushes the buffers in to uncouple (`sm42_td_uncouple_past_signal`) |
+| `l053_poranek_tme222158_debica_et21` | #421 | passes after 4131.6 s. On master of 2026-11-11, with an ET21 as in the report, the locomotive stopped for good at Debica Towarowa, on the headshunt 20 m past the end of the overhead wire, and its driver never got out of `Prepare_engine`. Since #409 the ET21 gets through Debica Towarowa (steps 1-5 of `dt_tme222158_stat`) to Debica; there it waited for the SM42 as `l053_poranek_tme222158_debica` did, until the same fix |
 | `l053_poludnie_roj32134_debica` | #506 | passes: both trains run and the unit ends at Debica after 6134 s; no train in its way |
 
 In the L053 sceneries the test mode logs a signal passed at danger for several shunting
@@ -505,7 +565,8 @@ the physicslog Velocity column, which is the wheel speed: it stays at 0 while th
 locked in a skid. The ones marked *vehicle speed* use the vehicle speed column at the end of
 the row instead, logged by builds from this branch on.
 
-- `starts` `min_speed`, `within`: reaches `min_speed` within `within` seconds.
+- `starts` `min_speed`, `within` (`after`): reaches `min_speed` within `within` seconds (and not before `after` seconds,
+  when given).
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
@@ -531,6 +592,12 @@ the row instead, logged by builds from this branch on.
   traction force times the vehicle speed, never goes above `max_kw` and, given `min_peak_kw`, reaches
   it at least once; e.g. a dual-mode vehicle running on the power of its genset. The traction force
   column is in N, whatever the header says.
+- `keeps_moving` `moving_speed`, `min_speed`, `until_distance`, optional `from_distance` (*vehicle speed*): once at
+  `moving_speed`, the speed stays at or above `min_speed` between the two distances (metres travelled, from the vehicle
+  speed), e.g. a heavy train doesn't come to a stand on a descent before a restriction. Reports the lowest speed.
+- `starts_again` `after`, `min_speed`, `within`, optional `max_rollback` (*vehicle speed* for the rollback): standing
+  at the time `after` (a signal that clears then), the train reaches `min_speed` within `within` seconds, and rolls back
+  no more than `max_rollback` metres meanwhile.
 - `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
   `Bad driving: ... collided` message of a collision.
 - `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.

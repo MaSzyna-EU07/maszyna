@@ -7,7 +7,7 @@ curves, speed and road crossings. The originals stay as they are, graded copies 
     python track_uneven_grade.py scenery/baltyk_skm1.scn --out graded --route -107,2300 -4120,2491 --straight tor0290,tor0906
     python track_uneven_grade.py scenery/mytracks.scm --root scenery --out graded --gain 1.2
 
-With no --out it only reports. See track_uneven_doc.md for the attribute. Python 3.8 or later, no other packages.
+With no --out it only reports. See docs/track_uneven_doc.md for the attribute. Python 3.8 or later, no other packages.
 """
 import argparse
 import collections

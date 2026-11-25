@@ -10099,7 +10099,17 @@ bool TTrain::Update(double const Deltatime)
 	ggDimHeadlightsButton.Update();
 	ggDimHeadlightsButton.Update();
 	//------------
+	// the converter switches follow the vehicle when something else flips them (the AI driver, the other cab,
+	// the pressure switch of an EMU), not only when the cab is entered (set_cab_controls())
+	if (ggConverterButton.SubModel != nullptr && mvOccupied->ConvSwitchType != "impulse" && mvOccupied->ConverterStart == start_t::manual)
+	{
+		ggConverterButton.UpdateValue(mvOccupied->ConverterAllow ? 1.f : 0.f, dsbSwitch);
+	}
 	ggConverterButton.Update();
+	if (ggConverterLocalButton.SubModel != nullptr)
+	{
+		ggConverterLocalButton.UpdateValue(mvOccupied->ConverterAllowLocal ? 1.f : 0.f, dsbSwitch);
+	}
 	ggConverterLocalButton.Update();
 	ggConverterOffButton.Update();
 	ggTrainHeatingButton.Update();
@@ -12004,9 +12014,9 @@ void TTrain::set_cab_controls(int const Cab)
 	// converter
 	if (mvOccupied->ConvSwitchType != "impulse")
 	{
-		ggConverterButton.PutValue(mvControlled->ConverterAllow ? 1.f : 0.f);
+		ggConverterButton.PutValue(mvOccupied->ConverterAllow ? 1.f : 0.f);
 	}
-	ggConverterLocalButton.PutValue(mvControlled->ConverterAllowLocal ? 1.f : 0.f);
+	ggConverterLocalButton.PutValue(mvOccupied->ConverterAllowLocal ? 1.f : 0.f);
 	// compressor
 	ggCompressorButton.PutValue(mvControlled->CompressorAllow ? 1.f : 0.f);
 	ggCompressorLocalButton.PutValue(mvControlled->CompressorAllowLocal ? 1.f : 0.f);

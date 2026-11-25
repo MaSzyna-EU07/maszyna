@@ -287,6 +287,8 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 	{
 		Global.LoadIniFile("eu07.ini");
 	}
+	// the settings are read, so the log service writes as it goes instead of holding everything until it stops
+	OpenLogFiles();
 	// the progress goes to the console, the log keeps the details
 	Global.iWriteLogEnabled &= ~2;
 	std::thread logservice(LogService);
