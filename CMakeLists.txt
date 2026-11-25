@@ -539,6 +539,11 @@ add_library(eu07_settings INTERFACE)
 # definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
 "McZapkie/friction.cpp"
+"McZapkie/steam/properties.cpp"
+"McZapkie/steam/valve_gear.cpp"
+"McZapkie/steam/engine.cpp"
+"McZapkie/steam/boiler.cpp"
+"McZapkie/steam/locomotive.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
