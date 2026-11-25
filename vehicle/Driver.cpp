@@ -3324,13 +3324,7 @@ bool TController::PrepareEngine()
                     cue_action( driver_hint::rearmotorblowerson );
                 }
             }
-            // the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional): off, the field
-            // stays full
-            if( AIControllFlag
-             && mvControlling->EngineType == TEngineType::DieselElectric
-             && mvControlling->AutoRelayType == 2 ) {
-                mvControlling->AutoRelaySwitch( true );
-            }
+            control_field_shunting();
             // sync virtual brake state with the 'real' one
             if( mvOccupied->BrakeHandle != TBrakeHandle::NoHandle ) {
                 std::unordered_map<int, int> const brakepositions{
@@ -8715,8 +8709,22 @@ TController::control_tractive_and_braking_force() {
 #endif
 }
 
+// the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional): off, the field stays full.
+// checked while running too, since a vehicle taken over with its engine running doesn't go through PrepareEngine()
+void TController::control_field_shunting() {
+
+    if( AIControllFlag
+     && mvControlling->EngineType == TEngineType::DieselElectric
+     && mvControlling->AutoRelayType == 2
+     && false == mvControlling->AutoRelayFlag ) {
+        mvControlling->AutoRelaySwitch( true );
+    }
+}
+
 // ensure relays are active
 void TController::control_relays() {
+
+    control_field_shunting();
 
     if( fActionTime < 0.0 ) { return; }
 
