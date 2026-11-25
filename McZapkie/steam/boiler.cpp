@@ -405,13 +405,19 @@ double boiler::draught_flow(boiler_input const &Input, double const BlowerFlow) 
 	constexpr int bisections{26};
 	constexpr double flow_limit{30.0};
 	auto const &ambient{m_parameters.ambient};
+	// the values of the input the search needs, taken by the lambda as values rather than through the reference
+	auto const door{Input.door};
+	auto const dampers{Input.dampers};
+	auto const nozzle_flow{Input.nozzle_flow};
+	auto const nozzle_velocity{Input.nozzle_velocity};
+	auto const nozzle_volume{Input.nozzle_volume};
 	// the vacuum the exhaust makes, plus the natural draught of the chimney, less what the gas path takes
-	auto const surplus{[this, &Input, BlowerFlow, &ambient](double const Flow)
+	auto const surplus{[this, door, dampers, nozzle_flow, nozzle_velocity, nozzle_volume, BlowerFlow, &ambient](double const Flow)
 	                   {
-		                   auto const burning{fire(Flow, Input.door)};
+		                   auto const burning{fire(Flow, door)};
 		                   auto const natural{gravity * 1.6 * ambient.pressure / air_gas_constant * (1.0 / ambient.temperature - 1.0 / std::max(burning.smokebox_temperature, ambient.temperature))};
-		                   auto const ejector{ejector_vacuum(Input.nozzle_flow, Input.nozzle_velocity, Input.nozzle_volume, BlowerFlow, burning.gas_flow, burning.smokebox_temperature)};
-		                   return ejector + natural - resistance(Flow, Input.dampers, burning.tube_pressure_drop);
+		                   auto const ejector{ejector_vacuum(nozzle_flow, nozzle_velocity, nozzle_volume, BlowerFlow, burning.gas_flow, burning.smokebox_temperature)};
+		                   return ejector + natural - resistance(Flow, dampers, burning.tube_pressure_drop);
 	                   }};
 	if (surplus(flow_limit) > 0.0)
 	{
