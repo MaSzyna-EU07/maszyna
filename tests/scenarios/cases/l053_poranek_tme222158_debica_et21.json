@@ -16,7 +16,6 @@
     "reason": "tme222158_got_the_exit_signal_at_debica"
   },
   "slow": true,
-  "xfail": "eu07/maszyna#421: the ET21 stands for good at Debica Towarowa with the shunting signal at Ms2. Running round the wagons it stops on the headshunt 20 m past the end of the overhead wire (the wire ends at z 4804 over tor2466, the locomotive stands at z 4786), loses power, and its driver never gets out of Prepare_engine; the ET22 the scenery has there now gets through",
   "physicslog": false,
   "ini": [
     "file.binary.terrain no"

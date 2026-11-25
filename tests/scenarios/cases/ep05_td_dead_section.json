@@ -1,0 +1,22 @@
+{
+  "description": "#272: an EP05 (PantRequiresMain=Yes: its line breaker closes ahead of the pantographs and holds without voltage) runs the td/rozklad timetable of td.scn with one span of the overhead wire on its way, 61 m some 400 m from the start, left without voltage, and nothing on the track to tell the driver to coast. The AI runs into it under power: the line breaker stays closed (the log keeps saying the vehicle lost power, which it says only while the line breaker is closed), the traction force drops to nothing and the AI puts the master controller to 0; behind the section the AI takes power again and stops at Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp/ep05_v2 ep05-23 ep05 0 headdriver 0 0 enddynamic"
+  },
+  "replace": [
+    ["node -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417", "node -1 0  none traction none 0 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417"]
+  ],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "traction", "from_distance": 420, "to_distance": 455, "at_most": 1},
+    {"type": "traction", "from_distance": 460, "to_distance": 620, "reaches": 25},
+    {"type": "log_contains", "pattern": "lost power for [3-9]\\.\\d\\d sec"},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}
