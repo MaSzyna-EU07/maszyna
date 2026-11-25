@@ -1267,19 +1267,39 @@ for i = 1, 10000000 do kept[i] = ("x"):rep(1000) .. i end
 return { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
 )"};
 
-// a concatenation of 320 MB in one operation, from a string of 64 MB: only an allocator of the screen's own refuses
-// it as it is made
+// the memory limit of the Lua screens made while it lives, in place of max_screen_memory: a test that fills the memory
+// of a screen stays small
+class screen_memory_limit {
+  public:
+	explicit screen_memory_limit(std::size_t const Bytes) { script_screens::set_lua_screen_memory_limit(Bytes); }
+	~screen_memory_limit() { script_screens::set_lua_screen_memory_limit(script_screens::max_screen_memory); }
+	screen_memory_limit(screen_memory_limit const &) = delete;
+	screen_memory_limit &operator=(screen_memory_limit const &) = delete;
+};
+
+constexpr std::size_t small_screen_memory{32 * 1024 * 1024};
+
+// with small_screen_memory: a concatenation of 80 MB in one operation, from a string of 8 MB, refused as it is made, in
+// the pcall, as the instruction hook would see it only once it is made
 constexpr std::string_view one_concatenation_script{R"(
 local a = ("x"):rep(1024 * 1024)
-for i = 1, 6 do a = a .. a end
-local ok, message = pcall(function() return #(a .. a .. a .. a .. a) end)
-local refused = #a == 64 * 1024 * 1024 and not ok and message:find("not enough memory", 1, true) ~= nil
+for i = 1, 3 do a = a .. a end
+local ok, message = pcall(function() return #(a .. a .. a .. a .. a .. a .. a .. a .. a .. a) end)
+local refused = #a == 8 * 1024 * 1024 and not ok and message:find("not enough memory", 1, true) ~= nil
 a = nil
 return {
 	render = function(state)
 		return eu07.image(1, 1, refused and { 255, 255, 255 } or { 0, 0, 0 })
 	end
 }
+)"};
+
+// doubles a string to 2 GB, 64 times small_screen_memory, in some fifty instructions: fewer than the thousand after
+// which the instruction hook looks at the heap
+constexpr std::string_view doubling_script{R"(
+local s = ("x"):rep(1024 * 1024)
+for i = 1, 11 do s = s .. s end
+return { render = function(state) return eu07.image(1, 1, { 255, 255, 255 }) end }
 )"};
 
 // white when a coroutine yields across xpcall, and xpcall without a handler is an error
@@ -1390,13 +1410,25 @@ TEST_CASE("lua screens: a screen holding more than its memory is switched off") 
 	CHECK(log.lines_with("memory limit exceeded").size() + log.lines_with("not enough memory").size() > 0);
 }
 
-TEST_CASE("lua screens: with an allocator of the screen's own, a string made over the memory in one operation is refused") {
-	if (false == script_screens::lua_screen_memory_allocator()) {
-		MESSAGE("LuaJIT takes no allocator of the game's here (2.0, or 2.1 without GC64 on x64): not tested");
-		return;
-	}
+TEST_CASE("lua screens: a string made over the memory in one operation is refused") {
+	screen_memory_limit const limit{small_screen_memory};
 	script_folder const folder{"lua_one_concatenation"};
 	CHECK(first_pixel(folder.write("concatenation.lua", one_concatenation_script), "concatenation") == 255);
+	CHECK(script_screens::lua_screen_memory_peak() <= 2 * small_screen_memory);
+}
+
+TEST_CASE("lua screens: a string doubled in a loop stops at the memory of the screen, not at LuaJIT's own limit") {
+	log_capture const log;
+	screen_memory_limit const limit{small_screen_memory};
+	script_folder const folder{"lua_doubling"};
+	check_switched_off(folder, "doubling.lua", doubling_script);
+	CHECK(log.lines_with("not enough memory").size() + log.lines_with("memory limit exceeded").size() > 0);
+	// past the limit between two checks of the hook, but refused before twice the limit (its garbage included). with
+	// LuaJIT 2.0 on x64 and no allocator in front of LuaJIT's own, this went on to its own limit, over 1 GB
+	auto const peak{script_screens::lua_screen_memory_peak()};
+	CAPTURE(peak);
+	CHECK(peak > small_screen_memory);
+	CHECK(peak <= 2 * small_screen_memory);
 }
 
 TEST_CASE("lua screens: a coroutine yields across xpcall") {
