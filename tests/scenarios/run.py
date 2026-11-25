@@ -487,11 +487,14 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
 # ---------------------------------------------------------------- checks
 
 
-def check_starts(rows, min_speed, within):
+def check_starts(rows, min_speed, within, after=None):
     for r in rows:
         if r[COL_TIME] > within:
             break
         if r[COL_VELOCITY] >= min_speed:
+            # a case can also say the train mustn't leave before something it waits for (a converter starting)
+            if after is not None and r[COL_TIME] < after:
+                return False, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s, before {after}s"
             return True, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s"
     top = max((r[COL_VELOCITY] for r in rows if r[COL_TIME] <= within), default=0.0)
     return False, f"top speed in the first {within}s was {top:.1f} km/h, wanted {min_speed}"
@@ -919,15 +922,6 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     if not with_physicslog and (watch or needs_physicslog):
         sys.exit(f"{name}: with physicslog off a case can have log checks only ({', '.join(LOG_CHECKS)}), "
                  "and can't run with --watch")
-    scenery = build_scenery(case, game_dir, name, vehicle)
-    ini = out / "autotest.ini"
-    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
-    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
-    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
-                   + "".join(line + "\n" for line in settings), encoding="ascii")
-    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
-    started = time.time() - 1
-
     duration = float(case["duration"]) if "duration" in case else None
     # a case that only records `duration` seconds ends on the test timeout; one that says
     # how the test ends (a pass event, a signal passed at danger...) expects that result
@@ -936,7 +930,17 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         sys.exit(f"{name}: expect must be one of {', '.join(RESULTS)}")
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
+
+    ini = out / "autotest.ini"
+    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
+    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
+    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
+                   + "".join(line + "\n" for line in settings), encoding="ascii")
+    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
+    started = time.time() - 1
+    # from here on the case has files of its own in the game dir (the vehicle variants, the timetable)
     try:
+        scenery = build_scenery(case, game_dir, name, vehicle)
         result = run_simulator(exe, game_dir, scenery, ini, physicslog,
                                duration, float(case.get("timeout", 600)), watch, say,
                                expect_rows=with_physicslog and not own_vehicle)

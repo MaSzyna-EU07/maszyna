@@ -365,10 +365,13 @@ so those cases run variants of the vehicles made for the run (`vehicle_variants`
   pantograph runs under the piece of wire.
 - `et42_td_converter_interlock_cold`: an ET42 with `LineContactorsInterlock=Converter` in both sections
   stands cold (`td_cold_timetable.scn`) and is ordered to run the timetable: the AI starts the converters,
-  leaves (20 km/h after 74 s) and stops at Przystanek (1393 m). That the variant takes effect shows with a
-  converter that starts 60 s after it is switched on (`ConverterStartDelay=60`, a trial run, not a case):
-  with the interlock the train reaches 20 km/h 6 s later than without it. `et42_td_converter_interlock` is
-  the same from the timetable start.
+  leaves (20 km/h after 74 s) and stops at Przystanek (1393 m). It and `et42_td_converter_interlock`, the
+  same from the timetable start, check that the AI gets such a train going; a plain ET42 passes them too.
+- `et42_td_converter_interlock_slow_converter`: the check that the interlock takes effect. The same cold ET42
+  with a converter that starts 60 s after it is switched on (`ConverterStartDelay=60`): the line contactors
+  wait for it, and the train reaches 20 km/h at 80.0 s; `starts` with `after: 77` fails it earlier. With the
+  same converter and no interlock it gets there at 73.8 s, as fast as without the slow converter (a copy of
+  the case without the key, run once, not kept).
 - `ep05_td_interlock_dead_section_cold`: #272 and #276 together, an EP05 with `LineContactorsInterlock=Converter`
   added, standing cold, with the span without voltage on its way: the pantographs can go up only through the
   closed line breaker, so the AI has to close it first, then start the converter; it leaves (20 km/h after
@@ -434,7 +437,8 @@ the physicslog Velocity column, which is the wheel speed: it stays at 0 while th
 locked in a skid. The ones marked *vehicle speed* use the vehicle speed column at the end of
 the row instead, logged by builds from this branch on.
 
-- `starts` `min_speed`, `within`: reaches `min_speed` within `within` seconds.
+- `starts` `min_speed`, `within` (`after`): reaches `min_speed` within `within` seconds (and not before `after` seconds,
+  when given).
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
