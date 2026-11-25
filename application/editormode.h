@@ -39,6 +39,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "editor/editorSwitchCurve.hpp"
+#include "editor/editorSwitchDrives.hpp"
 #include "editor/editorKilometrage.hpp"
 #include "editor/editorSpeed.hpp"
 #include "editor/editorRoad.hpp"
@@ -2679,7 +2680,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// "a".."d" for one of a double switch, whose switches are named <name>a..<name>d. none for a template which isn't a drive. the ones not
 	// described for the editor have no family (-1)
 	std::vector<std::string> const &drive_switches(std::string const &File, std::map<std::string, std::pair<int, int>, std::less<>> const &Variants);
-	std::map<std::string, std::vector<std::string>, std::less<>> m_drive_templates; // read once for each file
+	switch_drives::template_switches m_drive_templates; // read once for each file, again when the templates change
 	// a drive set to a switch the scenery hasn't got: left by a switch deleted or renamed by hand or in an earlier editor, its events
 	// throw nothing
 	struct stray_drive
@@ -2698,10 +2699,19 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		std::size_t instances{0};
 	};
 	std::optional<drives_named> m_drives_named;
+	// the drives whose switch isn't in the scenery, told once a frame for the list in the switch tool and the marks in the view, and again
+	// after a step made, undone or redone in the frame
+	struct drives_stray
+	{
+		std::vector<stray_drive> drives;
+		std::optional<int> frame; // none: to be told again
+		std::size_t history{0}; // the revision of the undo history
+	};
+	drives_stray m_drives_stray;
 	// the include of a drive or a template changed: what's kept of the drives standing is read again
 	void drives_changed();
-	// the drives whose switch isn't in the scenery, checked against the tracks each time
-	std::vector<stray_drive> stray_drives(bool Wait = false);
+	// the drives whose switch isn't in the scenery, checked against the tracks once a frame. the list holds until the next call
+	std::vector<stray_drive> const &stray_drives(bool Wait = false);
 	void render_stray_drives();
 	void draw_stray_drives();
 	scene::layer_handle output_layer(std::string const &Part) override;
