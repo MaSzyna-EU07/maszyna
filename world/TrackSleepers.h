@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -123,6 +124,9 @@ struct pack_model {
 // the models of sleepers and timbers in the scenery data, found once in models/ by the names of their files telling sleepers
 // or timbers: podklad, podrozjazd, sleeper, timber. the timber ones first, then by the name
 std::vector<pack_model> const &pack_models();
+// the models of sleepers and timbers among the files under the folder given, named relative to it, in the same order; a file
+// named with a character the code page lacks is left out
+std::vector<pack_model> pack_models( std::filesystem::path const &Root );
 // the beams of the track placed anew, as instances of the parts of the model
 void lay( TTrack &Track );
 // the beams of the tracks around the track to be placed again, as they depend on where it runs
