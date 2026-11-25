@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "vehicle/Train.h"
+#include "vehicle/brakereleaser.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
@@ -9117,39 +9118,26 @@ void TController::control_releaser() {
 
     if( false == hasreleaser ) { return; }
 
-    auto actuate { false };
+    brake_releaser::conditions state;
+    state.acceleration_desired = AccDesired;
+    state.pipe_pressure = mvOccupied->PipePress;
+    state.cylinder_pressure = mvOccupied->BrakePress;
+    state.control_pressure = mvOccupied->Hamulec->GetCRP();
+    state.velocity = mvOccupied->Vel;
+    state.uphill_start = bUphillStart;
+    state.pressing = TestFlag( iDrivigFlags, movePress );
+    // stage 3 of uncoupling (UpdateDisconnect), from the direction change until the coupler lets go
+    state.compressing_buffers =
+        state.pressing && ( OrderCurrentGet() & Disconnect ) != 0 && iVehicleCount >= 0 && iDirection == iDirectionOrder;
+    auto const wanted { brake_releaser::decide( state ) };
+    auto const actuate { wanted.actuate };
     auto isbrakehandleinrightposition { true };
 
-    if( AccDesired > EU07_AI_NOACCELERATION ) {
-        // fill up brake pipe if needed
-        if( mvOccupied->PipePress < 3.0 ) {
-            actuate = true;
-            // some vehicles require brake handle to be moved to specific position
-            if( mvOccupied->HandleUnlock != -3 ) {
-                cue_action( driver_hint::trainbrakesetpipeunlock );
-                isbrakehandleinrightposition &= BrakeCtrlPosition == mvOccupied->HandleUnlock;
-            }
-        }
-        // wyluzuj lokomotywę, to szybciej ruszymy
-        // this rule is for starting off, so only below 1 km/h: at speed, just after an application, it would vent
-        // the control reservoir of a locomotive that may have to brake again before the pipe has refilled it
-        if( mvOccupied->BrakePress > 0.4
-         && ( mvOccupied->Hamulec->GetCRP() > 4.9
-           // starting uphill the train brake stays applied on purpose, and the locomotive's own share of it has to go
-           // for the power to come on (asynchronous drives and the pressure switch cut the power while it is applied)
-           || bUphillStart )
-         && mvOccupied->Vel < 1.0 ) {
-            actuate = true;
-        }
-        // keep engine brakes released during coupling/uncoupling
-        if( true == TestFlag(iDrivigFlags, movePress)
-         && mvOccupied->BrakePress > 0.1 ) {
-            actuate = true;
-        }
-    }
-    // don't overcharge train brake pipe
-    if( mvOccupied->PipePress > 5.2 ) {
-        actuate = false;
+    // some vehicles require brake handle to be moved to specific position to fill up the brake pipe
+    if( wanted.fill_pipe
+     && mvOccupied->HandleUnlock != -3 ) {
+        cue_action( driver_hint::trainbrakesetpipeunlock );
+        isbrakehandleinrightposition = ( BrakeCtrlPosition == mvOccupied->HandleUnlock );
     }
 
     if( actuate ) {

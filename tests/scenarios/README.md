@@ -326,6 +326,21 @@ Przystanek whatever the buckle. With 600 mm over a main lobe of 8 m the locomoti
 the buckle at 46 km/h, 1036 m from the start (`Bad driving: ... derailed on buckled track`); with
 30 mm it keeps on the rails and stops at Przystanek after 1400 m.
 
+`sm42_td_uncouple_past_signal` (fragment `td_uncouple_past_signal.scn`) is the uncoupling of the SM42 at Debica on
+L053 poranek (step 10 of `deb_sm42_stat`) on td.scn. An SM42 with no timetable stands turned at the far end of `tor1k`,
+three wagons loaded with gravel (51 m of train) behind it towards the exit signal `stacja1_j`, which stays at stop (no
+route). `tdo_n1734`, the track behind `tor1k`, is closed (`trackvel 0`) from the start. `event0` of `tor1k` gives the
+driver `Shunt -1 0`: it pulls the wagons back for 47 m and stops in front of the closed track, with the far end of the
+last wagon 2 m past the signal's memory cell (the `distance` check keeps it 0-4 m past). The pull leaves the screw
+coupler stretched, 0.019 m apart at the buffers, and a screw coupler is let go only with the buffers pressed together
+(under 0.01 m). At the first stand `event0` gives `Shunt 0 0`: brake the wagons, change direction, push the buffers in,
+uncouple. After the direction change the driver counts `stacja1_j` as passed at its first move, so its speed is capped
+at 0. The driver used to work the brake releaser only while it wanted to speed up, so the locomotive stayed braked by
+the wagons' brake application and never closed the gap: no `uncoupled` in the log, and the case ran into its timeout.
+Now the locomotive is released, eases into the wagons and uncouples within a second. The wagons are loaded so that the
+stop leaves the gap above 0.01 m: with a coach and an empty wagon the buffers came to rest 0.009 m apart and the
+coupler let go at once.
+
 The `*_td_crew_*` cases (eu07/maszyna#510, fragment `td_crew.scn`) are about the crew command of a
 `putvalues` event, `Crew:<vehicle> <cab> <flags>`: cab 1 or -1 puts an AI driver in cab A or B of
 the vehicle named, 0 takes its AI driver off. The vehicle is named in the text, so the events are
@@ -485,8 +500,8 @@ staging f15ea405 of 2026-11-23):
 | `wrzosy_pxe336080_couples` | #524 | passes: ordered to, the locomotive couples to the rake (`couples`, 262 s) and takes it out of the depot (696 s). The scenery itself gives no such order |
 | `baltyk_skm1_roj55324_shunting_signal` | #525 | passes, with four seeds: the unit on the siding is let into the platforms 4 minutes after the start, once the shunter beside it has done its first moves, and leaves at 10:42 |
 | `baltyk_skm1_roj55321_departure` | #525 | passes, with three seeds: the unit in the platform leaves at 10:34 |
-| `l053_poranek_tme222158_debica` | #421 | `xfail`: on master of 2026-11-11 the station jammed 4 minutes after the start, the AI of EP07-338'16 passed the shunting signal Tm4 at stop at 29 km/h. Since #409 (staging f15ea405, 2026-11-23) the EP07 stops at the checkpoint and TME222158 gets to Debica, but the station's SM42-1096 jams it: ordered to uncouple at step 10 of `deb_sm42_stat` it pushes its cut past `debica_k_sem_info` at danger and never gets the coupler off, so the station never sends TME222158 on |
-| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: on master of 2026-11-11, with an ET21 as in the report, the locomotive stopped for good at Debica Towarowa, on the headshunt 20 m past the end of the overhead wire, and its driver never got out of `Prepare_engine`. Since #409 (staging f15ea405) the ET21 gets through Debica Towarowa (steps 1-5 of `dt_tme222158_stat`) to Debica, then fails on the SM42 as `l053_poranek_tme222158_debica` does |
+| `l053_poranek_tme222158_debica` | #421 | passes: TME222158 gets the exit signal to Sandomierz (step 6 of `deb_tme222158_stat`) after 4086.2 s. On master of 2026-11-11 the station jammed 4 minutes after the start, the AI of EP07-338'16 passed the shunting signal Tm4 at stop at 29 km/h; #409 fixed that. On staging f15ea405 (2026-11-23) the station's SM42-1096 jammed it next: ordered to uncouple at step 10 of `deb_sm42_stat`, with its cut standing across `debica_k_sem_info` at stop, it stayed braked and never got the coupler off (standstill after 4347 s), until the AI kept the locomotive released while it pushes the buffers in to uncouple (`sm42_td_uncouple_past_signal`) |
+| `l053_poranek_tme222158_debica_et21` | #421 | passes after 4131.6 s. On master of 2026-11-11, with an ET21 as in the report, the locomotive stopped for good at Debica Towarowa, on the headshunt 20 m past the end of the overhead wire, and its driver never got out of `Prepare_engine`. Since #409 the ET21 gets through Debica Towarowa (steps 1-5 of `dt_tme222158_stat`) to Debica; there it waited for the SM42 as `l053_poranek_tme222158_debica` did, until the same fix |
 | `l053_poludnie_roj32134_debica` | #506 | passes: both trains run and the unit ends at Debica after 6134 s; no train in its way |
 
 In the L053 sceneries the test mode logs a signal passed at danger for several shunting

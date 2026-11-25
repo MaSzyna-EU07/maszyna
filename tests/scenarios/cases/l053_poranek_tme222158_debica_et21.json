@@ -16,7 +16,6 @@
     "reason": "tme222158_got_the_exit_signal_at_debica"
   },
   "slow": true,
-  "xfail": "eu07/maszyna#421 is not reached, the station's SM42 jams Debica, as in l053_poranek_tme222158_debica: since #409 the ET21 no longer stands off the wire at Debica Towarowa, it gets through steps 1-5 of dt_tme222158_stat, takes the wagons to Debica and reports there (deb_tme222158_stat c 0), but SM42-1096, ordered to uncouple at step 10 of deb_sm42_stat, pushes its cut past debica_k_sem_info at danger and never gets the coupler off (\"Uncoupling [sm42-1096]: actuating and compressing buffers... from front\" for the rest of the run), so it never does step 11 and the station never gives TME222158 step 1: standstill after 4576 s",
   "physicslog": false,
   "ini": [
     "file.binary.terrain no"
