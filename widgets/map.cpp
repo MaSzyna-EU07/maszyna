@@ -948,34 +948,80 @@ void ui::map_panel::render_map_lines(
 
 				if (sem->shunting)
 				{
-					bool const shunt_hovered =
-						mouse_over_map &&
-						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
+					glm::dvec2 const world_direction = map_signal_direction(
+						glm::dvec3(location), model ? model->Angles().y : 0.0f);
+					glm::vec4 const transformed_direction =
+						transform * glm::vec4(static_cast<float>(world_direction.x), 0.0f,
+						                      static_cast<float>(world_direction.y), 0.0f);
+					glm::vec2 post_direction(
+						transformed_direction.x * surface_size.x * 0.5f,
+						-transformed_direction.z * surface_size.y * 0.5f);
+					if (glm::length2(post_direction) <= 1e-8f || !std::isfinite(glm::length2(post_direction)))
+						post_direction = glm::vec2(1.0f, 0.0f);
+					else
+						post_direction = glm::normalize(post_direction);
+					float const shunt_post_length =
+						std::lerp(15.0f, 10.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
+					ImVec2 const head_center(
+						center.x + post_direction.x * shunt_post_length,
+						center.y + post_direction.y * shunt_post_length);
+					glm::vec2 const head_axis(-post_direction.x, -post_direction.y);
+					glm::vec2 const head_normal(-head_axis.y, head_axis.x);
+					float const lamp_spacing = std::lerp(10.0f, 0.0f, std::clamp(static_cast<float>(scale_length) / 100.0f, 0.0f, 1.0f));
+					float const head_half_length = std::max(7.0f,(static_cast<float>(cache.colors.size()) - 1.0f) * lamp_spacing * 0.5f + 2.4f);
+					float constexpr head_half_width = 6.0f;
+					std::array<ImVec2, 4> const head_corners{
+						ImVec2(head_center.x - head_axis.x * head_half_length - head_normal.x * head_half_width,
+						       head_center.y - head_axis.y * head_half_length - head_normal.y * head_half_width),
+						ImVec2(head_center.x + head_axis.x * head_half_length - head_normal.x * head_half_width,
+						       head_center.y + head_axis.y * head_half_length - head_normal.y * head_half_width),
+						ImVec2(head_center.x + head_axis.x * head_half_length + head_normal.x * head_half_width,
+						       head_center.y + head_axis.y * head_half_length + head_normal.y * head_half_width),
+						ImVec2(head_center.x - head_axis.x * head_half_length + head_normal.x * head_half_width,
+						       head_center.y - head_axis.y * head_half_length + head_normal.y * head_half_width)};
+					draw_list->AddLine(center, head_center, IM_COL32(150, 150, 150, 255), 5.0f);
+					glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
+					bool const shunt_hovered = mouse_over_map &&
+						((std::abs(glm::dot(mouse_from_head, head_axis)) <= head_half_length &&
+						  std::abs(glm::dot(mouse_from_head, head_normal)) <= head_half_width) ||
+						 glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f);
 					if (shunt_hovered)
 						m_hovered_map_object = sem;
-					draw_list->AddCircleFilled(center, 7.0f, IM_COL32(0, 0, 0, 255));
+					ImU32 const head_color = shunt_hovered
+						? IM_COL32(120, 200, 255, 255)
+						: IM_COL32(0, 0, 0, 255);
+					draw_list->AddQuadFilled(
+						head_corners[0], head_corners[1], head_corners[2], head_corners[3], head_color);
+					if (shunt_hovered)
+					{
+						for (std::size_t corner = 0; corner < head_corners.size(); ++corner)
+							draw_list->AddLine(
+								head_corners[corner], head_corners[(corner + 1) % head_corners.size()],
+								head_color, 3.0f);
+					}
 					if (cache.colors.empty())
 					{
-						draw_list->AddCircleFilled(center, 3.0f, IM_COL32(255, 210, 70, 255));
+						draw_list->AddCircleFilled(head_center, 3.0f, IM_COL32(255, 210, 70, 255));
 					}
 					else
 					{
-						float const spacing = 5.0f;
 						float const first_offset =
 							(static_cast<float>(cache.colors.size()) - 1.0f) * -0.5f;
 						for (std::size_t idx = 0; idx < cache.colors.size(); ++idx)
 						{
+							if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
+								continue;
+							float const lamp_offset =
+								(first_offset + static_cast<float>(idx)) * lamp_spacing;
 							ImVec2 const lamp_position(
-								center.x,
-								center.y + (first_offset + static_cast<float>(idx)) * spacing);
+								head_center.x + head_axis.x * lamp_offset,
+								head_center.y + head_axis.y * lamp_offset);
 							draw_list->AddCircleFilled(
 								lamp_position,
 								2.4f,
 								static_cast<ImU32>(cache.colors[idx]));
 						}
 					}
-					if (shunt_hovered)
-						draw_list->AddCircle(center, 9.0f, IM_COL32(120, 200, 255, 255), 0, 3.0f);
 					return;
 				}
 
@@ -1025,7 +1071,7 @@ void ui::map_panel::render_map_lines(
 						 post_hovered);
 					if (icon_hovered || post_hovered)
 						m_hovered_map_object = sem;
-					draw_list->AddLine(post_start, post_end, IM_COL32(245, 245, 245, 255), 3.0f);
+					draw_list->AddLine(post_start, post_end, IM_COL32(255, 255, 255, 255), 3.0f);
 					for (int segment = 0; segment < 6; segment += 2)
 					{
 						ImVec2 const segment_start(
@@ -1034,7 +1080,7 @@ void ui::map_panel::render_map_lines(
 						ImVec2 const segment_end(
 							center.x + post_direction.x * post_segment_length * static_cast<float>(segment + 1),
 							center.y + post_direction.y * post_segment_length * static_cast<float>(segment + 1));
-						draw_list->AddLine(segment_start, segment_end, IM_COL32(220, 55, 55, 255), 3.0f);
+						draw_list->AddLine(segment_start, segment_end, IM_COL32(255, 0, 0, 255), 3.0f);
 					}
 					if (icon_hovered || post_hovered)
 						draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
@@ -1092,7 +1138,7 @@ void ui::map_panel::render_map_lines(
 				}
 				else
 					add_head_shape(IM_COL32(0, 0, 0, 255), head_half_width * 2.0f);
-				for (std::size_t idx = cache.colors.size(); post_direction.y <= 0.0f && idx-- > 0;)
+				for (std::size_t idx = cache.colors.size(); idx-- > 0;)
 				{
 					if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
 						continue;

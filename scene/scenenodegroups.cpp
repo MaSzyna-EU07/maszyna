@@ -55,7 +55,8 @@ void collect_signal_models(
 			for (scene::basic_node *target : lights->target_nodes())
 			{
 				auto *model = dynamic_cast<TAnimModel *>(target);
-				if (model && model->iNumLights > 0 && visited_models.insert(model).second)
+				if (model && model->iNumLights > 0 && !model->name().ends_with("w24") &&
+				    visited_models.insert(model).second)
 					models.push_back(model);
 			}
 			continue;
@@ -226,6 +227,16 @@ node_groups::update_map()
 					return event_belongs_to_signal(model->name(), signal_name) &&
 					       !model->name().ends_with("_wk_el");
 				});
+			bool const has_shunting_board_model = std::ranges::any_of(
+				namedmodels, [&signal_name](TAnimModel const *model) {
+					if (!event_belongs_to_signal(model->name(), signal_name) || !model->Model())
+						return false;
+					std::string const model_path = model->Model()->NameGet();
+					return model_path.find("sem/tm_") != std::string::npos ||
+					       model_path.find("sem/karzelki/ktm") != std::string::npos ||
+					       model_path.find("pkp/tmk_") != std::string::npos ||
+					       model_path.ends_with("pkp/mk1un.t3d");
+				});
 			if (signal_name.ends_with("_wk_el") || (derailer_model && !has_signal_model))
 				continue;
 
@@ -233,7 +244,9 @@ node_groups::update_map()
 			signal->location = memcell->location();
 			signal->memcell = memcell;
 			signal->name = signal_name;
-			signal->shunting = signal_name.starts_with("Tm") || signal_name.starts_with("tm_");
+			signal->shunting =
+				signal_name.starts_with("Tm") || signal_name.starts_with("tm_") ||
+				has_shunting_board_model;
 			signals_by_name.emplace(signal_name, signal);
 			semaphore_signals.push_back(signal);
 			map::Objects.entries.push_back(std::move(signal));
