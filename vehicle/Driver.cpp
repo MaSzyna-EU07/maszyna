@@ -2726,8 +2726,10 @@ double TController::ESMVelocity(bool Main)
 	}
 	IF = std::min(IF, mvControlling->Imax*fCurrentCoeff);
 	double R = mvControlling->RList[MCPN].R + mvControlling->CircuitRes + mvControlling->RList[MCPN].Mn*mvControlling->WindingRes;
-	double pole = mvControlling->MotorParam[SCPN].fi *
-		std::max(abs(IF) / (abs(IF) + mvControlling->MotorParam[SCPN].Isat) - mvControlling->MotorParam[SCPN].fi0, 0.0);
+	// SCPN may come from the .fiz (RList ScndAct) unchecked: read it with the bounds-safe accessor, as MomentumF() does
+	auto const &motorparam{mvControlling->motor_param(SCPN)};
+	double pole = motorparam.fi *
+		std::max(abs(IF) / (abs(IF) + motorparam.Isat) - motorparam.fi0, 0.0);
 	double Us = abs(mvControlling->EngineVoltage) - IF*R;
 	double ns = std::max(0.0, Us / (pole*mvControlling->RList[MCPN].Mn));
 	ESMVel = ns * mvControlling->WheelDiameter*M_PI*3.6/mvControlling->Transmision.Ratio;
