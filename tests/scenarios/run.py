@@ -149,6 +149,15 @@ def scenery_cache(game_dir: Path, case_name: str) -> Path:
     return game_dir / "scenery" / f"autotest_{case_name}.sbt"
 
 
+def timetable_name(case_name: str) -> str:
+    """The case's own timetable as a trainset names it: {{timetable}} in the fragment."""
+    return f"autotest_{case_name}"
+
+
+def timetable_path(game_dir: Path, case_name: str) -> Path:
+    return game_dir / "scenery" / f"{timetable_name(case_name)}.txt"
+
+
 def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> str:
     """Writes the case scenery into the game's scenery dir and returns its file name."""
     scenery_dir = game_dir / "scenery"
@@ -168,9 +177,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
         text = text.replace(old, new)
     # a case on a mission of the base scenery may have nothing to add but its test_config
     fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1") if "fragment" in case else ""
-    # vars first: {{vehicle}} inside a var's value gets filled in the second pass
-    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle"})
-    fragment = fill_vars(fragment, {"vehicle": vehicle})
+    # vars first: {{vehicle}} and {{timetable}} inside a var's value get filled in the second pass
+    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable"})
+    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name)})
     # FirstInit binds event launchers to their events and links the tracks. so launchers and
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
@@ -188,6 +197,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     text += header + trainsets + "\n"
     name = f"autotest_{case_name}.scn"
     (scenery_dir / name).write_bytes(text.encode("latin-1"))
+    # a timetable of the case's own, for a train whose timetable the sceneries of the game have none like
+    if "timetable" in case:
+        shutil.copyfile(CASES_DIR / case["timetable"], timetable_path(game_dir, case_name))
     # the simulator caches the scenery's static geometry in <name>.sbt and reads it instead of
     # the terrain in the .scn (tracks, events and trainsets always come from the .scn), so
     # drop the cache once the base scenery has changed
@@ -476,25 +488,42 @@ def check_brakes(rows, min_pressure, moving_speed=20):
     return False, f"brake cylinder pressure never reached {min_pressure} bar after moving off"
 
 
-def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None):
+def check_stops(rows, moving_speed, stop_speed, hold, min_distance=None, max_distance=None, max_time=None, nth=1):
+    """The nth stop of `hold` seconds after moving off at `moving_speed` (each stop after the first counts once the
+    train is moving at `moving_speed` again)."""
     start = _first_moving(rows, moving_speed)
     if start is None:
         return False, f"never reached {moving_speed} km/h"
     dist = _distances(rows)
     stopped_at = None
+    held = 0
+    moving = True
     for i in range(start, len(rows)):
         r = rows[i]
+        if not moving:
+            moving = r[COL_VELOCITY] >= moving_speed
+            continue
         if r[COL_VELOCITY] <= stop_speed:
             if stopped_at is None:
                 stopped_at = i
             if r[COL_TIME] - rows[stopped_at][COL_TIME] >= hold:
+                held += 1
+                if held < nth:
+                    stopped_at = None
+                    moving = False
+                    continue
                 where = dist[stopped_at]
-                detail = f"came to a stop at t={rows[stopped_at][COL_TIME]:.1f}s after {where:.0f} m"
+                when = rows[stopped_at][COL_TIME]
+                detail = f"came to a stop at t={when:.1f}s after {where:.0f} m"
                 if (min_distance is not None and where < min_distance) or (max_distance is not None and where > max_distance):
                     return False, f"{detail}, wanted between {min_distance} and {max_distance} m"
+                if max_time is not None and when > max_time:
+                    return False, f"{detail}, wanted by t={max_time}s"
                 return True, detail
         else:
             stopped_at = None
+    if held:
+        return False, f"stopped {held} times for {hold}s after moving off, wanted stop {nth}"
     return False, f"did not stay below {stop_speed} km/h for {hold}s after moving off"
 
 
@@ -699,9 +728,11 @@ def check_driver_changes(box, vehicle, to, after=0.0, before=None):
     return True, f"{vehicle} has driver {to} from t={change.time:.1f}s to the end (t={box.end_time:.1f}s)"
 
 
-def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0):
+def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0,
+                           min_deceleration=None, max_deceleration=None):
     """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it
-    stopped, to the end of the recording or until it gets a driver again."""
+    stopped, to the end of the recording or until it gets a driver again. With the decelerations, the mean one of
+    that stop (from the speed and the way to the stop, m/s²) has to be within them: how well the train brakes."""
     states, why = _vehicle_states(box, vehicle)
     if states is None:
         return False, why
@@ -728,8 +759,15 @@ def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_
     if fastest > stop_speed or creep > max_creep:
         return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h with no driver"
     way = sum(math.dist(a.position, b.position) for a, b in zip(after, after[1:]) if b.time <= stop.time)
-    return True, (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
-                  f"and {way:.0f} m later, moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}")
+    stopped = (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
+               f"and {way:.0f} m later")
+    # v² / 2s: the black box lists a vehicle once a second, so the way is closer to the truth than the time
+    deceleration = (abs(left.speed) / 3.6) ** 2 / (2 * way) if way > 0 else math.inf
+    if ((min_deceleration is not None and deceleration < min_deceleration)
+            or (max_deceleration is not None and deceleration > max_deceleration)):
+        bounds = f"{min_deceleration if min_deceleration is not None else 0:g}..{max_deceleration if max_deceleration is not None else 'any'}"
+        return False, f"{stopped}: a mean deceleration of {deceleration:.2f} m/s², outside {bounds}"
+    return True, f"{stopped} ({deceleration:.2f} m/s²), moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}"
 
 
 def check_moves(box, vehicle, min_speed, direction="front"):
@@ -957,6 +995,7 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     result = run_simulator(exe, game_dir, scenery, ini, physicslog,
                            duration, float(case.get("timeout", 600)), watch, say,
                            expect_rows=with_physicslog and not own_vehicle)
+    timetable_path(game_dir, name).unlink(missing_ok=True)
     # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
     if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
         scenery_cache(game_dir, name).unlink(missing_ok=True)
@@ -1002,10 +1041,13 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         say(f"  {'PASS' if passed else 'FAIL'}  exit code {describe_exit(result.exit_code)}{watchdog}, expected {expect}")
         ok &= passed
     # a run cut short (the real time watchdog, an error, a crash, or closed by us) could have been writing
-    # the scenery's geometry cache; the simulator checks only the header of it, so the next runs would read
-    # a truncated one. it is written again on the next run
+    # the scenery's geometry cache. the simulator writes it through <name>.sbt.tmp and turns down a cut-short
+    # one, but older builds wrote it in place and checked only its header, so the next runs would read a
+    # truncated one. either is written again on the next run
     if result.failure or (not watch and got in (None, "error", WALL_TIMEOUT)):
-        scenery_cache(game_dir, name).unlink(missing_ok=True)
+        cache = scenery_cache(game_dir, name)
+        cache.unlink(missing_ok=True)
+        cache.with_name(cache.name + ".tmp").unlink(missing_ok=True)
     if result.failure:
         say(f"  FAIL  {result.failure}")
         ok = False

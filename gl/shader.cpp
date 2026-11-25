@@ -30,8 +30,10 @@ namespace {
 // SHADERVALIDATOR_STANDALONE gates out the GL queries because the offline
 // shader validator tool links glad.c but never calls gladLoadGL(); the
 // function pointers stay null and a real call would crash. Returning
-// false there means the standalone validator simply compiles the original
-// 16-tap PCF fallback path in light_common.glsl, which is what we want.
+// false there adds no #extension directive. For desktop GL the validator
+// adds GL_ARB_gpu_shader5 itself (ci_shadervalidator/main.cpp), since
+// glslang defines that macro anyway, so light_common.glsl is validated on
+// its textureGather() path, not on the 16-tap PCF fallback.
 bool has_gl_extension(char const *name) {
 #ifdef SHADERVALIDATOR_STANDALONE
     (void)name;

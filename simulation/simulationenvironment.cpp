@@ -26,11 +26,12 @@ namespace {
 float
 turbidity_of( float const Overcast ) {
 
+    if( Overcast <= 0.10 ) { return 3.f; }
     if( Overcast <= 0.20 ) { return 4.f; }
-    if( Overcast <= 0.40 ) { return 5.f; }
-    if( Overcast <= 0.60 ) { return 6.f; }
-    if( Overcast <= 0.70 ) { return 7.f; }
-    if( Overcast <= 0.80 ) { return 8.f; }
+    if( Overcast <= 0.60 ) { return 5.f; }
+    if( Overcast <= 0.70 ) { return 6.f; }
+    if( Overcast <= 0.80 ) { return 7.f; }
+    if( Overcast <= 0.90 ) { return 8.f; }
     return 9.f;
 }
 

@@ -936,6 +936,11 @@ public:
 		glm::dvec3 velocity{}; // current shaking vector
 		glm::dvec3 offset{}; // overall shake-driven offset from base position
     } ShakeState;
+    shake_state ShakeStateBefore; // the state before the last step of update_shake
+    // the shake between the last two steps of update_shake: 0 the state before the last step, 1 the state after it.
+    // the steps are fixed and the frames aren't, so the camera takes the state at its own moment between the two
+    shake_state shake_between( double const Fraction ) const;
+    std::pair<double, double> shake_angles( shake_state const &State ) const;
 
 	glm::dvec3 modelShake;
 };

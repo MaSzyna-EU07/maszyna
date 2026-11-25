@@ -32,6 +32,10 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"
+	# and the http client the editor fetches its aids with
+	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
+	# the camera, for the order of its rotations (test_camera.cpp)
+	"${CMAKE_SOURCE_DIR}/vehicle/Camera.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

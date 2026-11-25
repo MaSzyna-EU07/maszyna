@@ -168,9 +168,9 @@ smoke_source::update( double const Timedelta, bool const Onlydespawn ) {
     if( m_ownertype == owner_type::vehicle ) {
 
         auto const &mover { *m_owner.vehicle->MoverParameters };
-        if( Global.AirTemperature <= 5.f || mover.dizel_heat.Ts < 45.f ) {
-            m_emitter.color = glm::vec3{ 128, 128, 128 };
-        }
+        // NOTE: the smoke keeps the colour of its template, cold engine or not. a grey for a cold engine was once meant
+        // here, but the line compared instead of assigning; made an assignment, it set 128 on the 0-1 scale of the
+        // emitter colour, so the smoke turned pure white, glowing at night, and never changed back
         // a vehicle taken off the tracks (gone through a portal, or waiting in the pool of the road traffic) puffs no more,
         // the particles it already let out fade away as usual
         m_spawncount = (
