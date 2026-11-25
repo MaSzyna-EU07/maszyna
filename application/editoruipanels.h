@@ -241,6 +241,7 @@ class layers_panel : public ui_panel
 	// outcome of the most recent operation, shown at the bottom of the window
 	std::string status;
 	bool status_error{false};
+	bool status_warning{false};
 
   private:
 	// methods

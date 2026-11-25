@@ -1902,6 +1902,8 @@ void editor_mode::push_road_snapshot(editor_road::record Record)
 	snap.roads = std::move(Record);
 	m_history.push_back(std::move(snap));
 	g_redo.clear();
+	// the roads changed are brought to the rails they cross, once the change is done
+	crossings_changed(m_history.back().roads);
 }
 
 void editor_mode::restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo)

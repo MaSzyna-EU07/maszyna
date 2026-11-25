@@ -1,0 +1,32 @@
+# stage 6: crossing panels laid on the crossing (the concrete slabs of the game, as przejazdy/plyty_przejazdowe6m.inc puts them on
+# the axis of the track), the road laid at the height of the heads (it ends 2 m past the track: an approach to an end lower down
+# would be steeper than 3%): the road stays in the plane of the heads under them, cut along the rails, and leaves its surface out under
+# their outlines, so its lanes, which the vehicles go along, stay at the top of the panels; the panels moved off the crossing, the
+# surface comes back under where they were; undo puts the panels back and the surface out under them again
+#> append node -1 0 rxpanel1 model 120 0 151.5 90 przejazdy/plyta_przejazdowa.t3d none endmodel
+#> append node -1 0 rxpanel2 model 120 0 148.5 90 przejazdy/plyta_przejazdowa.t3d none endmodel
+wait 5
+crossingpanels
+roadlay 96 150 122 150 0.18 1 3.0
+wait 10
+crossingprobe
+expect roadsurface 120 150 0.18 0.003
+expect railhead p2 left 50 0.001
+expect roadgaps 119.22 150 1
+expect roadcovered 120 150 1
+expect roadcovered 118.8 150 1
+expect roadcovered 112 150 0
+# the panels moved 30 m along the track, off the road
+selectmodel 120 151.5
+addmodel 120 148.5
+moveselection 0 0 30
+wait 10
+expect railhead p2 left 50 0.001
+expect roadgaps 119.22 150 1
+expect roadcovered 120 150 0
+undo
+wait 10
+expect roadsurface 120 150 0.18 0.003
+expect roadgaps 119.22 150 1
+expect roadcovered 120 150 1
+quit

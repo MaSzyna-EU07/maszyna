@@ -93,6 +93,15 @@ The expectations (`expect <what> ...`), each logged as `SELFTEST PASS <what>` or
 | `expect tool <name>` | the tool of the surroundings in use: `select`, `insert`, `brush`, `fill`, `copy`, or `track` while the field of work of the tracks is |
 | `expect window <shortcuts\|settings\|weather\|orthophoto> <0\|1>` | the window of the shortcuts (F1), of the settings of the editor, of the weather and the time, of the settings of the orthophoto is open |
 | `expect selected <x> <y> <z> <tolerance>` | the node selected stands at the point |
+| `expect roadsurface <x> <z> <height> <tolerance>` | the surface of the road at the point of the plan, the roll counted in |
+| `expect railhead <track> <left\|right> <m> <tolerance>` | the surface of the road over the middle of the head of the rail of the track, at the distance along it, against the top of the head |
+| `expect roadgaps <x> <z> <0\|1>` | the surface of the road at the point is cut away along a rail (the head or the flangeway of a level crossing), or not |
+| `expect roadpieces <count>` | the pieces of the roads in the scenery |
+| `expect crossing <holds\|lacks> <text>` | what the last level crossing laid told in the status line holds the text, or doesn't |
+| `expect crossingrefused <0\|1> [cant\|ramp]` | a level crossing was refused for the cant of a track, its fix offered (`cant`, the default), or for a cant ramp (`ramp`), or not |
+| `expect roadcovered <x> <z> <0\|1>` | the surface of the road at the point is left out under a crossing panel lying on the crossing, or not |
+| `expect crossingholes <count>` | what the last `crossingholes` found: holes, seams, slits, the road over a panel, flangeways not clear |
+| `expect cbprows <count> [model]` | the rows of the crossing panels CBP made of their drawings laid along the tracks, all of them or the ones named (`@cbp/in180-1435x3`) |
 
 With the editing on the model (`modelediting 1`, the setting for the run only), a track may be named `@<line>.<index>`: the track of
 the line of the model at the index from its start. The commands `modelplan <track>` (the route design opened on the line),
@@ -237,3 +246,22 @@ and the assumptions of the project and the norms enforced when laying (`editor-p
 | --- | --- |
 | `ps_1_setup_saved` | a scenery with none has no assumptions; set as the card's Start sets them they're the defaults of the laying and of the norms, written into the scenery (`//$u`) and read back the same after a reopen |
 | `ps_2_setup_project` | with the editing on the model the assumptions go into the project file, none into the scenery, and are read from there after a reopen with the setting off |
+
+The level crossings (stage 6): `roadlay <x0> <z0> <x1> <z1> <height> [lanes each way] [lane width]` lays a straight road as the road tool lays one, one step of
+the history; `crossingprobe` logs the pieces of the roads, their heights, rolls and gaps; `crossingfix` applies the fix of a crossing refused
+for the cant, as its button does; `crossinglaypanels <x> <z> [cbp | <inner> <outer>]` lays the crossing panels on the crossing of the
+road at the point, as the button of its window does (the panels CBP made of their drawings, or the models named); `crossingholes <x>
+<z> [file]` checks the crossing of the road at the point as built for what shows through it (road_crossing::check), writing the
+triangles and what it finds to the file for a map of it; `crossingpanels` logs
+the crossing panels found; `roadlanes <0|1>` draws the lanes of the roads or not;
+`workarea <surroundings|tracks|roads|terrain>` chooses the field of work.
+
+| case | checks |
+| --- | --- |
+| `rx_1_two_cants` | a road across two tracks side by side, one of them canted 35 mm, laid into the plane of the heads of each and cut along their rails; the cant changed, the road follows; one undo takes back the cant and the road over it, one more the road |
+| `rx_2_gaps_after_load` | the road laid into the rails is cut along them again as the scenery is loaded, by the road itself; a road away from the rails isn't |
+| `rx_3_panel` | crossing panels laid on the crossing: the road stays at the heads, cut along the rails, its surface left out under the panels, so its lanes stay at their top; moved away, the surface comes back; undo |
+| `rx_4_double_track_cant` | a road across the double track of a curve canted 150 mm, more than the 119 mm a crossing square to the tracks allows (Dz.U. 2025 poz. 1105, § 31 ust. 4): refused with its fix, the fix lowers the cant of each curve with its ramps and limits its speed; at 119 mm the grade line breaks at the facing heads by 12%, over the 5% of annex 5 pt 3: refused with its two fixes, o brought by its grade line into the plane of i, the road laid over both; undo takes the level back, then the fix of the cant |
+| `rx_5_cant_ramp` | a road across the straights on which the curves take their cant on is refused (no crossing on a cant ramp, § 31 ust. 3), left as laid; a road past the ramp, refused at 60 mm for the 6.2% break of the grade line at the heads side by side, is laid once its fix lowers both cants alike to 49 mm |
+| `rx_7_watertight` | the crossings as built checked for what shows through them (rays down every 2 cm, beside the edges, at slants, down the flangeways): a single track, 60 degrees, a curve, the double track at 119 mm in one plane, double tracks on curves 5.5 m apart crossed at 60 degrees (the cants lowered to keep the break of the grade line to 5%) and at 45 degrees (150 mm, in one plane), 4.5 m apart at 60 degrees, all with the panels CBP; nothing found (a ray through a crack under 0.02 mm the welded corners leave isn't counted) |
+| `rx_6_cbp_panels` | the crossing panels CBP made of their drawings laid along the double track of a canted curve (its cant lowered to keep the break of the grade line to 5%), inner and outer rows, the road leaving its surface out under them; undo; none on a curve of R 300 m (Id-111: R 600 m and more) |

@@ -1,0 +1,23 @@
+# stage 6: the road laid into the rails is cut along them as the scenery is loaded again, by the road itself (world/RoadCrossing.h);
+# the road of a scenery not at the heads isn't
+wait 5
+roadlay 105 50 135 50 0.0 1 3.5
+wait 10
+expect railhead p1 left 50 0.001
+expect roadgaps 119.22 50 1
+# a road laid along a track, under the rails: no crossing, no gaps
+roadlay 140 10 140 90 0.0 1 3.5
+wait 10
+expect roadgaps 140 50 0
+save
+wait 5
+quit
+#> reopen
+wait 10
+expect railhead p1 left 50 0.001
+expect railhead p1 right 50 0.001
+expect roadgaps 119.22 50 1
+expect roadgaps 120.78 50 1
+expect roadgaps 120 50 0
+expect roadgaps 124.5 50 0
+quit

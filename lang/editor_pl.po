@@ -15525,3 +15525,177 @@ msgstr "Esc anuluje · Enter układa bez czekania"
 
 msgid "Not laid: the points stay, Enter lays them"
 msgstr "Nie ułożono: punkty zostają, Enter je układa"
+
+msgid "Level crossing: the surface at the rail heads, %d track"
+msgid_plural "Level crossing: the surface at the rail heads, %d tracks"
+msgstr[0] "Przejazd: nawierzchnia na wysokości główek, %d tor"
+msgstr[1] "Przejazd: nawierzchnia na wysokości główek, %d tory"
+msgstr[2] "Przejazd: nawierzchnia na wysokości główek, %d torów"
+
+msgid ", cant %.0f-%.0f mm"
+msgstr ", przechyłka %.0f–%.0f mm"
+
+msgid ", cant %.0f mm"
+msgstr ", przechyłka %.0f mm"
+
+msgid ", %d crossing panel on top"
+msgid_plural ", %d crossing panels on top"
+msgstr[0] ", na wierzchu %d płyta przejazdowa"
+msgstr[1] ", na wierzchu %d płyty przejazdowe"
+msgstr[2] ", na wierzchu %d płyt przejazdowych"
+
+msgid "the road over the crossing at %.1f%%, over the %.0f%% of annex 5 Dz.U. 2025 poz. 1105"
+msgstr "droga na przejeździe w spadku %.1f%%, ponad %.0f%% z zał. 5 Dz.U. 2025 poz. 1105"
+
+msgid "an approach of %.1f%% within 20 m of the rails, over the 3%% of annex 5 Dz.U. 2025 poz. 1105"
+msgstr "dojazd %.1f%% w pasie 20 m od szyn, ponad 3%% z zał. 5 Dz.U. 2025 poz. 1105"
+
+msgid "crossed at %.0f degrees: § 28 ust. 1 Dz.U. 2025 poz. 1105 allows 60-120 for a crossing of category D, 45-135 for the others"
+msgstr "kąt skrzyżowania %.0f°: § 28 ust. 1 Dz.U. 2025 poz. 1105 dopuszcza 60–120° dla przejazdu kategorii D, 45–135° dla pozostałych"
+
+msgid "the heads of tracks this close along the road are off the plane they share by up to %.0f mm"
+msgstr "główki tak blisko leżących torów odchodzą od wspólnej płaszczyzny o %.0f mm"
+
+msgid "a level crossing isn't made within the length of a turnout (Dz.U. 2025 poz. 1105, § 34): the road stays as it is"
+msgstr "przejazdu nie robi się na długości rozjazdu (Dz.U. 2025 poz. 1105, § 34): droga zostaje bez zmian"
+
+msgid "the road runs along the track rather than across it: the road stays as it is"
+msgstr "droga biegnie wzdłuż toru, a nie w poprzek: zostaje bez zmian"
+
+msgid "the road gains or loses lanes within 30 m of the rails: the road stays as it is"
+msgstr "droga zyskuje lub traci pasy w odległości 30 m od szyn: zostaje bez zmian"
+
+msgid "Level crossing refused: track %s has a cant of %.0f mm, a crossing at %.0f degrees allows at most %.0f mm (the road over the crossing at most 8%%, Dz.U. 2025 poz. 1105, § 31 ust. 4)"
+msgstr "Przejazd odrzucony: tor %s ma przechyłkę %.0f mm, przejazd pod kątem %.0f° pozwala najwyżej na %.0f mm (droga na przejeździe w spadku do 8%%, Dz.U. 2025 poz. 1105, § 31 ust. 4)"
+
+msgid "Level crossing refused: track %s is on a cant ramp here, no level crossing is made on one (Dz.U. 2025 poz. 1105, § 31 ust. 3)"
+msgstr "Przejazd odrzucony: tor %s ma tu rampę przechyłkową, na rampie przejazdu się nie projektuje (Dz.U. 2025 poz. 1105, § 31 ust. 3)"
+
+msgid "Track %s changes its cant here, on a cant ramp; no level crossing is made on one (Dz.U. 2025 poz. 1105, § 31 ust. 3). The road stays as it is."
+msgstr "Tor %s zmienia tu przechyłkę, na rampie przechyłkowej; na rampie przejazdu się nie projektuje (Dz.U. 2025 poz. 1105, § 31 ust. 3). Droga zostaje bez zmian."
+
+msgid "Move the crossing off the cant ramp"
+msgstr "Przesuń przejazd poza rampę przechyłkową"
+
+msgid "The ramp ends %.0f m back and %.0f m ahead along the track: the crossing is laid as the road gets past either end"
+msgstr "Rampa kończy się %.0f m wstecz i %.0f m dalej wzdłuż toru: przejazd ułoży się, gdy droga minie któryś z jej końców"
+
+msgid "Level crossing##crossingfix"
+msgstr "Przejazd##crossingfix"
+
+msgid "Track %s has a cant of %.0f mm here; a level crossing allows at most %.0f mm (Dz.U. 2025 poz. 1105, § 31 ust. 4). The road stays as it is."
+msgstr "Tor %s ma tu przechyłkę %.0f mm; przejazd pozwala najwyżej na %.0f mm (Dz.U. 2025 poz. 1105, § 31 ust. 4). Droga zostaje bez zmian."
+
+msgid "Lower the cant of the track at the crossing to %.0f mm (%.0f km/h)"
+msgstr "Zmniejsz przechyłkę toru na przejeździe do %.0f mm (%.0f km/h)"
+
+msgid "Lower the cant of the track at the crossing to %.0f mm"
+msgstr "Zmniejsz przechyłkę toru na przejeździe do %.0f mm"
+
+msgid "Or move the road to where the cant of the track is lower: the crossing is laid as the road gets there"
+msgstr "Albo przesuń drogę tam, gdzie przechyłka toru jest mniejsza: przejazd ułoży się, gdy droga tam trafi"
+
+msgid "The cant can't be lowered: %s"
+msgstr "Nie można zmniejszyć przechyłki: %s"
+
+msgid "The cant of the curve lowered to %.0f mm over %d track, the speed limited to %.0f km/h; Ctrl+Z takes it back"
+msgid_plural "The cant of the curve lowered to %.0f mm over %d tracks, the speed limited to %.0f km/h; Ctrl+Z takes it back"
+msgstr[0] "Przechyłka łuku zmniejszona do %.0f mm na %d torze, prędkość ograniczona do %.0f km/h; Ctrl+Z cofa"
+msgstr[1] "Przechyłka łuku zmniejszona do %.0f mm na %d torach, prędkość ograniczona do %.0f km/h; Ctrl+Z cofa"
+msgstr[2] "Przechyłka łuku zmniejszona do %.0f mm na %d torach, prędkość ograniczona do %.0f km/h; Ctrl+Z cofa"
+
+msgid "The cant of the curve lowered to %.0f mm over %d track; Ctrl+Z takes it back"
+msgid_plural "The cant of the curve lowered to %.0f mm over %d tracks; Ctrl+Z takes it back"
+msgstr[0] "Przechyłka łuku zmniejszona do %.0f mm na %d torze; Ctrl+Z cofa"
+msgstr[1] "Przechyłka łuku zmniejszona do %.0f mm na %d torach; Ctrl+Z cofa"
+msgstr[2] "Przechyłka łuku zmniejszona do %.0f mm na %d torach; Ctrl+Z cofa"
+
+msgid "the cant of a track is more than a level crossing allows"
+msgstr "przechyłka toru jest większa, niż pozwala przejazd"
+
+msgid "Lay the crossing panels (inner and outer, bent along the tracks)"
+msgstr "Połóż płyty przejazdowe (wewnętrzne i zewnętrzne, gięte wzdłuż torów)"
+
+msgid "No rails cross the road"
+msgstr "Droga nie przecina szyn"
+
+msgid "%zu crossing panel bent along the tracks: inner %s, outer %s; Ctrl+Z takes them back"
+msgid_plural "%zu crossing panels bent along the tracks: inner %s, outer %s; Ctrl+Z takes them back"
+msgstr[0] "%zu płyta przejazdowa gięta wzdłuż torów: wewnętrzna %s, zewnętrzna %s; Ctrl+Z cofa"
+msgstr[1] "%zu płyty przejazdowe gięte wzdłuż torów: wewnętrzne %s, zewnętrzne %s; Ctrl+Z cofa"
+msgstr[2] "%zu płyt przejazdowych giętych wzdłuż torów: wewnętrzne %s, zewnętrzne %s; Ctrl+Z cofa"
+
+msgid "%zu row of the crossing panels CBP bent along the tracks: %s; Ctrl+Z takes them back"
+msgid_plural "%zu rows of the crossing panels CBP bent along the tracks: %s; Ctrl+Z takes them back"
+msgstr[0] "%zu rząd płyt przejazdowych CBP gięty wzdłuż torów: %s; Ctrl+Z cofa"
+msgstr[1] "%zu rzędy płyt przejazdowych CBP gięte wzdłuż torów: %s; Ctrl+Z cofa"
+msgstr[2] "%zu rzędów płyt przejazdowych CBP giętych wzdłuż torów: %s; Ctrl+Z cofa"
+
+msgid "CBP: the concrete panels of PKP PLK, made of the drawings of Id-111"
+msgstr "CBP: płyty żelbetowe PKP PLK, z rysunków Id-111"
+
+msgid "The models of the game (przejazdy/plyty_przejazd_wew_2_seg, _zew_2_seg)"
+msgstr "Modele z gry (przejazdy/plyty_przejazd_wew_2_seg, _zew_2_seg)"
+
+msgid "No crossing panels laid%s"
+msgstr "Nie położono płyt przejazdowych%s"
+
+msgid "track %s: CBP is made for the gauges of 1435 and 1520 mm only"
+msgstr "tor %s: płyty CBP są tylko na rozstaw 1435 i 1520 mm"
+
+msgid "track %s: no CBP on a curve of R %.0f m, it goes on straights and on curves of R 600 m and more (Id-111)"
+msgstr "tor %s: bez płyt CBP na łuku R %.0f m, kładzie się je na prostych i łukach R ≥ 600 m (Id-111)"
+
+msgid "track %s: its sleepers are %.2f m apart, CBP lies on sleepers 0.60 m apart with the joints of the panels over them (Id-111): the joints are off the sleepers"
+msgstr "tor %s: podkłady co %.2f m, a płyty CBP leżą na podkładach co 0,60 m, styki płyt nad podkładami (Id-111): styki wypadają poza podkładami"
+
+msgid "the approach can't be kept within 3% over 20 m of the rails (Dz.U. 2025 poz. 1105, annex 5): the road ends too near the rails or too far off their height; lengthen it or bring it nearer the height of the rails"
+msgstr "dojazdu nie da się utrzymać w spadku do 3% na 20 m od szyn (Dz.U. 2025 poz. 1105, zał. 5): droga kończy się za blisko szyn albo za daleko od ich wysokości; wydłuż ją albo zbliż jej koniec do wysokości szyn"
+
+msgid "a level crossing isn't made on a cant ramp (Dz.U. 2025 poz. 1105, § 31 ust. 3): move the crossing off the ramp"
+msgstr "przejazdu nie projektuje się na rampie przechyłkowej (Dz.U. 2025 poz. 1105, § 31 ust. 3): przesuń przejazd poza rampę przechyłkową"
+
+msgid "Level crossing refused: the grade line of the road breaks by %.1f%% at the heads of tracks %s and %s side by side, over the 5%% Dz.U. 2025 poz. 1105 annex 5 pt 3 allows"
+msgstr "Przejazd odrzucony: niweleta drogi łamie się o %.1f%% na główkach torów %s i %s leżących obok siebie, ponad 5%% dopuszczone w zał. 5 pkt 3 Dz.U. 2025 poz. 1105"
+
+msgid "The grade line of the road breaks by %.1f%% at the heads of tracks %s and %s side by side, where it turns from the plane of the heads of the one onto the line to the other; Dz.U. 2025 poz. 1105 annex 5 pt 3 allows 5%%, more only with an analysis of how the vehicles get over it. The road stays as it is."
+msgstr "Niweleta drogi łamie się o %.1f%% na główkach torów %s i %s leżących obok siebie, gdzie przechodzi z płaszczyzny główek jednego na prostą do drugiego; zał. 5 pkt 3 Dz.U. 2025 poz. 1105 dopuszcza 5%%, więcej tylko po analizie przejezdności. Droga zostaje, jaka była."
+
+msgid "Level the tracks into one plane"
+msgstr "Wyrównaj tory do jednej płaszczyzny"
+
+msgid "Track %s up by %.3f m by its grade line: level %.0f m either way of the crossing, ramps of %.0f m beyond; the road over both without a break (annex 5 pt 1)"
+msgstr "Tor %s w górę o %.3f m przez jego niweletę: poziomo %.0f m w obie strony od przejazdu, dalej rampy po %.0f m; droga przez oba tory bez załomu (zał. 5 pkt 1)"
+
+msgid "The tracks can't be levelled into one plane: %s"
+msgstr "Torów nie da się wyrównać do jednej płaszczyzny: %s"
+
+msgid "Lower the cant at the crossing to %.0f mm (%.0f km/h)"
+msgstr "Zmniejsz przechyłkę na przejeździe do %.0f mm (%.0f km/h)"
+
+msgid "Lower the cant at the crossing to %.0f mm"
+msgstr "Zmniejsz przechyłkę na przejeździe do %.0f mm"
+
+msgid "their cants or grades differ, their levels alone can't put their heads in one plane"
+msgstr "ich przechyłki albo pochylenia się różnią, samą wysokością nie da się położyć ich główek w jednej płaszczyźnie"
+
+msgid "the track is too short"
+msgstr "tor jest za krótki"
+
+msgid "the track is as steep as the norms allow already (%.1f per mille, PLK ST-T1-A6 tab. 10.1)"
+msgstr "tor jest już tak stromy, jak pozwalają normy (%.1f‰, PLK ST-T1-A6 tab. 10.1)"
+
+msgid "the track doesn't go on far enough for the ramps: %.0f m either way of the crossing are needed (%.0f m level, a ramp of %.0f m, vertical curves of R %.0f m)"
+msgstr "tor nie biegnie dość daleko na rampy: potrzeba %.0f m w obie strony od przejazdu (%.0f m poziomo, rampa %.0f m, łuki pionowe R %.0f m)"
+
+msgid "switch %s lies where the level would change"
+msgstr "rozjazd %s leży tam, gdzie zmieniałaby się wysokość"
+
+msgid "Track %s brought up by %.3f m by its grade line, its heads in the plane of the heads of the track beside it: level %.0f m either way of the crossing, ramps of %.0f m at %.1f per mille with vertical curves of R %.0f m; Ctrl+Z takes it back"
+msgstr "Tor %s podniesiony o %.3f m przez niweletę, jego główki w płaszczyźnie główek toru obok: poziomo %.0f m w obie strony od przejazdu, rampy po %.0f m o pochyleniu %.1f‰ z łukami pionowymi R %.0f m; Ctrl+Z cofa"
+
+msgid "the grade line breaks by %.1f%% at the heads of the tracks side by side: allowed up to 5%% in difficult conditions only (Dz.U. 2025 poz. 1105, annex 5 pt 3); with their heads in one plane it wouldn't break (pt 1)"
+msgstr "niweleta łamie się o %.1f%% na główkach torów obok siebie: dopuszczalne do 5%% tylko w trudnych warunkach (Dz.U. 2025 poz. 1105, zał. 5 pkt 3); z główkami w jednej płaszczyźnie by się nie łamała (pkt 1)"
+
+msgid "the grade line of the road breaks at the heads of two tracks side by side by more than 5% (Dz.U. 2025 poz. 1105, annex 5 pt 3)"
+msgstr "niweleta drogi łamie się na główkach dwóch torów obok siebie o więcej niż 5% (Dz.U. 2025 poz. 1105, zał. 5 pkt 3)"

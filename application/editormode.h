@@ -4029,4 +4029,98 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	void push_road_snapshot(editor_road::record Record);
 	void restore_road_snapshot(EditorSnapshot const &Snapshot, std::vector<EditorSnapshot> &Opposite, bool const Undo);
 	road_tool m_roadtool;
+
+	// level crossings (editormodecrossing.cpp): a road changed, or a rail track it crosses, brings the road to the rails once the change
+	// is done (no button held): over each track in the plane of the heads of its rails, the approaches graded in (editorCrossing.hpp),
+	// as a step of the history joined to the change, and told in the status line. The roads of the scenery as it was opened stay as
+	// they are until they or the tracks they cross are changed
+	struct crossing_state
+	{
+		std::vector<road_node *> roads; // changed since the last look
+		std::vector<TTrack *> tracks;
+		std::vector<std::pair<glm::dvec3, TAnimModel const *>> panels; // crossing panels changed: where each was, and the model
+		std::uint64_t serial{0}; // the last step of the history when the first of them was changed
+		std::uint64_t armedserial{0}; // and when the scenery was open
+		bool busy{false}; // the crossings being laid: their own step isn't a change to look at
+		bool armed{false}; // the scenery is open: the tracks committed while it loads don't count
+		std::string last; // what the last crossing laid told, for the self-test
+		// a crossing refused for the cant of a track: the fix offered, the cant of the track lowered to what the crossing allows
+		struct cant_fix
+		{
+			TTrack *track{nullptr};
+			road_node *road{nullptr};
+			double cant{0.0}; // mm, as it is
+			double allowed{0.0};
+			double radius{0.0}; // m, of the track there, 0 straight
+			double speed{-1.0}; // km/h the track can be run at with the cant lowered, -1: no limit
+		};
+		std::optional<cant_fix> fix;
+		// a crossing refused for a cant ramp: the track, and how far along it the ramp goes either way from the crossing
+		struct ramp_refusal
+		{
+			TTrack *track{nullptr};
+			road_node *road{nullptr};
+			double back{0.0}; // m along the track to where the ramp starts, against the way the track goes
+			double ahead{0.0}; // to where it ends
+		};
+		std::optional<ramp_refusal> ramp;
+		// a crossing refused for the break of the grade line of the road at the heads of two tracks side by side (Dz.U. 2025 poz. 1105, annex
+		// 5 pt 3): the two fixes offered. The one track brought by its grade line to the level which puts the heads of both in one plane
+		// (pt 1), or the cants of both lowered to what keeps the break to 5%
+		struct break_refusal
+		{
+			road_node *road{nullptr};
+			TTrack *first{nullptr}, *second{nullptr}; // in the order of the road
+			double value{0.0}; // the break, a fraction
+			// the level: the track moved, up by how much (m), where along it, the ramps either way; or why it can't be
+			TTrack *moved{nullptr};
+			glm::dvec3 point{0.0}; // where the road crosses it
+			double raise{0.0};
+			double flat{0.0}; // m either way of the crossing kept at the new level
+			double ramp{0.0}; // m of each ramp
+			std::string unlevelled;
+			// the cants: the share of both kept, the most cant it leaves (mm), the speed it takes (km/h, -1 no limit)
+			double share{1.0};
+			double cant{0.0};
+			double speed{-1.0};
+		};
+		std::optional<break_refusal> breaks;
+		road_node *laid{nullptr}; // the road of the crossing laid last, for its panels
+		int defects{-1}; // what the last check of a crossing found (crossingholes), -1: none checked
+		int system{0}; // the panels offered for it: 0 CBP made of their drawings, 1 the models of the game
+	};
+	crossing_state m_crossing;
+	void crossings_changed(std::vector<TTrack *> const &Tracks);
+	void crossings_changed(editor_road::record const &Record);
+	// a crossing panel about to be moved, added or taken away
+	void crossings_changed(TAnimModel &Model);
+	void crossings_update();
+	// the roads made again, which cuts them along the rails where they lie in the plane of the heads (world/RoadCrossing.h)
+	void crossings_reshow(std::vector<road_node *> const &Roads);
+	// the roads across the tracks, and the ones cut along them before
+	std::vector<road_node *> crossings_near(std::vector<TTrack *> const &Tracks) const;
+	// after an undo or a redo: the roads across the tracks put back made again, nothing laid anew
+	void crossings_after_history();
+	std::string crossing_summary(level_crossing::design_result const &Result) const;
+	// the window of a crossing refused for the cant, with its fix
+	void render_crossing_fix();
+	// the cant of the track lowered to what the crossing allows: over the curve it lies in, its ramps scaled with it, the speed of its tracks
+	// limited to what the cant left takes, one step of the history; the crossing is laid then. returns: what was done, to tell
+	std::string crossing_lower_cant();
+	// the fixes of a crossing refused for the break of the grade line at the heads of two tracks side by side, one step of the history
+	// each, the crossing laid then: the one track brought to the level of the plane of the other by its grade line, a level stretch over
+	// the crossing and ramps within the norms of the track (PLK ST-T1-A6 tab. 10.1 and 10.2) either way of it; or the cants of both lowered
+	// alike to what keeps the break to 5%, over their curves, as crossing_lower_cant() does. returns: what was done, to tell
+	std::string crossing_level_tracks();
+	std::string crossing_lower_for_breaks();
+	// the cants of the curves the tracks lie in scaled by the share, the speed of each limited (Speeds, -1 none), one step of the history;
+	// returns what was done, Allowed the cant it leaves to tell
+	std::string crossing_scale_cants(std::vector<TTrack *> const &Tracks, double const Share, std::vector<double> const &Speeds, double const Allowed);
+	// crossing panels on the crossing of the road, per track: the inner one between the rails, the outer ones outside each rail, each
+	// bent along the track as a model laid along it (the bend tool), so it follows its curve, its grade and its cant; the road leaves its
+	// surface out under them. Inner "cbp": the panels CBP made of their drawings (world/CrossingPanels.h), rows of 3 m panels long
+	// enough for the road, their joints over the sleepers, on the curves of R 600 m and more; otherwise the models named. One step of
+	// the history. returns: what was done, to tell
+	std::string crossing_lay_panels(road_node &Road, std::string const &Inner, std::string const &Outer);
+	selftest_result selftest_crossing(std::string const &command, std::istringstream &words);
 };

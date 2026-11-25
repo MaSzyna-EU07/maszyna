@@ -656,6 +656,8 @@ void editor_ui::render_()
 			{
 				if (m_layerspanel.status_error)
 					ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_layerspanel.status.c_str());
+				else if (m_layerspanel.status_warning)
+					ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.25f, 1.0f), "%s", m_layerspanel.status.c_str());
 				else
 					ImGui::TextUnformatted(m_layerspanel.status.c_str());
 			}
@@ -1070,6 +1072,7 @@ void editor_ui::set_status(std::string const &Status, bool const Error)
 {
 	m_layerspanel.status = Status;
 	m_layerspanel.status_error = Error;
+	m_layerspanel.status_warning = false;
 	if (ImGui::GetCurrentContext() != nullptr)
 		m_statustime = ImGui::GetTime();
 	if (Error && false == Status.empty())
@@ -1078,6 +1081,12 @@ void editor_ui::set_status(std::string const &Status, bool const Error)
 		m_refusaltime = ImGui::GetTime();
 		m_refusalnotice = false;
 	}
+}
+
+void editor_ui::set_warning(std::string const &Status)
+{
+	set_status(Status, false);
+	m_layerspanel.status_warning = true;
 }
 
 void editor_ui::set_notice(std::string const &Notice)

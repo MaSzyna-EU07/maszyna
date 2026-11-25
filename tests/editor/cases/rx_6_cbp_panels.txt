@@ -1,0 +1,40 @@
+# stage 6: the crossing panels CBP of PKP PLK (Id-111) made of their drawings, laid along the double track of the curves i (R 600 m)
+# and o (R 604.5 m), canted 60 mm, which would break the grade line of the road at their facing heads by 6%, so lowered alike to keep it
+# to the 5% of Dz.U. 2025 poz. 1105 annex 5 pt 3: on each track the inner row (PWS, PW, PWS) and the outer row on either side, bent
+# along the curve and leaning with its cant, the ones between the tracks bent onto the line from the one to the other, their joints
+# over the sleepers. The road stays at the heads and leaves its surface out under them; undo
+# takes them away and the surface comes back. On a curve of R 300 m no CBP is laid: it goes on R 600 m and more only (Id-111)
+#> append node -1 0 cbp300 track normal 30 1.435 0.15 25.0 20 0 flat vis rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1 520 0 -150 0 0 0 10.0021 -0.998542 0 -9.95219 521.4988 0 -120.0500 0 300 endtrack
+wait 5
+roadlay 363.51 94.86 250.76 114.79 0.0 1 3.5
+wait 10
+expect crossingrefused 1 break
+crossingfix lower
+wait 10
+expect crossingrefused 0 break
+expect railhead i4 left 15 0.002
+expect roadcovered 309.164 104.465 0
+crossinglaypanels 309.35 104.43 cbp
+wait 10
+expect cbprows 6
+crossingprobe
+crossingpanels
+expect roadcovered 309.164 104.465 1
+expect roadcovered 304.733 105.248 1
+expect roadcovered 308.032 104.665 1
+expect roadgaps 308.426 104.595 1
+expect railhead i4 left 15 0.002
+expect railhead o4 right 15.1 0.002
+undo
+wait 10
+expect cbprows 0
+expect roadcovered 309.164 104.465 0
+expect railhead i4 left 15 0.002
+# the curve of R 300 m
+roadlay 510 -135 532 -135 0.0 1 3.5
+wait 10
+expect crossingrefused 0
+crossinglaypanels 520.4 -135 cbp
+wait 10
+expect cbprows 0
+quit

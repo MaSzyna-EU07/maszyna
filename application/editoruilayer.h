@@ -187,6 +187,8 @@ class editor_ui : public ui_layer
 	static void register_settings();
 	// shows outcome of an operation in the layers window
 	void set_status(std::string const &Status, bool const Error = false);
+	// the same in the colour of a warning: allowed, with a condition told
+	void set_warning(std::string const &Status);
 	// a warning after an operation done: added to its status, shown by the cursor for a while
 	void set_notice(std::string const &Notice);
 	// the refusal or warning by the cursor taken away before its time, when what it tells of was taken back

@@ -1373,6 +1373,7 @@ void editor_mode::track_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
+	crossings_changed(Tracks);
 	nmt_track_changed(Tracks);
 	m_joints.tracks_committed(Tracks);
 	sweeps_committed(Tracks);
@@ -1497,6 +1498,8 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 void editor_mode::track_retired(TTrack &Track)
 {
 	nmt_track_gone(Track);
+	// the roads cut along its rails close their gaps
+	crossings_changed({&Track});
 	tracks_committed({});
 }
 

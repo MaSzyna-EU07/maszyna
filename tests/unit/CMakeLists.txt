@@ -37,6 +37,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/world/RoadCrossing.cpp"
 	# and the crossing panels CBP made of their drawings (test_crossing_panels.cpp)
 	"${CMAKE_SOURCE_DIR}/world/CrossingPanels.cpp"
+	# and the surface of the roads at the level crossings, in the plane of the heads of the rails (test_level_crossing.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/editorCrossing.cpp"
 	# and the fouling points of the switches, widened in the curves as the gauge is
 	"${CMAKE_SOURCE_DIR}/editor/editorGauge.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorFouling.cpp"

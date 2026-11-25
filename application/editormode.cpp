@@ -531,6 +531,24 @@ namespace
                 }
             }
         }
+        // a road cut along the rails of a level crossing: the surface over its gaps as well, so where it's asked for the ground there it's
+        // the top of the road and not the bottom of a groove beside a rail (the grooves are only seen, nothing goes down into them)
+        if (false == Skiproads)
+            for (auto *road : simulation::Roads.sequence())
+            {
+                if (road == nullptr || road->m_editorremoved || road->bridges().empty())
+                    continue;
+                auto const &bridges{road->bridges()};
+                for (std::size_t i = 0; i + 2 < bridges.size(); i += 3)
+                {
+                    auto const &a{bridges[i].position};
+                    auto const &b{bridges[i + 1].position};
+                    auto const &c{bridges[i + 2].position};
+                    if (std::max({a.x, b.x, c.x}) < Min.x || std::min({a.x, b.x, c.x}) > Max.x || std::max({a.z, b.z, c.z}) < Min.y || std::min({a.z, b.z, c.z}) > Max.y)
+                        continue;
+                    Out.push_back({a, b, c});
+                }
+            }
         // the heightmap terrain answers for itself, with its full grid whatever is drawn of it
         if (Heightmap)
             EditorTerrain.gather_triangles(Min, Max, Out);
@@ -947,6 +965,8 @@ void editor_mode::push_snapshot(scene::basic_node *node, EditorSnapshot::Action 
     {
         snap.rotation = model->Angles();
         snap.scale = model->Scale();
+        // a crossing panel moved, added or taken away: the roads under it follow once the change is done
+        crossings_changed(*model);
     }
     else
     {
@@ -1082,6 +1102,8 @@ void editor_mode::undo_last()
         if (false == joined)
             break;
     }
+    // what the steps put back isn't a change for the level crossings to follow: the steps put the roads back themselves
+    crossings_after_history();
     if (touched.size() > 1)
     {
         // the one with the gizmo was recorded first, so it's taken back last
@@ -1285,6 +1307,7 @@ void editor_mode::redo_last()
         if (m_node != nullptr && std::find(touched.begin(), touched.end(), m_node) == touched.end())
             touched.push_back(m_node);
     } while (false == g_redo.empty() && g_redo.back().joined);
+    crossings_after_history();
     if (touched.size() > 1)
     {
         m_node = touched.front();
@@ -1459,6 +1482,7 @@ bool editor_mode::update()
     Global.editor_tracks = (current_work_area() == work_area::tracks);
     selftest_step();
     steps.step("selftest");
+    crossings_update();
     thumbnails_trim();
     // the drives of the switches go to the tips of their blades once, as the templates of the scenery are known
     if (false == m_drives_checked)
@@ -1771,6 +1795,7 @@ bool editor_mode::update()
     // roads: trajectories of the lanes, and the tools of the road window
     update_road_tool();
     draw_road_overlay();
+    render_crossing_fix();
     // a model clicked in the node bank with the select tool of the surroundings is the one inserted next: the insert tool takes over
     // with it. The select tool did nothing with the click, and the model went in only after the insert tool was chosen
     if (ui()->bank_picked() && current_work_area() == work_area::surroundings && ui()->mode() == nodebank_panel::MODIFY)
