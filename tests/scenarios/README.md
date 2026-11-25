@@ -135,7 +135,7 @@ Python 3.10+, no extra packages. Options:
   `cmake-build-*/bin/Release/eu07*.exe`. The build needs the `--test` and `-ini` command
   line options.
 - name one or more cases to run only those, e.g. `run.py ... eu07_td_timetable`.
-- `-j N` runs N cases at once. Each case prints its results when it is done. The 22 cases
+- `-j N` runs N cases at once. Each case prints its results when it is done. The 42 cases
   that aren't `slow` take about 30 s with `-j 4` and 2 minutes one at a time, loading included.
 - `--watch` runs a case the old way, in a visible window in real time (or faster with
   `--timespeed N`), closed after the case's `duration`; the exit code isn't checked then. For
@@ -236,6 +236,21 @@ starting at `vars.velocity` km/h; with `track_friction` 0.03 it locks the wheels
 and slides past the signal, so those cases set `test.fail_if_stop_overran no`.
 `td_red_signal_pass.scn` adds the `test_pass` event, which `test_mode_pass` puts as `event0`
 on `tor1k`, the track in front of the signal.
+`td_shunt_red_signal.scn` is the same with no timetable, so the AI shunts (Shunt) towards the signal at
+stop, starting `vars.offset` m into `tdo_n1734`: `eu07_td_shunt_red_signal` alone and
+`eu07_td_shunt_push_red_signal` pushing three coaches, both from 30 km/h, have to stop before the signal,
+151 m from the start (the shunting AI used to coast up to it and pass it at about 28 km/h, fixed
+by #409). They stop after 145 m and 141 m.
+
+The `traxx_*` cases run a Traxx (E186, `p160dc`), whose driver's brake handle (MHZ_6P) has a time
+chamber, like the MHZ_K5P, M394, Knorr, St113, FVel6 and FVE408 handles, which no other case has: the
+AI getting such a locomotive ready has a rule of its own for releasing the train brake (5775493b2,
+#444). `traxx_td_timetable` is the timetable run from a trainset ready to depart,
+`traxx_td_timetable_cold` the same from a cold start (`td_cold_timetable.scn`, the handle in its
+holding position, the brake pipe low), and `traxx_td_crew_add` the locomotive standing ready to depart
+with nobody in it, the handle in its holding position and the brake pipe charged, until a driver is
+put in (`td_crew.scn`, as `eu07_td_crew_add`). In all three the driver puts the handle to running
+within a second of starting and leaves.
 
 `eu07_td_departure_station_capitals` runs an EU07 from where `td_timetable.scn` puts it, with the W4 of Stacja1 about
 35 m ahead, on a timetable of its own (`td_departure_station_capitals.txt`, fragment `td_departure_station.scn`):
@@ -249,6 +264,16 @@ the td/rozklad train, an EU07 with three coaches, with its head 80 m past the W4
 under the consist, behind the head, and the driver still counts Stacja1 and leaves at 10:35, since the scan of the
 route begins at the last vehicle and keeps a W4 behind the head.
 
+`eu07_coaches_td_timetable` is the timetable case with the EU07 and three coaches, a train that brakes with the train
+brake, beside the light EU07 and the SN61 alone, which brake with the independent brake. The `*_td_downgrade_w4_signal`
+cases (fragment `td_downgrade_w4_signal.scn`, timetable `td_downgrade.txt`) run on a line the fragment adds beside the
+tracks of td.scn, at x = -3000: 300 m level, then 3000 m down a gradient of 20 per mille, under an overhead wire fed
+by a substation of its own (`gr_pwr`; the wire on the section `pwr01` of td.scn gave the EU07 no voltage). The train
+starts on the level at the W4 of Gora, stops at the W4 of Dol 1500 m down the gradient, leaves at 10:38 and stops before
+`gr_sem`, a signal at stop 1100 m further down (a memory cell with `SetVelocity 0 0` and the event that reads it, no
+model), about 1590 m and 2690 m from the start. The three trains are the light EU07, the SN61 alone and the EU07 with
+three coaches.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -259,6 +284,13 @@ standstill of 100 s ends the test although the traffic runs on (counting every v
 into the test timeout).
 `test_mode_pass_while_moving` reports the pass from `event2` of `tor1k` (the direction the train runs), as the train runs onto
 it, with `test.no_movement_before_pass no`, so the test ends with the train still moving.
+`test_mode_standing_1m_past_signal` and `test_mode_standing_4m_past_signal` (fragment `td_past_red_signal.scn`) set
+the td/rozklad train at a stand with its head 1 m and 4 m past the exit signal at stop (the memory cell of the
+signal is 51 m into `tor1k`). The driver finds the signal behind the head at its first look ahead, 13.6 s in, and a
+standing train passes nothing, so both run into their timeout. When a signal found up to 5 m behind the head
+still counted as one the head had ahead, standing or not, both ended as signals passed at danger at 13.6 s (a
+train set 6 m or 20 m past didn't). Starting at 0 km/h the driver doesn't wake up within the case, so they start at
+0.1 km/h, as `td_red_signal.scn` does.
 
 The `en57_2000_automatic_coupler_*` cases (issue #86) share `td_automatic_coupler_hit.scn`: an
 EN57-2000 unit without a driver runs at `vars.velocity` km/h into a standing one, from
@@ -277,6 +309,15 @@ ahead (Connect, the first order it drives under), go on shunting. It passes when
 pushed, runs onto `tor1k` (`eventall2`), with the train still moving, and the black box has the
 locomotive coupled to the coaches (it couples about 70 s after the start). A driver that leaves its
 hand brake on under Connect pulls against it for good and the case ends as a standstill after 300 s.
+
+The `eu07_td_buckle_*` cases (fragment `td_buckle_event.scn`) run the timetable train of
+`td_timetable.scn` and buckle the curve `tdo_n222`, about 950 m ahead of it, with a `trackbuckle`
+event of `vars.amplitude` at 10:35. Both have `physics.derailment new` in `ini`: the default,
+`monitor`, leaves the decision to the legacy draw and only logs what the criteria would do
+(`derailment monitor: ... overturned at 46 km/h on track tdo_n222`), so the train runs on to
+Przystanek whatever the buckle. With 600 mm over a main lobe of 8 m the locomotive overturns on
+the buckle at 46 km/h, 1036 m from the start (`Bad driving: ... derailed on buckled track`); with
+30 mm it keeps on the rails and stops at Przystanek after 1400 m.
 
 `sm42_td_uncouple_past_signal` (fragment `td_uncouple_past_signal.scn`) is the uncoupling of the SM42 at Debica on
 L053 poranek (step 10 of `deb_sm42_stat`) on td.scn. An SM42 with no timetable stands turned at the far end of `tor1k`,
@@ -347,6 +388,23 @@ brake of the Vectron switched on), and `event0` of the track gives the driver `O
 starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
 the pipe stays below 1 bar and the case ends as a standstill after 300 s.
 
+`eu07_td_reinspect_brakes_after_coupling` (fragment `td_reinspect_brakes.scn`, eu07/maszyna#350 and #282) is about the
+wagon inspector of the AI (`TController::AutoRewident()`) on a train formed by coupling. An EU07 stands cold on the line
+from Stacja1 (`koniec`) and a cut stands 45 m ahead of it, braked, with nobody in it: 16 coaches with P alone (BDhpumn)
+and next to the locomotive 8 empty wagons with G and P (401W), 541 m of wagons. `event0` of the locomotive's track gives
+the driver `Shunt -3 3`, once: couple to the cut with the coupler and the brake hose and run it on as a train
+(`Obey_train`), waiting for the way, which `event2` of `tdo_n231`, in front of the cut, gives as a `SetVelocity 40 40`
+(no signal of the line is in sight). Over 500 m of wagons make it a train on G (Cw-1 §19.1), where the brake of a wagon
+without G is cut out (§19.9). The inspector looks at the train as the AI couples, at 4 km/h (t=69 s), too fast for it to
+cut a brake out, and leaves that for the next standstill: `reinspect_brakes()` cuts the 16 coaches out as the train stands
+a moment later, its brakes applied by the empty pipe of the cut. Neither the physicslog nor the black box has the brakes
+of the wagons, so the case tells by how the train brakes: `event2` of `tdo_n240` takes the driver off at 38 km/h, which
+leaves the brake valve in the emergency position, and braked by the locomotive and the 8 wagons alone the train stops 29 s
+and 211 m later, a mean deceleration of 0.27 m/s² (`stops_driverless` with `max_deceleration` 0.40). With every brake
+working it stops at 0.57 m/s², 99 m: that is `eu07_td_reinspect_brakes_legacy_inspector`, the same run with the inspector
+of the earlier releases (`ai.brakesetting.cw1 no`), which cuts no brake out, and also what a build whose
+`reinspect_brakes()` does nothing gives for the first case, which then fails. The test passes 150 s after the driver goes.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -376,7 +434,8 @@ track it stands on). The first of them may be the one to couple (`Shunt -2 -3`):
 first order is `Connect` releases the hand brake a cold locomotive starts with
 (`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
-The cases and what they showed on master of 2026-11-11:
+The cases and what they showed on master of 2026-11-11 (the two L053 poranek rows also on
+staging f15ea405 of 2026-11-23):
 
 | case | report | result |
 | --- | --- | --- |
@@ -404,9 +463,11 @@ the row instead, logged by builds from this branch on.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
-- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`: after
-  reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the distances,
-  that stop has to be between them (metres travelled, as in `distance`).
+- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`, `max_time`,
+  `nth`: after reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the
+  distances, that stop has to be between them (metres travelled, as in `distance`), with `max_time`
+  it has to begin by then (seconds of the physicslog). `nth` (default 1) takes a later stop: each
+  stop after the first counts once the train has reached `moving_speed` again.
 - `stays_stopped` `moving_speed`, `stop_speed`: after moving off and stopping, never goes
   above `stop_speed` again.
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the
@@ -439,7 +500,10 @@ the row instead, logged by builds from this branch on.
   (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
   stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
   the recording, or until it gets a driver again, at least `hold` seconds. The physicslog can't
-  tell: the driver writes it, so it ends when the driver goes.
+  tell: the driver writes it, so it ends when the driver goes. Optional `min_deceleration`,
+  `max_deceleration` (m/s²): the mean deceleration of that stop, from the speed the driver left at
+  and the way to the stop (v²/2s), has to be within them, e.g. a train some of whose brakes are
+  cut out stops slower.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 
