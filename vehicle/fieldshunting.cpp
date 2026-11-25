@@ -12,12 +12,16 @@ http://mozilla.org/MPL/2.0/.
 
 namespace fieldshunting {
 
-control diesel_electric(int const Autorelaytype, bool const Autorelayflag) {
+bool has_switch(int const Autorelaytype, bool const Fieldshuntswitch) {
+	return Autorelaytype == 2 && Fieldshuntswitch;
+}
+
+control diesel_electric(int const Autorelaytype, bool const Fieldshuntswitch, bool const Autorelayflag) {
 	using enum control;
 	if (Autorelayflag) {
 		return automatic;
 	}
-	return Autorelaytype == 2 ? off : manual;
+	return has_switch(Autorelaytype, Fieldshuntswitch) ? off : manual;
 }
 
 } // namespace fieldshunting

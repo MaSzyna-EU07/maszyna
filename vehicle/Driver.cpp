@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/brakingcurve.h"
+#include "vehicle/fieldshunting.h"
 #include "vehicle/handover.h"
 #include "vehicle/timetableservice.h"
 #include "world/mtable.h"
@@ -8709,13 +8710,14 @@ TController::control_tractive_and_braking_force() {
 #endif
 }
 
-// the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional): off, the field stays full.
-// checked while running too, since a vehicle taken over with its engine running doesn't go through PrepareEngine()
+// the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional with FieldShuntSwitch=Yes): off,
+// the field stays full. checked while running too, since a vehicle taken over with its engine running doesn't go through
+// PrepareEngine(). a diesel-electric with AutoRelay=Optional alone is left as before, shunting by hand with the switch off
 void TController::control_field_shunting() {
 
     if( AIControllFlag
      && mvControlling->EngineType == TEngineType::DieselElectric
-     && mvControlling->AutoRelayType == 2
+     && fieldshunting::has_switch( mvControlling->AutoRelayType, mvControlling->FieldShuntSwitch )
      && false == mvControlling->AutoRelayFlag ) {
         mvControlling->AutoRelaySwitch( true );
     }

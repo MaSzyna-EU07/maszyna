@@ -19,10 +19,14 @@ enum class control : int {
 	off // nobody: the shunting is switched off, the field stays full
 };
 
-// who sets the field shunting of a diesel-electric locomotive, by its AutoRelay (Autorelaytype: 0 No, 1 Yes,
-// 2 Optional) and its AutoRelayFlag (Autorelayflag). with the flag set, the relays. AutoRelay=Optional is a switch
-// that lets the relays shunt the field, as the SU45's and SP45's "załączenie bocznikowania" (eu07/maszyna#167):
-// switched off, nobody. otherwise the driver
-control diesel_electric(int Autorelaytype, bool Autorelayflag);
+// whether a diesel-electric has the switch that lets the relays shunt the field, as the SU45's and SP45's "załączenie
+// bocznikowania" (eu07/maszyna#167): AutoRelay=Optional (Autorelaytype 2) with FieldShuntSwitch=Yes (Fieldshuntswitch)
+bool has_switch(int Autorelaytype, bool Fieldshuntswitch);
+
+// who sets the field shunting of a diesel-electric locomotive, by its AutoRelay (Autorelaytype: 0 No, 1 Yes, 2 Optional),
+// its FieldShuntSwitch (Fieldshuntswitch) and its AutoRelayFlag (Autorelayflag). with the flag set, the relays. with the
+// switch of the field shunting (has_switch()) switched off, nobody. otherwise the driver, AutoRelay=Optional without
+// FieldShuntSwitch included
+control diesel_electric(int Autorelaytype, bool Fieldshuntswitch, bool Autorelayflag);
 
 } // namespace fieldshunting

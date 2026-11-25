@@ -3662,7 +3662,7 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 			// TBD, TODO: refactor this validation as part of relay check routine (currently in tractionforce()
 			// TBD, TODO: diesel electric engine utilize scndctrlactualpos like the other types?
 			if (EngineType == TEngineType::DieselElectric &&
-			    (IsMainCtrlNoPowerPos() || fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag) != fieldshunting::control::manual || ShuntMode || false == Mains))
+			    (IsMainCtrlNoPowerPos() || fieldshunting::diesel_electric(AutoRelayType, FieldShuntSwitch, AutoRelayFlag) != fieldshunting::control::manual || ShuntMode || false == Mains))
 			{
 				OK = false;
 			}
@@ -7416,7 +7416,7 @@ void TMoverParameters::DieselElectricTractionForce(double tmp)
 		EngineVoltage = 0;
 
 	// przekazniki bocznikowania, kazdy inny dla kazdej pozycji
-	if (auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, AutoRelayFlag)};
+	if (auto const fieldshuntingcontrol{fieldshunting::diesel_electric(AutoRelayType, FieldShuntSwitch, AutoRelayFlag)};
 	    false == StLinFlag || ShuntMode || fieldshuntingcontrol == fieldshunting::control::off)
 	{
 		ScndCtrlPos = 0;
@@ -13255,6 +13255,9 @@ void TMoverParameters::LoadFIZ_CntrlControllers(std::string const &line)
 	{
 		AutoRelayType = 0;
 	}
+	// a key of its own rather than a new AutoRelay value: an exe that doesn't know it reads the line as before, and the value
+	// stays Optional, which every check of the switch looks for
+	extract_value(FieldShuntSwitch, "FieldShuntSwitch", line, "");
 
 	extract_value(CoupledCtrl, "CoupledCtrl", line, "");
 	extract_value(HasCamshaft, "Camshaft", line, "");
