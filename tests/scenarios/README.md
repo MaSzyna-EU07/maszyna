@@ -555,6 +555,34 @@ back on (`LineContactorsHeldByLocalConverterSwitch()`, the part of #276 in `dete
 the `converteron` hint), is in the cab only: no command of a scenery or of the train's cables sets
 `ConverterAllowLocal`, and nobody sits in a cab in the test mode, so the switch is always on in a case.
 
+The `eu07_td_switch_*` cases (fragment `td_switch_thrown.scn`, the review of #289, point 2b) throw a switch of
+Stacja1 by an event under an EU07 with three coaches and check that the train keeps to the rails (`on_track`) and that
+the AI keeps to the route it is really on. Both switches of the station have their points towards the line and the
+way to track 2 straight (position 0), to track 1 curved (position 1); the ends of the two ways are 1.9 m apart, the
+tracks 4.6 m. `zwr01` at the west end is run through facing by a train running into the station, `zwr02` at the east
+end trailing by one leaving it. The throw is an event set off once, by the rear axle of the locomotive running onto a
+track (`event1`/`event2` of it, which only the vehicle with the driver sets off) or by a launcher 5 s after the start;
+a driver that stands cold gets its order (`vars.order`) from `event0` of its track, after the throw where the train
+stands over the switch. On track 1 a signal at stop of the case's own stands at z 1100: the train has to stop before
+it (`event0` of `tdo_n1725` passes the test, running onto `tdo_n1734` fails it); on track 2 the exit signal `stacja1_k`
+at stop. What they showed on `staging` of 2026-11-22 (f15ea405), where an axle on a switch keeps the way it ran onto
+(the segment it took when it got onto the switch) but leaves the switch by the way it is set to now, and the AI does
+not scan its route again for a switch that changed behind the head of the train:
+
+| case | throw | result |
+| --- | --- | --- |
+| `eu07_td_switch_facing_control` | none, set to track 1 from the start | passes: stops before the signal of track 1 |
+| `eu07_td_switch_thrown_facing_head` | `zwr01` to track 1 with the locomotive on the switch | `xfail`: the locomotive jumps sideways at the end of the switch (0.78 m off the track in the black box), the whole train goes to track 1, and the AI, still on the route of track 2, runs past the signal of track 1 at 40 km/h |
+| `eu07_td_switch_thrown_facing_behind` | `zwr01` to track 1 with the locomotive just past it | `xfail`: the locomotive runs on along track 2 and the coaches coupled to it along track 1, side by side, for 900 m |
+| `eu07_td_switch_thrown_standing_facing` | `zwr01` to track 1 under the standing train, which then leaves facing | `xfail`: the second coach runs with a bogie on each track, its body 2.3 m off both; the AI, which scans from the last vehicle, reads the signals of track 1 while it runs on track 2 (a signal passed at danger, `stacja1_j`) |
+| `eu07_td_switch_thrown_standing_trailing` | `zwr02` to track 1 under the standing train, which then leaves trailing | passes: the first wheels coming from track 2 push the switch back (as through any switch set against them from the frog end) |
+| `eu07_td_switch_thrown_trailing` | `zwr02` to track 2 under the coaches of the timetable train leaving track 1 | passes: the switch is pushed back, the train stops at Przystanek after 1402 m |
+
+Nothing derails in any of them with `physics.derailment monitor` (the default; the monitor reported nothing either),
+and the three `xfail` cases run with `physics.derailment new` came out the same to the metre: the criteria of
+derailment look at the curve, the cant and the speed of a vehicle, not at its bogies being on two tracks. Nor does the
+coupler between a locomotive and a coach 4.6 m beside it break.
+
 ### Snapshot cases
 
 A case with a `snapshot` section checks the simulation snapshots (above) on its scenery instead of a
@@ -700,6 +728,19 @@ the row instead, logged by builds from this branch on.
   it stays at or above `at_least`, e.g. no power lost under an insulator.
 - `master_controller` `from_distance`, `to_distance`, `at_most`: the master controller stays at or below the
   position between the two distances, e.g. at 0 where the scenery tells the driver to coast.
+
+- `on_track` `vehicles`, optional `max_offset` (0.75 m), `max_detour` (5 m): every vehicle whose name starts with
+  `vehicles` (e.g. `{{vehicle}}`, the train of the case) keeps to the rails in the black box, in each of its states:
+  its middle is within `max_offset` of the line of a track (level distance, the map of the tracks of the black box),
+  and of two vehicles coupled to each other the way along the tracks from one to the other (through the ends of the
+  tracks that meet) is no more than `max_detour` longer than the straight line between them. A vehicle with its
+  bogies on two tracks that part, or thrown sideways, is off the line; a coach running on beside the locomotive it is
+  coupled to, on the next track, has a way to it hundreds of metres long. A coach on a curve of 300 m, through the
+  S of a switch, was up to 0.38 m off. The middle of a vehicle is the middle of the chord between its pivots, so on
+  a curve of radius R a vehicle running right is a^2 / 8R off the track, a being the distance of the pivots: a 19.5 m
+  coach 0.59 m at R 80, 0.79 m at R 60. The default suits curves down to about R 65 for such a coach; a case with
+  tighter curves sets more. The black box lists a vehicle once a second, so a jump between two lists shows up only
+  as it is at the next one.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
