@@ -1,11 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
+#include <cstddef>
+#include <unordered_map>
 
 #include "application/uilayer.h"
 #include "widgets/map_objects.h"
 #include "widgets/popup.h"
-#include "rendering/frustum.h"
+
+class TAnimModel;
 
 namespace ui
 {
@@ -96,6 +100,41 @@ class map_panel : public ui_panel
 {
     friend class track_switch_window;
 
+	struct signal_track_entry
+	{
+		TTrack *track { nullptr };
+		glm::dvec2 minimum {};
+		glm::dvec2 maximum {};
+		std::size_t sequence_order { 0 };
+	};
+
+	struct signal_track_node
+	{
+		glm::dvec2 minimum {};
+		glm::dvec2 maximum {};
+		std::size_t first { 0 };
+		std::size_t last { 0 };
+		int left { -1 };
+		int right { -1 };
+	};
+
+	struct cached_signal_light
+	{
+		TAnimModel *model { nullptr };
+		std::uint64_t revision { 0 };
+		std::chrono::steady_clock::time_point refreshed_at {};
+		glm::dvec2 direction {};
+		std::vector<std::uint32_t> colors;
+		bool valid { false };
+		bool direction_valid { false };
+	};
+
+	struct cached_semaphore
+	{
+		std::vector<cached_signal_light> lights;
+		cached_signal_light fallback;
+	};
+
 	struct cached_world_lines
 	{
 		std::vector<glm::vec3> vertices;
@@ -132,6 +171,9 @@ class map_panel : public ui_panel
 	scene::basic_region *m_static_scene_region { nullptr };
 	std::uint64_t m_static_scene_revision { 0 };
 	std::vector<TTrack *> m_switch_tracks;
+	std::vector<signal_track_entry> m_signal_tracks;
+	std::vector<signal_track_node> m_signal_track_tree;
+	std::unordered_map<map::semaphore const *, cached_semaphore> m_signal_caches;
 	std::vector<cached_water_outline> m_water_outlines;
 	std::vector<cached_world_lines> m_river_lines;
 	std::vector<cached_world_lines> m_environment_lines;
@@ -155,6 +197,12 @@ class map_panel : public ui_panel
 
 	float get_vehicle_rotation();
 	void prepare_static_scene_cache();
+	int build_signal_track_tree(std::size_t first, std::size_t last);
+	void find_nearest_signal_track(
+		int node_index, glm::dvec3 const &position, TTrack *&nearest_track,
+		double &nearest_distance2, std::size_t &nearest_order) const;
+	glm::dvec2 map_signal_direction(glm::dvec3 const &position, float facing_angle) const;
+	void cache_signal_directions();
 	void cache_static_water();
 	void cache_static_track_lines(TTrack *track);
 	void cache_static_station_labels();
@@ -167,6 +215,8 @@ class map_panel : public ui_panel
 	void render_grid(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform);
 	void render_map_lines(ImDrawList *draw_list, ImVec2 origin, glm::vec2 surface_size, glm::mat4 transform, double scale_length);
 	void render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 surface_size);
+	void render_camera_frustum(
+		ImDrawList *draw_list, ImVec2 screen_origin, glm::vec2 surface_size, glm::mat4 transform);
 
 	bool init_done = false;
 

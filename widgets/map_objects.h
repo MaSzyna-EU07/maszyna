@@ -4,7 +4,6 @@
 #include "world/Event.h"
 #include "scene/scene.h"
 #include "world/MemCell.h"
-#include <chrono>
 #include <cstdint>
 
 namespace map
@@ -27,20 +26,7 @@ using sorted_object_list = std::map<float, std::shared_ptr<map::map_object>>;
 // semaphore description (only for minimap purposes)
 struct semaphore : public map_object
 {
-	struct light_cache
-	{
-		TAnimModel *model { nullptr };
-		std::uint64_t revision { 0 };
-		std::chrono::steady_clock::time_point refreshed_at {};
-		glm::dvec2 direction {};
-		std::vector<std::uint32_t> colors;
-		bool valid { false };
-		bool direction_valid { false };
-	};
-
 	std::vector<TAnimModel *> models;
-	std::vector<light_cache> light_caches;
-	light_cache fallback_cache;
 	std::vector<basic_event *> events;
 	TMemCell *memcell = nullptr;
 

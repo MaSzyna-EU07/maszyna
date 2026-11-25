@@ -469,16 +469,13 @@ string(REGEX REPLACE "(................................)" "\\1\n" EDITOR_ICONS_H
 string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," EDITOR_ICONS_HEX "${EDITOR_ICONS_HEX}")
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/geninc/editor_icons_png.inc" CONTENT "${EDITOR_ICONS_HEX}\n")
 
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(MAP_ICONS_PNG "${CMAKE_SOURCE_DIR}/widgets/map_icons.png")
 set(MAP_ICONS_INCLUDE "${CMAKE_BINARY_DIR}/geninc/map_icons_png.inc")
-add_custom_target(generate_map_icons
-	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/widgets/map_icons.py"
-		--png "${MAP_ICONS_PNG}" --include "${MAP_ICONS_INCLUDE}"
-	BYPRODUCTS "${MAP_ICONS_PNG}"
-		"${MAP_ICONS_INCLUDE}"
-	VERBATIM
-)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${MAP_ICONS_PNG}")
+file(READ "${MAP_ICONS_PNG}" MAP_ICONS_HEX HEX)
+string(REGEX REPLACE "(................................)" "\\1\n" MAP_ICONS_HEX "${MAP_ICONS_HEX}")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," MAP_ICONS_HEX "${MAP_ICONS_HEX}")
+file(CONFIGURE OUTPUT "${MAP_ICONS_INCLUDE}" CONTENT "${MAP_ICONS_HEX}\n")
 
 set (PREFIX "")
 set (SUFFIX "")
@@ -583,7 +580,6 @@ set_target_properties(eu07_core PROPERTIES
 	FOLDER "libraries")
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
-add_dependencies(${PROJECT_NAME} generate_map_icons)
 target_link_libraries(${PROJECT_NAME} eu07_core)
 
 target_compile_definitions(eu07_settings INTERFACE ${DEFINITIONS})

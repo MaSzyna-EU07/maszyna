@@ -11,15 +11,22 @@
 #include "widgets/mapIcons.h"
 #include "world/Sweep.h"
 #include <format>
+#include <ranges>
+#include <tuple>
 
 namespace
 {
 
 int constexpr map_vertex_limit = 48000;
+int constexpr map_static_vertex_limit = 28000;
+int constexpr map_symbol_vertex_limit = 40000;
+int constexpr map_platform_vertex_limit = 42000;
+int constexpr map_vehicle_vertex_limit = 47000;
 
-bool map_has_vertex_budget(ImDrawList const *draw_list, int const required = 12)
+bool map_has_vertex_budget(
+	ImDrawList const *draw_list, int const required = 12, int const limit = map_vertex_limit)
 {
-	return draw_list->VtxBuffer.Size + required < map_vertex_limit;
+	return draw_list->VtxBuffer.Size + required < limit;
 }
 
 bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
@@ -53,47 +60,6 @@ bool map_world_bounds_visible(
 	       screen_min.x <= origin.x + surface_size.x + screen_margin &&
 	       screen_max.y >= origin.y - screen_margin &&
 	       screen_min.y <= origin.y + surface_size.y + screen_margin;
-}
-
-glm::dvec2 map_signal_direction(glm::dvec3 const &position, float const facing_angle)
-{
-	TTrack *nearest_track = nullptr;
-	double nearest_distance2 = std::numeric_limits<double>::max();
-	for (TTrack *track : simulation::Paths.sequence())
-	{
-		if (!track || !track->Segment || (track->iCategoryFlag & 15) != 1)
-			continue;
-
-		glm::dvec3 const nearest_point = track->Segment->get_nearest_point(position);
-		glm::dvec2 const offset(position.x - nearest_point.x, position.z - nearest_point.z);
-		double const distance2 = glm::dot(offset, offset);
-		if (distance2 < nearest_distance2)
-		{
-			nearest_distance2 = distance2;
-			nearest_track = track;
-		}
-	}
-
-	if (!nearest_track || !nearest_track->Segment)
-		return glm::dvec2(1.0, 0.0);
-
-	double const path_length = nearest_track->Segment->GetLength();
-	if (!(path_length > 0.0) || !std::isfinite(path_length))
-		return glm::dvec2(1.0, 0.0);
-
-	double const segment_distance = nearest_track->Segment->find_nearest_point(position) * path_length;
-	glm::dvec3 const track_direction = nearest_track->Segment->GetDirection(segment_distance);
-	glm::dvec2 direction(track_direction.x, track_direction.z);
-	if (glm::length2(direction) <= 1e-8)
-		return glm::dvec2(1.0, 0.0);
-
-	direction = glm::normalize(direction);
-	float const yaw = glm::radians(facing_angle);
-	glm::dvec2 const signal_facing(-std::sin(yaw), -std::cos(yaw));
-	if (glm::dot(direction, signal_facing) < 0.0)
-		direction = -direction;
-
-	return direction;
 }
 
 bool clip_map_line(ImVec2 &a, ImVec2 &b, ImVec2 origin, glm::vec2 surface_size)
@@ -189,11 +155,17 @@ void ui::map_panel::prepare_static_scene_cache()
 	m_platform_lines.clear();
 	m_station_labels.clear();
 	m_switch_tracks.clear();
+	m_signal_tracks.clear();
+	m_signal_track_tree.clear();
+	m_signal_caches.clear();
 	cache_static_water();
 	for (TTrack *track : simulation::Paths.sequence())
 		cache_static_track_lines(track);
+	if (!m_signal_tracks.empty())
+		build_signal_track_tree(0, m_signal_tracks.size());
 	cache_static_station_labels();
 	cache_static_platforms();
+	cache_signal_directions();
 	m_static_scene_region = simulation::Region;
 	m_static_scene_revision = scene_revision;
 	m_static_view_cache_valid = false;
@@ -243,6 +215,15 @@ void ui::map_panel::cache_static_track_lines(TTrack *track)
 {
 	if (!track)
 		return;
+
+	if ((track->iCategoryFlag & 15) == 1 && track->Segment)
+	{
+		signal_track_entry entry;
+		entry.track = track;
+		entry.sequence_order = m_signal_tracks.size();
+		track->Segment->plan_bounds(entry.minimum, entry.maximum);
+		m_signal_tracks.push_back(entry);
+	}
 
 	if (track->iCategoryFlag == 1 && track->eType == tt_Switch && track->SwitchExtension)
 		m_switch_tracks.push_back(track);
@@ -310,6 +291,148 @@ void ui::map_panel::cache_static_track_lines(TTrack *track)
 	}
 	else if (track->eType == tt_Normal)
 		cache_environment_segment(track->Segment.get());
+}
+
+int ui::map_panel::build_signal_track_tree(std::size_t const first, std::size_t const last)
+{
+	signal_track_node node;
+	node.first = first;
+	node.last = last;
+	node.minimum = glm::dvec2(std::numeric_limits<double>::max());
+	node.maximum = glm::dvec2(std::numeric_limits<double>::lowest());
+	for (std::size_t idx = first; idx < last; ++idx)
+	{
+		node.minimum = glm::min(node.minimum, m_signal_tracks[idx].minimum);
+		node.maximum = glm::max(node.maximum, m_signal_tracks[idx].maximum);
+	}
+
+	int const node_index = static_cast<int>(m_signal_track_tree.size());
+	m_signal_track_tree.push_back(node);
+	if (last - first <= 8)
+		return node_index;
+
+	glm::dvec2 const extent = node.maximum - node.minimum;
+	int const axis = extent.x >= extent.y ? 0 : 1;
+	std::size_t const middle = first + (last - first) / 2;
+	std::nth_element(
+		m_signal_tracks.begin() + static_cast<std::ptrdiff_t>(first),
+		m_signal_tracks.begin() + static_cast<std::ptrdiff_t>(middle),
+		m_signal_tracks.begin() + static_cast<std::ptrdiff_t>(last),
+		[axis](signal_track_entry const &lhs, signal_track_entry const &rhs) {
+			return lhs.minimum[axis] + lhs.maximum[axis] <
+			       rhs.minimum[axis] + rhs.maximum[axis];
+		});
+
+	int const left = build_signal_track_tree(first, middle);
+	int const right = build_signal_track_tree(middle, last);
+	m_signal_track_tree[static_cast<std::size_t>(node_index)].left = left;
+	m_signal_track_tree[static_cast<std::size_t>(node_index)].right = right;
+	return node_index;
+}
+
+void ui::map_panel::find_nearest_signal_track(
+	int const node_index, glm::dvec3 const &position, TTrack *&nearest_track,
+	double &nearest_distance2, std::size_t &nearest_order) const
+{
+	if (node_index < 0)
+		return;
+
+	auto const &node = m_signal_track_tree[static_cast<std::size_t>(node_index)];
+	glm::dvec2 const point(position.x, position.z);
+	glm::dvec2 const offset = glm::max(glm::max(node.minimum - point, point - node.maximum), glm::dvec2(0.0));
+	if (glm::dot(offset, offset) > nearest_distance2)
+		return;
+
+	if (node.left < 0 || node.right < 0)
+	{
+		for (std::size_t idx = node.first; idx < node.last; ++idx)
+		{
+			TTrack *track = m_signal_tracks[idx].track;
+			if (!track || !track->Segment)
+				continue;
+			glm::dvec3 const nearest_point = track->Segment->get_nearest_point(position);
+			glm::dvec2 const track_offset(position.x - nearest_point.x, position.z - nearest_point.z);
+			double const distance2 = glm::dot(track_offset, track_offset);
+			if (distance2 < nearest_distance2 ||
+			    (distance2 == nearest_distance2 && m_signal_tracks[idx].sequence_order < nearest_order))
+			{
+				nearest_distance2 = distance2;
+				nearest_track = track;
+				nearest_order = m_signal_tracks[idx].sequence_order;
+			}
+		}
+		return;
+	}
+
+	auto const bounds_distance2 = [this, &point](int const child_index) {
+		auto const &child = m_signal_track_tree[static_cast<std::size_t>(child_index)];
+		glm::dvec2 const child_offset =
+			glm::max(glm::max(child.minimum - point, point - child.maximum), glm::dvec2(0.0));
+		return glm::dot(child_offset, child_offset);
+	};
+	int first_child = node.left;
+	int second_child = node.right;
+	if (bounds_distance2(second_child) < bounds_distance2(first_child))
+		std::swap(first_child, second_child);
+	find_nearest_signal_track(first_child, position, nearest_track, nearest_distance2, nearest_order);
+	find_nearest_signal_track(second_child, position, nearest_track, nearest_distance2, nearest_order);
+}
+
+glm::dvec2 ui::map_panel::map_signal_direction(glm::dvec3 const &position, float const facing_angle) const
+{
+	TTrack *nearest_track = nullptr;
+	double nearest_distance2 = std::numeric_limits<double>::max();
+	std::size_t nearest_order = std::numeric_limits<std::size_t>::max();
+	if (!m_signal_track_tree.empty())
+		find_nearest_signal_track(0, position, nearest_track, nearest_distance2, nearest_order);
+	if (!nearest_track || !nearest_track->Segment)
+		return glm::dvec2(1.0, 0.0);
+
+	double const path_length = nearest_track->Segment->GetLength();
+	if (!(path_length > 0.0) || !std::isfinite(path_length))
+		return glm::dvec2(1.0, 0.0);
+
+	double const segment_distance = nearest_track->Segment->find_nearest_point(position) * path_length;
+	glm::dvec3 const track_direction = nearest_track->Segment->GetDirection(segment_distance);
+	glm::dvec2 direction(track_direction.x, track_direction.z);
+	if (glm::length2(direction) <= 1e-8)
+		return glm::dvec2(1.0, 0.0);
+
+	direction = glm::normalize(direction);
+	float const yaw = glm::radians(facing_angle);
+	glm::dvec2 const signal_facing(-std::sin(yaw), -std::cos(yaw));
+	if (glm::dot(direction, signal_facing) < 0.0)
+		direction = -direction;
+	return direction;
+}
+
+void ui::map_panel::cache_signal_directions()
+{
+	for (auto const &object : map::Objects.entries)
+	{
+		auto const semaphore = std::dynamic_pointer_cast<map::semaphore>(object);
+		if (!semaphore)
+			continue;
+
+		cached_semaphore &cache = m_signal_caches[semaphore.get()];
+		cache.lights.resize(semaphore->models.size());
+		for (std::size_t idx = 0; idx < semaphore->models.size(); ++idx)
+		{
+			TAnimModel *model = semaphore->models[idx];
+			cached_signal_light &light = cache.lights[idx];
+			light.model = model;
+			light.direction = map_signal_direction(
+				model ? glm::dvec3(model->location()) : glm::dvec3(semaphore->location),
+				model ? model->Angles().y : 0.0f);
+			light.direction_valid = true;
+		}
+		if (semaphore->models.empty())
+		{
+			cache.fallback.direction =
+				map_signal_direction(glm::dvec3(semaphore->location), 0.0f);
+			cache.fallback.direction_valid = true;
+		}
+	}
 }
 
 void ui::map_panel::cache_static_station_labels()
@@ -397,9 +520,6 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 	    m_cached_view_transform == transform)
 		return;
 
-	cFrustum frustum;
-	frustum.calculate(transform, glm::mat4());
-
 	m_section_handles.clear();
 	m_colored_paths.roads.clear();
 	m_visible_switch_tracks.clear();
@@ -411,7 +531,14 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 		for (int column = 0; column < scene::EU07_REGIONSIDESECTIONCOUNT; column++)
 		{
 			scene::basic_section *section = simulation::Region->get_section(row * scene::EU07_REGIONSIDESECTIONCOUNT + column);
-			if (section && frustum.sphere_inside(section->area().center, section->area().radius) > 0.f)
+			if (!section)
+				continue;
+			auto const &area = section->area();
+			glm::dvec2 const center(area.center.x, area.center.z);
+			glm::dvec2 const radius(area.radius);
+			if (map_world_bounds_visible(
+				    center - radius, center + radius, transform, ImVec2(0.0f, 0.0f),
+				    glm::vec2(2.0f), 0.0f, 0.25f))
 			{
 				const gfx::geometrybank_handle handle = section->get_map_geometry();
 				if (handle != null_handle)
@@ -435,7 +562,7 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 		glm::dvec2 minimum;
 		glm::dvec2 maximum;
 		segment->plan_bounds(minimum, maximum);
-		return map_world_bounds_visible(minimum, maximum, transform, origin, surface_size, 0.0f, 3.0f);
+		return map_world_bounds_visible(minimum, maximum, transform, origin, surface_size, 0.0f, 0.25f);
 	};
 
 	for (TTrack *track : m_switch_tracks) {
@@ -575,13 +702,13 @@ void ui::map_panel::render_map_lines(
 	};
 
 	const auto draw_geometry = [&](gfx::geometrybank_handle const &handle, ImU32 color, float thickness = 1.0f) {
-		if (handle == null_handle || !map_has_vertex_budget(draw_list))
+		if (handle == null_handle || !map_has_vertex_budget(draw_list, 12, map_static_vertex_limit))
 			return;
 
 		auto const &vertices = GfxRenderer->Vertices(handle);
 		for (std::size_t idx = 0; idx + 1 < vertices.size(); idx += 2)
 		{
-			if (!map_has_vertex_budget(draw_list))
+			if (!map_has_vertex_budget(draw_list, 12, map_static_vertex_limit))
 				break;
 			ImVec2 a = to_screen(vertices[idx].position);
 			ImVec2 b = to_screen(vertices[idx + 1].position);
@@ -593,7 +720,7 @@ void ui::map_panel::render_map_lines(
 	const auto draw_cached_lines = [&](std::vector<glm::vec4> const &lines, ImU32 color) {
 		for (glm::vec4 const &line : lines)
 		{
-			if (!map_has_vertex_budget(draw_list))
+			if (!map_has_vertex_budget(draw_list, 12, map_static_vertex_limit))
 				break;
 			ImVec2 const first(
 				origin.x + (line.x + 1.0f) * 0.5f * surface_size.x,
@@ -610,7 +737,7 @@ void ui::map_panel::render_map_lines(
 
 	for (auto const &body : m_water_outlines)
 	{
-		if (!map_has_vertex_budget(draw_list, 2048))
+		if (!map_has_vertex_budget(draw_list, 2048, map_static_vertex_limit))
 			continue;
 		if (!map_world_bounds_visible(
 			    body.minimum, body.maximum, transform, origin, surface_size, static_cast<float>(body.level)))
@@ -637,10 +764,11 @@ void ui::map_panel::render_map_lines(
 			continue;
 
 		int const estimated_fill_vertices = static_cast<int>(outline.size()) * 6;
-		if (map_has_vertex_budget(draw_list, estimated_fill_vertices))
+		if (map_has_vertex_budget(draw_list, estimated_fill_vertices, map_static_vertex_limit))
 			draw_list->AddConcavePolyFilled(outline.data(), static_cast<int>(outline.size()), IM_COL32(35, 115, 165, 80));
 
-		for (std::size_t idx = 0; idx < outline.size() && map_has_vertex_budget(draw_list); ++idx)
+		for (std::size_t idx = 0;
+		     idx < outline.size() && map_has_vertex_budget(draw_list, 12, map_static_vertex_limit); ++idx)
 		{
 			ImVec2 a = outline[idx];
 			ImVec2 b = outline[(idx + 1) % outline.size()];
@@ -661,7 +789,8 @@ void ui::map_panel::render_map_lines(
 			continue;
 		std::size_t const segment_count = river.vertices.size() / 4;
 		for (std::size_t first_segment = 0;
-		     first_segment < segment_count && map_has_vertex_budget(draw_list);
+		     first_segment < segment_count &&
+			     map_has_vertex_budget(draw_list, 12, map_static_vertex_limit);
 		     first_segment += river_stride)
 		{
 			std::size_t const last_segment = std::min(first_segment + river_stride, segment_count) - 1;
@@ -673,23 +802,22 @@ void ui::map_panel::render_map_lines(
 				draw_list->AddLine(left_start, left_end, IM_COL32(80, 190, 230, 230), 1.5f);
 			ImVec2 right_start = to_screen(river.vertices[first_vertex + 2]);
 			ImVec2 right_end = to_screen(river.vertices[last_vertex + 3]);
-			if (map_has_vertex_budget(draw_list) && clip_map_line(right_start, right_end, origin, surface_size))
+			if (map_has_vertex_budget(draw_list, 12, map_static_vertex_limit) &&
+			    clip_map_line(right_start, right_end, origin, surface_size))
 				draw_list->AddLine(right_start, right_end, IM_COL32(80, 190, 230, 230), 1.5f);
 		}
 	}
 
-	draw_cached_lines(m_cached_section_lines, IM_COL32(190, 195, 200, 255));
-
 	for (auto const &lines : m_environment_lines)
 	{
-		if (lines.vertices.empty() || !map_has_vertex_budget(draw_list))
+		if (lines.vertices.empty() || !map_has_vertex_budget(draw_list, 12, map_static_vertex_limit))
 			continue;
 		if (!map_world_bounds_visible(
 			    lines.minimum, lines.maximum, transform, origin, surface_size, 0.0f, 3.0f))
 			continue;
 		for (std::size_t idx = 0; idx + 1 < lines.vertices.size(); idx += 2)
 		{
-			if (!map_has_vertex_budget(draw_list))
+			if (!map_has_vertex_budget(draw_list, 12, map_static_vertex_limit))
 				break;
 			ImVec2 a = to_screen(lines.vertices[idx]);
 			ImVec2 b = to_screen(lines.vertices[idx + 1]);
@@ -699,6 +827,7 @@ void ui::map_panel::render_map_lines(
 	}
 
 	draw_cached_lines(m_cached_road_lines, IM_COL32(235, 165, 65, 255));
+	draw_cached_lines(m_cached_section_lines, IM_COL32(190, 195, 200, 255));
 	for (auto const &handle : m_colored_paths.future)
 		draw_geometry(handle, IM_COL32(180, 180, 65, 255), 1.5f);
 	for (auto const &handle : m_colored_paths.switches)
@@ -708,26 +837,72 @@ void ui::map_panel::render_map_lines(
 	for (auto const &handle : m_colored_paths.highlighted)
 		draw_geometry(handle, IM_COL32(75, 75, 255, 255));
 
+	struct ordered_map_object
+	{
+		int signal_layer;
+		float screen_y;
+		std::shared_ptr<map::map_object> object;
+	};
+	std::vector<ordered_map_object> visible_map_objects;
+	visible_map_objects.reserve(map::Objects.entries.size());
 	for (auto const &object : map::Objects.entries)
 	{
-		if (!map_has_vertex_budget(draw_list, 16))
+		glm::vec4 const ndc = transform * glm::vec4(object->location, 1.0f);
+		if (std::abs(ndc.x) > 1.2f || std::abs(ndc.z) > 1.2f)
+			continue;
+		float const screen_y = origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y;
+		int signal_layer = 0;
+		if (auto const semaphore = std::dynamic_pointer_cast<map::semaphore>(object))
+		{
+			auto const cache_it = m_signal_caches.find(semaphore.get());
+			if (cache_it != m_signal_caches.end())
+			{
+				glm::dvec2 const direction = cache_it->second.lights.empty()
+					? cache_it->second.fallback.direction
+					: cache_it->second.lights.front().direction;
+				glm::vec4 const transformed_direction =
+					transform * glm::vec4(static_cast<float>(direction.x), 0.0f,
+					                      static_cast<float>(direction.y), 0.0f);
+				signal_layer = -transformed_direction.z > 0.0f ? 1 : 2;
+			}
+		}
+		visible_map_objects.push_back({signal_layer, screen_y, object});
+	}
+	std::ranges::stable_sort(
+		visible_map_objects, [](auto const &lhs, auto const &rhs) {
+			return std::tie(lhs.signal_layer, lhs.screen_y) <
+			       std::tie(rhs.signal_layer, rhs.screen_y);
+		});
+
+	for (auto const &entry : visible_map_objects)
+	{
+		auto const &object = entry.object;
+		if (!map_has_vertex_budget(draw_list, 16, map_symbol_vertex_limit))
 			break;
 
 		if (auto sem = std::dynamic_pointer_cast<map::semaphore>(object))
 		{
-			sem->light_caches.resize(sem->models.size());
+			cached_semaphore &signal_cache = m_signal_caches[sem.get()];
+			signal_cache.lights.resize(sem->models.size());
 			auto const light_cache_now = std::chrono::steady_clock::now();
 			auto draw_signal_head = [this, &sem, draw_list, &to_screen, &transform, &surface_size, scale_length,
 			                         mouse_over_map, mouse_position, light_cache_now,
 			                         origin](TAnimModel *model, glm::vec3 const &location,
-			                                 map::semaphore::light_cache &cache) {
+			                                 cached_signal_light &cache) {
 				ImVec2 const center = to_screen(location);
-				if (center.x < origin.x - 32.0f || center.x > origin.x + surface_size.x + 32.0f ||
-				    center.y < origin.y - 32.0f || center.y > origin.y + surface_size.y + 32.0f)
+				float constexpr signal_cull_margin = 80.0f;
+				if (center.x < origin.x - signal_cull_margin ||
+				    center.x > origin.x + surface_size.x + signal_cull_margin ||
+				    center.y < origin.y - signal_cull_margin ||
+				    center.y > origin.y + surface_size.y + signal_cull_margin)
 					return;
 
 				if (cache.model != model)
+				{
+					cache.model = model;
 					cache.direction_valid = false;
+					cache.valid = false;
+				}
 				if (model && (!cache.valid || cache.model != model ||
 				              cache.revision != model->LightRevision() ||
 				              light_cache_now - cache.refreshed_at >= std::chrono::milliseconds(100))) {
@@ -902,7 +1077,7 @@ void ui::map_panel::render_map_lines(
 					draw_list->AddQuad(
 						head_front_left, head_front_right, head_rear_right, head_rear_left,
 						IM_COL32(120, 200, 255, 255), 3.0f);
-				for (std::size_t idx = cache.colors.size(); idx-- > 0;)
+				for (std::size_t idx = cache.colors.size(); post_direction.y <= 0.0f && idx-- > 0;)
 				{
 					if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
 						continue;
@@ -917,11 +1092,11 @@ void ui::map_panel::render_map_lines(
 			};
 
 			if (sem->models.empty())
-				draw_signal_head(nullptr, sem->location, sem->fallback_cache);
+				draw_signal_head(nullptr, sem->location, signal_cache.fallback);
 			else
 				for (std::size_t idx = 0; idx < sem->models.size(); ++idx)
 					draw_signal_head(
-						sem->models[idx], glm::vec3(sem->models[idx]->location()), sem->light_caches[idx]);
+						sem->models[idx], glm::vec3(sem->models[idx]->location()), signal_cache.lights[idx]);
 			continue;
 		}
 
@@ -988,7 +1163,8 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(station.position), 1.0f);
 		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
 			continue;
-		if (!map_has_vertex_budget(draw_list, static_cast<int>(station.name.size() * 8 + 16)))
+		if (!map_has_vertex_budget(
+			    draw_list, static_cast<int>(station.name.size() * 8 + 16), map_platform_vertex_limit))
 			break;
 		station_names.push_back(station.name);
 
@@ -1016,14 +1192,14 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 	};
 	for (auto const &platform : m_platform_lines)
 	{
-		if (!map_has_vertex_budget(draw_list) || platform.vertices.empty())
+		if (!map_has_vertex_budget(draw_list, 12, map_platform_vertex_limit) || platform.vertices.empty())
 			break;
 		if (!map_world_bounds_visible(
 			    platform.minimum, platform.maximum, transform, map_screen_origin, surface_size, 0.0f, 3.0f))
 			continue;
 		for (std::size_t idx = 0; idx + 1 < platform.vertices.size(); idx += 2)
 		{
-			if (!map_has_vertex_budget(draw_list, 16))
+			if (!map_has_vertex_budget(draw_list, 16, map_platform_vertex_limit))
 				break;
 			ImVec2 a = to_screen(platform.vertices[idx]);
 			ImVec2 b = to_screen(platform.vertices[idx + 1]);
@@ -1033,17 +1209,30 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 	}
 	draw_list->PopClipRect();
 
+	std::vector<std::pair<float, TDynamicObject *>> visible_vehicles;
+	visible_vehicles.reserve(simulation::Vehicles.sequence().size());
 	for (TDynamicObject *vehicle : simulation::Vehicles.sequence())
 	{
-		if (!map_has_vertex_budget(draw_list, 16))
-			break;
 		if (!vehicle->MyTrack || (vehicle->MyTrack->iCategoryFlag & 15) != 1)
 			continue;
 
-		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(vehicle->GetPosition()), 1.0f);
+		glm::vec4 const ndc_pos = transform * glm::vec4(glm::vec3(vehicle->GetPosition()), 1.0f);
 		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
 			continue;
+		float const screen_y = map_screen_origin.y + (1.0f - ndc_pos.z) * 0.5f * surface_size.y;
+		visible_vehicles.emplace_back(screen_y, vehicle);
+	}
+	std::ranges::stable_sort(
+		visible_vehicles, [](auto const &lhs, auto const &rhs) { return lhs.first < rhs.first; });
 
+	TDynamicObject *const controlled_vehicle =
+		simulation::Train ? simulation::Train->Dynamic() : nullptr;
+	for (auto const &entry : visible_vehicles)
+	{
+		TDynamicObject *const vehicle = entry.second;
+		if (!map_has_vertex_budget(draw_list, 16, map_vehicle_vertex_limit) &&
+		    vehicle != controlled_vehicle)
+			continue;
 		bool const is_train_front = vehicle->Prev() == nullptr;
 		glm::dvec3 front = vehicle->VectorFront();
 		front.y = 0.0;
@@ -1085,6 +1274,9 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 			train_name = ToUpper(vehicle->name());
 		std::string const label = std::format("{} | {:.0f} km/h", train_name, std::abs(vehicle->GetVelocity()));
 
+		if (!map_has_vertex_budget(
+			    draw_list, static_cast<int>(label.size() * 8 + 16), map_vehicle_vertex_limit))
+			break;
 		glm::vec4 ndc_pos = transform * glm::vec4(glm::vec3(vehicle->GetPosition()), 1.0f);
 		if (glm::abs(ndc_pos.x) > 1.0f || glm::abs(ndc_pos.z) > 1.0f)
 			continue;
@@ -1096,6 +1288,53 @@ void ui::map_panel::render_labels(glm::mat4 transform, ImVec2 origin, glm::vec2 
 		ImGui::TextUnformatted(label.c_str());
 	}
 	ImGui::PopStyleColor();
+}
+
+void ui::map_panel::render_camera_frustum(
+	ImDrawList *draw_list, ImVec2 screen_origin, glm::vec2 surface_size, glm::mat4 transform)
+{
+	if (!map_has_vertex_budget(draw_list, 64))
+		return;
+
+	TCamera const &camera = Global.pCamera;
+	double yaw = camera.Angle.y;
+	if (camera.m_owner != nullptr)
+	{
+		glm::dvec3 owner_forward = camera.m_owner->VectorFront();
+		if (simulation::Train && simulation::Train->Dynamic() == camera.m_owner && simulation::Train->Occupied())
+			owner_forward *= simulation::Train->Occupied()->CabOccupied < 0 ? -1.0 : 1.0;
+		yaw += std::atan2(-owner_forward.x, -owner_forward.z);
+	}
+	glm::dvec3 forward(-std::sin(yaw), 0.0, -std::cos(yaw));
+	double const forward_length = glm::length(forward);
+	if (!(forward_length > 0.0))
+		return;
+
+	forward /= forward_length;
+	glm::dvec3 const side(-forward.z, 0.0, forward.x);
+	double const half_fov = glm::radians(
+		static_cast<double>(Global.FieldOfView / std::max(Global.ZoomFactor, 0.01f))) * 0.5;
+	double constexpr view_length = 300.0;
+	glm::dvec3 const left =
+		camera.Pos + (forward * std::cos(half_fov) - side * std::sin(half_fov)) * view_length;
+	glm::dvec3 const right =
+		camera.Pos + (forward * std::cos(half_fov) + side * std::sin(half_fov)) * view_length;
+	auto const to_screen = [transform, screen_origin, surface_size](glm::dvec3 const &position) {
+		glm::vec4 const ndc = transform * glm::vec4(glm::vec3(position), 1.0f);
+		return ImVec2(
+			screen_origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
+			screen_origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y);
+	};
+	ImVec2 const origin = to_screen(camera.Pos);
+	ImVec2 const left_screen = to_screen(left);
+	ImVec2 const right_screen = to_screen(right);
+	draw_list->AddTriangleFilled(origin, left_screen, right_screen, IM_COL32(100, 190, 255, 35));
+	draw_list->AddLine(origin, left_screen, IM_COL32(100, 190, 255, 160), 1.0f);
+	draw_list->AddLine(origin, right_screen, IM_COL32(100, 190, 255, 160), 1.0f);
+	draw_list->AddCircleFilled(origin, 5.0f, IM_COL32(100, 190, 255, 255));
+	draw_list->AddCircle(origin, 5.0f, IM_COL32(15, 25, 35, 255), 0, 1.5f);
+	ImVec2 const tip = to_screen(camera.Pos + forward * 9.0);
+	draw_list->AddLine(origin, tip, IM_COL32(15, 25, 35, 255), 2.0f);
 }
 
 void ui::map_panel::render_contents()
@@ -1243,46 +1482,6 @@ void ui::map_panel::render_contents()
 		IM_COL32(18, 22, 26, 255));
 	render_grid(draw_list, screen_origin, surface_size, transform);
 	render_map_lines(draw_list, screen_origin, surface_size, transform, scale_length);
-	if (map_has_vertex_budget(draw_list, 64))
-	{
-		TCamera const &camera = Global.pCamera;
-		double yaw = camera.Angle.y;
-		if (camera.m_owner != nullptr)
-		{
-			glm::dvec3 owner_forward = camera.m_owner->VectorFront();
-			if (simulation::Train && simulation::Train->Dynamic() == camera.m_owner && simulation::Train->Occupied())
-				owner_forward *= simulation::Train->Occupied()->CabOccupied < 0 ? -1.0 : 1.0;
-			yaw += std::atan2(-owner_forward.x, -owner_forward.z);
-		}
-		glm::dvec3 forward(-std::sin(yaw), 0.0, -std::cos(yaw));
-		double const forward_length = glm::length(forward);
-		if (forward_length > 0.0)
-		{
-			forward /= forward_length;
-			glm::dvec3 const side(-forward.z, 0.0, forward.x);
-			double const half_fov = glm::radians(
-				static_cast<double>(Global.FieldOfView / std::max(Global.ZoomFactor, 0.01f))) * 0.5;
-			double const view_length = 300.0;
-			glm::dvec3 const left = camera.Pos + (forward * std::cos(half_fov) - side * std::sin(half_fov)) * view_length;
-			glm::dvec3 const right = camera.Pos + (forward * std::cos(half_fov) + side * std::sin(half_fov)) * view_length;
-			auto const to_screen = [&](glm::dvec3 const &position) {
-				glm::vec4 const ndc = transform * glm::vec4(glm::vec3(position), 1.0f);
-				return ImVec2(
-					screen_origin.x + (ndc.x + 1.0f) * 0.5f * surface_size.x,
-					screen_origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y);
-			};
-			ImVec2 const origin = to_screen(camera.Pos);
-			ImVec2 const left_screen = to_screen(left);
-			ImVec2 const right_screen = to_screen(right);
-			draw_list->AddTriangleFilled(origin, left_screen, right_screen, IM_COL32(100, 190, 255, 35));
-			draw_list->AddLine(origin, left_screen, IM_COL32(100, 190, 255, 160), 1.0f);
-			draw_list->AddLine(origin, right_screen, IM_COL32(100, 190, 255, 160), 1.0f);
-			draw_list->AddCircleFilled(origin, 5.0f, IM_COL32(100, 190, 255, 255));
-			draw_list->AddCircle(origin, 5.0f, IM_COL32(15, 25, 35, 255), 0, 1.5f);
-			ImVec2 const tip = to_screen(camera.Pos + forward * 9.0);
-			draw_list->AddLine(origin, tip, IM_COL32(15, 25, 35, 255), 2.0f);
-		}
-	}
 	draw_list->PopClipRect();
 	ImGui::InvisibleButton("##map", surface_size_im);
 
@@ -1432,6 +1631,13 @@ void ui::map_panel::render_contents()
 
 	if (surface_size.x >= 40.0f && surface_size.y >= 40.0f)
 	{
+		draw_list->PushClipRect(
+			screen_origin,
+			ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y),
+			true);
+		render_camera_frustum(draw_list, screen_origin, surface_size, transform);
+		draw_list->PopClipRect();
+
 		const auto to_screen = [&](glm::dvec3 const &position) {
 			glm::vec4 const ndc = transform * glm::vec4(glm::vec3(position), 1.0f);
 			return ImVec2(
