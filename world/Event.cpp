@@ -178,110 +178,6 @@ basic_event::event_conditions::test() const {
     return true;
 }
 
-void
-basic_event::event_conditions::deserialize( cParser &Input ) {
-    // przetwarzanie warunków, wspólne dla Multiple i UpdateValues
-
-    std::string token;
-    while( true == Input.getTokens()
-        && false == (token = Input.peek()).empty()
-        && false == basic_event::is_keyword(token) ) {
-
-        if( token == "trackoccupied" ) {
-            flags |= flags::track_busy;
-        }
-        else if( token == "trackfree" ) {
-            flags |= flags::track_free;
-        }
-        else if( token == "propability" || token == "probability") { //remove propability in few years after changing old scenery scripts 01.2021
-            flags |= flags::probability;
-            Input.getTokens();
-            Input >> probability;
-        }
-        else if( token == "memcompare" ) {
-            Input.getTokens( 1, false ); // case sensitive
-            if( Input.peek() != "*" ) //"*" - nie brac command pod uwage
-            { // zapamiętanie łańcucha do porównania
-                Input >> memcompare_text;
-                flags |= flags::text;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac val1 pod uwage
-            {
-                Input >> memcompare_value1;
-                flags |= flags::value1;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac val2 pod uwage
-            {
-                Input >> memcompare_value2;
-                flags |= flags::value2;
-            }
-        }
-        else if( token == "memcompareex" ) {
-            memcompare_pass = comparison_pass_from_string( Input.getToken<std::string>() );
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_text_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens( 1, false ); // case sensitive
-                Input >> memcompare_text;
-                flags |= flags::text;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_value1_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens();
-                Input >> memcompare_value1;
-                flags |= flags::value1;
-            }
-            Input.getTokens();
-            if( Input.peek() != "*" ) //"*" - nie brac pod uwage
-            { // two tokens, operator followed by comparison value
-                std::string operatorstring;
-                Input >> operatorstring;
-                memcompare_value2_operator = comparison_operator_from_string( operatorstring );
-                Input.getTokens();
-                Input >> memcompare_value2;
-                flags |= flags::value2;
-            }
-        }
-    }
-}
-
-// sends basic content of the class in legacy (text) format to provided stream
-void
-basic_event::event_conditions::export_as_text( std::ostream &Output ) const {
-
-    if( flags != 0 ) {
-        Output << "condition ";
-        if( ( flags & flags::track_busy ) != 0 ) {
-            Output << "trackoccupied ";
-        }
-        if( ( flags & flags::track_free ) != 0 ) {
-            Output << "trackfree ";
-        }
-        if( ( flags & flags::probability ) != 0 ) {
-            Output
-                << "probability "
-                << probability << ' ';
-        }
-        if( ( flags & ( flags::text | flags::value1 | flags::value2 ) ) != 0 ) {
-            // NOTE: export doesn't preserve original memcompare condition, these are all upgraded to memcompareex format for simplicity
-            Output
-                << "memcompareex "
-                << ( ( flags & flags::text )   == 0 ? "*" :            memcompare_text     + ' ' + to_string( memcompare_text_operator ) ) << ' '
-                << ( ( flags & flags::value1 ) == 0 ? "*" : std::to_string( memcompare_value1 ) + ' ' + to_string( memcompare_value1_operator ) ) << ' '
-                << ( ( flags & flags::value2 ) == 0 ? "*" : std::to_string( memcompare_value2 ) + ' ' + to_string( memcompare_value2_operator ) ) << ' ';
-        }
-    }
-}
-
 basic_event::~basic_event() {
 
     m_sibling = nullptr; // nie usuwać podczepionych tutaj
@@ -444,14 +340,6 @@ TMemCell const *
 basic_event::input_cell() const {
 
     return nullptr;
-}
-
-bool
-basic_event::is_keyword( std::string const &Token ) {
-    // TODO: convert to array lookup if keyword list gets longer
-    return Token == "endevent"
-        || Token == "randomdelay"
-        || Token == "departuredelay";
 }
 
 
