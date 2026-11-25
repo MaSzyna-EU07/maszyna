@@ -8256,8 +8256,16 @@ TController::adjust_desired_speed_for_braking_curve( double const Vel ) {
     // independent brake, which leaves the train brake handle where it is, kept braking earlier
     // and earlier the whole way in, to crawl the last tens of metres to the stop point
     auto const fillbrakea0 { bStopTargetIsPassengerStop ? 1.0 : fBrake_a0[ 0 ] };
+    // once the brake is on, the room it takes to fill is behind; a vehicle running alone brakes with its
+    // independent brake and leaves the train brake handle in running, so that brake counts as well
     braking_curve::approach const approach {
-        Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS, BrakeCtrlPosition > 0.0,
+        Vel, VelNext, ActualProximityDist, brakingpointoffset, fAccGravity, AbsAccS,
+        braking_curve::brake_acting(
+            BrakeCtrlPosition,
+            // IncLocalBrakeLevel() moves the independent brake handle on a vehicle without one too
+            ( mvOccupied->LocalBrake == TLocalBrake::PneumaticBrake || mvOccupied->LocalBrake == TLocalBrake::HydraulicBrake ) ?
+                mvOccupied->LocalBrakePosA :
+                0.0 ),
         brake_response_horizon( mvOccupied, BrakeSystem, AbsAccS, fBrake_a0[ 0 ] ),
         brake_response_horizon( mvOccupied, BrakeSystem, 1.0, fillbrakea0 ) };
     auto const deceleration { braking_curve::demand( approach, BrakeSystem == TBrakeSystem::Pneumatic ? &braketable : nullptr ) };

@@ -254,6 +254,16 @@ the td/rozklad train, an EU07 with three coaches, with its head 80 m past the W4
 under the consist, behind the head, and the driver still counts Stacja1 and leaves at 10:35, since the scan of the
 route begins at the last vehicle and keeps a W4 behind the head.
 
+`eu07_coaches_td_timetable` is the timetable case with the EU07 and three coaches, a train that brakes with the train
+brake, beside the light EU07 and the SN61 alone, which brake with the independent brake. The `*_td_downgrade_w4_signal`
+cases (fragment `td_downgrade_w4_signal.scn`, timetable `td_downgrade.txt`) run on a line the fragment adds beside the
+tracks of td.scn, at x = -3000: 300 m level, then 3000 m down a gradient of 20 per mille, under an overhead wire fed
+by a substation of its own (`gr_pwr`; the wire on the section `pwr01` of td.scn gave the EU07 no voltage). The train
+starts on the level at the W4 of Gora, stops at the W4 of Dol 1500 m down the gradient, leaves at 10:38 and stops before
+`gr_sem`, a signal at stop 1100 m further down (a memory cell with `SetVelocity 0 0` and the event that reads it, no
+model), about 1590 m and 2690 m from the start. The three trains are the light EU07, the SN61 alone and the EU07 with
+three coaches.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -428,9 +438,11 @@ the row instead, logged by builds from this branch on.
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
-- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`: after
-  reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the distances,
-  that stop has to be between them (metres travelled, as in `distance`).
+- `stops` `moving_speed`, `stop_speed`, `hold`, optional `min_distance`, `max_distance`, `max_time`,
+  `nth`: after reaching `moving_speed`, stays at or below `stop_speed` for `hold` seconds; with the
+  distances, that stop has to be between them (metres travelled, as in `distance`), with `max_time`
+  it has to begin by then (seconds of the physicslog). `nth` (default 1) takes a later stop: each
+  stop after the first counts once the train has reached `moving_speed` again.
 - `stays_stopped` `moving_speed`, `stop_speed`: after moving off and stopping, never goes
   above `stop_speed` again.
 - `distance` `min`, `max`: total distance travelled. The physicslog has no position, so the
