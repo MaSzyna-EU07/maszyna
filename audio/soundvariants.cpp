@@ -53,8 +53,8 @@ bool listener_enclosed(int const Location) {
 	return Location >= rear_cab && Location <= front_cab;
 }
 
-choice select(bool const Hasinside, int const Location) {
-	return Hasinside && listener_enclosed(Location) ? choice::inside : choice::main;
+choice select(bool const Hasinside, int const Location, bool const Ownersvehicle) {
+	return Hasinside && Ownersvehicle && listener_enclosed(Location) ? choice::inside : choice::main;
 }
 
 float crossfade_gain(bool const Chosen, double const Elapsed, double const Duration) {
@@ -64,6 +64,15 @@ float crossfade_gain(bool const Chosen, double const Elapsed, double const Durat
 	}
 	auto const angle{progress * std::numbers::pi * 0.5};
 	return static_cast<float>(Chosen ? std::sin(angle) : std::cos(angle));
+}
+
+double crossfade_start(double const Now, double const Previousstart, double const Duration) {
+	auto const elapsed{Now - Previousstart};
+	if (elapsed < 0.0 || elapsed >= Duration) {
+		return Now;
+	}
+	// the gains are sin and cos of the progress, so the reversed fade at progress 1 - p gives the same two gains as now
+	return Now - (Duration - elapsed);
 }
 
 std::string capture_block(cParser &Input) {

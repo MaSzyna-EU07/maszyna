@@ -294,7 +294,7 @@ private:
     int m_crossfaderange {}; // range of transition from one chunk to another
     std::optional< std::array<float, 6> > m_soundproofing; // custom soundproofing parameters
     int m_explicit {}; // parameters given explicitly in the definition, combination of explicit_parameter flags
-    // optional inside variant, played instead of this definition when the listener is enclosed in a vehicle (at most one;
+    // optional inside variant, played instead of this definition when the listener is enclosed in its vehicle (at most one;
     // a vector, as the type isn't complete yet)
     std::vector<sound_source> m_variants;
     bool m_isvariant { false }; // this definition is an inside variant of another one

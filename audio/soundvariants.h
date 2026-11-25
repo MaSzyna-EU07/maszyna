@@ -15,7 +15,8 @@ http://mozilla.org/MPL/2.0/.
 class cParser;
 
 // the rules of the optional variant of a sound definition, heard instead of the definition when the listener is
-// enclosed in a vehicle (MaSzyna-EU07/maszyna#61). a sound with a variant has it as a block inside its own block:
+// enclosed in the vehicle carrying the sound (MaSzyna-EU07/maszyna#61). a sound with a variant has it as a block inside its
+// own block:
 //
 //   engine: {
 //       soundmain: engine_outside.wav
@@ -49,17 +50,24 @@ int listener_location(bool Windowopen, bool Freefly, bool Invehicle, int Occupie
 bool listener_enclosed(int Location);
 
 // the definition a sound plays for a listener at the location: the inside variant, if the sound has one and the listener
-// is enclosed, otherwise the sound's own definition
+// is enclosed in the vehicle which carries the sound, otherwise the sound's own definition. Ownersvehicle tells whether the
+// listener's vehicle is the sound's owner; the other vehicles of the consist count as outside, as in the soundproofing,
+// and so does any vehicle for a sound without an owner
 enum class choice {
 	main,
 	inside,
 };
-choice select(bool Hasinside, int Location);
+choice select(bool Hasinside, int Location, bool Ownersvehicle);
 
 // the volume factor of a definition during the crossfade which follows the change of the chosen one: the one chosen
 // rises from 0 to 1 and the other falls from 1 to 0 over Duration seconds, with equal power (the two recordings aren't
 // correlated, so their powers add up). reaches exactly 1 and 0 at the end
 float crossfade_gain(bool Chosen, double Elapsed, double Duration);
+
+// the start time of the crossfade which follows a change of the chosen definition at Now, when the previous change was at
+// Previousstart. a crossfade still going on is reversed from where it is, so both definitions keep their volume at the
+// change; otherwise the new crossfade starts at Now
+double crossfade_start(double Now, double Previousstart, double Duration);
 
 // the key of the inside variant inside of a sound block
 inline constexpr std::string_view inside_key{"inside:"};

@@ -197,7 +197,7 @@ sound_source::deserialize_mapping( cParser &Input, int const Chunkrange ) {
         deserialize_soundproofing( Input );
     }
     else if( key == sound_variants::inside_key ) {
-        // optional variant heard instead of this definition by a listener enclosed in a vehicle
+        // optional variant heard instead of this definition by a listener enclosed in the vehicle carrying it
         deserialize_variant( Input, Chunkrange );
     }
     else if( key.starts_with("sound") ) {
@@ -381,6 +381,11 @@ sound_source::export_as_text( std::ostream &Output ) const {
 
     if( sound( sound_id::main ).buffer == null_handle ) { return;  }
 
+    if( false == m_variants.empty() ) {
+        // the text format of the node has no place for it
+        WriteLog( std::format( "Sound node \"{}\" saved without its inside variant", m_name ) );
+    }
+
     // generic node header
     Output
         << "node "
@@ -457,14 +462,22 @@ sound_source::play_variants( int const Flags ) {
         m_pitchvariation = 0.01f * static_cast<float>( LocalRandom( 97.5, 102.5 ) );
     }
     auto &variant { m_variants.front() };
-    auto const insidechosen { sound_variants::select( true, current_listener_location() ) == sound_variants::choice::inside };
+    // only the listener in the vehicle carrying the sound hears it from the inside
+    auto const insidechosen {
+        sound_variants::select(
+            true,
+            current_listener_location(),
+            m_owner != nullptr && m_owner == Global.pCamera.m_owner ) == sound_variants::choice::inside };
     if( insidechosen != variant.m_variantchosen ) {
-        // the listener moved between the inside and the outside of the vehicles
+        // the listener moved between the inside and the outside of the vehicle
         auto &previous { insidechosen ? *this : variant };
         auto &next { insidechosen ? variant : *this };
         auto const previousplaying { previous.is_definition_playing() };
-        // crossfade, if there's anything to fade out
-        auto const switchtime { previousplaying ? audio::renderer.time() : -1.0e9 };
+        // crossfade, if there's anything to fade out. a crossfade still going on turns back from where it is
+        auto const switchtime {
+            previousplaying ?
+                sound_variants::crossfade_start( audio::renderer.time(), previous.m_variantswitchtime, EU07_SOUND_VARIANTCROSSFADE ) :
+                -1.0e9 };
         previous.m_variantchosen = false;
         previous.m_variantswitchtime = switchtime;
         next.m_variantchosen = true;

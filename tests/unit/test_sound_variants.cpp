@@ -90,17 +90,26 @@ TEST_CASE("sound variants: the cabs and the engine compartment enclose the liste
 TEST_CASE("sound variants: a sound without the inside variant plays its definition everywhere") {
 	for (int location{rear_cab}; location <= free_camera; ++location) {
 		CAPTURE(location);
-		CHECK(select(false, location) == choice::main);
+		CHECK(select(false, location, true) == choice::main);
+		CHECK(select(false, location, false) == choice::main);
 	}
 }
 
 TEST_CASE("sound variants: a sound with the inside variant plays it to an enclosed listener only") {
-	CHECK(select(true, rear_cab) == choice::inside);
-	CHECK(select(true, engine_compartment) == choice::inside);
-	CHECK(select(true, front_cab) == choice::inside);
-	CHECK(select(true, cab_window) == choice::main);
-	CHECK(select(true, attached_camera) == choice::main);
-	CHECK(select(true, free_camera) == choice::main);
+	CHECK(select(true, rear_cab, true) == choice::inside);
+	CHECK(select(true, engine_compartment, true) == choice::inside);
+	CHECK(select(true, front_cab, true) == choice::inside);
+	CHECK(select(true, cab_window, true) == choice::main);
+	CHECK(select(true, attached_camera, true) == choice::main);
+	CHECK(select(true, free_camera, true) == choice::main);
+}
+
+TEST_CASE("sound variants: the inside variant of another vehicle's sound isn't heard from the listener's cab") {
+	// a passing locomotive, a coach of the listener's own consist, or a sound without a vehicle
+	for (int location{rear_cab}; location <= free_camera; ++location) {
+		CAPTURE(location);
+		CHECK(select(true, location, false) == choice::main);
+	}
 }
 
 // the crossfade ------------------------------------------------------------------------------------------------------
@@ -144,6 +153,32 @@ TEST_CASE("sound variants: the crossfade keeps the power, the chosen definition 
 	// halfway both play at the same level, -3 dB
 	CHECK(crossfade_gain(true, 0.15, 0.3) == doctest::Approx(crossfade_gain(false, 0.15, 0.3)));
 	CHECK(crossfade_gain(true, 0.15, 0.3) == doctest::Approx(std::sqrt(0.5)));
+}
+
+TEST_CASE("sound variants: a change after the crossfade has ended starts a new one at once") {
+	CHECK(crossfade_start(10.0, 9.0, 0.3) == 10.0);
+	CHECK(crossfade_start(10.0, 9.7, 0.3) == 10.0);
+	// the first change, with no crossfade before it
+	CHECK(crossfade_start(10.0, -1.0e9, 0.3) == 10.0);
+}
+
+TEST_CASE("sound variants: a change back during the crossfade turns it back from the volumes reached") {
+	auto const duration{0.3};
+	auto const firstchange{10.0};
+	for (auto const elapsed : {0.0, 0.05, 0.1, 0.15, 0.2, 0.29}) {
+		CAPTURE(elapsed);
+		auto const now{firstchange + elapsed};
+		// at the first change A became chosen and B not; now B is chosen again
+		auto const gaina{crossfade_gain(true, now - firstchange, duration)};
+		auto const gainb{crossfade_gain(false, now - firstchange, duration)};
+		auto const secondchange{crossfade_start(now, firstchange, duration)};
+		CHECK(secondchange <= now);
+		CHECK(crossfade_gain(false, now - secondchange, duration) == doctest::Approx(gaina).epsilon(1e-6));
+		CHECK(crossfade_gain(true, now - secondchange, duration) == doctest::Approx(gainb).epsilon(1e-6));
+		// and B gets back to full volume in the time A took to get where it is (the margin covers the rounding)
+		CHECK(crossfade_gain(true, now + elapsed + 1e-9 - secondchange, duration) == 1.f);
+		CHECK(crossfade_gain(false, now + elapsed + 1e-9 - secondchange, duration) == 0.f);
+	}
 }
 
 // the block of the variant -------------------------------------------------------------------------------------------
