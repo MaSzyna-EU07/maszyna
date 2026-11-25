@@ -115,7 +115,11 @@ The model is the first step. In rough order:
    freight locomotive of the same kind, are scanned by the Stacja Muzeum
    (https://cyfrowa.stacjamuzeum.pl/zasoby-muzealne/dokumentacja-techniczna/, six volumes; higher resolution scans
    on request), as are those of the Pt31: a source for the boiler, the valve gear and the cab where the Ty2's own
-   aren't at hand. The test of 1200 t on the level (`tests/unit/test_steam.cpp`) gets to about 61 km/h now.
+   aren't at hand; a unit test builds the Ty23 from them (5.8 % over the starting force of its drawing, as the Ty2 is
+   over the same formula). Measured on 2026-11-25 with a simple driver keeping the boiler over 13 bar: 1200 t on the
+   level 64 km/h (table 65), 1700 t 57 km/h (table 50: the model is about 10 % strong there), 620 t up to the 80 km/h
+   of Vmax, and 190 t on 20 ‰ running 40 to 50 km/h at 1200 to 1440 kW while the cutoff is kept at 45 to 60 %
+   (table 40), though that driver notches the cutoff too roughly to hold a steady speed.
 2. **Cab controls of their own.** A continuous reverser and cutoff screw instead of the secondary controller, the
    regulator as a lever, the cylinder cocks, the blower, the two injectors (steam and water valves), the firehole
    door and the firing, the dampers, the gauges (boiler and chest pressure, the water glasses, the tender), as new
@@ -125,8 +129,9 @@ The model is the first step. In rough order:
 4. **Sound.** Chuffs in time with the cranks: four exhausts a revolution for two cylinders, their strength from the
    exhaust flow, the cocks, the safety valves, the injectors, the blower, the air pump. This needs new `.mmd` sound
    entries and samples.
-5. **The AI driver.** `TController` doesn't know the steam engine yet: preparing it, the regulator and cutoff when
-   starting and running, keeping the boiler.
+5. **The AI driver** is in: ready with 5 bar in the boiler, the air pump started, the regulator a position at a time,
+   the cutoff notched up with the speed and further when the boiler falls behind (`ty2_td_timetable` in
+   `tests/scenarios`). Still to come: the cylinder cocks when starting, the blower and the fire on a stop.
 6. **Raising steam.** A cold start (`SteamEngine::cool_down()`) from the scenario, with the fire lit and the blower on an
    outside supply until the boiler has pressure.
 7. **Faults.** Wheel slip with sanding, priming with the regulator opened too fast, an injector failing to pick up,
@@ -134,3 +139,7 @@ The model is the first step. In rough order:
 8. **The valve gear.** The rods are animated by the bones of the model (`bones_doc.md`, the placeholder Ty2 has them);
    the expansion link and the radius rod need two more kinds of points.
 9. **A real Ty2** with its model, cab and sounds in the game data, in place of the placeholder `pkp/ty2_v1`.
+10. **What the Ty23's drawings show the model leaves out**, all second-order: the release and compression of the
+    valve gear moving with the cutoff (a constant `DiagramFactor` now; drawing 21.03 tabulates them notch by notch),
+    the steam a Heusinger gear still admits in mid gear (7 % on the Ty23), and the exhaust-steam injector, which
+    heats the feed with the exhaust.
