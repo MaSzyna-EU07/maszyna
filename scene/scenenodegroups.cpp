@@ -16,6 +16,60 @@ http://mozilla.org/MPL/2.0/.
 #include "model/AnimModel.h"
 #include "widgets/map_objects.h"
 
+#include <algorithm>
+#include <ranges>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace {
+
+bool event_belongs_to_signal(std::string const &event_name, std::string const &signal_name)
+{
+	if (!event_name.starts_with(signal_name))
+		return false;
+	if (event_name.size() == signal_name.size())
+		return true;
+
+	char const separator = event_name[signal_name.size()];
+	return separator == '_' || separator == '-' || separator == '+' || separator == ':';
+}
+
+void collect_signal_models(
+	std::vector<basic_event *> const &root_events,
+	std::vector<TAnimModel *> &models)
+{
+	std::vector<basic_event *> pending_events(root_events);
+	std::unordered_set<basic_event *> visited_events;
+	std::unordered_set<TAnimModel *> visited_models;
+
+	while (!pending_events.empty())
+	{
+		basic_event *event = pending_events.back();
+		pending_events.pop_back();
+		if (!event || !visited_events.insert(event).second)
+			continue;
+
+		if (auto *lights = dynamic_cast<lights_event *>(event))
+		{
+			for (scene::basic_node *target : lights->target_nodes())
+			{
+				auto *model = dynamic_cast<TAnimModel *>(target);
+				if (model && model->iNumLights > 0 && visited_models.insert(model).second)
+					models.push_back(model);
+			}
+			continue;
+		}
+
+		if (auto *multi = dynamic_cast<multi_event *>(event))
+		{
+			auto children = multi->children();
+			pending_events.insert(pending_events.end(), children.begin(), children.end());
+		}
+	}
+}
+
+} // namespace
+
 namespace scene {
 
 node_groups Groups;
@@ -118,57 +172,118 @@ node_groups::update_map()
 
 	for (auto const &pair : m_groupmap) {
 		auto const &group = pair.second;
-		// named models of the group, collected once the group turns out to hold a semaphore.
-		// nested groups are flattened, so a group can hold millions of nodes, most of them nameless scenery;
-		// going through all of them for each semaphore took minutes
 		std::vector<TAnimModel *> namedmodels;
-		bool namedmodelscollected = false;
+		std::unordered_map<std::string, TMemCell *> signal_cells;
+		for (basic_node *node : group.nodes)
+		{
+			if (auto *model = dynamic_cast<TAnimModel *>(node); model && !model->name().empty())
+				namedmodels.push_back(model);
+			if (typeid(*node) == typeid(TMemCell) && node->name().ends_with("_sem_mem"))
+			{
+				std::string signal_name = node->name().substr(0, node->name().size() - 8);
+				signal_cells.emplace(std::move(signal_name), static_cast<TMemCell *>(node));
+			}
+		}
 
-		for (basic_node *node : group.nodes) {
-			std::string postfix { "_sem_mem" };
+		std::unordered_map<std::string, std::shared_ptr<map::semaphore>> signals_by_name;
+		std::vector<std::shared_ptr<map::semaphore>> semaphore_signals;
+		for (basic_node *node : group.nodes)
+		{
+			if (typeid(*node) != typeid(TMemCell) || !node->name().ends_with("_sem_mem"))
+				continue;
 
-			if (typeid(*node) == typeid(TMemCell) && node->name().ends_with(postfix)) {
-				std::string sem_name = node->name().substr(0, node->name().length() - postfix.length());
+			std::string const signal_name = node->name().substr(0, node->name().size() - 8);
+			TMemCell *memcell = signal_cells.at(signal_name);
+			bool const derailer_model = std::ranges::any_of(
+				namedmodels, [&signal_name](TAnimModel const *model) {
+					return event_belongs_to_signal(model->name(), signal_name) &&
+					       model->name().ends_with("_wk_el");
+				});
+			bool const has_signal_model = std::ranges::any_of(
+				namedmodels, [&signal_name](TAnimModel const *model) {
+					return event_belongs_to_signal(model->name(), signal_name) &&
+					       !model->name().ends_with("_wk_el");
+				});
+			if (signal_name.ends_with("_wk_el") || (derailer_model && !has_signal_model))
+				continue;
 
-				if (false == namedmodelscollected) {
-					for (basic_node *groupnode : group.nodes)
-						if (false == groupnode->name().empty())
-							if (auto *model = dynamic_cast<TAnimModel*>(groupnode))
-								namedmodels.push_back(model);
-					namedmodelscollected = true;
-				}
+			auto signal = std::make_shared<map::semaphore>();
+			signal->location = memcell->location();
+			signal->memcell = memcell;
+			signal->name = signal_name;
+			signal->shunting = signal_name.starts_with("Tm") || signal_name.starts_with("tm_");
+			signals_by_name.emplace(signal_name, signal);
+			semaphore_signals.push_back(signal);
+			map::Objects.entries.push_back(std::move(signal));
+		}
 
-				std::vector<TAnimModel *> signal_models;
-				bool derailer_model{false};
-				for (auto *model : namedmodels)
-					if (model->name().starts_with(sem_name)) {
-						if (model->name().ends_with("_wk_el")) {
-							derailer_model = true;
-							continue;
-						}
-						signal_models.push_back(model);
-					}
-
-				if (sem_name.ends_with("_wk_el") || (derailer_model && signal_models.empty()))
+		for (auto const &signal : semaphore_signals)
+		{
+			std::vector<basic_event *> root_events;
+			for (basic_event *event : group.events)
+			{
+				if (!event_belongs_to_signal(event->name(), signal->name))
 					continue;
-
-				auto sem_info = std::make_shared<map::semaphore>();
-				map::Objects.entries.push_back(sem_info);
-
-				sem_info->location = node->location();
-				sem_info->memcell = static_cast<TMemCell*>(node);
-				sem_info->name = sem_name;
-				sem_info->shunting = sem_name.starts_with("Tm") || sem_name.starts_with("tm_");
-				sem_info->models = std::move(signal_models);
-
-				for (basic_event *event : group.events) {
-					if (event->name().starts_with(sem_name)
-					        && event->name().substr(sem_name.length()).find("sem") == std::string::npos) {
-						sem_info->events.push_back(event);
-					}
-				}
+				if (event->name().substr(signal->name.size()).find("sem") != std::string::npos)
+					continue;
+				root_events.push_back(event);
 			}
 
+			std::vector<TAnimModel *> signal_models;
+			collect_signal_models(root_events, signal_models);
+			std::vector<TAnimModel *> ordered_signal_models;
+			for (TAnimModel *model : namedmodels)
+			{
+				if (std::ranges::find(signal_models, model) != signal_models.end())
+					ordered_signal_models.push_back(model);
+			}
+			for (TAnimModel *model : signal_models)
+			{
+				if (std::ranges::find(namedmodels, model) == namedmodels.end())
+					ordered_signal_models.push_back(model);
+			}
+
+			for (TAnimModel *model : ordered_signal_models)
+			{
+				if (model->name().ends_with("_wk_el"))
+					continue;
+
+				auto [signal_it, inserted] = signals_by_name.try_emplace(model->name());
+				if (inserted)
+				{
+					auto repeated_signal = std::make_shared<map::semaphore>();
+					repeated_signal->location = model->location();
+					repeated_signal->name = model->name();
+					repeated_signal->shunting =
+						repeated_signal->name.starts_with("Tm") || repeated_signal->name.starts_with("tm_");
+					if (auto const cell = signal_cells.find(repeated_signal->name); cell != signal_cells.end())
+						repeated_signal->memcell = cell->second;
+					map::Objects.entries.push_back(repeated_signal);
+					signal_it->second = std::move(repeated_signal);
+				}
+
+				auto &models = signal_it->second->models;
+				if (std::ranges::find(models, model) == models.end())
+					models.push_back(model);
+				if (!signal_it->second->memcell)
+					signal_it->second->location = model->location();
+			}
+		}
+
+		for (auto const &[signal_name, signal] : signals_by_name)
+		{
+			for (basic_event *event : group.events)
+			{
+				if (!event_belongs_to_signal(event->name(), signal_name))
+					continue;
+				if (event->name().substr(signal_name.size()).find("sem") != std::string::npos)
+					continue;
+				if (std::ranges::find(signal->events, event) == signal->events.end())
+					signal->events.push_back(event);
+			}
+		}
+
+		for (basic_node *node : group.nodes) {
             if (Global.map_manualswitchcontrol) {
                 if (TTrack *track = dynamic_cast<TTrack*>(node)) {
                     if (track->eType != tt_Switch)
