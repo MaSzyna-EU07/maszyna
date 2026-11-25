@@ -772,7 +772,8 @@ TEST_CASE("utilities: the folders of the XDG base directory spec, as Linux finds
 
 TEST_CASE("utilities: the settings stay in ~/.config/MaSzyna while XDG_CONFIG_HOME has no MaSzyna folder") {
 	using path = std::filesystem::path;
-	auto const home{std::filesystem::temp_directory_path() / "eu07_test_xdg_config_home"};
+	// in the working folder, as the other tests do: a fixed name in the shared temp folder could be taken over by another user
+	auto const home{std::filesystem::current_path() / "eu07_unit_xdg_config_home"};
 	std::filesystem::remove_all(home);
 	auto const homename{home.string()};
 	// an absolute posix path which doesn't exist, on every system the tests run on
