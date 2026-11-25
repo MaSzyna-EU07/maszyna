@@ -1,0 +1,16 @@
+# Laying from the photo: a compound curve of R 600 and 400 m of the norms, clicked close along the curve as the hint says: one curve of two
+# radii, each within 3 %. The empty ground north-east of the fixture
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.15
+laysample 2000 4000 0 600 150 15 0.1 60 600/400 600
+wait 2
+layenter
+wait 2
+expect laid curves 1
+expect laid radius 0 600/400 3
+quit

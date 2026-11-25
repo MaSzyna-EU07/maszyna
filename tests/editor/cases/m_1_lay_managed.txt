@@ -1,0 +1,32 @@
+# Editing on the model (E4a): a line laid with the lay tool in the straights is a line of the model, its tracks made by the generator
+# and marked as its, one step of the history; the project file is written next to the copy of the scenery when the map is opened and
+# with the scenery; the ends of the tracks are the numbers of the nodes, to the bit, before the save and after the scenery is opened
+# again, and nothing is taken for a change by hand. The old tracks stay old. The empty ground east of k0..k3 (x 800..1100)
+wait 5
+modelediting 1
+expect projectfile present
+expect projectfile lines 0
+expect modellines 0
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+modeltracks
+expect modellines 1
+expect managed @1.0 1
+expect managed @1.2 1
+expect managed a1 none
+expect modelends
+expect steps 1
+expect hand 1 0
+save
+wait 5
+expect projectfile lines 1
+quit
+#> reopen
+wait 5
+modelediting 1
+modeltracks
+expect modellines 1
+expect managed @1.0 1
+expect modelends
+expect hand 1 0
+quit

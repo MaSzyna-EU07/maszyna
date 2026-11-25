@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Names.h"
 #include "scene/scenenode.h"
 #include "world/Segment.h"
+#include "world/RoadCrossing.h"
 
 namespace scene
 {
@@ -202,8 +203,9 @@ class road_node : public scene::basic_node
 		double middle(double const Fraction) const;
 		// width of the whole roadway at specified value of the curve parameter: the lanes and what's between the directions
 		double span(double const T) const;
-		// shape of the middle of a lane, laid out in the direction of travel
-		segment_data lane_path(std::size_t const Lane) const;
+		// shape of the middle of a lane, laid out in the direction of travel. Crossing: the surface of a level crossing the piece follows,
+		// the lane set onto it at its ends (road_crossing::crossing_surface)
+		segment_data lane_path(std::size_t const Lane, road_crossing::crossing_surface const *Crossing = nullptr) const;
 		// shape of the way from the middle of a lane to the middle of another over a part of the axis, laid out in the direction of travel.
 		// From, To: values of the curve parameter of the axis, in the order of the axis
 		segment_data lane_path(std::size_t const Lane, std::size_t const Tolane, double const From, double const To) const;
@@ -230,6 +232,13 @@ class road_node : public scene::basic_node
 	void define(state const &State);
 	// creates paths of the lanes and hands them over to the simulation
 	void create_lanes();
+	// the lanes of a piece the editor laid over a level crossing set onto the surface of the crossing at their ends, as its geometry is
+	// (road_crossing::warp): at a skew the piece can't follow that surface across all of its width, its lanes would go into the panels
+	// or over them. To be called once the tracks are there: after the scenery is loaded, after the lanes are made in the editor
+	void fit_lanes();
+	// what the piece makes of the crossing it lies over, for the self-test: the tracks under it, the ones around it, whether it follows
+	// the surface of the crossing, the tracks it cuts along
+	std::string crossing_report() const;
 	// makes the paths which lead the lanes the piece has at one end to the lanes it has at the other, where these differ.
 	// to be called once the lanes are joined with the lanes of the neighbours
 	void create_links();
@@ -281,6 +290,29 @@ class road_node : public scene::basic_node
 	{
 		return m_merged;
 	}
+	// the gaps left out of the surface, the sides and the markings along the rails of a level crossing, when the geometry was made the
+	// last time: where the surface lies in the plane of the heads of the rails of a track it crosses (world/RoadCrossing.h). Convex
+	// outlines in the plan (x, z), and the tracks they're cut along
+	std::vector<std::vector<glm::dvec2>> const &gaps() const
+	{
+		return m_gaps;
+	}
+	std::vector<TTrack const *> const &gap_tracks() const
+	{
+		return m_gaptracks;
+	}
+	// the outlines of the crossing panels the road lies under where it crosses the rails, when the geometry was made the last time: its
+	// surface, its sides and its markings are left out under them (world/RoadCrossing.h)
+	std::vector<std::vector<glm::dvec2>> const &covers() const
+	{
+		return m_covers;
+	}
+	// the surface over the gaps as it lay before they were cut, triangles in the world: for what asks for the height of the road where
+	// a wheel or a foot goes, the grooves only seen. The vehicles don't ask: they go along the lanes, tracks made of the axis
+	std::vector<world_vertex> const &bridges() const
+	{
+		return m_bridges;
+	}
 	// members
 	bool m_editorremoved{false}; // removed in the editor; kept around so the removal can be undone
 
@@ -307,6 +339,10 @@ class road_node : public scene::basic_node
 	std::vector<TTrack *> m_turns;
 	bool m_merged{false};
 	owned_shapes m_shapes; // geometry put in the scene by show()
+	mutable std::vector<std::vector<glm::dvec2>> m_gaps; // see gaps()
+	mutable std::vector<TTrack const *> m_gaptracks;
+	mutable std::vector<world_vertex> m_bridges; // see bridges()
+	mutable std::vector<std::vector<glm::dvec2>> m_covers; // see covers()
 };
 
 // a place where roads meet. each arm of the junction is where a road ends: a point in the middle of that end, the way
@@ -511,6 +547,13 @@ class junction_node : public scene::basic_node
 	bool m_merged{false};
 	owned_shapes m_shapes;
 };
+
+// a model of a crossing panel, by the name of its model (the folders of the crossings, przejazdy/, and the slabs, plyty), lying flat:
+// its outline in the plan and its top. false for any other
+bool crossing_panel(TAnimModel &Model, road_crossing::panel &Panel);
+// the crossing panels lying within the rectangle of the plan (Low, High: x, z): the panels laid along the tracks as sweeps (the panels
+// made of their drawings, world/CrossingPanels.h, and the models of the panels) as their copies lie, and the models of the panels
+std::vector<road_crossing::panel> crossing_panels_near(glm::dvec2 const &Low, glm::dvec2 const &High);
 
 // collection of roads present in the scene
 class road_table : public basic_table<road_node>

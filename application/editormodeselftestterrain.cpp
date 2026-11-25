@@ -63,6 +63,14 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			WriteLog("SELFTEST orthophoto off");
 			return selftest_result::handled;
 		}
+		if (words.str().find(" forget") != std::string::npos)
+		{
+			// what the editor keeps of the photo of the scenery forgotten: its choice and its origin, as for a scenery never opened
+			EditorSettings.orthophoto_forget(m_orthophoto_scenery);
+			EditorSettings.save();
+			WriteLog("SELFTEST orthophoto forget " + m_orthophoto_scenery);
+			return selftest_result::handled;
+		}
 		int fit{1};
 		int inscene{0};
 		float height{0.0f};
@@ -74,6 +82,15 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		m_orthophoto.settings(config);
 		m_orthophoto.enabled(true);
 		WriteLog(format("SELFTEST orthophoto at %.0f %.0f, radius %d, %s%s", config.north, config.east, config.radius, config.drape ? "fitted" : "flat", config.in_scene ? ", in the scene" : ""));
+		return selftest_result::handled;
+	}
+	if (command == "toolbar")
+	{
+		// the button of the toolbar of the key or the name given clicked
+		std::string name;
+		words >> name;
+		auto const pressed{press_toolbar(name)};
+		WriteLog(format("SELFTEST toolbar %s: %s, orthophoto %d", name.c_str(), pressed ? "pressed" : "no such button", m_orthophoto.enabled() ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "orthoarea")
@@ -177,9 +194,11 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 			}
 			else if (key == "area")
 				m_area_terrain.run_only = value != 0.0; // for the run only: the setting isn't touched, so no save keeps it
+			else if (key == "hold")
+				state.held = value != 0.0; // the terrain held back: the chunks waiting aren't made, the model isn't read for the ground
 		}
-		WriteLog(format("SELFTEST nmtsettings band %.0f around %d shape %d follow %d grow %d offset %+.2f fitted %d", state.band, m_terrain_add_count, state.shape ? 1 : 0, state.follow ? 1 : 0, state.grow ? 1 : 0, state.offset,
-		                state.fitted ? 1 : 0));
+		WriteLog(format("SELFTEST nmtsettings band %.0f around %d shape %d follow %d grow %d offset %+.2f fitted %d hold %d", state.band, m_terrain_add_count, state.shape ? 1 : 0, state.follow ? 1 : 0, state.grow ? 1 : 0, state.offset,
+		                state.fitted ? 1 : 0, state.held ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "wmsdescribe")
@@ -508,6 +527,38 @@ editor_mode::selftest_result editor_mode::selftest_terrain(std::string const &co
 		}
 		auto const degrees{editor_geo::to_degrees(point)};
 		WriteLog(format("SELFTEST nmtplace%s: X %.1f Y %.1f, %.6f N %.6f E", text.c_str(), point.y, point.x, degrees.x, degrees.y));
+		return selftest_result::handled;
+	}
+	if (command == "nmtquestion")
+	{
+		// the question of the terrain of a new scenery: open, as the first L in an empty scenery opens it, or answered without
+		// terrain, as its card does it; restore: the terrain made by itself as it was before the answer. The answer keeps to the
+		// scenery open, so the settings of the tester aren't written
+		std::string answer;
+		words >> answer;
+		auto const &model{EditorSettings.terrain_model()};
+		// as the first L in a new scenery: the line of the offer in the panel of the laying, the terrain loaded in the background where
+		// the scenery is placed, no question asked
+		if (answer == "open")
+			nmt_offer_start();
+		else if (answer == "flat")
+		{
+			auto const kept{std::pair{EditorSettings.terrain_while_laying(), model.area}};
+			m_selftest.terrain_kept = std::pair{m_nmt_state.grow, m_nmt_state.declined};
+			nmt_decline_offer();
+			// the settings as they were: the answer is for this scenery alone
+			if (std::pair{EditorSettings.terrain_while_laying(), model.area} != kept)
+			{
+				editor_selftest::fail();
+				WriteLog("SELFTEST FAIL nmtquestion flat: the settings of the terrain changed");
+			}
+		}
+		else if (answer == "restore" && m_selftest.terrain_kept.has_value())
+		{
+			m_nmt_state.grow = m_selftest.terrain_kept->first;
+			m_nmt_state.declined = m_selftest.terrain_kept->second;
+		}
+		WriteLog(format("SELFTEST nmtquestion %s: prompt %d, loading %d, terrain while laying %d, around the camera %d", answer.c_str(), m_nmt_state.prompt ? 1 : 0, m_nmt_state.offer_loading ? 1 : 0, m_nmt_state.grow ? 1 : 0, nmt_area() ? 1 : 0));
 		return selftest_result::handled;
 	}
 	if (command == "nmtgrow")

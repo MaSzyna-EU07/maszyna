@@ -1,0 +1,9 @@
+// the other paths TTrack::Load() reads, written the way the game writes them: read and written back each comes out the same
+// a river, whose texture height is written upwards as of the tracks and kept downwards
+node -1 0 river1 track river 50 10 0.15 25 20 0 flat vis woda 10 brzeg 1 2 0.5 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 endtrack
+// a tributary, a river of its first path, the second one kept to be written back
+node -1 0 tributary1 track tributary 50 10 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 0 0 50 0 0 0 0 0 0 0 0 10 50 0 0 endtrack
+// a road, invisible
+node -1 0 road1 track road 50 6 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 50 0 0 velocity 50 endtrack
+// a road crossing, invisible, of the two paths of its first road
+node -1 0 cross1 track cross 20 6 0.15 25 20 0 flat unvis -10 0 0 0 0 0 0 0 0 0 10 0 0 0 0 0 0 -10 0 0 0 0 0 0 0 0 0 10 0 0 endtrack

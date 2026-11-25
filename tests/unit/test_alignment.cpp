@@ -1180,9 +1180,37 @@ TEST_CASE("alignment: the cant ramp the norms ask for, which a track laid on fro
 	CHECK(alignment::cant_ramp_length(100.0, 120.0, gentle) == doctest::Approx(100.0));
 	// the ramp is never shorter at a higher speed
 	double previous{0.0};
-	for (double speed = 20.0; speed <= 200.0; speed += 10.0) {
+	for (int step{0}; step <= 18; ++step) {
+		auto const speed{20.0 + 10.0 * step};
 		auto const length{alignment::cant_ramp_length(speed, 80.0, norms)};
 		CHECK(length >= previous);
 		previous = length;
 	}
+}
+
+TEST_CASE("alignment: a curve laid slower than the design is checked at its own speed, its cant and transitions asked at it") {
+	// R 300 m on a line of 120 km/h: the norms ask for more than it has; at 70 km/h, as it's laid, they're met
+	auto design{straights({600.0, 600.0}, {50.0 * pi / 180.0}, 120.0)};
+	auto &vertex{design.vertices.front()};
+	vertex.radius = 300.0;
+	auto const slower{alignment::recommend(70.0, 300.0, design.norms)};
+	vertex.cant = slower.cant;
+	vertex.transition_in = vertex.transition_out = slower.transition;
+	auto const fast{alignment::compute(design)};
+	REQUIRE(fast.valid);
+	REQUIRE(fast.curves.size() == 1);
+	CHECK_FALSE(alignment::meets_norms(fast.curves.front(), design));
+	CHECK_FALSE(fast.warnings.empty());
+	vertex.speed = 70.0;
+	CHECK(alignment::curve_speed(design, vertex) == 70.0);
+	auto const slow{alignment::compute(design)};
+	REQUIRE(slow.valid);
+	CHECK(slow.curves.front().speed == 70.0);
+	CHECK(alignment::meets_norms(slow.curves.front(), design));
+	CHECK(slow.warnings.empty());
+	// the geometry is the same, only the speed it's checked at differs
+	CHECK(slow.length == doctest::Approx(fast.length));
+	// a speed above the design's is the design's
+	vertex.speed = 160.0;
+	CHECK(alignment::curve_speed(design, vertex) == 120.0);
 }

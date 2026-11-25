@@ -1,0 +1,7 @@
+// plain tracks, each written the way the game writes it (TTrack::export_as_text_): read and written back it comes out the same
+// a straight with the attributes of a plain track, the events in the order they're written in
+node -1 0 plain track normal 100 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 0 0 0 0 0 0 100 0 0 event0 plain_ev0 eventall0 plain_all0 event1 plain_ev1 eventall1 plain_all1 event2 plain_ev2 eventall2 plain_all2 velocity 100 isolated plain_iso overhead 0 vradius 5000 railprofile s49 friction plain_cell endtrack
+// a curve with cant, its rolls at both ends, a radius, the unevenness, the buckle, the welded rail and the sleeper models
+node 500 10.5 curve track normal 24.7933 1.435 0.15 25 20 0 mountains vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 100 2 50 1.5 0 0 20 -5 0 -20 110 2.5 70 2.25 300 velocity 80 uneven 18;12;10;8;6 buckle 30;20;15;1 cwr 22;2;1 sleepermodel 0.6 models/tory/podklad.e3d none 0 0 -0.1 -0.05 endtrack
+// on a bridge, invisible, damaged
+node -1 0 bridge track normal 40 1.435 0.2 -1 10 1 bridge unvis 0 0 0 0 0 0 0 0 0 0 0 0 40 0 0 endtrack

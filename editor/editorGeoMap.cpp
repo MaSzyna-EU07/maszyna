@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stb/stb_image.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -37,6 +38,8 @@ double constexpr kCentralMeridian{19.0};
 glm::dvec2 const kPolandLow{140000.0, 120000.0};
 glm::dvec2 const kPolandHigh{890000.0, 800000.0};
 std::string const kMapService{"https://mapy.geoportal.gov.pl/wss/ext/OSM/BaseMap/service"};
+// the orthophoto of GUGiK, the service the photos under the scenery in the editor come from
+std::string const kPhotoService{"https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution"};
 
 double seconds()
 {
@@ -179,6 +182,14 @@ void editor_map::release()
 	m_texture = 0;
 }
 
+void editor_map::photos(bool const Photos)
+{
+	if (Photos == m_photos)
+		return;
+	m_photos = Photos;
+	m_dirty = true;
+}
+
 void editor_map::pick(glm::dvec2 const &Point)
 {
 	m_point = Point;
@@ -248,7 +259,28 @@ bool editor_map::render(glm::vec2 const &Size)
 			m_changed = seconds();
 		}
 	}
-	auto const clicked{ImGui::IsItemDeactivated() && false == m_dragging};
+	// the switch of the map and the photos in the top right corner: a click on it isn't a click on the map
+	auto const switch_labels{std::array<char const *, 2>{STR_C("Map"), STR_C("Photos")}};
+	auto const pad{4.f};
+	std::array<ImVec2, 2> switch_low{};
+	std::array<ImVec2, 2> switch_high{};
+	{
+		auto right{origin.x + Size.x - 6.f};
+		for (int i = 1; i >= 0; --i)
+		{
+			auto const text{ImGui::CalcTextSize(switch_labels[i])};
+			switch_high[i] = ImVec2(right, origin.y + 6.f + text.y + 2.f * pad);
+			switch_low[i] = ImVec2(right - text.x - 4.f * pad, origin.y + 6.f);
+			right = switch_low[i].x - 2.f;
+		}
+	}
+	auto const on_switch = [&](int const I) { return mouse.x >= switch_low[I].x && mouse.x < switch_high[I].x && mouse.y >= switch_low[I].y && mouse.y < switch_high[I].y; };
+	auto clicked{ImGui::IsItemDeactivated() && false == m_dragging};
+	if (clicked && (on_switch(0) || on_switch(1)))
+	{
+		photos(on_switch(1));
+		clicked = false;
+	}
 	if (clicked)
 	{
 		m_clicked = to_world(mouse);
@@ -292,6 +324,33 @@ bool editor_map::render(glm::vec2 const &Size)
 		drawlist->AddLine(ImVec2(at.x - 16.f, at.y), ImVec2(at.x + 16.f, at.y), colour, 2.f);
 		drawlist->AddLine(ImVec2(at.x, at.y - 16.f), ImVec2(at.x, at.y + 16.f), colour, 2.f);
 	}
+	// the switch drawn, the layer shown lit; the photos asked for but the map zoomed out too far for them told under it
+	for (int i = 0; i < 2; ++i)
+	{
+		auto const chosen{(i == 1) == m_photos};
+		auto const over{hovered && on_switch(i)};
+		drawlist->AddRectFilled(switch_low[i], switch_high[i], chosen ? IM_COL32(0, 120, 215, 235) : over ? IM_COL32(60, 60, 60, 220) : IM_COL32(0, 0, 0, 170), 4.f);
+		drawlist->AddText(ImVec2(switch_low[i].x + 2.f * pad, switch_low[i].y + pad), IM_COL32(255, 255, 255, 245), switch_labels[i]);
+	}
+	if (hovered && (on_switch(0) || on_switch(1)))
+		ImGui::SetTooltip("%s", STR_C("The aerial photos of geoportal.gov.pl, the same as under the scenery in the editor, once the map is zoomed in"));
+	// the photos shown: whose they are, in the corner under them, as the base map has it in its picture
+	if (m_texture != 0 && m_image_photo)
+	{
+		auto const text{STR_C("Imagery: GUGiK, geoportal.gov.pl")};
+		auto const size{ImGui::CalcTextSize(text)};
+		ImVec2 const at{origin.x + Size.x - size.x - 8.f, origin.y + Size.y - size.y - 6.f};
+		drawlist->AddRectFilled(ImVec2(at.x - 4.f, at.y - 2.f), ImVec2(at.x + size.x + 4.f, at.y + size.y + 2.f), IM_COL32(0, 0, 0, 150), 3.f);
+		drawlist->AddText(at, IM_COL32(255, 255, 255, 220), text);
+	}
+	if (m_photos && m_scale > photo_scale)
+	{
+		auto const text{STR_C("Zoom in for the photos")};
+		auto const size{ImGui::CalcTextSize(text)};
+		ImVec2 const at{switch_high[1].x - size.x - 4.f, switch_high[1].y + 4.f};
+		drawlist->AddRectFilled(ImVec2(at.x - 4.f, at.y - 2.f), ImVec2(at.x + size.x + 4.f, at.y + size.y + 2.f), IM_COL32(0, 0, 0, 170), 4.f);
+		drawlist->AddText(at, IM_COL32(255, 255, 255, 230), text);
+	}
 	std::string info;
 	if (hovered)
 	{
@@ -330,11 +389,15 @@ void editor_map::request(glm::vec2 const &Size)
 	auto const high{m_centre + half};
 	char bbox[160];
 	std::snprintf(bbox, sizeof(bbox), "%.1f,%.1f,%.1f,%.1f", low.x, low.y, high.x, high.y);
-	auto const url{kMapService + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&BBOX=" + bbox + "&WIDTH=" + std::to_string(width) + "&HEIGHT=" + std::to_string(height) + "&FORMAT=image/png"};
-	m_request = std::async(std::launch::async, [url, low, high, closing = &m_closing]() {
+	// zoomed in the photos, as the orthophoto of the editor gives them; further out the map, the photos of a whole region aren't read
+	auto const photo{m_photos && m_scale <= photo_scale};
+	auto const url{photo ? kPhotoService + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=Raster&STYLES=&SRS=EPSG:2180&BBOX=" + bbox + "&WIDTH=" + std::to_string(width) + "&HEIGHT=" + std::to_string(height) + "&FORMAT=image/jpeg"
+	                     : kMapService + "?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=osm&STYLES=&SRS=EPSG:2180&BBOX=" + bbox + "&WIDTH=" + std::to_string(width) + "&HEIGHT=" + std::to_string(height) + "&FORMAT=image/png"};
+	m_request = std::async(std::launch::async, [url, low, high, photo, closing = &m_closing]() {
 		image result;
 		result.low = low;
 		result.high = high;
+		result.photo = photo;
 		std::vector<std::uint8_t> data;
 		thread_local editor_http::client client;
 		if (false == client.get(url, data, result.error, [closing]() { return closing->load(); }))
@@ -373,4 +436,5 @@ void editor_map::upload()
 	m_texture = renderer != nullptr ? renderer->Create_Image(result.pixels.data(), result.width, result.height) : 0;
 	m_image_low = result.low;
 	m_image_high = result.high;
+	m_image_photo = result.photo;
 }

@@ -99,7 +99,7 @@ struct gesture_word
 // "Ctrl+wheel", "Shift+click x4", "Drag a point", "Q W E": the keys and the parts of the mouse it names, the rest as text
 inline std::vector<gesture_word> gesture_words(std::string const &Keys)
 {
-	static char const *const keys[]{"Ctrl", "Shift", "Alt", "Esc", "Del", "Enter", "Backspace", "Tab", "Space", "Home", "End", "PrtScr"};
+	static char const *const keys[]{"Ctrl", "Shift", "Alt", "Esc", "Del", "Enter", "Backspace", "Tab", "Space", "Home", "End", "PrtScr", "~"};
 	auto const mouse = [](std::string const &Word) -> std::string {
 		if (Word == "LMB" || Word == "click" || Word == "Click" || Word == "Press")
 			return "LMB";

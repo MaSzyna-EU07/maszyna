@@ -200,7 +200,8 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 			auto const ground{ground_heights({point}, true, &found)};
 			point.y = found[0] != 0 ? ground[0] : m_lay.points.empty() ? 0.0 : m_lay.points.back().y;
 			m_lay.mouse_snap = editor_track::find_free_end(nullptr, 1, point, 3.0, {});
-			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point);
+			m_lay.mouse_height = click_heights::source::fixed;
+			m_lay.mouse = m_lay.mouse_snap.track != nullptr ? point : lay_bed(point, &m_lay.mouse_height);
 			lay_click();
 		}
 		if (false == points.empty())
@@ -326,6 +327,13 @@ editor_mode::selftest_result editor_mode::selftest_switch(std::string const &com
 					WriteLog(format("SELFTEST connection record %s %s: spacing %.3f, insert %.3f, parts%s", entry.type.c_str(), entry.name.c_str(), entry.a, entry.b, parts.c_str()));
 				}
 		};
+		// a crossover between two lines of the model: the solver of the model's, not the old planner's
+		if (command == "connection" && false == drag && false == tool.curved && tool.connection >= 0 && model_track(start) != nullptr)
+		{
+			insert_connection();
+			WriteLog("SELFTEST connection built: " + tool.status);
+			return selftest_result::handled;
+		}
 		if (drag)
 		{
 			recognise_connection();

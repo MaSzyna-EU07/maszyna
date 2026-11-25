@@ -13,6 +13,13 @@ http://mozilla.org/MPL/2.0/.
 
 #include "editor/editorTrack.hpp"
 #include "world/Track.h"
+#include "world/TrackRails.h"
+#include "model/AnimModel.h"
+#include "world/Sweep.h"
+#include "model/Model3d.h"
+#include "rendering/renderer.h"
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include "scene/scene.h"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
@@ -48,6 +55,24 @@ glm::dvec3 axis_end(road_node::state const &State, bool const Atend)
 }
 
 // roads other than the specified one, with an end at specified point
+std::vector<road_node *> roads_at(glm::dvec3 const &Point, road_node const *Exclude);
+
+// the pieces joined at the point: the ones with an end right at it where there are such (a piece shorter than the distance two ends
+// may be apart and still be one joint has its other end close by too), otherwise the ones with an end close to it
+std::vector<road_node *> joined_at(glm::dvec3 const &Point, road_node const *Exclude)
+{
+	auto result{roads_at(Point, Exclude)};
+	std::vector<road_node *> exact;
+	for (auto *road : result)
+		for (auto const atend : {false, true})
+			if (glm::distance(axis_end(road->definition(), atend), Point) < 0.001)
+			{
+				exact.push_back(road);
+				break;
+			}
+	return exact.empty() ? result : exact;
+}
+
 std::vector<road_node *> roads_at(glm::dvec3 const &Point, road_node const *Exclude)
 {
 	std::vector<road_node *> result;
@@ -669,6 +694,8 @@ void editor_road::refresh(std::vector<road_node *> const &Roads, std::vector<jun
 		if (road->m_editorremoved)
 			continue;
 		road->create_lanes();
+		// over a level crossing onto its surface
+		road->fit_lanes();
 		road->show();
 		lanes.insert(lanes.end(), road->tracks().begin(), road->tracks().end());
 	}
@@ -1226,7 +1253,7 @@ std::vector<road_node *> editor_road::chain(road_node &Road)
 		for (auto const atend : {false, true})
 		{
 			// a road goes on only where exactly two pieces meet
-			auto const next{roads_at(axis_end(result[idx]->definition(), atend), result[idx])};
+			auto const next{joined_at(axis_end(result[idx]->definition(), atend), result[idx])};
 			if (next.size() == 1 && false == next.front()->definition().changing())
 				add_unique(result, next.front());
 		}
@@ -2063,4 +2090,366 @@ std::vector<road_node::state> editor_road::roundabout(glm::dvec3 const &Centre, 
 	// the last piece ends exactly where the first one starts
 	pieces.back().axis.points[segment_data::point::end] = pieces.front().axis.points[segment_data::point::start];
 	return pieces;
+}
+
+namespace
+{
+
+// a piece of a road in the order of the road, laid along it or against it
+struct chain_entry
+{
+	road_node *road{nullptr};
+	bool reversed{false};
+};
+
+// the pieces making a road with the given one, in their order along it, up to the junctions, the forks and the loose ends
+std::vector<chain_entry> ordered_chain(road_node &Road)
+{
+	std::vector<chain_entry> result{{&Road, false}};
+	auto const known = [&](road_node const *Piece, std::vector<chain_entry> const &Found) {
+		auto const same = [Piece](chain_entry const &Entry) { return Entry.road == Piece; };
+		return std::any_of(result.begin(), result.end(), same) || std::any_of(Found.begin(), Found.end(), same);
+	};
+	auto const walk = [&](bool const Forward) {
+		std::vector<chain_entry> found;
+		auto current{Forward ? result.back() : result.front()};
+		for (int guard = 0; guard < 500; ++guard)
+		{
+			auto const point{axis_end(current.road->definition(), Forward != current.reversed)};
+			if (false == junctions_at(point).empty())
+				break;
+			auto const others{joined_at(point, current.road)};
+			if (others.size() != 1 || known(others.front(), found))
+				break;
+			auto *next{others.front()};
+			// the end of the next piece nearer the point is the one there, a short piece having both close
+			auto const startthere{glm::distance(axis_end(next->definition(), false), point) <= glm::distance(axis_end(next->definition(), true), point)};
+			chain_entry const entry{next, Forward ? false == startthere : startthere};
+			found.push_back(entry);
+			current = entry;
+		}
+		return found;
+	};
+	auto const ahead{walk(true)};
+	auto behind{walk(false)};
+	std::reverse(behind.begin(), behind.end());
+	behind.insert(behind.end(), result.begin(), result.end());
+	behind.insert(behind.end(), ahead.begin(), ahead.end());
+	return behind;
+}
+
+// from the axis to the outer edge of what's laid along the road
+double outer_halfwidth(road_node::state const &State)
+{
+	auto const sides{std::max(State.sides[0].width, State.sides[1].width)};
+	auto const kerbs{(State.kerbs[0] || State.kerbs[1]) ? State.kerbwidth : 0.f};
+	return 0.5 * std::max(State.span(0.0), State.span(1.0)) + sides + kerbs;
+}
+
+// the paths of the rail tracks the road crosses near the height of its axis, each as it lies where it's crossed
+std::vector<level_crossing::rail_track> rails_crossing(std::vector<level_crossing::road_piece> const &Pieces)
+{
+	std::vector<level_crossing::rail_track> result;
+	std::vector<std::pair<TTrack const *, double>> taken;
+	int const roadpieces{32};
+	int const railpieces{24};
+	std::vector<std::vector<glm::dvec3>> lines;
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &piece : Pieces)
+	{
+		auto const axis{curve_points(piece.axis)};
+		std::vector<glm::dvec3> line;
+		for (int i = 0; i <= roadpieces; ++i)
+		{
+			line.emplace_back(curve_point(axis, static_cast<double>(i) / roadpieces));
+			low = glm::min(low, glm::dvec2{line.back().x, line.back().z});
+			high = glm::max(high, glm::dvec2{line.back().x, line.back().z});
+		}
+		lines.push_back(std::move(line));
+	}
+	for (auto const *track : simulation::Paths.sequence())
+	{
+		if (track == nullptr || track->m_editorremoved || (track->iCategoryFlag & 1) == 0)
+			continue;
+		for (int path = 0; path < track_rails::path_count(*track); ++path)
+		{
+			auto const &segment{track_rails::path_segment(*track, path)};
+			auto const length{segment.GetLength()};
+			if (length <= 0.0)
+				continue;
+			std::vector<glm::dvec3> rail;
+			glm::dvec3 across;
+			for (int j = 0; j <= railpieces; ++j)
+			{
+				glm::dvec3 point;
+				segment.plan_frame(length * j / railpieces, point, across);
+				rail.push_back(point);
+			}
+			auto const far_from = [&](glm::dvec3 const &Point) { return Point.x < low.x - length || Point.x > high.x + length || Point.z < low.y - length || Point.z > high.y + length; };
+			if (far_from(rail.front()))
+				continue;
+			for (int j = 1; j <= railpieces; ++j)
+				for (auto const &line : lines)
+					for (std::size_t i = 0; i + 1 < line.size(); ++i)
+					{
+						double along{0.0}, railalong{0.0};
+						if (false == lines_cross(line[i], line[i + 1], rail[j - 1], rail[j], along, railalong))
+							continue;
+						auto const crossing{glm::mix(line[i], line[i + 1], along)};
+						// the place along the path, brought onto the road's axis
+						auto s{length * (j - 1 + railalong) / railpieces};
+						for (int k = 0; k < 6; ++k)
+						{
+							glm::dvec3 point, side;
+							segment.plan_frame(s, point, side);
+							glm::dvec2 const direction{side.z, -side.x};
+							s = std::clamp(s + glm::dot(glm::dvec2{crossing.x - point.x, crossing.z - point.z}, direction), 0.0, length);
+						}
+						glm::dvec3 point, side;
+						segment.plan_frame(s, point, side);
+						// rails passing over or under the road don't make a level crossing
+						if (std::abs(point.y - crossing.y) > 3.0)
+							continue;
+						if (std::any_of(taken.begin(), taken.end(), [&](auto const &Entry) { return Entry.first == track && std::abs(Entry.second - s) < 2.0; }))
+							continue;
+						taken.emplace_back(track, s);
+						auto rail{level_crossing::track_at(segment, s)};
+						rail.name = track->name();
+						rail.source = track;
+						rail.path = path;
+						rail.gauge = std::abs(track->fTrackWidth);
+						rail.head = track->rail_dimensions().head;
+						if (path < static_cast<int>(track->m_paths.size()))
+							rail.radius = std::abs(track->m_paths[path].radius);
+						rail.turnout = (track->eType == tt_Switch || track->eType == tt_Cross);
+						result.push_back(rail);
+					}
+		}
+	}
+	return result;
+}
+
+// the same road with the same look, the axis included
+bool same_state(road_node::state const &A, road_node::state const &B)
+{
+	auto const close = [](glm::dvec3 const &X, glm::dvec3 const &Y) { return glm::distance(X, Y) < 1e-4; };
+	for (int i = 0; i < 4; ++i)
+		if (false == close(A.axis.points[i], B.axis.points[i]))
+			return false;
+	if (std::abs(A.axis.rolls[0] - B.axis.rolls[0]) > 1e-3f || std::abs(A.axis.rolls[1] - B.axis.rolls[1]) > 1e-3f)
+		return false;
+	if (A.forward != B.forward || A.backward != B.backward || A.lanes.size() != B.lanes.size() || A.markings != B.markings || A.surface != B.surface || A.taper != B.taper || A.kerbs != B.kerbs ||
+	    A.missing != B.missing || A.median.type != B.median.type || A.median.width != B.median.width || false == (A.banks[0] == B.banks[0]) || false == (A.banks[1] == B.banks[1]))
+		return false;
+	for (std::size_t i = 0; i < A.lanes.size(); ++i)
+		if (A.lanes[i].width != B.lanes[i].width)
+			return false;
+	for (std::size_t side = 0; side < 2; ++side)
+		if (A.sides[side].type != B.sides[side].type || A.sides[side].width != B.sides[side].width || A.sides[side].material != B.sides[side].material)
+			return false;
+	return true;
+}
+
+} // namespace
+
+std::vector<level_crossing::rail_track> editor_road::rails_under(road_node &Road)
+{
+	std::vector<level_crossing::road_piece> pieces;
+	for (auto const &entry : ordered_chain(Road))
+		pieces.push_back({entry.road->definition().axis, outer_halfwidth(entry.road->definition())});
+	return rails_crossing(pieces);
+}
+
+double editor_road::outer_width(road_node const &Road)
+{
+	return outer_halfwidth(Road.definition());
+}
+
+std::vector<road_node *> editor_road::roads_across(TTrack const &Track)
+{
+	std::vector<road_node *> result;
+	if ((Track.iCategoryFlag & 1) == 0)
+		return result;
+	for (auto *road : simulation::Roads.sequence())
+	{
+		if (road == nullptr || road->m_editorremoved)
+			continue;
+		std::vector<level_crossing::road_piece> pieces{{road->definition().axis, outer_halfwidth(road->definition())}};
+		for (auto const &track : rails_crossing(pieces))
+			if (track.name == Track.name())
+			{
+				result.push_back(road);
+				break;
+			}
+	}
+	return result;
+}
+
+bool editor_road::crossing_possible(road_node &Road, std::string &Refusal)
+{
+	Refusal.clear();
+	if (Road.m_editorremoved)
+		return false;
+	level_crossing::design_input input;
+	for (auto const &entry : ordered_chain(Road))
+	{
+		auto const state{entry.reversed ? flipped(entry.road->definition()) : entry.road->definition()};
+		input.pieces.push_back({state.axis, outer_halfwidth(state)});
+	}
+	input.tracks = rails_crossing(input.pieces);
+	if (input.tracks.empty())
+		return true;
+	for (auto const &track : input.tracks)
+		input.narrow |= track.gauge < 1.3;
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &track : input.tracks)
+	{
+		low = glm::min(low, glm::dvec2{track.point.x, track.point.z} - glm::dvec2{40.0});
+		high = glm::max(high, glm::dvec2{track.point.x, track.point.z} + glm::dvec2{40.0});
+	}
+	input.panels = crossing_panels(low, high);
+	auto const result{level_crossing::design(input)};
+	Refusal = result.reason;
+	return result.valid;
+}
+
+bool editor_road::settle_crossing(road_node &Road, record &Record, level_crossing::design_result &Result, std::string &Refusal)
+{
+	Refusal.clear();
+	Result = {};
+	if (Road.m_editorremoved)
+		return false;
+	auto const chain{ordered_chain(Road)};
+	std::vector<road_node::state> oriented;
+	level_crossing::design_input input;
+	for (auto const &entry : chain)
+	{
+		oriented.push_back(entry.reversed ? flipped(entry.road->definition()) : entry.road->definition());
+		input.pieces.push_back({oriented.back().axis, outer_halfwidth(oriented.back())});
+	}
+	input.tracks = rails_crossing(input.pieces);
+	if (input.tracks.empty())
+		return false;
+	for (auto const &track : input.tracks)
+		input.narrow |= track.gauge < 1.3;
+	// the crossing panels lying around the rails the road crosses
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &track : input.tracks)
+	{
+		low = glm::min(low, glm::dvec2{track.point.x, track.point.z} - glm::dvec2{40.0});
+		high = glm::max(high, glm::dvec2{track.point.x, track.point.z} + glm::dvec2{40.0});
+	}
+	input.panels = crossing_panels(low, high);
+	Result = level_crossing::design(input);
+	if (false == Result.valid)
+	{
+		Refusal = Result.reason;
+		return false;
+	}
+	auto const &starts{Result.starts};
+	// what goes into each stretch: the pieces before and past it keep what's outside of it, the ones inside are laid again
+	std::vector<std::pair<road_node *, road_node::state>> changes;
+	std::vector<road_node::state> created;
+	std::vector<road_node *> removed;
+	auto const change = [&](road_node *Node, road_node::state const &State) {
+		if (false == same_state(Node->definition(), State))
+			changes.emplace_back(Node, State);
+	};
+	for (auto const &[from, to] : Result.stretches)
+	{
+		std::vector<level_crossing::designed_piece const *> pieces;
+		for (auto const &piece : Result.pieces)
+		{
+			auto const middle{starts[piece.source] + 0.5 * (piece.from + piece.to) * (starts[piece.source + 1] - starts[piece.source])};
+			if (middle >= from - 1e-6 && middle <= to + 1e-6)
+				pieces.push_back(&piece);
+		}
+		if (pieces.empty())
+			continue;
+		auto const first{pieces.front()->source};
+		auto const last{pieces.back()->source};
+		for (auto index{first}; index <= last; ++index)
+		{
+			std::string reason;
+			if (false == can_edit(*chain[index].road, &reason))
+			{
+				Refusal = "the road can't be changed: " + reason;
+				return false;
+			}
+			if (oriented[index].changing())
+			{
+				Refusal = "the road gains or loses lanes within 30 m of the rails: the road stays as it is";
+				return false;
+			}
+		}
+		// the look of the road on either side, for the pieces laid again: the markings of the decks are left out, the rest goes as there
+		auto const *before{pieces.front()->from > 1e-6 ? &oriented[first] : first > 0 ? &oriented[first - 1] : nullptr};
+		auto const *after{pieces.back()->to < 1.0 - 1e-6 ? &oriented[last] : last + 1 < oriented.size() ? &oriented[last + 1] : nullptr};
+		std::vector<road_node *> pool;
+		for (auto index{first}; index <= last; ++index)
+			pool.push_back(chain[index].road);
+		if (pieces.front()->from > 1e-6)
+		{
+			// the piece the stretch starts in keeps its part before it
+			change(chain[first].road, part(oriented[first], 0.0, pieces.front()->from));
+			pool.erase(pool.begin());
+		}
+		if (pieces.back()->to < 1.0 - 1e-6)
+		{
+			auto const rest{part(oriented[last], pieces.back()->to, 1.0)};
+			if (false == pool.empty() && pool.back() == chain[last].road)
+			{
+				change(chain[last].road, rest);
+				pool.pop_back();
+			}
+			else
+				created.push_back(rest);
+		}
+		std::size_t next{0};
+		for (auto const *piece : pieces)
+		{
+			auto state{part(oriented[piece->source], piece->from, piece->to)};
+			state.axis = piece->axis;
+			auto const middle{starts[piece->source] + 0.5 * (piece->from + piece->to) * (starts[piece->source + 1] - starts[piece->source])};
+			auto const *look{middle < 0.5 * (from + to) ? (before != nullptr ? before : after) : (after != nullptr ? after : before)};
+			if (piece->deck)
+				state.markings = road_node::marking_colour::none;
+			else if (look != nullptr)
+				state.markings = look->markings;
+			if (next < pool.size())
+				change(pool[next++], state);
+			else
+				created.push_back(state);
+		}
+		removed.insert(removed.end(), pool.begin() + next, pool.end());
+	}
+	if (changes.empty() && created.empty() && removed.empty())
+		return false;
+	for (auto *road : removed)
+		Record.roads_removed.push_back(road);
+	remove(removed);
+	for (auto const &entry : changes)
+		remember(Record, entry.first);
+	apply(changes);
+	if (false == created.empty())
+	{
+		auto const layer{Road.layer()};
+		auto const made{create(created)};
+		for (auto *road : made)
+		{
+			scene::Layers.move(road, layer);
+			Record.roads_created.push_back(road);
+		}
+	}
+	return true;
+}
+
+bool editor_road::crossing_panel(TAnimModel &Model, level_crossing::panel &Panel)
+{
+	return ::crossing_panel(Model, Panel);
+}
+
+std::vector<level_crossing::panel> editor_road::crossing_panels(glm::dvec2 const &Low, glm::dvec2 const &High)
+{
+	return crossing_panels_near(Low, High);
 }

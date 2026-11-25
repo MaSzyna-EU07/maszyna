@@ -1,0 +1,24 @@
+# stage 6: no level crossing on a cant ramp (Dz.U. 2025 poz. 1105, § 31 ust. 3): a road across the straights i0 and o0, on which the
+# curves i and o take their cant of 60 mm on, is refused, the road left as laid, not cut; the window tells how far the ramp goes. A road
+# past the end of the ramp, across the curves where the cant stays: at 60 mm the grade line of the road would break at their heads
+# facing each other by 6.2%, over the 5% of annex 5 pt 3, refused for that; the cants of both lowered alike as its fix lowers them, to
+# 49 mm, the road is laid, the break of 5% told
+wait 5
+roadlay 285 -30 318 -30 0.0 1 3.5
+wait 10
+expect crossingrefused 1 ramp
+expect crossingrefused 0 cant
+expect roadgaps 299.25 -30 0
+expect roadsurface 300 -30 0.0 0.003
+roadlay 268 12 332 12 0.0 1 3.5
+wait 10
+expect crossingrefused 0 ramp
+expect crossingrefused 1 break
+crossingfix lower
+wait 10
+expect crossingrefused 0 break
+expect crossing holds cant 49 mm
+expect cant i1 start -48.6 1
+expect cant o1 start -48.6 1
+expect roadgaps 299.25 -30 0
+quit

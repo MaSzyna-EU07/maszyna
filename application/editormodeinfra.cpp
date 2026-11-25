@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "application/editormode.h"
+#include "editor/editorRecords.hpp"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
 #include "editor/editorFormat.hpp"
@@ -660,27 +661,22 @@ struct bindable_objects
 	}
 };
 
-// format of the lines, coordinates in the space of the file:
-//   <kind> <category> <x y z of the object> <file or name, - if none> <turns 0/1> <anchor count> { <path> <start x y z> <end x y z> }
-// the object is the model, the include (position from its parameters), the traction piece (its first point), the memory
-// cell or the event launcher found at the location; the anchors name the paths by their ends
+// the object of the line, the model, the include (position from its parameters), the traction piece (its first point), the memory
+// cell or the event launcher found at the location, bound to the paths named by their ends; the lines and their format:
+// editor_records::read_binding() and binding_line()
 std::optional<infra::binding> read_binding(std::string const &Text, scene::layer_context const &Context, bindable_objects const &Objects)
 {
 	double const tolerance{0.05};
-	std::istringstream line{Text};
-	std::string kindname;
-	std::string key;
-	int group{0};
-	int turns{0};
-	int count{0};
-	glm::dvec3 location;
-	line >> kindname >> group >> location.x >> location.y >> location.z >> key >> turns >> count;
-	if (line.fail() || count < 1 || count > 4)
+	auto const read{editor_records::read_binding(Text, Context)};
+	if (false == read.has_value())
 		return std::nullopt;
-	location = Context.to_world(location);
+	auto const &kindname{read->kind};
+	auto const &key{read->key};
+	auto const location{read->location};
+	auto const count{static_cast<int>(read->anchors.size())};
 	infra::binding binding;
-	binding.group = static_cast<infra::category>(std::clamp(group, 0, static_cast<int>(infra::category::environment)));
-	binding.turns = (turns != 0);
+	binding.group = static_cast<infra::category>(std::clamp(read->category, 0, static_cast<int>(infra::category::environment)));
+	binding.turns = read->turns;
 	auto found{false};
 	if (kindname == infra::name(infra::kind::model))
 	{
@@ -719,18 +715,15 @@ std::optional<infra::binding> read_binding(std::string const &Text, scene::layer
 		return std::nullopt;
 	for (int i = 0; i < count && found; ++i)
 	{
-		int path{0};
-		glm::dvec3 start;
-		glm::dvec3 end;
-		line >> path >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
-		start = Context.to_world(start);
-		end = Context.to_world(end);
+		auto const path{read->anchors[i].path};
+		auto const &start{read->anchors[i].start};
+		auto const &end{read->anchors[i].end};
 		auto const track{Objects.paths.find(start, tolerance, [&](TTrack *Track) {
 			return path >= 0 && path < static_cast<int>(Track->m_paths.size()) &&
 			       glm::distance(Track->m_paths[path].points[segment_data::point::start], start) <= tolerance &&
 			       glm::distance(Track->m_paths[path].points[segment_data::point::end], end) <= tolerance;
 		})};
-		if (line.fail() || false == track.has_value())
+		if (false == track.has_value())
 		{
 			found = false;
 			break;
@@ -816,24 +809,23 @@ void editor_mode::infra_store()
 			layer = scene::Layers.active();
 		if (false == scene::Layers.valid(layer))
 			layer = 1;
-		auto const &context{scene::Layers.layer(layer).context_insert()};
-		auto const local = [&](glm::dvec3 const &Point) {
-			auto const point{context.to_local(Point)};
-			return format("%.4f %.4f %.4f", point.x, point.y, point.z);
-		};
-		auto text{std::string{infra::name(binding.type)} + ' ' + std::to_string(static_cast<int>(binding.group)) + ' ' + local(points.front()) + ' ' + object_key(binding) + ' ' +
-		          (binding.turns ? "1 " : "0 ") + std::to_string(binding.anchors.size())};
+		editor_records::binding line;
+		line.kind = infra::name(binding.type);
+		line.category = static_cast<int>(binding.group);
+		line.location = points.front();
+		line.key = object_key(binding);
+		line.turns = binding.turns;
 		for (auto const &anchor : binding.anchors)
 		{
 			auto const &path{anchor.at.track->m_paths[anchor.at.path]};
-			text += ' ' + std::to_string(anchor.at.path) + ' ' + local(path.points[segment_data::point::start]) + ' ' + local(path.points[segment_data::point::end]);
+			line.anchors.push_back({anchor.at.path, path.points[segment_data::point::start], path.points[segment_data::point::end]});
 		}
-		lines[layer].push_back(std::move(text));
+		lines[layer].push_back(editor_records::binding_line(line, scene::Layers.layer(layer).context_insert()));
 	}
 	for (auto &entry : lines)
 	{
 		if (false == entry.second.empty())
-			entry.second.insert(entry.second.begin(), "# objects bound to the paths in the track editor, they follow changes of the track; the simulation skips these lines");
+			entry.second.insert(entry.second.begin(), editor_records::binding_heading());
 		scene::Layers.mark(entry.first, kBindingMark, std::move(entry.second));
 	}
 }
@@ -1381,6 +1373,7 @@ void editor_mode::track_captured(TTrack const &Track)
 
 void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 {
+	crossings_changed(Tracks);
 	nmt_track_changed(Tracks);
 	m_joints.tracks_committed(Tracks);
 	sweeps_committed(Tracks);
@@ -1505,6 +1498,8 @@ void editor_mode::tracks_committed(std::vector<TTrack *> const &Tracks)
 void editor_mode::track_retired(TTrack &Track)
 {
 	nmt_track_gone(Track);
+	// the roads cut along its rails close their gaps
+	crossings_changed({&Track});
 	tracks_committed({});
 }
 

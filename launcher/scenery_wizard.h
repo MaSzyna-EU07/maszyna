@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "editor/editorGeoMap.hpp"
+#include "editor/editorProjectSetup.hpp"
 
 #include <cstdint>
 #include <future>
@@ -39,6 +40,8 @@ class scenerywizard_panel : public ui_panel
 	void render_form();
 	void render_place();
 	void render_range();
+	// the last step: what's drawn, the assumptions of the project, a fictional scenery too (it has norms as any other)
+	void render_setup(int const Step);
 	void pick(glm::dvec2 const &Point);
 	// the range as it's written to the scenery, PUWG (east, north); empty while there's none
 	std::vector<glm::dvec2> range() const;
@@ -62,6 +65,7 @@ class scenerywizard_panel : public ui_panel
 	std::vector<glm::dvec2> m_drawn; // the area of the user's
 	bool m_drawing{false};           // its corners are being clicked
 	std::vector<glm::dvec2> m_before; // the area there was before the drawing began, back with Cancel
+	project_setup::setup m_setup; // written into the scenery, //$u
 };
 
 } // namespace ui

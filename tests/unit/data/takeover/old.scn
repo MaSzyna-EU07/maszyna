@@ -1,0 +1,315 @@
+// the old scenery of the takeover tests, written by make_old.py: tracks of no design, as old sceneries have them
+
+node -1 0 a_1 track normal 38.871 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+0 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+38.87 100 0 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_2 track normal 42.437 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+38.87 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+81.31 100 0 0 //point 2
+0
+velocity 100
+event2 sem_a_light
+endtrack
+node -1 0 a_3 track normal 36.375 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+117.68 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+81.31 100 0 0 //point 2
+0
+velocity 100
+event1 sem_a_set
+endtrack
+node -1 0 a_4 track normal 23.998 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+117.68 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+141.68 100 0 0 //point 2
+0
+velocity 100
+isolated obw_a
+endtrack
+node -1 0 a_5 track normal 40.321 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+141.68 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+182 100 0 0 //point 2
+0
+velocity 100
+isolated obw_a
+endtrack
+node -1 0 none track normal 17.999 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+182 100 0 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+200 100 0 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_7 track normal 45.55 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+200 100 0 0 //point 1
+15.184 0 0 //control vector 1
+-15.175 0 -0.525 //control vector 2
+245.545 100 0.525 2.3 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_8 track normal 14.45 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+259.978 100 1.2 -3.1 //point 1
+-4.808 0 -0.289 //control vector 1
+4.814 0 0.167 //control vector 2
+245.545 100 0.525 -2.3 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_9 track normal 15.266 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+259.978 100 1.2 3.1 //point 1
+5.081 0 0.305 //control vector 1
+-5.069 0 -0.46 //control vector 2
+275.205 100 2.348 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_10 track normal 24.647 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+275.205 100 2.348 3.1 //point 1
+8.18 0 0.743 //control vector 1
+-8.134 0 -1.145 //control vector 2
+299.679 100 5.179 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_11 track normal 36.362 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+299.679 100 5.179 3.1 //point 1
+12.003 0 1.689 //control vector 1
+-11.849 -0.061 -2.557 //control vector 2
+335.468 100.181 11.551 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 none track normal 21.846 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+335.468 100.181 11.551 3.1 //point 1
+7.12 0.036 1.536 //control vector 1
+-7.046 -0.036 -1.846 //control vector 2
+356.719 100.291 16.625 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_13 track normal 30.613 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+386.074 100.444 25.284 -3.1 //point 1
+-9.694 -0.051 -3.185 //control vector 1
+9.871 0.051 2.586 //control vector 2
+356.719 100.291 16.625 -3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_14 track normal 26.792 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+386.074 100.444 25.284 3.1 //point 1
+8.488 0.045 2.789 //control vector 1
+-8.326 -0.045 -3.24 //control vector 2
+411.298 100.578 34.328 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_15 track normal 22.769 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+411.298 100.578 34.328 3.1 //point 1
+7.071 0.038 2.751 //control vector 1
+-6.938 -0.038 -3.07 //control vector 2
+432.314 100.691 43.061 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_16 track normal 23.505 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+432.314 100.691 43.061 3.1 //point 1
+7.167 0.039 3.171 //control vector 1
+-7.01 -0.039 -3.505 //control vector 2
+453.582 100.809 53.076 3.1 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_17 track normal 16.591 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+453.582 100.809 53.076 3.1 //point 1
+4.946 0.028 2.473 //control vector 1
+-4.874 -0.028 -2.613 //control vector 2
+468.307 100.892 60.717 2.2 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_18 track normal 27.048 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+468.307 100.892 60.717 2.2 //point 1
+7.947 0.045 4.261 //control vector 1
+-7.829 -0.045 -4.473 //control vector 2
+491.944 101.027 73.867 0.8 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_19 track normal 16.361 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+491.944 101.027 73.867 0.8 //point 1
+4.735 0.027 2.706 //control vector 1
+-4.723 -0.027 -2.727 //control vector 2
+506.125 101.109 82.026 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_20 track normal 15.305 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+506.125 101.109 82.026 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+519.375 101.186 89.676 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_21 track normal 28.167 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+519.375 101.186 89.676 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+543.771 101.326 103.761 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_22 track normal 43.722 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+543.771 101.326 103.761 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+581.633 101.545 125.621 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_23 track normal 38.951 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+581.633 101.545 125.621 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+615.365 101.74 145.096 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_24 track normal 21.261 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+615.365 101.74 145.096 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+633.777 101.846 155.726 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_25 track normal 40.558 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+633.777 101.846 155.726 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+668.903 102.049 176.006 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 a_26 track normal 32.036 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+668.903 102.049 176.006 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+696.65 102.209 192.026 0 //point 2
+0
+velocity 100
+endtrack
+node -1 0 zwr_1 track switch 33.23 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+696.65 102.209 192.026 0
+0 0 0
+0 0 0
+725.428 102.375 208.641 0
+0
+696.65 102.209 192.026 0
+9.526 0.055 5.5
+-8.861 -0.055 -6.518
+724.217 102.374 210.078 0
+300
+velocity 100
+endtrack
+node -1 0 b_1 track normal 50 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+725.428 102.375 208.641 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+768.729 102.625 233.641 0 //point 2
+0
+velocity 60
+endtrack
+node -1 0 b_2 track normal 50 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+768.729 102.625 233.641 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+812.031 102.875 258.641 0 //point 2
+0
+velocity 60
+endtrack
+node -1 0 b_3 track normal 50 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+812.031 102.875 258.641 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+855.332 103.125 283.641 0 //point 2
+0
+velocity 60
+endtrack
+node -1 0 c_1 track normal 50 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+724.217 102.374 210.078 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+764.493 102.624 239.707 0 //point 2
+0
+velocity 60
+endtrack
+node -1 0 c_2 track normal 50 1.435 0.25 25.0 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1
+764.493 102.624 239.707 0 //point 1
+0 0 0 //control vector 1
+0 0 0 //control vector 2
+804.768 102.874 269.336 0 //point 2
+0
+velocity 60
+endtrack
+
+// the signal of line a, named by the events of a_2 and a_3, and its memory cell
+node -1 0 sem_a model 150 100 -3 90 sygnalizacja/semafor_sbl.t3d none endmodel
+node -1 0 sem_a_mem memcell 120 100 -4 sbl 0 0 none endmemcell
+event sem_a_light lights 0 sem_a 1 0 0 endevent
+event sem_a_set updatevalues 0 sem_a_mem sbl 1 0 endevent
+
+// the catenary of line a: a pole every 50 m on its left, the wires between them over the track
+node -1 0 slup_1 model 25 100 3.5 90 slupy/slup_k.t3d none endmodel
+node -1 0 slup_2 model 75 100 3.5 90 slupy/slup_k.t3d none endmodel
+node -1 0 slup_3 model 125 100 3.5 90 slupy/slup_k.t3d none endmodel
+node -1 0 slup_4 model 175 100 3.5 90 slupy/slup_k.t3d none endmodel
+node -1 0 slup_5 model 224.963 100 3.587 89.4 slupy/slup_k.t3d none endmodel
+node -1 0 slup_6 model 274.621 100 5.809 84.8 slupy/slup_k.t3d none endmodel
+node -1 0 slup_7 model 323.765 100.125 12.735 79.1 slupy/slup_k.t3d none endmodel
+node -1 0 slup_8 model 371.972 100.375 24.532 73.4 slupy/slup_k.t3d none endmodel
+node -1 0 slup_9 model 418.76 100.625 41.083 67.7 slupy/slup_k.t3d none endmodel
+node -1 0 slup_10 model 463.677 100.875 62.215 62.1 slupy/slup_k.t3d none endmodel
+node -1 0 slup_11 model 507.146 101.125 86.657 60 slupy/slup_k.t3d none endmodel
+node -1 0 slup_12 model 550.447 101.375 111.657 60 slupy/slup_k.t3d none endmodel
+node -1 0 slup_13 model 593.748 101.625 136.657 60 slupy/slup_k.t3d none endmodel
+node -1 0 slup_14 model 637.05 101.875 161.657 60 slupy/slup_k.t3d none endmodel
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 25 105.6 0.2 75 105.6 -0.2 25 107.2 0.2 75 107.2 -0.2 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 75 105.6 -0.2 125 105.6 0.2 75 107.2 -0.2 125 107.2 0.2 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 125 105.6 0.2 175 105.6 -0.2 125 107.2 0.2 175 107.2 -0.2 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 175 105.6 -0.2 224.998 105.6 0.287 175 107.2 -0.2 224.998 107.2 0.287 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 224.998 105.6 0.287 274.954 105.6 2.124 224.998 107.2 0.287 274.954 107.2 2.124 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 274.954 105.6 2.124 324.388 105.725 9.494 274.954 107.2 2.124 324.388 107.325 9.494 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 324.388 105.725 9.494 373.03 105.975 20.986 324.388 107.325 9.494 373.03 107.575 20.986 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 373.03 105.975 20.986 420.015 106.225 38.03 373.03 107.575 20.986 420.015 107.825 38.03 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 420.015 106.225 38.03 465.409 106.475 58.945 420.015 107.825 38.03 465.409 108.075 58.945 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 465.409 106.475 58.945 508.796 106.725 83.799 465.409 108.075 58.945 508.796 108.325 83.799 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 508.796 106.725 83.799 552.297 106.975 108.453 508.796 108.325 83.799 552.297 108.575 108.453 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 552.297 106.975 108.453 595.398 107.225 133.799 552.297 108.575 108.453 595.398 108.825 133.799 1.6 5 4 0.3 vis endtraction
+node -1 0 none traction zasilanie 3000 2000 0.01 cu 1 0 595.398 107.225 133.799 638.9 107.475 158.453 595.398 108.825 133.799 638.9 109.075 158.453 1.6 5 4 0.3 vis endtraction
+
+// the hectometre posts of line a, on its right
+node -1 0 none model 100 100 -2.5 90 znaki/hektometr.t3d none endmodel
+node -1 0 none model 200 100 -2.5 90 znaki/hektometr.t3d none endmodel
+node -1 0 none model 300.117 100 2.716 82 znaki/hektometr.t3d none endmodel
+node -1 0 none model 397.574 100.5 26.566 70.5 znaki/hektometr.t3d none endmodel
+node -1 0 none model 488.449 101 69.001 60.5 znaki/hektometr.t3d none endmodel
+node -1 0 none model 575.098 101.5 118.961 60 znaki/hektometr.t3d none endmodel
+node -1 0 none model 661.7 102 168.961 60 znaki/hektometr.t3d none endmodel
+
+// a tree far off line a, a cabinet between lines b and c
+node -1 0 none model 388.403 100.5 52.491 0 drzewa/tree1.t3d none endmodel
+node -1 0 szafa_1 model 733.18 102.375 214.822 0 ludzie/szafa_kablowa.t3d none endmodel

@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "editor/editorCrossing.hpp"
 #include "world/Road.h"
 #include "world/RoadPoint.h"
 
@@ -114,6 +115,25 @@ class editor_road
 	// rails crossing specified piece within specified distance from a point. Middle: receives the point of the axis halfway between
 	// the outermost of them, Halfspan: how far along the road these are from it. returns: false if no rails cross the piece there
 	static bool rails_across(road_node const &Road, glm::dvec3 const &Near, double const Reach, glm::dvec3 &Middle, double &Halfspan);
+	// the surface of the road brought to the rails it crosses (editor/editorCrossing.hpp): over each track in the plane of the heads
+	// of its rails, the approaches graded into it. The road the piece is a part of, up to its junctions and loose ends, is laid anew
+	// from 30 m before the first rails to 30 m past the last ones; what gets done is added to Record. Result: receives the design,
+	// with what's against the regulation; Refusal: why the road stays as it is, empty when no rails cross it.
+	// returns: true if the road was changed
+	static bool settle_crossing(road_node &Road, record &Record, level_crossing::design_result &Result, std::string &Refusal);
+	// the same without changing anything: true if the road would be laid so, Refusal: why not
+	static bool crossing_possible(road_node &Road, std::string &Refusal);
+	// a crossing panel: a model of the slabs of a crossing (its name in przejazdy/ or with plyty), lying flat. Panel: receives its outline
+	// in the plan and the height of its top. returns: false for a model of something else
+	static bool crossing_panel(TAnimModel &Model, level_crossing::panel &Panel);
+	// the crossing panels standing within the rectangle of the plan (x, z)
+	static std::vector<level_crossing::panel> crossing_panels(glm::dvec2 const &Low, glm::dvec2 const &High);
+	// the rail tracks the road the piece is a part of crosses, each as it lies there
+	static std::vector<level_crossing::rail_track> rails_under(road_node &Road);
+	// from the axis of the piece to the outer edge of what's laid along it
+	static double outer_width(road_node const &Road);
+	// the pieces of the roads whose axes cross the paths of the rail track at the height of its rails, give or take 3 m
+	static std::vector<road_node *> roads_across(TTrack const &Track);
 	// takes a point out of a road. the two pieces which meet at it are made one, led from the far end of one to the far end
 	// of the other the way these ends go; a point a road ends at takes the last piece of the road with it.
 	// what gets done is added to Record. returns: false if it can't be done, with the reason in Error

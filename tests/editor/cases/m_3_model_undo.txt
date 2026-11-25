@@ -1,0 +1,51 @@
+# Editing on the model (E4a): Ctrl+Z takes a command of the model back with its tracks, one step a command, and Ctrl+Y brings it
+# again; the project written after an undo has the line as it was before the command, read so after the scenery is opened again
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+modelmark laid
+modelplan @1.0
+routeradius 0 800
+routeapply
+wait 2
+expect modelrefused 0
+expect steps 2
+modelmark wider
+undo
+wait 2
+expect modelsame laid
+expect modelvertex 1 0 radius 791
+expect managed @1.0 1
+expect modelends
+redo
+wait 2
+expect modelsame wider
+expect modelends
+# split in the route design: two lines, one step; taken back, one line again
+modelplan @1.0
+modelsplit 300
+wait 2
+expect modellines 2
+expect steps 3
+expect modelends
+undo
+wait 2
+expect modellines 1
+expect modelsame wider
+expect modelends
+# the radius taken back too, and saved so
+undo
+wait 2
+expect modelsame laid
+save
+wait 5
+expect projectfile lines 1
+quit
+#> reopen
+wait 5
+modelediting 1
+expect modellines 1
+expect modelvertex 1 0 radius 791
+expect modelends
+quit

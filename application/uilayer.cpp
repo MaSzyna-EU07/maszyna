@@ -30,6 +30,7 @@ ImGuiIO *ui_layer::m_imguiio{nullptr};
 GLint ui_layer::m_textureunit{GL_TEXTURE0};
 bool ui_layer::m_cursorvisible;
 int ui_layer::m_palette{0};
+float ui_layer::m_window_alpha{-1.0f};
 ImFont *ui_layer::font_default{nullptr};
 ImFont *ui_layer::font_mono{nullptr};
 ImFont *ui_layer::font_loading{nullptr};
@@ -182,9 +183,10 @@ void create_viewport_window(ImGuiViewport *Viewport)
 }
 } // namespace
 
-void ui_layer::imgui_colors(int const Palette)
+void ui_layer::imgui_colors(int const Palette, float const WindowAlpha)
 {
 	m_palette = Palette;
+	m_window_alpha = WindowAlpha;
 	auto const rgb = [](int const Color, float const Alpha = 1.0f) {
 		return ImVec4(((Color >> 16) & 0xff) / 255.0f, ((Color >> 8) & 0xff) / 255.0f, (Color & 0xff) / 255.0f, Alpha);
 	};
@@ -204,7 +206,7 @@ void ui_layer::imgui_colors(int const Palette)
 
 	colors[ImGuiCol_Text] = rgb(editor ? 0xe6e8eb : 0xffffff);
 	colors[ImGuiCol_TextDisabled] = rgb(editor ? 0x8a929c : 0xa0a0a2);
-	colors[ImGuiCol_WindowBg] = rgb(panel, Global.UIBgOpacity); // ui.bg.opacity from config file
+	colors[ImGuiCol_WindowBg] = rgb(panel, WindowAlpha); // ui.bg.opacity from config file, unless the ui has its own
 	colors[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	colors[ImGuiCol_PopupBg] = rgb(base, 0.98f);
 	colors[ImGuiCol_Border] = rgb(border);
@@ -261,7 +263,7 @@ void ui_layer::imgui_colors(int const Palette)
 
 void ui_layer::imgui_style()
 {
-	imgui_colors(0);
+	imgui_colors(0, Global.UIBgOpacity);
 
 	// flat, square elements with thin borders
 	auto &style = ImGui::GetStyle();
@@ -518,7 +520,6 @@ void ui_layer::render()
 	render_tooltip();
 	render_menu();
 	render_quit_widget();
-	render_hierarchy();
 	// template method implementation
 	render_();
 
@@ -540,11 +541,16 @@ void ui_layer::render_internal()
 	}
 }
 
+float ui_layer::window_alpha() const
+{
+	return Global.UIBgOpacity;
+}
+
 void ui_layer::begin_ui_frame()
 {
 	// the colours follow the ui of the mode drawn
-	if (palette() != m_palette)
-		imgui_colors(palette());
+	if (palette() != m_palette || window_alpha() != m_window_alpha)
+		imgui_colors(palette(), window_alpha());
 	begin_ui_frame_internal();
 	render_dockspace();
 	m_dockspaceframe = ImGui::GetFrameCount();
@@ -574,54 +580,6 @@ void ui_layer::render_quit_widget()
 	ImGui::End();
 }
 
-void ui_layer::render_hierarchy(){
-	if(!m_editor_hierarchy)
-		return;
-
-	// fitted to the contents when it first appears; no auto resize, which a docked window can't do
-	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-	ImGui::Begin((std::string(STR_C("Scene Hierarchy")) + "###scenehierarchy").c_str(), &m_editor_hierarchy);
-	ImGui::Text(STR_C("Registered nodes: %zu"), scene::Hierarchy.size());
-    ImGui::BeginChild("hierarchy_list", ImVec2(500, 300), true);
-
-	for (auto &entry : scene::Hierarchy)
-        {
-        	const std::string &uuid = entry.first;
-            scene::basic_node *node = entry.second;
-
-            if (node)
-            {
-                char buf[512];
-                std::snprintf(buf, sizeof(buf), "%s | %s (%.1f, %.1f, %.1f)",
-                            node->name().c_str(),
-                            uuid.c_str(),
-                            node->location().x,
-                            node->location().y,
-                            node->location().z);
-
-                if (ImGui::Selectable(buf, false))
-                {
-                    // Focus camera on selected node
-                    auto const node_pos = node->location();
-                    auto const camera_offset = glm::dvec3(0.0, 10.0, -20.0);
-					editor_mode::set_focus_active(false);
-					TCamera &camera = editor_mode::get_camera(); 
-					camera.Pos = node_pos + camera_offset;
-				
-                }
-
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip(STR_C("UUID: %s\nNode type: %s"), uuid.c_str(), typeid(*node).name());
-                }
-            }
-        }
-
-    ImGui::EndChild();
-    ImGui::End();
-
-}
- 
 void ui_layer::set_cursor(int const Mode)
 {
 	// the cursor drawn into the picture: the one of the system hidden, so only that one shows, also in a capture of the window
@@ -733,7 +691,7 @@ void ui_layer::render_menu_contents()
 			GfxRenderer->Debug_Ui_State(ret);
 		}
 		if(EditorModeFlag){
-			ImGui::MenuItem(STR_C("Scene Hierarchy"), nullptr, &m_editor_hierarchy);
+			// the objects of the scenery are listed in the window Scene of the editor, in the windows of the editor below
 			bool change_history_enabled = editor_mode::change_history();
 			if (ImGui::MenuItem(STR_C("Change History"), nullptr, &change_history_enabled))
 			{
