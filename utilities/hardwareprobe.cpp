@@ -161,11 +161,12 @@ memory_info probe_memory()
 	return memory;
 }
 
-// the adapters DXGI lists, the software one left out. dxgi.dll is loaded only for this, so the game doesn't link it
+// the adapters DXGI lists, the software one left out. dxgi.dll is loaded only for this, so the game doesn't link it;
+// from System32 only, so a proxy dxgi.dll left in the game folder (ReShade, ENB) isn't loaded with it
 std::vector<gpu_adapter> probe_adapters()
 {
 	std::vector<gpu_adapter> adapters;
-	auto *library{LoadLibraryW(L"dxgi.dll")};
+	auto *library{LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)};
 	if (library == nullptr)
 	{
 		WriteLog("hardware: gpus: dxgi.dll not found");
@@ -287,10 +288,12 @@ gl_memory_info probe_gl_memory()
 		glGetIntegerv(texture_free_memory_ati, kilobytes.data());
 		memory.available = static_cast<std::uint64_t>(std::max(kilobytes[0], 0)) * 1024;
 	}
-	// a driver that takes the queries amiss leaves an error the renderer would report as its own
-	while (glGetError() != GL_NO_ERROR)
+	// a driver that takes the queries amiss leaves an error the renderer would report as its own. each call takes one
+	// error off; a lost context may keep reporting one, hence the limit
+	constexpr int max_errors{32};
+	for (int i = 0; i < max_errors && glGetError() != GL_NO_ERROR; ++i)
 	{
-		// each call takes one error off
+		// nothing else to do
 	}
 	return memory;
 }
@@ -301,6 +304,8 @@ void log_system()
 {
 	auto const cpu{probe_cpu()};
 	WriteLog(format_cpu(cpu));
+	// an AVX2 build on a cpu without it may die on an illegal instruction before this line; when it gets here (the
+	// start so far ran without an AVX2 or FMA instruction), the line names the cause of the crash that comes later
 #ifdef __AVX2__
 	constexpr bool build_needs_avx2{true};
 #else
