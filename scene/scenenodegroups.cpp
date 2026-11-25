@@ -17,6 +17,7 @@ http://mozilla.org/MPL/2.0/.
 #include "widgets/map_objects.h"
 
 #include <algorithm>
+#include <cctype>
 #include <ranges>
 #include <unordered_map>
 #include <unordered_set>
@@ -66,6 +67,27 @@ void collect_signal_models(
 			pending_events.insert(pending_events.end(), children.begin(), children.end());
 		}
 	}
+}
+
+bool is_shp_event(basic_event const *event)
+{
+	if (!event)
+		return false;
+
+	std::string const &event_name = event->name();
+	if (event_name.size() < 4)
+		return false;
+
+	std::size_t const suffix_start = event_name.size() - 3;
+	return event_name[suffix_start - 1] == '_' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start])) == 's' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start + 1])) == 'h' &&
+	       std::tolower(static_cast<unsigned char>(event_name[suffix_start + 2])) == 'p';
+}
+
+bool is_shp_launcher(basic_event const *first_event, basic_event const *second_event)
+{
+	return is_shp_event(first_event) || is_shp_event(second_event);
 }
 
 } // namespace
@@ -355,6 +377,8 @@ node_groups::update_map()
             } else {
                 if (TEventLauncher *launcher = dynamic_cast<TEventLauncher*>(node)) {
                     if (!launcher || !launcher->Event1 || !launcher->Event2)
+                        continue;
+                    if (is_shp_launcher(launcher->Event1, launcher->Event2))
                         continue;
 
                     auto map_launcher = std::make_shared<map::launcher>();

@@ -11,7 +11,6 @@
 #include "widgets/mapIcons.h"
 #include "world/Sweep.h"
 #include <format>
-#include <numbers>
 #include <ranges>
 #include <tuple>
 #include <cstdint>
@@ -29,6 +28,13 @@ bool map_has_vertex_budget(
 	ImDrawList const *draw_list, int const required = 12, int const limit = map_vertex_limit)
 {
 	return draw_list->VtxBuffer.Size + required < limit;
+}
+
+float map_signal_light_opacity(std::tuple<float, float, std::optional<glm::vec3>> const &state)
+{
+	if (std::abs(std::get<0>(state)) < 0.01f)
+		return 0.0f;
+	return std::clamp(std::get<1>(state), 0.0f, 1.0f);
 }
 
 bool map_point_in_rect(ImVec2 point, ImVec2 minimum, ImVec2 maximum)
@@ -923,7 +929,7 @@ void ui::map_panel::render_map_lines(
 							continue;
 
 						glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-						float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
+						float const opacity = map_signal_light_opacity(*state);
 						auto const color_component = [](float component) {
 							return static_cast<int>(std::clamp(component * 255.0f, 0.0f, 255.0f));
 						};
@@ -1072,37 +1078,20 @@ void ui::map_panel::render_map_lines(
 				ImVec2 const rear_cap_center(
 					head_center.x - head_axis.x * head_body_half_length,
 					head_center.y - head_axis.y * head_body_half_length);
-				auto const add_head_path = [draw_list, front_cap_center, rear_cap_center, head_half_width, head_axis,
-				                            head_normal]() {
-					float const head_angle = std::atan2(head_axis.y, head_axis.x);
-					draw_list->PathArcTo(
-						front_cap_center, head_half_width,
-						head_angle - std::numbers::pi_v<float> * 0.5f,
-						head_angle + std::numbers::pi_v<float> * 0.5f);
-					draw_list->PathLineTo(ImVec2(
-						rear_cap_center.x + head_normal.x * head_half_width,
-						rear_cap_center.y + head_normal.y * head_half_width));
-					draw_list->PathArcTo(
-						rear_cap_center, head_half_width,
-						head_angle + std::numbers::pi_v<float> * 0.5f,
-						head_angle + std::numbers::pi_v<float> * 1.5f);
-					draw_list->PathLineTo(ImVec2(
-						front_cap_center.x - head_normal.x * head_half_width,
-						front_cap_center.y - head_normal.y * head_half_width));
-				};
-				auto const add_head_shape = [&add_head_path, draw_list](ImU32 color) {
-					add_head_path();
-					draw_list->PathFillConvex(color);
+				auto const add_head_shape = [draw_list, front_cap_center, rear_cap_center](
+						ImU32 color, float thickness) {
+					float const radius = thickness * 0.5f;
+					draw_list->AddLine(rear_cap_center, front_cap_center, color, thickness);
+					draw_list->AddCircleFilled(front_cap_center, radius, color);
+					draw_list->AddCircleFilled(rear_cap_center, radius, color);
 				};
 				if (signal_hovered)
 				{
 					ImU32 constexpr highlight_color = IM_COL32(120, 200, 255, 255);
-					add_head_shape(highlight_color);
-					add_head_path();
-					draw_list->PathStroke(highlight_color, ImDrawFlags_Closed, 3.0f);
+					add_head_shape(highlight_color, head_half_width * 2.0f + 3.0f);
 				}
 				else
-					add_head_shape(IM_COL32(0, 0, 0, 255));
+					add_head_shape(IM_COL32(0, 0, 0, 255), head_half_width * 2.0f);
 				for (std::size_t idx = cache.colors.size(); post_direction.y <= 0.0f && idx-- > 0;)
 				{
 					if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
@@ -1790,7 +1779,7 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 					continue;
 
 				glm::vec3 const lamp_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-				float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
+				float const opacity = map_signal_light_opacity(*state);
 				if (std::get<0>(*state) < 0.0f)
 					continue;
 
@@ -1844,7 +1833,7 @@ void ui::semaphore_window::render_content()
 				continue;
 
 			glm::vec3 lamp_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-			float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
+			float const opacity = map_signal_light_opacity(*state);
 			float level = std::get<0>(*state);
 
 			if (level < 0.0f)
