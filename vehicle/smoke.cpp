@@ -85,6 +85,50 @@ steam_output cock_emission(SteamEngine const &Engine, double const Revolutions) 
 	return {share * beat, share, 0.5f + share};
 }
 
+// the air pump working: its exhaust, while the compressor runs on the steam of the boiler
+steam_output air_pump_emission(TMoverParameters const &Mover) {
+	if (false == Mover.CompressorFlag || Mover.Steam.pressure() < steam::air_pump_pressure) {
+		return {};
+	}
+	return {0.7f, 0.7f, 1.0f};
+}
+
+// the overflow of the injectors as they feed the boiler, the more the wider they are open
+steam_output injector_emission(SteamEngine const &Engine) {
+	auto const open{static_cast<float>(std::clamp(std::max(Engine.State.injectors[0], Engine.State.injectors[1]), 0.0, 1.0))};
+	if (open <= 0.f) {
+		return {};
+	}
+	return {open, 0.4f + 0.6f * open, 0.6f + 0.4f * open};
+}
+
+// the whistle blowing, while there's steam to blow it
+steam_output whistle_emission(TMoverParameters const &Mover) {
+	if (Mover.WarningSignal == 0 || Mover.Steam.pressure() < steam::air_pump_pressure) {
+		return {};
+	}
+	return {1.f, 0.9f, 1.f};
+}
+
+// the turbo-generator for the lights, running whenever the boiler has the pressure for it
+steam_output generator_emission(SteamEngine const &Engine) {
+	if (Engine.pressure() < steam::air_pump_pressure) {
+		return {};
+	}
+	return {0.5f, 0.5f, 1.f};
+}
+
+// the steam leaking past the glands of the piston rods and valve spindles: some with steam in the chests, more working
+steam_output leak_emission(SteamEngine const &Engine, double const Revolutions) {
+	auto const pressure{(Engine.State.chest_pressure - steam::atmosphere) / std::max(Engine.Parameters.working_pressure, 1.0)};
+	auto const share{static_cast<float>(std::clamp(pressure, 0.0, 1.0))};
+	if (share <= 0.f) {
+		return {};
+	}
+	auto const working{static_cast<float>(std::clamp(std::abs(Revolutions) / 2.0, 0.0, 1.0))};
+	return {share * (0.3f + 0.7f * working), 0.3f + 0.4f * share, 0.6f};
+}
+
 } // namespace
 
 steam_part steam_part_of(std::string_view const Name) {
@@ -100,6 +144,21 @@ steam_part steam_part_of(std::string_view const Name) {
 	}
 	if (Name == "cocks") {
 		return cocks;
+	}
+	if (Name == "air_pump") {
+		return air_pump;
+	}
+	if (Name == "injectors") {
+		return injectors;
+	}
+	if (Name == "whistle") {
+		return whistle;
+	}
+	if (Name == "generator") {
+		return generator;
+	}
+	if (Name == "leaks") {
+		return leaks;
 	}
 	return none;
 }
@@ -117,6 +176,16 @@ steam_output steam_emission(TMoverParameters const &Mover, steam_part const Part
 		return safety_valve_emission(Mover.Steam);
 	case steam_part::cocks:
 		return cock_emission(Mover.Steam, Mover.nrot);
+	case steam_part::air_pump:
+		return air_pump_emission(Mover);
+	case steam_part::injectors:
+		return injector_emission(Mover.Steam);
+	case steam_part::whistle:
+		return whistle_emission(Mover);
+	case steam_part::generator:
+		return generator_emission(Mover.Steam);
+	case steam_part::leaks:
+		return leak_emission(Mover.Steam, Mover.nrot);
 	default:
 		return {};
 	}

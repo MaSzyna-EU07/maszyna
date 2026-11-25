@@ -114,6 +114,11 @@ shows a part of the steam engine when its template says which, with the optional
 | `smoke` | the smoke of the fire, carried up with the exhaust | the coal burned against the most the grate burns (`State.burn_rate`) |
 | `safety_valves` | the safety valves blowing off | `State.safety_valve_flow` |
 | `cocks` | the open cylinder cocks, with each stroke | `Controls.cylinder_cocks` and the steam chest pressure |
+| `air_pump` | the exhaust of the air pump while it runs | `CompressorFlag`, with steam enough to drive the pump |
+| `injectors` | the overflow of the injectors as they feed | `State.injectors` |
+| `whistle` | the whistle blowing | `WarningSignal`, with steam in the boiler |
+| `generator` | the exhaust of the turbo-generator, steady | the boiler over the air pump's 3 bar |
+| `leaks` | steam past the glands of the cylinders, more with the engine working | the steam chest pressure and the revolutions |
 
 Each gives the share of the template's spawn rate and of the opacity and launch velocity of the particles
 (`smoke::steam_emission()`, `vehicle/smoke.h`). A template without `steam:`, or a vehicle with no steam engine, works as

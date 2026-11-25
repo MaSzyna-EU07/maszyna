@@ -215,3 +215,41 @@ TEST_CASE("smoke: a steam locomotive's safety valves and cylinder cocks blow onl
 	engine.CrankAngle = 0.0;
 	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::cocks).spawn > 0.5f);
 }
+
+TEST_CASE("smoke: the other steam of a steam locomotive: air pump, injectors, whistle, generator, glands") {
+	CHECK(smoke::steam_part_of("air_pump") == smoke::steam_part::air_pump);
+	CHECK(smoke::steam_part_of("injectors") == smoke::steam_part::injectors);
+	CHECK(smoke::steam_part_of("whistle") == smoke::steam_part::whistle);
+	CHECK(smoke::steam_part_of("generator") == smoke::steam_part::generator);
+	CHECK(smoke::steam_part_of("leaks") == smoke::steam_part::leaks);
+	test::vehicle locomotive{test::definition::load("steam_ty2"), 0.0, "test", 1};
+	auto &mover{locomotive.mover()};
+	auto &engine{mover.Steam};
+	// each blows only while it works
+	mover.CompressorFlag = false;
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::air_pump).spawn == 0.f);
+	mover.CompressorFlag = true;
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::air_pump).spawn > 0.f);
+	engine.State.injectors = {0.0, 0.0};
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::injectors).spawn == 0.f);
+	engine.State.injectors = {0.0, 0.8};
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::injectors).spawn == doctest::Approx(0.8f));
+	mover.WarningSignal = 0;
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::whistle).spawn == 0.f);
+	mover.WarningSignal = 1;
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::whistle).spawn > 0.f);
+	// the generator with the boiler in steam, none when it's cold
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::generator).spawn > 0.f);
+	engine.cool_down(20.0);
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::generator).spawn == 0.f);
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::whistle).spawn == 0.f);
+	// the glands leak with steam in the chests, more with the engine working
+	engine.State.chest_pressure = steam::atmosphere;
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::leaks).spawn == 0.f);
+	engine.State.chest_pressure = steam::atmosphere + engine.Parameters.working_pressure;
+	mover.nrot = 0.0;
+	auto const standing{smoke::steam_emission(mover, smoke::steam_part::leaks).spawn};
+	mover.nrot = 3.0;
+	CHECK(standing > 0.f);
+	CHECK(smoke::steam_emission(mover, smoke::steam_part::leaks).spawn > standing);
+}
