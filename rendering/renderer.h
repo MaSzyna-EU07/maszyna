@@ -10,7 +10,9 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "rendering/geometrybank.h"
 #include "interfaces/IMaterial.h"
@@ -84,6 +86,11 @@ public:
     virtual void Shutdown() = 0;
     // main draw call. returns false on error
     virtual auto Render() -> bool = 0;
+    // after the scenery is loaded, while the loading screen is shown: the programs of the materials drawn with once each, for
+    // about Milliseconds, so the driver compiles them now and not in the first frame of the simulation (a black window that
+    // doesn't answer for half a minute at the first start of a new version). returns how many are done and how many there are;
+    // a renderer which needs none of it says it's all done
+    virtual std::pair<std::size_t, std::size_t> Prewarm_Shaders( double const Milliseconds ) { return { 0, 0 }; }
     virtual void SwapBuffers() = 0;
     virtual auto Framerate() -> float = 0;
     // geometry methods

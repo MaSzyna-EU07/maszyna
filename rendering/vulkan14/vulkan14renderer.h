@@ -71,6 +71,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	bool AddViewport(global_settings::extraviewport_config const &conf) override;
 	void Shutdown() override;
 	bool Render() override;
+	std::pair<std::size_t, std::size_t> Prewarm_Shaders(double const Milliseconds) override;
 	void SwapBuffers() override;
 	float Framerate() override;
 	// geometry
@@ -513,6 +514,10 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// its own, for the gpu times). Repeated: a bit for each input read texel by texel and repeated (the noise of the ssao)
 	void post_pass(char const *Fragment, vk14::image &Target, std::vector<vk14::image *> const &Inputs, vk14::draw_constants const &Constants, char const *Pass = nullptr, unsigned const Repeated = 0);
 	bool bind_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, int const Topology);
+	// the images of a viewport for its size and the settings, made anew when they changed (render_scene(), Prewarm_Shaders())
+	bool make_viewport_targets(std::size_t const Index);
+	// Prewarm_Shaders(): the pipelines the scene loaded will draw with, listed the first time
+	void list_prewarm_pipelines();
 	// Triangles: the draw is of triangles, which the prepass draws (keepdepth)
 	void apply_draw_state(bool const Triangles = false);
 	void push_textures();

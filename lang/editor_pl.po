@@ -16286,6 +16286,9 @@ msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
 msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
 
+msgid "Preparing the graphics (takes longer at the first start of a new version)"
+msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
+
 msgid "Weather physics"
 msgstr "Fizyka pogody"
 
