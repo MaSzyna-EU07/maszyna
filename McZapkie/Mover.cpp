@@ -13948,7 +13948,11 @@ void TMoverParameters::LoadFIZ_EngineInductionMotor(std::string const &Input)
 	extract_value(eimc[eimc_f_DU], "DU", Input, "");
 	extract_value(eimc[eimc_f_I0], "I0", Input, "");
 	extract_value(eimc[eimc_f_cfu], "fcfu", Input, "");
-	extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, std::to_string(eimc[eimc_f_cfu]));
+	if (false == extract_value(eimc[eimc_f_cfuH], "fcfuH", Input, ""))
+	{
+		// without its own figure the dynamic brake takes the one of the traction
+		eimc[eimc_f_cfuH] = eimc[eimc_f_cfu];
+	}
 	extract_value(eimc[eimc_p_F0], "F0", Input, "");
 	extract_value(eimc[eimc_p_a1], "a1", Input, "");
 	extract_value(eimc[eimc_p_Pmax], "Pmax", Input, "");

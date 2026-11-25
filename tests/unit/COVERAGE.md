@@ -124,6 +124,8 @@ Notes to the table:
 - The small headers with the logic of a single part are all run in full: `vehicle/doorwings.h`, `gaugeduplicates.h`, `gaugepositions.h`, `holdcoillever.h`, `lightsprogrammer.h`, `mainctrlact.h`, `mirrors.h`, `scripting/scriptscreendrawing.h`, `scriptscreenkernels.h`, `scriptscreenprogram.h`, `scriptscreens.h`, `utilities/dictionary.h` and `vehicle/blackbox.h`.
 - `vehicle/brakesetting.cpp` and `vehicle/odometer.cpp` (the brake setting of the wagons, the odometer store) joined the library on master after that run. In the run of `bac9954a` their tests (`test_brake_setting.cpp`, `test_odometer.cpp`) run 94.1% (144 of 153) and 87.9% (189 of 215) of their lines, and all 14 and 26 of 28 of their functions.
 - The script hosts (`scriptscreens.cpp`, `luaprogram.cpp`, `wasmprogram.cpp`) aren't in the library. The test binary compiles them itself, with the real runtimes.
+- `vehicle/Camera.cpp` isn't in the library either. The test binary compiles it for the order of the camera's rotations (`test_camera.cpp`, #414), with stubs for the command queue and the clock that `TCamera::Update()` reaches for.
+- The colour of the smoke of a cold diesel (#413) isn't tested: the fix is in `smoke_source::update()` (`rendering/particles.cpp`), which needs the world environment (sky, sun, precipitation, sounds) and a whole `TDynamicObject` to link.
 - `scene/scenelayers.h`, `scene/scenenode.h` and `scene/scenenodegroups.h` are in the report with a few lines each: the parser reports the files it includes to the scenery, which the tests replace with stubs (`engine_stubs.cpp`).
 
 ### The parser, the helpers and the PLC

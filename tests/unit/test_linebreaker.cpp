@@ -9,6 +9,7 @@
 
 using test::consist;
 using test::definition;
+using linebreaker::state;
 
 namespace {
 
@@ -16,7 +17,7 @@ namespace {
 // the cab keeps of the line breaker follows the vehicle, the breaker closes while the lever is on and can close
 struct lever {
 	TMoverParameters &mover;
-	int breaker{0}; // as TTrain::m_linebreakerstate: 0 open, 1 closed
+	state breaker{state::open}; // as TTrain::m_linebreakerstate
 	bool on{false};
 
 	void press() {
@@ -26,8 +27,8 @@ struct lever {
 			break;
 		case linebreaker::toggle::open:
 			on = false;
-			if (breaker == 1 && mover.MainSwitch(false)) {
-				breaker = 0;
+			if (breaker == state::closed && mover.MainSwitch(false)) {
+				breaker = state::open;
 			}
 			break;
 		default:
@@ -36,14 +37,14 @@ struct lever {
 	}
 	// TTrain::Update()
 	void update() {
-		if (breaker == 0 && mover.Mains) {
-			breaker = 1;
+		if (breaker == state::open && mover.Mains) {
+			breaker = state::closed;
 		}
-		if (breaker == 1 && false == mover.Mains) {
-			breaker = 0;
+		if (breaker == state::closed && false == mover.Mains) {
+			breaker = state::open;
 		}
-		if (on && breaker == 0 && mover.MainSwitchCheck()) {
-			breaker = mover.MainSwitch(true) ? 1 : 0;
+		if (on && breaker == state::open && mover.MainSwitchCheck()) {
+			breaker = mover.MainSwitch(true) ? state::closed : state::open;
 		}
 	}
 };
@@ -53,15 +54,15 @@ struct lever {
 TEST_CASE("line breaker: a press of the toggle closes an open breaker and opens a closed one") {
 	using enum linebreaker::toggle;
 	for (auto const latching : {false, true}) {
-		CHECK(linebreaker::pressed(0, latching, false) == close);
-		CHECK(linebreaker::pressed(1, latching, true) == open);
-		CHECK(linebreaker::pressed(1, latching, false) == open);
+		CHECK(linebreaker::pressed(state::open, latching, false) == close);
+		CHECK(linebreaker::pressed(state::closed, latching, true) == open);
+		CHECK(linebreaker::pressed(state::closed, latching, false) == open);
 		// freshly closed, the cab finishes closing it first
-		CHECK(linebreaker::pressed(2, latching, true) == none);
+		CHECK(linebreaker::pressed(state::closing, latching, true) == none);
 	}
 	// a lever left on over an open breaker goes off; push buttons have no position to keep
-	CHECK(linebreaker::pressed(0, true, true) == open);
-	CHECK(linebreaker::pressed(0, false, true) == close);
+	CHECK(linebreaker::pressed(state::open, true, true) == open);
+	CHECK(linebreaker::pressed(state::open, false, true) == close);
 }
 
 TEST_CASE("line breaker: the EP05's lever goes off with the converter overload relay tripped (eu07/maszyna#394)") {
@@ -72,7 +73,7 @@ TEST_CASE("line breaker: the EP05's lever goes off with the converter overload r
 	REQUIRE(test::start_up(driver, line));
 	REQUIRE(ep05.Mains);
 	REQUIRE(ep05.ConverterFlag);
-	lever ws{ep05, 1, true};
+	lever ws{ep05, state::closed, true};
 
 	// the converter overload relay knocks the line breaker out, as the cab does it when the converter is
 	// switched on together with the compressor; the lever stays on
@@ -80,7 +81,7 @@ TEST_CASE("line breaker: the EP05's lever goes off with the converter overload r
 	ep05.MainSwitch(false, range_t::local);
 	ws.update();
 	REQUIRE_FALSE(ep05.Mains);
-	REQUIRE(ws.breaker == 0);
+	REQUIRE(ws.breaker == state::open);
 	CHECK(ws.on);
 	// with the relay tripped the breaker doesn't close
 	test::drive(driver, line, 5.0);
@@ -106,7 +107,7 @@ TEST_CASE("line breaker: the EP05's lever goes off with the converter overload r
 	ws.press();
 	ws.update();
 	CHECK(ep05.Mains);
-	CHECK(ws.breaker == 1);
+	CHECK(ws.breaker == state::closed);
 	// and the next press opens it
 	ws.press();
 	CHECK_FALSE(ws.on);

@@ -3754,7 +3754,7 @@ void TTrain::OnCommand_linebreakertoggle(TTrain *Train, command_data const &Comm
 		{
 			// only impulse switches react to release events
 			// NOTE: we presume dedicated state switch is of impulse type
-			if (Train->m_linebreakerstate == 0)
+			if (Train->m_linebreakerstate == linebreaker::state::open)
 			{
 				// ...after opening circuit, or holding for too short time to close it
 				OnCommand_linebreakeropen(Train, Command);
@@ -3807,14 +3807,14 @@ void TTrain::OnCommand_linebreakeropen(TTrain *Train, command_data const &Comman
 		// play sound immediately when the switch is hit, not after release
 		Train->fMainRelayTimer = 0.0f;
 
-		if (Train->m_linebreakerstate == 0)
+		if (Train->m_linebreakerstate == linebreaker::state::open)
 		{
 			return;
 		} // already in the desired state
 
 		if (true == Train->mvControlled->MainSwitch(false, Train->mvControlled->MainSwitchRange()))
 		{
-			Train->m_linebreakerstate = 0;
+			Train->m_linebreakerstate = linebreaker::state::open;
 			if (Train->mvControlled->MainSwitchRange() != range_t::local)
 			{
 				// the engines of the vehicles in multiple stopped along: their two-state switches go off too, left on
@@ -3889,7 +3889,7 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 			Train->ggMainButton.UpdateValue(0.5, Train->dsbSwitch);
 		}
 
-		if (Train->m_linebreakerstate == 1)
+		if (Train->m_linebreakerstate == linebreaker::state::closed)
 		{
 			return;
 		} // already in the desired state
@@ -3897,10 +3897,10 @@ void TTrain::OnCommand_linebreakerclose(TTrain *Train, command_data const &Comma
 		// we don't need to start the diesel twice, but the other types (with impulse switch setup) still need to be launched
 		// NOTE: this behaviour should depend on MainOnButton presence and type_delayed
 		// TODO: change it when/if vehicle definition files get their proper switch types
-		if (Train->m_linebreakerstate == 2 && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
+		if (Train->m_linebreakerstate == linebreaker::state::closing && Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor)
 		{
 			// try to finalize state change of the line breaker, set the state based on the outcome
-			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true, Train->mvControlled->MainSwitchRange()) ? 1 : 0;
+			Train->m_linebreakerstate = Train->mvControlled->MainSwitch(true, Train->mvControlled->MainSwitchRange()) ? linebreaker::state::closed : linebreaker::state::open;
 		}
 		// on button release reset the closing timer
 		Train->fMainRelayTimer = 0.0f;
@@ -8857,16 +8857,16 @@ bool TTrain::Update(double const Deltatime)
 {
 	// train state update
 	// line breaker:
-	if (m_linebreakerstate == 0 && true == mvControlled->Mains)
+	if (m_linebreakerstate == linebreaker::state::open && true == mvControlled->Mains)
 	{
 		// crude way to sync state of the linebreaker with ai-issued commands
-		m_linebreakerstate = 1;
+		m_linebreakerstate = linebreaker::state::closed;
 	}
-	if (m_linebreakerstate == 1 && false == (mvControlled->Mains || mvControlled->dizel_startup))
+	if (m_linebreakerstate == linebreaker::state::closed && false == (mvControlled->Mains || mvControlled->dizel_startup))
 	{
 		// crude way to catch cases where the main was knocked out
 		// because the state of the line breaker isn't changed to match, we need to do it here manually
-		m_linebreakerstate = 0;
+		m_linebreakerstate = linebreaker::state::open;
 	}
 	if (is_hold_coil_lever(ggMainOffButton) && hold_coil_lever::cuts_off(ggMainOffButton.GetDesiredValue()))
 	{
@@ -8876,10 +8876,10 @@ bool TTrain::Update(double const Deltatime)
 			// put the lever back on to match, like the line breaker state above
 			ggMainOffButton.UpdateValue(0.0);
 		}
-		else if (m_linebreakerstate == 2)
+		else if (m_linebreakerstate == linebreaker::state::closing)
 		{
 			// the hold coil was cut off while the closing button was held, the line breaker won't close on its release
-			m_linebreakerstate = 0;
+			m_linebreakerstate = linebreaker::state::open;
 		}
 	}
 
@@ -8903,18 +8903,18 @@ bool TTrain::Update(double const Deltatime)
 		// if the button disconnecting the line breaker is down prevent the timer from accumulating
 		fMainRelayTimer = 0.0f;
 	}
-	if (m_linebreakerstate == 0 && fMainRelayTimer > mvControlled->InitialCtrlDelay)
+	if (m_linebreakerstate == linebreaker::state::open && fMainRelayTimer > mvControlled->InitialCtrlDelay)
 	{
 		// wlaczanie WSa z opoznieniem
 		// mark the line breaker as ready to close; for electric series vehicles with impulse switch the setup is completed on button release
-		m_linebreakerstate = 2;
+		m_linebreakerstate = linebreaker::state::closing;
 	}
 	// for diesels and/or vehicles with toggle switch setup we complete the engine start here
 	// TODO: make it a test for main_on_bt of type push_delayed instead
-	if (m_linebreakerstate == 2 && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
+	if (m_linebreakerstate == linebreaker::state::closing && (ggMainOnButton.SubModel == nullptr || mvControlled->EngineType != TEngineType::ElectricSeriesMotor))
 	{
 		// try to finalize state change of the line breaker, set the state based on the outcome
-		m_linebreakerstate = mvControlled->MainSwitch(true, mvControlled->MainSwitchRange()) ? 1 : 0;
+		m_linebreakerstate = mvControlled->MainSwitch(true, mvControlled->MainSwitchRange()) ? linebreaker::state::closed : linebreaker::state::open;
 	}
 	// the switches of the other vehicles in multiple
 	update_remote_linebreakers(Deltatime);
@@ -9488,10 +9488,10 @@ bool TTrain::Update(double const Deltatime)
 		btLampkaSHP.Turn(mvOccupied->SecuritySystem.is_cabsignal_blinking());
 		btLampkaCzuwakaSHP.Turn(btLampkaSHP.GetValue() || btLampkaCzuwaka.GetValue());
 
-		btLampkaWylSzybki.Turn(m_linebreakerstate == 2 || mvControlled->Mains);
-		btLampkaWylSzybkiOff.Turn(m_linebreakerstate != 2 && !mvControlled->Mains);
-		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown <= 0.0 && m_linebreakerstate != 2 && !mvControlled->Mains);
-		btLampkaMainBreakerBlinkingIfReady.Turn(m_linebreakerstate == 2 || mvControlled->Mains || mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500);
+		btLampkaWylSzybki.Turn(m_linebreakerstate == linebreaker::state::closing || mvControlled->Mains);
+		btLampkaWylSzybkiOff.Turn(m_linebreakerstate != linebreaker::state::closing && !mvControlled->Mains);
+		btLampkaMainBreakerReady.Turn(mvControlled->MainsInitTimeCountdown <= 0.0 && m_linebreakerstate != linebreaker::state::closing && !mvControlled->Mains);
+		btLampkaMainBreakerBlinkingIfReady.Turn(m_linebreakerstate == linebreaker::state::closing || mvControlled->Mains || mvControlled->MainsInitTimeCountdown < 0.0 && simulation::Time.data().wMilliseconds > 500);
 
 		btLampkaPrzetw.Turn(mvOccupied->Power110vIsAvailable);
 		btLampkaPrzetwOff.Turn(!mvOccupied->Power110vIsAvailable);
@@ -11907,7 +11907,7 @@ void TTrain::set_cab_controls(int const Cab)
 	// line breaker
 	if (ggMainButton.SubModel != nullptr)
 	{ // instead of single main button there can be on/off pair
-		ggMainButton.PutValue(ggMainButton.type() == TGaugeType::push ? 0.5f : m_linebreakerstate > 0 ? 1.f : 0.f);
+		ggMainButton.PutValue(ggMainButton.type() == TGaugeType::push ? 0.5f : m_linebreakerstate != linebreaker::state::open ? 1.f : 0.f);
 	}
 	// line breakers of the other vehicles in multiple
 	for (std::size_t index = 0; index < m_remotelinebreakers.size(); ++index)
