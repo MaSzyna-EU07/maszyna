@@ -7465,7 +7465,12 @@ void editor_mode::on_key(int const Key, int const Scancode, int const Action, in
         }
         if (is_press(Action))
         {
+            // in the road window the first Esc gives up the road being drawn, the next one goes back to the selection
+            auto const &road{m_roadtool};
+            auto const next{editor_road::tool_after_escape(road.tool, road.chain || road.branchroad != nullptr || road.branchjunction != nullptr, road.lifting)};
             road_cancel();
+            if (road.window && ui()->mode() != nodebank_panel::TRACK)
+                road_choose_tool(next);
         }
         // the first Esc drops what is going on in the track mode, the next one goes back to the selection
         if (is_press(Action) && ui()->mode() == nodebank_panel::TRACK)

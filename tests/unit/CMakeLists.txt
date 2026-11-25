@@ -35,6 +35,8 @@ add_executable(${UNIT_TESTS_NAME}
 	# and the http client the editor fetches its aids with
 	"${CMAKE_SOURCE_DIR}/editor/editorHttp.cpp"
 	"${CMAKE_SOURCE_DIR}/utilities/asciiname.cpp"
+	# the camera, for the order of its rotations (test_camera.cpp)
+	"${CMAKE_SOURCE_DIR}/vehicle/Camera.cpp"
 	${UNIT_TEST_CASES})
 
 # the core library brings the game's build settings along

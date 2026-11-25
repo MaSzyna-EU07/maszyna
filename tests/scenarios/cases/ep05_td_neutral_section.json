@@ -1,0 +1,26 @@
+{
+  "description": "#272: as ep05_td_dead_section, with the track under the span without voltage (koniec, 371-466 m) marked as a section to coast through (overhead 0), as a scenery marks a neutral section: the AI puts the master controller to zero when the locomotive runs onto that track, coasts under the dead wire with the line breaker closed, and takes power again behind it.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp/ep05_v2 ep05-23 ep05 0 headdriver 0 0 enddynamic"
+  },
+  "replace": [
+    ["node -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417", "node -1 0  none traction none 0 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417"]
+  ],
+  "track_events": {
+    "koniec": "overhead 0"
+  },
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "master_controller", "from_distance": 395, "to_distance": 455, "at_most": 0},
+    {"type": "traction", "from_distance": 415, "to_distance": 455, "at_most": 1},
+    {"type": "traction", "from_distance": 470, "to_distance": 640, "reaches": 25},
+    {"type": "log_contains", "pattern": "lost power for [3-9]\\.\\d\\d sec"},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}

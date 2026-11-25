@@ -48,8 +48,20 @@ to_string( comparison_operator const Operator ) {
         case lt:     { return "<"; }
         case gt:     { return ">"; }
         case lt_eq:  { return "<="; }
-        case gt_eq:  { return ">"; }
+        case gt_eq:  { return ">="; }
         default:                          { return "??"; }
+    }
+}
+
+inline
+std::string
+to_string( comparison_pass const Pass ) {
+    switch( Pass ) {
+        using enum comparison_pass;
+        case all:  { return "all"; }
+        case any:  { return "any"; }
+        case none: { return "none"; }
+        default:   { return "all"; }
     }
 }
 
