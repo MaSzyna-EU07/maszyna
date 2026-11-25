@@ -179,6 +179,7 @@ class scene_walk
 	bool Render_interior(bool const Alpha = false);
 	bool Render_lowpoly(TDynamicObject *Dynamic, float const Squaredistance, bool const Setup, bool const Alpha = false);
 	bool Render_coupler_adapter(TDynamicObject *Dynamic, float const Squaredistance, int const End, bool const Alpha = false);
+	bool Render_flexes(TDynamicObject *Dynamic, float const Squaredistance, bool const Alpha = false);
 	void Render(TMemCell *Memcell);
 	void Render_Alpha(scene::basic_region *Region);
 	void Render_Alpha(cell_sequence::reverse_iterator First, cell_sequence::reverse_iterator Last);

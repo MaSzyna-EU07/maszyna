@@ -13,8 +13,8 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <iterator>
-#include <ranges>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -231,9 +231,9 @@ std::string add_chain(rig &Rig, std::vector<std::string> const &Words)
 		return "the points " + Words[1] + " and " + Words[2] + " of the chain " + Words[0] + " are to be defined before it";
 	}
 	auto count{0.0};
-	if (false == read_number(Words[3], count) || count < 1.0 || count > 32.0)
+	if (false == read_number(Words[3], count) || count < 1.0 || count > 64.0)
 	{
-		return "the chain " + Words[0] + " needs 1 to 32 nodes";
+		return "the chain " + Words[0] + " needs 1 to 64 nodes";
 	}
 	auto const nodes{static_cast<std::size_t>(count)};
 	std::vector<glm::dvec3> positions{Rig.points[chain.start].rest};
@@ -250,6 +250,10 @@ std::string add_chain(rig &Rig, std::vector<std::string> const &Words)
 	for (std::size_t piece{0}; piece + 1 < positions.size(); ++piece)
 	{
 		chain.lengths.push_back(glm::length(positions[piece + 1] - positions[piece]));
+	}
+	for (std::size_t point{0}; point + 2 < positions.size(); ++point)
+	{
+		chain.bends.push_back(glm::length(positions[point + 2] - positions[point]));
 	}
 	for (std::size_t node{0}; node < nodes; ++node)
 	{
@@ -269,6 +273,121 @@ std::string add_chain(rig &Rig, std::vector<std::string> const &Words)
 	return "";
 }
 
+std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
+{
+	if (Words.size() < 3)
+	{
+		return "a bent submodel needs its name and two points of its spine at least";
+	}
+	bend bend;
+	bend.submodel = Words[0];
+	auto const head{std::ranges::find(Words, std::string{"head"})};
+	auto const spineend{static_cast<std::size_t>(head - Words.begin())};
+	for (std::size_t word{1}; word < spineend; ++word)
+	{
+		auto const point{Rig.find(Words[word])};
+		if (point < 0)
+		{
+			return "no point " + Words[word] + " for the spine of " + Words[0];
+		}
+		bend.spine.push_back(point);
+	}
+	if (bend.spine.size() < 2)
+	{
+		return "a bent submodel needs two points of its spine at least";
+	}
+	if (head != Words.end())
+	{
+		if (Words.size() < spineend + 3)
+		{
+			return "head of " + Words[0] + " needs the two points of its line";
+		}
+		bend.head_from = Rig.find(Words[spineend + 1]);
+		bend.head_to = Rig.find(Words[spineend + 2]);
+		if (bend.head_from < 0 || bend.head_to < 0)
+		{
+			return "no points " + Words[spineend + 1] + " and " + Words[spineend + 2] + " for the head of " + Words[0];
+		}
+	}
+	Rig.bends.push_back(std::move(bend));
+	return "";
+}
+
+std::vector<skin_bind> bind_skin(std::vector<glm::dvec3> const &Spine, std::vector<glm::dvec3> const &Points)
+{
+	std::vector<skin_bind> binds;
+	binds.reserve(Points.size());
+	for (auto const &point : Points)
+	{
+		skin_bind nearest;
+		auto distance{std::numeric_limits<double>::max()};
+		for (std::size_t piece{0}; piece + 1 < Spine.size(); ++piece)
+		{
+			auto const along{Spine[piece + 1] - Spine[piece]};
+			auto const length2{glm::dot(along, along)};
+			auto const t{length2 > 0.0 ? std::clamp(glm::dot(point - Spine[piece], along) / length2, 0.0, 1.0) : 0.0};
+			auto const onspine{Spine[piece] + t * along};
+			if (auto const off{glm::length(point - onspine)}; off < distance)
+			{
+				distance = off;
+				nearest = {piece, t, point - onspine};
+			}
+		}
+		binds.push_back(nearest);
+	}
+	return binds;
+}
+
+std::vector<glm::dquat> spine_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> const &Now)
+{
+	// each piece takes the turn of the one before it, and then the least turn that brings it onto its line now: the twist
+	// is carried along from the start, so the hose turns about itself smoothly rather than piece by piece
+	std::vector<glm::dquat> pieces;
+	glm::dquat carried{1.0, 0.0, 0.0, 0.0};
+	for (std::size_t piece{0}; piece + 1 < Rest.size() && piece + 1 < Now.size(); ++piece)
+	{
+		auto const from{Rest[piece + 1] - Rest[piece]};
+		auto const to{Now[piece + 1] - Now[piece]};
+		if (glm::length(from) >= 1e-9 && glm::length(to) >= 1e-9)
+		{
+			carried = glm::normalize(glm::rotation(glm::normalize(carried * from), glm::normalize(to)) * carried);
+		}
+		pieces.push_back(carried);
+	}
+	if (pieces.empty())
+	{
+		return {};
+	}
+	std::vector<glm::dquat> nodes{pieces.front()};
+	for (std::size_t node{1}; node < pieces.size(); ++node)
+	{
+		nodes.push_back(glm::slerp(pieces[node - 1], pieces[node], 0.5));
+	}
+	nodes.push_back(pieces.back());
+	return nodes;
+}
+
+glm::dquat line_turn(glm::dvec3 const &FromRest, glm::dvec3 const &ToRest, glm::dvec3 const &FromNow, glm::dvec3 const &ToNow)
+{
+	auto const rest{ToRest - FromRest};
+	auto const now{ToNow - FromNow};
+	if (glm::length(rest) < 1e-9 || glm::length(now) < 1e-9)
+	{
+		return {1.0, 0.0, 0.0, 0.0};
+	}
+	return glm::rotation(glm::normalize(rest), glm::normalize(now));
+}
+
+skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, std::vector<glm::dquat> const &Turns)
+{
+	if (Bind.piece + 1 >= Now.size() || Bind.piece + 1 >= Turns.size())
+	{
+		return {};
+	}
+	auto const turn{glm::slerp(Turns[Bind.piece], Turns[Bind.piece + 1], Bind.along)};
+	return {glm::mix(Now[Bind.piece], Now[Bind.piece + 1], Bind.along) + turn * Bind.offset, turn};
+}
+
 void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::dvec3 const &Start, glm::dvec3 const &End)
 {
 	State.now = Nodes;
@@ -280,50 +399,68 @@ void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::
 
 namespace {
 
-// the nodes with the ends pinned where they are, each piece of the chain brought back to its length: the points of a
-// piece move apart or together, an end pinned taking none of it
-void keep_lengths(std::vector<double> const &Lengths, std::vector<glm::dvec3> &Nodes, glm::dvec3 const &Start, glm::dvec3 const &End)
+// the nodes with the ends pinned where they are, each piece of the chain brought back towards its length: its points
+// move apart or together by half the difference each, all the pieces from where the nodes were. so a chain comes out
+// the same whichever end it starts from: the two vehicles a hose hangs between, each with the chain from its own end,
+// get the very same one
+// the two points brought towards the given distance by the share of the difference, half of it each
+// the moves asked of the points of a chain in a pass, and how many constraints asked them
+struct pulls
+{
+	std::vector<glm::dvec3> moves;
+	std::vector<int> counts;
+};
+
+// the averaged move of a point taken this many times over: a point of a chain is pulled by about four constraints at
+// once, so the plain average would close only a part of the gap a pass
+constexpr double relaxation{2.0};
+
+void keep_distance(std::vector<glm::dvec3> const &Points, pulls &Pulls, std::size_t const First, std::size_t const Second, double const Distance, double const Share)
+{
+	auto const along{Points[Second] - Points[First]};
+	auto const length{glm::length(along)};
+	if (length < 1e-9)
+	{
+		return;
+	}
+	auto const correction{along * (0.5 * Share * (length - Distance) / length)};
+	Pulls.moves[First] += correction;
+	Pulls.moves[Second] -= correction;
+	++Pulls.counts[First];
+	++Pulls.counts[Second];
+}
+
+// the nodes with the ends pinned where they are, each piece of the chain brought back towards its length, and every
+// other point towards its distance as made, which keeps the chain from folding: a stiff hose keeps its curve. all of it
+// from where the nodes were, so a chain comes out the same whichever end it starts from: the two vehicles a hose hangs
+// between, each with the chain from its own end, get the very same one. a point takes the average of what its
+// constraints ask of it, not the sum: the sum overshoots, and the chain never comes to rest but shivers and stretches
+void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const &Bends, double const Bending, std::vector<glm::dvec3> &Nodes,
+                  glm::dvec3 const &Start, glm::dvec3 const &End)
 {
 	std::vector<glm::dvec3> points{Start};
 	points.insert(points.end(), Nodes.begin(), Nodes.end());
 	points.push_back(End);
-	auto const last{points.size() - 1};
-	for (std::size_t piece{0}; piece < Lengths.size() && piece < last; ++piece)
+	pulls pulls{std::vector<glm::dvec3>(points.size(), glm::dvec3{0.0}), std::vector<int>(points.size(), 0)};
+	for (std::size_t piece{0}; piece < Lengths.size() && piece + 1 < points.size(); ++piece)
 	{
-		auto const along{points[piece + 1] - points[piece]};
-		auto const length{glm::length(along)};
-		if (length < 1e-9)
-		{
-			continue;
-		}
-		auto const correction{along * ((length - Lengths[piece]) / length)};
-		auto const firstpinned{piece == 0};
-		auto const secondpinned{piece + 1 == last};
-		if (firstpinned && secondpinned)
-		{
-			continue;
-		}
-		if (firstpinned)
-		{
-			points[piece + 1] -= correction;
-		}
-		else if (secondpinned)
-		{
-			points[piece] += correction;
-		}
-		else
-		{
-			points[piece] += 0.5 * correction;
-			points[piece + 1] -= 0.5 * correction;
-		}
+		keep_distance(points, pulls, piece, piece + 1, Lengths[piece], 1.0);
 	}
-	std::ranges::copy(std::ranges::subrange(points.begin() + 1, points.end() - 1), Nodes.begin());
+	for (std::size_t bend{0}; bend < Bends.size() && bend + 2 < points.size(); ++bend)
+	{
+		keep_distance(points, pulls, bend, bend + 2, Bends[bend], Bending);
+	}
+	for (std::size_t node{0}; node < Nodes.size(); ++node)
+	{
+		auto const count{std::max(pulls.counts[node + 1], 1)};
+		Nodes[node] = points[node + 1] + pulls.moves[node + 1] * (relaxation / count);
+	}
 }
 
 } // namespace
 
-void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End, double const Deltatime,
-              chain_physics const &Physics)
+void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End,
+              double const Deltatime, chain_physics const &Physics)
 {
 	if (Deltatime <= 0.0 || false == State.started)
 	{
@@ -334,6 +471,8 @@ void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3
 	auto const keep{std::exp(-Physics.damping * step)};
 	auto const fromstart{State.start};
 	auto const fromend{State.end};
+	// the move of the ends a substep: the hose goes along with the vehicles, only its own swing against them dies down
+	auto const carried{0.5 * ((Start - fromstart) + (End - fromend)) / static_cast<double>(steps)};
 	for (auto substep{1}; substep <= steps; ++substep)
 	{
 		auto const along{static_cast<double>(substep) / steps};
@@ -341,17 +480,23 @@ void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3
 		auto const end{glm::mix(fromend, End, along)};
 		for (std::size_t node{0}; node < State.now.size(); ++node)
 		{
-			auto const velocity{(State.now[node] - State.before[node]) * keep};
+			auto const velocity{carried + (State.now[node] - State.before[node] - carried) * keep};
 			State.before[node] = State.now[node];
 			State.now[node] += velocity + Physics.gravity * (step * step);
 		}
 		for (auto iteration{0}; iteration < Physics.iterations; ++iteration)
 		{
-			keep_lengths(Lengths, State.now, start, end);
+			keep_lengths(Lengths, Bends, Physics.bending, State.now, start, end);
 		}
 	}
 	State.start = Start;
 	State.end = End;
+}
+
+void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End, double const Deltatime,
+              chain_physics const &Physics)
+{
+	simulate(Lengths, {}, State, Start, End, Deltatime, Physics);
 }
 
 glm::dvec3 crank(glm::dvec3 const &Rest, wheel_turn const &Wheel)

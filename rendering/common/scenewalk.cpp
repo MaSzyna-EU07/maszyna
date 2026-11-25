@@ -312,6 +312,25 @@ bool scene_walk::Render_coupler_adapter( TDynamicObject *Dynamic, float const Sq
     return true;
 }
 
+// the bent submodels of the vehicle (bonebend:), from the copies of its own, in place of those of the shared model; which
+// is then shown again for the other vehicles
+bool scene_walk::Render_flexes( TDynamicObject *Dynamic, float const Squaredistance, bool const Alpha ) {
+
+    if( Dynamic->m_flexes.empty() ) { return false; }
+    gfx::walk_sync::vehicle_hold hold;
+    for( auto const &flex : Dynamic->m_flexes ) {
+        if( false == flex.visible || flex.model == nullptr ) { continue; }
+        if( Alpha ) {
+            Render_Alpha( flex.model.get(), Dynamic->Material(), Squaredistance, glm::dvec3{ 0.0 }, glm::vec3{ 0.f } );
+        }
+        else {
+            Render( flex.model.get(), Dynamic->Material(), Squaredistance, glm::dvec3{ 0.0 }, glm::vec3{ 0.f } );
+        }
+    }
+    Dynamic->restore_flexes();
+    return true;
+}
+
 void scene_walk::Render(scene::basic_region *Region)
 {
 
@@ -1932,6 +1951,7 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
         // optional coupling adapters
         Render_coupler_adapter( Dynamic, squaredistance, end::front );
         Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+        Render_flexes( Dynamic, squaredistance );
 
         // post-render cleanup
 		if (gfx::vehicle_shade(Dynamic) > 0.0f)
@@ -1958,6 +1978,7 @@ bool scene_walk::Render(TDynamicObject *Dynamic)
         // optional coupling adapters
         Render_coupler_adapter( Dynamic, squaredistance, end::front );
         Render_coupler_adapter( Dynamic, squaredistance, end::rear );
+        Render_flexes( Dynamic, squaredistance );
         if( Dynamic->mdLoad ) {
             // renderowanie nieprzezroczystego ładunku
             Render( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );
@@ -3100,6 +3121,7 @@ bool scene_walk::Render_Alpha(TDynamicObject *Dynamic)
     // optional coupling adapters
     Render_coupler_adapter( Dynamic, squaredistance, end::front, true );
     Render_coupler_adapter( Dynamic, squaredistance, end::rear, true );
+    Render_flexes( Dynamic, squaredistance, true );
     if( Dynamic->mdLoad ) {
         // renderowanie nieprzezroczystego ładunku
         Render_Alpha( Dynamic->mdLoad, Dynamic->Material(), squaredistance, { 0.f, Dynamic->LoadOffset, 0.f }, {} );

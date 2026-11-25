@@ -19,6 +19,7 @@ bonepoint: <name> coupler <front|rear> <x> <y> <z>
 bonepoint: <name> mid <point> <point>
 bonechain: <name> <start point> <end point> <nodes> <x> <y> <z> (of each node)
 bone: <submodel> <anchor point> <point it faces, or none>
+bonebend: <submodel> <point> <point> ... [head <point> <point>] end
 ```
 
 - The coordinates are those of the model file: x across, y along the vehicle (the front, `coupler1`, at +y), z up.
@@ -33,14 +34,24 @@ bone: <submodel> <anchor point> <point it faces, or none>
   this vehicle's end as the hook is inside the other's). Coupled, it follows the other vehicle round a curve, and its
   buffers pressed in or pulled out; not coupled, it stays where it was made.
 - `mid`: halfway between two points defined before it: where the hoses of two vehicles meet.
-- `bonechain`: a chain hanging between two points, a rubber hose. Its nodes, given where they are in the model, are
-  the points `<name>.1`, `<name>.2` and so on, which bones can use but other points can't. The pieces between the
-  nodes keep their lengths; the nodes swing with gravity and their inertia (Verlet integration in the frame of the
-  world, in substeps of at most 1/240 s, the swing dying down by half in about half a second), with the ends pinned
-  where their points are. So a hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the
-  buffers are pressed in. Made of pieces, a submodel each, it bends at the nodes.
+- `bonechain`: a chain hanging between two points, a rubber hose, of 1 to 64 nodes. Its nodes, given where they are in
+  the model, are the points `<name>.1`, `<name>.2` and so on, which bones can use but other points can't. The pieces
+  between the nodes keep their lengths, and every other node keeps its distance as made, so the chain keeps its curve
+  like a stiff hose rather than folding. The nodes swing with gravity and their inertia (Verlet integration in the
+  frame of the world, in substeps of at most 1/240 s), with the ends pinned where their points are; the swing against
+  the vehicle dies down within a fraction of a second, while the hose goes along with the vehicle's own motion. So a
+  hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the buffers are pressed in. Each
+  node takes the average of what the lengths around it ask of it, and the order the pieces are taken in doesn't
+  matter: a chain from one vehicle's cock to the next vehicle's comes out the same for both of them.
 - `bone`: the submodel moves with its anchor point and turns about it to keep facing the other point. With `none`
   it only moves: a coupling rod, which stays level. The submodel's own origin and axes don't matter.
+- `bonebend`: the submodel bends along a spine of points, usually the start of a chain and its nodes: each vertex
+  follows the piece of the spine nearest to it as made, turning with it, so a hose made in one piece bends smoothly.
+  The turn is carried along the spine from its first point, so the hose twists about itself evenly. With `head`, the
+  end of the submodel past the last point of the spine (the metal coupling head, its last 0.15 m) is held as one to
+  the line between the two points and the vertical of the world: the heads of two hoses coupled to each other take
+  the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
+  own copy of the submodel.
 
 ## Examples
 
@@ -91,14 +102,26 @@ bonechain: waz_pneumatic2 kurek_pneumatic2 spotkanie_pneumatic2 1 0.62 -7.99 0.4
 bone: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1
 ```
 
+The same hose bent along its length, coupled to the hose of the next vehicle with the heads together. The chain runs
+from this vehicle's cock to the cock of the hose it is coupled to (here the `pneumatic1r` of the EU07 behind, its front
+coupled to our rear), through the nodes along this hose, one node where the two heads meet and the nodes along the other hose. The
+next vehicle has the same chain the other way round, so the two hoses meet at one node, which swings and lags with the
+rest of them. Three nodes a hose here; a smooth bend takes more, 16 a hose for the EU07:
+
+```
+bonepoint: kurek_pneumatic2 fixed 0.608 -7.4676 1.0744
+bonepoint: kurek_pneumatic2_sasiada coupler rear 0.62 -8.4474 1.0745
+bonechain: waz_pneumatic2 kurek_pneumatic2 kurek_pneumatic2_sasiada 7 0.608 -7.48 0.85 0.608 -7.65 0.62 0.608 -7.85 0.53 0.614 -7.9575 0.522 0.62 -8.065 0.53 0.62 -8.265 0.62 0.62 -8.435 0.85
+bonebend: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1 waz_pneumatic2.2 waz_pneumatic2.3 waz_pneumatic2.4 head waz_pneumatic2.3 waz_pneumatic2.5 end
+```
+
 ## Still to do
 
 - The valve gear (Heusinger / Walschaerts): the expansion link swung by the eccentric rod, the radius rod lifted by
   the reverser (`TAnimValveGear` holds the old, never finished figures for the Pt47). It needs a point turning on a
   pivot (a link) and a point at the crossing of two rods, besides those above.
-- A hose bending smoothly rather than at its nodes: skinning, the vertices of one submodel weighted to several
-  bones, in the shaders of the OpenGL 4.6 and Vulkan renderers. The chains stay as they are, only the drawing
-  changes. The hoses of the existing models (`pneumatic*`) are one piece each and would need it, or cutting up.
+- The bending of `bonebend` in the shaders of the OpenGL 4.6 and Vulkan renderers rather than on the CPU, should many
+  vehicles of a long train need it at once.
 - A screw coupling hanging free (not coupled) as a pendulum on its hook, and its sag with the buffers pressed in.
 - The old entries `animpistonprefix:`, `animconrodprefix:`, `animreturnprefix:` and `pistonfactors:` are still read
   and do nothing, as before.

@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
 #include "vehicle/bones.h"
+#include "rendering/geometrybank.h"
 #include "scripting/scriptscreenrules.h"
 
 #include <vector>
@@ -349,10 +350,15 @@ private:
     std::vector<bones::binding> m_bonebindings;
     std::vector<bone_wheel> m_bonewheels;
     bool m_bonesbound { false };
+    double m_chainclock { -1.0 }; // the render time the chains were moved to
     std::vector<bones::chain_state> m_chainstates; // of the chains of the rig, simulated in the world frame
     void load_bonepoint( cParser &Parser );
     void load_bonechain( cParser &Parser );
-    void simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
+    void load_bonebend( cParser &Parser );
+    void bind_flexes();
+    void pose_flexes( std::vector<glm::dvec3> const &Now );
+    // returns whether the chains moved, once a frame
+    bool simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
     void load_bone( cParser &Parser );
     void bind_bones();
     bones::drive bone_drive( bool const Future ) const;
@@ -528,6 +534,28 @@ private:
     AirCoupler btCoupler1; // sprzegi
     AirCoupler btCoupler2;
     std::array<TModel3d *, 2> m_coupleradapters = { nullptr, nullptr };
+    // the submodels bent along their spines (bonebend: of the .mmd, vehicle/bones.h): each in a copy of the vehicle's
+    // own, its vertices following the spine, drawn in place of the submodel of the shared model (scene_walk::Render_flexes())
+    struct flex_data {
+        TSubModel *original { nullptr };
+        std::shared_ptr<TModel3d> model;
+        TSubModel *skin { nullptr };
+        std::size_t bend { 0 }; // of the rig
+        std::vector<bones::skin_bind> binds;
+        gfx::vertex_array rest; // in the frame of the vehicle
+        gfx::vertex_array posed;
+        bool changed { false }; // posed, not yet put into the geometry (upload_flexes())
+        bool visible { false }; // the submodel of the shared model is shown for this vehicle now
+        int originalvisible { 1 };
+        bool hidden { false }; // by hide_flexes(), not yet shown again
+    };
+    std::vector<flex_data> m_flexes;
+    // hides the bent submodels in the shared model while the vehicle is drawn, noting whether they're shown for it
+    void hide_flexes();
+    // shows them again, after the vehicle is drawn
+    void restore_flexes();
+    // puts the bent submodels into their geometry, out of the walks of the renderer (the main thread, RenderSounds())
+    void upload_flexes();
     AirCoupler btCPneumatic1; // sprzegi powietrzne //yB - zmienione z Button na AirCoupler - krzyzyki
     AirCoupler btCPneumatic2;
     AirCoupler btCPneumatic1r; // ABu: to zeby nie bylo problemow przy laczeniu wagonow,

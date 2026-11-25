@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 class TSubModel;
 
@@ -29,11 +30,16 @@ class TSubModel;
 //   bonepoint: <name> mid <point> <point>
 //   bonechain: <name> <start point> <end point> <nodes between> <x> <y> <z> (of each node)
 //   bone: <submodel> <anchor point> <point it faces, or none>
+//   bonebend: <submodel> <point> <point> ... [head <point> <point>] end
 // the coordinates are those of the model file (x across, y along the vehicle, z up), and the positions are those of
 // the model as it is made: the wheels at their angle 0, the next vehicle standing straight behind. a sliding point
 // keeps its distance from the point driving it (the length of the connecting rod), along its guide. a chain hangs
 // between its two points: its nodes, the points <name>.1, <name>.2 and so on, swing with gravity and their inertia
-// (see simulate()), the lengths between them kept: a hose, its pieces bones from node to node
+// (see simulate()), the lengths between them kept: a hose, its pieces bones from node to node. a bent submodel is a
+// hose of one piece bending along its spine, the points given from its one end to the other: its vertices follow the
+// spine as it bends (bind_skin(), pose_skin()), in a copy of it of the vehicle's own. its head, past the last point of
+// the spine, can be held to the line between two points instead of turning with the last piece: the coupling heads of the
+// hoses of two vehicles, both turned to the line between them, keep the faces they couple with together
 namespace bones {
 
 enum class point_kind
@@ -64,6 +70,7 @@ struct chain {
 	int end{-1};
 	std::vector<int> nodes; // the points of its nodes, from the start
 	std::vector<double> lengths; // of its pieces, from the start point through the nodes to the end point
+	std::vector<double> bends; // between every other point, from the start point: what keeps a hose from folding
 };
 
 struct bone {
@@ -72,18 +79,30 @@ struct bone {
 	int aim{-1}; // -1: the bone only moves with its anchor
 };
 
+// a submodel bent along the points of its spine
+struct bend {
+	std::string submodel;
+	std::vector<int> spine;
+	int head_from{-1}; // the line the head is held to, none for a head turning with the last piece
+	int head_to{-1};
+};
+
 struct rig {
 	std::vector<point> points;
 	std::vector<bone> bones;
 	std::vector<chain> chains;
+	std::vector<bend> bends;
 	// the index of the named point, -1 for none
 	int find(std::string_view Name) const;
-	bool empty() const { return bones.empty(); }
+	bool empty() const { return bones.empty() && bends.empty(); }
 };
 
 // adds what follows bonepoint: or bone: in the .mmd; returns why it couldn't, empty when it did
 std::string add_point(rig &Rig, std::vector<std::string> const &Words);
 std::string add_bone(rig &Rig, std::vector<std::string> const &Words);
+// the words after bonebend: are the submodel and the points of its spine, two at least, then optionally head and the two
+// points of the line its head is held to
+std::string add_bend(rig &Rig, std::vector<std::string> const &Words);
 // the words after bonechain: are the name, the two points, the count of the nodes and three numbers for each
 std::string add_chain(rig &Rig, std::vector<std::string> const &Words);
 // how many words follow bonepoint: of the kind, after the name and the kind; 0 for an unknown kind
@@ -120,15 +139,40 @@ struct chain_state {
 };
 struct chain_physics {
 	glm::dvec3 gravity{0.0, -9.81, 0.0}; // in the frame of the simulation
-	double damping{1.5}; // 1/s: how fast the swing dies down
+	double damping{6.0}; // 1/s: how fast the swing against the vehicle dies down, not the vehicle's own motion
+	double bending{0.85}; // of the difference between every other point made up in a pass: how stiff the hose is
 	double step{1.0 / 240.0}; // s, the longest substep
-	int iterations{12}; // of keeping the lengths, a substep
+	int iterations{40}; // of keeping the lengths, a substep
 };
 // starts the chain at rest with its nodes where given
 void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::dvec3 const &Start, glm::dvec3 const &End);
 // moves the chain by the time step, its ends going over to where they are now; the ends are pinned, the nodes swing
+void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End,
+              double Deltatime, chain_physics const &Physics = {});
+// a chain with no stiffness against bending
 void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End, double Deltatime,
               chain_physics const &Physics = {});
+
+// a point of the skin of a bent submodel, bound to the piece of its spine nearest to it: where along the piece, and
+// how far off it, as the spine was made
+struct skin_bind {
+	std::size_t piece{0};
+	double along{0.0};
+	glm::dvec3 offset{0.0};
+};
+std::vector<skin_bind> bind_skin(std::vector<glm::dvec3> const &Spine, std::vector<glm::dvec3> const &Points);
+// how each node of the spine turned from where it was made to where it is now: the turn of each piece, the nodes
+// between two pieces halfway between their turns
+std::vector<glm::dquat> spine_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> const &Now);
+// the turn of a head held to the line between two points: the line as made turned to the line as it is now
+glm::dquat line_turn(glm::dvec3 const &FromRest, glm::dvec3 const &ToRest, glm::dvec3 const &FromNow, glm::dvec3 const &ToNow);
+// the point of the skin on the spine as it is now, and its turn, for its normals: both going smoothly along the piece
+// from the turn of one node to the other's, the skin bends rather than breaks at the nodes
+struct skin_pose {
+	glm::dvec3 position{0.0};
+	glm::dquat turn{1.0, 0.0, 0.0, 0.0};
+};
+skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, std::vector<glm::dquat> const &Turns);
 
 // the move of a bone: turned about its anchor to face its aim again, its anchor moved
 struct motion {

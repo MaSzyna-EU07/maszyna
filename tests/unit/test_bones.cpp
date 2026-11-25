@@ -237,3 +237,85 @@ TEST_CASE("bones: the hoses of two vehicles meet halfway between their cocks") {
 	CHECK_FALSE(bones::add_chain(rig, {"waz2", "kurek", "nic", "1", "0", "0", "0"}).empty());
 	CHECK_FALSE(bones::add_chain(rig, {"waz3", "kurek", "spotkanie", "2", "0", "0", "0"}).empty());
 }
+
+TEST_CASE("bones: a hose hung between two vehicles is the same chain from either end") {
+	// each vehicle hangs it from its own cock to the other's: the coupling heads meet only if the two come out the same
+	std::vector<double> const lengths{0.78, 0.78};
+	glm::dvec3 const ours{-0.57, 7.47, 1.07};
+	glm::dvec3 const theirs{-0.57, 8.445, 1.07};
+	bones::chain_state forwards;
+	bones::chain_state backwards;
+	bones::start_chain(forwards, {glm::dvec3{-0.57, 7.9575, 0.49}}, ours, theirs);
+	bones::start_chain(backwards, {glm::dvec3{-0.57, 7.9575, 0.49}}, theirs, ours);
+	for (auto step{0}; step < 300; ++step) {
+		// the two rocking and jerking against each other
+		auto const sway{glm::dvec3{0.05 * std::sin(step * 0.13), 0.03 * std::sin(step * 0.07), 0.04 * std::cos(step * 0.11)}};
+		bones::simulate(lengths, forwards, ours, theirs + sway, 0.02, downwards());
+		bones::simulate(lengths, backwards, theirs + sway, ours, 0.02, downwards());
+		REQUIRE(forwards.now[0] == backwards.now[0]);
+	}
+	// and it hangs, the pieces about their lengths
+	CHECK(forwards.now[0].z < 0.6);
+	CHECK(glm::length(forwards.now[0] - ours) == doctest::Approx(0.78).epsilon(0.02));
+}
+
+TEST_CASE("bones: the skin of a bent submodel follows its spine smoothly") {
+	std::vector<glm::dvec3> const rest{{0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 2.0, 0.0}};
+	// the spine bent a quarter turn at its middle
+	std::vector<glm::dvec3> const now{{0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {1.0, 1.0, 0.0}};
+	std::vector<glm::dvec3> const skin{{0.1, 0.0, 0.0}, {0.1, 1.0, 0.0}, {0.1, 2.0, 0.0}, {0.0, 1.5, 0.1}};
+	auto const binds{bones::bind_skin(rest, skin)};
+	REQUIRE(binds.size() == skin.size());
+	auto const turns{bones::spine_turns(rest, now)};
+	REQUIRE(turns.size() == 3);
+	auto const at = [&binds, &now, &turns](std::size_t Index) { return bones::pose_skin(binds[Index], now, turns).position; };
+	// the start as it was
+	CHECK(glm::length(at(0) - glm::dvec3{0.1, 0.0, 0.0}) == doctest::Approx(0.0).scale(1.0));
+	// the end turned with the last piece
+	CHECK(glm::length(at(2) - glm::dvec3{1.0, 0.9, 0.0}) == doctest::Approx(0.0).scale(1.0));
+	// at the bend halfway between the turns of the two pieces, as far off the spine as it was
+	CHECK(glm::length(at(1) - glm::dvec3{0.1 * std::sqrt(0.5), 1.0 - 0.1 * std::sqrt(0.5), 0.0}) == doctest::Approx(0.0).scale(1.0));
+	// a point off the plane of the bend stays off it
+	CHECK(at(3).z == doctest::Approx(0.1));
+	CHECK(at(3).x == doctest::Approx(0.5));
+	// a bent submodel needs its spine
+	bones::rig rig;
+	REQUIRE(bones::add_point(rig, {"a", "fixed", "0", "0", "0"}).empty());
+	REQUIRE(bones::add_point(rig, {"b", "fixed", "0", "1", "0"}).empty());
+	CHECK(bones::add_bend(rig, {"waz", "a", "b"}).empty());
+	CHECK_FALSE(bones::add_bend(rig, {"waz", "a"}).empty());
+	CHECK_FALSE(bones::add_bend(rig, {"waz", "a", "c"}).empty());
+	CHECK_FALSE(rig.empty());
+}
+
+TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swing against the vehicle damped") {
+	auto const rig{hose()};
+	glm::dvec3 const start{0.0};
+	glm::dvec3 const end{1.0, 0.0, 0.0};
+	bones::chain_state standing;
+	bones::start_chain(standing, rests(rig), start, end);
+	for (auto time{0.0}; time < 20.0; time += 0.02) {
+		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, standing, start, end, 0.02, downwards());
+	}
+	// the same at 50 km/h along the track, the frame going with it
+	bones::chain_state running;
+	bones::start_chain(running, rests(rig), start, end);
+	glm::dvec3 const velocity{0.0, 13.9, 0.0};
+	glm::dvec3 travelled{0.0};
+	for (auto time{0.0}; time < 20.0; time += 0.02) {
+		travelled += velocity * 0.02;
+		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, running, start + travelled, end + travelled, 0.02, downwards());
+	}
+	for (std::size_t node{0}; node < standing.now.size(); ++node) {
+		CAPTURE(node);
+		CHECK(glm::length((running.now[node] - travelled) - standing.now[node]) < 0.01);
+	}
+	// stiff, it keeps more of its curve than a limp one: the middle hangs less far below where it was made
+	bones::chain_state limp;
+	bones::start_chain(limp, rests(rig), start, end);
+	for (auto time{0.0}; time < 20.0; time += 0.02) {
+		bones::simulate(rig.chains[0].lengths, limp, start, end, 0.02, downwards());
+	}
+	auto const made{rig.points[rig.chains[0].nodes[1]].rest};
+	CHECK(glm::length(standing.now[1] - made) <= glm::length(limp.now[1] - made) + 1e-6);
+}

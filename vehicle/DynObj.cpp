@@ -41,6 +41,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "vehicle/doorwings.h"
 #include "rendering/renderer.h"
+#include "rendering/common/walksync.h"
 #include "application/uitranscripts.h"
 #include "input/messaging.h"
 #include "application/application.h"
@@ -650,7 +651,7 @@ void TDynamicObject::load_bonechain( cParser &Parser ) {
     Parser.getTokens( 4, false );
     std::vector<std::string> words( 4 );
     Parser >> words[ 0 ] >> words[ 1 ] >> words[ 2 ] >> words[ 3 ];
-    auto const nodes { std::clamp( std::atoi( words[ 3 ].c_str() ), 0, 32 ) };
+    auto const nodes { std::clamp( std::atoi( words[ 3 ].c_str() ), 0, 64 ) };
     for( auto word { 0 }; word < 3 * nodes; ++word ) {
         Parser.getTokens( 1, false );
         std::string value;
@@ -659,6 +660,22 @@ void TDynamicObject::load_bonechain( cParser &Parser ) {
     }
     if( auto const error { bones::add_chain( m_rig, words ) }; false == error.empty() ) {
         ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bonechain: " + error, logtype::model );
+    }
+}
+
+void TDynamicObject::load_bonebend( cParser &Parser ) {
+
+    std::vector<std::string> words;
+    // the submodel, a spine of a chain's start and up to 64 nodes and its end, the head and its two points
+    for( auto word { 0 }; word < 72; ++word ) {
+        Parser.getTokens( 1, false );
+        std::string value;
+        Parser >> value;
+        if( value.empty() || value == "end" ) { break; }
+        words.emplace_back( value );
+    }
+    if( auto const error { bones::add_bend( m_rig, words ) }; false == error.empty() ) {
+        ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - bonebend: " + error, logtype::model );
     }
 }
 
@@ -694,6 +711,7 @@ void TDynamicObject::bind_bones() {
         // the wheel animation turns it about its own X axis (UpdateAxle())
         m_bonewheels[ index ] = { static_cast<int>( animation - pAnimations.begin() ), { placement.origin, placement.rotation * glm::dvec3( 1.0, 0.0, 0.0 ), 0.0 } };
     }
+    bind_flexes();
     m_bonebindings.clear();
     for( auto const &bone : m_rig.bones ) {
         auto *submodel { GetSubmodelFromName( mdModel, bone.submodel ) };
@@ -704,6 +722,183 @@ void TDynamicObject::bind_bones() {
         }
         submodel->WillBeAnimated();
         m_bonebindings.emplace_back( model_file_placement( submodel ) );
+    }
+}
+
+namespace {
+
+// how far back from where the coupling heads meet a bent hose is metal, held to the head
+constexpr double coupling_head_length { 0.15 };
+
+// the vertices of the submodel as drawn, in the frame of the model file, one triangle after another: the frame a model made
+// of them takes them in, its matrix bringing them into that of the vehicle (float4x4::InitialRotate())
+gfx::vertex_array model_file_vertices( TSubModel *Submodel ) {
+
+    auto const &vertices { Submodel->m_geometry.handle != null_handle ? GfxRenderer->Vertices( Submodel->m_geometry.handle ) : Submodel->Vertices };
+    gfx::vertex_array triangles;
+    if( Submodel->m_geometry.index_count > 0 && Submodel->m_geometry.handle != null_handle ) {
+        for( auto const index : GfxRenderer->Indices( Submodel->m_geometry.handle ) ) {
+            if( index < vertices.size() ) {
+                triangles.push_back( vertices[ index ] );
+            }
+        }
+    }
+    else {
+        triangles = vertices;
+    }
+    float4x4 matrix;
+    Submodel->ParentMatrix( &matrix );
+    auto const frame { glm::mat4( glm::mat3( bones::model_file_frame() ) ) };
+    auto const placement { frame * glm::make_mat4( matrix.readArray() ) };
+    auto const turn { glm::mat3( placement ) };
+    for( auto &vertex : triangles ) {
+        vertex.position = glm::vec3( placement * glm::vec4( vertex.position, 1.f ) );
+        vertex.normal = glm::normalize( turn * vertex.normal );
+        vertex.tangent = glm::vec4( turn * glm::vec3( vertex.tangent ), vertex.tangent.w );
+    }
+    return triangles;
+}
+
+} // namespace
+
+void TDynamicObject::bind_flexes() {
+
+    m_flexes.clear();
+    for( std::size_t index { 0 }; index < m_rig.bends.size(); ++index ) {
+        auto const &bend { m_rig.bends[ index ] };
+        auto *original { GetSubmodelFromName( mdModel, bend.submodel ) };
+        if( original == nullptr ) {
+            ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - missed submodel " + bend.submodel + " to bend", logtype::model );
+            continue;
+        }
+        flex_data flex;
+        flex.original = original;
+        flex.bend = index;
+        flex.rest = model_file_vertices( original );
+        if( flex.rest.empty() ) { continue; }
+        std::vector<glm::dvec3> spine;
+        for( auto const point : bend.spine ) {
+            spine.push_back( m_rig.points[ point ].rest );
+        }
+        std::vector<glm::dvec3> points;
+        for( auto const &vertex : flex.rest ) {
+            points.push_back( glm::dvec3( vertex.position ) );
+        }
+        flex.binds = bones::bind_skin( spine, points );
+        if( bend.head_from >= 0 && spine.size() >= 2 ) {
+            // the coupling head is metal: its part of the last piece of the spine is held to the head as a whole, rather
+            // than turning partly with the rubber
+            auto const last { spine.size() - 2 };
+            auto const length { glm::length( spine.back() - spine[ last ] ) };
+            for( std::size_t vertex { 0 }; vertex < flex.binds.size(); ++vertex ) {
+                auto &bind { flex.binds[ vertex ] };
+                if( bind.piece == last && ( 1.0 - bind.along ) * length < coupling_head_length ) {
+                    bind.along = 1.0;
+                    bind.offset = points[ vertex ] - spine.back();
+                }
+            }
+        }
+        flex.posed = flex.rest;
+        // the copy of the vehicle's own, of the same material, its geometry made with the walks of the renderer held off
+        gfx::walk_sync::change change;
+        flex.model = std::make_shared<TModel3d>();
+        flex.skin = flex.model->AppendChildFromGeometry( bend.submodel, "none", flex.rest, gfx::index_array() );
+        flex.skin->m_material = original->m_material;
+        flex.skin->f4Ambient = original->f4Ambient;
+        flex.skin->f4Diffuse = original->f4Diffuse;
+        flex.skin->f4Specular = original->f4Specular;
+        flex.model->Init();
+        m_flexes.push_back( std::move( flex ) );
+    }
+}
+
+namespace {
+
+// the turn of a coupling head from as made (its line along the vehicle, the model's up its up) to its line now with the
+// given up, both kept square to the line
+glm::dquat coupling_turn( glm::dvec3 const &RestLine, glm::dvec3 const &NowLine, glm::dvec3 const &NowUp ) {
+
+    if( glm::length( RestLine ) < 1e-9 || glm::length( NowLine ) < 1e-9 ) {
+        return { 1.0, 0.0, 0.0, 0.0 };
+    }
+    auto const frame = []( glm::dvec3 const &Line, glm::dvec3 const &Up ) {
+        auto const forward { glm::normalize( Line ) };
+        auto side { glm::cross( forward, Up ) };
+        if( glm::length( side ) < 1e-9 ) {
+            side = glm::cross( forward, glm::dvec3 { 1.0, 0.0, 0.0 } );
+        }
+        side = glm::normalize( side );
+        return glm::dmat3 { forward, side, glm::cross( side, forward ) };
+    };
+    auto const rest { frame( RestLine, glm::dvec3 { 0.0, 0.0, 1.0 } ) };
+    auto const now { frame( NowLine, NowUp ) };
+    return glm::quat_cast( now * glm::transpose( rest ) );
+}
+
+} // namespace
+
+void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
+
+    // the vertical of the world in the frame of the model file
+    auto const upwards { glm::normalize( bones::model_file_frame() * glm::dvec3( glm::inverse( mMatrix ) * glm::dvec4( 0.0, 1.0, 0.0, 0.0 ) ) ) };
+
+    for( auto &flex : m_flexes ) {
+        auto const &bend { m_rig.bends[ flex.bend ] };
+        std::vector<glm::dvec3> rest;
+        std::vector<glm::dvec3> now;
+        for( auto const point : bend.spine ) {
+            rest.push_back( m_rig.points[ point ].rest );
+            now.push_back( Now[ point ] );
+        }
+        auto turns { bones::spine_turns( rest, now ) };
+        if( bend.head_from >= 0 && false == turns.empty() ) {
+            // the head held to the coupling: its line between the two vehicles and the vertical of the world, which the hose
+            // of the next vehicle takes too, so the two heads stay together as one, their faces on one plane
+            turns.back() = coupling_turn(
+                m_rig.points[ bend.head_to ].rest - m_rig.points[ bend.head_from ].rest,
+                Now[ bend.head_to ] - Now[ bend.head_from ],
+                upwards );
+        }
+        for( std::size_t vertex { 0 }; vertex < flex.rest.size() && vertex < flex.binds.size(); ++vertex ) {
+            auto const pose { bones::pose_skin( flex.binds[ vertex ], now, turns ) };
+            auto const turn { glm::mat3( glm::mat3_cast( pose.turn ) ) };
+            auto &posed { flex.posed[ vertex ] };
+            auto const &rest { flex.rest[ vertex ] };
+            posed.position = glm::vec3( pose.position );
+            posed.normal = glm::normalize( turn * rest.normal );
+            posed.tangent = glm::vec4( turn * glm::vec3( rest.tangent ), rest.tangent.w );
+        }
+        flex.changed = true;
+    }
+}
+
+void TDynamicObject::hide_flexes() {
+
+    for( auto &flex : m_flexes ) {
+        flex.originalvisible = flex.original->iVisible;
+        flex.visible = flex.original->iVisible != 0;
+        flex.original->iVisible = 0;
+        flex.hidden = true;
+    }
+}
+
+void TDynamicObject::restore_flexes() {
+
+    for( auto &flex : m_flexes ) {
+        if( false == flex.hidden ) { continue; }
+        flex.original->iVisible = flex.originalvisible;
+        flex.hidden = false;
+    }
+}
+
+void TDynamicObject::upload_flexes() {
+
+    for( auto &flex : m_flexes ) {
+        if( false == flex.changed || flex.skin == nullptr ) { continue; }
+        gfx::walk_sync::change change;
+        gfx::userdata_array userdata;
+        GfxRenderer->Replace( flex.posed, userdata, flex.skin->m_geometry.handle, GL_TRIANGLES );
+        flex.changed = false;
     }
 }
 
@@ -764,14 +959,18 @@ bones::animation bone_animation( bones::rig const &Rig, bones::bone const &Bone,
 
 // the chains swing in the world, their ends where the points of the vehicle are; their nodes are brought back to the
 // frame of the model file for the bones, the same for the pose a frame ahead
-void TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
+bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
 
     auto const frame { bones::model_file_frame() };
     auto const inverse { glm::inverse( mMatrix ) };
     auto const toworld = [ this, &frame ]( glm::dvec3 const &Point ) { return GetWorldPosition( frame * Point ); };
     auto const tomodel = [ this, &frame, &inverse ]( glm::dvec3 const &Point ) { return frame * glm::dvec3( inverse * glm::dvec4( Point - vPosition, 0.0 ) ); };
-    // a long frame, or the vehicle left alone while far, isn't taken in one: the chain would jump
-    auto const deltatime { std::min( Timer::GetDeltaRenderTime(), 0.1 ) };
+    // the vehicle is set up for each pass of the renderer, the chains move once a frame: by the render time since they
+    // moved last. a long frame, or the vehicle left alone while far, isn't taken in one: the chain would jump
+    auto const clock { Timer::GetRenderTime() };
+    auto const deltatime { m_chainclock < 0.0 ? 0.0 : std::clamp( clock - m_chainclock, 0.0, 0.1 ) };
+    auto const moved { clock != m_chainclock };
+    m_chainclock = clock;
     m_chainstates.resize( m_rig.chains.size() );
     for( std::size_t index { 0 }; index < m_rig.chains.size(); ++index ) {
         auto const &chain { m_rig.chains[ index ] };
@@ -785,12 +984,13 @@ void TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<
             }
             bones::start_chain( state, nodes, start, end );
         }
-        bones::simulate( chain.lengths, state, start, end, deltatime );
+        bones::simulate( chain.lengths, chain.bends, state, start, end, deltatime );
         for( std::size_t node { 0 }; node < chain.nodes.size(); ++node ) {
             Now[ chain.nodes[ node ] ] = tomodel( state.now[ node ] );
             Next[ chain.nodes[ node ] ] = Now[ chain.nodes[ node ] ];
         }
     }
+    return moved;
 }
 
 void TDynamicObject::update_bones() {
@@ -801,7 +1001,9 @@ void TDynamicObject::update_bones() {
     }
     auto now { bones::pose( m_rig, bone_drive( false ) ) };
     auto next { bones::pose( m_rig, bone_drive( true ) ) };
-    simulate_chains( now, next );
+    if( simulate_chains( now, next ) && false == m_flexes.empty() ) {
+        pose_flexes( now );
+    }
     for( std::size_t index { 0 }; index < m_bonebindings.size(); ++index ) {
         auto const &binding { m_bonebindings[ index ] };
         if( binding.submodel == nullptr ) { continue; }
@@ -1074,6 +1276,8 @@ void TDynamicObject::on_season_update()
 // ABu 29.01.05 przeklejone z render i renderalpha: *********************
 void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
 { // ABu290105: pozbierane i uporzadkowane powtarzajace
+    // the bent submodels hidden the last time, shown again before the vehicle is set up anew
+    restore_flexes();
     // sie rzeczy z Render i RenderAlpha
     // dodatkowy warunek, if (ObjSqrDist<...) zeby niepotrzebnie nie zmianiec w
     // obiektach,
@@ -1630,6 +1834,8 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
             JointCabs ? false : // internal view, all cabs share the model so hide them 'all'
             simulation::Train->iCabn != cabidx; // internal view, hide occupied cab and show others
     }
+    // the bent submodels are drawn from the copies of the vehicle's own, not from the shared model
+    hide_flexes();
 }
 // ABu 29.01.05 koniec przeklejenia *************************************
 
@@ -4668,6 +4874,8 @@ void TDynamicObject::TurnOff()
 void TDynamicObject::RenderSounds() {
 
     if( false == simulation::is_ready ) { return; }
+    // the bent submodels posed while the vehicle was set up for the renderer, into their geometry
+    upload_flexes();
     if( Global.iPause != 0 )            { return; }
 
     if( m_startjoltplayed
@@ -6094,6 +6302,10 @@ void TDynamicObject::LoadMMediaFile( std::string const &TypeName, std::string co
 
                 else if( token == "bonechain:" ) {
                     load_bonechain( parser );
+                }
+
+                else if( token == "bonebend:" ) {
+                    load_bonebend( parser );
                 }
 
 				else if( token == "animdoorprefix:" ) {
