@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"
+#include "vehicle/linebreaker.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
@@ -553,7 +554,7 @@ class TTrain {
     TMoverParameters *mvThird { nullptr }; // trzeci człon (SN61)
     TMoverParameters *mvPantographUnit { nullptr }; // nearest pantograph equipped unit
     // helper variable, to prevent immediate switch between closing and opening line breaker circuit
-    int m_linebreakerstate { 0 }; // 0: open, 1: closed, 2: freshly closed (and yes this is awful way to go about it)
+    linebreaker::state m_linebreakerstate { linebreaker::state::open };
     static const commandhandler_map m_commandhandlers;
     control_mapper m_controlmapper;
 
