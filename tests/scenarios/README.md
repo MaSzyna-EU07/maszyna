@@ -301,6 +301,12 @@ couple and neither shows up: the black box has to have the last car of the stand
 writes nothing to the log when couplers catch). Nothing reports a result, so both end on the 60 s
 test timeout.
 
+`et21_td_no_wire_reports` (issue #421, fragment `td_no_wire.scn`) adds a 200 m track of its own,
+with no overhead wire, 400 m off the line of td.scn (every track of td.scn is under the wire), with
+an ET21 and its AI driver on it. The pantographs go up and find no wire, so the locomotive can't
+start: the driver has to say so in the log, once, naming the locomotive and where it stands, and
+not mistake it for a wire without voltage. It ends on the standstill.
+
 `eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
 (`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
 so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
