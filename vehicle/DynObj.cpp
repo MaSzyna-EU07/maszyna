@@ -907,7 +907,7 @@ namespace {
 
 // the turn of a coupling head from as made (its line along the vehicle, the model's up its up) to its line now with the
 // given up, both kept square to the line
-glm::dquat coupling_turn( glm::dvec3 const &RestLine, glm::dvec3 const &NowLine, glm::dvec3 const &NowUp ) {
+glm::dquat coupling_turn( glm::dvec3 const &RestLine, glm::dvec3 const &NowLine, glm::dvec3 const &NowUp, glm::dvec3 const &RestUp = { 0.0, 0.0, 1.0 } ) {
 
     if( glm::length( RestLine ) < 1e-9 || glm::length( NowLine ) < 1e-9 ) {
         return { 1.0, 0.0, 0.0, 0.0 };
@@ -921,7 +921,7 @@ glm::dquat coupling_turn( glm::dvec3 const &RestLine, glm::dvec3 const &NowLine,
         side = glm::normalize( side );
         return glm::dmat3 { forward, side, glm::cross( side, forward ) };
     };
-    auto const rest { frame( RestLine, glm::dvec3 { 0.0, 0.0, 1.0 } ) };
+    auto const rest { frame( RestLine, RestUp ) };
     auto const now { frame( NowLine, NowUp ) };
     return glm::quat_cast( now * glm::transpose( rest ) );
 }
@@ -941,6 +941,20 @@ bool held_still( std::vector<glm::vec3> const &Wasnodes, std::vector<glm::quat> 
 }
 
 } // namespace
+
+// the turn of the head of a bend: held to the line between its two points and the point over them, the next car turned
+// as a whole; without that point to the line and the vertical of the world, which the next vehicle takes too, so the
+// coupling heads of two hoses stay together, on one plane
+glm::dquat TDynamicObject::head_turn( bones::bend const &Bend, std::vector<glm::dvec3> const &Now, glm::dvec3 const &Upwards ) const {
+
+    auto const &from { m_rig.points[ Bend.head_from ].rest };
+    auto const restline { m_rig.points[ Bend.head_to ].rest - from };
+    auto const nowline { Now[ Bend.head_to ] - Now[ Bend.head_from ] };
+    if( Bend.head_up < 0 ) {
+        return coupling_turn( restline, nowline, Upwards );
+    }
+    return coupling_turn( restline, nowline, Now[ Bend.head_up ] - Now[ Bend.head_from ], m_rig.points[ Bend.head_up ].rest - from );
+}
 
 void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
 
@@ -963,15 +977,15 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
             }
             auto turns { bones::spine_turns( rest, now ) };
             if( bend.head_from >= 0 && false == turns.empty() ) {
-                // the head held to the coupling: its line between the two vehicles and the vertical of the world, which the
-                // next vehicle takes too, so the two heads (or the two halves of a bellows) stay together, on one plane
-                turns.back() = coupling_turn(
-                    m_rig.points[ bend.head_to ].rest - m_rig.points[ bend.head_from ].rest,
-                    Now[ bend.head_to ] - Now[ bend.head_from ],
-                    upwards );
+                turns.back() = head_turn( bend, Now, upwards );
             }
             // the root held to the body as made
             bones::hold_root( bend, turns );
+            if( bend.rooted && bend.head_from >= 0 ) {
+                // the joint of two cars: the turn spread evenly from the body to the next car, as the next car spreads it
+                // the other way, so the parts of the two that overlap (the bellows, the roof cables) stay together
+                bones::spread_turns( rest, turns );
+            }
             nodes.emplace_back( now.begin(), now.end() );
             nodeturns.emplace_back( turns.begin(), turns.end() );
             allnodes.insert( allnodes.end(), nodes.back().begin(), nodes.back().end() );
@@ -1778,6 +1792,16 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                 }
 
                 auto const dist { safe_clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
+                // on a curve the buffers on the inside press in more than those on the outside, which may stand clear
+                if( auto const pressed { Global.gfx_buffers_curve ? buffers_pressed( i ) : std::nullopt } ) {
+                    if( smBuforLewy[ i ] ) {
+                        smBuforLewy[ i ]->SetTranslate( glm::vec3( ( *pressed )[ 0 ], 0, 0 ) );
+                    }
+                    if( smBuforPrawy[ i ] ) {
+                        smBuforPrawy[ i ]->SetTranslate( glm::vec3( ( *pressed )[ 1 ], 0, 0 ) );
+                    }
+                    continue;
+                }
 
                 if( dist >= 0.0 ) { continue; }
 
@@ -1793,15 +1817,27 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
         // Winger 160204 - podnoszenie pantografow
 
         // przewody sterowania ukrotnionego
+        // where both vehicles have _xon, their cables are modelled whole from socket to socket in _on: the coupling owner
+        // (render flag) displays _on and the other one _xon, so the cables are drawn once; otherwise _on as ever
         if (TestFlag(MoverParameters->Couplers[0].CouplingFlag, coupling::control))
         {
-            btCCtrl1.Turn( true );
+            if( MoverParameters->Couplers[ end::front ].Render || false == control_cables_shared( end::front ) ) {
+                btCCtrl1.TurnOn();
+            }
+            else {
+                btCCtrl1.TurnxOn();
+            }
             btnOn = true;
         }
         // else btCCtrl1.TurnOff();
         if (TestFlag(MoverParameters->Couplers[1].CouplingFlag, coupling::control))
         {
-            btCCtrl2.Turn( true );
+            if( MoverParameters->Couplers[ end::rear ].Render || false == control_cables_shared( end::rear ) ) {
+                btCCtrl2.TurnOn();
+            }
+            else {
+                btCCtrl2.TurnxOn();
+            }
             btnOn = true;
         }
         // else btCCtrl2.TurnOff();
@@ -3070,8 +3106,8 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     btPneumatic1r.Init("pneumatic1r", mdModel);
     btPneumatic2r.Init("pneumatic2r", mdModel);
     // control cables
-    btCCtrl1.Init( "cctrl1", mdModel, false);
-    btCCtrl2.Init( "cctrl2", mdModel, false);
+    btCCtrl1.Init( "cctrl1", mdModel );
+    btCCtrl2.Init( "cctrl2", mdModel );
     // gangways
     btCPass1.Init( "cpass1", mdModel, false);
     btCPass2.Init( "cpass2", mdModel, false);
@@ -3184,6 +3220,16 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
             smBuforPrawy[ i ] = mdModel->GetFromName( asAnimName );
             if( smBuforPrawy[ i ] )
                 smBuforPrawy[ i ]->WillBeAnimated();
+            // where the heads stand across and up, in the frame of the model file (x across, z up)
+            std::array<TSubModel const *, 2> const buffers { smBuforLewy[ i ], smBuforPrawy[ i ] };
+            for( std::size_t side = 0; side < buffers.size(); ++side ) {
+                m_bufferheads[ i ][ side ] = std::nullopt;
+                if( buffers[ side ] == nullptr ) { continue; }
+                auto const at { glm::transpose( bones::model_file_frame() ) * glm::dvec3 { buffers[ side ]->offset( 0.1f ) } };
+                if( std::abs( at.x ) > 0.2 && at.z > 0.3 ) {
+                    m_bufferheads[ i ][ side ] = glm::dvec2 { at.x, at.z };
+                }
+            }
         }
     }
     if( Track->fSoundDistance > 0.f ) {
@@ -5098,8 +5144,8 @@ void TDynamicObject::TurnOff()
     btPneumatic1r.TurnOff();
     btPneumatic2.TurnOff();
     btPneumatic2r.TurnOff();
-    btCCtrl1.Turn( false );
-    btCCtrl2.Turn( false );
+    btCCtrl1.TurnOff();
+    btCCtrl2.TurnOff();
     btCPass1.Turn( false );
     btCPass2.Turn( false );
     m_endsignal12.Turn( false );
@@ -8301,6 +8347,49 @@ void TDynamicObject::SetLightDimmings()
 			}
 		}
 	}
+}
+
+std::optional<std::array<double, 2>> TDynamicObject::buffers_pressed( int const End ) const {
+
+    auto const &neighbour { MoverParameters->Neighbours[ End ] };
+    if( neighbour.vehicle == nullptr
+     || false == TestFlag( MoverParameters->Couplers[ End ].CouplingFlag, coupling::coupler ) ) {
+        return std::nullopt;
+    }
+    auto const &ours { m_bufferheads[ End ] };
+    auto const &theirs { neighbour.vehicle->m_bufferheads[ neighbour.vehicle_end ] };
+    if( !ours[ 0 ] || !ours[ 1 ] || !theirs[ 0 ] || !theirs[ 1 ] ) {
+        return std::nullopt;
+    }
+    auto const frame { bones::model_file_frame() };
+    auto const head = [ &frame ]( TDynamicObject const &Vehicle, int const Vehicleend, glm::dvec2 const &Head ) {
+        auto const along { ( Vehicleend == end::front ? 0.5 : -0.5 ) * Vehicle.MoverParameters->Dim.L };
+        return Vehicle.GetWorldPosition( frame * glm::dvec3 { Head.x, along, Head.y } ); };
+    // outwards from our end
+    auto const outwards { glm::normalize( head( *this, End, { 0.0, 0.0 } ) - GetWorldPosition( glm::dvec3 { 0.0 } ) ) };
+    auto const limit { MoverParameters->Couplers[ End ].DmaxB };
+    auto const first { head( *neighbour.vehicle, neighbour.vehicle_end, *theirs[ 0 ] ) };
+    auto const second { head( *neighbour.vehicle, neighbour.vehicle_end, *theirs[ 1 ] ) };
+    std::array<double, 2> pressed {};
+    for( std::size_t side = 0; side < pressed.size(); ++side ) {
+        auto const here { head( *this, End, *ours[ side ] ) };
+        auto const &facing { ( glm::distance( here, first ) < glm::distance( here, second ) ? first : second ) };
+        // the gap to it along our end, negative where the two overlap: each buffer takes half of it
+        auto const gap { glm::dot( facing - here, outwards ) };
+        pressed[ side ] = safe_clamp( gap / 2.0, -limit, 0.0 );
+    }
+    return pressed;
+}
+
+// whether the control cables of the given end are modelled whole from socket to socket by both coupled vehicles (each
+// has cctrl<n>_xon there), so that only the coupling owner draws them
+bool TDynamicObject::control_cables_shared( int const End ) const {
+
+    auto const *other { MoverParameters->Neighbours[ End ].vehicle };
+    if( other == nullptr ) { return false; }
+    auto const &ours { ( End == end::front ? btCCtrl1 : btCCtrl2 ) };
+    auto const &theirs { ( MoverParameters->Neighbours[ End ].vehicle_end == end::front ? other->btCCtrl1 : other->btCCtrl2 ) };
+    return ours.has_xon() && theirs.has_xon();
 }
 
 bool TDynamicObject::has_signal_pc1_on() const {

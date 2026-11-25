@@ -519,3 +519,29 @@ TEST_CASE("bones: a hose on a running vehicle is drawn with its ends, not left b
 	CHECK(state.pending == doctest::Approx(0.003));
 	CHECK(glm::distance(bones::drawn(state, 1), before + travelled) < 1.0e-9);
 }
+
+TEST_CASE("bones: a joint held to the whole turn of the next car, spread evenly along it from either side") {
+	bones::rig rig;
+	REQUIRE(bones::add_point(rig, {"root", "fixed", "0", "0", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"joint", "fixed", "0", "1", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"far", "fixed", "0", "2", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"axis", "fixed", "0", "4", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"over", "fixed", "0", "2", "3"}).empty());
+	REQUIRE(bones::add_bend(rig, {"miech", "root", "joint", "far", "head", "far", "axis", "over", "rooted"}).empty());
+	REQUIRE(bones::add_bend(rig, {"waz", "root", "joint", "head", "far", "axis"}).empty());
+	CHECK_FALSE(bones::add_bend(rig, {"miech", "root", "joint", "head", "far", "axis", "nowhere"}).empty());
+	CHECK(rig.bends[0].head_up == 4);
+	CHECK(rig.bends[0].rooted);
+	CHECK(rig.bends[1].head_up == -1);
+	// the next car turned 0.2 rad about the vertical and rolled 0.1 rad: the joint halfway takes half of the whole turn
+	std::vector<glm::dvec3> const rest{{0.0, 0.0, 2.0}, {0.0, 1.0, 2.0}, {0.0, 2.0, 2.0}};
+	auto const whole{glm::angleAxis(0.2, glm::dvec3{0.0, 0.0, 1.0}) * glm::angleAxis(0.1, glm::dvec3{0.0, 1.0, 0.0})};
+	std::vector<glm::dquat> turns{glm::dquat{1.0, 0.0, 0.0, 0.0}, glm::dquat{1.0, 0.0, 0.0, 0.0}, whole};
+	bones::spread_turns(rest, turns);
+	auto const half{glm::slerp(glm::dquat{1.0, 0.0, 0.0, 0.0}, whole, 0.5)};
+	CHECK(std::abs(glm::dot(turns[1], half)) == doctest::Approx(1.0));
+	// from the next car the same joint: its root the whole turn back, and halfway the same turn in the world
+	std::vector<glm::dquat> back{glm::dquat{1.0, 0.0, 0.0, 0.0}, glm::dquat{1.0, 0.0, 0.0, 0.0}, glm::inverse(whole)};
+	bones::spread_turns(rest, back);
+	CHECK(std::abs(glm::dot(whole * back[1], turns[1])) == doctest::Approx(1.0));
+}

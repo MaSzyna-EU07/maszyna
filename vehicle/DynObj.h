@@ -28,6 +28,8 @@ http://mozilla.org/MPL/2.0/.
 
 #include <vector>
 #include <memory>
+#include <array>
+#include <optional>
 
 class script_screen; // scripting/scriptscreens.h
 enum class script_language; // scripting/scriptscreens.h
@@ -385,6 +387,9 @@ private:
     // animacje typu przesuw
     TSubModel *smBuforLewy[2];
     TSubModel *smBuforPrawy[2];
+    // the heads of the buffers of each end, left and right, as they stand in the model file: across and up (x, z); found
+    // from the buffer submodels when the vehicle is loaded
+    std::array<std::array<std::optional<glm::dvec2>, 2>, 2> m_bufferheads;
     TAnimValveGear *pValveGear;
 	glm::dvec3 vFloor; // podłoga dla ładunku
   public:
@@ -578,6 +583,7 @@ private:
     // puts the bent submodels into their geometry, out of the walks of the renderer (the main thread, RenderSounds())
     void upload_flexes();
     void bind_flex( std::vector<std::size_t> const &Bends );
+    glm::dquat head_turn( bones::bend const &Bend, std::vector<glm::dvec3> const &Now, glm::dvec3 const &Upwards ) const;
     void bind_flex_part( flex_data &Flex, std::size_t const Slot, std::vector<glm::dvec3> const &Points );
     void pose_flex_vertex( flex_data &Flex, std::uint32_t const Vertex, std::vector<glm::vec3> const &Nodes, std::vector<glm::quat> const &Turns );
     AirCoupler btCPneumatic1; // sprzegi powietrzne //yB - zmienione z Button na AirCoupler - krzyzyki
@@ -589,8 +595,8 @@ private:
     AirCoupler btPneumatic1r; // ABu: analogicznie jak 4 linijki wyzej
     AirCoupler btPneumatic2r;
 
-    TButton btCCtrl1; // sprzegi sterowania
-    TButton btCCtrl2;
+    AirCoupler btCCtrl1; // sprzegi sterowania; _xon: drawn by the vehicle that isn't the coupling owner
+    AirCoupler btCCtrl2;
     TButton btCPass1; // mostki przejsciowe
     TButton btCPass2;
     char cp1, sp1, cp2, sp2; // ustawienia węży
@@ -916,6 +922,11 @@ private:
     int DettachStatus(int dir);
     int Dettach(int dir);
     TDynamicObject * Neighbour(int &dir);
+    // how far each buffer of the end (left, right) is pressed in, as its head stands against the nearest one of the next
+    // vehicle on the track: half the overlap each; none without a coupled vehicle with buffers known on both
+    std::optional<std::array<double, 2>> buffers_pressed( int const End ) const;
+    // whether both vehicles at the end have their control cables modelled whole (cctrl<n>_xon), drawn by the owner only
+    bool control_cables_shared( int const End ) const;
     // updates potential collision sources
     void update_neighbours();
     // locates potential collision source within specified range, scanning its route in specified direction

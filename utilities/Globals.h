@@ -538,6 +538,9 @@ struct global_settings {
     // the old lighting ahead of vehicles: the beam of their headlights (light_array, the projected texture of the beam), with its
     // shadows and its light in the fog. off: the vehicles light what is ahead of them only with the light points of their lamps
     bool gfx_lights_headlights { true };
+    // the buffers of coupled vehicles pressed in each as its head stands against the other on the track, so more on the
+    // inside of a curve; off: both buffers of an end pressed in alike, by half the distance of the couplers
+    bool gfx_buffers_curve { true };
     bool gfx_lights_cab { true }; // the lamp of the occupied cab is a point light instead of an addition to the ambient light
     float gfx_lights_freespot_intensity { 10.f }; // brightness of a light point of a model
     float gfx_lights_compartment_intensity { 1.f }; // brightness of the light of a lit vehicle compartment

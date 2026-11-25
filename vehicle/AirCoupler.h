@@ -78,5 +78,9 @@ public:
     {
         return ModelOn != nullptr || ModelxOn != nullptr;
     };
+    inline bool has_xon() const
+    {
+        return ModelxOn != nullptr;
+    };
 };
 

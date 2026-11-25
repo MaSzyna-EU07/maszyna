@@ -2089,6 +2089,7 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "gfx.lights.scenery" ) { readswitch( gfx_lights_scenery ); }
     else if( Token == "gfx.lights.vehicles" ) { readswitch( gfx_lights_vehicles ); }
     else if( Token == "gfx.lights.headlights" ) { readswitch( gfx_lights_headlights ); }
+    else if( Token == "gfx.buffers.curve" ) { readswitch( gfx_buffers_curve ); }
     else if( Token == "gfx.lights.cab" ) { readswitch( gfx_lights_cab ); }
     else if( Token == "gfx.lights.freespot.intensity" ) { readvalue( gfx_lights_freespot_intensity, 0.f, 1000.f ); }
     else if( Token == "gfx.lights.compartment.intensity" ) { readvalue( gfx_lights_compartment_intensity, 0.f, 100.f ); }
@@ -2657,6 +2658,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.lights.scenery", gfx_lights_scenery );
     export_as_text( Output, "gfx.lights.vehicles", gfx_lights_vehicles );
     export_as_text( Output, "gfx.lights.headlights", gfx_lights_headlights );
+    export_as_text( Output, "gfx.buffers.curve", gfx_buffers_curve );
     export_as_text( Output, "gfx.lights.cab", gfx_lights_cab );
     export_as_text( Output, "gfx.lights.freespot.intensity", gfx_lights_freespot_intensity );
     export_as_text( Output, "gfx.lights.compartment.intensity", gfx_lights_compartment_intensity );

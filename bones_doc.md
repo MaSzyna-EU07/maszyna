@@ -19,7 +19,7 @@ bonepoint: <name> coupler <front|rear> <x> <y> <z>
 bonepoint: <name> mid <point> <point>
 bonechain: <name> <start point> <end point> <nodes> <x> <y> <z> (of each node)
 bone: <submodel> <anchor point> <point it faces, or none>
-bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
+bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [rooted] end
 ```
 
 - The coordinates are those of the model file: x across, y along the vehicle (the front, `coupler1`, at +y), z up.
@@ -70,6 +70,25 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
   they leave the roof of one car to where they leave the roof of the next. A rooted submodel is not cut into smaller
   triangles, and the bends of one submodel (the bellows on both ends of a car) bend it each its own part. A bent
   submodel whose spines stand still, a train standing, is not posed again.
+- A third point after `head` (`head <point> <point> <point>`): a point over the line, which the head is held to as
+  well, so the head takes the whole turn of the next car, rolled and pitched too, not only the line and the vertical of
+  the world. On a `rooted` bend the turn is then spread over the spine by its length as made, from none at the root to
+  the whole of it at the head: a joint bends the same from both cars, and the faces of two bellows or two rubber
+  collars meeting halfway stand on one plane, which halves the angle between the cars.
+
+## Control cables, rubber collars and buffers
+
+- The control cables of a vehicle (`cctrl1_on` / `cctrl2_on`) may be modelled whole, from our socket to the socket of
+  the next vehicle, with a `cctrl<n>_xon` beside them that holds only our plugs. Where both coupled vehicles have the
+  `_xon` at the ends that meet, the one that owns the coupling (the one which draws the screw coupling, its `Render`
+  flag) shows `_on` and the other `_xon`, so each cable is drawn once. Where either has no `_xon`, both show `_on`, as
+  before. A whole cable is bent through the joint by a `rooted` `bonebend` from the socket, as the roof cables above.
+- A rubber collar gangway round the end door is a submodel of its own, bent the same way from the face of the body to
+  the coupling plane: on a curve the collars of two coaches turn half the angle each and meet face to face.
+- The buffers (`buffer_left0<n>`, `buffer_right0<n>`) of two coupled vehicles are pressed in each as its head stands
+  against the nearest head of the other vehicle on the track, half the overlap each, up to `DmaxB`: on a curve those
+  on the inside press in, those on the outside stand clear. `gfx.buffers.curve no` in `eu07.ini` presses both buffers
+  of an end alike, by half the distance of the couplers, as before.
 
 ## Examples
 

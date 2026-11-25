@@ -311,6 +311,14 @@ std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
 		{
 			return "no points " + Words[headat + 1] + " and " + Words[headat + 2] + " for the head of " + Words[0];
 		}
+		if (Words.size() > headat + 3 && Words[headat + 3] != "rooted")
+		{
+			bend.head_up = Rig.find(Words[headat + 3]);
+			if (bend.head_up < 0)
+			{
+				return "no point " + Words[headat + 3] + " over the head of " + Words[0];
+			}
+		}
 	}
 	Rig.bends.push_back(std::move(bend));
 	return "";
@@ -391,6 +399,29 @@ void hold_root(bend const &Bend, std::vector<glm::dquat> &Turns)
 	if (Bend.rooted && false == Turns.empty())
 	{
 		Turns.front() = glm::dquat{1.0, 0.0, 0.0, 0.0};
+	}
+}
+
+void spread_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dquat> &Turns)
+{
+	if (Turns.size() < 3 || Rest.size() != Turns.size())
+	{
+		return;
+	}
+	auto total{0.0};
+	for (std::size_t node{1}; node < Rest.size(); ++node)
+	{
+		total += glm::distance(Rest[node], Rest[node - 1]);
+	}
+	if (total < 1e-9)
+	{
+		return;
+	}
+	auto along{0.0};
+	for (std::size_t node{1}; node + 1 < Rest.size(); ++node)
+	{
+		along += glm::distance(Rest[node], Rest[node - 1]);
+		Turns[node] = glm::slerp(Turns.front(), Turns.back(), along / total);
 	}
 }
 

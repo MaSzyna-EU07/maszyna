@@ -30,7 +30,7 @@ class TSubModel;
 //   bonepoint: <name> mid <point> <point>
 //   bonechain: <name> <start point> <end point> <nodes between> <x> <y> <z> (of each node)
 //   bone: <submodel> <anchor point> <point it faces, or none>
-//   bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
+//   bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [rooted] end
 // the coordinates are those of the model file (x across, y along the vehicle, z up), and the positions are those of
 // the model as it is made: the wheels at their angle 0, the next vehicle standing straight behind. a sliding point
 // keeps its distance from the point driving it (the length of the connecting rod), along its guide. a chain hangs
@@ -85,6 +85,9 @@ struct bend {
 	std::vector<int> spine;
 	int head_from{-1}; // the line the head is held to, none for a head turning with the last piece
 	int head_to{-1};
+	// optional: a point over the line, the head then held to the line and this point (the next car turned as a whole,
+	// rolled and pitched too); without it to the line and the vertical of the world
+	int head_up{-1};
 	// rooted: the first point of the spine is held to the body, unturned, and only the part of the submodel past it bends,
 	// the rest staying as made: the half of a gangway bellows on the end of a car, its face bent to the joint
 	bool rooted{false};
@@ -208,6 +211,9 @@ skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, s
 bool behind_root(bend const &Bend, skin_bind const &Bind);
 // the turns of the nodes of a rooted bend with its root held to the body, unturned; those of any other left as they are
 void hold_root(bend const &Bend, std::vector<glm::dquat> &Turns);
+// the turns of the nodes between the first and the last spread evenly along the spine as made, from the turn of the first
+// to that of the last: a joint bent the same seen from either car
+void spread_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dquat> &Turns);
 
 // the move of a bone: turned about its anchor to face its aim again, its anchor moved
 struct motion {
