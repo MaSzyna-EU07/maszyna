@@ -32,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Train.h"
 #include "utilities/Timer.h"
 #include "utilities/framepacer.h"
+#include "utilities/hardwareprobe.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
@@ -447,6 +448,9 @@ int eu07_application::init(int Argc, char *Argv[])
 	// cruel way to prevent crashes because of threaded upload from python
 	if (Global.NvRenderer)
 		Global.python_threadedupload = false;
+
+	// the cpu, the memory and the graphics adapters, for the bug reports
+	hardware::log_system();
 
 	WriteLog("// startup");
 
@@ -1631,6 +1635,9 @@ int eu07_application::init_ogl()
 			return -1;
 		}
 	}
+
+	// which of the GPUs the context runs on, and its memory
+	hardware::log_gl_context();
 
 	return 0;
 }
