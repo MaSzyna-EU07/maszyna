@@ -32,7 +32,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
+#include <atomic>
 #include <cstring>
 #include <format>
 #include <new>
@@ -57,22 +57,61 @@ constexpr char sprite_metatable[]{"eu07.sprite"};
 // the address is the key of the program in the registry of its state
 constexpr char program_key{0};
 
-// the memory of a screen: what its Lua heap holds, when the allocator counts it, and the pixels of its images, fonts
-// and sprites, which the objects keep outside the heap
+// what set_lua_screen_memory_limit() set
+std::atomic<std::size_t> &memory_limit_setting()
+{
+	static std::atomic<std::size_t> setting{max_screen_memory};
+	return setting;
+}
+
+// what lua_screen_memory_peak() gives
+std::atomic<std::size_t> &memory_peak()
+{
+	static std::atomic<std::size_t> peak{0};
+	return peak;
+}
+
+// the memory of a screen: what its Lua heap holds and the pixels of its images, fonts and sprites, which the objects
+// keep outside the heap
 struct screen_memory
 {
+	std::size_t limit{max_screen_memory}; // what the screen may hold, read when its state is made
 	std::size_t heap{0};
 	std::size_t objects{0};
-	bool counted{false}; // the state was made with limited_alloc
+	std::size_t peak{0}; // the most the screen held
 	bool enforced{false}; // a call into the script is in progress: the allocator refuses what goes over the limit
 	// what the screen holds when it is checked next (lua_program::over_memory) with a full collection
 	std::size_t collect_at{max_screen_memory};
+	// LuaJIT's own allocator of the state, which limited_alloc gives the blocks to
+	lua_Alloc base{nullptr};
+	void *base_data{nullptr};
 };
 
-// the allocator of a screen's state (lua_newstate), which refuses a block that would take the screen over twice
-// max_screen_memory (what it holds, and its garbage between the collections) while a call into the script is in
-// progress: LuaJIT raises "not enough memory" there, in the protected call. the game's own work between the calls isn't
-// refused, as it isn't protected
+// keeps the most the screen held
+void note_peak(screen_memory &Memory)
+{
+	auto const held{Memory.heap + Memory.objects};
+	if (held <= Memory.peak)
+	{
+		return;
+	}
+	Memory.peak = held;
+	auto &peak{memory_peak()};
+	auto seen{peak.load()};
+	while (held > seen && false == peak.compare_exchange_weak(seen, held))
+	{
+		// a failed exchange put the value another screen stored in seen; try again while held is still more
+	}
+}
+
+// the allocator of a screen's state, put in front of LuaJIT's own (lua_setallocf) once the state is made: LuaJIT 2.0
+// on x64 (the game's on Windows) and 2.1 on x64 without GC64 make no state with an allocator of the game's
+// (lua_newstate gives nullptr), as their heap has to stay in the low addresses only their own allocator keeps to. so
+// LuaJIT's allocator still makes every block; this one counts them, and refuses a block that would take the screen over
+// twice its limit (what it holds, and its garbage between the collections) while a call into the script is in
+// progress: LuaJIT raises "not enough memory" there, in the protected call, before the block is made. that holds what
+// one instruction makes, which the instruction hook sees only once it is made (a concatenation, a .. b). the game's own
+// work between the calls isn't refused, as it isn't protected
 void *limited_alloc(void *Data, void *Block, std::size_t Old, std::size_t New)
 {
 	auto &memory{*static_cast<screen_memory *>(Data)};
@@ -80,20 +119,15 @@ void *limited_alloc(void *Data, void *Block, std::size_t Old, std::size_t New)
 	{
 		Old = 0;
 	}
-	if (New == 0)
-	{
-		std::free(Block);
-		memory.heap -= Old;
-		return nullptr;
-	}
-	if (New > Old && memory.enforced && memory.heap - Old + New + memory.objects > 2 * max_screen_memory)
+	if (New > Old && memory.enforced && memory.heap - std::min(Old, memory.heap) + New + memory.objects > 2 * memory.limit)
 	{
 		return nullptr;
 	}
-	auto *result{std::realloc(Block, New)};
-	if (result != nullptr)
+	auto *result{memory.base(memory.base_data, Block, Old, New)};
+	if (New == 0 || result != nullptr)
 	{
-		memory.heap = memory.heap - Old + New;
+		memory.heap = memory.heap - std::min(Old, memory.heap) + New;
+		note_peak(memory);
 	}
 	return result;
 }
@@ -111,6 +145,12 @@ class lua_program final : public program
 		{
 			// the finalizers lua_close runs aren't counted: the budget of the last call may be spent
 			lua_sethook(m_state, nullptr, 0, 0);
+			// LuaJIT's own allocator back: lua_close frees the whole heap of its allocator only when the state has it,
+			// and otherwise leaves the heap's own bookkeeping behind
+			if (memory.base != nullptr)
+			{
+				lua_setallocf(m_state, memory.base, memory.base_data);
+			}
 			lua_close(m_state);
 		}
 	}
@@ -130,7 +170,7 @@ class lua_program final : public program
 	char const *stopped{nullptr}; // why the call in progress is being stopped: the hook raises it at every instruction
 	screen_memory memory;
 
-	// true when the screen would hold more than max_screen_memory with Adding bytes more. checked with a full collection
+	// true when the screen would hold more than its limit with Adding bytes more. checked with a full collection
 	// once it has made a quarter of the limit since the last one, so a screen near its limit isn't collected over and
 	// over
 	bool over_memory(lua_State *L, std::size_t Adding);
@@ -156,20 +196,15 @@ lua_program *program_of(lua_State *L)
 
 bool lua_program::over_memory(lua_State *L, std::size_t const Adding)
 {
-	auto const used{[this, L] {
-		auto const heap{memory.counted ? memory.heap
-		                               : static_cast<std::size_t>(lua_gc(L, LUA_GCCOUNT, 0)) * 1024 + static_cast<std::size_t>(lua_gc(L, LUA_GCCOUNTB, 0))};
-		return heap + memory.objects;
-	}};
-	if (used() + Adding <= memory.collect_at)
+	if (memory.heap + memory.objects + Adding <= memory.collect_at)
 	{
 		return false;
 	}
 	// what is garbage doesn't count
 	lua_gc(L, LUA_GCCOLLECT, 0);
-	auto const held{used()};
-	memory.collect_at = std::max(max_screen_memory, held + max_screen_memory / 4);
-	return held + Adding > max_screen_memory;
+	auto const held{memory.heap + memory.objects};
+	memory.collect_at = std::max(memory.limit, held + memory.limit / 4);
+	return held + Adding > memory.limit;
 }
 
 void count_hook(lua_State *L, lua_Debug * /*Debug*/)
@@ -188,7 +223,7 @@ void count_hook(lua_State *L, lua_Debug * /*Debug*/)
 		}
 		else if (self->over_memory(L, 0))
 		{
-			// what the allocator doesn't refuse (where the screen has none of its own) is caught here
+			// what the allocator lets through, up to twice the limit with the garbage, is caught here
 			self->stopped = "memory limit exceeded";
 		}
 	}
@@ -208,8 +243,15 @@ void reserve_memory(lua_State *L, std::size_t const Bytes)
 {
 	if (auto *self{program_of(L)}; self != nullptr && self->over_memory(L, Bytes))
 	{
-		luaL_error(L, "memory limit exceeded (%d MB)", static_cast<int>(max_screen_memory / (1024 * 1024)));
+		luaL_error(L, "memory limit exceeded (%d MB)", static_cast<int>(self->memory.limit / (1024 * 1024)));
 	}
+}
+
+// the memory the screen of the state may hold
+std::size_t memory_limit(lua_State *L)
+{
+	auto const *self{program_of(L)};
+	return self != nullptr ? self->memory.limit : max_screen_memory;
 }
 
 // objects of the api -------------------------------------------------------------------------------------------------
@@ -230,6 +272,7 @@ template <typename Type_> std::remove_cvref_t<Type_> *push_object(lua_State *L, 
 	if (auto *self{program_of(L)}; self != nullptr)
 	{
 		self->memory.objects += Bytes;
+		note_peak(self->memory);
 	}
 	luaL_getmetatable(L, Metatable);
 	lua_setmetatable(L, -2);
@@ -855,7 +898,7 @@ int api_repeat(lua_State *L)
 // the result may be over the memory of a screen. what they make otherwise is counted with the rest of the heap
 int too_large(lua_State *L, char const *Function)
 {
-	return luaL_error(L, "%s: the result may be over the memory of a screen (%d MB)", Function, static_cast<int>(max_screen_memory / (1024 * 1024)));
+	return luaL_error(L, "%s: the result may be over the memory of a screen (%d MB)", Function, static_cast<int>(memory_limit(L) / (1024 * 1024)));
 }
 
 // calls the library's own function, the upvalue, with the arguments, and returns what it returns
@@ -878,7 +921,7 @@ int api_format(lua_State *L)
 	{
 		total += lua_type(L, idx) == LUA_TSTRING ? 4.0 * static_cast<double>(lua_objlen(L, idx)) : 512.0;
 	}
-	if (total > static_cast<double>(max_screen_memory))
+	if (total > static_cast<double>(memory_limit(L)))
 	{
 		return too_large(L, "string.format");
 	}
@@ -894,6 +937,7 @@ int api_concat(lua_State *L)
 	luaL_optlstring(L, 2, "", &separator);
 	auto const first{luaL_optinteger(L, 3, 1)};
 	auto const last{lua_isnoneornil(L, 4) ? static_cast<lua_Integer>(lua_objlen(L, 1)) : luaL_checkinteger(L, 4)};
+	auto const limit{static_cast<double>(memory_limit(L))};
 	auto total{0.0};
 	for (auto idx = first; idx <= last; ++idx)
 	{
@@ -906,7 +950,7 @@ int api_concat(lua_State *L)
 		{
 			break;
 		}
-		if (total > static_cast<double>(max_screen_memory))
+		if (total > limit)
 		{
 			return too_large(L, "table.concat");
 		}
@@ -978,7 +1022,7 @@ int api_pattern(lua_State *L)
 	{
 		auto const size{static_cast<double>(subject)};
 		auto const matches{lua_isnumber(L, 4) ? std::clamp(static_cast<double>(lua_tonumber(L, 4)), 0.0, size + 1.0) : size + 1.0};
-		if (auto const replaced{replacement_length(L, 3, size, matches)}; replaced.has_value() && size + *replaced > static_cast<double>(max_screen_memory))
+		if (auto const replaced{replacement_length(L, 3, size, matches)}; replaced.has_value() && size + *replaced > static_cast<double>(memory_limit(L)))
 		{
 			return too_large(L, name);
 		}
@@ -1195,46 +1239,20 @@ int call_render(lua_State *L)
 	return 1;
 }
 
-// true when a screen's state can be made with an allocator of its own: LuaJIT 2.0 on x64, and 2.1 on x64 without GC64,
-// refuse one (lua_newstate gives nullptr, and writes so to stderr: 2.0 isn't asked)
-bool custom_allocator_works()
-{
-#if LUAJIT_VERSION_NUM < 20100
-	if constexpr (sizeof(void *) == 8)
-	{
-		return false;
-	}
-#endif
-	static bool const works{[] {
-		screen_memory probe;
-		auto *state{lua_newstate(limited_alloc, &probe)};
-		if (state == nullptr)
-		{
-			return false;
-		}
-		lua_close(state);
-		return true;
-	}()};
-	return works;
-}
-
 bool lua_program::start()
 {
-	// the screen's own allocator counts its memory, where LuaJIT takes one
-	if (custom_allocator_works())
-	{
-		m_state = lua_newstate(limited_alloc, &memory);
-		memory.counted = m_state != nullptr;
-	}
-	if (m_state == nullptr)
-	{
-		m_state = luaL_newstate();
-	}
+	m_state = luaL_newstate();
 	if (m_state == nullptr)
 	{
 		ErrorLog(std::format("Lua screen \"{}\": failed to create the state", script));
 		return false;
 	}
+	// the screen's allocator in front of LuaJIT's own, counting from what the state holds already
+	memory.limit = memory_limit_setting().load();
+	memory.collect_at = memory.limit;
+	memory.heap = static_cast<std::size_t>(lua_gc(m_state, LUA_GCCOUNT, 0)) * 1024 + static_cast<std::size_t>(lua_gc(m_state, LUA_GCCOUNTB, 0));
+	memory.base = lua_getallocf(m_state, &memory.base_data);
+	lua_setallocf(m_state, limited_alloc, &memory);
 	// no compiled code: LuaJIT calls no hooks in it, and the hook is what stops a script stuck in a loop
 	luaJIT_setmode(m_state, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF);
 	open_libraries();
@@ -1340,9 +1358,15 @@ class lua_runtime_host final : public runtime
 
 } // namespace
 
-bool lua_screen_memory_allocator()
+void set_lua_screen_memory_limit(std::size_t const Bytes)
 {
-	return custom_allocator_works();
+	memory_limit_setting().store(Bytes);
+	memory_peak().store(0);
+}
+
+std::size_t lua_screen_memory_peak()
+{
+	return memory_peak().load();
 }
 
 std::unique_ptr<runtime> make_lua_runtime()

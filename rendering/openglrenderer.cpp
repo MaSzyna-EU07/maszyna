@@ -4370,8 +4370,8 @@ glm::dvec3
 opengl_renderer::Update_Mouse_Position() {
 
     glm::ivec2 mousepos = Global.cursor_pos * Global.fb_size / Global.window_size;
-    mousepos.x = std::clamp( mousepos.x, 0, Global.fb_size.x - 1 );
-	mousepos.y = std::clamp(Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1);
+    mousepos.x = safe_clamp( mousepos.x, 0, Global.fb_size.x - 1 );
+	mousepos.y = safe_clamp(Global.fb_size.y - mousepos.y, 0, Global.fb_size.y - 1);
     GLfloat pointdepth;
     ::glReadPixels( mousepos.x, mousepos.y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pointdepth );
 

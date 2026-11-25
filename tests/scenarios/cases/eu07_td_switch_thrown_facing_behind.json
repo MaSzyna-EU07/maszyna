@@ -1,0 +1,50 @@
+{
+  "description": "Switch thrown under a train running facing through it (#289 review 2b): as eu07_td_switch_thrown_facing_head, but zwr01 is thrown to track 1 when the locomotive has left the switch for track 2 (event of tor2p, set off by its rear axle), with the coaches still before and on the switch. A train cannot run on two tracks at once: every vehicle has to keep to the line of a track, whatever the throw does to them.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_switch_thrown.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none start 80.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "route": "node -1 0 autotest_route_launcher eventlauncher 0 0 0 -1 none 1034 keyctrl01 end",
+    "throw": "zwr01_1 zwr01_V40",
+    "trigger": "",
+    "order": "Shunt -1 0"
+  },
+  "track_events": {
+    "start": "event0 autotest_wake",
+    "tor2p": [
+      "event1 autotest_throw",
+      "event2 autotest_throw"
+    ],
+    "tdo_n109": "event0 autotest_pass"
+  },
+  "test_config": [
+    "test.timeout 400",
+    "test.standstill 120"
+  ],
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 30,
+      "within": 200
+    },
+    {
+      "type": "on_track",
+      "vehicles": "{{vehicle}}",
+      "max_offset": 0.6
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "Bad driving"
+    }
+  ],
+  "xfail": "#289 review 2b, as before the stack (TrkFoll reverted in c268673c): the axles still on the switch leave it by the way it is set to now, those behind it take that way too, so the coaches go to track 1 and the locomotive they are coupled to runs on along track 2, 4.6 m beside them, with nothing derailed or broken"
+}

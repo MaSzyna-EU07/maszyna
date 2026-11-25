@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/translation.h"
 #include "application/driverhints.h"
 #include "vehicle/blackbox.h"
-#include "utilities/physicslog.h"
+#include "vehicle/aipower.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -29,6 +29,7 @@ auto const EU07_AI_NOMOVEMENT = 0.05; // standstill velocity threshold
 auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+auto const EU07_AI_SANDEDSTARTVELOCITY = 15.0; // [km/h] a start that slipped keeps the sand on up to this speed
 
 enum TOrders
 { // rozkazy dla AI
@@ -165,6 +166,7 @@ class TSpeedPos
     int iFlags{ spNone }; // flagi typu wpisu do tabelki
 	bool bMoved{ false }; // czy przesunięty (dotyczy punktu zatrzymania w peronie)
 	double fMoved{ 0.0 }; // ile przesunięty (dotyczy punktu zatrzymania w peronie) 
+    bool bSeenAhead{ false }; // the head of the train had it ahead once: only such a point can be passed by the train
     glm::dvec3 vPos; // współrzędne XYZ do liczenia odległości
     struct
     {
@@ -184,7 +186,8 @@ class TSpeedPos
     void
         UpdateDistance( double dist ) {
             fDist -= dist; }
-    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
+    // Standing: the train stands, so an event found behind its head wasn't passed by it
+    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders, bool Standing = false);
     void Set(TTrack *t, double d, int f);
     std::string TableText() const;
     std::string GetName() const;
@@ -440,6 +443,8 @@ private:
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
     bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    bool bSandedStart = false; // the wheels slipped while starting: sand while under power until the train is under way
+    double fSandedStartDecreaseTime = -1.0; // when the power was last taken down a step for a slip while starting
     double fUphillStartTime = 0.0; // when the uphill start began
     double fAccDesiredGravity = 0.0; // część AccDesired odjęta na spadku jako kompensacja pochylenia; AbsAccS zawiera ją już sam
     double VelforDriver = -1.0; // prędkość, używana przy zmianie kierunku (ograniczenie przy nieznajmości szlaku?)
@@ -682,6 +687,9 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    // tells in the log, once, of standing with the pantographs up and no voltage (eu07/maszyna#421)
+    void report_power_stall( bool const Poweravailable, double const Pantographpressure );
+    ai_power::reporter m_powerstall; // the reports of report_power_stall()
     void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );
@@ -739,22 +747,17 @@ private:
 public:
     TDynamicObject const *Vehicle() const {
         return pVehicle; }
-    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line, with
-    // its line end, and the values of a line of it as the vehicle is now, which the writer of the logs makes into text.
-    // the black box keeps the lines of the vehicle the user is in when its driver doesn't write its own
+    // the physics log (physicslog/<vehicle>.dat): the name of its file without the extension, its first line and
+    // a line of it as the vehicle is now, each with its line end. the black box keeps the lines of the vehicle the
+    // user is in, to write its log at the end when the logs of all the vehicles are off
     std::string const &physicslog_name() const {
         return VehicleName; }
-    // whether it writes its physics log itself: with "physicslog yes" all but the drivers of road vehicles, with
-    // "physicslog.trains yes" one who drives rail vehicles. a driver made primary later begins its log then. the cars of
-    // a big scenery are hundreds, whose logs nobody reads and which a hard disk can't keep up with; the black box writes
-    // the log of one the user is in
+    // whether it writes its physics log itself: all with "physicslog yes", with "physicslog.trains yes" one who drives
+    // rail vehicles. a driver made primary later begins its log then
     bool writes_physicslog() const {
-        return ( WriteLogFlag && false == drives_road_vehicle() ) || ( WriteTrainLogFlag && is_train() && primary() ); }
-    // a driver of a road vehicle; not one of no vehicle
-    bool drives_road_vehicle() const {
-        return mvOccupied != nullptr && is_car(); }
+        return WriteLogFlag || ( WriteTrainLogFlag && is_train() && primary() ); }
     static std::string_view physicslog_header();
-    physicslog_values physicslog_line() const;
+    std::string physicslog_line() const;
     TDynamicObject *Vehicle( end const Side ) const {
         return pVehicles[ Side ]; }
 private:

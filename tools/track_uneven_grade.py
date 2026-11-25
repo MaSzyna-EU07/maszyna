@@ -7,7 +7,7 @@ curves, speed and road crossings. The originals stay as they are, graded copies 
     python track_uneven_grade.py scenery/baltyk_skm1.scn --out graded --route -107,2300 -4120,2491 --straight tor0290,tor0906
     python track_uneven_grade.py scenery/mytracks.scm --root scenery --out graded --gain 1.2
 
-With no --out it only reports. See track_uneven_doc.md for the attribute. Python 3.8 or later, no other packages.
+With no --out it only reports. See docs/track_uneven_doc.md for the attribute. Python 3.8 or later, no other packages.
 """
 import argparse
 import collections
@@ -38,10 +38,10 @@ CURVE_STEP = 1.0 / 2500.0  # a difference of curvature that counts as a change, 
 RISE = 0.0273 * 4.5  # how fast pressure lifts a pantograph, m/s, by TDynamicObject::Update
 GAP_MOST = 0.006  # the gap to the wire allowed; at 0.01 m the voltage goes and the main breaker trips
 OVERSPEED = 1.1  # a driver can go this much over the speed of the track
-# as up_waves and the dip of the joints in world/TrackUneven.h
-STRAY_PER_MM, DIP_SHARE, DIP_REACH = 0.00145, 0.4, 3.0
+# as up_waves, stray_up_per_mm and the dip of the joints in world/TrackUneven.h
+STRAY_PER_MM, DIP_SHARE, DIP_REACH = 0.00229, 0.4, 3.0
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
-UP_WAVES = [(2 * math.pi / length * math.cos(GOLDEN * i), 2 * math.pi / length * math.sin(GOLDEN * i), GOLDEN * (i + 1), share) for i, (length, share) in enumerate(zip((8.3, 11.9, 16.7, 23.9, 37.1, 47.3, 61.9, 83.3), (.14, .19, .22, .22, .23, .23, .23, .23)))]
+UP_WAVES = [(2 * math.pi / length * math.cos(GOLDEN * i), 2 * math.pi / length * math.sin(GOLDEN * i), GOLDEN * (i + 1), share) for i, (length, share) in enumerate(zip((8.0, 11.6, 16.9, 24.6, 35.8, 52.0, 75.6, 110.0), (.0761, .1058, .1393, .176, .2175, .2651, .3215, .3887)))]
 TOKEN = re.compile(r"//[^\n]*|\S+")
 NUMBER = re.compile(r"^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$")
 

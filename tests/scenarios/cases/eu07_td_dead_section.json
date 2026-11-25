@@ -1,0 +1,22 @@
+{
+  "description": "The reference of ep05_td_dead_section: an EU07, whose pantographs come first and whose line breaker opens without voltage (no PantRequiresMain), runs into the same span without voltage under power. Its line breaker opens 0.2 s into the section (the log says it lost power for 0.2x s, no longer: it says so only while the line breaker is closed), and behind it the AI closes the line breaker again, takes power and stops at Przystanek.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp/4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "replace": [
+    ["node -1 0  none traction pwr01 3500 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417", "node -1 0  none traction none 0 4500 0.01 cu 3.0 1\r\n0.7764 5.845 1561.2417"]
+  ],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "log_contains", "pattern": "lost power for 0\\.2\\d sec"},
+    {"type": "log_lacks", "pattern": "lost power for (0\\.[3-9]|[1-9])"},
+    {"type": "traction", "from_distance": 460, "to_distance": 700, "reaches": 25},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}

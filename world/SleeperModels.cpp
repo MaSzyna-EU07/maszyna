@@ -23,8 +23,6 @@ http://mozilla.org/MPL/2.0/.
 
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <iterator>
 #include <mutex>
 
 namespace track_sleepers {
@@ -237,44 +235,6 @@ double plain_length( TTrack const &Track ) {
     return 2.0 * ( 0.5 * std::abs( Track.fTrackWidth ) + rail_reach + beam_overhang );
 }
 
-namespace {
-
-// the model of sleepers or timbers of the file added to those found, once by its name, what goes wrong left in the error
-void add_pack_model( std::filesystem::directory_entry const &Entry, std::filesystem::path const &Root, std::error_code &Error, std::vector<pack_model> &Models ) {
-
-    namespace fs = std::filesystem;
-    if( false == Entry.is_regular_file( Error ) ) {
-        return;
-    }
-    auto const extension { ToLower( Entry.path().extension().string() ) };
-    if( extension != ".t3d" && extension != ".e3d" ) {
-        return;
-    }
-    auto name { ToLower( fs::relative( Entry.path(), Root, Error ).replace_extension().generic_string() ) };
-    if( Error || name.empty() ) {
-        return;
-    }
-    if( name.find( "podklad" ) == std::string::npos && name.find( "podrozjazd" ) == std::string::npos
-     && name.find( "sleeper" ) == std::string::npos && name.find( "timber" ) == std::string::npos ) {
-        return;
-    }
-    // a timber model has the parts it's put together from, told by their names in the file
-    std::ifstream file { Entry.path(), std::ios::binary };
-    std::string const content { std::istreambuf_iterator<char>( file ), std::istreambuf_iterator<char>() };
-    auto const has = [ &extension, &content ]( std::string const &Part ) {
-        return (
-            extension == ".t3d" ?
-                content.find( "Name: " + Part + "\n" ) != std::string::npos || content.find( "Name: " + Part + " " ) != std::string::npos
-             || content.find( "Name: " + Part + "\r" ) != std::string::npos :
-                content.find( std::string { '\0' } + Part + '\0' ) != std::string::npos ); };
-    auto const timber { has( "begin" ) && has( "main" ) && has( "end" ) };
-    if( std::ranges::none_of( Models, [ &name ]( pack_model const &Model ) { return Model.name == name; } ) ) {
-        Models.emplace_back( std::move( name ), timber );
-    }
-}
-
-} // namespace
-
 std::vector<pack_model> const &pack_models() {
 
     static std::vector<pack_model> models;
@@ -283,20 +243,7 @@ std::vector<pack_model> const &pack_models() {
         return models;
     }
     scanned = true;
-    namespace fs = std::filesystem;
-    std::error_code error;
-    auto const root { fs::path { paths::models } };
-    fs::recursive_directory_iterator entry { root, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied, error };
-    fs::recursive_directory_iterator const end;
-    while( entry != end ) {
-        if( error ) {
-            break;
-        }
-        add_pack_model( *entry, root, error, models );
-        entry.increment( error );
-    }
-    std::ranges::sort( models, []( pack_model const &Left, pack_model const &Right ) {
-        return ( Left.timber != Right.timber ? Left.timber : Left.name < Right.name ); } );
+    models = pack_models( std::filesystem::path { paths::models } );
     return models;
 }
 

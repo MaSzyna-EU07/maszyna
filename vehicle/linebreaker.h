@@ -12,6 +12,13 @@ http://mozilla.org/MPL/2.0/.
 // the line breaker (main switch, WS) controls of the cab
 namespace linebreaker {
 
+// the state the cab keeps of the line breaker, besides the vehicle's own (TMoverParameters::Mains)
+enum class state : int {
+	open,
+	closed,
+	closing // the closing control was held long enough; the line breaker closes when it's released, or right away
+};
+
 enum class toggle : int {
 	none, // the press does nothing
 	close, // the control goes to its on position, and the line breaker closes if it can
@@ -19,10 +26,10 @@ enum class toggle : int {
 };
 
 // what a press of the line breaker toggle does. Breakerstate is the state the cab keeps of the line
-// breaker (0: open, 1: closed, 2: freshly closed). Latchinglever is a single two-state switch which
-// stays where it was put, Leveron that it stands in its on position. such a lever doesn't follow the
-// line breaker: knocked out (by the converter overload relay, say) the breaker opens with the lever
-// left on, and the lever has to go off before it can be put on again (eu07/maszyna#394)
-toggle pressed(int Breakerstate, bool Latchinglever, bool Leveron);
+// breaker. Latchinglever is a single two-state switch which stays where it was put, Leveron that it
+// stands in its on position. such a lever doesn't follow the line breaker: knocked out (by the converter
+// overload relay, say) the breaker opens with the lever left on, and the lever has to go off before it
+// can be put on again (eu07/maszyna#394)
+toggle pressed(state Breakerstate, bool Latchinglever, bool Leveron);
 
 } // namespace linebreaker

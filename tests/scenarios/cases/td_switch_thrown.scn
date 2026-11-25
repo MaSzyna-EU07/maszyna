@@ -1,0 +1,45 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// a switch of Stacja1 thrown by an event while a train stands or runs over it (the review of MaSzyna-EU07/maszyna#289,
+// point 2b). Both switches of the station have their points (point 1) towards the line and two ways from there to
+// the station: position 0 straight to track 2 (x 0.4), position 1 curved to track 1 (x 2.3 at the end of the switch,
+// x 5.0 further on). The events of zwrp34r300.inc / zwrl34r300.inc: <switch>+ sets position 0, <switch>- position 1
+// (and the speed of the switch: none on the straight, 40 on the curve).
+// - zwr01, west end: points at z 336, the ways end at z 370 (tor2p, track 2; tdo_n1641, track 1). A train running
+//   towards z 2000 (into the station) goes through it facing, from the points.
+// - zwr02, east end: points at z 1436 (tdo_n145, the line), the ways end at z 1402 (tor2k, track 2; tdo_n1744,
+//   track 1). A train running towards z 2000 (out of the station) goes through it trailing, from the frog end.
+// A trainset faces point 2 of its track (towards z 2000 on all these tracks): the first vehicle has its front as many
+// metres past point 1 as the trainset says, the others stand behind it.
+{{trainsets}}
+
+// the way set at the start, if any (a launcher with a positive time fires once at that hour, the scenery starts
+// at 10:34)
+{{route}}
+
+// the throw (vars.throw), once: whichever of the events hung on the tracks of the case (track_events) or the
+// launcher (vars.trigger) sets it off first, the memory cell keeps the others from doing it again
+node -1 0 autotest_thrown memcell 0 0 0 thrown 0 0 none endmemcell
+event autotest_throw multiple 0 autotest_thrown {{throw}} autotest_throw_done condition memcompare * 0 * endevent
+event autotest_throw_done UpdateValues 0 autotest_thrown * 1 * endevent
+{{trigger}}
+
+// a driver of a trainset of velocity 0 sleeps until it gets an order. event0 of the track its vehicle stands on
+// (track_events) gives it, once: vars.order, e.g. Shunt -1 0 (go on shunting with the whole train; a proceed aspect
+// of a main signal ahead turns that into a train run) or Obey_train 0 0. autotest_wake gives it at once,
+// autotest_wake_after_throw only once the switch has been thrown (for a train standing over the switch)
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_wake_after_throw multiple 0 autotest_thrown autotest_wake condition memcompare * 1 * endevent
+event autotest_wake multiple 0 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event autotest_order PutValues 0 none 0 0 0 {{order}} endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 1 * endevent
+
+// a signal at stop on track 1 for a train running towards z 2000: the memory cell stands beside the track at z 1100
+// and event2 of tdo_n1725 (z 1065-1165, track_events) reads it. A train on track 1 has to stop before it, with its head
+// on tdo_n1725, where event0 passes the test; running onto tdo_n1734 (z 1165-1265) beyond the signal fails it. On
+// track 2 the train stops before the exit signal stacja1_k (z 1316, at stop all the time), with its head on tdo_n109
+// (z 1236-1336)
+node -1 0 autotest_signal1 memcell 5.04488 0.2 1100.0 SetVelocity 0 0 none endmemcell
+event autotest_signal1_info getvalues 0 autotest_signal1 endevent
+event autotest_pass UpdateValues 0 __test.result stopped_before_the_signal 1 * endevent
+event autotest_fail UpdateValues 0 __test.result ran_past_the_signal_of_track_1 0 * endevent
+event autotest_pass_running UpdateValues 0 __test.result ran_clear_of_the_switch 1 * endevent

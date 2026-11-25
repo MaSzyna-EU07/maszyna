@@ -27,6 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Driver.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <unordered_set>
 #include "utilities/Globals.h"
@@ -1162,7 +1163,7 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
                     continue;
                 }
 
-                auto const dist { std::clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
+                auto const dist { safe_clamp( MoverParameters->Couplers[ i ].Dist / 2.0, -MoverParameters->Couplers[ i ].DmaxB, 0.0 ) };
 
                 if( dist >= 0.0 ) { continue; }
 
@@ -2446,6 +2447,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     ShakeSpring.Init( 125.0 );
     BaseShake = baseshake_config {};
     ShakeState = shake_state {};
+    ShakeStateBefore = shake_state {};
 
     // McZapkie-250202
 /*
@@ -2604,7 +2606,7 @@ TDynamicObject::Init(std::string Name, // nazwa pojazdu, np. "EU07-424"
     initial_track = MyTrack;
     iNumAxles = 2;
     // McZapkie-090402: odleglosc miedzy czopami skretu lub osiami
-    fAxleDist = std::clamp(
+    fAxleDist = safe_clamp(
             std::max( MoverParameters->BDist, MoverParameters->ADist ),
             0.2, //żeby się dało wektory policzyć
             MoverParameters->Dim.L - 0.2 ); // nie mogą być za daleko bo będzie "walenie w mur"
@@ -3202,7 +3204,7 @@ TDynamicObject::update_load_offset() {
             0.0 :
             100.0 * MoverParameters->LoadAmount / MoverParameters->MaxLoad ) };
 
-    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, loadpercentage * 0.01, 1.0 ) );
+    LoadOffset = std::lerp( MoverParameters->LoadType.offset_min, 0.f, safe_clamp( 0.0, 1.0, loadpercentage * 0.01 ) );
 }
 
 void
@@ -3849,20 +3851,21 @@ bool TDynamicObject::Update(double dt, double dt1)
 							// crude bump simulation, drop down on even axles, move back up on
 							// the odd ones
 							// MoverParameters->AccVert += (MoverParameters->Vel*0.1f) *
-							double const headroom = std::clamp(
-							    MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ),
-							    0.0, MoverParameters->Vmax );
+							// the arguments keep the order they had up to 26.05.1, 0 in place of the value and the figure in place of the
+							// upper limit, so they work out as the old clamp worked them out up to 26.05.1: the headroom is
+							// Vmax - (Vel + 0.32 Vmax) whatever its sign, and the bump is capped from above only
+							double const headroom = safe_clamp( 0.0, MoverParameters->Vmax, MoverParameters->Vmax - ( MoverParameters->Vel + MoverParameters->Vmax * 0.32f ) );
 							double const jolt = headroom * .05f * ( MyTrack->iDamageFlag * 0.25f );
 							if (MyTrack->eType == tt_Normal)
 							{
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 4.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 4.0, jolt );
 							}
 							else if (MyTrack->eType == tt_Switch)
 							{
-								double const accHorizontal = std::clamp( jolt, 0.0, 1.0 ) * ((axleindex % 2) != 0 ? 1 : -1);
+								double const accHorizontal = safe_clamp( 0.0, 1.0, jolt ) * ((axleindex % 2) != 0 ? 1 : -1);
 								MoverParameters->AccS += accHorizontal;
 								MoverParameters->AccN += accHorizontal;
-								MoverParameters->AccVert += std::clamp( jolt, 0.0, 2.0 );
+								MoverParameters->AccVert += safe_clamp( 0.0, 2.0, jolt );
 							}
                         }
                         ++axleindex;
@@ -8336,6 +8339,8 @@ void TDynamicObject::OverheadTrack(float o)
 
 void
 TDynamicObject::update_shake( double const Timedelta ) {
+
+    ShakeStateBefore = ShakeState;
     // Ra: mechanik powinien być telepany niezależnie od pozycji pojazdu
     // Ra: trzeba zrobić model bujania głową i wczepić go do pojazdu
 
@@ -8460,9 +8465,32 @@ TDynamicObject::axle_passed_joint( axle_sounds &Axle, double const Move, int con
 std::pair<double, double>
 TDynamicObject::shake_angles() const {
 
+    return shake_angles( ShakeState );
+}
+
+std::pair<double, double>
+TDynamicObject::shake_angles( shake_state const &State ) const {
+
     return {
-        std::atan( ShakeState.velocity.x * BaseShake.angle_scale.x ),
-        std::atan( ShakeState.velocity.z * BaseShake.angle_scale.z ) };
+        std::atan( State.velocity.x * BaseShake.angle_scale.x ),
+        std::atan( State.velocity.z * BaseShake.angle_scale.z ) };
+}
+
+TDynamicObject::shake_state
+TDynamicObject::shake_between( double const Fraction ) const {
+
+    if( Fraction >= 1.0 ) {
+        return ShakeState;
+    }
+    auto const between { []( glm::dvec3 const &Before, glm::dvec3 const &After, double const Part ) {
+        return glm::dvec3 {
+            std::lerp( Before.x, After.x, Part ),
+            std::lerp( Before.y, After.y, Part ),
+            std::lerp( Before.z, After.z, Part ) }; } };
+    auto const part { std::max( Fraction, 0.0 ) };
+    return {
+        between( ShakeStateBefore.velocity, ShakeState.velocity, part ),
+        between( ShakeStateBefore.offset, ShakeState.offset, part ) };
 }
 
 void

@@ -26,6 +26,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "scene/sn_utils.h"
 #include "utilities/serialize.h"
 #include "utilities/glmHelpers.h"
+#include "utilities/wholefile.h"
 
 #include <bit>
 
@@ -2611,20 +2612,8 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	WriteLog("Loading binary format 3d model data from \"" + FileName + "\"...", logtype::model);
 
 	// the file is read whole in one go and parsed from memory
-	std::unique_ptr<char[]> filedata;
-	std::size_t filesize{0};
-	{
-		std::ifstream input(FileName, std::ios::binary | std::ios::ate);
-		auto const length{input.tellg()};
-		if (length > 0)
-		{
-			filedata.reset(new char[static_cast<std::size_t>(length)]);
-			input.seekg(0);
-			input.read(filedata.get(), length);
-			filesize = static_cast<std::size_t>(input.gcount());
-		}
-	}
-	e3d_memorybuffer buffer(filedata.get(), filedata.get() + filesize);
+	auto const filedata{read_whole_file(FileName)};
+	e3d_memorybuffer buffer(filedata.data.get(), filedata.data.get() + filedata.size);
 	std::istream file(&buffer);
 
 	uint32_t type = sn_utils::ld_uint32(file);
