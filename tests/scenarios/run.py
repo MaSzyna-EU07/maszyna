@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import heapq
 import json
 import os
 import math
@@ -300,6 +301,7 @@ def read_text(path: Path | None) -> str:
 # physicslog/<scenery>_<date>.blackbox. A header, then records: a byte of the kind, the length, the content
 BLACKBOX_MAGIC = b"EU07BBX\0"
 BLACKBOX_HEADER = 12  # the magic, the version of the format, two bytes reserved
+BLACKBOX_TRACK = 0x10  # the map: a rail track, or one way of a switch, as points along it
 BLACKBOX_VEHICLE = 0x12  # a vehicle: its number and its name
 BLACKBOX_VEHICLES = 0x21  # once a second: the vehicles which moved, changed speed or got another driver
 BLACKBOX_COUPLING = 0x37  # a coupler of a vehicle coupled, uncoupled, or its hoses and cables changed
@@ -330,8 +332,19 @@ class VehicleState:
 
 
 @dataclass
+class Track:
+    """A `track` record: a plain track, or one way of a switch (several records under the number of the switch)."""
+    number: int
+    name: str
+    kind: int  # 0 a plain track, 1 a way of a switch
+    branch: int  # the switch position this way is taken in
+    points: list[tuple[float, float, float]]
+
+
+@dataclass
 class Blackbox:
     vehicles: dict[int, str] = field(default_factory=dict)  # names by number
+    tracks: list[Track] = field(default_factory=list)  # the map, in the order written
     couplings: list[Coupling] = field(default_factory=list)  # in the order written
     states: dict[int, list[VehicleState]] = field(default_factory=dict)  # of each vehicle by number, in time order
     end_time: float = 0.0  # of the last `vehicles` record
@@ -347,8 +360,22 @@ def find_blackbox(game_dir: Path, scenery: str, since: float) -> Path | None:
     return max(files, key=lambda p: p.stat().st_mtime, default=None)
 
 
+def _blackbox_text(content: bytes, start: int) -> tuple[str, int]:
+    """A text of a black box record at `start`, and where the field after it begins."""
+    # its length in 7 bit groups, low first, the high bit set on all but the last
+    size, shift = 0, 0
+    while True:
+        byte = content[start]
+        start += 1
+        size |= (byte & 0x7F) << shift
+        shift += 7
+        if byte < 0x80:
+            break
+    return content[start: start + size].decode("utf-8", errors="replace"), start + size
+
+
 def read_blackbox(path: Path | None) -> Blackbox | None:
-    """The vehicles and the coupling records of a black box; None when there is none or it can't be read."""
+    """The map, the vehicles and the coupling records of a black box; None when there is none or it can't be read."""
     try:
         data = path.read_bytes() if path else b""
     except FileNotFoundError:
@@ -366,16 +393,14 @@ def read_blackbox(path: Path | None) -> Blackbox | None:
             at += 5 + length
             if kind == BLACKBOX_VEHICLE:
                 number, = struct.unpack_from("<I", content)
-                # a text: its length in 7 bit groups, low first, the high bit set on all but the last
-                size, shift, start = 0, 0, 4
-                while True:
-                    byte = content[start]
-                    start += 1
-                    size |= (byte & 0x7F) << shift
-                    shift += 7
-                    if byte < 0x80:
-                        break
-                box.vehicles[number] = content[start: start + size].decode("utf-8", errors="replace")
+                box.vehicles[number], _ = _blackbox_text(content, 4)
+            elif kind == BLACKBOX_TRACK:
+                # the number, the name, the kind, the switch position of the way, the category, the points
+                number, = struct.unpack_from("<I", content)
+                name, start = _blackbox_text(content, 4)
+                track_kind, branch, _, count = struct.unpack_from("<BBBI", content, start)
+                points = [struct.unpack_from("<3f", content, start + 7 + 12 * i) for i in range(count)]
+                box.tracks.append(Track(number, name, track_kind, branch, points))
             elif kind == BLACKBOX_VEHICLES:
                 # the time, a keyframe mark, the count, then 25 bytes a vehicle: number, position, heading, speed, driver
                 when, _, count = struct.unpack_from("<dBI", content)
@@ -923,6 +948,159 @@ def check_moves(box, vehicle, min_speed, direction="front"):
     return True, f"{vehicle} runs {direction} end leading: {min_speed} km/h at t={first.time:.1f}s, up to {sign * fastest.speed:.1f} km/h"
 
 
+def _along_track(track, x, z):
+    """Where the point (x, z) lies by the track: its level distance [m] from the line of the track, and how far along
+    the track [m] from its first point that nearest point of the line is."""
+    best, at, run_length = math.inf, 0.0, 0.0
+    if len(track.points) == 1:
+        return math.hypot(x - track.points[0][0], z - track.points[0][2]), 0.0
+    for (ax, _, az), (bx, _, bz) in zip(track.points, track.points[1:]):
+        dx, dz = bx - ax, bz - az
+        length = dx * dx + dz * dz
+        share = 0.0 if length == 0.0 else max(0.0, min(1.0, ((x - ax) * dx + (z - az) * dz) / length))
+        offset = math.hypot(x - (ax + share * dx), z - (az + share * dz))
+        if offset < best:
+            best, at = offset, run_length + share * math.sqrt(length)
+        run_length += math.sqrt(length)
+    return best, at
+
+
+def _track_length(track):
+    return sum(math.hypot(b[0] - a[0], b[2] - a[2]) for a, b in zip(track.points, track.points[1:]))
+
+
+def _track_label(track):
+    return f"{track.name or '#' + str(track.number)}" + (f" (way {track.branch})" if track.kind == 1 else "")
+
+
+class _TrackMap:
+    """The tracks of a black box as a network: the ends of the tracks (and of the ways of the switches) that meet are
+    one node, each track an edge of its length between its two ends."""
+
+    JOINT = 0.3  # ends closer than this [m], level, meet
+
+    def __init__(self, tracks):
+        self.tracks = tracks
+        self.lengths = [_track_length(t) for t in tracks]
+        nodes = []  # (x, z) of each node
+        self.ends = []  # the nodes of the first and the last point of each track
+        for track in tracks:
+            pair = []
+            for x, _, z in (track.points[0], track.points[-1]):
+                node = next((i for i, (nx, nz) in enumerate(nodes) if math.hypot(nx - x, nz - z) < self.JOINT), None)
+                if node is None:
+                    nodes.append((x, z))
+                    node = len(nodes) - 1
+                pair.append(node)
+            self.ends.append(tuple(pair))
+        self.edges = {}  # node: [(other node, length)]
+        for (a, b), length in zip(self.ends, self.lengths):
+            self.edges.setdefault(a, []).append((b, length))
+            self.edges.setdefault(b, []).append((a, length))
+
+    def places(self, position, max_offset):
+        """The tracks the position lies on: within max_offset [m] of their line, (track index, offset, along)."""
+        x, _, z = position
+        found = [(i, *_along_track(t, x, z)) for i, t in enumerate(self.tracks)]
+        near = [f for f in found if f[1] <= max_offset]
+        return near or [min(found, key=lambda f: f[1])]
+
+    def distance(self, one, other, limit):
+        """The shortest way [m] along the tracks between two places (track index, offset, along), up to `limit`
+        (beyond it, infinity)."""
+        (i, _, s), (j, _, t) = one, other
+        if i == j:
+            return abs(s - t)
+        start = {self.ends[i][0]: s, self.ends[i][1]: self.lengths[i] - s}
+        goal = {self.ends[j][0]: t, self.ends[j][1]: self.lengths[j] - t}
+        reached = dict(start)
+        queue = [(cost, node) for node, cost in start.items()]
+        heapq.heapify(queue)
+        best = math.inf
+        while queue:
+            cost, node = heapq.heappop(queue)
+            if cost > reached.get(node, math.inf) or cost >= min(best, limit):
+                continue
+            if node in goal:
+                best = min(best, cost + goal[node])
+            for nxt, length in self.edges.get(node, []):
+                if cost + length < reached.get(nxt, math.inf):
+                    reached[nxt] = cost + length
+                    heapq.heappush(queue, (cost + length, nxt))
+        return best if best <= limit else math.inf
+
+
+def _coupled_pairs(box, chosen, upto):
+    """The pairs of vehicles (by number) among `chosen` whose couplers hold each other at the time `upto`."""
+    held = {}
+    for c in box.couplings:
+        if c.time > upto:
+            break
+        held[(c.vehicle, c.side)] = (c.other, c.flags)
+    return {tuple(sorted((vehicle, other))) for (vehicle, _), (other, flags) in held.items()
+            if flags & COUPLING_COUPLER and vehicle in chosen and other in chosen}
+
+
+def check_on_track(box, vehicles, max_offset=0.75, max_detour=5.0):
+    """Every vehicle whose name starts with `vehicles` stays on the line of a track in every state the black box has of
+    it, and the vehicles coupled to each other stay on one way: the way along the tracks from one to the other is no
+    more than `max_detour` [m] longer than the straight line between them. A vehicle thrown sideways has its middle off
+    any track; one with its bogies on two tracks that part too, once they are apart; and a train whose vehicles went
+    two ways at a switch runs on with two coupled vehicles on two tracks, side by side, with the way between them back
+    through the switch."""
+    if not box.tracks:
+        return False, "the black box has no map of the tracks"
+    chosen = {number: name for number, name in box.vehicles.items() if name.lower().startswith(vehicles.lower())}
+    if not chosen:
+        return False, f"the black box has no vehicle named {vehicles}..."
+    network = _TrackMap(box.tracks)
+    # the states of the chosen vehicles by time: a vehicle is listed when it moved, or every 60 s
+    times = sorted({s.time for number in chosen for s in box.states.get(number, [])})
+    if not times:
+        return False, f"the black box has no state of {', '.join(chosen.values())}"
+    latest, index, places = {}, {number: 0 for number in chosen}, {}
+    worst_offset, worst_detour, failures = None, None, []
+    for when in times:
+        for number in chosen:
+            states = box.states.get(number, [])
+            while index[number] < len(states) and states[index[number]].time <= when:
+                latest[number] = states[index[number]]
+                index[number] += 1
+        for number, state in latest.items():
+            if (number, state.time) in places:
+                continue
+            places[(number, state.time)] = network.places(state.position, max_offset)
+            nearest = min(places[(number, state.time)], key=lambda p: p[1])
+            if worst_offset is None or nearest[1] > worst_offset[0]:
+                worst_offset = (nearest[1], chosen[number], state, box.tracks[nearest[0]])
+        for one, other in _coupled_pairs(box, chosen, when):
+            if one not in latest or other not in latest:
+                continue
+            straight = math.dist(latest[one].position, latest[other].position)
+            at_one, at_other = places[(one, latest[one].time)], places[(other, latest[other].time)]
+            way = min(network.distance(a, b, straight + 1000.0) for a in at_one for b in at_other)
+            detour = way - straight
+            if worst_detour is None or detour > worst_detour[0]:
+                worst_detour = (detour, chosen[one], chosen[other], when, at_one, at_other)
+    offset, name, state, track = worst_offset
+    where = f"{name} at t={state.time:.1f}s ({abs(state.speed):.1f} km/h) {offset:.2f} m off {_track_label(track)}"
+    if offset > max_offset:
+        failures.append(f"{where}, more than {max_offset} m")
+    detail = f"the farthest off a track {where}"
+    if worst_detour is not None:
+        detour, one, other, when, at_one, at_other = worst_detour
+        tracks = (f"{_track_label(box.tracks[min(at_one, key=lambda p: p[1])[0]])} and "
+                  f"{_track_label(box.tracks[min(at_other, key=lambda p: p[1])[0]])}")
+        length = "no way along the tracks" if math.isinf(detour) else f"the way along the tracks {detour:.1f} m longer than the straight line"
+        said = f"{one} and {other}, coupled, at t={when:.1f}s on {tracks}: {length}"
+        if detour > max_detour:
+            failures.append(f"{said}, more than {max_detour} m")
+        detail += f"; of the coupled ones {said}"
+    if failures:
+        return False, "; ".join(failures)
+    return True, f"{len(chosen)} vehicle(s), {detail}"
+
+
 # checks on the black box of the run rather than on the physicslog rows
 BLACKBOX_CHECKS = {
     "couples": check_couples,
@@ -930,6 +1108,7 @@ BLACKBOX_CHECKS = {
     "driver_changes": check_driver_changes,
     "stops_driverless": check_stops_driverless,
     "moves": check_moves,
+    "on_track": check_on_track,
 }
 
 
