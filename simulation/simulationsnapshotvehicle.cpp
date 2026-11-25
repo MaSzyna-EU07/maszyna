@@ -79,12 +79,44 @@ axle_place read_axle(snapshot::record const &Entry, int const Index)
 	return place;
 }
 
+// where the axle is now
+axle_place axle_at(TTrackFollower const &Axle)
+{
+	return {Axle.GetTrack(), Axle.Path(), Axle.GetTranslation(), Axle.GetDirection(), Axle.EventFlags() | (Axle.EventallFlags() << 2)};
+}
+
 // takes the vehicle off the list of the track it's on, if it's on it
 void leave_track(TDynamicObject &Vehicle)
 {
 	if (Vehicle.MyTrack != nullptr && Vehicle.MyTrack->CheckDynamicObject(&Vehicle))
 		Vehicle.MyTrack->RemoveDynamicObject(&Vehicle);
 	Vehicle.MyTrack = nullptr;
+}
+
+// puts the axles of the vehicle at the places, and its body after them. returns: false if an axle can't be put there
+bool put_axles(TDynamicObject &Vehicle, std::array<axle_place, 2> const &Places)
+{
+	// the axles a hair off the ends of their tracks first, for the body of the vehicle to be worked out from them:
+	// Move() does that, and takes an axle standing at the very end of a track over to the next one
+	if (constexpr double inset{1e-6}; false == Places[0].put(Vehicle.Axle0, inset) || false == Places[1].put(Vehicle.Axle1, inset))
+		return false;
+	// too short a way for the axles to move at all
+	Vehicle.Move(1e-300);
+	// then exactly where they were
+	Places[0].put(Vehicle.Axle0, 0.0);
+	Places[1].put(Vehicle.Axle1, 0.0);
+	return true;
+}
+
+// the vehicle is on the list of the track its leading axle is on, and its physics where its body is
+void settle(TDynamicObject &Vehicle)
+{
+	if (auto *track{Vehicle.iAxleFirst != 0 ? Vehicle.Axle1.GetTrack() : Vehicle.Axle0.GetTrack()}; track != nullptr && track != Vehicle.MyTrack)
+	{
+		leave_track(Vehicle);
+		track->AddDynamicObject(&Vehicle);
+	}
+	Vehicle.MoverParameters->Loc = {-Vehicle.vPosition.x, Vehicle.vPosition.z, Vehicle.vPosition.y};
 }
 
 // the vehicle whose physics a coupler is joined to: the neighbour at that end as a rule, otherwise looked up
@@ -258,27 +290,31 @@ bool TDynamicObject::snapshot_place(simulation::snapshot::record const &Entry)
 	if (places[0].track == nullptr || places[1].track == nullptr)
 		return false;
 
+	// where the scenery put the vehicle, for it to stay there if it can't be put where the snapshot has it
+	auto const scenery{std::array{axle_at(Axle0), axle_at(Axle1)}};
+	auto const facing{iDirection};
+	auto const first{iAxleFirst};
 	// which of the ends of the vehicle leads in its consist, which of its axles is the first: 0 or 1
 	Entry.get("facing", iDirection, 0, 1);
-	// the axles a hair off the ends of their tracks first, for the body of the vehicle to be worked out from them:
-	// Move() does that, and takes an axle standing at the very end of a track over to the next one
-	if (constexpr double inset{1e-6}; false == places[0].put(Axle0, inset) || false == places[1].put(Axle1, inset))
-		return false;
-	// too short a way for the axles to move at all
-	Move(1e-300);
-	// then exactly where they were
-	places[0].put(Axle0, 0.0);
-	places[1].put(Axle1, 0.0);
-	Entry.get("first", iAxleFirst, 0, 1);
-
-	// the vehicle is on the list of the track its leading axle is on
-	if (auto *track{iAxleFirst != 0 ? Axle1.GetTrack() : Axle0.GetTrack()}; track != MyTrack)
+	if (put_axles(*this, places))
 	{
-		leave_track(*this);
-		track->AddDynamicObject(this);
+		Entry.get("first", iAxleFirst, 0, 1);
+		// a track named by its place in the scenery ("#12") is another one after a track was added before it: the
+		// place in the world the entry gives tells
+		if (snapshot::placed_where_saved(Entry, vPosition.x, vPosition.y, vPosition.z))
+		{
+			settle(*this);
+			return true;
+		}
+		Entry.refuse("x", std::format("the vehicle put on track {} is more than {} m from there", Entry.text("track0"), snapshot::misplaced_distance));
 	}
-	MoverParameters->Loc = {-vPosition.x, vPosition.z, vPosition.y};
-	return true;
+	// back where the scenery put it
+	iDirection = facing;
+	iAxleFirst = first;
+	if (scenery[0].track != nullptr && scenery[1].track != nullptr)
+		put_axles(*this, scenery);
+	settle(*this);
+	return false;
 }
 
 void TDynamicObject::snapshot_load(simulation::snapshot::record const &Entry)

@@ -208,13 +208,28 @@ struct coupling_plan {
 	std::vector<coupling_link> refused;
 };
 // Current: the links as they are, each given from both of its ends or from one. Wanted: the same for the snapshot.
-// Present: the names of the vehicles of the scenery. links of vehicles the snapshot says nothing of stay as they are,
-// unless a vehicle of the snapshot needs the coupler at their other end
+// Present: the names of the vehicles of the scenery which can be coupled as the snapshot has them. links of vehicles the
+// snapshot says nothing of stay as they are, unless a vehicle of the snapshot needs the coupler at their other end. a
+// vehicle left out of Present (one which stays where the scenery put it) is parted from the vehicles of the snapshot,
+// and the links of the snapshot to it are missing
 coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vector<coupling_link> const &Wanted, std::vector<std::string> const &Present);
 // the couplings of the vehicle entries ("coupler0", "coupler0end", "coupler0flags" and the same for 1), for
 // plan_couplings(). an end other than 0 or 1, or flags which aren't those of a coupling, are refused (refuse()): that
 // coupler is left out, as if the entry said nothing of it
 std::vector<coupling_link> read_couplings(std::vector<record const *> const &Entries);
+
+// how far a vehicle may be put from the place in the world its entry gives ("x", "y", "z") to be where the snapshot has
+// it. further off, the track the entry names is another one now: the scenery changed since the snapshot was taken
+inline constexpr double misplaced_distance{1.0};
+// whether the vehicle, put at X Y Z, is where the entry has it. an entry without its place in the world can't tell, and
+// is taken at its word
+bool placed_where_saved(record const &Entry, double X, double Y, double Z);
+// what differs between the fingerprint of the scenery in the header of a snapshot (Saved) and the one of the scenery
+// it's put over (Now): "tracks 812 (snapshot 811), names ...". returns: empty if they're the same
+std::string fingerprint_changes(record const &Saved, record const &Now);
+// the file to write in place of File, which is taken already: "<stem>_2<extension>", "<stem>_3<extension>"... the first
+// one which isn't. returns: File itself if it isn't taken
+std::string free_file(std::string const &File);
 
 // the snapshots asked for on the command line of the simulator
 struct command_line {

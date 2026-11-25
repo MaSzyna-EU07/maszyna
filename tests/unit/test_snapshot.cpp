@@ -376,6 +376,30 @@ TEST_CASE("snapshot: the couplings of the scenery are changed into the ones of t
 		REQUIRE(plan.missing.size() == 1);
 		CHECK(plan.missing[0].other == "gone");
 	}
+	SUBCASE("a vehicle which stays where the scenery put it is parted from the ones put where the snapshot has them")
+	{
+		// w1 couldn't be put where the snapshot has it: it's left out of Present, and its entry out of Wanted
+		std::vector<std::string> const placed{"loco", "w2", "w3", "other"};
+		std::vector<link> const current{{"loco", 1, "w1", 0, full}, {"w1", 1, "w2", 0, full}};
+		std::vector<link> const wanted{{"loco", 0, "", 0, 0}, {"loco", 1, "w1", 0, full}, {"w2", 0, "w1", 1, full}, {"w2", 1, "", 0, 0}};
+		auto const plan{snapshot::plan_couplings(current, wanted, placed)};
+		REQUIRE(plan.part.size() == 2);
+		CHECK(plan.part[0] == link{"loco", 1, "w1", 0, full});
+		CHECK(plan.part[1] == link{"w1", 1, "w2", 0, full});
+		CHECK(plan.join.empty());
+		CHECK(plan.change.empty());
+		CHECK(plan.missing.size() == 2);
+	}
+	SUBCASE("a vehicle which stays where the scenery put it keeps the vehicles the snapshot doesn't know")
+	{
+		std::vector<std::string> const placed{"loco", "w2", "w3", "other"};
+		std::vector<link> const current{{"other", 1, "w1", 0, full}, {"loco", 1, "w2", 0, full}};
+		std::vector<link> const wanted{{"loco", 1, "w2", 0, full}, {"w2", 0, "loco", 1, full}};
+		auto const plan{snapshot::plan_couplings(current, wanted, placed)};
+		CHECK(plan.part.empty());
+		CHECK(plan.join.empty());
+		CHECK(plan.missing.empty());
+	}
 }
 
 TEST_CASE("snapshot: the command line says which snapshot to load and when to take others")
@@ -737,5 +761,58 @@ TEST_CASE("snapshot: a file is written whole or not at all")
 		CHECK_FALSE(snapshot::write_file((folder / "no" / "such.snapshot").string(), document).empty());
 		CHECK_FALSE(std::filesystem::exists(folder / "no"));
 	}
+	std::filesystem::remove_all(folder);
+}
+
+TEST_CASE("snapshot: a vehicle put further than a metre from the place in the world its entry gives isn't where it was")
+{
+	snapshot::record entry{"vehicle", "eu07-424"};
+	entry.set("x", 1200.5).set("y", 3.25).set("z", -840.0);
+	CHECK(snapshot::placed_where_saved(entry, 1200.5, 3.25, -840.0));
+	CHECK(snapshot::placed_where_saved(entry, 1201.0, 3.25, -840.5));
+	// a track named "#12" which is another one after a track was added before it in the scenery
+	CHECK_FALSE(snapshot::placed_where_saved(entry, 1202.0, 3.25, -840.0));
+	CHECK_FALSE(snapshot::placed_where_saved(entry, 1200.5, 3.25, -2840.0));
+	CHECK_FALSE(snapshot::placed_where_saved(entry, std::nan(""), 3.25, -840.0));
+	// an entry which doesn't say where it is can't tell
+	snapshot::record unsaid{"vehicle", "eu07-424"};
+	CHECK(snapshot::placed_where_saved(unsaid, 0.0, 0.0, 0.0));
+	unsaid.set("x", 1.0).set("y", 2.0);
+	CHECK(snapshot::placed_where_saved(unsaid, 500.0, 0.0, 0.0));
+	unsaid.set("z", "nan");
+	CHECK(snapshot::placed_where_saved(unsaid, 500.0, 0.0, 0.0));
+}
+
+TEST_CASE("snapshot: the fingerprint of a changed scenery says what changed")
+{
+	snapshot::record saved{"snapshot", "1"};
+	saved.set("scenery", "td.scn").set("tracks", 812).set("events", 300).set("names", "0123456789abcdef");
+	snapshot::record now;
+	now.set("tracks", 812).set("events", 300).set("names", "0123456789abcdef");
+	CHECK(snapshot::fingerprint_changes(saved, now).empty());
+	// a track added to the scenery
+	now.set("tracks", 813).set("names", "fedcba9876543210");
+	CHECK(snapshot::fingerprint_changes(saved, now) == "tracks 813 (snapshot 812), names fedcba9876543210 (snapshot 0123456789abcdef)");
+	// a snapshot which doesn't say goes by what it says
+	snapshot::record older{"snapshot", "1"};
+	CHECK(snapshot::fingerprint_changes(older, now).empty());
+}
+
+TEST_CASE("snapshot: a snapshot saved where one of the same name is takes a name of its own")
+{
+	auto const folder{std::filesystem::path{EU07_UNIT_TESTS_SCRATCH} / "snapshot_names"};
+	std::filesystem::remove_all(folder);
+	std::filesystem::create_directories(folder);
+	auto const file{(folder / "td_2026-11-24_10-32-15.snapshot").generic_string()};
+	CHECK(snapshot::free_file(file) == file);
+	std::ofstream{file} << "snapshot 1 endsnapshot";
+	auto const second{snapshot::free_file(file)};
+	CHECK(second == (folder / "td_2026-11-24_10-32-15_2.snapshot").generic_string());
+	std::ofstream{second} << "snapshot 1 endsnapshot";
+	CHECK(snapshot::free_file(file) == (folder / "td_2026-11-24_10-32-15_3.snapshot").generic_string());
+	// a name without an extension
+	auto const bare{(folder / "state").generic_string()};
+	std::ofstream{bare} << "snapshot 1 endsnapshot";
+	CHECK(snapshot::free_file(bare) == bare + "_2");
 	std::filesystem::remove_all(folder);
 }

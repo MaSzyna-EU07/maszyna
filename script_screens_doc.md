@@ -309,6 +309,6 @@ again:
 
 Only `eu07.ini` turns it on: a `config` block of a scenery doesn't (the log says the key was ignored). Nor does it set
 the other keys that would take a scenery out of its sandbox or reach the computer: `execonexit`, `extcam.cmd`,
-`extcam.rec`, `screenshotsdir`, `network.server`, `network.client`, `zmq.address`, `motiontelemetry`, `uart`,
+`extcam.rec`, `screenshotsdir`, `snapshotsdir`, `network.server`, `network.client`, `zmq.address`, `motiontelemetry`, `uart`,
 `feedbackmode`, `feedbackport`, nor does it switch on `python.enabled`, `luascreens.enabled` or `wasm.enabled` when
 `eu07.ini` has them off. A scenery may still switch those three off, or `lua.fulllibraries` off, as it always could.

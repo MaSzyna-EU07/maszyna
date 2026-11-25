@@ -140,17 +140,24 @@ eu07 -s <scenery.scn> [--snapshot-at <seconds> <file>]... [--load-snapshot <file
 - `--load-snapshot <file>` puts the snapshot over the scenery given with `-s` once it has loaded. Without
   `-seed` the random seed is taken from the snapshot, so the scenery loads the way it did then; without
   `-v` the player starts in the vehicle they were in. A file the reader finds damaged (an entry cut short, or
-  fewer entries than its header counts) isn't loaded: the scenery starts as it is, the log says why, and a
-  test run ends with the error code. `--load-snapshot-force` loads what can be read of it all the same.
+  fewer entries than its header counts), or one taken in a scenery which isn't the same as this one (see
+  below), isn't loaded: the scenery starts as it is, the log says why, and a test run ends with the error code.
+  `--load-snapshot-force` loads what can be read of it all the same.
 - Both work with and without `--test`. In the game the `snapshotsave` command ([Ctrl]+[Shift]+[F9], or
-  whatever `eu07_input-keyboard.ini` binds it to) writes one to `snapshots/<scenery>_<date>_<time>.snapshot`
-  in the game folder.
+  whatever `eu07_input-keyboard.ini` binds it to) writes one to `<scenery>_<date>_<time>.snapshot` in the
+  folder `snapshotsdir` of `eu07.ini` names (`snapshots` in the game folder if it names none), with `_2`,
+  `_3`... added when that file is there already, and says on the screen where it went.
 
 The file is in the syntax of the scenery files: entries of the form
 `<type> <name> <key> <value> ... end<type>`, with the scenery's own comments and quotes. It starts with
 `snapshot <version> scenery <file> ...`, which also holds how many tracks, cells, events and vehicles the
 scenery had and a hash of their names; loaded over a scenery which gives other numbers, the log says which
-ones differ and the snapshot is applied as far as its names lead anywhere. A reader skips the entries and
+ones differ and the snapshot isn't loaded: most tracks have no name and are named by their place in the
+scenery (`#12`), and one added early in a file moves the places of all after it. With
+`--load-snapshot-force` it is applied as far as its names lead anywhere. Each vehicle is checked against the
+place in the world its entry gives (`x`, `y`, `z`): one put more than 1 m from it, or on a track which
+isn't there, stays where the scenery put it, isn't coupled to the vehicles put where the snapshot has them,
+and keeps the state and the driver the scenery gave it. A reader skips the entries and
 keys it doesn't know, and what a snapshot doesn't have stays as the scenery made it. Every value which is
 used as an index, a count, a choice of a few or the name of something is checked as it is read: a coupler
 end other than 0 or 1, a count past what the entry lists, an index past the end of a table, a number which
@@ -165,7 +172,9 @@ brake valves, the state of their couplers, the orders and timetable positions of
 they see ahead, the wind, the traction power sources, the random numbers still to be drawn, the lights of
 the signals, how many axles each isolated section counts. In the test mode that is enough for a loaded run to go on bit for bit on the sceneries of the
 snapshot cases below. What isn't kept: sounds, animations and the poses of models other than signal lamps,
-Lua and Python state, vehicles which came into being during the run (road traffic made by scripts).
+Lua and Python state, vehicles which came into being during the run (road traffic made by scripts), the cars
+of the road traffic of the spawn points (a car on the road in the snapshot isn't put back, the log counts them;
+the spawn points send cars anew), the timers of the spawn points.
 `tests/scenarios/snapshots.py a b` tells two snapshots apart, with the largest differences of position,
 speed and pressure.
 

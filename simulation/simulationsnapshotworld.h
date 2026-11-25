@@ -36,13 +36,16 @@ struct apply_summary {
 };
 
 // puts the state of the document over the scenery, which is expected to be loaded and initialized, with the simulation
-// not yet running. what the snapshot doesn't hold stays as the scenery made it
-apply_summary apply(document const &Document);
+// not yet running. what the snapshot doesn't hold stays as the scenery made it. a snapshot taken in a scenery which
+// isn't the same as this one (its fingerprint differs) is refused, unless Force says to put it over it all the same
+apply_summary apply(document const &Document, bool Force = false);
 
 // writes a snapshot of the simulation to the file. returns: true on success
 bool save(std::string const &File);
-// writes one to the snapshots folder of the game, named after the scenery and the time of the simulation; for the
-// player, who asks for it with a key (the snapshotsave command). returns: the file written, empty if it couldn't be
+// writes one to the folder of the snapshots (snapshotsdir of eu07.ini, "snapshots" by default), named after the scenery
+// and the time of the simulation, with a number added if that file is there already; for the player, who asks for it
+// with a key (the snapshotsave command), and is told on the screen where it went. returns: the file written, empty if
+// it couldn't be
 std::string save_now();
 
 // the snapshots asked for on the command line (parse_command_line()): one to load when the simulation starts, and the

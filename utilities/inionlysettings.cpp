@@ -37,7 +37,7 @@ void keep_off(bool &Current, bool const Kept, std::string_view const Key, std::v
 } // namespace
 
 ini_only_settings::ini_only_settings(global_settings const &Settings)
-    : m_exec_on_exit{Settings.exec_on_exit}, m_screenshot_dir{Settings.screenshot_dir}, m_extcam_cmd{Settings.extcam_cmd},
+    : m_exec_on_exit{Settings.exec_on_exit}, m_screenshot_dir{Settings.screenshot_dir}, m_snapshot_dir{Settings.snapshot_dir}, m_extcam_cmd{Settings.extcam_cmd},
       m_extcam_rec{Settings.extcam_rec}, m_network_servers{Settings.network_servers}, m_network_client{Settings.network_client},
 #ifdef WITH_ZMQ
       m_zmq_address{Settings.zmq_address},
@@ -56,6 +56,7 @@ std::vector<std::string_view> ini_only_settings::restore(global_settings &Settin
 	std::vector<std::string_view> changed;
 	keep(Settings.exec_on_exit, m_exec_on_exit, "execonexit", changed);
 	keep(Settings.screenshot_dir, m_screenshot_dir, "screenshotsdir", changed);
+	keep(Settings.snapshot_dir, m_snapshot_dir, "snapshotsdir", changed);
 	keep(Settings.extcam_cmd, m_extcam_cmd, "extcam.cmd", changed);
 	keep(Settings.extcam_rec, m_extcam_rec, "extcam.rec", changed);
 	keep(Settings.network_servers, m_network_servers, "network.server", changed);

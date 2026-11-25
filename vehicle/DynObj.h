@@ -756,6 +756,7 @@ private:
     // what else it keeps, written to an entry of the snapshot
     void snapshot_save( simulation::snapshot::record &Entry ) const;
     // puts the vehicle where the entry has it, or takes it out of the simulation if it was gone by then. returns: false if it can't be done
+    // (a track which isn't there, or a place more than a metre from the one in the world the entry gives); the vehicle stays where the scenery put it then
     bool snapshot_place( simulation::snapshot::record const &Entry );
     // sets the rest of the vehicle as the entry has it; after the vehicles are placed and coupled
     void snapshot_load( simulation::snapshot::record const &Entry );

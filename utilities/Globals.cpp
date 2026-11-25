@@ -148,6 +148,12 @@ bool global_settings::ConfigParseGeneral(cParser& Parser, const std::string& tok
         return true;
     }
 
+    if (token == "snapshotsdir")
+    {
+        ParseOne(Parser, snapshot_dir, 1);
+        return true;
+    }
+
     if (token == "execonexit")
     {
         ParseOne(Parser, exec_on_exit, 1);
@@ -2138,6 +2144,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
             << network_client->first << " " << network_client->second << "\n";
     }
     export_as_text( Output, "execonexit", exec_on_exit );
+    export_as_text( Output, "snapshotsdir", snapshot_dir );
 }
 
 template <>

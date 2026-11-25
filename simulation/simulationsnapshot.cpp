@@ -655,7 +655,10 @@ coupling_plan plan_couplings(std::vector<coupling_link> const &Current, std::vec
 		auto const *here{wanted_link(wanted, link.vehicle, link.end)};
 		if (auto const *there{wanted_link(wanted, link.other, link.otherend)}; here == nullptr && there == nullptr)
 			continue;
-		if (auto const kept{here != nullptr && same_partner(*here, coupler_link{link.other, link.otherend, link.flags})}; false == kept)
+		// a vehicle which stays where the scenery put it isn't coupled to one put where the snapshot has it
+		if (auto const kept{here != nullptr && present.contains(link.vehicle) && present.contains(link.other) &&
+		                    same_partner(*here, coupler_link{link.other, link.otherend, link.flags})};
+		    false == kept)
 		{
 			plan.part.emplace_back(link);
 			continue;
@@ -710,6 +713,46 @@ std::vector<coupling_link> read_couplings(std::vector<record const *> const &Ent
 		}
 	}
 	return links;
+}
+
+bool placed_where_saved(record const &Entry, double const X, double const Y, double const Z)
+{
+	auto const x{text_number(Entry.text("x"))};
+	auto const y{text_number(Entry.text("y"))};
+	auto const z{text_number(Entry.text("z"))};
+	if (false == x.has_value() || false == y.has_value() || false == z.has_value() || false == std::isfinite(*x + *y + *z))
+		return true;
+	// written so that a vehicle put at a place which isn't a number is off
+	return std::hypot(X - *x, Y - *y, Z - *z) <= misplaced_distance;
+}
+
+std::string fingerprint_changes(record const &Saved, record const &Now)
+{
+	std::string changed;
+	for (auto const &[key, value] : Now.fields)
+	{
+		if (auto const saved{Saved.text(key, value)}; saved != value)
+			changed += std::format("{}{} {} (snapshot {})", changed.empty() ? "" : ", ", key, value, shortened(saved));
+	}
+	return changed;
+}
+
+std::string free_file(std::string const &File)
+{
+	std::error_code error;
+	if (false == std::filesystem::exists(File, error))
+		return File;
+	// the number goes before the extension of the name, the folder is written as it was given
+	auto const extension{std::filesystem::path{File}.extension().string()};
+	auto const stem{File.substr(0, File.size() - extension.size())};
+	auto number{2};
+	auto file{std::format("{}_{}{}", stem, number, extension)};
+	while (std::filesystem::exists(file, error))
+	{
+		++number;
+		file = std::format("{}_{}{}", stem, number, extension);
+	}
+	return file;
 }
 
 } // namespace simulation::snapshot
