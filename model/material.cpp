@@ -106,6 +106,35 @@ int opengl_material::texture_slot( std::string const &Key )
     return -1;
 }
 
+namespace {
+
+// the texture of a single texel which a unit of a material shows when its shader can do without the texture and the material
+// gives none (the fourth argument of #pragma texture). made once for each colour, shared by all the materials
+texture_handle
+default_texture( gfx::shader_texture_default const Default ) {
+
+    struct texel_source {
+        char const *name;
+        std::array<std::uint8_t, 4> texel;
+    };
+    using enum gfx::shader_texture_default;
+    texel_source source { "internal_src:material/default_black", { 0, 0, 0, 255 } };
+    if( Default == white ) { source = { "internal_src:material/default_white", { 255, 255, 255, 255 } }; }
+    else if( Default == red ) { source = { "internal_src:material/default_red", { 255, 0, 0, 255 } }; }
+    else if( Default == yellow ) { source = { "internal_src:material/default_yellow", { 255, 255, 0, 255 } }; }
+
+    auto const handle { GfxRenderer->Fetch_Texture( source.name, true ) };
+    if( handle == null_handle ) { return null_handle; }
+    // a texture just made is the stub of the generated textures, larger than the texel it gets here
+    if( auto &texture { GfxRenderer->Texture( handle ) };
+        ( texture.get_width() != 1 ) || ( texture.get_height() != 1 ) ) {
+        texture.update_from_memory( 1, 1, source.texel.data() );
+    }
+    return handle;
+}
+
+} // namespace
+
 void opengl_material::build_texture_variants( std::vector<variant_binding> const &Bindings, bool const Loadnow )
 {
     if( true == Bindings.empty() ) { return; }
@@ -266,6 +295,17 @@ void opengl_material::finalize(bool Loadnow)
     for (auto it : shader->texture_conf)
     {
         gfx::shader_texture_entry &entry = it.second;
+        if( ( textures[ entry.id ] == null_handle ) && ( entry.fallback != gfx::shader_texture_default::none ) ) {
+            // a texture the shader can do without: its unit shows a single texel, in the sets of the variants too
+            auto const fallback { default_texture( entry.fallback ) };
+            if( fallback != null_handle ) {
+                textures[ entry.id ] = fallback;
+                for( auto &variant : texture_variants ) {
+                    if( variant[ entry.id ] == null_handle ) { variant[ entry.id ] = fallback; }
+                }
+                continue;
+            }
+        }
         texture_handle handle = textures[entry.id];
         // NOTE: texture validation at this stage relies on forced texture load behaviour during its create() call
         // TODO: move texture id validation to later stage if/when deferred texture loading is implemented

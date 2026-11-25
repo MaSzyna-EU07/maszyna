@@ -2845,7 +2845,7 @@ int vulkan14_renderer::prepass_class(material_handle const Material)
 	static std::unordered_set<std::string> const alphatested{"default",           "default_1",           "default_2",    "default_detail",        "default_specgloss",
 	                                                         "detail_normalmap",  "detail_normalmap_specgloss", "normalmap", "normalmap_specgloss", "reflmap",
 	                                                         "reflmap_specgloss", "shadowlessnormalmap", "shadowlessnormalmap_specgloss", "sunlessnormalmap", "sunlessnormalmap_specgloss",
-	                                                         "trackblend",        "trackblend_normalmap", "trackblend_specgloss"};
+	                                                         "trackblend",        "trackblend_normalmap", "trackblend_specgloss", "pbr", "pbr_detail", "pbr_coat"};
 	static std::unordered_set<std::string> const solid{"colored", "default_0", "terrain", "water", "water_specgloss", "invalid"};
 	auto prepassclass{0};
 	for (auto const &program : scene.materials)

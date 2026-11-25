@@ -28,6 +28,30 @@ layout(std430, binding = CAB_PROBE_SSBO_BINDING) readonly buffer cab_probe_ssbo
 
 float glossiness = 1.0;
 float metalic = 0.0;
+
+// the materials of the metallic and roughness workflow (mat_pbr.glsl, which defines PBR_SURFACE) describe the surface the way the
+// texturing tools do: the perceptual roughness itself in place of the glossiness, the occlusion of the ambient light baked into
+// their textures, and the light the surface emits whatever falls on it. they are lit as those tools show them: the sun without
+// the sharpened terminator, the highlights not scaled by the specular colour of the submodel, and with the light a rough
+// surface reflects after more than one bounce between its facets
+float pbr_roughness = 1.0;
+float pbr_occlusion = 1.0;
+vec3 pbr_emission = vec3(0.0);
+// with PBR_COAT, the clear varnish over the surface: how much of it there is (0..1) and its perceptual roughness
+float coat_weight = 0.0;
+float coat_roughness = 0.0;
+// the highlights of the lamps in the varnish, gathered by add_local_light()
+vec3 coat_lampspecular = vec3(0.0);
+// the reflectance of the varnish at normal incidence (a refractive index of 1.5)
+const float COAT_F0 = 0.04;
+
+// what scales the highlights of the sun and the lamps: specular: of the material, the specular colour of the submodel without
+// it. in the pbr materials that parameter is the specular level instead, which shade_surface() gets as Specularity
+#ifdef PBR_SURFACE
+#define HIGHLIGHT_SCALE 1.0
+#else
+#define HIGHLIGHT_SCALE param[1].y
+#endif
 layout(location = 7) in vec4 UserData;
 #pragma param(weathering, 2, 3, 1, zero)
 
@@ -609,7 +633,18 @@ void add_local_light(light_s light, vec2 part, vec3 fragnormal, inout vec3 diffu
 	float energy = 1.0;
 	if ((light.type != LIGHT_HEADLIGHTS) && (light.ambient != 0.0))
 		tolight = sphere_light_specular(tolight, fragnormal, abs(light.ambient), spec_roughness, energy);
-	specular += color * (part.y * param[1].y * energy) * specular_light(normalize(tolight), fragnormal, spec_f0, spec_roughness, LOCAL_LIGHT_BRDF_LIMIT);
+	specular += color * (part.y * HIGHLIGHT_SCALE * energy) * specular_light(normalize(tolight), fragnormal, spec_f0, spec_roughness, LOCAL_LIGHT_BRDF_LIMIT);
+#ifdef PBR_COAT
+	// the varnish reflects the lamp with a lobe of its own
+	if (coat_weight > 0.0)
+	{
+		vec3 tocoat = light.pos - f_pos.xyz;
+		float coatenergy = 1.0;
+		if ((light.type != LIGHT_HEADLIGHTS) && (light.ambient != 0.0))
+			tocoat = sphere_light_specular(tocoat, fragnormal, abs(light.ambient), coat_roughness, coatenergy);
+		coat_lampspecular += color * (part.y * coatenergy) * specular_light(normalize(tocoat), fragnormal, vec3(COAT_F0), coat_roughness, LOCAL_LIGHT_BRDF_LIMIT);
+	}
+#endif
 }
 
 // adds the light of the headlights and lamps which reach the fragment to its diffuse and specular light. these are the ones in
@@ -737,7 +772,14 @@ vec3 reflection_surroundings(vec3 fragnormal, float roughness)
 {
     vec3 direction = normalize(envmap_direction(fragnormal));
     vec3 sky = envmap_sample_rough(normalize(vec3(direction.x, max(direction.y, 0.0), direction.z)), roughness);
+#ifdef PBR_SURFACE
+    // the lobe of a rough surface takes in the sky and the ground at once: the horizon spreads with the roughness, instead of
+    // drawing a line across the surface
+    float spread = roughness * roughness;
+    float below = smoothstep(-spread, 0.25 + spread, -direction.y);
+#else
     float below = smoothstep(0.0, 0.25, -direction.y);
+#endif
     if ((below <= 0.0) || (false == ENVMAP_ENABLED))
         return sky;
     return mix(sky, reflection_ground(), below);
@@ -861,6 +903,17 @@ vec3 cab_probe_reflection(vec3 surroundings, vec3 fragnormal, float roughness, v
     return surroundings * (1.0 - albedo.a) + light.rgb + albedo.rgb * ambientlight;
 }
 
+#ifdef PBR_COAT
+// what the varnish of a material reflects of the surroundings, with Coatspec the share of them it reflects: the ambient light
+// where the material doesn't ask for the cubemap (Shares.x), the scene and the environment map elsewhere (Shares.y; the map
+// held back by the occlusion and by the shadow of the sun, as for the surface below)
+vec3 coat_reflection(vec3 ambientlight, vec3 envcolor, vec4 scenecolor, vec3 coatspec, vec2 shares, float occlusion, float cubemapshadow)
+{
+    return ambientlight * coatspec * shares.x * occlusion
+         + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemapshadow * occlusion)) * coatspec * shares.y;
+}
+#endif
+
 // lights the surface: the ambient light, the sun (the moon), the headlights and lamps and the reflection of the surroundings.
 // the units are the ones of the ambient light, the irradiance over pi: a white lambertian surface lit by 1 of it shows 1.
 // Texturecolor is the albedo (the base colour of a metal), Specularity the specular level of a dielectric (0.5 is the
@@ -894,7 +947,11 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         texturecolor = (tinted > 0.0 ? texturecolor * mix(vec3(1.0), param[2].rgb, tinted) : texturecolor);
         specularity = mix(specularity, min(specularity, 0.03), smoothstep(0.0, 0.4, polished));
         metalic = mix(metalic, 0.0, polished);
+#ifdef PBR_SURFACE
+        pbr_roughness = mix(pbr_roughness, max(pbr_roughness, 0.94), polished);
+#else
         glossiness = mix(glossiness, min(glossiness, 0.06 * abs(param[1].w)), polished);
+#endif
         reflectivity = mix(reflectivity, min(reflectivity, 0.08 * param[1].z), smoothstep(0.0, 0.4, polished));
 #endif
         // Scale ambient before it gets tinted by the texture.
@@ -912,7 +969,11 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     float NdotV = max(dot(fragnormal, view_dir), 1e-4);
 
     // glossiness == param[1].w -> mirror, glossiness == 0 -> fully rough
+#ifdef PBR_SURFACE
+    float roughness = clamp(pbr_roughness, 0.0, 1.0);
+#else
     float roughness = clamp(1.0 - glossiness / max(abs(param[1].w), 1.0), 0.0, 1.0);
+#endif
     roughness = max(specular_antialiasing(fragnormal, roughness), MIN_ROUGHNESS);
     // metals reflect with their base colour, dielectrics with the specular level (0.5 -> 0.04)
     vec3 f0 = mix(vec3(0.08 * specularity), texturecolor, metalic);
@@ -932,6 +993,10 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // light a lot; they take a share of it (gfx.postfx.ao.cab), the light which bounces inside them comes from the probe or below
     if (cab_interior > 0.5)
         occlusion = mix(1.0, occlusion, ao_params.z);
+#ifdef PBR_SURFACE
+    // the occlusion baked into the textures of the material holds the ambient light back too, whatever the view finds
+    occlusion = min(occlusion, pbr_occlusion);
+#endif
     vec3 diffuse_occlusion = vec3(1.0);
     float specular_occlusion = 1.0;
     if (occlusion < 1.0)
@@ -939,6 +1004,15 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         diffuse_occlusion = ao_multi_bounce(occlusion, texturecolor);
         specular_occlusion = ao_specular(occlusion, NdotV, roughness);
     }
+#ifdef PBR_SURFACE
+    // a normal map can tilt the normal so far that the reflected ray goes into the surface the geometry has there: such a ray
+    // finds the surface itself, not the surroundings (the horizon occlusion of Lagarde and de Rousiers 2014)
+    vec3 surfacenormal = normalize(f_normal);
+    if (dot(surfacenormal, f_pos.xyz) > 0.0)
+        surfacenormal = -surfacenormal;
+    float horizon = clamp(1.0 + dot(reflect(-view_dir, fragnormal), surfacenormal), 0.0, 1.0);
+    specular_occlusion *= horizon * horizon;
+#endif
 
     // Pre-integrated env BRDF: how much of the surroundings the surface reflects, for its F0, roughness and the view angle.
     // the surroundings are the cubemap where the material asks for it (reflectivity) and the ambient light elsewhere, so a
@@ -955,6 +1029,15 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     }
     // what the diffuse layer is left with
     vec3 diffuse_albedo = texturecolor * (1.0 - metalic) * (1.0 - env_spec);
+#ifdef PBR_SURFACE
+    // the single bounce of the brdf leaves out the light which leaves a rough surface after more bounces between its facets, so
+    // rough metals come out too dark: the highlights and the reflection are raised by what is missing (Fdez-Aguera, "A multiple
+    // scattering microfacet model for real-time image based lighting", 2019). a white surface reflects 1 - 0.55 * roughness in
+    // one bounce: what the two terms of EnvBRDFApprox() add up to
+    vec3 multibounce = 1.0 + f0 * (1.0 / (1.0 - 0.55 * roughness) - 1.0);
+    env_spec *= multibounce;
+    cubemap_spec = env_spec;
+#endif
     if (legacy_coat)
     {
         // the varnish: a smooth dielectric layer reflecting the cubemap, worn off where the material is weathered
@@ -963,6 +1046,17 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         ambient_share = 1.0;
         diffuse_albedo *= 1.0 - cubemap_spec * min(cubemap_share, 1.0);
     }
+#ifdef PBR_COAT
+    // the varnish: a smooth dielectric layer over the surface. what it reflects doesn't reach the surface below (coat_through is
+    // what does), and it reflects the surroundings, the sun and the lamps with a lobe of its own
+    coat_weight = matte ? 0.0 : clamp(coat_weight, 0.0, 1.0);
+    coat_roughness = max(specular_antialiasing(fragnormal, clamp(coat_roughness, 0.0, 1.0)), MIN_ROUGHNESS);
+    vec3 coat_spec = EnvBRDFApprox(vec3(COAT_F0), coat_roughness, NdotV) * coat_weight;
+    float coat_through = 1.0 - coat_weight * (COAT_F0 + (1.0 - COAT_F0) * pow(1.0 - NdotV, 5.0));
+    float coat_occlusion = ((occlusion < 1.0) ? ao_specular(occlusion, NdotV, coat_roughness) : 1.0) * horizon * horizon;
+    vec3 coat_envcolor = vec3(0.0);
+    vec4 coat_scenecolor = vec4(0.0);
+#endif
     // the reflection of the surroundings: the scene where the screen (or the ray tracing) gives it, the sky and the ground of the
     // environment map elsewhere
     vec3 envcolor = vec3(0.0);
@@ -974,22 +1068,54 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
         // inside the cab the cab is what the surroundings are, where the probe holds it
         if (cabprobe && (cab_probe_params.y > 0.0))
             envcolor = cab_probe_reflection(envcolor, fragnormal, env_roughness, cabambient);
+#ifdef PBR_COAT
+        // the varnish reflects the surroundings as well. the scene is traced once, for the layer which shows more of it; the
+        // other one reflects the environment map alone
+        if (coat_weight > 0.0)
+        {
+            coat_envcolor = reflection_surroundings(fragnormal, coat_roughness) * skyoccl.x;
+            if (cabprobe && (cab_probe_params.y > 0.0))
+                coat_envcolor = cab_probe_reflection(coat_envcolor, fragnormal, coat_roughness, cabambient);
+        }
+        float baseweight = cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0)) * coat_through;
+        float coatweight = cubemap_share * dot(coat_spec, vec3(1.0 / 3.0));
+        bool tracing = (ssr_params.x > 0.0) || (ssr_params2.z > 0.0);
+        if (tracing && (coatweight >= baseweight) && (coatweight > REFLECTION_SCENE_WEIGHT))
+            coat_scenecolor = reflection_scene(fragnormal, coat_roughness);
+        else if (tracing && (baseweight > REFLECTION_SCENE_WEIGHT))
+            scenecolor = reflection_scene(fragnormal, env_roughness);
+#else
         if (((ssr_params.x > 0.0) || (ssr_params2.z > 0.0)) && (cubemap_share * dot(cubemap_spec, vec3(1.0 / 3.0)) > REFLECTION_SCENE_WEIGHT))
             scenecolor = reflection_scene(fragnormal, env_roughness);
+#endif
     }
 
     if (lights_count == 0U)
-        return fragcolor * diffuse_occlusion * diffuse_albedo
-             + emissioncolor * texturecolor
-             + fragcolor * env_spec * ambient_share * specular_occlusion
-             + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * specular_occlusion)) * cubemap_spec * cubemap_share;
+    {
+        vec3 unlit = fragcolor * diffuse_occlusion * diffuse_albedo
+                   + emissioncolor * texturecolor
+                   + fragcolor * env_spec * ambient_share * specular_occlusion
+                   + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * specular_occlusion)) * cubemap_spec * cubemap_share;
+#ifdef PBR_SURFACE
+        unlit += pbr_emission;
+#endif
+#ifdef PBR_COAT
+        unlit = unlit * coat_through
+              + coat_reflection(fragcolor, coat_envcolor, coat_scenecolor, coat_spec, vec2(ambient_share, cubemap_share), coat_occlusion, 1.0);
+#endif
+        return unlit;
+    }
 
     vec3 light_dir = normalize(-lights[0].dir);
     float NdotL = max(dot(fragnormal, light_dir), 0.0);
     // Sharpen sun N.L falloff so the lit-to-shaded terminator on cab
     // panels, vehicle bodies and terrain reads as a clear edge rather
     // than a soft Lambertian ramp. Tunable via SUN_NDOTL_SHARPNESS.
+#ifdef PBR_SURFACE
+    float sun_NdotL = NdotL;
+#else
     float sun_NdotL = pow(NdotL, SUN_NDOTL_SHARPNESS);
+#endif
     // the clouds hold back the sun (the moon at night) where their shadow falls
     float cloudsun = cloud_shadow(mat3(inv_view) * f_pos.xyz);
     // Sun HDR scale -> SUN_DIFFUSE_SCALE, the same for the diffuse and the specular light
@@ -1018,6 +1144,9 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     // the reflection of the surroundings, before the light of the sun and the lamps joins the ambient light
     vec3 env_reflection = fragcolor * env_spec * ambient_share * specular_occlusion
                         + (scenecolor.rgb + envcolor * ((1.0 - scenecolor.a) * cubemap_shadow * specular_occlusion)) * cubemap_spec * cubemap_share;
+#ifdef PBR_COAT
+    vec3 coat_light = coat_reflection(fragcolor, coat_envcolor, coat_scenecolor, coat_spec, vec2(ambient_share, cubemap_share), coat_occlusion, cubemap_shadow);
+#endif
     // the sun coming in through the windows and bouncing around a low poly interior, or the cab without its probe (which gives that
     // light from where the sun falls in the cab): a share of the light of the sun outside joins the ambient light (gfx.interior.bounce)
     if ((cab_interior > 0.5) && (false == cabprobe))
@@ -1033,12 +1162,27 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
 
     vec3 lampspecular = vec3(0.0);
     add_local_lights(fragnormal, fragcolor, lampspecular);
+#ifdef PBR_SURFACE
+    specular *= multibounce;
+    lampspecular *= multibounce;
+#endif
 
-    return fragcolor * diffuse_albedo     // ambient, sun and lamps on the diffuse layer
-         + specular * param[1].y        // highlight of the sun, fresnel coloured (metals take their base colour)
-         + lampspecular                 // highlights of the lamps, param[1].y already applied
-         + emissioncolor * texturecolor
-         + env_reflection;
+    vec3 lit = fragcolor * diffuse_albedo     // ambient, sun and lamps on the diffuse layer
+             + specular * HIGHLIGHT_SCALE   // highlight of the sun, fresnel coloured (metals take their base colour)
+             + lampspecular                 // highlights of the lamps, HIGHLIGHT_SCALE already applied
+             + emissioncolor * texturecolor
+             + env_reflection;
+#ifdef PBR_SURFACE
+    lit += pbr_emission;
+#endif
+#ifdef PBR_COAT
+    // the highlights of the sun and the lamps in the varnish, over what comes through it from the surface below
+    if (coat_weight > 0.0)
+        coat_light += (sunlight * specular_light(light_dir, fragnormal, vec3(COAT_F0), coat_roughness, SUN_BRDF_LIMIT) * (1.0 - shadow)
+                       + coat_lampspecular) * coat_weight;
+    lit = lit * coat_through + coat_light;
+#endif
+    return lit;
 }
 
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
