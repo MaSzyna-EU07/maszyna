@@ -696,6 +696,70 @@ TEST_CASE("parser: read line by line, a line starting with include is the direct
 	CHECK(rest(word, false, "\n\r") == "one|two");
 }
 
+namespace {
+
+// the lines of a file, read the way the vehicle's .fiz is (TMoverParameters::LoadFIZ_Parse): line by line while the
+// parser is ok
+std::string fiz_lines(cParser &Parser) {
+	std::string joined;
+	while (Parser.ok()) {
+		auto const line{Parser.getToken<std::string>(false, "\n\r")};
+		if (line.empty()) {
+			continue;
+		}
+		if (false == joined.empty()) {
+			joined += '|';
+		}
+		joined += line;
+	}
+	return joined;
+}
+
+} // namespace
+
+TEST_CASE("parser: a file which ends right after the end of an include is read through, the included file too") {
+	// the shape of the .fiz files of the wagons (pkp/yb_v1/b84_pl_1.fiz): the directive, the file and its parameters
+	// each on a line of their own, and no line break after the end. the change of MaSzyna-EU07/maszyna#100 broke on these
+	test::scratch_folder const folder{"parser_include_at_end"};
+	folder.write("yb.fiz.inc", "Mass=(p1)\r\nVmax=(p2)\r\nLength=20\r\n");
+	folder.write("ended.fiz", "include\r\nyb.fiz.inc\r\n160\r\n80\r\nend");
+	folder.write("newline.fiz", "include\r\nyb.fiz.inc\r\n160\r\n80\r\nend\r\n");
+
+	cParser ended("ended.fiz", cParser::buffer_FILE, folder.path());
+	CHECK(fiz_lines(ended) == "Mass=160|Vmax=80|Length=20");
+	cParser newline("newline.fiz", cParser::buffer_FILE, folder.path());
+	CHECK(fiz_lines(newline) == "Mass=160|Vmax=80|Length=20");
+
+	SUBCASE("the end of the data shows once the included file is read through, not when its directive is") {
+		folder.write("pair.inc", "x y");
+		cParser parser("include pair.inc end", cParser::buffer_TEXT, folder.path());
+		CHECK(parser.getToken<std::string>() == "x");
+		CHECK_FALSE(parser.eof());
+		CHECK(parser.getToken<std::string>() == "y");
+		CHECK(parser.eof());
+		CHECK(parser.ok());
+		CHECK(parser.getToken<std::string>().empty());
+		CHECK_FALSE(parser.ok());
+		// the same as for a text with the included tokens in place of the directive
+		cParser same("x y", cParser::buffer_TEXT);
+		CHECK(same.getToken<std::string>() == "x");
+		CHECK_FALSE(same.eof());
+		CHECK(same.getToken<std::string>() == "y");
+		CHECK(same.eof());
+	}
+	SUBCASE("a reader which stops at the end of the data reads the whole included file") {
+		folder.write("map.inc", "alpha One\nbeta Two");
+		for (auto const *const text : {"include map.inc end", "include map.inc end\n"}) {
+			CAPTURE(text);
+			cParser parser(text, cParser::buffer_TEXT, folder.path());
+			std::map<std::string, std::string> map;
+			deserialize_map(map, parser);
+			CHECK(map["alpha"] == "One");
+			CHECK(map["beta"] == "Two");
+		}
+	}
+}
+
 TEST_CASE("parser: an include can name several files to pick one from at random") {
 	test::scratch_folder const folder{"parser_random_include"};
 	folder.write("only.inc", "chosen");
