@@ -724,7 +724,14 @@ void driver_mode::update_camera(double const Deltatime)
 	}
 	if (Global.FreeCameraMoveTarget)
 	{
-		FreeFlyModeFlag = true;
+		if (!FreeFlyModeFlag)
+		{
+			if (simulation::Train != nullptr)
+				InOutKey();
+			else
+				FreeFlyModeFlag = true;
+		}
+		m_externalview = false;
 		Camera.m_owner = nullptr;
 		Camera.Velocity = {};
 		Global.FreeCameraTeleport.reset();
@@ -1176,7 +1183,10 @@ void driver_mode::OnKeyDown(int cKey)
 			if (!FreeFlyModeFlag)
 				InOutKey();
 			else
-				DistantView(true);
+			{
+				Camera.m_owner = nullptr;
+				m_externalview = false;
+			}
 
 			vehicle->MechInside = false;
 			if (!ai_was_controlling)

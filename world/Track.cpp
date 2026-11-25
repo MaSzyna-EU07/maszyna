@@ -1304,7 +1304,8 @@ bool TTrack::AddDynamicObject(TDynamicObject *Dynamic)
             }
         }
     }
-    if( Dynamics.empty() ) {
+    bool const was_unoccupied = Dynamics.empty();
+    if( was_unoccupied ) {
         // a train comes onto the track, which can buckle under it in the heat
         buckle_pass_enter( *Dynamic );
     }
