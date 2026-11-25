@@ -391,3 +391,58 @@ TEST_CASE("bones: a hose clamped in its cocks swings less to the side than one h
 	CHECK(widestheld < widestfree);
 	CHECK(glm::length(held.now[1] - made[1]) < glm::length(free.now[1] - made[1]) + 1e-6);
 }
+
+TEST_CASE("bones: the half of a bellows rooted on the end of a car bends its face to the joint, the body left as made") {
+	bones::rig rig;
+	// the face of the car at y 0, the joint 1 m past it, the line of the head from 1 m inside this car to 2 m into the next
+	REQUIRE(bones::add_point(rig, {"root", "fixed", "0", "0", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"joint", "fixed", "0", "1", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"ours", "fixed", "0", "-1", "2"}).empty());
+	REQUIRE(bones::add_point(rig, {"theirs", "fixed", "0", "3", "2"}).empty());
+	// rooted, before or after the head
+	REQUIRE(bones::add_bend(rig, {"miech", "root", "joint", "head", "ours", "theirs", "rooted"}).empty());
+	REQUIRE(bones::add_bend(rig, {"miech", "root", "joint", "rooted", "head", "ours", "theirs"}).empty());
+	REQUIRE(bones::add_bend(rig, {"waz", "root", "joint", "head", "ours", "theirs"}).empty());
+	CHECK_FALSE(bones::add_bend(rig, {"miech", "root", "joint", "head", "rooted", "ours"}).empty());
+	REQUIRE(rig.bends.size() == 3);
+	for (auto const &bend : rig.bends) {
+		CHECK(bend.spine.size() == 2);
+		CHECK(bend.head_from == 2);
+		CHECK(bend.head_to == 3);
+	}
+	CHECK(rig.bends[0].rooted);
+	CHECK(rig.bends[1].rooted);
+	CHECK_FALSE(rig.bends[2].rooted);
+	auto const &bend{rig.bends[0]};
+	std::vector<glm::dvec3> const spine{{0.0, 0.0, 2.0}, {0.0, 1.0, 2.0}};
+	// a vertex of the body behind the face, one at the face, one on the bellows halfway, one on its face at the joint
+	std::vector<glm::dvec3> const skin{{1.4, -3.0, 1.0}, {1.4, 0.0, 1.0}, {1.4, 0.5, 1.0}, {1.4, 1.0, 1.0}};
+	auto const binds{bones::bind_skin(spine, skin)};
+	CHECK(bones::behind_root(bend, binds[0]));
+	CHECK(bones::behind_root(bend, binds[1]));
+	CHECK_FALSE(bones::behind_root(bend, binds[2]));
+	CHECK_FALSE(bones::behind_root(bend, binds[3]));
+	CHECK_FALSE(bones::behind_root(rig.bends[2], binds[0]));
+	// the next car turned 0.2 rad about the joint: the face held to the line from 1 m inside this car to 2 m into the
+	// next, which halves the angle between the two cars
+	auto const angle{0.2};
+	glm::dvec3 const theirs{2.0 * std::sin(angle), 1.0 + 2.0 * std::cos(angle), 2.0};
+	auto turns{bones::spine_turns(spine, spine)};
+	turns.back() = bones::line_turn(glm::dvec3{0.0, -1.0, 2.0}, glm::dvec3{0.0, 3.0, 2.0}, glm::dvec3{0.0, -1.0, 2.0}, theirs);
+	bones::hold_root(bend, turns);
+	auto const at = [&binds, &spine, &turns](std::size_t Index) { return bones::pose_skin(binds[Index], spine, turns).position; };
+	// at the root as made
+	CHECK(glm::length(at(1) - skin[1]) == doctest::Approx(0.0).scale(1.0));
+	// the face on the plane through the joint square to the line of the head
+	auto const line{glm::normalize(theirs - glm::dvec3{0.0, -1.0, 2.0})};
+	CHECK(glm::dot(at(3) - spine[1], line) == doctest::Approx(0.0).scale(1.0));
+	CHECK(glm::length(at(3) - spine[1]) == doctest::Approx(glm::length(skin[3] - spine[1])));
+	// halfway turned half as much
+	auto const halfway{at(2) - glm::dvec3{0.0, 0.5, 2.0}};
+	CHECK(std::atan2(-halfway.y, halfway.x) == doctest::Approx(0.25 * angle).epsilon(0.02));
+	// a bend not rooted turns its root with the spine
+	auto unheld{turns};
+	unheld.front() = glm::dquat{std::cos(0.05), 0.0, 0.0, std::sin(0.05)};
+	bones::hold_root(rig.bends[2], unheld);
+	CHECK(unheld.front().w == doctest::Approx(std::cos(0.05)));
+}

@@ -820,50 +820,86 @@ gfx::vertex_array subdivided( gfx::vertex_array const &Triangles, float const Lo
 void TDynamicObject::bind_flexes() {
 
     m_flexes.clear();
+    // the bends of one submodel bend one copy of it, each its own part
+    std::vector<std::vector<std::size_t>> groups;
     for( std::size_t index { 0 }; index < m_rig.bends.size(); ++index ) {
-        auto const &bend { m_rig.bends[ index ] };
-        auto *original { GetSubmodelFromName( mdModel, bend.submodel ) };
-        if( original == nullptr ) {
-            ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - missed submodel " + bend.submodel + " to bend", logtype::model );
-            continue;
+        auto const group { std::ranges::find_if( groups, [ this, index ]( std::vector<std::size_t> const &Group ) {
+            return m_rig.bends[ Group.front() ].submodel == m_rig.bends[ index ].submodel; } ) };
+        if( group != groups.end() ) {
+            group->push_back( index );
         }
-        flex_data flex;
-        flex.original = original;
-        flex.bend = index;
-        flex.rest = subdivided( model_file_vertices( original ), max_flex_edge );
-        if( flex.rest.empty() ) { continue; }
-        std::vector<glm::dvec3> spine;
-        for( auto const point : bend.spine ) {
-            spine.push_back( m_rig.points[ point ].rest );
+        else {
+            groups.push_back( { index } );
         }
-        std::vector<glm::dvec3> points;
-        for( auto const &vertex : flex.rest ) {
-            points.push_back( glm::dvec3( vertex.position ) );
+    }
+    for( auto const &group : groups ) {
+        bind_flex( group );
+    }
+}
+
+void TDynamicObject::bind_flex( std::vector<std::size_t> const &Bends ) {
+
+    auto const &name { m_rig.bends[ Bends.front() ].submodel };
+    auto *original { GetSubmodelFromName( mdModel, name ) };
+    if( original == nullptr ) {
+        ErrorLog( "Bad model: " + asBaseDir + MoverParameters->TypeName + ".mmd" + " - missed submodel " + name + " to bend", logtype::model );
+        return;
+    }
+    flex_data flex;
+    flex.original = original;
+    flex.bends = Bends;
+    // a hose is halved into small triangles to bend smoothly; a rooted part, the end of a car body, is taken as made
+    auto const halved { std::ranges::any_of( Bends, [ this ]( std::size_t const Bend ) { return false == m_rig.bends[ Bend ].rooted; } ) };
+    flex.rest = halved ? subdivided( model_file_vertices( original ), max_flex_edge ) : model_file_vertices( original );
+    if( flex.rest.empty() ) { return; }
+    std::vector<glm::dvec3> points;
+    for( auto const &vertex : flex.rest ) {
+        points.push_back( glm::dvec3( vertex.position ) );
+    }
+    flex.binds.assign( points.size(), {} );
+    flex.owners.assign( points.size(), -1 );
+    for( std::size_t slot { 0 }; slot < Bends.size(); ++slot ) {
+        bind_flex_part( flex, slot, points );
+    }
+    for( std::size_t vertex { 0 }; vertex < flex.owners.size(); ++vertex ) {
+        if( flex.owners[ vertex ] >= 0 ) {
+            flex.moving.push_back( static_cast<std::uint32_t>( vertex ) );
         }
-        flex.binds = bones::bind_skin( spine, points );
-        if( bend.head_from >= 0 && spine.size() >= 2 ) {
+    }
+    flex.posed = flex.rest;
+    // the copy of the vehicle's own, of the same material, its geometry made with the walks of the renderer held off
+    gfx::walk_sync::change change;
+    flex.model = std::make_shared<TModel3d>();
+    flex.skin = flex.model->AppendChildFromGeometry( name, "none", flex.rest, gfx::index_array() );
+    flex.skin->m_material = original->m_material;
+    flex.skin->f4Ambient = original->f4Ambient;
+    flex.skin->f4Diffuse = original->f4Diffuse;
+    flex.skin->f4Specular = original->f4Specular;
+    flex.model->Init();
+    m_flexes.push_back( std::move( flex ) );
+}
+
+// the vertices the bend in the given slot of the flex bends: those past the root of a rooted one, all those not yet taken
+// by another for one that isn't
+void TDynamicObject::bind_flex_part( flex_data &Flex, std::size_t const Slot, std::vector<glm::dvec3> const &Points ) {
+
+    auto const &bend { m_rig.bends[ Flex.bends[ Slot ] ] };
+    std::vector<glm::dvec3> spine;
+    for( auto const point : bend.spine ) {
+        spine.push_back( m_rig.points[ point ].rest );
+    }
+    auto const binds { bones::bind_skin( spine, Points ) };
+    for( std::size_t vertex { 0 }; vertex < binds.size(); ++vertex ) {
+        if( Flex.owners[ vertex ] >= 0 ) { continue; }
+        auto const &bind { binds[ vertex ] };
+        if( bones::behind_root( bend, bind ) ) { continue; }
+        Flex.owners[ vertex ] = static_cast<int>( Slot );
+        Flex.binds[ vertex ] = bind;
+        if( bend.head_from >= 0 && spine.size() >= 2 && glm::distance( Points[ vertex ], spine.back() ) < coupling_head_reach ) {
             // the coupling head is metal: all of it, whichever piece of the spine its vertices lie nearest, is held to the
             // head as a whole, rather than turning partly with the rubber and coming apart
-            auto const last { spine.size() - 2 };
-            for( std::size_t vertex { 0 }; vertex < flex.binds.size(); ++vertex ) {
-                if( glm::distance( points[ vertex ], spine.back() ) >= coupling_head_reach ) { continue; }
-                auto &bind { flex.binds[ vertex ] };
-                bind.piece = last;
-                bind.along = 1.0;
-                bind.offset = points[ vertex ] - spine.back();
-            }
+            Flex.binds[ vertex ] = { spine.size() - 2, 1.0, Points[ vertex ] - spine.back() };
         }
-        flex.posed = flex.rest;
-        // the copy of the vehicle's own, of the same material, its geometry made with the walks of the renderer held off
-        gfx::walk_sync::change change;
-        flex.model = std::make_shared<TModel3d>();
-        flex.skin = flex.model->AppendChildFromGeometry( bend.submodel, "none", flex.rest, gfx::index_array() );
-        flex.skin->m_material = original->m_material;
-        flex.skin->f4Ambient = original->f4Ambient;
-        flex.skin->f4Diffuse = original->f4Diffuse;
-        flex.skin->f4Specular = original->f4Specular;
-        flex.model->Init();
-        m_flexes.push_back( std::move( flex ) );
     }
 }
 
@@ -890,6 +926,20 @@ glm::dquat coupling_turn( glm::dvec3 const &RestLine, glm::dvec3 const &NowLine,
     return glm::quat_cast( now * glm::transpose( rest ) );
 }
 
+// whether the spines of a bent submodel are where they were when it was last posed, give or take a tenth of a millimetre
+// and as little of a turn: a bellows of a train standing, or running on a straight track or a curve of one radius
+bool held_still( std::vector<glm::vec3> const &Wasnodes, std::vector<glm::quat> const &Wasturns, std::vector<glm::vec3> const &Nodes, std::vector<glm::quat> const &Turns ) {
+
+    if( Wasnodes.size() != Nodes.size() || Wasturns.size() != Turns.size() ) { return false; }
+    for( std::size_t index { 0 }; index < Nodes.size(); ++index ) {
+        if( glm::distance( Wasnodes[ index ], Nodes[ index ] ) > 1e-4f ) { return false; }
+    }
+    for( std::size_t index { 0 }; index < Turns.size(); ++index ) {
+        if( std::abs( glm::dot( Wasturns[ index ], Turns[ index ] ) ) < 1.f - 1e-7f ) { return false; }
+    }
+    return true;
+}
+
 } // namespace
 
 void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
@@ -898,44 +948,63 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
     auto const upwards { glm::normalize( bones::model_file_frame() * glm::dvec3( glm::inverse( mMatrix ) * glm::dvec4( 0.0, 1.0, 0.0, 0.0 ) ) ) };
 
     for( auto &flex : m_flexes ) {
-        auto const &bend { m_rig.bends[ flex.bend ] };
-        std::vector<glm::dvec3> rest;
-        std::vector<glm::dvec3> now;
-        for( auto const point : bend.spine ) {
-            rest.push_back( m_rig.points[ point ].rest );
-            now.push_back( Now[ point ] );
-        }
-        auto turns { bones::spine_turns( rest, now ) };
-        if( bend.head_from >= 0 && false == turns.empty() ) {
-            // the head held to the coupling: its line between the two vehicles and the vertical of the world, which the hose
-            // of the next vehicle takes too, so the two heads stay together as one, their faces on one plane
-            turns.back() = coupling_turn(
-                m_rig.points[ bend.head_to ].rest - m_rig.points[ bend.head_from ].rest,
-                Now[ bend.head_to ] - Now[ bend.head_from ],
-                upwards );
-        }
-        // the skin as bones::pose_skin() works it out, in single precision for the thousands of vertices of a hose: the
-        // nodes and their turns made floats once, each vertex turned by the quaternion rather than by a matrix made for it
-        std::vector<glm::vec3> nodes( now.begin(), now.end() );
-        std::vector<glm::quat> nodeturns( turns.begin(), turns.end() );
-        for( std::size_t vertex { 0 }; vertex < flex.rest.size() && vertex < flex.binds.size(); ++vertex ) {
-            auto const &bind { flex.binds[ vertex ] };
-            if( bind.piece + 1 >= nodes.size() || bind.piece + 1 >= nodeturns.size() ) { continue; }
-            auto const along { static_cast<float>( bind.along ) };
-            auto other { nodeturns[ bind.piece + 1 ] };
-            if( glm::dot( nodeturns[ bind.piece ], other ) < 0.f ) {
-                other = -other;
+        // the nodes and their turns of each bend of the submodel, in single precision for the thousands of vertices
+        std::vector<std::vector<glm::vec3>> nodes;
+        std::vector<std::vector<glm::quat>> nodeturns;
+        std::vector<glm::vec3> allnodes;
+        std::vector<glm::quat> allturns;
+        for( auto const index : flex.bends ) {
+            auto const &bend { m_rig.bends[ index ] };
+            std::vector<glm::dvec3> rest;
+            std::vector<glm::dvec3> now;
+            for( auto const point : bend.spine ) {
+                rest.push_back( m_rig.points[ point ].rest );
+                now.push_back( Now[ point ] );
             }
-            auto const turn { glm::normalize( nodeturns[ bind.piece ] * ( 1.f - along ) + other * along ) };
-            auto &posed { flex.posed[ vertex ] };
-            auto const &rest { flex.rest[ vertex ] };
-            posed.position = glm::mix( nodes[ bind.piece ], nodes[ bind.piece + 1 ], along ) + turn * glm::vec3( bind.offset );
-            // a turn keeps the length: the normal stays a unit one
-            posed.normal = turn * rest.normal;
-            posed.tangent = glm::vec4( turn * glm::vec3( rest.tangent ), rest.tangent.w );
+            auto turns { bones::spine_turns( rest, now ) };
+            if( bend.head_from >= 0 && false == turns.empty() ) {
+                // the head held to the coupling: its line between the two vehicles and the vertical of the world, which the
+                // next vehicle takes too, so the two heads (or the two halves of a bellows) stay together, on one plane
+                turns.back() = coupling_turn(
+                    m_rig.points[ bend.head_to ].rest - m_rig.points[ bend.head_from ].rest,
+                    Now[ bend.head_to ] - Now[ bend.head_from ],
+                    upwards );
+            }
+            // the root held to the body as made
+            bones::hold_root( bend, turns );
+            nodes.emplace_back( now.begin(), now.end() );
+            nodeturns.emplace_back( turns.begin(), turns.end() );
+            allnodes.insert( allnodes.end(), nodes.back().begin(), nodes.back().end() );
+            allturns.insert( allturns.end(), nodeturns.back().begin(), nodeturns.back().end() );
+        }
+        if( held_still( flex.posednodes, flex.posedturns, allnodes, allturns ) ) { continue; }
+        flex.posednodes = std::move( allnodes );
+        flex.posedturns = std::move( allturns );
+        for( auto const vertex : flex.moving ) {
+            pose_flex_vertex( flex, vertex, nodes[ flex.owners[ vertex ] ], nodeturns[ flex.owners[ vertex ] ] );
         }
         flex.changed = true;
     }
+}
+
+// a vertex as bones::pose_skin() works it out, in single precision: turned by the mixed and normalised quaternions of the
+// nodes of its piece rather than by a matrix made for it
+void TDynamicObject::pose_flex_vertex( flex_data &Flex, std::uint32_t const Vertex, std::vector<glm::vec3> const &Nodes, std::vector<glm::quat> const &Turns ) {
+
+    auto const &bind { Flex.binds[ Vertex ] };
+    if( bind.piece + 1 >= Nodes.size() || bind.piece + 1 >= Turns.size() ) { return; }
+    auto const along { static_cast<float>( bind.along ) };
+    auto other { Turns[ bind.piece + 1 ] };
+    if( glm::dot( Turns[ bind.piece ], other ) < 0.f ) {
+        other = -other;
+    }
+    auto const turn { glm::normalize( Turns[ bind.piece ] * ( 1.f - along ) + other * along ) };
+    auto &posed { Flex.posed[ Vertex ] };
+    auto const &rest { Flex.rest[ Vertex ] };
+    posed.position = glm::mix( Nodes[ bind.piece ], Nodes[ bind.piece + 1 ], along ) + turn * glm::vec3( bind.offset );
+    // a turn keeps the length: the normal stays a unit one
+    posed.normal = turn * rest.normal;
+    posed.tangent = glm::vec4( turn * glm::vec3( rest.tangent ), rest.tangent.w );
 }
 
 void TDynamicObject::hide_flexes() {

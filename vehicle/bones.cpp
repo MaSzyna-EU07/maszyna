@@ -281,8 +281,10 @@ std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
 	}
 	bend bend;
 	bend.submodel = Words[0];
+	bend.rooted = std::ranges::find(Words, std::string{"rooted"}) != Words.end();
 	auto const head{std::ranges::find(Words, std::string{"head"})};
-	auto const spineend{static_cast<std::size_t>(head - Words.begin())};
+	auto const rooted{std::ranges::find(Words, std::string{"rooted"})};
+	auto const spineend{static_cast<std::size_t>(std::min(head, rooted) - Words.begin())};
 	for (std::size_t word{1}; word < spineend; ++word)
 	{
 		auto const point{Rig.find(Words[word])};
@@ -298,15 +300,16 @@ std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
 	}
 	if (head != Words.end())
 	{
-		if (Words.size() < spineend + 3)
+		auto const headat{static_cast<std::size_t>(head - Words.begin())};
+		if (Words.size() < headat + 3 || Words[headat + 1] == "rooted" || Words[headat + 2] == "rooted")
 		{
 			return "head of " + Words[0] + " needs the two points of its line";
 		}
-		bend.head_from = Rig.find(Words[spineend + 1]);
-		bend.head_to = Rig.find(Words[spineend + 2]);
+		bend.head_from = Rig.find(Words[headat + 1]);
+		bend.head_to = Rig.find(Words[headat + 2]);
 		if (bend.head_from < 0 || bend.head_to < 0)
 		{
-			return "no points " + Words[spineend + 1] + " and " + Words[spineend + 2] + " for the head of " + Words[0];
+			return "no points " + Words[headat + 1] + " and " + Words[headat + 2] + " for the head of " + Words[0];
 		}
 	}
 	Rig.bends.push_back(std::move(bend));
@@ -376,6 +379,19 @@ glm::dquat line_turn(glm::dvec3 const &FromRest, glm::dvec3 const &ToRest, glm::
 		return {1.0, 0.0, 0.0, 0.0};
 	}
 	return glm::rotation(glm::normalize(rest), glm::normalize(now));
+}
+
+bool behind_root(bend const &Bend, skin_bind const &Bind)
+{
+	return Bend.rooted && Bind.piece == 0 && Bind.along <= 0.0;
+}
+
+void hold_root(bend const &Bend, std::vector<glm::dquat> &Turns)
+{
+	if (Bend.rooted && false == Turns.empty())
+	{
+		Turns.front() = glm::dquat{1.0, 0.0, 0.0, 0.0};
+	}
 }
 
 skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, std::vector<glm::dquat> const &Turns)

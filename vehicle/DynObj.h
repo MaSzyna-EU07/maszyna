@@ -556,10 +556,15 @@ private:
         TSubModel *original { nullptr };
         std::shared_ptr<TModel3d> model;
         TSubModel *skin { nullptr };
-        std::size_t bend { 0 }; // of the rig
+        std::vector<std::size_t> bends; // of the rig, bending this submodel
+        std::vector<int> owners; // of each vertex, the one of bends it follows; -1 for a vertex staying as made
+        std::vector<std::uint32_t> moving; // the vertices with an owner
         std::vector<bones::skin_bind> binds;
         gfx::vertex_array rest; // in the frame of the vehicle
         gfx::vertex_array posed;
+        // the nodes of the spines and their turns the vertices were last posed for, all bends one after the other
+        std::vector<glm::vec3> posednodes;
+        std::vector<glm::quat> posedturns;
         bool changed { false }; // posed, not yet put into the geometry (upload_flexes())
         bool visible { false }; // the submodel of the shared model is shown for this vehicle now
         int originalvisible { 1 };
@@ -572,6 +577,9 @@ private:
     void restore_flexes();
     // puts the bent submodels into their geometry, out of the walks of the renderer (the main thread, RenderSounds())
     void upload_flexes();
+    void bind_flex( std::vector<std::size_t> const &Bends );
+    void bind_flex_part( flex_data &Flex, std::size_t const Slot, std::vector<glm::dvec3> const &Points );
+    void pose_flex_vertex( flex_data &Flex, std::uint32_t const Vertex, std::vector<glm::vec3> const &Nodes, std::vector<glm::quat> const &Turns );
     AirCoupler btCPneumatic1; // sprzegi powietrzne //yB - zmienione z Button na AirCoupler - krzyzyki
     AirCoupler btCPneumatic2;
     AirCoupler btCPneumatic1r; // ABu: to zeby nie bylo problemow przy laczeniu wagonow,

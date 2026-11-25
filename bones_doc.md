@@ -19,7 +19,7 @@ bonepoint: <name> coupler <front|rear> <x> <y> <z>
 bonepoint: <name> mid <point> <point>
 bonechain: <name> <start point> <end point> <nodes> <x> <y> <z> (of each node)
 bone: <submodel> <anchor point> <point it faces, or none>
-bonebend: <submodel> <point> <point> ... [head <point> <point>] end
+bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
 ```
 
 - The coordinates are those of the model file: x across, y along the vehicle (the front, `coupler1`, at +y), z up.
@@ -59,6 +59,13 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] end
   the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
   own copy of the submodel, its triangles halved until no edge is longer than 6 cm: a hose of a model is often a
   few straight tubes, which would bend only where their rings are.
+- `rooted` (on a `bonebend`): the submodel is a car body with the half of a gangway bellows on its end. The first point
+  of the spine is the root, on the face of the body: everything at or behind it stays as made, and the root itself
+  doesn't turn. Past it the bellows bends from the body to its head, which `head` holds to the line through the joint,
+  from a point inside this car to one as far inside the next: that line halves the angle between the two cars, so the
+  faces of the two halves of the bellows stay on one plane round a curve. A rooted submodel is not cut into smaller
+  triangles, and the bends of one submodel (the bellows on both ends of a car) bend it each its own part. A bent
+  submodel whose spines stand still, a train standing, is not posed again.
 
 ## Examples
 
@@ -120,6 +127,29 @@ bonepoint: kurek_pneumatic2 fixed 0.608 -7.4676 1.0744
 bonepoint: kurek_pneumatic2_sasiada coupler rear 0.62 -8.4474 1.0745
 bonechain: waz_pneumatic2 kurek_pneumatic2 kurek_pneumatic2_sasiada 7 0.608 -7.48 0.85 0.608 -7.65 0.62 0.608 -7.85 0.53 0.614 -7.9575 0.522 0.62 -8.065 0.53 0.62 -8.265 0.62 0.62 -8.435 0.85
 bonebend: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1 waz_pneumatic2.2 waz_pneumatic2.3 waz_pneumatic2.4 head waz_pneumatic2.3 waz_pneumatic2.5 end
+```
+
+
+The gangway bellows of an articulated EMU, the Elf EN76 (`pkp/elf_v1`, the middle car `22wee-b`, its body
+`model_glowny` with the half of a bellows on each end, 16.5 m long): the root on the face of the body, the joint where
+the next car's end is, and the head held to the line from 2 m inside this car to 2 m inside the next. The end cars
+(`22wee-a`, `22wee-d`) have the same on the inner end of their `pudlo` (21.081 m, the root at -10.37):
+
+```
+bonepoint: miech_przod_korzen fixed 0 8.080 2.4
+bonepoint: miech_przod_nasz fixed 0 8.2500 2.4
+bonepoint: miech_przod_ich coupler front 0 8.2500 2.4
+bonepoint: miech_przod_styk mid miech_przod_nasz miech_przod_ich
+bonepoint: miech_przod_os_nasz fixed 0 6.2500 2.4
+bonepoint: miech_przod_os_ich coupler front 0 10.2500 2.4
+bonebend: model_glowny miech_przod_korzen miech_przod_styk head miech_przod_os_nasz miech_przod_os_ich rooted end
+bonepoint: miech_tyl_korzen fixed 0 -7.880 2.4
+bonepoint: miech_tyl_nasz fixed 0 -8.2500 2.4
+bonepoint: miech_tyl_ich coupler rear 0 -8.2500 2.4
+bonepoint: miech_tyl_styk mid miech_tyl_nasz miech_tyl_ich
+bonepoint: miech_tyl_os_nasz fixed 0 -6.2500 2.4
+bonepoint: miech_tyl_os_ich coupler rear 0 -10.2500 2.4
+bonebend: model_glowny miech_tyl_korzen miech_tyl_styk head miech_tyl_os_nasz miech_tyl_os_ich rooted end
 ```
 
 ## Still to do
