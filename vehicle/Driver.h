@@ -22,6 +22,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/uphillstart.h"
 #include "vehicle/brakecharge.h"
 #include "vehicle/blackbox.h"
+#include "vehicle/aipower.h"
 
 auto const EU07_AI_ACCELERATION = 0.05;
 auto const EU07_AI_NOACCELERATION = -0.05;
@@ -31,6 +32,7 @@ auto const EU07_AI_MOVEMENT = 1.0; // deliberate movement velocity threshold
 auto const EU07_AI_UPHILLGRAVITY = -0.025; // [m/s2] about 2.5 per mille up: the gradient that rolls a standing train back
 auto const EU07_AI_UPHILLRELEASETIME = 60.0; // [s] the longest an uphill start keeps the power on while the train brake releases
 auto const EU07_AI_SPEEDLIMITEXTENDSBEYONDSCANRANGE = 10000.0;
+auto const EU07_AI_SANDEDSTARTVELOCITY = 15.0; // [km/h] a start that slipped keeps the sand on up to this speed
 
 enum TOrders
 { // rozkazy dla AI
@@ -187,7 +189,8 @@ class TSpeedPos
     void
         UpdateDistance( double dist ) {
             fDist -= dist; }
-    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
+    // Standing: the train stands, so an event found behind its head wasn't passed by it
+    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders, bool Standing = false);
     void Set(TTrack *t, double d, int f);
     std::string TableText() const;
     std::string GetName() const;
@@ -447,6 +450,8 @@ private:
     double fShortfallTime = 0.0; // when that was checked
     int iShortfallGrowth = 0; // how many checks in a row the shortfall has grown
     bool bUphillStart = false; // starting uphill: the train brake holds the train until the power does
+    bool bSandedStart = false; // the wheels slipped while starting: sand while under power until the train is under way
+    double fSandedStartDecreaseTime = -1.0; // when the power was last taken down a step for a slip while starting
     double fUphillStartTime = 0.0; // when the uphill start began
     bool bUphillRelease = false; // starting uphill, the power holds the train and the train brake is being released
     bool bUphillBrakeTopUp = false; // starting uphill, the train brake is applied further before the locomotive brake comes off
@@ -690,6 +695,7 @@ private:
     std::string m_lastexchangestop; // HACK: safeguard to prevent multiple load exchanges per station
     int m_lastexchangeplatforms { 0 }; // cached station platforms for last exchange
     int m_lastexchangedirection { 0 }; //
+    timetable::service_flags m_stopflags; // service flags of the timetable at the stop the train is at or left last
     double fLastStopExpDist = -1.0; // odległość wygasania ostateniego przystanku
     int iRadioChannel = 1; // numer aktualnego kanału radiowego
     int iGuardRadio = 0; // numer kanału radiowego kierownika (0, gdy nie używa radia)
@@ -703,6 +709,9 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    // tells in the log, once, of standing with the pantographs up and no voltage (eu07/maszyna#421)
+    void report_power_stall( bool const Poweravailable, double const Pantographpressure );
+    ai_power::reporter m_powerstall; // the reports of report_power_stall()
     void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );

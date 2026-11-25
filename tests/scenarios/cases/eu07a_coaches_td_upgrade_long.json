@@ -1,0 +1,50 @@
+{
+  "description": "An EU07A (303E) with 8 coaches (about 360 t) on a line of its own beside td.scn: up a gradient of 10 per mille, 5.5 km long, at the 80 km/h of its timetable, to the signal at stop 5300 m up. The train is to keep above 70 km/h on the climb (#187: an EU07A hung at 55-58 km/h on 10 per mille).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_upgrade_long.scn",
+  "timetable": "td_passenger_upgrade.txt",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\303e_v1 303E-336'20 303E 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c4 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c5 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c6 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c7 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c8 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic"
+    ]
+  },
+  "expect": "standstill",
+  "duration": 1200,
+  "timeout": 1500,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 150
+    },
+    {
+      "type": "max_speed",
+      "limit": 80,
+      "tolerance": 3
+    },
+    {
+      "type": "keeps_moving",
+      "moving_speed": 20,
+      "min_speed": 70,
+      "from_distance": 2500,
+      "until_distance": 4800
+    },
+    {
+      "type": "stops",
+      "moving_speed": 15,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 5330,
+      "max_distance": 5410
+    }
+  ]
+}

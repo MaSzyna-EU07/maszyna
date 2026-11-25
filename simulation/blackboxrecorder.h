@@ -106,7 +106,8 @@ private:
 	std::uint32_t vehicle_id(TDynamicObject const *Vehicle);
 	// the number of a vehicle still on the scenery, no_vehicle for none or one taken off it
 	std::uint32_t known_id(TDynamicObject const *Vehicle);
-	std::uint32_t signal_at(glm::dvec3 const &Location) const;
+	// the number of the signal whose aspect the memory cell tells, no_signal for one which isn't on the map
+	std::uint32_t signal_of(TMemCell const *Cell) const;
 
 	std::mutex m_mutex;
 	std::array<char, 256 * 1024> m_filebuffer{};

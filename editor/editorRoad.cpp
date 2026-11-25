@@ -10,6 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "editor/editorRoad.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorRingRoom.hpp"
 
 #include "editor/editorTrack.hpp"
 #include "world/Track.h"
@@ -274,7 +275,9 @@ bool follow(road_node &Road, double const T, bool const Forward, double const Di
 		auto const lengths{stations(state)};
 		auto const here{station_at(lengths, from)};
 		auto const available{forward ? lengths.back() - here : here};
-		if (remaining <= 0.0 || available >= remaining + kShortestRoad)
+		// what's left of a piece of a roundabout carries on round, so it can be shorter than a road of its own
+		auto const shortest{state.roundabout ? editor_ring::shortest_piece : kShortestRoad};
+		if (remaining <= 0.0 || available >= remaining + shortest)
 		{
 			// the cut is put here; with nothing left to go the piece is kept whole
 			Cut.road = piece;
@@ -337,6 +340,27 @@ bool cut_arm(road_cut const &Cut, junction_node::arm_data &Arm)
 double edge_reach(double const Halfwidth, double const Otherhalfwidth, double const Angle)
 {
 	return (Otherhalfwidth + Halfwidth * std::cos(Angle)) / std::sin(Angle);
+}
+
+// the circle the axis of a piece bends along at specified value of its curve parameter, seen from above. returns: false if it's straight there
+bool ring_circle(road_node::state const &State, double const T, glm::dvec2 &Centre, double &Radius)
+{
+	auto const points{curve_points(State.axis)};
+	auto const u{1.0 - T};
+	auto const first{3.0 * u * u * (points[1] - points[0]) + 6.0 * u * T * (points[2] - points[1]) + 3.0 * T * T * (points[3] - points[2])};
+	auto const second{6.0 * u * (points[2] - 2.0 * points[1] + points[0]) + 6.0 * T * (points[3] - 2.0 * points[2] + points[1])};
+	glm::dvec2 const velocity{first.x, first.z};
+	auto const speed{glm::length(velocity)};
+	if (speed < 1e-9)
+		return false;
+	auto const curvature{(velocity.x * second.z - velocity.y * second.x) / (speed * speed * speed)};
+	if (std::abs(curvature) < 1e-5)
+		return false;
+	auto const point{curve_point(points, T)};
+	auto const tangent{velocity / speed};
+	Centre = glm::dvec2{point.x, point.z} + glm::dvec2{-tangent.y, tangent.x} / curvature;
+	Radius = 1.0 / std::abs(curvature);
+	return true;
 }
 
 // the look of a junction goes after the road it's made on
@@ -1852,11 +1876,27 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	auto const branchhalfwidth{0.5 * (Incoming + Outgoing) * Width};
 	auto const reach{edge_reach(halfwidth, branchhalfwidth, angle) + kCornerRoom};
 	auto const branchreach{edge_reach(branchhalfwidth, halfwidth, angle) + kCornerRoom};
+	// how far the junction takes the road back along it and ahead of the centre
+	std::array<double, 2> reaches{reach, reach};
+	glm::dvec2 ringcentre{0.0};
+	double ringradius{0.0};
+	if (layout.roundabout && ring_circle(layout, T, ringcentre, ringradius))
+	{
+		// the ring bends away from a road leaving it to the outside, so their edges meet sooner than on a straight road; and a road
+		// leaving at a slant meets the edge of the ring sooner on the side it leans away from. the room of a straight road, measured
+		// on the side the road leans towards, is the most a side takes
+		for (int side = 0; side < 2; ++side)
+		{
+			auto const room{editor_ring::edge_room(ringcentre, ringradius, glm::dvec2{centre.x, centre.z}, direction, side == 0 ? -along : along, halfwidth, branchhalfwidth)};
+			if (room >= 0.0)
+				reaches[side] = std::min(reach, room + kCornerRoom);
+		}
+	}
 
 	// where the road is cut on both sides of the centre
 	road_cut cuts[2];
 	std::vector<road_node *> consumed;
-	if (false == follow(Road, T, false, reach, cuts[0], consumed, Error) || false == follow(Road, T, true, reach, cuts[1], consumed, Error))
+	if (false == follow(Road, T, false, reaches[0], cuts[0], consumed, Error) || false == follow(Road, T, true, reaches[1], cuts[1], consumed, Error))
 		return false;
 	if (cuts[0].road == cuts[1].road && cuts[0].road != &Road)
 	{

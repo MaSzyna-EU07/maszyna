@@ -86,11 +86,11 @@ int opengl_material::texture_slot( std::string const &Key )
         // named binding, the slot it fills is up to the shader
         key.erase( 0, 1 );
         key.pop_back();
-        if( shader && ( shader->texture_conf.find( key ) != shader->texture_conf.end() ) ) {
+        if( shader && shader->texture_conf.contains( key ) ) {
             return static_cast<int>( shader->texture_conf[ key ].id );
         }
-        auto const lookup { texture_bindings.find( key ) };
-        if( ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
+        if( auto const lookup { texture_bindings.find( key ) };
+            ( shader == nullptr ) && ( lookup != texture_bindings.end() ) ) {
             return lookup->second;
         }
         // ignore unrecognized texture bindings in legacy render mode, it's most likely data for more advanced shaders
@@ -318,7 +318,7 @@ std::unordered_set<std::string> seasons = {
 
 bool is_season( std::string const &String ) {
 
-    return seasons.find(String) != seasons.end();
+    return seasons.contains(String);
 }
 
 std::unordered_set<std::string> weather = {
@@ -326,7 +326,7 @@ std::unordered_set<std::string> weather = {
 
 bool is_weather( std::string const &String ) {
 
-    return weather.find(String) != weather.end();
+    return weather.contains(String);
 }
 
 // imports member data pair from the config file
@@ -362,7 +362,7 @@ void opengl_material::deserialize_texture_mapping( cParser &Input, std::string c
         value = variants.front();
     }
 
-    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, parse_info_s::tex_def{ value, Priority, variants } ) };
+    auto const [ it, inserted ] { parse_info->tex_mapping.try_emplace( key, value, Priority, variants ) };
     if( ( false == inserted ) && ( Priority > it->second.priority ) ) {
         it->second = parse_info_s::tex_def{ value, Priority, variants };
     }
@@ -389,7 +389,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // skip the opening bracket
             auto const value { Input.getToken<std::string>( true, "\n\r\t ;" ) };
             while( true == deserialize_mapping( Input, Priority + 2, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
         else if( key == Global.Season ) {
@@ -397,7 +397,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // skip the opening bracket
             auto const value { Input.getToken<std::string>( true, "\n\r\t ;" ) };
             while( true == deserialize_mapping( Input, Priority + 1, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
 
@@ -477,7 +477,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
                 // unrecognized or ignored token, but comes with attribute block and potential further nesting
                 // go through it and discard the content
                 while( true == deserialize_mapping( Input, -1, Loadnow ) ) {
-                    ; // all work is done in the header
+                    // all work is done in the header
                 }
             }
         }
@@ -489,7 +489,7 @@ opengl_material::deserialize_mapping( cParser &Input, int const Priority, bool c
             // ignored tokens can come with their own blocks, ignore these recursively
             // go through it and discard the content
             while( true == deserialize_mapping( Input, -1, Loadnow ) ) {
-                ; // all work is done in the header
+                // all work is done in the header
             }
         }
     }

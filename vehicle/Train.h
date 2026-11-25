@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/Button.h"
 #include "vehicle/Gauge.h"
 #include "vehicle/enginestart.h"
+#include "vehicle/linebreaker.h"
 #include "audio/sound.h"
 #include "scripting/PyInt.h"
 #include "input/command.h"
@@ -172,6 +173,11 @@ class TTrain {
     inline
     std::string GetLabel( TSubModel const *Control ) const {
         return m_controlmapper.find( Control ); }
+    // the direction the mouse drags universal control Index in to any position between its ends, none if the control
+    // is only set to its ends (MaSzyna-EU07/maszyna#62)
+    universal_drag::direction universal_drag_direction( int const Index ) const;
+    // the position universal control Index is set to, from 0 to 1
+    float universal_position( int const Index ) const;
     void UpdateCab();
     bool Update( double const Deltatime );
 	void UpdateDirectionRelays();
@@ -518,6 +524,7 @@ class TTrain {
     static void OnCommand_cabchangeforward( TTrain *Train, command_data const &Command );
     static void OnCommand_cabchangebackward( TTrain *Train, command_data const &Command );
     static void OnCommand_generictoggle( TTrain *Train, command_data const &Command );
+    static void OnCommand_genericset( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemoveforwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehiclemovebackwards( TTrain *Train, command_data const &Command );
 	static void OnCommand_vehicleboost( TTrain *Train, command_data const &Command );
@@ -547,7 +554,7 @@ class TTrain {
     TMoverParameters *mvThird { nullptr }; // trzeci człon (SN61)
     TMoverParameters *mvPantographUnit { nullptr }; // nearest pantograph equipped unit
     // helper variable, to prevent immediate switch between closing and opening line breaker circuit
-    int m_linebreakerstate { 0 }; // 0: open, 1: closed, 2: freshly closed (and yes this is awful way to go about it)
+    linebreaker::state m_linebreakerstate { linebreaker::state::open };
     static const commandhandler_map m_commandhandlers;
     control_mapper m_controlmapper;
 

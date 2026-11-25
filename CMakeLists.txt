@@ -86,6 +86,7 @@ option(ENABLE_MCC "Enable multicore compilation" ON)
 option(WITHDUMPGEN "Enable generating DMP files on crash" ON)
 option(ENABLE_AVX2 "Enable AVX2 instruction set (requires AVX2-capable CPU, Haswell/2013 or newer)" ON)
 option(ADD_VERSION_SUFFIX "Add date and commit hash to the executable name" ON)
+option(USE_SYSTEM_JSON "Use an installed nlohmann_json (3.9 or newer) instead of the ref/json submodule" OFF)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 # vcpkg init
@@ -113,6 +114,7 @@ set(SOURCES
 "world/RailCarve.cpp"
 "world/RailLayer.cpp"
 "world/TrackUneven.cpp"
+"world/TrackBuckle.cpp"
 "world/Road.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
@@ -125,6 +127,7 @@ set(SOURCES
 "vehicle/Button.cpp"
 "vehicle/Camera.cpp"
 "vehicle/Driver.cpp"
+"vehicle/crewchange.cpp"
 "application/driverhints.cpp"
 "vehicle/DynObj.cpp"
 "EU07.cpp"
@@ -144,7 +147,6 @@ set(SOURCES
 "rendering/nullrenderer.cpp"
 "rendering/renderer.cpp"
 "model/ResourceManager.cpp"
-"scene/sn_utils.cpp"
 "world/Segment.cpp"
 "environment/sky.cpp"
 "environment/sun.cpp"
@@ -182,6 +184,7 @@ set(SOURCES
 "rendering/screenshot.cpp"
 "input/driverkeyboardinput.cpp"
 "application/drivermode.cpp"
+"application/consistviews.cpp"
 "application/driveruilayer.cpp"
 "application/driveruipanels.cpp"
 "input/editorkeyboardinput.cpp"
@@ -287,6 +290,7 @@ set(SOURCES
 "utilities/dictionary.cpp"
 "rendering/particles.cpp"
 "utilities/headtrack.cpp"
+"utilities/hardwareprobe.cpp"
 "rendering/geometrybank.cpp"
 "rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
@@ -385,7 +389,8 @@ endif()
 
 if (WITH_LUA)
 	set(DEFINITIONS ${DEFINITIONS} "WITH_LUA")
-	set(SOURCES ${SOURCES} "scripting/lua.cpp")
+	# the scenery scripts (lua.cpp) and the Lua screens (luaprogram.cpp) share the sandbox of luasandbox.cpp
+	set(SOURCES ${SOURCES} "scripting/lua.cpp" "scripting/luasandbox.cpp")
 endif()
 
 # the script screens (scripting/scriptscreens.cpp), with the Lua and the WebAssembly runtime when they're built
@@ -547,31 +552,54 @@ add_library(eu07_settings INTERFACE)
 # the parts of the simulation the game shares with the unit tests: the vehicle physics, the vehicle
 # definition parser, the helpers they use and the rules of the test mode. built once, and tested as the game uses them
 set(CORE_SOURCES
+"audio/startsample.cpp"
 "McZapkie/friction.cpp"
 "McZapkie/hamulce.cpp"
 "McZapkie/Mover.cpp"
 "McZapkie/couplerphysics.cpp"
+"McZapkie/derailment.cpp"
+"McZapkie/collision.cpp"
+"world/TrackCheck.cpp"
+"world/SleeperPack.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
+"utilities/logfiles.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
+"utilities/hardwareinfo.cpp"
+"scene/sn_utils.cpp"
+"scene/regionfile.cpp"
+"utilities/inionlysettings.cpp"
 "utilities/crashsignals.cpp"
 "scripting/ladderlogic.cpp"
 "scripting/scriptscreenrules.cpp"
 "scripting/scriptscreenkernels.cpp"
 "scripting/scriptscreendrawing.cpp"
 "simulation/simulationtestrules.cpp"
+"vehicle/aipower.cpp"
+"vehicle/aiwire.cpp"
 "vehicle/blackbox.cpp"
 "utilities/physicslog.cpp"
 "vehicle/enginestart.cpp"
 "vehicle/brakesetting.cpp"
+"vehicle/gaugewrap.cpp"
+"vehicle/drivingaid.cpp"
 "vehicle/brakingcurve.cpp"
+"vehicle/signalpassing.cpp"
+"vehicle/brakereleaser.cpp"
 "vehicle/handover.cpp"
-"vehicle/uphillstart.cpp"
-"vehicle/brakecharge.cpp"
+"vehicle/crew.cpp"
 "vehicle/horn.cpp"
+"vehicle/cameraviews.cpp"
 "vehicle/linebreaker.cpp"
 "vehicle/smoke.cpp"
 "vehicle/odometer.cpp"
+"world/timetablestart.cpp"
+"vehicle/timetableservice.cpp"
+"world/timetableflags.cpp"
+"world/timetablereader.cpp"
+"world/stationnames.cpp"
+"world/eventconditions.cpp"
+"utilities/wholefile.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)
@@ -692,10 +720,14 @@ target_link_libraries(eu07_settings INTERFACE Threads::Threads)
 find_package(GLM REQUIRED)
 target_include_directories(eu07_settings INTERFACE ${GLM_INCLUDE_DIR})
 
-# JSON lib
-add_subdirectory(ref/json)
+# JSON lib: the ref/json submodule by default, or an installed package (e.g. nlohmann-json3-dev, vcpkg nlohmann-json).
+# Both give the nlohmann_json::nlohmann_json target; 3.9 is the first release with ordered_json, used by the unit tests.
+if (USE_SYSTEM_JSON)
+	find_package(nlohmann_json 3.9 REQUIRED)
+else()
+	add_subdirectory(ref/json)
+endif()
 target_link_libraries(eu07_settings INTERFACE nlohmann_json::nlohmann_json)
-target_include_directories(eu07_settings INTERFACE ${NLOHMANN_JSON_INCLUDE_INSTALL_DIR})
 
 
 
