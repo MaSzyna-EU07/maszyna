@@ -488,7 +488,12 @@ bool hiz_pyramid::build(command_stream *Commands, VkDevice Device, allocator &Me
 			info.format = desc.format;
 			info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, 1, 0, 1};
 			VkImageView view{VK_NULL_HANDLE};
-			VK14_VERIFY(vkCreateImageView(Device, &info, nullptr, &view));
+			if (!VK14_VERIFY(vkCreateImageView(Device, &info, nullptr, &view)))
+			{
+				// no pyramid without a view of each of its levels: what was made of it goes, the culling goes without the occlusion test
+				destroy(Device, &Deletions, Value);
+				return false;
+			}
 			m_levels.push_back(view);
 		}
 		// the pyramid stays in the general layout: the kernel reads the levels it wrote, the culling all of them

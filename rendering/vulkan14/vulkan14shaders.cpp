@@ -96,6 +96,18 @@ std::vector<std::uint32_t> read_spirv(std::string const &Path)
 	{
 		return {};
 	}
+	// the instructions after the header of five words follow one another to the very end of the file: a file cut short or damaged
+	// (a full disk, a crash while it was written) isn't given to the driver, the shader is compiled again
+	std::size_t word{5};
+	while (word < words.size())
+	{
+		auto const count{static_cast<std::size_t>(words[word] >> 16)};
+		if ((count == 0) || (count > words.size() - word))
+		{
+			return {};
+		}
+		word += count;
+	}
 	return words;
 }
 
@@ -113,8 +125,11 @@ void write_file(std::string const &Path, void const *Data, std::size_t const Siz
 			return;
 		}
 		file.write(static_cast<char const *>(Data), static_cast<std::streamsize>(Size));
-		if (false == static_cast<bool>(file))
+		// closed before it's looked at: what's still in the buffer of the stream is written then, and may not fit on the disk
+		file.close();
+		if (file.fail())
 		{
+			std::filesystem::remove(temporary, error);
 			return;
 		}
 	}

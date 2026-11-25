@@ -102,6 +102,11 @@ void background_tasks::work()
 		{
 			ErrorLog(std::string("vulkan: a background task failed: ") + Exception.what());
 		}
+		catch (...)
+		{
+			// whatever a task lets out stays in it: the thread goes on with the next one
+			ErrorLog("vulkan: a background task failed");
+		}
 		lock.lock();
 		--m_busy;
 		if (m_queue.empty() && (m_busy == 0))

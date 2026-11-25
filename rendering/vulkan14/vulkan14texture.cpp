@@ -831,6 +831,11 @@ vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 			}
 			levels.push_back({offset, {width, height, 1}});
 			offset += levelsize;
+			if ((width == 1) && (height == 1))
+			{
+				// the last level an image of the size has, whatever the count the file gives
+				break;
+			}
 			width = std::max(width / 2, 1u);
 			height = std::max(height / 2, 1u);
 		}
@@ -841,6 +846,12 @@ vulkan14_texture::make_result vulkan14_texture::make(bool const Background)
 		if (format.expand_rgb)
 		{
 			auto const pixels{static_cast<std::size_t>(data_width) * data_height};
+			if (data.size() < pixels * 3)
+			{
+				// a file cut short: not read past what it holds
+				ErrorLog("Bad texture: \"" + name + "\" holds less data than its size needs", logtype::texture);
+				return failed();
+			}
 			expanded.resize(pixels * 4);
 			for (std::size_t i = 0; i < pixels; ++i)
 			{

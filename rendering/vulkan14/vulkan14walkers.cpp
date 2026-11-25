@@ -191,6 +191,11 @@ void vulkan14_renderer::fork_walk(std::function<void(vulkan14_renderer &)> Job, 
 			    ErrorLog(std::string("vulkan: a walker failed to walk its pass, which is left out: ") + Exception.what());
 			    walker.m_walkfailed = true;
 		    }
+		    catch (...)
+		    {
+			    ErrorLog("vulkan: a walker failed to walk its pass, which is left out");
+			    walker.m_walkfailed = true;
+		    }
 		    if (walker.m_walkfailed)
 		    {
 			    // whatever it left half done (a rendering under way) goes

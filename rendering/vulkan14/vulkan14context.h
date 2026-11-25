@@ -196,6 +196,9 @@ struct viewport_targets
 	target_formats formats;
 	target_formats output_formats;
 	bool srgb{true}; // the output encodes the colour (gfx.shadergamma no)
+	// the images couldn't be made for the size and the settings above, and when: tried again after a while (make_targets())
+	bool failed{false};
+	std::chrono::steady_clock::time_point failed_at{};
 };
 
 // the images of the frame generation of dlss (gfx.framegeneration) for the main window, made for its size and its format: the frame
@@ -368,6 +371,8 @@ struct cull_resources
 	std::vector<std::unique_ptr<instance_cull>> lamps;
 	hiz_pyramid hiz;
 	bool ready{false};
+	// the cullings were tried to be made once (vulkan14_renderer::ensure_cull()), with the renderer they're of
+	bool tried{false};
 	// the cascades of the sun shadows fitted to the depth of the main view (gfx.shadow.sdsm), made when they're first needed
 	shadow_fitter shadowfit;
 	bool shadowfit_tried{false};

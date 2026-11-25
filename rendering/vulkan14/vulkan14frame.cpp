@@ -331,16 +331,27 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	VkExtent2D const extent{static_cast<std::uint32_t>(std::max(Width, 1)), static_cast<std::uint32_t>(std::max(Height, 1))};
 	// the images after the upscaling of dlss have the size of the window, the others that of the scene
 	VkExtent2D const outputextent{Dlss ? VkExtent2D{static_cast<std::uint32_t>(std::max(OutputWidth, 1)), static_cast<std::uint32_t>(std::max(OutputHeight, 1))} : extent};
-	if ((Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
-	    (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections) && Targets.output)
+	auto const unchanged{(Targets.extent.width == extent.width) && (Targets.extent.height == extent.height) && (Targets.output_extent.width == outputextent.width) && (Targets.output_extent.height == outputextent.height) &&
+	                (Targets.samples == samples) && (Targets.motion == motion) && (Targets.taa == Taa) && (Targets.dlss == Dlss) && (Targets.aberration == aberration) && (Targets.srgb == Srgb) && (Targets.reflections == Reflections)};
+	if (unchanged && Targets.output)
 	{
 		return true;
 	}
-	Deletions.push(Value, [old = std::move(Targets)]() {});
+	// the same images couldn't be made a moment ago (no memory for them): tried again after a while, not with every frame
+	auto const now{std::chrono::steady_clock::now()};
+	auto const failedbefore{unchanged && Targets.failed};
+	if (failedbefore && (now - Targets.failed_at < std::chrono::seconds{1}))
+	{
+		return false;
+	}
 	auto const oldformats{Targets.formats};
 	auto const oldoutput{Targets.output_formats};
 	auto const oldpost{Targets.post_formats};
 	auto const olddepth{Targets.depth_formats};
+	// the ambient occlusion made once stays with the images made anew for another reason: it can be switched on again in the debug
+	// window only where its images are
+	auto const hadocclusion{bool(Targets.ssao)};
+	Deletions.push(Value, [old = std::move(Targets)]() {});
 	Targets = vk14::viewport_targets{};
 	Targets.extent = extent;
 	Targets.output_extent = outputextent;
@@ -425,7 +436,7 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 		     make(Targets.dlss_output, hdr, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | historysource, VK_SAMPLE_COUNT_1_BIT, "dlss output", outputextent);
 	}
 	// the ambient occlusion, half the size, when it's on
-	if (ok && (Global.gfx_postfx_ao != 0))
+	if (ok && ((Global.gfx_postfx_ao != 0) || hadocclusion))
 	{
 		auto makehalf = [&](std::shared_ptr<vk14::image> &Image, char const *Name) {
 			vk14::image_desc desc;
@@ -486,8 +497,28 @@ bool make_targets(vk14::allocator &Memory, vk14::deletion_queue &Deletions, std:
 	}
 	if (false == ok)
 	{
-		vk14::log_error("the images of a viewport of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made");
-		Targets.output.reset();
+		if (false == failedbefore)
+		{
+			vk14::log_error("the images of a viewport of " + std::to_string(extent.width) + "x" + std::to_string(extent.height) + " can't be made, trying again every second");
+		}
+		// what was made of them goes: the viewport isn't drawn without all of them
+		Deletions.push(Value, [partial = std::move(Targets)]() {});
+		Targets = vk14::viewport_targets{};
+		Targets.extent = extent;
+		Targets.output_extent = outputextent;
+		Targets.dlss = Dlss;
+		Targets.samples = samples;
+		Targets.motion = motion;
+		Targets.taa = Taa;
+		Targets.aberration = aberration;
+		Targets.srgb = Srgb;
+		Targets.reflections = Reflections;
+		Targets.formats = oldformats;
+		Targets.output_formats = oldoutput;
+		Targets.post_formats = oldpost;
+		Targets.depth_formats = olddepth;
+		Targets.failed = true;
+		Targets.failed_at = now;
 		return false;
 	}
 	Targets.formats.colour = {hdr, motion ? velocity : VK_FORMAT_UNDEFINED};

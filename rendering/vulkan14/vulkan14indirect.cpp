@@ -108,10 +108,9 @@ vk14::instance_cull &vulkan14_renderer::pass_cull()
 void vulkan14_renderer::ensure_cull()
 {
 	auto &cull{m_context->scene.cull};
-	static bool tried{false};
-	if ((m_main == nullptr) && (Global.gfx_gpucull != 0) && (false == cull.ready) && (false == tried))
+	if ((m_main == nullptr) && (Global.gfx_gpucull != 0) && (false == cull.ready) && (false == cull.tried))
 	{
-		tried = true;
+		cull.tried = true;
 		if (false == init_cull())
 		{
 			ErrorLog("vulkan: the gpu culling of the instances can't be used, the cpu culls them (gfx.gpucull)");

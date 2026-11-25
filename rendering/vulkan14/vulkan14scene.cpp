@@ -26,6 +26,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -2230,10 +2231,23 @@ std::string list_value(std::string const &Field)
 	return result;
 }
 
-std::string pipeline_list_path()
+std::filesystem::path pipeline_list_path()
 {
 	auto const path{user_config_path("cache")};
-	return (path.empty() ? std::string{"cache/vulkan14/pipelines.txt"} : (path / "vulkan14" / "pipelines.txt").string());
+	return (path.empty() ? std::filesystem::path{"cache/vulkan14/pipelines.txt"} : (path / "vulkan14" / "pipelines.txt"));
+}
+
+// what a line of the list of the pipelines may hold: the list is a file of the user's profile, which a crash or an editor can leave
+// with anything in it, and its values go to the making of pipelines by the driver
+bool pipeline_record_valid(vk14::scene_pipeline_record const &Record, std::uint32_t const Vertices, std::uint32_t const Topology)
+{
+	auto const format = [](VkFormat const Format) {
+		// the formats of the core, which the targets of the passes are of
+		return static_cast<std::uint32_t>(Format) <= static_cast<std::uint32_t>(VK_FORMAT_ASTC_12x12_SRGB_BLOCK);
+	};
+	return (Vertices <= static_cast<std::uint32_t>(vk14::vertex_kind::particle_instance)) && (Topology <= static_cast<std::uint32_t>(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)) &&
+	       (Record.blending <= static_cast<std::uint32_t>(vk14::blend_mode::no_colour)) && format(Record.colour[0]) && format(Record.colour[1]) && format(Record.depth) &&
+	       std::has_single_bit(Record.samples) && (Record.samples <= 8) && (Record.view_mask <= 0x3fu) && (Record.settings < 64u);
 }
 
 // the number of pipelines the list keeps; the oldest go
@@ -2286,8 +2300,6 @@ bool vk14::scene_pipeline_record::parse(std::string const &Line)
 		{
 			values[i] = static_cast<std::uint32_t>(std::stoul(fields[6 + i]));
 		}
-		vertices = static_cast<vertex_kind>(values[0]);
-		topology = static_cast<VkPrimitiveTopology>(values[1]);
 		blending = values[2];
 		colour = {static_cast<VkFormat>(values[3]), static_cast<VkFormat>(values[4])};
 		colours = std::min<std::uint32_t>(values[5], 2);
@@ -2295,6 +2307,12 @@ bool vk14::scene_pipeline_record::parse(std::string const &Line)
 		samples = values[7];
 		view_mask = values[8];
 		settings = values[9];
+		if (false == pipeline_record_valid(*this, values[0], values[1]))
+		{
+			return false;
+		}
+		vertices = static_cast<vertex_kind>(values[0]);
+		topology = static_cast<VkPrimitiveTopology>(values[1]);
 	}
 	catch (std::exception const &)
 	{
@@ -2714,8 +2732,9 @@ void vulkan14_renderer::context::save_scene_pipelines()
 	}
 	auto const path{pipeline_list_path()};
 	std::error_code error;
-	std::filesystem::create_directories(std::filesystem::path(path).parent_path(), error);
-	auto const temporary{path + ".tmp"};
+	std::filesystem::create_directories(path.parent_path(), error);
+	auto temporary{path};
+	temporary += ".tmp";
 	{
 		std::ofstream file(temporary, std::ios::trunc);
 		if (false == file.is_open())
@@ -2725,6 +2744,13 @@ void vulkan14_renderer::context::save_scene_pipelines()
 		for (auto const &record : records)
 		{
 			file << record.line() << '\n';
+		}
+		// a list which wasn't written whole (a full disk) doesn't take the place of the one there
+		file.close();
+		if (file.fail())
+		{
+			std::filesystem::remove(temporary, error);
+			return;
 		}
 	}
 	std::filesystem::rename(temporary, path, error);

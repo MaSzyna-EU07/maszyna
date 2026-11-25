@@ -92,22 +92,40 @@ std::vector<VkDescriptorSetLayoutBinding> reflect_bindings(std::vector<std::uint
 			}
 			break;
 		case op_type_sampler:
-			types[op[1]] = {opcode, 0, 0, 0};
+			if (count >= 2)
+			{
+				types[op[1]] = {opcode, 0, 0, 0};
+			}
 			break;
 		case op_type_sampled_image:
-			types[op[1]] = {opcode, op[2], 0, 0};
+			if (count >= 3)
+			{
+				types[op[1]] = {opcode, op[2], 0, 0};
+			}
 			break;
 		case op_type_array:
-			types[op[1]] = {opcode, op[2], op[3], 0};
+			if (count >= 4)
+			{
+				types[op[1]] = {opcode, op[2], op[3], 0};
+			}
 			break;
 		case op_type_runtime_array:
-			types[op[1]] = {opcode, op[2], 0, 0};
+			if (count >= 3)
+			{
+				types[op[1]] = {opcode, op[2], 0, 0};
+			}
 			break;
 		case op_type_struct:
-			types[op[1]] = {opcode, 0, 0, 0};
+			if (count >= 2)
+			{
+				types[op[1]] = {opcode, 0, 0, 0};
+			}
 			break;
 		case op_type_pointer:
-			types[op[1]] = {opcode, op[3], op[2], 0};
+			if (count >= 4)
+			{
+				types[op[1]] = {opcode, op[3], op[2], 0};
+			}
 			break;
 		case op_variable:
 			if (count >= 4)

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14common.h"
 #include "rendering/vulkan14/vulkan14memory.h"
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 
@@ -98,6 +99,9 @@ class vulkan14_geometrybank : public gfx::geometry_bank
 	std::vector<chunk_place> m_places;
 	bool m_layoutdirty{true}; // the buffers have to be made anew
 	bool m_chunksdirty{false}; // some chunks have to be copied
+	// the buffers couldn't be made (no memory for them), and when: made again after a while
+	bool m_failed{false};
+	std::chrono::steady_clock::time_point m_failedat{};
 	VkDeviceSize m_bytes{0};
 	// the buffers made or updated by one of the threads drawing from the bank at a time
 	std::mutex m_mutex;

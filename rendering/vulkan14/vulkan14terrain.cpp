@@ -145,6 +145,11 @@ void terrain_materials::gpu_storage(texture_array const &Array, int const Layers
 		if (vkCreateImageView(device, &info, nullptr, &view) != VK_SUCCESS)
 		{
 			ErrorLog("heightmap terrain: no view of a layer of \"" + target.name + "\"");
+			// the views made of the layers before it go with it
+			for (auto const made : images.layers)
+			{
+				vkDestroyImageView(device, made, nullptr);
+			}
 			images.layers.clear();
 			break;
 		}
