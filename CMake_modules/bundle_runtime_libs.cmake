@@ -8,7 +8,8 @@
 # libcurl and everything it pulls in (TLS, Kerberos, LDAP, HTTP/2, compression, name handling) stay out too: the
 # build machine's copy knows the CA bundle path of the build machine's distribution (Debian), so shipped next to
 # the game it breaks the certificate checks on Fedora or openSUSE, and the security updates of the TLS stack come
-# from the user's system, not from our package. the game then needs the system's libcurl at run time
+# from the user's system, not from our package. the game isn't linked with libcurl: the editor loads the system's one
+# at run time (editor/editorHttp.cpp), and without it only the editor's downloads are off
 
 get_filename_component(game_folder "${GAME}" DIRECTORY)
 set(manifest "${game_folder}/bundled_libs.txt")
