@@ -39,10 +39,11 @@ std::string_view to_string(gpu_kind Kind);
 // conservative, by the names the vendors give their chips:
 // - NVIDIA: discrete (PC NVIDIA graphics have been cards or laptop chips with their own memory since the nForce days)
 // - Intel: discrete only for the Arc cards (Arc A380/A770/B580, Arc Pro A60) and Iris Xe MAX; the rest (HD, UHD,
-//   Iris, Arc Graphics and Arc 140V of Meteor/Lunar Lake) is integrated
+//   Iris, Arc Graphics, Arc 140V and Arc B370/B390 of Meteor/Lunar/Panther Lake) is integrated
 // - AMD: discrete for Radeon RX/Pro/VII, FirePro and Instinct; integrated for the APU names, which have no model
 //   number before "Graphics" (Radeon(TM) Graphics, Radeon Vega 8 Graphics, Radeon 780M Graphics, Radeon 8060S
-//   Graphics); anything else (an old Radeon HD, R7 ...) is unknown, as both cards and APUs were named so
+//   Graphics), and Radeon RX Vega 11 Graphics of Raven Ridge; anything else (an old Radeon HD, R7 ...) is unknown, as
+//   both cards and APUs were named so
 // - software renderers are software; any other vendor (virtual machines, Qualcomm) is unknown
 gpu_kind classify_gpu(std::uint32_t VendorId, std::string_view Name);
 

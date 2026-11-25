@@ -85,6 +85,11 @@ bool has_word(std::vector<std::string> const &Words, std::string_view What)
 	return std::ranges::find(Words, What) != Words.end();
 }
 
+bool is_number(std::string_view Word)
+{
+	return !Word.empty() && std::ranges::all_of(Word, [](char const c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+}
+
 bool is_software_name(std::string_view Name)
 {
 	constexpr std::array<std::string_view, 6> markers{"llvmpipe", "softpipe", "swiftshader", "gdi generic", "software rasterizer", "basic render driver"};
@@ -99,8 +104,9 @@ gpu_kind classify_intel(std::vector<std::string> const &Words)
 	for (std::size_t i = 0; i + 2 < Words.size(); ++i)
 		if (Words[i] == "iris" && Words[i + 1] == "xe" && Words[i + 2] == "max")
 			return discrete;
-	// the Arc cards have a letter and a number after "Arc" (A770, B580) or are the Pro ones; the integrated Arc are
-	// "Arc Graphics" (Meteor Lake) and "Arc 140V" (Lunar Lake)
+	// the Arc cards have a letter and a number after "Arc" (A310, A770, B580) or are the Pro ones; the integrated Arc
+	// are "Arc Graphics" (Meteor Lake), "Arc 140V" (Lunar Lake) and "Arc B370", "Arc B390" (Panther Lake), the B3xx
+	// range, below the B570 and B580 cards
 	for (std::size_t i = 0; i + 1 < Words.size(); ++i)
 	{
 		if (Words[i] != "arc")
@@ -108,15 +114,31 @@ gpu_kind classify_intel(std::vector<std::string> const &Words)
 		auto const &model{Words[i + 1]};
 		if (model == "pro")
 			return discrete;
+		if (model.size() >= 2 && model[0] == 'b' && model[1] == '3')
+			return integrated;
 		if (model.size() >= 2 && std::isalpha(static_cast<unsigned char>(model[0])) && std::isdigit(static_cast<unsigned char>(model[1])))
 			return discrete;
 	}
 	return integrated;
 }
 
+// Raven Ridge and Picasso APUs: "Radeon RX Vega 11 Graphics", "Radeon RX Vega 10 Graphics". the RX Vega cards have
+// no "Graphics" ("Radeon RX Vega 56"), and Kaby Lake G's own-memory chip has a letter ("Radeon RX Vega M GH Graphics")
+bool is_rx_vega_apu(std::vector<std::string> const &Words)
+{
+	if (Words.empty() || Words.back() != "graphics")
+		return false;
+	for (std::size_t i = 0; i + 2 < Words.size(); ++i)
+		if (Words[i] == "rx" && Words[i + 1] == "vega" && is_number(Words[i + 2]))
+			return true;
+	return false;
+}
+
 gpu_kind classify_amd(std::vector<std::string> const &Words)
 {
 	using enum gpu_kind;
+	if (is_rx_vega_apu(Words))
+		return integrated;
 	if (has_word(Words, "rx") || has_word(Words, "firepro") || has_word(Words, "instinct") || has_pair(Words, "radeon", "pro") || has_pair(Words, "radeon", "vii"))
 		return discrete;
 	// the APUs are "Radeon Graphics", "Radeon Vega 8 Graphics", "Radeon R7 Graphics", "Radeon 780M Graphics"; the

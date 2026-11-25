@@ -20,6 +20,12 @@ TEST_CASE("hardware info: Intel GPUs are integrated, except the Arc cards and Ir
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Iris(R) Xe Graphics") == gpu_kind::integrated);
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) Graphics") == gpu_kind::integrated); // Meteor Lake
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) 140V GPU (16GB)") == gpu_kind::integrated); // Lunar Lake
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) B390 GPU") == gpu_kind::integrated); // Panther Lake
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) B370 GPU") == gpu_kind::integrated);
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) A310 Graphics") == gpu_kind::discrete);
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) A380 Graphics") == gpu_kind::discrete);
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) A370M Graphics") == gpu_kind::discrete);
+	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) B570 Graphics") == gpu_kind::discrete);
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) A770 Graphics") == gpu_kind::discrete);
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) B580 Graphics") == gpu_kind::discrete);
 	CHECK(classify_gpu(vendor_intel, "Intel(R) Arc(TM) Pro A60 Graphics") == gpu_kind::discrete);
@@ -37,6 +43,11 @@ TEST_CASE("hardware info: AMD cards are discrete, the APUs integrated, the rest 
 	CHECK(classify_gpu(vendor_amd, "AMD Radeon(TM) Vega 8 Graphics") == gpu_kind::integrated);
 	CHECK(classify_gpu(vendor_amd, "AMD Radeon 780M Graphics") == gpu_kind::integrated);
 	CHECK(classify_gpu(vendor_amd, "AMD Radeon(TM) R7 Graphics") == gpu_kind::integrated);
+	CHECK(classify_gpu(vendor_amd, "AMD Radeon(TM) RX Vega 11 Graphics") == gpu_kind::integrated); // Raven Ridge
+	CHECK(classify_gpu(vendor_amd, "AMD Radeon(TM) RX Vega 10 Graphics") == gpu_kind::integrated);
+	CHECK(classify_gpu(vendor_amd, "Radeon RX Vega") == gpu_kind::discrete);
+	CHECK(classify_gpu(vendor_amd, "AMD Radeon RX Vega 56") == gpu_kind::discrete);
+	CHECK(classify_gpu(vendor_amd, "Radeon RX Vega M GH Graphics") == gpu_kind::discrete); // Kaby Lake G, own memory
 	CHECK(classify_gpu(vendor_amd, "AMD Radeon R7 370") == gpu_kind::unknown);
 	CHECK(classify_gpu(vendor_amd, "AMD Radeon HD 7850") == gpu_kind::unknown);
 	CHECK(classify_gpu(vendor_amd_alt, "AMD Radeon(TM) Graphics") == gpu_kind::integrated);
@@ -101,6 +112,9 @@ TEST_CASE("hardware info: a warning when OpenGL runs on the integrated GPU besid
 	CHECK(gl_warnings({}, "Intel", "Mesa Intel(R) UHD Graphics 620 (KBL GT2)").empty());
 	// an AMD APU beside an AMD card
 	CHECK(gl_warnings({adapter("AMD Radeon(TM) Graphics", vendor_amd), adapter("AMD Radeon RX 6600M", vendor_amd)}, "ATI Technologies Inc.", "AMD Radeon(TM) Graphics").size() == 1);
+	// a Ryzen 2400G with the monitor on the motherboard beside a GeForce, a Panther Lake laptop running GL on the B390
+	CHECK(gl_warnings({adapter("AMD Radeon(TM) RX Vega 11 Graphics", vendor_amd), adapter("NVIDIA GeForce GTX 1650", vendor_nvidia)}, "ATI Technologies Inc.", "AMD Radeon(TM) RX Vega 11 Graphics").size() == 1);
+	CHECK(gl_warnings({adapter("Intel(R) Arc(TM) B390 GPU", vendor_intel), adapter("NVIDIA GeForce RTX 5060 Laptop GPU", vendor_nvidia)}, "Intel", "Intel(R) Arc(TM) B390 GPU").size() == 1);
 }
 
 TEST_CASE("hardware info: a warning when OpenGL draws on the cpu")
