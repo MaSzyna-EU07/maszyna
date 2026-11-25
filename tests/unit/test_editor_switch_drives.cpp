@@ -2,6 +2,7 @@
 #include "doctest.h"
 #include "editor/editorSwitchDrives.hpp"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <string>
