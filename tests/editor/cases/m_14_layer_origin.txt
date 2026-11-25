@@ -1,0 +1,33 @@
+# Editing on the model (E4b): the tracks of a line of the model saved into a file under an origin (the end of the fixture is under
+# origin 2000 0 0 in this case, where the editor adds what it lays) are written as the generator made them, their points moved by the
+# origin, and recorded so: the scenery opened again finds the line as it was written, nothing changed by hand
+#> append origin 2000 0 0
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+expect modellines 1
+expect managed @1.0 1
+save
+wait 5
+expect hand 1 0
+quit
+#> reopen
+wait 5
+modelediting 1
+modeltracks
+expect modellines 1
+expect managed @1.0 1
+expect managed @1.5 1
+expect hand 1 0
+# written again as the file has them: still nothing changed by hand
+save
+wait 5
+expect hand 1 0
+quit
+#> reopen
+wait 5
+modelediting 1
+expect hand 1 0
+expect managed @1.0 1
+quit

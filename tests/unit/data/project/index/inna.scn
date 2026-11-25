@@ -1,0 +1,6 @@
+// a scenario of another map: tracks of the same names aren't the map's
+node -1 0 tor_1 track normal 100.0 1.435 0.15 25 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 0 0 0 0 0 100 0 0 velocity 60 endtrack
+FirstInit
+trainset obcy tor_1 0.0 0.0
+node -1 0 loco dynamic pkp ep07 ep07 0 headdriver 3 0 enddynamic
+endtrainset

@@ -11,6 +11,8 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorOrthophoto.hpp"
 #include "editor/editorHttp.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorPhotoRules.hpp"
+#include "editor/editorRecords.hpp"
 
 #include "rendering/renderer.h"
 #include "scene/scene.h"
@@ -757,40 +759,15 @@ bool editor_orthophoto::owns(gfx::geometry_handle const &Geometry)
 	return Geometry.bank != 0 && std::find(scene_banks.begin(), scene_banks.end(), Geometry.bank) != scene_banks.end();
 }
 
+// the line of the scenery and its format: editor_records::orthophoto_line() and read_orthophoto()
 std::string editor_orthophoto::mark(config const &Config, bool const Enabled, bool const Origin)
 {
-	// how the imagery is shown is the user's, kept with the editor (EditorSettings); the scenery keeps whether it's on and where the
-	// scenery lies
-	char text[256];
-	std::snprintf(text, sizeof(text), "on %d", Enabled ? 1 : 0);
-	std::string result{text};
-	if (Origin)
-	{
-		std::snprintf(text, sizeof(text), " origin %.2f %.2f", Config.north, Config.east);
-		result += text;
-	}
-	return result;
+	return editor_records::orthophoto_line(Enabled, Origin, Config.north, Config.east, Config.aligned);
 }
 
 bool editor_orthophoto::read_mark(std::string const &Text, config &Config, bool &Enabled)
 {
-	std::istringstream words{Text};
-	std::string key;
-	auto found{false};
-	// the year, opacity, radius and the rest the lines of the older sceneries carry are passed over: the user's settings stand
-	while (words >> key)
-	{
-		if (key == "on")
-			words >> Enabled;
-		else if (key == "origin")
-			words >> Config.north >> Config.east;
-		else
-			continue;
-		if (words.fail())
-			return found;
-		found = true;
-	}
-	return found;
+	return editor_records::read_orthophoto(Text, Enabled, Config.north, Config.east, &Config.aligned);
 }
 
 void editor_orthophoto::enabled(bool State)
@@ -884,6 +861,7 @@ void editor_orthophoto::restart_prefetch()
 		m_prefetch = std::move(keys);
 		m_prefetch_next = 0;
 		m_prefetch_failed.clear();
+		m_prefetch_retry.clear();
 		m_prefetch_cached.clear();
 		m_prefetch_source = source{m_config.year, m_config.hires, m_config.service, m_config.layers};
 		++m_prefetch_generation;
@@ -891,35 +869,15 @@ void editor_orthophoto::restart_prefetch()
 	m_wakeup.notify_all();
 }
 
+// the lines of the scenery and their format: editor_records::area_lines() and read_area()
 std::vector<std::string> editor_orthophoto::area_lines(std::vector<glm::dvec2> const &Polygon)
 {
-	std::vector<std::string> lines;
-	if (Polygon.size() < 3)
-		return lines;
-	lines.emplace_back("# the area the editor downloads the orthophoto and the terrain model in, PUWG 1992 easting northing");
-	for (auto const &point : Polygon)
-	{
-		char text[64];
-		std::snprintf(text, sizeof(text), "point %.2f %.2f", point.x, point.y);
-		lines.emplace_back(text);
-	}
-	return lines;
+	return editor_records::area_lines(Polygon);
 }
 
 std::vector<glm::dvec2> editor_orthophoto::read_area(std::vector<std::string> const &Lines)
 {
-	std::vector<glm::dvec2> polygon;
-	for (auto const &line : Lines)
-	{
-		std::istringstream words{line};
-		std::string keyword;
-		glm::dvec2 point{0.0};
-		if (words >> keyword && keyword == "point" && words >> point.x >> point.y)
-			polygon.push_back(point);
-	}
-	if (polygon.size() < 3)
-		polygon.clear();
-	return polygon;
+	return editor_records::read_area(Lines);
 }
 
 void editor_orthophoto::refit()
@@ -938,15 +896,6 @@ void editor_orthophoto::ground_arrived()
 		if (t.grounded && ground_came(key, t))
 			t.grounded = false;
 	}
-}
-
-bool editor_orthophoto::waits_for_ground(tile_key const &Key) const
-{
-	// a tile laid out already stays, sampled again when its ground comes (ground_came)
-	if (!m_coming || m_tiles.contains(Key))
-		return false;
-	glm::dvec2 const corner = tile_corner(Key);
-	return m_coming(corner - glm::dvec2{tile_size}, corner);
 }
 
 bool editor_orthophoto::ground_came(tile_key const &Key, tile const &Tile) const
@@ -1022,8 +971,37 @@ void editor_orthophoto::retry_failed()
 		for (auto const &key : m_prefetch_failed)
 			m_prefetch.push_back(key);
 		m_prefetch_failed.clear();
+		m_prefetch_retry.clear();
+		m_last_error.clear();
 	}
 	m_wakeup.notify_all();
+}
+
+std::vector<std::pair<glm::dvec2, glm::dvec2>> editor_orthophoto::failed() const
+{
+	std::vector<std::pair<glm::dvec2, glm::dvec2>> result;
+	if (false == m_enabled)
+		return result;
+	std::set<tile_key> keys;
+	for (auto const &[key, t] : m_tiles)
+		if (t.failures > 0 && t.level == 0 && false == t.empty)
+			keys.insert(key);
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		keys.insert(m_prefetch_failed.begin(), m_prefetch_failed.end());
+	}
+	for (auto const &key : keys)
+	{
+		glm::dvec2 const corner = tile_corner(key);
+		result.emplace_back(corner - glm::dvec2{tile_size}, corner);
+	}
+	return result;
+}
+
+std::string editor_orthophoto::last_failure() const
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return m_last_error.empty() ? std::string{} : photo_rules::failure_reason(m_last_error);
 }
 
 editor_orthophoto::statistics editor_orthophoto::stats() const
@@ -1066,16 +1044,23 @@ bool editor_orthophoto::outside_area(tile_key const &Key) const
 	return false == m_area.empty() && 0 == m_area_tiles.count(Key);
 }
 
-int editor_orthophoto::level_for(int Distance, bool Hires)
+int editor_orthophoto::level_for(int Distance, int HiresReach)
 {
 	// coarser imagery further away keeps the memory use of large radii in check
-	if (Distance <= 1)
-		return Hires ? hires_pixels : standard_pixels;
+	if (Distance <= HiresReach)
+		return hires_pixels;
 	if (Distance <= 3)
 		return standard_pixels;
 	if (Distance <= 6)
 		return standard_pixels / 2;
 	return standard_pixels / 4;
+}
+
+int editor_orthophoto::hires_reach() const
+{
+	if (m_config.hires)
+		return 1;
+	return m_zoom_hires ? 0 : -1;
 }
 
 editor_orthophoto::tile_key editor_orthophoto::camera_tile(glm::dvec3 const &Camera) const
@@ -1132,7 +1117,7 @@ void editor_orthophoto::schedule(tile_key const &Key, tile &Tile, int Level, std
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](job const &Job) { return Job.key == Key; }), m_queue.end());
-		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires, m_config.service, m_config.layers}, m_generation.load()});
+		m_queue.push_back(job{Key, Level, Alpha, source{m_config.year, m_config.hires || m_zoom_hires, m_config.service, m_config.layers}, m_generation.load()});
 	}
 	Tile.requested = Level;
 	Tile.requested_alpha = Alpha;
@@ -1161,8 +1146,9 @@ std::size_t editor_orthophoto::apply(result &Result, double Now)
 	{
 		if (current)
 		{
+			// tried again later and later, never given up: the service comes back, or the connection does
 			++t.failures;
-			t.retry_at = (t.failures >= 5) ? std::numeric_limits<double>::max() : Now + std::min(120.0, 5.0 * std::pow(2.0, t.failures - 1));
+			t.retry_at = Now + photo_rules::retry_delay(t.failures);
 		}
 		return 0;
 	}
@@ -1264,6 +1250,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 {
 	Tile.grounded = true;
 	Tile.guessed = false;
+	Tile.flat.reset();
 	Tile.scene_dirty = true;
 	Tile.heights.clear();
 	Tile.surface.clear();
@@ -1377,11 +1364,15 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 						heights[static_cast<std::size_t>(j) * samples + i] = y;
 				}
 		}
-		// nothing to go by yet: the tile stays flat at the layer height, and is sampled again when something comes
+		// nothing to go by yet: the tile lies flat at the height of the ground found last, or of the layer before any was, and is
+		// sampled again when something comes
 		Tile.guessed = true;
 		missing = std::count(heights.begin(), heights.end(), no_height);
 		if (missing == heights.size())
+		{
+			Tile.flat = m_known_height;
 			return;
+		}
 	}
 	while (missing > 0)
 	{
@@ -1417,6 +1408,7 @@ void editor_orthophoto::sample_ground(tile_key const &Key, tile &Tile)
 	auto const range = std::minmax_element(Tile.heights.begin(), Tile.heights.end());
 	Tile.height_min = *range.first;
 	Tile.height_max = *range.second;
+	m_known_height = 0.5f * (Tile.height_min + Tile.height_max);
 }
 
 void editor_orthophoto::remove_shape(tile &Tile)
@@ -1482,8 +1474,9 @@ void editor_orthophoto::build_shape(tile_key const &Key, tile &Tile)
 	}
 	else
 	{
-		// flat quad at the layer height, triangles facing up like the draped surface
-		double const y = m_config.height;
+		// flat quad at the layer height, or at the height of the ground found last where there's none yet under it, triangles facing
+		// up like the draped surface
+		double const y = (m_config.drape && Tile.flat.has_value()) ? *Tile.flat : m_config.height;
 		glm::dvec3 const nw(corner.x, y, corner.y), ne(corner.x - tile_size, y, corner.y);
 		glm::dvec3 const sw(corner.x, y, corner.y - tile_size), se(corner.x - tile_size, y, corner.y - tile_size);
 		for (auto const &point : {nw, sw, ne, se, ne, sw})
@@ -1636,11 +1629,24 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 		return;
 
 	tile_key const centre = camera_tile(Camera);
-	if (centre != m_camera_tile)
 	{
-		m_camera_tile = centre;
 		std::lock_guard<std::mutex> lock(m_mutex);
-		m_focus = centre;
+		if (centre != m_camera_tile)
+		{
+			m_camera_tile = centre;
+			m_focus = centre;
+		}
+		// the tiles of the area which failed, tried again once their time comes
+		bool again{false};
+		for (auto it = m_prefetch_retry.begin(); it != m_prefetch_retry.end(); ++it)
+			if (it->second.second <= now && m_prefetch_failed.erase(it->first) > 0)
+			{
+				m_prefetch.push_back(it->first);
+				it->second.second = std::numeric_limits<double>::max();
+				again = true;
+			}
+		if (again)
+			m_wakeup.notify_all();
 	}
 	int const radius = m_config.radius;
 	auto const distance = [&](tile_key const &Key) { return std::max(std::abs(Key.first - centre.first), std::abs(Key.second - centre.second)); };
@@ -1689,12 +1695,11 @@ void editor_orthophoto::update(glm::dvec3 const &Camera)
 				}
 				continue;
 			}
-			if (waits_for_ground(key))
-				continue;
+			// laid out at once, whether its ground has come or not: it lies flat till it does, then goes onto it
 			tile &t = m_tiles[key];
 			if (!in_service_area(key.first, key.second))
 				t.empty = true;
-			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), m_config.hires));
+			int const level = first_level(t, level_for(std::max(std::abs(dx), std::abs(dy)), hires_reach()));
 			if (t.empty || (t.level == level && t.alpha == m_alpha) || (t.requested == level && t.requested_alpha == m_alpha) || now < t.retry_at)
 				continue;
 			schedule(key, t, level, m_alpha);
@@ -1805,9 +1810,20 @@ void editor_orthophoto::worker()
 			if (prefetchgeneration == m_prefetch_generation)
 			{
 				if (ok)
+				{
 					m_prefetch_cached.insert(*prefetch);
+					m_prefetch_retry.erase(*prefetch);
+				}
 				else
+				{
+					// tried again later and later, up to 5 min apart, never given up
 					m_prefetch_failed.insert(*prefetch);
+					auto &retry{m_prefetch_retry[*prefetch]};
+					++retry.first;
+					retry.second = steady_seconds() + photo_rules::retry_delay(retry.first);
+					if (error != "cancelled")
+						m_last_error = error;
+				}
 			}
 			continue;
 		}
@@ -1838,7 +1854,14 @@ void editor_orthophoto::worker()
 		if (m_stop)
 			return;
 		if (!out.ok && error != "superseded")
+		{
 			ErrorLog(std::string("Editor orthophoto: tile ") + std::to_string(current.key.second) + "_" + std::to_string(current.key.first) + " failed: " + error);
+			if (error != "cancelled")
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				m_last_error = error;
+			}
+		}
 		if (out.ok && current.alpha < 255)
 			for (std::size_t i = 3; i < picture.rgba.size(); i += 4)
 				picture.rgba[i] = static_cast<std::uint8_t>((picture.rgba[i] * current.alpha + 127u) / 255u);
@@ -1896,7 +1919,8 @@ void editor_orthophoto::draw(glm::mat4 const &ViewProjection, glm::dvec3 const &
 			continue;
 
 		bool const draped = m_config.drape && !t.heights.empty();
-		double const flat = m_config.height;
+		// with no ground under it yet, laid onto the ground, at the height of the ground found last
+		double const flat = (m_config.drape && t.flat.has_value()) ? *t.flat : m_config.height;
 		double const lift = m_config.lift;
 		double const ylo = draped ? t.height_min + lift : flat;
 		double const yhi = draped ? t.height_max + lift : flat;
@@ -2019,7 +2043,7 @@ bool editor_orthophoto::hurry_tile(tile_key const &Key, int const Distance)
 		t.empty = true;
 	if (t.empty)
 		return false;
-	auto const level{first_level(t, level_for(Distance, m_config.hires))};
+	auto const level{first_level(t, level_for(Distance, hires_reach()))};
 	t.retry_at = 0.0;
 	if (t.level == level && t.alpha == m_alpha)
 		return false; // already shown as it should be

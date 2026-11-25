@@ -1,0 +1,29 @@
+# Stations from the photo (Etap 5): a turnout traced nearer to the one before it on the main track than the norms let it (ST-T1-A6 11.3
+# pkt 7: max(0.15 V; 6) m between them, 7.5 m at the 50 km/h of its diverging track) is moved on along the track to keep that straight,
+# told by how much. The empty ground north-east of the fixture (x 2000.., z 9300..)
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.1
+layp 2000 9300 2500 9300 3000 9300
+layenter
+wait 2
+tap esc
+wait 2
+# the turnout there: its blades at 2350, to -z, its end at 2383.2
+switchplace Rz_60E1-300-1:9 2350 9300 1 -1
+wait 2
+expect steps 2
+layp 2389.20 9300.00 2397.54 9300.06 2404.45 9300.42 2411.53 9300.78 2418.48 9301.42 2427.55 9302.34 2449.46 9304.87 2479.52 9308.13 2519.47 9312.63 2559.54 9316.99
+layenter
+wait 2
+expect station turnouts 1
+expect station turnout 0 Rz_60E1-300-1:9
+expect station moved 0 1.2 0.8
+expect station status straight between turnouts at least 7.5 m
+expect laid joined 1
+expect steps 3
+quit

@@ -1,0 +1,49 @@
+# stage 6: a road across two tracks of different cant (within the 119 mm a crossing allows) is laid into the plane of the heads of each,
+# cut along the rails; the cant of a track changed, the road follows it; one undo takes the change of the cant and the road with it.
+# p2 (x 120) and q2 (x 124.5): straights side by side along z from 100 to 200, the points of the tracks at 0, the heads 0.18 over them
+wait 5
+expect roadpieces 0
+trackcant q2 0 35 35
+wait 3
+expect cant q2 start 35 0.5
+# the road across both at z 150, laid at the height of the points, 0.18 under the heads; d2 (x 80) left out
+roadlay 85 150 158 150 0.0 1 3.5
+wait 10
+crossingprobe
+expect crossing holds 35 mm
+# the surface at the middle of each head, where the road crosses it (50 m along each track)
+expect railhead p2 left 50 0.001
+expect railhead p2 right 50 0.001
+expect railhead q2 left 50 0.001
+expect railhead q2 right 50 0.001
+# the gaps: the flangeway and the head of each rail (the right rail of a track along z lies at -x), none between the rails
+expect roadgaps 119.22 150 1
+expect roadgaps 120.78 150 1
+expect roadgaps 120 150 0
+expect roadgaps 123.78 150 1
+expect roadgaps 125.22 150 1
+expect roadgaps 124.5 150 0
+expect roadgaps 122.25 150 0
+# the road more than 30 m from the rails goes on as it was, at the height it was laid at
+expect roadsurface 87 150 0.0 0.001
+expect roadsurface 157 150 0.0 0.001
+# the cant of q2 changed: the road over it follows
+trackcant q2 0 20 20
+wait 10
+expect crossing holds 20 mm
+expect railhead q2 left 50 0.001
+expect railhead q2 right 50 0.001
+expect railhead p2 left 50 0.001
+expect roadgaps 123.78 150 1
+# one undo: the cant of 35 mm and the road over it
+undo
+wait 5
+expect cant q2 start 35 0.5
+expect railhead q2 left 50 0.001
+expect railhead q2 right 50 0.001
+expect roadgaps 123.78 150 1
+# and one more: the road and its crossing go together
+undo
+wait 5
+expect roadpieces 0
+quit

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <optional>
 #include <string>
@@ -21,12 +22,15 @@ public:
 
 	bool load();
 	bool save();
+	// the settings as the file keeps them, read and written
+	void read(std::istream &Stream);
+	void write(std::ostream &Stream) const;
 
 	movement_scheme movement() const { return m_movement; }
 	void movement(movement_scheme scheme) { m_movement = scheme; }
 
-	// geoportal orthophoto layer (editor_orthophoto), how it's shown and whether it's on; the origin is kept per scenery, and the
-	// scenery keeps it too
+	// geoportal orthophoto layer (editor_orthophoto), how it's shown; whether it's on and the origin are kept per scenery, and the
+	// scenery keeps them too
 	struct orthophoto_settings
 	{
 		int radius{2};
@@ -37,13 +41,16 @@ public:
 		bool drape{true};
 		float lift{0.05f};
 		bool in_scene{false};
-		// turned on or off by the user, for every scenery; none chosen yet: as the scenery keeps it, or the terrain model turns it on
-		std::optional<bool> on;
 	};
 	orthophoto_settings &orthophoto() { return m_orthophoto; }
 	// PUWG 1992 northing/easting of the scenery's (0,0,0) point; false when none was stored
 	bool orthophoto_origin(std::string const &Scenery, double &North, double &East) const;
 	void orthophoto_origin(std::string const &Scenery, double North, double East);
+	// the photo turned on or off by the user in the scenery; none: not chosen there yet, as the scenery keeps it
+	std::optional<bool> orthophoto_on(std::string const &Scenery) const;
+	void orthophoto_on(std::string const &Scenery, bool On);
+	// what's kept of the scenery's photo, its choice and its origin, forgotten
+	void orthophoto_forget(std::string const &Scenery);
 	// the WMS layers the user added under the scenery, over the orthophoto, the top one first: the address of the service, the
 	// layers asked of it, its title and terms as its capabilities gave them. Kept with the editor, not with the scenery
 	struct wms_layer
@@ -78,6 +85,10 @@ public:
 	// the tutorial (Help > Tutorial) opens by itself when an editor session starts
 	bool first_steps() const { return m_first_steps; }
 	void first_steps(bool Show) { m_first_steps = Show; }
+	// the tracks laid and edited through the model of the track geometry, its commands and the project file of the map (stage E4,
+	// a trial): off, the editor works as it did
+	bool model_editing() const { return m_model_editing; }
+	void model_editing(bool const On) { m_model_editing = On; }
 	// a scenery begun with no terrain is offered the terrain model as the first track is laid
 	bool terrain_offer() const { return m_terrain_offer; }
 	void terrain_offer(bool Offer) { m_terrain_offer = Offer; }
@@ -104,6 +115,9 @@ public:
 	void terrain_model_offset(std::string const &Scenery, double Offset, bool Fitted);
 	bool track_tools_more() const { return m_track_tools_more; }
 	void track_tools_more(bool Show) { m_track_tools_more = Show; }
+	// the card of the tool in use folded to its title row, for all the tools of all the fields of work
+	bool tool_card_folded() const { return m_tool_card_folded; }
+	void tool_card_folded(bool const Folded) { m_tool_card_folded = Folded; }
 	// the ballast of the railway drawn in the top view
 	int top_tracks() const { return m_top_tracks; }
 	void top_tracks(int const Tracks) { m_top_tracks = Tracks; }
@@ -133,6 +147,7 @@ private:
 	orthophoto_settings m_orthophoto;
 	camera_settings m_camera;
 	std::map<std::string, std::pair<double, double>> m_orthophoto_origins;
+	std::map<std::string, bool> m_orthophoto_on;
 	std::vector<wms_layer> m_wms_layers;
 	double m_platform_edge{1.725};
 	double m_signal_offset{2.25};
@@ -141,9 +156,11 @@ private:
 	int m_nodebank_card{96};
 	int m_palette{0};
 	bool m_first_steps{true};
+	bool m_model_editing{false};
 	bool m_terrain_offer{true};
 	bool m_terrain_buried_ask{true};
 	bool m_track_tools_more{false};
+	bool m_tool_card_folded{true};
 	bool m_terrain_while_laying{true};
 	terrain_model_settings m_terrain_model;
 	std::map<std::string, std::pair<double, bool>> m_terrain_model_offsets;

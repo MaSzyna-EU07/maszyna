@@ -32,34 +32,7 @@ namespace scene
 
 node_layers Layers;
 
-// converts world space location to the one which produces it when loaded with this context in effect
-glm::dvec3 layer_context::to_local(glm::dvec3 Location) const
-{
-	// reverse of the transformation done by the scenery loader: rotation around the vertical axis, then scale, then offset
-	Location -= offset;
-	Location /= glm::dvec3{scale};
-	if (rotation != glm::vec3{0.f})
-	{
-		Location = glm::rotateY<double>(Location, -glm::radians(static_cast<double>(rotation.y)));
-	}
-	return Location;
-}
-
-glm::dvec3 layer_context::to_world(glm::dvec3 Location) const
-{
-	if (rotation != glm::vec3{0.f})
-	{
-		Location = glm::rotateY<double>(Location, glm::radians(static_cast<double>(rotation.y)));
-	}
-	Location *= glm::dvec3{scale};
-	Location += offset;
-	return Location;
-}
-
-bool layer_context::matches(layer_context const &Other) const
-{
-	return glm::all(glm::epsilonEqual(offset, Other.offset, 1e-4)) && glm::all(glm::epsilonEqual(rotation, Other.rotation, 1e-4f)) && glm::all(glm::epsilonEqual(scale, Other.scale, 1e-5f));
-}
+// layer_context: scene/scenelayercontext.cpp, which the unit tests of the //$ lines of the editor link alone
 
 std::size_t basic_layer::item_count() const
 {
@@ -849,7 +822,7 @@ namespace
 {
 // marks of the lines the editor keeps track of. The letters the starters read in a scenery file are left to them: the title //$n,
 // the description //$d, the attachments //$f, the image //$i, the id //$l and the old scenery //$a, in the trainsets //$o and //$r
-std::array<char const *, 11> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$z", "//$w", "//$t"};
+std::array<char const *, 12> const editormarks{"//$p", "//$h", "//$r", "//$b", "//$c", "//$o", "//$s", "//$k", "//$z", "//$w", "//$t", "//$u"};
 
 // the marks some of these had before, on the letters of the starters: the download area //$z was //$a, the shared grade lines //$w
 // were //$n, the fitted tracks //$t were //$f. Their lines are read only by the word the editor wrote in them, or by the start of
@@ -885,7 +858,7 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 		std::string on, state, next;
 		return words >> on >> state && on == "on" && (state == "0" || state == "1") && (false == static_cast<bool>(words >> next) || next == "origin" || next == "year");
 	}
-	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 7> const words{{
+	static std::array<std::pair<std::string_view, std::array<std::string_view, 11>>, 8> const words{{
 	    {"//$h", {"#", "alignment", "source", "ends", "norms", "pieces", "kept", "vertex", "click", "element", "end"}},
 	    {"//$r", {"#", "switch", "slip", "crossing", "double", "connection"}},
 	    {"//$s", {"#", "station"}},
@@ -893,6 +866,7 @@ bool editor_line(std::string_view const Mark, std::string const &Text)
 	    {"//$z", {"#", "point"}},
 	    {"//$w", {"#", "gradeline"}},
 	    {"//$t", {"#", "fitted"}},
+	    {"//$u", {"#", "setup"}},
 	}};
 	auto const lookup{std::find_if(words.begin(), words.end(), [&](auto const &Entry) { return Entry.first == Mark; })};
 	if (lookup == words.end())

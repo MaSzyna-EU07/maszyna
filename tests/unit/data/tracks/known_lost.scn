@@ -1,0 +1,11 @@
+// what TTrack::Load() reads and export_as_text() doesn't write back yet: each the entry of a test of test_track_text.cpp which fails
+// until it does (doctest::should_fail)
+// angle1, angle2: the angles the ends of the track are cut at, read and dropped ("not used/implemented")
+node -1 0 angles track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 angle1 15 angle2 -15 endtrack
+// fouling1, fouling2: the models of the fouling points at the ends, read and dropped ("not used/implemented")
+node -1 0 fouling track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 fouling1 ukres_a fouling2 ukres_b endtrack
+// the isolated circuit after @ in the name: taken out of the name with the letter before the @
+node -1 0 tor1@iso1 track normal 10 1.435 0.15 25 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 endtrack
+// the attributes are written to 6 significant digits, short of the 9 of a float: the gauge, the friction, the speed and the texture
+// height here lose their last digits on the first save
+node -1 0 digits track normal 10 1.4351234 0.1512345 25 20 0 flat vis rail 4 ballast 0.2012345 0.5 1.1 0 0 0 0 0 0 0 0 0 0 0 0 10 0 0 velocity 87.65432 endtrack

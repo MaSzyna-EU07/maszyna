@@ -1,0 +1,27 @@
+# Editing on the model (E4b): the parallel tool beside a line of the model lays a line of the model at the spacing: its straights offset,
+# its arc concentric with the line's, the radius less on the inside of the curve, the transitions recomputed, the spacing in the curve
+# widened by the widening of the gauge of both tracks (none at this radius); checked by the norms, one step. The empty ground east of k0..k3 (x 800..1300)
+wait 5
+modelediting 1
+layclicks 0 600 800 -300 800 100 1100 400
+wait 2
+expect modellines 1
+expect steps 1
+modelselect @1.0
+# on the inside of the curve, which turns to +x: to the right of the line as it runs
+parallel 4.5 -1
+wait 2
+modeltracks
+expect modelrefused 0
+expect modellines 2
+expect managed @2.0 2
+expect modelends
+expect steps 2
+# 4.5 m on the straight and in the arc, concentric (no widening of the gauge in a curve of R 250 m or more)
+expect modelspacing 1 2 10 4.4999 4.5001
+expect modelspacing 1 2 400 4.498 4.502
+undo
+wait 2
+expect modellines 1
+expect steps 1
+quit

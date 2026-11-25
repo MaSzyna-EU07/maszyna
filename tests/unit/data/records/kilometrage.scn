@@ -1,0 +1,5 @@
+// //$k: the kilometrage of the lines, as editor_records::kilometrage_lines() writes it: the marks, then the vias
+//$k # kilometrage of the lines set in the track editor, the simulation skips these lines
+//$k mark 91 100.0000 0.0000 200.0000 way 0.000000000 1.000000000 km 12.345
+//$k mark 91 100.0000 0.0000 1200.0000 way 0.000000000 1.000000000 km 13.345 beyond 14.000
+//$k via 91 105.0000 0.0000 700.0000

@@ -1,0 +1,18 @@
+# Laying from the photo: a "straight" which is a curve of R 9 km over 800 m, clicked every 200 m: recognised as a curve, nearly straight,
+# its radius within 10 %, not laid as a straight. The empty ground north-east of the fixture
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.2
+laysample 2000 3000 0 700 200 200 0.15 5.09 9000 700
+wait 2
+layenter
+wait 2
+expect laid curves 1
+expect laid nearly 0 1
+expect laid radius 0 9000 10
+expect laykeys 0 1
+quit

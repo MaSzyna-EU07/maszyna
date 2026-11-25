@@ -14,6 +14,8 @@ http:
 #include "application/editoruilayer.h"
 #include "application/editorprojection.h"
 #include "application/editormodeshared.h"
+#include "application/editorgestures.h"
+#include "application/editorflow.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -145,14 +147,16 @@ void editor_mode::update_build_tools()
 		m_join_radius = 0.0;
 		m_join_variant = 0;
 	};
-	bool const pointing{m_cursor_override.has_value() || ImGui::IsMousePosValid()};
+	// the pointer over a panel points at no ground: the line shown stays as it was, rather than gaining a leg to where the pointer
+	// is under the panel. A drag begun in the view goes on over a panel, the panel doesn't take the mouse then
+	bool const pointing{m_cursor_override.has_value() || (ImGui::IsMousePosValid() && false == ImGui::GetIO().WantCaptureMouse)};
 	if (m_extend.active)
 	{
 		if (pointing)
 			m_extend.mouse = cursor_terrain(m_extend.point.y);
 		m_extend.snap = m_extend.track != nullptr ? snap_free_end(m_extend.mouse, cursor, m_extend.track, m_extend.track->iCategoryFlag & 15, {m_extend.track}) : editor_track::snap_target{};
 		if (m_extend.snap.track == nullptr)
-			m_extend.mouse.y = EditorSettings.heights() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
+			m_extend.mouse.y = lay_heights_now() == editorSettings::lay_heights::level ? m_extend.point.y : bed_height(m_extend.mouse, plan_of(m_extend.mouse - m_extend.point), m_extend.track);
 		joining(m_extend.snap);
 	}
 	if (m_switch.placing)
@@ -176,6 +180,11 @@ void editor_mode::update_build_tools()
 	lay.preview_length = 0.0;
 	if (false == lay.active)
 		return;
+	lay_shape_default();
+	// the turnouts traced on the photo are fitted of the templates of the switch tool
+	if (lay_traced())
+		station_templates();
+	lay_glide();
 	// a slow preview tells in the log where the time went: the cursor on the ground, the snap, the height, the plan of the line
 	auto stamp{std::chrono::steady_clock::now()};
 	auto const lap = [&]() {
@@ -189,20 +198,34 @@ void editor_mode::update_build_tools()
 	if (pointing)
 		lay.mouse = typed_lay(cursor_terrain(height));
 	auto const oncursor{lap()};
-	lay.skew.clear();
-	if (pointing && ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
-		lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
-	lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+	if (pointing)
+	{
+		lay.skew.clear();
+		if (ImGui::GetIO().KeyAlt && m_typed.empty() && false == lay.points.empty())
+			lay.mouse = lay_angle_snap(lay.mouse, lay.skew);
+		lay.mouse_snap = m_typed.empty() ? snap_free_end(lay.mouse, cursor, nullptr, kRailCategory, {}) : editor_track::find_free_end(nullptr, kRailCategory, lay.mouse, kLaySnapRadius, {});
+		// tracing the photo a free end is reached on the ground, within a metre: the end of the track beside isn't the one clicked at
+		if (lay_traced() && lay.mouse_snap.track != nullptr && plan_distance(lay.mouse_snap.position, lay.mouse) > kTraceSnap)
+			lay.mouse_snap = {};
+	}
 	auto const snapping{lap()};
-	if (lay.mouse_snap.track == nullptr)
-		lay.mouse = lay_bed(lay.mouse);
+	if (pointing && lay.mouse_snap.track == nullptr)
+		lay.mouse = lay_bed(lay.mouse, &lay.mouse_height);
+	else if (lay.mouse_snap.track != nullptr)
+		lay.mouse_height = click_heights::source::fixed;
 	auto const bedding{lap()};
 	if (false == m_extend.active)
 		joining(lay.points.empty() ? editor_track::snap_target{} : lay.mouse_snap);
 	lay_trim();
+	// the terrain came under the points clicked before it: they take its height, and the line shown with them; Enter waiting for it
+	// lays the line once it's there
+	lay_settle_heights();
+	if (lay_waiting())
+		lay_wait_end();
 	lay.plan = {};
 	if (lay.points.empty())
 	{
+		lay.station = {};
 		lay.shown.reset();
 		lay.settling.reset();
 		return;
@@ -230,16 +253,40 @@ void editor_mode::update_build_tools()
 	else
 	{
 		end = {};
-		if (plan_distance(mouse, points.back()) > 1.0)
+		// the line traced is the one of the points clicked: the cursor isn't one of them, a leg to it is drawn apart; but over a track, where
+		// a click ends the line with a turnout into it
+		if ((false == lay_traced() || station_end_at(mouse)) && plan_distance(mouse, points.back()) > 1.0)
 		{
 			points.push_back(mouse);
 			modes.push_back(lay.mode);
+		}
+	}
+	// the turnouts of the line traced, its crossover, its run alongside a track: drawn and told by the view
+	lay.station = lay_traced() ? traced_station_of(points) : traced_station{};
+	// the line traced is the one of the points clicked, and of the free end reached: worked out once for them, not at every frame
+	std::vector<double> traced_key;
+	if (lay_traced())
+	{
+		for (auto const &point : points)
+			traced_key.insert(traced_key.end(), {point.x, point.y, point.z});
+		traced_key.insert(traced_key.end(), {end.track != nullptr ? 1.0 : 0.0, static_cast<double>(m_track_edits), static_cast<double>(lay_heights_now()), lay.style.velocity});
+		if (lay.shown.has_value() && traced_key == lay.traced_key)
+		{
+			auto const &shown{*lay.shown};
+			lay.preview = shown.preview;
+			lay.preview_error = shown.error;
+			lay.preview_length = shown.length;
+			lay.plan = shown.plan;
+			m_eased_last = shown.eased;
+			m_join_last = shown.join;
+			return;
 		}
 	}
 	m_fits_waiting = false;
 	m_follow_preview = true;
 	lay.preview = lay_pieces(points, modes, end, lay.preview_length, lay.preview_error, &lay.plan);
 	m_follow_preview = false;
+	lay.traced_key = traced_key;
 	if (false == m_fits_waiting || false == lay.whole)
 	{
 		lay.shown = lay_tool::worked_out{lay.preview, lay.preview_error, lay.preview_length, lay.plan, m_eased_last, m_join_last, lay.points};
@@ -500,7 +547,8 @@ void editor_mode::point_drag_start(editor_track::point_ref const &Point)
 	auto *track{selected_track()};
 	m_track_point = Point;
 	m_point_drag = {};
-	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()))
+	// the points of a track of a line of the model aren't dragged by hand: the line is edited in the route design
+	if (track == nullptr || false == Point.valid() || Point.path >= static_cast<int>(track->m_paths.size()) || model_track(track) != nullptr)
 		return;
 	auto const &io{ImGui::GetIO()};
 	m_point_drag.active = true;
@@ -967,6 +1015,13 @@ void editor_mode::finish_extend()
 	ui()->set_node(m_node);
 	nmt_fit_laid(from, created.back()->m_paths.front().points[segment_data::point::end]);
 	m_nmt_state.laying = false;
+	if (m_lay.active)
+	{
+		double length{0.0};
+		for (auto const &piece : pieces)
+			length += bezier{piece}.plan_length();
+		lay_told(length, created.size());
+	}
 	straight_refresh();
 }
 
@@ -1159,7 +1214,9 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	if (Points.size() < 2)
 		return {};
 	auto const unknown{std::numeric_limits<double>::quiet_NaN()};
-	if (Points.size() == 2 && End.track != nullptr)
+	// traced on the photo, a point and a free end make a line ending at the end; from one free end to another the join lays the curve
+	auto const traced_join{std::all_of(Modes.begin(), Modes.end(), [](lay_mode const Mode) { return Mode == lay_mode::traced; }) && tool.start.track == nullptr};
+	if (Points.size() == 2 && End.track != nullptr && false == traced_join)
 	{
 		// two free ends: the curve between them is the one the join finds
 		if (tool.start.track != nullptr)
@@ -1280,7 +1337,7 @@ std::vector<segment_data> editor_mode::lay_pieces(std::vector<glm::dvec3> const 
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : End.track != nullptr ? End.track : tool.copy_selected ? selected_track() : nullptr};
 	auto const grade0{tool.start.track != nullptr ? -grade_of(tool.start.direction) : unknown};
 	auto const grade1{End.track != nullptr ? grade_of(End.direction) : unknown};
-	if (EditorSettings.heights() == editorSettings::lay_heights::fitted)
+	if (lay_heights_now() == editorSettings::lay_heights::fitted)
 		follow_ground(pieces, Points.front().y, grade0, Points.back().y, grade1, style);
 	else
 		ground_follow::follow_points(pieces, plan.knots, {Points.front().y, grade0, Points.back().y, grade1});
@@ -1305,6 +1362,9 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 {
 	auto const &tool{m_lay};
 	Plan = {};
+	// the points traced on the photo: the straights and the curves they show
+	if (false == Modes.empty() && std::all_of(Modes.begin(), Modes.end(), [](lay_mode const Mode) { return Mode == lay_mode::traced; }))
+		return traced_line(Points, End, Plan, Error);
 	auto &design{Plan.design};
 	design.norms = laying_norms();
 	design.shape = m_route.design.shape;
@@ -1917,6 +1977,282 @@ bool editor_mode::lay_line(std::vector<glm::dvec3> const &Points, std::vector<la
 	return true;
 }
 
+std::string editor_mode::traced_label(trace::curve const &Curve)
+{
+	auto const radii{trace::radii_text(Curve)};
+	if (Curve.refused)
+		return format(STR_C("R %s · below the least radius"), radii.c_str());
+	if (Curve.restricted)
+		return format(STR_C("R %s · up to %.0f km/h"), radii.c_str(), Curve.speed);
+	if (Curve.nearly_straight)
+		return format(STR_C("nearly straight · curve R %s"), radii.c_str());
+	if (Curve.compound())
+		return format(STR_C("compound curve R %s"), radii.c_str());
+	return format(STR_C("curve R %s"), radii.c_str());
+}
+
+ImU32 editor_mode::traced_colour(trace::curve const &Curve)
+{
+	if (Curve.refused)
+		return overlay_color::invalid;
+	return Curve.restricted ? overlay_color::warning : overlay_color::marked;
+}
+
+double editor_mode::least_radius(norms::track_kind const Track) const
+{
+	auto const setup{setup_now()};
+	norms::query where;
+	where.speed = setup.speed;
+	where.radius = 1000.0;
+	where.kind = setup.traffic;
+	where.track = Track;
+	double least{0.0};
+	for (auto const &limits : {norms::limits(setup.profile, norms::parameter::radius, where), norms::hard_limits(norms::parameter::radius, where)})
+		if (limits.block.has_value() && limits.block->confirmed)
+			least = std::max(least, limits.block->value);
+	return least;
+}
+
+trace::settings editor_mode::trace_settings() const
+{
+	trace::settings settings;
+	settings.norms = laying_norms();
+	settings.shape = m_route.design.shape;
+	settings.speed = std::max(1.0, design_speed(m_lay.start.track, nullptr));
+	settings.radius_least = least_radius(setup_now().track);
+	return settings;
+}
+
+std::optional<trace::hold> editor_mode::trace_start() const
+{
+	auto const &start{m_lay.start};
+	if (start.track == nullptr || glm::length(plan_of(start.direction)) < 1e-6)
+		return std::nullopt;
+	trace::hold hold;
+	hold.position = plan_of(start.position);
+	hold.heading = glm::normalize(-plan_of(start.direction));
+	// the curve of the track goes on into the line: of a plain track, of the diverging track of a switch at its radius
+	if (start.track->eType == tt_Normal || start.track->eType == tt_Switch)
+		if (auto const bend{editor_track::bend_at(*start.track, start.position)}; bend.has_value() && std::abs(bend->curvature) >= 1e-4)
+		{
+			hold.curvature = bend->curvature;
+			hold.cant = std::max(0.0, laying_norms().gauge * std::sin(glm::radians(bend->roll)) * (bend->curvature > 0.0 ? 1.0 : -1.0));
+			hold.fixed = start.track->eType == tt_Switch;
+		}
+	return hold;
+}
+
+trace::tracer const &editor_mode::tracer_of(std::vector<glm::dvec2> const &Points, std::vector<double> const &Sigmas, std::optional<trace::hold> const &Start, trace::settings const &Settings) const
+{
+	auto const same = [](std::optional<trace::hold> const &A, std::optional<trace::hold> const &B) {
+		if (A.has_value() != B.has_value())
+			return false;
+		return false == A.has_value() || (A->position == B->position && A->heading == B->heading && A->curvature == B->curvature && A->cant == B->cant && A->fixed == B->fixed);
+	};
+	if (false == (m_tracer.options() == Settings) || false == same(m_tracer.start(), Start))
+	{
+		m_tracer = trace::tracer{Settings, Start};
+		m_tracer_ended.reset();
+	}
+	// back to the points in common, then on with the ones clicked since
+	auto const &have{m_tracer.points()};
+	std::size_t common{0};
+	while (common < have.size() && common < Points.size() && have[common] == Points[common])
+		++common;
+	if (m_tracer.size() != common || Points.size() != common)
+		m_tracer_ended.reset();
+	while (m_tracer.size() > common)
+		m_tracer.pop();
+	for (auto i{m_tracer.size()}; i < Points.size(); ++i)
+	{
+		m_tracer.add(Points[i], i < Sigmas.size() ? Sigmas[i] : trace::click_sigma(0.1));
+		auto const &now{m_tracer.now()};
+		if (now.milliseconds > 30.0)
+			WriteLog(format("Editor: the line traced took %.0f ms at point %zu, %zu evaluations%s", now.milliseconds, i + 1, now.evaluations, now.budget_spent ? ", the budget spent" : ""), logtype::generic);
+	}
+	return m_tracer;
+}
+
+bool editor_mode::traced_line(std::vector<glm::dvec3> const &Points, editor_track::snap_target const &End, lay_line_plan &Plan, std::string &Error) const
+{
+	auto const &tool{m_lay};
+	auto const joined{End.track != nullptr && glm::length(plan_of(End.direction)) > 1e-6};
+	// the station the points make: the turnouts it starts and ends with, its run alongside a track
+	auto const &station{traced_station_of(Points)};
+	if (station.valid && false == station.refusal.empty())
+	{
+		Error = station.refusal;
+		return false;
+	}
+	// a crossover has no line of its own to trace: it's the solver's, drawn as it is
+	if (station.valid && station.crossover)
+	{
+		Error.clear();
+		return false;
+	}
+	// the points traced: the ones clicked after the free end it goes on from, but the free end reached last; of a station the ones between
+	// its turnouts, moved alongside the track they keep along
+	std::vector<glm::dvec2> points;
+	std::vector<double> sigmas;
+	std::vector<glm::dvec3> clicked;
+	if (station.valid)
+		for (std::size_t k = 0; k < station.points.size(); ++k)
+		{
+			if (joined && k + 1 == station.points.size() && plan_distance(station.clicked[k], End.position) < 1e-6)
+				break;
+			points.push_back(plan_of(station.points[k]));
+			sigmas.push_back(station.sigmas[k]);
+			clicked.push_back(station.clicked[k]);
+		}
+	else
+		for (std::size_t i = tool.start.track != nullptr ? 1 : 0; i < tool.points.size(); ++i)
+		{
+			if (joined && i + 1 == tool.points.size() && plan_distance(tool.points[i], End.position) < 1e-6)
+				break;
+			points.push_back(plan_of(tool.points[i]));
+			sigmas.push_back(i < tool.sigmas.size() && tool.sigmas[i] > 0.0 ? tool.sigmas[i] : trace::click_sigma(0.1));
+			clicked.push_back(tool.points[i]);
+		}
+	// a station track alongside a straight track designed: its arcs and its straight as they are, nothing traced; laid from the ends of the
+	// turnouts as they went in
+	std::optional<alignment::design> designed;
+	if (station.valid && station.design.has_value())
+		designed = station.design;
+	else if (m_station_laying && m_station_design.has_value())
+	{
+		designed = m_station_design;
+		designed->start = Points.front();
+		if (joined)
+			designed->end = End.position;
+	}
+	if (designed.has_value())
+	{
+		Plan.design = *designed;
+		Plan.shape = alignment::compute(Plan.design);
+		if (Plan.shape.valid)
+		{
+			Plan.corners.assign(Plan.design.vertices.size(), 0);
+			lay_trace trace;
+			trace.points = clicked;
+			for (auto const &each : alignment::project(Plan.shape, points))
+				trace.offsets.push_back(each.offset);
+			for (std::size_t k = 0; k < trace.offsets.size() && k < points.size(); ++k)
+			{
+				trace.offsets[k] = std::abs(trace.offsets[k]) + glm::distance(plan_of(clicked[k]), points[k]);
+				trace.worst = std::max(trace.worst, trace.offsets[k]);
+				trace.rms += trace.offsets[k] * trace.offsets[k];
+			}
+			trace.rms = trace.offsets.empty() ? 0.0 : std::sqrt(trace.rms / static_cast<double>(trace.offsets.size()));
+			trace.curves = Plan.shape.curves.size();
+			Plan.traces.push_back(std::move(trace));
+			return true;
+		}
+		Plan = {};
+	}
+	auto settings{trace_settings()};
+	// a track between the diverging tracks of two turnouts, a station track between its heads, goes no faster than they let it
+	auto const branch = [](TTrack const *Track, editor_track::point_ref const &Point) {
+		if (Track == nullptr || Track->eType != tt_Switch || Point.path != 1)
+			return 0.0;
+		return std::abs(editor_track::velocity(*Track));
+	};
+	auto const from{station.valid && station.start.has_value() ? station.start->speed : branch(tool.start.track, tool.start.point)};
+	auto const into{station.valid && station.end.has_value() ? station.end->speed : branch(End.track, End.point)};
+	if (from > 0.0 && into > 0.0)
+		settings.speed = std::max(1.0, std::min(settings.speed, std::max(from, into)));
+	auto const start{station.valid && station.start.has_value() ? std::optional<trace::hold>{station.start->hold} : trace_start()};
+	auto const &tracer{tracer_of(points, sigmas, start, settings)};
+	trace::result line;
+	std::optional<trace::hold> end;
+	if (station.valid && station.end.has_value())
+		end = station.end->hold;
+	else if (joined)
+	{
+		end = trace::hold{};
+		end->position = plan_of(End.position);
+		end->heading = glm::normalize(plan_of(End.direction));
+	}
+	if (end.has_value())
+	{
+		glm::dvec3 const key{end->position.x, end->heading.x, end->position.y};
+		if (false == m_tracer_ended.has_value() || m_tracer_ended->first != key)
+			m_tracer_ended = std::make_pair(key, tracer.ended(*end));
+		line = m_tracer_ended->second;
+	}
+	else
+		line = tracer.now();
+	if (false == line.valid)
+	{
+		Error = line.error == "points" ? STR_C("Click at least two points") : STR_C("No line follows the points clicked along it");
+		return false;
+	}
+	Plan.traced = line;
+	Plan.design = line.design;
+	Plan.design.start.y = station.valid && station.start.has_value() ? station.start->end.y : Points.front().y;
+	Plan.design.end.y = station.valid && station.end.has_value() ? station.end->end.y : Points.back().y;
+	Plan.shape = alignment::compute(Plan.design);
+	if (false == Plan.shape.valid)
+	{
+		Plan.design = line.design;
+		Plan.shape = line.laid;
+	}
+	Plan.corners.assign(Plan.design.vertices.size(), 0);
+	lay_trace trace;
+	trace.points = clicked;
+	trace.offsets = line.offsets;
+	// a point moved alongside a track departs from the line by as much as it was moved too
+	for (std::size_t k = 0; k < trace.offsets.size() && k < points.size(); ++k)
+		trace.offsets[k] = std::abs(trace.offsets[k]) + glm::distance(plan_of(clicked[k]), points[k]);
+	trace.rms = line.rms;
+	trace.worst = line.worst;
+	trace.curves = line.curves.size();
+	// the grade breaks at the points on the straights, a curve goes at one grade from end to end
+	for (std::size_t i = 1; i + 1 < trace.points.size() && i < line.on_straight.size(); ++i)
+		if (line.on_straight[i] != 0)
+			Plan.knots.push_back(trace.points[i]);
+	Plan.traces.push_back(std::move(trace));
+	if (line.refused)
+		for (auto const &curve : line.curves)
+			if (curve.refused)
+			{
+				Error = format(STR_C("Not laid: R %.0f m is below the least radius of %.0f m the norms allow for this track at any speed"), curve.sharpest(), trace_settings().radius_least);
+				break;
+			}
+	return true;
+}
+
+double editor_mode::click_sigma_at(glm::dvec3 const &Point) const
+{
+	if (m_lay.sigma_given > 0.0)
+		return m_lay.sigma_given;
+	// the ground a pixel covers there, the shorter of the two ways across it: seen at a slant, along the view it's longer
+	screen_projection const projection;
+	ImVec2 at;
+	ImVec2 east;
+	ImVec2 south;
+	if (false == projection.project(Point, at) || false == projection.project(Point + glm::dvec3{1.0, 0.0, 0.0}, east) || false == projection.project(Point + glm::dvec3{0.0, 0.0, 1.0}, south))
+		return trace::click_sigma(0.25);
+	auto const pixels{std::max(std::hypot(east.x - at.x, east.y - at.y), std::hypot(south.x - at.x, south.y - at.y))};
+	return trace::click_sigma(pixels > 1e-6 ? 1.0 / pixels : 0.25);
+}
+
+void editor_mode::lay_glide()
+{
+	auto &tool{m_lay};
+	if (false == tool.glide.has_value())
+		return;
+	// a quarter of a second, the camera easing towards where it goes
+	auto const now{ImGui::GetTime()};
+	auto const share{std::clamp((now - tool.glide_time) / 0.25, 0.0, 1.0)};
+	auto const left{*tool.glide - glm::dvec2{Camera.Pos.x, Camera.Pos.z}};
+	auto const step{share >= 1.0 ? left : left * std::min(1.0, 0.25 + 0.5 * share)};
+	Camera.Pos.x += step.x;
+	Camera.Pos.z += step.y;
+	Global.pCamera = Camera;
+	if (share >= 1.0 || glm::length(left) < 0.01)
+		tool.glide.reset();
+}
+
 std::optional<alignment::trace_stretch> editor_mode::traced_stretch(alignment::design const &Base, std::vector<glm::dvec2> const &Points, int const Radii, bool const Straights, bool const Meanwhile,
                                                                    bool *Exact, bool const Going) const
 {
@@ -1982,24 +2318,46 @@ void editor_mode::lay_trim()
 {
 	auto &tool{m_lay};
 	tool.modes.resize(tool.points.size(), lay_mode::straights);
+	tool.sigmas.resize(tool.points.size(), 0.0);
+	tool.heights.resize(tool.points.size(), click_heights::source::fixed);
 }
 
 void editor_mode::lay_switch_mode()
 {
 	auto &tool{m_lay};
-	tool.mode = tool.mode == lay_mode::straights ? lay_mode::curve : lay_mode::straights;
-	m_track_layout = tool.mode == lay_mode::curve ? track_layout::arc_straight : track_layout::straight;
-	if (tool.mode == lay_mode::curve)
-		first_step_done(first_step::trace);
-	tool.status = tool.mode == lay_mode::curve ? STR("Curve: click points along the middle of the track, the curve ends at the last one. Tab: back to the straights")
-	                                           : STR("Straights: each point clicked is a bend of the straights, eased with a large curve. Tab: a curve traced on the photo");
-	tool.status_time = ImGui::GetTime();
+	++tool.tabs;
+	tool.shape_chosen = true;
+	tool.mode = tool.mode == lay_mode::traced ? lay_mode::straights : lay_mode::traced;
+	// the points clicked so far are read the other way too: one line, one shape
+	lay_trim();
+	for (auto &mode : tool.modes)
+		mode = tool.mode;
+	// a shape dragged out of a free end: an arc and a straight traced on the photo, a straight with the bends, as Tab had it
+	m_track_layout = tool.mode == lay_mode::traced ? track_layout::arc_straight : track_layout::straight;
+	tool.hint = tool.mode == lay_mode::traced ? STR("From the photo: click along the middle of the track. Tab: the bends") : STR("The bends of straights. Tab: from the photo");
+	tool.hint_time = ImGui::GetTime();
+}
+
+void editor_mode::lay_shape_default()
+{
+	auto &tool{m_lay};
+	if (tool.shape_chosen || false == tool.points.empty())
+		return;
+	auto const mode{m_orthophoto.enabled() ? lay_mode::traced : lay_mode::straights};
+	if (mode == tool.mode)
+		return;
+	tool.mode = mode;
+	m_track_layout = mode == lay_mode::traced ? track_layout::arc_straight : track_layout::straight;
 }
 
 void editor_mode::lay_click()
 {
 	auto &tool{m_lay};
+	// the line waits for the terrain under its points to be laid: Esc or Enter first
+	if (lay_waiting())
+		return;
 	tool.status.clear();
+	tool.laid_now = false;
 	lay_trim();
 	auto const snap{tool.mouse_snap};
 	if (snap.track != nullptr && false == tool.points.empty() && glm::distance(snap.position, tool.points.front()) > 1.0)
@@ -2007,12 +2365,15 @@ void editor_mode::lay_click()
 		// reaching a free end finishes the track there, in line with the path it joins
 		tool.points.push_back(snap.position);
 		tool.modes.push_back(tool.mode);
-		lay_finish(snap);
+		lay_finish_on_ground(snap);
 		return;
 	}
 	if (tool.points.empty())
 	{
+		if (lay_traced())
+			station_templates();
 		tool.start = snap;
+		tool.continuing = false;
 		auto point{snap.track != nullptr ? snap.position : tool.mouse};
 		if (auto const *axis{snap.track == nullptr && ImGui::GetIO().KeyAlt ? skew_reference(point, point, kSkewSeat) : nullptr})
 		{
@@ -2024,35 +2385,131 @@ void editor_mode::lay_click()
 		}
 		tool.points.push_back(point);
 		tool.modes.push_back(tool.mode);
+		tool.sigmas.push_back(click_sigma_at(point));
+		tool.heights.push_back(snap.track != nullptr ? click_heights::source::fixed : tool.mouse_height);
+		// the photo is traced from above: the view turns to it at the first point
+		if (lay_traced() && false == Global.EditorOrtho)
+			toggle_ortho();
 		return;
 	}
-	// the points only make the line shown: it's laid by Enter, or by a click on a free end
+	// the points only make the line shown: it's laid by Enter, or by a click on a free end, or traced on the photo by a click on a track,
+	// which ends the line with a turnout into it
 	auto const &point{tool.mouse};
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
+	if (lay_traced() && station_end_at(point))
+	{
+		station_templates();
+		tool.points.push_back(point);
+		tool.modes.push_back(tool.mode);
+		tool.sigmas.push_back(click_sigma_at(point));
+		tool.heights.push_back(tool.mouse_height);
+		lay_finish_on_ground({});
+		return;
+	}
 	m_typed.clear();
 	tool.points.push_back(point);
 	tool.modes.push_back(tool.mode);
+	tool.sigmas.push_back(click_sigma_at(point));
+	tool.heights.push_back(tool.mouse_height);
+	tool.continuing = false;
+	if (lay_traced() && tool.points.size() >= 3)
+		first_step_done(first_step::trace_points);
+	// a point clicked near the edge of the view: the view glides on to bring it nearer to the middle
+	if (ImVec2 screen; lay_traced() && screen_projection{}.project(point, screen))
+	{
+		auto const &size{ImGui::GetIO().DisplaySize};
+		auto const margin{0.15f};
+		if (size.x > 0.0f && size.y > 0.0f && (screen.x < size.x * margin || screen.x > size.x * (1.0f - margin) || screen.y < size.y * margin || screen.y > size.y * (1.0f - margin)))
+		{
+			// the point half way to the middle of the view: the camera moves by half of what it's off the middle on the ground
+			glm::dvec3 middle;
+			if (screen_projection{}.on_level(ImVec2(size.x * 0.5f, size.y * 0.5f), point.y, middle))
+			{
+				auto const shift{plan_of(point - middle) * 0.5};
+				tool.glide = glm::dvec2{Camera.Pos.x, Camera.Pos.z} + shift;
+				tool.glide_time = ImGui::GetTime();
+			}
+		}
+	}
 }
 
 void editor_mode::lay_finish(editor_track::snap_target const &End)
 {
 	auto &tool{m_lay};
 	lay_trim();
+	// traced on the photo from a track or into one: its turnouts laid first, the line between them after, or the crossover
+	if (lay_traced() && false == m_station_laying && false == tool.points.empty())
+	{
+		station_templates();
+		if (auto const station{traced_station_of(tool.points)}; station.valid && (station.start.has_value() || station.end.has_value() || station.crossover || false == station.refusal.empty()))
+		{
+			lay_station(station, End);
+			return;
+		}
+	}
 	double length;
 	std::string error;
 	lay_line_plan plan;
 	auto const pieces{lay_pieces(tool.points, tool.modes, End, length, error, &plan)};
 	auto const eased{m_eased_last};
 	tool.status_time = ImGui::GetTime();
+	// a curve traced below the least radius of the track: nothing laid, the points kept to be put right
+	if (plan.traced.has_value() && plan.traced->refused)
+	{
+		tool.laid_now = false;
+		tool.status = error;
+		if (End.track != nullptr && false == tool.points.empty())
+		{
+			tool.points.pop_back();
+			lay_trim();
+		}
+		return;
+	}
 	if (pieces.empty())
 	{
+		tool.laid_now = false;
 		tool.status = error.empty() ? std::string{STR_C("Click at least two points")} : error;
 		if (End.track != nullptr && false == tool.points.empty())
 		{
 			tool.points.pop_back();
 			lay_trim();
 		}
+		return;
+	}
+	// with the editing on the model, a line of the model: refused with the reasons, the points kept to be put right, or laid, its tracks
+	// made by the model and marked as its. What it doesn't lay yet is laid the old way, told why
+	std::string oldway;
+	if (std::vector<TTrack *> made; model_lay(plan, End, made, oldway))
+	{
+		if (model_refused() || made.empty())
+		{
+			tool.laid_now = false;
+			tool.status = model_shown();
+			if (End.track != nullptr && false == tool.points.empty())
+			{
+				tool.points.pop_back();
+				lay_trim();
+			}
+			WriteLog("Editor: " + tool.status, logtype::generic);
+			return;
+		}
+		first_step_done(first_step::laid);
+		if (End.track != nullptr)
+			first_step_done(first_step::join);
+		lay_told(length, made.size());
+		tool.status += "\n" + model_shown();
+		for (auto const &notice : model_notices())
+			tool.status += "\n" + notice;
+		m_node = made.back();
+		ui()->set_node(m_node);
+		tool.laid = {made, length, {}};
+		WriteLog("Editor: " + tool.status, logtype::generic);
+		tool.points.clear();
+		tool.modes.clear();
+		tool.start = {};
+		tool.laid_step = history_top();
+		straight_refresh();
 		return;
 	}
 	auto const *style{tool.start.track != nullptr ? tool.start.track : End.track};
@@ -2064,6 +2521,31 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	for (auto const &piece : pieces)
 		created.push_back(style != nullptr ? editor_track::create_path(*style, piece) : editor_track::create_path(tool.style, piece));
 	give_own_speed(created);
+	// the tracks of a curve traced slowed down, its transitions with it, get its speed
+	if (plan.traced.has_value() && plan.shape.valid)
+		for (auto const &curve : plan.traced->curves)
+		{
+			if (false == curve.restricted)
+				continue;
+			// where the curve lies along the line laid with the heights
+			auto const k{static_cast<int>(&curve - plan.traced->curves.data())};
+			auto from{plan.shape.length};
+			auto to{0.0};
+			for (auto const &e : plan.shape.elements)
+				if (e.vertex == k && e.kind != alignment::element_kind::straight && e.length > 1e-6)
+				{
+					from = std::min(from, e.chainage);
+					to = std::max(to, e.chainage + e.length);
+				}
+			for (auto *track : created)
+			{
+				auto const &path{track->m_paths.front()};
+				auto const middle{plan_of(bezier{path}.point(0.5))};
+				auto const along{alignment::project(plan.shape, {middle})};
+				if (false == along.empty() && along.front().chainage > from - 0.01 && along.front().chainage < to + 0.01)
+					editor_track::velocity(*track, curve.speed);
+			}
+		}
 	editor_track::commit(created);
 	// the scenery keeps the design the tracks were laid by, as it is, for the plan to edit; read from the paths again it wouldn't be
 	// the same, a compound curve with transitions between its arcs least of all. A track laid with no design of the line, between two
@@ -2078,7 +2560,7 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 		first_step_done(first_step::bend);
 	if (End.track != nullptr)
 		first_step_done(first_step::join);
-	tool.status = format(STR_P("Laid %.1f m of track in %zu piece, Ctrl+Z takes it back", "Laid %.1f m of track in %zu pieces, Ctrl+Z takes it back", static_cast<long long>(created.size())), length, created.size());
+	lay_told(length, created.size());
 	if (false == error.empty())
 		tool.status += "\n" + error;
 	if (eased.has_value() && eased->compound)
@@ -2111,22 +2593,100 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 	}
 	if (scene::Layers.active() == null_handle && style == nullptr)
 		tool.status += "\n" + STR("The scenery isn't opened for editing: new track won't be saved");
+	if (false == oldway.empty())
+		tool.status += "\n" + oldway;
 	m_node = created.back();
 	ui()->set_node(m_node);
-	if (nmt_fit_laid(tool.history, created.back()->m_paths.front().points[segment_data::point::end]))
+	// what was laid, told in the inspector as long as the last track stays selected
+	tool.laid = {created, length, {}};
+	if (plan.shape.valid)
+		for (auto const &curve : plan.shape.curves)
+		{
+			auto label{curve_label(curve, laying_norms())};
+			// a curve traced laid slowed down tells the speed it's laid for, not the one its arc alone would allow
+			if (plan.traced.has_value() && curve.vertex >= 0 && curve.vertex < static_cast<int>(plan.traced->curves.size()) && plan.traced->curves[curve.vertex].restricted)
+			{
+				auto const allows{speed_of(curve_sharpest(curve), laying_norms())};
+				if (false == allows.empty() && label.size() >= allows.size() && label.compare(label.size() - allows.size(), allows.size(), allows) == 0)
+					label.erase(label.size() - allows.size());
+				label += format(STR_C("  (up to %.0f km/h)"), plan.traced->curves[curve.vertex].speed);
+			}
+			tool.laid.curves.emplace_back(format("%d. %s", curve.vertex + 1, label.c_str()), alignment::meets_norms(curve, plan.design));
+		}
+	tool.laid.traced = plan.traced;
+	// a run alongside a track, laid exactly alongside it: told
+	if (plan.traced.has_value() && false == m_station_laying)
+		if (auto const &station{traced_station_of(tool.points)}; station.valid && station.alongside.has_value())
+		{
+			tool.laid.station = station;
+			tool.status += "\n" + format(STR_C("Alongside %s · %.2f m (measured %.2f m)"), station.alongside->neighbour.c_str(), std::abs(station.alongside->spacing), std::abs(station.alongside->measured));
+		}
+	if (plan.traced.has_value())
+		first_step_done(first_step::trace);
+	// the curves slowed down, told
+	if (plan.traced.has_value())
+		for (auto const &curve : plan.traced->curves)
+			if (curve.restricted)
+				tool.status += "\n" + format(STR_C("Curve R %s laid for %.0f km/h: sharper than the norms allow at %.0f km/h"), trace::radii_text(curve).c_str(), curve.speed, plan.design.speed);
+	auto const end{created.back()->m_paths.front().points[segment_data::point::end]};
+	if (nmt_fit_laid(tool.history, end))
 		tool.status += "\n" + STR("The grade line of the whole track laid in a row fitted to the terrain model, as the tracks go onto the terrain");
 	m_nmt_state.laying = false;
 	nmt_check_buried(tool.history);
 	WriteLog("Editor: " + tool.status, logtype::generic);
+	auto const traced{false == tool.modes.empty() && tool.modes.back() == lay_mode::traced};
+	auto const sigma{tool.sigmas.empty() ? 0.0 : tool.sigmas.back()};
 	tool.points.clear();
 	tool.modes.clear();
+	tool.sigmas.clear();
+	tool.heights.clear();
 	tool.start = {};
+	tool.laid_step = history_top();
 	straight_refresh();
+	// traced on the photo, the line goes on from the end laid till Esc: the next click carries it on, no need to hit the end. The end
+	// found in the plan: the grade line fitted to the terrain may have lifted or lowered it
+	if (traced && End.track == nullptr)
+	{
+		editor_track::snap_target free;
+		auto nearest{0.05};
+		for (auto const &candidate : editor_track::free_ends(nullptr, kRailCategory, end, 100.0, {}))
+			if (auto const distance{plan_distance(candidate.position, end)}; distance < nearest)
+			{
+				nearest = distance;
+				free = candidate;
+			}
+		if (free.track != nullptr)
+		{
+			tool.start = free;
+			tool.points = {free.position};
+			tool.modes = {lay_mode::traced};
+			tool.sigmas = {sigma};
+			tool.heights = {click_heights::source::fixed};
+			tool.continuing = true;
+		}
+	}
+}
+
+void editor_mode::lay_told(double const Length, std::size_t const Tracks)
+{
+	auto &tool{m_lay};
+	tool.status = format(STR_P("Laid %.0f m (%zu track) · Ctrl+Z undoes", "Laid %.0f m (%zu tracks) · Ctrl+Z undoes", static_cast<long long>(Tracks)), Length, Tracks);
+	tool.status_time = ImGui::GetTime();
+	tool.laid_now = true;
+	tool.notes_open = false;
+	tool.laid_step = history_top();
 }
 
 void editor_mode::lay_enter()
 {
 	auto &tool{m_lay};
+	++tool.enters;
+	// Enter again while the line waits for the terrain under its points: laid at once, at the heights there are
+	if (lay_waiting())
+	{
+		lay_wait_end(true);
+		return;
+	}
 	if (false == m_typed.empty())
 	{
 		lay_click();
@@ -2140,18 +2700,110 @@ void editor_mode::lay_enter()
 	{
 		tool.points.push_back(end.position);
 		tool.modes.push_back(tool.mode);
-		lay_finish(end);
+		lay_finish_on_ground(end);
 		return;
 	}
-	// a single point is no track: Enter drops it
+	if (end.track == nullptr && lay_traced() && plan_distance(tool.mouse, tool.points.back()) > 1.0 && station_end_at(tool.mouse))
+	{
+		station_templates();
+		tool.points.push_back(tool.mouse);
+		tool.modes.push_back(tool.mode);
+		tool.sigmas.push_back(click_sigma_at(tool.mouse));
+		tool.heights.push_back(tool.mouse_height);
+		lay_finish_on_ground({});
+		return;
+	}
+	// a single point is no track: the end of the line laid last it goes on from is left by Enter, one clicked is told
 	if (tool.points.size() < 2)
 	{
-		lay_cancel();
+		if (tool.continuing)
+		{
+			lay_cancel();
+			return;
+		}
+		tool.status = STR_C("Click at least two points");
+		tool.status_time = ImGui::GetTime();
+		tool.laid_now = false;
 		return;
 	}
 	// the laying ends with the track laid: the next click starts anew where it's made, a click on the free end left goes on from
 	// it. Going on by itself, a click made elsewhere afterwards led a loop out of that end to it
-	lay_finish({});
+	lay_finish_on_ground({});
+}
+
+void editor_mode::lay_finish_on_ground(editor_track::snap_target const &End)
+{
+	auto &tool{m_lay};
+	lay_settle_heights();
+	// a point clicked before the terrain under it came, the terrain still on its way: laid once it's there, not at the height guessed
+	if (lay_terrain_coming())
+	{
+		tool.terrain_wait = ImGui::GetTime();
+		tool.wait_end = End;
+		tool.status.clear();
+		WriteLog(format("Editor: the laying waits for the terrain under %zu point(s) clicked before it came", click_heights::guessed_count(tool.heights)), logtype::generic);
+		return;
+	}
+	lay_finish(End);
+}
+
+void editor_mode::lay_wait_end(bool const Now)
+{
+	auto &tool{m_lay};
+	if (false == lay_waiting())
+		return;
+	auto const waited{ImGui::GetTime() - tool.terrain_wait};
+	if (false == Now && click_heights::wait_on(tool.heights, [&](std::size_t const Index) { return lay_terrain_coming_at(Index); }, waited))
+		return;
+	auto const end{tool.wait_end};
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
+	WriteLog(format("Editor: the laying waited %.1f s for the terrain under the points%s, %zu left at a guessed height", waited, Now ? ", Enter again" : "", click_heights::guessed_count(tool.heights)), logtype::generic);
+	lay_finish(end);
+}
+
+void editor_mode::lay_settle_heights()
+{
+	auto &tool{m_lay};
+	lay_trim();
+	if (false == click_heights::guessed(tool.heights))
+		return;
+	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
+	auto const &points{tool.points};
+	// read from above, as the cursor reads the ground: the terrain come may lie far over the height guessed
+	auto const above{static_cast<double>(Global.pCamera.Pos.y)};
+	auto const changed{click_heights::settle(tool.points, tool.heights, [&](std::size_t const Index) {
+		auto const &point{points[Index]};
+		auto const direction{Index > 0 ? plan_of(point - points[Index - 1]) : Index + 1 < points.size() ? plan_of(points[Index + 1] - point) : glm::dvec2{0.0}};
+		return bed_heights({glm::dvec3{point.x, std::max(point.y, above), point.z}}, {direction}, style).front();
+	})};
+	if (changed > 0)
+		WriteLog(format("Editor: the terrain came under %zu point(s) clicked before it, their heights taken from it", changed), logtype::generic);
+}
+
+bool editor_mode::lay_terrain_coming_at(std::size_t const Index) const
+{
+	auto const &tool{m_lay};
+	auto const &state{m_nmt_state};
+	if (Index >= tool.points.size() || false == state.grow || false == m_nmt.placed())
+		return false;
+	auto const &point{tool.points[Index]};
+	auto const chunk{heightmap::chunk_at(point.x, point.z)};
+	if (std::find(state.pending.begin(), state.pending.end(), chunk) != state.pending.end())
+		return true;
+	// not asked for yet: the terrain grows around the cursor every half a second, within the area the terrain is downloaded for
+	auto const at{plan_of(point)};
+	return false == m_streamer.exists(chunk) && false == state.given_up.contains(chunk) && in_download_area(at - glm::dvec2{1.0}, at + glm::dvec2{1.0});
+}
+
+editorSettings::lay_heights editor_mode::lay_heights_now() const
+{
+	return click_heights::heights_for(EditorSettings.heights(), m_lay.mode == lay_mode::traced, m_lay.heights_chosen);
+}
+
+bool editor_mode::lay_terrain_coming() const
+{
+	return click_heights::waiting(m_lay.heights, [&](std::size_t const Index) { return lay_terrain_coming_at(Index); });
 }
 
 void editor_mode::lay_cancel()
@@ -2159,24 +2811,46 @@ void editor_mode::lay_cancel()
 	auto &tool{m_lay};
 	tool.points.clear();
 	tool.modes.clear();
+	tool.sigmas.clear();
+	tool.heights.clear();
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
+	tool.continuing = false;
 	tool.start = {};
 	tool.preview.clear();
 	tool.plan = {};
 	tool.status.clear();
+	tool.laid_now = false;
+	tool.settings_open = false;
 }
 
 std::size_t editor_mode::lay_pending() const
 {
-	return m_lay.points.size();
+	// the end of the line laid last isn't a point clicked
+	return m_lay.points.size() - (m_lay.continuing && false == m_lay.points.empty() ? 1 : 0);
 }
 
 void editor_mode::lay_escape()
 {
 	auto &tool{m_lay};
 	lay_trim();
+	// the wait for the terrain under the points given up: nothing laid, the points stay, the free end reached left
+	if (lay_waiting())
+	{
+		if (tool.wait_end.track != nullptr && false == tool.points.empty())
+		{
+			tool.points.pop_back();
+			lay_trim();
+		}
+		tool.terrain_wait = -1.0;
+		tool.wait_end = {};
+		tool.status = STR_C("Not laid: the points stay, Enter lays them");
+		tool.status_time = ImGui::GetTime();
+		return;
+	}
 	// the points clicked are no track yet and nothing brings them back: a slip of Esc only warns, the second one drops them
 	auto const pending{lay_pending()};
-	if (tool.points.size() < 2 || ImGui::GetTime() - tool.escape_time < 3.0)
+	if (tool.points.size() < 2 || (tool.continuing && tool.points.size() < 2) || ImGui::GetTime() - tool.escape_time < 3.0)
 	{
 		lay_cancel();
 		tool.escape_time = -100.0;
@@ -2206,15 +2880,22 @@ void editor_mode::lay_back()
 {
 	auto &tool{m_lay};
 	lay_trim();
+	tool.terrain_wait = -1.0;
+	tool.wait_end = {};
 	// the points not laid yet, the last one first; the tracks laid go back with Ctrl+Z
 	if (tool.points.size() > 1)
 	{
 		tool.points.pop_back();
 		tool.modes.pop_back();
+		tool.sigmas.pop_back();
+		tool.heights.pop_back();
 		return;
 	}
 	tool.points.clear();
 	tool.modes.clear();
+	tool.sigmas.clear();
+	tool.heights.clear();
+	tool.continuing = false;
 	tool.start = {};
 }
 
@@ -2310,6 +2991,7 @@ void editor_mode::route_drop()
 	auto const norms{m_route.design.norms};
 	m_route = {};
 	m_route.design.norms = norms;
+	m_route.design.speed = setup_now().speed;
 }
 
 alignment::limits editor_mode::laying_norms() const
@@ -2319,84 +3001,347 @@ alignment::limits editor_mode::laying_norms() const
 	return norms;
 }
 
-void editor_mode::render_lay_ui()
+std::uint64_t editor_mode::history_top() const
 {
-	auto &tool{m_lay};
-	// the points clicked are no track until they're laid: said first, with the keys as buttons
-	if (tool.points.size() > 1)
+	return m_history.empty() ? 0 : m_history.back().serial;
+}
+
+editor_mode::lay_state editor_mode::lay_panel_state() const
+{
+	if (m_extend.active)
+		return lay_state::extending;
+	// the line laid just now goes on from its end: told as laid till another point is clicked
+	if (m_lay.continuing && m_lay.points.size() == 1 && m_lay.laid_now && m_lay.laid_step == history_top())
+		return lay_state::laid;
+	if (false == m_lay.points.empty())
+		return lay_state::clicking;
+	if (m_lay.laid_now && m_lay.laid_step == history_top())
+		return lay_state::laid;
+	return lay_state::ready;
+}
+
+namespace
+{
+
+// the speed an arc lets the trains through at, in steps of 5 km/h as the labels tell it
+double arc_speed(double const Radius, alignment::limits const &Norms)
+{
+	return Radius > 0.0 ? std::floor(alignment::speed_limit(Radius, Norms) / 5.0) * 5.0 : 0.0;
+}
+
+// the length of the pieces and the radius of the sharpest arc among them, the one of the layout eased in its place where there's one
+std::pair<double, double> pieces_measure(std::vector<segment_data> const &Pieces, std::optional<alignment::lay_result> const &Eased)
+{
+	double length{0.0};
+	double radius{0.0};
+	for (auto const &piece : Pieces)
 	{
-		auto const pending{lay_pending()};
-		ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", format(STR_P("Not laid yet: %zu point", "Not laid yet: %zu points", static_cast<long long>(pending)), pending).c_str());
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.45f, 0.22f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.56f, 0.28f, 1.0f));
-		if (ImGui::Button(STR_C("Lay  (Enter)")))
-		{
-			// the cursor is over the panel: no free end under it to join
-			tool.mouse_snap = {};
-			lay_enter();
-		}
-		ImGui::PopStyleColor(2);
-		ImGui::SameLine();
-		if (ImGui::Button(STR_C("Drop the points")))
-			lay_cancel();
-		item_tooltip("Esc twice does the same");
-		ImGui::Separator();
+		length += bezier{piece}.plan_length();
+		if (auto const r{piece_plan_radius(piece)}; r >= 0.5 && (radius == 0.0 || r < radius))
+			radius = r;
 	}
-	if (int mode{tool.mode == lay_mode::curve ? 1 : 0};
-	    segmented("laymode", mode,
-	              {{0, STR_C("Straights   Tab"), "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"},
-	               {1, STR_C("Curve   Tab"), "Click points along the middle of a curve seen on the photo: the curve, compound or with a straight in it, is fitted to them and ends at the last one, heading as they do there. It comes from the straight before it, of the points clicked before or of the free end, and goes on with the curve of a free end, a switch too, where the points turn its way"}}) &&
-	    (mode == 1) != (tool.mode == lay_mode::curve))
-		lay_switch_mode();
-	ImGui::PushItemWidth(120.0f);
-	if (tool.mode == lay_mode::straights)
+	if (Eased.has_value() && false == Eased->pieces.empty())
+		radius = Eased->radius;
+	return {length, radius};
+}
+
+// the leg the cursor draws as a curve: its radius, the speed it lets the trains through at, the sign of a warning where that's below
+// the norms
+std::string curve_leg(std::string const &Radii, double const Speed, bool const Meets)
+{
+	auto text{Speed > 0.0 ? format(STR_C("curve R %s m · up to %.0f km/h"), Radii.c_str(), Speed) : format(STR_C("curve R %s m"), Radii.c_str())};
+	if (false == Meets)
+		text += editor_flow::kWarningMark;
+	return text;
+}
+
+// how far a curve traced is from the points clicked along it: green within 10 cm, yellow within 30 cm, red farther
+ImU32 departure_colour(double const Departure)
+{
+	if (Departure <= 0.1)
+		return IM_COL32(90, 220, 110, 255);
+	if (Departure <= 0.3)
+		return IM_COL32(255, 200, 60, 255);
+	return IM_COL32(255, 90, 70, 255);
+}
+
+std::string first_line(std::string const &Text)
+{
+	return Text.substr(0, Text.find('\n'));
+}
+
+} // namespace
+
+editor_mode::lay_quality editor_mode::lay_quality_now() const
+{
+	auto const &lay{m_lay};
+	auto const norms{laying_norms()};
+	lay_quality quality;
+	auto const [from, to]{laying_ends()};
+	quality.speed = design_speed(from, to);
+	if (false == m_extend.active && lay.plan.shape.valid && false == lay.preview.empty())
 	{
-		ImGui::TextDisabled("%s", STR_C("Radius of the curves at the bends"));
-		ImGui::SameLine();
-		if (ImGui::SmallButton("?##corners"))
+		quality.length = lay.preview_length;
+		quality.speed = lay.plan.design.speed;
+		for (auto const &curve : lay.plan.shape.curves)
 		{
-			m_first_steps_open = true;
-			m_tutorial_goto = "Radius of the curves at the bends";
+			// a curve traced slowed down is laid for its speed
+			auto speed{arc_speed(curve_sharpest(curve), norms)};
+			if (lay.plan.traced.has_value() && curve.vertex >= 0 && curve.vertex < static_cast<int>(lay.plan.traced->curves.size()) && lay.plan.traced->curves[curve.vertex].restricted)
+				speed = std::min(speed, lay.plan.traced->curves[curve.vertex].speed);
+			quality.slowest = quality.curves == 0 ? speed : std::min(quality.slowest, speed);
+			++quality.curves;
+			if (false == alignment::meets_norms(curve, lay.plan.design))
+				++quality.below;
 		}
-		item_tooltip("What it is: the lesson of the tutorial");
-		ImGui::PushTextWrapPos(0.0f);
-		ImGui::TextDisabled("%s", STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
-		ImGui::PopTextWrapPos();
 	}
 	else
 	{
-		ImGui::PopItemWidth();
-		segmented("layradii", tool.radii,
-		          {{0, STR_C("Auto"), "As few radii as follow the points, up to three"}, {1, STR_C("1 R"), "One radius"}, {2, STR_C("2 R"), "A compound curve of two radii"}, {3, STR_C("3 R"), "A compound curve of three radii"}});
-		ImGui::Checkbox(STR_C("Two curves with a straight between them, where the points show one"), &tool.straights_between);
-		item_tooltip("The points along the curve may make two curves, turning the same way or not, with a straight between them, where these follow the points much closer than one curve");
-		if (auto const &traces{tool.plan.traces}; false == traces.empty() && false == traces.back().offsets.empty())
+		auto const [length, radius]{pieces_measure(m_extend.active ? extend_preview() : lay.preview, m_eased_last)};
+		quality.length = m_extend.active ? length : lay.preview_length;
+		if (radius > 0.0)
 		{
-			auto const &trace{traces.back()};
-			auto const colour = [](double const Departure) { return Departure <= 0.1 ? IM_COL32(90, 220, 110, 255) : Departure <= 0.3 ? IM_COL32(255, 200, 60, 255) : IM_COL32(255, 90, 70, 255); };
-			metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
-			              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), colour(trace.rms)},
-			              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), colour(trace.worst)}});
+			quality.curves = 1;
+			quality.slowest = arc_speed(radius, norms);
+			quality.below = quality.slowest > 0.0 && quality.slowest < quality.speed ? 1 : 0;
 		}
-		else
-		{
-			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextDisabled("%s", STR_C("Click points along the middle of the track on the photo; the curve ends at the last one"));
-			ImGui::PopTextWrapPos();
-		}
-		ImGui::PushItemWidth(120.0f);
 	}
-	ImGui::DragScalar(STR_C("Speed (km/h)"), ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+	quality.valid = quality.length > 0.0;
+	return quality;
+}
+
+std::string editor_mode::lay_settings_summary() const
+{
+	auto const &lay{m_lay};
+	std::string text{lay.mode == lay_mode::traced ? STR_C("From the photo") : STR_C("Bends")};
+	auto const [from, to]{laying_ends()};
+	text += format(" · %.0f km/h", design_speed(from, to));
+	static char const *const heights[]{"along the ground", "through the points", "level"};
+	return text + " · " + STR_C(heights[std::clamp(static_cast<int>(lay_heights_now()), 0, 2)]);
+}
+
+std::vector<std::string> editor_mode::lay_leg() const
+{
+	auto const &lay{m_lay};
+	auto const norms{laying_norms()};
+	std::vector<std::string> lines;
+	// traced on the photo: what the line ends with, and the point clicked last where the line couldn't follow it
+	if (lay.plan.traced.has_value() && lay.plan.shape.valid)
+	{
+		auto const &traced{*lay.plan.traced};
+		auto const &shape{lay.plan.shape};
+		if (false == shape.elements.empty() && shape.elements.back().kind == alignment::element_kind::straight && false == lay.points.empty())
+			lines.push_back(format(STR_C("straight %.0f m"), shape.elements.back().length));
+		else if (false == traced.curves.empty())
+			lines.push_back(traced_label(traced.curves.back()));
+		if (false == traced.misfit.empty() && traced.misfit.back() != 0)
+			lines.push_back(STR_C("doesn't fit - Backspace takes it back"));
+		return lines;
+	}
+	if (lay.plan.shape.valid)
+	{
+		// the straight the cursor is at the end of, and the curve of the last bend before it
+		auto const &shape{lay.plan.shape};
+		if (false == shape.elements.empty() && shape.elements.back().kind == alignment::element_kind::straight)
+			lines.push_back(format(STR_C("straight %.0f m"), shape.elements.back().length));
+		if (false == shape.curves.empty())
+		{
+			auto const &curve{shape.curves.back()};
+			lines.push_back(curve_leg(curve_radii(curve), arc_speed(curve_sharpest(curve), norms), alignment::meets_norms(curve, lay.plan.design)));
+		}
+		return lines;
+	}
+	if (lay.preview.empty())
+		return lines;
+	if (auto const radius{pieces_measure(lay.preview, m_eased_last).second}; radius > 0.0)
+	{
+		auto const [from, to]{laying_ends()};
+		auto const speed{arc_speed(radius, norms)};
+		lines.push_back(curve_leg(format("%.0f", radius), speed, speed <= 0.0 || speed >= design_speed(from, to)));
+	}
+	else
+		lines.push_back(format(STR_C("straight %.0f m"), lay.preview_length));
+	return lines;
+}
+
+std::string editor_mode::extend_leg(double const Length, double const Radius, TTrack const *Joined, bool const Warned) const
+{
+	auto const speed{arc_speed(Radius, laying_norms())};
+	auto text{Radius > 0.0 ? curve_leg(format("%.0f", Radius), speed, false == Warned && (speed <= 0.0 || speed >= design_speed(m_extend.track, Joined))) : format(STR_C("straight %.0f m"), Length)};
+	if (Radius <= 0.0 && Warned)
+		text += editor_flow::kWarningMark;
+	if (Joined != nullptr)
+		text += " · " + format(STR_C("joins %s"), name_of(*Joined).c_str());
+	// the shape of a curve, of the layout chosen or of the join; a straight says it all
+	if (Radius <= 0.0)
+		return text;
+	return text + "\n" + first_line(track_shaping(Joined != nullptr));
+}
+
+std::string editor_mode::lay_error() const
+{
+	auto const &lay{m_lay};
+	// a line traced refused, a curve below the least radius of the track, is told as one which can't be laid
+	if (lay.plan.traced.has_value() && lay.plan.traced->refused)
+		return lay.preview_error;
+	// a line of a design laid with the norms broken is told so by its curves, in orange, and by the badge of the panel
+	if (lay.preview_error.empty() || (false == lay.preview.empty() && lay.plan.shape.valid))
+		return {};
+	return lay.preview_error;
+}
+
+std::string editor_mode::lay_readout() const
+{
+	auto const &lay{m_lay};
+	auto const now{ImGui::GetTime()};
+	std::vector<std::string> lines;
+	if (lay.points.empty())
+		lines.emplace_back(lay.mouse_snap.track != nullptr ? STR_C("goes on from this end of the track") : STR_C("start"));
+	else
+		lines = lay_leg();
+	// where the leg ends: the free end it joins, the shape of the track joined to it
+	if (false == lay.points.empty() && lay.mouse_snap.track != nullptr)
+	{
+		auto const joins{format(STR_C("joins %s"), name_of(*lay.mouse_snap.track).c_str())};
+		if (lines.empty())
+			lines.push_back(joins);
+		else
+			lines.front() += " · " + joins;
+	}
+	if (lay.points.size() == 1 && lay.mouse_snap.track != nullptr)
+		lines.push_back(first_line(track_shaping(lay.start.track != nullptr)));
+	if (auto const error{lay_error()}; false == error.empty())
+		lines.push_back(first_line(error));
+	if (ImGui::GetIO().KeyAlt && false == lay.points.empty())
+	{
+		auto const offset{plan_of(lay.mouse - lay.points.back())};
+		auto const degrees{std::fmod(glm::degrees(std::atan2(offset.x, offset.y)) + 360.0, 360.0)};
+		lines.push_back(lay.skew.empty() ? format(STR_C("azimuth %.0f deg"), degrees) : lay.skew);
+	}
+	// the warning of the first Esc leads, where it's read first; what was laid, and what Tab switched to, a while after
+	if (now - lay.escape_time < 3.0)
+		lines.insert(lines.begin(), first_line(lay.status));
+	else if (false == lay.status.empty() && now - lay.status_time < 4.0)
+		lines.push_back(first_line(lay.status));
+	if (false == lay.hint.empty() && now - lay.hint_time < 4.0)
+		lines.push_back(lay.hint);
+	return lines_of(lines);
+}
+
+void editor_mode::render_lay_ui()
+{
+	auto &tool{m_lay};
+	auto const state{lay_panel_state()};
+	render_lay_step(state);
+	render_nmt_offer_line();
+	if (state == lay_state::clicking || state == lay_state::extending)
+	{
+		render_lay_quality();
+		if (state == lay_state::clicking)
+			render_lay_buttons();
+		// the settings as the line of their summary while the points are clicked: it opens them
+		auto const [from, to]{laying_ends()};
+		auto const speed{from != nullptr || to != nullptr ? design_speed_of(from, to) : std::string{}};
+		if (editor_flow::summary_line("##laysettings", lay_settings_summary(), tool.settings_open, speed.c_str()))
+			tool.settings_open = !tool.settings_open;
+		if (tool.settings_open)
+			render_lay_settings();
+		render_lay_status(state);
+		// the details under it all: opened, they don't push the buttons out of the panel
+		if (tool.details_open)
+			render_lay_details();
+		return;
+	}
+	// the line laid just now, told in one line over the settings
+	if (state == lay_state::laid)
+		render_lay_status(state);
+	tool.settings_open = false;
+	tool.details_open = false;
+	render_lay_settings();
+	if (state != lay_state::laid)
+		render_lay_status(state);
+}
+
+void editor_mode::render_lay_step(lay_state const State)
+{
+	auto const traced{m_lay.mode == lay_mode::traced};
+	if (lay_waiting())
+	{
+		editor_flow::step_line(STR_C("Waiting for the terrain under the points..."), STR_C("Esc cancels · Enter lays without waiting"));
+		return;
+	}
+	switch (State)
+	{
+	case lay_state::extending: editor_flow::step_line(STR_C("Drag to lay from the end; let go to lay it")); break;
+	case lay_state::clicking:
+		editor_flow::step_line(traced ? STR_C("Click along the middle of the track on the photo: every 100-300 m on straights, closer on curves. Enter lays") : STR_C("Click the next bends"),
+		                       m_lay.points.size() > 1 ? STR_C("Enter lays · Backspace takes back a point · Esc drops") : STR_C("Backspace takes back the point · Esc drops"));
+		break;
+	case lay_state::laid:
+		if (m_lay.continuing)
+		{
+			editor_flow::step_line(STR_C("Click on along the track to go on with it; Esc ends the line"));
+			break;
+		}
+		[[fallthrough]];
+	default:
+		if (traced)
+			editor_flow::step_line(STR_C("Click along the middle of the track on the photo: every 100-300 m on straights, closer on curves. Enter lays"),
+			                       STR_C("A click on a track starts the line with a turnout into it, the last one on a track ends it with one"));
+		else
+			editor_flow::step_line(STR_C("Click on the ground or at a free end of a track"));
+		break;
+	}
+}
+
+void editor_mode::render_lay_settings()
+{
+	auto &tool{m_lay};
+	// the shape, what it makes of the points under the question mark beside it
+	if (ImGui::BeginTable("##layshape", 2, ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("##choice", ImGuiTableColumnFlags_WidthStretch);
+		ImGui::TableSetupColumn("##why", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableNextColumn();
+		if (int mode{tool.mode == lay_mode::traced ? 0 : 1};
+		    segmented("laymode", mode,
+		              {{0, STR_C("From the photo   Tab"), "Click points along the middle of the track seen on the photo, on its straights and its curves: the straights and the curves, gentle, compound or the other way too, are recognised from them, with the transitions and the cant of the norms. A curve sharper than the norms allow at the speed is laid slower"},
+		               {1, STR_C("Bends   Tab"), "Each point clicked is a bend of the straights: the bend eased with two transition curves meeting, with no cant, of a large radius; where they don't fit, an arc with the transitions and the cant of the norms, as large as fits"}}) &&
+		    (mode == 0) != (tool.mode == lay_mode::traced))
+			lay_switch_mode();
+		ImGui::TableNextColumn();
+		auto const traced{tool.mode == lay_mode::traced};
+		if (ImGui::SmallButton("?##layshape"))
+		{
+			m_first_steps_open = true;
+			m_tutorial_goto = traced ? "Laying from the photo" : "Radius of the curves at the bends";
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(ImGui::GetFontSize() * 30.0f));
+			ImGui::TextUnformatted(traced ? STR_C("Click along the middle of the track on the photo, on the straights and the curves; Enter lays")
+			                              : STR_C("The largest radius that fits between your points is taken: two transition curves meeting, with no cant, from 6000 m down to 2000 m, and below that an arc with the transitions and the cant of the norms"));
+			ImGui::TextDisabled("%s", STR_C("What it is: the lesson of the tutorial"));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		ImGui::EndTable();
+	}
+	// the name on the left of the field, as in the inspector, the values to pick with a click under it
+	if (begin_fields("##layspeed"))
+	{
+		field_row("Speed (km/h)");
+		ImGui::DragScalar("##velocity", ImGuiDataType_Double, &tool.style.velocity, 1.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Speed limit of the new paths, and the design speed of the transition curves and of the cant; the speed of the track joined comes first, and none higher than the radius allows");
+		ImGui::EndTable();
+	}
 	value_chips("speeds", tool.style.velocity, {40.0, 60.0, 80.0, 100.0, 120.0, 160.0}, "%.0f");
 	tool.style.velocity = std::clamp(tool.style.velocity, 0.0, 400.0);
-	ImGui::PopItemWidth();
-	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
-	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	if (auto const [from, to]{laying_ends()}; from != nullptr || to != nullptr)
 		ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
 	ImGui::TextDisabled("%s", STR_C("Height of the track on the ground"));
-	if (int heights{static_cast<int>(EditorSettings.heights())};
+	if (int heights{static_cast<int>(lay_heights_now())};
 	    segmented("layheights", heights,
 	              {{0, STR_C("Fitted"), "The grades fitted to the ground as Tracks onto the terrain fits them: vertical curves of the norms, the bumps of the ground gone past; the terrain is left as it is. On the terrain model the whole track laid in a row is fitted again at each click"},
 	               {1, STR_C("Point to point"), "Each bend of the straights clicked at the height of the ground, an even grade between them: the grade changes only at the bends. A curve traced, or bends clicked close along a curve, goes at an even grade from one end of it to the other"},
@@ -2404,54 +3349,148 @@ void editor_mode::render_lay_ui()
 	{
 		EditorSettings.heights(static_cast<editorSettings::lay_heights>(heights));
 		EditorSettings.save();
+		tool.heights_chosen = true;
 	}
-	// the curves of the line shown, those below the norms in the colour of a warning: they're laid all the same
-	if (auto const &plan{tool.plan}; tool.active && plan.shape.valid && false == plan.shape.curves.empty())
+	render_lay_more();
+}
+
+void editor_mode::render_lay_quality()
+{
+	auto &tool{m_lay};
+	auto const quality{lay_quality_now()};
+	if (false == quality.valid)
+		return;
+	// the length, the curves and the slowest of them in a line, the norms as a badge; the curves one by one and what they break in the
+	// details it opens
+	auto line{quality.curves == 0 ? format(STR_C("Length %.0f m · straight"), quality.length)
+	                              : format(STR_P("Length %.0f m · %zu curve", "Length %.0f m · %zu curves", static_cast<long long>(quality.curves)), quality.length, quality.curves)};
+	if (quality.curves > 0 && quality.slowest > 0.0)
+		line += format(STR_C(" · slowest %.0f km/h"), quality.slowest);
+	ImGui::TextWrapped("%s", line.c_str());
+	auto const badge{quality.below == 0 ? std::string{STR_C("meets the norms")}
+	                                    : format(STR_P("%zu curve below the norms for %.0f km/h", "%zu curves below the norms for %.0f km/h", static_cast<long long>(quality.below)), quality.below, quality.speed)};
+	editor_flow::quality_badge("##layquality", badge.c_str(), quality.below == 0, STR_C("details"), tool.details_open);
+}
+
+void editor_mode::render_lay_details()
+{
+	auto const &tool{m_lay};
+	auto const &plan{tool.plan};
+	auto const warning{editor_flow::kBelow};
+	ImGui::Indent();
+	ImGui::PushTextWrapPos(0.0f);
+	// the curves one by one, those below the norms in the colour of a warning: they're laid all the same; what each breaks, and what its
+	// label says, by the cursor over it
+	if (false == m_extend.active && plan.shape.valid)
 	{
-		ImGui::SeparatorText(STR_C("Curves of the track laid"));
-		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
 		for (auto const &curve : plan.shape.curves)
 		{
-			auto const meets{alignment::meets_norms(curve, plan.design)};
 			auto const text{format("%d. %s", curve.vertex + 1, curve_label(curve, laying_norms()).c_str())};
-			if (meets)
+			if (alignment::meets_norms(curve, plan.design))
 				ImGui::TextUnformatted(text.c_str());
 			else
-				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.15f, 1.0f), "%s", text.c_str());
-			if (ImGui::IsItemHovered())
-			{
-				std::string notes;
-				auto const tag{format(STR_C("Vertex %zu"), static_cast<std::size_t>(curve.vertex + 1))};
-				for (auto const &warning : plan.shape.warnings)
-					if (warning.rfind(tag + ":", 0) == 0)
-						notes += (notes.empty() ? "" : "\n") + warning;
-				ImGui::SetTooltip("%s", notes.empty() ? STR_C("Meets the norms for the speed") : notes.c_str());
-			}
+				ImGui::TextColored(warning, "%s", text.c_str());
+			if (false == ImGui::IsItemHovered())
+				continue;
+			std::string notes;
+			auto const tag{format(STR_C("Vertex %zu"), static_cast<std::size_t>(curve.vertex + 1))};
+			for (auto const &note : plan.shape.warnings)
+				if (note.rfind(tag + ":", 0) == 0)
+					notes += (notes.empty() ? "" : "\n") + note;
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(std::round(ImGui::GetFontSize() * 32.0f));
+			ImGui::TextUnformatted(notes.empty() ? STR_C("Meets the norms for the speed") : notes.c_str());
+			ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		// what the curves break, in the words of the norms, and what else the line shown was told
+		for (auto const &note : plan.shape.warnings)
+			ImGui::TextColored(warning, "%s", note.c_str());
+		if (false == tool.preview_error.empty() && tool.preview_error != lines_of(plan.shape.warnings))
+			ImGui::TextColored(warning, "%s", tool.preview_error.c_str());
+		if (false == plan.shape.curves.empty())
+		{
+			if (auto const on{curve_goes_on(plan.shape.curves.front())}; false == on.empty())
+				ImGui::TextDisabled("%s", on.c_str());
+			if (auto const on{curve_goes_on(plan.shape.curves.back())}; plan.shape.curves.size() > 1 && false == on.empty())
+				ImGui::TextDisabled("%s", on.c_str());
+		}
+		// how close a curve traced follows the points clicked along it
+		if ((tool.mode == lay_mode::curve || tool.mode == lay_mode::traced) && false == plan.traces.empty() && false == plan.traces.back().offsets.empty())
+		{
+			auto const &trace{plan.traces.back()};
+			metric_tiles({{format("%zu", trace.points.size()), STR_C("points"), ImGui::GetColorU32(ImGuiCol_Text)},
+			              {format("%.0f cm", trace.rms * 100.0), STR_C("departure"), departure_colour(trace.rms)},
+			              {format("%.0f cm", trace.worst * 100.0), STR_C("at most"), departure_colour(trace.worst)}});
 		}
 	}
-	if (auto *track{selected_track()}; track != nullptr)
+	else if (auto const eased{eased_of(m_eased_last)}; false == eased.empty())
+		ImGui::TextDisabled("%s", eased.c_str());
+	// the speed it's designed for, the grades, what the norms say of it where it goes on from a switch
+	auto const [from, to]{laying_ends()};
+	ImGui::TextDisabled("%s", design_speed_of(from, to).c_str());
+	auto const pieces{m_extend.active ? extend_preview() : tool.preview};
+	if (auto const vertical{pieces.empty() ? std::string{} : vertical_of(pieces)}; false == vertical.empty())
+		ImGui::TextDisabled("%s", vertical.c_str());
+	std::vector<std::string> exits;
+	if (m_extend.active)
 	{
-		std::string reason;
-		if (editor_track::can_edit_geometry(*track, reason))
-			render_extend_ui();
+		editor_track::snap_target target;
+		auto const snapped{extend_snap(target) && target.track != nullptr};
+		exits = switch_exit_warnings(m_extend.track, m_extend.point, snapped ? target.track : nullptr, target.position, pieces);
 	}
+	else
+		exits = switch_exit_warnings(tool.start.track, tool.points.empty() ? tool.mouse : tool.points.front(), tool.mouse_snap.track, tool.mouse_snap.position, pieces);
+	for (auto const &exit : exits)
+		ImGui::TextColored(warning, "%s", exit.c_str());
+	ImGui::PopTextWrapPos();
+	ImGui::Unindent();
+}
+
+void editor_mode::render_lay_buttons()
+{
+	auto &tool{m_lay};
+	// the points clicked are no track until they're laid: Enter lays them, a single point is none; a line traced refused none either
+	ImGui::BeginDisabled(tool.points.size() < 2 || (tool.plan.traced.has_value() && tool.plan.traced->refused));
+	if (main_button(STR_C("Lay  (Enter)"), ImVec2(0.0f, 0.0f)))
+	{
+		// the cursor is over the panel: no free end under it to join
+		tool.mouse_snap = {};
+		lay_enter();
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button(STR_C("Drop")))
+		lay_cancel();
+	item_tooltip("Drops the points not laid yet; Esc twice does the same");
+}
+
+void editor_mode::render_lay_more()
+{
+	auto &tool{m_lay};
 	if (false == ImGui::TreeNode(STR_C("More settings")))
-	{
-		render_lay_status();
 		return;
-	}
+	ImGui::Checkbox(STR_C("This speed also on from a track with a speed of its own"), &tool.own_speed);
+	item_tooltip("Off: a track laid on from another one, or joined to it, is designed for the speed of that track and takes it.\nOn: it's designed for the speed above and the new tracks get it.\nWhile laying: Ctrl+Shift+wheel");
 	ImGui::TextDisabled("%s", STR_C("Dragged from a free end, or laid from a point to one"));
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Curve radius (m)"), ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
-	item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+	if (begin_fields("##layradius"))
+	{
+		field_row("Curve radius (m)");
+		ImGui::DragScalar("##radius", ImGuiDataType_Double, &tool.radius, 5.0f, nullptr, nullptr, "%.0f");
+		item_tooltip("Drag to change, Ctrl+click to type the value. While dragging: Ctrl+wheel");
+		ImGui::EndTable();
+	}
 	value_chips("radii", tool.radius, {190.0, 300.0, 500.0, 800.0, 1200.0, 2000.0}, "%.0f");
 	tool.radius = std::max(10.0, tool.radius);
-	ImGui::PopItemWidth();
 	ImGui::Spacing();
-	ImGui::PushItemWidth(120.0f);
-	ImGui::DragScalar(STR_C("Longest path (m)"), ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+	if (begin_fields("##laypiece"))
+	{
+		field_row("Longest path (m)");
+		ImGui::DragScalar("##piece", ImGuiDataType_Double, &tool.piece_length, 1.0f, nullptr, nullptr, "%.0f");
+		ImGui::EndTable();
+	}
 	tool.piece_length = std::clamp(tool.piece_length, 5.0, 1000.0);
-	ImGui::PopItemWidth();
 	ImGui::TextDisabled("%s", STR_C("Look of the new track"));
 	int source{tool.copy_selected ? 1 : 0};
 	if (segmented("laylook", source,
@@ -2507,17 +3546,115 @@ void editor_mode::render_lay_ui()
 		texture_row(0, STR_C("Rails"), tool.style.rail);
 		texture_row(1, STR_C("Trackbed"), tool.style.ballast);
 	}
+	// pieces added at the free end of the selected track, one by one
+	if (auto const *track{selected_track()}; track != nullptr)
+	{
+		std::string reason;
+		if (editor_track::can_edit_geometry(*track, reason))
+			render_extend_ui();
+	}
 	ImGui::TreePop();
-	render_lay_status();
 }
 
-void editor_mode::render_lay_status()
+void editor_mode::render_lay_status(lay_state const State)
 {
-	auto const &tool{m_lay};
+	auto &tool{m_lay};
 	if (scene::Layers.active() == null_handle)
-		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), STR_C("The scenery isn't opened for editing: new track won't be saved"));
-	if (tool.active && false == tool.preview_error.empty())
-		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", tool.preview_error.c_str());
-	if (false == tool.status.empty())
-		ImGui::TextWrapped("%s", tool.status.c_str());
+		editor_flow::message_line(STR_C("The scenery isn't opened for editing: new track won't be saved"), ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	auto const refused{tool.plan.traced.has_value() && tool.plan.traced->refused};
+	if (auto const error{lay_error()}; tool.active && State == lay_state::clicking && false == error.empty())
+		editor_flow::message_line(error, tool.preview.empty() || refused ? editor_flow::kRefused : ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+	// refused on a main track where a side track may be that sharp: one click makes it one
+	if (refused && State == lay_state::clicking && setup_now().track == norms::track_kind::main)
+	{
+		auto sharpest{std::numeric_limits<double>::max()};
+		for (auto const &curve : tool.plan.traced->curves)
+			if (curve.refused)
+				sharpest = std::min(sharpest, curve.sharpest());
+		if (auto const side{least_radius(norms::track_kind::side)}; side < least_radius(norms::track_kind::main) && sharpest >= side)
+		{
+			if (ImGui::Button(STR_C("It's a side track")))
+			{
+				auto setup{setup_now()};
+				setup.track = norms::track_kind::side;
+				setup_apply(setup, true);
+			}
+			item_tooltip("The assumptions of the project: a side track (a station track), whose least radius is smaller");
+		}
+	}
+	if (tool.status.empty())
+		return;
+	if (State != lay_state::laid)
+	{
+		// a line laid before, taken back or gone on from since, isn't told any more
+		if (false == tool.laid_now)
+			editor_flow::message_line(tool.status, ImVec4(1.0f, 0.7f, 0.2f, 1.0f));
+		return;
+	}
+	// the line laid: one line of it, what else there is to tell of it under the link beside it
+	auto const end{tool.status.find('\n')};
+	editor_flow::message_line(tool.status.substr(0, end), editor_flow::kGood);
+	if (end == std::string::npos)
+		return;
+	same_line_if_fits(ImGui::CalcTextSize(STR_C("notes")).x + ImGui::GetFontSize() * 1.2f);
+	editor_flow::fold_link("##laynotes", STR_C("notes"), tool.notes_open);
+	if (false == tool.notes_open)
+		return;
+	ImGui::Indent();
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	ImGui::TextWrapped("%s", tool.status.c_str() + end + 1);
+	ImGui::PopStyleColor();
+	ImGui::Unindent();
+}
+
+bool editor_mode::laid_shown() const
+{
+	auto const &tracks{m_lay.laid.tracks};
+	return false == tracks.empty() && m_node == tracks.back() && m_track_set.empty() && std::ranges::none_of(tracks, [](TTrack const *Track) { return Track->m_editorremoved; });
+}
+
+void editor_mode::render_laid_summary()
+{
+	auto const &laid{m_lay.laid};
+	auto const below{std::ranges::any_of(laid.curves, [](lay_tool::laid_curve const &Curve) { return false == Curve.meets; })};
+	auto const warning{ImVec4(1.0f, 0.55f, 0.15f, 1.0f)};
+	ImGui::TextUnformatted(STR_C("Track laid"));
+	metric_tiles({{format("%zu", laid.tracks.size()), STR_C("tracks"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%.0f m", laid.length), STR_C("length"), ImGui::GetColorU32(ImGuiCol_Text)},
+	              {format("%zu", laid.curves.size()), STR_C("curves"), below ? ImGui::GetColorU32(warning) : ImGui::GetColorU32(ImGuiCol_Text)}});
+	if (false == laid.curves.empty())
+	{
+		ImGui::PushTextWrapPos(0.0f);
+		ImGui::TextDisabled("%s", STR_C("R: radius, L: transition curve (m), h: cant (mm)"));
+		for (auto const &curve : laid.curves)
+		{
+			if (curve.meets)
+				ImGui::TextUnformatted(curve.label.c_str());
+			else
+				ImGui::TextColored(warning, "%s", curve.label.c_str());
+		}
+		if (below)
+			ImGui::TextColored(warning, "%s", STR_C("Orange: below the norms for the speed, laid all the same"));
+		ImGui::PopTextWrapPos();
+	}
+	// what comes next: a switch into the line and the scenery saved
+	ImGui::SeparatorText(STR_C("Next"));
+	if (m_track_tab != track_tab::turnout)
+	{
+		if (ImGui::Button(STR_C("A switch  (T)")))
+			show_track_tab(track_tab::turnout);
+		item_tooltip("The switch tool: press on a straight and drag along it and to the side");
+		ImGui::SameLine();
+	}
+	ImGui::BeginDisabled(scene::Layers.empty());
+	if (ImGui::Button(STR_C("Save  (Ctrl+S)")))
+		save();
+	ImGui::EndDisabled();
+	ImGui::Spacing();
+	if (m_track_tab == track_tab::lay)
+		gesture_rows({{"LMB on a free end", "lays the track on from it"}, {"Esc", "stop laying"}});
+	else if (m_track_tab == track_tab::turnout)
+		gesture_rows({{"Drag on a track", "along: the direction, sideways: the side"}, {"LMB on a track", "its properties show here"}});
+	else
+		gesture_rows({{"LMB on a track", "its properties show here"}});
 }

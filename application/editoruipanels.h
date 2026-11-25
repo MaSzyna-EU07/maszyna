@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorPreviews.hpp"
 
 #include <functional>
+#include <utility>
 /*
 // helper, associated bool is set when the primary value was changed and expects processing at the observer's leisure
 template<typename Type_>
@@ -164,6 +165,11 @@ class nodebank_panel : public ui_panel
 		m_standin = std::move(Content);
 		m_standintitle = std::move(Title);
 	}
+	// a template was clicked in the node bank since the last call: the select tool of the surroundings takes it as the one to insert
+	bool take_picked() { return std::exchange(m_picked, false); }
+	// the template of the node bank at the index, the headers of the groups left out, chosen as a click on its card chooses it; false
+	// if there's none there. For the self-test
+	bool pick(std::size_t const Index);
 
 
   private:
@@ -196,6 +202,7 @@ class nodebank_panel : public ui_panel
 	std::vector<std::pair<std::string, std::shared_ptr<std::string>>> m_nodebank;
 	char m_nodesearch[128];
 	std::shared_ptr<std::string> m_selectedtemplate;
+	bool m_picked{false}; // a template clicked since take_picked() was called
 	// previews of the models: image of each node definition, by its address, and the images read so far
 	std::unordered_map<std::string const *, std::string> m_previewpaths;
 	std::unique_ptr<editor_previews::image_cache> m_previews;
@@ -234,6 +241,7 @@ class layers_panel : public ui_panel
 	// outcome of the most recent operation, shown at the bottom of the window
 	std::string status;
 	bool status_error{false};
+	bool status_warning{false};
 
   private:
 	// methods

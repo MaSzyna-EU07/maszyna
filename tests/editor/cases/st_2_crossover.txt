@@ -1,0 +1,32 @@
+# Stations from the photo (Etap 5): from a click on a track to a click on the track alongside it, 4.75 m away, with only the points along
+# the crossover between them: the crossover of the solver of the connections, two turnouts Rz 60E1-300-1:9 and the straight between them,
+# one step of the history. The empty ground north-east of the fixture (x 2000.., z 9100..)
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.1
+layp 2000 9100 2500 9100 3000 9100
+layenter
+wait 2
+tap esc
+wait 2
+layp 2000 9104.75 2500 9104.75 3000 9104.75
+layenter
+wait 2
+tap esc
+wait 2
+expect steps 2
+layp 2199.50 9100.00 2220.03 9100.65 2238.05 9102.34 2276.50 9104.75
+wait 2
+expect station crossover 1
+expect station turnouts 2
+expect station turnout 0 Rz_60E1-300-1:9
+expect steps 3
+expect laycontinue 0
+undo
+wait 2
+expect steps 2
+quit

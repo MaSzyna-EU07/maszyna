@@ -1,0 +1,33 @@
+# The aerial photo is the scenery's. The wizard's //$o on 1 with nothing chosen in the scenery: on. Turned off with the button of the
+# toolbar it stays off when the scenery is opened again, though the scenery says on; turned on again, on after a reopen. Kept with
+# the editor, not with the save: the scenery isn't saved. The fixture isn't placed on the map, so no photo is downloaded
+#> append //$o on 1
+wait 5
+# what an earlier run kept of the photo of this scenery forgotten
+orthophoto forget
+quit
+#> reopen
+wait 5
+expect photo on 1
+expect photo chosen 1
+tap f3
+wait 2
+toolbar ~
+wait 2
+expect photo on 0
+quit
+#> reopen
+wait 5
+# the user's off goes over the scenery's on
+expect photo on 0
+tap f3
+wait 2
+toolbar ~
+wait 2
+expect photo on 1
+quit
+#> reopen
+wait 5
+expect photo on 1
+orthophoto forget
+quit

@@ -1,0 +1,19 @@
+# In the top view the tracks laid are drawn over the photo, which is drawn over the view, also zoomed in (under 0.5 m a pixel, where they
+# were left to the 3d tracks the photo covers): the rails of a1 at about 0.17 m a pixel. Without the photo no lines over them there. The
+# origin is outside Poland, so no photo is downloaded
+wait 5
+tap f3
+wait 2
+camera 0 200 50 0 0 50.5
+ortho 40 whole
+wait 3
+orthophoto 50 50 0 1 0
+wait 3
+expect photo on 1
+expect photo tracksover 1
+orthophoto off
+wait 3
+expect photo on 0
+expect photo tracksover 0
+orthophoto forget
+quit

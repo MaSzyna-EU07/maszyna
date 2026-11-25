@@ -1,0 +1,64 @@
+# stage 6: a road across the double track of the curves i (R 600 m) and o (R 604.5 m), 4.5 m apart, their cant raised to 150 mm: more
+# than the 119 mm a crossing square to the tracks allows (the road over the crossing at most 8%, Dz.U. 2025 poz. 1105, § 31 ust. 4,
+# annex 5). The crossing is refused with its fix; the fix lowers the cant of each curve, its ramps with it, and limits its speed. At 119 mm
+# the grade line of the road would break at the facing heads by 12%, over the 5% of annex 5 pt 3: refused again, with its two fixes;
+# the one which brings o by its grade line into the plane of the heads of i is taken, and the road is laid into that plane over both
+# tracks, the cant of the crossing the most it allows, cut along the rails; undo takes the level back, then the fix of the cant
+wait 5
+# the cant of the curves raised to 150 mm; the ramps at their ends follow at the joints
+trackcant i1 0 -150 -150
+trackcant i2 0 -150 -150
+trackcant i3 0 -150 -150
+trackcant i4 0 -150 -150
+trackcant i5 0 -150 -150
+trackcant i6 0 -150 -150
+trackcant i7 0 -150 -150
+trackcant i8 0 -150 -150
+trackcant o1 0 -150 -150
+trackcant o2 0 -150 -150
+trackcant o3 0 -150 -150
+trackcant o4 0 -150 -150
+trackcant o5 0 -150 -150
+trackcant o6 0 -150 -150
+trackcant o7 0 -150 -150
+trackcant o8 0 -150 -150
+wait 3
+expect cant i4 start -150 0.5
+expect cant i0 start 0 0.5
+roadlay 363.51 94.86 250.76 114.79 0.0 1 3.5
+wait 10
+expect crossingrefused 1
+expect roadgaps 309.35 104.43 0
+crossingfix
+wait 10
+# the other curve next
+expect crossingrefused 1
+crossingfix
+wait 10
+expect crossingrefused 0
+expect crossingrefused 1 break
+expect cant i4 start -119 1
+expect cant o4 start -119 1
+crossingfix level
+wait 10
+expect crossingrefused 0 break
+crossingprobe
+expect cant i4 start -119 1
+expect cant o4 start -119 1
+expect cant i0 start 0 0.5
+expect railhead i4 left 15 0.002
+expect railhead i4 right 15 0.002
+# o4 cut where its grade line bends: the crossing lies on o4_1, its level stretch
+expect railhead o4_1 left 9.0 0.002
+expect railhead o4_1 right 9.0 0.002
+expect crossing holds 119 mm
+# undo: the level and the road laid with it (o4 whole again), then the second fix of the cant
+undo
+wait 10
+expect height o4 start 0 0.001
+expect cant o4 start -119 1
+undo
+wait 10
+expect cant o4 start -150 0.5
+expect cant i4 start -119 1
+quit

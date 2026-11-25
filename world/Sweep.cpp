@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 #include "world/Sweep.h"
+#include "world/CrossingPanels.h"
 #include "editor/editorGauge.hpp"
 
 #include "model/MdlMngr.h"
@@ -304,10 +305,24 @@ struct layout
 	bool edge_far{false};
 };
 
-bool lay_out(sweep_node const &Sweep, layout &Layout)
+// the models laid along the curve, each in the space of the template; or a crossing panel made of its drawings, named in the place of
+// the model (world/CrossingPanels.h)
+void gather_models(sweep_node const &Sweep, std::vector<laid_model> &Models)
 {
 	auto const &definition{Sweep.definition()};
 	auto const scaling{glm::scale(glm::dmat4(1.0), definition.scale)};
+	if (crossing_panels::spec panel; crossing_panels::parse(definition.model, panel))
+	{
+		laid_model model;
+		model_part part;
+		part.material = GfxRenderer->Fetch_Material(crossing_panels::texture);
+		part.vertices = crossing_panels::geometry(panel);
+		for (auto &vertex : part.vertices)
+			vertex.position = glm::dvec3(scaling * glm::dvec4(vertex.position, 1.0));
+		model.parts.push_back(std::move(part));
+		Models.push_back(std::move(model));
+		return;
+	}
 	for (auto const &entry : Sweep.items())
 	{
 		laid_model model;
@@ -315,8 +330,14 @@ bool lay_out(sweep_node const &Sweep, layout &Layout)
 		gather_parts(entry.model->Root, transform, entry.skins, entry.model->instance_parts().lights_on, model.parts);
 		model.origin = glm::dvec3(transform[3]);
 		if (false == model.parts.empty())
-			Layout.models.push_back(std::move(model));
+			Models.push_back(std::move(model));
 	}
+}
+
+bool lay_out(sweep_node const &Sweep, layout &Layout)
+{
+	auto const &definition{Sweep.definition()};
+	gather_models(Sweep, Layout.models);
 	if (Layout.models.empty())
 		return false;
 	auto &low{Layout.low};
@@ -1090,21 +1111,17 @@ double sweep_node::project(glm::dvec3 const &Point, double &Lateral) const
 
 double sweep_node::model_length() const
 {
-	auto const pieces{items()};
-	auto const scaling{glm::scale(glm::dmat4(1.0), m_state.scale)};
+	std::vector<laid_model> models;
+	gather_models(*this, models);
 	double low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
-	for (auto const &entry : pieces)
-	{
-		std::vector<model_part> parts;
-		gather_parts(entry.model->Root, scaling * entry.transform, entry.skins, entry.model->instance_parts().lights_on, parts);
-		for (auto const &part : parts)
+	for (auto const &model : models)
+		for (auto const &part : model.parts)
 			for (auto const &vertex : part.vertices)
 			{
 				auto const along{m_state.along_x ? vertex.position.x : vertex.position.z};
 				low = std::min(low, along);
 				high = std::max(high, along);
 			}
-	}
 	return high > low ? high - low : 0.0;
 }
 

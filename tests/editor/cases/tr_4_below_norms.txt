@@ -1,0 +1,29 @@
+# Laying from the photo: a curve of R 300 m on a line of 120 km/h, sharper than the norms allow at that speed, is laid slowed down to the
+# speed its radius allows, 70 km/h, its tracks given that speed, with no question. One of R 150 m, below the least radius of a main track
+# (PLK 180 m), isn't laid at all: the points stay to be put right. The empty ground north-east of the fixture
+wait 5
+setup norms plk speed 120 traffic mixed track main gauge 1435 rail 60E1
+expect layspeed 120
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.15
+laysample 2000 5000 0 300 150 25 0.1 50 300 300
+wait 2
+layenter
+wait 2
+expect laid curves 1
+expect laid radius 0 300 3
+expect laid speed 0 70
+expect laid slowtracks 70 2
+laycancel
+laysample 3500 5000 0 300 150 15 0.1 60 150 300
+wait 2
+expect steps 1
+layenter
+wait 2
+expect steps 1
+expect laypanel clicking folded
+quit
