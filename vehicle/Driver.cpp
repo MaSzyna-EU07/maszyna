@@ -3402,7 +3402,7 @@ TController::report_power_stall( bool const Poweravailable, double const Pantogr
     // a user driving the vehicle sees the voltmeters for themselves
     if( auto const stall { m_powerstall.update( AIControllFlag ? ai_power::check( state ) : ai_power::stall::waiting, ElapsedTime ) };
         stall.has_value() ) {
-        ErrorLog( ai_power::message( *stall, pVehicle->asName, pVehicle->GetPosition() ) );
+        ErrorLog( ai_power::message( *stall, pVehicle->asName, pVehicle->GetPosition() ), logtype::traction );
     }
 }
 
