@@ -632,6 +632,58 @@ def check_ends_moving(rows, min_speed):
     return ok, f"last row t={last[COL_TIME]:.1f}s, v={last[COL_VELOCITY]:.1f} km/h (wanted >= {min_speed})"
 
 
+def check_keeps_moving(rows, moving_speed, min_speed, until_distance, from_distance=0.0):
+    """(*vehicle speed*) Once at moving_speed, the speed stays at or above min_speed between the two distances (metres
+    travelled, from the vehicle speed), e.g. a train doesn't come to a stand on a gradient before a restriction or in
+    it. The vehicle speed, as wheels slipping at the start would count as moving off."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column, the build is too old"
+    speed = [abs(r[COL_VEHICLE_VELOCITY]) for r in rows]
+    start = next((i for i, v in enumerate(speed) if v >= moving_speed), None)
+    if start is None:
+        return False, f"never reached {moving_speed} km/h"
+    dist, d = [0.0], 0.0
+    for i in range(1, len(rows)):
+        d += (speed[i - 1] + speed[i]) / 2 / 3.6 * (rows[i][COL_TIME] - rows[i - 1][COL_TIME])
+        dist.append(d)
+    span = [i for i in range(start, len(rows)) if from_distance <= dist[i] <= until_distance]
+    if not span or dist[-1] < until_distance:
+        return False, f"travelled {dist[-1]:.0f} m only, wanted {until_distance} m"
+    low = min(span, key=lambda i: speed[i])
+    r = rows[low]
+    detail = (f"lowest speed {speed[low]:.1f} km/h at t={r[COL_TIME]:.1f}s after {dist[low]:.0f} m "
+              f"(brake cylinder {r[COL_BRAKE_PRESS]:.2f} bar), wanted >= {min_speed} between {from_distance:.0f} and {until_distance} m")
+    return speed[low] >= min_speed, detail
+
+
+def check_starts_again(rows, after, min_speed, within, max_rollback=None):
+    """Standing at the time `after` (e.g. at a signal that clears then), the vehicle reaches min_speed within `within`
+    seconds; with max_rollback (*vehicle speed*), it rolls back no more than that many metres meanwhile."""
+    first = next((i for i, r in enumerate(rows) if r[COL_TIME] >= after), None)
+    if first is None:
+        return False, f"the physicslog ends before t={after}s"
+    if rows[first][COL_VELOCITY] > 1.0:
+        return False, f"moving at {rows[first][COL_VELOCITY]:.1f} km/h at t={after}s, wanted standing"
+    moved = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] > 1.0), None)
+    reached = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] >= min_speed), None)
+    rollback, back = 0.0, 0.0
+    if max_rollback is not None:
+        if len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+            return False, "the physicslog has no vehicle speed column, the build is too old"
+        end = reached if reached is not None else after + within
+        for a, b in zip(rows[first:], rows[first + 1:]):
+            if b[COL_TIME] > end:
+                break
+            back += (a[COL_VEHICLE_VELOCITY] + b[COL_VEHICLE_VELOCITY]) / 2 / 3.6 * (b[COL_TIME] - a[COL_TIME])
+            rollback = max(rollback, -back)
+    detail = (f"moved off (1 km/h) {moved - after:.1f}s after t={after}s" if moved is not None else f"didn't move off after t={after}s")
+    detail += f", {min_speed} km/h after {reached - after:.1f}s" if reached is not None else f", never reached {min_speed} km/h"
+    if max_rollback is not None:
+        detail += f", rolled back {rollback:.2f} m (wanted <= {max_rollback})"
+    ok = reached is not None and reached - after <= within and (max_rollback is None or rollback <= max_rollback)
+    return ok, detail + f" (wanted {min_speed} km/h within {within}s)"
+
+
 def check_slip_clears(rows, moving_speed, stop_speed, within):
     """Once the vehicle has stopped after moving off, its wheels stop slipping within `within` seconds
     (a vehicle left skidding on locked wheels keeps its brakes capped by the sliding adhesion)."""
@@ -705,6 +757,8 @@ CHECKS = {
     "stays_stopped": check_stays_stopped,
     "distance": check_distance,
     "ends_moving": check_ends_moving,
+    "keeps_moving": check_keeps_moving,
+    "starts_again": check_starts_again,
 }
 
 

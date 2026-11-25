@@ -275,6 +275,42 @@ starts on the level at the W4 of Gora, stops at the W4 of Dol 1500 m down the gr
 model), about 1590 m and 2690 m from the start. The three trains are the light EU07, the SN61 alone and the EU07 with
 three coaches.
 
+### Heavy trains
+
+The heavy train cases (#187, #199, #263, #265) run on lines of their own beside the tracks of td.scn, at x = -3000, as
+the `*_td_downgrade_w4_signal` cases of #479 do: 100 m tracks, an overhead wire fed by a substation of its own (none for
+the diesel case) and signals at stop that are a memory cell with `SetVelocity 0 0` and the event that reads it, with no
+model. Each train starts on a level stretch long enough for the whole consist, with its head 10 m before the W4 of Gora,
+which is where the distances in the checks start from. A freight train leaves a station of its timetable as soon as it
+stands there (`IsCargoTrain` in `TController`), so the freight trains leave Gora at once, not at 10:35. The checks that
+look for a train that comes to a stand use the vehicle speed (`keeps_moving`), as the wheels of a heavy train starting
+on poor rails spin while it stands; `starts_again` checks a start from a signal that clears at a given time, and how far
+the train rolls back meanwhile.
+
+| case | fragment | train | what it shows |
+| --- | --- | --- | --- |
+| `et41_coal_td_downgrade_restriction` | `td_downgrade_restriction.scn`: 600 m level, 3500 m down 20 per mille, 20 km/h from 1500 to 1900 m down, the signal 3000 m down | ET41, 25 coal wagons 412W with 40 t each, G (about 1670 t) | passes: through the restriction at 10.5 km/h at the lowest, stops at the signal (3078 m) |
+| `et22_764_td_downgrade_restriction` | the same | ET22, 20 heavy wagons 764 with 84 t each (about 2650 t) | `xfail`: dips to 8.5 km/h in the 20 km/h restriction (below the 10 km/h #263 counts as a defect); it doesn't stop |
+| `st43_steel_td_downgrade12_long` | `td_downgrade12_long.scn`: 900 m level, 6500 m down 12 per mille, no wire, the signal 6000 m down | ST43, 45 coil wagons 425S, G | passes: holds 35-37.5 km/h of the 40 all the way down, never below 20 km/h, stops at the signal |
+| `et41_coal_td_upgrade_start` | `td_upgrade_signal_start.scn`: 600 m level, 2500 m up 10 per mille, a signal 1000 m up that clears at 10:42, another 2300 m up | the ET41 with 25 coal wagons | passes: stops at the first signal with the whole train on the gradient, moves off 4.7 s after it clears, 10 km/h after 52 s, rolls back 0.04 m |
+| `eu07a_coaches_td_upgrade_long` | `td_upgrade_long.scn`: 600 m level, 5500 m up 10 per mille, the signal 5300 m up | EU07A (303E), 8 coaches (about 360 t), passenger timetable at 80 km/h | passes: 80 km/h at 1430 m, never below 73.8 km/h on the climb |
+| `et41_coal_td_slippery_start` | `td_level_signal.scn`: 2100 m level, the signal 1000 m ahead | ET41, 25 coal wagons with 60 t each (about 2170 t), `friction 0.3` | passes with the fix of this branch: gets going and stops at the signal (1082 m, at 392 s); before it, 395 slips in 1500 s and 75 m |
+
+What the AI still does with heavy trains, without a case that fails on it:
+
+- On a steep descent into a restriction a heavy G train holds the speed by applying and releasing the train brake in
+  turn. Its brake takes 10-15 s to release, so it falls well below the limit before the brake lets go: 10.5-12 km/h
+  for the ET41 with coal wagons, 8.5 km/h for the ET22 with the 764 wagons (the `xfail` above), in a 20 km/h
+  restriction. #263 reported this train stopping before the restriction in 10 of 12 runs; on staging it no longer
+  does, also with `friction 0.5` and with the wagons fully loaded.
+- Starting uphill, a heavy train pulls against its train brake while the brake releases (#265): in
+  `et41_coal_td_upgrade_start` about 13 s at about 200 kN with the head moving by the slack of the couplers alone. It
+  starts at full power, without taking up the slack first.
+- The AI doesn't know the adhesion of the rails: it plans braking with `Global.FrictionWeatherFactor` alone, and the
+  result of its running brake test (`adjust_desired_speed_for_braking_test`) is shown in the debug panel only. It sands
+  ahead of a slip only at a high motor current, and, since the fix of `et41_coal_td_slippery_start`, through the rest of
+  a start that has slipped (`control_wheelslip()`); not before a hard brake, nor before the first slip of a start.
+
 The `test_mode_*` cases show the ends of the test mode: `test_mode_pass` (exit 0, the pass
 event), `test_mode_signal_passed_at_danger` (exit 11), `test_mode_timeout` (exit 12, from
 `test.timeout`), `test_mode_standstill` (exit 13, from `test.standstill`) and
@@ -540,6 +576,12 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `keeps_moving` `moving_speed`, `min_speed`, `until_distance`, optional `from_distance` (*vehicle speed*): once at
+  `moving_speed`, the speed stays at or above `min_speed` between the two distances (metres travelled, from the vehicle
+  speed), e.g. a heavy train doesn't come to a stand on a descent before a restriction. Reports the lowest speed.
+- `starts_again` `after`, `min_speed`, `within`, optional `max_rollback` (*vehicle speed* for the rollback): standing
+  at the time `after` (a signal that clears then), the train reaches `min_speed` within `within` seconds, and rolls back
+  no more than `max_rollback` metres meanwhile.
 - `log_contains` `pattern`: a line of the run's `log.txt` matches the regex, e.g. the
   `Bad driving: ... collided` message of a collision.
 - `log_lacks` `pattern`: no line of the run's `log.txt` matches the regex.
