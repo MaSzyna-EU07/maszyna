@@ -693,6 +693,10 @@ public:
     bool CheckVehicles( TOrders user = Wait_for_orders );
 private:
     bool PrepareEngine();
+    // a steam locomotive is ready to go with this much in its boiler (gauge Pa), as another is with its line breaker closed
+    static constexpr double steam_ready_pressure { 5.0e5 };
+    static bool is_line_breaker_open( TMoverParameters const &Vehicle );
+    void set_steam_cutoff();
     void close_line_breaker();
     bool ReleaseEngine();
     void Doors( bool const Open, int const Side = 0 );
