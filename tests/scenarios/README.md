@@ -215,6 +215,7 @@ to `logs/`.
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire). Optional when the case keeps the scenery's trainsets |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `timetable` | a timetable file in `cases/` for a trainset of the fragment, for a train whose timetable no scenery of the game has: copied to the game's `scenery/` dir as `autotest_<case>.txt` for the run and removed after it; the fragment names it `{{timetable}}` |
+| `vehicle_variants` | vehicles of the case's own, made from those of the game, e.g. with a `.fiz` key the game's data doesn't have yet: a list of `{ "name": ..., "from": "<dir>/<type>", "replace": [[old, new], ...] }`. For the run the vehicle's `.fiz`, with the literal replacements (an `old` it doesn't have is an error), and its `.mmd` are copied beside it in the game's `dynamic/` dir as `autotest_<case>_<name>` and removed after it; the fragment names the type `{{variant_<name>}}`, e.g. `dynamic pkp/et42_v2 112e-014-a {{variant_a}} ...`. The copy of the `.mmd` has the name of the vehicle it is made from in place of `(p2)`, the type name the simulator hands it, which some pass on to the include that names the model |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
 | `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
@@ -396,6 +397,57 @@ working it stops at 0.57 m/s², 99 m: that is `eu07_td_reinspect_brakes_legacy_i
 of the earlier releases (`ai.brakesetting.cw1 no`), which cuts no brake out, and also what a build whose
 `reinspect_brakes()` does nothing gives for the first case, which then fails. The test passes 150 s after the driver goes.
 
+The `*_section*` and `*_converter_interlock*` cases are about the line breaker closed ahead of the pantographs
+(`PantRequiresMain=Yes` in `Cntrl.`, MaSzyna-EU07/maszyna#272) and the line contactors that wait for the
+converter of their own vehicle (`LineContactorsInterlock=Converter`, #276), driven by the AI on the timetable
+run of td.scn. The overhead wire of td.scn is changed with `replace`: one span of it, 61 m some 400 m from
+the start (`0.7764 5.845 1561.2417` onwards, over the way out of Stacja1, which the train runs under power at
+50-55 km/h), gets no supply and 0 V (`traction none 0`), and in `ep05_td_section_insulator` the span before
+it is split around a section insulator 1 m long (`traction * 0`, as sceneries hang insulators). The EP05 has
+`PantRequiresMain=Yes` in the game's data; the ET42 has no `LineContactorsInterlock` yet (SVN data of #276),
+so those cases run variants of the vehicles made for the run (`vehicle_variants`).
+
+- `ep05_td_timetable`: the EP05 on the plain timetable run, the reference: 20 km/h after 73 s, the stop
+  after 205 s and 1400 m.
+- `ep05_td_dead_section`: the EP05 runs into the span without voltage under power, nothing on the track
+  telling its driver to coast. The traction force drops to nothing at once and the AI puts the master
+  controller to 0; the line breaker stays closed (the log
+  says the vehicle lost power for 4.05 s, which it says only while the line breaker is closed). Behind the
+  section the AI takes power again (535 m, 36 kN by 595 m) and stops at Przystanek (1399 m).
+- `ep05_td_neutral_section`: the same with the track under that span, `koniec`, marked as one to coast
+  through (`overhead 0`, which `track_events` adds as it adds events): the AI puts the master controller to
+  0 as the locomotive runs onto it, 25 m ahead of the dead wire, and takes power again behind it.
+- `eu07_td_dead_section`: the old behaviour for reference, an EU07 (pantographs first) into the same span:
+  its line breaker opens after 0.2 s (`lost power for 0.21 sec`, no longer), and behind the section the AI
+  closes it again and takes power (493 m).
+- `ep05_td_section_insulator`: the EP05 runs under the insulator under power at 50 km/h. The pantograph is
+  without voltage for some 0.07 s, which the vehicle bridges by holding the last voltage for 0.2 s
+  (`TDynamicObject::Update`): the traction force stays between 50 and 58 kN past it and nothing is logged.
+  Without the hold the undervoltage relay of a `PantRequiresMain` vehicle would open the line contactors,
+  which close again only with the master controller back at its first position. With the insulator 15 m long
+  instead (a trial run) the vehicle does lose power there (logged, the force drops to 0), which shows the
+  pantograph runs under the piece of wire.
+- `et42_td_converter_interlock_cold`: an ET42 with `LineContactorsInterlock=Converter` in both sections
+  stands cold (`td_cold_timetable.scn`) and is ordered to run the timetable: the AI starts the converters,
+  leaves (20 km/h after 74 s) and stops at Przystanek (1393 m). It and `et42_td_converter_interlock`, the
+  same from the timetable start, check that the AI gets such a train going; a plain ET42 passes them too.
+- `et42_td_converter_interlock_slow_converter`: the check that the interlock takes effect. The same cold ET42
+  with a converter that starts 60 s after it is switched on (`ConverterStartDelay=60`): the line contactors
+  wait for it, and the train reaches 20 km/h at 80.0 s; `starts` with `after: 77` fails it earlier. With the
+  same converter and no interlock it gets there at 73.8 s, as fast as without the slow converter (a copy of
+  the case without the key, run once, not kept).
+- `ep05_td_interlock_dead_section_cold`: #272 and #276 together, an EP05 with `LineContactorsInterlock=Converter`
+  added, standing cold, with the span without voltage on its way: the pantographs can go up only through the
+  closed line breaker, so the AI has to close it first, then start the converter; it leaves (20 km/h after
+  77 s). Under the dead wire the converter stops with the main circuit, behind it the converter starts again
+  and the AI takes power (573 m, 4 s later than the EP05 without the interlock) and stops at Przystanek
+  (1393 m).
+
+What these can't reach: the local converter switch of the ET42 (`converterlocal_sw:`), which the AI has to put
+back on (`LineContactorsHeldByLocalConverterSwitch()`, the part of #276 in `determine_consist_state()` and
+the `converteron` hint), is in the cab only: no command of a scenery or of the train's cables sets
+`ConverterAllowLocal`, and nobody sits in a cab in the test mode, so the switch is always on in a case.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -450,7 +502,8 @@ the physicslog Velocity column, which is the wheel speed: it stays at 0 while th
 locked in a skid. The ones marked *vehicle speed* use the vehicle speed column at the end of
 the row instead, logged by builds from this branch on.
 
-- `starts` `min_speed`, `within`: reaches `min_speed` within `within` seconds.
+- `starts` `min_speed`, `within` (`after`): reaches `min_speed` within `within` seconds (and not before `after` seconds,
+  when given).
 - `max_speed` `limit`, `tolerance`: never goes faster than `limit + tolerance`.
 - `brakes` `min_pressure`: after moving off, brake cylinder pressure reaches `min_pressure` bar
   (physicslog pressures are in bar whatever its header says; the brake pipe runs at 5.0).
@@ -497,6 +550,13 @@ the row instead, logged by builds from this branch on.
   cut out stops slower.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
+- `traction` `from_distance`, `to_distance`, and one or more of `reaches`, `at_most`, `at_least`: the
+  traction force in kN (the physicslog has it in N, whatever its header says) while the vehicle runs between
+  the two distances (metres travelled, as in `distance`): its highest there reaches `reaches`, e.g. the power
+  taken again behind a section without voltage; it stays at or below `at_most`, e.g. none under a dead wire;
+  it stays at or above `at_least`, e.g. no power lost under an insulator.
+- `master_controller` `from_distance`, `to_distance`, `at_most`: the master controller stays at or below the
+  position between the two distances, e.g. at 0 where the scenery tells the driver to coast.
 
 New check types go in `CHECKS` in `run.py`; each gets the physicslog rows and the check's
 parameters and returns `(passed, detail)`. Checks on the log go in `LOG_CHECKS` and get the
