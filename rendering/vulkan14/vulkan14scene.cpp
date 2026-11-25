@@ -1805,7 +1805,7 @@ void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handl
 {
 	// the point of the light wasn't seen by the occlusion query of the last frame done by the gpu
 	auto const &visible{m_context->scene.glare_visible};
-	auto const lookup{visible.find(Submodel)};
+	auto const lookup{visible.find(vk14::glare_point{Submodel, TSubModel::iInstance})};
 	if ((lookup != visible.end()) && (false == lookup->second))
 	{
 		return;
@@ -1816,7 +1816,9 @@ void vulkan14_renderer::walk_glare_draw(TSubModel *Submodel, gfx::geometry_handl
 void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 {
 	auto &draw{*m_draw};
-	if (false == draw.rendering)
+	// the points seen in the view of the colour pass, which draws the glare; the queries of a frame are numbered by the main thread
+	// alone (a walker draws the cab into the shadow maps at the same time)
+	if ((false == draw.rendering) || (m_main != nullptr) || (m_renderpass.draw_mode != rendermode::color))
 	{
 		return;
 	}
@@ -1830,7 +1832,7 @@ void vulkan14_renderer::walk_light_query(TSubModel *Submodel, bool const Begin)
 			return;
 		}
 		draw.query = static_cast<std::uint32_t>(submodels.size());
-		submodels.push_back(Submodel);
+		submodels.push_back(vk14::glare_point{Submodel, TSubModel::iInstance});
 		draw.commands->begin_query(scene.occlusion_pools[m_context->slot], draw.query, 0);
 	}
 	else if (draw.query != ~0u)
@@ -1913,6 +1915,7 @@ std::uint32_t vulkan14_renderer::push_draw_block()
 		slice = draw.draws_cache.allocate(draws.stride, draws.stride);
 		if (false == bool(slice))
 		{
+			draws.report_full("the blocks of the draws");
 			return ~0u;
 		}
 		// a new window of the blocks, the pass set is bound with its offset
@@ -1942,24 +1945,36 @@ std::uint32_t vulkan14_renderer::walk_instances(glm::mat4 const *Modelviews, std
 	auto slice{window.open ? draw.instances_cache.allocate_before(size, instances.stride, window.base, window.base + instances.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
-		// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances
-		auto const alignment{m_context->device.caps().limits.minStorageBufferOffsetAlignment};
-		auto const block{draw.instances_cache.allocate(instances.stride + size, std::max<VkDeviceSize>(alignment, instances.stride))};
+		// what's left of the part of the ring held has no room for them: further on in the ring, never below the window (the walk
+		// draws instances it placed earlier after it placed others, Flush_Timbers(): their indices count from the start of the window,
+		// which stays where it is as long as the new ones lie within it). with room for the identity a new window begins with
+		auto const alignment{std::max<VkDeviceSize>(m_context->device.caps().limits.minStorageBufferOffsetAlignment, instances.stride)};
+		auto const block{window.open ? draw.instances_cache.allocate_after(instances.stride + size, alignment, window.base) : draw.instances_cache.allocate(instances.stride + size, alignment)};
 		if (false == bool(block))
 		{
-			// the ring of the frame is full: the instances are drawn where the draws which aren't instanced are
-			window.open = false;
+			// the ring of the frame is full: the instanced draws are left out (draw_chunk())
+			instances.report_full("the instances");
+			draw.instances_lost = true;
 			return 0;
 		}
-		glm::mat4 const one{1.f};
-		std::memcpy(block.data, &one, sizeof(one));
-		window.base = block.offset;
-		window.open = true;
-		draw.set_dirty = true;
-		slice = block;
-		slice.data += instances.stride;
-		slice.offset += instances.stride;
-		slice.size = size;
+		if (window.open && (block.offset + block.size <= window.base + instances.window))
+		{
+			slice = block;
+			slice.size = size;
+		}
+		else
+		{
+			// a new window, which begins with the identity of the draws which aren't instanced, followed by the instances
+			glm::mat4 const one{1.f};
+			std::memcpy(block.data, &one, sizeof(one));
+			window.base = block.offset;
+			window.open = true;
+			draw.set_dirty = true;
+			slice = block;
+			slice.data += instances.stride;
+			slice.offset += instances.stride;
+			slice.size = size;
+		}
 	}
 	std::memcpy(slice.data, Modelviews, static_cast<std::size_t>(size));
 	return static_cast<std::uint32_t>((slice.offset - window.base) / instances.stride);
@@ -2059,6 +2074,12 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 	if ((draw.depthpass || draw.probepass) && (draw.depthskip || (false == triangles)))
 	{
 		// the depth of the scene: what the programs of the prepass don't draw, and no points or lines
+		return;
+	}
+	if ((m_current_instance_count > 0) && draw.instances_lost)
+	{
+		// the matrices of the instances aren't in their ring (walk_instances())
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
 	auto &ctx{*m_context};

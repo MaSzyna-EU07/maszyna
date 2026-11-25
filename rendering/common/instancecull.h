@@ -119,6 +119,11 @@ class instance_cull
 	{
 		return m_twophase;
 	}
+	// the culling of the pass was dispatched: there are results of it to draw from
+	bool dispatched() const
+	{
+		return m_dispatched;
+	}
 	// groups of the pass and the lod bounds they refer to, valid from the dispatch to end_pass()
 	std::vector<draw_group> const &draw_groups() const
 	{

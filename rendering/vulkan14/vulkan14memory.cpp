@@ -795,7 +795,12 @@ ring_slice ring_cache::allocate_before(VkDeviceSize const Size, VkDeviceSize con
 
 ring_slice ring_cache::allocate(VkDeviceSize const Size, VkDeviceSize const Alignment)
 {
-	if (auto const slice{allocate_before(Size, Alignment, 0, std::numeric_limits<VkDeviceSize>::max())})
+	return allocate_after(Size, Alignment, 0);
+}
+
+ring_slice ring_cache::allocate_after(VkDeviceSize const Size, VkDeviceSize const Alignment, VkDeviceSize const Base)
+{
+	if (auto const slice{allocate_before(Size, Alignment, Base, std::numeric_limits<VkDeviceSize>::max())})
 	{
 		return slice;
 	}

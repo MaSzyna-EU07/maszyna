@@ -128,6 +128,7 @@ void vulkan14_renderer::take_state(vulkan14_renderer const &Main)
 	draw.instances_cache.reset(&ctx.scene.instances.ring, vk14::instance_ring_part);
 	draw.draws_window = {};
 	draw.instances_window = {};
+	draw.instances_lost = false;
 	draw.used_banks.clear();
 	draw.used_textures.clear();
 	m_walkfailed = false;

@@ -585,6 +585,7 @@ bool vulkan14_renderer::Render()
 	m_draw->instances_cache.reset(&scene.instances.ring, vk14::instance_ring_part);
 	m_draw->draws_window = {};
 	m_draw->instances_window = {};
+	m_draw->instances_lost = false;
 	// the draws which aren't instanced read the identity at the start of the window from the first draw of the frame on
 	open_instance_window();
 	// the occlusion queries of the lamps the slot made the last time
@@ -851,11 +852,13 @@ bool vulkan14_renderer::Render()
 	if (drawscene)
 	{
 		render_scene();
-		if (m_pickcontrolswanted && simulation::Train)
+		// nothing is picked in a main window which is minimized: its scene wasn't drawn
+		auto const picking{(false == ctx.windows.empty()) && (false == ctx.windows.front()->minimized())};
+		if (picking && m_pickcontrolswanted && simulation::Train)
 		{
 			render_picking(rendermode::pickcontrols);
 		}
-		if (m_picknodewanted)
+		if (picking && m_picknodewanted)
 		{
 			render_picking(rendermode::pickscenery);
 		}
@@ -1052,6 +1055,11 @@ void vulkan14_renderer::render_scene()
 	for (std::size_t i = 0; i < m_viewports.size(); ++i)
 	{
 		auto const &viewport{m_viewports[i]};
+		if ((viewport.window < ctx.windows.size()) && ctx.windows[viewport.window]->minimized())
+		{
+			// nothing of it is shown, and a window without a size has no projection to draw with
+			continue;
+		}
 		auto const srgb{false == Global.gfx_shadergamma};
 		auto const *history{scene.targets[i].taa_history[0].get()};
 		auto const *upscaled{scene.targets[i].dlss_output.get()};
@@ -1273,7 +1281,8 @@ void vulkan14_renderer::setup_pass(viewport_config &Viewport, renderpass_config 
 		{
 			float const fovy = glm::radians(Global.FieldOfView / Global.ZoomFactor);
 			// setup virtual screen
-			glm::vec2 screen_h = glm::vec2(Global.window_size) / 2.0f;
+			// a minimized window has no size: its projection would be made of nothing but NaN
+			glm::vec2 screen_h = glm::vec2(glm::max(Global.window_size, glm::ivec2{1})) / 2.0f;
 			float const dist = screen_h.y / glm::tan(fovy / 2.0f);
 			Viewport.projection.pa = glm::vec3(-screen_h.x, -screen_h.y, -dist);
 			Viewport.projection.pb = glm::vec3(screen_h.x, -screen_h.y, -dist);
@@ -1624,6 +1633,12 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	auto const clustered{clusters && Global.gfx_lights_clustered && (scene.clusters.params.valid != 0)};
 	update_lights(simulation::Lights, true, clustered);
+	if (false == clustered)
+	{
+		// the lights of the view for the kernels of its clouds and its fog, which run before its rendering begins: without the clusters
+		// update_lights() leaves the header to the first draw, and the kernels would read the one of an earlier pass
+		upload_light_header();
+	}
 	ctx.passes.end_pass();
 
 	// the clouds of the view and the fog volume, which take the lights of the clusters and the shadow map of the pass
@@ -2411,7 +2426,9 @@ bool vulkan14_renderer::render_reflections(viewport_config &Viewport)
 	{
 		// no update in progress, check whether it's time for another one
 		auto const timestamp{Timer::GetRenderTime()};
-		if ((timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval) && (glm::length2(m_renderpass.pass_camera.position() - m_environmentupdatelocation) < sq(1000.0)))
+		// the first one doesn't wait: the map holds nothing till then
+		if (m_environmentready && (timestamp - m_environmentupdatetime < Global.reflectiontune.update_interval) &&
+		    (glm::length2(m_renderpass.pass_camera.position() - m_environmentupdatelocation) < sq(1000.0)))
 		{
 			return false;
 		}

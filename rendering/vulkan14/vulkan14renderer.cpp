@@ -414,7 +414,8 @@ bool vulkan14_renderer::context::present(std::vector<vk14::swapchain *> const &W
 		info.pImageIndices = &image;
 		auto const result{vkQueuePresentKHR(device.graphics_queue(), &info)};
 		main->presented(result);
-		if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
+		// a lost surface is made anew with the swapchain before the next image (swapchain::presented())
+		if (result == VK_ERROR_DEVICE_LOST)
 		{
 			vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
 			return false;
@@ -463,7 +464,7 @@ bool vulkan14_renderer::context::present(std::vector<vk14::swapchain *> const &W
 	{
 		Windows[i]->presented(results[i]);
 	}
-	if ((result == VK_ERROR_DEVICE_LOST) || (result == VK_ERROR_SURFACE_LOST_KHR))
+	if (result == VK_ERROR_DEVICE_LOST)
 	{
 		vk14::log_error(std::string("vkQueuePresentKHR failed with ") + vk14::result_string(result));
 		return false;
@@ -1193,7 +1194,13 @@ void vulkan14_renderer::update_info()
 	ctx.memory.budget(usage, budget);
 	m_infostats = "device memory: " + vk14::memory_size_string(usage) + " of " + vk14::memory_size_string(budget) + (ctx.device.memory_budget_enabled() ? "" : " (no budget from the driver)") + "\n" + "images: " + std::to_string(ctx.images.size()) +
 	              ", uploaded " + vk14::memory_size_string(ctx.uploads.uploaded()) + ", waiting for the gpu to be deleted: " + std::to_string(ctx.deletions.size()) + "\n" + (ctx.textures ? ctx.textures->info() + "\n" : std::string{}) + ctx.shaders.info() +
-	              "\n" + ctx.pipelines.info() + "\n" + background_info() + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + "\n";
+	              "\n" + ctx.pipelines.info() + "\n" + background_info() + "frame ring: " + vk14::memory_size_string(ctx.ring.used()) + " of " + vk14::memory_size_string(ctx.ring.capacity()) + ", of the draws: " +
+	              vk14::memory_size_string(ctx.scene.draws.ring.used()) + " of " + vk14::memory_size_string(ctx.scene.draws.ring.capacity()) + ", of the instances: " +
+	              vk14::memory_size_string(ctx.scene.instances.ring.used()) + " of " + vk14::memory_size_string(ctx.scene.instances.ring.capacity()) + "\n";
+	if (auto const full{ctx.scene.draws.full.load() + ctx.scene.instances.full.load()}; full > 0)
+	{
+		m_infostats += "draws left out of full rings: " + std::to_string(full) + "\n";
+	}
 	for (auto const &window : ctx.windows)
 	{
 		auto const extent{window->extent()};

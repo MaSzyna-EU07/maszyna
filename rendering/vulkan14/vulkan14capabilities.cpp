@@ -25,12 +25,12 @@ namespace
 
 // columns: structure, name, required, guaranteed by vulkan 1.4, purpose.
 //
-// beyond what vulkan 1.4 requires of every device the renderer needs multiDrawIndirect, shaderDrawParameters,
-// textureCompressionBC and geometryShader, so a gpu without one of them is turned down by its name rather than failing later.
+// beyond what vulkan 1.4 requires of every device the renderer needs multiDrawIndirect, shaderDrawParameters and
+// textureCompressionBC, so a gpu without one of them is turned down by its name rather than failing later.
 // "guaranteed" follows the minimum requirements of vulkan 1.2-1.4 (VP_LUNARG_minimum_requirements_1_4 of the vulkan sdk)
 std::vector<feature_entry> const g_feature_table = {
     // VkPhysicalDeviceFeatures (1.0)
-    {"VkPhysicalDeviceFeatures", "geometryShader", true, false, "map icons and cube shadow maps of the lamps until multiview takes them over", VK14_CORE(geometryShader)},
+    {"VkPhysicalDeviceFeatures", "geometryShader", false, false, "none of the shaders is a geometry shader (the cube shadow maps of the lamps are drawn with multiview)", VK14_CORE(geometryShader)},
     {"VkPhysicalDeviceFeatures", "multiDrawIndirect", true, false, "multi draw indirect of the gpu culling", VK14_CORE(multiDrawIndirect)},
     {"VkPhysicalDeviceFeatures", "textureCompressionBC", true, false, "bc1-bc7 compressed dds textures", VK14_CORE(textureCompressionBC)},
     {"VkPhysicalDeviceFeatures", "drawIndirectFirstInstance", true, true, "instanced indirect draws", VK14_CORE(drawIndirectFirstInstance)},

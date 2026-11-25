@@ -624,6 +624,13 @@ void vulkan14_renderer::record_indirect_draws(vk14::instance_cull &Cull, bool co
 {
 	m_indirectcull = &Cull;
 	Walk_Indirect_Draws(Cull, Cascade);
+	if (false == Cull.dispatched())
+	{
+		// the culling didn't run (its buffers or its data of the frame couldn't be had): there are no results to draw its instances
+		// from, and the commands of an earlier frame aren't theirs
+		m_indirectdraws.clear();
+		m_indirectcommands.clear();
+	}
 	auto const orderstart{std::chrono::steady_clock::now()};
 	// with multi draws the draws with the same state follow one another; the order goes into the commands, so it comes first
 	m_indirectmultidraw = Global.gfx_gpucull_multidraw;

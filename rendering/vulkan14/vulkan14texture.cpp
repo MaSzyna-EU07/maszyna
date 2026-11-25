@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <cstring>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <span>
 
@@ -82,6 +84,25 @@ bool texels_pass_alpha_test(texture_format const &Format, alpha_source const &So
 		return false;
 	}
 }
+
+// a job of a texture given to the background threads: when it's let go of without having been run, the state of the texture goes back
+// to the one given, so nothing waits for the job
+struct job_ticket
+{
+	job_ticket(std::atomic<int> &State, int const Idle) : state{State}, idle{Idle} {}
+	job_ticket(job_ticket const &) = delete;
+	job_ticket &operator=(job_ticket const &) = delete;
+	~job_ticket()
+	{
+		if (false == taken)
+		{
+			state = idle;
+		}
+	}
+	std::atomic<int> &state;
+	int idle;
+	std::atomic<bool> taken{false};
+};
 
 } // namespace
 
@@ -676,9 +697,25 @@ bool vulkan14_texture::request_background()
 		return false;
 	}
 	++m_resources.pending->late_count;
-	// the texture outlives the job: its destruction waits for it (the background threads are stopped before the bank goes, too)
-	m_resources.background->add([this]() {
-		auto const result{make(true)};
+	// the texture outlives the job: its destruction waits for it (the background threads are stopped before the bank goes, too). a job
+	// the threads let go of without running it (they were stopped with it in their queue) leaves the texture as it was before it
+	auto const ticket{std::make_shared<job_ticket>(m_job, job_none)};
+	m_resources.background->add([this, ticket]() {
+		ticket->taken = true;
+		auto result{make_result::failed};
+		try
+		{
+			result = make(true);
+		}
+		catch (std::exception const &Error)
+		{
+			// counted as made, without an image: nothing waits for a job which never ends
+			log_error("the texture " + name + " couldn't be made: " + Error.what());
+			m_madeimage.reset();
+			m_madeupload = uploader::prepared{};
+			m_madestaged = false;
+			on_failed();
+		}
 		m_madefailed = (result == make_result::failed);
 		m_madeempty = (result == make_result::none);
 		std::lock_guard<std::mutex> lock(m_resources.pending->mutex);

@@ -30,7 +30,7 @@ class swapchain
 	enum class acquire_result
 	{
 		ready, // an image to draw into, its acquire semaphore will be signalled
-		skipped, // nothing to draw this frame (minimized, or made anew)
+		skipped, // nothing to draw this frame (minimized, made anew, or its surface or swapchain can't be had now and is tried again)
 		failed // the device is gone
 	};
 
@@ -66,6 +66,8 @@ class swapchain
 	// the image of the frame Frame (index of the frame in flight), and Generated more for the frames generated from it, which are
 	// shown before it (as many of them as there is room for, generated_count())
 	acquire_result acquire(std::uint32_t const Frame, std::uint32_t const Generated = 0);
+	// the window has no size to draw into (minimized); the main thread only, as glfw wants
+	bool minimized() const;
 	// the image acquired, from undefined to cleared with Colour (linear) and ready to be shown
 	void record_clear(command_stream *Commands, glm::vec4 const &Colour) const;
 	// the image acquired and its view
@@ -159,8 +161,13 @@ class swapchain
 	}
 
   private:
-	// false only when the device is gone or the surface is lost; a minimized window gives true with no swapchain
+	// false: no swapchain, Reason says why (m_devicelost: the device is gone, anything else may be tried again); a minimized window
+	// gives true with no swapchain
 	bool build(std::string &Reason);
+	// the surface of the window made anew after it was lost, the swapchain of the old one gone with it
+	bool restore_surface(std::string &Reason);
+	// what a result of the surface, the swapchain or a present says of them: the device or the surface is lost
+	void note_failure(VkResult Result);
 	void release_images();
 	// whether the swapchain has to be made anew before the next image
 	bool outdated() const;
@@ -181,6 +188,11 @@ class swapchain
 	bool m_vsync{false};
 	bool m_srgb{false};
 	bool m_rebuild{false};
+	// the surface was lost and is made anew with the swapchain; the device is gone; the swapchain couldn't be had with the last frame
+	// (said in the log once)
+	bool m_surfacelost{false};
+	bool m_devicelost{false};
+	bool m_failing{false};
 
 	std::vector<VkImage> m_images;
 	// the states of the images for the barriers of the passes

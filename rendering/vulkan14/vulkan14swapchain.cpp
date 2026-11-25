@@ -133,11 +133,17 @@ bool swapchain::build(std::string &Reason)
 		return true;
 	}
 
+	if (m_surfacelost && (false == restore_surface(Reason)))
+	{
+		return false;
+	}
+
 	VkSurfaceCapabilitiesKHR capabilities{};
 	auto const result{vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, m_surface, &capabilities)};
 	if (result != VK_SUCCESS)
 	{
 		Reason = std::string("the surface of ") + m_name + " can't be queried (" + result_string(result) + ")";
+		note_failure(result);
 		return false;
 	}
 
@@ -274,6 +280,7 @@ bool swapchain::build(std::string &Reason)
 	if (created != VK_SUCCESS)
 	{
 		Reason = "the swapchain of " + m_name + " can't be made (" + result_string(created) + ")";
+		note_failure(created);
 		return false;
 	}
 	m_swapchain = swapchain;
@@ -344,8 +351,25 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame, std::uin
 		std::string reason;
 		if (false == build(reason))
 		{
-			log_error(reason);
-			return acquire_result::failed;
+			if (m_devicelost)
+			{
+				log_error(reason);
+				return acquire_result::failed;
+			}
+			// a surface or a swapchain which can't be had now (lost, or the window changed meanwhile) is tried again with the next
+			// frame, the window isn't drawn till then. said once
+			if (false == m_failing)
+			{
+				log_warning(reason + ", trying again with the next frames");
+				m_failing = true;
+			}
+			m_rebuild = true;
+			return acquire_result::skipped;
+		}
+		if (m_failing && (m_swapchain != VK_NULL_HANDLE))
+		{
+			log_info(m_name + ": the swapchain is back");
+			m_failing = false;
 		}
 	}
 	if ((m_swapchain == VK_NULL_HANDLE) || m_rebuild)
@@ -396,11 +420,81 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame, std::uin
 	case VK_ERROR_OUT_OF_DATE_KHR:
 		m_rebuild = true;
 		return acquire_result::skipped;
+	case VK_ERROR_DEVICE_LOST:
+		log_error(std::string("vkAcquireNextImageKHR of ") + m_name + " failed with " + result_string(result));
+		return acquire_result::failed;
 	default:
 		break;
 	}
-	log_error(std::string("vkAcquireNextImageKHR of ") + m_name + " failed with " + result_string(result));
-	return acquire_result::failed;
+	// the surface lost, the exclusive fullscreen taken away and the like: the swapchain (with its surface, when that's what is lost) is
+	// made anew for the next frame, as build() does when it fails. said once
+	if (false == m_failing)
+	{
+		log_warning(std::string("vkAcquireNextImageKHR of ") + m_name + " failed with " + result_string(result) + ", the swapchain is made anew");
+		m_failing = true;
+	}
+	note_failure(result);
+	m_rebuild = true;
+	return acquire_result::skipped;
+}
+
+bool swapchain::minimized() const
+{
+	if (m_window == nullptr)
+	{
+		return true;
+	}
+	int width{0};
+	int height{0};
+	glfwGetFramebufferSize(m_window, &width, &height);
+	return (width <= 0) || (height <= 0);
+}
+
+void swapchain::note_failure(VkResult const Result)
+{
+	if (Result == VK_ERROR_DEVICE_LOST)
+	{
+		m_devicelost = true;
+	}
+	else if (Result == VK_ERROR_SURFACE_LOST_KHR)
+	{
+		m_surfacelost = true;
+	}
+}
+
+bool swapchain::restore_surface(std::string &Reason)
+{
+	auto const device{m_device->handle()};
+	// the swapchain goes before its surface, once the frames in flight and the presentation are done with its images
+	if (m_swapchain != VK_NULL_HANDLE)
+	{
+		vkQueueWaitIdle(m_device->graphics_queue());
+		release_images();
+		vkDestroySwapchainKHR(device, m_swapchain, nullptr);
+		m_swapchain = VK_NULL_HANDLE;
+	}
+	if (m_surface != VK_NULL_HANDLE)
+	{
+		vkDestroySurfaceKHR(m_instance->handle(), m_surface, nullptr);
+		m_surface = VK_NULL_HANDLE;
+	}
+	if (auto const result{glfwCreateWindowSurface(m_instance->handle(), m_window, nullptr, &m_surface)}; result != VK_SUCCESS)
+	{
+		m_surface = VK_NULL_HANDLE;
+		Reason = "the window of " + m_name + " gives no vulkan surface (" + result_string(result) + ")";
+		note_failure(result);
+		return false;
+	}
+	m_instance->set_object_name(device, VK_OBJECT_TYPE_SURFACE_KHR, reinterpret_cast<std::uint64_t>(m_surface), m_name + " surface");
+	VkBool32 present{VK_FALSE};
+	if (auto const result{vkGetPhysicalDeviceSurfaceSupportKHR(m_device->physical(), m_device->families().graphics, m_surface, &present)}; (result != VK_SUCCESS) || (present == VK_FALSE))
+	{
+		Reason = "the gpu can't show images in the window of " + m_name;
+		note_failure(result);
+		return false;
+	}
+	m_surfacelost = false;
+	return true;
 }
 
 bool swapchain::latency_sleep(VkSemaphore const Semaphore, std::uint64_t const Value) const
@@ -410,9 +504,7 @@ bool swapchain::latency_sleep(VkSemaphore const Semaphore, std::uint64_t const V
 		return false;
 	}
 	// minimized: nothing is presented, the driver has nothing to measure (the main thread, as glfw wants)
-	int width{0}, height{0};
-	glfwGetFramebufferSize(m_window, &width, &height);
-	if ((width <= 0) || (height <= 0))
+	if (minimized())
 	{
 		return false;
 	}
@@ -438,10 +530,11 @@ void swapchain::latency_marker(std::uint64_t const PresentId, VkLatencyMarkerNV 
 
 void swapchain::presented(VkResult const Result)
 {
-	if ((Result == VK_SUBOPTIMAL_KHR) || (Result == VK_ERROR_OUT_OF_DATE_KHR))
+	if ((Result == VK_SUBOPTIMAL_KHR) || (Result == VK_ERROR_OUT_OF_DATE_KHR) || (Result == VK_ERROR_SURFACE_LOST_KHR) || (Result == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT))
 	{
 		m_rebuild = true;
 	}
+	note_failure(Result);
 }
 
 void swapchain::record_clear(command_stream *Commands, glm::vec4 const &Colour) const
