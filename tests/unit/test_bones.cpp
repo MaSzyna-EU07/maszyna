@@ -358,3 +358,36 @@ TEST_CASE("bones: a hose on a running vehicle keeps still through frames of chan
 	CHECK(firstsecond < 0.5);
 	CHECK(settled < 0.005);
 }
+
+TEST_CASE("bones: a hose clamped in its cocks swings less to the side than one hung on pins") {
+	auto const rig{hose()};
+	glm::dvec3 const start{0.0};
+	glm::dvec3 const end{1.0, 0.0, 0.0};
+	auto const &chain{rig.chains[0]};
+	auto const made{rests(rig)};
+	// the clamps where the nodes next to the ends are, as made
+	bones::chain_ends clamped{start, end, made.front(), made.back()};
+	// both swung 40 degrees to the side about the line between the ends, and let go
+	auto const swung{glm::angleAxis(glm::radians(40.0), glm::dvec3{1.0, 0.0, 0.0})};
+	std::vector<glm::dvec3> aside;
+	for (auto const &node : made) {
+		aside.push_back(swung * node);
+	}
+	bones::chain_state free;
+	bones::start_chain(free, aside, start, end);
+	bones::chain_state held;
+	bones::start_chain(held, aside, start, end);
+	auto widestfree{0.0};
+	auto widestheld{0.0};
+	for (auto step{0}; step < 50; ++step) {
+		bones::simulate(chain.lengths, chain.bends, free, start, end, 0.02, downwards());
+		bones::simulate(chain.lengths, chain.bends, held, clamped, 0.02, downwards());
+		if (step >= 10) {
+			widestfree = std::max(widestfree, std::abs(free.now[1].y));
+			widestheld = std::max(widestheld, std::abs(held.now[1].y));
+		}
+	}
+	// the clamped one comes back to hang under its ends sooner, and settles where made
+	CHECK(widestheld < widestfree);
+	CHECK(glm::length(held.now[1] - made[1]) < glm::length(free.now[1] - made[1]) + 1e-6);
+}

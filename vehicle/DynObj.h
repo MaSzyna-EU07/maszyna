@@ -374,6 +374,7 @@ private:
     void bind_bones();
     bones::drive bone_drive( bool const Future ) const;
     std::optional<glm::dvec3> coupler_shift( bones::point const &Point ) const;
+    std::optional<glm::dvec3> chain_clamp( bones::chain const &Chain, bool const AtStart ) const;
     void update_bones();
     // Winger 160204 - pantografy
     double pantspeedfactor;

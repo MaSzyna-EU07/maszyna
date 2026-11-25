@@ -130,11 +130,22 @@ glm::dvec3 crank(glm::dvec3 const &Rest, wheel_turn const &Wheel);
 glm::dvec3 slide(glm::dvec3 const &Rest, glm::dvec3 const &Guide, glm::dvec3 const &DriverRest, glm::dvec3 const &DriverNow);
 
 // a chain in motion: its nodes now and a step before, in a frame of the world (Verlet integration)
+// where the ends of a chain are. a clamp is where the node next to an end is as made, held to what the end is held to:
+// the node is drawn towards it, so the chain leaves that end the way it was made, as a hose pushed onto the fitting of
+// its cock rather than hung on a pin. without one the end is free to turn
+struct chain_ends {
+	glm::dvec3 start{0.0};
+	glm::dvec3 end{0.0};
+	std::optional<glm::dvec3> start_clamp;
+	std::optional<glm::dvec3> end_clamp;
+};
 struct chain_state {
 	std::vector<glm::dvec3> now;
 	std::vector<glm::dvec3> before;
 	glm::dvec3 start{0.0};
 	glm::dvec3 end{0.0};
+	std::optional<glm::dvec3> start_clamp;
+	std::optional<glm::dvec3> end_clamp;
 	double step{0.0}; // s, the substep that took the nodes from before to now
 	bool started{false};
 	bool moving{false}; // whether the nodes have taken on the motion of the ends yet
@@ -149,6 +160,9 @@ struct chain_physics {
 // starts the chain at rest with its nodes where given
 void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::dvec3 const &Start, glm::dvec3 const &End);
 // moves the chain by the time step, its ends going over to where they are now; the ends are pinned, the nodes swing
+void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, chain_ends const &Ends, double Deltatime,
+              chain_physics const &Physics = {});
+// the same with its ends free to turn
 void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End,
               double Deltatime, chain_physics const &Physics = {});
 // a chain with no stiffness against bending

@@ -730,8 +730,9 @@ namespace {
 // s, the longest time since the chains moved last that they make up for rather than start again
 constexpr double max_chain_gap { 0.5 };
 
-// how far back from where the coupling heads meet a bent hose is metal, held to the head
-constexpr double coupling_head_length { 0.15 };
+// m, how far from where the coupling heads meet a bent hose is metal, held to the head as a whole: the head of the EU07's
+// hoses reaches about 7 cm from there
+constexpr double coupling_head_reach { 0.08 };
 
 // the vertices of the submodel as drawn, in the frame of the model file, one triangle after another: the frame a model made
 // of them takes them in, its matrix bringing them into that of the vehicle (float4x4::InitialRotate())
@@ -841,16 +842,15 @@ void TDynamicObject::bind_flexes() {
         }
         flex.binds = bones::bind_skin( spine, points );
         if( bend.head_from >= 0 && spine.size() >= 2 ) {
-            // the coupling head is metal: its part of the last piece of the spine is held to the head as a whole, rather
-            // than turning partly with the rubber
+            // the coupling head is metal: all of it, whichever piece of the spine its vertices lie nearest, is held to the
+            // head as a whole, rather than turning partly with the rubber and coming apart
             auto const last { spine.size() - 2 };
-            auto const length { glm::length( spine.back() - spine[ last ] ) };
             for( std::size_t vertex { 0 }; vertex < flex.binds.size(); ++vertex ) {
+                if( glm::distance( points[ vertex ], spine.back() ) >= coupling_head_reach ) { continue; }
                 auto &bind { flex.binds[ vertex ] };
-                if( bind.piece == last && ( 1.0 - bind.along ) * length < coupling_head_length ) {
-                    bind.along = 1.0;
-                    bind.offset = points[ vertex ] - spine.back();
-                }
+                bind.piece = last;
+                bind.along = 1.0;
+                bind.offset = points[ vertex ] - spine.back();
             }
         }
         flex.posed = flex.rest;
@@ -1096,8 +1096,28 @@ void TDynamicObject::advance_chains( std::vector<glm::dvec3> const &Now ) {
             }
             bones::start_chain( state, nodes, start, end );
         }
-        bones::simulate( chain.lengths, chain.bends, state, start, end, deltatime );
+        bones::simulate( chain.lengths, chain.bends, state, bones::chain_ends { start, end, chain_clamp( chain, true ), chain_clamp( chain, false ) }, deltatime );
     }
+}
+
+// the clamp of an end of a chain in the world: where the node next to the end is as made, held to the vehicle the end
+// is fixed to or, for a coupler point, to the next vehicle. none for an end of another kind
+std::optional<glm::dvec3> TDynamicObject::chain_clamp( bones::chain const &Chain, bool const AtStart ) const {
+
+    if( Chain.nodes.empty() ) { return std::nullopt; }
+    auto const &endpoint { m_rig.points[ AtStart ? Chain.start : Chain.end ] };
+    auto const &node { m_rig.points[ AtStart ? Chain.nodes.front() : Chain.nodes.back() ] };
+    auto clamp { endpoint };
+    clamp.rest = node.rest;
+    auto const frame { bones::model_file_frame() };
+    if( endpoint.kind == bones::point_kind::fixed ) {
+        return GetWorldPosition( frame * clamp.rest );
+    }
+    if( endpoint.kind == bones::point_kind::coupler ) {
+        auto const shift { coupler_shift( clamp ) };
+        return GetWorldPosition( frame * ( clamp.rest + shift.value_or( glm::dvec3 { 0.0 } ) ) );
+    }
+    return std::nullopt;
 }
 
 // the same, for the next vehicle whose chain this one shares: with this vehicle's pose of the moment

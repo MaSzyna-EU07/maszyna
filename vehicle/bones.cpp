@@ -394,6 +394,8 @@ void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::
 	State.before = Nodes;
 	State.start = Start;
 	State.end = End;
+	State.start_clamp.reset();
+	State.end_clamp.reset();
 	State.step = 0.0;
 	State.started = true;
 	State.moving = false;
@@ -432,17 +434,32 @@ void keep_distance(std::vector<glm::dvec3> const &Points, pulls &Pulls, std::siz
 	++Pulls.counts[Second];
 }
 
+// the point brought towards the given distance from a point that stays, by the share of the difference: half of it, as a
+// pair of points that both move would close
+void keep_distance_from(std::vector<glm::dvec3> const &Points, pulls &Pulls, std::size_t const Point, glm::dvec3 const &Anchor, double const Distance,
+                        double const Share)
+{
+	auto const along{Points[Point] - Anchor};
+	auto const length{glm::length(along)};
+	if (length < 1e-9)
+	{
+		return;
+	}
+	Pulls.moves[Point] -= along * (0.5 * Share * (length - Distance) / length);
+	++Pulls.counts[Point];
+}
+
 // the nodes with the ends pinned where they are, each piece of the chain brought back towards its length, and every
 // other point towards its distance as made, which keeps the chain from folding: a stiff hose keeps its curve. all of it
 // from where the nodes were, so a chain comes out the same whichever end it starts from: the two vehicles a hose hangs
 // between, each with the chain from its own end, get the very same one. a point takes the average of what its
 // constraints ask of it, not the sum: the sum overshoots, and the chain never comes to rest but shivers and stretches
 void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const &Bends, double const Bending, std::vector<glm::dvec3> &Nodes,
-                  glm::dvec3 const &Start, glm::dvec3 const &End)
+                  chain_ends const &Ends)
 {
-	std::vector<glm::dvec3> points{Start};
+	std::vector<glm::dvec3> points{Ends.start};
 	points.insert(points.end(), Nodes.begin(), Nodes.end());
-	points.push_back(End);
+	points.push_back(Ends.end);
 	pulls pulls{std::vector<glm::dvec3>(points.size(), glm::dvec3{0.0}), std::vector<int>(points.size(), 0)};
 	for (std::size_t piece{0}; piece < Lengths.size() && piece + 1 < points.size(); ++piece)
 	{
@@ -451,6 +468,15 @@ void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const 
 	for (std::size_t bend{0}; bend < Bends.size() && bend + 2 < points.size(); ++bend)
 	{
 		keep_distance(points, pulls, bend, bend + 2, Bends[bend], Bending);
+	}
+	// a clamped end draws the node next to it to where it is as made
+	if (Ends.start_clamp.has_value() && false == Nodes.empty())
+	{
+		keep_distance_from(points, pulls, 1, *Ends.start_clamp, 0.0, Bending);
+	}
+	if (Ends.end_clamp.has_value() && false == Nodes.empty())
+	{
+		keep_distance_from(points, pulls, Nodes.size(), *Ends.end_clamp, 0.0, Bending);
 	}
 	for (std::size_t node{0}; node < Nodes.size(); ++node)
 	{
@@ -461,13 +487,35 @@ void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const 
 
 } // namespace
 
+namespace {
+
+// a clamp a substep of the way from where it was to where it is, or where it is if it wasn't
+std::optional<glm::dvec3> clamp_between(std::optional<glm::dvec3> const &From, std::optional<glm::dvec3> const &To, double const Along)
+{
+	if (false == To.has_value())
+	{
+		return std::nullopt;
+	}
+	return From.has_value() ? glm::mix(*From, *To, Along) : *To;
+}
+
+} // namespace
+
 void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End,
               double const Deltatime, chain_physics const &Physics)
+{
+	simulate(Lengths, Bends, State, chain_ends{Start, End, std::nullopt, std::nullopt}, Deltatime, Physics);
+}
+
+void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, chain_ends const &Ends, double const Deltatime,
+              chain_physics const &Physics)
 {
 	if (Deltatime <= 0.0 || false == State.started)
 	{
 		return;
 	}
+	auto const &Start{Ends.start};
+	auto const &End{Ends.end};
 	auto const steps{std::clamp(static_cast<int>(std::ceil(Deltatime / Physics.step)), 1, 64)};
 	auto const step{Deltatime / steps};
 	auto const keep{std::exp(-Physics.damping * step)};
@@ -492,8 +540,8 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 	for (auto substep{1}; substep <= steps; ++substep)
 	{
 		auto const along{static_cast<double>(substep) / steps};
-		auto const start{glm::mix(fromstart, Start, along)};
-		auto const end{glm::mix(fromend, End, along)};
+		chain_ends const ends{glm::mix(fromstart, Start, along), glm::mix(fromend, End, along), clamp_between(State.start_clamp, Ends.start_clamp, along),
+		                      clamp_between(State.end_clamp, Ends.end_clamp, along)};
 		for (std::size_t node{0}; node < State.now.size(); ++node)
 		{
 			auto const velocity{carried + ((State.now[node] - State.before[node]) * scale - carried) * keep};
@@ -503,11 +551,13 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 		scale = 1.0;
 		for (auto iteration{0}; iteration < Physics.iterations; ++iteration)
 		{
-			keep_lengths(Lengths, Bends, Physics.bending, State.now, start, end);
+			keep_lengths(Lengths, Bends, Physics.bending, State.now, ends);
 		}
 	}
 	State.start = Start;
 	State.end = End;
+	State.start_clamp = Ends.start_clamp;
+	State.end_clamp = Ends.end_clamp;
 	State.step = step;
 }
 

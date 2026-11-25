@@ -41,7 +41,9 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] end
   frame of the world, in substeps of at most 1/240 s), with the ends pinned where their points are; the swing against
   the vehicle dies down within a fraction of a second, while the hose goes along with the vehicle's own motion. So a
   hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the buffers are pressed in. Each
-  node takes the average of what the lengths around it ask of it. A chain from a cock (a `fixed` point) to a
+  node takes the average of what the lengths around it ask of it. An end at a `fixed` or a `coupler` point is
+  clamped: the node next to it is drawn to where it is as made, held to that vehicle, so a hose leaves its cock as
+  made rather than swinging far to the side about the line between its ends. A chain from a cock (a `fixed` point) to a
   `coupler` point is one hose with the chain of the coupled vehicle that runs the other way, from the point ours
   ends at back to the point ours starts at, with as many nodes: one of the two vehicles moves it, and both draw it,
   so the coupled heads never part. The chains move by the time of each frame, the frames long or short; after a gap
@@ -52,7 +54,7 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] end
 - `bonebend`: the submodel bends along a spine of points, usually the start of a chain and its nodes: each vertex
   follows the piece of the spine nearest to it as made, turning with it, so a hose made in one piece bends smoothly.
   The turn is carried along the spine from its first point, so the hose twists about itself evenly. With `head`, the
-  end of the submodel past the last point of the spine (the metal coupling head, its last 0.15 m) is held as one to
+  end of the submodel around the last point of the spine (the metal coupling head, all within 8 cm of it) is held as one to
   the line between the two points and the vertical of the world: the heads of two hoses coupled to each other take
   the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
   own copy of the submodel, its triangles halved until no edge is longer than 2.5 cm: a hose of a model is often a
