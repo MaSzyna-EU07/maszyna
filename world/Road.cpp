@@ -11,6 +11,12 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Road.h"
 
 #include "world/RoadOrder.h"
+#include "world/RoadCrossing.h"
+#include "world/CrossingPanels.h"
+#include "world/Sweep.h"
+#include "model/AnimModel.h"
+#include "model/Model3d.h"
+#include "world/TrackRails.h"
 #include "world/Track.h"
 #include "vehicle/DynObj.h"
 #include "simulation/simulation.h"
@@ -460,6 +466,184 @@ void cap(std::vector<world_vertex> &Output, axis_frame const &Frame, std::vector
 	}
 }
 
+std::vector<road_crossing::rail_track> rails_under(road_node::state const &Road, double const Halfwidth, std::vector<TTrack const *> &Sources);
+
+// how far the geometry of a road piece reaches from its axis: the roadway, its sides, its kerbs
+double crossing_reach(road_node::state const &Road)
+{
+	return 0.5 * std::max(Road.span(0.0), Road.span(1.0)) + std::max(Road.sides[0].width, Road.sides[1].width) + ((Road.kerbs[0] || Road.kerbs[1]) ? Road.kerbwidth : 0.f);
+}
+
+// the surface of the level crossing around a road piece (road_crossing::crossing_surface): the tracks it crosses and the ones either way
+// along it as far as two tracks facing each other across the road may be apart, the piece between them crossing none
+road_crossing::crossing_surface crossing_of(road_node::state const &Road, double const Halfwidth)
+{
+	auto const &start{Road.axis.points[segment_data::point::start]};
+	auto const &end{Road.axis.points[segment_data::point::end]};
+	glm::dvec3 direction{end.x - start.x, 0.0, end.z - start.z};
+	if (glm::length(direction) < 1e-6)
+		return {};
+	direction = glm::normalize(direction);
+	// the piece made longer either way, straight: the gap of facing tracks at the sharpest angle a crossing is made at, with its skew
+	auto const extra{road_crossing::facing_gap / 0.2 + 2.0 * Halfwidth * 4.9 + 2.0};
+	road_node::state longer{Road};
+	longer.axis.points[segment_data::point::start] = start - direction * extra;
+	longer.axis.points[segment_data::point::end] = end + direction * extra;
+	longer.axis.points[segment_data::point::control1] = glm::dvec3{0.0};
+	longer.axis.points[segment_data::point::control2] = glm::dvec3{0.0};
+	std::vector<TTrack const *> sources;
+	return road_crossing::surface_of(rails_under(longer, Halfwidth, sources), glm::dvec2{direction.x, direction.z}, Halfwidth);
+}
+
+// the rail tracks a road piece crosses near the height of its axis, each as it lies where it's crossed, and the tracks they were taken
+// from (Sources). The tracks are looked for as the frogs look for the tracks around a track (world/RailCrossings.cpp): in the cells of
+// the region around the piece, only those whose reach meets the piece's
+std::vector<road_crossing::rail_track> rails_under(road_node::state const &Road, double const Halfwidth, std::vector<TTrack const *> &Sources)
+{
+	std::vector<road_crossing::rail_track> result;
+	if (simulation::Region == nullptr)
+		return result;
+	road_axis const axis{Road.axis};
+	auto const centre{axis.point(0.5)};
+	auto const reach{0.5 * axis.length() + Halfwidth + 2.0};
+	std::vector<TTrack *> candidates;
+	std::vector<scene::basic_section *> sections;
+	simulation::Region->sections(centre, static_cast<float>(reach + 50.0), sections);
+	for (auto const *section : sections)
+		for (auto const &cell : section->m_cells)
+		{
+			if (glm::length(cell.area().center - centre) > cell.area().radius + reach)
+				continue;
+			for (auto *path : cell.m_directories.paths)
+			{
+				if (path == nullptr || path->m_editorremoved || (path->iCategoryFlag & 1) == 0)
+					continue;
+				if (glm::length(path->location() - centre) > path->radius() + reach + 1.0)
+					continue;
+				if (std::find(candidates.begin(), candidates.end(), path) == candidates.end())
+					candidates.push_back(path);
+			}
+		}
+	if (candidates.empty())
+		return result;
+	int const roadpieces{32};
+	int const railpieces{24};
+	// the axis and both edges: a track can pass under a piece without crossing its axis, the axis crossing it on a piece next to it;
+	// and both ends: a short piece at a skew has a track pass under it from the one end to the other, crossing neither its axis nor its
+	// edges. The edges and the ends a metre out: the rails of a track lie up to 0.8 m off its axis, which may pass by the corner of a
+	// piece with a rail under it
+	double constexpr band{1.0};
+	std::array<std::vector<glm::dvec3>, 5> lines;
+	for (int i = 0; i <= roadpieces; ++i)
+	{
+		auto const frame{axis.frame(static_cast<double>(i) / roadpieces)};
+		glm::dvec3 const across{frame.tangent.z, 0.0, -frame.tangent.x};
+		auto const side{glm::length(across) > 1e-9 ? glm::normalize(across) : glm::dvec3{0.0}};
+		auto const left{side * (Halfwidth + band)};
+		lines[0].push_back(frame.position);
+		lines[1].push_back(frame.position + left);
+		lines[2].push_back(frame.position - left);
+		if (i == 0 || i == roadpieces)
+		{
+			auto const tangent{glm::length(glm::dvec3{frame.tangent.x, 0.0, frame.tangent.z}) > 1e-9 ? glm::normalize(glm::dvec3{frame.tangent.x, 0.0, frame.tangent.z}) : glm::dvec3{0.0}};
+			auto const end{frame.position + tangent * (i == 0 ? -band : band)};
+			auto &line{lines[i == 0 ? 3 : 4]};
+			for (int k = -4; k <= 4; ++k)
+				line.push_back(end + left * (k / 4.0));
+		}
+	}
+	auto const crosses = [](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, glm::dvec3 const &D, double &U, double &V) {
+		glm::dvec2 const ab{B.x - A.x, B.z - A.z};
+		glm::dvec2 const cd{D.x - C.x, D.z - C.z};
+		auto const denominator{ab.x * cd.y - ab.y * cd.x};
+		if (std::abs(denominator) < 1e-12)
+			return false;
+		glm::dvec2 const ac{C.x - A.x, C.z - A.z};
+		U = (ac.x * cd.y - ac.y * cd.x) / denominator;
+		V = (ac.x * ab.y - ac.y * ab.x) / denominator;
+		return U >= 0.0 && U <= 1.0 && V >= 0.0 && V <= 1.0;
+	};
+	std::vector<std::pair<TTrack const *, double>> taken;
+	for (auto const *track : candidates)
+		for (int path = 0; path < track_rails::path_count(*track); ++path)
+		{
+			auto const &segment{track_rails::path_segment(*track, path)};
+			auto const length{segment.GetLength()};
+			if (length <= 0.0)
+				continue;
+			std::vector<glm::dvec3> rail;
+			glm::dvec3 across;
+			for (int j = 0; j <= railpieces; ++j)
+			{
+				glm::dvec3 point;
+				segment.plan_frame(length * j / railpieces, point, across);
+				rail.push_back(point);
+			}
+			for (int j = 1; j <= railpieces; ++j)
+				for (auto const &line : lines)
+				for (std::size_t i = 0; i + 1 < line.size(); ++i)
+				{
+					double along{0.0}, railalong{0.0};
+					if (false == crosses(line[i], line[i + 1], rail[j - 1], rail[j], along, railalong))
+						continue;
+					auto const crossing{glm::mix(line[i], line[i + 1], along)};
+					// the place along the path, brought onto the axis of the road
+					auto s{length * (j - 1 + railalong) / railpieces};
+					for (int k = 0; k < 6; ++k)
+					{
+						glm::dvec3 point, side;
+						segment.plan_frame(s, point, side);
+						glm::dvec2 const forward{side.z, -side.x};
+						s = std::clamp(s + glm::dot(glm::dvec2{crossing.x - point.x, crossing.z - point.z}, forward), 0.0, length);
+					}
+					glm::dvec3 point, side;
+					segment.plan_frame(s, point, side);
+					// rails passing over or under the road make no level crossing
+					if (std::abs(point.y - crossing.y) > 3.0)
+						continue;
+					if (std::any_of(taken.begin(), taken.end(), [&](auto const &Entry) { return Entry.first == track && std::abs(Entry.second - s) < 2.0 * Halfwidth + 2.0; }))
+						continue;
+					taken.emplace_back(track, s);
+					// the place where the axis of the road, taken straight past the ends of the piece, crosses the path: where the editor lays the
+					// road over the track (editor_road::rails_crossing), its plane of the heads there; the place found on an edge or an end of the
+					// piece only tells the track passes under it
+					{
+						glm::dvec2 const a0{lines[0].front().x, lines[0].front().z};
+						glm::dvec2 const a1{lines[0].back().x, lines[0].back().z};
+						if (glm::length(a1 - a0) > 1e-6)
+						{
+							auto const way{glm::normalize(a1 - a0)};
+							for (int k = 0; k < 8; ++k)
+							{
+								glm::dvec3 point, side;
+								segment.plan_frame(s, point, side);
+								glm::dvec2 const forward{side.z, -side.x};
+								auto const off{way.x * (point.z - a0.y) - way.y * (point.x - a0.x)};
+								auto const turn{way.x * forward.y - way.y * forward.x};
+								if (std::abs(turn) < 1e-6)
+									break;
+								auto const next{std::clamp(s - off / turn, 0.0, length)};
+								if (std::abs(next - s) < 1e-7)
+									break;
+								s = next;
+							}
+						}
+					}
+					auto entry{road_crossing::track_at(segment, s)};
+					entry.name = track->name();
+					entry.source = track;
+					entry.gauge = std::abs(track->fTrackWidth);
+					entry.head = track->rail_dimensions().head;
+					if (path < static_cast<int>(track->m_paths.size()))
+						entry.radius = std::abs(track->m_paths[path].radius);
+					entry.turnout = (track->eType == tt_Switch || track->eType == tt_Cross);
+					result.push_back(entry);
+					Sources.push_back(track);
+				}
+		}
+	return result;
+}
+
 // proportions of the image specified material is painted with
 float texture_ratio(std::string const &Material)
 {
@@ -825,7 +1009,7 @@ double road_node::state::span(double const T) const
 }
 
 // shape of the middle of a lane, laid out in the direction of travel
-segment_data road_node::state::lane_path(std::size_t const Lane) const
+segment_data road_node::state::lane_path(std::size_t const Lane, road_crossing::crossing_surface const *Crossing) const
 {
 	road_axis const centre{axis};
 	// on a road which gets wider or narrower the lane moves away from the axis or towards it along the way,
@@ -833,7 +1017,10 @@ segment_data road_node::state::lane_path(std::size_t const Lane) const
 	auto const side{Lane < static_cast<std::size_t>(backward) ? 0.5 : -0.5};
 	auto const beginoffset{lane_offset(Lane, 0) * taper[0] + side * median_width(0.0)};
 	auto const endoffset{lane_offset(Lane, 1) * taper[1] + side * median_width(1.0)};
-	return lane_shape(offset_path(axis, centre, 0.0, 1.0, beginoffset, endoffset), Lane < static_cast<std::size_t>(backward));
+	auto path{offset_path(axis, centre, 0.0, 1.0, beginoffset, endoffset)};
+	if (Crossing != nullptr)
+		road_crossing::fit(path, *Crossing);
+	return lane_shape(path, Lane < static_cast<std::size_t>(backward));
 }
 
 // shape of the way from the middle of a lane to the middle of another over a part of the axis, laid out in the direction of travel
@@ -1233,6 +1420,58 @@ void road_node::create_lanes()
 			m_lanetracks[end][lane] = track;
 			m_tracks.emplace_back(track);
 		}
+	}
+}
+
+std::string road_node::crossing_report() const
+{
+	auto const reach{crossing_reach(m_state)};
+	std::vector<TTrack const *> sources;
+	auto const rails{rails_under(m_state, reach, sources)};
+	auto const crossing{crossing_of(m_state, reach)};
+	auto const follows{road_crossing::follows(m_state.axis, crossing)};
+	auto const cut{road_crossing::cut(m_state.axis, reach, rails, m_state.texturelength, {}, follows ? &crossing : nullptr)};
+	std::ostringstream text;
+	text << m_name << ": reach " << reach << ", under";
+	for (auto const &rail : rails)
+		text << ' ' << rail.name << '@' << rail.point.x << ',' << rail.point.y << ',' << rail.point.z;
+	text << "; around";
+	text.precision(9);
+	for (auto const &rail : crossing.tracks)
+		text << ' ' << rail.name << '@' << rail.point.x << ',' << rail.point.y << ',' << rail.point.z << " grade " << rail.grade << " roll " << rail.roll << " along " << rail.along.x << ','
+		     << rail.along.y << " distance " << rail.distance;
+	// how far its axis is off the surface of the crossing, at most
+	auto worst{0.0};
+	for (int i = 0; i <= 16; ++i)
+	{
+		auto const point{road_axis{m_state.axis}.point(i / 16.0)};
+		double height{0.0};
+		if (crossing.at(glm::dvec2{point.x, point.z}, height))
+			worst = std::max(worst, std::abs(height - point.y));
+	}
+	text << "; follows " << follows << " (axis off by " << worst << ")" << "; cut";
+	for (auto const index : cut.tracks)
+		text << ' ' << rails[index].name;
+	return text.str();
+}
+
+void road_node::fit_lanes()
+{
+	auto const reach{crossing_reach(m_state)};
+	auto const crossing{crossing_of(m_state, reach)};
+	if (false == road_crossing::follows(m_state.axis, crossing))
+		return;
+	for (std::size_t lane = 0; lane < m_state.lanes.size(); ++lane)
+	{
+		// a lane kept all the way, a single path
+		auto *track{m_lanetracks[0].size() > lane ? m_lanetracks[0][lane] : nullptr};
+		if (track == nullptr || m_lanetracks[1].size() <= lane || track != m_lanetracks[1][lane] || track->m_paths.empty())
+			continue;
+		auto const path{m_state.lane_path(lane, &crossing)};
+		auto &own{track->m_paths[0]};
+		own.points = path.points;
+		own.rolls = path.rolls;
+		track->init_segments(false);
 	}
 }
 
@@ -1921,6 +2160,52 @@ std::vector<scene::shape_node> road_node::create_shapes() const
 		}
 	}
 
+	// the gaps along the rails of a level crossing, where the surface lies in the plane of the heads of a track the road crosses
+	m_gaps.clear();
+	m_gaptracks.clear();
+	m_bridges.clear();
+	m_covers.clear();
+	{
+		auto const reach{crossing_reach(road)};
+		std::vector<TTrack const *> sources;
+		auto const rails{rails_under(road, reach, sources)};
+		// the crossing the piece is a part of: a piece the editor laid over it takes its surface, at a skew too
+		auto const crossing{crossing_of(road, reach)};
+		auto const follows{road_crossing::follows(road.axis, crossing)};
+		// the crossing panels lying around: the road leaves its surface out under them, the grooves go on along them
+		auto const &start{road.axis.points[segment_data::point::start]};
+		auto const &end{road.axis.points[segment_data::point::end]};
+		glm::dvec2 low{glm::min(glm::dvec2{start.x, start.z}, glm::dvec2{end.x, end.z})};
+		glm::dvec2 high{glm::max(glm::dvec2{start.x, start.z}, glm::dvec2{end.x, end.z})};
+		// the control vectors bow a curved piece out by a third of their length at most
+		for (auto const &[corner, control] : {std::pair{start, road.axis.points[segment_data::point::control1]}, std::pair{end, road.axis.points[segment_data::point::control2]}})
+		{
+			low = glm::min(low, glm::dvec2{corner.x + control.x, corner.z + control.z});
+			high = glm::max(high, glm::dvec2{corner.x + control.x, corner.z + control.z});
+		}
+		// the panels reach along the tracks past the road
+		auto const panels{crossing_panels_near(low - glm::dvec2{reach + 12.0}, high + glm::dvec2{reach + 12.0})};
+		std::vector<std::vector<world_vertex> *> all;
+		for (auto &entry : batches)
+			all.push_back(&entry.vertices);
+		auto built{road_crossing::build(all, road.axis, reach, rails, road.texturelength, panels, follows ? &crossing : nullptr)};
+		for (auto const index : built.tracks)
+			if (std::find(m_gaptracks.begin(), m_gaptracks.end(), sources[index]) == m_gaptracks.end())
+				m_gaptracks.push_back(sources[index]);
+		m_gaps = std::move(built.holes);
+		m_bridges = std::move(built.bridges);
+		m_covers = std::move(built.covers);
+		// the grooves and the strips beside the rails in the look of the surface
+		if (road.surface != "none" && (false == built.grooves.empty() || false == built.fills.empty()))
+		{
+			auto &surface{vertices(road.surface, lighting_data{})};
+			surface.insert(surface.end(), built.grooves.begin(), built.grooves.end());
+			surface.insert(surface.end(), built.fills.begin(), built.fills.end());
+		}
+	}
+
+	for (auto &entry : batches)
+		road_crossing::weld(entry.vertices);
 	std::vector<scene::shape_node> shapes;
 	for (auto &entry : batches)
 	{
@@ -4189,11 +4474,13 @@ void road_node::export_as_text_(std::ostream &Output) const
 // legacy style initialization, to be performed when the tracks are already joined
 void road_table::InitLanes()
 {
-	// the pieces which gain or lose lanes lead the ones they have at one end to the ones they have at the other
+	// the pieces which gain or lose lanes lead the ones they have at one end to the ones they have at the other; the lanes of the pieces
+	// laid over a level crossing go onto its surface, the tracks being there now
 	for (auto *road : m_items)
 	{
 		if (road != nullptr)
 		{
+			road->fit_lanes();
 			road->create_links();
 		}
 	}
@@ -4292,3 +4579,202 @@ void junction_table::create_geometry(scene::scratch_data &Scratchpad)
 }
 
 //---------------------------------------------------------------------------
+
+namespace
+{
+
+// the corners of the triangles of a submodel, its siblings and its children, in the world: as the gauge check takes them
+template <typename Visitor_> void model_corners(TSubModel *Submodel, glm::dmat4 const &Matrix, Visitor_ const &Visit)
+{
+	for (auto *submodel = Submodel; submodel != nullptr; submodel = submodel->NextGet())
+	{
+		if (submodel->iVisible == 0)
+			continue;
+		auto matrix{Matrix};
+		if ((submodel->iFlags & 0xC000) && submodel->GetMatrix() != nullptr)
+			matrix *= glm::dmat4(glm::make_mat4(submodel->GetMatrix()->readArray()));
+		if (submodel->eType == GL_TRIANGLES && submodel->m_geometry.handle != null_handle)
+			for (auto const &vertex : GfxRenderer->Vertices(submodel->m_geometry.handle))
+				Visit(glm::dvec3(matrix * glm::dvec4(glm::dvec3(vertex.position), 1.0)));
+		model_corners(submodel->ChildGet(), matrix, Visit);
+	}
+}
+
+// the triangles of a submodel, its siblings and its children, in the world
+template <typename Visitor_> void model_triangles(TSubModel *Submodel, glm::dmat4 const &Matrix, Visitor_ const &Visit)
+{
+	for (auto *submodel = Submodel; submodel != nullptr; submodel = submodel->NextGet())
+	{
+		if (submodel->iVisible == 0)
+			continue;
+		auto matrix{Matrix};
+		if ((submodel->iFlags & 0xC000) && submodel->GetMatrix() != nullptr)
+			matrix *= glm::dmat4(glm::make_mat4(submodel->GetMatrix()->readArray()));
+		if (submodel->eType == GL_TRIANGLES && submodel->m_geometry.handle != null_handle)
+		{
+			auto const &vertices{GfxRenderer->Vertices(submodel->m_geometry.handle)};
+			auto const &indices{GfxRenderer->Indices(submodel->m_geometry.handle)};
+			auto const at = [&](std::size_t const Index) { return glm::dvec3(matrix * glm::dvec4(glm::dvec3(vertices[Index].position), 1.0)); };
+			if (false == indices.empty())
+			{
+				for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+					Visit(at(indices[i]), at(indices[i + 1]), at(indices[i + 2]));
+			}
+			else
+				for (std::size_t i = 0; i + 2 < vertices.size(); i += 3)
+					Visit(at(i), at(i + 1), at(i + 2));
+		}
+		model_triangles(submodel->ChildGet(), matrix, Visit);
+	}
+}
+
+// a triangle of a panel lying flat may be a part of its top, whichever way the model winds it
+void panel_face(glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C, road_crossing::panel &Panel)
+{
+	auto const normal{glm::cross(B - A, C - A)};
+	auto const length{glm::length(normal)};
+	if (length < 1e-9 || std::abs(normal.y) < 0.7 * length)
+		return;
+	Panel.faces.push_back({A, B, C});
+}
+
+// of the triangles lying flat the top: the ones with none of the others over them
+void keep_top(road_crossing::panel &Panel)
+{
+	std::vector<std::array<glm::dvec3, 3>> top;
+	for (auto const &face : Panel.faces)
+	{
+		auto const middle{(face[0] + face[1] + face[2]) / 3.0};
+		auto const covered{std::any_of(Panel.faces.begin(), Panel.faces.end(), [&](std::array<glm::dvec3, 3> const &Other) {
+			auto const &a{Other[0]};
+			auto const &b{Other[1]};
+			auto const &c{Other[2]};
+			auto const d{(b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z)};
+			if (std::abs(d) < 1e-14)
+				return false;
+			auto const u{((b.z - c.z) * (middle.x - c.x) + (c.x - b.x) * (middle.z - c.z)) / d};
+			auto const v{((c.z - a.z) * (middle.x - c.x) + (a.x - c.x) * (middle.z - c.z)) / d};
+			if (u < -1e-9 || v < -1e-9 || 1.0 - u - v < -1e-9)
+				return false;
+			return u * a.y + v * b.y + (1.0 - u - v) * c.y > middle.y + 0.01;
+		})};
+		if (false == covered)
+			top.push_back(face);
+	}
+	Panel.faces = std::move(top);
+}
+
+// a name of a model of the crossings (przejazdy/) or of the slabs (plyty), or of a panel made of its drawings
+bool panel_name(std::string Name)
+{
+	if (crossing_panels::spec spec; crossing_panels::parse(Name, spec))
+		return true;
+	std::transform(Name.begin(), Name.end(), Name.begin(), [](unsigned char C) { return static_cast<char>(std::tolower(C)); });
+	return Name.find("przejazd") != std::string::npos || Name.find("plyt") != std::string::npos;
+}
+
+} // namespace
+
+bool crossing_panel(TAnimModel &Model, road_crossing::panel &Panel)
+{
+	if (Model.Model() == nullptr || Model.Model()->GetSMRoot() == nullptr || false == Model.visible())
+		return false;
+	if (false == panel_name(Model.Model()->NameGet()))
+		return false;
+	auto const angles{Model.Angles()};
+	auto matrix{glm::translate(glm::dmat4(1.0), Model.location())};
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.y)), glm::dvec3(0.0, 1.0, 0.0));
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.x)), glm::dvec3(1.0, 0.0, 0.0));
+	matrix = glm::rotate(matrix, glm::radians(static_cast<double>(angles.z)), glm::dvec3(0.0, 0.0, 1.0));
+	matrix = glm::scale(matrix, glm::dvec3(Model.Scale()));
+	std::vector<glm::dvec2> points;
+	double low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	model_corners(Model.Model()->GetSMRoot(), matrix, [&](glm::dvec3 const &Corner) {
+		points.emplace_back(Corner.x, Corner.z);
+		low = std::min(low, Corner.y);
+		high = std::max(high, Corner.y);
+	});
+	// a slab lies flat: a hut by the crossing doesn't
+	if (points.size() < 3 || high - low > 0.6)
+		return false;
+	Panel.outline = road_crossing::hull(std::move(points));
+	Panel.top = high;
+	Panel.faces.clear();
+	model_triangles(Model.Model()->GetSMRoot(), matrix, [&](glm::dvec3 const &A, glm::dvec3 const &B, glm::dvec3 const &C) { panel_face(A, B, C, Panel); });
+	keep_top(Panel);
+	return Panel.outline.size() >= 3;
+}
+
+std::vector<road_crossing::panel> crossing_panels_near(glm::dvec2 const &Low, glm::dvec2 const &High)
+{
+	std::vector<road_crossing::panel> result;
+	auto const outside = [&](glm::dvec3 const &Location, double const Reach) {
+		return Reach >= 0.0 && (Location.x + Reach < Low.x || Location.x - Reach > High.x || Location.z + Reach < Low.y || Location.z - Reach > High.y);
+	};
+	// the panels bent along the tracks: their copies as they're laid
+	for (auto *sweep : simulation::Sweeps.sequence())
+	{
+		if (sweep == nullptr || sweep->m_editorremoved || false == panel_name(sweep->definition().model))
+			continue;
+		if (outside(sweep->location(), static_cast<double>(sweep->radius()) + 1.0))
+			continue;
+		std::vector<glm::dvec2> points;
+		double low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+		road_crossing::panel panel;
+		for (auto const &shape : sweep->create_shapes())
+		{
+			auto const &vertices{shape.data().vertices};
+			for (auto const &vertex : vertices)
+			{
+				points.emplace_back(vertex.position.x, vertex.position.z);
+				low = std::min(low, vertex.position.y);
+				high = std::max(high, vertex.position.y);
+			}
+			for (std::size_t i = 0; i + 2 < vertices.size(); i += 3)
+				panel_face(vertices[i].position, vertices[i + 1].position, vertices[i + 2].position, panel);
+		}
+		if (points.size() < 3 || high - low > 0.6)
+			continue;
+		keep_top(panel);
+		panel.outline = road_crossing::hull(std::move(points));
+		panel.top = high;
+		if (panel.outline.size() < 3)
+			continue;
+		glm::dvec2 a{std::numeric_limits<double>::max()}, b{-std::numeric_limits<double>::max()};
+		for (auto const &corner : panel.outline)
+		{
+			a = glm::min(a, corner);
+			b = glm::max(b, corner);
+		}
+		if (b.x < Low.x || a.x > High.x || b.y < Low.y || a.y > High.y)
+			continue;
+		result.push_back(std::move(panel));
+	}
+	// the models of the panels: the ones in the cells of the region around
+	if (simulation::Region != nullptr)
+	{
+		auto const middle{0.5 * (Low + High)};
+		auto const radius{static_cast<float>(0.5 * glm::length(High - Low) + 10.0)};
+		std::vector<scene::basic_section *> sections;
+		simulation::Region->sections(glm::dvec3{middle.x, 0.0, middle.y}, radius, sections);
+		std::vector<TAnimModel *> seen;
+		for (auto *section : sections)
+			for (auto &cell : section->m_cells)
+			{
+				auto const reach{static_cast<double>(cell.m_area.radius)};
+				if (outside(cell.m_area.center, reach))
+					continue;
+				for (auto const *instances : {&cell.m_instancesopaque, &cell.m_instancetranslucent})
+					for (auto *model : *instances)
+					{
+						if (model == nullptr || outside(model->location(), static_cast<double>(model->radius()) + 1.0) || std::find(seen.begin(), seen.end(), model) != seen.end())
+							continue;
+						seen.push_back(model);
+						road_crossing::panel panel;
+						if (crossing_panel(*model, panel))
+							result.push_back(std::move(panel));
+					}
+			}
+	}
+	return result;
+}

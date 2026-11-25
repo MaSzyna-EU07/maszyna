@@ -116,6 +116,7 @@ set(SOURCES
 "world/TrackUneven.cpp"
 "world/TrackBuckle.cpp"
 "world/Road.cpp"
+"world/RoadCrossing.cpp"
 "world/CrossingPanels.cpp"
 "world/Sweep.cpp"
 "world/RoadPoint.cpp"
