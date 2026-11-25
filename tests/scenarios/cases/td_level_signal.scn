@@ -1,0 +1,333 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// a line of its own, away from the tracks of td.scn: 2100 m level, under an overhead wire. the train starts with
+// its head 10 m before the W4 of Gora and runs on the timetable {{timetable}} (no stop; a freight train leaves Gora at once) to the signal
+// lv_sem at stop 1000 m ahead. the line goes on 500 m past it
+node -1 0 lv_00 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -600.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -500.0 0.0
+0
+endtrack
+node -1 0 lv_01 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -500.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -400.0 0.0
+0
+endtrack
+node -1 0 lv_02 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -300.0 0.0
+0
+endtrack
+node -1 0 lv_03 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -200.0 0.0
+0
+endtrack
+node -1 0 lv_04 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 -100.0 0.0
+0
+endtrack
+node -1 0 lv_05 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 -100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 0.0 0.0
+0
+event2 gora#1_stopinfo
+endtrack
+node -1 0 lv_06 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 0.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 100.0 0.0
+0
+endtrack
+node -1 0 lv_07 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 200.0 0.0
+0
+endtrack
+node -1 0 lv_08 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 300.0 0.0
+0
+endtrack
+node -1 0 lv_09 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 400.0 0.0
+0
+endtrack
+node -1 0 lv_10 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 500.0 0.0
+0
+endtrack
+node -1 0 lv_11 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 500.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 600.0 0.0
+0
+endtrack
+node -1 0 lv_12 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 600.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 700.0 0.0
+0
+endtrack
+node -1 0 lv_13 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 700.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 800.0 0.0
+0
+endtrack
+node -1 0 lv_14 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 800.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 900.0 0.0
+0
+endtrack
+node -1 0 lv_15 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 900.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1000.0 0.0
+0
+event2 lv_sem_info
+endtrack
+node -1 0 lv_16 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 1000.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1100.0 0.0
+0
+endtrack
+node -1 0 lv_17 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 1100.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1200.0 0.0
+0
+endtrack
+node -1 0 lv_18 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 1200.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1300.0 0.0
+0
+endtrack
+node -1 0 lv_19 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 1300.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1400.0 0.0
+0
+endtrack
+node -1 0 lv_20 track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+-3000.0 60.00 1400.0 0.0
+0.0 0.0 0.0
+0.0 0.0 0.0
+-3000.0 60.00 1500.0 0.0
+0
+endtrack
+// the overhead wire along the whole line, as td.scn has it: 5.6 m above the rail, the carrier 1.7 m higher, fed by
+// a substation of its own
+node -1 0 lv_pwr tractionpowersource -3000.0 60.00 0.0 3400 0 0.01 2000 1.0 3 60.0 end
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -600.0
+-3000.0 65.60 -500.0
+-3000.0 67.30 -600.0
+-3000.0 67.30 -500.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -500.0
+-3000.0 65.60 -400.0
+-3000.0 67.30 -500.0
+-3000.0 67.30 -400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -400.0
+-3000.0 65.60 -300.0
+-3000.0 67.30 -400.0
+-3000.0 67.30 -300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -300.0
+-3000.0 65.60 -200.0
+-3000.0 67.30 -300.0
+-3000.0 67.30 -200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -200.0
+-3000.0 65.60 -100.0
+-3000.0 67.30 -200.0
+-3000.0 67.30 -100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 -100.0
+-3000.0 65.60 0.0
+-3000.0 67.30 -100.0
+-3000.0 67.30 0.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 0.0
+-3000.0 65.60 100.0
+-3000.0 67.30 0.0
+-3000.0 67.30 100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 100.0
+-3000.0 65.60 200.0
+-3000.0 67.30 100.0
+-3000.0 67.30 200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 200.0
+-3000.0 65.60 300.0
+-3000.0 67.30 200.0
+-3000.0 67.30 300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 300.0
+-3000.0 65.60 400.0
+-3000.0 67.30 300.0
+-3000.0 67.30 400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 400.0
+-3000.0 65.60 500.0
+-3000.0 67.30 400.0
+-3000.0 67.30 500.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 500.0
+-3000.0 65.60 600.0
+-3000.0 67.30 500.0
+-3000.0 67.30 600.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 600.0
+-3000.0 65.60 700.0
+-3000.0 67.30 600.0
+-3000.0 67.30 700.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 700.0
+-3000.0 65.60 800.0
+-3000.0 67.30 700.0
+-3000.0 67.30 800.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 800.0
+-3000.0 65.60 900.0
+-3000.0 67.30 800.0
+-3000.0 67.30 900.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 900.0
+-3000.0 65.60 1000.0
+-3000.0 67.30 900.0
+-3000.0 67.30 1000.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 1000.0
+-3000.0 65.60 1100.0
+-3000.0 67.30 1000.0
+-3000.0 67.30 1100.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 1100.0
+-3000.0 65.60 1200.0
+-3000.0 67.30 1100.0
+-3000.0 67.30 1200.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 1200.0
+-3000.0 65.60 1300.0
+-3000.0 67.30 1200.0
+-3000.0 67.30 1300.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 1300.0
+-3000.0 65.60 1400.0
+-3000.0 67.30 1300.0
+-3000.0 67.30 1400.0
+0.4 4.0 3 0.04 vis
+endtraction
+node -1 0 none traction lv_pwr 3500 4500 0.01 cu 3.0 1
+-3000.0 65.60 1400.0
+-3000.0 65.60 1500.0
+-3000.0 67.30 1400.0
+-3000.0 67.30 1500.0
+0.4 4.0 3 0.04 vis
+endtraction
+// the W4 of the stations of the timetable
+include ip/pkp/w4n.inc gora#1 -2997.3 60.00 -90.0 180 0 0 -10 202 end
+// a signal at stop: what the AI reads of one, a memory cell with SetVelocity 0 0 and the event that reads it
+node -1 0 lv_sem_mem memcell -2997.3 68.00 1000.0 SetVelocity 0.0 0.0 none endmemcell
+event lv_sem_info getvalues 5.0 lv_sem_mem endevent
+
+trainset {{timetable}} lv_05 0.0 0.1
+{{consist}}
+endtrainset
