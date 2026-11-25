@@ -50,7 +50,9 @@ OUT_DIR = HERE / "out"
 # Velocity is in km/h and pressures in bar, despite the header saying m/s and MPa.
 COL_TIME = 0
 COL_VELOCITY = 1  # wheel speed: stays at 0 while the wheels are locked in a skid
+COL_TRACTION_FORCE = 5  # N, despite the header saying kN
 COL_BRAKE_PRESS = 8
+COL_MASTER_CONTROLLER = 11  # the position of the master controller
 COL_COMMAND = 16  # text, read as None
 COL_WHEELSLIP = 20
 COL_VEHICLE_VELOCITY = 25  # signed vehicle speed, km/h; only in builds which log it
@@ -156,6 +158,46 @@ def timetable_path(game_dir: Path, case_name: str) -> Path:
     return game_dir / "scenery" / f"{timetable_name(case_name)}.txt"
 
 
+def variant_name(case_name: str, name: str) -> str:
+    """A vehicle variant of the case as a trainset names it: {{variant_<name>}} in the fragment."""
+    return f"autotest_{case_name}_{name}"
+
+
+def variant_paths(game_dir: Path, case_name: str, variant: dict) -> list[Path]:
+    """The .fiz and .mmd of a vehicle variant of the case, beside those of the vehicle it is made from."""
+    folder = (game_dir / "dynamic" / variant["from"]).parent
+    return [folder / f"{variant_name(case_name, variant['name'])}{suffix}" for suffix in (".fiz", ".mmd")]
+
+
+def write_vehicle_variants(case: dict, game_dir: Path, case_name: str) -> None:
+    """Writes the case's vehicle variants into the game's dynamic/ dir: a copy of a vehicle's .fiz with the
+    case's replacements, e.g. a .fiz key the shipped data doesn't have yet, and a copy of its .mmd. The
+    simulator hands the .mmd its type name as (p2), which some pass on to the include that names the
+    model (et42_v2: `include 112e-a.mmd.inc (p2) end`, `models: (p1).t3d`), so the copy has the name of
+    the vehicle it is made from in place of (p2) and looks and loads as that one does."""
+    files = {}
+    for variant in case.get("vehicle_variants", []):
+        source = game_dir / "dynamic" / variant["from"]
+        # .fiz files are cp1250 like the sceneries; latin-1 round-trips every byte
+        fiz = source.with_name(source.name + ".fiz").read_bytes().decode("latin-1")
+        for old, new in variant.get("replace", []):
+            if old not in fiz:
+                sys.exit(f"vehicle_variants: {variant['from']}.fiz has no {old!r}")
+            fiz = fiz.replace(old, new)
+        mmd = source.with_name(source.name + ".mmd").read_bytes().decode("latin-1").replace("(p2)", source.name)
+        fiz_path, mmd_path = variant_paths(game_dir, case_name, variant)
+        files[fiz_path], files[mmd_path] = fiz, mmd
+    # written once every variant is made, so a case with a wrong replacement leaves nothing in the game dir
+    for path, text in files.items():
+        path.write_bytes(text.encode("latin-1"))
+
+
+def remove_vehicle_variants(case: dict, game_dir: Path, case_name: str) -> None:
+    for variant in case.get("vehicle_variants", []):
+        for path in variant_paths(game_dir, case_name, variant):
+            path.unlink(missing_ok=True)
+
+
 def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> str:
     """Writes the case scenery into the game's scenery dir and returns its file name."""
     scenery_dir = game_dir / "scenery"
@@ -176,8 +218,9 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     # a case on a mission of the base scenery may have nothing to add but its test_config
     fragment = (CASES_DIR / case["fragment"]).read_bytes().decode("latin-1") if "fragment" in case else ""
     # vars first: {{vehicle}} and {{timetable}} inside a var's value get filled in the second pass
-    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable"})
-    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name)})
+    variants = {f"variant_{v['name']}": variant_name(case_name, v["name"]) for v in case.get("vehicle_variants", [])}
+    fragment = fill_vars(fragment, case.get("vars", {}), keep={"vehicle", "timetable", *variants})
+    fragment = fill_vars(fragment, {"vehicle": vehicle, "timetable": timetable_name(case_name), **variants})
     # FirstInit binds event launchers to their events and links the tracks. so launchers and
     # events of the case go in before it (read after it they never fire), trainsets after it
     # (placed before it they stand on unlinked track and derail at once)
@@ -193,6 +236,8 @@ def build_scenery(case: dict, game_dir: Path, case_name: str, vehicle: str) -> s
     else:
         text += header + before + "\n"
     text += header + trainsets + "\n"
+    # vehicles of the case's own, made from those of the game
+    write_vehicle_variants(case, game_dir, case_name)
     name = f"autotest_{case_name}.scn"
     (scenery_dir / name).write_bytes(text.encode("latin-1"))
     # a timetable of the case's own, for a train whose timetable the sceneries of the game have none like
@@ -467,11 +512,14 @@ def run_simulator(exe: Path, game_dir: Path, scenery: str, ini: Path, physicslog
 # ---------------------------------------------------------------- checks
 
 
-def check_starts(rows, min_speed, within):
+def check_starts(rows, min_speed, within, after=None):
     for r in rows:
         if r[COL_TIME] > within:
             break
         if r[COL_VELOCITY] >= min_speed:
+            # a case can also say the train mustn't leave before something it waits for (a converter starting)
+            if after is not None and r[COL_TIME] < after:
+                return False, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s, before {after}s"
             return True, f"reached {min_speed} km/h at t={r[COL_TIME]:.1f}s"
     top = max((r[COL_VELOCITY] for r in rows if r[COL_TIME] <= within), default=0.0)
     return False, f"top speed in the first {within}s was {top:.1f} km/h, wanted {min_speed}"
@@ -609,6 +657,58 @@ def check_ends_moving(rows, min_speed):
     return ok, f"last row t={last[COL_TIME]:.1f}s, v={last[COL_VELOCITY]:.1f} km/h (wanted >= {min_speed})"
 
 
+def check_keeps_moving(rows, moving_speed, min_speed, until_distance, from_distance=0.0):
+    """(*vehicle speed*) Once at moving_speed, the speed stays at or above min_speed between the two distances (metres
+    travelled, from the vehicle speed), e.g. a train doesn't come to a stand on a gradient before a restriction or in
+    it. The vehicle speed, as wheels slipping at the start would count as moving off."""
+    if not rows or len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+        return False, "the physicslog has no vehicle speed column, the build is too old"
+    speed = [abs(r[COL_VEHICLE_VELOCITY]) for r in rows]
+    start = next((i for i, v in enumerate(speed) if v >= moving_speed), None)
+    if start is None:
+        return False, f"never reached {moving_speed} km/h"
+    dist, d = [0.0], 0.0
+    for i in range(1, len(rows)):
+        d += (speed[i - 1] + speed[i]) / 2 / 3.6 * (rows[i][COL_TIME] - rows[i - 1][COL_TIME])
+        dist.append(d)
+    span = [i for i in range(start, len(rows)) if from_distance <= dist[i] <= until_distance]
+    if not span or dist[-1] < until_distance:
+        return False, f"travelled {dist[-1]:.0f} m only, wanted {until_distance} m"
+    low = min(span, key=lambda i: speed[i])
+    r = rows[low]
+    detail = (f"lowest speed {speed[low]:.1f} km/h at t={r[COL_TIME]:.1f}s after {dist[low]:.0f} m "
+              f"(brake cylinder {r[COL_BRAKE_PRESS]:.2f} bar), wanted >= {min_speed} between {from_distance:.0f} and {until_distance} m")
+    return speed[low] >= min_speed, detail
+
+
+def check_starts_again(rows, after, min_speed, within, max_rollback=None):
+    """Standing at the time `after` (e.g. at a signal that clears then), the vehicle reaches min_speed within `within`
+    seconds; with max_rollback (*vehicle speed*), it rolls back no more than that many metres meanwhile."""
+    first = next((i for i, r in enumerate(rows) if r[COL_TIME] >= after), None)
+    if first is None:
+        return False, f"the physicslog ends before t={after}s"
+    if rows[first][COL_VELOCITY] > 1.0:
+        return False, f"moving at {rows[first][COL_VELOCITY]:.1f} km/h at t={after}s, wanted standing"
+    moved = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] > 1.0), None)
+    reached = next((r[COL_TIME] for r in rows[first:] if r[COL_VELOCITY] >= min_speed), None)
+    rollback, back = 0.0, 0.0
+    if max_rollback is not None:
+        if len(rows[0]) <= COL_VEHICLE_VELOCITY or rows[0][COL_VEHICLE_VELOCITY] is None:
+            return False, "the physicslog has no vehicle speed column, the build is too old"
+        end = reached if reached is not None else after + within
+        for a, b in zip(rows[first:], rows[first + 1:]):
+            if b[COL_TIME] > end:
+                break
+            back += (a[COL_VEHICLE_VELOCITY] + b[COL_VEHICLE_VELOCITY]) / 2 / 3.6 * (b[COL_TIME] - a[COL_TIME])
+            rollback = max(rollback, -back)
+    detail = (f"moved off (1 km/h) {moved - after:.1f}s after t={after}s" if moved is not None else f"didn't move off after t={after}s")
+    detail += f", {min_speed} km/h after {reached - after:.1f}s" if reached is not None else f", never reached {min_speed} km/h"
+    if max_rollback is not None:
+        detail += f", rolled back {rollback:.2f} m (wanted <= {max_rollback})"
+    ok = reached is not None and reached - after <= within and (max_rollback is None or rollback <= max_rollback)
+    return ok, detail + f" (wanted {min_speed} km/h within {within}s)"
+
+
 def check_slip_clears(rows, moving_speed, stop_speed, within):
     """Once the vehicle has stopped after moving off, its wheels stop slipping within `within` seconds
     (a vehicle left skidding on locked wheels keeps its brakes capped by the sliding adhesion)."""
@@ -627,7 +727,51 @@ def check_slip_clears(rows, moving_speed, stop_speed, within):
     return True, f"stopped at t={rows[stop][COL_TIME]:.1f}s, no slipping after t={deadline:.1f}s"
 
 
+def check_traction(rows, from_distance, to_distance, reaches=None, at_most=None, at_least=None):
+    """The traction force of the vehicle in kN (the physicslog has it in N, whatever its header says) while it
+    runs between two points of its way, in metres travelled as in `distance`: the highest there `reaches` a
+    force, e.g. the power taken again behind a section without voltage; it stays `at_most` a force, e.g. none
+    taken where there is no voltage; it stays `at_least` a force, e.g. no power lost under an insulator."""
+    dist = _distances(rows)
+    window = [(d, r) for d, r in zip(dist, rows) if from_distance <= d <= to_distance]
+    if not window:
+        return False, f"never got between {from_distance} and {to_distance} m (travelled {dist[-1] if dist else 0:.0f} m)"
+
+    def describe(item):
+        d, r = item
+        return f"{r[COL_TRACTION_FORCE] / 1000:.1f} kN at {d:.0f} m, t={r[COL_TIME]:.1f}s, v={r[COL_VELOCITY]:.1f} km/h"
+
+    top = max(window, key=lambda item: item[1][COL_TRACTION_FORCE])
+    low = min(window, key=lambda item: item[1][COL_TRACTION_FORCE])
+    detail = (f"between {from_distance} and {to_distance} m (t={window[0][1][COL_TIME]:.1f}-{window[-1][1][COL_TIME]:.1f}s) "
+              f"the traction force was {describe(low)} at its lowest, {describe(top)} at its highest")
+    if reaches is not None and top[1][COL_TRACTION_FORCE] / 1000 < reaches:
+        return False, f"{detail}; wanted it to reach {reaches} kN"
+    if at_most is not None and top[1][COL_TRACTION_FORCE] / 1000 > at_most:
+        return False, f"{detail}; wanted at most {at_most} kN"
+    if at_least is not None and low[1][COL_TRACTION_FORCE] / 1000 < at_least:
+        return False, f"{detail}; wanted at least {at_least} kN"
+    return True, detail
+
+
+def check_master_controller(rows, from_distance, to_distance, at_most):
+    """The master controller of the vehicle stays at or below a position while it runs between two points of its
+    way (metres travelled, as in `distance`), e.g. at 0 where the scenery tells the driver to coast."""
+    dist = _distances(rows)
+    window = [(d, r) for d, r in zip(dist, rows) if from_distance <= d <= to_distance]
+    if not window:
+        return False, f"never got between {from_distance} and {to_distance} m (travelled {dist[-1] if dist else 0:.0f} m)"
+    d, top = max(window, key=lambda item: item[1][COL_MASTER_CONTROLLER])
+    detail = (f"between {from_distance} and {to_distance} m (t={window[0][1][COL_TIME]:.1f}-{window[-1][1][COL_TIME]:.1f}s) "
+              f"the master controller was at {top[COL_MASTER_CONTROLLER]:.0f} at most, at {d:.0f} m, t={top[COL_TIME]:.1f}s")
+    if top[COL_MASTER_CONTROLLER] > at_most:
+        return False, f"{detail}; wanted at most {at_most}"
+    return True, detail
+
+
 CHECKS = {
+    "master_controller": check_master_controller,
+    "traction": check_traction,
     "slips": check_slips,
     "slip_clears": check_slip_clears,
     "holds_still": check_holds_still,
@@ -638,6 +782,8 @@ CHECKS = {
     "stays_stopped": check_stays_stopped,
     "distance": check_distance,
     "ends_moving": check_ends_moving,
+    "keeps_moving": check_keeps_moving,
+    "starts_again": check_starts_again,
 }
 
 
@@ -1035,15 +1181,6 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
     if not with_physicslog and (watch or needs_physicslog):
         sys.exit(f"{name}: with physicslog off a case can have log checks only ({', '.join(LOG_CHECKS)}), "
                  "and can't run with --watch")
-    scenery = build_scenery(case, game_dir, name, vehicle)
-    ini = out / "autotest.ini"
-    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
-    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
-    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
-                   + "".join(line + "\n" for line in settings), encoding="ascii")
-    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
-    started = time.time() - 1
-
     duration = float(case["duration"]) if "duration" in case else None
     # a case that only records `duration` seconds ends on the test timeout; one that says
     # how the test ends (a pass event, a signal passed at danger...) expects that result
@@ -1052,10 +1189,24 @@ def _run_case(name: str, case: dict, exe: Path, game_dir: Path, timespeed: float
         sys.exit(f"{name}: expect must be one of {', '.join(RESULTS)}")
     if watch and duration is None:
         sys.exit(f"{name}: --watch needs a case with duration")
-    result = run_simulator(exe, game_dir, scenery, ini, physicslog,
-                           duration, float(case.get("timeout", 600)), watch, say,
-                           expect_rows=with_physicslog and not own_vehicle)
-    timetable_path(game_dir, name).unlink(missing_ok=True)
+
+    ini = out / "autotest.ini"
+    # the case's own settings go last, over the common ones; then the seed of this run of the suite, if any
+    settings = [*case.get("ini", []), *([f"randomseed {seed}"] if seed else [])]
+    ini.write_text(TEST_INI.format(timespeed=timespeed, physicslog="yes" if with_physicslog else "no")
+                   + "".join(line + "\n" for line in settings), encoding="ascii")
+    physicslog = game_dir / "physicslog" / f"{vehicle}.dat"
+    started = time.time() - 1
+    # from here on the case has files of its own in the game dir (the vehicle variants, the timetable)
+    try:
+        scenery = build_scenery(case, game_dir, name, vehicle)
+        result = run_simulator(exe, game_dir, scenery, ini, physicslog,
+                               duration, float(case.get("timeout", 600)), watch, say,
+                               expect_rows=with_physicslog and not own_vehicle)
+    finally:
+        # the case's own files go from the game dir also when the run is broken off (ctrl+c)
+        timetable_path(game_dir, name).unlink(missing_ok=True)
+        remove_vehicle_variants(case, game_dir, name)
     # a case that asked for no geometry cache (file.binary.terrain no) leaves none of an earlier run behind
     if any(line.split()[:2] == ["file.binary.terrain", "no"] for line in case.get("ini", [])):
         scenery_cache(game_dir, name).unlink(missing_ok=True)

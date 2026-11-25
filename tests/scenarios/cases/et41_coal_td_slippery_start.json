@@ -1,0 +1,66 @@
+{
+  "description": "An ET41 with 25 fully loaded coal wagons (412W, 80 t each, G; about 2170 t) starts on level track with the rail friction at 0.3 of its normal (eu07.ini friction 0.3, as on wet leaves), and runs to the signal at stop 1000 m ahead. The train is to get going, keep moving and stop at the signal (#187: heavy trains slip, grip and snatch over and over and often don't get going).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_level_signal.scn",
+  "timetable": "td_freight_downgrade.txt",
+  "ini": [
+    "friction 0.3"
+  ],
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\et41_v2 41-045-a 203e-a 0 headdriver 55 0 enddynamic",
+      "node -1 0 {{vehicle}}_b dynamic pkp\\et41_v2 41-045-b 203e-b 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_w01 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w02 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w03 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w04 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w05 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w06 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w07 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w08 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w09 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w10 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w11 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w12 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w13 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w14 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w15 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w16 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w17 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w18 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w19 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w20 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w21 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w22 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w23 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w24 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic",
+      "node -1 0 {{vehicle}}_w25 dynamic pkp\\412w_v2 31515362022-6 412W 0 nobody 3 60 coal enddynamic"
+    ]
+  },
+  "expect": "standstill",
+  "duration": 1500,
+  "timeout": 1800,
+  "checks": [
+    {
+      "type": "moves",
+      "vehicle": "{{vehicle}}",
+      "min_speed": 10
+    },
+    {
+      "type": "keeps_moving",
+      "moving_speed": 5,
+      "min_speed": 3,
+      "from_distance": 100,
+      "until_distance": 900
+    },
+    {
+      "type": "stops",
+      "moving_speed": 10,
+      "stop_speed": 1.0,
+      "hold": 20,
+      "min_distance": 1040,
+      "max_distance": 1150
+    }
+  ]
+}
