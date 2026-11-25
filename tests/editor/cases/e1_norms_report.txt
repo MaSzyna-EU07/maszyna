@@ -1,0 +1,16 @@
+# E1: the report of the norms on the tracks of the scenery, read only.
+# k0..k3: a straight, 60 m of R 2000 m and 60 m of R 400 m turning the same way with no transitions and no cant, a straight.
+# At 60 km/h against PLK: the abrupt changes of the cant deficiency at both ends of the arc of R 400 m (85 and 106 mm) are beyond the
+# 60 mm of P2 (ST-T1-A6 tab. 9.15), the radius of 400 m below the 600 m recommended; the cant deficiency of 106 mm is within P0
+wait 5
+select k1
+normsreport scenery/autotest_editor_e1_norms_report_line.txt 0 plk 60
+expect findings block 2 2
+expect findings warning 0 0
+expect findings note 1 1
+# the whole scenery against the TSI alone at 100 km/h: R 400 m with no cant, I 295 mm, and the abrupt changes at it, beyond the TSI
+normsreport scenery/autotest_editor_e1_norms_report_all.txt 1 tsi 100
+expect findings block 3 100
+expect findings warning 0 0
+expect findings note 0 0
+quit

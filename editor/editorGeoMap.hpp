@@ -31,8 +31,8 @@ bool in_poland(glm::dvec2 const &Point);
 
 } // namespace editor_geo
 
-// the map of Poland to pick a place on: the base map of OpenStreetMap from geoportal.gov.pl, the wheel zooms it, a drag moves
-// it, a click picks the place
+// the map of Poland to pick a place on: the base map of OpenStreetMap from geoportal.gov.pl, or zoomed in the aerial photos of
+// geoportal.gov.pl, the wheel zooms it, a drag moves it, a click picks the place
 class editor_map
 {
   public:
@@ -63,6 +63,14 @@ class editor_map
 	}
 	// a line written at the bottom of the map, a word of what a click does there; empty: none
 	void hint(std::string Text) { m_hint = std::move(Text); }
+	// the aerial photos of geoportal.gov.pl (the orthophoto the editor lays under the scenery, the same service) in place of the map
+	// where it's zoomed in enough to tell them apart; further out the map. Switched in the corner of the map
+	bool photos() const { return m_photos; }
+	// the image shown is of the photos, not of the map: whose it is, is told under it
+	bool photos_shown() const { return m_texture != 0 && m_image_photo; }
+	void photos(bool const Photos);
+	// m a pixel up to which the photos are shown, further out the map
+	static constexpr double photo_scale{40.0};
 
   private:
 	struct image
@@ -73,6 +81,7 @@ class editor_map
 		int height{0};
 		std::vector<std::uint8_t> pixels;
 		std::string error;
+		bool photo{false}; // of the aerial photos, not of the map
 	};
 
 	void request(glm::vec2 const &Size);
@@ -100,4 +109,6 @@ class editor_map
 	std::vector<glm::dvec2> m_outline;
 	bool m_outline_closed{false};
 	std::string m_hint;
+	bool m_photos{true};
+	bool m_image_photo{false}; // the image shown is of the photos, told under it
 };

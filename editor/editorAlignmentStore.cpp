@@ -11,6 +11,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorFormat.hpp"
 #include "editor/editorGeometry.hpp"
+#include "editor/editorRecords.hpp"
 
 #include "world/Track.h"
 #include "simulation/simulation.h"
@@ -18,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -39,42 +41,7 @@ std::vector<record> g_base; // as they were before the changes not yet in the un
 bool g_changed{false};
 bool g_loaded{false};
 
-// format of the lines, coordinates in the space of the file:
-//   alignment <start x y z> <end x y z>
-//   source <designed> origin <chainage of the start> shape <parabola|clothoid> speed <km/h> [fit <m>]
-//   ends <start direction x z> <end direction x z> <start grade> <end grade> <start R> <end R>
-//   norms <gauge> <unbalanced> <cant max> <cant rate> <ramp factor> <jerk> <straight between curves, s> <arc min> <arc min factor>
-//   pieces <pieces of a transition> <angle of an arc piece>
-//   vertex <x> <z> <offset> <R> <L in> <L out> <cant> <reverse 0/1> <compound 0/1> <share> <arcs> [<R> <L> <share>]... [spirals 1]
-//     spirals: two transition curves with no arc between them, their lengths following from R
-//     [cants <first> <arc>...]: the cants of the radii of a compound curve set one by one, below 0 the cant in proportion to the curvature
-//     [ramps <in offset> <in length> <out offset> <out length>]: the cant ramps of the curve where they don't go along its transitions,
-//       their outer ends from the start and from the end of the curve, into it above 0; a length below 0 keeps the ramp along the transition
-//   click <x y z>: a point clicked when the line was laid, its curves fitted to them
-//   kept <from> <to>: the stretch of the line the design is kept for, chainages from its start, where tracks along it were deleted
-//   element <straight|transition|arc> <vertex> <chainage> <length> <R at the start> <R at the end> <cant> <start x> <start z> <direction x> <direction z>
-//     radii signed with the turn, 0 for no curvature
-//   end
-char const *shape_name(alignment::transition_shape const Shape)
-{
-	return Shape == alignment::transition_shape::clothoid ? "clothoid" : "parabola";
-}
-
-glm::dvec2 local_direction(scene::layer_context const &Context, glm::dvec3 const &Point, glm::dvec2 const &Direction)
-{
-	auto const from{Context.to_local(Point)};
-	auto const to{Context.to_local(Point + glm::dvec3{Direction.x, 0.0, Direction.y})};
-	auto const direction{plan_of(to - from)};
-	return glm::length(direction) > 1e-12 ? glm::normalize(direction) : Direction;
-}
-
-glm::dvec2 world_direction(scene::layer_context const &Context, glm::dvec3 const &Local, glm::dvec2 const &Direction)
-{
-	auto const from{Context.to_world(Local)};
-	auto const to{Context.to_world(Local + glm::dvec3{Direction.x, 0.0, Direction.y})};
-	auto const direction{plan_of(to - from)};
-	return glm::length(direction) > 1e-12 ? glm::normalize(direction) : Direction;
-}
+// the lines and their format: editor_records::read_alignments() and alignment_lines()
 
 // the points of the line every kStep from the start of the stretch it's kept for
 void sample(record &Record)
@@ -116,67 +83,9 @@ void mark(scene::layer_handle const Layer)
 {
 	if (false == scene::Layers.valid(Layer))
 		return;
-	auto const &context{scene::Layers.layer(Layer).context_insert()};
-	auto const local = [&](glm::dvec3 const &Point) {
-		auto const point{context.to_local(Point)};
-		return format("%.4f %.4f %.4f", point.x, point.y, point.z);
-	};
-	std::vector<std::string> lines;
-	for (auto const &entry : g_records)
-	{
-		if (entry.layer != Layer)
-			continue;
-		if (lines.empty())
-			lines.emplace_back("# horizontal alignments designed in the track editor, the simulation skips these lines");
-		auto const &design{entry.design};
-		lines.push_back("alignment " + local(design.start) + ' ' + local(design.end));
-		lines.push_back(format("source %s origin %.4f shape %s speed %.1f", entry.source.c_str(), entry.origin, shape_name(design.shape), design.speed) + (entry.fit > 0.0 ? format(" fit %.3f", entry.fit) : std::string{}));
-		auto const startdirection{local_direction(context, design.start, design.start_direction)};
-		auto const enddirection{local_direction(context, design.end, design.end_direction)};
-		auto ends{format("ends %.9f %.9f %.9f %.9f %.6f %.6f %.3f %.3f", startdirection.x, startdirection.y, enddirection.x, enddirection.y, design.start_grade, design.end_grade, design.start_radius, design.end_radius)};
-		// the sides the adjoining tracks turn to, and the curves going on from them with their cants, written since there are such
-		if (design.start_turn != 0 || design.end_turn != 0)
-			ends += format(" turns %d %d", design.start_turn, design.end_turn);
-		if (design.start_curved || design.end_curved)
-			ends += format(" curved %d %d %.1f %.1f", design.start_curved ? 1 : 0, design.end_curved ? 1 : 0, design.start_cant, design.end_cant);
-		lines.push_back(ends);
-		auto const &norms{design.norms};
-		lines.push_back(format("norms %.1f %.3f %.1f %.1f %.2f %.3f %.2f %.2f %.3f", norms.gauge, norms.unbalanced, norms.cant_max, norms.cant_rate, norms.ramp_factor, norms.jerk, norms.tangent_min_time, norms.arc_min, norms.arc_min_factor));
-		lines.push_back(format("pieces %d %.3f", design.transition_pieces, design.arc_piece_angle));
-		if (false == entry.whole())
-			lines.push_back(format("kept %.4f %.4f", entry.from, entry.kept_to()));
-		for (auto const &vertex : design.vertices)
-		{
-			auto const position{context.to_local({vertex.position.x, 0.0, vertex.position.y})};
-			auto text{format("vertex %.4f %.4f %.4f %.3f %.3f %.3f %.1f %d %d %.9f %zu", position.x, position.z, vertex.offset, vertex.radius, vertex.transition_in, vertex.transition_out, vertex.cant, vertex.reverse_turn ? 1 : 0, vertex.compound ? 1 : 0,
-			                  vertex.share, vertex.arcs.size())};
-			for (auto const &arc : vertex.arcs)
-				text += format(" %.3f %.3f %.9f", arc.radius, arc.transition, arc.share);
-			if (vertex.spirals)
-				text += " spirals 1";
-			if (vertex.first_cant >= 0.0 || std::any_of(vertex.arcs.begin(), vertex.arcs.end(), [](alignment::compound_arc const &Arc) { return Arc.cant >= 0.0; }))
-			{
-				text += format(" cants %.1f", vertex.first_cant);
-				for (auto const &arc : vertex.arcs)
-					text += format(" %.1f", arc.cant);
-			}
-			if (vertex.own_ramps())
-				text += format(" ramps %.3f %.3f %.3f %.3f", vertex.ramp_in_offset, vertex.ramp_in_length, vertex.ramp_out_offset, vertex.ramp_out_length);
-			lines.push_back(text);
-		}
-		for (auto const &click : entry.clicks)
-			lines.push_back("click " + local(click));
-		for (auto const &e : entry.result.elements)
-		{
-			auto const station{alignment::evaluate(entry.result, e.chainage)};
-			auto const start{context.to_local(station.position)};
-			auto const direction{local_direction(context, station.position, glm::normalize(plan_of(station.direction)))};
-			auto const element{describe(e)};
-			lines.push_back(format("element %s %d %.4f %.4f %.3f %.3f %.1f %.4f %.4f %.9f %.9f", element.kind.c_str(), element.vertex, element.chainage, element.length, element.radius_start, element.radius_end, element.cant, start.x, start.z, direction.x, direction.y));
-		}
-		lines.emplace_back("end");
-	}
-	scene::Layers.mark(Layer, kMark, std::move(lines));
+	std::vector<record> records;
+	std::copy_if(g_records.begin(), g_records.end(), std::back_inserter(records), [&](record const &Entry) { return Entry.layer == Layer; });
+	scene::Layers.mark(Layer, kMark, editor_records::alignment_lines(records, scene::Layers.layer(Layer).context_insert()));
 }
 
 // the vertex as seen from the other end of the line
@@ -269,43 +178,7 @@ int merge(record const &Entry)
 
 } // namespace
 
-stored_element describe(alignment::element const &Element)
-{
-	stored_element result;
-	result.vertex = Element.vertex;
-	result.chainage = Element.chainage;
-	result.length = Element.length;
-	result.cant = Element.cant;
-	auto const sign{Element.turn < 0 ? -1.0 : 1.0};
-	auto const radius = [&](double const Curvature) { return Curvature > 1e-12 ? sign / Curvature : 0.0; };
-	switch (Element.kind)
-	{
-	case alignment::element_kind::transition_in:
-		result.radius_end = sign * Element.radius;
-		break;
-	case alignment::element_kind::arc:
-		result.radius_end = sign * Element.radius;
-		result.radius_start = result.radius_end;
-		break;
-	case alignment::element_kind::transition_out:
-		result.radius_start = sign * Element.radius;
-		break;
-	case alignment::element_kind::spiral:
-		result.radius_start = radius(Element.curvature_start);
-		result.radius_end = radius(Element.curvature_end);
-		break;
-	default:
-		result.cant = 0.0;
-		break;
-	}
-	if (result.radius_start == 0.0 && result.radius_end == 0.0)
-		result.kind = "straight";
-	else if (std::abs(result.radius_start - result.radius_end) < 1e-6)
-		result.kind = "arc";
-	else
-		result.kind = "transition";
-	return result;
-}
+// describe(): with the lines, editor/editorRecords.cpp
 
 void reset()
 {
@@ -317,125 +190,6 @@ void reset()
 
 namespace
 {
-
-std::optional<record> read_start(std::istringstream &Line, scene::layer_context const &Context, scene::layer_handle const Layer)
-{
-	record entry;
-	entry.layer = Layer;
-	glm::dvec3 start;
-	glm::dvec3 end;
-	Line >> start.x >> start.y >> start.z >> end.x >> end.y >> end.z;
-	if (Line.fail())
-		return std::nullopt;
-	entry.design.start = Context.to_world(start);
-	entry.design.end = Context.to_world(end);
-	return entry;
-}
-
-std::optional<alignment::vertex> read_vertex(std::istringstream &Line, scene::layer_context const &Context)
-{
-	alignment::vertex vertex;
-	glm::dvec3 position{0.0};
-	int reverse{0};
-	int compound{0};
-	std::size_t arcs{0};
-	Line >> position.x >> position.z >> vertex.offset >> vertex.radius >> vertex.transition_in >> vertex.transition_out >> vertex.cant >> reverse >> compound >> vertex.share >> arcs;
-	for (std::size_t i = 0; i < arcs && false == Line.fail(); ++i)
-	{
-		alignment::compound_arc arc;
-		Line >> arc.radius >> arc.transition >> arc.share;
-		vertex.arcs.push_back(arc);
-	}
-	if (Line.fail())
-		return std::nullopt;
-	// written since the bends of the straights are eased with two transition curves, the lines of before end with the arcs
-	for (std::string word; Line >> word;)
-	{
-		if (int value{0}; word == "spirals" && Line >> value)
-			vertex.spirals = (value != 0);
-		// the cants of the arcs of a compound curve, set one by one: of the first arc and of the ones after it, below 0 in proportion
-		if (word == "cants")
-		{
-			Line >> vertex.first_cant;
-			for (auto &arc : vertex.arcs)
-				Line >> arc.cant;
-		}
-		if (word == "ramps")
-			Line >> vertex.ramp_in_offset >> vertex.ramp_in_length >> vertex.ramp_out_offset >> vertex.ramp_out_length;
-	}
-	position = Context.to_world(position);
-	vertex.position = {position.x, position.z};
-	vertex.reverse_turn = (reverse != 0);
-	vertex.compound = (compound != 0);
-	return vertex;
-}
-
-void read_part(record &Entry, std::string const &Keyword, std::istringstream &Line, scene::layer_context const &Context)
-{
-	auto &design{Entry.design};
-	std::string word;
-	if (Keyword == "source")
-	{
-		std::string shape;
-		Line >> Entry.source >> word >> Entry.origin >> word >> shape >> word >> design.speed;
-		design.shape = shape == "clothoid" ? alignment::transition_shape::clothoid : alignment::transition_shape::cubic_parabola;
-		if (Line >> word && word == "fit")
-			Line >> Entry.fit;
-	}
-	else if (Keyword == "ends")
-	{
-		glm::dvec2 startdirection;
-		glm::dvec2 enddirection;
-		Line >> startdirection.x >> startdirection.y >> enddirection.x >> enddirection.y >> design.start_grade >> design.end_grade >> design.start_radius >> design.end_radius;
-		design.start_direction = world_direction(Context, Context.to_local(design.start), startdirection);
-		design.end_direction = world_direction(Context, Context.to_local(design.end), enddirection);
-		for (std::string key; Line >> key;)
-		{
-			if (key == "turns")
-				Line >> design.start_turn >> design.end_turn;
-			if (int start{0}, end{0}; key == "curved" && Line >> start >> end >> design.start_cant >> design.end_cant)
-			{
-				design.start_curved = (start != 0);
-				design.end_curved = (end != 0);
-			}
-		}
-	}
-	else if (Keyword == "norms")
-	{
-		auto &norms{design.norms};
-		Line >> norms.gauge >> norms.unbalanced >> norms.cant_max >> norms.cant_rate >> norms.ramp_factor >> norms.jerk >> norms.tangent_min_time >> norms.arc_min >> norms.arc_min_factor;
-	}
-	else if (Keyword == "pieces")
-		Line >> design.transition_pieces >> design.arc_piece_angle;
-	else if (Keyword == "vertex")
-	{
-		if (auto const vertex{read_vertex(Line, Context)})
-			design.vertices.push_back(*vertex);
-	}
-	else if (Keyword == "element")
-	{
-		stored_element e;
-		Line >> e.kind >> e.vertex >> e.chainage >> e.length >> e.radius_start >> e.radius_end >> e.cant;
-		if (false == Line.fail())
-			Entry.elements.push_back(e);
-	}
-	else if (Keyword == "click")
-	{
-		glm::dvec3 point;
-		if (Line >> point.x >> point.y >> point.z)
-			Entry.clicks.push_back(Context.to_world(point));
-	}
-	else if (Keyword == "kept")
-	{
-		double from;
-		double to;
-		if (Line >> from >> to && to > from)
-		{
-			Entry.from = std::max(0.0, from);
-			Entry.to = to;
-		}
-	}
-}
 
 void close_record(record &Entry, std::string const &Layer)
 {
@@ -453,25 +207,8 @@ void close_record(record &Entry, std::string const &Layer)
 
 void load_layer(scene::layer_handle const Layer)
 {
-	auto const &context{scene::Layers.layer(Layer).context_insert()};
-	std::optional<record> current;
-	for (auto const &text : scene::Layers.marked(Layer, kMark))
-	{
-		std::istringstream line{text};
-		std::string keyword;
-		line >> keyword;
-		if (keyword == "alignment")
-			current = read_start(line, context, Layer);
-		else if (false == current.has_value())
-			continue;
-		else if (keyword == "end")
-		{
-			close_record(*current, scene::Layers.layer(Layer).name);
-			current.reset();
-		}
-		else
-			read_part(*current, keyword, line, context);
-	}
+	for (auto &entry : editor_records::read_alignments(scene::Layers.marked(Layer, kMark), scene::Layers.layer(Layer).context_insert(), Layer))
+		close_record(entry, scene::Layers.layer(Layer).name);
 }
 
 } // namespace

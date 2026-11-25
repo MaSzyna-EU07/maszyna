@@ -1,0 +1,29 @@
+# The photo in the toolbar of the tracks: its button and ~ turn it on and off for the scenery, as the user's choice, and the terrain
+# made of the model around the camera doesn't turn it on again behind the user (~ turned it off before without it counting as a choice,
+# and the terrain turned it on again). ~ is in the shortcuts (F1). In Warsaw: the photo of one tile, the terrain of the model around
+wait 5
+tap f3
+wait 2
+orthophoto 482500 634000 0 1 0
+wait 3
+expect photo on 1
+tap grave
+wait 2
+expect photo on 0
+expect photo chosen 1
+nmtmake around 100
+wait 10
+expect photo on 0
+toolbar ~
+wait 2
+expect photo on 1
+toolbar ~
+wait 2
+expect photo on 0
+tap f1
+wait 3
+expect window shortcuts 1
+tap f1
+wait 2
+orthophoto forget
+quit

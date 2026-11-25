@@ -83,21 +83,27 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	// widths in pixels the windows need, as parts of the room there is
 	auto const width{std::max(viewport->WorkSize.x, 1.0f)};
 	auto const height{std::max(viewport->WorkSize.y, 1.0f)};
-	auto const left_width{std::min(400.0f * Global.ui_scale, width * 0.3f)};
-	auto const right_width{std::min(460.0f * Global.ui_scale, width * 0.3f)};
+	// the side columns a share of the width, not narrower than 300 px nor wider than they need: at 1366 px they left the view about
+	// 520 px of it
+	auto const side = [width](float const Most) { return std::min({std::max(width * 0.22f, 300.0f * Global.ui_scale), Most * Global.ui_scale, width * 0.3f}); };
+	auto const left_width{side(400.0f)};
+	auto const right_width{side(460.0f)};
 	auto const bottom_height{std::min(280.0f * Global.ui_scale, height * 0.35f)};
 	ImGuiID center{Dockspace};
 	auto const right{ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, right_width / width, nullptr, &center)};
 	auto const left{ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, left_width / (width - right_width), nullptr, &center)};
 	auto const bottom{ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, bottom_height / height, nullptr, &center)};
-	// left: settings of the tool in use above, the scenery below
+	// left: settings of the tool in use above, taller, the scenery below. In a window under 800 px high the scenery is a tab beside the
+	// settings, which take the whole column: at 1366 x 768 the panel of the lay tool didn't fit half of it
 	ImGuiID lefttop{left};
-	auto const leftbottom{ImGui::DockBuilderSplitNode(lefttop, ImGuiDir_Down, 0.5f, nullptr, &lefttop)};
+	auto const leftbottom{height < 800.0f * Global.ui_scale ? left : ImGui::DockBuilderSplitNode(lefttop, ImGuiDir_Down, 0.4f, nullptr, &lefttop)};
 	// windows are found by the stable part of their names, after ###
 	ImGui::DockBuilderDockWindow("###tooloptions", lefttop);
-	for (auto const *window : {"###scenetree", "###Layers", "###scenehierarchy"})
+	for (auto const *window : {"###scenetree", "###Layers"})
 		ImGui::DockBuilderDockWindow(window, leftbottom);
-	for (auto const *window : {"###inspector", "###editorsettings", "###Include database", "###orthophoto", "###environment"})
+	// the settings of the editor, the weather and the orthophoto float over the view, as the window of a lesson: docked by the
+	// inspector they took its place
+	for (auto const *window : {"###inspector", "###Include database"})
 		ImGui::DockBuilderDockWindow(window, right);
 	// bottom: the node bank, and the model sets by its side, the models are dragged from the one to the other
 	ImGuiID bottomleft{bottom};
@@ -105,6 +111,11 @@ void editor_ui::build_default_layout(unsigned int const Dockspace)
 	for (auto const *window : {"###Node bank", "###profilestrip", "###trackanalysis", "###structuregauge", "###editorhistory"})
 		ImGui::DockBuilderDockWindow(window, bottomleft);
 	ImGui::DockBuilderDockWindow("###modelsets", bottomright);
+	// the scenery a tab beside the settings of the tool, these are the tab shown, as imgui.ini keeps the tab chosen: the tab of a window
+	// is the hash of "#TAB" seeded with the id of the window
+	if (leftbottom == lefttop)
+		if (auto *node{ImGui::DockBuilderGetNode(lefttop)}; node != nullptr)
+			node->SelectedTabId = ImHashStr("#TAB", 0, ImHashStr("###tooloptions"));
 	ImGui::DockBuilderFinish(Dockspace);
 }
 
@@ -648,6 +659,8 @@ void editor_ui::render_()
 				else
 					ImGui::TextUnformatted(m_layerspanel.status.c_str());
 			}
+			if (m_statusextra)
+				m_statusextra();
 			if (m_node != nullptr)
 			{
 				auto const name{m_node->name().empty() ? std::string{STR_C("(no name)")} : m_node->name()};
@@ -685,17 +698,11 @@ void editor_ui::update()
 
 void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 {
+	// the mouse and the keys of the tool are on its card above
 	switch (Mode)
 	{
-	case nodebank_panel::MODIFY:
-		ImGui::TextDisabled(STR_C("LMB: select node   F: focus   End: drop to ground   Del: delete"));
-		break;
-	case nodebank_panel::COPY:
-		ImGui::TextDisabled(STR_C("LMB: copy the clicked model to the node bank"));
-		break;
 	case nodebank_panel::ADD:
 	{
-		ImGui::TextDisabled(STR_C("LMB: insert a model at the cursor"));
 		ImGui::Checkbox(STR_C("Random model from set"), &m_insertrandom);
 		if (m_insertrandom)
 		{
@@ -711,7 +718,6 @@ void editor_ui::render_mode_options(nodebank_panel::edit_mode const Mode)
 		break;
 	}
 	case nodebank_panel::BRUSH:
-		ImGui::TextDisabled(STR_C("Hold LMB: paint models along the cursor path"));
 		m_brushobjects.render_options(m_nodebankpanel);
 		m_functionspanel.render_controls();
 		break;
@@ -740,27 +746,8 @@ void editor_ui::render_tool_options()
 	}
 	if (ImGui::Begin((std::string(STR_C("Tool options")) + "###tooloptions").c_str(), &m_tooloptionsopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
-		char const *name{STR_C("Select")};
-		switch (current)
-		{
-		case nodebank_panel::ADD:
-			name = STR_C("Insert");
-			break;
-		case nodebank_panel::BRUSH:
-			name = STR_C("Brush");
-			break;
-		case nodebank_panel::FILL:
-			name = STR_C("Area fill");
-			break;
-		case nodebank_panel::COPY:
-			name = STR_C("Copy to bank");
-			break;
-		case nodebank_panel::TRACK:
-			name = STR_C("Tracks");
-			break;
-		default:
-			break;
-		}
+		// the field of work over the card of its tool in use, the same in all of them
+		auto const *name{current == nodebank_panel::TRACK ? STR_C("Tracks") : STR_C("Surroundings")};
 		if (active == workspace::roads)
 			name = STR_C("Roads");
 		else if (active == workspace::terrain)
@@ -778,7 +765,14 @@ void editor_ui::render_tool_options()
 				m_tracktools();
 		}
 		else
+		{
+			if (m_toolcard)
+				m_toolcard();
+			// the texts go on under themselves at the edge of the panel, narrower in a small window
+			ImGui::PushTextWrapPos(0.0f);
 			render_mode_options(current);
+			ImGui::PopTextWrapPos();
+		}
 		if (ImGui::CollapsingHeader(STR_C("Gizmo")))
 		{
 			if (m_gizmooptions)
@@ -803,6 +797,8 @@ void editor_ui::render_inspector()
 			ImGui::End();
 			return;
 		}
+		if (m_firststeps)
+			m_firststeps();
 		if (auto const &selection{m_workspaceselection[static_cast<std::size_t>(m_workspace)]})
 		{
 			selection();
@@ -881,6 +877,11 @@ void editor_ui::render_scene()
 	if (false == m_sceneopen)
 		return;
 	ImGui::SetNextWindowSize(ImVec2S(400, 420), ImGuiCond_FirstUseEver);
+	if (m_scenefocus)
+	{
+		ImGui::SetNextWindowFocus();
+		m_scenefocus = false;
+	}
 	if (ImGui::Begin((std::string(STR_C("Scene")) + "###scenetree").c_str(), &m_sceneopen, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
 	{
 		if (m_scenesize != scene::Hierarchy.size())
@@ -967,6 +968,16 @@ void editor_ui::render_scene()
 
 void editor_ui::render_menu_contents()
 {
+	// the menus opaque: the text of the windows under them showed through
+	auto background{ImGui::GetStyleColorVec4(ImGuiCol_PopupBg)};
+	background.w = 1.0f;
+	ImGui::PushStyleColor(ImGuiCol_PopupBg, background);
+	render_menus();
+	ImGui::PopStyleColor();
+}
+
+void editor_ui::render_menus()
+{
 	if (ImGui::BeginMenu(STR_C("File")))
 	{
 		if (ImGui::MenuItem(STR_C("New scenery...")) && m_newscenery)
@@ -1021,7 +1032,14 @@ void editor_ui::render_windows_menu()
 	ImGui::Separator();
 	ImGui::MenuItem(STR_C("Tool options"), nullptr, &m_tooloptionsopen);
 	ImGui::MenuItem(STR_C("Inspector"), nullptr, &m_inspectoropen);
-	ImGui::MenuItem(STR_C("Scene"), nullptr, &m_sceneopen);
+	// the one list of the objects of the scenery: opened, or brought forward where it's a tab behind another one
+	if (ImGui::MenuItem(STR_C("Scene"), nullptr, m_sceneopen))
+	{
+		m_sceneopen = true;
+		m_scenefocus = true;
+	}
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("%s", STR_C("The objects of the scenery by layer and group, found by name or uuid: a click selects one, a double click flies to it"));
 	ImGui::MenuItem(STR_C("Node bank"), nullptr, &m_nodebankpanel.is_open);
 	if (ImGui::MenuItem(STR_C("Model sets")))
 		m_nodebankpanel.open_sets_window();
@@ -1079,6 +1097,22 @@ void editor_ui::set_notice(std::string const &Notice)
 	m_refusal = Notice;
 	m_refusaltime = ImGui::GetTime();
 	m_refusalnotice = true;
+}
+
+void editor_ui::set_refusal(std::string const &Refusal)
+{
+	if (Refusal.empty() || ImGui::GetCurrentContext() == nullptr)
+		return;
+	m_refusal = Refusal;
+	m_refusaltime = ImGui::GetTime();
+	m_refusalnotice = false;
+}
+
+std::string editor_ui::refusal_shown() const
+{
+	if (ImGui::GetCurrentContext() == nullptr || ImGui::GetTime() - m_refusaltime > (m_refusalnotice ? 7.0 : 4.0))
+		return {};
+	return m_refusal;
 }
 
 void editor_ui::render_refusal()
@@ -1142,6 +1176,14 @@ std::string const *editor_ui::get_active_node_template(bool bypassRandom)
 			return pick;
 	}
 	return m_nodebankpanel.get_active_template();
+}
+
+bool editor_ui::bank_picked()
+{
+	auto const picked{m_nodebankpanel.take_picked()};
+	if (picked && (m_nodebankpanel.mode == nodebank_panel::MODIFY || m_nodebankpanel.mode == nodebank_panel::ADD))
+		m_insertrandom = false;
+	return picked;
 }
 
 nodebank_panel::edit_mode editor_ui::mode()

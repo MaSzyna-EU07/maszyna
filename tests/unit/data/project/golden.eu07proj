@@ -1,0 +1,43 @@
+eu07proj 1
+# the project of the track editor for the scenery next to it: the lines, the nodes and the norms of its tracks; the editor
+# reads and writes it whole, the simulator doesn't read it
+next node 6 line 4 vertex 3 turnout 1
+norms plk
+area granica ch 4 -500 0 -100 0 -100 400 -500 400
+area przejscie%20graniczne tsi 3 0 0 10 0 10 10
+lineprofile 91 en13803
+class 1 vmax 120 vmin 0 traffic mixed track main load 5 features 0
+class 2 vmax 80 vmin 40 traffic freight track side load 12.5 features 64
+node 1 at 0 100 0 heading 0 1 curvature 0 cant 0 grade 0 ends 1 1 start 1
+node 2 at 0 100 500 heading 0 1 curvature 0 cant 0 grade 0 ends 2 1 end 1 3 start 1
+node 5 at 300 102 900 heading 0.9486832980505138 0.31622776601683794 curvature 0 cant 0 grade 0.0016666666666666668 ends 1 3 end 1
+line 1 from 1 to 2 class 1 chainage 1200 transition clothoid ramp linear continues 0 0 turnout 0 profile tsi
+end
+line 3 from 2 to 5 class 2 chainage 1700 transition parabola ramp bloss continues 0 0 turnout 0 profile -
+vertex 2 at 0 800 radius 300 in 60 out 60 cant 40
+grade 200 101.5 5000
+end
+turnouts
+end
+anchors
+end
+generated
+track l1_se1 line 1 file trasa/tory.scm sum 0123456789abcdef
+track l3_s21 line 3 file trasa/tory.scm sum fedcba9876543210
+track l3_v2a1 line 3 file trasa/tory%20nowe.scm sum 00000000000000ff
+hand 3
+end
+legacy h trasa/tory.scm line 1
+| alignment 0.0000 100.0000 0.0000 0.0000 100.0000 500.0000
+| source designed origin 1200.0000 shape clothoid speed 120.0
+| end
+end
+legacy h trasa/tory.scm line 0 why a compound curve
+| alignment 1.0000 2.0000 3.0000 4.0000 5.0000 6.0000
+|
+| end
+end
+legacy r trasa/tory.scm line 0
+| # switches placed in the track editor, the simulation skips these lines
+| switch z1 Rz 60E1 500.000 12.000 L 15.550 15.550 0.000 parts 1 z1 start 100.0000 0.0000 200.0000 dir 0.000000000 1.000000000 km - number 1 source designed
+end

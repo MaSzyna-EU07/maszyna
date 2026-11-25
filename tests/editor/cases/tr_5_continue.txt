@@ -1,0 +1,31 @@
+# Laying from the photo: after Enter the tool stays at the end laid, the next clicks carry the line on from there, joined to it, with no
+# click on the free end; Esc ends it. The empty ground north-east of the fixture
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.15
+layp 2000 6000 2150 6000 2300 6000 2450 6000
+wait 2
+layenter
+wait 2
+expect laycontinue 1
+expect laypanel laid shown
+expect laid curves 0
+# on along the same straight, then into a curve to the left
+layp 2600 6000 2750 6000 2900 6000 3050 6002.5 3200 6012 3340 6030
+wait 2
+expect laypanel clicking folded
+layenter
+wait 2
+expect laid joined 1
+expect laid curves 1
+expect laycontinue 1
+expect steps 2
+tap esc
+wait 2
+expect laycontinue 0
+expect laypanel ready shown
+quit

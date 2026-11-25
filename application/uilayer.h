@@ -79,7 +79,7 @@ public:
     static bool init( GLFWwindow *Window );
 	static void imgui_style();
 	// colours of the user interface: 0 the green ones shared with the starter, 1 the amber ones of the editor
-	static void imgui_colors(int const Palette);
+	static void imgui_colors(int const Palette, float const WindowAlpha);
 
     // assign texturing hardware unit
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
@@ -154,7 +154,10 @@ protected:
 	{
 		return 0;
 	}
+	// how opaque the windows of this ui are: the setting of the simulator, ui.bg.opacity, unless the ui says otherwise
+	virtual float window_alpha() const;
 	static int m_palette; // colours set at the moment
+	static float m_window_alpha;
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
 	bool m_menu_always = false; // if `true`, the menu is shown all the time, not only when the mouse is at the top of the window
@@ -176,7 +179,6 @@ protected:
 	void render_panels();
 	void render_menu();
 	void render_quit_widget();
-    void render_hierarchy();
     // draws a quad between coordinates x,y and z,w with uv-coordinates spanning 0-1
     void quad( glm::vec4 const &Coordinates, glm::vec4 const &Color );
 // members
@@ -188,6 +190,5 @@ protected:
     std::string m_tooltip;
     bool m_quit_active = false;
 	bool m_imgui_demo = false;
-    bool m_editor_hierarchy = false;
     bool m_editor_change_history = false;
 };

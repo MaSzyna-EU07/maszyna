@@ -1,0 +1,28 @@
+# Laying from the photo: a line of 3.2 km with three curves of the norms (R 1200, 900 the other way, 1500) clicked along the middle of the
+# track as on the photo, sparsely, 20 clicks at most, in the shape traced on the photo, with no Tab and one Enter: the three curves are
+# recognised, their radii within 3 %, laid at the speed of the line. The empty ground north-east of the fixture (x 2000.., z 2000..)
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+# from the photo the heights are fitted to the ground by themselves, nothing chosen in this run
+expect layheights fitted
+laysigma 0.2
+laysample 2000 2000 0 500 300 160 0.15 30 1200 1130 -40 900 1130 25 1500 600
+wait 2
+expect laypanel clicking folded
+layenter
+wait 2
+expect laypanel laid shown
+expect laid clicks 20
+expect laid curves 3
+expect laid radius 0 1200 3
+expect laid radius 1 900 3
+expect laid radius 2 1500 3
+expect laid speed 0 100
+expect laid speed 1 100
+expect laid speed 2 100
+expect laykeys 0 1
+quit

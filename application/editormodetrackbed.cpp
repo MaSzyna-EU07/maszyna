@@ -129,7 +129,7 @@ double editor_mode::bed_height(glm::dvec3 const &Point, glm::dvec2 const &Direct
 void editor_mode::follow_ground(std::vector<segment_data> &Pieces, double const Height0, double const Grade0, double const Height1, double const Grade1, TTrack const *Style) const
 {
 	// from point to point or level the heights lead from one end to the other, whatever the ground between
-	if (EditorSettings.heights() != editorSettings::lay_heights::fitted)
+	if (lay_heights_now() != editorSettings::lay_heights::fitted)
 	{
 		ground_follow::follow(Pieces, {Height0, Grade0, Height1, Grade1}, [](std::vector<glm::dvec3> const &Points, std::vector<glm::dvec2> const &) { return std::vector<double>(Points.size(), std::numeric_limits<double>::quiet_NaN()); });
 		return;
@@ -161,12 +161,24 @@ ground_follow::grading editor_mode::laying_grading(TTrack const *Style) const
 	return grading;
 }
 
-glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point)
+glm::dvec3 editor_mode::lay_bed(glm::dvec3 const &Point, click_heights::source *Source)
 {
 	auto const &tool{m_lay};
 	// level: on at the height the laying goes on from, the first point on the ground
-	if (EditorSettings.heights() == editorSettings::lay_heights::level && false == tool.points.empty())
+	if (lay_heights_now() == editorSettings::lay_heights::level && false == tool.points.empty())
+	{
+		if (Source != nullptr)
+			*Source = click_heights::source::level;
 		return {Point.x, tool.points.back().y, Point.z};
+	}
 	TTrack const *style{tool.start.track != nullptr ? tool.start.track : tool.copy_selected ? selected_track() : nullptr};
-	return {Point.x, bed_height(Point, tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back()), style), Point.z};
+	auto const direction{tool.points.empty() ? glm::dvec2{0.0} : plan_of(Point - tool.points.back())};
+	// no ground there yet, nor the model of it: the height a guess, taken again once the terrain comes
+	auto const height{bed_heights({Point}, {direction}, style).front()};
+	if (Source != nullptr)
+		*Source = std::isnan(height) ? click_heights::source::none : click_heights::source::ground;
+	if (false == std::isnan(height))
+		return {Point.x, height, Point.z};
+	auto const nearby{nearby_ground(Point)};
+	return {Point.x, std::isnan(nearby) ? Point.y : nearby + trackbed(style).first, Point.z};
 }

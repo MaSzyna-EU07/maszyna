@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorFormat.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorSpeed.hpp"
 #include "editor/editorGeometry.hpp"
 
 #include "world/Track.h"
@@ -517,6 +518,13 @@ bool editor_mode::move_switch_paths(TTrack &Track, std::vector<segment_data> con
 		Status = reason;
 		return false;
 	}
+	// where it goes, the cant of the line under it and near it as at laying it: one breaking a hard rule stays as it is
+	if (auto const refusal{straight_switch_refusal(editor_track::find_straight(Track, m_straights.tolerance), Paths.front().points[segment_data::point::start], Paths.front().points[segment_data::point::end], false, {&Track})};
+	    false == refusal.empty())
+	{
+		Status = refusal;
+		return false;
+	}
 	auto const ends{switch_end_moves(Track, Paths.front(), online, {low, high}, m_straights.tolerance.offset, Status)};
 	if (false == ends.has_value())
 		return false;
@@ -617,6 +625,14 @@ bool editor_mode::move_double_paths(double_switch const &Set, std::vector<segmen
 	if (false == online && false == reason.empty())
 	{
 		Status = reason;
+		return false;
+	}
+	// where it goes, the cant of the line under both its switches and near them as at laying it: one breaking a hard rule stays as it is
+	if (auto const refusal{straight_switch_refusal(editor_track::find_straight(*Set.first, m_straights.tolerance), Paths[0].points[segment_data::point::start], Paths[2].points[segment_data::point::end], false,
+	                                               {Set.first, Set.link, Set.second})};
+	    false == refusal.empty())
+	{
+		Status = refusal;
 		return false;
 	}
 	struct outer_end
@@ -914,7 +930,11 @@ bool editor_mode::slide_bent_switch(TTrack &Track, double const Distance)
 	switch_store::follow();
 	records_to_history();
 	straight_refresh();
-	m_switch.status = format(STR_C("Switch %s moved %.2f m along the curve"), Track.name().c_str(), distance) + (notes.empty() ? "" : "\n") + notes;
+	// bent where it lies now: the speed on its diverging track as there, of the type of its record
+	std::string speed;
+	if (auto const known{switch_store::named(Track)}; known.has_value() && known->radius > 0.0)
+		speed = write_switch_speed(Track, known->radius, known->ratio, speed_check::path_velocity(Track, 0));
+	m_switch.status = format(STR_C("Switch %s moved %.2f m along the curve"), Track.name().c_str(), distance) + (notes.empty() ? "" : "\n") + notes + (speed.empty() ? "" : "\n") + speed;
 	ui()->set_status(m_switch.status, false == notes.empty());
 	return true;
 }
@@ -924,6 +944,13 @@ bool editor_mode::lay_bent_switch(TTrack &Track, std::vector<curve_sample> const
 	Notes.clear();
 	if (Paths.size() < 2 || Frame.size() < 2)
 		return false;
+	// where it goes, as at laying it into the curve: the curvatures of its tracks, the cant of the line under it and near it; one breaking a
+	// hard rule stays as it is
+	if (auto const report{bent_switch_report(Track, Frame, {Sides[0], &Track, Sides[1]}, Paths)}; false == report.refusals.empty())
+	{
+		Notes = switch_refusal(report.refusals, false);
+		return false;
+	}
 	auto const &main{Paths.front()};
 	// where the new ends of the switch fall along the curve, within the tracks next to it
 	std::array<double, 2> const ends{nearest_station(Frame, main.points[segment_data::point::start]), nearest_station(Frame, main.points[segment_data::point::end])};
@@ -998,6 +1025,9 @@ bool editor_mode::slide_switch(TTrack &Track, double const Distance)
 {
 	if (std::abs(Distance) < 0.005)
 		return false;
+	// a turnout of the model moved along its line by its command
+	if (model_switch_slide(Track, Distance))
+		return false == model_refused();
 	// a slip slides whole
 	if (auto const slip{slip_of(Track)})
 		return slide_slip(*slip, Distance);

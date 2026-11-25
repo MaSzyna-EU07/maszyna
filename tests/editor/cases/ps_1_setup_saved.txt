@@ -1,0 +1,27 @@
+# The assumptions of the project (editor-project-setup.md): a scenery with none asks for them, the defaults meanwhile. Set as the
+# Start of the card sets them, they're written into the scenery as //$u with it and read back the same when it's opened again
+# They're the defaults of the tools: the speed of the laying, the gauge of the norms
+wait 5
+expect setup none
+expect setupmark absent
+expect layspeed 100
+setup norms tsi speed 80 traffic freight track side gauge 1000 rail 49E1
+expect setup norms tsi
+expect setup speed 80
+expect layspeed 80
+expect norms gauge 1065
+save
+wait 5
+expect setupmark present
+quit
+#> reopen
+wait 5
+expect setup norms tsi
+expect setup speed 80
+expect setup traffic freight
+expect setup track side
+expect setup gauge 1000
+expect setup rail 49E1
+expect layspeed 80
+expect norms gauge 1065
+quit

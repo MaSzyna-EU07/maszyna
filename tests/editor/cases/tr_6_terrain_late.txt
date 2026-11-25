@@ -1,0 +1,102 @@
+# Laying from the photo where the terrain isn't there yet: it's made around the cursor from the first point clicked, a moment later. The
+# terrain of the NMT held back all along (nmtsettings hold 1: the chunks waiting not made, the model not read), the points clicked have
+# their heights guessed. Enter waits for the terrain under them with a line in the panel, Esc gives the wait up keeping the points,
+# Enter again waits; the terrain made under the points then (terrainadd, terrainlevel), the line is laid by itself. Then the first
+# point clicked before the terrain, the next ones on it once it came: the first takes the height of the terrain too, no jump in the
+# grade at the second point. The terrain the case makes, not the NMT's: no network, and nothing waited for by the time, the frames of
+# the editor as fast as they come. Over Warszawa Zachodnia (the origin of the photo of the shots, the scenery placed so that the
+# terrain grows while laying), the station 1 km north of the place of the wait so the terrain of the one doesn't reach the other
+wait 5
+nmtsettings grow 1
+wait 2
+tap f3
+wait 5
+orthophoto 485535 634211 4 1 0
+ortho 330 whole
+wait 5
+tap l
+wait 10
+laymode traced
+laysigma 0.3
+# Enter waits for the terrain held back under the two points clicked before it
+nmtsettings hold 1
+camera 295 300 -700 295 0 -699.5
+wait 10
+mouseat 290 0 -790
+wait 3
+button left press
+wait 1
+button left release
+wait 3
+mouseat 292 0 -630
+wait 3
+button left press
+wait 1
+button left release
+wait 5
+expect layguessed 2
+expect laypanel clicking folded
+layenter
+wait 3
+expect laywait 1
+expect laykeys 0 1
+# Esc gives the wait up: nothing laid, the points stay
+tap esc
+wait 3
+expect laywait 0
+expect layguessed 2
+expect laypanel clicking folded
+layenter
+wait 3
+expect laywait 1
+# the terrain comes under the points, made at 8 m: they take its height, the line is laid by itself
+terrainadd 3 2
+terrainlevel 291 -710 600 8
+terrainlevel 291 -710 600 8
+terrainlevel 291 -710 600 8
+wait 10
+expect laywait 0
+expect laypanel laid shown
+expect laid clicks 2
+tap esc
+wait 5
+# at the station: the first point clicked before the terrain came, guessed; the terrain made under it then, the point takes its height.
+# The NMT held back meanwhile: only the terrain made here comes
+nmtsettings hold 1
+camera 295 300 300 295 0 300.5
+wait 10
+mouseat 290 0 200
+wait 3
+button left press
+wait 1
+button left release
+wait 5
+expect layguessed 1
+terrainadd 3 2
+terrainlevel 293 290 600 12
+terrainlevel 293 290 600 12
+terrainlevel 293 290 600 12
+wait 10
+expect layguessed 0
+# the next points on the terrain: laid at once, its grade with no jump at the second point
+mouseat 292 0 290
+wait 3
+button left press
+wait 1
+button left release
+wait 3
+mouseat 296 0 380
+wait 3
+button left press
+wait 1
+button left release
+wait 5
+expect layguessed 0
+layenter
+wait 5
+expect laywait 0
+expect laid clicks 3
+expect laid steepest 60
+nmtsettings hold 0
+wait 2
+quit

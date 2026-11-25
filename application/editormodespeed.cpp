@@ -231,7 +231,7 @@ void speed_tool::render_options()
 	if (ImGui::TreeNode(STR_C("Thresholds")))
 	{
 		auto &options{state.options};
-		if (begin_fields("##speedlimits", 0.6f))
+		if (begin_fields_fitted("##speedlimits", 0.6f, {"Unbalanced acceleration (m/s2)", "Switch branches (m/s2)", "Cant change rate (mm/s)", "Cant ramp 1:(k*V), k", "Unbalanced acc. change rate (m/s3)", "Reference length (m)"}))
 		{
 			auto const limit = [](char const *Label, char const *Id, double &Value, char const *Format) {
 				field_row(Label);
@@ -288,64 +288,68 @@ void speed_tool::render_options()
 			                  "A switch has one velocity for both its tracks: negative limits only the diverging one, the main one keeping no limit.\n"
 			                  "When the main track needs a limit of its own, the lower of the two applies to both"));
 	}
-	auto const namewidth{std::max(120.0f, ImGui::GetContentRegionAvail().x * 0.3f)};
-	ImGui::Columns(6, "speedcolumns", false);
-	ImGui::SetColumnWidth(0, namewidth + 8.0f);
-	for (auto const *header : {"Path", "Limit", "Safe", "Suggested", "Cause", "R / cant"})
-	{
-		ImGui::TextDisabled("%s", STR_C(header));
-		ImGui::NextColumn();
-	}
-	ImGui::Columns(1);
 	bool const chosen{state.selected >= 0 && state.selected < static_cast<int>(state.results.size())};
 	auto const details{chosen ? ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() * 5.0f : 0.0f};
-	ImGui::BeginChild("speedresults", ImVec2(0.0f, -details), true);
-	ImGui::Columns(6, "speedrows", false);
-	ImGui::SetColumnWidth(0, namewidth);
-	ImGuiListClipper clipper;
-	clipper.Begin(static_cast<int>(listed.size()));
-	while (clipper.Step())
-		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+	// each column as wide as what's in it and its name and a little apart, the last one to the edge; the names stay at the top
+	// as the list scrolls
+	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(std::round(ImGui::GetFontSize() * 0.6f), ImGui::GetStyle().CellPadding.y));
+	if (ImGui::BeginTable("speedresults", 6, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter, ImVec2(0.0f, -details)))
+	{
+		for (int column = 0; column < 6; ++column)
+			ImGui::TableSetupColumn(nullptr, column == 5 ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_None);
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableNextRow();
+		for (auto const *header : {"Path", "Limit", "Safe", "Suggested", "Cause", "R / cant"})
 		{
-			auto const index{listed[row]};
-			auto const &verdict{state.results[index]};
-			bool const violated{verdict.violated(state.options)};
-			bool const bad{violated || verdict.warned(state.options)};
-			auto const colour{violated ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f)};
-			auto name{name_of(*verdict.track)};
-			if (verdict.track->eType == tt_Switch)
-				name += verdict.path == 0 ? STR_C(" (main)") : STR_C(" (branch)");
-			if (bad)
-				ImGui::PushStyleColor(ImGuiCol_Text, colour);
-			if (ImGui::Selectable((name + "##speed" + std::to_string(index)).c_str(), state.selected == index, ImGuiSelectableFlags_SpanAllColumns))
-				speed_focus(index);
-			if (ImGui::IsItemHovered())
+			ImGui::TableNextColumn();
+			ImGui::TextDisabled("%s", STR_C(header));
+		}
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(listed.size()));
+		while (clipper.Step())
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
 			{
-				if (bad)
-					ImGui::PopStyleColor();
-				ImGui::SetTooltip("%s", speed_check::explain(verdict, state.options).c_str());
+				auto const index{listed[row]};
+				auto const &verdict{state.results[index]};
+				bool const violated{verdict.violated(state.options)};
+				bool const bad{violated || verdict.warned(state.options)};
+				auto const colour{violated ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f) : ImVec4(1.0f, 0.75f, 0.3f, 1.0f)};
+				auto name{name_of(*verdict.track)};
+				if (verdict.track->eType == tt_Switch)
+					name += verdict.path == 0 ? STR_C(" (main)") : STR_C(" (branch)");
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
 				if (bad)
 					ImGui::PushStyleColor(ImGuiCol_Text, colour);
+				if (ImGui::Selectable((name + "##speed" + std::to_string(index)).c_str(), state.selected == index, ImGuiSelectableFlags_SpanAllColumns))
+					speed_focus(index);
+				if (ImGui::IsItemHovered())
+				{
+					if (bad)
+						ImGui::PopStyleColor();
+					ImGui::SetTooltip("%s", speed_check::explain(verdict, state.options).c_str());
+					if (bad)
+						ImGui::PushStyleColor(ImGuiCol_Text, colour);
+				}
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(speed_text(verdict.set).c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(verdict.safe >= state.options.top ? STR_C("any") : format("%.0f", verdict.safe).c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(verdict.safe >= state.options.top ? "-" : format("%.0f", speed_check::suggested(verdict.safe)).c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(STR_C(speed_check::describe(verdict.why)));
+				ImGui::TableNextColumn();
+				if (verdict.radius > 0.0)
+					ImGui::Text(STR_C("%.0f m / %.0f mm"), verdict.radius, verdict.cant);
+				else
+					ImGui::TextUnformatted("-");
+				if (bad)
+					ImGui::PopStyleColor();
 			}
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(speed_text(verdict.set).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(verdict.safe >= state.options.top ? STR_C("any") : format("%.0f", verdict.safe).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(verdict.safe >= state.options.top ? "-" : format("%.0f", speed_check::suggested(verdict.safe)).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(STR_C(speed_check::describe(verdict.why)));
-			ImGui::NextColumn();
-			if (verdict.radius > 0.0)
-				ImGui::Text(STR_C("%.0f m / %.0f mm"), verdict.radius, verdict.cant);
-			else
-				ImGui::TextUnformatted("-");
-			ImGui::NextColumn();
-			if (bad)
-				ImGui::PopStyleColor();
-		}
-	ImGui::Columns(1);
-	ImGui::EndChild();
+		ImGui::EndTable();
+	}
+	ImGui::PopStyleVar();
 	if (chosen)
 	{
 		auto const &verdict{state.results[state.selected]};

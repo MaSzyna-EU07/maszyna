@@ -1,0 +1,34 @@
+# Laying flow: the panel of the lay tool goes through its states, each with its step at its top. Nothing clicked: its settings shown.
+# Points clicked: the settings folded to the line of their summary. The line laid with Enter: told in one line over the settings
+# shown again. Taken back with Ctrl+Z: ready, the line laid no more told. The same traced on the photo. The points go on
+# the empty ground between the turntable tt1 and the curves (x 220..270), the camera straight above them
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+camera 245 200 150 245 0 150.5
+wait 3
+expect laypanel ready shown
+layp 225 120
+wait 2
+expect laypanel clicking folded
+layp 235 165 250 185
+wait 2
+expect laypanel clicking folded
+layenter
+wait 2
+expect laypanel laid shown
+undo
+wait 2
+expect laypanel ready shown
+laymode traced
+wait 2
+expect laypanel ready shown
+layp 225 120 235 165 245 180
+wait 2
+expect laypanel clicking folded
+laycancel
+wait 2
+expect laypanel ready shown
+quit

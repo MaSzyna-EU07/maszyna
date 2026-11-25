@@ -441,10 +441,17 @@ std::shared_ptr<editor_nmt::square const> editor_nmt::fetch(key const &Key, std:
 		return result;
 	}
 	editor_http::client client;
-	// the download of the area gives way to the squares asked for: the terrain under the track laid isn't kept waiting for it
-	auto const yield = [this, Yielded]() {
+	// the download of the area gives way to the squares asked for: the terrain under the track laid isn't kept waiting for it; and to
+	// another area, or to none once no terrain is to be made of the model: dropped, it went on to fail in the log long after
+	std::uint32_t generation{0};
+	if (Yielded != nullptr)
+	{
 		std::lock_guard<std::mutex> lock{m_mutex};
-		return Yielded != nullptr && false == m_queue.empty();
+		generation = m_prefetch_generation;
+	}
+	auto const yield = [this, Yielded, generation]() {
+		std::lock_guard<std::mutex> lock{m_mutex};
+		return Yielded != nullptr && (false == m_queue.empty() || m_prefetch_generation != generation);
 	};
 	auto const stop = [this, &yield]() {
 		{

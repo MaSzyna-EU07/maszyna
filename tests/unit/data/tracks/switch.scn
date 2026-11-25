@@ -1,0 +1,6 @@
+// switches, written the way the game writes them: read and written back each comes out the same
+// a switch with all its attributes: the speed of the diverging track, the trackbed, the frog made from the rails, the movable nose,
+// the blades, the unevenness of both paths, the timbers
+node -1 0 switch1 track switch 33.23 1.435 0.25 10 20 0 flat vis rail_screw_used1 4 tpbps-new2 0.2 0.5 1.1 0 0 0 0 0 0 11 0 0 -11 0 0 33.23 0 0 0 0 0 0 0 0 11 0.6 0 -11 1.8 0 33.1 0 300 velocity -40 isolated switch_iso trackbed tpbps-new2 frogs movablenose blades 5.5 0.16 uneven 14;10;8;6;4;2 timbermodel models/tory/rz_podklady.e3d none endtrack
+// a plain switch, invisible
+node -1 0 switch2 track switch 33.23 1.435 0.25 10 20 0 flat unvis 0 0 0 0 0 0 0 0 0 0 0 0 33.23 0 0 0 0 0 0 0 0 11 -0.6 0 -11 -1.8 0 33.1 0 -300 endtrack

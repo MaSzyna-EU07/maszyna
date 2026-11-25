@@ -611,7 +611,7 @@ void joints_tool::render_options()
 	}
 	if (ImGui::TreeNode(STR_C("Thresholds")))
 	{
-		if (begin_fields("##jointlimits", 0.55f))
+		if (begin_fields_fitted("##jointlimits", 0.55f, {"Around the camera (m)", "Gap up to (m)", "Step (m)", "Kink (deg)", "Cant jump (mm)", "Grade break (per mille)", "Off the terrain model (m)"}))
 		{
 			auto const limit = [](char const *Label, char const *Id, double &Value, char const *Format) {
 				field_row(Label);
@@ -675,36 +675,41 @@ void joints_tool::render_options()
 			                              "Kinks and grade breaks: the end is turned in line with the other path. Cant: the cant of the other path.\n"
 			                              "The plain path moves, a switch stays as it is. One Ctrl+Z takes it all back"));
 	}
-	auto const namewidth{std::max(110.0f, ImGui::GetContentRegionAvail().x * 0.32f)};
 	bool const chosen{state.selected >= 0 && state.selected < static_cast<int>(state.issues.size())};
 	auto const details{chosen ? ImGui::GetFrameHeightWithSpacing() + ImGui::GetTextLineHeightWithSpacing() * 2.0f : 0.0f};
-	ImGui::BeginChild("jointresults", ImVec2(0.0f, -details), true);
-	ImGui::Columns(4, "jointrows", false);
-	ImGui::SetColumnWidth(0, 90.0f);
-	ImGui::SetColumnWidth(1, 80.0f);
-	ImGui::SetColumnWidth(2, namewidth);
-	ImGuiListClipper clipper;
-	clipper.Begin(static_cast<int>(listed.size()));
-	while (clipper.Step())
-		for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
-		{
-			auto const index{listed[row]};
-			auto const &issue{state.issues[index]};
-			auto const colour{ImGui::ColorConvertU32ToFloat4(kind_colour(issue.type))};
-			ImGui::PushStyleColor(ImGuiCol_Text, issue.fixed ? ImVec4(0.5f, 0.8f, 0.5f, 1.0f) : colour);
-			if (ImGui::Selectable(format("%s##joint%d", STR_C(kind_name(issue.type)), index).c_str(), state.selected == index, ImGuiSelectableFlags_SpanAllColumns))
-				joints_focus(index);
-			ImGui::PopStyleColor();
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(issue.fixed ? STR_C("fixed") : value_text(issue).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(label_of(issue.track).c_str());
-			ImGui::NextColumn();
-			ImGui::TextUnformatted(label_of(issue.other).c_str());
-			ImGui::NextColumn();
-		}
-	ImGui::Columns(1);
-	ImGui::EndChild();
+	// the kind, the value, the track and the other one, each column as wide as what's in it and a little apart: in a window
+	// docked across the bottom the tracks stay next to each other
+	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(std::round(ImGui::GetFontSize() * 0.6f), ImGui::GetStyle().CellPadding.y));
+	if (ImGui::BeginTable("jointresults", 4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter, ImVec2(0.0f, -details)))
+	{
+		ImGui::TableSetupColumn("##kind");
+		ImGui::TableSetupColumn("##value");
+		ImGui::TableSetupColumn("##track");
+		ImGui::TableSetupColumn("##other", ImGuiTableColumnFlags_WidthStretch);
+		ImGuiListClipper clipper;
+		clipper.Begin(static_cast<int>(listed.size()));
+		while (clipper.Step())
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+			{
+				auto const index{listed[row]};
+				auto const &issue{state.issues[index]};
+				auto const colour{ImGui::ColorConvertU32ToFloat4(kind_colour(issue.type))};
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::PushStyleColor(ImGuiCol_Text, issue.fixed ? ImVec4(0.5f, 0.8f, 0.5f, 1.0f) : colour);
+				if (ImGui::Selectable(format("%s##joint%d", STR_C(kind_name(issue.type)), index).c_str(), state.selected == index, ImGuiSelectableFlags_SpanAllColumns))
+					joints_focus(index);
+				ImGui::PopStyleColor();
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(issue.fixed ? STR_C("fixed") : value_text(issue).c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(label_of(issue.track).c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(label_of(issue.other).c_str());
+			}
+		ImGui::EndTable();
+	}
+	ImGui::PopStyleVar();
 	if (chosen)
 	{
 		auto &issue{state.issues[state.selected]};
