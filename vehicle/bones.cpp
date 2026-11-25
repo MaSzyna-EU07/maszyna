@@ -394,7 +394,9 @@ void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::
 	State.before = Nodes;
 	State.start = Start;
 	State.end = End;
+	State.step = 0.0;
 	State.started = true;
+	State.moving = false;
 }
 
 namespace {
@@ -473,6 +475,20 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 	auto const fromend{State.end};
 	// the move of the ends a substep: the hose goes along with the vehicles, only its own swing against them dies down
 	auto const carried{0.5 * ((Start - fromstart) + (End - fromend)) / static_cast<double>(steps)};
+	if (false == State.moving)
+	{
+		// a chain started where made goes along with its ends from the first step, rather than being left behind by a
+		// vehicle already running
+		for (std::size_t node{0}; node < State.now.size(); ++node)
+		{
+			State.before[node] = State.now[node] - carried;
+		}
+		State.step = step;
+		State.moving = true;
+	}
+	// the move of the last substep, for a substep of this length: the frames, and so the substeps, aren't all as long,
+	// and the move taken as it was would speed up or slow down the nodes against their ends with each change
+	auto scale{State.step > 0.0 ? step / State.step : 1.0};
 	for (auto substep{1}; substep <= steps; ++substep)
 	{
 		auto const along{static_cast<double>(substep) / steps};
@@ -480,10 +496,11 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 		auto const end{glm::mix(fromend, End, along)};
 		for (std::size_t node{0}; node < State.now.size(); ++node)
 		{
-			auto const velocity{carried + (State.now[node] - State.before[node] - carried) * keep};
+			auto const velocity{carried + ((State.now[node] - State.before[node]) * scale - carried) * keep};
 			State.before[node] = State.now[node];
 			State.now[node] += velocity + Physics.gravity * (step * step);
 		}
+		scale = 1.0;
 		for (auto iteration{0}; iteration < Physics.iterations; ++iteration)
 		{
 			keep_lengths(Lengths, Bends, Physics.bending, State.now, start, end);
@@ -491,6 +508,7 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 	}
 	State.start = Start;
 	State.end = End;
+	State.step = step;
 }
 
 void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End, double const Deltatime,

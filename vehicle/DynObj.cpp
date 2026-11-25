@@ -727,6 +727,9 @@ void TDynamicObject::bind_bones() {
 
 namespace {
 
+// s, the longest time since the chains moved last that they make up for rather than start again
+constexpr double max_chain_gap { 0.5 };
+
 // how far back from where the coupling heads meet a bent hose is metal, held to the head
 constexpr double coupling_head_length { 0.15 };
 
@@ -959,25 +962,82 @@ bones::animation bone_animation( bones::rig const &Rig, bones::bone const &Bone,
 
 // the chains swing in the world, their ends where the points of the vehicle are; their nodes are brought back to the
 // frame of the model file for the bones, the same for the pose a frame ahead
-bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
+namespace {
 
+// m, how near the ends of the chains of two coupled vehicles are to each other's for the two to be one hose
+constexpr double shared_chain_reach { 0.1 };
+
+} // namespace
+
+// the chain of the next vehicle the given chain is one with: one from the point the given chain ends at, coupled to
+// this vehicle, back to the point the given chain starts at, with as many nodes. a hose from cock to cock, which both
+// vehicles of the coupling have
+TDynamicObject::shared_chain TDynamicObject::find_shared_chain( std::size_t const Index, std::vector<glm::dvec3> const &Now ) const {
+
+    auto const &chain { m_rig.chains[ Index ] };
+    auto const &endpoint { m_rig.points[ chain.end ] };
+    if( endpoint.kind != bones::point_kind::coupler ) { return {}; }
+    auto const &neighbour { MoverParameters->Neighbours[ endpoint.end ] };
+    auto *vehicle { neighbour.vehicle };
+    if( vehicle == nullptr
+     || vehicle->m_rig.empty()
+     || false == TestFlag( MoverParameters->Couplers[ endpoint.end ].CouplingFlag, coupling::coupler ) ) {
+        return {};
+    }
     auto const frame { bones::model_file_frame() };
-    auto const inverse { glm::inverse( mMatrix ) };
-    auto const toworld = [ this, &frame ]( glm::dvec3 const &Point ) { return GetWorldPosition( frame * Point ); };
-    auto const tomodel = [ this, &frame, &inverse ]( glm::dvec3 const &Point ) { return frame * glm::dvec3( inverse * glm::dvec4( Point - vPosition, 0.0 ) ); };
-    // the vehicle is set up for each pass of the renderer, the chains move once a frame: by the render time since they
-    // moved last. a long frame, or the vehicle left alone while far, isn't taken in one: the chain would jump
+    auto const ourstart { GetWorldPosition( frame * Now[ chain.start ] ) };
+    auto const ourend { GetWorldPosition( frame * Now[ chain.end ] ) };
+    for( std::size_t index { 0 }; index < vehicle->m_rig.chains.size(); ++index ) {
+        auto const &theirs { vehicle->m_rig.chains[ index ] };
+        auto const &theirstart { vehicle->m_rig.points[ theirs.start ] };
+        auto const &theirend { vehicle->m_rig.points[ theirs.end ] };
+        if( theirs.nodes.size() != chain.nodes.size()
+         || theirstart.kind != bones::point_kind::fixed
+         || theirend.kind != bones::point_kind::coupler
+         || theirend.end != neighbour.vehicle_end ) {
+            continue;
+        }
+        auto const shift { vehicle->coupler_shift( theirend ) };
+        if( false == shift.has_value() ) { continue; }
+        if( glm::distance( vehicle->GetWorldPosition( frame * theirstart.rest ), ourend ) < shared_chain_reach
+         && glm::distance( vehicle->GetWorldPosition( frame * ( theirend.rest + *shift ) ), ourstart ) < shared_chain_reach ) {
+            return { vehicle, index };
+        }
+    }
+    return {};
+}
+
+// whether the chain shared with the next vehicle is moved by that one, and this one takes it from there. one of the two
+// moves it, so both draw the very same hose
+bool TDynamicObject::follows( shared_chain const &Shared ) const {
+
+    return Shared.vehicle != nullptr && std::less<TDynamicObject const *> {}( Shared.vehicle, this );
+}
+
+// moves the chains by the render time since they moved last, once a frame, all but those the next vehicle moves
+void TDynamicObject::advance_chains( std::vector<glm::dvec3> const &Now ) {
+
     auto const clock { Timer::GetRenderTime() };
-    auto const deltatime { m_chainclock < 0.0 ? 0.0 : std::clamp( clock - m_chainclock, 0.0, 0.1 ) };
-    auto const moved { clock != m_chainclock };
+    if( clock == m_chainclock ) { return; }
+    auto const elapsed { m_chainclock < 0.0 ? 0.0 : std::max( clock - m_chainclock, 0.0 ) };
+    // the time as it went, so the nodes keep up with their ends: a step cut short while the ends moved all the way would
+    // be a jolt. after a long gap (the vehicle left alone while far, or the game held up) the chains start again where
+    // made instead, going along with the vehicle
+    auto const restart { elapsed > max_chain_gap };
+    auto const deltatime { restart ? 0.0 : elapsed };
     m_chainclock = clock;
+    auto const frame { bones::model_file_frame() };
+    auto const toworld = [ this, &frame ]( glm::dvec3 const &Point ) { return GetWorldPosition( frame * Point ); };
     m_chainstates.resize( m_rig.chains.size() );
+    m_chainshared.assign( m_rig.chains.size(), {} );
     for( std::size_t index { 0 }; index < m_rig.chains.size(); ++index ) {
+        m_chainshared[ index ] = find_shared_chain( index, Now );
+        if( follows( m_chainshared[ index ] ) ) { continue; }
         auto const &chain { m_rig.chains[ index ] };
         auto &state { m_chainstates[ index ] };
         auto const start { toworld( Now[ chain.start ] ) };
         auto const end { toworld( Now[ chain.end ] ) };
-        if( false == state.started ) {
+        if( restart || false == state.started ) {
             std::vector<glm::dvec3> nodes;
             for( auto const node : chain.nodes ) {
                 nodes.emplace_back( toworld( m_rig.points[ node ].rest ) );
@@ -985,11 +1045,45 @@ bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<
             bones::start_chain( state, nodes, start, end );
         }
         bones::simulate( chain.lengths, chain.bends, state, start, end, deltatime );
-        for( std::size_t node { 0 }; node < chain.nodes.size(); ++node ) {
-            Now[ chain.nodes[ node ] ] = tomodel( state.now[ node ] );
+    }
+}
+
+// the same, for the next vehicle whose chain this one shares: with this vehicle's pose of the moment
+void TDynamicObject::advance_chains() {
+
+    if( m_rig.empty() || Timer::GetRenderTime() == m_chainclock ) { return; }
+    advance_chains( bones::pose( m_rig, bone_drive( false ) ) );
+}
+
+bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
+
+    advance_chains( Now );
+    auto const frame { bones::model_file_frame() };
+    auto const inverse { glm::inverse( mMatrix ) };
+    auto const tomodel = [ this, &frame, &inverse ]( glm::dvec3 const &Point ) { return frame * glm::dvec3( inverse * glm::dvec4( Point - vPosition, 0.0 ) ); };
+    for( std::size_t index { 0 }; index < m_rig.chains.size() && index < m_chainstates.size(); ++index ) {
+        auto const &chain { m_rig.chains[ index ] };
+        auto const *state { &m_chainstates[ index ] };
+        auto const shared { index < m_chainshared.size() ? m_chainshared[ index ] : shared_chain {} };
+        auto const followed { follows( shared ) };
+        if( followed ) {
+            // the hose as the next vehicle moved it, from its end
+            shared.vehicle->advance_chains();
+            if( shared.chain >= shared.vehicle->m_chainstates.size() ) { continue; }
+            state = &shared.vehicle->m_chainstates[ shared.chain ];
+        }
+        if( false == state->started || state->now.size() != chain.nodes.size() ) { continue; }
+        auto const count { chain.nodes.size() };
+        for( std::size_t node { 0 }; node < count; ++node ) {
+            auto const &world { state->now[ followed ? count - 1 - node : node ] };
+            Now[ chain.nodes[ node ] ] = tomodel( world );
             Next[ chain.nodes[ node ] ] = Now[ chain.nodes[ node ] ];
         }
     }
+    // whether the nodes moved since they were last taken into the pose: once a frame, also where the next vehicle moved
+    // the chains of this one
+    auto const moved { m_chainposed != m_chainclock };
+    m_chainposed = m_chainclock;
     return moved;
 }
 

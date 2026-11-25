@@ -41,8 +41,12 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] end
   frame of the world, in substeps of at most 1/240 s), with the ends pinned where their points are; the swing against
   the vehicle dies down within a fraction of a second, while the hose goes along with the vehicle's own motion. So a
   hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the buffers are pressed in. Each
-  node takes the average of what the lengths around it ask of it, and the order the pieces are taken in doesn't
-  matter: a chain from one vehicle's cock to the next vehicle's comes out the same for both of them.
+  node takes the average of what the lengths around it ask of it. A chain from a cock (a `fixed` point) to a
+  `coupler` point is one hose with the chain of the coupled vehicle that runs the other way, from the point ours
+  ends at back to the point ours starts at, with as many nodes: one of the two vehicles moves it, and both draw it,
+  so the coupled heads never part. The chains move by the time of each frame, the frames long or short; after a gap
+  of more than half a second (the vehicle left alone while far) they start again as made, going along with the
+  vehicle.
 - `bone`: the submodel moves with its anchor point and turns about it to keep facing the other point. With `none`
   it only moves: a coupling rod, which stays level. The submodel's own origin and axes don't matter.
 - `bonebend`: the submodel bends along a spine of points, usually the start of a chain and its nodes: each vertex

@@ -135,7 +135,9 @@ struct chain_state {
 	std::vector<glm::dvec3> before;
 	glm::dvec3 start{0.0};
 	glm::dvec3 end{0.0};
+	double step{0.0}; // s, the substep that took the nodes from before to now
 	bool started{false};
+	bool moving{false}; // whether the nodes have taken on the motion of the ends yet
 };
 struct chain_physics {
 	glm::dvec3 gravity{0.0, -9.81, 0.0}; // in the frame of the simulation

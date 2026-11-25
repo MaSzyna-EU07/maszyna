@@ -350,8 +350,15 @@ private:
     std::vector<bones::binding> m_bonebindings;
     std::vector<bone_wheel> m_bonewheels;
     bool m_bonesbound { false };
+    // a chain of the next vehicle one with a chain of this one: a hose from cock to cock, coupled
+    struct shared_chain {
+        TDynamicObject *vehicle { nullptr };
+        std::size_t chain { 0 };
+    };
     double m_chainclock { -1.0 }; // the render time the chains were moved to
+    double m_chainposed { -1.0 }; // the render time the nodes were last taken into the pose
     std::vector<bones::chain_state> m_chainstates; // of the chains of the rig, simulated in the world frame
+    std::vector<shared_chain> m_chainshared; // the chain of the next vehicle each one is one with, if any
     void load_bonepoint( cParser &Parser );
     void load_bonechain( cParser &Parser );
     void load_bonebend( cParser &Parser );
@@ -359,6 +366,10 @@ private:
     void pose_flexes( std::vector<glm::dvec3> const &Now );
     // returns whether the chains moved, once a frame
     bool simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
+    void advance_chains( std::vector<glm::dvec3> const &Now );
+    void advance_chains();
+    shared_chain find_shared_chain( std::size_t const Index, std::vector<glm::dvec3> const &Now ) const;
+    bool follows( shared_chain const &Shared ) const;
     void load_bone( cParser &Parser );
     void bind_bones();
     bones::drive bone_drive( bool const Future ) const;

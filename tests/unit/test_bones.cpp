@@ -319,3 +319,40 @@ TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swi
 	auto const made{rig.points[rig.chains[0].nodes[1]].rest};
 	CHECK(glm::length(standing.now[1] - made) <= glm::length(limp.now[1] - made) + 1e-6);
 }
+
+TEST_CASE("bones: a hose on a running vehicle keeps still through frames of changing length, from its start") {
+	auto const rig{hose()};
+	glm::dvec3 const start{0.0};
+	glm::dvec3 const end{1.0, 0.0, 0.0};
+	bones::chain_state standing;
+	bones::start_chain(standing, rests(rig), start, end);
+	for (auto time{0.0}; time < 20.0; time += 0.02) {
+		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, standing, start, end, 0.02, downwards());
+	}
+	// started at 50 km/h, with frames now short, now long: the substeps change their length from frame to frame
+	bones::chain_state running;
+	bones::start_chain(running, rests(rig), start, end);
+	glm::dvec3 const velocity{0.0, 13.9, 0.0};
+	glm::dvec3 travelled{0.0};
+	auto firstsecond{0.0};
+	auto settled{0.0};
+	auto time{0.0};
+	for (auto frame{0}; time < 20.0; ++frame) {
+		auto const deltatime{frame % 2 == 0 ? 0.005 : 0.035};
+		time += deltatime;
+		travelled += velocity * deltatime;
+		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, running, start + travelled, end + travelled, deltatime, downwards());
+		for (std::size_t node{0}; node < standing.now.size(); ++node) {
+			auto const off{glm::length((running.now[node] - travelled) - standing.now[node])};
+			if (time < 1.0) {
+				firstsecond = std::max(firstsecond, glm::length((running.now[node] - travelled) - rig.points[rig.chains[0].nodes[node]].rest));
+			}
+			else if (time > 10.0) {
+				settled = std::max(settled, off);
+			}
+		}
+	}
+	// no whip at the start: the hose doesn't fly past where it hangs, left behind by the vehicle
+	CHECK(firstsecond < 0.5);
+	CHECK(settled < 0.005);
+}
