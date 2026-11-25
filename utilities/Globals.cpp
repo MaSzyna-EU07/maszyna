@@ -614,6 +614,14 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
         return true;
     }
 
+    // the saved odometer states of the vehicles not run for this many days are dropped, 0 = never (vehicle/odometer.h)
+    if (token == "odometer.expiry")
+    {
+        ParseOne(Parser, odometer_expiry);
+        odometer_expiry = std::max(0, odometer_expiry);
+        return true;
+    }
+
     if (token == "blackbox")
     {
         bool blackbox{false};
@@ -1884,6 +1892,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "sound.efx.airabsorption", AudioAirAbsorption );
     export_as_text( Output, "physicslog", WriteLogFlag );
     export_as_text( Output, "physicslog.trains", WriteTrainLogFlag );
+    export_as_text( Output, "odometer.expiry", odometer_expiry );
     if( BlackBox ) {
         export_as_text( Output, "blackbox", *BlackBox );
     }

@@ -102,21 +102,23 @@ std::string format_day(day const Day) {
 	                   static_cast<unsigned>(date.day()));
 }
 
-// the day of a stamp line, which can't be later than Today. Today for a malformed one: the states after it are kept
+// the day of a stamp line, as written, a day later than Today included. Today for a malformed one: the states after it
+// are kept
 day stamp_day(std::string_view const Line, day const Today) {
 	auto text{Line.substr(stamp_prefix.size())};
 	while (false == text.empty() && (text.back() == ' ' || text.back() == '\t'))
 		text.remove_suffix(1);
-	auto const stamp{parse_day(text)};
-	if (false == stamp.has_value())
-		return Today;
-	return std::min(*stamp, Today);
+	return parse_day(text).value_or(Today);
 }
 
 } // namespace
 
 day today() {
 	return std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+}
+
+std::chrono::days expiry() {
+	return std::chrono::days{std::max(0, Global.odometer_expiry)};
 }
 
 void reading::begin(double const Km, origin const Source) {
@@ -169,6 +171,7 @@ std::size_t store::read(std::istream &Input, day const Today) {
 		if (false == km.has_value() || name.empty())
 			continue;
 		m_states[name] = state{*km, guessed, stamp};
+		m_read_latest = std::max(m_read_latest.value_or(stamp), stamp);
 		++count;
 	}
 	return count;
@@ -234,7 +237,10 @@ void store::record(std::string const &Vehicle, reading const &Odometer, day cons
 	}
 	if (false == newer(recorded, lookup->second))
 		return;
+	// a clock set back doesn't move the day back
+	auto const latest{std::max(lookup->second.updated, Today)};
 	lookup->second = recorded;
+	lookup->second.updated = latest;
 	m_modified = true;
 }
 
@@ -261,8 +267,13 @@ void store::merge(store const &Other) {
 	}
 }
 
-std::size_t store::expire(day const Today) {
-	return std::erase_if(m_states, [Today](auto const &Entry) { return Today - Entry.second.updated > expiry; });
+std::size_t store::expire(day const Today, std::chrono::days const Period) {
+	if (Period <= std::chrono::days::zero())
+		return 0;
+	// not from a later Today alone: a clock set forward, or the first save after a break, doesn't drop every state not
+	// run in this session
+	auto const since{std::min(Today, m_read_latest.value_or(Today))};
+	return std::erase_if(m_states, [since, Period](auto const &Entry) { return since - Entry.second.updated > Period; });
 }
 
 bool store::holds(store const &Other) const {
@@ -376,20 +387,21 @@ store &states() {
 namespace {
 
 // the states as the file holds them once written, the km rounded to the digits written
-store as_written(store const &States) {
+store as_written(store const &States, day const Today) {
 	std::stringstream text;
 	States.write(text);
 	store result;
-	result.read(text);
+	result.read(text, Today);
 	return result;
 }
 
 } // namespace
 
-bool save(store &States, std::filesystem::path const &File, day const Today) {
+bool save(store &States, std::filesystem::path const &File, day const Today, std::chrono::days const Period) {
 	if (false == States.modified() && false == States.unconfirmed())
 		return true;
 	std::error_code error;
+	std::size_t expired{0};
 	if (File.has_parent_path())
 		std::filesystem::create_directories(File.parent_path(), error);
 	// other simulations on the machine (multiplayer, parallel runs) keep their states in the same file: what they
@@ -401,13 +413,13 @@ bool save(store &States, std::filesystem::path const &File, day const Today) {
 			saved.read(input, Today);
 		States.merge(saved);
 		// the vehicles not run for long, of this simulation and of the others alike, so the file doesn't keep every
-		// vehicle ever run
-		if (auto const expired{States.expire(Today)}; expired > 0)
-			WriteLog(std::format("Odometer states of {} vehicles not updated for {} days dropped", expired, expiry.count()));
+		// vehicle ever run. they're logged once the file is written without them: a save that doesn't write it leaves
+		// them in it (the next save that writes it drops them again), and a write that fails is tried again
+		expired = States.expire(Today, Period);
 		// another simulation that read the file before the last save of this one and put its own in place after it
 		// dropped the states this one wrote. when the file holds them all, the same or newer, there's nothing to write
 		if (false == States.modified()) {
-			if (saved.holds(as_written(States))) {
+			if (saved.holds(as_written(States, Today))) {
 				States.confirmed();
 				return true;
 			}
@@ -446,6 +458,8 @@ bool save(store &States, std::filesystem::path const &File, day const Today) {
 		return false;
 	}
 	States.saved();
+	if (expired > 0)
+		WriteLog(std::format("Odometer states of {} vehicles not updated for {} days dropped", expired, Period.count()));
 	return true;
 }
 

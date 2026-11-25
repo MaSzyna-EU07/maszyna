@@ -4,14 +4,23 @@
 #include "utilities/Globals.h"
 #include "vehicle/odometer.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 // the odometer of a vehicle, kept between the sessions (eu07/maszyna#72): one state the cab's counters and the
 // python screens show, saved in one store, taking over the states the python screens kept in their own files
@@ -830,7 +839,7 @@ TEST_CASE("odometer: a build before the stamps reads the file with them as it re
 	CHECK(old.at("SM42-001").guessed);
 }
 
-TEST_CASE("odometer: a stamp later than the day, or a malformed one, doesn't make a state expire") {
+TEST_CASE("odometer: a stamp later than the day is kept as written, a malformed one doesn't make a state expire") {
 	auto const store{read_text("# updated 2099-01-01\n1 future\n"
 	                           "# updated 2025-01-01\n2 dated\n"
 	                           "# a comment between\n3 after a comment\n"
@@ -841,7 +850,8 @@ TEST_CASE("odometer: a stamp later than the day, or a malformed one, doesn't mak
 	                           "#updated 2024-01-01\n8 not a stamp\n")};
 	odometer::day const newyear{std::chrono::year{2025} / 1 / 1};
 	CHECK(store.size() == 8);
-	CHECK(store.updated("future") == today);
+	// a clock set back doesn't move it back (review of #435: the next session with the right clock dropped them all)
+	CHECK(store.updated("future") == odometer::day{std::chrono::year{2099} / 1 / 1});
 	CHECK(store.updated("dated") == newyear);
 	CHECK(store.updated("after a comment") == newyear);
 	CHECK(store.updated("malformed") == today);
@@ -875,18 +885,18 @@ TEST_CASE("odometer: of two stores merged, the later day of a state is kept, whi
 }
 
 TEST_CASE("odometer: a save drops the states not updated for longer than a year, the other simulations' too") {
-	static_assert(odometer::expiry == std::chrono::days{365});
+	CHECK(odometer::expiry() == std::chrono::days{365});
 	scratch_directory directory{"odometer_expiry"};
 	auto const path{directory.path / "eu07_odometers.txt"};
 	write_file(path, "# updated 2025-11-20\n100 over a year\n"
 	                 "# updated 2025-11-21\n200 a year\n"
-	                 "# updated 2026-11-20\n300 fresh\n");
+	                 "# updated 2026-11-21\n300 fresh\n");
 	auto store{read_text(read_file(path))};
 	// another simulation saved meanwhile, with a state as old as one of this one's
 	write_file(path, "# updated 2025-11-20\n100 over a year\n"
 	                 "# updated 2025-11-21\n200 a year\n"
 	                 "# updated 2025-06-01\n5 old of another\n"
-	                 "# updated 2026-11-20\n300 fresh\n6 fresh of another\n");
+	                 "# updated 2026-11-21\n300 fresh\n6 fresh of another\n");
 	store.record("run today", run(70.0, 1000.0), today);
 	REQUIRE(odometer::save(store, path, today));
 
@@ -903,9 +913,15 @@ TEST_CASE("odometer: a save drops the states not updated for longer than a year,
 	CHECK_FALSE(store.find("over a year").has_value());
 	CHECK(store.size() == 4);
 
-	SUBCASE("the day after, the one of a year drops too, at the next save") {
+	SUBCASE("the one of a year drops too once the file was updated a day later, in the session that reads it") {
+		// the session goes on the next day: measured from the day the file had when the session read it
 		store.record("run today", run(71.0, 1000.0), days_on(1));
 		REQUIRE(odometer::save(store, path, days_on(1)));
+		CHECK(read_text(read_file(path), days_on(1)).find("a year").has_value());
+		// the next session
+		auto next{read_text(read_file(path), days_on(1))};
+		next.record("run today", run(72.0, 1000.0), days_on(1));
+		REQUIRE(odometer::save(next, path, days_on(1)));
 		auto const later{read_text(read_file(path), days_on(1))};
 		CHECK(later.size() == 3);
 		CHECK_FALSE(later.find("a year").has_value());
@@ -949,4 +965,181 @@ TEST_CASE("odometer: a save lost to another simulation's save is written again w
 	CHECK(saved.updated("first only") == today);
 	CHECK(saved.find("second only").value() == doctest::Approx(81.0));
 	CHECK(saved.updated("second only") == days_ago(1));
+}
+
+// a wrong clock, the period of eu07.ini (odometer.expiry) and the log of what's dropped (review of eu07/maszyna#435)
+
+// the lines logged while the object lives, kept by the engine stubs (engine_stubs.cpp)
+void unit_tests_log_capture(bool Enabled);
+std::vector<std::string> unit_tests_logged_lines();
+
+namespace {
+
+odometer::day const backintime{std::chrono::year{2000} / 1 / 1};
+
+int process_id() {
+#ifdef _WIN32
+	return _getpid();
+#else
+	return static_cast<int>(getpid());
+#endif
+}
+
+class log_capture {
+public:
+	log_capture() { unit_tests_log_capture(true); }
+	~log_capture() { unit_tests_log_capture(false); }
+	log_capture(log_capture const &) = delete;
+	log_capture &operator=(log_capture const &) = delete;
+
+	std::size_t count(std::string_view const Text) const {
+		auto const lines{unit_tests_logged_lines()};
+		return static_cast<std::size_t>(std::ranges::count_if(lines, [Text](std::string const &Line) { return Line.find(Text) != std::string::npos; }));
+	}
+};
+
+std::string const stamped_file{"# updated 2025-12-01\n100 a year ago\n"
+                               "# updated 2026-11-11\n200 driven\n"
+                               "# updated 2026-11-21\n300 fresh\n"};
+
+} // namespace
+
+TEST_CASE("odometer: a clock set back doesn't move the days of the states back, nor drops them then") {
+	scratch_directory directory{"odometer_clock_back"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, stamped_file);
+	// a dead battery of the clock: the session starts on 2000-01-01
+	auto back{read_text(read_file(path), backintime)};
+	CHECK(back.updated("a year ago") == days_ago(355));
+	back.record("driven", run(200.0, 1000.0), backintime);
+	CHECK(back.updated("driven") == days_ago(10));
+	REQUIRE(odometer::save(back, path, backintime));
+	auto const written{read_file(path)};
+	CHECK(written.find("# updated 2000-01-01") == std::string::npos);
+	CHECK(read_text(written).size() == 3);
+
+	// the next session with the right clock drops none of them
+	auto right{read_text(written, days_on(1))};
+	right.record("fresh", run(300.0, 1000.0), days_on(1));
+	REQUIRE(odometer::save(right, path, days_on(1)));
+	auto const after{read_text(read_file(path), days_on(1))};
+	CHECK(after.size() == 3);
+	CHECK(after.updated("a year ago") == days_ago(355));
+	CHECK(after.updated("driven") == days_ago(10));
+	CHECK(after.find("driven").value() == doctest::Approx(201.0));
+}
+
+TEST_CASE("odometer: a clock set forward doesn't drop the states not run in that session") {
+	scratch_directory directory{"odometer_clock_forward"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, stamped_file);
+	// two years ahead: measured from the day the file had when the session read it
+	auto ahead{read_text(read_file(path), days_on(730))};
+	ahead.record("driven", run(200.0, 1000.0), days_on(730));
+	REQUIRE(odometer::save(ahead, path, days_on(730)));
+	// the later saves of the session too, which find its own states of that day in the file
+	ahead.record("driven", run(201.0, 1000.0), days_on(730));
+	REQUIRE(odometer::save(ahead, path, days_on(730)));
+	CHECK(read_text(read_file(path), days_on(730)).size() == 3);
+
+	// the next session with the right clock: the day ahead is kept as written, nothing drops
+	auto right{read_text(read_file(path), days_on(1))};
+	CHECK(right.updated("driven") == days_on(730));
+	right.record("fresh", run(300.0, 1000.0), days_on(1));
+	REQUIRE(odometer::save(right, path, days_on(1)));
+	auto const after{read_text(read_file(path), days_on(1))};
+	CHECK(after.size() == 3);
+	CHECK(after.updated("a year ago") == days_ago(355));
+	CHECK(after.updated("driven") == days_on(730));
+}
+
+TEST_CASE("odometer: a player back after a break keeps the states in the session he comes back in") {
+	scratch_directory directory{"odometer_break"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	// the last session was 500 days ago
+	write_file(path, "# updated 2024-05-19\n10 too old\n"
+	                 "# updated 2025-01-31\n20 older\n"
+	                 "# updated 2025-07-09\n30 last run\n40 not run since\n");
+	REQUIRE(odometer::day{std::chrono::year{2025} / 7 / 9} == days_ago(500));
+	auto back{read_text(read_file(path))};
+	back.record("last run", run(30.0, 1000.0), today);
+	REQUIRE(odometer::save(back, path, today));
+	auto const first{read_text(read_file(path))};
+	// more than a year before the last session: gone, as that session would have dropped it the next day
+	CHECK_FALSE(first.find("too old").has_value());
+	CHECK(first.find("older").has_value());
+	CHECK(first.find("not run since").has_value());
+	CHECK(first.updated("last run") == today);
+
+	// the session after: not run for a year before the last one, they drop
+	auto next{read_text(read_file(path), days_on(1))};
+	next.record("last run", run(31.0, 1000.0), days_on(1));
+	REQUIRE(odometer::save(next, path, days_on(1)));
+	auto const second{read_text(read_file(path), days_on(1))};
+	CHECK(second.size() == 1);
+	CHECK(second.find("last run").has_value());
+}
+
+TEST_CASE("odometer: the period is the one eu07.ini gives, 0 keeps every state") {
+	auto const text{"# updated 2000-01-01\n1 long ago\n# updated 2026-10-21\n2 a month ago\n# updated 2026-11-21\n3 fresh\n"};
+	{
+		auto store{read_text(text)};
+		CHECK(store.expire(today, std::chrono::days{0}) == 0);
+		CHECK(store.size() == 3);
+	}
+	{
+		auto store{read_text(text)};
+		CHECK(store.expire(today, std::chrono::days{30}) == 2);
+		CHECK(store.find("fresh").has_value());
+	}
+	{
+		// and a save with it
+		scratch_directory directory{"odometer_never"};
+		auto const path{directory.path / "eu07_odometers.txt"};
+		write_file(path, text);
+		auto store{read_text(read_file(path))};
+		store.record("fresh", run(3.0, 1000.0), today);
+		REQUIRE(odometer::save(store, path, today, std::chrono::days{0}));
+		CHECK(read_text(read_file(path)).size() == 3);
+	}
+
+	// odometer.expiry <days> in eu07.ini, a year unless set (the parser of eu07.ini, Globals.cpp, isn't in the build of
+	// the unit tests)
+	CHECK(std::make_unique<global_settings>()->odometer_expiry == 365);
+	// the store of the simulation takes it from the settings, a negative one as 0
+	auto const kept{Global.odometer_expiry};
+	Global.odometer_expiry = 90;
+	CHECK(odometer::expiry() == std::chrono::days{90});
+	Global.odometer_expiry = 0;
+	CHECK(odometer::expiry() == std::chrono::days{0});
+	Global.odometer_expiry = -5;
+	CHECK(odometer::expiry() == std::chrono::days{0});
+	Global.odometer_expiry = kept;
+}
+
+TEST_CASE("odometer: the states dropped are logged once, by the save that writes the file without them") {
+	scratch_directory directory{"odometer_dropped_log"};
+	auto const path{directory.path / "eu07_odometers.txt"};
+	write_file(path, "# updated 2025-01-01\n1 long ago\n# updated 2026-11-21\n2 fresh\n");
+	auto store{read_text(read_file(path))};
+	store.record("fresh", run(2.0, 1000.0), today);
+	constexpr std::string_view dropped{"not updated for 365 days dropped"};
+	log_capture const log;
+
+	// the file aside can't be written: each save fails, none logs the states dropped
+	auto temporary{path};
+	temporary += "." + std::to_string(process_id()) + ".tmp";
+	std::filesystem::create_directories(temporary / "blocked");
+	CHECK_FALSE(odometer::save(store, path, today, std::chrono::days{365}));
+	CHECK_FALSE(odometer::save(store, path, today, std::chrono::days{365}));
+	CHECK(log.count(dropped) == 0);
+	CHECK(read_text(read_file(path)).find("long ago").has_value());
+
+	std::filesystem::remove_all(temporary);
+	REQUIRE(odometer::save(store, path, today, std::chrono::days{365}));
+	CHECK(log.count(dropped) == 1);
+	CHECK_FALSE(read_text(read_file(path)).find("long ago").has_value());
+	// the save after, which finds the file as written, doesn't log them again
+	REQUIRE(odometer::save(store, path, today, std::chrono::days{365}));
+	CHECK(log.count(dropped) == 1);
 }
