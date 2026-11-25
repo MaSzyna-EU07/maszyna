@@ -76,19 +76,21 @@ bool parse_arguments(int const Argc, char *Argv[], preview_settings &Settings)
 		}
 		else if (token == "-resolution")
 		{
-			if ((i + 1 >= Argc) || (false == parse_number(Argv[++i], Settings.resolution)) || (Settings.resolution < 16))
+			if ((i + 1 >= Argc) || (false == parse_number(Argv[i + 1], Settings.resolution)) || (Settings.resolution < 16))
 			{
 				report("-resolution needs a number of pixels, 16 or more", true);
 				return false;
 			}
+			++i;
 		}
 		else if (token == "-margin")
 		{
-			if ((i + 1 >= Argc) || (false == parse_number(Argv[++i], Settings.margin)) || (Settings.margin < 0))
+			if ((i + 1 >= Argc) || (false == parse_number(Argv[i + 1], Settings.margin)) || (Settings.margin < 0))
 			{
 				report("-margin needs a number of pixels, 0 or more", true);
 				return false;
 			}
+			++i;
 		}
 		else if (token == "-no-shadows")
 		{
@@ -285,6 +287,8 @@ int generate_nodebank_previews(int Argc, char *Argv[])
 	{
 		Global.LoadIniFile("eu07.ini");
 	}
+	// the settings are read, so the log service writes as it goes instead of holding everything until it stops
+	OpenLogFiles();
 	// the progress goes to the console, the log keeps the details
 	Global.iWriteLogEnabled &= ~2;
 	std::thread logservice(LogService);

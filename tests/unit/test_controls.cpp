@@ -4,7 +4,7 @@
 #include "drive.h"
 
 #include "McZapkie/hamulce.h"
-#include "McZapkie/core.h"
+#include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
 // characterisation of the controls a driver and a crew use besides driving and braking: doors, direction and
@@ -500,6 +500,14 @@ TEST_CASE("controls: a freight wagon loaded and braked") {
 }
 
 TEST_CASE("controls: a locomotive running into a standing wagon") {
+	// the legacy collisions of physics.collisions old: derailed, the wagon is a wall (test_collisions.cpp has the new)
+	struct legacy {
+		global_settings::collision_model previous{Global.collisions};
+		legacy() { Global.collisions = global_settings::collision_model::old; }
+		~legacy() { Global.collisions = previous; }
+		legacy(legacy const &) = delete;
+		legacy &operator=(legacy const &) = delete;
+	} const model;
 	for (auto const speed : {5.0, 15.0, 40.0}) {
 		CAPTURE(speed);
 		scenario scenario{std::format("controls/collision/{} kmh", static_cast<int>(speed)), motion()};

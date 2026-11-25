@@ -3,7 +3,7 @@
 #include "consist.h"
 #include "scenario.h"
 
-#include "McZapkie/core.h"
+#include "utilities/Globals.h"
 #include "utilities/utilities.h"
 
 // characterisation of the couplers between vehicles: coupling and uncoupling by hand (Attach, DettachStatus,
@@ -19,6 +19,22 @@ using mover::dtrain_coupling;
 using mover::dtrain_out;
 using mover::end;
 using mover::sound;
+
+namespace {
+
+// the given model of collisions for the test, restored after it
+class model_setting {
+public:
+	explicit model_setting(global_settings::collision_model Model) : m_previous{Global.collisions} { Global.collisions = Model; }
+	~model_setting() { Global.collisions = m_previous; }
+	model_setting(model_setting const &) = delete;
+	model_setting &operator=(model_setting const &) = delete;
+
+private:
+	global_settings::collision_model m_previous;
+};
+
+} // namespace
 
 TEST_CASE("couplers: coupled by hand, touching or apart, of the same kind or not") {
 	consist train;
@@ -153,7 +169,9 @@ TEST_CASE("couplers: a coupler broken, with its brake hose torn off") {
 
 TEST_CASE("couplers: collisions fast enough to derail") {
 	// a locomotive running into a standing wagon from behind, and a wagon running backwards into a standing
-	// locomotive; over 15 km/h, weighed by the ratio of the masses, the vehicles derail
+	// locomotive; over 15 km/h, weighed by the ratio of the masses, the vehicles derail. the legacy rule of
+	// physics.collisions old: the new model crushes the ends (test_collisions.cpp)
+	model_setting const legacy{global_settings::collision_model::old};
 	struct collision {
 		char const *name;
 		char const *frontpath;

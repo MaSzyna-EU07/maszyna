@@ -1,0 +1,13 @@
+// added by tests/scenarios/run.py to a scenery that keeps its own trainsets (strip_trainsets false): the
+// case tests one of the scenery's missions, with every train driven by AI.
+// the sceneries of this kind steer their stations with state cells, one per train (text and two values,
+// e.g. "a 6 *": the route of step 6 is set for the train, "d * *": the train is done at this station).
+// the probe looks at the cell {{cell}} every 5 s from the start on and reports the pass once it holds
+// {{state}}. no fail event: a train that never gets there ends the test with the standstill or the
+// timeout of the test mode.
+// the two events calling each other are the loop these sceneries use themselves (e.g. bal_obsluga_stacji);
+// an event with "onstart" in its name is queued when the scenery starts.
+event onstart_autotest_probe multiple 30 none autotest_probe endevent
+event autotest_probe multiple 0 {{cell}} autotest_pass else autotest_probe_wait condition memcompare {{state}} endevent
+event autotest_probe_wait multiple 5 none autotest_probe endevent
+event autotest_pass UpdateValues 0 __test.result {{reason}} 1 * endevent

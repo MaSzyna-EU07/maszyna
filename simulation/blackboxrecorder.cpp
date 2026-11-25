@@ -25,6 +25,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "utilities/utilities.h"
+#include "world/stationnames.h"
 
 #include <algorithm>
 #include <cctype>
@@ -392,8 +393,9 @@ void blackbox_recorder::write_map() {
 		if (values == nullptr)
 			continue;
 		auto const &text{values->input_text()};
+		// the name in the form the station records and the rows of the timetable have theirs, as it always was
 		if (text.starts_with(stoppoint))
-			m_writer->stop_point(stoppoints++, text_of(std::string_view{text}.substr(stoppoint.size())), values->input_location(),
+			m_writer->stop_point(stoppoints++, text_of(timetable::station_ascii(text.substr(stoppoint.size()))), values->input_location(),
 			    static_cast<float>(values->input_value(1)), static_cast<float>(values->input_value(2)), heading_of(values->input_location()));
 		else if (text == "Warning_signal")
 			m_writer->horn_point(hornpoints++, text_of(values->name()), values->input_location(), static_cast<float>(values->input_value(1)),
@@ -720,8 +722,9 @@ std::uint32_t blackbox_recorder::known_id(TDynamicObject const *Vehicle) {
 	return Vehicle != nullptr && Vehicle->bEnabled ? vehicle_id(Vehicle) : blackbox::no_vehicle;
 }
 
-std::uint32_t blackbox_recorder::signal_at(glm::dvec3 const &Location) const {
-	auto const found{std::ranges::find_if(m_signals, [&Location](signal_entry const &Signal) { return glm::distance(Signal.location, Location) < 0.01; })};
+std::uint32_t blackbox_recorder::signal_of(TMemCell const *Cell) const {
+	// by the memory cell, not by its position: two signals can have their cells at one point
+	auto const found{std::ranges::find(m_signals, Cell, &signal_entry::cell)};
 	if (found == m_signals.end())
 		return blackbox::no_signal;
 	return static_cast<std::uint32_t>(std::distance(m_signals.begin(), found));
@@ -750,7 +753,7 @@ void blackbox_recorder::signal_passed(TDynamicObject const *Vehicle, basic_event
 	if (m_writer == nullptr || Vehicle == nullptr)
 		return;
 	auto const location{Event.input_location()};
-	m_writer->signal_passed({m_time, vehicle_id(Vehicle), signal_at(location), text_of(Event.name()), location, static_cast<float>(Speed1), static_cast<float>(Speed2),
+	m_writer->signal_passed({m_time, vehicle_id(Vehicle), signal_of(Event.input_cell()), text_of(Event.name()), location, static_cast<float>(Speed1), static_cast<float>(Speed2),
 	    static_cast<float>(Trainspeed), static_cast<float>(Overrun), Flags});
 }
 

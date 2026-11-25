@@ -179,6 +179,8 @@ TTrackShape shape_of(track const &Track) {
 	TTrackShape shape;
 	shape.Len = 1000.0;
 	shape.dHtrack = Track.gradient;
+	shape.R = Track.radius;
+	shape.dHrail = Track.cant;
 	return shape;
 }
 
@@ -186,6 +188,7 @@ TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 	TTrackParam param;
 	param.Width = Track.width;
 	param.friction = Track.friction;
+	param.Name = &Track.name;
 	// the vehicle's own kind of way: a road vehicle on rails derails as soon as it moves
 	if (Track.category != 0) {
 		param.CategoryFlag = Track.category;
@@ -201,6 +204,7 @@ TTrackParam parameters_of(track const &Track, TMoverParameters const &Mover) {
 double vehicle::fast_move(track const &Track, double Dt, TLocation const &Location) {
 	// TDynamicObject::FastUpdate(), the iterations of a frame before the last one
 	auto param{parameters_of(Track, *m_mover)};
+	param.DamageFlag = m_trackdamage;
 	return m_mover->FastComputeMovement(Dt, shape_of(Track), param, Location, TRotation{0.0, 0.0, 0.0});
 }
 
@@ -223,7 +227,8 @@ void vehicle::forces(double Dt) {
 
 double vehicle::move(track const &Track, double Dt, TLocation const &Location, double Trainpipe) {
 	auto const shape{shape_of(Track)};
-	auto const param{parameters_of(Track, *m_mover)};
+	auto param{parameters_of(Track, *m_mover)};
+	param.DamageFlag = m_trackdamage;
 	TRotation const rotation{0.0, 0.0, 0.0};
 
 	// what TDynamicObject::Update() does before the movement. a raised pantograph touches the wire at once,
@@ -341,6 +346,8 @@ void pair::step(track const &Track, double Dt) {
 		auto const &mover{placed.owner->mover()};
 		placed.position += placed.heading * placed.owner->move(Track, Dt, TLocation{placed.position, 0.0, 0.0}, mover.PipePress);
 	}
+	// vehicle_table::update_brake_pipes()
+	TMoverParameters::UpdatePipeCouplers({&m_vehicles[0].owner->mover(), &m_vehicles[1].owner->mover()}, Dt);
 }
 
 void pair::run(double Seconds, track const &Track, double Dt) {
