@@ -8647,21 +8647,7 @@ void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Comma
 
 	if (Command.action == GLFW_PRESS)
 	{
-		auto const movedirection{1};
-		if (Command.param1 == 1.0)
-		{
-			auto const exitdirection{end::front};
-			auto *targetvehicle = Train->mvOccupied->Couplers[exitdirection].Connected
-			                          ? Train->mvOccupied->Neighbours[exitdirection].vehicle
-			                          : nullptr;
-			if (targetvehicle)
-			{
-				targetvehicle->MoverParameters->CabOccupied =
-					Train->mvOccupied->Neighbours[exitdirection].vehicle_end ? -1 : 1;
-				Train->MoveToVehicle(targetvehicle);
-			}
-		}
-		else if (false == Train->CabChange(movedirection))
+		if (auto const movedirection{1}; false == Train->CabChange(movedirection))
 		{
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
 			if (TestFlag(Train->mvOccupied->Couplers[exitdirection].CouplingFlag, coupling::gangway))
@@ -8690,21 +8676,7 @@ void TTrain::OnCommand_cabchangebackward(TTrain *Train, command_data const &Comm
 
 	if (Command.action == GLFW_PRESS)
 	{
-		auto const movedirection{-1};
-		if (Command.param1 == 1.0)
-		{
-			auto const exitdirection{end::rear};
-			auto *targetvehicle = Train->mvOccupied->Couplers[exitdirection].Connected
-			                          ? Train->mvOccupied->Neighbours[exitdirection].vehicle
-			                          : nullptr;
-			if (targetvehicle)
-			{
-				targetvehicle->MoverParameters->CabOccupied =
-					Train->mvOccupied->Neighbours[exitdirection].vehicle_end ? -1 : 1;
-				Train->MoveToVehicle(targetvehicle);
-			}
-		}
-		else if (false == Train->CabChange(movedirection))
+		if (auto const movedirection{-1}; false == Train->CabChange(movedirection))
 		{
 			// current vehicle doesn't extend any farther in this direction, check if we there's one connected we can move to
 			auto const exitdirection{(movedirection > 0 ? end::front : end::rear)};
