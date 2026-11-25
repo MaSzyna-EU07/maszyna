@@ -47,7 +47,8 @@ jobs:
       matrix:
         # a pull request from a branch of this repository builds the AVX2 variant only; the variant without AVX2
         # (the same sources, one compiler switch) is built by the push of that branch, by the pushes to staging
-        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both
+        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both.
+        # so the "No AVX2" jobs of a pull request of this repository never run: don't make them a required check
         variant: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
@@ -204,6 +205,10 @@ jobs:
   linux:
     name: Linux x64 / GCC / ${{ matrix.variant.name }}
     runs-on: ubuntu-24.04
+    # actions: write only to delete the older compiler caches after a save (the step after "Save the compiler cache")
+    permissions:
+      contents: read
+      actions: write
     # see the notes above the windows job: two variants, each with a concurrency group of its own
     concurrency:
       group: ${{ github.workflow }}-linux-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
@@ -305,8 +310,10 @@ jobs:
           python --version
 
       # The compiler cache (ccache), one per variant. Only the runs on staging and master save it (the step after the
-      # build); a pull request takes the newest one of its variant, and so recompiles just what it changed. A pull
-      # request can read the caches of its base branch and of the default branch, not those of other pull requests.
+      # build) and delete their older ones; a pull request takes the newest one of its variant, and so recompiles just
+      # what it changed. A pull request can read the caches of its base branch and of the default branch, not those of
+      # other pull requests. A push of another branch can read only master's, so it hits only as far as the branch
+      # still matches master.
       # The compiler version is in the key, so a new GCC of the runner image starts a cache of its own, with no
       # fallback to the cache of the old one, which ccache couldn't use (the compiler is part of its hash).
       - name: Compiler cache key
@@ -360,11 +367,28 @@ jobs:
           ccache --show-stats
 
       - name: Save the compiler cache
+        id: ccache-save
         if: ${{ !cancelled() && github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/master') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache
           key: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
+
+      # a cache can't be written over, so every save above is a new key of up to 0.5 GB. the older ones of this branch
+      # and variant (of any GCC) go right after it, or they'd fill the 10 GB of the repository and push out the small
+      # caches (audio-dlls-*, apt-*). a failed delete only leaves the old cache to the eviction
+      - name: Delete the older compiler caches
+        if: ${{ !cancelled() && steps.ccache-save.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFIX: ccache-linux-${{ matrix.variant.suffix }}-
+          KEEP: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "$PREFIX" --limit 100 --json id,key \
+            --jq ".[] | select(.key != env.KEEP) | .id" |
+          while read -r id; do
+            gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || echo "::warning::cache $id not deleted"
+          done
 
       # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
       # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
