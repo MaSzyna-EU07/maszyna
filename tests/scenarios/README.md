@@ -341,6 +341,23 @@ brake of the Vectron switched on), and `event0` of the track gives the driver `O
 starts up, charges the brake pipe and leaves on time (the stop after 209 s and 1393 m); without the `H`
 the pipe stays below 1 bar and the case ends as a standstill after 300 s.
 
+`eu07_td_reinspect_brakes_after_coupling` (fragment `td_reinspect_brakes.scn`, eu07/maszyna#350 and #282) is about the
+wagon inspector of the AI (`TController::AutoRewident()`) on a train formed by coupling. An EU07 stands cold on the line
+from Stacja1 (`koniec`) and a cut stands 45 m ahead of it, braked, with nobody in it: 16 coaches with P alone (BDhpumn)
+and next to the locomotive 8 empty wagons with G and P (401W), 541 m of wagons. `event0` of the locomotive's track gives
+the driver `Shunt -3 3`, once: couple to the cut with the coupler and the brake hose and run it on as a train
+(`Obey_train`), waiting for the way, which `event2` of `tdo_n231`, in front of the cut, gives as a `SetVelocity 40 40`
+(no signal of the line is in sight). Over 500 m of wagons make it a train on G (Cw-1 §19.1), where the brake of a wagon
+without G is cut out (§19.9). The inspector looks at the train as the AI couples, at 4 km/h (t=69 s), too fast for it to
+cut a brake out, and leaves that for the next standstill: `reinspect_brakes()` cuts the 16 coaches out as the train stands
+a moment later, its brakes applied by the empty pipe of the cut. Neither the physicslog nor the black box has the brakes
+of the wagons, so the case tells by how the train brakes: `event2` of `tdo_n240` takes the driver off at 38 km/h, which
+leaves the brake valve in the emergency position, and braked by the locomotive and the 8 wagons alone the train stops 29 s
+and 211 m later, a mean deceleration of 0.27 m/s² (`stops_driverless` with `max_deceleration` 0.40). With every brake
+working it stops at 0.57 m/s², 99 m: that is `eu07_td_reinspect_brakes_legacy_inspector`, the same run with the inspector
+of the earlier releases (`ai.brakesetting.cw1 no`), which cuts no brake out, and also what a build whose
+`reinspect_brakes()` does nothing gives for the first case, which then fails. The test passes 150 s after the driver goes.
+
 ### Cases on a mission of a scenery
 
 The cases made from players' reports (eu07/maszyna#421, #506, #524, #525) run a whole mission
@@ -433,7 +450,10 @@ the row instead, logged by builds from this branch on.
   (1 m), `hold` (60 s): the black box has the vehicle lose its driver at `min_speed` or faster,
   stand `within` seconds later and stay within `max_creep` of where it stopped for the rest of
   the recording, or until it gets a driver again, at least `hold` seconds. The physicslog can't
-  tell: the driver writes it, so it ends when the driver goes.
+  tell: the driver writes it, so it ends when the driver goes. Optional `min_deceleration`,
+  `max_deceleration` (m/s²): the mean deceleration of that stop, from the speed the driver left at
+  and the way to the stop (v²/2s), has to be within them, e.g. a train some of whose brakes are
+  cut out stops slower.
 - `moves` `vehicle`, `min_speed`, optional `direction` (`front`, or `rear`): the black box has the
   vehicle reach `min_speed` with that end leading (the physicslog speed has no direction).
 

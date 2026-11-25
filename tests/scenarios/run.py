@@ -705,9 +705,11 @@ def check_driver_changes(box, vehicle, to, after=0.0, before=None):
     return True, f"{vehicle} has driver {to} from t={change.time:.1f}s to the end (t={box.end_time:.1f}s)"
 
 
-def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0):
+def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_creep=1.0, hold=60.0,
+                           min_deceleration=None, max_deceleration=None):
     """The vehicle loses its driver at `min_speed` or faster, stands `within` seconds later and stays where it
-    stopped, to the end of the recording or until it gets a driver again."""
+    stopped, to the end of the recording or until it gets a driver again. With the decelerations, the mean one of
+    that stop (from the speed and the way to the stop, m/s²) has to be within them: how well the train brakes."""
     states, why = _vehicle_states(box, vehicle)
     if states is None:
         return False, why
@@ -734,8 +736,15 @@ def check_stops_driverless(box, vehicle, min_speed, within, stop_speed=0.5, max_
     if fastest > stop_speed or creep > max_creep:
         return False, f"{vehicle} stood at t={stop.time:.1f}s, then moved {creep:.1f} m at up to {fastest:.1f} km/h with no driver"
     way = sum(math.dist(a.position, b.position) for a, b in zip(after, after[1:]) if b.time <= stop.time)
-    return True, (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
-                  f"and {way:.0f} m later, moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}")
+    stopped = (f"{vehicle} lost its driver at t={left.time:.1f}s at {abs(left.speed):.1f} km/h, stood {stop.time - left.time:.0f}s "
+               f"and {way:.0f} m later")
+    # v² / 2s: the black box lists a vehicle once a second, so the way is closer to the truth than the time
+    deceleration = (abs(left.speed) / 3.6) ** 2 / (2 * way) if way > 0 else math.inf
+    if ((min_deceleration is not None and deceleration < min_deceleration)
+            or (max_deceleration is not None and deceleration > max_deceleration)):
+        bounds = f"{min_deceleration if min_deceleration is not None else 0:g}..{max_deceleration if max_deceleration is not None else 'any'}"
+        return False, f"{stopped}: a mean deceleration of {deceleration:.2f} m/s², outside {bounds}"
+    return True, f"{stopped} ({deceleration:.2f} m/s²), moved {creep:.2f} m in the {until - stop.time:.0f}s {alone}"
 
 
 def check_moves(box, vehicle, min_speed, direction="front"):
