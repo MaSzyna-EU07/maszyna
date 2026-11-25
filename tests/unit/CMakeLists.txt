@@ -26,6 +26,8 @@ add_executable(${UNIT_TESTS_NAME}
 	"${CMAKE_SOURCE_DIR}/editor/editorAlignment.cpp"
 	# and the line traced on the photo, its straights and curves recognised from the points clicked
 	"${CMAKE_SOURCE_DIR}/editor/editorTrace.cpp"
+	# and the stations traced on the photo: the turnouts fitted to the points, the tracks alongside, the heads (test_trace_station.cpp)
+	"${CMAKE_SOURCE_DIR}/editor/editorTraceStation.cpp"
 	# and the heights of the tracks laid, and of the points clicked laying them
 	"${CMAKE_SOURCE_DIR}/editor/editorGroundFollow.cpp"
 	"${CMAKE_SOURCE_DIR}/editor/editorClickHeights.cpp"

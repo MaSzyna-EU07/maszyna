@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorSettings.hpp"
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorSwitchStore.hpp"
+#include "editor/editorGeometry.hpp"
 #include "scene/scenelayers.h"
 #include "simulation/simulation.h"
 #include "utilities/Logs.h"
@@ -743,6 +744,130 @@ editor_mode::selftest_result editor_mode::selftest_expect(std::string const &com
 		expect_steps(what, words, static_cast<std::size_t>(std::ranges::count_if(m_history, [](EditorSnapshot const &Step) { return false == Step.joined; })));
 	else if (kind == "laid")
 		expect_laid(what, words, m_lay.laid.tracks, m_lay.laid.length, m_lay.laid.traced);
+	else if (kind == "station")
+	{
+		// expect station <what> ...: the station the lay tool traced last on the photo: turnouts <count> (the switches laid with the line),
+		// turnout <0|1> <type> (the one it starts with, or ends with, of the template, _ for spaces), moved <0|1> <m> <tolerance> (by the
+		// norms of the head), crossover <0|1>, alongside <spacing> <tolerance> (the run alongside a track: the spacing laid, the tracks off it
+		// by no more than the tolerance), free <count> (the free ends of the tracks of the line), status <text> (the status of the lay tool
+		// holds it), shown <turnouts|crossover|alongside|refused> <count|0|1> (of the line shown while the points are clicked)
+		std::string which;
+		words >> which;
+		auto const &laid{m_lay.laid};
+		auto const &station{laid.station};
+		auto const turnout_of = [&](traced_station const &Station, int const Index) -> traced_turnout const * {
+			if (Index == 0 && Station.start.has_value())
+				return &*Station.start;
+			if (Index == 1 && Station.end.has_value())
+				return &*Station.end;
+			return nullptr;
+		};
+		if (which == "turnouts")
+		{
+			std::size_t wanted{0};
+			words >> wanted;
+			if (false == malformed(what, words))
+				expectation(laid.turnouts.size() == wanted, what, std::to_string(laid.turnouts.size()), std::to_string(wanted));
+		}
+		else if (which == "turnout" || which == "moved")
+		{
+			int index{0};
+			words >> index;
+			std::string type;
+			double moved{0.0};
+			double tolerance{0.0};
+			if (which == "turnout")
+				words >> type;
+			else
+				words >> moved >> tolerance;
+			std::replace(type.begin(), type.end(), '_', ' ');
+			auto const *turnout{station.has_value() ? turnout_of(*station, index) : nullptr};
+			if (auto const bad{malformed(what, words)}; bad)
+			{
+			}
+			else if (turnout == nullptr)
+				expectation(false, what, "no such turnout", format("turnout %d", index));
+			else if (which == "turnout")
+			{
+				auto const &title{m_switch.templates[turnout->shape].title()};
+				expectation(title == type, what, title, type);
+			}
+			else
+				expect_near(what, std::abs(turnout->moved), moved, tolerance);
+		}
+		else if (which == "crossover")
+		{
+			int wanted{0};
+			words >> wanted;
+			if (false == malformed(what, words))
+				expectation(laid.crossover == (wanted != 0), what, laid.crossover ? "1" : "0", wanted != 0 ? "1" : "0");
+		}
+		else if (which == "alongside")
+		{
+			double spacing{0.0};
+			double tolerance{0.0};
+			words >> spacing >> tolerance;
+			if (auto const bad{malformed(what, words)}; bad)
+			{
+			}
+			else if (false == station.has_value() || false == station->alongside.has_value())
+				expectation(false, what, "no run alongside a track", format("one %.2f m away", spacing));
+			else
+			{
+				auto const &alongside{*station->alongside};
+				// the tracks laid along the run, at their ends and in their middles, off the spacing: between its second point and the one before
+				// its last, its first and its last may be where the curves before and after it begin within the noise of the clicks
+				auto const inner{alongside.last - alongside.first >= 3 ? std::size_t{1} : std::size_t{0}};
+				auto const from{trace_station::abreast_of(alongside.axis, geometry::plan_of(station->points[alongside.first + inner])).along};
+				auto const to{trace_station::abreast_of(alongside.axis, geometry::plan_of(station->points[alongside.last - inner])).along};
+				double worst{0.0};
+				std::size_t measured{0};
+				for (auto const *track : laid.tracks)
+					for (auto const t : {0.0, 0.5, 1.0})
+					{
+						auto const at{trace_station::abreast_of(alongside.axis, geometry::plan_of(geometry::bezier{track->m_paths.front()}.point(t)))};
+						if (false == at.found || at.along < std::min(from, to) || at.along > std::max(from, to))
+							continue;
+						worst = std::max(worst, std::abs(std::abs(at.lateral) - std::abs(alongside.spacing)));
+						++measured;
+					}
+				expectation(std::abs(std::abs(alongside.spacing) - spacing) < 1e-6 && measured > 0 && worst <= tolerance, what, format("%.2f m, the tracks off it by up to %.4f m (%zu points)", std::abs(alongside.spacing), worst, measured),
+				            format("%.2f m, the tracks off it by up to %.4f m", spacing, tolerance));
+			}
+		}
+		else if (which == "free")
+		{
+			std::size_t wanted{0};
+			words >> wanted;
+			std::size_t free{0};
+			for (auto const *track : laid.tracks)
+				free += (track->trPrev == nullptr ? 1 : 0) + (track->trNext == nullptr ? 1 : 0);
+			if (false == malformed(what, words))
+				expectation(free == wanted, what, std::to_string(free), std::to_string(wanted));
+		}
+		else if (which == "status")
+			expect_status(what, words, m_lay.status);
+		else if (which == "shown")
+		{
+			std::string part;
+			std::size_t wanted{0};
+			words >> part >> wanted;
+			auto const &shown{m_lay.station};
+			std::size_t got{0};
+			if (part == "turnouts")
+				got = (shown.start.has_value() ? 1 : 0) + (shown.end.has_value() ? 1 : 0);
+			else if (part == "crossover")
+				got = shown.crossover ? 1 : 0;
+			else if (part == "alongside")
+				got = shown.alongside.has_value() ? 1 : 0;
+			else if (part == "refused")
+				got = shown.refusal.empty() ? 0 : 1;
+			if (false == malformed(what, words))
+				expectation(got == wanted, what, std::to_string(got) + (shown.refusal.empty() ? std::string{} : " (" + shown.refusal + ")"), std::to_string(wanted));
+		}
+		else
+			expectation(false, what, "no expectation station " + which, "turnouts, turnout, moved, crossover, alongside, free, status or shown");
+	}
 	else if (kind == "laykeys")
 	{
 		// the shapes switched with Tab and the lines laid with Enter since the start

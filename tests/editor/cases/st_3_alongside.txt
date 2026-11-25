@@ -1,0 +1,22 @@
+# Stations from the photo (Etap 5): a line traced alongside a track, its clicks 4.08 m off it give or take the noise, is laid exactly
+# alongside it, at the usual 4.0 m. The empty ground north-east of the fixture (x 2000.., z 9200..)
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.1
+layp 2000 9200 2500 9200 3000 9200
+layenter
+wait 2
+tap esc
+wait 2
+layp 2100.00 9204.12 2250.00 9204.03 2400.00 9204.11 2550.00 9204.05 2700.00 9204.09
+layenter
+wait 2
+expect station alongside 4.0 0.005
+expect station turnouts 0
+expect station status Alongside
+expect steps 2
+quit

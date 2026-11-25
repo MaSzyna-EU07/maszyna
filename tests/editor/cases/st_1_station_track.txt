@@ -1,0 +1,35 @@
+# Stations from the photo (Etap 5): a station track between two heads in one run of clicks, no tool switched, no Tab. The first click on
+# the main track where the turnout starts, the clicks along its diverging track, the reverse curve and the track alongside at 4.75 m (as
+# clicked, a few cm off), the clicks into the other turnout, the last click on the main track: two turnouts Rz 60E1-300-1:9 laid into the
+# main track, fitted to the clicks, the station track between them exactly 4.75 m off the main one, joined at both ends; one step of the
+# history, Ctrl+Z takes it all back. The empty ground north-east of the fixture (x 2000.., z 9000..)
+wait 5
+tap f3
+wait 2
+tap l
+wait 2
+laymode traced
+laysigma 0.1
+# the main track, 1 km straight
+layp 2000 9000 2500 9000 3000 9000
+layenter
+wait 2
+tap esc
+wait 2
+expect steps 1
+layp 2199.50 9000.00 2208.04 9000.06 2215.03 9000.36 2222.05 9000.77 2229.02 9001.37 2238.04 9002.33 2250.01 9003.60 2260.03 9004.28 2270.05 9004.68 2320.02 9004.79 2399.95 9004.78 2499.98 9004.80 2599.96 9004.77 2679.97 9004.79 2729.95 9004.70 2739.98 9004.35 2749.96 9003.67 2761.99 9002.40 2768.54 9001.61 2800.50 9000.00
+wait 2
+expect station turnouts 2
+expect station turnout 0 Rz_60E1-300-1:9
+expect station turnout 1 Rz_60E1-300-1:9
+expect station crossover 0
+expect station alongside 4.75 0.005
+expect station free 0
+expect station status Rz 60E1-300-1:9 · 50 km/h
+expect station status Alongside
+expect steps 2
+expect laycontinue 0
+undo
+wait 2
+expect steps 1
+quit

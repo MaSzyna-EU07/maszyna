@@ -15699,3 +15699,48 @@ msgstr "niweleta łamie się o %.1f%% na główkach torów obok siebie: dopuszcz
 
 msgid "the grade line of the road breaks at the heads of two tracks side by side by more than 5% (Dz.U. 2025 poz. 1105, annex 5 pt 3)"
 msgstr "niweleta drogi łamie się na główkach dwóch torów obok siebie o więcej niż 5% (Dz.U. 2025 poz. 1105, zał. 5 pkt 3)"
+
+msgid "A turnout traced on the photo goes into a straight track. Into a curve, lay it with the turnout tool, then trace on from the end of its diverging track"
+msgstr "Rozjazd odrysowany ze zdjęcia wchodzi w tor prosty. W łuk ułóż go narzędziem Rozjazd, potem odrysowuj dalej od końca jego toru zwrotnego"
+
+msgid "On a line of the model the turnout is laid with the turnout tool: lay it there, then trace on from the end of its diverging track"
+msgstr "Na linii modelu rozjazd układa narzędzie Rozjazd: ułóż go nim, potem odrysowuj dalej od końca jego toru zwrotnego"
+
+msgid "The catalogue has no turnouts of the rail %s to fit"
+msgstr "Katalog nie ma rozjazdów szyny %s do dopasowania"
+
+msgid "No room for %s here: %.1f m of plain track between the turnouts, it needs %.1f m and %g m of straight to each of them"
+msgstr "Brak miejsca na %s: między rozjazdami jest %.1f m zwykłego toru, potrzeba %.1f m i po %g m prostej do każdego z nich"
+
+msgid "moved %.1f m (straight between turnouts at least %g m)"
+msgstr "przesunięto o %.1f m (prosta między rozjazdami min %g m)"
+
+msgid "Click points along the track between the turnouts"
+msgstr "Kliknij punkty wzdłuż toru między rozjazdami"
+
+msgid "Crossover of %s, traced on the photo · Ctrl+Z undoes"
+msgstr "Połączenie torów z %s, odrysowane ze zdjęcia · Ctrl+Z cofa"
+
+msgid "The track the turnout goes into isn't a plain straight there any more"
+msgstr "Tor, w który wchodzi rozjazd, nie jest już tam zwykłą prostą"
+
+msgid "The turnout couldn't be laid"
+msgstr "Nie udało się ułożyć rozjazdu"
+
+msgid "The track between the turnouts couldn't be laid"
+msgstr "Nie udało się ułożyć toru między rozjazdami"
+
+msgid "Alongside %s · %.2f m (measured %.2f m)"
+msgstr "Równoległy do %s · %.2f m (zmierzone %.2f m)"
+
+msgid "crossover · %s"
+msgstr "połączenie torów · %s"
+
+msgid "alongside %s · %.2f m"
+msgstr "równoległy do %s · %.2f m"
+
+msgid "Turnout %s: %s"
+msgstr "Rozjazd %s: %s"
+
+msgid "A click on a track starts the line with a turnout into it, the last one on a track ends it with one"
+msgstr "Klik na torze zaczyna tor rozjazdem z niego, ostatni klik na torze kończy go rozjazdem"

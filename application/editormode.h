@@ -38,6 +38,7 @@ http://mozilla.org/MPL/2.0/.
 #include "editor/editorConnections.hpp"
 #include "editor/editorAlignment.hpp"
 #include "editor/editorTrace.hpp"
+#include "editor/editorTraceStation.hpp"
 #include "editor/editorClickHeights.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
@@ -1938,6 +1939,56 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		// one curve, goes at one grade from end to end
 		std::vector<glm::dvec3> knots;
 	};
+	// stations traced on the photo (Etap 5): the line traced from a click on a track starts with a turnout of the catalogue into that track,
+	// fitted to the points clicked along its diverging track; one ending with a click on a track ends with one into it; from a click on a
+	// track to one on a track running alongside it, with nothing but the turnouts between, a crossover of the solver of the connections. A run
+	// of the points keeping one spacing from a track beside it is laid exactly alongside it, the spacing rounded to the usual ones
+	struct traced_turnout
+	{
+		TTrack *track{nullptr}; // clicked on
+		editor_track::straight line; // the straight of the main track it goes into
+		int shape{-1}; // of the switch templates of the switch tool
+		trace_station::turnout_fit fit; // along the line: its start, the way it runs from there and its side
+		bool at_end{false}; // the one the line ends with: fitted to the points from the last one back
+		double moved{0.0}; // m along the line, to keep the straight the norms ask from the turnout next to it
+		double least{0.0}; // m, that straight
+		double speed{0.0}; // km/h on its diverging track
+		std::vector<segment_data> paths; // as it'd be laid
+		trace::hold hold; // the end of its diverging track as the line runs: held where it starts, reached where it ends
+		glm::dvec3 end{0.0}; // the end of its diverging track, at its height
+		glm::dvec3 start{0.0}; // the tips of its blades on the main track
+		std::string label; // "Rz 60E1-300-1:9 · 40 km/h"
+		std::string note; // how far the norms moved it, and why
+	};
+	struct traced_alongside
+	{
+		std::size_t first{0}; // of the points the line is traced by, the last one in it
+		std::size_t last{0};
+		double spacing{0.0}; // m, to the left of the neighbour as its axis runs
+		double measured{0.0};
+		std::string neighbour; // the name of its track
+		std::vector<glm::dvec2> axis; // of the neighbour, in the plan
+		glm::dvec3 at{0.0}; // where it's told
+	};
+	struct traced_station
+	{
+		bool valid{false}; // a turnout or a crossover, or a run alongside a track
+		std::optional<traced_turnout> start;
+		std::optional<traced_turnout> end;
+		bool crossover{false};
+		connection::request request;
+		connection::result connection;
+		std::optional<traced_alongside> alongside;
+		// the points the line between the turnouts is traced by, those alongside a track moved onto the spacing; the clicks they're of
+		std::vector<glm::dvec3> points;
+		std::vector<double> sigmas;
+		std::vector<glm::dvec3> clicked;
+		std::vector<std::size_t> indices; // of the clicks among the points given
+		// a station track alongside a straight track from a turnout or into one, designed: the arcs joining the turnouts onto the straight
+		// alongside, their radii fitted to the points along them
+		std::optional<alignment::design> design;
+		std::string refusal;
+	};
 	// lays new track through the clicked points, with no path needed to start from
 	struct lay_tool
 	{
@@ -1972,6 +2023,7 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 		int radii{0}; // of a curve traced: 0 as many as the points need, up to three
 		bool straights_between{true}; // a curve traced may be two with a straight between them
 		lay_line_plan plan; // of the line shown
+		traced_station station; // of the line shown, traced on the photo: its turnouts, its run alongside a track
 		editor_track::snap_target start; // free end the track starts from, if any
 		glm::dvec3 mouse{0.0};
 		editor_track::snap_target mouse_snap;
@@ -2038,6 +2090,9 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 			double length{0.0};
 			std::vector<laid_curve> curves;
 			std::optional<trace::result> traced; // the line traced on the photo it was laid by
+			std::optional<traced_station> station; // its turnouts, its run alongside a track
+			std::vector<TTrack *> turnouts; // the switches laid with it
+			bool crossover{false};
 		};
 		laid_line laid;
 	};
@@ -2144,8 +2199,6 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	// the cursor is over, kept for it
 	mutable trace::tracer m_tracer;
 	mutable std::optional<std::pair<glm::dvec3, trace::result>> m_tracer_ended;
-	// the tracer of the points clicked now: started anew where the free end it goes on from or the settings changed
-	trace::tracer const &tracer_now(bool const DropLast = false) const;
 	trace::settings trace_settings() const;
 	std::optional<trace::hold> trace_start() const;
 	// the line traced through the points, ending at the free end End where there's one
@@ -2158,6 +2211,43 @@ class editor_mode : public application_mode, private editor_track::observer, pri
 	bool lay_traced() const { return m_lay.mode == lay_mode::traced; }
 	// the noise of a click at the point, from the size of a pixel of the view there
 	double click_sigma_at(glm::dvec3 const &Point) const;
+	// the station the points clicked make, traced on the photo: the last of them may be the cursor over a track. Kept for the same
+	// points, the same tracks
+	traced_station const &traced_station_of(std::vector<glm::dvec3> const &Points) const;
+	mutable std::optional<std::pair<std::vector<double>, traced_station>> m_station_memo;
+	// the plain track a point clicked lies on, within 1.5 m of its axis, away from its free ends: a turnout goes into it
+	struct track_under
+	{
+		TTrack *track{nullptr};
+		bool straight{false};
+		editor_track::straight line;
+	};
+	track_under station_track_at(glm::dvec3 const &Point) const;
+	// a click on a track ends the line traced with a turnout into it: not on the track the line starts off near its start
+	bool station_end_at(glm::dvec3 const &Point) const;
+	// the turnout of the catalogue fitted to the points, from the first one on the track Under, or from the last one back
+	std::optional<traced_turnout> station_turnout(track_under const &Under, std::vector<glm::dvec3> const &Points, std::vector<double> const &Sigmas, bool const AtEnd, std::string &Refusal,
+	                                              traced_turnout const *Other) const;
+	// the templates of the switch tool the turnouts traced are fitted of: the plain ones of the rail, one of each shape
+	struct station_catalogue
+	{
+		std::string rail;
+		std::size_t templates{0};
+		std::vector<int> index; // of the templates of the switch tool
+		std::vector<trace_station::turnout_shape> shapes;
+	};
+	mutable station_catalogue m_station_catalogue;
+	station_catalogue const &station_shapes(std::string const &Rail) const;
+	// the templates of the switch tool read, the turnouts traced are fitted of them
+	void station_templates();
+	// lays the turnouts of the station, then the line between them as the lay tool lays one from a free end, one step of the history; End:
+	// the free end the line reached
+	void lay_station(traced_station const &Station, editor_track::snap_target const &End);
+	bool m_station_laying{false}; // the line of a station laid from the ends of its turnouts: no station looked for again
+	std::optional<alignment::design> m_station_design; // the line designed of the station laid from the ends of its turnouts
+	// the tracer of the points given, kept from one call to the next as long as they go on from the ones before
+	// started anew where the hold it goes on from or the settings changed
+	trace::tracer const &tracer_of(std::vector<glm::dvec2> const &Points, std::vector<double> const &Sigmas, std::optional<trace::hold> const &Start, trace::settings const &Settings) const;
 	// the view glides on to bring the last point nearer to its middle
 	void lay_glide();
 	// the least radius of the norms the tracks are laid to, for the kind of the track given

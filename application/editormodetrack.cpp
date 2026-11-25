@@ -3119,6 +3119,35 @@ void editor_mode::draw_build_overlay() const
 			drawlist->AddRectFilled(ImVec2(screen.x + 6.0f, screen.y - 8.0f), ImVec2(screen.x + 14.0f + size.x, screen.y + 8.0f), IM_COL32(0, 0, 0, 180), 3.0f);
 			drawlist->AddText(ImVec2(screen.x + 10.0f, screen.y - 8.0f), Colour, Text.c_str());
 		};
+		// traced on the photo: the turnouts the line starts and ends with, as they'd go in, told what they are and how far the norms of the
+		// head moved them; the crossover between two tracks; the run alongside a track
+		if (auto const &station{lay.station}; station.valid)
+		{
+			for (auto const *turnout : {station.start.has_value() ? &*station.start : nullptr, station.end.has_value() ? &*station.end : nullptr})
+			{
+				if (turnout == nullptr)
+					continue;
+				for (auto const &path : turnout->paths)
+					drawrails(path, IM_COL32(120, 220, 255, 235));
+				label_at(turnout->start, turnout->label, IM_COL32(120, 220, 255, 255));
+				if (false == turnout->note.empty())
+					label_at(turnout->end, turnout->note, overlay_color::warning);
+			}
+			if (station.crossover)
+			{
+				for (auto const &placed : station.connection.switches)
+					for (auto const &path : placed.paths)
+						drawrails(path, IM_COL32(120, 220, 255, 235));
+				for (auto const &insert : station.connection.inserts)
+					drawrails(insert, IM_COL32(120, 220, 255, 235));
+				if (station.start.has_value())
+					label_at(station.start->start, format(STR_C("crossover · %s"), station.start->label.c_str()), IM_COL32(120, 220, 255, 255));
+			}
+			if (station.alongside.has_value())
+				label_at(station.alongside->at, format(STR_C("alongside %s · %.2f m"), station.alongside->neighbour.c_str(), std::abs(station.alongside->spacing)), overlay_color::marked);
+			if (false == station.refusal.empty() && false == lay.points.empty())
+				label_at(lay.points.back(), station.refusal, overlay_color::invalid);
+		}
 		// the straights the next bend slides along, dashed
 		for (auto const &[from, to] : plan.guides)
 		{

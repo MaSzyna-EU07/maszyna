@@ -140,6 +140,8 @@ tool's `parallel <spacing> <side>` lay turnouts, crossovers and lines of the mod
 | `expect laykeys <tabs> <enters>`, `expect laycontinue <0\|1>` | the shapes switched with Tab and the lines laid with Enter so far; the lay tool goes on from the end of the line laid |
 | `expect layheights <fitted\|points\|level>` | the heights the line is laid at now: fitted to the ground (from the photo by itself till the heights are chosen), through the points clicked, level |
 | `expect laid steepest <per mille>`, `expect laywait <0\|1>`, `expect layguessed <count>` | the steepest grade of the tracks of the line laid last; the line waits for the terrain under its points to be laid; the points clicked whose height is a guess, no ground under them yet |
+| `expect station turnouts <count>`, `expect station turnout <0\|1> <type>`, `expect station moved <0\|1> <m> <tolerance>`, `expect station crossover <0\|1>` | the station traced on the photo last: the switches laid with its line; the type of the turnout it starts with (0) or ends with (1), `_` for spaces; how far the norms of the head moved that turnout; laid as a crossover of the solver |
+| `expect station alongside <spacing> <tolerance>`, `expect station free <count>`, `expect station status <text>`, `expect station shown <turnouts\|crossover\|alongside\|refused> <count>` | its run alongside a track: the spacing it was laid at, the tracks laid off it by no more than the tolerance; the free ends of the tracks of its line; the status of the lay tool holds the text; the same of the line shown while the points are clicked |
 
 Files `scenery/autotest_editor.<part>.scn` are copied next to the copy of the fixture as `autotest_editor_<case>_<part>.scn`, the name of
 the fixture in them made the name of its copy: scenarios of its map, for the scenario index (`autotest_editor.uses.scn`, a trainset on `s1`).
@@ -239,6 +241,10 @@ as on the photo):
 | `tr_4_below_norms` | a curve of R 300 m on a line of 120 km/h laid slowed down to 70 km/h, its tracks given it; one of R 150 m, below the least radius of a main track, not laid |
 | `tr_5_continue` | after Enter the next clicks carry the line on from its end, joined to it; Esc ends it |
 | `tr_6_terrain_late` | the points clicked before the terrain under them came (the NMT held back with `nmtsettings hold 1`, the terrain made by the case with `terrainadd`, `terrainlevel`: no network, nothing waited for by the time): Enter waits for it with a line in the panel, Esc gives the wait up keeping the points, the line laid by itself once the terrain came; a first point clicked before it takes its height, no jump in the grade at the second point |
+| `st_1_station_track` | a station track between two heads in one run of clicks, no tool switched: from a click on the main track, along the diverging track of the turnout, the reverse curve and the track alongside, into the other turnout, a click on the main track; two turnouts Rz 60E1-300-1:9 fitted to the clicks, the track between them exactly 4.75 m off the main one and joined at both ends, one step of the history |
+| `st_2_crossover` | from a click on a track to one on the track 4.75 m beside it, only the points along the crossover between them: the crossover of the solver, two turnouts Rz 60E1-300-1:9, one step |
+| `st_3_alongside` | a line clicked about 4.08 m off a straight track laid exactly alongside it at 4.0 m |
+| `st_4_head_moved` | a turnout traced 6.3 m past the end of the one before it on the main track moved on to keep the 7.5 m straight the norms ask between them at 50 km/h, told so |
 
 and the assumptions of the project and the norms enforced when laying (`editor-project-setup.md`):
 

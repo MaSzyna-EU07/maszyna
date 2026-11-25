@@ -181,6 +181,9 @@ void editor_mode::update_build_tools()
 	if (false == lay.active)
 		return;
 	lay_shape_default();
+	// the turnouts traced on the photo are fitted of the templates of the switch tool
+	if (lay_traced())
+		station_templates();
 	lay_glide();
 	// a slow preview tells in the log where the time went: the cursor on the ground, the snap, the height, the plan of the line
 	auto stamp{std::chrono::steady_clock::now()};
@@ -222,6 +225,7 @@ void editor_mode::update_build_tools()
 	lay.plan = {};
 	if (lay.points.empty())
 	{
+		lay.station = {};
 		lay.shown.reset();
 		lay.settling.reset();
 		return;
@@ -249,13 +253,16 @@ void editor_mode::update_build_tools()
 	else
 	{
 		end = {};
-		// the line traced is the one of the points clicked: the cursor isn't one of them, a leg to it is drawn apart
-		if (false == lay_traced() && plan_distance(mouse, points.back()) > 1.0)
+		// the line traced is the one of the points clicked: the cursor isn't one of them, a leg to it is drawn apart; but over a track, where
+		// a click ends the line with a turnout into it
+		if ((false == lay_traced() || station_end_at(mouse)) && plan_distance(mouse, points.back()) > 1.0)
 		{
 			points.push_back(mouse);
 			modes.push_back(lay.mode);
 		}
 	}
+	// the turnouts of the line traced, its crossover, its run alongside a track: drawn and told by the view
+	lay.station = lay_traced() ? traced_station_of(points) : traced_station{};
 	// the line traced is the one of the points clicked, and of the free end reached: worked out once for them, not at every frame
 	std::vector<double> traced_key;
 	if (lay_traced())
@@ -2035,41 +2042,30 @@ std::optional<trace::hold> editor_mode::trace_start() const
 	return hold;
 }
 
-trace::tracer const &editor_mode::tracer_now(bool const DropLast) const
+trace::tracer const &editor_mode::tracer_of(std::vector<glm::dvec2> const &Points, std::vector<double> const &Sigmas, std::optional<trace::hold> const &Start, trace::settings const &Settings) const
 {
-	// the points clicked after the free end it goes on from, but the free end reached last
-	std::vector<glm::dvec2> points;
-	std::vector<double> sigmas;
-	auto const &tool{m_lay};
-	for (std::size_t i = tool.start.track != nullptr ? 1 : 0; i + (DropLast ? 1 : 0) < tool.points.size(); ++i)
-	{
-		points.push_back(plan_of(tool.points[i]));
-		sigmas.push_back(i < tool.sigmas.size() && tool.sigmas[i] > 0.0 ? tool.sigmas[i] : trace::click_sigma(0.1));
-	}
-	auto const settings{trace_settings()};
-	auto const start{trace_start()};
 	auto const same = [](std::optional<trace::hold> const &A, std::optional<trace::hold> const &B) {
 		if (A.has_value() != B.has_value())
 			return false;
 		return false == A.has_value() || (A->position == B->position && A->heading == B->heading && A->curvature == B->curvature && A->cant == B->cant && A->fixed == B->fixed);
 	};
-	if (false == (m_tracer.options() == settings) || false == same(m_tracer.start(), start))
+	if (false == (m_tracer.options() == Settings) || false == same(m_tracer.start(), Start))
 	{
-		m_tracer = trace::tracer{settings, start};
+		m_tracer = trace::tracer{Settings, Start};
 		m_tracer_ended.reset();
 	}
 	// back to the points in common, then on with the ones clicked since
 	auto const &have{m_tracer.points()};
 	std::size_t common{0};
-	while (common < have.size() && common < points.size() && have[common] == points[common])
+	while (common < have.size() && common < Points.size() && have[common] == Points[common])
 		++common;
-	if (m_tracer.size() != common || points.size() != common)
+	if (m_tracer.size() != common || Points.size() != common)
 		m_tracer_ended.reset();
 	while (m_tracer.size() > common)
 		m_tracer.pop();
-	for (auto i{m_tracer.size()}; i < points.size(); ++i)
+	for (auto i{m_tracer.size()}; i < Points.size(); ++i)
 	{
-		m_tracer.add(points[i], sigmas[i]);
+		m_tracer.add(Points[i], i < Sigmas.size() ? Sigmas[i] : trace::click_sigma(0.1));
 		auto const &now{m_tracer.now()};
 		if (now.milliseconds > 30.0)
 			WriteLog(format("Editor: the line traced took %.0f ms at point %zu, %zu evaluations%s", now.milliseconds, i + 1, now.evaluations, now.budget_spent ? ", the budget spent" : ""), logtype::generic);
@@ -2081,16 +2077,106 @@ bool editor_mode::traced_line(std::vector<glm::dvec3> const &Points, editor_trac
 {
 	auto const &tool{m_lay};
 	auto const joined{End.track != nullptr && glm::length(plan_of(End.direction)) > 1e-6};
-	// the points of the tool are the ones traced: those given here, but the free end reached last, are the same
-	auto const &tracer{tracer_now(joined && false == tool.points.empty() && plan_distance(tool.points.back(), End.position) < 1e-6)};
-	trace::result line;
-	if (joined)
+	// the station the points make: the turnouts it starts and ends with, its run alongside a track
+	auto const &station{traced_station_of(Points)};
+	if (station.valid && false == station.refusal.empty())
 	{
-		trace::hold end;
-		end.position = plan_of(End.position);
-		end.heading = glm::normalize(plan_of(End.direction));
-		if (false == m_tracer_ended.has_value() || m_tracer_ended->first != End.position)
-			m_tracer_ended = std::make_pair(End.position, tracer.ended(end));
+		Error = station.refusal;
+		return false;
+	}
+	// a crossover has no line of its own to trace: it's the solver's, drawn as it is
+	if (station.valid && station.crossover)
+	{
+		Error.clear();
+		return false;
+	}
+	// the points traced: the ones clicked after the free end it goes on from, but the free end reached last; of a station the ones between
+	// its turnouts, moved alongside the track they keep along
+	std::vector<glm::dvec2> points;
+	std::vector<double> sigmas;
+	std::vector<glm::dvec3> clicked;
+	if (station.valid)
+		for (std::size_t k = 0; k < station.points.size(); ++k)
+		{
+			if (joined && k + 1 == station.points.size() && plan_distance(station.clicked[k], End.position) < 1e-6)
+				break;
+			points.push_back(plan_of(station.points[k]));
+			sigmas.push_back(station.sigmas[k]);
+			clicked.push_back(station.clicked[k]);
+		}
+	else
+		for (std::size_t i = tool.start.track != nullptr ? 1 : 0; i < tool.points.size(); ++i)
+		{
+			if (joined && i + 1 == tool.points.size() && plan_distance(tool.points[i], End.position) < 1e-6)
+				break;
+			points.push_back(plan_of(tool.points[i]));
+			sigmas.push_back(i < tool.sigmas.size() && tool.sigmas[i] > 0.0 ? tool.sigmas[i] : trace::click_sigma(0.1));
+			clicked.push_back(tool.points[i]);
+		}
+	// a station track alongside a straight track designed: its arcs and its straight as they are, nothing traced; laid from the ends of the
+	// turnouts as they went in
+	std::optional<alignment::design> designed;
+	if (station.valid && station.design.has_value())
+		designed = station.design;
+	else if (m_station_laying && m_station_design.has_value())
+	{
+		designed = m_station_design;
+		designed->start = Points.front();
+		if (joined)
+			designed->end = End.position;
+	}
+	if (designed.has_value())
+	{
+		Plan.design = *designed;
+		Plan.shape = alignment::compute(Plan.design);
+		if (Plan.shape.valid)
+		{
+			Plan.corners.assign(Plan.design.vertices.size(), 0);
+			lay_trace trace;
+			trace.points = clicked;
+			for (auto const &each : alignment::project(Plan.shape, points))
+				trace.offsets.push_back(each.offset);
+			for (std::size_t k = 0; k < trace.offsets.size() && k < points.size(); ++k)
+			{
+				trace.offsets[k] = std::abs(trace.offsets[k]) + glm::distance(plan_of(clicked[k]), points[k]);
+				trace.worst = std::max(trace.worst, trace.offsets[k]);
+				trace.rms += trace.offsets[k] * trace.offsets[k];
+			}
+			trace.rms = trace.offsets.empty() ? 0.0 : std::sqrt(trace.rms / static_cast<double>(trace.offsets.size()));
+			trace.curves = Plan.shape.curves.size();
+			Plan.traces.push_back(std::move(trace));
+			return true;
+		}
+		Plan = {};
+	}
+	auto settings{trace_settings()};
+	// a track between the diverging tracks of two turnouts, a station track between its heads, goes no faster than they let it
+	auto const branch = [](TTrack const *Track, editor_track::point_ref const &Point) {
+		if (Track == nullptr || Track->eType != tt_Switch || Point.path != 1)
+			return 0.0;
+		return std::abs(editor_track::velocity(*Track));
+	};
+	auto const from{station.valid && station.start.has_value() ? station.start->speed : branch(tool.start.track, tool.start.point)};
+	auto const into{station.valid && station.end.has_value() ? station.end->speed : branch(End.track, End.point)};
+	if (from > 0.0 && into > 0.0)
+		settings.speed = std::max(1.0, std::min(settings.speed, std::max(from, into)));
+	auto const start{station.valid && station.start.has_value() ? std::optional<trace::hold>{station.start->hold} : trace_start()};
+	auto const &tracer{tracer_of(points, sigmas, start, settings)};
+	trace::result line;
+	std::optional<trace::hold> end;
+	if (station.valid && station.end.has_value())
+		end = station.end->hold;
+	else if (joined)
+	{
+		end = trace::hold{};
+		end->position = plan_of(End.position);
+		end->heading = glm::normalize(plan_of(End.direction));
+	}
+	if (end.has_value())
+	{
+		glm::dvec3 const key{end->position.x, end->heading.x, end->position.y};
+		if (false == m_tracer_ended.has_value() || m_tracer_ended->first != key)
+			m_tracer_ended = std::make_pair(key, tracer.ended(*end));
 		line = m_tracer_ended->second;
 	}
 	else
@@ -2102,8 +2188,8 @@ bool editor_mode::traced_line(std::vector<glm::dvec3> const &Points, editor_trac
 	}
 	Plan.traced = line;
 	Plan.design = line.design;
-	Plan.design.start.y = Points.front().y;
-	Plan.design.end.y = Points.back().y;
+	Plan.design.start.y = station.valid && station.start.has_value() ? station.start->end.y : Points.front().y;
+	Plan.design.end.y = station.valid && station.end.has_value() ? station.end->end.y : Points.back().y;
 	Plan.shape = alignment::compute(Plan.design);
 	if (false == Plan.shape.valid)
 	{
@@ -2112,10 +2198,11 @@ bool editor_mode::traced_line(std::vector<glm::dvec3> const &Points, editor_trac
 	}
 	Plan.corners.assign(Plan.design.vertices.size(), 0);
 	lay_trace trace;
-	for (std::size_t i = tool.start.track != nullptr ? 1 : 0; i < tool.points.size(); ++i)
-		if (false == joined || plan_distance(tool.points[i], End.position) > 1e-6)
-			trace.points.push_back(tool.points[i]);
+	trace.points = clicked;
 	trace.offsets = line.offsets;
+	// a point moved alongside a track departs from the line by as much as it was moved too
+	for (std::size_t k = 0; k < trace.offsets.size() && k < points.size(); ++k)
+		trace.offsets[k] = std::abs(trace.offsets[k]) + glm::distance(plan_of(clicked[k]), points[k]);
 	trace.rms = line.rms;
 	trace.worst = line.worst;
 	trace.curves = line.curves.size();
@@ -2283,6 +2370,8 @@ void editor_mode::lay_click()
 	}
 	if (tool.points.empty())
 	{
+		if (lay_traced())
+			station_templates();
 		tool.start = snap;
 		tool.continuing = false;
 		auto point{snap.track != nullptr ? snap.position : tool.mouse};
@@ -2303,10 +2392,21 @@ void editor_mode::lay_click()
 			toggle_ortho();
 		return;
 	}
-	// the points only make the line shown: it's laid by Enter, or by a click on a free end
+	// the points only make the line shown: it's laid by Enter, or by a click on a free end, or traced on the photo by a click on a track,
+	// which ends the line with a turnout into it
 	auto const &point{tool.mouse};
 	if (plan_distance(point, tool.points.back()) < 1.0)
 		return;
+	if (lay_traced() && station_end_at(point))
+	{
+		station_templates();
+		tool.points.push_back(point);
+		tool.modes.push_back(tool.mode);
+		tool.sigmas.push_back(click_sigma_at(point));
+		tool.heights.push_back(tool.mouse_height);
+		lay_finish_on_ground({});
+		return;
+	}
 	m_typed.clear();
 	tool.points.push_back(point);
 	tool.modes.push_back(tool.mode);
@@ -2338,6 +2438,16 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 {
 	auto &tool{m_lay};
 	lay_trim();
+	// traced on the photo from a track or into one: its turnouts laid first, the line between them after, or the crossover
+	if (lay_traced() && false == m_station_laying && false == tool.points.empty())
+	{
+		station_templates();
+		if (auto const station{traced_station_of(tool.points)}; station.valid && (station.start.has_value() || station.end.has_value() || station.crossover || false == station.refusal.empty()))
+		{
+			lay_station(station, End);
+			return;
+		}
+	}
 	double length;
 	std::string error;
 	lay_line_plan plan;
@@ -2504,6 +2614,13 @@ void editor_mode::lay_finish(editor_track::snap_target const &End)
 			tool.laid.curves.emplace_back(format("%d. %s", curve.vertex + 1, label.c_str()), alignment::meets_norms(curve, plan.design));
 		}
 	tool.laid.traced = plan.traced;
+	// a run alongside a track, laid exactly alongside it: told
+	if (plan.traced.has_value() && false == m_station_laying)
+		if (auto const &station{traced_station_of(tool.points)}; station.valid && station.alongside.has_value())
+		{
+			tool.laid.station = station;
+			tool.status += "\n" + format(STR_C("Alongside %s · %.2f m (measured %.2f m)"), station.alongside->neighbour.c_str(), std::abs(station.alongside->spacing), std::abs(station.alongside->measured));
+		}
 	if (plan.traced.has_value())
 		first_step_done(first_step::trace);
 	// the curves slowed down, told
@@ -2584,6 +2701,16 @@ void editor_mode::lay_enter()
 		tool.points.push_back(end.position);
 		tool.modes.push_back(tool.mode);
 		lay_finish_on_ground(end);
+		return;
+	}
+	if (end.track == nullptr && lay_traced() && plan_distance(tool.mouse, tool.points.back()) > 1.0 && station_end_at(tool.mouse))
+	{
+		station_templates();
+		tool.points.push_back(tool.mouse);
+		tool.modes.push_back(tool.mode);
+		tool.sigmas.push_back(click_sigma_at(tool.mouse));
+		tool.heights.push_back(tool.mouse_height);
+		lay_finish_on_ground({});
 		return;
 	}
 	// a single point is no track: the end of the line laid last it goes on from is left by Enter, one clicked is told
@@ -3158,7 +3285,11 @@ void editor_mode::render_lay_step(lay_state const State)
 		}
 		[[fallthrough]];
 	default:
-		editor_flow::step_line(traced ? STR_C("Click along the middle of the track on the photo: every 100-300 m on straights, closer on curves. Enter lays") : STR_C("Click on the ground or at a free end of a track"));
+		if (traced)
+			editor_flow::step_line(STR_C("Click along the middle of the track on the photo: every 100-300 m on straights, closer on curves. Enter lays"),
+			                       STR_C("A click on a track starts the line with a turnout into it, the last one on a track ends it with one"));
+		else
+			editor_flow::step_line(STR_C("Click on the ground or at a free end of a track"));
 		break;
 	}
 }
