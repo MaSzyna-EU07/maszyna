@@ -986,7 +986,10 @@ void ui::map_panel::render_map_lines(
 						  std::abs(glm::dot(mouse_from_head, head_normal)) <= head_half_width) ||
 						 glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f);
 					if (shunt_hovered)
+					{
 						m_hovered_map_object = sem;
+						draw_list->AddLine(center, head_center, IM_COL32(120, 200, 255, 255), 8.0f);
+					}
 					ImU32 const head_color = shunt_hovered
 						? IM_COL32(120, 200, 255, 255)
 						: IM_COL32(0, 0, 0, 255);
