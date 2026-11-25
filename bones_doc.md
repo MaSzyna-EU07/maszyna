@@ -59,11 +59,14 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
   the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
   own copy of the submodel, its triangles halved until no edge is longer than 6 cm: a hose of a model is often a
   few straight tubes, which would bend only where their rings are.
-- `rooted` (on a `bonebend`): the submodel is a car body with the half of a gangway bellows on its end. The first point
-  of the spine is the root, on the face of the body: everything at or behind it stays as made, and the root itself
-  doesn't turn. Past it the bellows bends from the body to its head, which `head` holds to the line through the joint,
-  from a point inside this car to one as far inside the next: that line halves the angle between the two cars, so the
-  faces of the two halves of the bellows stay on one plane round a curve. A rooted submodel is not cut into smaller
+- `rooted` (on a `bonebend`): the first point of the spine is the root, held to the body: everything at or behind it
+  stays as made, and the root itself doesn't turn. For what crosses the joint of an articulated train (the gangway
+  bellows on the ends of the bodies, the roof cables): the spine runs from the root before the joint, through the joint,
+  to a point as far past it in the next car, and `head` holds its end to the next car (a line along it). Both cars
+  give the same stretch of the joint, each from its side, so the two bend it the same: the halves of a bellows that
+  overlap stay together, and the cables of one car meet those of the next round a curve. For the bellows the stretch
+  runs from the face of one body to the face of the other, so the bodies stay as made; for the cables, from where
+  they leave the roof of one car to where they leave the roof of the next. A rooted submodel is not cut into smaller
   triangles, and the bends of one submodel (the bellows on both ends of a car) bend it each its own part. A bent
   submodel whose spines stand still, a train standing, is not posed again.
 
@@ -130,27 +133,31 @@ bonebend: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1 waz_pneumatic2.2 waz_p
 ```
 
 
-The gangway bellows of an articulated EMU, the Elf EN76 (`pkp/elf_v1`, the middle car `22wee-b`, its body
-`model_glowny` with the half of a bellows on each end, 16.5 m long): the root on the face of the body, the joint where
-the next car's end is, and the head held to the line from 2 m inside this car to 2 m inside the next. The end cars
-(`22wee-a`, `22wee-d`) have the same on the inner end of their `pudlo` (21.081 m, the root at -10.37):
+The gangway bellows and the roof cables of an articulated EMU, the Elf EN76 (`pkp/elf_v1`). The middle car `22wee-b`
+(16.5 m, the joints at +-8.25) has its body `model_glowny` with the half of a bellows on each end, its face 0.17 m
+before the front joint and 0.37 m before the rear one, and its cables in `elementy_dachu_kable`. Its front joint, to the
+end car `22wee-a` whose face is 0.17 m before it: the bellows from face to face, the cables 1.2 m each side:
 
 ```
-bonepoint: miech_przod_korzen fixed 0 8.080 2.4
-bonepoint: miech_przod_nasz fixed 0 8.2500 2.4
-bonepoint: miech_przod_ich coupler front 0 8.2500 2.4
-bonepoint: miech_przod_styk mid miech_przod_nasz miech_przod_ich
-bonepoint: miech_przod_os_nasz fixed 0 6.2500 2.4
-bonepoint: miech_przod_os_ich coupler front 0 10.2500 2.4
-bonebend: model_glowny miech_przod_korzen miech_przod_styk head miech_przod_os_nasz miech_przod_os_ich rooted end
-bonepoint: miech_tyl_korzen fixed 0 -7.880 2.4
-bonepoint: miech_tyl_nasz fixed 0 -8.2500 2.4
-bonepoint: miech_tyl_ich coupler rear 0 -8.2500 2.4
-bonepoint: miech_tyl_styk mid miech_tyl_nasz miech_tyl_ich
-bonepoint: miech_tyl_os_nasz fixed 0 -6.2500 2.4
-bonepoint: miech_tyl_os_ich coupler rear 0 -10.2500 2.4
-bonebend: model_glowny miech_tyl_korzen miech_tyl_styk head miech_tyl_os_nasz miech_tyl_os_ich rooted end
+bonepoint: miech_p_korzen fixed 0 8.0800 2.4
+bonepoint: miech_p_nasz fixed 0 8.2500 2.4
+bonepoint: miech_p_ich coupler front 0 8.2500 2.4
+bonepoint: miech_p_styk mid miech_p_nasz miech_p_ich
+bonepoint: miech_p_dalej coupler front 0 8.4200 2.4
+bonepoint: miech_p_os coupler front 0 10.4200 2.4
+bonebend: model_glowny miech_p_korzen miech_p_styk miech_p_dalej head miech_p_dalej miech_p_os rooted end
+bonepoint: kable_p_korzen fixed 0 7.0500 3.9
+bonepoint: kable_p_nasz fixed 0 8.2500 3.9
+bonepoint: kable_p_ich coupler front 0 8.2500 3.9
+bonepoint: kable_p_styk mid kable_p_nasz kable_p_ich
+bonepoint: kable_p_dalej coupler front 0 9.4500 3.9
+bonepoint: kable_p_os coupler front 0 11.4500 3.9
+bonebend: elementy_dachu_kable kable_p_korzen kable_p_styk kable_p_dalej head kable_p_dalej kable_p_os rooted end
 ```
+
+`22wee-a` has the same at its rear, on `pudlo` and the cables of `tex4_obj1_os`, with the faces the other way round.
+The coordinates are those of the model file after the transforms of the parent submodels: the end car `22wee-d` is
+the model of `22wee-a` turned round by its root submodel, so its joint is at its front.
 
 ## Still to do
 
