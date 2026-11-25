@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include "vehicle/smoke.h"
+
 #include "utilities/Classes.h"
 #include "scene/scene.h"
 
@@ -212,6 +214,8 @@ private:
     float m_spread { 0.f }; // spread:
     // optional time the particles take to show up after they're born, seconds, so they don't pop up at the exhaust
     float m_fadein { 0.f }; // fade_in:
+    // optional part of a steam locomotive the source shows, which its steam engine drives (steam:); none for any other
+    smoke::steam_part m_steampart { smoke::steam_part::none };
 //    texture_handle m_texture { -1 }; // texture assigned to particle billboards
     // current state
     float m_spawncount { 0.f }; // number of particles to spawn during next update

@@ -103,6 +103,22 @@ Every key is optional; the defaults are the Ty2's.
 | `TenderCoal` | 10 | t | |
 | `AirPumpFlow` | 0.1 | kg/s | steam of the air pump |
 
+## Steam and smoke
+
+A smoke source of the model (a submodel `smokesource_<template>`, its particles from `data/smokesource_<template>.txt`)
+shows a part of the steam engine when its template says which, with the optional key `steam:`:
+
+| `steam:` | what it shows | driven by |
+|---|---|---|
+| `exhaust` | the blast up the chimney, white steam in four puffs a turn of the driving wheels, merging into a steady blast from about 3 turns a second | the exhaust and the blower against the boiler's steam rate (`State.exhaust_flow`, `State.blower`) and the crank angle |
+| `smoke` | the smoke of the fire, carried up with the exhaust | the coal burned against the most the grate burns (`State.burn_rate`) |
+| `safety_valves` | the safety valves blowing off | `State.safety_valve_flow` |
+| `cocks` | the open cylinder cocks, with each stroke | `Controls.cylinder_cocks` and the steam chest pressure |
+
+Each gives the share of the template's spawn rate and of the opacity and launch velocity of the particles
+(`smoke::steam_emission()`, `vehicle/smoke.h`). A template without `steam:`, or a vehicle with no steam engine, works as
+before. The AI opens the cylinder cocks while starting, under 10 km/h with the regulator open.
+
 ## What is to come
 
 The model is the first step. In rough order:
@@ -131,7 +147,7 @@ The model is the first step. In rough order:
    entries and samples.
 5. **The AI driver** is in: ready with 5 bar in the boiler, the air pump started, the regulator a position at a time,
    the cutoff notched up with the speed and further when the boiler falls behind (`ty2_td_timetable` in
-   `tests/scenarios`). Still to come: the cylinder cocks when starting, the blower and the fire on a stop.
+   `tests/scenarios`), and the cylinder cocks opened while starting. Still to come: the blower and the fire on a stop.
 6. **Raising steam.** A cold start (`SteamEngine::cool_down()`) from the scenario, with the fire lit and the blower on an
    outside supply until the boiler has pressure.
 7. **Faults.** Wheel slip with sanding, priming with the regulator opened too fast, an injector failing to pick up,

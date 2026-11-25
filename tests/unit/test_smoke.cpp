@@ -5,6 +5,9 @@
 #include "drive.h"
 
 #include "vehicle/smoke.h"
+#include "McZapkie/MOVER.h"
+
+#include <numbers>
 
 // the smoke of a vehicle's engine: how many particles the smoke source of the vehicle's model spawns in an update
 
@@ -158,4 +161,57 @@ TEST_CASE("smoke: without SmokeDelay in its .fiz a diesel smokes as soon as the 
 		CHECK(locomotive->dizel_FiringCountdown == 0.0);
 		CHECK(smoke::vehicle_spawn_count(locomotive.mover(), true, source, update) >= 1.f);
 	}
+}
+
+TEST_CASE("smoke: the parts of a steam locomotive its sources show") {
+	CHECK(smoke::steam_part_of("exhaust") == smoke::steam_part::exhaust);
+	CHECK(smoke::steam_part_of("smoke") == smoke::steam_part::smoke);
+	CHECK(smoke::steam_part_of("safety_valves") == smoke::steam_part::safety_valves);
+	CHECK(smoke::steam_part_of("cocks") == smoke::steam_part::cocks);
+	CHECK(smoke::steam_part_of("chimney") == smoke::steam_part::none);
+	// a vehicle with no steam engine gives a part nothing
+	auto vehicle{diesel()};
+	CHECK(smoke::steam_emission(vehicle.mover(), smoke::steam_part::exhaust).spawn == 0.f);
+}
+
+TEST_CASE("smoke: the chimney of a steam locomotive beats with its exhaust") {
+	test::vehicle locomotive{test::definition::load("steam_ty2"), 0.0, "test", 1};
+	auto &engine{locomotive->Steam};
+	// standing with the regulator shut, a little smoke of the fire and next to no steam
+	engine.State.exhaust_flow = 0.0;
+	engine.State.blower = 0.0;
+	auto const standing{smoke::steam_emission(locomotive.mover(), smoke::steam_part::exhaust)};
+	CHECK(standing.spawn < 0.05f);
+	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::smoke).spawn > 0.f);
+	// working hard at a walking pace: four puffs a turn, strong as the crank comes round to a release, weak between
+	engine.State.exhaust_flow = engine.Parameters.steam_rate;
+	locomotive->nrot = 0.5;
+	engine.CrankAngle = 0.0;
+	auto const puff{smoke::steam_emission(locomotive.mover(), smoke::steam_part::exhaust)};
+	engine.CrankAngle = std::numbers::pi / 4.0;
+	auto const between{smoke::steam_emission(locomotive.mover(), smoke::steam_part::exhaust)};
+	CHECK(puff.spawn > 0.9f);
+	CHECK(between.spawn < 0.3f * puff.spawn);
+	CHECK(puff.velocity > between.velocity);
+	// fast, the puffs merge into a steady blast
+	locomotive->nrot = 6.0;
+	auto const fast{smoke::steam_emission(locomotive.mover(), smoke::steam_part::exhaust)};
+	engine.CrankAngle = 0.0;
+	CHECK(fast.spawn == doctest::Approx(smoke::steam_emission(locomotive.mover(), smoke::steam_part::exhaust).spawn));
+}
+
+TEST_CASE("smoke: a steam locomotive's safety valves and cylinder cocks blow only when open") {
+	test::vehicle locomotive{test::definition::load("steam_ty2"), 0.0, "test", 1};
+	auto &engine{locomotive->Steam};
+	engine.State.safety_valve_flow = 0.0;
+	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::safety_valves).spawn == 0.f);
+	engine.State.safety_valve_flow = 0.5 * engine.Parameters.safety_valve_flow;
+	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::safety_valves).spawn > 0.5f);
+	// the cocks with steam in the chest
+	engine.State.chest_pressure = steam::atmosphere + engine.Parameters.working_pressure;
+	engine.Controls.cylinder_cocks = false;
+	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::cocks).spawn == 0.f);
+	engine.Controls.cylinder_cocks = true;
+	engine.CrankAngle = 0.0;
+	CHECK(smoke::steam_emission(locomotive.mover(), smoke::steam_part::cocks).spawn > 0.5f);
 }

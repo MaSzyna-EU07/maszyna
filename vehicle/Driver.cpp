@@ -4491,6 +4491,8 @@ void TController::SpeedSet() {
     }
     case TEngineType::SteamEngine: {
         set_steam_cutoff();
+        // the cylinder cocks open while starting, to blow the water out of the cylinders, and shut once under way
+        mvControlling->Steam.Controls.cylinder_cocks = ( mvControlling->MainCtrlPos > 0 ) && ( mvControlling->Vel < steam_cocks_speed );
         break;
     }
     case TEngineType::DieselEngine: {
