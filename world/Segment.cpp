@@ -439,7 +439,10 @@ glm::dvec3 TSegment::stray( glm::dvec3 const &Point, track_uneven::amounts const
     glm::dvec3 result { 0.0 };
     if( m_setting.uneven ) {
         auto const field { track_uneven::field( Point ) };
-        result = glm::dvec3 { field.x * Amount.side, field.y * Amount.up, field.z * Amount.side } * track_uneven::stray_per_mm;
+        result = glm::dvec3 {
+            field.x * Amount.side * track_uneven::stray_side_per_mm,
+            field.y * Amount.up * track_uneven::stray_up_per_mm,
+            field.z * Amount.side * track_uneven::stray_side_per_mm };
         result.y -= pOwner->joint_dip( Distance );
     }
     if( m_setting.buckled && m_pieces.empty() ) {
@@ -493,7 +496,7 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
         return;
     }
     auto const amount { m_setting.uneven ? pOwner->uneven_at( Distance, m_setting.path ) : track_uneven::amounts {} };
-    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
+    Vertex.position.y -= static_cast<float>( share * track_uneven::stray_up_per_mm * amount.cross * track_uneven::level( Origin + glm::dvec3 { Position }, glm::dvec3 { Parallel } ) * across / gauge );
     Vertex.position += glm::vec3 { share * stray( Origin + glm::dvec3 { Vertex.position }, amount, Distance, glm::dvec3 { Parallel } ) };
 }
 
@@ -532,7 +535,7 @@ void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::
     auto const gauge { std::max( std::abs( pOwner->fTrackWidth ), 0.1f ) };
     glm::dvec3 const across { -std::cos( rotation.z ), 0.0, -std::sin( rotation.z ) };
     auto const amount { m_setting.uneven ? pOwner->uneven_at( fDistance, m_setting.path ) : track_uneven::amounts {} };
-    rotation.x += static_cast<float>( track_uneven::stray_per_mm * (
+    rotation.x += static_cast<float>( track_uneven::stray_up_per_mm * (
         amount.up * track_uneven::roll( position, across, gauge )
       + amount.cross * track_uneven::level( position, across ) / gauge ) );
     position += track_uneven::across_only( stray( position, amount, fDistance, across ), across );

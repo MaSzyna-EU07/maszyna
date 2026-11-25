@@ -247,10 +247,9 @@ void blackbox_recorder::update(double const Deltatime) {
 
 	std::scoped_lock lock{m_mutex};
 	m_time += Deltatime;
-	// the tape of the driver the user is with, unless it writes its own: with "physicslog yes" each driver but one of a
-	// road vehicle does. the tapes are files of their own: they go on after the recording ends in the editor, and with
-	// a recording which couldn't be made
-	if (m_time >= m_tapedue) {
+	// with the physics logs on, each driver writes its own all the time. the tapes are files of their own: they go on
+	// after the recording ends in the editor, and with a recording which couldn't be made
+	if (false == WriteLogFlag && m_time >= m_tapedue) {
 		keep_tape_line();
 		m_tapedue = std::max(m_tapedue + tapeinterval, m_time);
 	}
@@ -510,13 +509,10 @@ void blackbox_recorder::keep_tape_line() {
 	auto const *driver{vehicle->Mechanik != nullptr && vehicle->Mechanik->primary() ? vehicle->Mechanik : vehicle->ctOwner};
 	if (driver == nullptr)
 		return;
-	auto const &name{driver->physicslog_name()};
-	// its log, the driver's own or written here, before the logs of the other drivers: the closing drops those it has
-	// no time for, on a hard disk with hundreds of them
-	PhysicsLogs.put_first(name);
 	// a driver writing its own, of a train with "physicslog.trains yes", isn't written twice
 	if (driver->writes_physicslog())
 		return;
+	auto const &name{driver->physicslog_name()};
 	if (m_tapes.insert(name).second) {
 		PhysicsLogs.begin(name, TController::physicslog_header());
 		WriteLog(std::format("Black box: the physics log \"{}\" begun", PhysicsLogs.shown(name)));
