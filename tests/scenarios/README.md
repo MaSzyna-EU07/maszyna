@@ -399,15 +399,16 @@ track it stands on). The first of them may be the one to couple (`Shunt -2 -3`):
 first order is `Connect` releases the hand brake a cold locomotive starts with
 (`eu07_td_cold_connect`). The mission trains of velocity 0.1 wait for their signal and need nothing.
 
-The cases and what they showed on master of 2026-11-11:
+The cases and what they showed on master of 2026-11-11 (the two L053 poranek rows also on
+staging f15ea405 of 2026-11-23):
 
 | case | report | result |
 | --- | --- | --- |
 | `wrzosy_pxe336080_couples` | #524 | passes: ordered to, the locomotive couples to the rake (`couples`, 262 s) and takes it out of the depot (696 s). The scenery itself gives no such order |
 | `baltyk_skm1_roj55324_shunting_signal` | #525 | passes, with four seeds: the unit on the siding is let into the platforms 4 minutes after the start, once the shunter beside it has done its first moves, and leaves at 10:42 |
 | `baltyk_skm1_roj55321_departure` | #525 | passes, with three seeds: the unit in the platform leaves at 10:34 |
-| `l053_poranek_tme222158_debica` | #421 | `xfail`: the train is never let into Debica, the station jams 4 minutes after the start: the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint the station waits for it at |
-| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: with an ET21, as in the report, the locomotive stops for good at Debica Towarowa: running round the wagons it stands on the headshunt 20 m past the end of the overhead wire, and its driver never gets out of `Prepare_engine` |
+| `l053_poranek_tme222158_debica` | #421 | `xfail`: on master of 2026-11-11 the station jammed 4 minutes after the start, the AI of EP07-338'16 passed the shunting signal Tm4 at stop at 29 km/h. Since #409 (staging f15ea405, 2026-11-23) the EP07 stops at the checkpoint and TME222158 gets to Debica, but the station's SM42-1096 jams it: ordered to uncouple at step 10 of `deb_sm42_stat` it pushes its cut past `debica_k_sem_info` at danger and never gets the coupler off, so the station never sends TME222158 on |
+| `l053_poranek_tme222158_debica_et21` | #421 | `xfail`: on master of 2026-11-11, with an ET21 as in the report, the locomotive stopped for good at Debica Towarowa, on the headshunt 20 m past the end of the overhead wire, and its driver never got out of `Prepare_engine`. Since #409 (staging f15ea405) the ET21 gets through Debica Towarowa (steps 1-5 of `dt_tme222158_stat`) to Debica, then fails on the SM42 as `l053_poranek_tme222158_debica` does |
 | `l053_poludnie_roj32134_debica` | #506 | passes: both trains run and the unit ends at Debica after 6134 s; no train in its way |
 
 In the L053 sceneries the test mode logs a signal passed at danger for several shunting
