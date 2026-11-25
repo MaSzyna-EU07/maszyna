@@ -3,7 +3,9 @@
 Changes accepted in review that players, scenery authors or data makers can notice, for release notes and for
 triaging new bug reports ("it worked differently before"). Each entry says what changed, who notices, what
 data or eu07.ini it needs, and the pull request (#NNN, MaSzyna-EU07/maszyna). Written against `staging` as of
-2026-11-20; the list starts at #266 (merged 2026-11-08). Keys marked "optional" change nothing until the data uses them.
+2026-11-24; the list starts at #266 (merged 2026-11-08). Keys marked "optional" change nothing until the data uses them.
+#443 (2026-11-22) reverted #408 and merged `master` into `staging`; of the changes it brought from `master` only the
+physics log ones, which replace those of #408, are listed here.
 
 The last section lists the new optional data keys, so that data makers can find them; they change nothing for
 existing data.
@@ -19,25 +21,18 @@ existing data.
   goes to the log for AI and player drivers alike, rail vehicles only, for a signal showing `SetVelocity 0 0`
   (not an automatic block signal with `SetVelocity 0 x`). Before it was only counted in test runs. Notices: log.txt
   of any scenery with trains running red signals. Needs: nothing.
-- **`export_as_text` writes the `test.*` keys** (#266). A scenery saved from the editor (or any export of the
-  settings) now contains `test.timeout`, `test.standstill`, `test.pass_on_standstill`, `test.fail_if_stop_overran`,
-  `test.no_movement_before_pass` (and `test.wall_timeout`, `test.vehicle` when set) also in normal sessions, with
-  their defaults. They are ignored outside the test mode.
-- **`physicslog yes` writes no logs of road vehicles** (#408). On a large scenery it used to make a file for every
-  car of the roads (over 500 on Tomaszewo). Now only the other drivers get a `.dat`; the black box still writes the
-  tape of a road vehicle the user drives. Notices: whoever looked for road vehicle logs in `physicslog/`.
-  Needs: nothing. The comment of `physicslog` in the shipped eu07.ini ("for all vehicles manned by AI or a human") is
-  now a little wide of this.
-- **The physics logs are written every 2 s by a thread of their own** (#408, with the commits it carries). The files
-  are opened only for the moment of writing; a crash loses the last 2 s (up to 10 s after a slow disk). A log whose
-  file can't be written keeps its lines and is retried (up to 64 MB in all).
-- **The closing waits for the logs 1 s at most** (#408): the logs not written by then are dropped and the number is told
-  in the log. The user's own vehicle is written first. Notices: the tail of the logs of other vehicles can be
-  missing after leaving the simulator on a big scenery or a slow disk.
-- **Characters illegal in Windows file names are replaced by `_` in log file names, on every system** (#408):
-  a spawned vehicle `spawn_ezt:12` logs to `spawn_ezt_12.dat`.
-- **`physicslog.trains yes`** (#408, new): `.dat` logs of the drivers of rail vehicles only (no passengers).
-  **`blackbox yes|no`** (#408, new): the black box on its own; with no entry it goes with `physicslog` as before.
+- **The settings dump at the start of log.txt lists the `test.*` keys** (#266): `test.timeout`, `test.standstill`,
+  `test.pass_on_standstill`, `test.fail_if_stop_overran`, `test.no_movement_before_pass` (and `test.wall_timeout`,
+  `test.vehicle` when set), also in normal sessions, with their defaults. They are ignored outside the test mode.
+- **The physics logs are written every 2 s by a thread of their own** (#385 on `master`, on `staging` with #443).
+  The files are opened only for the moment of writing; a crash loses the last 2 s. A log whose file can't be written
+  keeps its lines and is retried (up to 64 MB in all). `physicslog yes` still logs every driver, road vehicles
+  included. The closing writes out everything left, with no time limit; only the test mode stops waiting after 2 s.
+- **Characters illegal in Windows file names are replaced by `_` in log file names, on every system** (#385, with
+  #443): a spawned vehicle `spawn_ezt:12` logs to `spawn_ezt_12.dat`.
+- **`physicslog.trains yes`** (#385, with #443, new): `.dat` logs of the drivers of rail vehicles only (no passengers,
+  no road vehicles). **`blackbox yes|no`** (#385, with #443, new): the black box on its own; with no entry it goes with
+  `physicslog` (or `physicslog.trains`) as before.
 - **A failed start ends with exit code 1 and the reason in the log** (#425); a closing from the player's side still
   ends with 0. The crash dump written by the Windows crash handler is small by default (stacks and data segments,
   tens of MB instead of the whole memory); `crashdump.full yes` brings back the full one.
