@@ -1236,7 +1236,7 @@ bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<
         if( false == state->started || state->now.size() != chain.nodes.size() ) { continue; }
         auto const count { chain.nodes.size() };
         for( std::size_t node { 0 }; node < count; ++node ) {
-            auto const &world { state->now[ followed ? count - 1 - node : node ] };
+            auto const world { bones::drawn( *state, followed ? count - 1 - node : node ) };
             Now[ chain.nodes[ node ] ] = tomodel( world );
             Next[ chain.nodes[ node ] ] = Now[ chain.nodes[ node ] ];
         }

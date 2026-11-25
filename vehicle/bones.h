@@ -143,16 +143,27 @@ struct chain_ends {
 	std::optional<glm::dvec3> end_clamp;
 };
 struct chain_state {
-	std::vector<glm::dvec3> now;
+	std::vector<glm::dvec3> now; // at the time of the last substep
 	std::vector<glm::dvec3> before;
-	glm::dvec3 start{0.0};
+	glm::dvec3 start{0.0}; // the ends, the clamps, at the time of the last substep
 	glm::dvec3 end{0.0};
 	std::optional<glm::dvec3> start_clamp;
 	std::optional<glm::dvec3> end_clamp;
 	double step{0.0}; // s, the substep that took the nodes from before to now
+	// s of the time given not yet simulated, short of a substep: the substeps are all as long whatever the frames, as a
+	// long chain, its lengths not quite kept, would otherwise hang a little differently with each length of frame and
+	// tremble standing
+	double pending{0.0};
+	// how far the ends went on in the time pending, which the nodes as drawn go along with (drawn())
+	glm::dvec3 lead{0.0};
+	double quiet{0.0}; // s the chain and its ends have stood still
+	// at rest: not simulated until an end moves (wake_tolerance)
+	bool asleep{false};
 	bool started{false};
 	bool moving{false}; // whether the nodes have taken on the motion of the ends yet
 };
+// where a node of the chain is drawn: where the last substep put it, gone along with its ends since
+glm::dvec3 drawn(chain_state const &State, std::size_t Node);
 struct chain_physics {
 	glm::dvec3 gravity{0.0, -9.81, 0.0}; // in the frame of the simulation
 	double damping{6.0}; // 1/s: how fast the swing against the vehicle dies down, not the vehicle's own motion

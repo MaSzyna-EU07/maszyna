@@ -38,7 +38,7 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
   the model, are the points `<name>.1`, `<name>.2` and so on, which bones can use but other points can't. The pieces
   between the nodes keep their lengths, and every other node keeps its distance as made, so the chain keeps its curve
   like a stiff hose rather than folding. The nodes swing with gravity and their inertia (Verlet integration in the
-  frame of the world, in substeps of at most 1/240 s), with the ends pinned where their points are; the swing against
+  frame of the world, in substeps of 1/240 s whatever the frames: the time short of a substep waits for the next frame, the nodes as drawn going along with their ends meanwhile, as a long chain whose lengths are kept only nearly would hang a little differently with each length of frame and tremble standing), with the ends pinned where their points are; the swing against
   the vehicle dies down within a fraction of a second, while the hose goes along with the vehicle's own motion. So a
   hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the buffers are pressed in. Each
   node takes the average of what the lengths around it ask of it. An end at a `fixed` or a `coupler` point is
@@ -48,7 +48,8 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
   ends at back to the point ours starts at, with as many nodes: one of the two vehicles moves it, and both draw it,
   so the coupled heads never part. The chains move by the simulation time of each frame, the frames long or short, sped up with the time acceleration and held by the pause, as the vehicle is; after a gap
   of more than half a second (the vehicle left alone while far) they start again as made, going along with the
-  vehicle.
+  vehicle. A chain whose nodes and ends stand still for a second is left at rest, not simulated, until an end moves
+  0.1 mm: the hoses of a train standing cost nothing.
 - `bone`: the submodel moves with its anchor point and turns about it to keep facing the other point. With `none`
   it only moves: a coupling rod, which stays level. The submodel's own origin and axes don't matter.
 - `bonebend`: the submodel bends along a spine of points, usually the start of a chain and its nodes: each vertex

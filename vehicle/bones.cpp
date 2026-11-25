@@ -420,8 +420,17 @@ void start_chain(chain_state &State, std::vector<glm::dvec3> const &Nodes, glm::
 	State.start_clamp.reset();
 	State.end_clamp.reset();
 	State.step = 0.0;
+	State.pending = 0.0;
+	State.lead = glm::dvec3{0.0};
+	State.quiet = 0.0;
+	State.asleep = false;
 	State.started = true;
 	State.moving = false;
+}
+
+glm::dvec3 drawn(chain_state const &State, std::size_t const Node)
+{
+	return State.now[Node] + State.lead;
 }
 
 namespace {
@@ -541,22 +550,87 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 	simulate(Lengths, Bends, State, chain_ends{Start, End, std::nullopt, std::nullopt}, Deltatime, Physics);
 }
 
+namespace {
+
+// the most substeps a frame; a frame longer than that many substeps takes longer ones
+constexpr int max_substeps{64};
+// m an end moves from where it stood to wake a chain at rest
+constexpr double wake_tolerance{1.0e-4};
+// m a substep under which a node or an end stands still
+constexpr double still_move{2.0e-6};
+// s the chain and its ends stand still before it's left at rest
+constexpr double sleep_after{1.0};
+
+// a chain at rest stays so, not simulated, while its ends stay where they were; whether it's (still) at rest
+bool stays_asleep(chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End)
+{
+	if (false == State.asleep)
+	{
+		return false;
+	}
+	if (glm::distance(Start, State.start) < wake_tolerance && glm::distance(End, State.end) < wake_tolerance)
+	{
+		return true;
+	}
+	State.asleep = false;
+	State.quiet = 0.0;
+	return false;
+}
+
+// the time the chain and its ends have stood still, the last substep moving no node: after a while it's left at rest
+void note_rest(chain_state &State, glm::dvec3 const &Carried, double const Time)
+{
+	auto moved{glm::length(Carried)};
+	for (std::size_t node{0}; node < State.now.size(); ++node)
+	{
+		moved = std::max(moved, glm::distance(State.now[node], State.before[node]));
+	}
+	if (moved >= still_move)
+	{
+		State.quiet = 0.0;
+		return;
+	}
+	State.quiet += Time;
+	State.asleep = State.quiet > sleep_after;
+}
+
+} // namespace
+
 void simulate(std::vector<double> const &Lengths, std::vector<double> const &Bends, chain_state &State, chain_ends const &Ends, double const Deltatime,
               chain_physics const &Physics)
 {
-	if (Deltatime <= 0.0 || false == State.started)
+	if (Deltatime <= 0.0 || false == State.started || stays_asleep(State, Ends.start, Ends.end))
 	{
 		return;
 	}
 	auto const &Start{Ends.start};
 	auto const &End{Ends.end};
-	auto const steps{std::clamp(static_cast<int>(std::ceil(Deltatime / Physics.step)), 1, 64)};
-	auto const step{Deltatime / steps};
-	auto const keep{std::exp(-Physics.damping * step)};
 	auto const fromstart{State.start};
 	auto const fromend{State.end};
+	// whole substeps of the time given and what was left over before, the rest left for the next frame
+	auto const total{State.pending + Deltatime};
+	auto steps{static_cast<int>(std::floor(total / Physics.step))};
+	auto step{Physics.step};
+	if (steps > max_substeps)
+	{
+		steps = max_substeps;
+		step = total / steps;
+	}
+	if (steps == 0)
+	{
+		State.pending = total;
+		State.lead = 0.5 * ((Start - fromstart) + (End - fromend));
+		return;
+	}
+	// the ends at the time of the last substep: that far on their way from where they were to where they are
+	auto const reach{steps * step / total};
+	auto const tostart{glm::mix(fromstart, Start, reach)};
+	auto const toend{glm::mix(fromend, End, reach)};
+	auto const startclamp{clamp_between(State.start_clamp, Ends.start_clamp, reach)};
+	auto const endclamp{clamp_between(State.end_clamp, Ends.end_clamp, reach)};
+	auto const keep{std::exp(-Physics.damping * step)};
 	// the move of the ends a substep: the hose goes along with the vehicles, only its own swing against them dies down
-	auto const carried{0.5 * ((Start - fromstart) + (End - fromend)) / static_cast<double>(steps)};
+	auto const carried{0.5 * ((tostart - fromstart) + (toend - fromend)) / static_cast<double>(steps)};
 	if (false == State.moving)
 	{
 		// a chain started where made goes along with its ends from the first step, rather than being left behind by a
@@ -568,15 +642,15 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 		State.step = step;
 		State.moving = true;
 	}
-	// the move of the last substep, for a substep of this length: the frames, and so the substeps, aren't all as long,
-	// and the move taken as it was would speed up or slow down the nodes against their ends with each change
+	// the move of the last substep, for a substep of this length: only a frame longer than the substeps allowed takes
+	// longer ones, and the move taken as it was would speed up or slow down the nodes against their ends with the change
 	auto scale{State.step > 0.0 ? step / State.step : 1.0};
 	solver_scratch scratch;
 	for (auto substep{1}; substep <= steps; ++substep)
 	{
 		auto const along{static_cast<double>(substep) / steps};
-		chain_ends const ends{glm::mix(fromstart, Start, along), glm::mix(fromend, End, along), clamp_between(State.start_clamp, Ends.start_clamp, along),
-		                      clamp_between(State.end_clamp, Ends.end_clamp, along)};
+		chain_ends const ends{glm::mix(fromstart, tostart, along), glm::mix(fromend, toend, along), clamp_between(State.start_clamp, startclamp, along),
+		                      clamp_between(State.end_clamp, endclamp, along)};
 		for (std::size_t node{0}; node < State.now.size(); ++node)
 		{
 			auto const velocity{carried + ((State.now[node] - State.before[node]) * scale - carried) * keep};
@@ -589,11 +663,14 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 			keep_lengths(Lengths, Bends, Physics.bending, State.now, ends, scratch);
 		}
 	}
-	State.start = Start;
-	State.end = End;
-	State.start_clamp = Ends.start_clamp;
-	State.end_clamp = Ends.end_clamp;
+	State.start = tostart;
+	State.end = toend;
+	State.start_clamp = startclamp;
+	State.end_clamp = endclamp;
 	State.step = step;
+	State.pending = std::max(0.0, total - steps * step);
+	State.lead = 0.5 * ((Start - tostart) + (End - toend));
+	note_rest(State, carried, steps * step);
 }
 
 void simulate(std::vector<double> const &Lengths, chain_state &State, glm::dvec3 const &Start, glm::dvec3 const &End, double const Deltatime,

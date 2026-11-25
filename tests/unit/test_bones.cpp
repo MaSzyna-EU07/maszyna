@@ -310,7 +310,7 @@ TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swi
 	}
 	for (std::size_t node{0}; node < standing.now.size(); ++node) {
 		CAPTURE(node);
-		CHECK(glm::length((running.now[node] - travelled) - standing.now[node]) < 0.01);
+		CHECK(glm::length((bones::drawn(running, node) - travelled) - bones::drawn(standing, node)) < 0.01);
 	}
 	// stiff, it keeps more of its curve than a limp one: the middle hangs less far below where it was made
 	bones::chain_state limp;
@@ -345,9 +345,9 @@ TEST_CASE("bones: a hose on a running vehicle keeps still through frames of chan
 		travelled += velocity * deltatime;
 		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, running, start + travelled, end + travelled, deltatime, downwards());
 		for (std::size_t node{0}; node < standing.now.size(); ++node) {
-			auto const off{glm::length((running.now[node] - travelled) - standing.now[node])};
+			auto const off{glm::length((bones::drawn(running, node) - travelled) - bones::drawn(standing, node))};
 			if (time < 1.0) {
-				firstsecond = std::max(firstsecond, glm::length((running.now[node] - travelled) - rig.points[rig.chains[0].nodes[node]].rest));
+				firstsecond = std::max(firstsecond, glm::length((bones::drawn(running, node) - travelled) - rig.points[rig.chains[0].nodes[node]].rest));
 			}
 			else if (time > 10.0) {
 				settled = std::max(settled, off);
@@ -445,4 +445,77 @@ TEST_CASE("bones: the half of a bellows rooted on the end of a car bends its fac
 	unheld.front() = glm::dquat{std::cos(0.05), 0.0, 0.0, std::sin(0.05)};
 	bones::hold_root(rig.bends[2], unheld);
 	CHECK(unheld.front().w == doctest::Approx(std::cos(0.05)));
+}
+
+namespace {
+
+// a hose of the EU07's kind, 33 nodes hanging between two points 1 m apart, the first node clamped
+bones::rig long_hose() {
+	bones::rig rig;
+	REQUIRE(bones::add_point(rig, {"kurek", "fixed", "0", "0", "0"}).empty());
+	REQUIRE(bones::add_point(rig, {"zlaczka", "fixed", "1", "0", "0"}).empty());
+	std::vector<std::string> words{"waz", "kurek", "zlaczka", "33"};
+	for (auto node{1}; node <= 33; ++node) {
+		auto const along{node / 34.0};
+		words.push_back(std::to_string(along));
+		words.emplace_back("0");
+		words.push_back(std::to_string(-1.4 * along * (1.0 - along)));
+	}
+	REQUIRE(bones::add_chain(rig, words).empty());
+	return rig;
+}
+
+} // namespace
+
+TEST_CASE("bones: a long hose standing keeps still through frames of every length, and is left at rest") {
+	auto const rig{long_hose()};
+	auto const &chain{rig.chains[0]};
+	bones::chain_state state;
+	bones::start_chain(state, rests(rig), glm::dvec3{0.0}, glm::dvec3{1.0, 0.0, 0.0});
+	bones::chain_ends const ends{glm::dvec3{0.0}, glm::dvec3{1.0, 0.0, 0.0}, glm::dvec3{1.0 / 34.0, 0.0, -0.05}, std::nullopt};
+	// frames of 4 to 9 ms, as a game running fast has them
+	auto const frame = [](int Frame) { return 0.004 + 0.005 * ((Frame * 37) % 11) / 10.0; };
+	auto trembled{0.0};
+	auto frames{0};
+	auto rested{false};
+	for (auto time{0.0}; time < 20.0; ++frames) {
+		auto const deltatime{frame(frames)};
+		time += deltatime;
+		std::vector<glm::dvec3> before;
+		for (std::size_t node{0}; node < state.now.size(); ++node) {
+			before.push_back(bones::drawn(state, node));
+		}
+		bones::simulate(chain.lengths, chain.bends, state, ends, deltatime, downwards());
+		if (time > 15.0) {
+			rested = rested || state.asleep;
+			for (std::size_t node{0}; node < before.size(); ++node) {
+				trembled = std::max(trembled, glm::distance(bones::drawn(state, node), before[node]));
+			}
+		}
+	}
+	// the nodes as still as with frames all of one length: before, they trembled by about 2 mm a frame
+	CHECK(trembled < 1.0e-5);
+	CHECK(rested);
+	// an end moved wakes it, and the hose swings after it
+	auto const hanging{state.now[16]};
+	bones::chain_ends const moved{glm::dvec3{0.0, 0.05, 0.0}, glm::dvec3{1.0, 0.05, 0.0}, glm::dvec3{1.0 / 34.0, 0.05, -0.05}, std::nullopt};
+	for (auto step{0}; step < 100; ++step) {
+		bones::simulate(chain.lengths, chain.bends, state, moved, 0.01, downwards());
+	}
+	CHECK_FALSE(state.asleep);
+	CHECK(state.now[16].y - hanging.y == doctest::Approx(0.05).epsilon(0.1));
+}
+
+TEST_CASE("bones: a hose on a running vehicle is drawn with its ends, not left behind by the time short of a substep") {
+	auto const rig{hose()};
+	bones::chain_state state;
+	bones::start_chain(state, rests(rig), glm::dvec3{0.0}, glm::dvec3{1.0, 0.0, 0.0});
+	glm::dvec3 const velocity{0.0, 30.0, 0.0};
+	glm::dvec3 travelled{0.0};
+	// a frame of 3 ms, shorter than a substep: nothing simulated, the nodes drawn gone along with the ends
+	auto const before{bones::drawn(state, 1)};
+	travelled += velocity * 0.003;
+	bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, state, travelled, glm::dvec3{1.0, 0.0, 0.0} + travelled, 0.003, downwards());
+	CHECK(state.pending == doctest::Approx(0.003));
+	CHECK(glm::distance(bones::drawn(state, 1), before + travelled) < 1.0e-9);
 }
