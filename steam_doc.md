@@ -139,7 +139,12 @@ The model is the first step. In rough order:
 8. **The valve gear.** The rods are animated by the bones of the model (`bones_doc.md`, the placeholder Ty2 has them);
    the expansion link and the radius rod need two more kinds of points.
 9. **A real Ty2** with its model, cab and sounds in the game data, in place of the placeholder `pkp/ty2_v1`.
-10. **What the Ty23's drawings show the model leaves out**, all second-order: the release and compression of the
+10. **More classes.** The Ty23 (1'E) and the Pt31 (1'D1') from the drawings of the collection are defined for the
+    unit tests (`tests/unit/data/steam_ty23.json`, `steam_pt31.json`) and as placeholder vehicles with their tenders
+    (`pkp/ty23_v1`, `pkp/pt31_v1`, not in the SVN yet), each `.fiz` marking with ? what the drawings don't give.
+    Both start a few percent over the PKP's formula, as the Ty2 does; the Ty23 takes 1200 t to about 68 km/h and the
+    Pt31 500 t to about 86 km/h on the level. The Oc-1 boards of the collection give too little for a definition.
+11. **What the Ty23's drawings show the model leaves out**, all second-order: the release and compression of the
     valve gear moving with the cutoff (a constant `DiagramFactor` now; drawing 21.03 tabulates them notch by notch),
     the steam a Heusinger gear still admits in mid gear (7 % on the Ty23), and the exhaust-steam injector, which
     heats the feed with the exhaust.

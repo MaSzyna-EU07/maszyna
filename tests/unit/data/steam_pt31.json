@@ -1,0 +1,95 @@
+{
+  "_comment": "Passenger steam locomotive made after the PKP Pt31, without its tender: 1'D1' h2, two cylinders 630 x 700 mm, 1850 mm wheels, 15 at, from the works drawings in the Stacja Muzeum collection (19.01, 21.04, 4.20, 1.04, 6.02). The mass, Vmax and the grate are from the literature, the boiler's steam rate and water scaled from the Ty2.",
+  "Param": {
+    "Category": "train",
+    "M": 103600,
+    "Vmax": 100,
+    "PWR": 1450
+  },
+  "Dimensions": {
+    "L": 14.3,
+    "H": 4.65,
+    "W": 3.1,
+    "Cx": 0.3
+  },
+  "Wheels": {
+    "D": 1.85,
+    "Tw": 1.435,
+    "AIM": 2100,
+    "Axle": "1D1",
+    "Ad": 12.22,
+    "Bd": 2.6,
+    "Rmin": 160,
+    "BearingType": "Slide",
+    "Dl": 1.0
+  },
+  "Brake": {
+    "BrakeValve": "K",
+    "NBpA": 4,
+    "MBF": 130.0,
+    "MaxBP": 3.43,
+    "LocMaxBP": 3.43,
+    "BCN": 2,
+    "BCR": 0.2032,
+    "BCD": 0.1,
+    "BCM": 6.0,
+    "HiPP": 5,
+    "LoPP": 3.5,
+    "Vv": 0.3,
+    "MinCP": 7.0,
+    "MaxCP": 8.0,
+    "CompressorSpeed": 0.0125,
+    "CompressorPower": "Engine",
+    "BCS": 0.8,
+    "BSA": 0,
+    "BM": "P10-Bg",
+    "BVV": 40,
+    "BRE": 0.9
+  },
+  "BuffCoupl": {
+    "CType": "Screw",
+    "kB": 9200,
+    "DmaxB": 0.15,
+    "FmaxB": 740,
+    "kC": 4800,
+    "DmaxC": 0.15,
+    "FmaxC": 780,
+    "beta": 0.58,
+    "AllowedFlag": 3
+  },
+  "Cntrl": {
+    "BrakeSystem": "Pneumatic",
+    "BDelay1": 15,
+    "BDelay2": 4,
+    "ASB": "Manual",
+    "LocalBrake": "PneumaticBrake",
+    "ManualBrake": "Yes",
+    "MCPN": 10,
+    "SCPN": 14,
+    "IniCDelay": 0.5,
+    "SCDelay": 0.1,
+    "BrakeDelays": "GP",
+    "BrakeHandle": "Knorr",
+    "LocBrakeHandle": "Knorr",
+    "BCPN": 4
+  },
+  "Engine": {
+    "EngineType": "SteamEngine",
+    "Trans": "1:1"
+  },
+  "Steam": {
+    "CylD": 0.63,
+    "CylS": 0.7,
+    "CutoffMax": 0.8,
+    "CutoffMaxReverse": 0.77,
+    "CutoffMin": 0.1,
+    "BoilerPressure": 14.71,
+    "Grate": 4.5,
+    "SteamRate": 3.9,
+    "Superheat": 160,
+    "BoilerWater": 11000,
+    "FireMass": 700,
+    "TenderWater": 32,
+    "TenderCoal": 10
+  }
+}

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <string>
+#include <string_view>
 
 #include "McZapkie/steam.h"
 
@@ -182,11 +184,11 @@ struct freight_train {
 	test::consist train;
 	vehicle *locomotive{nullptr};
 
-	explicit freight_train(int Wagons) {
-		locomotive = &train.add(definition::load("steam_ty2"), 1);
-		train.add(freight_wagon(58700));
+	explicit freight_train(int Wagons, std::string_view Locomotive = "steam_ty2", double Tender = 58700.0, double Wagon = 50000.0) {
+		locomotive = &train.add(definition::load(std::string{Locomotive}), 1);
+		train.add(freight_wagon(Tender));
 		for (auto wagon{0}; wagon < Wagons; ++wagon) {
-			train.add(freight_wagon(50000));
+			train.add(freight_wagon(Wagon));
 		}
 		auto &cab{mover()};
 		cab.CabActivisation();
@@ -203,10 +205,12 @@ struct freight_train {
 		auto &cab{mover()};
 		auto const steps{std::lround(Seconds / 5.0)};
 		for (auto step{0L}; step < steps; ++step) {
-			if (cab.Vel > 15.0 && cab.Steam.pressure() < 13.0 * bar) {
+			// the boiler kept between 3 and 1 bar under its working pressure: 13 and 15 bar for the Ty2's 16
+			auto const working{cab.Steam.Parameters.working_pressure};
+			if (cab.Vel > 15.0 && cab.Steam.pressure() < working - 3.0 * bar) {
 				cab.IncScndCtrl(1);
 			}
-			else if (cab.Steam.pressure() > 15.0 * bar && cab.ScndCtrlPos > 0) {
+			else if (cab.Steam.pressure() > working - 1.0 * bar && cab.ScndCtrlPos > 0) {
 				cab.DecScndCtrl(1);
 			}
 			train.run(5.0);
@@ -286,4 +290,65 @@ TEST_CASE("steam: the Ty23 of its drawings, with no more than its data") {
 	auto const backwards{ty23.starting_force(ty23.Parameters.cutoff_max_reverse, steam::atmosphere + ty23.Parameters.working_pressure)};
 	CHECK(backwards < force);
 	CHECK(backwards > 0.85 * force);
+}
+
+namespace {
+
+// the tractive force of the PKP's formula, Z = 0.75 p d² s / D (kg, with p in at and d, s, D in cm), in N
+double formula_force(double Pressure, double Bore, double Stroke, double Wheel) {
+	return 0.75 * Pressure * Bore * Bore * Stroke / Wheel * 9.81;
+}
+
+} // namespace
+
+TEST_CASE("steam: the Ty23 and the Pt31 of the museum's drawings load as steam locomotives in steam") {
+	struct locomotive_class {
+		char const *name;
+		double wheel;
+		double formula;
+	};
+	// the Ty23: 14 at, 65 x 72 cm, 145 cm wheels, the 22 030 kg of its drawing 1.03; the Pt31: 15 at, 63 x 70 cm, 185 cm
+	for (auto const &tested : {locomotive_class{"steam_ty23", 1.45, formula_force(14.0, 65.0, 72.0, 145.0)},
+	                           locomotive_class{"steam_pt31", 1.85, formula_force(15.0, 63.0, 70.0, 185.0)}}) {
+		CAPTURE(tested.name);
+		vehicle locomotive{definition::load(tested.name), 0.0, "test", 1};
+		CHECK(locomotive->EngineType == TEngineType::SteamEngine);
+		CHECK(locomotive->Steam.Parameters.wheel_diameter == doctest::Approx(tested.wheel));
+		CHECK(locomotive->steam_InSteam());
+		CHECK(locomotive->Steam.pressure() > locomotive->Steam.Parameters.working_pressure - 1.5 * bar);
+		// the model's starting force at full gear a few percent over the formula, as the Ty2's is
+		auto const force{locomotive->Steam.starting_force(locomotive->Steam.Parameters.cutoff_max, steam::atmosphere + locomotive->Steam.Parameters.working_pressure)};
+		MESSAGE(tested.name << ": " << force / 1000.0 << " kN starting, the formula " << tested.formula / 1000.0 << " kN");
+		CHECK(force > tested.formula);
+		CHECK(force < 1.10 * tested.formula);
+	}
+}
+
+TEST_CASE("steam: the Ty23 and the Pt31 take their trains up to speed on the level") {
+	struct run_case {
+		char const *name;
+		double tender;
+		int wagons;
+		double wagon;
+		double lowest;
+		double highest;
+	};
+	// the Ty23 with 1200 t of goods wagons, the Pt31 with 500 t of coaches (as goods wagons here, of a like resistance)
+	for (auto const &tested : {run_case{"steam_ty23", 52000.0, 24, 50000.0, 45.0, 70.0}, run_case{"steam_pt31", 72000.0, 10, 50000.0, 75.0, 105.0}}) {
+		CAPTURE(tested.name);
+		freight_train train{tested.wagons, tested.name, tested.tender, tested.wagon};
+		auto &cab{train.mover()};
+		REQUIRE(cab.DirectionForward());
+		while (cab.MainCtrlPos < cab.MainCtrlPosNo) {
+			REQUIRE(cab.IncMainCtrl(1));
+		}
+		train.train.run(10.0);
+		CHECK(cab.Vel > 1.0);
+		train.drive(1200.0);
+		MESSAGE(tested.name << " after 20 min: " << cab.Vel << " km/h, " << cab.Steam.pressure() / bar << " bar, notch " << cab.ScndCtrlPos << ", "
+		                    << cab.Steam.State.power / 1000.0 << " kW");
+		CHECK(cab.Vel > tested.lowest);
+		CHECK(cab.Vel < tested.highest);
+		CHECK(cab.Steam.water_level() > 0.0);
+	}
 }
