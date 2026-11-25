@@ -70,6 +70,11 @@ constexpr double injector_minimum_pressure{1.5 * bar}; // gauge, under which the
 constexpr double safety_valve_blowdown{0.3 * bar}; // under the working pressure, where the valves close again
 constexpr double fireman_level{0.55}; // of the glass, where the fireman keeps the water
 constexpr double fireman_reaction{60.0}; // s in which the fireman makes up the fire to what it should be
+// kg of coal an hour per m² of heating surface at which a boiler's efficiency is down to BoilerEfficiencyMin: the Ty2's
+// 550 kg/(m² h) on its 3.89 m² of grate, over its 177.7 m² of evaporative surface
+constexpr double reference_surface_rate{12.0};
+// how far past that rate the efficiency keeps falling, for a boiler of less surface to its grate than the Ty2's
+constexpr double surface_rate_limit{1.5};
 
 // steam taken as an ideal gas, kg/m³
 double density(double const Pressure, double const Temperature)
@@ -100,6 +105,11 @@ double burn_rate(parameters const &Parameters, double const Fire, double const D
 // the part of the heat of the coal burned at the given rate which reaches the water
 double boiler_efficiency(parameters const &Parameters, double const Burnrate)
 {
+	if (Parameters.heating_surface > 0.0)
+	{
+		auto const surfacerate{Burnrate * 3600.0 / Parameters.heating_surface / reference_surface_rate};
+		return std::lerp(Parameters.efficiency_max, Parameters.efficiency_min, std::clamp(surfacerate, 0.0, surface_rate_limit));
+	}
 	auto const rate{Burnrate / full_burn_rate(Parameters)};
 	return std::lerp(Parameters.efficiency_max, Parameters.efficiency_min, std::clamp(rate, 0.0, 1.0));
 }
@@ -493,6 +503,7 @@ void SteamEngine::load(std::string_view const Line)
 	steam::read(Parameters.coal_heat, "CoalHeat", line, 1.0e6);
 	steam::read(Parameters.efficiency_max, "BoilerEfficiency", line);
 	steam::read(Parameters.efficiency_min, "BoilerEfficiencyMin", line);
+	steam::read(Parameters.heating_surface, "HeatingSurface", line);
 	steam::read(Parameters.fire_delay, "FireDelay", line);
 	steam::read(Parameters.exhaust_draught, "ExhaustDraught", line);
 	steam::read(Parameters.blower_draught, "BlowerDraught", line);

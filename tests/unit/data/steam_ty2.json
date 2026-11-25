@@ -14,5 +14,5 @@
     "MCPN": 10, "SCPN": 14, "IniCDelay": 0.5, "SCDelay": 0.1, "BrakeDelays": "G", "BrakeHandle": "Knorr", "LocBrakeHandle": "Knorr"
   },
   "Engine": { "EngineType": "SteamEngine", "Trans": "1:1" },
-  "Steam": { "CylD": 0.6, "CylS": 0.66, "BoilerPressure": 16, "Grate": 3.89 }
+  "Steam": { "CylD": 0.6, "CylS": 0.66, "BoilerPressure": 16, "Grate": 3.89, "HeatingSurface": 177.7 }
 }

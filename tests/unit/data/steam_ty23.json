@@ -90,6 +90,7 @@
     "BoilerWater": 9500,
     "FireMass": 700,
     "TenderWater": 21,
-    "TenderCoal": 9
+    "TenderCoal": 9,
+    "HeatingSurface": 191.1
   }
 }

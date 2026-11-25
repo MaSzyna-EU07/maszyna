@@ -334,7 +334,7 @@ TEST_CASE("steam: the Ty23 and the Pt31 take their trains up to speed on the lev
 		double highest;
 	};
 	// the Ty23 with 1200 t of goods wagons, the Pt31 with 500 t of coaches (as goods wagons here, of a like resistance)
-	for (auto const &tested : {run_case{"steam_ty23", 52000.0, 24, 50000.0, 45.0, 70.0}, run_case{"steam_pt31", 72000.0, 10, 50000.0, 75.0, 105.0}}) {
+	for (auto const &tested : {run_case{"steam_ty23", 52000.0, 24, 50000.0, 45.0, 70.0}, run_case{"steam_pt31", 67500.0, 10, 50000.0, 75.0, 105.0}}) {
 		CAPTURE(tested.name);
 		freight_train train{tested.wagons, tested.name, tested.tender, tested.wagon};
 		auto &cab{train.mover()};
@@ -351,4 +351,79 @@ TEST_CASE("steam: the Ty23 and the Pt31 take their trains up to speed on the lev
 		CHECK(cab.Vel < tested.highest);
 		CHECK(cab.Steam.water_level() > 0.0);
 	}
+}
+
+namespace {
+
+// a passenger train of the Pt31's time: Coaches of 43.3 t (650 t in fifteen), on bogies and plain bearings, behind the
+// locomotive and its tender, run with the regulator wide open and the cutoff notched up to the given notch once moving
+struct passenger_run {
+	double speed{0.0}; // km/h, the mean of the last five minutes
+	double power{0.0}; // kW indicated, likewise
+};
+
+passenger_run run_passenger_train(std::string_view const Locomotive, double const Tender, int const Notch, double const Gradient, double const Minutes) {
+	test::consist train;
+	auto &locomotive{train.add(definition::load(std::string{Locomotive}), 1)};
+	train.add(freight_wagon(Tender));
+	for (auto coach{0}; coach < 15; ++coach) {
+		train.add(definition::load("wagon").set("Param", "M", 43333.0).set("Dimensions", "L", 20.0).set("Wheels", "BearingType", "Slide").set("Brake", "BrakeValve", "K"));
+	}
+	auto &cab{locomotive.mover()};
+	cab.CabActivisation();
+	locomotive.hold_brake_pipe(5.0);
+	locomotive.hold_main_reservoir(8.0);
+	test::release_brakes(cab);
+	train.run(30.0);
+	REQUIRE(cab.DirectionForward());
+	while (cab.MainCtrlPos < cab.MainCtrlPosNo) {
+		REQUIRE(cab.IncMainCtrl(1));
+	}
+	// a gradient of the test track is positive downhill
+	test::track const track{0.15, -Gradient};
+	passenger_run result;
+	auto const steps{std::lround(Minutes * 12.0)};
+	auto counted{0};
+	for (auto step{0L}; step < steps; ++step) {
+		while (cab.Vel > 10.0 && cab.ScndCtrlPos < Notch) {
+			cab.IncScndCtrl(1);
+		}
+		train.run(5.0, track);
+		if (step >= steps - 60) {
+			result.speed += cab.Vel;
+			result.power += cab.Steam.State.power / 1000.0;
+			++counted;
+		}
+	}
+	result.speed /= counted;
+	result.power /= counted;
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("steam: the Pt31 keeps up more power than the Ty2 with the same train, as its boiler is the larger") {
+	// the boilers fired hardest: the Pt31's 4.5 m2 of grate over 239 m2 of heating surface, the Ty2's 3.89 m2 over 177.7 m2
+	auto const fullheat = [](std::string_view const Name) {
+		vehicle locomotive{definition::load(std::string{Name}), 0.0, "test", 1};
+		auto const &parameters{locomotive->Steam.Parameters};
+		auto const burn{parameters.grate_area * parameters.firing_rate_max / 3600.0};
+		return burn * parameters.coal_heat * std::lerp(parameters.efficiency_max, parameters.efficiency_min, burn * 3600.0 / parameters.heating_surface / 12.0);
+	};
+	auto const ratio{fullheat("steam_pt31") / fullheat("steam_ty2")};
+	MESSAGE("the heat of the Pt31's boiler to the Ty2's, fired hardest: " << ratio);
+	// about the 2000 KM of the Pt31 to the 1633 KM of the Ty2
+	CHECK(ratio == doctest::Approx(2000.0 / 1633.0).epsilon(0.05));
+	// both with 650 t of coaches on the level, the cutoff short, as at speed
+	auto const ty2{run_passenger_train("steam_ty2", 58700.0, 13, 0.0, 25.0)};
+	auto const pt31{run_passenger_train("steam_pt31", 67500.0, 13, 0.0, 25.0)};
+	MESSAGE("650 t on the level: the Ty2 " << ty2.speed << " km/h, " << ty2.power << " kW; the Pt31 " << pt31.speed << " km/h, " << pt31.power << " kW");
+	CHECK(pt31.power > 1.12 * ty2.power);
+	CHECK(pt31.speed > ty2.speed);
+	// and up the 5 per mille the Pt31 was built for, at a longer cutoff
+	auto const ty2up{run_passenger_train("steam_ty2", 58700.0, 11, 0.005, 25.0)};
+	auto const pt31up{run_passenger_train("steam_pt31", 67500.0, 11, 0.005, 25.0)};
+	MESSAGE("650 t up 5 per mille: the Ty2 " << ty2up.speed << " km/h, " << ty2up.power << " kW; the Pt31 " << pt31up.speed << " km/h, " << pt31up.power << " kW");
+	CHECK(pt31up.power > 1.12 * ty2up.power);
+	CHECK(pt31up.speed > ty2up.speed);
 }

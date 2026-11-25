@@ -1,10 +1,10 @@
 {
-  "_comment": "Passenger steam locomotive made after the PKP Pt31, without its tender: 1'D1' h2, two cylinders 630 x 700 mm, 1850 mm wheels, 15 at, from the works drawings in the Stacja Muzeum collection (19.01, 21.04, 4.20, 1.04, 6.02). The mass, Vmax and the grate are from the literature, the boiler's steam rate and water scaled from the Ty2.",
+  "_comment": "Passenger steam locomotive made after the PKP Pt31, without its tender: 1'D1' h2, two cylinders 630 x 700 mm, 1850 mm wheels, 15 at, from the works drawings in the Stacja Muzeum collection (19.01, 21.04, 4.20, 1.04, 6.02). The service mass (106.2 t), Vmax (110 km/h), power (2000 KM), grate (4.5 m2) and evaporative heating surface (239 m2) are from the literature (pl.wikipedia, parowozy.net); the boiler's nominal steam rate is the Ty2's scaled by the power, its water scaled from the Ty2.",
   "Param": {
     "Category": "train",
-    "M": 103600,
-    "Vmax": 100,
-    "PWR": 1450
+    "M": 106200,
+    "Vmax": 110,
+    "PWR": 1470
   },
   "Dimensions": {
     "L": 14.3,
@@ -85,11 +85,12 @@
     "CutoffMin": 0.1,
     "BoilerPressure": 14.71,
     "Grate": 4.5,
-    "SteamRate": 3.9,
+    "SteamRate": 3.55,
     "Superheat": 160,
     "BoilerWater": 11000,
     "FireMass": 700,
     "TenderWater": 32,
-    "TenderCoal": 10
+    "TenderCoal": 10,
+    "HeatingSurface": 239
   }
 }

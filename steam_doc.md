@@ -92,6 +92,7 @@ Every key is optional; the defaults are the Ty2's.
 | `CoalHeat` | 29 | MJ/kg | |
 | `BoilerEfficiency` | 0.8 | | heat reaching the water, firing gently |
 | `BoilerEfficiencyMin` | 0.5 | | and at the highest firing rate |
+| `HeatingSurface` | none | m² | the evaporative heating surface (firebox, tubes and flues, on the side of the gases). Given, the efficiency falls with the coal burned an hour per m² of it, down to `BoilerEfficiencyMin` at the 12 kg/(m² h) of the Ty2 fired hardest, and on past it to 1.5 times that rate: a boiler with more surface to its grate keeps more of the heat. Without it, with the firing rate of the grate alone |
 | `FireDelay` | 25 | s | from burning to heating the water |
 | `ExhaustDraught` | 1 | | draught of the nominal exhaust |
 | `BlowerDraught` | 0.35 | | draught of the blower wide open |
@@ -163,8 +164,14 @@ The model is the first step. In rough order:
 10. **More classes.** The Ty23 (1'E) and the Pt31 (1'D1') from the drawings of the collection are defined for the
     unit tests (`tests/unit/data/steam_ty23.json`, `steam_pt31.json`) and as placeholder vehicles with their tenders
     (`pkp/ty23_v1`, `pkp/pt31_v1`, not in the SVN yet), each `.fiz` marking with ? what the drawings don't give.
-    Both start a few percent over the PKP's formula, as the Ty2 does; the Ty23 takes 1200 t to about 68 km/h and the
-    Pt31 500 t to about 86 km/h on the level. The Oc-1 boards of the collection give too little for a definition.
+    Both start a few percent over the PKP's formula, as the Ty2 does; the Ty23 takes 1200 t to about 67 km/h and the
+    Pt31 500 t to about 90 km/h on the level. With `HeatingSurface` (Ty2 177.7, Ty23 191.1, Pt31 239 m²) the Pt31's
+    boiler gives 1.25 times the heat of the Ty2's fired hardest, about the 2000 KM to 1633 KM of their ratings, and
+    with the same 650 t of coaches it keeps up 1.15 times the Ty2's indicated power, a few km/h faster on the level
+    (87 against 84) and up 5 ‰ (56 against 53). Before, the Pt31's `SteamRate` of 3.9 kept its fireman from firing
+    to the full and the two gave the same power. The Pt31's design figure, 650 t up 5 ‰ at 80 km/h, is not reached:
+    the coaches of the game, on plain bearings, take about 6 daN/t at 85 km/h, about one and a half times what the
+    German formulas give, which is a matter of the resistance of all the game's wagons, not of the steam engine. The Oc-1 boards of the collection give too little for a definition.
 11. **What the Ty23's drawings show the model leaves out**, all second-order: the release and compression of the
     valve gear moving with the cutoff (a constant `DiagramFactor` now; drawing 21.03 tabulates them notch by notch),
     the steam a Heusinger gear still admits in mid gear (7 % on the Ty23), and the exhaust-steam injector, which

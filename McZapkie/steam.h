@@ -74,6 +74,11 @@ struct parameters {
 	double coal_heat{29.0e6}; // J/kg, CoalHeat
 	double efficiency_max{0.80}; // of the heat of the coal reaching the water, firing gently, BoilerEfficiency
 	double efficiency_min{0.50}; // and firing at the highest rate
+	// m² of the boiler's evaporative heating surface (the firebox and the tubes and flues, on the side of the gases),
+	// HeatingSurface; optional. given, the efficiency falls with the coal burned per m² of it, reaching efficiency_min at
+	// the rate of the Ty2 at its fullest firing, so a boiler of more surface to its grate keeps more of the heat; without it,
+	// with the firing rate of the grate alone
+	double heating_surface{0.0};
 	double fire_delay{25.0}; // s from burning the coal to heating the water, FireDelay
 	double exhaust_draught{1.0}; // the draught of the nominal exhaust, of the full one, ExhaustDraught
 	double blower_draught{0.35}; // the draught of the blower fully open, BlowerDraught
