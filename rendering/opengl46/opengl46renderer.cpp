@@ -5760,6 +5760,95 @@ std::string const &opengl46_renderer::info_stats() const
 	return m_debugstatstext;
 }
 
+std::pair<std::size_t, std::size_t> opengl46_renderer::Prewarm_Shaders( double const Milliseconds )
+{
+	auto &prewarm { m_prewarm };
+	if( false == prewarm.started ) {
+		prewarm.started = true;
+		// the programs of the materials and their variants for the multi draws of the instances
+		for( auto const &shader : m_shaders ) {
+			if( shader.second != nullptr ) { prewarm.programs.emplace_back( shader.second.get() ); }
+		}
+		for( auto const &variant : m_multidrawprograms ) {
+			if( variant.second != nullptr ) { prewarm.programs.emplace_back( variant.second.get() ); }
+		}
+		// the formats and the samples of the colour pass (init_viewport()), 4 x 4 pixels
+		auto const samples { 1 << Global.iMultisampling };
+		prewarm.color = std::make_unique<gl::renderbuffer>();
+		prewarm.color->alloc( Global.gfx_format_color, 4, 4, samples );
+		prewarm.depth = std::make_unique<gl::renderbuffer>();
+		prewarm.depth->alloc( Global.gfx_format_depth, 4, 4, samples );
+		prewarm.target = std::make_unique<gl::framebuffer>();
+		prewarm.target->attach( *prewarm.color, GL_COLOR_ATTACHMENT0 );
+		prewarm.target->attach( *prewarm.depth, GL_DEPTH_ATTACHMENT );
+		if( Global.gfx_motion_vectors() ) {
+			prewarm.motion = std::make_unique<gl::renderbuffer>();
+			prewarm.motion->alloc( Global.gfx_postfx_motionblur_format, 4, 4, samples );
+			prewarm.target->attach( *prewarm.motion, GL_COLOR_ATTACHMENT1 );
+		}
+		// a triangle with no area: drawn, nothing comes of it, but the program is made ready for the state of the draw
+		gfx::vertex_array vertices( 3, gfx::basic_vertex( glm::vec3( 0.f ), glm::vec3( 0.f, 1.f, 0.f ), glm::vec2( 0.f ) ) );
+		gfx::userdata_array userdata;
+		prewarm.bank = Create_Bank();
+		prewarm.triangle = Insert( vertices, userdata, prewarm.bank, GL_TRIANGLES );
+		if( false == m_multidrawprograms.empty() ) {
+			// the variants of the multi draws read the model block of the draw from a storage buffer, which the frames bind for
+			// their multi draws only. drawn here with a plain draw, they read the block of the draw 0; without a buffer there
+			// the draw would be undefined
+			prewarm.draws = std::make_unique<gl::ssbo>( static_cast<GLsizeiptr>( sizeof( gl::model_ubs ) ), gl::MODEL_DRAW_SSBO_BINDING );
+			prewarm.draws->update( model_ubs );
+		}
+		if( false == prewarm.target->is_complete() ) {
+			ErrorLog( "the programs of the materials weren't prepared: the target of the drawing can't be made" );
+			prewarm.next = prewarm.programs.size();
+		}
+		WriteLog( "preparing " + std::to_string( prewarm.programs.size() ) + " programs of the materials before the first frame" );
+	}
+	auto const total { prewarm.programs.size() + opengl46_windscreen_water::program_count() };
+	if( prewarm.next >= prewarm.programs.size() ) {
+		// then the programs of the water on the windscreens, one at a time: the longest of all to compile, the first frame of the
+		// simulation made them before
+		if( ( false == prewarm.water_done ) && m_windscreenwater.prepare_next() ) {
+			++prewarm.water;
+		}
+		else if( false == prewarm.water_done ) {
+			prewarm.water_done = true;
+			WriteLog( "the programs of the windscreen water prepared" );
+		}
+		return { prewarm.water_done ? total : prewarm.next + prewarm.water, total };
+	}
+
+	auto const until { std::chrono::steady_clock::now() + std::chrono::duration<double, std::milli>( Milliseconds ) };
+	prewarm.target->bind();
+	prewarm.target->setup_drawing( prewarm.motion ? 2 : 1 );
+	::glViewport( 0, 0, 4, 4 );
+	::glEnable( GL_DEPTH_TEST );
+	model_ubo->update( model_ubs );
+	if( prewarm.draws != nullptr ) {
+		// every multi draw of a frame binds its own blocks there afterwards (Bind_Indirect_Blocks())
+		prewarm.draws->bind_base();
+	}
+	while( ( prewarm.next < prewarm.programs.size() ) && ( std::chrono::steady_clock::now() < until ) ) {
+		prewarm.programs[ prewarm.next ]->bind();
+		// as the opaque things are drawn, and as the translucent ones are
+		::glDisable( GL_BLEND );
+		::glDepthMask( GL_TRUE );
+		m_geometry.draw( prewarm.triangle );
+		::glEnable( GL_BLEND );
+		::glDepthMask( GL_FALSE );
+		m_geometry.draw( prewarm.triangle );
+		++prewarm.next;
+	}
+	::glDisable( GL_BLEND );
+	::glDepthMask( GL_TRUE );
+	gl::program::unbind();
+	gl::framebuffer::unbind();
+	if( prewarm.next >= prewarm.programs.size() ) {
+		WriteLog( "the programs of the materials prepared" );
+	}
+	return { prewarm.next, total };
+}
+
 void opengl46_renderer::MakeScreenshot()
 {
     // rows are tightly packed RGB: the renderer sets GL_PACK_ALIGNMENT to 1

@@ -579,7 +579,26 @@ struct vulkan14_renderer::context
 	std::vector<vk14::scene_pipeline_record> warm_records;
 	std::unordered_set<std::string> warm_lines;
 	std::atomic<std::size_t> warm_made{0};
+	// the pipelines of the list of the last session handed to the background threads, and those of them done with, made or not:
+	// the progress of the loading screen (vulkan14_renderer::Prewarm_Shaders())
+	std::atomic<std::size_t> warm_queued{0};
+	std::atomic<std::size_t> warm_finished{0};
 	std::atomic<std::size_t> pipelines_late{0};
+	// the pipelines made behind the loading screen once the scenery is loaded (vulkan14_renderer::Prewarm_Shaders()): each with the
+	// key bind_scene_pipeline() looks it up by in the map of its program, and the next one made on the main thread without the
+	// background threads
+	struct prewarm_pipeline
+	{
+		std::shared_ptr<vk14::scene_program> program;
+		vk14::target_formats targets;
+		vk14::blend_mode blend{vk14::blend_mode::none};
+		std::uint32_t settings{0};
+		bool single{false};
+		std::uint64_t key{0};
+	};
+	std::vector<prewarm_pipeline> prewarm;
+	std::size_t prewarm_next{0};
+	bool prewarm_listed{false};
 	// [0]: the main window, then the windows of the extra viewports
 	std::vector<std::unique_ptr<vk14::swapchain>> windows;
 	std::vector<frame> frames;
@@ -681,8 +700,9 @@ struct vulkan14_renderer::context
 	VkPipeline make_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single);
 	bool find_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single,
 	                         VkPipeline &Pipeline);
+	// Late: a draw waits for it (counted as made late); otherwise it's made ahead
 	void queue_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode Blend, VkPrimitiveTopology Primitiveclass, std::uint32_t Settings, bool Single,
-	                          std::uint64_t Key);
+	                          std::uint64_t Key, bool Late = true);
 	void warm_scene_pipelines();
 	void save_scene_pipelines();
 	// the value of the timeline the gpu reached, 0 when it can't be read

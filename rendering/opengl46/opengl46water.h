@@ -27,6 +27,10 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 
 	// the storage bound to its point for the glasses drawn next (the bindings are kept by every context of its own)
 	void bind() const;
+	// the next of the programs of the simulation compiled ahead of its first step (a few seconds each where the driver has none
+	// of them kept, at the first start of a new version), so the loading screen stays while they're made. false once all are
+	bool prepare_next();
+	static constexpr std::size_t program_count() { return pass::count; }
 
   protected:
 	bool gpu_init() override;

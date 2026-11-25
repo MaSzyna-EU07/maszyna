@@ -287,13 +287,34 @@ void scenarioloader_ui::render_()
 		ImVec2 text_pos = ImVec2(screen_size.x - 16 * scale - text_size.x, 16 * scale);
 		draw_list->AddText(text_pos, IM_COL32_WHITE, sceneryName.c_str());
 	}
-	
+
+	render_notice(draw_list, scale, font_scale_mult);
+
 	// Progress bar at the bottom of the screen
 	const auto p1 = ImVec2(0, Global.window_size.y - 2);
 	const auto p2 = ImVec2(Global.window_size.x * m_progress, Global.window_size.y);
 	draw_list->AddRectFilled(p1, p2, ImColor(40, 210, 60, 255));
 	ImGui::PopFont();
 	ImGui::End();
+}
+
+// the notice centred at the top of the screen on a dark plate, so it reads on any background. the bottom of the screen
+// is taken by the trivia and by the texts some backgrounds carry
+void scenarioloader_ui::render_notice( ImDrawList *Drawlist, float const Scale, float const Fontscale ) const
+{
+	if (m_notice.empty())
+		return;
+
+	ImGui::SetWindowFontScale(Fontscale * 0.6f);
+	auto const text_size{ImGui::CalcTextSize(m_notice.c_str())};
+	auto const padding{16.f * Scale};
+	auto const top{48.f * Scale};
+	ImVec2 const text_pos{(static_cast<float>(Global.window_size.x) - text_size.x) * 0.5f, top + padding};
+	Drawlist->AddRectFilled(
+		ImVec2{text_pos.x - padding, top},
+		ImVec2{text_pos.x + text_size.x + padding, text_pos.y + text_size.y + padding},
+		IM_COL32(0, 0, 0, 170), 8.f * Scale);
+	Drawlist->AddText(text_pos, IM_COL32_WHITE, m_notice.c_str());
 }
 
 void scenarioloader_ui::generate_gradient_tex()
