@@ -765,7 +765,7 @@ gfx::vertex_array model_file_vertices( TSubModel *Submodel ) {
 
 // m, the longest edge of the triangles of a bent submodel. a hose of a model may be a few straight tubes, which bend only
 // where their rings are; halved again and again along their longest edge, its triangles bend smoothly
-constexpr float max_flex_edge { 0.025f };
+constexpr float max_flex_edge { 0.06f };
 // the most vertices a bent submodel is halved to, should a model have far more or far larger triangles than a hose
 constexpr std::size_t max_flex_vertices { 120000 };
 
@@ -914,13 +914,24 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
                 Now[ bend.head_to ] - Now[ bend.head_from ],
                 upwards );
         }
+        // the skin as bones::pose_skin() works it out, in single precision for the thousands of vertices of a hose: the
+        // nodes and their turns made floats once, each vertex turned by the quaternion rather than by a matrix made for it
+        std::vector<glm::vec3> nodes( now.begin(), now.end() );
+        std::vector<glm::quat> nodeturns( turns.begin(), turns.end() );
         for( std::size_t vertex { 0 }; vertex < flex.rest.size() && vertex < flex.binds.size(); ++vertex ) {
-            auto const pose { bones::pose_skin( flex.binds[ vertex ], now, turns ) };
-            auto const turn { glm::mat3( glm::mat3_cast( pose.turn ) ) };
+            auto const &bind { flex.binds[ vertex ] };
+            if( bind.piece + 1 >= nodes.size() || bind.piece + 1 >= nodeturns.size() ) { continue; }
+            auto const along { static_cast<float>( bind.along ) };
+            auto other { nodeturns[ bind.piece + 1 ] };
+            if( glm::dot( nodeturns[ bind.piece ], other ) < 0.f ) {
+                other = -other;
+            }
+            auto const turn { glm::normalize( nodeturns[ bind.piece ] * ( 1.f - along ) + other * along ) };
             auto &posed { flex.posed[ vertex ] };
             auto const &rest { flex.rest[ vertex ] };
-            posed.position = glm::vec3( pose.position );
-            posed.normal = glm::normalize( turn * rest.normal );
+            posed.position = glm::mix( nodes[ bind.piece ], nodes[ bind.piece + 1 ], along ) + turn * glm::vec3( bind.offset );
+            // a turn keeps the length: the normal stays a unit one
+            posed.normal = turn * rest.normal;
             posed.tangent = glm::vec4( turn * glm::vec3( rest.tangent ), rest.tangent.w );
         }
         flex.changed = true;
@@ -929,6 +940,12 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
 
 void TDynamicObject::hide_flexes() {
 
+    if( false == m_flexesnear ) {
+        for( auto &flex : m_flexes ) {
+            flex.visible = false;
+        }
+        return;
+    }
     for( auto &flex : m_flexes ) {
         flex.originalvisible = flex.original->iVisible;
         flex.visible = flex.original->iVisible != 0;
@@ -1067,10 +1084,10 @@ bool TDynamicObject::follows( shared_chain const &Shared ) const {
 }
 
 // moves the chains by the render time since they moved last, once a frame, all but those the next vehicle moves
-void TDynamicObject::advance_chains( std::vector<glm::dvec3> const &Now ) {
+void TDynamicObject::advance_chains( std::vector<glm::dvec3> const &Now, bool const Needed ) {
 
     auto const clock { Timer::GetRenderTime() };
-    if( clock == m_chainclock ) { return; }
+    if( clock == m_chainclock || ( false == m_chainsnear && false == Needed ) ) { return; }
     auto const elapsed { m_chainclock < 0.0 ? 0.0 : std::max( clock - m_chainclock, 0.0 ) };
     // the time as it went, so the nodes keep up with their ends: a step cut short while the ends moved all the way would
     // be a jolt. after a long gap (the vehicle left alone while far, or the game held up) the chains start again where
@@ -1124,7 +1141,8 @@ std::optional<glm::dvec3> TDynamicObject::chain_clamp( bones::chain const &Chain
 void TDynamicObject::advance_chains() {
 
     if( m_rig.empty() || Timer::GetRenderTime() == m_chainclock ) { return; }
-    advance_chains( bones::pose( m_rig, bone_drive( false ) ) );
+    // the next vehicle needs the chain it shares with this one: moved however far this one is, or out of sight
+    advance_chains( bones::pose( m_rig, bone_drive( false ) ), true );
 }
 
 bool TDynamicObject::simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next ) {
@@ -1167,7 +1185,7 @@ void TDynamicObject::update_bones() {
     }
     auto now { bones::pose( m_rig, bone_drive( false ) ) };
     auto next { bones::pose( m_rig, bone_drive( true ) ) };
-    if( simulate_chains( now, next ) && false == m_flexes.empty() ) {
+    if( simulate_chains( now, next ) && false == m_flexes.empty() && m_flexesnear ) {
         pose_flexes( now );
     }
     for( std::size_t index { 0 }; index < m_bonebindings.size(); ++index ) {
@@ -1444,6 +1462,11 @@ void TDynamicObject::ABuLittleUpdate(double ObjSqrDist)
 { // ABu290105: pozbierane i uporzadkowane powtarzajace
     // the bent submodels hidden the last time, shown again before the vehicle is set up anew
     restore_flexes();
+    // bent only near enough to be seen bending: farther, the submodels of the model are drawn as made
+    m_flexesnear = ObjSqrDist < flex_reach * flex_reach;
+    // the chains a little farther still, so that one shared with the next vehicle moves whenever either is near; left
+    // alone farther, they start again where made when the vehicle comes near (max_chain_gap)
+    m_chainsnear = ObjSqrDist < chain_reach * chain_reach;
     // sie rzeczy z Render i RenderAlpha
     // dodatkowy warunek, if (ObjSqrDist<...) zeby niepotrzebnie nie zmianiec w
     // obiektach,

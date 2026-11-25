@@ -357,6 +357,10 @@ private:
     };
     double m_chainclock { -1.0 }; // the render time the chains were moved to
     double m_chainposed { -1.0 }; // the render time the nodes were last taken into the pose
+    bool m_flexesnear { false }; // whether the vehicle is near enough for its bent submodels to be bent and drawn
+    static constexpr double flex_reach { 50.0 }; // m, how near that is
+    bool m_chainsnear { false }; // whether it's near enough for its chains to move
+    static constexpr double chain_reach { 75.0 }; // m, how near that is
     std::vector<bones::chain_state> m_chainstates; // of the chains of the rig, simulated in the world frame
     std::vector<shared_chain> m_chainshared; // the chain of the next vehicle each one is one with, if any
     void load_bonepoint( cParser &Parser );
@@ -366,7 +370,7 @@ private:
     void pose_flexes( std::vector<glm::dvec3> const &Now );
     // returns whether the chains moved, once a frame
     bool simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
-    void advance_chains( std::vector<glm::dvec3> const &Now );
+    void advance_chains( std::vector<glm::dvec3> const &Now, bool const Needed = false );
     void advance_chains();
     shared_chain find_shared_chain( std::size_t const Index, std::vector<glm::dvec3> const &Now ) const;
     bool follows( shared_chain const &Shared ) const;

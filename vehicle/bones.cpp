@@ -384,7 +384,14 @@ skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, s
 	{
 		return {};
 	}
-	auto const turn{glm::slerp(Turns[Bind.piece], Turns[Bind.piece + 1], Bind.along)};
+	// the turn between the two nodes, the quaternions mixed and normalised: as good as a slerp for the small angles between
+	// neighbouring nodes, and far cheaper for the thousands of vertices of a hose
+	auto other{Turns[Bind.piece + 1]};
+	if (glm::dot(Turns[Bind.piece], other) < 0.0)
+	{
+		other = -other;
+	}
+	auto const turn{glm::normalize(Turns[Bind.piece] * (1.0 - Bind.along) + other * Bind.along)};
 	return {glm::mix(Now[Bind.piece], Now[Bind.piece + 1], Bind.along) + turn * Bind.offset, turn};
 }
 
@@ -454,13 +461,24 @@ void keep_distance_from(std::vector<glm::dvec3> const &Points, pulls &Pulls, std
 // from where the nodes were, so a chain comes out the same whichever end it starts from: the two vehicles a hose hangs
 // between, each with the chain from its own end, get the very same one. a point takes the average of what its
 // constraints ask of it, not the sum: the sum overshoots, and the chain never comes to rest but shivers and stretches
-void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const &Bends, double const Bending, std::vector<glm::dvec3> &Nodes,
-                  chain_ends const &Ends)
+// the points and the pulls of a pass, kept from one pass to the next so as not to be made anew each time
+struct solver_scratch
 {
-	std::vector<glm::dvec3> points{Ends.start};
+	std::vector<glm::dvec3> points;
+	struct pulls pulls;
+};
+
+void keep_lengths(std::vector<double> const &Lengths, std::vector<double> const &Bends, double const Bending, std::vector<glm::dvec3> &Nodes,
+                  chain_ends const &Ends, solver_scratch &Scratch)
+{
+	auto &points{Scratch.points};
+	points.clear();
+	points.push_back(Ends.start);
 	points.insert(points.end(), Nodes.begin(), Nodes.end());
 	points.push_back(Ends.end);
-	pulls pulls{std::vector<glm::dvec3>(points.size(), glm::dvec3{0.0}), std::vector<int>(points.size(), 0)};
+	auto &pulls{Scratch.pulls};
+	pulls.moves.assign(points.size(), glm::dvec3{0.0});
+	pulls.counts.assign(points.size(), 0);
 	for (std::size_t piece{0}; piece < Lengths.size() && piece + 1 < points.size(); ++piece)
 	{
 		keep_distance(points, pulls, piece, piece + 1, Lengths[piece], 1.0);
@@ -537,6 +555,7 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 	// the move of the last substep, for a substep of this length: the frames, and so the substeps, aren't all as long,
 	// and the move taken as it was would speed up or slow down the nodes against their ends with each change
 	auto scale{State.step > 0.0 ? step / State.step : 1.0};
+	solver_scratch scratch;
 	for (auto substep{1}; substep <= steps; ++substep)
 	{
 		auto const along{static_cast<double>(substep) / steps};
@@ -551,7 +570,7 @@ void simulate(std::vector<double> const &Lengths, std::vector<double> const &Ben
 		scale = 1.0;
 		for (auto iteration{0}; iteration < Physics.iterations; ++iteration)
 		{
-			keep_lengths(Lengths, Bends, Physics.bending, State.now, ends);
+			keep_lengths(Lengths, Bends, Physics.bending, State.now, ends, scratch);
 		}
 	}
 	State.start = Start;
