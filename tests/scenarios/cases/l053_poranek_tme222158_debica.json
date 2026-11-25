@@ -10,7 +10,7 @@
     "reason": "tme222158_got_the_exit_signal_at_debica"
   },
   "slow": true,
-  "xfail": "eu07/maszyna#421 is not reached: with every train driven by AI Debica jams 4 minutes after the start, the AI of EP07-338'16 passes the shunting signal Tm4 at stop at 29 km/h and stops 20 m beyond the checkpoint before it (tor1834:event0), so RPE23113 never reports there and TME222158 is never let into the station",
+  "xfail": "eu07/maszyna#421 is not reached, the station's SM42 jams Debica: since #409 EP07-338'16 stops at the checkpoint before Tm4 (tor1834:event0) and TME222158 is let in and reports at Debica (deb_tme222158_stat c 0), but SM42-1096, ordered to uncouple at step 10 of deb_sm42_stat, pushes its cut past debica_k_sem_info at danger and never gets the coupler off (\"Uncoupling [sm42-1096]: actuating and compressing buffers... from front\" for the rest of the run), so it never does step 11 and the station never gives TME222158 step 1: standstill after 4347 s",
   "physicslog": false,
   "ini": [
     "file.binary.terrain no"

@@ -550,6 +550,7 @@ set(CORE_SOURCES
 "McZapkie/derailment.cpp"
 "McZapkie/collision.cpp"
 "world/TrackCheck.cpp"
+"world/SleeperPack.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
@@ -570,6 +571,7 @@ set(CORE_SOURCES
 "vehicle/gaugewrap.cpp"
 "vehicle/drivingaid.cpp"
 "vehicle/brakingcurve.cpp"
+"vehicle/signalpassing.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
 "vehicle/horn.cpp"
@@ -582,6 +584,7 @@ set(CORE_SOURCES
 "world/timetableflags.cpp"
 "world/timetablereader.cpp"
 "world/stationnames.cpp"
+"world/eventconditions.cpp"
 "utilities/wholefile.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
