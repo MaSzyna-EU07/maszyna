@@ -11,6 +11,7 @@
 #include "widgets/mapIcons.h"
 #include "world/Sweep.h"
 #include <format>
+#include <numbers>
 #include <ranges>
 #include <tuple>
 #include <cstdint>
@@ -923,16 +924,15 @@ void ui::map_panel::render_map_lines(
 
 						glm::vec3 const base_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
 						float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
-						glm::vec3 const effective_color = base_color * opacity;
 						auto const color_component = [](float component) {
 							return static_cast<int>(std::clamp(component * 255.0f, 0.0f, 255.0f));
 						};
 						cache.colors.resize(static_cast<std::size_t>(i) + 1, 0);
 						cache.colors[static_cast<std::size_t>(i)] = static_cast<std::uint32_t>(IM_COL32(
-							color_component(effective_color.x),
-							color_component(effective_color.y),
-							color_component(effective_color.z),
-							opacity > 0.0f ? 255 : 0));
+							color_component(base_color.x),
+							color_component(base_color.y),
+							color_component(base_color.z),
+							static_cast<int>(opacity * 255.0f)));
 					}
 					cache.model = model;
 					cache.revision = model->LightRevision();
@@ -947,7 +947,7 @@ void ui::map_panel::render_map_lines(
 						glm::length2(glm::vec2(mouse_position.x - center.x, mouse_position.y - center.y)) <= 100.0f;
 					if (shunt_hovered)
 						m_hovered_map_object = sem;
-					draw_list->AddCircleFilled(center, 7.0f, IM_COL32(35, 40, 45, 220));
+					draw_list->AddCircleFilled(center, 7.0f, IM_COL32(0, 0, 0, 255));
 					if (cache.colors.empty())
 					{
 						draw_list->AddCircleFilled(center, 3.0f, IM_COL32(255, 210, 70, 255));
@@ -1043,6 +1043,7 @@ void ui::map_panel::render_map_lines(
 				ImVec2 const head_center(post_end.x+head_axis.x * head_half_length, post_end.y + head_axis.y * head_half_length);
 				glm::vec2 const head_normal(-head_axis.y, head_axis.x);
 				float constexpr head_half_width = 5.0f;
+				float const head_body_half_length = std::max(0.0f, head_half_length - head_half_width);
 				glm::vec2 const mouse_from_head(mouse_position.x - head_center.x, mouse_position.y - head_center.y);
 				bool const icon_hovered = mouse_over_map &&
 					((std::abs(glm::dot(mouse_from_head, head_axis)) <= head_half_length &&
@@ -1052,18 +1053,6 @@ void ui::map_panel::render_map_lines(
 				if (signal_hovered)
 					m_hovered_map_object = sem;
 
-				ImVec2 const head_front_left(
-					head_center.x + head_axis.x * head_half_length + head_normal.x * head_half_width,
-					head_center.y + head_axis.y * head_half_length + head_normal.y * head_half_width);
-				ImVec2 const head_front_right(
-					head_center.x + head_axis.x * head_half_length - head_normal.x * head_half_width,
-					head_center.y + head_axis.y * head_half_length - head_normal.y * head_half_width);
-				ImVec2 const head_rear_right(
-					head_center.x - head_axis.x * head_half_length - head_normal.x * head_half_width,
-					head_center.y - head_axis.y * head_half_length - head_normal.y * head_half_width);
-				ImVec2 const head_rear_left(
-					head_center.x - head_axis.x * head_half_length + head_normal.x * head_half_width,
-					head_center.y - head_axis.y * head_half_length + head_normal.y * head_half_width);
 				draw_list->AddLine(post_start, post_end, IM_COL32(245, 245, 245, 255), 3.0f);
 				for (int segment = 0; segment < 6; segment += 2)
 				{
@@ -1077,13 +1066,43 @@ void ui::map_panel::render_map_lines(
 				}
 				if (signal_hovered)
 					draw_list->AddLine(post_start, post_end, IM_COL32(120, 200, 255, 255), 5.0f);
-				draw_list->AddQuadFilled(
-					head_front_left, head_front_right, head_rear_right, head_rear_left,
-					IM_COL32(35, 40, 45, 220));
+				ImVec2 const front_cap_center(
+					head_center.x + head_axis.x * head_body_half_length,
+					head_center.y + head_axis.y * head_body_half_length);
+				ImVec2 const rear_cap_center(
+					head_center.x - head_axis.x * head_body_half_length,
+					head_center.y - head_axis.y * head_body_half_length);
+				auto const add_head_path = [draw_list, front_cap_center, rear_cap_center, head_half_width, head_axis,
+				                            head_normal]() {
+					float const head_angle = std::atan2(head_axis.y, head_axis.x);
+					draw_list->PathArcTo(
+						front_cap_center, head_half_width,
+						head_angle - std::numbers::pi_v<float> * 0.5f,
+						head_angle + std::numbers::pi_v<float> * 0.5f);
+					draw_list->PathLineTo(ImVec2(
+						rear_cap_center.x + head_normal.x * head_half_width,
+						rear_cap_center.y + head_normal.y * head_half_width));
+					draw_list->PathArcTo(
+						rear_cap_center, head_half_width,
+						head_angle + std::numbers::pi_v<float> * 0.5f,
+						head_angle + std::numbers::pi_v<float> * 1.5f);
+					draw_list->PathLineTo(ImVec2(
+						front_cap_center.x - head_normal.x * head_half_width,
+						front_cap_center.y - head_normal.y * head_half_width));
+				};
+				auto const add_head_shape = [&add_head_path, draw_list](ImU32 color) {
+					add_head_path();
+					draw_list->PathFillConvex(color);
+				};
 				if (signal_hovered)
-					draw_list->AddQuad(
-						head_front_left, head_front_right, head_rear_right, head_rear_left,
-						IM_COL32(120, 200, 255, 255), 3.0f);
+				{
+					ImU32 constexpr highlight_color = IM_COL32(120, 200, 255, 255);
+					add_head_shape(highlight_color);
+					add_head_path();
+					draw_list->PathStroke(highlight_color, ImDrawFlags_Closed, 3.0f);
+				}
+				else
+					add_head_shape(IM_COL32(0, 0, 0, 255));
 				for (std::size_t idx = cache.colors.size(); post_direction.y <= 0.0f && idx-- > 0;)
 				{
 					if ((cache.colors[idx] & IM_COL32_A_MASK) == 0)
@@ -1770,11 +1789,12 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 				if (!state)
 					continue;
 
-				glm::vec3 current_color = std::get<2>(*state).value_or(glm::vec3(0.5f)) * std::get<1>(*state);
+				glm::vec3 const lamp_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
+				float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
 				if (std::get<0>(*state) < 0.0f)
 					continue;
 
-				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(current_color.x, current_color.y, current_color.z, 1.0f));
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(lamp_color.x, lamp_color.y, lamp_color.z, opacity));
 
 				std::string res = "  ##" + std::to_string(i);
 				ImGui::Button(res.c_str());
@@ -1824,14 +1844,14 @@ void ui::semaphore_window::render_content()
 				continue;
 
 			glm::vec3 lamp_color = std::get<2>(*state).value_or(glm::vec3(0.5f));
-			glm::vec3 current_color = lamp_color * std::get<1>(*state);
+			float const opacity = std::clamp(std::get<1>(*state), 0.0f, 1.0f);
 			float level = std::get<0>(*state);
 
 			if (level < 0.0f)
 				continue;
 
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(lamp_color.x, lamp_color.y, lamp_color.z, 1.0f));
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(current_color.x, current_color.y, current_color.z, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(lamp_color.x, lamp_color.y, lamp_color.z, opacity));
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(lamp_color.x, lamp_color.y, lamp_color.z, opacity));
 
 			std::string res = "  ##" + std::to_string(i);
 			if (ImGui::Button(res.c_str()))
