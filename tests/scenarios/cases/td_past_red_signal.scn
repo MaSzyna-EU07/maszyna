@@ -1,0 +1,7 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// the timetable train of td.scn (td/rozklad) set at a stand past the exit signal stacja1_j, which stays at stop
+// (no route): the head {{offset}} m into tor1k, whose memory cell of the signal is 51 m into the track. the train
+// starts at 0.1 km/h, as in td_red_signal.scn: set at 0 its AI driver doesn't wake up within the case
+trainset td/rozklad tor1k {{offset}} 0.1
+{{consist}}
+endtrainset
