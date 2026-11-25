@@ -8525,13 +8525,15 @@ double TMoverParameters::steam_Regulator() const
 
 double TMoverParameters::steam_Cutoff() const
 {
-	// the secondary controller notches up the valve gear from full gear to the shortest cutoff
+	// the secondary controller notches up the valve gear from full gear to the shortest cutoff. full gear running
+	// backwards may be shorter: the link of a Heusinger gear swings less far that way
+	auto const fullgear{DirAbsolute < 0 && SteamParameters.cutoff_max_reverse > 0.0 ? SteamParameters.cutoff_max_reverse : SteamParameters.cutoff_max};
 	if (ScndCtrlPosNo <= 0)
 	{
-		return SteamParameters.cutoff_max;
+		return fullgear;
 	}
 	auto const notching{std::clamp(static_cast<double>(ScndCtrlPos) / ScndCtrlPosNo, 0.0, 1.0)};
-	return std::lerp(SteamParameters.cutoff_max, SteamParameters.cutoff_min, notching);
+	return std::lerp(fullgear, SteamParameters.cutoff_min, notching);
 }
 
 void TMoverParameters::steam_Update(double const Deltatime)

@@ -43,6 +43,7 @@ struct parameters {
 	double clearance{0.09}; // the dead space, of the swept volume, CylClearance
 	double cutoff_max{0.80}; // the longest cutoff of the valve gear, of the stroke, CutoffMax
 	double cutoff_min{0.10}; // the shortest one, CutoffMin
+	double cutoff_max_reverse{0.0}; // full gear running backwards, CutoffMaxReverse; 0: the same as forwards
 	double diagram_factor{0.95}; // the indicator diagram's area against the ideal one (release, compression, throttling), DiagramFactor
 	double mechanical_efficiency{0.85}; // from the cylinders to the rims, MechEff
 	double wire_drawing{1.0 / 55.0}; // loss of admission pressure per sqrt(rpm), through the ports and passages, WireDrawing

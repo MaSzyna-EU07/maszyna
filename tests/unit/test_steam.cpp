@@ -264,3 +264,27 @@ TEST_CASE("steam: in mid gear the Ty2 takes no steam and gives no force") {
 	CHECK(locomotive->Steam.cylinder_flow == 0.0);
 	CHECK(locomotive->Ft == 0.0);
 }
+
+TEST_CASE("steam: the Ty23 of its drawings, with no more than its data") {
+	// Stacja Muzeum, Ty23 drawings 1.03/1.05 (main data, from the 630th locomotive) and 21.03 (valve gear results):
+	// 2 cylinders 650 x 720 mm, driving wheels 1450 mm, 14 at, full gear 84 % forwards and 70 % backwards, and the
+	// tractive force of the drawing Z = 22 030 kg = 0.75 p d^2 s / D, which the DR's tables for the Ty2 exceed by 7 %
+	steam::parameters parameters;
+	steam::load(parameters, "Steam: CylD=0.65 CylS=0.72 CutoffMax=0.84 CutoffMaxReverse=0.70 BoilerPressure=13.73 Grate=4.5");
+	parameters.wheel_diameter = 1.45;
+	CHECK(parameters.cutoff_max_reverse == doctest::Approx(0.70));
+	auto const force{steam::starting_force(parameters, parameters.cutoff_max, steam::atmosphere + parameters.working_pressure)};
+	auto const drawing{22030.0 * 9.81};
+	MESSAGE("Ty23 starting force " << force / 1000.0 << " kN, the drawing's Z " << drawing / 1000.0 << " kN");
+	CHECK(force > drawing);
+	CHECK(force < 1.10 * drawing);
+	// the same against the Ty2 as the formula has them: the Ty23 has the larger cylinders, the Ty2 the higher pressure
+	auto const ty2parameters{ty2()};
+	auto const ty2force{steam::starting_force(ty2parameters, ty2parameters.cutoff_max, steam::atmosphere + ty2parameters.working_pressure)};
+	auto const formula = [](double Pressure, double Bore, double Stroke, double Wheel) { return Pressure * Bore * Bore * Stroke / Wheel; };
+	CHECK(force / ty2force == doctest::Approx(formula(13.73, 0.65, 0.72, 1.45) / formula(16.0, 0.60, 0.66, 1.40)).epsilon(0.03));
+	// backwards, the shorter full gear gives less
+	auto const backwards{steam::starting_force(parameters, parameters.cutoff_max_reverse, steam::atmosphere + parameters.working_pressure)};
+	CHECK(backwards < force);
+	CHECK(backwards > 0.85 * force);
+}

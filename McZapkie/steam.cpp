@@ -280,7 +280,7 @@ void run_cylinders(parameters const &Parameters, state &State, controls const &C
 {
 	cylinder_conditions const conditions{
 	    Revolutions,
-	    std::clamp(Controls.cutoff, 0.0, Parameters.cutoff_max),
+	    std::clamp(Controls.cutoff, 0.0, std::max(Parameters.cutoff_max, Parameters.cutoff_max_reverse)),
 	    saturation::temperature(State.boiler_pressure) + State.superheat,
 	    atmosphere + Parameters.back_pressure * State.exhaust_flow * State.exhaust_flow,
 	    Controls.cylinder_cocks,
@@ -459,6 +459,7 @@ void load(parameters &Parameters, std::string_view const Line)
 	read(Parameters.clearance, "CylClearance", line);
 	read(Parameters.cutoff_max, "CutoffMax", line);
 	read(Parameters.cutoff_min, "CutoffMin", line);
+	read(Parameters.cutoff_max_reverse, "CutoffMaxReverse", line);
 	read(Parameters.diagram_factor, "DiagramFactor", line);
 	read(Parameters.mechanical_efficiency, "MechEff", line);
 	read(Parameters.wire_drawing, "WireDrawing", line);

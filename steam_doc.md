@@ -66,6 +66,7 @@ Every key is optional; the defaults are the Ty2's.
 | `CylClearance` | 0.09 | of the swept volume | clearance volume |
 | `CutoffMax` | 0.8 | of the stroke | full gear |
 | `CutoffMin` | 0.1 | of the stroke | the shortest cutoff |
+| `CutoffMaxReverse` | as `CutoffMax` | of the stroke | full gear running backwards, where the valve gear gives less (the Ty23: 0.84 forwards, 0.70 backwards) |
 | `DiagramFactor` | 0.95 | | the indicator diagram against the ideal one |
 | `MechEff` | 0.85 | | from the cylinders to the rims |
 | `WireDrawing` | 1/55 | per √rpm | the admission pressure lost with speed |
