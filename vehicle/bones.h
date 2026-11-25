@@ -214,6 +214,10 @@ void hold_root(bend const &Bend, std::vector<glm::dquat> &Turns);
 // the turns of the nodes between the first and the last spread evenly along the spine as made, from the turn of the first
 // to that of the last: a joint bent the same seen from either car
 void spread_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dquat> &Turns);
+// the nodes after the first moved along the spine so that each piece keeps its length as made, its direction kept: the
+// joint of two cars as stiff as the bellows over it, which turns with the cars but doesn't stretch with the play of
+// their coupling
+void keep_lengths(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &Now);
 
 // the move of a bone: turned about its anchor to face its aim again, its anchor moved
 struct motion {

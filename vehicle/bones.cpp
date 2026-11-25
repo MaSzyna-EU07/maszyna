@@ -425,6 +425,24 @@ void spread_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dquat> &
 	}
 }
 
+void keep_lengths(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &Now)
+{
+	if (Rest.size() != Now.size())
+	{
+		return;
+	}
+	// the pieces as they stand now, before any node is moved
+	std::vector<glm::dvec3> const was{Now};
+	for (std::size_t node{1}; node < Now.size(); ++node)
+	{
+		auto const piece{was[node] - was[node - 1]};
+		auto const length{glm::length(piece)};
+		auto const made{glm::distance(Rest[node], Rest[node - 1])};
+		auto const direction{length > 1e-9 ? piece / length : Rest[node] - Rest[node - 1]};
+		Now[node] = Now[node - 1] + (length > 1e-9 ? made : 1.0) * direction;
+	}
+}
+
 skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, std::vector<glm::dquat> const &Turns)
 {
 	if (Bind.piece + 1 >= Now.size() || Bind.piece + 1 >= Turns.size())

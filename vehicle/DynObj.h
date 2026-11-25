@@ -922,8 +922,9 @@ private:
     int DettachStatus(int dir);
     int Dettach(int dir);
     TDynamicObject * Neighbour(int &dir);
-    // how far each buffer of the end (left, right) is pressed in, as its head stands against the nearest one of the next
-    // vehicle on the track: half the overlap each; none without a coupled vehicle with buffers known on both
+    // how far each buffer of the end (left, right) is pressed in: the deflection of the end as the coupling has it, and
+    // half of what the head stands nearer to the one it meets than the axis does; none without a coupled vehicle with
+    // buffers known on both
     std::optional<std::array<double, 2>> buffers_pressed( int const End ) const;
     // whether both vehicles at the end have their control cables modelled whole (cctrl<n>_xon), drawn by the owner only
     bool control_cables_shared( int const End ) const;

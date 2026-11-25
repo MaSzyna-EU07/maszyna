@@ -85,9 +85,11 @@ bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [roote
   before. A whole cable is bent through the joint by a `rooted` `bonebend` from the socket, as the roof cables above.
 - A rubber collar gangway round the end door is a submodel of its own, bent the same way from the face of the body to
   the coupling plane: on a curve the collars of two coaches turn half the angle each and meet face to face.
-- The buffers (`buffer_left0<n>`, `buffer_right0<n>`) of two coupled vehicles are pressed in each as its head stands
-  against the nearest head of the other vehicle on the track, half the overlap each, up to `DmaxB`: on a curve those
-  on the inside press in, those on the outside stand clear. `gfx.buffers.curve no` in `eu07.ini` presses both buffers
+- The buffers (`buffer_left0<n>`, `buffer_right0<n>`) of two coupled vehicles are pressed in each by the deflection of
+  its end as the coupling has it (half the distance of the couplers, or that of the end in the physical model of the
+  coupling, by the springs of both ends), and by half of what its head stands nearer to the head it meets than the axis
+  of the vehicle does, up to `DmaxB`: on a curve those on the inside press in more, those on the outside less or not at
+  all, and on the straight both as before. `gfx.buffers.curve no` in `eu07.ini` presses both buffers
   of an end alike, by half the distance of the couplers, as before.
 
 ## Examples

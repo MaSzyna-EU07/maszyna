@@ -520,6 +520,24 @@ TEST_CASE("bones: a hose on a running vehicle is drawn with its ends, not left b
 	CHECK(glm::distance(bones::drawn(state, 1), before + travelled) < 1.0e-9);
 }
 
+TEST_CASE("bones: a joint keeps the lengths of its pieces as made, stretched or pressed by the play of the coupling") {
+	std::vector<glm::dvec3> const rest{{0.0, 0.0, 2.0}, {0.0, 0.2, 2.0}, {0.0, 0.4, 2.0}};
+	// the next car 3 cm farther, turned a little round a curve
+	std::vector<glm::dvec3> now{{0.0, 0.0, 2.0}, {0.01, 0.215, 2.0}, {0.03, 0.43, 2.0}};
+	auto const turned{glm::normalize(now[2] - now[1])};
+	bones::keep_lengths(rest, now);
+	CHECK(now[0] == glm::dvec3{0.0, 0.0, 2.0});
+	CHECK(glm::distance(now[1], now[0]) == doctest::Approx(0.2));
+	CHECK(glm::distance(now[2], now[1]) == doctest::Approx(0.2));
+	// each piece still pointing where it pointed
+	auto const kept{glm::normalize(now[2] - now[1])};
+	CHECK(glm::dot(kept, turned) == doctest::Approx(1.0));
+	// pressed together, the same
+	std::vector<glm::dvec3> pressed{{0.0, 0.0, 2.0}, {0.0, 0.18, 2.0}, {0.0, 0.36, 2.0}};
+	bones::keep_lengths(rest, pressed);
+	CHECK(pressed[2].y == doctest::Approx(0.4));
+}
+
 TEST_CASE("bones: a joint held to the whole turn of the next car, spread evenly along it from either side") {
 	bones::rig rig;
 	REQUIRE(bones::add_point(rig, {"root", "fixed", "0", "0", "2"}).empty());

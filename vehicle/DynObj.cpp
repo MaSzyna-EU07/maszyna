@@ -848,8 +848,11 @@ void TDynamicObject::bind_flex( std::vector<std::size_t> const &Bends ) {
     flex_data flex;
     flex.original = original;
     flex.bends = Bends;
-    // a hose is halved into small triangles to bend smoothly; a rooted part, the end of a car body, is taken as made
-    auto const halved { std::ranges::any_of( Bends, [ this ]( std::size_t const Bend ) { return false == m_rig.bends[ Bend ].rooted; } ) };
+    // a hose is halved into small triangles to bend smoothly, one hanging from its cock too; a part of a joint of two cars
+    // (rooted, its head held to the whole turn of the next car), the end of a car body, is taken as made
+    auto const halved { std::ranges::any_of( Bends, [ this ]( std::size_t const Bend ) {
+        auto const &bend { m_rig.bends[ Bend ] };
+        return false == bend.rooted || bend.head_up < 0; } ) };
     flex.rest = halved ? subdivided( model_file_vertices( original ), max_flex_edge ) : model_file_vertices( original );
     if( flex.rest.empty() ) { return; }
     std::vector<glm::dvec3> points;
@@ -981,10 +984,13 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
             }
             // the root held to the body as made
             bones::hold_root( bend, turns );
-            if( bend.rooted && bend.head_from >= 0 ) {
+            if( bend.rooted && bend.head_up >= 0 ) {
                 // the joint of two cars: the turn spread evenly from the body to the next car, as the next car spreads it
                 // the other way, so the parts of the two that overlap (the bellows, the roof cables) stay together
                 bones::spread_turns( rest, turns );
+                // and as long as made: the bellows and the cables turn with the cars, not stretched by the play of the
+                // coupling of the articulated joint as the train brakes and pulls
+                bones::keep_lengths( rest, now );
             }
             nodes.emplace_back( now.begin(), now.end() );
             nodeturns.emplace_back( turns.begin(), turns.end() );
@@ -8367,16 +8373,20 @@ std::optional<std::array<double, 2>> TDynamicObject::buffers_pressed( int const 
         return Vehicle.GetWorldPosition( frame * glm::dvec3 { Head.x, along, Head.y } ); };
     // outwards from our end
     auto const outwards { glm::normalize( head( *this, End, { 0.0, 0.0 } ) - GetWorldPosition( glm::dvec3 { 0.0 } ) ) };
-    auto const limit { MoverParameters->Couplers[ End ].DmaxB };
+    auto const &coupler { MoverParameters->Couplers[ End ] };
     auto const first { head( *neighbour.vehicle, neighbour.vehicle_end, *theirs[ 0 ] ) };
     auto const second { head( *neighbour.vehicle, neighbour.vehicle_end, *theirs[ 1 ] ) };
+    // the gap of the two ends on their axis, as the gaps of the buffers are measured
+    auto const centre { glm::dot( head( *neighbour.vehicle, neighbour.vehicle_end, { 0.0, 0.0 } ) - head( *this, End, { 0.0, 0.0 } ), outwards ) };
     std::array<double, 2> pressed {};
     for( std::size_t side = 0; side < pressed.size(); ++side ) {
         auto const here { head( *this, End, *ours[ side ] ) };
         auto const &facing { ( glm::distance( here, first ) < glm::distance( here, second ) ? first : second ) };
-        // the gap to it along our end, negative where the two overlap: each buffer takes half of it
+        // the deflection of our end as the coupling has it (half the distance of the couplers, or ours of the physical
+        // model of the coupling), and half of what this buffer stands nearer to or farther from its pair than the axis
+        // does: on a curve the inside presses in more, the outside less or not at all
         auto const gap { glm::dot( facing - here, outwards ) };
-        pressed[ side ] = safe_clamp( gap / 2.0, -limit, 0.0 );
+        pressed[ side ] = safe_clamp( coupler.Dist / 2.0 + ( gap - centre ) / 2.0, -coupler.DmaxB, 0.0 );
     }
     return pressed;
 }
