@@ -142,7 +142,7 @@ struct chain_state {
 struct chain_physics {
 	glm::dvec3 gravity{0.0, -9.81, 0.0}; // in the frame of the simulation
 	double damping{6.0}; // 1/s: how fast the swing against the vehicle dies down, not the vehicle's own motion
-	double bending{0.85}; // of the difference between every other point made up in a pass: how stiff the hose is
+	double bending{0.6}; // of the difference between every other point made up in a pass: how stiff the hose is
 	double step{1.0 / 240.0}; // s, the longest substep
 	int iterations{40}; // of keeping the lengths, a substep
 };

@@ -55,7 +55,8 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] end
   end of the submodel past the last point of the spine (the metal coupling head, its last 0.15 m) is held as one to
   the line between the two points and the vertical of the world: the heads of two hoses coupled to each other take
   the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
-  own copy of the submodel.
+  own copy of the submodel, its triangles halved until no edge is longer than 2.5 cm: a hose of a model is often a
+  few straight tubes, which would bend only where their rings are.
 
 ## Examples
 

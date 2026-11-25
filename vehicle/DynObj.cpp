@@ -762,6 +762,58 @@ gfx::vertex_array model_file_vertices( TSubModel *Submodel ) {
     return triangles;
 }
 
+// m, the longest edge of the triangles of a bent submodel. a hose of a model may be a few straight tubes, which bend only
+// where their rings are; halved again and again along their longest edge, its triangles bend smoothly
+constexpr float max_flex_edge { 0.025f };
+// the most vertices a bent submodel is halved to, should a model have far more or far larger triangles than a hose
+constexpr std::size_t max_flex_vertices { 120000 };
+
+// the vertex halfway along an edge
+gfx::basic_vertex halfway( gfx::basic_vertex const &First, gfx::basic_vertex const &Second ) {
+
+    gfx::basic_vertex middle;
+    middle.position = 0.5f * ( First.position + Second.position );
+    auto const normal { First.normal + Second.normal };
+    middle.normal = glm::length( normal ) > 1e-6f ? glm::normalize( normal ) : First.normal;
+    middle.texture = 0.5f * ( First.texture + Second.texture );
+    middle.tangent = glm::vec4( 0.5f * ( glm::vec3( First.tangent ) + glm::vec3( Second.tangent ) ), First.tangent.w );
+    return middle;
+}
+
+// the triangles, one after another, each halved along its longest edge until no edge is longer than given. an edge is
+// halved at the same points whichever of the two triangles it bounds is halved, so no gaps open between them
+gfx::vertex_array subdivided( gfx::vertex_array const &Triangles, float const Longest ) {
+
+    std::vector<std::array<gfx::basic_vertex, 3>> pending;
+    for( std::size_t index { 0 }; index + 2 < Triangles.size(); index += 3 ) {
+        pending.push_back( { Triangles[ index ], Triangles[ index + 1 ], Triangles[ index + 2 ] } );
+    }
+    gfx::vertex_array result;
+    while( false == pending.empty() ) {
+        auto const triangle { pending.back() };
+        pending.pop_back();
+        auto longest { 0 };
+        auto length { 0.f };
+        for( auto edge { 0 }; edge < 3; ++edge ) {
+            if( auto const edgelength { glm::distance( triangle[ edge ].position, triangle[ ( edge + 1 ) % 3 ].position ) }; edgelength > length ) {
+                length = edgelength;
+                longest = edge;
+            }
+        }
+        if( length <= Longest || result.size() + 3 * pending.size() > max_flex_vertices ) {
+            result.insert( result.end(), triangle.begin(), triangle.end() );
+            continue;
+        }
+        auto const &from { triangle[ longest ] };
+        auto const &to { triangle[ ( longest + 1 ) % 3 ] };
+        auto const &opposite { triangle[ ( longest + 2 ) % 3 ] };
+        auto const middle { halfway( from, to ) };
+        pending.push_back( { from, middle, opposite } );
+        pending.push_back( { middle, to, opposite } );
+    }
+    return result;
+}
+
 } // namespace
 
 void TDynamicObject::bind_flexes() {
@@ -777,7 +829,7 @@ void TDynamicObject::bind_flexes() {
         flex_data flex;
         flex.original = original;
         flex.bend = index;
-        flex.rest = model_file_vertices( original );
+        flex.rest = subdivided( model_file_vertices( original ), max_flex_edge );
         if( flex.rest.empty() ) { continue; }
         std::vector<glm::dvec3> spine;
         for( auto const point : bend.spine ) {
