@@ -29,6 +29,7 @@ struct semaphore : public map_object
 	std::vector<TAnimModel *> models;
 	std::vector<basic_event *> events;
 	TMemCell *memcell = nullptr;
+	bool shunting { false };
 
 	gfx::basic_vertex vertex() override {
 		bool stop_signal = memcell->IsVelocity() && (memcell->Value1() == 0.0);

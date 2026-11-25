@@ -344,7 +344,7 @@ struct global_settings {
 	// scenery loaded (trackcheck:, see world/TrackCheck.h)
 	bool track_check = false;
 	bool control_coupling_engine_check = true; // no multiple-unit control between electric and diesel traction vehicles (eu07/maszyna#520)
-	bool gui_defaultwindows = false;
+	bool gui_defaultwindows = true;
 	bool gui_showtranscripts = true;
     bool gui_trainingdefault = false;
 

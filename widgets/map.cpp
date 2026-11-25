@@ -13,6 +13,7 @@
 #include <format>
 #include <ranges>
 #include <tuple>
+#include <cstdint>
 
 namespace
 {
@@ -138,7 +139,9 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 {
 	size_min = {200, 200};
 	size_max = {fb_size, fb_size};
-	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+	window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+	               ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus |
+	               ImGuiWindowFlags_NoFocusOnAppearing;
 	init_done = true;
 }
 
@@ -671,15 +674,21 @@ void ui::map_panel::render_grid(ImDrawList *draw_list, ImVec2 origin, glm::vec2 
 	}
 
 	ImU32 const color = IM_COL32(110, 125, 135, 55);
-	for (double x = std::floor(minimum.x / spacing) * spacing; x <= maximum.x; x += spacing)
+	std::int64_t const first_x = static_cast<std::int64_t>(std::floor(minimum.x / spacing));
+	std::int64_t const last_x = static_cast<std::int64_t>(std::floor(maximum.x / spacing));
+	for (std::int64_t x_index = first_x; x_index <= last_x; ++x_index)
 	{
+		double const x = static_cast<double>(x_index) * spacing;
 		ImVec2 a = to_screen(glm::dvec3(x, 0.0, minimum.y));
 		ImVec2 b = to_screen(glm::dvec3(x, 0.0, maximum.y));
 		if (map_has_vertex_budget(draw_list) && clip_map_line(a, b, origin, surface_size))
 			draw_list->AddLine(a, b, color);
 	}
-	for (double z = std::floor(minimum.y / spacing) * spacing; z <= maximum.y; z += spacing)
+	std::int64_t const first_z = static_cast<std::int64_t>(std::floor(minimum.y / spacing));
+	std::int64_t const last_z = static_cast<std::int64_t>(std::floor(maximum.y / spacing));
+	for (std::int64_t z_index = first_z; z_index <= last_z; ++z_index)
 	{
+		double const z = static_cast<double>(z_index) * spacing;
 		ImVec2 a = to_screen(glm::dvec3(minimum.x, 0.0, z));
 		ImVec2 b = to_screen(glm::dvec3(maximum.x, 0.0, z));
 		if (map_has_vertex_budget(draw_list) && clip_map_line(a, b, origin, surface_size))
@@ -931,9 +940,7 @@ void ui::map_panel::render_map_lines(
 					cache.valid = true;
 				}
 
-				bool const shunting =
-					sem->memcell && sem->memcell->Command() == TCommandType::cm_ShuntVelocity;
-				if (shunting)
+				if (sem->shunting)
 				{
 					bool const shunt_hovered =
 						mouse_over_map &&
@@ -1479,7 +1486,7 @@ void ui::map_panel::render_contents()
 	draw_list->AddRectFilled(
 		screen_origin,
 		ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y),
-		IM_COL32(18, 22, 26, 255));
+		IM_COL32(18, 22, 26, static_cast<int>(Global.UIBgOpacity * 255.0f)));
 	render_grid(draw_list, screen_origin, surface_size, transform);
 	render_map_lines(draw_list, screen_origin, surface_size, transform, scale_length);
 	draw_list->PopClipRect();

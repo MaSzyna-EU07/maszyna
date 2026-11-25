@@ -158,6 +158,7 @@ node_groups::update_map()
 				sem_info->location = node->location();
 				sem_info->memcell = static_cast<TMemCell*>(node);
 				sem_info->name = sem_name;
+				sem_info->shunting = sem_name.starts_with("Tm") || sem_name.starts_with("tm_");
 				sem_info->models = std::move(signal_models);
 
 				for (basic_event *event : group.events) {
