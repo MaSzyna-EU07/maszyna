@@ -1,0 +1,33 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed.
+// on the line from Stacja1 to Stacja2 (flat, curves of 600 m): a locomotive with an AI driver stands cold
+// (trainset velocity 0) on koniec, its front 35 m past point 1 of the track, facing point 2, towards Stacja2;
+// a cut of wagons (vars.cut) stands, braked as well and with nobody in it, ahead of it, its front 56 m past
+// point 1 of tdo_n222, some 45 m in front of the locomotive.
+trainset none koniec 35.0 0.0
+node -1 0 {{vehicle}} dynamic {{locomotive}} 0 headdriver 0 0 enddynamic
+endtrainset
+
+trainset none tdo_n222 56.0 0.0
+{{cut}}
+endtrainset
+
+// event0 of the locomotive's track (the case's track_events) runs while the locomotive stands there. it wakes
+// the driver and gives it, once, the order to couple to the cut ahead and run it on as a train: Shunt -3 3,
+// Connect (with the coupler and the brake hose) then Obey_train, which waits for the way to be given. the AI
+// couples on the run, at some 4 km/h, and the wagon inspector of the train run looks at the new train then,
+// before it stands.
+node -1 0 autotest_ordered memcell 0 0 0 ordered 0 0 none endmemcell
+event autotest_wake multiple 0 autotest_ordered autotest_order autotest_order_given condition memcompare * 0 * endevent
+event autotest_order PutValues 0 none 0 0 0 Shunt -3 3 endevent
+event autotest_order_given UpdateValues 0 autotest_ordered * 1 * endevent
+
+// the way: no signal of the line is in sight, so event2 of tdo_n231 (the case's track_events), 40 m in front of
+// the cut, gives the speed a signal at proceed would, 40 km/h, which the AI reads as it scans the track ahead
+event autotest_way PutValues 0 none 0 0 0 SetVelocity 40 40 endevent
+
+// event2 of tdo_n240 (the case's track_events), some 700 m on, as the locomotive runs over it pushing the train:
+// the driver is taken off (Crew:<vehicle> 0 0), which leaves the brake valve in the emergency position, so the
+// train stops on the brakes it has. the pass comes 150 s later, with the train standing.
+event autotest_crew_off multiple 0 none autotest_driver_off autotest_pass endevent
+event autotest_driver_off putvalues 0 none 0 0 0 Crew:{{vehicle}} 0 0 endevent
+event autotest_pass UpdateValues 150 __test.result the_train_was_stopped_with_the_brakes_it_has 1 * endevent
