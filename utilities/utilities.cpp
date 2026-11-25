@@ -16,6 +16,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <charconv>
+#include <mutex>
 #include <ranges>
 #include <format>
 //#ifndef WIN32
@@ -68,6 +69,22 @@ std::filesystem::path xdg_base_directory(char const *Variable, char const *Home,
 	return {};
 }
 
+std::filesystem::path xdg_config_folder(char const *Variable, char const *Home)
+{
+	auto const base{xdg_base_directory(Variable, Home, ".config")};
+	if (base.empty())
+		return {};
+	auto folder{base / "MaSzyna"};
+	if (Home != nullptr && Home[0] != '\0')
+	{
+		auto legacy{std::filesystem::path(Home) / ".config" / "MaSzyna"};
+		std::error_code error;
+		if (legacy != folder && false == std::filesystem::exists(folder, error) && std::filesystem::is_directory(legacy, error))
+			return legacy;
+	}
+	return folder;
+}
+
 std::filesystem::path user_config_path(const std::string &filename)
 {
 	namespace fs = std::filesystem;
@@ -78,8 +95,17 @@ std::filesystem::path user_config_path(const std::string &filename)
 	if (const char *home = std::getenv("HOME"))
 		return fs::path(home) / "Library" / "Application Support" / "MaSzyna" / filename;
 #else
-	if (auto const base{xdg_base_directory(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"), ".config")}; false == base.empty())
-		return base / "MaSzyna" / filename;
+	if (auto const folder{xdg_config_folder(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"))}; false == folder.empty())
+	{
+		if (auto const wanted{xdg_base_directory(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"), ".config") / "MaSzyna"};
+		    folder != wanted)
+		{
+			// said once, so whoever set XDG_CONFIG_HOME knows why the settings aren't there
+			static std::once_flag told;
+			std::call_once(told, [&] { WriteLog(std::format("Settings kept in \"{}\", the folder of the earlier releases, since \"{}\" doesn't exist", folder.string(), wanted.string())); });
+		}
+		return folder / filename;
+	}
 #endif
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }

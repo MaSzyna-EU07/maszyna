@@ -736,7 +736,8 @@ TEST_CASE("utilities: the folders of the user's settings and of the cache are na
 		auto const base{xdg_base_directory(std::getenv(Variable), std::getenv("HOME"), Fallback)};
 		return base.empty() ? std::filesystem::path{} : base / "MaSzyna" / Filename;
 	}};
-	CHECK(user_config_path("eu07.ini") == expected("XDG_CONFIG_HOME", ".config", "eu07.ini"));
+	auto const config{xdg_config_folder(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"))};
+	CHECK(user_config_path("eu07.ini") == (config.empty() ? std::filesystem::path{} : config / "eu07.ini"));
 	CHECK(user_cache_path("geoportal") == expected("XDG_CACHE_HOME", ".cache", "geoportal"));
 #endif
 }
@@ -767,6 +768,41 @@ TEST_CASE("utilities: the folders of the XDG base directory spec, as Linux finds
 		CHECK(config / "MaSzyna" / "eu07.ini" == path{"/xdg/config/MaSzyna/eu07.ini"});
 		CHECK(cache / "MaSzyna" / "geoportal" == path{"/home/user/.cache/MaSzyna/geoportal"});
 	}
+}
+
+TEST_CASE("utilities: the settings stay in ~/.config/MaSzyna while XDG_CONFIG_HOME has no MaSzyna folder") {
+	using path = std::filesystem::path;
+	auto const home{std::filesystem::temp_directory_path() / "eu07_test_xdg_config_home"};
+	std::filesystem::remove_all(home);
+	auto const homename{home.string()};
+	// an absolute posix path which doesn't exist, on every system the tests run on
+	char const *const xdg{"/eu07_test_xdg_config_nowhere"};
+	SUBCASE("without the old folder the settings go where XDG says") {
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == path{xdg} / "MaSzyna");
+		CHECK(xdg_config_folder(nullptr, homename.c_str()) == home / ".config" / "MaSzyna");
+	}
+	SUBCASE("the old folder is kept while the new one doesn't exist") {
+		std::filesystem::create_directories(home / ".config" / "MaSzyna");
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == home / ".config" / "MaSzyna");
+		CHECK(xdg_config_folder(nullptr, homename.c_str()) == home / ".config" / "MaSzyna");
+		// the old folder needs the home folder to be found
+		CHECK(xdg_config_folder(xdg, nullptr) == path{xdg} / "MaSzyna");
+	}
+	SUBCASE("a file of that name isn't the old folder") {
+		std::filesystem::create_directories(home / ".config");
+		std::ofstream{home / ".config" / "MaSzyna"} << "x";
+		CHECK(xdg_config_folder(xdg, homename.c_str()) == path{xdg} / "MaSzyna");
+	}
+#ifndef _WIN32
+	SUBCASE("the new folder is taken once it exists") {
+		auto const config{home / "xdg"};
+		std::filesystem::create_directories(config / "MaSzyna");
+		std::filesystem::create_directories(home / ".config" / "MaSzyna");
+		auto const configname{config.string()};
+		CHECK(xdg_config_folder(configname.c_str(), homename.c_str()) == config / "MaSzyna");
+	}
+#endif
+	std::filesystem::remove_all(home);
 }
 
 // numbers -------------------------------------------------------------------------------------------------------------

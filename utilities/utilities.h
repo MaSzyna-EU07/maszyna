@@ -31,6 +31,10 @@ template <typename T> constexpr T sq(T v)
 // of HOME, either of them null when not set: the variable when it holds an absolute path, else `Fallback` (.config,
 // .cache) in the home folder, else an empty path. what Linux uses; apart from the environment, so tests can call it
 std::filesystem::path xdg_base_directory(char const *Variable, char const *Home, char const *Fallback);
+// the folder of the settings on Linux, of the values of XDG_CONFIG_HOME and HOME: MaSzyna in the base folder of the
+// settings, but ~/.config/MaSzyna, where the releases which didn't read XDG_CONFIG_HOME kept them, while it exists and
+// the new one doesn't, so the settings already there keep working. an empty path as xdg_base_directory
+std::filesystem::path xdg_config_folder(char const *Variable, char const *Home);
 // returns the per-user config path for `filename` (platform-specific dir: %APPDATA%\MaSzyna,
 // ~/Library/Application Support/MaSzyna, $XDG_CONFIG_HOME/MaSzyna or ~/.config/MaSzyna),
 // or an empty path if the home/appdata env var is unavailable
