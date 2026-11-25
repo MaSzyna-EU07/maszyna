@@ -440,6 +440,12 @@ basic_event::input_location() const {
     return glm::dvec3( 0, 0, 0 );
 };
 
+TMemCell const *
+basic_event::input_cell() const {
+
+    return nullptr;
+}
+
 bool
 basic_event::is_keyword( std::string const &Token ) {
     // TODO: convert to array lookup if keyword list gets longer
@@ -675,6 +681,12 @@ glm::dvec3
 getvalues_event::input_location() const {
 
     return m_input.data_cell()->location(); // współrzędne podłączonej komórki pamięci
+}
+
+TMemCell const *
+getvalues_event::input_cell() const {
+
+    return m_input.data_cell();
 }
 
 

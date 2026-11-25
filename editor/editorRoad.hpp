@@ -179,6 +179,13 @@ class editor_road
 	// Radius: of the axis of that road; Layout: what the road is like. the lanes it has along its axis are the ones the roundabout gets.
 	// Island: what the middle is covered with, "none" to leave the ground showing
 	static std::vector<road_node::state> roundabout(glm::dvec3 const &Centre, double const Radius, road_node::state const &Layout, std::string const &Island);
+	// the tool of the road window (0 select, 1 build, 2 place) Esc leaves. while a road is being drawn, or led out of the side of
+	// a road or a junction, or the selected points are dragged up or down, the tool in use stays and Esc gives that up; with
+	// nothing going on Esc goes back to the selection
+	static constexpr int tool_after_escape(int const Tool, bool const Drawing, bool const Lifting)
+	{
+		return (Drawing || Lifting) ? Tool : 0;
+	}
 
   private:
 	// takes down what depends on the listed pieces and junctions, lets the caller change them, then builds it all again
