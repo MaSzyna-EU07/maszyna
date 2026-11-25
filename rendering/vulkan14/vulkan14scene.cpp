@@ -1912,16 +1912,20 @@ std::uint32_t vulkan14_renderer::push_draw_block()
 	auto slice{window.open ? draw.draws_cache.allocate_before(draws.stride, draws.stride, window.base, window.base + draws.window) : vk14::ring_slice{}};
 	if (false == bool(slice))
 	{
-		slice = draw.draws_cache.allocate(draws.stride, draws.stride);
+		// the part of the ring held ran out: the next one lies further on, mostly still within the window, which then stays where it is
+		slice = (window.open ? draw.draws_cache.allocate_after(draws.stride, draws.stride, window.base) : draw.draws_cache.allocate(draws.stride, draws.stride));
 		if (false == bool(slice))
 		{
 			draws.report_full("the blocks of the draws");
 			return ~0u;
 		}
-		// a new window of the blocks, the pass set is bound with its offset
-		window.base = slice.offset;
-		window.open = true;
-		draw.set_dirty = true;
+		if ((false == window.open) || (slice.offset + slice.size > window.base + draws.window))
+		{
+			// a new window of the blocks, the pass set is bound with its offset
+			window.base = slice.offset;
+			window.open = true;
+			draw.set_dirty = true;
+		}
 	}
 	std::memcpy(slice.data, &model_ubs, sizeof(gl::model_ubs));
 	return static_cast<std::uint32_t>((slice.offset - window.base) / draws.stride);
@@ -2317,6 +2321,7 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 	else
 	{
 		auto found{false};
+		auto pending{false};
 		{
 			std::lock_guard<std::mutex> lock(Program.mutex);
 			auto const lookup{Program.pipelines.find(key)};
@@ -2325,6 +2330,10 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 				pipeline = lookup->second;
 				found = true;
 			}
+			else
+			{
+				pending = Program.pending.contains(key);
+			}
 		}
 		if (false == found)
 		{
@@ -2332,6 +2341,11 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 			auto const single{(false == motion) && (Targets.colours > 0)};
 			if ((draw.async || (m_main != nullptr)) && Global.gfx_vulkan_asyncresources && ctx.background.running())
 			{
+				if (pending)
+				{
+					// being made by the background threads: the draws go without it till it's there, none of them asks for it again
+					return false;
+				}
 				// made ahead (the list of the last session), or made for another program of the same shaders: taken at once
 				if (false == ctx.find_scene_pipeline(Program, Targets, Blend, primitiveclass, settings, single, pipeline))
 				{

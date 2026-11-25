@@ -603,7 +603,8 @@ bool vulkan14_texture::claim()
 				// what a background thread made is taken over by the thread of the renderer
 				return false;
 			}
-			publish();
+			// the draw waits for the texture: whatever the copies of the frame come to
+			publish(true);
 			continue;
 		}
 		if (state != job_none)
@@ -725,12 +726,23 @@ bool vulkan14_texture::request_background()
 	return false;
 }
 
-void vulkan14_texture::publish()
+void vulkan14_texture::publish(bool const Force)
 {
 	int expected{job_done};
 	if (false == m_job.compare_exchange_strong(expected, job_making))
 	{
 		return;
+	}
+	if ((false == Force) && (m_madeimage != nullptr) && m_madestaged && (m_resources.pending != nullptr))
+	{
+		// the copy of the staging buffer goes with the uploads of a frame; the first of a frame whatever its size
+		auto &budget{m_resources.pending->upload_budget};
+		if (budget <= 0)
+		{
+			m_job = job_done;
+			return;
+		}
+		budget -= static_cast<std::int64_t>(m_madeupload.staging ? m_madeupload.staging->size() : 0);
 	}
 	if (m_madeimage != nullptr)
 	{

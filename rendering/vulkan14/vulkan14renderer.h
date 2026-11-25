@@ -37,6 +37,8 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 
 #include <array>
+#include <chrono>
+#include <cstddef>
 #include <functional>
 
 class world_environment;
@@ -258,7 +260,8 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	// Count recorded draws from First with the program (a multi draw with more than one) and the state of the draws
 	bool draw_indirect(vk14::instance_cull &Cull, command_set const Set, std::size_t const First, std::uint32_t const Count, vk14::scene_program &Program, vk14::blend_mode const Blend);
 	// the variant of a program for the multi draws, nullptr when there's none
-	vk14::scene_program *multidraw_program(vk14::scene_program &Program);
+	// Pending: its shaders are being compiled by the background threads, the draws it's for are left out till they're there
+	vk14::scene_program *multidraw_program(vk14::scene_program &Program, bool &Pending);
 	vk14::instance_cull &pass_cull();
 	// the shadow maps of the lamps (vulkan14lamps.cpp, the stage P4; opengl46_renderer::Render_local_shadows() and the rest): the cab
 	// lamp, the scenery lamps, one of them, the headlights, one set of them; the culling of a map (nullptr when its instances go
@@ -453,6 +456,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	void end_draws();
 	// the rendering of the colour of a viewport, begun with the images cleared or again where it was
 	void begin_colour_rendering(std::size_t const Viewport, bool const Clear);
+	void resolve_colour(std::size_t const Viewport);
 	void push_constants(void const *Constants);
 	// a pipeline of the post-processing (a VkPipeline), nullptr when the shader isn't there. Encode: the colour is encoded by the
 	// shader (OUTPUT_GAMMA), -1: as gfx.shadergamma says
@@ -562,6 +566,9 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	int m_environmentcubetextureface{0};
 	int m_environmentupdateface{6};
 	bool m_environmentready{false};
+	// the pipelines made when the pipeline cache was last written to the disk in the session, and when that was (save_pipeline_cache())
+	std::size_t m_pipelinessaved{0};
+	std::chrono::steady_clock::time_point m_pipelinessavedat{};
 	double m_environmentupdatetime{0.0};
 	glm::dvec3 m_environmentupdatelocation{0.0};
 	bool m_vehiclesmoved{true};
@@ -638,6 +645,7 @@ class vulkan14_renderer : public gfx_renderer, public gfx::scene_walk
 	debug_stats m_laststats;
 
 	void update_info();
+	void save_pipeline_cache();
 	// the lines of the debug panel about the threads of the renderer other than the recording ones (the stages M2, M3, M5, M6)
 	std::string background_info() const;
 	// the debug windows (vulkan14debug.cpp, opengl46_renderer::draw_debug_ui()), the lines of the cullings and of the scene for them

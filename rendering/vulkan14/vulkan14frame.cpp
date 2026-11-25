@@ -645,9 +645,22 @@ bool vulkan14_renderer::Render()
 		{
 			texture->apply_pending();
 		}
+		// the copies of the textures made are spread over the frames when many come at once: those the frame has no budget left for
+		// wait for the next one, before the ones made meanwhile
+		ctx.pending.upload_budget = vk14::pending_textures::upload_budget_frame;
+		std::vector<vk14::vulkan14_texture *> waiting;
 		for (auto *texture : made)
 		{
 			texture->publish();
+			if (texture->made_waiting())
+			{
+				waiting.push_back(texture);
+			}
+		}
+		if (false == waiting.empty())
+		{
+			std::scoped_lock const lock{ctx.pending.mutex};
+			ctx.pending.made.insert(ctx.pending.made.begin(), waiting.begin(), waiting.end());
 		}
 	}
 
@@ -1800,6 +1813,7 @@ void vulkan14_renderer::render_viewport(std::size_t const Index)
 	}
 	commands->end_rendering();
 	end_draws();
+	resolve_colour(Index);
 	if (m_contactshadows || m_ssractive || m_aolighting || m_cabprobelit)
 	{
 		// the depth they read is of this view only, and so is the probe of the cab
@@ -2103,8 +2117,10 @@ void vulkan14_renderer::gather_ray_draw(gfx::geometry_handle const &Geometry)
 		{
 			return 0;
 		}
-		auto &texture{m_context->textures->mark_as_used(Texture)};
-		return ((texture.create() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
+		// made by the background threads as the ones of the draws are (gfx.vulkan.asyncresources; made now without them): what the rays
+		// hit goes without its texture till it's there, the frame doesn't wait for the files of everything within their range
+		auto &texture{static_cast<vk14::vulkan14_texture &>(m_context->textures->mark_as_used(Texture))};
+		return ((texture.request_background() && (m_context->images.find(texture.get_id()) != nullptr)) ? texture.get_id() : 0);
 	};
 	if ((draw.program != nullptr) && ((draw.program == m_rtterrain[0]) || (draw.program == m_rtterrain[1])))
 	{
@@ -2215,6 +2231,39 @@ void vulkan14_renderer::store_ssr_history(std::size_t const Index, vk14::image &
 	m_ssr.end_frame();
 }
 
+// the colour and the velocity of a viewport drawn with more than one sample resolved to the images the post-processing reads, once
+// its colour pass is over: a rendering of them with nothing drawn, which resolves them when it ends
+void vulkan14_renderer::resolve_colour(std::size_t const Index)
+{
+	auto &targets{m_context->scene.targets[Index]};
+	if (targets.samples == VK_SAMPLE_COUNT_1_BIT)
+	{
+		return;
+	}
+	VkClearValue const none{};
+	std::array<VkRenderingAttachmentInfo, 2> colours{};
+	colours[0] = attachment_info(targets.msaa_colour->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false, none);
+	colours[0].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+	colours[0].resolveImageView = targets.colour->view();
+	colours[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	if (targets.motion)
+	{
+		colours[1] = attachment_info(targets.msaa_motion->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false, none);
+		colours[1].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+		colours[1].resolveImageView = targets.motion_image->view();
+		colours[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+	VkRenderingInfo rendering{};
+	rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	rendering.renderArea = {{0, 0}, targets.extent};
+	rendering.layerCount = 1;
+	rendering.colorAttachmentCount = targets.formats.colours;
+	rendering.pColorAttachments = colours.data();
+	// the images are in the layouts the colour pass left them in (colour_target_uses())
+	m_commands->begin_rendering(&rendering);
+	m_commands->end_rendering();
+}
+
 // the rendering of the colour of a viewport: begun with the images cleared, or again after the depth under the cursor was read
 void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool const Clear)
 {
@@ -2226,27 +2275,19 @@ void vulkan14_renderer::begin_colour_rendering(std::size_t const Index, bool con
 	VkClearValue depthclear{};
 	depthclear.depthStencil = {0.f, 0};
 	std::array<VkRenderingAttachmentInfo, 2> colours{};
+	// with more than one sample the colour and the velocity are resolved once, when the pass is over (resolve_colour()): the
+	// rendering is ended and begun again several times in a pass (the depth of the scene, the culling, the particles), and nothing
+	// reads the resolved images till it's over
 	colours[0] = attachment_info((msaa ? targets.msaa_colour : targets.colour)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
-	if (msaa)
-	{
-		colours[0].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-		colours[0].resolveImageView = targets.colour->view();
-		colours[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	}
 	if (targets.motion)
 	{
 		colours[1] = attachment_info((msaa ? targets.msaa_motion : targets.motion_image)->view(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, Clear, colourclear);
-		if (msaa)
-		{
-			colours[1].resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-			colours[1].resolveImageView = targets.motion_image->view();
-			colours[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
 	}
 	auto depth{attachment_info((msaa ? targets.msaa_depth : targets.depth)->view(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, Clear, depthclear)};
 	if (msaa)
 	{
-		// the depth of the first sample, for the motion blur and the cursor of the editor
+		// the depth of the first sample, for the motion blur and the cursor of the editor; resolved each time the rendering ends, what
+		// reads it in the middle of the pass (the depth pyramid of the culling, the particles) takes it from there
 		depth.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
 		depth.resolveImageView = targets.depth->view();
 		depth.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;

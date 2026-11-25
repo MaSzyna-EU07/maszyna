@@ -132,6 +132,11 @@ class pipeline_library
 	bool init(device const &Device, std::string &Reason);
 	// writes the pipeline cache to the disk and destroys the pipelines
 	void shutdown();
+	// the pipeline cache written to the disk as it is now, so a session which doesn't end as it should keeps what it compiled. any
+	// thread, while the library is there
+	void save() const;
+	// the pipelines made so far
+	std::size_t count() const;
 	// the pipeline of the description, made at the first call (from the cache on the disk, when it has it). null when it can't be made
 	VkPipeline get(pipeline_desc const &Desc);
 	// the pipeline of the description when it was made already (Pipeline: it, null when it couldn't be); false: not made yet

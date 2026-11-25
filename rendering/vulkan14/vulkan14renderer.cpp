@@ -1172,7 +1172,34 @@ void vulkan14_renderer::Update(double const Deltatime)
 	{
 		update_texture_release();
 	}
+	save_pipeline_cache();
 	update_info();
+}
+
+// the pipeline cache written to the disk by a background thread once pipelines were made since it was written last and the threads
+// have nothing else to do, not more often than every so many seconds: a session which doesn't end as it should (a crash, a lost
+// device, the process killed) keeps what it compiled
+void vulkan14_renderer::save_pipeline_cache()
+{
+	if (!m_context)
+	{
+		return;
+	}
+	auto &ctx{*m_context};
+	if ((false == ctx.background.running()) || (ctx.background.pending() > 0))
+	{
+		return;
+	}
+	auto const count{ctx.pipelines.count()};
+	auto const now{std::chrono::steady_clock::now()};
+	if ((count == m_pipelinessaved) || (now - m_pipelinessavedat < std::chrono::seconds{20}))
+	{
+		return;
+	}
+	m_pipelinessaved = count;
+	m_pipelinessavedat = now;
+	// the library outlives the threads (context::destroy() stops them first)
+	ctx.background.add([&pipelines = ctx.pipelines]() { pipelines.save(); }, false);
 }
 
 void vulkan14_renderer::update_info()

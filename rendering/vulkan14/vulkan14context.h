@@ -93,6 +93,8 @@ struct scene_program : public gfx::shader_program
 	// the variant of the multi draws of the instances drawn from the gpu culling (MODEL_DRAWS), made when it's first needed
 	std::shared_ptr<scene_program> multidraw;
 	bool multidraw_tried{false};
+	// its shaders are being compiled by the background threads, the draws it's for are left out till then
+	bool multidraw_pending{false};
 	vertex_kind vertices{vertex_kind::scene};
 	// the pipelines made, by the key of bind_scene_pipeline(), and the ones the background threads are making (M5). guarded by the
 	// mutex, as are the variants above made when they're first needed: the walks of the passes and the background threads ask for
