@@ -127,6 +127,19 @@ drivingaid_panel::update() {
             expandedtext.c_str());
 
         text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
+
+        // a steam locomotive: what the crew keeps an eye on
+        if( auto const &controlled { *vehicledriver->Controlling() }; controlled.EngineType == TEngineType::SteamEngine ) {
+            std::snprintf(
+                m_buffer.data(), m_buffer.size(),
+                STR_C("Steam: boiler %.1f bar, water %.0f%%, regulator %.0f%%, cutoff %.0f%%, fire %.0f kg"),
+                controlled.Steam.pressure() * 1e-5,
+                controlled.Steam.water_level( controlled.SteamParameters ) * 100.0,
+                controlled.SteamControls.regulator * 100.0,
+                controlled.SteamControls.cutoff * 100.0,
+                controlled.Steam.fire_mass );
+            text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
+        }
     }
 
     { // brakes, air pressure
@@ -1086,6 +1099,42 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
             Output.emplace_back( parameters, Global.UITextColor );
         }
         Output.emplace_back( "Inverter:\n frequency: " + to_string( mover.InverterFrequency, 2 ), Global.UITextColor );
+    }
+    // steam engine data
+    if( mover.EngineType == TEngineType::SteamEngine ) {
+
+        auto const &steam { mover.Steam };
+        std::string parameterstext = "steam       value";
+        std::vector< std::pair <std::string, double> > const steamvalues {
+            { "boilr: ", steam.pressure() * 1e-5 },
+            { "chest: ", ( steam.chest_pressure - steam::atmosphere ) * 1e-5 },
+            { "water: ", steam.water_level( mover.SteamParameters ) },
+            { "watkg: ", steam.water_mass },
+            { "watdc: ", steam.water_temperature },
+            { "suphe: ", steam.superheat },
+            { " fire: ", steam.fire_mass },
+            { " burn: ", steam.burn_rate },
+            { "draug: ", steam.draught },
+            { " regl: ", mover.SteamControls.regulator },
+            { "cutof: ", mover.SteamControls.cutoff },
+            { "stcyl: ", steam.cylinder_flow },
+            { "exhst: ", steam.exhaust_flow },
+            { "safvl: ", steam.safety_valve_flow },
+            { "inj 1: ", steam.injectors[ 0 ] },
+            { "inj 2: ", steam.injectors[ 1 ] },
+            { "blowr: ", steam.blower },
+            { "primg: ", steam.priming },
+            { "force: ", steam.force * 1e-3 },
+            { "power: ", steam.power * 1e-3 },
+            { "tendw: ", steam.tender_water },
+            { "tendc: ", steam.tender_coal } };
+        for( auto const &[parametername, parametervalue] : steamvalues ) {
+            parameterstext += "\n" + parametername + to_string( parametervalue, 2, 9 );
+        }
+        if( steam.fusible_plug_melted ) {
+            parameterstext += "\nfusible plug melted";
+        }
+        Output.emplace_back( parameterstext, Global.UITextColor );
     }
     // diesel engine data
     if( mover.EngineType == TEngineType::DieselEngine ) {
