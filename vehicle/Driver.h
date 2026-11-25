@@ -185,7 +185,8 @@ class TSpeedPos
     void
         UpdateDistance( double dist ) {
             fDist -= dist; }
-    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders);
+    // Standing: the train stands, so an event found behind its head wasn't passed by it
+    bool Set(basic_event *e, double d, double length, TOrders order = Wait_for_orders, bool Standing = false);
     void Set(TTrack *t, double d, int f);
     std::string TableText() const;
     std::string GetName() const;
