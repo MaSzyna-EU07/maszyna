@@ -292,6 +292,7 @@ set(SOURCES
 "utilities/dictionary.cpp"
 "rendering/particles.cpp"
 "utilities/headtrack.cpp"
+"utilities/hardwareprobe.cpp"
 "rendering/geometrybank.cpp"
 "rendering/openglcolor.cpp"
 "simulation/simulationsounds.cpp"
@@ -555,8 +556,10 @@ set(CORE_SOURCES
 "world/TrackCheck.cpp"
 "world/SleeperPack.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
+"utilities/logfiles.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
+"utilities/hardwareinfo.cpp"
 "scene/sn_utils.cpp"
 "scene/regionfile.cpp"
 "utilities/inionlysettings.cpp"
@@ -568,6 +571,7 @@ set(CORE_SOURCES
 "simulation/simulationtestrules.cpp"
 "simulation/simulationsnapshot.cpp"
 "simulation/simulationsnapshotmover.cpp"
+"vehicle/aipower.cpp"
 "vehicle/aiwire.cpp"
 "vehicle/blackbox.cpp"
 "utilities/physicslog.cpp"
@@ -577,6 +581,7 @@ set(CORE_SOURCES
 "vehicle/drivingaid.cpp"
 "vehicle/brakingcurve.cpp"
 "vehicle/signalpassing.cpp"
+"vehicle/brakereleaser.cpp"
 "vehicle/handover.cpp"
 "vehicle/crew.cpp"
 "vehicle/horn.cpp"
@@ -589,6 +594,8 @@ set(CORE_SOURCES
 "world/timetableflags.cpp"
 "world/timetablereader.cpp"
 "world/stationnames.cpp"
+"world/eventconditions.cpp"
+"utilities/wholefile.cpp"
 )
 add_library(eu07_core STATIC ${CORE_SOURCES})
 target_link_libraries(eu07_core PUBLIC eu07_settings)

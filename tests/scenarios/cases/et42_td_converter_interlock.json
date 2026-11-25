@@ -1,0 +1,24 @@
+{
+  "description": "#276: as et42_td_converter_interlock_cold, from the timetable start (trainset velocity 0.1, the locomotive ready to go).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp/et42_v2 112e-014-a {{variant_a}} 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_b dynamic pkp/et42_v2 112e-014-b {{variant_b}} 0 nobody 3 0 enddynamic"
+    ]
+  },
+  "vehicle_variants": [
+    {"name": "a", "from": "pkp/et42_v2/112e-a", "replace": [["IniCDelay=0.5 SCDelay=0.1", "IniCDelay=0.5 SCDelay=0.1 LineContactorsInterlock=Converter"]]},
+    {"name": "b", "from": "pkp/et42_v2/112e-b", "replace": [["IniCDelay=0.5 SCDelay=0.1", "IniCDelay=0.5 SCDelay=0.1 LineContactorsInterlock=Converter"]]}
+  ],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    {"type": "starts", "min_speed": 20, "within": 150},
+    {"type": "max_speed", "limit": 90, "tolerance": 3},
+    {"type": "brakes", "min_pressure": 0.5},
+    {"type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420}
+  ]
+}

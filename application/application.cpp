@@ -25,12 +25,14 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/renderer.h"
 #include "application/uilayer.h"
 #include "utilities/Logs.h"
+#include "utilities/logfiles.h"
 #include "world/SleeperWorker.h"
 #include "rendering/screenshot.h"
 #include "utilities/translation.h"
 #include "vehicle/Train.h"
 #include "utilities/Timer.h"
 #include "utilities/framepacer.h"
+#include "utilities/hardwareprobe.h"
 #include "utilities/dictionary.h"
 #include "version_info.h"
 #include "simulation/simulationtest.h"
@@ -404,8 +406,10 @@ int eu07_application::init(int Argc, char *Argv[])
 	Global.threads.emplace("LogService", std::move(sLoggingService));
 
 	init_debug();
+	result = init_settings(Argc, Argv);
+	// the log files are named by the settings (multiplelogs), so they are cleared and opened once those are read
 	init_files();
-	if ((result = init_settings(Argc, Argv)) != 0)
+	if (result != 0)
 	{
 		ErrorLog("Failed to initialize settings! Maybe you're missing eu07.ini file?");
 		return result;
@@ -445,6 +449,9 @@ int eu07_application::init(int Argc, char *Argv[])
 	// cruel way to prevent crashes because of threaded upload from python
 	if (Global.NvRenderer)
 		Global.python_threadedupload = false;
+
+	// the cpu, the memory and the graphics adapters, for the bug reports
+	hardware::log_system();
 
 	WriteLog("// startup");
 
@@ -1263,16 +1270,19 @@ void eu07_application::init_console()
 
 void eu07_application::init_files()
 {
-
+	// without multiplelogs the run writes the shared log.txt / errors.txt, and those of the run before go. with it the
+	// run writes files of its own in logs/, and the shared ones are left to whoever ran the game last without it
+	for (auto const &file : stale_log_files(Global.MultipleLogs))
+	{
+		std::error_code error; // not there is fine
+		std::filesystem::remove(file, error);
+	}
 #ifdef _WIN32
-	DeleteFile("log.txt");
-	DeleteFile("errors.txt");
 	CreateDirectory("logs", nullptr);
 #elif __unix__
-	unlink("log.txt");
-	unlink("errors.txt");
 	mkdir("logs", 0750);
 #endif
+	OpenLogFiles();
 }
 namespace fs = std::filesystem;
 
@@ -1657,6 +1667,9 @@ int eu07_application::init_ogl()
 			return -1;
 		}
 	}
+
+	// which of the GPUs the context runs on, and its memory
+	hardware::log_gl_context();
 
 	return 0;
 }

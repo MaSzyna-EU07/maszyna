@@ -85,6 +85,8 @@ public:
     virtual TCommandType input_command() const;
     virtual double input_value( int Index ) const;
     virtual glm::dvec3 input_location() const;
+    // the memory cell the data comes from, null if the event doesn't read one
+    virtual TMemCell const *input_cell() const;
     void group( scene::group_handle Group );
     scene::group_handle group() const;
 	std::string const &name() const { return m_name; }
@@ -243,6 +245,7 @@ public:
     TCommandType input_command() const override;
     double input_value( int Index ) const override;
     glm::dvec3 input_location() const override;
+    TMemCell const *input_cell() const override;
 
 private:
 // methods

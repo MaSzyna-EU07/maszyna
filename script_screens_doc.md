@@ -144,12 +144,11 @@ Besides the 200 million instructions of a call, a Lua screen is held to what run
 - memory: a screen holds at most 128 MB: its Lua heap and the pixels of its images, fonts and sprites (4 bytes a pixel
   of an image, 1 of a font or a sprite). An object that would take the screen over is refused (`memory limit
   exceeded`), and a screen found holding more stops with that error. Garbage doesn't count: the check collects it
-  first. Where LuaJIT takes an allocator of the game's (2.1 in its GC64 mode), anything over twice the limit is refused
-  as it is asked for (`not enough memory`); the game's LuaJIT 2.0 on 64-bit Windows takes none, and there the heap is
-  checked every thousand instructions and before the calls below, and whatever a script makes between two checks is
-  made whole first: every concatenation (`a .. b`) within one interval of a thousand instructions, so a loop doubling a
-  string (`for i = 1, 11 do s = s .. s end` on a 1 MB `s`) gets to LuaJIT's own heap limit of about 2 GB before the
-  check sees it;
+  first, every thousand instructions and before the calls below. Between the checks the screen's heap goes through a
+  counter of the game's, in front of LuaJIT's own allocator, which refuses a block that would take the screen over
+  twice the limit as it is asked for (`not enough memory`, an error the script may catch). So what one instruction
+  makes is held as well: a loop doubling a string (`for i = 1, 11 do s = s .. s end` on a 1 MB `s`) stops at the
+  concatenation that would go over 256 MB, not at LuaJIT's own heap limit of about 2 GB;
 - `string.rep` makes no string over 1 MB; `string.format`, `table.concat` and `string.gsub` (with a string or a table to
   replace with) refuse a result that may be over the memory of a screen, counted from the lengths of what they are
   given;

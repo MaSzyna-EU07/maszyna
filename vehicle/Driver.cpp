@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/physicslog.h"
 #include "vehicle/Train.h"
+#include "vehicle/brakereleaser.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
@@ -575,15 +576,21 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
     }
     else {
         if( iTableDirection == 0 ) { return; }
-        // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table
-        if( SemNextIndex != npos
-         && SemNextIndex >= sSpeedTable.size() ) {
-            SemNextIndex = npos;
-        }
-        if( SemNextStopIndex != npos
-         && SemNextStopIndex >= sSpeedTable.size() ) {
-            SemNextStopIndex = npos;
-        }
+        // NOTE: belt and braces; TablePurger() used to leave these pointing past the end of the table.
+        // nothing is known to do that any more, so say so when it happens
+        auto const dropstaleindex = [this, fDistance]( std::size_t &Index, std::string_view const Name ) {
+            if( Index == npos
+             || Index < sSpeedTable.size() ) {
+                return;
+            }
+            ErrorLog( std::format(
+                "Speed table for {}: {} {} points past the end of the table ({} records), last track {} at {:.1f} m, scan range {:.1f} m; reset",
+                OwnerName(), Name, Index, sSpeedTable.size(),
+                ( iLast >= 0 && sSpeedTable[ iLast ].trTrack != nullptr ? sSpeedTable[ iLast ].trTrack->name() : "none" ),
+                ( iLast >= 0 ? sSpeedTable[ iLast ].fDist : 0.0 ), fDistance ) );
+            Index = npos; };
+        dropstaleindex( SemNextIndex, "SemNextIndex" );
+        dropstaleindex( SemNextStopIndex, "SemNextStopIndex" );
         // kontynuacja skanowania od ostatnio sprawdzonego toru (w ostatniej pozycji zawsze jest tor)
         if( SemNextStopIndex != npos
          && sSpeedTable[SemNextStopIndex].fVelNext == 0.0 ) {
@@ -3242,15 +3249,15 @@ bool TController::PrepareEngine()
         close_line_breaker();
     }
 
+    auto const sufficientpantographpressure { (
+        is_emu() ?
+            2.5 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
+            3.5 )
+        + 0.1 }; // leeway margin
+
     if( mvPantographUnit->EnginePowerSource.SourceType == TPowerSource::CurrentCollector
      && mvPantographUnit->EnginePowerSource.CollectorParameters.CollectorsNo > 0 ) {
         // if our pantograph unit isn't a pantograph-devoid fallback
-        auto const sufficientpantographpressure { (
-            is_emu() ?
-                2.5 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
-                3.5 )
-            + 0.1 }; // leeway margin
-
         if (mvPantographUnit->PantPress < sufficientpantographpressure) {
             // załączenie małej sprężarki
             if( false == mvPantographUnit->PantAutoValve ) {
@@ -3280,6 +3287,9 @@ bool TController::PrepareEngine()
     auto const ispoweravailable =
         mvControlling->EnginePowerSource.SourceType != TPowerSource::CurrentCollector
      || std::max(mvControlling->GetTrainsetHighVoltage(), mvControlling->PantographVoltage) > mvControlling->EnginePowerSource.CollectorParameters.MinV;
+    // standing with the pantographs up and no voltage, nothing the driver does starts the vehicle. it says so, and keeps
+    // trying: towed back under the wire, or with the power switched on, the vehicle gets prepared after all
+    report_power_stall( ispoweravailable, sufficientpantographpressure );
 
     bool isready = false;
 
@@ -3364,6 +3374,39 @@ bool TController::PrepareEngine()
     iEngineActive = isready;
 
     return iEngineActive;
+}
+
+// tells in the log, once, of standing with the pantographs up and no voltage at them, past the end of the overhead
+// wire or under a wire switched off (eu07/maszyna#421). Poweravailable is what PrepareEngine() found, Pantographpressure
+// the air the pantographs need to rise
+void
+TController::report_power_stall( bool const Poweravailable, double const Pantographpressure ) {
+
+    ai_power::state state;
+    state.collector = mvControlling->EnginePowerSource.SourceType == TPowerSource::CurrentCollector;
+    state.power = Poweravailable;
+    state.standing = mvOccupied->Vel < EU07_AI_NOMOVEMENT;
+    if( mvPantographUnit->PantPress >= Pantographpressure ) {
+        state.pantographs_up =
+            mvPantographUnit->Pantographs[ end::front ].is_active
+         || mvPantographUnit->Pantographs[ end::rear ].is_active;
+    }
+    // the pantographs of the vehicle carrying them hold the wire they found above them
+    if( auto const *carrier { pVehicle->FindPantographCarrier() };
+        carrier != nullptr && carrier->MoverParameters == mvPantographUnit ) {
+        auto const pantographcount { std::min<int>( carrier->iAnimType[ ANIM_PANTS ], static_cast<int>( carrier->MoverParameters->Pantographs.size() ) ) };
+        for( auto index { 0 }; index < pantographcount; ++index ) {
+            if( true == carrier->MoverParameters->Pantographs[ index ].is_active
+             && carrier->pants[ index ].fParamPants->hvPowerWire != nullptr ) {
+                state.wire = true;
+            }
+        }
+    }
+    // a user driving the vehicle sees the voltmeters for themselves
+    if( auto const stall { m_powerstall.update( AIControllFlag ? ai_power::check( state ) : ai_power::stall::waiting, ElapsedTime ) };
+        stall.has_value() ) {
+        ErrorLog( ai_power::message( *stall, pVehicle->asName, pVehicle->GetPosition() ), logtype::traction );
+    }
 }
 
 // wyłączanie silnika (test wyłączenia, a część wykonawcza tylko jeśli steruje komputer)
@@ -6738,15 +6781,38 @@ TController::determine_consist_state() {
 
 void
 TController::control_wheelslip() {
+    // a start that has slipped once keeps the sand on until the train is under way. with the sand off as soon as the
+    // wheels grip again, the next notch slips again, and a heavy train on poor rails slips, grips and snatches over
+    // and over, and may never get going (#187). a vehicle without sand starts as before
+    auto const velocity { std::abs( mvOccupied->Vel ) };
+    if( mvControlling->SlippingWheels
+     && velocity < EU07_AI_SANDEDSTARTVELOCITY
+     && false == mvControlling->IsMainCtrlNoPowerPos()
+     && mvControlling->Sand > 0.0 ) {
+        bSandedStart = true;
+    }
+    else if( velocity >= EU07_AI_SANDEDSTARTVELOCITY
+          || ( velocity < EU07_AI_NOMOVEMENT && VelDesired == 0.0 ) ) {
+        bSandedStart = false;
+    }
     // wheel slip
     if( mvControlling->SlippingWheels ) {
         cue_action( driver_hint::sandingon ); // piasku!
-        cue_action( driver_hint::tractiveforcedecrease );
+        if( false == bSandedStart ) {
+            cue_action( driver_hint::tractiveforcedecrease );
+            cue_action( driver_hint::antislip );
+        }
+        else if( ElapsedTime - fSandedStartDecreaseTime >= 1.0 ) {
+            // starting, a step down at a time, and no anti-slip brake: taking the power off at once and braking the
+            // locomotive brings a heavy train that has just got moving to a stand again, and the start begins anew
+            cue_action( driver_hint::tractiveforcedecrease );
+            fSandedStartDecreaseTime = ElapsedTime;
+        }
         cue_action( driver_hint::brakingforcedecrease );
-        cue_action( driver_hint::antislip );
         ++iDriverFailCount;
     }
-    else if( std::fabs( mvControlling->Im ) > 0.75 * mvControlling->ImaxHi ) {
+    else if( ( std::fabs( mvControlling->Im ) > 0.75 * mvControlling->ImaxHi )
+          || ( bSandedStart && false == mvControlling->IsMainCtrlNoPowerPos() ) ) {
         cue_action( driver_hint::sandingon ); // piaskujemy tory, coby się nie ślizgać
     }
     else {
@@ -9075,39 +9141,26 @@ void TController::control_releaser() {
 
     if( false == hasreleaser ) { return; }
 
-    auto actuate { false };
+    brake_releaser::conditions state;
+    state.acceleration_desired = AccDesired;
+    state.pipe_pressure = mvOccupied->PipePress;
+    state.cylinder_pressure = mvOccupied->BrakePress;
+    state.control_pressure = mvOccupied->Hamulec->GetCRP();
+    state.velocity = mvOccupied->Vel;
+    state.uphill_start = bUphillStart;
+    state.pressing = TestFlag( iDrivigFlags, movePress );
+    // stage 3 of uncoupling (UpdateDisconnect), from the direction change until the coupler lets go
+    state.compressing_buffers =
+        state.pressing && ( OrderCurrentGet() & Disconnect ) != 0 && iVehicleCount >= 0 && iDirection == iDirectionOrder;
+    auto const wanted { brake_releaser::decide( state ) };
+    auto const actuate { wanted.actuate };
     auto isbrakehandleinrightposition { true };
 
-    if( AccDesired > EU07_AI_NOACCELERATION ) {
-        // fill up brake pipe if needed
-        if( mvOccupied->PipePress < 3.0 ) {
-            actuate = true;
-            // some vehicles require brake handle to be moved to specific position
-            if( mvOccupied->HandleUnlock != -3 ) {
-                cue_action( driver_hint::trainbrakesetpipeunlock );
-                isbrakehandleinrightposition &= BrakeCtrlPosition == mvOccupied->HandleUnlock;
-            }
-        }
-        // wyluzuj lokomotywę, to szybciej ruszymy
-        // this rule is for starting off, so only below 1 km/h: at speed, just after an application, it would vent
-        // the control reservoir of a locomotive that may have to brake again before the pipe has refilled it
-        if( mvOccupied->BrakePress > 0.4
-         && ( mvOccupied->Hamulec->GetCRP() > 4.9
-           // starting uphill the train brake stays applied on purpose, and the locomotive's own share of it has to go
-           // for the power to come on (asynchronous drives and the pressure switch cut the power while it is applied)
-           || bUphillStart )
-         && mvOccupied->Vel < 1.0 ) {
-            actuate = true;
-        }
-        // keep engine brakes released during coupling/uncoupling
-        if( true == TestFlag(iDrivigFlags, movePress)
-         && mvOccupied->BrakePress > 0.1 ) {
-            actuate = true;
-        }
-    }
-    // don't overcharge train brake pipe
-    if( mvOccupied->PipePress > 5.2 ) {
-        actuate = false;
+    // some vehicles require brake handle to be moved to specific position to fill up the brake pipe
+    if( wanted.fill_pipe
+     && mvOccupied->HandleUnlock != -3 ) {
+        cue_action( driver_hint::trainbrakesetpipeunlock );
+        isbrakehandleinrightposition = ( BrakeCtrlPosition == mvOccupied->HandleUnlock );
     }
 
     if( actuate ) {
