@@ -11,7 +11,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include <optional>
 
+namespace mover
+{
 class TMoverParameters;
+}
 
 // what the driving aid panel shows of the controls and of the braking: the numbers of its throttle and
 // brakes lines, worked out from the vehicle state (eu07/maszyna#558, eu07/maszyna#555)
@@ -63,6 +66,6 @@ readout compute(input const &Input);
 
 // the state the panel reads: Vehicle is the one the driver sits in, Controlling the one whose controllers
 // the driver moves (TController::Controlling())
-input from_movers(TMoverParameters const &Vehicle, TMoverParameters const &Controlling, cab_controls const &Cab);
+input from_movers(mover::TMoverParameters const &Vehicle, mover::TMoverParameters const &Controlling, cab_controls const &Cab);
 
 } // namespace drivingaid

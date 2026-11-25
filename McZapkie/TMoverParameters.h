@@ -52,6 +52,8 @@
 #include "spring_brake.h"
 #include "load_attributes.h"
 #include "dimPosition.h"
+#include "derailment.h"
+#include "collision.h"
 
 namespace mover
 {

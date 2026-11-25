@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 
-#include "McZapkie/MOVER.h"
+#include "McZapkie/TMoverParameters.h"
 #include "McZapkie/hamulce.h"
 #include "consist.h"
 #include "vehicle.h"

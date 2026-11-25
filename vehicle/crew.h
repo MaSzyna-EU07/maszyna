@@ -12,7 +12,10 @@ http://mozilla.org/MPL/2.0/.
 #include <string>
 #include <string_view>
 
+namespace mover
+{
 class TMoverParameters;
+}
 
 // a driver put in a vehicle, or taken off it, while the scenario runs (eu07/maszyna#510): the command of a
 // putvalues event
@@ -77,6 +80,6 @@ std::string_view describe(action Action);
 // so a train on the move stops and stays braked, and the cab is neither active nor occupied. the engine, the
 // pantographs and the lights stay as they were. Occupied is the vehicle of the driver, Controlling the one whose
 // motors it drove (the AI's mvOccupied and mvControlling; the same one in a locomotive)
-void secure(TMoverParameters &Occupied, TMoverParameters &Controlling);
+void secure(mover::TMoverParameters &Occupied, mover::TMoverParameters &Controlling);
 
 } // namespace crew

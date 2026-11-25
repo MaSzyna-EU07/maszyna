@@ -10,16 +10,16 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/timetableservice.h"
 
-#include "McZapkie/MOVER.h"
+#include "McZapkie/TMoverParameters.h"
 
 namespace timetable {
 
-bool opens_doors(TMoverParameters const &Vehicle, service_flags const &Flags) {
+bool opens_doors(mover::TMoverParameters const &Vehicle, service_flags const &Flags) {
 	switch (Vehicle.Doors.open_control) {
-		case control_t::conductor:
-		case control_t::driver:
+		case mover::control_t::conductor:
+		case mover::control_t::driver:
 			return true;
-		case control_t::mixed:
+		case mover::control_t::mixed:
 			// left to the passengers, unless the timetable has the driver open them all
 			return Flags.central_doors == tristate::yes;
 		default:

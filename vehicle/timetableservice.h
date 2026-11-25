@@ -13,7 +13,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "world/timetableflags.h"
 
+namespace mover
+{
 class TMoverParameters;
+}
 
 // what the AI driver does at a stop and on the way, as the service flags of the timetable ask (eu07/maszyna#95). with
 // no flags each answer is the one the AI gave before the flags
@@ -22,7 +25,7 @@ namespace timetable {
 // whether the driver opens the doors of the consist from the cab at a stop, Vehicle being the one he drives: the doors
 // the conductor or the driver opens, and with the central door opening also the ones of mixed control, which are
 // otherwise left to the passengers
-bool opens_doors(TMoverParameters const &Vehicle, service_flags const &Flags);
+bool opens_doors(mover::TMoverParameters const &Vehicle, service_flags const &Flags);
 
 // the state the driver sets the doorsteps to before he opens the doors at a stop, none when he leaves them as they are
 std::optional<bool> doorstep(service_flags const &Flags);

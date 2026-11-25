@@ -2,6 +2,8 @@
 
 #include "core.h"
 #include "power_coupling.h"
+#include "couplerphysics.h"
+#include "collision.h"
 
 namespace mover
 {
@@ -38,11 +40,48 @@ struct TCoupling
 	power_coupling power_high;
 	power_coupling power_110v;
 	power_coupling power_24v;
+	power_coupling *power(coupling const Coupling)
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
+	power_coupling const *power(coupling const Coupling) const
+	{
+		switch (Coupling)
+		{
+		case coupling::highvoltage:
+			return &power_high;
+		case coupling::power110v:
+			return &power_110v;
+		case coupling::power24v:
+			return &power_24v;
+		default:
+			return nullptr;
+		}
+	}
 
 	// the physical model of the coupling (couplerphysics in eu07.ini), see couplerphysics.h: the parameters of this end,
 	// and the state of the coupling with the vehicle at this end, which that vehicle keeps alike on its own end
 	coupler_physics::end_parameters physics;
 	coupler_physics::pair_state physics_state;
+	collision::end_definition collision;
+	double crush{0.0};
+	double closing{0.0};
+	bool hit_handled{false};
+	double hit_force{0.0};
+	double hit_duration{0.0};
+	bool crush_monitored{false};
+	collision::contact_energy contact;
+	bool inside_reported{false};
 
 	int sounds{0}; // sounds emitted by the coupling devices
 	bool Render = false; /*ABu: czy rysowac jak zaczepiony sprzeg*/

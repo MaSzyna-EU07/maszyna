@@ -179,6 +179,8 @@ enum DerailReason
 	COLLISION = 5, //     powód wykolejenia: zderzenie z innym pojazdem
 	/// <summary>Trailing through a switch with a movable nose set the other way.</summary>
 	TRAILED_SWITCH = 6, // powód wykolejenia: rozprucie rozjazdu z ruchomym dziobem
+	COLLISION_OVERRIDE = 7,
+	COLLISION_PUSHED_OFF = 8,
 };
 
 /*wagi prawdopodobienstwa dla funkcji FuzzyLogic*/

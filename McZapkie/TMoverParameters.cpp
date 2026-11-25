@@ -9018,73 +9018,14 @@ void TMoverParameters::EIMICFromFourPositions(double dt)
 			break;
 		}
 	}
+	if (MainCtrlActualPos == MainCtrlPos)
+		LastRelayTime += dt;
+	else
+	{
+		LastRelayTime = 0;
+		MainCtrlActualPos = MainCtrlPos;
+	}
 }
-		if (MainCtrlPos >= 3 && eimic < 0)
-			eimic = 0;
-		if (MainCtrlPos <= 3 && eimic > 0)
-			eimic = 0;
-		break;
-	case 2:
-		if (IsMainCtrlEmergencyPos())
-		{
-			// hamowanie nagle: pelne hamowanie od razu, przewod glowny oproznia UpdatePipePressure()
-			eimic = -1.0;
-		}
-		else if (MainCtrlActualPos != MainCtrlPos || LastRelayTime > InitialCtrlDelay)
-		{
-			double delta = MainCtrlActualPos == MainCtrlPos ? dt * CtrlDelay : 0.01;
-			// the positions below are those of the controller without the emergency brake position
-			switch (MainCtrlPos - EIMCtrlEmergencyPositions())
-			{
-			case 0:
-			case 1:
-				eimic -= safe_clamp(1.0 + eimic, 0.0, delta); // odejmuj do -1
-				if (eimic > 0)
-					eimic = 0;
-				break;
-			case 2:
-				eimic -= safe_clamp(0.0 + eimic, 0.0, delta); // odejmuj do 0
-				break;
-			case 3:
-				eimic += safe_clamp(0.0 - eimic, 0.0, delta); // dodawaj do 0
-				break;
-			case 4:
-				eimic += safe_clamp(1.0 - eimic, 0.0, delta); // dodawaj do 1
-				if (eimic < 0)
-					eimic = 0;
-				break;
-			default:
-				break;
-			}
-		}
-		if (MainCtrlActualPos == MainCtrlPos)
-			LastRelayTime += dt;
-		else
-		{
-			LastRelayTime = 0;
-			MainCtrlActualPos = MainCtrlPos;
-		}
-		break;
-	case 3:
-		if (UniCtrlIntegratedBrakePNCtrl)
-		{
-			if (UniCtrlList[MainCtrlPos].mode != BrakeCtrlPos && MainCtrlActualPos == MainCtrlPos) // there was no move of controller, but brake only
-			{
-				if (BrakeCtrlPos < UniCtrlList[MainCtrlPosNo].mode)
-					BrakeLevelSet(UniCtrlList[MainCtrlPosNo].mode); // bottom clamping
-				if (BrakeCtrlPos > UniCtrlList[0].mode)
-					BrakeLevelSet(UniCtrlList[0].mode); // top clamping
-				if (IsCabMaster())
-				{
-					while (BrakeCtrlPos > UniCtrlList[MainCtrlPos].mode)
-						DecMainCtrl(1); // find nearest position
-					while (BrakeCtrlPos < UniCtrlList[MainCtrlPos].mode)
-						IncMainCtrl(1); // find nearest position
-				}
-			}
-			else // controller was moved
-				BrakeLevelSet(UniCtrlList[MainCtrlPos].mode);
-		}
 
 // EIMCtrlType 3: the universal controller of UniCtrlList, with the train brake built in or not
 void TMoverParameters::EIMICFromUniversalController(double dt, double const brakeDemand)
@@ -14263,7 +14204,6 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 		SecuritySystem.MagnetLocation = Dim.L / 2 - 0.5;
 	}
 	SecuritySystem.MagnetLocation = safe_clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
-
 	return OK;
 }
 
@@ -14518,8 +14458,6 @@ void TMoverParameters::SetBraked()
 		SpringBrake.Activate = true;
 	}
 	SecuritySystem.MagnetLocation = safe_clamp(SecuritySystem.MagnetLocation, 0.0, Dim.L);
-
-	return OK;
 }
 
 // *************************************************************************************************

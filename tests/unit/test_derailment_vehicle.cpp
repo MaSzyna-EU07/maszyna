@@ -2,7 +2,7 @@
 #include "doctest.h"
 #include "vehicle.h"
 #include "McZapkie/derailment.h"
-#include "McZapkie/MOVER.h"
+#include "McZapkie/TMoverParameters.h"
 #include "utilities/Globals.h"
 
 #include <cmath>

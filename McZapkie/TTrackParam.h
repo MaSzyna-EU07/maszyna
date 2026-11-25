@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "core.h"
 
 namespace mover
@@ -18,6 +20,7 @@ struct TTrackParam
 	int DamageFlag = 0;
 	/// <summary>Maximum allowed velocity on this segment (used by AI driver).</summary>
 	double Velmax; /*dla uzytku maszynisty w ai_driver*/
+	std::string const *Name = nullptr;
 };
 
 } // namespace mover

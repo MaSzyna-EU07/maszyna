@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/drivingaid.h"
 
-#include "McZapkie/MOVER.h"
+#include "McZapkie/TMoverParameters.h"
 #include "McZapkie/hamulce.h"
 
 #include <algorithm>
@@ -59,9 +59,9 @@ readout compute(input const &Input) {
 	return result;
 }
 
-input from_movers(TMoverParameters const &Vehicle, TMoverParameters const &Controlling, cab_controls const &Cab) {
+input from_movers(mover::TMoverParameters const &Vehicle, mover::TMoverParameters const &Controlling, cab_controls const &Cab) {
 	input result;
-	result.eim = Vehicle.EngineType == TEngineType::ElectricInductionMotor || Vehicle.EIMCtrlType > 0;
+	result.eim = Vehicle.EngineType == mover::TEngineType::ElectricInductionMotor || Vehicle.EIMCtrlType > 0;
 	result.eimctrltype = Vehicle.EIMCtrlType;
 	result.splited = Controlling.SplitEDPneumaticBrake;
 	result.integratedbrake = Vehicle.UniCtrlIntegratedBrakeCtrl;

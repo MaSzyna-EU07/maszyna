@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "vehicle/crew.h"
 
-#include "McZapkie/MOVER.h"
+#include "McZapkie/TMoverParameters.h"
 #include "vehicle/handover.h"
 
 namespace crew {
@@ -23,7 +23,7 @@ char lower_ascii(char const Character) {
 }
 
 // the controllers of the vehicle to the positions giving no power, and the vehicles it controls told so
-void cut_power(TMoverParameters &Vehicle) {
+void cut_power(mover::TMoverParameters &Vehicle) {
 	Vehicle.MainCtrlPos = Vehicle.MainCtrlNoPowerPos();
 	Vehicle.ScndCtrlPos = 0;
 	// what the integrated handle and the cruise control asked for last stays in force until somebody drives
@@ -110,7 +110,7 @@ std::string_view describe(action const Action) {
 	}
 }
 
-void secure(TMoverParameters &Occupied, TMoverParameters &Controlling) {
+void secure(mover::TMoverParameters &Occupied, mover::TMoverParameters &Controlling) {
 	handover::release_ai_controls(Occupied, Controlling);
 	cut_power(Controlling);
 	if (&Occupied != &Controlling) {
@@ -119,9 +119,9 @@ void secure(TMoverParameters &Occupied, TMoverParameters &Controlling) {
 	// the emergency position vents the brake pipe whatever the brake mode, and with nobody in the cab too
 	Occupied.BrakeLevelSet(Occupied.Handle->GetPos(bh_EB));
 	// a vehicle with no train brake (a car, a draisine) gets the brake its driver stops it with, in full
-	if (Occupied.BrakeSystem == TBrakeSystem::Individual) {
-		if (Occupied.LocalBrake == TLocalBrake::ManualBrake) {
-			Occupied.IncManualBrakeLevel(ManualBrakePosNo);
+	if (Occupied.BrakeSystem == mover::TBrakeSystem::Individual) {
+		if (Occupied.LocalBrake == mover::TLocalBrake::ManualBrake) {
+			Occupied.IncManualBrakeLevel(mover::ManualBrakePosNo);
 		}
 		else {
 			Occupied.IncLocalBrakeLevel(LocalBrakePosNo);
