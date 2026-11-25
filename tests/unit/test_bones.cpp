@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "doctest.h"
 
+#include <cmath>
 #include <numbers>
 
 #include "vehicle/bones.h"
@@ -45,7 +46,8 @@ TEST_CASE("bones: a crank pin goes round with its wheel, the crosshead slides ke
 	auto const length{glm::length(rig.points[1].rest - rig.points[0].rest)};
 	auto lowest{1e9};
 	auto highest{-1e9};
-	for (auto angle{0.0}; angle < 360.0; angle += 5.0) {
+	for (auto degrees{0}; degrees < 360; degrees += 5) {
+		auto const angle{static_cast<double>(degrees)};
 		CAPTURE(angle);
 		auto const points{bones::pose(rig, turned(rig, angle))};
 		// the pin on its circle
@@ -164,7 +166,7 @@ std::vector<glm::dvec3> rests(bones::rig const &Rig) {
 }
 
 void settle(bones::rig const &Rig, bones::chain_state &State, glm::dvec3 Start, glm::dvec3 End, double Seconds) {
-	for (auto time{0.0}; time < Seconds; time += 0.02) {
+	for (auto step{0L}; step < std::lround(Seconds / 0.02); ++step) {
 		bones::simulate(Rig.chains[0].lengths, State, Start, End, 0.02, downwards());
 	}
 }
@@ -209,7 +211,7 @@ TEST_CASE("bones: a chain jerked by its ends swings after them and settles") {
 	// the middle lags behind, swinging
 	CHECK(state.now[1].y - hanging.y < 0.35);
 	auto farthest{0.0};
-	for (auto time{0.0}; time < 2.0; time += 0.02) {
+	for (auto step{0L}; step < std::lround(2.0 / 0.02); ++step) {
 		bones::simulate(rig.chains[0].lengths, state, start + shift, end + shift, 0.02, downwards());
 		farthest = std::max(farthest, state.now[1].y - hanging.y);
 	}
@@ -294,7 +296,7 @@ TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swi
 	glm::dvec3 const end{1.0, 0.0, 0.0};
 	bones::chain_state standing;
 	bones::start_chain(standing, rests(rig), start, end);
-	for (auto time{0.0}; time < 20.0; time += 0.02) {
+	for (auto step{0L}; step < std::lround(20.0 / 0.02); ++step) {
 		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, standing, start, end, 0.02, downwards());
 	}
 	// the same at 50 km/h along the track, the frame going with it
@@ -302,7 +304,7 @@ TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swi
 	bones::start_chain(running, rests(rig), start, end);
 	glm::dvec3 const velocity{0.0, 13.9, 0.0};
 	glm::dvec3 travelled{0.0};
-	for (auto time{0.0}; time < 20.0; time += 0.02) {
+	for (auto step{0L}; step < std::lround(20.0 / 0.02); ++step) {
 		travelled += velocity * 0.02;
 		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, running, start + travelled, end + travelled, 0.02, downwards());
 	}
@@ -313,7 +315,7 @@ TEST_CASE("bones: a hose on a running vehicle hangs as it does standing, its swi
 	// stiff, it keeps more of its curve than a limp one: the middle hangs less far below where it was made
 	bones::chain_state limp;
 	bones::start_chain(limp, rests(rig), start, end);
-	for (auto time{0.0}; time < 20.0; time += 0.02) {
+	for (auto step{0L}; step < std::lround(20.0 / 0.02); ++step) {
 		bones::simulate(rig.chains[0].lengths, limp, start, end, 0.02, downwards());
 	}
 	auto const made{rig.points[rig.chains[0].nodes[1]].rest};
@@ -326,7 +328,7 @@ TEST_CASE("bones: a hose on a running vehicle keeps still through frames of chan
 	glm::dvec3 const end{1.0, 0.0, 0.0};
 	bones::chain_state standing;
 	bones::start_chain(standing, rests(rig), start, end);
-	for (auto time{0.0}; time < 20.0; time += 0.02) {
+	for (auto step{0L}; step < std::lround(20.0 / 0.02); ++step) {
 		bones::simulate(rig.chains[0].lengths, rig.chains[0].bends, standing, start, end, 0.02, downwards());
 	}
 	// started at 50 km/h, with frames now short, now long: the substeps change their length from frame to frame
