@@ -22,6 +22,16 @@ struct debug_mode {
 	~debug_mode() { DebugModeFlag = before; }
 };
 
+// puts logs.filecase back as it was
+struct file_case_log {
+	bool const before{Global.FileCaseLog};
+
+	explicit file_case_log(bool const Enabled) { Global.FileCaseLog = Enabled; }
+	file_case_log(file_case_log const &) = delete;
+	file_case_log &operator=(file_case_log const &) = delete;
+	~file_case_log() { Global.FileCaseLog = before; }
+};
+
 // the polish letters in windows-1250, as in test_win1250.cpp
 std::string const kWin1250{"\xA5\xC6\xCA\xA3\xD1\xD3\x8C\x8F\xAF\xB9\xE6\xEA\xB3\xF1\xF3\x9C\x9F\xBF"};
 
@@ -661,9 +671,10 @@ TEST_CASE("utilities: a file is written over in another case, or made in its fol
 	CHECK(FileOnDiskToWrite("eu07_unit_test_no_such_file.xyz") == "eu07_unit_test_no_such_file.xyz");
 }
 
-TEST_CASE("utilities: a file found only in another case is logged once, the folders of a file to write are not") {
+TEST_CASE("utilities: a file found only in another case is logged once with logs.filecase, the folders of a file to write are not") {
 	test::scratch_folder const folder{"utilities_cased_log"};
 	folder.write("Scenery/Braniewo/Base.scm", "x");
+	file_case_log const opted{true};
 	test::log_capture const log;
 
 	// asked for again, and to be written over
@@ -683,6 +694,40 @@ TEST_CASE("utilities: a file found only in another case is logged once, the fold
 #else
 	REQUIRE(lines.size() == 1);
 	CHECK(lines.front().find(folder.path("Scenery/Braniewo/Base.scm")) != std::string::npos);
+#endif
+}
+
+TEST_CASE("utilities: the files found only in another case are counted, and without logs.filecase only the count is logged") {
+	test::scratch_folder const folder{"utilities_cased_count"};
+	folder.write("Scenery/Kozki/Base.scm", "x");
+	folder.write("Textures/Kozki/Tor.dds", "x");
+	file_case_log const opted{false};
+	test::log_capture const log;
+	[[maybe_unused]] auto const before{FilesInAnotherCase()};
+
+	// two files in another case, one asked for twice, one asked for in its own case, one which isn't there in any case
+	CHECK_FALSE(FileCased(folder.path("scenery/kozki/base.scm")).empty());
+	CHECK_FALSE(FileCased(folder.path("scenery/kozki/base.scm")).empty());
+	CHECK_FALSE(FileOnDiskToWrite(folder.path("textures/kozki/tor.dds")).empty());
+	CHECK_FALSE(FileCased(folder.path("Scenery/Kozki/Base.scm")).empty());
+	CHECK(FileCased(folder.path("scenery/kozki/nothing.scm")).empty());
+	// not one of them on its own
+	CHECK(log.lines().empty());
+
+	LogFilesInAnotherCase();
+	auto const lines{log.lines()};
+#ifdef _WIN32
+	// nothing found in another case, nothing to count nor to log
+	CHECK(FilesInAnotherCase() == 0);
+	CHECK(lines.empty());
+#else
+	auto const count{FilesInAnotherCase()};
+	CHECK(count == before + 2);
+	// the one line, with the count of the whole run so far and the way to have them listed
+	REQUIRE(lines.size() == 1);
+	CHECK(lines.front().find(": " + std::to_string(count) + " (") != std::string::npos);
+	CHECK(lines.front().find("logs.filecase yes") != std::string::npos);
+	CHECK(lines.front().find("Kozki") == std::string::npos);
 #endif
 }
 

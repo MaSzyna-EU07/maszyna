@@ -551,7 +551,7 @@ struct cased_hash
 	using is_transparent = void;
 	std::size_t operator()(std::string_view const Text) const noexcept { return std::hash<std::string_view>{}(Text); }
 };
-// the files found only in another case than asked for, written to the log once each
+// the files found only in another case than asked for, counted once each by the name asked for
 std::unordered_set<std::string, cased_hash, std::equal_to<>> &cased_reported()
 {
 	static std::unordered_set<std::string, cased_hash, std::equal_to<>> reported;
@@ -668,7 +668,7 @@ bool cased_folder_path(std::string const &Folder, std::string &Cased)
 namespace
 {
 
-// FileCased(), the file found only in another case written to the log when Report
+// FileCased(), the file found only in another case counted, and written to the log on request, when Report
 std::string file_cased(std::filesystem::path const &Filename, [[maybe_unused]] bool const Report)
 {
 	std::error_code error;
@@ -714,19 +714,20 @@ std::string file_cased(std::filesystem::path const &Filename, [[maybe_unused]] b
 		return {};
 	if (Report && (cased != asked))
 	{
-		// marked as reported once it's known to be there, and written to the log outside of the lock
+		// counted once it's known to be there, and written to the log outside of the lock
 		std::unique_lock lock{cased_mutex};
 		auto const first{cased_reported().insert(asked).second};
 		lock.unlock();
-		// the parser asks for the names in lowercase, so these are mostly the files not named in lowercase on the disk
-		if (first)
+		// the parser asks for the names in lowercase, so these are mostly the files not named in lowercase on the disk. as they load
+		// fine, each is written to the log only on request (logs.filecase); their count is, at the closing (LogFilesInAnotherCase())
+		if (first && Global.FileCaseLog)
 			WriteLog("File \"" + asked + "\" is \"" + cased + "\" on disk, in another case", logtype::file);
 	}
 	return cased;
 #endif
 }
 
-// FileOnDiskToWrite(), the file found only in another case written to the log when Report; the folders never are
+// FileOnDiskToWrite(), the file found only in another case counted and logged as by file_cased() when Report; the folders never are
 std::string on_disk_to_write(std::string const &Filename, bool const Report)
 {
 	if (auto const cased{file_cased(Filename, Report)}; false == cased.empty())
@@ -754,6 +755,26 @@ std::string FileOnDisk(std::string const &Filename)
 std::string FileOnDiskToWrite(std::string const &Filename)
 {
 	return on_disk_to_write(Filename, true);
+}
+
+std::size_t FilesInAnotherCase()
+{
+#ifdef _WIN32
+	return 0;
+#else
+	std::scoped_lock const lock{cased_mutex};
+	return cased_reported().size();
+#endif
+}
+
+void LogFilesInAnotherCase()
+{
+	auto const count{FilesInAnotherCase()};
+	if (count == 0)
+		return;
+	WriteLog(std::format("Files found on disk only in another case than asked for: {}{}", count,
+	                     Global.FileCaseLog ? ", each logged above" : " (\"logs.filecase yes\" in eu07.ini logs each)"),
+	         logtype::file);
 }
 
 std::string FileStemOnDisk(std::string const &Folder, std::string const &Name, std::vector<std::string> const &Extensions)

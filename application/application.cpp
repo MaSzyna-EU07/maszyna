@@ -741,6 +741,9 @@ void eu07_application::exit()
 	auto const step = [closing](char const *What) {
 		WriteLog(std::format("Closing: {} at {} ms", What, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - closing).count()));
 	};
+	// the files found in another case, counted over the whole run: the vehicles, sounds and textures loaded after the scenery
+	// count as well as those loaded with it
+	LogFilesInAnotherCase();
 	step("the sleepers laid in the background");
 	// the sleepers laid in the background read the scenery, which goes below
 	track_sleepers::stop_background();
