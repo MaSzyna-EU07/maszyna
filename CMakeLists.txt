@@ -552,6 +552,7 @@ set(CORE_SOURCES
 "world/TrackCheck.cpp"
 "world/SleeperPack.cpp"
 "McZapkie/Oerlikon_ESt.cpp"
+"utilities/logfiles.cpp"
 "utilities/parser.cpp"
 "utilities/utilities.cpp"
 "scene/sn_utils.cpp"
