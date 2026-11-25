@@ -134,10 +134,10 @@ drivingaid_panel::update() {
                 m_buffer.data(), m_buffer.size(),
                 STR_C("Steam: boiler %.1f bar, water %.0f%%, regulator %.0f%%, cutoff %.0f%%, fire %.0f kg"),
                 controlled.Steam.pressure() * 1e-5,
-                controlled.Steam.water_level( controlled.SteamParameters ) * 100.0,
-                controlled.SteamControls.regulator * 100.0,
-                controlled.SteamControls.cutoff * 100.0,
-                controlled.Steam.fire_mass );
+                controlled.Steam.water_level() * 100.0,
+                controlled.Steam.Controls.regulator * 100.0,
+                controlled.Steam.Controls.cutoff * 100.0,
+                controlled.Steam.State.fire_mass );
             text_lines.emplace_back( m_buffer.data(), Global.UITextColor );
         }
     }
@@ -1103,20 +1103,20 @@ debug_panel::update_section_engine( std::vector<text_line> &Output ) const {
     // steam engine data
     if( mover.EngineType == TEngineType::SteamEngine ) {
 
-        auto const &steam { mover.Steam };
+        auto const &steam { mover.Steam.State };
         std::string parameterstext = "steam       value";
         std::vector< std::pair <std::string, double> > const steamvalues {
             { "boilr: ", steam.pressure() * 1e-5 },
             { "chest: ", ( steam.chest_pressure - steam::atmosphere ) * 1e-5 },
-            { "water: ", steam.water_level( mover.SteamParameters ) },
+            { "water: ", steam.water_level( mover.Steam.Parameters ) },
             { "watkg: ", steam.water_mass },
             { "watdc: ", steam.water_temperature },
             { "suphe: ", steam.superheat },
             { " fire: ", steam.fire_mass },
             { " burn: ", steam.burn_rate },
             { "draug: ", steam.draught },
-            { " regl: ", mover.SteamControls.regulator },
-            { "cutof: ", mover.SteamControls.cutoff },
+            { " regl: ", mover.Steam.Controls.regulator },
+            { "cutof: ", mover.Steam.Controls.cutoff },
             { "stcyl: ", steam.cylinder_flow },
             { "exhst: ", steam.exhaust_flow },
             { "safvl: ", steam.safety_valve_flow },

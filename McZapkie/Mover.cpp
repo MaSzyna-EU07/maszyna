@@ -6184,8 +6184,8 @@ double TMoverParameters::TractionForce(double dt)
 		case TEngineType::SteamEngine:
 		{
 			// the steam pushes the way the valve gear is set
-			Ft = Steam.force * DirAbsolute;
-			EnginePower = Steam.power / 1000.0;
+			Ft = Steam.State.force * DirAbsolute;
+			EnginePower = Steam.State.power / 1000.0;
 			break;
 		}
 
@@ -8527,30 +8527,29 @@ double TMoverParameters::steam_Cutoff() const
 {
 	// the secondary controller notches up the valve gear from full gear to the shortest cutoff. full gear running
 	// backwards may be shorter: the link of a Heusinger gear swings less far that way
-	auto const fullgear{DirAbsolute < 0 && SteamParameters.cutoff_max_reverse > 0.0 ? SteamParameters.cutoff_max_reverse : SteamParameters.cutoff_max};
+	auto const fullgear{DirAbsolute < 0 && Steam.Parameters.cutoff_max_reverse > 0.0 ? Steam.Parameters.cutoff_max_reverse : Steam.Parameters.cutoff_max};
 	if (ScndCtrlPosNo <= 0)
 	{
 		return fullgear;
 	}
 	auto const notching{std::clamp(static_cast<double>(ScndCtrlPos) / ScndCtrlPosNo, 0.0, 1.0)};
-	return std::lerp(fullgear, SteamParameters.cutoff_min, notching);
+	return std::lerp(fullgear, Steam.Parameters.cutoff_min, notching);
 }
 
 void TMoverParameters::steam_Update(double const Deltatime)
 {
-	SteamControls.regulator = steam_Regulator();
+	Steam.Controls.regulator = steam_Regulator();
 	// mid gear with the reverser in neutral
-	SteamControls.cutoff = DirActive != 0 ? steam_Cutoff() : 0.0;
-	SteamControls.auxiliary_flow = CompressorFlag ? SteamParameters.air_pump_flow : 0.0;
-	SteamCrankAngle = std::fmod(SteamCrankAngle + 2.0 * M_PI * std::abs(nrot) * Deltatime, 2.0 * M_PI);
-	steam::update(SteamParameters, Steam, SteamControls, nrot, SteamCrankAngle, Deltatime);
+	Steam.Controls.cutoff = DirActive != 0 ? steam_Cutoff() : 0.0;
+	Steam.Controls.auxiliary_flow = CompressorFlag ? Steam.Parameters.air_pump_flow : 0.0;
+	Steam.update(nrot, Deltatime);
 	// the smoke of the chimney follows the exhaust (rendering/particles.cpp)
-	dizel_fill = std::clamp(0.1 + 0.9 * Steam.exhaust_flow / SteamParameters.steam_rate, 0.0, 1.0);
+	dizel_fill = std::clamp(0.1 + 0.9 * Steam.State.exhaust_flow / Steam.Parameters.steam_rate, 0.0, 1.0);
 }
 
 bool TMoverParameters::steam_InSteam() const
 {
-	return EngineType == TEngineType::SteamEngine && (Steam.fire_mass > 0.0 || Steam.pressure() > 0.0);
+	return EngineType == TEngineType::SteamEngine && Steam.in_steam();
 }
 
 // *************************************************************************************************
@@ -10679,7 +10678,7 @@ bool TMoverParameters::LoadFIZ_Parse(cParser &fizparser) // NOSONAR the former b
 		{
 			startBPT = false;
 			fizlines.try_emplace("Steam", inputline);
-			steam::load(SteamParameters, inputline);
+			Steam.load(inputline);
 			continue;
 		}
 
@@ -12819,8 +12818,8 @@ bool TMoverParameters::CheckLocomotiveParameters(bool ReadyFlag, int /*Dir*/)
 	if (EngineType == TEngineType::SteamEngine)
 	{
 		// in steam, as the other locomotives come with their engines ready to be started
-		SteamParameters.wheel_diameter = WheelDiameter;
-		Steam = steam::in_steam(SteamParameters);
+		Steam.Parameters.wheel_diameter = WheelDiameter;
+		Steam.raise_steam();
 	}
 
 	// checking ready flag

@@ -2,8 +2,8 @@
 
 `EngineType=SteamEngine` in the `Engine:` section of a vehicle definition makes the vehicle a steam locomotive.
 Until now the type was read and then did nothing: no force, no controls, no vehicle of the game data uses it. Its
-model is `McZapkie/steam.h` / `steam.cpp`, which stands apart from the vehicle and is driven by
-`TMoverParameters::steam_Update()`. The defaults are those of the PKP Ty2 (DRB class 52), and the optional `Steam:`
+model is the class `SteamEngine` (`McZapkie/steam.h` / `steam.cpp`): its parameters, its state and the controls the crew
+works it with, which stands apart from the vehicle and is driven by `TMoverParameters::steam_Update()`. The defaults are those of the PKP Ty2 (DRB class 52), and the optional `Steam:`
 section of the definition sets a locomotive's own. Nothing changes for a definition without `EngineType=SteamEngine`.
 
 ## What is modelled
@@ -38,7 +38,7 @@ coal of the tender.
 - **Fireman.** The automatic fireman (the default) keeps the fire up with the steam taken and the pressure a little
   under the working one, keeps the water a little over the middle of the glass with the injectors (the exhaust steam
   one running, the live steam one standing), and works the blower. By hand the crew sets the firing rate, the
-  injectors and the blower (`TMoverParameters::SteamControls`).
+  injectors and the blower (`TMoverParameters::Steam.Controls`, a `SteamEngine`).
 - **Air pump.** `CompressorPower=Engine` (and the legacy `Main`) of a steam locomotive is its steam air pump: it
   runs with the boiler over 3 bar and takes `AirPumpFlow` of steam.
 
@@ -127,7 +127,7 @@ The model is the first step. In rough order:
    entries and samples.
 5. **The AI driver.** `TController` doesn't know the steam engine yet: preparing it, the regulator and cutoff when
    starting and running, keeping the boiler.
-6. **Raising steam.** A cold start (`steam::cold()`) from the scenario, with the fire lit and the blower on an
+6. **Raising steam.** A cold start (`SteamEngine::cool_down()`) from the scenario, with the fire lit and the blower on an
    outside supply until the boiler has pressure.
 7. **Faults.** Wheel slip with sanding, priming with the regulator opened too fast, an injector failing to pick up,
    clinker with the fire forced, the fusible plug melted needing a repair.

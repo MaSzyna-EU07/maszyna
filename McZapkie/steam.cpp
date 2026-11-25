@@ -447,107 +447,108 @@ double parameters::swept_volume() const
 	return cylinders * 2.0 * std::numbers::pi / 4.0 * bore * bore * stroke;
 }
 
-void load(parameters &Parameters, std::string_view const Line)
-{
-	std::string const line{Line};
-	if (auto cylinders{0}; extract_value(cylinders, "Cylinders", line, "") && cylinders > 0)
-	{
-		Parameters.cylinders = cylinders;
-	}
-	read(Parameters.bore, "CylD", line);
-	read(Parameters.stroke, "CylS", line);
-	read(Parameters.clearance, "CylClearance", line);
-	read(Parameters.cutoff_max, "CutoffMax", line);
-	read(Parameters.cutoff_min, "CutoffMin", line);
-	read(Parameters.cutoff_max_reverse, "CutoffMaxReverse", line);
-	read(Parameters.diagram_factor, "DiagramFactor", line);
-	read(Parameters.mechanical_efficiency, "MechEff", line);
-	read(Parameters.wire_drawing, "WireDrawing", line);
-	read(Parameters.back_pressure, "BackPressure", line, bar);
-	read(Parameters.condensation, "Condensation", line);
-	read(Parameters.regulator_flow, "RegulatorFlow", line);
-	read(Parameters.cocks_flow, "CocksFlow", line);
-	read(Parameters.torque_pulsation, "TorquePulsation", line);
-	read(Parameters.equaliser_pressure, "EqualiserPressure", line, bar);
-	read(Parameters.working_pressure, "BoilerPressure", line, bar);
-	read(Parameters.safety_valve_flow, "SafetyValveFlow", line);
-	read(Parameters.water_mass, "BoilerWater", line);
-	read(Parameters.glass_mass, "GlassWater", line);
-	read(Parameters.crown_mass, "CrownWater", line);
-	read(Parameters.swell, "Swell", line);
-	read(Parameters.steel_heat, "BoilerSteelHeat", line, 1.0e6);
-	read(Parameters.heat_loss, "BoilerHeatLoss", line);
-	read(Parameters.superheat_max, "Superheat", line);
-	read(Parameters.steam_rate, "SteamRate", line);
-	read(Parameters.grate_area, "Grate", line);
-	read(Parameters.fire_mass, "FireMass", line);
-	read(Parameters.firing_rate_max, "FiringRateMax", line);
-	read(Parameters.coal_heat, "CoalHeat", line, 1.0e6);
-	read(Parameters.efficiency_max, "BoilerEfficiency", line);
-	read(Parameters.efficiency_min, "BoilerEfficiencyMin", line);
-	read(Parameters.fire_delay, "FireDelay", line);
-	read(Parameters.exhaust_draught, "ExhaustDraught", line);
-	read(Parameters.blower_draught, "BlowerDraught", line);
-	read(Parameters.blower_flow, "BlowerFlow", line);
-	// l/min of water
-	read(Parameters.injector_flow[0], "InjectorFlow1", line, 1.0 / 60.0);
-	read(Parameters.injector_flow[1], "InjectorFlow2", line, 1.0 / 60.0);
-	read(Parameters.feed_temperature, "FeedTemperature", line);
-	// m³ of water, t of coal
-	read(Parameters.tender_water, "TenderWater", line, 1000.0);
-	read(Parameters.tender_coal, "TenderCoal", line, 1000.0);
-	read(Parameters.air_pump_flow, "AirPumpFlow", line);
-}
-
 double state::water_level(parameters const &Parameters) const
 {
 	auto const bottom{Parameters.water_mass - 0.5 * Parameters.glass_mass};
 	return (water_mass - bottom) / Parameters.glass_mass + Parameters.swell * (cylinder_flow + safety_valve_flow);
 }
 
-state in_steam(parameters const &Parameters)
+} // namespace steam
+
+void SteamEngine::load(std::string_view const Line)
 {
-	state result;
-	result.water_temperature = saturation::temperature(atmosphere + Parameters.working_pressure - 0.5 * bar);
-	result.boiler_pressure = saturation::pressure(result.water_temperature);
+	std::string const line{Line};
+	if (auto cylinders{0}; extract_value(cylinders, "Cylinders", line, "") && cylinders > 0)
+	{
+		Parameters.cylinders = cylinders;
+	}
+	steam::read(Parameters.bore, "CylD", line);
+	steam::read(Parameters.stroke, "CylS", line);
+	steam::read(Parameters.clearance, "CylClearance", line);
+	steam::read(Parameters.cutoff_max, "CutoffMax", line);
+	steam::read(Parameters.cutoff_min, "CutoffMin", line);
+	steam::read(Parameters.cutoff_max_reverse, "CutoffMaxReverse", line);
+	steam::read(Parameters.diagram_factor, "DiagramFactor", line);
+	steam::read(Parameters.mechanical_efficiency, "MechEff", line);
+	steam::read(Parameters.wire_drawing, "WireDrawing", line);
+	steam::read(Parameters.back_pressure, "BackPressure", line, steam::bar);
+	steam::read(Parameters.condensation, "Condensation", line);
+	steam::read(Parameters.regulator_flow, "RegulatorFlow", line);
+	steam::read(Parameters.cocks_flow, "CocksFlow", line);
+	steam::read(Parameters.torque_pulsation, "TorquePulsation", line);
+	steam::read(Parameters.equaliser_pressure, "EqualiserPressure", line, steam::bar);
+	steam::read(Parameters.working_pressure, "BoilerPressure", line, steam::bar);
+	steam::read(Parameters.safety_valve_flow, "SafetyValveFlow", line);
+	steam::read(Parameters.water_mass, "BoilerWater", line);
+	steam::read(Parameters.glass_mass, "GlassWater", line);
+	steam::read(Parameters.crown_mass, "CrownWater", line);
+	steam::read(Parameters.swell, "Swell", line);
+	steam::read(Parameters.steel_heat, "BoilerSteelHeat", line, 1.0e6);
+	steam::read(Parameters.heat_loss, "BoilerHeatLoss", line);
+	steam::read(Parameters.superheat_max, "Superheat", line);
+	steam::read(Parameters.steam_rate, "SteamRate", line);
+	steam::read(Parameters.grate_area, "Grate", line);
+	steam::read(Parameters.fire_mass, "FireMass", line);
+	steam::read(Parameters.firing_rate_max, "FiringRateMax", line);
+	steam::read(Parameters.coal_heat, "CoalHeat", line, 1.0e6);
+	steam::read(Parameters.efficiency_max, "BoilerEfficiency", line);
+	steam::read(Parameters.efficiency_min, "BoilerEfficiencyMin", line);
+	steam::read(Parameters.fire_delay, "FireDelay", line);
+	steam::read(Parameters.exhaust_draught, "ExhaustDraught", line);
+	steam::read(Parameters.blower_draught, "BlowerDraught", line);
+	steam::read(Parameters.blower_flow, "BlowerFlow", line);
+	// l/min of water
+	steam::read(Parameters.injector_flow[0], "InjectorFlow1", line, 1.0 / 60.0);
+	steam::read(Parameters.injector_flow[1], "InjectorFlow2", line, 1.0 / 60.0);
+	steam::read(Parameters.feed_temperature, "FeedTemperature", line);
+	// m³ of water, t of coal
+	steam::read(Parameters.tender_water, "TenderWater", line, 1000.0);
+	steam::read(Parameters.tender_coal, "TenderCoal", line, 1000.0);
+	steam::read(Parameters.air_pump_flow, "AirPumpFlow", line);
+}
+
+void SteamEngine::raise_steam()
+{
+	steam::state result;
+	result.water_temperature = steam::saturation::temperature(steam::atmosphere + Parameters.working_pressure - 0.5 * steam::bar);
+	result.boiler_pressure = steam::saturation::pressure(result.water_temperature);
 	result.water_mass = Parameters.water_mass;
 	result.fire_mass = 0.7 * Parameters.fire_mass;
 	result.draught = Parameters.natural_draught;
-	result.burn_rate = burn_rate(Parameters, result.fire_mass, result.draught);
-	result.fire_heat = result.burn_rate * Parameters.coal_heat * boiler_efficiency(Parameters, result.burn_rate);
+	result.burn_rate = steam::burn_rate(Parameters, result.fire_mass, result.draught);
+	result.fire_heat = result.burn_rate * Parameters.coal_heat * steam::boiler_efficiency(Parameters, result.burn_rate);
 	result.tender_water = Parameters.tender_water;
 	result.tender_coal = Parameters.tender_coal;
-	return result;
+	State = result;
 }
 
-state cold(parameters const &Parameters, double const Temperature)
+void SteamEngine::cool_down(double const Temperature)
 {
-	state result;
+	steam::state result;
 	result.water_temperature = Temperature;
-	result.boiler_pressure = std::max(atmosphere, saturation::pressure(Temperature));
+	result.boiler_pressure = std::max(steam::atmosphere, steam::saturation::pressure(Temperature));
 	result.water_mass = Parameters.water_mass;
 	result.tender_water = Parameters.tender_water;
 	result.tender_coal = Parameters.tender_coal;
-	return result;
+	State = result;
 }
 
-void update(parameters const &Parameters, state &State, controls const &Controls, double const Revolutions, double const CrankAngle, double const Deltatime)
+void SteamEngine::update(double const Revolutions, double const Deltatime)
 {
+	CrankAngle = std::fmod(CrankAngle + 2.0 * std::numbers::pi * std::abs(Revolutions) * Deltatime, 2.0 * std::numbers::pi);
 	if (Deltatime <= 0.0)
 	{
 		return;
 	}
-	auto const work{Controls.automatic_fireman ? automatic_fireman(Parameters, State) : by_hand(Controls)};
+	auto const work{Controls.automatic_fireman ? steam::automatic_fireman(Parameters, State) : steam::by_hand(Controls)};
 	State.injectors = work.injectors;
 	State.blower = std::clamp(work.blower, 0.0, 1.0);
-	run_cylinders(Parameters, State, Controls, std::abs(Revolutions), CrankAngle, Deltatime);
-	run_boiler(Parameters, State, Controls, Deltatime);
-	run_fire(Parameters, State, work.firing, Deltatime);
+	steam::run_cylinders(Parameters, State, Controls, std::abs(Revolutions), CrankAngle, Deltatime);
+	steam::run_boiler(Parameters, State, Controls, Deltatime);
+	steam::run_fire(Parameters, State, work.firing, Deltatime);
 }
 
-double starting_force(parameters const &Parameters, double const Cutoff, double const Pressure)
+double SteamEngine::starting_force(double const Cutoff, double const Pressure) const
 {
-	return rim_force(Parameters, mean_effective_pressure(Parameters, Cutoff, Pressure, atmosphere));
+	return steam::rim_force(Parameters, steam::mean_effective_pressure(Parameters, Cutoff, Pressure, steam::atmosphere));
 }
-
-} // namespace steam

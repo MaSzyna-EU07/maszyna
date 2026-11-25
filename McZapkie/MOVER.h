@@ -2116,11 +2116,8 @@ class TMoverParameters
 	bool WaterCircuitsLink{false}; // optional connection between water circuits
 	heat_data dizel_heat;
 	// the steam engine (EngineType=SteamEngine): the regulator follows the master controller, the cutoff the secondary
-	// one and the reverser, the rest is set by the crew in SteamControls. see steam.h and the steam_* methods
-	steam::parameters SteamParameters;
-	steam::state Steam;
-	steam::controls SteamControls;
-	double SteamCrankAngle{0.0}; // rad, of the cranks of the driving wheels
+	// one and the reverser, the rest is set by the crew in Steam.Controls. see steam.h and the steam_* methods
+	SteamEngine Steam;
 	std::array<cooling_fan, 2> MotorBlowers;
 	door_data Doors;
 	float DoorsOpenWithPermitAfter{-1.f}; // remote open if permit button is held for specified time. NOTE: separate from door data as its cab control thing

@@ -3239,7 +3239,7 @@ void TController::set_steam_cutoff() {
     // full gear up to 10 km/h, the shortest cutoff from 60 km/h
     auto target { static_cast<int>( std::lround( std::clamp( ( mvControlling->Vel - 10.0 ) / 50.0, 0.0, 1.0 ) * notches ) ) };
     auto const pressure { mvControlling->Steam.pressure() };
-    auto const working { mvControlling->SteamParameters.working_pressure };
+    auto const working { mvControlling->Steam.Parameters.working_pressure };
     if( pressure < working - 4.0e5 ) {
         // the boiler can't keep up: less steam
         target = std::min( notches, target + 2 );

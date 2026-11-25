@@ -5,6 +5,7 @@
 #include "drive.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "McZapkie/steam.h"
@@ -20,18 +21,25 @@ namespace {
 
 double const bar{1.0e5};
 
-steam::parameters ty2() {
-	steam::parameters parameters;
-	parameters.wheel_diameter = 1.4;
-	return parameters;
+// the engine of the Ty2, as the defaults have it, on its 1.4 m driving wheels
+SteamEngine ty2() {
+	SteamEngine engine;
+	engine.Parameters.wheel_diameter = 1.4;
+	return engine;
+}
+
+// the same, in steam
+SteamEngine ty2_in_steam() {
+	auto engine{ty2()};
+	engine.raise_steam();
+	return engine;
 }
 
 // runs the engine standing or turning at the given revolutions per second for Seconds, in steps of 0.05 s
-void run(steam::parameters const &Parameters, steam::state &State, steam::controls const &Controls, double Revolutions, double Seconds) {
-	auto angle{0.0};
-	for (auto time{0.0}; time < Seconds; time += 0.05) {
-		angle = std::fmod(angle + 2.0 * std::numbers::pi * Revolutions * 0.05, 2.0 * std::numbers::pi);
-		steam::update(Parameters, State, Controls, Revolutions, angle, 0.05);
+void run(SteamEngine &Engine, double Revolutions, double Seconds) {
+	auto const steps{std::lround(Seconds / 0.05)};
+	for (auto step{0L}; step < steps; ++step) {
+		Engine.update(Revolutions, 0.05);
 	}
 }
 
@@ -53,34 +61,35 @@ TEST_CASE("steam: the saturation line of the steam tables") {
 }
 
 TEST_CASE("steam: the starting force of the Ty2") {
-	auto const parameters{ty2()};
+	auto engine{ty2_in_steam()};
+	auto const &parameters{engine.Parameters};
 	// full gear and the boiler at its working pressure give the 214 kN of the DR's tables
-	auto const force{steam::starting_force(parameters, parameters.cutoff_max, steam::atmosphere + parameters.working_pressure)};
+	auto const force{engine.starting_force(parameters.cutoff_max, steam::atmosphere + parameters.working_pressure)};
 	CHECK(force == doctest::Approx(214000.0).epsilon(0.03));
 	// a shorter cutoff less, the steam expanding after it still doing much of the work
-	auto const notched{steam::starting_force(parameters, 0.3, steam::atmosphere + parameters.working_pressure)};
+	auto const notched{engine.starting_force(0.3, steam::atmosphere + parameters.working_pressure)};
 	CHECK(notched > 0.6 * force);
 	CHECK(notched < 0.75 * force);
 	// the engine standing with the regulator open gives the same, swinging with the cranks
-	auto state{steam::in_steam(parameters)};
-	steam::controls controls;
-	controls.regulator = 1.0;
-	controls.cutoff = parameters.cutoff_max;
+	engine.Controls.regulator = 1.0;
+	engine.Controls.cutoff = parameters.cutoff_max;
 	auto lowest{1.0e9};
 	auto highest{0.0};
-	for (auto angle{0.0}; angle < 2.0 * std::numbers::pi; angle += 0.05) {
-		steam::update(parameters, state, controls, 0.0, angle, 0.01);
-		lowest = std::min(lowest, state.force);
-		highest = std::max(highest, state.force);
+	for (auto step{0}; step * 0.05 < 2.0 * std::numbers::pi; ++step) {
+		engine.CrankAngle = step * 0.05;
+		engine.update(0.0, 0.01);
+		lowest = std::min(lowest, engine.State.force);
+		highest = std::max(highest, engine.State.force);
 	}
-	auto const mean{steam::starting_force(parameters, parameters.cutoff_max, state.boiler_pressure)};
+	auto const mean{engine.starting_force(parameters.cutoff_max, engine.State.boiler_pressure)};
 	CHECK(lowest == doctest::Approx(0.79 * mean).epsilon(0.02));
 	CHECK(highest == doctest::Approx(1.11 * mean).epsilon(0.02));
 }
 
 TEST_CASE("steam: the Steam section of the definition") {
-	steam::parameters parameters;
-	steam::load(parameters, "Steam: CylD=0.63 CylS=0.66 BoilerPressure=14 InjectorFlow1=120 TenderWater=26 BackPressure=0.05");
+	SteamEngine engine;
+	engine.load("Steam: CylD=0.63 CylS=0.66 BoilerPressure=14 InjectorFlow1=120 TenderWater=26 BackPressure=0.05");
+	auto const &parameters{engine.Parameters};
 	CHECK(parameters.bore == doctest::Approx(0.63));
 	CHECK(parameters.working_pressure == doctest::Approx(14.0 * bar));
 	CHECK(parameters.injector_flow[0] == doctest::Approx(2.0));
@@ -91,73 +100,62 @@ TEST_CASE("steam: the Steam section of the definition") {
 }
 
 TEST_CASE("steam: a locomotive standing in steam, looked after by the automatic fireman") {
-	auto const parameters{ty2()};
-	auto state{steam::in_steam(parameters)};
-	steam::controls const controls;
-	run(parameters, state, controls, 0.0, 1800.0);
+	auto engine{ty2_in_steam()};
+	run(engine, 0.0, 1800.0);
 	// the pressure kept near the working one, the water in the glass, the fire alive
-	CHECK(state.pressure() > parameters.working_pressure - 1.5 * bar);
-	CHECK(state.pressure() < parameters.working_pressure + 0.5 * bar);
-	CHECK(state.water_level(parameters) > 0.3);
-	CHECK(state.water_level(parameters) < 0.9);
-	CHECK(state.fire_mass > 0.0);
-	CHECK_FALSE(state.fusible_plug_melted);
+	CHECK(engine.pressure() > engine.Parameters.working_pressure - 1.5 * bar);
+	CHECK(engine.pressure() < engine.Parameters.working_pressure + 0.5 * bar);
+	CHECK(engine.water_level() > 0.3);
+	CHECK(engine.water_level() < 0.9);
+	CHECK(engine.State.fire_mass > 0.0);
+	CHECK_FALSE(engine.State.fusible_plug_melted);
 }
 
 TEST_CASE("steam: a fire left burning without feeding the boiler melts the fusible plug") {
-	auto const parameters{ty2()};
-	auto state{steam::in_steam(parameters)};
-	steam::controls controls;
-	controls.automatic_fireman = false;
-	controls.blower = 1.0;
-	controls.firing = 0.3;
+	auto engine{ty2_in_steam()};
+	engine.Controls.automatic_fireman = false;
+	engine.Controls.blower = 1.0;
+	engine.Controls.firing = 0.3;
 	// the safety valves take the steam the fire makes, the water boils away
-	auto melted{0.0};
-	for (auto time{0.0}; time < 7200.0 && melted == 0.0; time += 10.0) {
-		run(parameters, state, controls, 0.0, 10.0);
-		if (state.fusible_plug_melted) {
-			melted = time;
-		}
+	for (auto tens{0}; tens < 720 && false == engine.State.fusible_plug_melted; ++tens) {
+		run(engine, 0.0, 10.0);
 	}
-	REQUIRE(state.fusible_plug_melted);
-	CHECK(state.water_level(parameters) < 0.0);
+	REQUIRE(engine.State.fusible_plug_melted);
+	CHECK(engine.water_level() < 0.0);
 	// and its steam puts the fire out
-	run(parameters, state, controls, 0.0, 300.0);
-	CHECK(state.fire_mass < 1.0);
-	CHECK(state.burn_rate == 0.0);
+	run(engine, 0.0, 300.0);
+	CHECK(engine.State.fire_mass < 1.0);
+	CHECK(engine.State.burn_rate == 0.0);
 }
 
 TEST_CASE("steam: a boiler filled over the glass primes, the water carried over doing no work") {
-	auto const parameters{ty2()};
-	steam::controls controls;
-	controls.regulator = 1.0;
-	controls.cutoff = 0.3;
-	auto normal{steam::in_steam(parameters)};
-	auto overfilled{steam::in_steam(parameters)};
-	overfilled.water_mass += parameters.glass_mass;
-	run(parameters, normal, controls, revolutions(30.0), 1.0);
-	run(parameters, overfilled, controls, revolutions(30.0), 1.0);
-	CHECK(normal.priming == 0.0);
-	CHECK(overfilled.priming > 0.2);
-	CHECK(overfilled.force < 0.8 * normal.force);
+	auto normal{ty2_in_steam()};
+	normal.Controls.regulator = 1.0;
+	normal.Controls.cutoff = 0.3;
+	auto overfilled{normal};
+	overfilled.State.water_mass += overfilled.Parameters.glass_mass;
+	run(normal, revolutions(30.0), 1.0);
+	run(overfilled, revolutions(30.0), 1.0);
+	CHECK(normal.State.priming == 0.0);
+	CHECK(overfilled.State.priming > 0.2);
+	CHECK(overfilled.State.force < 0.8 * normal.State.force);
 }
 
 TEST_CASE("steam: the boiler limits the power the cylinders can keep up") {
 	// at 65 km/h with the regulator wide open, the longest cutoff the boiler keeps over 13 bar for half an hour
-	auto const parameters{ty2()};
 	auto kept{0.0};
 	auto power{0.0};
-	for (auto cutoff{0.10}; cutoff <= 0.40; cutoff += 0.02) {
-		auto state{steam::in_steam(parameters)};
-		steam::controls controls;
-		controls.regulator = 1.0;
-		controls.cutoff = cutoff;
-		run(parameters, state, controls, revolutions(65.0), 1800.0);
-		if (state.pressure() < 13.0 * bar) {
+	for (auto notch{0}; notch <= 15; ++notch) {
+		auto const cutoff{0.10 + 0.02 * notch};
+		auto engine{ty2_in_steam()};
+		engine.Controls.regulator = 1.0;
+		engine.Controls.cutoff = cutoff;
+		run(engine, revolutions(65.0), 1800.0);
+		if (engine.pressure() < 13.0 * bar) {
 			break;
 		}
 		kept = cutoff;
-		power = state.power;
+		power = engine.State.power;
 	}
 	MESSAGE("65 km/h: cutoff " << kept << ", " << power / 1000.0 << " kW indicated");
 	CHECK(kept >= 0.14);
@@ -203,7 +201,8 @@ struct freight_train {
 	// a driver keeping the regulator wide open and notching up the cutoff as far as the boiler keeps its pressure
 	void drive(double Seconds) {
 		auto &cab{mover()};
-		for (auto time{0.0}; time < Seconds; time += 5.0) {
+		auto const steps{std::lround(Seconds / 5.0)};
+		for (auto step{0L}; step < steps; ++step) {
 			if (cab.Vel > 15.0 && cab.Steam.pressure() < 13.0 * bar) {
 				cab.IncScndCtrl(1);
 			}
@@ -220,13 +219,13 @@ struct freight_train {
 TEST_CASE("steam: the Ty2 loads as a steam locomotive in steam") {
 	vehicle locomotive{definition::load("steam_ty2"), 0.0, "test", 1};
 	CHECK(locomotive->EngineType == TEngineType::SteamEngine);
-	CHECK(locomotive->SteamParameters.wheel_diameter == doctest::Approx(1.4));
+	CHECK(locomotive->Steam.Parameters.wheel_diameter == doctest::Approx(1.4));
 	CHECK(locomotive->Steam.pressure() > 15.0 * bar);
 	CHECK(locomotive->steam_InSteam());
 	// the master controller works the regulator, the secondary one notches up from full gear
-	CHECK(locomotive->steam_Cutoff() == doctest::Approx(locomotive->SteamParameters.cutoff_max));
+	CHECK(locomotive->steam_Cutoff() == doctest::Approx(locomotive->Steam.Parameters.cutoff_max));
 	locomotive->ScndCtrlPos = locomotive->ScndCtrlPosNo;
-	CHECK(locomotive->steam_Cutoff() == doctest::Approx(locomotive->SteamParameters.cutoff_min));
+	CHECK(locomotive->steam_Cutoff() == doctest::Approx(locomotive->Steam.Parameters.cutoff_min));
 }
 
 TEST_CASE("steam: the Ty2 starts 1200 t and takes it up to speed on the level") {
@@ -241,12 +240,12 @@ TEST_CASE("steam: the Ty2 starts 1200 t and takes it up to speed on the level") 
 	CHECK(cab.Vel > 1.0);
 	freight.drive(1200.0);
 	MESSAGE("after 20 min: " << cab.Vel << " km/h, " << cab.Steam.pressure() / bar << " bar, notch " << cab.ScndCtrlPos << ", "
-	                         << cab.Steam.power / 1000.0 << " kW");
+	                         << cab.Steam.State.power / 1000.0 << " kW");
 	// the 1200 t at about the 65 km/h of the Ty2's design
 	CHECK(cab.Vel > 55.0);
 	CHECK(cab.Vel < 75.0);
 	CHECK(cab.Steam.pressure() > 11.0 * bar);
-	CHECK(cab.Steam.water_level(cab.SteamParameters) > 0.0);
+	CHECK(cab.Steam.water_level() > 0.0);
 	// the cutoff notched up from full gear
 	CHECK(cab.ScndCtrlPos > 0);
 }
@@ -261,7 +260,7 @@ TEST_CASE("steam: in mid gear the Ty2 takes no steam and gives no force") {
 	locomotive.run(10.0);
 	CHECK(locomotive->DirActive == 0);
 	CHECK(locomotive->Vel < 0.01);
-	CHECK(locomotive->Steam.cylinder_flow == 0.0);
+	CHECK(locomotive->Steam.State.cylinder_flow == 0.0);
 	CHECK(locomotive->Ft == 0.0);
 }
 
@@ -269,22 +268,22 @@ TEST_CASE("steam: the Ty23 of its drawings, with no more than its data") {
 	// Stacja Muzeum, Ty23 drawings 1.03/1.05 (main data, from the 630th locomotive) and 21.03 (valve gear results):
 	// 2 cylinders 650 x 720 mm, driving wheels 1450 mm, 14 at, full gear 84 % forwards and 70 % backwards, and the
 	// tractive force of the drawing Z = 22 030 kg = 0.75 p d^2 s / D, which the DR's tables for the Ty2 exceed by 7 %
-	steam::parameters parameters;
-	steam::load(parameters, "Steam: CylD=0.65 CylS=0.72 CutoffMax=0.84 CutoffMaxReverse=0.70 BoilerPressure=13.73 Grate=4.5");
-	parameters.wheel_diameter = 1.45;
-	CHECK(parameters.cutoff_max_reverse == doctest::Approx(0.70));
-	auto const force{steam::starting_force(parameters, parameters.cutoff_max, steam::atmosphere + parameters.working_pressure)};
+	SteamEngine ty23;
+	ty23.load("Steam: CylD=0.65 CylS=0.72 CutoffMax=0.84 CutoffMaxReverse=0.70 BoilerPressure=13.73 Grate=4.5");
+	ty23.Parameters.wheel_diameter = 1.45;
+	CHECK(ty23.Parameters.cutoff_max_reverse == doctest::Approx(0.70));
+	auto const force{ty23.starting_force(ty23.Parameters.cutoff_max, steam::atmosphere + ty23.Parameters.working_pressure)};
 	auto const drawing{22030.0 * 9.81};
 	MESSAGE("Ty23 starting force " << force / 1000.0 << " kN, the drawing's Z " << drawing / 1000.0 << " kN");
 	CHECK(force > drawing);
 	CHECK(force < 1.10 * drawing);
 	// the same against the Ty2 as the formula has them: the Ty23 has the larger cylinders, the Ty2 the higher pressure
-	auto const ty2parameters{ty2()};
-	auto const ty2force{steam::starting_force(ty2parameters, ty2parameters.cutoff_max, steam::atmosphere + ty2parameters.working_pressure)};
+	auto const ty2engine{ty2()};
+	auto const ty2force{ty2engine.starting_force(ty2engine.Parameters.cutoff_max, steam::atmosphere + ty2engine.Parameters.working_pressure)};
 	auto const formula = [](double Pressure, double Bore, double Stroke, double Wheel) { return Pressure * Bore * Bore * Stroke / Wheel; };
 	CHECK(force / ty2force == doctest::Approx(formula(13.73, 0.65, 0.72, 1.45) / formula(16.0, 0.60, 0.66, 1.40)).epsilon(0.03));
 	// backwards, the shorter full gear gives less
-	auto const backwards{steam::starting_force(parameters, parameters.cutoff_max_reverse, steam::atmosphere + parameters.working_pressure)};
+	auto const backwards{ty23.starting_force(ty23.Parameters.cutoff_max_reverse, steam::atmosphere + ty23.Parameters.working_pressure)};
 	CHECK(backwards < force);
 	CHECK(backwards > 0.85 * force);
 }

@@ -90,9 +90,6 @@ struct parameters {
 	double swept_volume() const; // m³ swept by all the pistons in a revolution of the wheels
 };
 
-// reads the keys of the Steam: section of a vehicle definition over the defaults
-void load(parameters &Parameters, std::string_view Line);
-
 // what the crew does with the controls of the engine
 struct controls {
 	double regulator{0.0}; // 0..1
@@ -137,16 +134,41 @@ struct state {
 	double water_level(parameters const &Parameters) const;
 };
 
-// a locomotive in steam, ready to go: the boiler a little under its working pressure, the fire made up, the glass half full
-state in_steam(parameters const &Parameters);
-// a cold locomotive, its boiler filled and the fire not lit
-state cold(parameters const &Parameters, double Temperature);
-
-// advances the engine by the time step: the revolutions of the driving wheels per second (unsigned) and the angle of
-// their crank (rad) give the force at the rims, in State.force, which pushes the way the valve gear is set
-void update(parameters const &Parameters, state &State, controls const &Controls, double Revolutions, double CrankAngle, double Deltatime);
-
-// the force at the rims of the given cutoff and admission pressure, at a standstill and not limited by the boiler, N
-double starting_force(parameters const &Parameters, double Cutoff, double Pressure);
-
 } // namespace steam
+
+// the steam engine of a locomotive: its boiler, fire and cylinders, and the controls the crew works them with. the
+// vehicle sets the controls and turns the driving wheels, the engine gives the force at their rims
+class SteamEngine {
+  public:
+	steam::parameters Parameters;
+	steam::controls Controls;
+	steam::state State;
+	double CrankAngle{0.0}; // rad, of the cranks of the driving wheels
+
+	// reads the keys of the Steam: section of a vehicle definition over the defaults
+	void load(std::string_view Line);
+	// in steam, ready to go: the boiler a little under its working pressure, the fire made up, the glass half full
+	void raise_steam();
+	// cold, the boiler filled and the fire not lit
+	void cool_down(double Temperature);
+	// advances the engine by the time step at the revolutions of the driving wheels per second (unsigned): the cranks
+	// turn with them, and the force at the rims, in State.force, pushes the way the valve gear is set
+	void update(double Revolutions, double Deltatime);
+	// the force at the rims of the given cutoff and admission pressure, at a standstill and not limited by the boiler, N
+	double starting_force(double Cutoff, double Pressure) const;
+	// the gauge pressure of the boiler, Pa
+	double pressure() const
+	{
+		return State.pressure();
+	}
+	// the level in the glass: 0 at the bottom, 1 at the top, under 0 out of sight
+	double water_level() const
+	{
+		return State.water_level(Parameters);
+	}
+	// whether its fire or its boiler is alive, so that it needs its physics with no one in the cab
+	bool in_steam() const
+	{
+		return State.fire_mass > 0.0 || State.pressure() > 0.0;
+	}
+};
