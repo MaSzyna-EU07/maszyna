@@ -154,6 +154,41 @@ TEST_CASE("braking curve: a train with a worked out brake table plans along the 
 	}
 }
 
+TEST_CASE("braking curve: the train brake handle or the independent brake counts as braking") {
+	CHECK_FALSE(braking_curve::brake_acting(0.0, 0.0));
+	// the handle in its release or filling positions is below running
+	CHECK_FALSE(braking_curve::brake_acting(-1.0, 0.0));
+	CHECK(braking_curve::brake_acting(1.0, 0.0));
+	CHECK(braking_curve::brake_acting(0.5, 0.0));
+	// a light locomotive or a railcar alone brakes with the independent brake, the handle stays in running
+	CHECK(braking_curve::brake_acting(0.0, 0.25));
+	CHECK(braking_curve::brake_acting(-1.0, 1.0));
+	CHECK(braking_curve::brake_acting(2.0, 0.5));
+}
+
+TEST_CASE("braking curve: a vehicle braking with its independent brake uses the whole distance, as with the train brake") {
+	// before, only the train brake handle counted: a light locomotive that had put its independent brake on still
+	// planned, on every look, to stop short by the distance the brake takes to fill, so it slowed down too early
+	// and crawled the last tens of metres to the stop
+	flat_table const light;
+	auto const table{light.table()};
+	auto approach{stop_at(60.0, 300.0)};
+	approach.offset = 20.0;
+	approach.fill_horizon = 8.0;
+	approach.brake_applied = braking_curve::brake_acting(0.0, 0.3);
+
+	auto const demand{braking_curve::demand(approach, &table)};
+
+	CHECK(demand == doctest::Approx(braking_curve::shaped_demand(60.0, 0.0, 280.0 + 0.1 / 25.92, 0.0, table)));
+	auto trainbrake{approach};
+	trainbrake.brake_applied = braking_curve::brake_acting(1.0, 0.0);
+	CHECK(demand == doctest::Approx(braking_curve::demand(trainbrake, &table)));
+	auto released{approach};
+	released.brake_applied = braking_curve::brake_acting(0.0, 0.0);
+	// with no brake on, the room to fill is kept, and more is asked for
+	CHECK(braking_curve::demand(released, &table) < demand);
+}
+
 TEST_CASE("braking curve: a train gets the demand it got before the curve moved out of the AI") {
 	// a table that grips harder as the train slows, on a gradient; the demands were worked out with the
 	// code of TController::adjust_desired_speed_for_braking_curve before the move (origin/master 80fd5aad)
