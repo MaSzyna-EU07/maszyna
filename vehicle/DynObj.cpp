@@ -1152,15 +1152,17 @@ bool TDynamicObject::follows( shared_chain const &Shared ) const {
     return Shared.vehicle != nullptr && std::less<TDynamicObject const *> {}( Shared.vehicle, this );
 }
 
-// moves the chains by the render time since they moved last, once a frame, all but those the next vehicle moves
+// moves the chains by the simulation time since they moved last, once a frame, all but those the next vehicle moves: the
+// time the vehicle itself moves by, sped up (the time acceleration) or held (the pause) with it, so the ends of a hose don't
+// leap a time faster than its nodes swing
 void TDynamicObject::advance_chains( std::vector<glm::dvec3> const &Now, bool const Needed ) {
 
-    auto const clock { Timer::GetRenderTime() };
+    auto const clock { Timer::GetTime() };
     if( clock == m_chainclock || ( false == m_chainsnear && false == Needed ) ) { return; }
     auto const elapsed { m_chainclock < 0.0 ? 0.0 : std::max( clock - m_chainclock, 0.0 ) };
     // the time as it went, so the nodes keep up with their ends: a step cut short while the ends moved all the way would
-    // be a jolt. after a long gap (the vehicle left alone while far, or the game held up) the chains start again where
-    // made instead, going along with the vehicle
+    // be a jolt. after a long gap (the vehicle left alone while far, the game held up, or a frame of the time sped up
+    // far) the chains start again where made instead, going along with the vehicle
     auto const restart { elapsed > max_chain_gap };
     auto const deltatime { restart ? 0.0 : elapsed };
     m_chainclock = clock;
@@ -1209,7 +1211,7 @@ std::optional<glm::dvec3> TDynamicObject::chain_clamp( bones::chain const &Chain
 // the same, for the next vehicle whose chain this one shares: with this vehicle's pose of the moment
 void TDynamicObject::advance_chains() {
 
-    if( m_rig.empty() || Timer::GetRenderTime() == m_chainclock ) { return; }
+    if( m_rig.empty() || Timer::GetTime() == m_chainclock ) { return; }
     // the next vehicle needs the chain it shares with this one: moved however far this one is, or out of sight
     advance_chains( bones::pose( m_rig, bone_drive( false ) ), true );
 }

@@ -355,8 +355,8 @@ private:
         TDynamicObject *vehicle { nullptr };
         std::size_t chain { 0 };
     };
-    double m_chainclock { -1.0 }; // the render time the chains were moved to
-    double m_chainposed { -1.0 }; // the render time the nodes were last taken into the pose
+    double m_chainclock { -1.0 }; // the simulation time the chains were moved to
+    double m_chainposed { -1.0 }; // the simulation time the nodes were last taken into the pose
     bool m_flexesnear { false }; // whether the vehicle is near enough for its bent submodels to be bent and drawn
     static constexpr double flex_reach { 50.0 }; // m, how near that is
     bool m_chainsnear { false }; // whether it's near enough for its chains to move

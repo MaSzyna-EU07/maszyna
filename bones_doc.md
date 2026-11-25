@@ -46,7 +46,7 @@ bonebend: <submodel> <point> <point> ... [head <point> <point>] [rooted] end
   made rather than swinging far to the side about the line between its ends. A chain from a cock (a `fixed` point) to a
   `coupler` point is one hose with the chain of the coupled vehicle that runs the other way, from the point ours
   ends at back to the point ours starts at, with as many nodes: one of the two vehicles moves it, and both draw it,
-  so the coupled heads never part. The chains move by the time of each frame, the frames long or short; after a gap
+  so the coupled heads never part. The chains move by the simulation time of each frame, the frames long or short, sped up with the time acceleration and held by the pause, as the vehicle is; after a gap
   of more than half a second (the vehicle left alone while far) they start again as made, going along with the
   vehicle.
 - `bone`: the submodel moves with its anchor point and turns about it to keep facing the other point. With `none`
