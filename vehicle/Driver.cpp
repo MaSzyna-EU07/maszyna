@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/brakesetting.h"
 #include "vehicle/brakingcurve.h"
 #include "vehicle/handover.h"
+#include "vehicle/signalpassing.h"
 #include "vehicle/timetableservice.h"
 #include "world/mtable.h"
 #include "world/stationnames.h"
@@ -330,9 +331,7 @@ bool TSpeedPos::Update()
         // trzeba zazanaczyć, że minięty
         iFlags |= spElapsed;
     }
-    else {
-        bSeenAhead = true;
-    }
+    bSeenAhead = signal_passing::seen_ahead_on_update( fDist, bSeenAhead );
     if (iFlags & spTrack) {
         // road/track
         if (trTrack) {
@@ -418,18 +417,14 @@ bool TSpeedPos::IsProperSemaphor(TOrders order)
 	return false; // true gdy zatrzymanie, wtedy nie ma po co skanować dalej
 }
 
-// how far behind the head an event found in the scan may lie and still count as one the head had ahead [m]
-constexpr double SeenAheadTolerance { 5.0 };
-
-bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order)
+bool TSpeedPos::Set(basic_event *event, double dist, double length, TOrders order, bool const Standing)
 { // zapamiętanie zdarzenia
     fDist = dist;
-    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. the
-    // distance is found in steps of a metre from the position of the memory cell, so a signal just ahead of the head
-    // may come out a few metres behind it: those still count as seen ahead. the price is that a train set less than
-    // the tolerance past a signal at stop is still reported to pass it; a train standing that close to a signal can't
-    // be told from one stopped just short of it, which really passes the signal if it goes on
-    bSeenAhead = ( dist >= -SeenAheadTolerance );
+    // an event already behind the head when found (under a train set across a signal) wasn't passed by it. a moving
+    // train may be just passing it, and the distance is found in steps of a metre, so for a moving train an event a
+    // little behind the head still counts as seen ahead. a standing train passes nothing: an event found behind its
+    // head counts only once an update finds it ahead
+    bSeenAhead = signal_passing::seen_ahead_when_found( dist, Standing );
     iFlags = spEvent;
     evEvent = event;
     vPos = event->input_location(); // współrzędne eventu albo komórki pamięci (zrzutować na tor?)
@@ -646,7 +641,7 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 					                            fCurrentDistance + ProjectEventOnTrack( pEvent, pTrack, fLastDir ),
 					                            OrderCurrentGet() ) ) {
 					*/
-					if (newspeedpoint.Set(pEvent, GetDistanceToEvent(pTrack, pEvent, fLastDir, fCurrentDistance), fLength, OrderCurrentGet()))
+					if (newspeedpoint.Set(pEvent, GetDistanceToEvent(pTrack, pEvent, fLastDir, fCurrentDistance), fLength, OrderCurrentGet(), mvOccupied->Vel < EU07_AI_NOMOVEMENT))
 					{
 
 						fDistance = newspeedpoint.fDist; // jeśli sygnał stop, to nie ma potrzeby dalej skanować
@@ -922,9 +917,8 @@ std::uint8_t passing_flags_of( TSpeedPos const &Point, double const Speedatsigna
 
 void TController::CheckSignalPassed( TSpeedPos const &Point, bool const Passedbefore ) const
 {
-    if( Passedbefore
-     || false == TestFlag( Point.iFlags, spElapsed )
-     || false == Point.bSeenAhead // found already behind the head: the train stood across it, it didn't pass it
+    // not bSeenAhead: found already behind the head, the train stood across it or past it, it didn't pass it
+    if( false == signal_passing::passed_now( Passedbefore, TestFlag( Point.iFlags, spElapsed ), Point.bSeenAhead )
      || ( mvOccupied->CategoryFlag & 1 ) == 0 ) { // railway only
         return;
     }
