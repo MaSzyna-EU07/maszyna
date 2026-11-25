@@ -26,8 +26,11 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/utilities.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <mutex>
 #include <unordered_set>
 
 namespace
@@ -2300,6 +2303,31 @@ bool vk14::scene_pipeline_record::parse(std::string const &Line)
 	return true;
 }
 
+namespace
+{
+
+// the settings of the game the shaders of the scene take as specialization constants, for the targets of a pass
+std::uint32_t scene_pipeline_settings(vk14::target_formats const &Targets)
+{
+	auto const motion{Targets.colours > 1};
+	return (Global.gfx_shadergamma ? 1u : 0u) | (Global.gfx_shadowmap_enabled ? 2u : 0u) | (Global.gfx_envmap_enabled ? 4u : 0u) | (motion ? 8u : 0u) | 16u | (Global.gfx_extraeffects ? 32u : 0u);
+}
+
+// the key a pipeline of a program is kept by in the map of the program (vk14::scene_program::pipelines)
+std::uint64_t scene_pipeline_key(vk14::target_formats const &Targets, vk14::blend_mode const Blend, VkPrimitiveTopology const Primitiveclass, std::uint32_t const Settings)
+{
+	return (static_cast<std::uint64_t>(Targets.id)) | (static_cast<std::uint64_t>(Blend) << 16) | (static_cast<std::uint64_t>(Primitiveclass) << 24) | (static_cast<std::uint64_t>(Settings) << 32);
+}
+
+// the program has the pipeline of the key, made or found unable to be made
+bool has_scene_pipeline(vk14::scene_program &Program, std::uint64_t const Key)
+{
+	std::scoped_lock lock(Program.mutex);
+	return Program.pipelines.contains(Key);
+}
+
+} // namespace
+
 // the pipeline of the program for the targets of the pass, the blending and the class of the primitive, made the first time it's
 // asked for; bound with the primitive as dynamic state. false: it can't be made, or it's being made by the background threads for
 // the walk of the scene, which leaves out the draw till it's there (gfx.vulkan.asyncresources, the stage M5)
@@ -2311,8 +2339,8 @@ bool vulkan14_renderer::bind_scene_pipeline(vk14::scene_program &Program, vk14::
 	auto const primitiveclass{topology_class(topology)};
 	// the settings of the game the shaders take as specialization constants
 	auto const motion{Targets.colours > 1};
-	std::uint32_t const settings{(Global.gfx_shadergamma ? 1u : 0u) | (Global.gfx_shadowmap_enabled ? 2u : 0u) | (Global.gfx_envmap_enabled ? 4u : 0u) | (motion ? 8u : 0u) | 16u | (Global.gfx_extraeffects ? 32u : 0u)};
-	auto const key{(static_cast<std::uint64_t>(Targets.id)) | (static_cast<std::uint64_t>(Blend) << 16) | (static_cast<std::uint64_t>(primitiveclass) << 24) | (static_cast<std::uint64_t>(settings) << 32)};
+	auto const settings{scene_pipeline_settings(Targets)};
+	auto const key{scene_pipeline_key(Targets, Blend, primitiveclass, settings)};
 	VkPipeline pipeline{VK_NULL_HANDLE};
 	if ((draw.lastprogram == &Program) && (draw.lastkey == key))
 	{
@@ -2478,7 +2506,7 @@ bool vulkan14_renderer::context::find_scene_pipeline(vk14::scene_program &Progra
 }
 
 void vulkan14_renderer::context::queue_scene_pipeline(vk14::scene_program &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend, VkPrimitiveTopology const Primitiveclass,
-                                             std::uint32_t const Settings, bool const Single, std::uint64_t const Key)
+                                             std::uint32_t const Settings, bool const Single, std::uint64_t const Key, bool const Late)
 {
 	auto &ctx{*this};
 	{
@@ -2489,7 +2517,10 @@ void vulkan14_renderer::context::queue_scene_pipeline(vk14::scene_program &Progr
 			return;
 		}
 	}
-	++ctx.pipelines_late;
+	if (Late)
+	{
+		++ctx.pipelines_late;
+	}
 	// the program and the renderer outlive the background threads (stopped first when the scene goes)
 	ctx.background.add([this, program = &Program, targets = Targets, Blend, Primitiveclass, Settings, Single, Key]() {
 		auto const pipeline{make_scene_pipeline(*program, targets, Blend, Primitiveclass, Settings, Single)};
@@ -2497,6 +2528,110 @@ void vulkan14_renderer::context::queue_scene_pipeline(vk14::scene_program &Progr
 		program->pipelines.emplace(Key, pipeline);
 		program->pending.erase(Key);
 	});
+}
+
+// the pipelines the scene loaded will draw with most: those of the programs of its materials for the colour of the main view, opaque
+// and blended, and those of the shadows. what else a frame asks for (the variants of the gpu culling, the passes of the extra
+// views, the reflections) is made when it's first needed, as before
+void vulkan14_renderer::list_prewarm_pipelines()
+{
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	ctx.prewarm_listed = true;
+	auto const add = [&ctx](std::shared_ptr<vk14::scene_program> const &Program, vk14::target_formats const &Targets, vk14::blend_mode const Blend) {
+		if ((Program == nullptr) || (Program->vertices != vk14::vertex_kind::scene) || (Targets.id == 0))
+		{
+			return;
+		}
+		context::prewarm_pipeline pipeline;
+		pipeline.program = Program;
+		pipeline.targets = Targets;
+		pipeline.blend = Blend;
+		pipeline.settings = scene_pipeline_settings(Targets);
+		// a shader writing the velocity without its target is reported by the validation layer (bind_scene_pipeline())
+		pipeline.single = (Targets.colours == 1);
+		pipeline.key = scene_pipeline_key(Targets, Blend, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, pipeline.settings);
+		ctx.prewarm.push_back(std::move(pipeline));
+	};
+	auto const main{std::ranges::find_if(m_viewports, [](viewport_config const &Viewport) { return Viewport.main; })};
+	auto const index{static_cast<std::size_t>(std::distance(m_viewports.begin(), main))};
+	if ((main != m_viewports.end()) && make_viewport_targets(index))
+	{
+		auto const &targets{scene.targets[index].formats};
+		for (auto const &material : scene.materials)
+		{
+			add(material.second, targets, vk14::blend_mode::none);
+			add(material.second, targets, vk14::blend_mode::scene_alpha);
+		}
+	}
+	if (Global.gfx_shadowmap_enabled)
+	{
+		add(scene.shadow, scene.shadow_formats, vk14::blend_mode::none);
+		add(scene.alpha_shadow, scene.shadow_formats, vk14::blend_mode::none);
+	}
+	vk14::log_info("pipelines made behind the loading screen: " + std::to_string(ctx.prewarm.size()));
+}
+
+// the pipelines the scene loaded will draw with, made while the loading screen is shown: by the background threads where they run,
+// otherwise here, for about Milliseconds a call. a pipeline made for a draw instead would leave the draw out for a few frames (the
+// background threads) or hold the frame while it's made. the pipelines of the list of the last session are waited for as well,
+// and counted in what's returned
+std::pair<std::size_t, std::size_t> vulkan14_renderer::Prewarm_Shaders(double const Milliseconds)
+{
+	if (m_context == nullptr)
+	{
+		return {0, 0};
+	}
+	auto &ctx{*m_context};
+	if (false == ctx.prewarm_listed)
+	{
+		list_prewarm_pipelines();
+	}
+	auto const background{Global.gfx_vulkan_asyncresources && ctx.background.running()};
+	if (background)
+	{
+		// handed over once, made ahead of what the draws ask for later
+		for (; ctx.prewarm_next < ctx.prewarm.size(); ++ctx.prewarm_next)
+		{
+			auto const &pipeline{ctx.prewarm[ctx.prewarm_next]};
+			if (false == has_scene_pipeline(*pipeline.program, pipeline.key))
+			{
+				ctx.queue_scene_pipeline(*pipeline.program, pipeline.targets, pipeline.blend, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, pipeline.settings, pipeline.single, pipeline.key, false);
+			}
+		}
+	}
+	else
+	{
+		auto const start{std::chrono::steady_clock::now()};
+		while ((ctx.prewarm_next < ctx.prewarm.size()) && (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() < Milliseconds))
+		{
+			auto const &pipeline{ctx.prewarm[ctx.prewarm_next]};
+			++ctx.prewarm_next;
+			if (has_scene_pipeline(*pipeline.program, pipeline.key))
+			{
+				continue;
+			}
+			auto const made{ctx.make_scene_pipeline(*pipeline.program, pipeline.targets, pipeline.blend, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, pipeline.settings, pipeline.single)};
+			std::scoped_lock lock(pipeline.program->mutex);
+			pipeline.program->pipelines.emplace(pipeline.key, made);
+		}
+	}
+	auto const done{static_cast<std::size_t>(std::ranges::count_if(ctx.prewarm, [](context::prewarm_pipeline const &Pipeline) { return has_scene_pipeline(*Pipeline.program, Pipeline.key); }))};
+	// the pipelines of the list of the last session count too, up to 4096 of them from any scenery played before: with a cold
+	// cache of the driver they take most of the time, and the bar moves with them. then one more step: the background threads
+	// idle, which ends the wait whatever the counts say (a task dropped is never counted as done)
+	auto const listed{ctx.warm_queued.load()};
+	auto const warmed{std::min(ctx.warm_finished.load(), listed)};
+	auto const idle{(false == background) || (ctx.background.pending() == 0)};
+	auto const total{ctx.prewarm.size() + listed + 1};
+	if (idle && (done == ctx.prewarm.size()))
+	{
+		// all made: the programs aren't held past the loading screen
+		ctx.prewarm.clear();
+		ctx.prewarm_next = 0;
+		return {total, total};
+	}
+	return {done + warmed, total};
 }
 
 // the pipelines of the list of the last session made ahead by the background threads, after the ones the draws wait for
@@ -2535,6 +2670,7 @@ void vulkan14_renderer::context::warm_scene_pipelines()
 	}
 	vk14::log_info("pipelines of the last session made ahead: " + std::to_string(records.size()));
 	auto const layout{ctx.scene.scene_layout};
+	ctx.warm_queued += records.size();
 	for (auto const &record : records)
 	{
 		ctx.background.add(
@@ -2553,6 +2689,7 @@ void vulkan14_renderer::context::warm_scene_pipelines()
 				    // the shader went or changed meanwhile
 				    vk14::log_info(std::string("a pipeline of the last session can't be made ahead: ") + Exception.what());
 			    }
+			    ++ctx.warm_finished;
 		    },
 		    false);
 	}

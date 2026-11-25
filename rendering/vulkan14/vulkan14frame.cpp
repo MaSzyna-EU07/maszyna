@@ -1055,6 +1055,44 @@ bool vulkan14_renderer::Render()
 	return true;
 }
 
+bool vulkan14_renderer::make_viewport_targets(std::size_t const Index)
+{
+	if (m_context == nullptr)
+	{
+		return false;
+	}
+	auto &ctx{*m_context};
+	auto &scene{ctx.scene};
+	if (scene.targets.size() < m_viewports.size())
+	{
+		scene.targets.resize(m_viewports.size());
+	}
+	auto const &viewport{m_viewports[Index]};
+	auto &targets{scene.targets[Index]};
+	auto const srgb{false == Global.gfx_shadergamma};
+	auto const *history{targets.taa_history[0].get()};
+	auto const *upscaled{targets.dlss_output.get()};
+	auto const *reflections{targets.ssr_history.get()};
+	auto const dlss{viewport.main && dlss_active() && (viewport.output_width > 0) && (viewport.output_height > 0)};
+	if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
+	                          scene.history_format, targets, viewport.width, viewport.height, viewport.output_width, viewport.output_height, srgb, viewport.main && Global.gfx_taa(),
+	                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing)), dlss))
+	{
+		return false;
+	}
+	if (viewport.main && ((targets.taa_history[0].get() != history) || (targets.dlss_output.get() != upscaled)))
+	{
+		// new images of the history, nothing in them yet
+		m_taa.reset();
+		m_dlssreset = true;
+	}
+	if (targets.ssr_history.get() != reflections)
+	{
+		m_ssr.reset();
+	}
+	return true;
+}
+
 void vulkan14_renderer::render_scene()
 {
 	auto &ctx{*m_context};
@@ -1067,34 +1105,16 @@ void vulkan14_renderer::render_scene()
 	}
 	for (std::size_t i = 0; i < m_viewports.size(); ++i)
 	{
-		auto const &viewport{m_viewports[i]};
-		if ((viewport.window < ctx.windows.size()) && ctx.windows[viewport.window]->minimized())
+		if (auto const &viewport{m_viewports[i]}; (viewport.window < ctx.windows.size()) && ctx.windows[viewport.window]->minimized())
 		{
 			// nothing of it is shown, and a window without a size has no projection to draw with
 			continue;
 		}
-		auto const srgb{false == Global.gfx_shadergamma};
-		auto const *history{scene.targets[i].taa_history[0].get()};
-		auto const *upscaled{scene.targets[i].dlss_output.get()};
-		auto const *reflections{scene.targets[i].ssr_history.get()};
-		auto const dlss{viewport.main && dlss_active() && (viewport.output_width > 0) && (viewport.output_height > 0)};
-		if (false == make_targets(ctx.memory, ctx.deletions, ctx.uploads.current_value(), scene.formats_count, ctx.device.caps().limits.framebufferColorSampleCounts & ctx.device.caps().limits.framebufferDepthSampleCounts, scene.bloom_format,
-		                          scene.history_format, scene.targets[i], viewport.width, viewport.height, viewport.output_width, viewport.output_height, srgb, viewport.main && Global.gfx_taa(),
-		                          viewport.main && (false == Global.gfx_skippipeline) && ((Global.gfx_ssr > 0) || (m_raytracingon && scene.raytracing)), dlss))
+		if (false == make_viewport_targets(i))
 		{
 			continue;
 		}
-		if (viewport.main && ((scene.targets[i].taa_history[0].get() != history) || (scene.targets[i].dlss_output.get() != upscaled)))
-		{
-			// new images of the history, nothing in them yet
-			m_taa.reset();
-			m_dlssreset = true;
-		}
 		auto &targets{scene.targets[i]};
-		if (targets.ssr_history.get() != reflections)
-		{
-			m_ssr.reset();
-		}
 		if (targets.ssr_history && (false == targets.ssr_cleared))
 		{
 			// the pass sets hold the history from now on, it's read (by none of the pixels) before the first frame goes to it

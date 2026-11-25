@@ -12,16 +12,23 @@ http://mozilla.org/MPL/2.0/.
 #include "application/uilayer.h"
 #include "launcher/deferred_image.h"
 
+#include <string>
+#include <string_view>
+
 class scenarioloader_ui : public ui_layer {
 	int m_gradient_overlay_width;
 	int m_gradient_overlay_height;
 	std::uint64_t m_gradient_overlay_tex; // imgui_renderer image
 	deferred_image m_loading_wheel_frames[60];
     std::vector<std::string> m_trivia;
+	std::string m_notice; // shown at the top of the screen, clear of the trivia and the texts of the backgrounds at the bottom
 public:
 	scenarioloader_ui();
 	void render_() override;
+	// a notice for the player at the top of the screen, such as that the graphics are being prepared; empty hides it
+	void set_notice( std::string_view const Text ) { m_notice = Text; }
 private:
+	void render_notice( ImDrawList *Drawlist, float Scale, float Fontscale ) const;
 
 	/// <summary>
 	/// Loads random trivia from lang/trivia.json
