@@ -392,6 +392,9 @@ struct global_settings {
     float gfx_distance_factor_max { 3.f };
     float gfx_shadow_angle_min { -0.2f };
     int gfx_shadow_rank_cutoff { 3 };
+    // how many times wider sideways the headlight beam is spread than its texture: at 1.7 the ground beside the track gets
+    // most of the light of the ballast; 1 draws the narrow beam of 26.05
+    float gfx_headlights_beamwidth { 1.7f };
 
     float ui_fontsize = 13.0f;
     float ui_scale = 1.0f;

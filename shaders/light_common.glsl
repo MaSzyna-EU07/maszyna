@@ -33,7 +33,7 @@ in vec4 UserData;
 //                       lit and shaded faces of the same surface).
 // ---------------------------------------------------------------------
 const float AMBIENT_SCALE       = 0.65;
-const float SUN_DIFFUSE_SCALE   = 1.5;
+const float SUN_DIFFUSE_SCALE   = 2.5;   // 26.05; at 1.5 the moon left the night black around the headlights
 const float SUN_NDOTL_SHARPNESS = 1.25;
 
 float length2(vec3 v)
@@ -242,7 +242,13 @@ vec2 calc_headlights(light_s light, vec3 fragnormal)
 	float distance = length(light.pos - f_pos.xyz);
 	float atten = 1.0f / (1.0f + light.linear * distance + light.quadratic * (distance * distance));
 	atten *= mix(1.0, 0.0, clamp((coords.z - 0.998) * 500.0, 0.0, 1.0));
-	vec3 lights = textureProj(headlightmap, headlightpos).rgb * light.headlight_weights.rgb;
+	// gfx.headlights.beamwidth spreads the beam sideways around its middle (0.5 of the projected x), so the
+	// ground beside the track gets the light of the ballast; the brightness along the track stays as it was
+	vec4 beampos = headlightpos;
+#ifdef HEADLIGHT_BEAM_WIDTH
+	beampos.x = 0.5 * beampos.w + (beampos.x - 0.5 * beampos.w) / HEADLIGHT_BEAM_WIDTH;
+#endif
+	vec3 lights = textureProj(headlightmap, beampos).rgb * light.headlight_weights.rgb;
 	float lightintensity = max(max(lights.r, lights.g), lights.b);
 	return part * atten * lightintensity;
 }
@@ -279,7 +285,9 @@ vec3 EnvBRDFApprox(vec3 F0, float roughness, float NoV)
 // param[1].x its intensity (HSV value unless a material overrides it).
 vec3 material_diffuse()
 {
-    vec3 diffusecolor = pow(max(param[0].rgb, vec3(0.0)), vec3(2.2));
+    // the colour as it is, as 26.05 scaled the light by it; linearised (^2.2) it took a quarter off the default
+    // 0.8 of every scenery shape and more off darker submodels, and the night went black
+    vec3 diffusecolor = max(param[0].rgb, vec3(0.0));
     float value = max(param[0].r, max(param[0].g, param[0].b));
     return (value > 0.0 ? diffusecolor * (param[1].x / value) : vec3(0.0));
 }
@@ -288,6 +296,8 @@ vec3 material_diffuse()
 // do magic here
 vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float reflectivity, float specularity, float shadowtone)
 {
+    // the sun highlight is tinted by the texture alone, as 26.05 drew it, not by the diffuse colour too
+    vec3 highlight_tint = texturecolor;
     // Diffuse colour is applied once, to the albedo; the light terms below are not scaled by it again
     texturecolor *= material_diffuse();
     float weathered = (param[3].w > 0.0 ? clamp(param[3].w * UserData.x, 0.0, 1.0) : 0.0);
@@ -313,6 +323,10 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     vec3 view_dir = normalize(-f_pos.xyz);
     float NdotV = max(dot(fragnormal, view_dir), 0.0);
     vec3 F0 = mix(vec3(0.04), texturecolor, metalic);
+    // A metal gives up its diffuse term only as far as its reflection mask lets the environment take its place.
+    // Assets made before the metal/rough combine mark metal in the specgloss but keep a low mask, and without
+    // this their metal parts went almost black; a metal with the full mask is drawn as before.
+    float metal_diffuse_loss = metalic * clamp(reflectivity, 0.0, 1.0);
     vec3 fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
     const float MAX_REFLECTION_LOD = 8.0;
@@ -333,9 +347,9 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     texturecolor = mix(texturecolor, texturecolorfullv, envyuv.r * reflectivity * env_spec_w);
 
     if (lights_count == 0U)
-        // Metals carry no diffuse term; env reflection is gated by the env BRDF
+        // Metals carry no diffuse term where they reflect; env reflection is gated by the env BRDF
         // (F0-tinted, roughness-attenuated) so matte surfaces barely reflect.
-        return fragcolor * texturecolor * (1.0 - metalic)
+        return fragcolor * texturecolor * (1.0 - metal_diffuse_loss)
              + emissioncolor * texturecolor
              + envcolor * env_spec * reflectivity;
 
@@ -375,16 +389,19 @@ vec3 apply_lights(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float refl
     vec3 env_reflection = envcolor * env_spec * reflectivity * (1.0 - shadow1 * 0.5);
 
     // --- Physically-based metal/rough combine (Substance 3D Painter parity) ---
-    // Dielectrics: keep the full diffuse albedo; the direct sun highlight stays
-    //              light-coloured because dielectric F0 is achromatic (~0.04) and
-    //              must NOT be tinted by the base colour.
-    // Metals:      drop the diffuse term entirely and tint the direct highlight
-    //              with the albedo (metal F0 == base colour).
+    // Dielectrics: keep the full diffuse albedo; the direct sun highlight is tinted
+    //              by the albedo, as 26.05 drew it. The specular strength of the
+    //              assets (param_specular, the specgloss R) was tuned with that
+    //              multiply; an untinted highlight on dark glossy plastic of an old
+    //              asset turned into white glints along edges and speckles on cab
+    //              desks.
+    // Metals:      drop the diffuse term where the reflection mask is full (see
+    //              metal_diffuse_loss) and tint the direct highlight with the
+    //              albedo (metal F0 == base colour).
     // The highlight *strength* (specularamount) is deliberately left untouched so
-    // existing material tuning is preserved — only the colour/energy split that
-    // was previously inverted gets corrected.
-    vec3 diffuse_albedo = texturecolor * (1.0 - metalic);
-    vec3 spec_tint      = mix(vec3(1.0), texturecolor, metalic);
+    // existing material tuning is preserved.
+    vec3 diffuse_albedo = texturecolor * (1.0 - metal_diffuse_loss);
+    vec3 spec_tint      = highlight_tint;
 
     vec3 result = fragcolor      * diffuse_albedo   // sun + ambient + headlight diffuse
                 + specularcolor  * spec_tint        // direct sun highlight
