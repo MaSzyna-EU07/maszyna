@@ -191,17 +191,7 @@ void map::map_objects::prepare()
 				continue;
 
 			std::string const signal_name = node->name().substr(0, node->name().size() - 8);
-			TMemCell *memcell = signal_cells.at(signal_name);
-			bool const derailer_model = std::ranges::any_of(
-				named_models, [&signal_name](TAnimModel const *model) {
-					return event_belongs_to_signal(model->name(), signal_name) &&
-					       model->name().ends_with("_wk_el");
-				});
-			bool const has_signal_model = std::ranges::any_of(
-				named_models, [&signal_name](TAnimModel const *model) {
-					return event_belongs_to_signal(model->name(), signal_name) &&
-					       !model->name().ends_with("_wk_el");
-				});
+			auto *memcell = static_cast<TMemCell *>(node);
 			bool const has_shunting_board_model = std::ranges::any_of(
 				named_models, [&signal_name](TAnimModel const *model) {
 					if (!event_belongs_to_signal(model->name(), signal_name) || !model->Model())
@@ -212,8 +202,6 @@ void map::map_objects::prepare()
 					       model_path.find("pkp/tmk_") != std::string::npos ||
 					       model_path.ends_with("pkp/mk1un.t3d");
 				});
-			if (signal_name.ends_with("_wk_el") || (derailer_model && !has_signal_model))
-				continue;
 
 			auto signal = std::make_shared<semaphore_map_object>();
 			signal->location = memcell->location();
