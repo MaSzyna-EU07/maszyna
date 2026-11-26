@@ -116,7 +116,8 @@ double nice_distance_step(double target)
 	return (normalized <= 1.0 ? 1.0 : normalized <= 2.0 ? 2.0 : normalized <= 5.0 ? 5.0 : 10.0) * magnitude;
 }
 
-bool map_toolbar_icon_button(char const *id, char const *tooltip, map_icons::icon icon, bool selected = false)
+bool map_toolbar_icon_button(
+	char const *id, char const *tooltip, map_icons::icon icon, bool selected, bool &hovered)
 {
 	ImGui::PushID(id);
 	ImGui::PushStyleColor(
@@ -124,12 +125,13 @@ bool map_toolbar_icon_button(char const *id, char const *tooltip, map_icons::ico
 		selected ? ImVec4(0.25f, 0.45f, 0.65f, 1.0f) : ImGui::GetStyleColorVec4(ImGuiCol_Button));
 	float const button_size = ImGui::GetFrameHeight();
 	bool const clicked = ImGui::Button("##icon", ImVec2(button_size, button_size));
+	hovered = ImGui::IsItemHovered();
 	ImVec2 const minimum = ImGui::GetItemRectMin();
 	ImVec2 const maximum = ImGui::GetItemRectMax();
 	ImVec2 const center((minimum.x + maximum.x) * 0.5f, (minimum.y + maximum.y) * 0.5f);
 	map_icons::draw(ImGui::GetWindowDrawList(), icon, center, ImGui::GetColorU32(ImGuiCol_Text));
 
-	if (ImGui::IsItemHovered())
+	if (hovered)
 	{
 		ImGui::BeginTooltip();
 		ImGui::TextUnformatted(tooltip);
@@ -1421,32 +1423,67 @@ void ui::map_panel::render_contents()
         return;
     }
 
-	bool const zoom_in = map_toolbar_icon_button("zoom-in", STR_C("Zoom in"), map_icons::icon::zoom_in);
-	ImGui::SameLine();
-	bool const zoom_out = map_toolbar_icon_button("zoom-out", STR_C("Zoom out"), map_icons::icon::zoom_out);
-	ImGui::SameLine();
-
 	if (!simulation::Train && mode == MODE_VEHICLE)
 		mode = MODE_MANUAL;
+
+	ImVec2 const padding = ImGui::GetStyle().WindowPadding;
+	ImVec2 const cursor_origin = ImGui::GetCursorPos();
+	ImVec2 const cursor_screen_origin = ImGui::GetCursorScreenPos();
+	ImVec2 const available = ImGui::GetContentRegionAvail();
+	ImVec2 const window_origin(cursor_origin.x - padding.x, cursor_origin.y - padding.y);
+	ImVec2 const screen_origin(cursor_screen_origin.x - padding.x, cursor_screen_origin.y - padding.y);
+	ImVec2 const surface_size_im(available.x + padding.x * 2.0f, available.y + padding.y * 2.0f);
+	glm::vec2 const surface_size(surface_size_im.x, surface_size_im.y);
+	ImGui::SetCursorScreenPos(screen_origin);
+	ImGui::SetNextItemAllowOverlap();
+	ImGui::InvisibleButton("##map", surface_size_im);
+	bool const map_hovered = ImGui::IsItemHovered();
+
+	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+	draw_list->ChannelsSplit(2);
+	draw_list->ChannelsSetCurrent(1);
+	ImGui::SetCursorScreenPos(ImVec2(screen_origin.x + 10.0f, screen_origin.y + 10.0f));
+
+	bool toolbar_hovered = false;
+	bool zoom_in_hovered = false;
+	bool const zoom_in = map_toolbar_icon_button(
+		"zoom-in", STR_C("Zoom in"), map_icons::icon::zoom_in, false, zoom_in_hovered);
+	toolbar_hovered = toolbar_hovered || zoom_in_hovered;
+	ImGui::SameLine();
+	bool zoom_out_hovered = false;
+	bool const zoom_out = map_toolbar_icon_button(
+		"zoom-out", STR_C("Zoom out"), map_icons::icon::zoom_out, false, zoom_out_hovered);
+	toolbar_hovered = toolbar_hovered || zoom_out_hovered;
+	ImGui::SameLine();
 
 	glm::mat4 transform;
 	transform[0][0] = -1.0f;
 
-	if (map_toolbar_icon_button("pan", STR_C("Pan"), map_icons::icon::pan, mode == MODE_MANUAL))
+	bool pan_hovered = false;
+	if (map_toolbar_icon_button(
+		    "pan", STR_C("Pan"), map_icons::icon::pan, mode == MODE_MANUAL, pan_hovered))
 		mode = MODE_MANUAL;
+	toolbar_hovered = toolbar_hovered || pan_hovered;
 	ImGui::SameLine();
-	if (map_toolbar_icon_button("camera", STR_C("Follow camera"), map_icons::icon::camera, mode == MODE_CAMERA))
+	bool camera_hovered = false;
+	if (map_toolbar_icon_button(
+		    "camera", STR_C("Follow camera"), map_icons::icon::camera, mode == MODE_CAMERA, camera_hovered))
 		mode = MODE_CAMERA;
+	toolbar_hovered = toolbar_hovered || camera_hovered;
 	ImGui::SameLine();
 	ImGui::BeginDisabled(simulation::Train == nullptr);
-	if (map_toolbar_icon_button("vehicle", STR_C("Follow vehicle"), map_icons::icon::vehicle, mode == MODE_VEHICLE))
+	bool vehicle_hovered = false;
+	if (map_toolbar_icon_button(
+		    "vehicle", STR_C("Follow vehicle"), map_icons::icon::vehicle, mode == MODE_VEHICLE, vehicle_hovered))
 		mode = MODE_VEHICLE;
 	ImGui::EndDisabled();
+	toolbar_hovered = toolbar_hovered || vehicle_hovered;
 	ImGui::SameLine();
-	if (map_toolbar_icon_button("reset-heading", STR_C("Reset map rotation"), map_icons::icon::rotate))
+	bool reset_heading_hovered = false;
+	if (map_toolbar_icon_button(
+		    "reset-heading", STR_C("Reset map rotation"), map_icons::icon::rotate, false, reset_heading_hovered))
 		m_manual_rotation = 0.0f;
-	ImVec2 surface_size_im = ImGui::GetContentRegionAvail();
-	glm::vec2 surface_size(surface_size_im.x, surface_size_im.y);
+	toolbar_hovered = toolbar_hovered || reset_heading_hovered;
 
 	glm::mat4 aspect_transform;
 	float aspect = surface_size.y / surface_size.x;
@@ -1548,10 +1585,7 @@ void ui::map_panel::render_contents()
 	prepare_static_scene_cache();
 	collect_map_geometry(transform);
 
-	ImVec2 window_origin = ImGui::GetCursorPos();
-	ImVec2 screen_origin = ImGui::GetCursorScreenPos();
-
-	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+	draw_list->ChannelsSetCurrent(0);
 	draw_list->PushClipRect(screen_origin, ImVec2(screen_origin.x + surface_size.x, screen_origin.y + surface_size.y), true);
 	draw_list->AddRectFilled(
 		screen_origin,
@@ -1560,7 +1594,6 @@ void ui::map_panel::render_contents()
 	render_grid(draw_list, screen_origin, surface_size, transform);
 	render_map_lines(draw_list, screen_origin, surface_size, transform, scale_length);
 	draw_list->PopClipRect();
-	ImGui::InvisibleButton("##map", surface_size_im);
 
 	if (m_camera_click_pending && ImGui::GetTime() >= m_camera_click_deadline)
 	{
@@ -1570,7 +1603,7 @@ void ui::map_panel::render_contents()
 		m_camera_click_pending = false;
 	}
 
-	if (ImGui::IsItemHovered())
+	if (map_hovered && !toolbar_hovered)
 	{
 		const ImVec2 screen_pos = ImGui::GetMousePos();
 		const glm::vec2 surface_pos(screen_pos.x - screen_origin.x, screen_pos.y - screen_origin.y);
@@ -1797,6 +1830,8 @@ void ui::map_panel::render_contents()
 			draw_list->PopClipRect();
 		}
 	}
+	ImGui::SetCursorScreenPos(ImVec2(screen_origin.x, screen_origin.y + surface_size.y));
+	draw_list->ChannelsMerge();
 }
 
 void ui::handle_map_object_click(ui_panel &parent, std::shared_ptr<map::map_object> &obj)
