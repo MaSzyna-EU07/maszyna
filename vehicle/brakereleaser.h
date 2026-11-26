@@ -24,6 +24,7 @@ struct conditions {
 	bool uphill_start{false}; // starting uphill with the train brake held on purpose
 	bool pressing{false}; // (un)coupling: the driver presses the buffers (movePress)
 	bool compressing_buffers{false}; // uncoupling, stage 3: pushing towards the cut to slacken the coupler
+	bool charges_standing{false}; // a train prepared standing charges its brakes before its first start (bBrakeChargeStart)
 };
 
 struct decision {

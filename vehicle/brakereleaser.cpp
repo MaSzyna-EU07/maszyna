@@ -43,6 +43,12 @@ decision decide(conditions const &State) {
 		result.fill_pipe = State.pipe_pressure < 3.0;
 		result.actuate = wanted_to_start(State);
 	}
+	else if (State.charges_standing) {
+		// a train standing to charge its brakes before its first start has the pipe filled up as it stands, not only
+		// once it is to go. the other rules of a start are left for when the driver wants to speed up
+		result.fill_pipe = State.pipe_pressure < 3.0;
+		result.actuate = result.fill_pipe;
+	}
 	// uncoupling, stage 3: the locomotive has to push the slack of the coupler out whatever its speed table says.
 	// the consist stays held by its own brakes, applied in stage 2, and the push asks for 2 km/h at most. a signal
 	// at stop that the consist stands across after the direction change caps the speed at 0 and so AccDesired
