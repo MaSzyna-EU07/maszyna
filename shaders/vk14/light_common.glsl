@@ -801,10 +801,24 @@ vec3 reflection_surroundings(vec3 fragnormal, float roughness)
 const float REFLECTION_SCENE_WEIGHT = 0.004;
 const float REFLECTION_RAY_WEIGHT = 0.012;
 
+#ifdef PBR_SURFACE
+// the screen and the rays follow the mirror direction alone: the sharp image of a polished surface, where a rough one shows the
+// surroundings blurred. the scene hands the reflection over to the environment map and the probe of the cab, which the
+// roughness blurs, between these perceptual roughnesses
+const float SCENE_REFLECTION_ROUGHNESS_START = 0.1;
+const float SCENE_REFLECTION_ROUGHNESS_END = 0.3;
+#endif
+
 // the reflection of the scene in a surface of the given perceptual roughness: the colour times how much of the reflection the
 // scene gives (rgb), and that share (a), the rest is left to reflection_surroundings()
 vec4 reflection_scene(vec3 fragnormal, float roughness, float weight)
 {
+#ifdef PBR_SURFACE
+    float sharpness = 1.0 - smoothstep(SCENE_REFLECTION_ROUGHNESS_START, SCENE_REFLECTION_ROUGHNESS_END, roughness);
+    if (sharpness <= 0.0)
+        return vec4(0.0);
+    weight *= sharpness;
+#endif
     vec3 direction = normalize(reflect(f_pos.xyz, fragnormal));
     vec4 result = ssr_trace(f_pos.xyz, normalize(f_normal), direction, roughness);
 #ifdef REFLECTION_RAYS_ACTIVE
@@ -815,6 +829,9 @@ vec4 reflection_scene(vec3 fragnormal, float roughness, float weight)
         result.rgb += traced.rgb * (1.0 - result.a);
         result.a += traced.a * (1.0 - result.a);
     }
+#endif
+#ifdef PBR_SURFACE
+    result *= sharpness;
 #endif
     return result;
 }
@@ -947,6 +964,11 @@ vec3 shade_surface(vec3 fragcolor, vec3 fragnormal, vec3 texturecolor, float ref
     else
     {
         // the sky lights the faces turned up and towards the bright part of the sky more than the ones turned to the ground
+#ifdef PBR_SURFACE
+        // inside a cab or an interior the roof and the walls hide the sky: the bright blue zenith doesn't light the faces turned up
+        // more than the rest, the cab around (its probe) lights them instead
+        if (cab_interior < 0.5)
+#endif
         fragcolor = add_sky_ambient(fragcolor, fragnormal);
 #ifndef NO_WEATHERING
         float weathered = (param[2].w > 0.0 ? clamp(param[2].w * UserData.x, 0.0, 1.0) : 0.0);
