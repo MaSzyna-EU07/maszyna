@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/openglparticles.h"
 
+#include <cstddef>
+
 #include "rendering/particles.h"
 #include "rendering/openglcamera.h"
 #include "simulation/simulation.h"
@@ -141,12 +143,12 @@ opengl_particles::render( GLint const Textureunit ) {
     // setup...
     ::glPushClientAttrib( GL_CLIENT_VERTEX_ARRAY_BIT );
     ::glBindBuffer( GL_ARRAY_BUFFER, m_buffer );
-    ::glVertexPointer( 3, GL_FLOAT, sizeof( particle_vertex ), static_cast<char *>( nullptr ) );
+    ::glVertexPointer( 3, GL_FLOAT, sizeof( particle_vertex ), reinterpret_cast<void const *>( offsetof( particle_vertex, position ) ) );
     ::glEnableClientState( GL_VERTEX_ARRAY );
-    ::glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( particle_vertex ), reinterpret_cast<void const *>( sizeof( float ) * 3 ) );
+    ::glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( particle_vertex ), reinterpret_cast<void const *>( offsetof( particle_vertex, color ) ) );
     ::glEnableClientState( GL_COLOR_ARRAY );
     ::glClientActiveTexture( GL_TEXTURE0 + Textureunit );
-    ::glTexCoordPointer( 2, GL_FLOAT, sizeof( particle_vertex ), reinterpret_cast<void const *>( sizeof( float ) * 3 + sizeof( std::uint8_t ) * 4 ) );
+    ::glTexCoordPointer( 2, GL_FLOAT, sizeof( particle_vertex ), reinterpret_cast<void const *>( offsetof( particle_vertex, texture ) ) );
     ::glEnableClientState( GL_TEXTURE_COORD_ARRAY );
     // ...draw...
     ::glDrawArrays( GL_QUADS, 0, static_cast<GLsizei>(m_particlevertices.size()) );
