@@ -1903,6 +1903,9 @@ class TMoverParameters
 	int FastSerialCircuit = 0; /*0 - po kolei zamyka styczniki az do osiagniecia szeregowej, 1 - natychmiastowe wejscie na szeregowa*/ /*hunter-111012*/
 	int BackwardsBranchesAllowed = 1;
 	int AutoRelayType = 0; /*0 -brak, 1 - jest, 2 - opcja*/
+	// FieldShuntSwitch=Yes: the switch of AutoRelay=Optional of a diesel-electric is its switch of the field shunting, as the SU45's
+	// and SP45's (fieldshunting.h): off, the field stays full. without it, off hands the shunting to the second controller, as before
+	bool FieldShuntSwitch = false;
 	bool CoupledCtrl = false; /*czy mainctrl i scndctrl sa sprzezone*/
 	bool HasCamshaft{false};
 	int DynamicBrakeType = 0; /*patrz dbrake_**/
