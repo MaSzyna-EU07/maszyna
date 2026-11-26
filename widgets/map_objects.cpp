@@ -243,12 +243,12 @@ void map::prepare_objects()
 			std::vector<TAnimModel *> ordered_signal_models;
 			for (TAnimModel *model : named_models)
 			{
-				if (std::ranges::find(signal_models, model) != signal_models.end())
+				if (model->name().starts_with(signal->name))
 					ordered_signal_models.push_back(model);
 			}
 			for (TAnimModel *model : signal_models)
 			{
-				if (std::ranges::find(named_models, model) == named_models.end())
+				if (std::ranges::find(ordered_signal_models, model) == ordered_signal_models.end())
 					ordered_signal_models.push_back(model);
 			}
 
