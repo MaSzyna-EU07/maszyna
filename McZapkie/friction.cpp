@@ -30,8 +30,9 @@ double TP10Bg::GetFC(double N, double Vel)
     //  Vel:= Vel-20;
     //  GetFC:=0.52*((1*Vel+100)/(5.0*Vel+100))*(13.08-0.083*N)/(12.94+0.285*N);
     //    GetFC:=std::min(0.67*(1*(277-2.66*Vel)/(100+2.1*Vel)+0.23*(-686+8.27*Vel)/(100+1.16*Vel))*(13.08-0.083*N)/(12.94+0.285*N),0.4);
-    return exp(-0.022 * N) * (0.19 - 0.095 * exp(-Vel * 1.0 / 25.7)) +
-            0.384 * exp(-Vel * 1.0 / 25.7) - 0.028;
+    double const slowdown{exp(-Vel * 1.0 / 25.7)}; // computed once, used twice
+    return exp(-0.022 * N) * (0.19 - 0.095 * slowdown) +
+            0.384 * slowdown - 0.028;
 }
 
 double TP10Bgu::GetFC(double N, double Vel)
@@ -45,8 +46,9 @@ double TP10Bgu::GetFC(double N, double Vel)
     //  GetFC:=0.52*((0.0*Vel+120)/(5*Vel+100))*(11.33-0.013*N)/(11.33+0.280*N);
     //  GetFC:=0.49*100/(3*Vel+100)*(11.33-0.013*N)/(11.33+0.280*N);
     //    GetFC:=std::min(0.67*(1*(277-2.66*Vel)/(100+2.1*Vel)+0.23*(-686+8.27*Vel)/(100+1.16*Vel))*(11.33-0.013*N)/(11.33+0.280*N),0.4);
-    return exp(-0.017 * N) * (0.18 - 0.09 * exp(-Vel * 1.0 / 25.7)) +
-            0.381 * exp(-Vel * 1.0 / 25.7) - 0.022; // 0.05*exp(-0.2*N);
+    double const slowdown{exp(-Vel * 1.0 / 25.7)}; // computed once, used twice
+    return exp(-0.017 * N) * (0.18 - 0.09 * slowdown) +
+            0.381 * slowdown - 0.022; // 0.05*exp(-0.2*N);
 }
 
 double TP10yBg::GetFC(double N, double Vel)

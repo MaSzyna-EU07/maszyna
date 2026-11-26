@@ -983,6 +983,8 @@ class TKE : public TBrake
 	double RM = 0.0; // przelozenie rapida
 	/// <summary>Auxiliary (local) brake pressure feeding the DCV.</summary>
 	double LBP = 0.0; // cisnienie hamulca pomocniczego
+	/// <summary>Disc brakes rather than cast iron blocks, which keeps the rapid step on; set in Init from the friction material.</summary>
+	bool DiscFriction = false; // tarczowki, nie zeliwo
 
   public:
 	/// <summary>Initialises the KE distributor (control / impulse / auxiliary reservoirs and BVM).</summary>

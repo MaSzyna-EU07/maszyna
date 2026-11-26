@@ -260,6 +260,8 @@ bool driver_mode::update()
 			simulation::State.update(stepdeltatime, updatecount);
 		}
 		Timer::subsystem.sim_dynamics.stop();
+		// the AI of every vehicle, measured inside the update of the vehicles above
+		Timer::subsystem.sim_ai.commit();
 
 		// secondary fixed step simulation time routines
 		while (m_secondaryupdateaccumulator >= m_secondaryupdaterate)
@@ -331,8 +333,10 @@ bool driver_mode::update()
 			simulation::Trains.updateAsync(deltatime);
 		else
 			simulation::Trains.update(deltatime);
+		Timer::subsystem.sim_events.start();
 		simulation::Events.update();
 		simulation::Region->update_events();
+		Timer::subsystem.sim_events.stop();
 		simulation::Lights.update();
 		{
 			// where the user looks from, for the black box
