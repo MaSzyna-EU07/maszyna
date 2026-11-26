@@ -20,11 +20,11 @@ struct map_object
 	}
 };
 
-using map_objects_list = std::vector<std::shared_ptr<map_object>>;
-using floats_map_objects_map = std::map<float, std::shared_ptr<map_object>>;
+using object_list = std::vector<std::shared_ptr<map_object>>;
+using sorted_object_list = std::map<float, std::shared_ptr<map_object>>;
 
 // semaphore description (only for minimap purposes)
-struct semaphore_map_object : map_object
+struct semaphore : map_object
 {
 	std::vector<TAnimModel *> models;
 	std::vector<basic_event *> events;
@@ -39,7 +39,7 @@ struct semaphore_map_object : map_object
 };
 
 // event launcher description (only for minimap purposes)
-struct event_launcher_map_object : map_object
+struct launcher : map_object
 {
 	basic_event *first_event = nullptr;
 	basic_event *second_event = nullptr;
@@ -57,7 +57,7 @@ struct event_launcher_map_object : map_object
 };
 
 // switch description (only for minimap purposes)
-struct track_switch_map_object : map_object
+struct track_switch : map_object
 {
     std::array<basic_event*, 4> action = { nullptr };
     std::array<char[4], 4> preview;
@@ -69,7 +69,7 @@ struct track_switch_map_object : map_object
 };
 
 // training obstacle description
-struct obstacle_map_object : map_object
+struct obstacle : map_object
 {
 	std::string model_name;
 
@@ -78,20 +78,20 @@ struct obstacle_map_object : map_object
 	}
 };
 
-struct vehicle_map_object : map_object
+struct vehicle : map_object
 {
 	TDynamicObject *dynobj = nullptr;
 };
 
-struct map_objects
+struct objects
 {
-	map_objects_list MapObjects;
-	void prepare();
-	floats_map_objects_map find_in_range(glm::vec3 from, float distance) const;
+	object_list entries;
+	bool poi_dirty = true;
+	sorted_object_list find_in_range(glm::vec3 from, float distance) const;
 };
 
-// vehicle wrapper for map display
+void prepare_objects();
 
-extern map_objects MapObjects;
+extern objects Objects;
 
 } // namespace map

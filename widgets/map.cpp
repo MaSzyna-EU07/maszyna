@@ -418,9 +418,9 @@ glm::dvec2 ui::map_panel::map_signal_direction(glm::dvec3 const &position, float
 
 void ui::map_panel::cache_signal_directions()
 {
-	for (auto const &object : map::MapObjects.MapObjects)
+	for (auto const &object : map::Objects.entries)
 	{
-		auto const semaphore = std::dynamic_pointer_cast<map::semaphore_map_object>(object);
+		auto const semaphore = std::dynamic_pointer_cast<map::semaphore>(object);
 		if (!semaphore)
 			continue;
 
@@ -860,15 +860,15 @@ void ui::map_panel::render_map_lines(
 		std::shared_ptr<map::map_object> object;
 	};
 	std::vector<ordered_map_object> visible_map_objects;
-	visible_map_objects.reserve(map::MapObjects.MapObjects.size());
-	for (auto const &object : map::MapObjects.MapObjects)
+	visible_map_objects.reserve(map::Objects.entries.size());
+	for (auto const &object : map::Objects.entries)
 	{
 		glm::vec4 const ndc = transform * glm::vec4(object->location, 1.0f);
 		if (std::abs(ndc.x) > 1.2f || std::abs(ndc.z) > 1.2f)
 			continue;
 		float const screen_y = origin.y + (1.0f - ndc.z) * 0.5f * surface_size.y;
 		int signal_layer = 0;
-		if (auto const semaphore = std::dynamic_pointer_cast<map::semaphore_map_object>(object))
+		if (auto const semaphore = std::dynamic_pointer_cast<map::semaphore>(object))
 		{
 			auto const cache_it = m_signal_caches.find(semaphore.get());
 			if (cache_it != m_signal_caches.end())
@@ -896,7 +896,7 @@ void ui::map_panel::render_map_lines(
 		if (!map_has_vertex_budget(draw_list, 16, map_symbol_vertex_limit))
 			break;
 
-		if (auto sem = std::dynamic_pointer_cast<map::semaphore_map_object>(object))
+		if (auto sem = std::dynamic_pointer_cast<map::semaphore>(object))
 		{
 			cached_semaphore &signal_cache = m_signal_caches[sem.get()];
 			signal_cache.lights.resize(sem->models.size());
@@ -1187,8 +1187,8 @@ void ui::map_panel::render_map_lines(
 		if (object_hovered)
 			m_hovered_map_object = object;
 
-		if (auto const launcher = std::dynamic_pointer_cast<map::event_launcher_map_object>(object);
-		    launcher && launcher->type == map::event_launcher_map_object::level_crossing)
+		if (auto const launcher = std::dynamic_pointer_cast<map::launcher>(object);
+		    launcher && launcher->type == map::launcher::level_crossing)
 		{
 			draw_list->AddCircleFilled(object_position, 8.0f, IM_COL32(35, 40, 45, 240));
 			draw_list->AddLine(
@@ -1213,11 +1213,11 @@ void ui::map_panel::render_map_lines(
 		}
 
 		ImU32 color = IM_COL32(255, 220, 70, 255);
-		if (std::dynamic_pointer_cast<map::event_launcher_map_object>(object))
+		if (std::dynamic_pointer_cast<map::launcher>(object))
 			color = IM_COL32(255, 150, 50, 255);
-		else if (std::dynamic_pointer_cast<map::track_switch_map_object>(object))
+		else if (std::dynamic_pointer_cast<map::track_switch>(object))
 			color = IM_COL32(80, 190, 255, 255);
-		else if (std::dynamic_pointer_cast<map::obstacle_map_object>(object))
+		else if (std::dynamic_pointer_cast<map::obstacle>(object))
 			color = IM_COL32(255, 80, 80, 255);
 		draw_list->AddCircleFilled(object_position, object_hovered ? 5.0f : 3.0f, color);
 		if (object_hovered)
@@ -1646,21 +1646,21 @@ void ui::map_panel::render_contents()
 			float const map_pick_radius = std::max(
 				0.03f / zoom,
 				24.0f / (std::min(surface_size.x, surface_size.y) * zoom));
-			map::floats_map_objects_map objects =
-				map::MapObjects.find_in_range(glm::vec3(world_pos.x, NAN, world_pos.z), map_pick_radius);
+			map::sorted_object_list objects =
+				map::Objects.find_in_range(glm::vec3(world_pos.x, NAN, world_pos.z), map_pick_radius);
 
 			if (ImGui::IsMouseReleased(0) &&
 			    io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
 			{
 				std::shared_ptr<map::map_object> clicked_object;
 				if (m_hovered_map_object &&
-				    (std::dynamic_pointer_cast<map::semaphore_map_object>(m_hovered_map_object) ||
-				     std::dynamic_pointer_cast<map::track_switch_map_object>(m_hovered_map_object)))
+				    (std::dynamic_pointer_cast<map::semaphore>(m_hovered_map_object) ||
+				     std::dynamic_pointer_cast<map::track_switch>(m_hovered_map_object)))
 					clicked_object = m_hovered_map_object;
 				else if (auto clickable_object = std::find_if(
 					         objects.begin(), objects.end(), [](auto const &entry) {
-						         return std::dynamic_pointer_cast<map::semaphore_map_object>(entry.second) ||
-						                std::dynamic_pointer_cast<map::track_switch_map_object>(entry.second);
+						         return std::dynamic_pointer_cast<map::semaphore>(entry.second) ||
+						                std::dynamic_pointer_cast<map::track_switch>(entry.second);
 					         });
 				         clickable_object != objects.end())
 					clicked_object = clickable_object->second;
@@ -1677,8 +1677,8 @@ void ui::map_panel::render_contents()
 			        io.MouseDragThreshold * io.MouseDragThreshold)
 			{
 				if (m_hovered_map_object &&
-				    (std::dynamic_pointer_cast<map::semaphore_map_object>(m_hovered_map_object) ||
-				     std::dynamic_pointer_cast<map::track_switch_map_object>(m_hovered_map_object)))
+				    (std::dynamic_pointer_cast<map::semaphore>(m_hovered_map_object) ||
+				     std::dynamic_pointer_cast<map::track_switch>(m_hovered_map_object)))
 					handle_map_object_click(*this, m_hovered_map_object);
 				else if (objects.size() > 1)
 					register_popup(std::make_unique<ui::disambiguation_popup>(*this, std::move(objects)));
@@ -1801,23 +1801,23 @@ void ui::map_panel::render_contents()
 
 void ui::handle_map_object_click(ui_panel &parent, std::shared_ptr<map::map_object> &obj)
 {
-	if (auto sem = std::dynamic_pointer_cast<map::semaphore_map_object>(obj))
+	if (auto sem = std::dynamic_pointer_cast<map::semaphore>(obj))
 	{
 		parent.register_popup(std::make_unique<semaphore_popup>(parent, std::move(sem)));
 	}
-	else if (auto track = std::dynamic_pointer_cast<map::event_launcher_map_object>(obj))
+	else if (auto track = std::dynamic_pointer_cast<map::launcher>(obj))
 	{
 		parent.register_popup(std::make_unique<event_launcher_popup>(parent, std::move(track)));
 	}
-    else if (auto track_switch = std::dynamic_pointer_cast<map::track_switch_map_object>(obj))
+    else if (auto track_switch = std::dynamic_pointer_cast<map::track_switch>(obj))
     {
         parent.register_popup(std::make_unique<track_switch_popup>(parent, std::move(track_switch)));
     }
-	else if (auto obstacle = std::dynamic_pointer_cast<map::obstacle_map_object>(obj))
+	else if (auto obstacle = std::dynamic_pointer_cast<map::obstacle>(obj))
 	{
 		parent.register_popup(std::make_unique<obstacle_remove_popup>(parent, std::move(obstacle)));
 	}
-	else if (auto obstacle = std::dynamic_pointer_cast<map::vehicle_map_object>(obj))
+	else if (auto obstacle = std::dynamic_pointer_cast<map::vehicle>(obj))
 	{
 		parent.register_popup(std::make_unique<vehicle_popup>(parent, std::move(obstacle)));
 	}
@@ -1827,7 +1827,7 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 {
 	ImGui::BeginTooltip();
 
-	if (auto sem = std::dynamic_pointer_cast<map::semaphore_map_object>(obj))
+	if (auto sem = std::dynamic_pointer_cast<map::semaphore>(obj))
 	{
 		for (auto &model : sem->models)
 		{
@@ -1864,7 +1864,7 @@ void ui::handle_map_object_hover(std::shared_ptr<map::map_object> &obj)
 	ImGui::EndTooltip();
 }
 
-ui::disambiguation_popup::disambiguation_popup(ui_panel &panel, map::floats_map_objects_map &&list) : popup(panel), m_list(list) {}
+ui::disambiguation_popup::disambiguation_popup(ui_panel &panel, map::sorted_object_list &&list) : popup(panel), m_list(list) {}
 
 void ui::disambiguation_popup::render_content()
 {
@@ -1879,7 +1879,7 @@ void ui::disambiguation_popup::render_content()
 	}
 }
 
-ui::semaphore_popup::semaphore_popup(ui_panel &panel, std::shared_ptr<map::semaphore_map_object> &&sem) : popup(panel), m_sem(sem) {}
+ui::semaphore_popup::semaphore_popup(ui_panel &panel, std::shared_ptr<map::semaphore> &&sem) : popup(panel), m_sem(sem) {}
 
 void ui::semaphore_popup::render_content()
 {
@@ -1938,18 +1938,18 @@ void ui::semaphore_popup::render_content()
 	}
 }
 
-ui::event_launcher_popup::event_launcher_popup(ui_panel &panel, std::shared_ptr<map::event_launcher_map_object> &&sw) : popup(panel), m_switch(sw) {}
+ui::event_launcher_popup::event_launcher_popup(ui_panel &panel, std::shared_ptr<map::launcher> &&sw) : popup(panel), m_switch(sw) {}
 
 void ui::event_launcher_popup::render_content()
 {
 	ImGui::TextUnformatted(m_switch->name.c_str());
 
 	const std::string &open_label =
-	        m_switch->type == map::event_launcher_map_object::track_switch
+	        m_switch->type == map::launcher::track_switch
 	        ? STR("Straight |") : STR("Open |");
 
 	const std::string &close_label =
-	        m_switch->type == map::event_launcher_map_object::track_switch
+	        m_switch->type == map::launcher::track_switch
 	        ? STR("Divert /") : STR("Close -");
 
 	if (ImGui::Button(open_label.c_str()))
@@ -1965,7 +1965,7 @@ void ui::event_launcher_popup::render_content()
 	}
 }
 
-ui::track_switch_popup::track_switch_popup(ui_panel &panel, std::shared_ptr<map::track_switch_map_object> &&sw) : popup(panel), m_switch(sw) {}
+ui::track_switch_popup::track_switch_popup(ui_panel &panel, std::shared_ptr<map::track_switch> &&sw) : popup(panel), m_switch(sw) {}
 
 bool ui::track_switch_popup::render()
 {
@@ -2040,19 +2040,19 @@ void ui::obstacle_insert_popup::render_content()
 			std::string payload(name + ':' + entry.second);
 			m_relay.post(user_command::insertmodel, 0.0, 0.0, GLFW_PRESS, 0, m_position, &payload);
 
-			auto obstacle = std::make_shared<map::obstacle_map_object>();
+			auto obstacle = std::make_shared<map::obstacle>();
 			obstacle->name = entry.first;
 			obstacle->location = m_position;
 			obstacle->model_name = name;
 
-			map::MapObjects.MapObjects.push_back(std::move(obstacle));
+			map::Objects.entries.push_back(std::move(obstacle));
 
 			ImGui::CloseCurrentPopup();
 		}
 	}
 }
 
-ui::obstacle_remove_popup::obstacle_remove_popup(ui_panel &panel, std::shared_ptr<map::obstacle_map_object> &&obstacle)
+ui::obstacle_remove_popup::obstacle_remove_popup(ui_panel &panel, std::shared_ptr<map::obstacle> &&obstacle)
     : popup(panel), m_obstacle(obstacle) { }
 
 void ui::obstacle_remove_popup::render_content()
@@ -2060,7 +2060,7 @@ void ui::obstacle_remove_popup::render_content()
 	if (ImGui::Button(STR_C("Delete obstacle"))) {
 		m_relay.post(user_command::deletemodel, 0.0, 0.0, GLFW_PRESS, 0, glm::vec3(), &m_obstacle->model_name);
 
-		auto &entries = map::MapObjects.MapObjects;
+		auto &entries = map::Objects.entries;
 		for (auto it = entries.rbegin(); it != entries.rend(); it++) {
 			if (*it == m_obstacle) {
 				entries.erase(std::next(it).base());
@@ -2072,7 +2072,7 @@ void ui::obstacle_remove_popup::render_content()
 	}
 }
 
-ui::vehicle_popup::vehicle_popup(ui_panel &panel, std::shared_ptr<map::vehicle_map_object> &&obstacle)
+ui::vehicle_popup::vehicle_popup(ui_panel &panel, std::shared_ptr<map::vehicle> &&obstacle)
     : popup(panel), m_vehicle(obstacle) { }
 
 void ui::vehicle_popup::render_content()

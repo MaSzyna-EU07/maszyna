@@ -16,43 +16,43 @@ namespace ui
 
 class disambiguation_popup : public popup
 {
-	map::floats_map_objects_map m_list;
+	map::sorted_object_list m_list;
 
   public:
-	disambiguation_popup(ui_panel &panel, map::floats_map_objects_map &&list);
+	disambiguation_popup(ui_panel &panel, map::sorted_object_list &&list);
 
 	void render_content() override;
 };
 
 class semaphore_popup : public popup
 {
-	std::shared_ptr<map::semaphore_map_object> m_sem;
+	std::shared_ptr<map::semaphore> m_sem;
 	command_relay m_relay;
 
   public:
-	semaphore_popup(ui_panel &panel, std::shared_ptr<map::semaphore_map_object> &&sem);
+	semaphore_popup(ui_panel &panel, std::shared_ptr<map::semaphore> &&sem);
 
 	virtual void render_content() override;
 };
 
 class event_launcher_popup : public popup
 {
-	std::shared_ptr<map::event_launcher_map_object> m_switch;
+	std::shared_ptr<map::launcher> m_switch;
 	command_relay m_relay;
 
   public:
-	event_launcher_popup(ui_panel &panel, std::shared_ptr<map::event_launcher_map_object> &&sw);
+	event_launcher_popup(ui_panel &panel, std::shared_ptr<map::launcher> &&sw);
 
 	virtual void render_content() override;
 };
 
 class track_switch_popup : public popup
 {
-    std::shared_ptr<map::track_switch_map_object> m_switch;
+    std::shared_ptr<map::track_switch> m_switch;
     command_relay m_relay;
 
   public:
-    track_switch_popup(ui_panel &panel, std::shared_ptr<map::track_switch_map_object> &&sw);
+    track_switch_popup(ui_panel &panel, std::shared_ptr<map::track_switch> &&sw);
 
 	virtual bool render() override;
     virtual void render_content() override;
@@ -72,18 +72,18 @@ class obstacle_insert_popup : public popup
 
 class obstacle_remove_popup : public popup
 {
-	std::shared_ptr<map::obstacle_map_object> m_obstacle;
+	std::shared_ptr<map::obstacle> m_obstacle;
 	command_relay m_relay;
 
   public:
-	obstacle_remove_popup(ui_panel &panel, std::shared_ptr<map::obstacle_map_object> &&obstacle);
+	obstacle_remove_popup(ui_panel &panel, std::shared_ptr<map::obstacle> &&obstacle);
 
 	virtual void render_content() override;
 };
 
 class vehicle_popup : public popup
 {
-	std::shared_ptr<map::vehicle_map_object> m_vehicle;
+	std::shared_ptr<map::vehicle> m_vehicle;
 	command_relay m_relay;
 
 	std::array<char, 128> command_buf = { 0 };
@@ -91,7 +91,7 @@ class vehicle_popup : public popup
 	int command_param2 = 0;
 
   public:
-	vehicle_popup(ui_panel &panel, std::shared_ptr<map::vehicle_map_object> &&obstacle);
+	vehicle_popup(ui_panel &panel, std::shared_ptr<map::vehicle> &&obstacle);
 
 	virtual void render_content() override;
 };
@@ -173,7 +173,7 @@ class map_panel : public ui_panel
 	std::vector<TTrack *> m_switch_tracks;
 	std::vector<signal_track_entry> m_signal_tracks;
 	std::vector<signal_track_node> m_signal_track_tree;
-	std::unordered_map<map::semaphore_map_object const *, cached_semaphore> m_signal_caches;
+	std::unordered_map<map::semaphore const *, cached_semaphore> m_signal_caches;
 	std::vector<cached_water_outline> m_water_outlines;
 	std::vector<cached_world_lines> m_river_lines;
 	std::vector<cached_world_lines> m_environment_lines;

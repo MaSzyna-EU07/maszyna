@@ -360,8 +360,8 @@ void blackbox_recorder::write_map() {
 		++index;
 	}
 	index = 0;
-	for (auto const &object : map::MapObjects.MapObjects) {
-		auto const *semaphore{dynamic_cast<map::semaphore_map_object const *>(object.get())};
+	for (auto const &object : map::Objects.entries) {
+		auto const *semaphore{dynamic_cast<map::semaphore const *>(object.get())};
 		if (semaphore == nullptr || semaphore->memcell == nullptr)
 			continue;
 		auto const location{semaphore->memcell->location()};
