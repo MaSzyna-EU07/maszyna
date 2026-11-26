@@ -205,10 +205,11 @@ jobs:
   linux:
     name: Linux x64 / GCC / ${{ matrix.variant.name }}
     runs-on: ubuntu-24.04
-    # actions: write only to delete the older compiler caches after a save (the step after "Save the compiler cache")
-    permissions:
-      contents: read
-      actions: write
+    # the key of a compiler cache saved here, one output per variant (a matrix job's outputs are shared by its legs):
+    # the job linux-ccache-cleanup deletes the older ones, so this job needs no write access
+    outputs:
+      ccache-key-avx2: ${{ steps.ccache-saved.outputs.avx2 }}
+      ccache-key-noavx2: ${{ steps.ccache-saved.outputs.noavx2 }}
     # see the notes above the windows job: two variants, each with a concurrency group of its own
     concurrency:
       group: ${{ github.workflow }}-linux-${{ matrix.variant.suffix }}-${{ github.event_name }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
@@ -219,7 +220,8 @@ jobs:
       matrix:
         # a pull request from a branch of this repository builds the AVX2 variant only; the variant without AVX2
         # (the same sources, one compiler switch) is built by the push of that branch, by the pushes to staging
-        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both
+        # and master and by a manual run. a pull request from a fork has no push run here, so it builds both.
+        # so the "No AVX2" jobs of a pull request of this repository never run: don't make them a required check
         variant: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"}]' || '[{"name":"AVX2","suffix":"avx2","cmake_flags":"-DENABLE_AVX2=ON"},{"name":"No AVX2","suffix":"noavx2","cmake_flags":"-DENABLE_AVX2=OFF"}]') }}
 
     steps:
@@ -374,21 +376,13 @@ jobs:
           path: ${{ runner.temp }}/ccache
           key: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
 
-      # a cache can't be written over, so every save above is a new key of up to 0.5 GB. the older ones of this branch
-      # and variant (of any GCC) go right after it, or they'd fill the 10 GB of the repository and push out the small
-      # caches (audio-dlls-*, apt-*). a failed delete only leaves the old cache to the eviction
-      - name: Delete the older compiler caches
+      # for the job linux-ccache-cleanup, which deletes the older caches of this branch and variant
+      - name: Pass on the saved compiler cache key
+        id: ccache-saved
         if: ${{ !cancelled() && steps.ccache-save.outcome == 'success' }}
         env:
-          GH_TOKEN: ${{ github.token }}
-          PREFIX: ccache-linux-${{ matrix.variant.suffix }}-
-          KEEP: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
-        run: |
-          gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "$PREFIX" --limit 100 --json id,key \
-            --jq ".[] | select(.key != env.KEEP) | .id" |
-          while read -r id; do
-            gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || echo "::warning::cache $id not deleted"
-          done
+          KEY: ccache-linux-${{ matrix.variant.suffix }}-gcc${{ steps.ccache-key.outputs.gcc }}-${{ github.sha }}
+        run: echo "${{ matrix.variant.suffix }}=$KEY" >> "$GITHUB_OUTPUT"
 
       # the build copies the shared libraries next to the game (CMake_modules/bundle_runtime_libs.cmake) and the
       # game looks for them there first ($ORIGIN): each one it loads from outside build/bin has to be one of the system
@@ -451,6 +445,42 @@ jobs:
             build/bin/
           if-no-files-found: error
           retention-days: 14
+
+
+  # a cache can't be written over, so every save of the linux job is a new key of up to 0.5 GB. the older ones of the
+  # branch and variant (of any GCC) go right after it, or they'd fill the 10 GB of the repository and push out the
+  # small caches (audio-dlls-*, apt-*). only the caches created before the one saved go: when two runs of a branch end
+  # together, the one which saved later keeps its cache. a failed delete only leaves the old cache to the eviction
+  linux-ccache-cleanup:
+    name: Linux / delete the older compiler caches
+    needs: linux
+    if: ${{ !cancelled() && (needs.linux.outputs.ccache-key-avx2 != '' || needs.linux.outputs.ccache-key-noavx2 != '') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+
+    steps:
+      - name: Delete the older compiler caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SAVED: ${{ needs.linux.outputs.ccache-key-avx2 }} ${{ needs.linux.outputs.ccache-key-noavx2 }}
+        run: |
+          # the ids of the caches created before the one saved (env.KEEP); none when it isn't listed. the times are
+          # compared as numbers, as their fractions of a second can have any number of digits
+          older='
+            def t: capture("^(?<s>[^.Z]+)(?<f>[.][0-9]+)?Z$") | ((.s + "Z") | fromdateiso8601) + (("0" + (.f // "")) | tonumber);
+            (map(select(.key == env.KEEP)) | first | .createdAt) as $saved
+            | if $saved == null then empty else ($saved | t) as $at | .[] | select((.createdAt | t) < $at) | .id end'
+          for KEEP in $SAVED; do
+            export KEEP
+            # the key without its GCC version and commit: ccache-linux-<variant>-
+            prefix="${KEEP%%-gcc*}-"
+            gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "$prefix" --limit 100 \
+              --json id,key,createdAt --jq "$older" |
+            while read -r id; do
+              gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || echo "::warning::cache $id not deleted"
+            done
+          done
 
 
   # ============================================================
