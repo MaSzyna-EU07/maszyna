@@ -189,7 +189,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     scene::Groups.close();
     scene::Layers.close();
 
-	scene::update_map();
+	scene::Groups.update_map();
 	Region->create_map_geometry();
 
 	if( true == Global.file_binary_terrain

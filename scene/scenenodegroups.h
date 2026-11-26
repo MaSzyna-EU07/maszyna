@@ -35,6 +35,8 @@ public:
     // indicates creation of current group ended. returns: handle to the parent group or null_handle if group stack is empty
     group_handle
         close();
+    void
+        update_map();
     // returns current active group, or null_handle if group stack is empty
     group_handle
         handle() const;
@@ -93,8 +95,6 @@ private:
 };
 
 extern node_groups Groups;
-
-void update_map();
 
 } // scene
 

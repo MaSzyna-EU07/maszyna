@@ -20,7 +20,7 @@ namespace scene {
 
 node_groups Groups;
 
-void update_map() {
+void node_groups::update_map() {
 	map::prepare_objects();
 }
 
