@@ -538,6 +538,24 @@ TEST_CASE("bones: a joint keeps the lengths of its pieces as made, stretched or 
 	CHECK(pressed[2].y == doctest::Approx(0.4));
 }
 
+TEST_CASE("bones: a stiff joint turns only about the vertical, level and as long as made") {
+	std::vector<glm::dvec3> const rest{{0.0, 0.0, 2.0}, {0.0, 0.2, 2.0}, {0.0, 0.4, 2.0}};
+	// the next car 3 cm farther, a little round a curve and 2 cm higher at the far end
+	std::vector<glm::dvec3> now{{0.0, 0.0, 2.0}, {0.01, 0.215, 2.01}, {0.03, 0.43, 2.02}};
+	bones::keep_level(rest, now);
+	CHECK(now[2].z == doctest::Approx(2.0));
+	CHECK(glm::distance(now[1], now[0]) == doctest::Approx(0.2));
+	CHECK(glm::distance(now[2], now[1]) == doctest::Approx(0.2));
+	CHECK(now[2].x > 0.0);
+	// a turn of 10 degrees round the vertical with 5 of pitch: only the 10 kept
+	auto const yaw{glm::angleAxis(glm::radians(10.0), glm::dvec3{0.0, 0.0, 1.0})};
+	auto const pitch{glm::angleAxis(glm::radians(5.0), glm::dvec3{1.0, 0.0, 0.0})};
+	auto const kept{bones::yaw_only(yaw * pitch)};
+	auto const ahead{kept * glm::dvec3{0.0, 1.0, 0.0}};
+	CHECK(ahead.z == doctest::Approx(0.0));
+	CHECK(glm::degrees(std::atan2(-ahead.x, ahead.y)) == doctest::Approx(10.0).epsilon(0.01));
+}
+
 TEST_CASE("bones: a joint held to the whole turn of the next car, spread evenly along it from either side") {
 	bones::rig rig;
 	REQUIRE(bones::add_point(rig, {"root", "fixed", "0", "0", "2"}).empty());

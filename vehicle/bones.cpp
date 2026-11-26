@@ -443,6 +443,37 @@ void keep_lengths(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &
 	}
 }
 
+void keep_level(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &Now)
+{
+	if (Rest.size() != Now.size())
+	{
+		return;
+	}
+	std::vector<glm::dvec3> const was{Now};
+	for (std::size_t node{1}; node < Now.size(); ++node)
+	{
+		auto const made{Rest[node] - Rest[node - 1]};
+		auto const across{glm::length(glm::dvec2{made.x, made.y})};
+		// the direction of the piece now, seen from above, with the rise it has as made
+		auto flat{glm::dvec2{was[node].x - was[node - 1].x, was[node].y - was[node - 1].y}};
+		auto const length{glm::length(flat)};
+		flat = length > 1e-9 ? flat / length : (across > 1e-9 ? glm::dvec2{made.x, made.y} / across : glm::dvec2{0.0, 1.0});
+		Now[node] = Now[node - 1] + glm::dvec3{flat * across, made.z};
+	}
+}
+
+glm::dquat yaw_only(glm::dquat const &Turn)
+{
+	// the twist of the turn about the vertical: its vector part projected onto the axis, normalised
+	glm::dquat twist{Turn.w, 0.0, 0.0, Turn.z};
+	auto const length{glm::length(twist)};
+	if (length < 1e-9)
+	{
+		return glm::dquat{1.0, 0.0, 0.0, 0.0};
+	}
+	return twist / length;
+}
+
 skin_pose pose_skin(skin_bind const &Bind, std::vector<glm::dvec3> const &Now, std::vector<glm::dquat> const &Turns)
 {
 	if (Bind.piece + 1 >= Now.size() || Bind.piece + 1 >= Turns.size())

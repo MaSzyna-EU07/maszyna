@@ -981,6 +981,11 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
             auto turns { bones::spine_turns( rest, now ) };
             if( bend.head_from >= 0 && false == turns.empty() ) {
                 turns.back() = head_turn( bend, Now, upwards );
+                if( bend.rooted && bend.head_up >= 0 ) {
+                    // the joint of two cars as stiff as its bellows: it turns round a curve, but not with the pitch and
+                    // the roll of the next car on uneven track
+                    turns.back() = bones::yaw_only( turns.back() );
+                }
             }
             // the root held to the body as made
             bones::hold_root( bend, turns );
@@ -988,9 +993,9 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
                 // the joint of two cars: the turn spread evenly from the body to the next car, as the next car spreads it
                 // the other way, so the parts of the two that overlap (the bellows, the roof cables) stay together
                 bones::spread_turns( rest, turns );
-                // and as long as made: the bellows and the cables turn with the cars, not stretched by the play of the
-                // coupling of the articulated joint as the train brakes and pulls
-                bones::keep_lengths( rest, now );
+                // and as long and as level as made: the bellows and the cables turn with the cars, not stretched by
+                // the play of the coupling of the articulated joint as the train brakes and pulls, nor bent up and down
+                bones::keep_level( rest, now );
             }
             nodes.emplace_back( now.begin(), now.end() );
             nodeturns.emplace_back( turns.begin(), turns.end() );

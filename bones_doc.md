@@ -74,7 +74,10 @@ bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [roote
   well, so the head takes the whole turn of the next car, rolled and pitched too, not only the line and the vertical of
   the world. On a `rooted` bend the turn is then spread over the spine by its length as made, from none at the root to
   the whole of it at the head: a joint bends the same from both cars, and the faces of two bellows or two rubber
-  collars meeting halfway stand on one plane, which halves the angle between the cars.
+  collars meeting halfway stand on one plane, which halves the angle between the cars. Such a joint is as stiff as a
+  bellows: of the turn of the next car it keeps only the part about the vertical (round a curve), not its pitch and
+  roll on uneven track, and the pieces of its spine keep their length and rise as made, whatever the play of the
+  articulated coupling as the train brakes and pulls.
 
 ## Control cables, rubber collars and buffers
 

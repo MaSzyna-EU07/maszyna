@@ -218,6 +218,12 @@ void spread_turns(std::vector<glm::dvec3> const &Rest, std::vector<glm::dquat> &
 // joint of two cars as stiff as the bellows over it, which turns with the cars but doesn't stretch with the play of
 // their coupling
 void keep_lengths(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &Now);
+// the same, each piece also as steep as made: the joint turns only about the vertical of the car, as round a curve,
+// whatever the next car pitches or rolls on uneven track
+void keep_level(std::vector<glm::dvec3> const &Rest, std::vector<glm::dvec3> &Now);
+// of a turn, only its part about the vertical of the model file (z): the turn of the next car round a curve, without
+// its pitch and its roll
+glm::dquat yaw_only(glm::dquat const &Turn);
 
 // the move of a bone: turned about its anchor to face its aim again, its anchor moved
 struct motion {
