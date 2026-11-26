@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "application/editorprojection.h"
 #include "editor/editorFormat.hpp"
 #include "editor/editorIncludeInfo.hpp"
+#include "editor/editorSwitchDrives.hpp"
 
 #include "world/Segment.h"
 #include "world/Track.h"
@@ -35,15 +36,14 @@ http://mozilla.org/MPL/2.0/.
 #include <iterator>
 #include <map>
 #include <sstream>
+#include <utility>
 
 namespace
 {
 
 std::string drive_file(std::string Text)
 {
-	std::replace(Text.begin(), Text.end(), '\\', '/');
-	std::transform(Text.begin(), Text.end(), Text.begin(), [](unsigned char Character) { return static_cast<char>(std::tolower(Character)); });
-	return Text;
+	return switch_drives::game_name(std::move(Text));
 }
 
 // the track the events of a drive find by the name: the game reads the names of the tracks lower case, the parameters of an include as
@@ -52,6 +52,30 @@ TTrack *track_named(std::string const &Name)
 {
 	auto *track{simulation::Paths.find(Name)};
 	return track != nullptr ? track : simulation::Paths.find(drive_file(Name));
+}
+
+// whether the track a name finds is removed, none when it finds no track
+std::optional<bool> named_removed(std::string const &Name)
+{
+	auto const *track{track_named(Name)};
+	return track != nullptr ? std::optional<bool>{track->m_editorremoved} : std::nullopt;
+}
+
+// the names of all the tracks of the scenery not removed
+std::vector<std::string> standing_names()
+{
+	std::vector<std::string> names;
+	for (auto const *track : simulation::Paths.sequence())
+		if (track != nullptr && false == track->m_editorremoved)
+			names.push_back(track->name());
+	return names;
+}
+
+// the switches standing, told by the names as the events of the drives find them in the game; with no track found by a name, a track of
+// the name left by the deletion of the other of two is looked for in the whole scenery
+switch_drives::standing_switches switches_standing()
+{
+	return switch_drives::standing_switches{named_removed, standing_names};
 }
 
 // a template by the name of its file, with no folder: told to the user, who picks the drives by their names
@@ -307,10 +331,8 @@ std::vector<std::string> const &editor_mode::drive_switches(std::string const &F
 	static std::vector<std::string> const single{std::string{}};
 	if (Variants.contains(File))
 		return single;
-	auto const [found, fresh]{m_drive_templates.try_emplace(File)};
-	if (fresh)
-		editor_includes::switched_tracks(File, found->second);
-	return found->second;
+	// a template changed is read again with the next revision of the templates, one which couldn't be read in the next frame
+	return m_drive_templates.of(File, EditorIncludes.revision(), ImGui::GetFrameCount(), editor_includes::switched_tracks);
 }
 
 std::map<std::string, std::pair<int, int>, std::less<>> editor_mode::drive_variants() const
@@ -330,7 +352,7 @@ void editor_mode::drives_changed()
 	m_drives_named.reset();
 }
 
-std::vector<editor_mode::stray_drive> editor_mode::stray_drives(bool const Wait)
+std::vector<editor_mode::stray_drive> const &editor_mode::stray_drives(bool const Wait)
 {
 	scan_switch_drives(Wait);
 	auto const instances{static_cast<std::size_t>(scene::Layers.instance_count())};
@@ -348,31 +370,38 @@ std::vector<editor_mode::stray_drive> editor_mode::stray_drives(bool const Wait)
 				drive.switches.push_back(standing.values[0] + suffix);
 			kept->drives.push_back(std::move(drive));
 		}
+		m_drives_stray.frame.reset();
 	}
-	// a switch is told by the name, as the events of the drive find it in the game; a drive of a double switch is stray with all of its
-	// switches gone, while one stands it still throws it
-	std::vector<stray_drive> stray;
+	// the list in the switch tool and the marks in the view ask in each frame: told once, and again after a step in the frame
+	auto &stray{m_drives_stray};
+	auto const frame{ImGui::GetFrameCount()};
+	auto const history{history_revision()};
+	if (stray.frame == frame && stray.history == history)
+		return stray.drives;
+	stray.frame = frame;
+	stray.history = history;
+	stray.drives.clear();
+	// a switch is told by the name, as the events of the drive find it in the game, by the same test the deletion of a switch takes its
+	// drive away by; a drive of a double switch is stray with all of its switches gone, while one stands it still throws it
+	auto switches{switches_standing()};
 	for (auto const &drive : kept->drives)
 	{
 		auto const &included{scene::Layers.instance(drive.instance)};
 		// a gate, a derailer or a turntable of the same kind of template throws a track of another kind: only a track gone counts
-		if (included.removed || included.dead || std::any_of(drive.switches.begin(), drive.switches.end(), [](std::string const &Name) {
-			    auto const *track{track_named(Name)};
-			    return track != nullptr && false == track->m_editorremoved;
-		    }))
+		if (included.removed || included.dead || switches.any_stands(drive.switches))
 			continue;
 		std::string missing;
 		for (auto const &name : drive.switches)
 			missing += (missing.empty() ? "" : ", ") + name;
-		stray.push_back(drive);
-		stray.back().name = std::move(missing);
+		stray.drives.push_back(drive);
+		stray.drives.back().name = std::move(missing);
 	}
-	return stray;
+	return stray.drives;
 }
 
 void editor_mode::render_stray_drives()
 {
-	auto const stray{stray_drives()};
+	auto const &stray{stray_drives()};
 	if (stray.empty())
 		return;
 	ImGui::PushID("straydrives");
@@ -400,7 +429,7 @@ void editor_mode::render_stray_drives()
 // a red mark by each drive with no switch in sight, so it's seen in the view and over the photo, not only in the list
 void editor_mode::draw_stray_drives()
 {
-	auto const stray{stray_drives()};
+	auto const &stray{stray_drives()};
 	if (stray.empty())
 		return;
 	// the ones far off would only crowd the view of the whole line
@@ -528,13 +557,8 @@ void editor_mode::drives_deleted(std::vector<TTrack *> const &Switches)
 	auto const named = [&](std::string const &Name) { return std::find(deleted.begin(), deleted.end(), drive_file(Name)) != deleted.end(); };
 	// an older scenery may have two tracks of a name, the name finding the later; the earlier one, left by the deletion of the other,
 	// still has the drive and the ballast, so it's looked for too
-	auto const stands = [](std::string const &Name) {
-		if (auto const *track{track_named(Name)}; track != nullptr)
-			return false == track->m_editorremoved;
-		auto const name{drive_file(Name)};
-		auto const &tracks{simulation::Paths.sequence()};
-		return std::any_of(tracks.begin(), tracks.end(), [&](TTrack const *Track) { return Track != nullptr && false == Track->m_editorremoved && drive_file(Track->name()) == name; });
-	};
+	auto switches{switches_standing()};
+	auto const stands = [&switches](std::string const &Name) { return switches.stands(Name); };
 	auto const take_away = [&](scene::instance_handle const Instance) {
 		if (false == scene::Layers.removable(Instance))
 			return;
