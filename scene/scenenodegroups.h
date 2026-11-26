@@ -85,8 +85,6 @@ private:
     // creates handle for a new group
     group_handle
         create_handle();
-    bool
-        assign_cross_switch(map::track_switch&sw, std::string &sw_name, const std::string &id, size_t idx);
     // the node leaves the group it's in
     void
         leave( scene::basic_node *Node );
