@@ -64,12 +64,6 @@ node_groups::close()
     return handle();
 }
 
-void
-node_groups::update_map()
-{
-	map::prepare_objects();
-}
-
 // returns current active group, or null_handle if group stack is empty
 group_handle
 node_groups::handle() const {

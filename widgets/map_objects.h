@@ -20,11 +20,11 @@ struct map_object
 	}
 };
 
-using object_list = std::vector<std::shared_ptr<map::map_object>>;
-using sorted_object_list = std::map<float, std::shared_ptr<map::map_object>>;
+using map_objects_list = std::vector<std::shared_ptr<map_object>>;
+using floats_map_objects_map = std::map<float, std::shared_ptr<map_object>>;
 
 // semaphore description (only for minimap purposes)
-struct semaphore : public map_object
+struct semaphore_map_object : map_object
 {
 	std::vector<TAnimModel *> models;
 	std::vector<basic_event *> events;
@@ -39,7 +39,7 @@ struct semaphore : public map_object
 };
 
 // event launcher description (only for minimap purposes)
-struct launcher : public map_object
+struct event_launcher_map_object : map_object
 {
 	basic_event *first_event = nullptr;
 	basic_event *second_event = nullptr;
@@ -57,7 +57,7 @@ struct launcher : public map_object
 };
 
 // switch description (only for minimap purposes)
-struct track_switch : public map_object
+struct track_switch_map_object : map_object
 {
     std::array<basic_event*, 4> action = { nullptr };
     std::array<char[4], 4> preview;
@@ -69,7 +69,7 @@ struct track_switch : public map_object
 };
 
 // training obstacle description
-struct obstacle : public map_object
+struct obstacle_map_object : map_object
 {
 	std::string model_name;
 
@@ -78,21 +78,20 @@ struct obstacle : public map_object
 	}
 };
 
-// vehicle wrapper for map display
-struct vehicle : public map_object
+struct vehicle_map_object : map_object
 {
 	TDynamicObject *dynobj = nullptr;
 };
 
-struct objects
+struct map_objects
 {
-	std::vector<std::shared_ptr<map_object>> entries;
-
-	// returns objects in range from vec3, NaN in Y ignores it
-	sorted_object_list find_in_range(glm::vec3 from, float distance) const;
+	map_objects_list MapObjects;
+	void prepare();
+	floats_map_objects_map find_in_range(glm::vec3 from, float distance) const;
 };
 
-extern objects Objects;
+// vehicle wrapper for map display
 
-void prepare_objects();
+extern map_objects MapObjects;
+
 } // namespace map

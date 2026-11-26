@@ -31,7 +31,6 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Road.h"
 #include "world/Sweep.h"
 #include "world/RoadPoint.h"
-#include "widgets/map_objects.h"
 #include "application/application.h"
 #include "rendering/renderer.h"
 #include "utilities/Logs.h"
@@ -190,7 +189,7 @@ state_serializer::deserialize_continue(std::shared_ptr<deserializer_state> state
     scene::Groups.close();
     scene::Layers.close();
 
-	scene::Groups.update_map();
+	map::MapObjects.prepare();
 	Region->create_map_geometry();
 
 	if( true == Global.file_binary_terrain
