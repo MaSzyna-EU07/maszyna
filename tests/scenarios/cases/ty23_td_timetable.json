@@ -1,0 +1,38 @@
+{
+  "description": "Ty23 (1'E) steam locomotive with its tender on td.scn, made from the works drawings in the Stacja Muzeum collection, AI driver on the td/rozklad timetable: starts from Stacja1, keeps to the speed limit, brakes to a stop at Przystanek. Needs the placeholder vehicle pkp/ty23_v1, not in the SVN yet. The stop may come up to 100 m past the mark: the Ty23 brakes with what its drawing 22.01a gives, two 14\" cylinders at 3.5 at through a lever ratio of 5.75, 39.9 t on the shoes, 47 % of its weight on the coupled axles, in G only, and the AI starts braking for it late (60 m past in the run of 2026-11-25).",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\ty23_v1 ty23-1 ty23 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_t dynamic pkp\\ty23_v1 ty23t-1 ty23t 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 200
+    },
+    {
+      "type": "max_speed",
+      "limit": 90,
+      "tolerance": 3
+    },
+    {
+      "type": "brakes",
+      "min_pressure": 0.5
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 0,
+      "min_distance": 1380,
+      "max_distance": 1500
+    }
+  ]
+}

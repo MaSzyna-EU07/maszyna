@@ -22,10 +22,14 @@ http://mozilla.org/MPL/2.0/.
 #include "audio/sound.h"
 #include "world/Spring.h"
 #include "vehicle/mirrors.h"
+#include "vehicle/bones.h"
+#include "rendering/geometrybank.h"
 #include "scripting/scriptscreenrules.h"
 
 #include <vector>
 #include <memory>
+#include <array>
+#include <optional>
 
 class script_screen; // scripting/scriptscreens.h
 enum class script_language; // scripting/scriptscreens.h
@@ -338,11 +342,54 @@ private:
     std::vector<slottedlever_data> m_slottedlevers;
     static double slottedlever_angle( slottedlever_data const &Lever, double const Wheelangle );
     void update_slottedlevers();
+    // bones of the model (bonepoint:, bone: of the .mmd, see vehicle/bones.h): the rods of a steam locomotive, the
+    // couplers following the next vehicle
+    struct bone_wheel {
+        int animation { -1 }; // of the wheel a crank point goes round with
+        bones::wheel_turn turn;
+    };
+    bones::rig m_rig;
+    std::vector<bones::binding> m_bonebindings;
+    std::vector<bone_wheel> m_bonewheels;
+    bool m_bonesbound { false };
+    // a chain of the next vehicle one with a chain of this one: a hose from cock to cock, coupled
+    struct shared_chain {
+        TDynamicObject *vehicle { nullptr };
+        std::size_t chain { 0 };
+    };
+    double m_chainclock { -1.0 }; // the simulation time the chains were moved to
+    double m_chainposed { -1.0 }; // the simulation time the nodes were last taken into the pose
+    bool m_flexesnear { false }; // whether the vehicle is near enough for its bent submodels to be bent and drawn
+    static constexpr double flex_reach { 50.0 }; // m, how near that is
+    bool m_chainsnear { false }; // whether it's near enough for its chains to move
+    static constexpr double chain_reach { 75.0 }; // m, how near that is
+    std::vector<bones::chain_state> m_chainstates; // of the chains of the rig, simulated in the world frame
+    std::vector<shared_chain> m_chainshared; // the chain of the next vehicle each one is one with, if any
+    void load_bonepoint( cParser &Parser );
+    void load_bonechain( cParser &Parser );
+    void load_bonebend( cParser &Parser );
+    void bind_flexes();
+    void pose_flexes( std::vector<glm::dvec3> const &Now );
+    // returns whether the chains moved, once a frame
+    bool simulate_chains( std::vector<glm::dvec3> &Now, std::vector<glm::dvec3> &Next );
+    void advance_chains( std::vector<glm::dvec3> const &Now, bool const Needed = false );
+    void advance_chains();
+    shared_chain find_shared_chain( std::size_t const Index, std::vector<glm::dvec3> const &Now ) const;
+    bool follows( shared_chain const &Shared ) const;
+    void load_bone( cParser &Parser );
+    void bind_bones();
+    bones::drive bone_drive( bool const Future ) const;
+    std::optional<glm::dvec3> coupler_shift( bones::point const &Point ) const;
+    std::optional<glm::dvec3> chain_clamp( bones::chain const &Chain, bool const AtStart ) const;
+    void update_bones();
     // Winger 160204 - pantografy
     double pantspeedfactor;
     // animacje typu przesuw
     TSubModel *smBuforLewy[2];
     TSubModel *smBuforPrawy[2];
+    // the heads of the buffers of each end, left and right, as they stand in the model file: across and up (x, z); found
+    // from the buffer submodels when the vehicle is loaded
+    std::array<std::array<std::optional<glm::dvec2>, 2>, 2> m_bufferheads;
     TAnimValveGear *pValveGear;
 	glm::dvec3 vFloor; // podłoga dla ładunku
   public:
@@ -508,6 +555,37 @@ private:
     AirCoupler btCoupler1; // sprzegi
     AirCoupler btCoupler2;
     std::array<TModel3d *, 2> m_coupleradapters = { nullptr, nullptr };
+    // the submodels bent along their spines (bonebend: of the .mmd, vehicle/bones.h): each in a copy of the vehicle's
+    // own, its vertices following the spine, drawn in place of the submodel of the shared model (scene_walk::Render_flexes())
+    struct flex_data {
+        TSubModel *original { nullptr };
+        std::shared_ptr<TModel3d> model;
+        TSubModel *skin { nullptr };
+        std::vector<std::size_t> bends; // of the rig, bending this submodel
+        std::vector<int> owners; // of each vertex, the one of bends it follows; -1 for a vertex staying as made
+        std::vector<std::uint32_t> moving; // the vertices with an owner
+        std::vector<bones::skin_bind> binds;
+        gfx::vertex_array rest; // in the frame of the vehicle
+        gfx::vertex_array posed;
+        // the nodes of the spines and their turns the vertices were last posed for, all bends one after the other
+        std::vector<glm::vec3> posednodes;
+        std::vector<glm::quat> posedturns;
+        bool changed { false }; // posed, not yet put into the geometry (upload_flexes())
+        bool visible { false }; // the submodel of the shared model is shown for this vehicle now
+        int originalvisible { 1 };
+        bool hidden { false }; // by hide_flexes(), not yet shown again
+    };
+    std::vector<flex_data> m_flexes;
+    // hides the bent submodels in the shared model while the vehicle is drawn, noting whether they're shown for it
+    void hide_flexes();
+    // shows them again, after the vehicle is drawn
+    void restore_flexes();
+    // puts the bent submodels into their geometry, out of the walks of the renderer (the main thread, RenderSounds())
+    void upload_flexes();
+    void bind_flex( std::vector<std::size_t> const &Bends );
+    glm::dquat head_turn( bones::bend const &Bend, std::vector<glm::dvec3> const &Now, glm::dvec3 const &Upwards ) const;
+    void bind_flex_part( flex_data &Flex, std::size_t const Slot, std::vector<glm::dvec3> const &Points );
+    void pose_flex_vertex( flex_data &Flex, std::uint32_t const Vertex, std::vector<glm::vec3> const &Nodes, std::vector<glm::quat> const &Turns );
     AirCoupler btCPneumatic1; // sprzegi powietrzne //yB - zmienione z Button na AirCoupler - krzyzyki
     AirCoupler btCPneumatic2;
     AirCoupler btCPneumatic1r; // ABu: to zeby nie bylo problemow przy laczeniu wagonow,
@@ -517,8 +595,8 @@ private:
     AirCoupler btPneumatic1r; // ABu: analogicznie jak 4 linijki wyzej
     AirCoupler btPneumatic2r;
 
-    TButton btCCtrl1; // sprzegi sterowania
-    TButton btCCtrl2;
+    AirCoupler btCCtrl1; // sprzegi sterowania; _xon: drawn by the vehicle that isn't the coupling owner
+    AirCoupler btCCtrl2;
     TButton btCPass1; // mostki przejsciowe
     TButton btCPass2;
     char cp1, sp1, cp2, sp2; // ustawienia węży
@@ -844,6 +922,12 @@ private:
     int DettachStatus(int dir);
     int Dettach(int dir);
     TDynamicObject * Neighbour(int &dir);
+    // how far each buffer of the end (left, right) is pressed in: the deflection of the end as the coupling has it, and
+    // half of what the head stands nearer to the one it meets than the axis does; none without a coupled vehicle with
+    // buffers known on both
+    std::optional<std::array<double, 2>> buffers_pressed( int const End ) const;
+    // whether both vehicles at the end have their control cables modelled whole (cctrl<n>_xon), drawn by the owner only
+    bool control_cables_shared( int const End ) const;
     // updates potential collision sources
     void update_neighbours();
     // locates potential collision source within specified range, scanning its route in specified direction

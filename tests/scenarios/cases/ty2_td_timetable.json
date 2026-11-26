@@ -1,0 +1,38 @@
+{
+  "description": "Ty2 steam locomotive with its tender on td.scn, AI driver on the td/rozklad timetable: raises steam, starts the air pump, starts from Stacja1 on the regulator with the cut-off notched up, keeps to the speed limit, brakes to a stop at Przystanek. The stop may come up to 30 m past the mark rather than 20: the placeholder Ty2 brakes in G only, which fills slowly, and the AI's first light application on its Knorr handle barely brakes (5 m past in the run of 2026-11-25). Needs the placeholder vehicle pkp/ty2_v1, not in the SVN yet.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\ty2_v1 ty2-1 ty2 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_t dynamic pkp\\ty2_v1 ty2t-1 ty2t 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "duration": 300,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 200
+    },
+    {
+      "type": "max_speed",
+      "limit": 90,
+      "tolerance": 3
+    },
+    {
+      "type": "brakes",
+      "min_pressure": 0.5
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 0,
+      "min_distance": 1380,
+      "max_distance": 1430
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "_comment": "Freight steam locomotive made after the PKP Ty2 (DRB class 52), without its tender: 1'E h2, two cylinders 600 x 660 mm, 1400 mm wheels, 16 bar. The Steam section keeps the defaults of steam.h, which are the Ty2's; tests change only the keys they're about.",
+  "Param": { "Category": "train", "M": 84000, "Vmax": 80, "PWR": 1192 },
+  "Dimensions": { "L": 13.4, "H": 4.55, "W": 3.1, "Cx": 0.3 },
+  "Wheels": { "D": 1.4, "Tw": 1.435, "AIM": 1500, "Axle": "1E", "Ad": 9.2, "Bd": 2.6, "Rmin": 140, "BearingType": "Slide" },
+  "Brake": {
+    "BrakeValve": "K", "NBpA": 4, "MBF": 120.0, "MaxBP": 3.8, "LocMaxBP": 3.8, "BCN": 2, "BCR": 0.2, "BCD": 0.1, "BCM": 8.0,
+    "HiPP": 5, "LoPP": 3.5, "Vv": 0.3, "MinCP": 7.0, "MaxCP": 8.0, "CompressorSpeed": 0.0125, "CompressorPower": "Engine",
+    "BCS": 0.8, "BSA": 0, "BM": "P10-Bg", "BVV": 40, "BRE": 0.9
+  },
+  "BuffCoupl": { "CType": "Screw", "kB": 9200, "DmaxB": 0.15, "FmaxB": 740, "kC": 4800, "DmaxC": 0.15, "FmaxC": 780, "beta": 0.58, "AllowedFlag": 3 },
+  "Cntrl": {
+    "BrakeSystem": "Pneumatic", "BDelay1": 15, "BDelay2": 4, "ASB": "Manual", "LocalBrake": "PneumaticBrake", "ManualBrake": "Yes",
+    "MCPN": 10, "SCPN": 14, "IniCDelay": 0.5, "SCDelay": 0.1, "BrakeDelays": "G", "BrakeHandle": "Knorr", "LocBrakeHandle": "Knorr"
+  },
+  "Engine": { "EngineType": "SteamEngine", "Trans": "1:1" },
+  "Steam": { "CylD": 0.6, "CylS": 0.66, "BoilerPressure": 16, "Grate": 3.89, "HeatingSurface": 177.7 }
+}

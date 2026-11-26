@@ -3221,6 +3221,37 @@ void TController::close_line_breaker()
     cue_action( driver_hint::linebreakerclose );
 }
 
+// the line breaker of the vehicle, for the AI: a steam locomotive has its boiler in steam instead
+bool TController::is_line_breaker_open( TMoverParameters const &Vehicle ) {
+
+    if( Vehicle.EngineType == TEngineType::SteamEngine ) {
+        return Vehicle.Steam.pressure() < steam_ready_pressure;
+    }
+    return false == Vehicle.Mains;
+}
+
+// the cutoff of a steam locomotive the AI drives: full gear starting, notched up with the speed, the boiler kept in steam
+// by notching up further when its pressure falls. a notch a call, the secondary controller from full gear (0)
+void TController::set_steam_cutoff() {
+
+    auto const notches { mvControlling->ScndCtrlPosNo };
+    if( notches <= 0 ) { return; }
+    // full gear up to 10 km/h, the shortest cutoff from 60 km/h
+    auto target { static_cast<int>( std::lround( std::clamp( ( mvControlling->Vel - 10.0 ) / 50.0, 0.0, 1.0 ) * notches ) ) };
+    auto const pressure { mvControlling->Steam.pressure() };
+    auto const working { mvControlling->Steam.Parameters.working_pressure };
+    if( pressure < working - 4.0e5 ) {
+        // the boiler can't keep up: less steam
+        target = std::min( notches, target + 2 );
+    }
+    if( mvControlling->ScndCtrlPos < target ) {
+        mvControlling->IncScndCtrl( 1 );
+    }
+    else if( mvControlling->ScndCtrlPos > target ) {
+        mvControlling->DecScndCtrl( 1 );
+    }
+}
+
 bool TController::PrepareEngine()
 { // odpalanie silnika
     // HACK: don't immediately activate inert vehicle in case the simulation is about to replace us with human driver
@@ -3316,7 +3347,9 @@ bool TController::PrepareEngine()
                 }
                 // w EN57 sprężarka w ra jest zasilana z silnikowego
                 // TODO: change condition to presence of required voltage type
-                if( IsAnyCompressorPresent && IsAnyConverterEnabled ) {
+                // the air pump of a steam locomotive runs on steam from its boiler, it waits for no converter
+                if( IsAnyCompressorPresent
+                 && ( IsAnyConverterEnabled || mvControlling->EngineType == TEngineType::SteamEngine ) ) {
                     cue_action( driver_hint::compressoron );
                 }
                 if( mvControlling->ScndPipePress < 4.5 && mvControlling->VeselVolume > 0.0 ) {
@@ -4091,6 +4124,12 @@ bool TController::IncSpeed()
 			}
 		}
         break;
+    case TEngineType::SteamEngine:
+        // the regulator opened a position at a time, the cutoff set by SpeedSet()
+        if( Ready || ( iDrivigFlags & movePress ) ) {
+            OK = mvControlling->IncMainCtrl( 1 );
+        }
+        break;
     case TEngineType::WheelsDriven:
         if (!mvControlling->CabActive)
             mvControlling->CabActivisation();
@@ -4186,6 +4225,10 @@ bool TController::DecSpeed(bool force)
 	case TEngineType::ElectricInductionMotor:
 		OK = DecSpeedEIM();
 		break;
+    case TEngineType::SteamEngine:
+        // the regulator closed, at once when forced
+        OK = mvControlling->DecMainCtrl( force ? mvControlling->MainCtrlPos : 1 );
+        break;
     case TEngineType::WheelsDriven:
         if (!mvControlling->CabActive)
             mvControlling->CabActivisation();
@@ -4444,6 +4487,12 @@ void TController::SpeedSet() {
         break;
     }
     case TEngineType::ElectricInductionMotor: {
+        break;
+    }
+    case TEngineType::SteamEngine: {
+        set_steam_cutoff();
+        // the cylinder cocks open while starting, to blow the water out of the cylinders, and shut once under way
+        mvControlling->Steam.Controls.cylinder_cocks = ( mvControlling->MainCtrlPos > 0 ) && ( mvControlling->Vel < steam_cocks_speed );
         break;
     }
     case TEngineType::DieselEngine: {
@@ -6676,7 +6725,7 @@ TController::determine_consist_state() {
             IsAnyConverterEnabled |= ( vehicle->ConverterAllow || vehicle->ConverterStart == start_t::automatic ) && vehicle->ConverterAllowLocal;
             IsAnyConverterExplicitlyEnabled |= vehicle->ConverterAllow && vehicle->ConverterAllowLocal;
             if( vehicle->Power > 0.01 ) {
-                IsAnyLineBreakerOpen |= !vehicle->Mains; } } );
+                IsAnyLineBreakerOpen |= is_line_breaker_open( *vehicle ); } } );
 
     // siłę generują pojazdy na pochyleniu ale działa ona całość składu, więc a=F/m
     fAccGravity *= iDirection >= 0 ? 1 : -1;

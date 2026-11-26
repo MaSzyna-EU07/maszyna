@@ -1,0 +1,96 @@
+{
+  "_comment": "Freight steam locomotive made after the PKP Ty23, without its tender: 1'E h2, two cylinders 650 x 720 mm, 1450 mm wheels, 14 at, full gear 84 % forwards and 70 % backwards, from the works drawings in the Stacja Muzeum collection (1.03/1.05, 21.03, 22.01a). What they don't give is scaled from the Ty2.",
+  "Param": {
+    "Category": "train",
+    "M": 97400,
+    "Vmax": 65,
+    "PWR": 1250
+  },
+  "Dimensions": {
+    "L": 12.95,
+    "H": 4.6,
+    "W": 3.1,
+    "Cx": 0.3
+  },
+  "Wheels": {
+    "D": 1.45,
+    "Tw": 1.435,
+    "AIM": 1600,
+    "Axle": "1E",
+    "Ad": 9.05,
+    "Bd": 2.6,
+    "Rmin": 140,
+    "BearingType": "Slide",
+    "Dl": 0.86
+  },
+  "Brake": {
+    "BrakeValve": "K",
+    "NBpA": 4,
+    "MBF": 130.0,
+    "MaxBP": 3.43,
+    "LocMaxBP": 3.43,
+    "BCN": 2,
+    "BCR": 0.1778,
+    "BCD": 0.1,
+    "BCM": 5.75,
+    "HiPP": 5,
+    "LoPP": 3.5,
+    "Vv": 0.3,
+    "MinCP": 7.0,
+    "MaxCP": 8.0,
+    "CompressorSpeed": 0.0125,
+    "CompressorPower": "Engine",
+    "BCS": 0.8,
+    "BSA": 0,
+    "BM": "P10-Bg",
+    "BVV": 40,
+    "BRE": 0.9
+  },
+  "BuffCoupl": {
+    "CType": "Screw",
+    "kB": 9200,
+    "DmaxB": 0.15,
+    "FmaxB": 740,
+    "kC": 4800,
+    "DmaxC": 0.15,
+    "FmaxC": 780,
+    "beta": 0.58,
+    "AllowedFlag": 3
+  },
+  "Cntrl": {
+    "BrakeSystem": "Pneumatic",
+    "BDelay1": 15,
+    "BDelay2": 4,
+    "ASB": "Manual",
+    "LocalBrake": "PneumaticBrake",
+    "ManualBrake": "Yes",
+    "MCPN": 10,
+    "SCPN": 14,
+    "IniCDelay": 0.5,
+    "SCDelay": 0.1,
+    "BrakeDelays": "G",
+    "BrakeHandle": "Knorr",
+    "LocBrakeHandle": "Knorr",
+    "BCPN": 4
+  },
+  "Engine": {
+    "EngineType": "SteamEngine",
+    "Trans": "1:1"
+  },
+  "Steam": {
+    "CylD": 0.65,
+    "CylS": 0.72,
+    "CutoffMax": 0.84,
+    "CutoffMaxReverse": 0.7,
+    "CutoffMin": 0.1,
+    "BoilerPressure": 13.73,
+    "Grate": 4.5,
+    "SteamRate": 3.1,
+    "Superheat": 175,
+    "BoilerWater": 9500,
+    "FireMass": 700,
+    "TenderWater": 21,
+    "TenderCoal": 9,
+    "HeatingSurface": 191.1
+  }
+}

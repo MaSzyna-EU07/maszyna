@@ -53,6 +53,7 @@ std::array const sections{
     section{"Power", ':'},
     section{"SpeedControl", ':'},
     section{"Engine", ':'},
+    section{"Steam", ':'},
     section{"Switches", ':'},
     section{"MotorParamTable", ':', motor_table, "END-MPT"},
     section{"MotorParamTable0", ':', motor_table0, "END-MPT"},

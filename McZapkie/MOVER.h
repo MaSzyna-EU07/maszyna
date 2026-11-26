@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include <optional>
 #include "hamulce.h"
 #include "couplerphysics.h"
+#include "steam.h"
 #include "scripting/ladderlogic.h"
 #include "vehicle/odometerreading.h"
 
@@ -2114,6 +2115,9 @@ class TMoverParameters
 	water_heater WaterHeater;
 	bool WaterCircuitsLink{false}; // optional connection between water circuits
 	heat_data dizel_heat;
+	// the steam engine (EngineType=SteamEngine): the regulator follows the master controller, the cutoff the secondary
+	// one and the reverser, the rest is set by the crew in Steam.Controls. see steam.h and the steam_* methods
+	SteamEngine Steam;
 	std::array<cooling_fan, 2> MotorBlowers;
 	door_data Doors;
 	float DoorsOpenWithPermitAfter{-1.f}; // remote open if permit button is held for specified time. NOTE: separate from door data as its cab control thing
@@ -2776,6 +2780,12 @@ class TMoverParameters
 	void dizel_Heat(double const dt);
 	bool dizel_StartupCheck();
 	bool dizel_Update(double dt);
+
+	/* the steam engine */
+	double steam_Regulator() const; // the regulator the master controller sets, 0..1
+	double steam_Cutoff() const; // the cutoff the secondary controller sets, of the stroke
+	void steam_Update(double const Deltatime); // the boiler, the fire and the cylinders, giving Steam.force
+	bool steam_InSteam() const; // a steam locomotive with its fire or its boiler alive, which needs its physics
 
 	/* funckje dla wagonow*/
 	bool AssignLoad(std::string const &Name, float const Amount = 0.f);

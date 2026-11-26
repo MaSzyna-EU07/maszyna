@@ -1,0 +1,198 @@
+# Bones of the vehicle models
+
+A vehicle's `.mmd` can pin submodels of its model to points that move, and turn them to keep facing another such
+point: the rods of a steam locomotive, which go round with the cranks of the wheels and slide with the crossheads,
+and the couplers, which follow the hook of the next vehicle round a curve. The math is in `vehicle/bones.h` /
+`bones.cpp`, the vehicle runs it in `TDynamicObject::update_bones()` along with the wheels. A model without these
+entries is drawn as before.
+
+## The entries
+
+In the `models:` section, after `animwheelprefix:`, the points before the bones and before the points sliding with
+them:
+
+```
+bonepoint: <name> fixed <x> <y> <z>
+bonepoint: <name> crank <wheel submodel> <x> <y> <z>
+bonepoint: <name> slide <driving point> <x> <y> <z> <guide dx> <dy> <dz>
+bonepoint: <name> coupler <front|rear> <x> <y> <z>
+bonepoint: <name> mid <point> <point>
+bonechain: <name> <start point> <end point> <nodes> <x> <y> <z> (of each node)
+bone: <submodel> <anchor point> <point it faces, or none>
+bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [sway <0..1>] [rooted] end
+```
+
+- The coordinates are those of the model file: x across, y along the vehicle (the front, `coupler1`, at +y), z up.
+  Each position is where the point is in the model as made: the wheels at their angle 0, the next vehicle straight
+  in line.
+- `fixed`: a point of the body.
+- `crank`: a point going round with the wheel submodel (one of `animwheelprefix:`), about its axle the way the wheel
+  turns: a crank pin.
+- `slide`: a point on a guide through its position, in the direction given, which keeps the distance it has from
+  the driving point as made: a crosshead, the length of the connecting rod kept.
+- `coupler`: where the next vehicle's hook is, given for the two vehicles standing straight in line (as far past
+  this vehicle's end as the hook is inside the other's). Coupled, it follows the other vehicle round a curve, and its
+  buffers pressed in or pulled out; not coupled, it stays where it was made.
+- `mid`: halfway between two points defined before it: where the hoses of two vehicles meet.
+- `bonechain`: a chain hanging between two points, a rubber hose, of 1 to 64 nodes. Its nodes, given where they are in
+  the model, are the points `<name>.1`, `<name>.2` and so on, which bones can use but other points can't. The pieces
+  between the nodes keep their lengths, and every other node keeps its distance as made, so the chain keeps its curve
+  like a stiff hose rather than folding. The nodes swing with gravity and their inertia (Verlet integration in the
+  frame of the world, in substeps of 1/240 s whatever the frames: the time short of a substep waits for the next frame, the nodes as drawn going along with their ends meanwhile, as a long chain whose lengths are kept only nearly would hang a little differently with each length of frame and tremble standing), with the ends pinned where their points are; the swing against
+  the vehicle dies down within a fraction of a second, while the hose goes along with the vehicle's own motion. So a
+  hose swings when the vehicle jerks, brakes or rocks on uneven track, and sags as the buffers are pressed in. Each
+  node takes the average of what the lengths around it ask of it. An end at a `fixed` or a `coupler` point is
+  clamped: the node next to it is drawn to where it is as made, held to that vehicle, so a hose leaves its cock as
+  made rather than swinging far to the side about the line between its ends. A chain from a cock (a `fixed` point) to a
+  `coupler` point is one hose with the chain of the coupled vehicle that runs the other way, from the point ours
+  ends at back to the point ours starts at, with as many nodes: one of the two vehicles moves it, and both draw it,
+  so the coupled heads never part. The chains move by the simulation time of each frame, the frames long or short, sped up with the time acceleration and held by the pause, as the vehicle is; after a gap
+  of more than half a second (the vehicle left alone while far) they start again as made, going along with the
+  vehicle. A chain whose nodes and ends stand still for a second is left at rest, not simulated, until an end moves
+  0.1 mm: the hoses of a train standing cost nothing.
+- `bone`: the submodel moves with its anchor point and turns about it to keep facing the other point. With `none`
+  it only moves: a coupling rod, which stays level. The submodel's own origin and axes don't matter.
+- `bonebend`: the submodel bends along a spine of points, usually the start of a chain and its nodes: each vertex
+  follows the piece of the spine nearest to it as made, turning with it, so a hose made in one piece bends smoothly.
+  The turn is carried along the spine from its first point, so the hose twists about itself evenly. With `head`, the
+  end of the submodel around the last point of the spine (the metal coupling head, all within 8 cm of it) is held as one to
+  the line between the two points and the vertical of the world: the heads of two hoses coupled to each other take
+  the same line and stay together, their faces on one plane. The vertices are bent on the CPU; the vehicle draws its
+  own copy of the submodel, its triangles halved until no edge is longer than 6 cm: a hose of a model is often a
+  few straight tubes, which would bend only where their rings are.
+- `rooted` (on a `bonebend`): the first point of the spine is the root, held to the body: everything at or behind it
+  stays as made, and the root itself doesn't turn. For what crosses the joint of an articulated train (the gangway
+  bellows on the ends of the bodies, the roof cables): the spine runs from the root before the joint, through the joint,
+  to a point as far past it in the next car, and `head` holds its end to the next car (a line along it). Both cars
+  give the same stretch of the joint, each from its side, so the two bend it the same: the halves of a bellows that
+  overlap stay together, and the cables of one car meet those of the next round a curve. For the bellows the stretch
+  runs from the face of one body to the face of the other, so the bodies stay as made; for the cables, from where
+  they leave the roof of one car to where they leave the roof of the next. A rooted submodel is not cut into smaller
+  triangles, and the bends of one submodel (the bellows on both ends of a car) bend it each its own part. A bent
+  submodel whose spines stand still, a train standing, is not posed again.
+- A third point after `head` (`head <point> <point> <point>`): a point over the line, which the head is held to as
+  well, so the head takes the whole turn of the next car, rolled and pitched too, not only the line and the vertical of
+  the world. On a `rooted` bend the turn is then spread over the spine by its length as made, from none at the root to
+  the whole of it at the head: a joint bends the same from both cars, and the faces of two bellows or two rubber
+  collars meeting halfway stand on one plane, which halves the angle between the cars. Such a joint is as stiff as a
+  bellows: of the turn of the next car it keeps only the part about the vertical (round a curve), not its pitch and
+  roll on uneven track, and the pieces of its spine keep their length and rise as made, whatever the play of the
+  articulated coupling as the train brakes and pulls. `sway <0..1>` gives it that part of the pitch and the roll of the
+  next car, and as much of its rise and fall, still as long as made: 0.5 for a bellows or a rubber collar, which give a
+  little, 1 for roof cables, which give with the cars.
+
+## Control cables, rubber collars and buffers
+
+- The control cables of a vehicle (`cctrl1_on` / `cctrl2_on`) may be modelled whole, from our socket to the socket of
+  the next vehicle, with a `cctrl<n>_xon` beside them that holds only our plugs. Where both coupled vehicles have the
+  `_xon` at the ends that meet, the one that owns the coupling (the one which draws the screw coupling, its `Render`
+  flag) shows `_on` and the other `_xon`, so each cable is drawn once. Where either has no `_xon`, both show `_on`, as
+  before. A whole cable is bent through the joint by a `rooted` `bonebend` from the socket, as the roof cables above.
+- A rubber collar gangway round the end door is a submodel of its own, bent the same way from the face of the body to
+  the coupling plane: on a curve the collars of two coaches turn half the angle each and meet face to face.
+- The buffers (`buffer_left0<n>`, `buffer_right0<n>`) of two coupled vehicles are pressed in each by the deflection of
+  its end as the coupling has it (half the distance of the couplers, or that of the end in the physical model of the
+  coupling, by the springs of both ends), and by half of what its head stands nearer to the head it meets than the axis
+  of the vehicle does, up to `DmaxB`: on a curve those on the inside press in more, those on the outside less or not at
+  all, and on the straight both as before. `gfx.buffers.curve no` in `eu07.ini` presses both buffers
+  of an end alike, by half the distance of the couplers, as before.
+
+## Examples
+
+The rods of one side of a two cylinder locomotive, the connecting rods driving the third coupled axle (`wheel4`),
+the crank of 330 mm over the axle at the wheel angle 0 (the placeholder `pkp/ty2_v1`):
+
+```
+bonepoint: czop_p crank wheel4 1.0 -1.3 1.03
+bonepoint: wodzik_p slide czop_p 1.06 2.7 1.0 0 1 0
+bone: wiazar_p czop_p none
+bone: korbowod_p czop_p wodzik_p
+bone: wodzik_p wodzik_p none
+```
+
+The screw couplings of an EU07, hanging from the pin of the hook and reaching over the next vehicle's hook:
+
+```
+bonepoint: hak1_sworzen fixed 0 7.45 1.03
+bonepoint: hak1_sasiada coupler front 0 8.30 1.03
+bone: coupler1_on hak1_sworzen hak1_sasiada
+bonepoint: hak2_sworzen fixed 0 -7.45 1.03
+bonepoint: hak2_sasiada coupler rear 0 -8.30 1.03
+bone: coupler2_on hak2_sworzen hak2_sasiada
+```
+
+A brake hose hanging from its cock to where it meets the next vehicle's, in four pieces (`waz_1` to `waz_4`):
+
+```
+bonepoint: kurek fixed 0.45 -6.35 0.95
+bonepoint: kurek_tendra coupler rear 0.45 -7.05 0.95
+bonepoint: spotkanie mid kurek kurek_tendra
+bonechain: waz kurek spotkanie 3 0.45 -6.43 0.65 0.45 -6.53 0.55 0.45 -6.62 0.65
+bone: waz_1 kurek waz.1
+bone: waz_2 waz.1 waz.2
+bone: waz_3 waz.2 waz.3
+bone: waz_4 waz.3 spotkanie
+```
+
+A hose of an existing model, made in one piece (the EU07's `pneumatic2_On`, hanging from its cock on the buffer beam to
+its coupling at the end of the vehicle), swings as a whole about its cock: it faces the node of a chain of one node,
+which hangs between the cock and where the couplings of the two vehicles meet. No change to the model:
+
+```
+bonepoint: kurek_pneumatic2 fixed 0.57 -7.47 1.07
+bonepoint: kurek_pneumatic2_sasiada coupler rear 0.57 -8.445 1.07
+bonepoint: spotkanie_pneumatic2 mid kurek_pneumatic2 kurek_pneumatic2_sasiada
+bonechain: waz_pneumatic2 kurek_pneumatic2 spotkanie_pneumatic2 1 0.62 -7.99 0.49
+bone: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1
+```
+
+The same hose bent along its length, coupled to the hose of the next vehicle with the heads together. The chain runs
+from this vehicle's cock to the cock of the hose it is coupled to (here the `pneumatic1r` of the EU07 behind, its front
+coupled to our rear), through the nodes along this hose, one node where the two heads meet and the nodes along the other hose. The
+next vehicle has the same chain the other way round, so the two hoses meet at one node, which swings and lags with the
+rest of them. Three nodes a hose here; a smooth bend takes more, 16 a hose for the EU07:
+
+```
+bonepoint: kurek_pneumatic2 fixed 0.608 -7.4676 1.0744
+bonepoint: kurek_pneumatic2_sasiada coupler rear 0.62 -8.4474 1.0745
+bonechain: waz_pneumatic2 kurek_pneumatic2 kurek_pneumatic2_sasiada 7 0.608 -7.48 0.85 0.608 -7.65 0.62 0.608 -7.85 0.53 0.614 -7.9575 0.522 0.62 -8.065 0.53 0.62 -8.265 0.62 0.62 -8.435 0.85
+bonebend: pneumatic2_On kurek_pneumatic2 waz_pneumatic2.1 waz_pneumatic2.2 waz_pneumatic2.3 waz_pneumatic2.4 head waz_pneumatic2.3 waz_pneumatic2.5 end
+```
+
+
+The gangway bellows and the roof cables of an articulated EMU, the Elf EN76 (`pkp/elf_v1`). The middle car `22wee-b`
+(16.5 m, the joints at +-8.25) has its body `model_glowny` with the half of a bellows on each end, its face 0.17 m
+before the front joint and 0.37 m before the rear one, and its cables in `elementy_dachu_kable`. Its front joint, to the
+end car `22wee-a` whose face is 0.17 m before it: the bellows from face to face, the cables 1.2 m each side:
+
+```
+bonepoint: miech_p_korzen fixed 0 8.0800 2.4
+bonepoint: miech_p_nasz fixed 0 8.2500 2.4
+bonepoint: miech_p_ich coupler front 0 8.2500 2.4
+bonepoint: miech_p_styk mid miech_p_nasz miech_p_ich
+bonepoint: miech_p_dalej coupler front 0 8.4200 2.4
+bonepoint: miech_p_os coupler front 0 10.4200 2.4
+bonebend: model_glowny miech_p_korzen miech_p_styk miech_p_dalej head miech_p_dalej miech_p_os rooted end
+bonepoint: kable_p_korzen fixed 0 7.0500 3.9
+bonepoint: kable_p_nasz fixed 0 8.2500 3.9
+bonepoint: kable_p_ich coupler front 0 8.2500 3.9
+bonepoint: kable_p_styk mid kable_p_nasz kable_p_ich
+bonepoint: kable_p_dalej coupler front 0 9.4500 3.9
+bonepoint: kable_p_os coupler front 0 11.4500 3.9
+bonebend: elementy_dachu_kable kable_p_korzen kable_p_styk kable_p_dalej head kable_p_dalej kable_p_os rooted end
+```
+
+`22wee-a` has the same at its rear, on `pudlo` and the cables of `tex4_obj1_os`, with the faces the other way round.
+The coordinates are those of the model file after the transforms of the parent submodels: the end car `22wee-d` is
+the model of `22wee-a` turned round by its root submodel, so its joint is at its front.
+
+## Still to do
+
+- The valve gear (Heusinger / Walschaerts): the expansion link swung by the eccentric rod, the radius rod lifted by
+  the reverser (`TAnimValveGear` holds the old, never finished figures for the Pt47). It needs a point turning on a
+  pivot (a link) and a point at the crossing of two rods, besides those above.
+- The bending of `bonebend` in the shaders of the OpenGL 4.6 and Vulkan renderers rather than on the CPU, should many
+  vehicles of a long train need it at once.
+- A screw coupling hanging free (not coupled) as a pendulum on its hook, and its sag with the buffers pressed in.
+- The old entries `animpistonprefix:`, `animconrodprefix:`, `animreturnprefix:` and `pistonfactors:` are still read
+  and do nothing, as before.

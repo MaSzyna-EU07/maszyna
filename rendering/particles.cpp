@@ -129,6 +129,9 @@ smoke_source::deserialize_mapping( cParser &Input ) {
     else if( key == "fade_in:" ) {
         m_fadein = std::max( 0.f, Input.getToken<float>( true, "\n\r\t  ,;[]" ) );
     }
+    else if( key == "steam:" ) {
+        m_steampart = smoke::steam_part_of( Input.getToken<std::string>( true, "\n\r\t  ,;[]" ) );
+    }
 
     return true; // return value marks a [ key: value ] pair was extracted, nothing about whether it's recognized
 }
@@ -175,6 +178,17 @@ smoke_source::accumulate_spawns( double const Timedelta, bool const Onlydespawn 
     if( m_ownertype == owner_type::vehicle ) {
 
         auto const &mover { *m_owner.vehicle->MoverParameters };
+        if( ( m_steampart != smoke::steam_part::none ) && ( mover.EngineType == TEngineType::SteamEngine ) ) {
+            // a part of a steam locomotive: as much as its engine lets out now
+            auto const share { smoke::steam_emission( mover, m_steampart ).spawn };
+            m_spawncount = (
+                ( spawning && m_owner.vehicle->bEnabled ) ?
+                    std::min<float>(
+                        static_cast<float>( m_spawncount + m_spawnrate * Timedelta * Global.SmokeFidelity * share ),
+                        static_cast<float>( m_max_particles ) ) :
+                    0.f );
+            return;
+        }
         // NOTE: the smoke keeps the colour of its template, cold engine or not. a grey for a cold engine was once meant
         // here, but the line compared instead of assigning; made an assignment, it set 128 on the 0-1 scale of the
         // emitter colour, so the smoke turned pure white, glowing at night, and never changed back
@@ -343,6 +357,12 @@ smoke_source::launch_scales( float &Velocity, float &Opacity ) const {
     Velocity = 1.f;
     Opacity = 1.f;
     if( m_ownertype != owner_type::vehicle ) { return; }
+    if( ( m_steampart != smoke::steam_part::none ) && ( m_owner.vehicle->MoverParameters->EngineType == TEngineType::SteamEngine ) ) {
+        auto const emission { smoke::steam_emission( *m_owner.vehicle->MoverParameters, m_steampart ) };
+        Velocity = emission.velocity;
+        Opacity = emission.opacity;
+        return;
+    }
 
     Opacity = static_cast<float>(m_owner.vehicle->MoverParameters->dizel_fill);
         if (m_owner.vehicle->MoverParameters->EngineType == TEngineType::DieselElectric)

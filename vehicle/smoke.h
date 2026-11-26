@@ -9,6 +9,8 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <string_view>
+
 class TMoverParameters;
 
 // the smoke of a vehicle's engine, let out by the smoke sources of its model (rendering/particles.h)
@@ -27,5 +29,23 @@ struct spawn_rate {
 // traffic) puffs no more, the particles it already let out fade away as usual
 // an engine the starter turns but which hasn't fired yet (TMoverParameters::dizel_FiringCountdown) lets out no smoke either
 float vehicle_spawn_count(TMoverParameters const &Mover, bool Ontracks, spawn_rate const &Rate, double Timedelta);
+
+// the part of a steam locomotive a smoke source of its model shows, set in the template of the source (steam:): the blast
+// of the exhaust up the chimney, the smoke of the fire, the safety valves blowing off, the cylinder cocks, the exhaust of
+// the air pump, the overflow of the injectors, the whistle, the exhaust of the turbo-generator, the steam leaking past the
+// glands of the cylinders. none leaves the source to the engine, as for any other vehicle
+enum class steam_part { none, exhaust, smoke, safety_valves, cocks, air_pump, injectors, whistle, generator, leaks };
+// the part named in a template: exhaust, smoke, safety_valves, cocks, air_pump, injectors, whistle, generator or leaks;
+// none for any other name
+steam_part steam_part_of(std::string_view Name);
+
+// how the steam engine of the vehicle drives a source of the given part now: the share of the source's spawn rate, and
+// the shares of the opacity and of the launch velocity of a particle born now. nothing for a vehicle with no steam engine
+struct steam_output {
+	float spawn{0.f};
+	float opacity{0.f};
+	float velocity{1.f};
+};
+steam_output steam_emission(TMoverParameters const &Mover, steam_part Part);
 
 } // namespace smoke
