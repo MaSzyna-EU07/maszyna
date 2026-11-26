@@ -45,6 +45,9 @@ public:
     double RailPhase( double const Offset ) const;
     // TTrack::buckle_curvature at the axle, averaged over Base around it
     double BuckleCurvature( double const Base ) const;
+    // the level direction of the path the axle runs on, with its buckle and its uneven track, over Reach [m] behind and
+    // ahead of it, the way the axle goes forwards; none without a path
+    glm::dvec3 PathDirection( double const Reach = 1.0 ) const;
     bool Init(TTrack *pTrack, TDynamicObject *NewOwner, double fDir);
 	void Reset();
     void Render(float fNr);

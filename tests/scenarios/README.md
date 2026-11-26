@@ -368,6 +368,21 @@ an ET21 and its AI driver on it. The pantographs go up and find no wire, so the 
 start: the driver has to say so in the log, once, naming the locomotive and where it stands, and
 not mistake it for a wire without voltage. It ends on the standstill.
 
+The `eu07_td_off_track_*` cases run with `physics.derailment new`, where a derailed vehicle leaves the track and
+moves on the ground by itself (`vehicle/derailmotion.h`); they check what the black box records of it with
+`leaves_track`, and the log has a line of each vehicle off the track every second (`derailment: ... off the track`).
+`td_off_track.scn` keeps an EU07 with an AI driver standing on track 1 of Stacja1 to log its physics, and has the train
+of the case, without a driver, run at `vars.velocity` km/h from `vars.offset` m past point 1 of `vars.track`:
+`eu07_td_off_track_buckle_fast` (133 km/h, `tdo_n222` buckled 600 mm over 8 m from the start with the `buckle`
+keyword of the track) and `eu07_td_off_track_overturn` (190 km/h, over the overturning speed of the R 600 m curve)
+from `tdo_n157`, `eu07_td_off_track_end` off the end of a track of its own (`vars.track_nodes`).
+`eu07_td_off_track_buckle` is `td_buckle_event.scn` with an EU07 and three coaches on the timetable, at the 46 km/h
+of the AI. The `eu07_td_off_track_curve_*` cases have an EU07 overturn at 150 km/h on a track of R 300 m of their own,
+on level ground, on an embankment 4 m high and in a cutting, made of triangle strips in the fragment
+(`td_off_track_curve_*.scn`, written by `make_off_track_curves.py`: a curve of R 300 m from (-300, 400) about the
+centre (-600, 400), the cross section swept along it every 0.03 rad; the banks of the cutting rise 4 m at 1:1.5, then
+on at 1:5).
+
 `eu07_td_cold_connect` (fragment `td_cold_connect.scn`) has an EU07 with a hand brake
 (`4E-ZEZ_GREY`; the plain `4e` has none) standing cold on track 1 of Stacja1 (trainset velocity 0,
 so it starts with the hand brake on) and two coaches standing 45 m ahead of it. Its driver sleeps
@@ -666,6 +681,22 @@ the row instead, logged by builds from this branch on.
   it stays at or above `at_least`, e.g. no power lost under an insulator.
 - `master_controller` `from_distance`, `to_distance`, `at_most`: the master controller stays at or below the
   position between the two distances, e.g. at 0 where the scenery tells the driver to coast.
+- `leaves_track` `vehicle`, optional `cause` (`flange climbed`, `overturned`, `end of track`, `pulled off`,
+  `collision`), `min_offset`, `max_offset`, `min_distance`, `max_distance`, `lying`: with
+  `physics.derailment new` the black box has the vehicle leave the track and come to rest off it; at rest its
+  distance from the axis of the track (either side) and the distance it went on the ground are within the
+  bounds, and it lies on its side, or not, as `lying` says.
+- `consist_folds` `vehicles` (the names of the train front to back, comma separated), `min_bend`, optional
+  `min_folds` (1), `alternate`, `both_sides`: with `physics.derailment new` the train came to rest folded up off
+  the track: at least `min_folds` of the bends between neighbours at rest (the angle between their headings in the
+  black box, either way along) are `min_bend` degrees or more; with `alternate` neighbouring bends of that size turn
+  opposite ways (a zigzag), with `both_sides` some of the vehicles rest on either side of the track. A vehicle that
+  stayed on the rails has no bend with its neighbours.
+- `no_overlap` `max_transient`, `max_at_rest` (a check on the log): with `physics.derailment new` the bodies of the
+  vehicles off the track and of those near them don't go into each other. The simulator logs every second the most
+  any two of them overlapped by (`derailment: the bodies overlap by up to ... m (which two, how they are related)
+  over the last second, ... m now`), and once more when all vehicles off the track are at rest (`, all at rest`); the
+  most on the way is at most `max_transient` m, the overlap at rest at most `max_at_rest` m.
 
 - `on_track` `vehicles`, optional `max_offset` (0.75 m), `max_detour` (5 m): every vehicle whose name starts with
   `vehicles` (e.g. `{{vehicle}}`, the train of the case) keeps to the rails in the black box, in each of its states:

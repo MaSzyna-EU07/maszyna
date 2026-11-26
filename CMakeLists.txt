@@ -551,6 +551,7 @@ set(CORE_SOURCES
 "McZapkie/couplerphysics.cpp"
 "McZapkie/derailment.cpp"
 "McZapkie/collision.cpp"
+"vehicle/derailmotion.cpp"
 "world/TrackCheck.cpp"
 "world/SleeperPack.cpp"
 "McZapkie/Oerlikon_ESt.cpp"

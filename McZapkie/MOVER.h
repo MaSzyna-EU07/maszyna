@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "derailment.h"
 #include "collision.h"
 #include "scripting/ladderlogic.h"
+#include "vehicle/derailmotion.h"
 #include "vehicle/odometerreading.h"
 
 class cParser;
@@ -2553,6 +2554,22 @@ class TMoverParameters
 	// derailment, which stops it as the legacy model does (with physics.collisions new by a friction of its weight, the
 	// forces of the vehicles coupled to it acting on it)
 	derailment::outcome Derailed{derailment::outcome::none};
+	// physics.derailment new: how the vehicle left the rails, for the way it leaves the track (vehicle/derailmotion.h):
+	// what derailed it, the lateral acceleration of its body out of the curve then [m/s2] (negative into the curve, where a
+	// buckle bends the line the other way), and the side it was pulled off to by a coupling (1 the left of its front, -1
+	// the right; 0 the side the acceleration throws it to, from the track)
+	derail_motion::cause DerailCause{derail_motion::cause::off_rails};
+	double DerailAcceleration{0.0};
+	int DerailSide{0};
+	// the vehicle off the track, on the ground: begun and stepped by TDynamicObject, which knows the ground; its friction
+	// and the grade under it go into the forces of this one
+	derail_motion::body OffTrack;
+	// physics.derailment new: the vehicle derailed by the physical criteria, the end of the track or a collision has to
+	// leave the track and its motion on the ground isn't begun yet. never with physics.derailment monitor, old or off
+	bool leaves_track() const;
+	// physics.derailment new: a coupling of a vehicle off the track pulls this one off the rails sideways, to the Side
+	// (1 the left of its front, -1 the right), with the lateral acceleration [m/s2] of the pull on it
+	void pull_off(int Side, double Acceleration, std::string const &Why);
 	// physics.collisions new: what the vehicle is for the defaults of its crush and its buffers, the crush curve and the
 	// height of the buffers of an end, and how long the push of its ends held its wheels over the climbing limit
 	collision::vehicle_kind collision_kind() const;
