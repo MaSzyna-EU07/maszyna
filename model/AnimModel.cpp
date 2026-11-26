@@ -804,6 +804,7 @@ std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::L
 
     float opacity = m_lightopacities[n];
     auto const lightmode = static_cast<int>(std::abs(lsLights[n]));
+    // FIXME(@pansandacz): Calculate lamp state globally for the whole simulation (it need not run as often as the simulation), and store it independently of visibility.
     if (lightmode == ls_Dark || lightmode == ls_Home) {
         bool state =
             Global.fLuminance - std::max(0.f, Global.Overcast - 1.f) <=
