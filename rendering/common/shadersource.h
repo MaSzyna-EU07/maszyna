@@ -67,10 +67,23 @@ enum class shader_components : int
 	sRGB_A = 0x8C42
 };
 
+// what a unit shows when the material gives no texture for it, as the optional fourth argument of #pragma texture names it: a
+// single texel of that colour. none: the material has to give the texture. the texels hold only 0 and 255, which read the
+// same whether the unit takes them as sRGB or not
+enum class shader_texture_default
+{
+	none,
+	black,
+	white,
+	red,
+	yellow
+};
+
 struct shader_texture_entry
 {
 	std::size_t id;
 	shader_components components;
+	shader_texture_default fallback{shader_texture_default::none};
 };
 
 enum class shader_param_default
