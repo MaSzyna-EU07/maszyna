@@ -93,4 +93,6 @@ struct objects
 };
 
 extern objects Objects;
+
+void prepare_objects();
 } // namespace map
