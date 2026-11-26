@@ -885,6 +885,15 @@ private:
 	double MEDLogInactiveTime = 0;
 	int MEDLogCount = 0;
 	double MED_oldFED = 0;
+	// what the ED/EP brake blending of the consist works on, one entry a vehicle; kept between the updates so the
+	// blending doesn't allocate on every one
+	struct edep_blending {
+		std::vector<bool> saturated; // the vehicle can't take more EP force
+		std::vector<float> ed; // ED share
+		std::vector<float> ep; // EP force
+		std::vector<float> maxep; // highest pneumatic force
+	};
+	edep_blending m_edepblending;
 
 // vehicle shaking calculations
 // TBD, TODO: make an object out of it
@@ -944,6 +953,10 @@ public:
     // records the odometer states of the vehicles and saves them for the next sessions
     void
         save_odometers();
+    // vehicles the physics computed in the last update, the sleeping ones left out
+    std::size_t
+        awake() const {
+            return m_awake; }
 
 private:
     // maintenance; removes from tracks consists with vehicles marked as disabled
@@ -955,6 +968,7 @@ private:
         update_coupler_physics() const;
 
     double m_odometersavetimer { 0.0 }; // simulation time since the odometers were last saved
+    std::size_t m_awake { 0 }; // vehicles the physics computed in the last update
 };
 
 

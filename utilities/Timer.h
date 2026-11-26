@@ -46,12 +46,26 @@ public:
 	std::chrono::microseconds
 	    last() const {
 		    return m_last; }
+    // work done in many pieces over a frame (the AI of every vehicle): resume() and pause() around each piece,
+    // commit() once a frame to take their sum as the frame's time
+    void
+        resume() {
+            m_start = std::chrono::steady_clock::now(); }
+    void
+        pause() {
+            m_pending += std::chrono::duration_cast<std::chrono::microseconds>( std::chrono::steady_clock::now() - m_start ); }
+    void
+        commit() {
+            m_last = m_pending;
+            m_pending = std::chrono::microseconds::zero();
+            m_accumulator = 0.95f * m_accumulator + static_cast<float>(m_last.count()) / 1000.f; }
 
 private:
 // members
     std::chrono::time_point<std::chrono::steady_clock> m_start { std::chrono::steady_clock::now() };
     float m_accumulator { 1000.f / 30.f * 20.f }; // 20 last samples, initial 'neutral' rate of 30 fps
     std::chrono::microseconds m_last;
+    std::chrono::microseconds m_pending { 0 }; // the pieces summed since the last commit()
 };
 
 struct subsystem_stopwatches {

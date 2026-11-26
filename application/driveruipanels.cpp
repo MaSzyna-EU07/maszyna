@@ -1293,7 +1293,10 @@ debug_panel::update_section_scenario( std::vector<text_line> &Output ) const {
 
     auto textline =
         "vehicles: " + to_string( Timer::subsystem.sim_dynamics.average(), 2 ) + " msec"
-        + " update total: " + to_string( Timer::subsystem.sim_total.average(), 2 ) + " msec";
+        + " (AI: " + to_string( Timer::subsystem.sim_ai.average(), 2 ) + " msec)"
+        + " events: " + to_string( Timer::subsystem.sim_events.average(), 2 ) + " msec"
+        + " update total: " + to_string( Timer::subsystem.sim_total.average(), 2 ) + " msec"
+        + "\nvehicles awake: " + std::to_string( simulation::Vehicles.awake() ) + " of " + std::to_string( simulation::Vehicles.sequence().size() );
 
     Output.emplace_back( textline, Global.UITextColor );
     // current luminance level

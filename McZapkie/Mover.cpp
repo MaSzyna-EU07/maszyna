@@ -5093,11 +5093,13 @@ double TMoverParameters::GetDVc(double dt)
 
 	dv1 = 0;
 	dv2 = 0;
+	// the cross-section of the pipe between the vehicles, the same towards both of them
+	double const pipesection{Spg / (1.0 + 0.015 / Spg * Dim.L)};
 	// sprzeg 1
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
-		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, pipesection);
 		if (dv1 * dv1 > 0.00000000000001)
 			c->switch_physics(true);
 		c->Pipe->Flow(-dv1);
@@ -5106,7 +5108,7 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, pipesection);
 		if (dv2 * dv2 > 0.00000000000001)
 			c->switch_physics(true);
 		c->Pipe->Flow(-dv2);

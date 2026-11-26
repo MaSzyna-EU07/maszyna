@@ -3483,12 +3483,16 @@ bool TDynamicObject::Update(double dt, double dt1)
 				&& MoverParameters->eimc[eimc_p_abed] < 0.001)
 				FzadED = 0; //pętla bezpieczeństwa - bez ED
             auto const FzadPN = Fzad - FrED * MoverParameters->MED_FrED_factor;
-			std::vector<bool> PrzekrF( np );
+			auto &PrzekrF{m_edepblending.saturated};
+			PrzekrF.assign(np, false);
 			float nPrzekrF = 0;
 			bool test = true;
-			std::vector<float> FzED( np );
-			std::vector<float> FzEP( np );
-			std::vector<float> FmaxEP( np );
+			auto &FzED{m_edepblending.ed};
+			FzED.assign(np, 0.f);
+			auto &FzEP{m_edepblending.ep};
+			FzEP.assign(np, 0.f);
+			auto &FmaxEP{m_edepblending.maxep};
+			FmaxEP.assign(np, 0.f);
 			// 3. ustaw pojazdom sile hamowania ED
             //   - proporcjonalnie do mozliwosci
 
@@ -3650,7 +3654,9 @@ bool TDynamicObject::Update(double dt, double dt1)
 			MED_oldFED = FzadED;
         }
 
+        Timer::subsystem.sim_ai.resume();
         Mechanik->Update(dt1); // przebłyski świadomości AI
+        Timer::subsystem.sim_ai.pause();
     }
 
     // fragment "z EXE Kursa"
@@ -9063,6 +9069,11 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
         // Ra 2015-01: tylko tu przelicza sieć trakcyjną
         vehicle->Update( Deltatime, totaltime );
     }
+    // how many of the vehicles the physics computes, for the debug panel: a vehicle left out sleeps
+    m_awake = static_cast<std::size_t>( std::ranges::count_if(
+        m_items,
+        []( TDynamicObject const *Vehicle ) {
+            return Vehicle->bEnabled && Vehicle->MoverParameters->PhysicActivation; } ) );
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();

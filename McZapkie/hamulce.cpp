@@ -2682,8 +2682,7 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 	ImplsRes->Flow(-dv);
 
 	// rapid
-	auto const &frictionmaterial{*FM};
-	if (auto const &frictionmaterialtype{typeid(frictionmaterial)}; !(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
+	if (false == DiscFriction) // jesli zeliwo to schodz
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R && (RV < 0 || (Vel > RV && RapidStatus) || Vel > RV + 20);
 	else // jesli tarczowki, to zostan
 		RapidStatus = (BrakeDelayFlag & bdelay_R) == bdelay_R;
@@ -2766,6 +2765,11 @@ void TKE::Init(double const PP, double const HPP, double const LPP, double const
 	BVM = 1.0 / (HPP - LPP) * MaxBP;
 
 	BrakeDelayFlag = BDF;
+
+	// the friction material doesn't change after the brake is made, so its kind is checked once here rather than on every step
+	auto const &frictionmaterial{*FM};
+	auto const &frictionmaterialtype{typeid(frictionmaterial)};
+	DiscFriction = (frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2));
 }
 
 /// <summary>Returns the control reservoir (ZS) pressure.</summary>
