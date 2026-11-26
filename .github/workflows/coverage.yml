@@ -28,8 +28,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that changes only documentation doesn't need the coverage build. The check is a job-level
+  # condition, not `paths-ignore` on the trigger: a workflow that doesn't start leaves a required check "pending"
+  # for ever, while a skipped job (its name is fixed) counts as passed. A push, and anything this step can't
+  # decide, runs the build.
+  changes:
+    name: Which files changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - name: List the changed files
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')" || [ -z "$files" ]; then
+            echo "The list of changed files is not available, building."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # what is not documentation: *.md, docs/ and LICENSE (not *.txt: CMakeLists.txt is code)
+          if printf '%s\n' "$files" | grep -Evq '(\.md$|^docs/|^LICENSE)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only documentation changed, the coverage build is skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   coverage:
     name: Unit test coverage (GCC)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
