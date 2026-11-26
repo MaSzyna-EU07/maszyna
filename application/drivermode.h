@@ -104,7 +104,6 @@ private:
     void CabView();
     void ExternalView();
     void DistantView( bool const Near = false );
-    void update_window_title();
     // whether the camera shows one of the views of consist_views now
     bool consist_view_active() const;
     // places the camera of the view of consist_views for the frame
@@ -134,6 +133,5 @@ private:
     int iPause { 0 }; // wykrywanie zmian w zapauzowaniu
 	command_relay m_relay;
 	std::string change_train; // train name awaiting entering
-	std::string m_window_title;
 	bool m_editorpending { false }; // scenery was opened for editing, switch to the editor after the initial update
 };

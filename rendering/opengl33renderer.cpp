@@ -988,31 +988,6 @@ void opengl33_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			auto const *vehicle = Global.pCamera.m_owner;
 			glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
 			future = glm::translate(mv, -glm::vec3(vehicle->get_future_movement())) * glm::inverse(mv);
-			m_freecameraposition.reset();
-		}
-		else if (vp.main)
-		{
-			// the free camera (freefly, debug camera) blurs the world with its own movement, as a vehicle does with its:
-			// without it the ground racing under a low camera strobes in rings at the distances its texture repeats.
-			// the movement of the frame before stands for the one to come; a jump (a camera preset) is no movement
-			auto const position{Global.pCamera.Pos};
-			if (m_freecameraposition)
-			{
-				auto movement{glm::vec3(position - *m_freecameraposition)};
-				auto const length{glm::length(movement)};
-				if (length < 50.f)
-				{
-					// the blur takes the scene where the camera will be: a fast camera (shift, ctrl) moves past the ground
-					// at the bottom of the screen within a frame, it ends up behind it there and its motion turns over
-					// into a bright band. half a metre a frame still blurs metres with the shutter of the motion blur
-					auto const maxmovement{0.5f};
-					if (length > maxmovement)
-						movement *= maxmovement / length;
-					glm::mat4 mv = OpenGLMatrices.data(GL_MODELVIEW);
-					future = glm::translate(mv, -movement) * glm::inverse(mv);
-				}
-			}
-			m_freecameraposition = position;
 		}
 
         Update_Lights( simulation::Lights );

@@ -321,8 +321,6 @@ bool driver_mode::update()
 			// fixup camera after vehicle switch
 			CabView();
 		}
-		update_window_title();
-
 		if (simulation::Train != nullptr)
 			TSubModel::iInstance = reinterpret_cast<std::uintptr_t>(simulation::Train->Dynamic());
 		else
@@ -1438,38 +1436,8 @@ void driver_mode::InOutKey()
 		vehicle->bDisplayCab = true;
 		CabView(); // na pozycję mecha
 	}
-	update_window_title();
-}
-
-void driver_mode::update_window_title()
-{
-	std::string vehicle_label;
-	if (simulation::Train != nullptr)
-	{
-		auto const *current_vehicle = simulation::Train->Dynamic();
-		auto const *first_vehicle = current_vehicle;
-		std::vector<TDynamicObject const *> visited{first_vehicle};
-		while (auto const *previous_vehicle = first_vehicle->Prev())
-		{
-			if (std::find(visited.begin(), visited.end(), previous_vehicle) != visited.end())
-				break;
-			first_vehicle = previous_vehicle;
-			visited.push_back(first_vehicle);
-		}
-
-		vehicle_label = first_vehicle->Mechanik != nullptr ? first_vehicle->Mechanik->TrainName() : "";
-		if (vehicle_label.empty() || vehicle_label == "none")
-			vehicle_label = ToUpper(first_vehicle->name());
-	}
-
-	auto const title{Global.AppName + " (" + Global.SceneryFile +
-	                 (vehicle_label.empty() ? "" : " - " + vehicle_label) +
-	                 (simulation::Train != nullptr ? " [" + simulation::Train->name() + "]" : "") + ")"};
-	if (title != m_window_title)
-	{
-		Application.set_title(title);
-		m_window_title = title;
-	}
+	// update window title to reflect the situation
+	Application.set_title(Global.AppName + " (" + (train != nullptr ? train->Occupied()->Name : "") + " @ " + Global.SceneryFile + ")");
 }
 
 void driver_mode::set_picking(bool const Picking)

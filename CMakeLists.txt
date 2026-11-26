@@ -587,8 +587,6 @@ set(CORE_SOURCES
 "vehicle/signalpassing.cpp"
 "vehicle/brakereleaser.cpp"
 "vehicle/handover.cpp"
-"vehicle/uphillstart.cpp"
-"vehicle/brakecharge.cpp"
 "vehicle/crew.cpp"
 "vehicle/horn.cpp"
 "vehicle/cameraviews.cpp"
