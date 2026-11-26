@@ -20,6 +20,10 @@ namespace scene {
 
 node_groups Groups;
 
+void update_map() {
+	map::prepare_objects();
+}
+
 // requests creation of a new node group. returns: handle to the group
 scene::group_handle
 node_groups::create( bool const Separate ) {

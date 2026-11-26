@@ -94,6 +94,8 @@ private:
 
 extern node_groups Groups;
 
+void update_map();
+
 } // scene
 
 //---------------------------------------------------------------------------
