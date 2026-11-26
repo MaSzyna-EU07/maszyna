@@ -667,7 +667,8 @@ void editor_mode::render_capsule_tools()
 		auto const &button{buttons[index]};
 		if (index > 0)
 			ImGui::SameLine(0.0f, button.group ? 12.0f * s : 2.0f * s);
-		if (capsule_button(button, static_cast<int>(index), accent) && button.enabled && button.action)
+		// a tool of a family of its own (the kinds of track, the roads) keeps the colour it has in the flat toolbar
+		if (capsule_button(button, static_cast<int>(index), button.accent != 0 ? button.accent : accent) && button.enabled && button.action)
 			button.action();
 	}
 }
