@@ -12,6 +12,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "utilities/parser.h"
 
+#include <optional>
+
 /*rozne takie duperele do operacji na stringach w paszczalu, pewnie w delfi sa lepsze*/
 /*konwersja zmiennych na stringi, funkcje matematyczne, logiczne, lancuchowe, I/O etc*/
 
@@ -25,7 +27,16 @@ template <typename T> constexpr T sq(T v)
 	return v * v;
 }
 
-// returns the per-user config path for `filename` (platform-specific dir),
+// a base folder of the XDG base directory spec, of the values of its variable (XDG_CONFIG_HOME, XDG_CACHE_HOME) and
+// of HOME, either of them null when not set: the variable when it holds an absolute path, else `Fallback` (.config,
+// .cache) in the home folder, else an empty path. what Linux uses; apart from the environment, so tests can call it
+std::filesystem::path xdg_base_directory(char const *Variable, char const *Home, char const *Fallback);
+// the folder of the settings on Linux, of the values of XDG_CONFIG_HOME and HOME: MaSzyna in the base folder of the
+// settings, but ~/.config/MaSzyna, where the releases which didn't read XDG_CONFIG_HOME kept them, while it exists and
+// the new one doesn't, so the settings already there keep working. an empty path as xdg_base_directory
+std::filesystem::path xdg_config_folder(char const *Variable, char const *Home);
+// returns the per-user config path for `filename` (platform-specific dir: %APPDATA%\MaSzyna,
+// ~/Library/Application Support/MaSzyna, $XDG_CONFIG_HOME/MaSzyna or ~/.config/MaSzyna),
 // or an empty path if the home/appdata env var is unavailable
 std::filesystem::path user_config_path(const std::string &filename);
 // the per-user path for `filename` among the files kept only to be fetched again faster, which don't roam with the profile:
@@ -76,11 +87,15 @@ int RandomInt(int min, int max);
 /// @return A random seed as 64 bit unsigned integer
 std::uint64_t true_random_seed();
 
-// The seed a word stands for. A number is taken as it is written; anything else is
+// The seed a word stands for. A number is taken as it is written - the whole text, so
+// "4242abc" is a word, not 4242 - and 0 is a seed like any other; anything else is
 // hashed the way Java's String.hashCode does it, so the same word gives the same
 // world on every platform and every build - which is the whole point of telling
 // somebody a seed.
 std::uint32_t seed_of(std::string const &Text);
+// the seed a text of the settings (randomseed) or of the command line (-seed) gives: none for
+// an empty text, else seed_of() it, 0 included
+std::optional<std::uint32_t> seed_given(std::string const &Text);
 
 std::string generate_uuid_v4();
 double LocalRandom(double a, double b);

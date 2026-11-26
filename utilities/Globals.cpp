@@ -936,7 +936,12 @@ bool global_settings::ConfigParseSimulation(cParser& Parser, const std::string& 
     {
         std::string text;
         ParseOne(Parser, text);
-        Global.random_seed = seed_of(text);
+        // nothing after the key gives no seed; anything else does, 0 too
+        if (auto const seed{seed_given(text)})
+        {
+            Global.random_seed = *seed;
+            Global.random_seed_given = true;
+        }
         return true;
     }
 

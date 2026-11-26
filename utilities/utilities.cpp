@@ -16,6 +16,7 @@ Copyright (C) 2007-2014 Maciej Cierniak
 //#include <sys/types.h>
 //#include <sys/stat.h>
 #include <charconv>
+#include <mutex>
 #include <ranges>
 #include <format>
 //#ifndef WIN32
@@ -57,6 +58,33 @@ std::string Now()
 #endif
 }
 
+std::filesystem::path xdg_base_directory(char const *Variable, char const *Home, char const *Fallback)
+{
+	// as the spec has it: a variable which isn't set, is empty or holds a relative path counts as not set. absolute is
+	// said the way a posix system says it, so the answer is the same on every system the tests run on
+	if (Variable != nullptr && Variable[0] == '/')
+		return std::filesystem::path(Variable);
+	if (Home != nullptr && Home[0] != '\0')
+		return std::filesystem::path(Home) / Fallback;
+	return {};
+}
+
+std::filesystem::path xdg_config_folder(char const *Variable, char const *Home)
+{
+	auto const base{xdg_base_directory(Variable, Home, ".config")};
+	if (base.empty())
+		return {};
+	auto folder{base / "MaSzyna"};
+	if (Home != nullptr && Home[0] != '\0')
+	{
+		auto legacy{std::filesystem::path(Home) / ".config" / "MaSzyna"};
+		std::error_code error;
+		if (legacy != folder && false == std::filesystem::exists(folder, error) && std::filesystem::is_directory(legacy, error))
+			return legacy;
+	}
+	return folder;
+}
+
 std::filesystem::path user_config_path(const std::string &filename)
 {
 	namespace fs = std::filesystem;
@@ -67,8 +95,17 @@ std::filesystem::path user_config_path(const std::string &filename)
 	if (const char *home = std::getenv("HOME"))
 		return fs::path(home) / "Library" / "Application Support" / "MaSzyna" / filename;
 #else
-	if (const char *home = std::getenv("HOME"))
-		return fs::path(home) / ".config" / "MaSzyna" / filename;
+	if (auto const folder{xdg_config_folder(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"))}; false == folder.empty())
+	{
+		if (auto const wanted{xdg_base_directory(std::getenv("XDG_CONFIG_HOME"), std::getenv("HOME"), ".config") / "MaSzyna"};
+		    folder != wanted)
+		{
+			// said once, so whoever set XDG_CONFIG_HOME knows why the settings aren't there
+			static std::once_flag told;
+			std::call_once(told, [&] { WriteLog(std::format("Settings kept in \"{}\", the folder of the earlier releases, since \"{}\" doesn't exist", folder.string(), wanted.string())); });
+		}
+		return folder / filename;
+	}
 #endif
 	return {}; // env var missing → caller falls back to CWD-relative filename
 }
@@ -83,10 +120,8 @@ std::filesystem::path user_cache_path(const std::string &filename)
 	if (const char *home = std::getenv("HOME"))
 		return fs::path(home) / "Library" / "Caches" / "MaSzyna" / filename;
 #else
-	if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache != nullptr && *cache != '\0')
-		return fs::path(cache) / "MaSzyna" / filename;
-	if (const char *home = std::getenv("HOME"))
-		return fs::path(home) / ".cache" / "MaSzyna" / filename;
+	if (auto const base{xdg_base_directory(std::getenv("XDG_CACHE_HOME"), std::getenv("HOME"), ".cache")}; false == base.empty())
+		return base / "MaSzyna" / filename;
 #endif
 	return {};
 }
@@ -183,9 +218,18 @@ std::uint64_t true_random_seed()
 
 std::uint32_t seed_of(std::string const &Text)
 {
-	if (std::uint32_t number{}; std::from_chars(Text.data(), Text.data() + Text.size(), number).ec == std::errc{})
+	auto const *const end{Text.data() + Text.size()};
+	std::uint32_t number{};
+	auto const [last, error]{std::from_chars(Text.data(), end, number)};
+	if (error == std::errc{} && last == end)
 	{
 		return number;
+	}
+	if (error == std::errc{})
+	{
+		// digits with something after them are a word like any other, not the number in front of them: "4242abc"
+		// isn't seed 4242. said in the log, since whoever wrote it most likely meant a number
+		WriteLog(std::format("seed \"{}\" isn't a number, taken as a word", Text));
 	}
 	std::uint32_t hash{};
 	for (auto const character : Text)
@@ -193,6 +237,15 @@ std::uint32_t seed_of(std::string const &Text)
 		hash = hash * 31u + static_cast<std::uint32_t>(static_cast<unsigned char>(character));
 	}
 	return hash;
+}
+
+std::optional<std::uint32_t> seed_given(std::string const &Text)
+{
+	if (Text.empty())
+	{
+		return std::nullopt;
+	}
+	return seed_of(Text);
 }
 
 std::string generate_uuid_v4()
