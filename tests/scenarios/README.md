@@ -37,8 +37,10 @@ With `--test` the simulator:
   test mode are applied again after it,
 - runs the simulation as fast as it can in fixed steps of 0.03 s of simulation time per
   frame (three 10 ms physics steps), whatever the real time, the time speed or the machine,
-- seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so two
-  runs of a scenery come out the same (the physicslogs of two runs are byte for byte equal),
+- seeds its random numbers with a fixed seed unless `-seed` or `randomseed` gives one, so,
+  with the fixed step above, two runs of a scenery come out the same (the physicslogs of two
+  runs are byte for byte equal; a seed without the fixed step isn't enough, see
+  [A seed alone doesn't make a run repeatable](#a-seed-alone-doesnt-make-a-run-repeatable)),
 - quits when the test ends, and says how it ended in the exit code and in a `test: ...`
   line on stdout and in the log. A command line it can't take, a start that fails, or an
   exception thrown by the simulator (of any type, on Linux too) ends the same way, with the
@@ -148,7 +150,29 @@ Python 3.10+, no extra packages. Options:
   it runs alone, after the others.
 - `--seed N` (a number or a word) runs the cases with another seed of the simulator's random
   numbers (`randomseed`) than the fixed one of the test mode, for a bug that shows up only
-  sometimes: run the case with a few seeds.
+  sometimes: run the case with a few seeds. A seed repeats a run only in the test mode, see
+  below.
+
+### A seed alone doesn't make a run repeatable
+
+The same seed gives the same run only when every frame lasts the same simulation time. Each
+frame the simulator splits the time since the last one into physics steps of at most 10 ms
+(`driver_mode::update()`); outside the test mode that time comes from the wall clock (times
+`timespeed`), so the number and the length of the steps follow the frame rate, and with them
+the speeds, the pressures and the moments the AI decides things. Two runs of one scenery with
+one seed then drift apart, the more so on a busy machine.
+
+- The test mode (`--test`, what `run.py` runs by default) sets a fixed step itself: 0.03 s of
+  simulation time per frame, three 10 ms steps, whatever the wall clock
+  (`Timer::set_fixed_step()` in `driver_mode::enter()`). A case run twice with the same
+  `--seed`, or with none, comes out the same. This is the way to repeat a run.
+- `--watch` doesn't use the test mode: it runs on the wall clock, so a watched run isn't
+  repeatable, seed or not. Use it to look at a case, not to repeat one.
+- Outside the test mode (`--watch`, or the simulator started by hand with `-seed`) the setting
+  `deltaoverride N` makes every frame last 1/N s of simulation time, whatever the wall clock
+  and `timespeed` (`Timer::set_delta_override()`). It goes in `eu07.ini`, a `-ini` file or a
+  case's `ini` list. In the test mode it takes the place of the 0.03 s step. Whether a watched
+  run with it repeats byte for byte hasn't been checked.
 
 Exit code is 0 when every case passed, or failed as its `xfail` mark says it does (`XFAIL` in
 the summary); a case marked `xfail` that passes (`XPASS`) fails the run, so that the mark gets
