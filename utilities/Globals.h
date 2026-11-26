@@ -131,6 +131,9 @@ struct global_settings {
     bool ParserLogIncludes{ true };
     // simulation
     bool RealisticControlMode{ false }; // controls ability to steer the vehicle from outside views
+    // odometer.expiry: the saved odometer state of a vehicle not run for longer than this many days is dropped from the
+    // store (vehicle/odometer.h); 0 = never
+    int odometer_expiry{ 365 };
     bool bEnableTraction{ true };
     float fFriction{ 1.f }; // mnożnik tarcia - KURS90
     float FrictionWeatherFactor{ 1.f };
