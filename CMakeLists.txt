@@ -777,13 +777,16 @@ if (WIN32)
 endif()
 
 # http client of the editor, for the orthophoto, the terrain model and the topo map of geoportal.gov.pl: WinHTTP on Windows,
-# libcurl elsewhere when available
+# libcurl elsewhere when available. libcurl isn't linked: only its headers are used, and editor/editorHttp.cpp loads the
+# system's libcurl at run time (dlopen), so the game starts on a system without it and only the editor's downloads are off
+# there. the package doesn't bundle it either (CMake_modules/bundle_runtime_libs.cmake)
 if (WIN32)
 	target_link_libraries(eu07_settings INTERFACE winhttp)
 else()
 	find_package(CURL QUIET)
 	if (CURL_FOUND)
-		target_link_libraries(eu07_settings INTERFACE CURL::libcurl)
+		target_include_directories(eu07_settings INTERFACE $<TARGET_PROPERTY:CURL::libcurl,INTERFACE_INCLUDE_DIRECTORIES>)
+		target_link_libraries(eu07_settings INTERFACE ${CMAKE_DL_LIBS})
 		target_compile_definitions(eu07_settings INTERFACE EU07_WITH_CURL)
 	else()
 		message(STATUS "libcurl not found: the editor's orthophoto and terrain model will only show what's cached, its topo map nothing")
