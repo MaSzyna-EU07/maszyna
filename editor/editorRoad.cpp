@@ -20,6 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
 #include "utilities/translation.h"
+#include "editor/editorRoadLimits.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -30,10 +31,8 @@ namespace
 double const kSamePoint{0.25}; // ends of two pieces this close are taken for joined
 double const kPieceLength{50.0}; // longest piece the planner makes
 double const kPieceTurn{glm::radians(30.0)}; // largest turn of a single piece
-double const kShortestRoad{2.0};
-double const kTightestRadius{6.0};
+// the shortest road, the tightest bend and the sharpest angle between roads go by what the road is made of: road_limits_for()
 double const kCornerRoom{4.0}; // length of an arm of a junction past the point where its edge meets the edge of the next one, taken by the rounded corner
-double const kSharpestBranch{glm::radians(30.0)}; // smallest angle between two roads leaving a junction
 double const kWidestCorner{glm::radians(120.0)}; // arms further apart than this don't have to make room for each other
 double const kTransitionLength{30.0}; // length of the road taken by a change of its lanes
 
@@ -276,7 +275,7 @@ bool follow(road_node &Road, double const T, bool const Forward, double const Di
 		auto const here{station_at(lengths, from)};
 		auto const available{forward ? lengths.back() - here : here};
 		// what's left of a piece of a roundabout carries on round, so it can be shorter than a road of its own
-		auto const shortest{state.roundabout ? editor_ring::shortest_piece : kShortestRoad};
+		auto const shortest{state.roundabout ? editor_ring::shortest_piece : road_limits_for(state.surfacetype).shortest_road};
 		if (remaining <= 0.0 || available >= remaining + shortest)
 		{
 			// the cut is put here; with nothing left to go the piece is kept whole
@@ -1393,12 +1392,15 @@ editor_road::loose_end editor_road::find_end(glm::dvec3 const &Point, double con
 	return result;
 }
 
-std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight, std::string &Error)
+std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 const *Direction, glm::dvec3 const &Target, glm::dvec2 const *Enddirection, bool const Straight,
+                                            road_surface_type const Type, double const Halfwidth, std::string &Error)
 {
 	std::vector<segment_data> pieces;
 	glm::dvec2 const chord{Target.x - Start.x, Target.z - Start.z};
 	auto const span{glm::length(chord)};
-	if (span < kShortestRoad)
+	auto const limits{road_limits_for(Type)};
+	auto const tightest{editor_road_limits::tightest_bend(limits, Halfwidth)};
+	if (span < limits.shortest_road)
 	{
 		Error = "Too short";
 		return pieces;
@@ -1418,7 +1420,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 	if (Direction != nullptr && Enddirection != nullptr)
 	{
 		// both ends are tied, which leaves a single curve with the tangents set
-		if (glm::dot(*Direction, chord) < 0.1 * span || glm::dot(*Enddirection, chord) < 0.1 * span)
+		if (glm::dot(*Direction, chord) < limits.tied_lead * span || glm::dot(*Enddirection, chord) < limits.tied_lead * span)
 		{
 			Error = "The road would have to turn back to meet the end";
 			return pieces;
@@ -1436,7 +1438,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 			straight(Target);
 			return pieces;
 		}
-		if (radius < kTightestRadius)
+		if (radius < tightest)
 		{
 			Error = "The bend is too tight";
 			return pieces;
@@ -1449,7 +1451,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 	{
 		// only the far end is tied: the same road as the one leading back from there, turned around
 		glm::dvec2 const back{-*Enddirection};
-		auto reversed{plan(Target, &back, Start, nullptr, Straight, Error)};
+		auto reversed{plan(Target, &back, Start, nullptr, Straight, Type, Halfwidth, Error)};
 		for (auto &piece : reversed)
 		{
 			std::swap(piece.points[segment_data::point::start], piece.points[segment_data::point::end]);
@@ -1471,7 +1473,7 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 	auto const side{glm::dot(chord, left)};
 	if (Straight || std::abs(side) < 0.02 * span)
 	{
-		if (along < kShortestRoad)
+		if (along < limits.shortest_road)
 		{
 			Error = "The target is behind the start";
 			return pieces;
@@ -1481,12 +1483,12 @@ std::vector<segment_data> editor_road::plan(glm::dvec3 const &Start, glm::dvec2 
 	}
 	auto const turn{2.0 * std::atan2(side, along)}; // positive to the left
 	auto const radius{span * span / (2.0 * side)}; // likewise
-	if (std::abs(turn) > glm::radians(170.0))
+	if (std::abs(turn) > limits.widest_turn)
 	{
 		Error = "The road would have to turn back to reach the target";
 		return pieces;
 	}
-	if (std::abs(radius) < kTightestRadius)
+	if (std::abs(radius) < tightest)
 	{
 		Error = "The bend is too tight";
 		return pieces;
@@ -1847,7 +1849,8 @@ bool editor_road::lane_width(road_node::state const &State, double const T, floa
 	return true;
 }
 
-bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error)
+bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, road_surface_type const Type, branch &Result,
+                              std::string &Error)
 {
 	Result = branch{};
 	auto const &layout{Road.definition()};
@@ -1856,7 +1859,7 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	auto const direction{glm::length(Direction) > 1e-9 ? glm::normalize(Direction) : glm::dvec2{0.0, 1.0}};
 	// the sharper the angle the road leaves at, the further from the centre the edges of the roads part
 	auto const angle{std::acos(std::clamp(std::abs(glm::dot(direction, along)), 0.0, 1.0))};
-	if (angle < kSharpestBranch)
+	if (angle < road_limits_for(Type).sharpest_branch)
 	{
 		Error = "The road would leave at too sharp an angle";
 		return false;
@@ -1974,7 +1977,8 @@ bool editor_road::branch_from(road_node &Road, double const T, glm::dvec2 const 
 	return true;
 }
 
-bool editor_road::branch_from(junction_node &Junction, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, branch &Result, std::string &Error)
+bool editor_road::branch_from(junction_node &Junction, glm::dvec2 const &Direction, int const Incoming, int const Outgoing, float const Width, road_surface_type const Type, branch &Result,
+                              std::string &Error)
 {
 	Result = branch{};
 	auto const &layout{Junction.definition()};
@@ -1997,7 +2001,7 @@ bool editor_road::branch_from(junction_node &Junction, glm::dvec2 const &Directi
 	{
 		auto const &other{layout.arms[idx]};
 		auto const angle{std::acos(std::clamp(glm::dot(direction, other.direction), -1.0, 1.0))};
-		if (angle < kSharpestBranch)
+		if (angle < road_limits_for(Type).sharpest_branch)
 		{
 			Error = "The road would leave too close to another road of the junction";
 			return false;

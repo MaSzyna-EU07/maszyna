@@ -8073,6 +8073,18 @@ msgstr "Pas rozwidla się najwyżej na trzy: na pasy dodane ponad dwa nie da si�
 msgid "Lane width [m]"
 msgstr "Szerokość pasa (m)"
 
+msgid "paved"
+msgstr "utwardzona"
+
+msgid "dirt"
+msgstr "gruntowa"
+
+msgid "Road type"
+msgstr "Rodzaj drogi"
+
+msgid "Paved: asphalt, concrete or setts, with the bends and the junction angles of a built road.\nDirt: a track between fields or through a forest. It bends tighter (3 m radius instead of 6 m), can be shorter (1 m instead of 2 m),\nleaves other roads at sharper angles (15 degrees instead of 30) and can turn back in a hairpin.\nMade dirt, a road with the default asphalt gets the field road texture and loses the white lines"
+msgstr "Utwardzona: asfalt, beton albo kostka, z łukami i kątami skrzyżowań jak na drodze budowanej.\nGruntowa: droga polna albo leśna. Skręca ciaśniej (promień 3 m zamiast 6 m), może być krótsza (1 m zamiast 2 m),\nodchodzi od innych dróg pod ostrzejszym kątem (15 stopni zamiast 30) i może zawrócić serpentyną.\nDroga z domyślnym asfaltem zmieniona na gruntową dostaje teksturę drogi polnej i traci białe linie"
+
 msgid "Left side"
 msgstr "Lewa strona"
 
