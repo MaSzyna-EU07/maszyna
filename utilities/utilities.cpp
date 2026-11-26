@@ -715,9 +715,11 @@ std::string file_cased(std::filesystem::path const &Filename, [[maybe_unused]] b
 	if (Report && (cased != asked))
 	{
 		// counted once it's known to be there, and written to the log outside of the lock
-		std::unique_lock lock{cased_mutex};
-		auto const first{cased_reported().insert(asked).second};
-		lock.unlock();
+		bool first{false};
+		{
+			std::scoped_lock const lock{cased_mutex};
+			first = cased_reported().insert(asked).second;
+		}
 		// the parser asks for the names in lowercase, so these are mostly the files not named in lowercase on the disk. as they load
 		// fine, each is written to the log only on request (logs.filecase); their count is, at the closing (LogFilesInAnotherCase())
 		if (first && Global.FileCaseLog)
@@ -772,7 +774,7 @@ void LogFilesInAnotherCase()
 	auto const count{FilesInAnotherCase()};
 	if (count == 0)
 		return;
-	WriteLog(std::format("Files found on disk only in another case than asked for: {}{}", count,
+	WriteLog(std::format("Names asked for and found on disk only in another case: {}{}", count,
 	                     Global.FileCaseLog ? ", each logged above" : " (\"logs.filecase yes\" in eu07.ini logs each)"),
 	         logtype::file);
 }
