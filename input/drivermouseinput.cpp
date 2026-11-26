@@ -640,6 +640,12 @@ drivermouse_input::default_bindings() {
         { "oilfuelpump_sw:", {
             oilfuelpumptoggle,
             none } },
+        { "tractionmode_sw:", {
+            tractionmodetoggle,
+            none } },
+        { "genset_sw:", {
+            gensettoggle,
+            none } },
         { "motorblowersfront_sw:", {
             motorblowerstogglefront,
             none } },

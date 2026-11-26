@@ -239,7 +239,7 @@ to `logs/`.
 | `fragment` | `.scn` file in `cases/` added to the scenery: trainsets after `FirstInit` (before it they derail on unlinked track), the rest before it (launchers read after it never fire). Optional when the case keeps the scenery's trainsets |
 | `vars` | values for `{{name}}` in the fragment; a list becomes one line per item |
 | `timetable` | a timetable file in `cases/` for a trainset of the fragment, for a train whose timetable no scenery of the game has: copied to the game's `scenery/` dir as `autotest_<case>.txt` for the run and removed after it; the fragment names it `{{timetable}}` |
-| `vehicle_variants` | vehicles of the case's own, made from those of the game, e.g. with a `.fiz` key the game's data doesn't have yet: a list of `{ "name": ..., "from": "<dir>/<type>", "replace": [[old, new], ...] }`. For the run the vehicle's `.fiz`, with the literal replacements (an `old` it doesn't have is an error), and its `.mmd` are copied beside it in the game's `dynamic/` dir as `autotest_<case>_<name>` and removed after it; the fragment names the type `{{variant_<name>}}`, e.g. `dynamic pkp/et42_v2 112e-014-a {{variant_a}} ...`. The copy of the `.mmd` has the name of the vehicle it is made from in place of `(p2)`, the type name the simulator hands it, which some pass on to the include that names the model |
+| `vehicle_variants` | vehicles of the case's own, made from those of the game, e.g. with a `.fiz` key the game's data doesn't have yet: a list of `{ "name": ..., "from": "<dir>/<type>", "replace": [[old, new], ...] }`. For the run the vehicle's `.fiz`, with the literal replacements (an `old` it doesn't have is an error), and its `.mmd` are copied beside it in the game's `dynamic/` dir as `autotest_<case>_<name>` and removed after it; the fragment names the type `{{variant_<name>}}`, e.g. `dynamic pkp/et42_v2 112e-014-a {{variant_a}} ...`. The copy of the `.mmd` has the name of the vehicle it is made from in place of `(p2)`, the type name the simulator hands it, which some pass on to the include that names the model. An optional `"fiz_from": "<dir>/<file>"` copies that file instead of the vehicle's own `.fiz`, named in full, e.g. `pkp/e6act_v2/e6acta.fiz.inc` for a vehicle whose `.fiz` only includes it (`e6actad.fiz`); the `.mmd` still comes from `from`. Keys for a section of the included file can't go after the include on a line of their own: a second `Power:` line loads the power source anew |
 | `expect` | the result the test mode should end with: `pass`, `fail`, `signal_passed_at_danger`, `timeout`, `standstill` or `error`, or `wall_timeout` for the timeout of the real time watchdog (the timeout code with a verdict saying it was the real time; a case expecting `timeout` fails on it). Default `timeout` for a case with `duration`, else `pass` |
 | `duration` | seconds of simulation to record: the test timeout of the run (`--test-timeout`) |
 | `timeout` | wall-clock seconds before giving up, loading included: the simulator's `--test-wall-timeout` (default 600) |
@@ -298,6 +298,18 @@ starts on the level at the W4 of Gora, stops at the W4 of Dol 1500 m down the gr
 `gr_sem`, a signal at stop 1100 m further down (a memory cell with `SetVelocity 0 0` and the event that reads it, no
 model), about 1590 m and 2690 m from the start. The three trains are the light EU07, the SN61 alone and the EU07 with
 three coaches.
+
+`e6actad_genset_td_timetable` (fragment `td_timetable_genset.scn`) is the timetable run of a dual-mode vehicle on its
+genset (eu07/maszyna#536): an E6ACTad, the Dragon 2 "last mile" with a 520 kW diesel generator set. The game data has no
+genset for it yet, so the case makes its own E6ACTad (`vehicle_variants`, `{{variant_g6}}`): the `.mmd` of `e6actad`, and
+as its `.fiz` the `e6acta.fiz.inc` that `e6actad.fiz` includes (`fiz_from`), with `GensetStart=Manual` added to the
+`Cntrl.` line and `GensetPower=520 GensetVoltage=3000 GensetIdleRPM=700 GensetMaxRPM=1800 GensetStartTime=8
+GensetSpinUpTime=3 GensetPmaxRatio=0.85` to the `Power:` line. `event0` of the start track gives the standing vehicle, once,
+`PutValues` `MainSwitch 0`, `TractionMode 1` (the selector on the genset) and `GensetSwitch 1`, a second apart, as the
+vehicle holds one command at a time. The AI knows nothing of the genset: it closes the line breaker once the genset runs
+and drives the timetable on it, at most 520 kW x 0.85 = 442 kW at the wheels (`traction_power`).
+`e6actad_catenary_td_timetable` is the same variant without the events: it stays on the catenary and takes several
+times that, which shows the check tells the two apart.
 
 ### Heavy trains
 
@@ -643,6 +655,10 @@ the row instead, logged by builds from this branch on.
   after moving off, moves no more than `max_distance` metres, e.g. no creeping on locked wheels.
 - `ends_moving` `min_speed`: the last row of the physicslog is at `min_speed` or faster, e.g.
   the test ended without waiting for the train to stop.
+- `traction_power` `max_kw`, optional `min_peak_kw` (*vehicle speed*): the power at the wheels, the
+  traction force times the vehicle speed, never goes above `max_kw` and, given `min_peak_kw`, reaches
+  it at least once; e.g. a dual-mode vehicle running on the power of its genset. The traction force
+  column is in N, whatever the header says.
 - `keeps_moving` `moving_speed`, `min_speed`, `until_distance`, optional `from_distance` (*vehicle speed*): once at
   `moving_speed`, the speed stays at or above `min_speed` between the two distances (metres travelled, from the vehicle
   speed), e.g. a heavy train doesn't come to a stand on a descent before a restriction. Reports the lowest speed.

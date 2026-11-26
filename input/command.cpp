@@ -446,6 +446,12 @@ commanddescription_sequence Commands_descriptions = {
     {"genericset27", command_target::vehicle, command_mode::oneoff},
     {"genericset28", command_target::vehicle, command_mode::oneoff},
     {"genericset29", command_target::vehicle, command_mode::oneoff},
+    {"tractionmodetoggle", command_target::vehicle, command_mode::oneoff},
+    {"tractionmodecatenary", command_target::vehicle, command_mode::oneoff},
+    {"tractionmodegenset", command_target::vehicle, command_mode::oneoff},
+    {"gensettoggle", command_target::vehicle, command_mode::oneoff},
+    {"gensetenable", command_target::vehicle, command_mode::oneoff},
+    {"gensetdisable", command_target::vehicle, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -871,6 +877,12 @@ std::unordered_map<std::string, user_command> const commandMap = {
     {"genericset27", user_command::genericset27},
     {"genericset28", user_command::genericset28},
     {"genericset29", user_command::genericset29},
+    {"tractionmodetoggle", user_command::tractionmodetoggle},
+    {"tractionmodecatenary", user_command::tractionmodecatenary},
+    {"tractionmodegenset", user_command::tractionmodegenset},
+    {"gensettoggle", user_command::gensettoggle},
+    {"gensetenable", user_command::gensetenable},
+    {"gensetdisable", user_command::gensetdisable},
 	{"none", user_command::none}};
 
 } // namespace simulation
