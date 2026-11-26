@@ -1835,6 +1835,12 @@ global_settings::ConfigParse_gfx( cParser &Parser, std::string_view const Token 
         Parser >> gfx_shadow_rank_cutoff;
         gfx_shadow_rank_cutoff = std::clamp(gfx_shadow_rank_cutoff, 1, 3);
     }
+    else if (Token == "gfx.headlights.beamwidth")
+    {
+        Parser.getTokens(1);
+        Parser >> gfx_headlights_beamwidth;
+        gfx_headlights_beamwidth = std::clamp(gfx_headlights_beamwidth, 1.f, 4.f);
+    }
     else
     {
         tokenparsed = false;
@@ -2123,6 +2129,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "gfx.shadergamma", gfx_shadergamma );
     export_as_text( Output, "gfx.shadow.angle.min", gfx_shadow_angle_min );
     export_as_text( Output, "gfx.shadow.rank.cutoff", gfx_shadow_rank_cutoff );
+    export_as_text( Output, "gfx.headlights.beamwidth", gfx_headlights_beamwidth );
     export_as_text( Output, "python.enabled", python_enabled );
     export_as_text( Output, "python.threadedupload", python_threadedupload );
     export_as_text( Output, "python.uploadmain", python_uploadmain );
