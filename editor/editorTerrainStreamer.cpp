@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
 #include "utilities/Logs.h"
+#include "utilities/utilities.h"
 
 #include <algorithm>
 #include <chrono>
@@ -99,17 +100,19 @@ terrain_streamer::~terrain_streamer()
 
 std::string terrain_streamer::pack_path(heightmap::pack_key const &Key) const
 {
-	return m_directory + heightmap::pack_file_name(Key);
+	// read and written as it's named on the disk
+	return FileOnDisk(m_directory + heightmap::pack_file_name(Key));
 }
 
 bool terrain_streamer::open(std::string const &Name)
 {
 	close();
 	m_name = Name;
-	m_directory = "terrain/" + Name + "/";
+	// the folder as it's named on the disk, the editor writes the files of the terrain into it
+	m_directory = FileOnDiskToWrite("terrain/" + Name) + "/";
 	m_manifest = heightmap::manifest();
 	m_manifestchanged = false;
-	auto const manifestpath{m_directory + "terrain.yaml"};
+	auto const manifestpath{FileOnDisk(m_directory + "terrain.yaml")};
 	std::error_code ec;
 	if (std::filesystem::exists(manifestpath, ec))
 	{
@@ -1895,7 +1898,8 @@ bool terrain_streamer::save(std::string *Error)
 		return false;
 	};
 	std::error_code ec;
-	auto const manifestpath{m_directory + "terrain.yaml"};
+	// written over as it's named on the disk, not joined by a second one next to it
+	auto const manifestpath{FileOnDisk(m_directory + "terrain.yaml")};
 	if (m_manifestchanged || modified() || false == std::filesystem::exists(manifestpath, ec))
 	{
 		std::string error;

@@ -1320,6 +1320,12 @@ bool global_settings::ConfigParseDebug(cParser& Parser, const std::string& token
         return true;
     }
 
+    if (token == "logs.filecase")
+    {
+        ParseOne(Parser, FileCaseLog);
+        return true;
+    }
+
     if (token == "rollfix")
     {
         ParseOne(Parser, bRollFix);
@@ -1768,6 +1774,7 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "crashdump.full", CrashDumpFull );
     export_as_text( Output, "showsystemconsole", ShowSystemConsole );
     export_as_text( Output, "logs.filter", DisabledLogTypes );
+    export_as_text( Output, "logs.filecase", FileCaseLog );
     Output
         << "mousescale "
         << fMouseXScale << " "

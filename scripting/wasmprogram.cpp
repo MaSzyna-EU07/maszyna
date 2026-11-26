@@ -579,7 +579,7 @@ wasm_module_t wasm_runtime_host::load_module(std::string const &Script)
 	}
 	// a failure is kept as well, so the module isn't tried again for every screen using it
 	auto &entry{m_modules[Script]};
-	std::ifstream file{Script, std::ios::binary};
+	std::ifstream file{FileOnDisk(Script), std::ios::binary};
 	if (false == file.is_open())
 	{
 		ErrorLog(std::format("WASM screen \"{}\": file not found", Script));

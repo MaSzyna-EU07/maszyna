@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "doctest.h"
+#include "logcapture.h"
 #include "scratch.h"
 
 #include <cmath>
@@ -25,6 +26,16 @@ struct debug_mode {
 	debug_mode(debug_mode const &) = delete;
 	debug_mode &operator=(debug_mode const &) = delete;
 	~debug_mode() { DebugModeFlag = before; }
+};
+
+// puts logs.filecase back as it was
+struct file_case_log {
+	bool const before{Global.FileCaseLog};
+
+	explicit file_case_log(bool const Enabled) { Global.FileCaseLog = Enabled; }
+	file_case_log(file_case_log const &) = delete;
+	file_case_log &operator=(file_case_log const &) = delete;
+	~file_case_log() { Global.FileCaseLog = before; }
 };
 
 // the polish letters in windows-1250, as in test_win1250.cpp
@@ -667,6 +678,98 @@ TEST_CASE("utilities: a terrain file is found in another case, by its text or by
 	CHECK(std::filesystem::exists(scenery + binary + ".btf"));
 	// neither file in any case: the name stays as given
 	CHECK(FileStemOnDisk(scenery, "nmt/nowhere_ter", extensions) == "nmt/nowhere_ter");
+}
+
+TEST_CASE("utilities: a file is written over in another case, or made in its folders as they're named on the disk") {
+	test::scratch_folder const folder{"utilities_cased_write"};
+	folder.write("Scenery/Braniewo/Base.scm", "x");
+	// on Windows the names are given back as asked, the file system finding them in any case; elsewhere as they're on the disk
+#ifdef _WIN32
+	bool const cased{false};
+#else
+	bool const cased{true};
+#endif
+
+	// a file there in another case: written under its name on the disk, not joined by a second one next to it
+	auto const existing{FileOnDiskToWrite(folder.path("scenery/braniewo/base.scm"))};
+	CHECK(existing == folder.path(cased ? "Scenery/Braniewo/Base.scm" : "scenery/braniewo/base.scm"));
+	CHECK(std::filesystem::exists(existing));
+	// a new file: the name given, in the folders as they're on the disk, so no second folder is made next to the one there
+	auto const added{FileOnDiskToWrite(folder.path("scenery/braniewo/nowa.scm"))};
+	CHECK(added == folder.path(cased ? "Scenery/Braniewo/nowa.scm" : "scenery/braniewo/nowa.scm"));
+	CHECK(added.ends_with("/nowa.scm"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{added}.parent_path()));
+	// folders missing in any case: named as given, to be made in the nearest one there is
+	auto const deeper{FileOnDiskToWrite(folder.path("scenery/braniewo/teren/nowy/x.btf"))};
+	CHECK(deeper == folder.path(cased ? "Scenery/Braniewo/teren/nowy/x.btf" : "scenery/braniewo/teren/nowy/x.btf"));
+	CHECK(deeper.ends_with("/teren/nowy/x.btf"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{deeper}.parent_path().parent_path().parent_path()));
+	// the folders written the Windows way as well
+	auto const backslashed{FileOnDiskToWrite(folder.path() + "scenery\\braniewo\\nowa.scm")};
+	CHECK(backslashed.ends_with("/nowa.scm"));
+	CHECK(std::filesystem::is_directory(std::filesystem::path{backslashed}.parent_path()));
+	// a name with no folder, and none there
+	CHECK(FileOnDiskToWrite("eu07_unit_test_no_such_file.xyz") == "eu07_unit_test_no_such_file.xyz");
+}
+
+TEST_CASE("utilities: a file found only in another case is logged once with logs.filecase, the folders of a file to write are not") {
+	test::scratch_folder const folder{"utilities_cased_log"};
+	folder.write("Scenery/Braniewo/Base.scm", "x");
+	file_case_log const opted{true};
+	test::log_capture const log;
+
+	// asked for again, and to be written over
+	CHECK_FALSE(FileCased(folder.path("scenery/braniewo/base.scm")).empty());
+	CHECK_FALSE(FileCased(folder.path("scenery/braniewo/base.scm")).empty());
+	CHECK_FALSE(FileOnDiskToWrite(folder.path("scenery/braniewo/base.scm")).empty());
+	// asked for in its case on the disk
+	CHECK_FALSE(FileCased(folder.path("Scenery/Braniewo/Base.scm")).empty());
+	// a new file, in folders named in another case
+	CHECK_FALSE(FileOnDiskToWrite(folder.path("scenery/braniewo/nowa.scm")).empty());
+	CHECK_FALSE(FileOnDiskToWrite(folder.path("scenery/braniewo/teren/nowa.scm")).empty());
+
+	auto const lines{log.lines()};
+#ifdef _WIN32
+	// the file system finds the names in any case, the name asked for is the one given back: nothing to log
+	CHECK(lines.empty());
+#else
+	REQUIRE(lines.size() == 1);
+	CHECK(lines.front().find(folder.path("Scenery/Braniewo/Base.scm")) != std::string::npos);
+#endif
+}
+
+TEST_CASE("utilities: the files found only in another case are counted, and without logs.filecase only the count is logged") {
+	test::scratch_folder const folder{"utilities_cased_count"};
+	folder.write("Scenery/Kozki/Base.scm", "x");
+	folder.write("Textures/Kozki/Tor.dds", "x");
+	file_case_log const opted{false};
+	test::log_capture const log;
+	[[maybe_unused]] auto const before{FilesInAnotherCase()};
+
+	// two files in another case, one asked for twice, one asked for in its own case, one which isn't there in any case
+	CHECK_FALSE(FileCased(folder.path("scenery/kozki/base.scm")).empty());
+	CHECK_FALSE(FileCased(folder.path("scenery/kozki/base.scm")).empty());
+	CHECK_FALSE(FileOnDiskToWrite(folder.path("textures/kozki/tor.dds")).empty());
+	CHECK_FALSE(FileCased(folder.path("Scenery/Kozki/Base.scm")).empty());
+	CHECK(FileCased(folder.path("scenery/kozki/nothing.scm")).empty());
+	// not one of them on its own
+	CHECK(log.lines().empty());
+
+	LogFilesInAnotherCase();
+	auto const lines{log.lines()};
+#ifdef _WIN32
+	// nothing found in another case, nothing to count nor to log
+	CHECK(FilesInAnotherCase() == 0);
+	CHECK(lines.empty());
+#else
+	auto const count{FilesInAnotherCase()};
+	CHECK(count == before + 2);
+	// the one line, with the count of the whole run so far and the way to have them listed
+	REQUIRE(lines.size() == 1);
+	CHECK(lines.front().find(": " + std::to_string(count) + " (") != std::string::npos);
+	CHECK(lines.front().find("logs.filecase yes") != std::string::npos);
+	CHECK(lines.front().find("Kozki") == std::string::npos);
+#endif
 }
 
 TEST_CASE("utilities: the time a file was changed is given, zero for a file which isn't there") {

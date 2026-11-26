@@ -122,6 +122,9 @@ struct global_settings {
     std::optional<bool> BlackBox;
     bool ShowSystemConsole{ false }; // toggle visibility of the OS console window with log output
     unsigned int DisabledLogTypes{ 0 };
+    // logs.filecase: each file found on the disk only in another case than asked for (not on Windows) is written to the log;
+    // without it only their count is, once, at the closing
+    bool FileCaseLog{ false };
     bool ParserLogIncludes{ true };
     // simulation
     bool RealisticControlMode{ false }; // controls ability to steer the vehicle from outside views
