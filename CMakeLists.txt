@@ -221,7 +221,7 @@ set(SOURCES
 "editor/editorGeoMap.cpp"
 "editor/editorPreviews.cpp"
 "editor/editorIcons.cpp"
-"widgets/mapIcons.cpp"
+"widgets/map_icons.cpp"
 "editor/editorClips.cpp"
 "application/editormode.cpp"
 "application/editormodetrack.cpp"

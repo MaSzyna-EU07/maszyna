@@ -8,7 +8,7 @@
 #include "model/AnimModel.h"
 #include "application/application.h"
 #include "editor/editorTerrainStreamer.hpp"
-#include "widgets/mapIcons.h"
+#include "widgets/map_icons.h"
 #include "world/Sweep.h"
 #include <format>
 #include <ranges>

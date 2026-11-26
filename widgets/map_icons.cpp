@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "widgets/mapIcons.h"
+#include "widgets/map_icons.h"
 
 #include "rendering/renderer.h"
 #include "stb/stb_image.h"

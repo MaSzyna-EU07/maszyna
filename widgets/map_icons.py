@@ -11,13 +11,36 @@ from editor.icons import editor_icons
 
 CELL = editor_icons.CELL
 SUPER = editor_icons.SUPER
+
+
+def zoom_in(d):
+    editor_icons.circle(d, 27, 27, 16, outline=True, width=editor_icons.W - 5)
+    editor_icons.line(d, [(39, 39), (56, 56)], editor_icons.W - 5)
+    editor_icons.line(d, [(19, 27), (35, 27)], editor_icons.W - 7)
+    editor_icons.line(d, [(27, 19), (27, 35)], editor_icons.W - 7)
+
+
+def camera(d):
+    editor_icons.rect(d, 7, 18, 57, 53, outline=True, width=editor_icons.W - 4, radius=5)
+    editor_icons.poly(d, [(17, 18), (22, 9), (39, 9), (44, 18)])
+    editor_icons.circle(d, 33, 35, 11, outline=True, width=editor_icons.W - 6)
+    editor_icons.circle(d, 33, 35, 3)
+    editor_icons.circle(d, 49, 25, 2)
+
+
+def zoom_out(d):
+    editor_icons.circle(d, 27, 27, 16, outline=True, width=editor_icons.W - 5)
+    editor_icons.line(d, [(39, 39), (56, 56)], editor_icons.W - 5)
+    editor_icons.line(d, [(19, 27), (35, 27)], editor_icons.W - 7)
+
+
 ICONS = (
     editor_icons.translate,
     editor_icons.rotate,
     editor_icons.vehicle,
-    editor_icons.camera,
-    editor_icons.zoom_in,
-    editor_icons.zoom_out,
+    camera,
+    zoom_in,
+    zoom_out,
 )
 
 
