@@ -982,9 +982,9 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
             if( bend.head_from >= 0 && false == turns.empty() ) {
                 turns.back() = head_turn( bend, Now, upwards );
                 if( bend.rooted && bend.head_up >= 0 ) {
-                    // the joint of two cars as stiff as its bellows: it turns round a curve, but not with the pitch and
-                    // the roll of the next car on uneven track
-                    turns.back() = bones::yaw_only( turns.back() );
+                    // the joint of two cars as stiff as its bellows: it turns round a curve, and with as much of the pitch
+                    // and the roll of the next car on uneven track as its sway gives
+                    turns.back() = glm::slerp( bones::yaw_only( turns.back() ), turns.back(), bend.sway );
                 }
             }
             // the root held to the body as made
@@ -995,7 +995,12 @@ void TDynamicObject::pose_flexes( std::vector<glm::dvec3> const &Now ) {
                 bones::spread_turns( rest, turns );
                 // and as long and as level as made: the bellows and the cables turn with the cars, not stretched by
                 // the play of the coupling of the articulated joint as the train brakes and pulls, nor bent up and down
-                bones::keep_level( rest, now );
+                auto level { now };
+                bones::keep_level( rest, level );
+                bones::keep_lengths( rest, now );
+                for( std::size_t node = 0; node < now.size(); ++node ) {
+                    now[ node ] = glm::mix( level[ node ], now[ node ], bend.sway );
+                }
             }
             nodes.emplace_back( now.begin(), now.end() );
             nodeturns.emplace_back( turns.begin(), turns.end() );

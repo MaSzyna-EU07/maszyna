@@ -19,7 +19,7 @@ bonepoint: <name> coupler <front|rear> <x> <y> <z>
 bonepoint: <name> mid <point> <point>
 bonechain: <name> <start point> <end point> <nodes> <x> <y> <z> (of each node)
 bone: <submodel> <anchor point> <point it faces, or none>
-bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [rooted] end
+bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [sway <0..1>] [rooted] end
 ```
 
 - The coordinates are those of the model file: x across, y along the vehicle (the front, `coupler1`, at +y), z up.
@@ -77,7 +77,9 @@ bonebend: <submodel> <point> <point> ... [head <point> <point> [<point>]] [roote
   collars meeting halfway stand on one plane, which halves the angle between the cars. Such a joint is as stiff as a
   bellows: of the turn of the next car it keeps only the part about the vertical (round a curve), not its pitch and
   roll on uneven track, and the pieces of its spine keep their length and rise as made, whatever the play of the
-  articulated coupling as the train brakes and pulls.
+  articulated coupling as the train brakes and pulls. `sway <0..1>` gives it that part of the pitch and the roll of the
+  next car, and as much of its rise and fall, still as long as made: 0.5 for a bellows or a rubber collar, which give a
+  little, 1 for roof cables, which give with the cars.
 
 ## Control cables, rubber collars and buffers
 

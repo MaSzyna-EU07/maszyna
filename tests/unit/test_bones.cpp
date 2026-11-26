@@ -538,6 +538,23 @@ TEST_CASE("bones: a joint keeps the lengths of its pieces as made, stretched or 
 	CHECK(pressed[2].y == doctest::Approx(0.4));
 }
 
+TEST_CASE("bones: the sway of a joint, the part of the pitch and roll of the next car it follows") {
+	bones::rig rig;
+	for (auto const &name : {"root", "joint", "far", "axis", "over"})
+	{
+		REQUIRE(bones::add_point(rig, {name, "fixed", "0", "0", "0"}).empty());
+	}
+	REQUIRE(bones::add_bend(rig, {"miech", "root", "joint", "far", "head", "far", "axis", "over", "sway", "0.5", "rooted"}).empty());
+	REQUIRE(bones::add_bend(rig, {"kable", "root", "joint", "far", "head", "far", "axis", "over", "rooted"}).empty());
+	CHECK(rig.bends[0].sway == doctest::Approx(0.5));
+	CHECK(rig.bends[0].head_up == 4);
+	CHECK(rig.bends[0].spine.size() == 3);
+	CHECK(rig.bends[0].rooted);
+	CHECK(rig.bends[1].sway == doctest::Approx(0.0));
+	CHECK_FALSE(bones::add_bend(rig, {"miech", "root", "joint", "sway", "2", "rooted"}).empty());
+	CHECK_FALSE(bones::add_bend(rig, {"miech", "root", "joint", "sway"}).empty());
+}
+
 TEST_CASE("bones: a stiff joint turns only about the vertical, level and as long as made") {
 	std::vector<glm::dvec3> const rest{{0.0, 0.0, 2.0}, {0.0, 0.2, 2.0}, {0.0, 0.4, 2.0}};
 	// the next car 3 cm farther, a little round a curve and 2 cm higher at the far end

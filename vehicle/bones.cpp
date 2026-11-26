@@ -284,7 +284,17 @@ std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
 	bend.rooted = std::ranges::find(Words, std::string{"rooted"}) != Words.end();
 	auto const head{std::ranges::find(Words, std::string{"head"})};
 	auto const rooted{std::ranges::find(Words, std::string{"rooted"})};
-	auto const spineend{static_cast<std::size_t>(std::min(head, rooted) - Words.begin())};
+	auto const sway{std::ranges::find(Words, std::string{"sway"})};
+	auto const spineend{static_cast<std::size_t>(std::min({head, rooted, sway}) - Words.begin())};
+	if (sway != Words.end())
+	{
+		auto const value{sway + 1 != Words.end() ? std::strtod((sway + 1)->c_str(), nullptr) : -1.0};
+		if (sway + 1 == Words.end() || value < 0.0 || value > 1.0)
+		{
+			return "sway of " + Words[0] + " needs a number from 0 to 1";
+		}
+		bend.sway = value;
+	}
 	for (std::size_t word{1}; word < spineend; ++word)
 	{
 		auto const point{Rig.find(Words[word])};
@@ -311,7 +321,7 @@ std::string add_bend(rig &Rig, std::vector<std::string> const &Words)
 		{
 			return "no points " + Words[headat + 1] + " and " + Words[headat + 2] + " for the head of " + Words[0];
 		}
-		if (Words.size() > headat + 3 && Words[headat + 3] != "rooted")
+		if (Words.size() > headat + 3 && Words[headat + 3] != "rooted" && Words[headat + 3] != "sway")
 		{
 			bend.head_up = Rig.find(Words[headat + 3]);
 			if (bend.head_up < 0)

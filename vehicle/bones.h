@@ -91,6 +91,10 @@ struct bend {
 	// rooted: the first point of the spine is held to the body, unturned, and only the part of the submodel past it bends,
 	// the rest staying as made: the half of a gangway bellows on the end of a car, its face bent to the joint
 	bool rooted{false};
+	// sway <0..1>, of a joint of two cars (rooted, its head held to the whole turn of the next car): the part of the pitch
+	// and the roll of the next car it follows, and as much of its rise and fall; 0 (none given) only round a curve, as
+	// stiff as a bellows, 1 all of them: roof cables, which give with the cars
+	double sway{0.0};
 };
 
 struct rig {
