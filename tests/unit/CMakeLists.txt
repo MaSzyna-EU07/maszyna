@@ -46,6 +46,17 @@ add_executable(${UNIT_TESTS_NAME}
 
 # the core library brings the game's build settings along
 target_link_libraries(${UNIT_TESTS_NAME} PRIVATE eu07_core)
+
+# a precompiled header, as the game has: the system and library headers of stdafx.h and doctest are parsed once, not
+# again in each of the files. the vehicle physics stays out of it, its unscoped enums (end::front...) would clash with
+# the names of the tests. main.cpp defines the implementation of doctest before it includes doctest.h, so it goes without
+if(USE_PCH)
+	target_precompile_headers(${UNIT_TESTS_NAME} PRIVATE
+		"$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/stdafx.h>"
+		"$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/ref/doctest/doctest.h>")
+	set_source_files_properties(main.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
+endif()
+
 # the script screen host, tested with the real runtimes (test_script_screen_host.cpp)
 target_sources(${UNIT_TESTS_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/scripting/scriptscreens.cpp")
 if (WITH_LUA)
