@@ -156,9 +156,7 @@ ui::map_panel::map_panel() : ui_panel(STR_C("Map"), false)
 
 void ui::map_panel::prepare_static_scene_cache()
 {
-	std::uint64_t const scene_revision = TTrack::map_geometry_revision();
-	if (m_static_scene_region == simulation::Region &&
-	    m_static_scene_revision == scene_revision)
+	if (m_static_scene_region == simulation::Region)
 		return;
 
 	m_water_outlines.clear();
@@ -179,7 +177,6 @@ void ui::map_panel::prepare_static_scene_cache()
 	cache_static_platforms();
 	cache_signal_directions();
 	m_static_scene_region = simulation::Region;
-	m_static_scene_revision = scene_revision;
 	m_static_view_cache_valid = false;
 	m_dynamic_tracks_cache_valid = false;
 }
@@ -528,7 +525,6 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 {
 	if (m_static_view_cache_valid &&
 	    m_cached_region == simulation::Region &&
-	    m_cached_view_scene_revision == m_static_scene_revision &&
 	    m_cached_view_transform == transform)
 		return;
 
@@ -605,7 +601,6 @@ void ui::map_panel::prepare_static_view_cache(glm::mat4 const &transform)
 
 	m_cached_region = simulation::Region;
 	m_cached_view_transform = transform;
-	m_cached_view_scene_revision = m_static_scene_revision;
 	m_static_view_cache_valid = true;
 }
 
@@ -614,7 +609,6 @@ void ui::map_panel::collect_map_geometry(glm::mat4 transform)
 	prepare_static_view_cache(transform);
 
 	m_colored_paths.switches.clear();
-	m_colored_paths.occupied.clear();
 	m_colored_paths.future.clear();
 	m_colored_paths.highlighted.clear();
 
@@ -850,8 +844,6 @@ void ui::map_panel::render_map_lines(
 		draw_geometry(handle, IM_COL32(180, 180, 65, 255), 1.5f);
 	for (auto const &handle : m_colored_paths.switches)
 		draw_geometry(handle, IM_COL32(0, 255, 0, 255));
-	for (auto const &handle : m_colored_paths.occupied)
-		draw_geometry(handle, IM_COL32(255, 0, 0, 255));
 	for (auto const &handle : m_colored_paths.highlighted)
 		draw_geometry(handle, IM_COL32(75, 75, 255, 255));
 
@@ -1595,14 +1587,6 @@ void ui::map_panel::render_contents()
 	render_map_lines(draw_list, screen_origin, surface_size, transform, scale_length);
 	draw_list->PopClipRect();
 
-	if (m_camera_click_pending && ImGui::GetTime() >= m_camera_click_deadline)
-	{
-		Global.FreeCameraInit[0] = m_camera_click_position;
-		Global.FreeCameraTeleport = m_camera_click_position;
-		Global.pCamera.Pos = m_camera_click_position;
-		m_camera_click_pending = false;
-	}
-
 	if (map_hovered && !toolbar_hovered)
 	{
 		const ImVec2 screen_pos = ImGui::GetMousePos();
@@ -1610,18 +1594,6 @@ void ui::map_panel::render_contents()
 		const glm::vec2 ndc_pos = surface_pos / surface_size * 2.0f - 1.0f;
 		glm::vec3 const world_pos = glm::inverse(transform) * glm::vec4(ndc_pos.x, 0.0f, -ndc_pos.y, 1.0f);
 		const ImGuiIO &io = ImGui::GetIO();
-		const auto relocate_camera = [&] {
-			glm::vec3 const world_pos = glm::inverse(transform) * glm::vec4(ndc_pos.x, 0.0f, -ndc_pos.y, 1.0f);
-			glm::dvec3 const camera_position(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
-			Global.FreeCameraInit[0] = camera_position;
-			Global.FreeCameraTeleport = camera_position;
-			Global.pCamera.Pos = camera_position;
-		};
-		if (ImGui::IsMouseDoubleClicked(0))
-		{
-			m_camera_click_pending = false;
-			Global.FreeCameraMoveTarget = glm::dvec3(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
-		}
 
 		if (io.MouseWheel != 0.0f &&
 		    base_pixels_per_meter > 0.0f &&
@@ -1637,23 +1609,12 @@ void ui::map_panel::render_contents()
 			translate += (previous_zoom - zoom) * glm::vec2(world_pos.x, world_pos.z);
 		}
 
-		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr && ImGui::IsMouseClicked(2))
-			relocate_camera();
-		if (FreeFlyModeFlag && Global.pCamera.m_owner == nullptr
-		    && ImGui::IsMouseReleased(0)
-		    && io.MouseDragMaxDistanceSqr[0] < io.MouseDragThreshold * io.MouseDragThreshold)
-		{
-			m_camera_click_position = glm::dvec3(world_pos.x, Global.pCamera.Pos.y, world_pos.z);
-			m_camera_click_deadline = ImGui::GetTime() + io.MouseDoubleClickTime;
-			m_camera_click_pending = true;
-		}
 		if (mode != MODE_MANUAL && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
 		{
 			glm::vec4 const world_center = glm::inverse(transform) * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 			translate = -glm::vec2(world_center.x, world_center.z) * zoom;
 			m_manual_rotation = map_rotation;
 			mode = MODE_MANUAL;
-			m_camera_click_pending = false;
 		}
 		if (ImGui::IsMouseDragging(ImGuiMouseButton_Right))
 		{
@@ -1701,7 +1662,6 @@ void ui::map_panel::render_contents()
 				if (clicked_object)
 				{
 					handle_map_object_click(*this, clicked_object);
-					m_camera_click_pending = false;
 				}
 			}
 

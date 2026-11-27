@@ -120,16 +120,10 @@ TTrack::profiles_array TTrack::m_profiles;
 TTrack::profiles_map TTrack::m_profilesmap;
 int TTrack::s_layoutstamp { 0 };
 std::atomic<std::uint64_t> TTrack::s_map_dynamics_revision { 0 };
-std::atomic<std::uint64_t> TTrack::s_map_geometry_revision { 0 };
 
 std::uint64_t TTrack::map_dynamics_revision()
 {
 	return s_map_dynamics_revision.load(std::memory_order_relaxed);
-}
-
-std::uint64_t TTrack::map_geometry_revision()
-{
-	return s_map_geometry_revision.load(std::memory_order_relaxed);
 }
 
 TSwitchExtension::TSwitchExtension(TTrack *owner, int const what)
@@ -254,15 +248,12 @@ void TIsolated::Modify(int i, TDynamicObject *o)
 
 // tworzenie nowego odcinka ruchu
 TTrack::TTrack( scene::node_data const &Nodedata ) : basic_node( Nodedata ) {
-	++s_map_geometry_revision;
-
     track_rails::forget();
 }
 
 TTrack::~TTrack()
 { // likwidacja odcinka
     track_rails::forget();
-	++s_map_geometry_revision;
 	if( eType == tt_Cross ) {
 		delete SwitchExtension->vPoints; // skrzyżowanie może mieć punkty
 	}
@@ -918,7 +909,6 @@ void TTrack::init_segments( bool const Initial ) {
 	double r1, r2, r3, r4;
     double segsize = 5.0; // długość odcinka segmentowania
 
-    ++s_map_geometry_revision;
     fTexHeight1 -= fTexHeightOffset;
     fTexHeightOffset = 0.f;
     iTrapezoid = 0;
@@ -1557,15 +1547,6 @@ void TTrack::get_map_future_paths(map_colored_paths &handles) {
 		return;
 
 	if (!Dynamics.empty()) {
-		if (eType == tt_Switch) {
-			if (GetSwitchState() == 0)
-				handles.occupied.push_back(SwitchExtension->map_geometry[0]);
-			else
-				handles.occupied.push_back(SwitchExtension->map_geometry[1]);
-		} else if (eType == tt_Normal) {
-			handles.occupied.push_back(extra_map_geometry);
-		}
-
 		static int stamp = 0;
 		stamp++;
 

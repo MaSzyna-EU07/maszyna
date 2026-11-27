@@ -165,11 +165,9 @@ class map_panel : public ui_panel
 	map_colored_paths m_colored_paths;
 	scene::basic_region *m_cached_region { nullptr };
 	glm::mat4 m_cached_view_transform { 0.0f };
-	std::uint64_t m_cached_view_scene_revision { 0 };
 	bool m_static_view_cache_valid { false };
 	std::vector<TTrack *> m_visible_switch_tracks;
 	scene::basic_region *m_static_scene_region { nullptr };
-	std::uint64_t m_static_scene_revision { 0 };
 	std::vector<TTrack *> m_switch_tracks;
 	std::vector<signal_track_entry> m_signal_tracks;
 	std::vector<signal_track_node> m_signal_track_tree;
@@ -190,9 +188,6 @@ class map_panel : public ui_panel
 	float zoom = 1.0f / 1000.0f;
 	float m_manual_rotation { 0.0f };
 	enum { MODE_MANUAL = 0, MODE_CAMERA, MODE_VEHICLE } mode = MODE_MANUAL;
-	bool m_camera_click_pending { false };
-	double m_camera_click_deadline { 0.0 };
-	glm::dvec3 m_camera_click_position{};
 	std::shared_ptr<map::map_object> m_hovered_map_object;
 
 	float get_vehicle_rotation();

@@ -731,31 +731,6 @@ void driver_mode::update_camera(double const Deltatime)
 		Global.ZoomFactor = std::max(1.0f, Global.ZoomFactor - 15.0f * static_cast<float>(Deltatime));
 	}
 
-	// uwzględnienie ruchu wywołanego klawiszami
-	if (Global.FreeCameraTeleport && Camera.m_owner == nullptr)
-	{
-		Camera.Pos = *Global.FreeCameraTeleport;
-		Camera.Velocity = {};
-		Global.FreeCameraTeleport.reset();
-	}
-	if (Global.FreeCameraMoveTarget)
-	{
-		if (!FreeFlyModeFlag)
-		{
-			if (simulation::Train != nullptr)
-				InOutKey();
-			else
-				FreeFlyModeFlag = true;
-		}
-		m_externalview = false;
-		Camera.m_owner = nullptr;
-		Camera.Velocity = {};
-		Global.FreeCameraTeleport.reset();
-		m_free_camera_move_target = *Global.FreeCameraMoveTarget;
-		m_free_camera_move_active = true;
-		Global.FreeCameraMoveTarget.reset();
-	}
-
 	if (false == DebugCameraFlag)
 	{
 		// regular camera
@@ -768,21 +743,6 @@ void driver_mode::update_camera(double const Deltatime)
 		}
 
 		Camera.Update();
-		if (m_free_camera_move_active)
-		{
-			double constexpr retained_fraction_per_step = 0.96;
-			double constexpr reference_rate = 60.0;
-			double constexpr snap_distance = 0.01;
-			double const fraction =
-				1.0 - std::pow(retained_fraction_per_step, Deltatime * reference_rate);
-			Camera.Pos = glm::mix(Camera.Pos, m_free_camera_move_target, fraction);
-			Camera.Velocity = {};
-			if (glm::distance(Camera.Pos, m_free_camera_move_target) < snap_distance)
-			{
-				Camera.Pos = m_free_camera_move_target;
-				m_free_camera_move_active = false;
-			}
-		}
 
 		if (simulation::Train != nullptr && false == FreeFlyModeFlag)
 		{

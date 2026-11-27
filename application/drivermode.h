@@ -118,8 +118,6 @@ private:
     int m_externalviewmode { view::consistfront }; // selected external view mode
 	bool m_externalview { true };
     std::array<view_config, view::count_> m_externalviewconfigs;
-    bool m_free_camera_move_active { false };
-    glm::dvec3 m_free_camera_move_target{};
     consist_views m_consistviews; // the orbit, shunting, coupling and trackside views
     TDynamicObject *pDynamicNearest { nullptr }; // vehicle nearest to the active camera. TODO: move to camera
     double fTime50Hz { 0.0 }; // bufor czasu dla komunikacji z PoKeys
