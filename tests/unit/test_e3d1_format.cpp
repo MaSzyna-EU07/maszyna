@@ -7,14 +7,16 @@
 
 #include "doctest.h"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 
 using namespace e3d_samples;
 
 namespace {
 
-std::filesystem::path scratch_folder(std::string const &Name)
+std::filesystem::path scratch_folder(std::filesystem::path const &Name)
 {
 	auto const folder{std::filesystem::path(EU07_UNIT_TESTS_SCRATCH) / "e3d1" / Name};
 	e3d::pack_reader::close_all();
@@ -46,8 +48,10 @@ bool same(geometry const &Left, geometry const &Right)
 std::vector<geometry> decode_e3d0(std::string const &File)
 {
 	auto const sub{find_chunk(File, id4('S', 'U', 'B', '0'))};
-	std::string vnt, idx;
-	int format{0}, indexsize{0};
+	std::string vnt;
+	std::string idx;
+	int format{0};
+	int indexsize{0};
 	for (auto const &c : chunks(File))
 	{
 		if ((c.id & 0x00FFFFFF) == (id4('V', 'N', 'T', 0) & 0x00FFFFFF))
@@ -118,7 +122,7 @@ std::vector<geometry> decode_e3d1(std::filesystem::path const &Path, std::vector
 	return result;
 }
 
-e3d::e3d1_content split(std::string const &File)
+e3d::e3d1_content split(std::string_view const File)
 {
 	e3d::e3d1_content content;
 	std::string error;
@@ -263,17 +267,17 @@ TEST_CASE("an E3D0 file with geometry outside its chunks isn't converted")
 TEST_CASE("the indices of a block are stored in the narrowest width which holds them")
 {
 	std::string data;
-	gfx::basic_index const narrow[]{0, 1, 255};
-	CHECK(e3d::encode_indices(narrow, 3, data) == 1);
+	std::array<gfx::basic_index, 3> const narrow{0, 1, 255};
+	CHECK(e3d::encode_indices(narrow.data(), narrow.size(), data) == 1);
 	CHECK(data.size() == 3);
-	gfx::basic_index const middle[]{0, 256, 65535};
+	std::array<gfx::basic_index, 3> const middle{0, 256, 65535};
 	data.clear();
-	CHECK(e3d::encode_indices(middle, 3, data) == 2);
-	gfx::basic_index const wide[]{0, 65536};
+	CHECK(e3d::encode_indices(middle.data(), middle.size(), data) == 2);
+	std::array<gfx::basic_index, 2> const wide{0, 65536};
 	data.clear();
-	CHECK(e3d::encode_indices(wide, 2, data) == 4);
-	gfx::basic_index decoded[2];
-	e3d::decode_indices(reinterpret_cast<unsigned char const *>(data.data()), 2, 4, decoded);
+	CHECK(e3d::encode_indices(wide.data(), wide.size(), data) == 4);
+	std::array<gfx::basic_index, 2> decoded{};
+	e3d::decode_indices(reinterpret_cast<unsigned char const *>(data.data()), decoded.size(), 4, decoded.data());
 	CHECK(decoded[1] == 65536);
 }
 

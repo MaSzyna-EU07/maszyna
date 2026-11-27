@@ -12,6 +12,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 
 using namespace e3d_samples;
 
@@ -23,14 +24,14 @@ class keeping_renderer final : public gfx_renderer
   public:
 	bool Init(GLFWwindow *) override { return true; }
 	bool AddViewport(const global_settings::extraviewport_config &) override { return false; }
-	void Shutdown() override {}
+	void Shutdown() override { /* nothing to shut down */ }
 	bool Render() override { return true; }
-	void SwapBuffers() override {}
+	void SwapBuffers() override { /* nothing drawn */ }
 	float Framerate() override { return 10.0f; }
 	gfx::geometrybank_handle Create_Bank() override { return {1, 0}; }
 	gfx::geometry_handle Insert(gfx::index_array &Indices, gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &, int const) override
 	{
-		m_chunks.push_back({});
+		m_chunks.emplace_back();
 		m_chunks.back().indices.swap(Indices);
 		m_chunks.back().vertices.swap(Vertices);
 		m_chunks.back().userdata.swap(Userdata);
@@ -38,8 +39,8 @@ class keeping_renderer final : public gfx_renderer
 	}
 	gfx::geometry_handle Insert(gfx::vertex_array &Vertices, gfx::userdata_array &Userdata, gfx::geometrybank_handle const &Bank, int const Type) override
 	{
-		gfx::index_array none;
-		return Insert(none, Vertices, Userdata, Bank, Type);
+		gfx::index_array noindices;
+		return Insert(noindices, Vertices, Userdata, Bank, Type);
 	}
 	bool Replace(gfx::vertex_array &, gfx::userdata_array &, gfx::geometry_handle const &, int const, const std::size_t) override { return false; }
 	bool Append(gfx::vertex_array &, gfx::userdata_array &, gfx::geometry_handle const &, int const) override { return false; }
@@ -47,28 +48,28 @@ class keeping_renderer final : public gfx_renderer
 	gfx::vertex_array const &Vertices(gfx::geometry_handle const &Geometry) const override { return m_chunks.at(Geometry.chunk - 1).vertices; }
 	gfx::userdata_array const &UserData(gfx::geometry_handle const &Geometry) const override { return m_chunks.at(Geometry.chunk - 1).userdata; }
 	material_handle Fetch_Material(std::string const &, bool const) override { return null_handle; }
-	void Bind_Material(material_handle const, TSubModel const *, lighting_data const *) override {}
+	void Bind_Material(material_handle const, TSubModel const *, lighting_data const *) override { /* no materials */ }
 	IMaterial const *Material(material_handle const) const override { return IMaterial::null_material(); }
 	std::shared_ptr<gfx::shader_program> Fetch_Shader(std::string const &) override { return nullptr; }
 	texture_handle Fetch_Texture(std::string const &, bool const, GLint) override { return null_handle; }
-	void Bind_Texture(texture_handle const) override {}
-	void Bind_Texture(std::size_t const, texture_handle const) override {}
+	void Bind_Texture(texture_handle const) override { /* no textures */ }
+	void Bind_Texture(std::size_t const, texture_handle const) override { /* no textures */ }
 	ITexture &Texture(texture_handle const) override { return *ITexture::null_texture(); }
 	ITexture const &Texture(texture_handle const) const override { return *ITexture::null_texture(); }
-	void Pick_Control_Callback(std::function<void(TSubModel const *, const glm::vec2)>) override {}
-	void Pick_Node_Callback(std::function<void(scene::basic_node *)>) override {}
+	void Pick_Control_Callback(std::function<void(TSubModel const *, const glm::vec2)>) override { /* no picking */ }
+	void Pick_Node_Callback(std::function<void(scene::basic_node *)>) override { /* no picking */ }
 	TSubModel const *Pick_Control() const override { return nullptr; }
 	scene::basic_node const *Pick_Node() const override { return nullptr; }
 	glm::dvec3 Mouse_Position() const override { return {}; }
-	void Update(double const) override {}
-	void Update_Pick_Control() override {}
-	void Update_Pick_Node() override {}
+	void Update(double const) override { /* nothing to update */ }
+	void Update_Pick_Control() override { /* no picking */ }
+	void Update_Pick_Node() override { /* no picking */ }
 	glm::dvec3 Update_Mouse_Position() override { return {}; }
 	bool Debug_Ui_State(std::optional<bool>) override { return false; }
 	std::string const &info_times() const override { return m_empty; }
 	std::string const &info_stats() const override { return m_empty; }
 	imgui_renderer *GetImguiRenderer() override { return nullptr; }
-	void MakeScreenshot() override {}
+	void MakeScreenshot() override { /* nothing drawn */ }
 
   private:
 	struct chunk {
@@ -80,7 +81,7 @@ class keeping_renderer final : public gfx_renderer
 	std::string m_empty;
 };
 
-std::filesystem::path scratch_folder(std::string const &Name)
+std::filesystem::path scratch_folder(std::filesystem::path const &Name)
 {
 	auto const folder{std::filesystem::path(EU07_UNIT_TESTS_SCRATCH) / "e3d1_model" / Name};
 	e3d::pack_reader::close_all();
@@ -90,7 +91,7 @@ std::filesystem::path scratch_folder(std::string const &Name)
 	return folder;
 }
 
-void write_file(std::filesystem::path const &Path, std::string const &Data)
+void write_file(std::filesystem::path const &Path, std::string_view const Data)
 {
 	std::ofstream output(Path, std::ios::binary | std::ios::trunc);
 	output.write(Data.data(), static_cast<std::streamsize>(Data.size()));
@@ -110,20 +111,20 @@ std::string model_name(std::filesystem::path const &File)
 
 // the renderer in place for a test, the one before put back after it
 struct renderer_scope {
-	renderer_scope() : previous(std::move(GfxRenderer)) { GfxRenderer = std::make_unique<keeping_renderer>(); }
+	renderer_scope() { GfxRenderer = std::make_unique<keeping_renderer>(); }
 	~renderer_scope() { GfxRenderer = std::move(previous); }
-	std::unique_ptr<gfx_renderer> previous;
+	std::unique_ptr<gfx_renderer> previous{std::move(GfxRenderer)};
 };
 
 gfx::vertex_array const &vertices_of(TSubModel const &Submodel)
 {
-	static gfx::vertex_array const none;
-	return Submodel.m_geometry.handle != null_handle ? GfxRenderer->Vertices(Submodel.m_geometry.handle) : none;
+	static gfx::vertex_array const empty;
+	return Submodel.m_geometry.handle != null_handle ? GfxRenderer->Vertices(Submodel.m_geometry.handle) : empty;
 }
 gfx::index_array const &indices_of(TSubModel const &Submodel)
 {
-	static gfx::index_array const none;
-	return Submodel.m_geometry.handle != null_handle ? GfxRenderer->Indices(Submodel.m_geometry.handle) : none;
+	static gfx::index_array const empty;
+	return Submodel.m_geometry.handle != null_handle ? GfxRenderer->Indices(Submodel.m_geometry.handle) : empty;
 }
 
 bool same_vertices(gfx::vertex_array const &Left, gfx::vertex_array const &Right)
@@ -166,13 +167,13 @@ TEST_CASE("TModel3d loads the same geometry from E3D1 and its pack as from E3D0"
 	for (int i = 0; i < 4; ++i)
 	{
 		CAPTURE(i);
-		auto const &left{e3d0.Root[i]};
-		auto const &right{e3d1.Root[i]};
-		CHECK(right.pName == left.pName);
-		CHECK(right.m_geometry.vertex_count == left.m_geometry.vertex_count);
-		CHECK(right.m_geometry.index_count == left.m_geometry.index_count);
-		CHECK(same_vertices(vertices_of(right), vertices_of(left)));
-		CHECK(indices_of(right) == indices_of(left));
+		auto const &original{e3d0.Root[i]};
+		auto const &converted{e3d1.Root[i]};
+		CHECK(converted.pName == original.pName);
+		CHECK(converted.m_geometry.vertex_count == original.m_geometry.vertex_count);
+		CHECK(converted.m_geometry.index_count == original.m_geometry.index_count);
+		CHECK(same_vertices(vertices_of(converted), vertices_of(original)));
+		CHECK(indices_of(converted) == indices_of(original));
 	}
 	// both copies of the bogie came from the one block of the pack
 	CHECK(vertices_of(e3d1.Root[1]).size() == 300);

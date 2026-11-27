@@ -51,9 +51,7 @@ Stele, firleju, szociu, hunter, ZiomalCl, OLI_EU and others
 void export_e3d_standalone(std::string in, std::string out, int flags, bool dynamic);
 int export_btf_standalone(std::string in, std::string out);
 int generate_nodebank_previews(int Argc, char *Argv[]);
-int e3d1_pack_standalone(int Argc, char *Argv[]);
-int e3d1_verify_standalone(int Argc, char *Argv[]);
-int e3d1_bench_standalone(int Argc, char *Argv[]);
+int e3d1_tools_standalone(int Argc, char *Argv[]);
 
 #include <string>
 #include <utilities/Globals.h>
@@ -152,8 +150,7 @@ int main(int argc, char *argv[])
 	// standalone E3D1 tools, with the null renderer: conversion to shared geometry, comparison and load times (e3d1_tools_standalone.cpp)
 	else if (argc >= 2 && (std::string(argv[1]) == "-e3dpack" || std::string(argv[1]) == "-e3dverify" || std::string(argv[1]) == "-e3dbench"))
 	{
-		std::string const mode(argv[1]);
-		auto const result{mode == "-e3dpack" ? e3d1_pack_standalone(argc, argv) : mode == "-e3dverify" ? e3d1_verify_standalone(argc, argv) : e3d1_bench_standalone(argc, argv)};
+		auto const result{e3d1_tools_standalone(argc, argv)};
 		fflush(stdout);
 		fflush(stderr);
 		std::_Exit(result);

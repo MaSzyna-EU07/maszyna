@@ -28,6 +28,7 @@ Copyright (C) 2001-2004  Marcin Wozniak, Maciej Czapkiewicz and others
 #include "model/geometrypack.h"
 
 #include <bit>
+#include <format>
 #include <sstream>
 
 //---------------------------------------------------------------------------
@@ -1994,6 +1995,41 @@ void TSubModel::serialize(std::ostream &s, std::vector<TSubModel *> &models, std
 		s.put(0);
 }
 
+namespace
+{
+// the model put together in memory written as it is (E3D0) or, with bit 32 of convertmodels set, as E3D1: the geometry
+// blocks go to the pack, the small ones stay in the file. false if it couldn't be stored
+bool write_model_file(std::string const &FileName, std::string const &Pack, std::string const &Data)
+{
+	if (0 == (Global.iConvertModels & 32))
+	{
+		std::ofstream output(FileName, std::ios::binary);
+		output.write(Data.data(), static_cast<std::streamsize>(Data.size()));
+		return true;
+	}
+	e3d::e3d1_content content;
+	if (std::string error; false == e3d::split_e3d0(reinterpret_cast<unsigned char const *>(Data.data()), Data.size(), content, error))
+	{
+		ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + error, logtype::model);
+		return false;
+	}
+	e3d::writer_options options;
+	auto const file{e3d::utf8_path(FileName)};
+	options.pack = Pack.empty() ? file.parent_path() / "geometry.e3dpack" : e3d::utf8_path(Pack);
+	try
+	{
+		e3d::write_e3d1(file, content, options);
+		e3d::flush_pack_writers();
+	}
+	catch (std::exception const &exception)
+	{
+		ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + exception.what(), logtype::model);
+		return false;
+	}
+	return true;
+}
+} // namespace
+
 void TModel3d::SaveToBinFile(std::string const &FileName, std::string const &Pack)
 {
 	WriteLog("saving e3d model..");
@@ -2113,38 +2149,8 @@ void TModel3d::SaveToBinFile(std::string const &FileName, std::string const &Pac
 	s.seekp(e3d_spos);
 	sn_utils::ls_uint32(s, (uint32_t)(4 + end - e3d_spos));
 
-	auto const data{s.str()};
-	if (Global.iConvertModels & 32)
-	{
-		// E3D1: the geometry blocks go to the pack of the folder, the small ones stay in the file
-		e3d::e3d1_content content;
-		std::string error;
-		if (false == e3d::split_e3d0(reinterpret_cast<unsigned char const *>(data.data()), data.size(), content, error))
-		{
-			ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + error, logtype::model);
-			return;
-		}
-		e3d::writer_options options;
-		auto const file{std::filesystem::u8path(FileName)};
-		options.pack = Pack.empty() ? file.parent_path() / "geometry.e3dpack" : std::filesystem::u8path(Pack);
-		try
-		{
-			e3d::write_e3d1(file, content, options);
-			e3d::flush_pack_writers();
-		}
-		catch (std::exception const &exception)
-		{
-			ErrorLog("Bad model: can't store \"" + FileName + "\" as E3D1: " + exception.what(), logtype::model);
-			return;
-		}
-	}
-	else
-	{
-		std::ofstream output(FileName, std::ios::binary);
-		output.write(data.data(), static_cast<std::streamsize>(data.size()));
-	}
-
-	WriteLog("..done.");
+	if (write_model_file(FileName, Pack, s.str()))
+		WriteLog("..done.");
 }
 
 void TSubModel::deserialize(std::istream &s)
@@ -2497,10 +2503,10 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 		else if (type == MAKE_ID4('G', 'R', 'F', '0') || type == MAKE_ID4('G', 'R', 'I', '0')) // E3D1 geometry records and inline geometry
 		{
 			if (memory == nullptr)
-				throw std::runtime_error("e3d: E3D1 geometry can be read only from memory");
+				throw e3d::e3d1_error("e3d: E3D1 geometry can be read only from memory");
 			auto &chunk{type == MAKE_ID4('G', 'R', 'F', '0') ? geometryrecords : geometryinline};
 			if (chunk.first != nullptr)
-				throw std::runtime_error("e3d: duplicated GRF/GRI chunk");
+				throw e3d::e3d1_error("e3d: duplicated GRF/GRI chunk");
 			chunk = {memory->cursor(), std::min<std::size_t>(size, memory->available())};
 		}
 		else if (type == MAKE_ID4('T', 'R', 'A', '0'))
@@ -2595,17 +2601,16 @@ void TModel3d::deserialize(std::istream &s, size_t size, bool dynamic)
 void TModel3d::deserialize_e3d1_geometry(unsigned char const *Records, std::size_t Recordssize, unsigned char const *Inline, std::size_t Inlinesize, std::vector<char> &Tangents)
 {
 	if (Records == nullptr)
-		throw std::runtime_error("e3d: E3D1 model without GRF chunk");
+		throw e3d::e3d1_error("e3d: E3D1 model without GRF chunk");
 	e3d::e3d1_geometry geometry;
-	std::string error;
-	if (false == e3d::parse_grf0(Records, Recordssize, geometry, error))
-		throw std::runtime_error("e3d: " + error);
+	if (std::string error; false == e3d::parse_grf0(Records, Recordssize, geometry, error))
+		throw e3d::e3d1_error("e3d: " + error);
 	if (geometry.records.size() != static_cast<std::size_t>(iSubModelsCount))
-		throw std::runtime_error("e3d: GRF chunk doesn't match the SUB chunk");
+		throw e3d::e3d1_error("e3d: GRF chunk doesn't match the SUB chunk");
 	geometry.inline_data = Inline;
 	geometry.inline_size = Inlinesize;
 	e3d::resolved_geometry resolved;
-	e3d::resolve_geometry(geometry, std::filesystem::u8path(m_binaryfolder), resolved);
+	e3d::resolve_geometry(geometry, e3d::utf8_path(m_binaryfolder), resolved);
 	for (auto const &message : resolved.errors)
 	{
 		ErrorLog("Bad model: " + message + " (\"" + m_filename + "\")", logtype::model);
@@ -2624,7 +2629,7 @@ void TModel3d::deserialize_e3d1_geometry(unsigned char const *Records, std::size
 		}
 		if (submodel.m_geometry.vertex_count != static_cast<int>(record.vertex_count) || submodel.m_geometry.index_count != static_cast<int>(record.index_count))
 		{
-			ErrorLog("Bad model: geometry record of sub-model " + std::to_string(i) + " doesn't match its counts (\"" + m_filename + "\")", logtype::model);
+			ErrorLog(std::format("Bad model: geometry record of sub-model {} doesn't match its counts (\"{}\")", i, m_filename), logtype::model);
 			submodel.m_geometry.vertex_count = static_cast<int>(record.vertex_count);
 			submodel.m_geometry.index_count = static_cast<int>(record.index_count);
 		}
@@ -2823,7 +2828,7 @@ void TModel3d::LoadFromBinFile(std::string const &FileName, bool dynamic)
 	{
 		// the geometry of E3D1 is looked for in the pack named relative to the folder of the model file
 		m_e3d1 = (type == MAKE_ID4('E', '3', 'D', '1'));
-		auto const folder{std::filesystem::u8path(FileName).parent_path().u8string()};
+		auto const folder{e3d::utf8_path(FileName).parent_path().u8string()};
 		m_binaryfolder.assign(folder.begin(), folder.end());
 		deserialize(file, size, dynamic);
 

@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <format>
 #include <map>
 #include <stdexcept>
 
@@ -29,14 +30,19 @@ constexpr std::uint32_t id4(char a, char b, char c, char d)
 {
 	return (std::uint32_t(std::uint8_t(d)) << 24) | (std::uint32_t(std::uint8_t(c)) << 16) | (std::uint32_t(std::uint8_t(b)) << 8) | std::uint32_t(std::uint8_t(a));
 }
-constexpr char pack_magic[8]{'E', '3', 'D', 'P', 'A', 'C', 'K', '1'};
+constexpr std::array<char, 8> pack_magic{'E', '3', 'D', 'P', 'A', 'C', 'K', '1'};
 
-std::atomic<std::uint64_t> g_packbytesread{0};
+// bytes read from the packs since the start
+std::atomic<std::uint64_t> &pack_bytes_counter()
+{
+	static std::atomic<std::uint64_t> bytes{0};
+	return bytes;
+}
 
 // little endian values, read the way sn_utils reads them from a stream
 std::uint16_t get_u16(unsigned char const *&Data)
 {
-	std::uint16_t const value = static_cast<std::uint16_t>(Data[1] << 8 | Data[0]);
+	auto const value = static_cast<std::uint16_t>(Data[1] << 8 | Data[0]);
 	Data += 2;
 	return value;
 }
@@ -130,9 +136,9 @@ inline std::uint64_t rotl64(std::uint64_t x, int r)
 inline std::uint64_t fmix64(std::uint64_t k)
 {
 	k ^= k >> 33;
-	k *= 0xff51afd7ed558ccdull;
+	k *= 0xff51afd7ed558ccdULL;
 	k ^= k >> 33;
-	k *= 0xc4ceb9fe1a85ec53ull;
+	k *= 0xc4ceb9fe1a85ec53ULL;
 	k ^= k >> 33;
 	return k;
 }
@@ -165,7 +171,7 @@ bool read_at(std::FILE *File, std::uint64_t Offset, void *Data, std::size_t Size
 	if (false == seek(File, Offset))
 		return false;
 	auto const read{std::fread(Data, 1, Size, File)};
-	g_packbytesread += read;
+	pack_bytes_counter() += read;
 	return read == Size;
 }
 
@@ -183,13 +189,36 @@ std::string path_key(std::filesystem::path const &Path)
 // a gap between two blocks of a model read in the same go, rather than seeking past it
 constexpr std::uint64_t coalesce_gap{256 * 1024};
 
+// the narrowest width of the indices which holds the given one
+int index_width(gfx::basic_index const Largest)
+{
+	if (Largest < (1u << 8))
+		return 1;
+	if (Largest < (1u << 16))
+		return 2;
+	return 4;
+}
+
+// one GRF0 record
+void put_record(std::string &Output, geometry_record const &Record)
+{
+	put_u8(Output, Record.vertex_format);
+	put_u8(Output, Record.index_size);
+	put_u8(Output, Record.flags);
+	put_u8(Output, 0);
+	put_u32(Output, Record.vertex_count);
+	put_u32(Output, Record.index_count);
+	put_u32(Output, Record.size);
+	put_u64(Output, Record.offset);
+	put_u64(Output, Record.hash.low);
+	put_u64(Output, Record.hash.high);
+}
+
 } // namespace
 
 std::string hash128::to_string() const
 {
-	char text[33];
-	std::snprintf(text, sizeof(text), "%016llx%016llx", static_cast<unsigned long long>(high), static_cast<unsigned long long>(low));
-	return text;
+	return std::format("{:016x}{:016x}", high, low);
 }
 
 hash128 murmur3_128(void const *Data, std::size_t Size, std::uint32_t Seed)
@@ -198,8 +227,8 @@ hash128 murmur3_128(void const *Data, std::size_t Size, std::uint32_t Seed)
 	std::size_t const nblocks{Size / 16};
 	std::uint64_t h1{Seed};
 	std::uint64_t h2{Seed};
-	std::uint64_t const c1{0x87c37b91114253d5ull};
-	std::uint64_t const c2{0x4cf5ad432745937full};
+	std::uint64_t const c1{0x87c37b91114253d5ULL};
+	std::uint64_t const c2{0x4cf5ad432745937fULL};
 
 	for (std::size_t i = 0; i < nblocks; ++i)
 	{
@@ -348,8 +377,7 @@ int encode_indices(gfx::basic_index const *Indices, std::size_t const Count, std
 {
 	if (Count == 0)
 		return 0;
-	auto const largest{*std::max_element(Indices, Indices + Count)};
-	int const size{largest < (1u << 8) ? 1 : largest < (1u << 16) ? 2 : 4};
+	int const size{index_width(*std::max_element(Indices, Indices + Count))};
 	Output.reserve(Output.size() + Count * size);
 	for (std::size_t i = 0; i < Count; ++i)
 	{
@@ -379,6 +407,36 @@ hash128 block_hash(int const Vertexformat, int const Indexsize, std::uint32_t co
 
 // writer ------------------------------------------------------------------------------------------------------
 
+namespace {
+
+// the block of a non-empty record goes to the inline data or to the pack
+void store_block(geometry_block const &Block, geometry_record &Record, writer_options const &Options, std::string &Inlinedata, write_stats &Stats)
+{
+	if (Block.data.size() != Record.vertex_bytes() + Record.index_bytes())
+		throw e3d1_error("e3d1: size of the geometry block doesn't match its counts");
+	Record.size = static_cast<std::uint32_t>(Block.data.size());
+	auto const hashstart{std::chrono::steady_clock::now()};
+	Record.hash = block_hash(Block.vertex_format, Block.index_size, Block.vertex_count, Block.index_count, Block.data);
+	Stats.hash_seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - hashstart).count();
+	++Stats.blocks;
+	if (false == Options.use_pack || Block.data.size() < Options.inline_threshold)
+	{
+		Record.flags |= geometry_record::inline_data;
+		Record.offset = Inlinedata.size();
+		Inlinedata += Block.data;
+		++Stats.inline_blocks;
+		return;
+	}
+	++Stats.packed_blocks;
+	if (pack_writer_for(Options.pack).add(Record.hash, Block.data))
+	{
+		++Stats.new_blocks;
+		Stats.new_bytes += Block.data.size();
+	}
+}
+
+} // namespace
+
 write_stats write_e3d1(std::filesystem::path const &File, e3d1_content const &Content, writer_options const &Options)
 {
 	write_stats stats;
@@ -399,41 +457,8 @@ write_stats write_e3d1(std::filesystem::path const &File, e3d1_content const &Co
 		record.vertex_count = block.vertex_count;
 		record.index_count = block.index_count;
 		if (false == block.empty())
-		{
-			if (block.data.size() != record.vertex_bytes() + record.index_bytes())
-				throw std::runtime_error("e3d1: size of the geometry block doesn't match its counts");
-			record.size = static_cast<std::uint32_t>(block.data.size());
-			auto const hashstart{std::chrono::steady_clock::now()};
-			record.hash = block_hash(block.vertex_format, block.index_size, block.vertex_count, block.index_count, block.data);
-			stats.hash_seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - hashstart).count();
-			++stats.blocks;
-			if (false == Options.use_pack || block.data.size() < Options.inline_threshold)
-			{
-				record.flags |= geometry_record::inline_data;
-				record.offset = inlinedata.size();
-				inlinedata += block.data;
-				++stats.inline_blocks;
-			}
-			else
-			{
-				++stats.packed_blocks;
-				if (pack_writer_for(Options.pack).add(record.hash, block.data))
-				{
-					++stats.new_blocks;
-					stats.new_bytes += block.data.size();
-				}
-			}
-		}
-		put_u8(records, record.vertex_format);
-		put_u8(records, record.index_size);
-		put_u8(records, record.flags);
-		put_u8(records, 0);
-		put_u32(records, record.vertex_count);
-		put_u32(records, record.index_count);
-		put_u32(records, record.size);
-		put_u64(records, record.offset);
-		put_u64(records, record.hash.low);
-		put_u64(records, record.hash.high);
+			store_block(block, record, Options, inlinedata, stats);
+		put_record(records, record);
 	}
 
 	std::string grf;
@@ -477,14 +502,129 @@ write_stats write_e3d1(std::filesystem::path const &File, e3d1_content const &Co
 		std::filesystem::create_directories(File.parent_path(), error);
 	auto *output{open_file(File, "wb")};
 	if (output == nullptr)
-		throw std::runtime_error("e3d1: can't write \"" + File.generic_string() + "\"");
+		throw e3d1_error(std::format("e3d1: can't write \"{}\"", File.generic_string()));
 	auto const written{std::fwrite(file.data(), 1, file.size(), output)};
 	std::fclose(output);
 	if (written != file.size())
-		throw std::runtime_error("e3d1: failed to write \"" + File.generic_string() + "\"");
+		throw e3d1_error(std::format("e3d1: failed to write \"{}\"", File.generic_string()));
 	stats.file_bytes = file.size();
 	return stats;
 }
+
+namespace {
+
+// where the parts of an E3D0 file lie, as split_e3d0() finds them
+struct e3d0_layout {
+	unsigned char const *sub{nullptr};
+	std::size_t subsize{0};
+	std::size_t recordsize{0};
+	unsigned char const *vnt{nullptr};
+	std::size_t vntsize{0};
+	int vertexformat{-1};
+	unsigned char const *idx{nullptr};
+	std::size_t idxsize{0};
+	int indexsize{0};
+};
+
+// one chunk of an E3D0 file, with its header, noted in the layout or copied to the content. false with the reason
+// given if the file can't be converted
+bool take_chunk(unsigned char const *Chunk, std::uint32_t const Type, std::uint32_t const Chunksize, e3d0_layout &Layout, e3d1_content &Content, std::string &Error)
+{
+	unsigned char const *const payload{Chunk + 8};
+	std::size_t const payloadsize{Chunksize - 8};
+	auto const kind{Type & 0x00FFFFFF};
+	int const digit{static_cast<int>((Type >> 24) & 0xFF) - '0'};
+	std::string_view const whole(reinterpret_cast<char const *>(Chunk), Chunksize);
+	if (kind == (id4('S', 'U', 'B', 0) & 0x00FFFFFF))
+	{
+		if (Layout.sub != nullptr)
+		{
+			Error = "duplicated SUB chunk";
+			return false;
+		}
+		Layout.sub = payload;
+		Layout.subsize = payloadsize;
+		Layout.recordsize = 256 + 64 * static_cast<std::size_t>(std::max(digit, 0));
+		Content.sub = whole;
+	}
+	else if (kind == (id4('V', 'N', 'T', 0) & 0x00FFFFFF))
+	{
+		if (Layout.vnt != nullptr || vertex_stride(digit) == 0)
+		{
+			Error = "unsupported or duplicated VNT chunk";
+			return false;
+		}
+		Layout.vnt = payload;
+		Layout.vntsize = payloadsize;
+		Layout.vertexformat = digit;
+	}
+	else if (kind == (id4('I', 'D', 'X', 0) & 0x00FFFFFF))
+	{
+		if (Layout.idx != nullptr || (digit != 1 && digit != 2 && digit != 4))
+		{
+			Error = "unsupported or duplicated IDX chunk";
+			return false;
+		}
+		Layout.idx = payload;
+		Layout.idxsize = payloadsize;
+		Layout.indexsize = digit;
+	}
+	else if (Type == id4('T', 'R', 'A', '0') || Type == id4('T', 'R', 'A', '1'))
+		Content.tra = whole;
+	else if (Type == id4('T', 'E', 'X', '0'))
+		Content.tex = whole;
+	else if (Type == id4('N', 'A', 'M', '0'))
+		Content.nam = whole;
+	else
+	{
+		Error = "unknown chunk";
+		return false;
+	}
+	return true;
+}
+
+// the geometry block of the sub-model of the given index, cut out of the VNT and IDX chunks; the indices are stored
+// again in the narrowest width. false with the reason given if the data lies out of its chunk
+bool cut_block(e3d0_layout const &Layout, std::size_t const Index, geometry_block &Block, std::vector<gfx::basic_index> &Indices, std::string &Error)
+{
+	unsigned char const *const record{Layout.sub + Index * Layout.recordsize};
+	auto const vertexcount{get_i32_at(record + 28)};
+	auto const vertexoffset{get_i32_at(record + 32)};
+	auto const indexcount{get_i32_at(record + 156)};
+	auto const indexoffset{get_i32_at(record + 160)};
+	if (vertexcount > 0)
+	{
+		auto const stride{Layout.vnt != nullptr ? vertex_stride(Layout.vertexformat) : 0};
+		std::uint64_t const begin{static_cast<std::uint64_t>(std::max(vertexoffset, 0)) * stride};
+		std::uint64_t const bytes{static_cast<std::uint64_t>(vertexcount) * stride};
+		if (Layout.vnt == nullptr || vertexoffset < 0 || begin + bytes > Layout.vntsize)
+		{
+			Error = std::format("vertex data of sub-model {} out of the VNT chunk", Index);
+			return false;
+		}
+		Block.vertex_format = Layout.vertexformat;
+		Block.vertex_count = static_cast<std::uint32_t>(vertexcount);
+		Block.data.assign(reinterpret_cast<char const *>(Layout.vnt + begin), static_cast<std::size_t>(bytes));
+	}
+	else if (Layout.vnt != nullptr)
+		Block.vertex_format = Layout.vertexformat;
+	if (indexcount > 0)
+	{
+		std::uint64_t const begin{static_cast<std::uint64_t>(std::max(indexoffset, 0)) * Layout.indexsize};
+		if (std::uint64_t const bytes{static_cast<std::uint64_t>(indexcount) * Layout.indexsize}; Layout.idx == nullptr || indexoffset < 0 || begin + bytes > Layout.idxsize)
+		{
+			Error = std::format("index data of sub-model {} out of the IDX chunk", Index);
+			return false;
+		}
+		Indices.resize(static_cast<std::size_t>(indexcount));
+		decode_indices(Layout.idx + begin, Indices.size(), Layout.indexsize, Indices.data());
+		Block.index_count = static_cast<std::uint32_t>(indexcount);
+		Block.index_size = encode_indices(Indices.data(), Indices.size(), Block.data);
+	}
+	return true;
+}
+
+} // namespace
 
 bool split_e3d0(unsigned char const *Data, std::size_t const Size, e3d1_content &Content, std::string &Error)
 {
@@ -507,14 +647,7 @@ bool split_e3d0(unsigned char const *Data, std::size_t const Size, e3d1_content 
 		return false;
 	}
 	unsigned char const *const end{Data + mainsize};
-	unsigned char const *sub{nullptr};
-	std::size_t subsize{0}, recordsize{0};
-	unsigned char const *vnt{nullptr};
-	std::size_t vntsize{0};
-	int vertexformat{-1};
-	unsigned char const *idx{nullptr};
-	std::size_t idxsize{0};
-	int indexsize{0};
+	e3d0_layout layout;
 	while (cursor + 8 <= end)
 	{
 		unsigned char const *const chunk{cursor};
@@ -525,104 +658,22 @@ bool split_e3d0(unsigned char const *Data, std::size_t const Size, e3d1_content 
 			Error = "bad chunk size";
 			return false;
 		}
-		unsigned char const *const payload{chunk + 8};
-		std::size_t const payloadsize{chunksize - 8};
-		auto const kind{type & 0x00FFFFFF};
-		int const digit{static_cast<int>((type >> 24) & 0xFF) - '0'};
-		std::string_view const whole(reinterpret_cast<char const *>(chunk), chunksize);
-		if (kind == (id4('S', 'U', 'B', 0) & 0x00FFFFFF))
-		{
-			if (sub != nullptr)
-			{
-				Error = "duplicated SUB chunk";
-				return false;
-			}
-			sub = payload;
-			subsize = payloadsize;
-			recordsize = 256 + 64 * static_cast<std::size_t>(std::max(digit, 0));
-			Content.sub = whole;
-		}
-		else if (kind == (id4('V', 'N', 'T', 0) & 0x00FFFFFF))
-		{
-			if (vnt != nullptr || vertex_stride(digit) == 0)
-			{
-				Error = "unsupported or duplicated VNT chunk";
-				return false;
-			}
-			vnt = payload;
-			vntsize = payloadsize;
-			vertexformat = digit;
-		}
-		else if (kind == (id4('I', 'D', 'X', 0) & 0x00FFFFFF))
-		{
-			if (idx != nullptr || (digit != 1 && digit != 2 && digit != 4))
-			{
-				Error = "unsupported or duplicated IDX chunk";
-				return false;
-			}
-			idx = payload;
-			idxsize = payloadsize;
-			indexsize = digit;
-		}
-		else if (type == id4('T', 'R', 'A', '0') || type == id4('T', 'R', 'A', '1'))
-			Content.tra = whole;
-		else if (type == id4('T', 'E', 'X', '0'))
-			Content.tex = whole;
-		else if (type == id4('N', 'A', 'M', '0'))
-			Content.nam = whole;
-		else
-		{
-			Error = "unknown chunk";
+		if (false == take_chunk(chunk, type, chunksize, layout, Content, Error))
 			return false;
-		}
 		cursor = chunk + chunksize;
 	}
-	if (sub == nullptr)
+	if (layout.sub == nullptr)
 	{
 		Error = "no SUB chunk";
 		return false;
 	}
-	std::size_t const count{subsize / recordsize};
+	std::size_t const count{layout.subsize / layout.recordsize};
 	Content.blocks.resize(count);
 	std::vector<gfx::basic_index> indices;
 	for (std::size_t i = 0; i < count; ++i)
 	{
-		unsigned char const *const record{sub + i * recordsize};
-		auto const vertexcount{get_i32_at(record + 28)};
-		auto const vertexoffset{get_i32_at(record + 32)};
-		auto const indexcount{get_i32_at(record + 156)};
-		auto const indexoffset{get_i32_at(record + 160)};
-		auto &block{Content.blocks[i]};
-		if (vertexcount > 0)
-		{
-			auto const stride{vnt != nullptr ? vertex_stride(vertexformat) : 0};
-			std::uint64_t const begin{static_cast<std::uint64_t>(std::max(vertexoffset, 0)) * stride};
-			std::uint64_t const bytes{static_cast<std::uint64_t>(vertexcount) * stride};
-			if (vnt == nullptr || vertexoffset < 0 || begin + bytes > vntsize)
-			{
-				Error = "vertex data of sub-model " + std::to_string(i) + " out of the VNT chunk";
-				return false;
-			}
-			block.vertex_format = vertexformat;
-			block.vertex_count = static_cast<std::uint32_t>(vertexcount);
-			block.data.assign(reinterpret_cast<char const *>(vnt + begin), static_cast<std::size_t>(bytes));
-		}
-		else if (vnt != nullptr)
-			block.vertex_format = vertexformat;
-		if (indexcount > 0)
-		{
-			std::uint64_t const begin{static_cast<std::uint64_t>(std::max(indexoffset, 0)) * indexsize};
-			std::uint64_t const bytes{static_cast<std::uint64_t>(indexcount) * indexsize};
-			if (idx == nullptr || indexoffset < 0 || begin + bytes > idxsize)
-			{
-				Error = "index data of sub-model " + std::to_string(i) + " out of the IDX chunk";
-				return false;
-			}
-			indices.resize(static_cast<std::size_t>(indexcount));
-			decode_indices(idx + begin, indices.size(), indexsize, indices.data());
-			block.index_count = static_cast<std::uint32_t>(indexcount);
-			block.index_size = encode_indices(indices.data(), indices.size(), block.data);
-		}
+		if (false == cut_block(layout, i, Content.blocks[i], indices, Error))
+			return false;
 	}
 	return true;
 }
@@ -636,18 +687,18 @@ pack_writer::pack_writer(std::filesystem::path const &Path) : m_path(Path)
 	{
 		m_file = open_file(Path, "r+b");
 		if (m_file == nullptr)
-			throw std::runtime_error("e3dpack: can't open \"" + Path.generic_string() + "\" for writing");
+			throw e3d1_error(std::format("e3dpack: can't open \"{}\" for writing", Path.generic_string()));
 		auto const filesize{std::filesystem::file_size(Path, error)};
-		unsigned char footer[pack_footer_size];
-		if (filesize < pack_header_size + pack_footer_size || false == read_at(m_file, filesize - pack_footer_size, footer, sizeof(footer)) ||
-		    std::memcmp(footer + 24, pack_magic, 8) != 0)
-			throw std::runtime_error("e3dpack: \"" + Path.generic_string() + "\" is not a geometry pack");
-		unsigned char const *cursor{footer};
+		std::array<unsigned char, pack_footer_size> footer;
+		if (filesize < pack_header_size + pack_footer_size || false == read_at(m_file, filesize - pack_footer_size, footer.data(), footer.size()) ||
+		    std::memcmp(footer.data() + 24, pack_magic.data(), pack_magic.size()) != 0)
+			throw e3d1_error(std::format("e3dpack: \"{}\" is not a geometry pack", Path.generic_string()));
+		unsigned char const *cursor{footer.data()};
 		auto const indexoffset{get_u64(cursor)};
 		auto const entrycount{get_u64(cursor)};
 		std::vector<unsigned char> index(static_cast<std::size_t>(entrycount * pack_entry_size));
 		if (false == read_at(m_file, indexoffset, index.data(), index.size()))
-			throw std::runtime_error("e3dpack: can't read the index of \"" + Path.generic_string() + "\"");
+			throw e3d1_error(std::format("e3dpack: can't read the index of \"{}\"", Path.generic_string()));
 		cursor = index.data();
 		for (std::uint64_t i = 0; i < entrycount; ++i)
 		{
@@ -656,7 +707,7 @@ pack_writer::pack_writer(std::filesystem::path const &Path) : m_path(Path)
 			entry.hash.high = get_u64(cursor);
 			entry.offset = get_u64(cursor);
 			entry.size = get_u64(cursor);
-			m_entries.emplace(entry.hash, entry);
+			m_entries.try_emplace(entry.hash, entry);
 		}
 		m_dataend = indexoffset;
 	}
@@ -666,7 +717,7 @@ pack_writer::pack_writer(std::filesystem::path const &Path) : m_path(Path)
 			std::filesystem::create_directories(Path.parent_path(), error);
 		m_file = open_file(Path, "w+b");
 		if (m_file == nullptr)
-			throw std::runtime_error("e3dpack: can't create \"" + Path.generic_string() + "\"");
+			throw e3d1_error(std::format("e3dpack: can't create \"{}\"", Path.generic_string()));
 		std::string header;
 		put_u32(header, id4('E', '3', 'D', 'P'));
 		put_u32(header, pack_version);
@@ -685,6 +736,7 @@ pack_writer::~pack_writer()
 	}
 	catch (...)
 	{
+		// a destructor mustn't throw: flush_pack_writers() flushes the packs before, and reports their errors
 	}
 	if (m_file != nullptr)
 		std::fclose(m_file);
@@ -692,18 +744,17 @@ pack_writer::~pack_writer()
 
 bool pack_writer::add(hash128 const &Hash, std::string_view const Data)
 {
-	auto const found{m_entries.find(Hash)};
-	if (found != m_entries.end())
+	if (auto const found{m_entries.find(Hash)}; found != m_entries.end())
 	{
 		// the same hash: make sure it is the same block
-		std::string existing(static_cast<std::size_t>(found->second.size), '\0');
-		if (found->second.size != Data.size() || false == read_at(m_file, found->second.offset, existing.data(), existing.size()) || existing != Data)
-			throw std::runtime_error("e3dpack: hash collision or damaged block " + Hash.to_string() + " in \"" + m_path.generic_string() + "\"");
+		if (std::string existing(static_cast<std::size_t>(found->second.size), '\0');
+		    found->second.size != Data.size() || false == read_at(m_file, found->second.offset, existing.data(), existing.size()) || existing != Data)
+			throw e3d1_error(std::format("e3dpack: hash collision or damaged block {} in \"{}\"", Hash.to_string(), m_path.generic_string()));
 		return false;
 	}
 	if (false == seek(m_file, m_dataend) || std::fwrite(Data.data(), 1, Data.size(), m_file) != Data.size())
-		throw std::runtime_error("e3dpack: failed to append to \"" + m_path.generic_string() + "\"");
-	m_entries.emplace(Hash, pack_entry{Hash, m_dataend, Data.size()});
+		throw e3d1_error(std::format("e3dpack: failed to append to \"{}\"", m_path.generic_string()));
+	m_entries.try_emplace(Hash, pack_entry{Hash, m_dataend, Data.size()});
 	m_dataend += Data.size();
 	m_dirty = true;
 	return true;
@@ -715,9 +766,9 @@ void pack_writer::flush()
 		return;
 	std::vector<pack_entry> entries;
 	entries.reserve(m_entries.size());
-	for (auto const &entry : m_entries)
-		entries.push_back(entry.second);
-	std::sort(entries.begin(), entries.end(), [](pack_entry const &Left, pack_entry const &Right) { return Left.hash < Right.hash; });
+	for (auto const &[hash, entry] : m_entries)
+		entries.push_back(entry);
+	std::ranges::sort(entries, [](pack_entry const &Left, pack_entry const &Right) { return Left.hash < Right.hash; });
 	std::string tail;
 	tail.reserve(entries.size() * pack_entry_size + pack_footer_size);
 	for (auto const &entry : entries)
@@ -731,17 +782,17 @@ void pack_writer::flush()
 	put_u64(tail, entries.size());
 	put_u32(tail, pack_version);
 	put_u32(tail, 0);
-	tail.append(pack_magic, 8);
+	tail.append(pack_magic.data(), pack_magic.size());
 	// the data end only grows and so does the index, so the new tail covers the old one whole
 	if (false == seek(m_file, m_dataend) || std::fwrite(tail.data(), 1, tail.size(), m_file) != tail.size() || std::fflush(m_file) != 0)
-		throw std::runtime_error("e3dpack: failed to write the index of \"" + m_path.generic_string() + "\"");
+		throw e3d1_error(std::format("e3dpack: failed to write the index of \"{}\"", m_path.generic_string()));
 	m_dirty = false;
 }
 
 namespace {
-std::map<std::string, std::unique_ptr<pack_writer>> &pack_writers()
+std::map<std::string, std::unique_ptr<pack_writer>, std::less<>> &pack_writers()
 {
-	static std::map<std::string, std::unique_ptr<pack_writer>> writers;
+	static std::map<std::string, std::unique_ptr<pack_writer>, std::less<>> writers;
 	return writers;
 }
 } // namespace
@@ -752,15 +803,15 @@ pack_writer &pack_writer_for(std::filesystem::path const &Path)
 	auto const key{path_key(Path)};
 	auto found{writers.find(key)};
 	if (found == writers.end())
-		found = writers.emplace(key, std::make_unique<pack_writer>(Path)).first;
+		found = writers.try_emplace(key, std::make_unique<pack_writer>(Path)).first;
 	return *found->second;
 }
 
 void flush_pack_writers()
 {
 	auto &writers{pack_writers()};
-	for (auto &writer : writers)
-		writer.second->flush();
+	for (auto const &[key, writer] : writers)
+		writer->flush();
 	writers.clear();
 	// a pack read before is stale now
 	pack_reader::close_all();
@@ -769,17 +820,21 @@ void flush_pack_writers()
 // pack reader -------------------------------------------------------------------------------------------------
 
 namespace {
-std::mutex g_readerslock;
-std::map<std::string, std::shared_ptr<pack_reader>> &pack_readers()
+std::mutex &readers_lock()
 {
-	static std::map<std::string, std::shared_ptr<pack_reader>> readers;
+	static std::mutex lock;
+	return lock;
+}
+std::map<std::string, std::shared_ptr<pack_reader>, std::less<>> &pack_readers()
+{
+	static std::map<std::string, std::shared_ptr<pack_reader>, std::less<>> readers;
 	return readers;
 }
 } // namespace
 
 std::shared_ptr<pack_reader> pack_reader::open(std::filesystem::path const &Path, std::string &Error)
 {
-	std::scoped_lock lock(g_readerslock);
+	std::scoped_lock lock(readers_lock());
 	auto &readers{pack_readers()};
 	auto const key{path_key(Path)};
 	if (auto const found{readers.find(key)}; found != readers.end())
@@ -790,31 +845,30 @@ std::shared_ptr<pack_reader> pack_reader::open(std::filesystem::path const &Path
 	reader->m_file = open_file(Path, "rb");
 	if (reader->m_file == nullptr)
 	{
-		Error = "geometry pack \"" + Path.generic_string() + "\" not found";
+		Error = std::format("geometry pack \"{}\" not found", Path.generic_string());
 		return nullptr;
 	}
 	std::error_code error;
 	reader->m_filesize = std::filesystem::file_size(Path, error);
-	unsigned char footer[pack_footer_size];
-	if (error || reader->m_filesize < pack_header_size + pack_footer_size || false == read_at(reader->m_file, reader->m_filesize - pack_footer_size, footer, sizeof(footer)) ||
-	    std::memcmp(footer + 24, pack_magic, 8) != 0)
+	std::array<unsigned char, pack_footer_size> footer;
+	if (error || reader->m_filesize < pack_header_size + pack_footer_size || false == read_at(reader->m_file, reader->m_filesize - pack_footer_size, footer.data(), footer.size()) ||
+	    std::memcmp(footer.data() + 24, pack_magic.data(), pack_magic.size()) != 0)
 	{
-		Error = "\"" + Path.generic_string() + "\" is not a geometry pack";
+		Error = std::format("\"{}\" is not a geometry pack", Path.generic_string());
 		return nullptr;
 	}
-	unsigned char const *cursor{footer};
+	unsigned char const *cursor{footer.data()};
 	auto const indexoffset{get_u64(cursor)};
 	auto const entrycount{get_u64(cursor)};
-	auto const version{get_u32(cursor)};
-	if (version != pack_version || indexoffset + entrycount * pack_entry_size + pack_footer_size != reader->m_filesize)
+	if (auto const version{get_u32(cursor)}; version != pack_version || indexoffset + entrycount * pack_entry_size + pack_footer_size != reader->m_filesize)
 	{
-		Error = "geometry pack \"" + Path.generic_string() + "\" of unknown version or damaged";
+		Error = std::format("geometry pack \"{}\" of unknown version or damaged", Path.generic_string());
 		return nullptr;
 	}
 	std::vector<unsigned char> index(static_cast<std::size_t>(entrycount * pack_entry_size));
 	if (false == read_at(reader->m_file, indexoffset, index.data(), index.size()))
 	{
-		Error = "can't read the index of geometry pack \"" + Path.generic_string() + "\"";
+		Error = std::format("can't read the index of geometry pack \"{}\"", Path.generic_string());
 		return nullptr;
 	}
 	cursor = index.data();
@@ -827,22 +881,22 @@ std::shared_ptr<pack_reader> pack_reader::open(std::filesystem::path const &Path
 		entry.size = get_u64(cursor);
 		if (entry.offset < pack_header_size || entry.offset + entry.size > indexoffset)
 		{
-			Error = "geometry pack \"" + Path.generic_string() + "\" has a block out of its data";
+			Error = std::format("geometry pack \"{}\" has a block out of its data", Path.generic_string());
 			return nullptr;
 		}
 	}
-	if (false == std::is_sorted(reader->m_index.begin(), reader->m_index.end(), [](pack_entry const &Left, pack_entry const &Right) { return Left.hash < Right.hash; }))
+	if (false == std::ranges::is_sorted(reader->m_index, [](pack_entry const &Left, pack_entry const &Right) { return Left.hash < Right.hash; }))
 	{
-		Error = "the index of geometry pack \"" + Path.generic_string() + "\" isn't sorted";
+		Error = std::format("the index of geometry pack \"{}\" isn't sorted", Path.generic_string());
 		return nullptr;
 	}
-	readers.emplace(key, reader);
+	readers.try_emplace(key, reader);
 	return reader;
 }
 
 void pack_reader::close_all()
 {
-	std::scoped_lock lock(g_readerslock);
+	std::scoped_lock lock(readers_lock());
 	pack_readers().clear();
 }
 
@@ -854,8 +908,8 @@ pack_reader::~pack_reader()
 
 pack_entry const *pack_reader::find(hash128 const &Hash) const
 {
-	auto const found{std::lower_bound(m_index.begin(), m_index.end(), Hash, [](pack_entry const &Entry, hash128 const &Value) { return Entry.hash < Value; })};
-	return (found != m_index.end() && found->hash == Hash) ? &*found : nullptr;
+	auto const found{std::ranges::lower_bound(m_index, Hash, std::ranges::less{}, &pack_entry::hash)};
+	return (found != m_index.end() && found->hash == Hash) ? std::to_address(found) : nullptr;
 }
 
 bool pack_reader::read(std::vector<pack_entry const *> const &Entries, std::vector<unsigned char const *> &Blocks, std::vector<unsigned char> &Storage, std::string &Error) const
@@ -866,9 +920,10 @@ bool pack_reader::read(std::vector<pack_entry const *> const &Entries, std::vect
 	for (std::size_t i = 0; i < Entries.size(); ++i)
 		if (Entries[i] != nullptr)
 			order.push_back(i);
-	std::sort(order.begin(), order.end(), [&](std::size_t Left, std::size_t Right) { return Entries[Left]->offset < Entries[Right]->offset; });
+	std::ranges::sort(order, [&](std::size_t Left, std::size_t Right) { return Entries[Left]->offset < Entries[Right]->offset; });
 	struct span {
-		std::uint64_t begin, end;
+		std::uint64_t begin;
+		std::uint64_t end;
 		std::size_t storage;
 	};
 	std::vector<span> spans;
@@ -880,7 +935,7 @@ bool pack_reader::read(std::vector<pack_entry const *> const &Entries, std::vect
 		auto const begin{Entries[i]->offset};
 		auto const end{begin + Entries[i]->size};
 		if (spans.empty() || begin > spans.back().end + gap)
-			spans.push_back({begin, end, 0});
+			spans.push_back(span{begin, end, 0});
 		else
 			spans.back().end = std::max(spans.back().end, end);
 		spanof[i] = spans.size() - 1;
@@ -897,7 +952,7 @@ bool pack_reader::read(std::vector<pack_entry const *> const &Entries, std::vect
 		{
 			if (false == read_at(m_file, s.begin, Storage.data() + s.storage, static_cast<std::size_t>(s.end - s.begin)))
 			{
-				Error = "read error in geometry pack \"" + m_path.generic_string() + "\"";
+				Error = std::format("read error in geometry pack \"{}\"", m_path.generic_string());
 				return false;
 			}
 		}
@@ -912,7 +967,7 @@ bool pack_reader::read(std::vector<pack_entry const *> const &Entries, std::vect
 
 std::uint64_t pack_bytes_read()
 {
-	return g_packbytesread.load();
+	return pack_bytes_counter().load();
 }
 
 // loader ------------------------------------------------------------------------------------------------------
@@ -955,7 +1010,7 @@ bool parse_grf0(unsigned char const *Data, std::size_t const Size, e3d1_geometry
 		if (false == record.empty() && (vertex_stride(record.vertex_format) == 0 || (record.index_count > 0 && record.index_size != 1 && record.index_size != 2 && record.index_size != 4) ||
 		                                record.size != record.vertex_bytes() + record.index_bytes()))
 		{
-			Error = "GRF0 record " + std::to_string(i) + " malformed";
+			Error = std::format("GRF0 record {} malformed", i);
 			return false;
 		}
 	}
@@ -977,7 +1032,7 @@ void resolve_geometry(e3d1_geometry const &Geometry, std::filesystem::path const
 		if (record.flags & geometry_record::inline_data)
 		{
 			if (record.offset + record.size > Geometry.inline_size)
-				Resolved.errors.push_back("geometry of sub-model " + std::to_string(i) + " lies past the end of the GRI0 chunk");
+				Resolved.errors.push_back(std::format("geometry of sub-model {} lies past the end of the GRI0 chunk", i));
 			else
 				Resolved.blocks[i] = Geometry.inline_data + record.offset;
 		}
@@ -988,11 +1043,11 @@ void resolve_geometry(e3d1_geometry const &Geometry, std::filesystem::path const
 		return;
 	if (Geometry.pack.empty())
 	{
-		Resolved.errors.push_back("geometry kept in a pack, but no pack named");
+		Resolved.errors.emplace_back("geometry kept in a pack, but no pack named");
 		return;
 	}
 	std::string error;
-	auto const pack{pack_reader::open(Modelfolder / std::filesystem::u8path(Geometry.pack), error)};
+	auto const pack{pack_reader::open(Modelfolder / utf8_path(Geometry.pack), error)};
 	if (pack == nullptr)
 	{
 		Resolved.errors.push_back(error);
@@ -1006,7 +1061,7 @@ void resolve_geometry(e3d1_geometry const &Geometry, std::filesystem::path const
 		auto const *entry{pack->find(record.hash)};
 		if (entry == nullptr || entry->size != record.size)
 		{
-			Resolved.errors.push_back("geometry block " + record.hash.to_string() + " of sub-model " + std::to_string(i) + " not found in pack \"" + pack->path().generic_string() + "\"");
+			Resolved.errors.push_back(std::format("geometry block {} of sub-model {} not found in pack \"{}\"", record.hash.to_string(), i, pack->path().generic_string()));
 			continue;
 		}
 		entries[i] = entry;

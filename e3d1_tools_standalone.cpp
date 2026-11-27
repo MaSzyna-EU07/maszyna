@@ -32,8 +32,10 @@ http://mozilla.org/MPL/2.0/.
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <map>
+#include <span>
 #include <thread>
 
 namespace {
@@ -56,38 +58,41 @@ std::vector<std::string> read_list(std::string const &File)
 			line.pop_back();
 		if (line.empty() || line[0] == '#')
 			continue;
-		std::replace(line.begin(), line.end(), '\\', '/');
+		std::ranges::replace(line, '\\', '/');
 		list.push_back(line);
 	}
 	return list;
 }
 
-std::string option(int Argc, char *Argv[], int First, std::string const &Name, std::string const &Default = {})
+// the command line arguments
+using arguments = std::span<char *const>;
+
+std::string option(arguments const Args, std::size_t const First, std::string_view const Name, std::string_view const Default = {})
 {
-	for (int i = First; i + 1 < Argc; ++i)
-		if (Name == Argv[i])
-			return Argv[i + 1];
-	return Default;
+	for (std::size_t i = First; i + 1 < Args.size(); ++i)
+		if (Name == Args[i])
+			return Args[i + 1];
+	return std::string(Default);
 }
-bool flag(int Argc, char *Argv[], int First, std::string const &Name)
+bool flag(arguments const Args, std::size_t const First, std::string_view const Name)
 {
-	for (int i = First; i < Argc; ++i)
-		if (Name == Argv[i])
+	for (std::size_t i = First; i < Args.size(); ++i)
+		if (Name == Args[i])
 			return true;
 	return false;
 }
 
 std::filesystem::path path_of(std::string const &Root, std::string const &Relative)
 {
-	return std::filesystem::u8path(Root) / std::filesystem::u8path(Relative);
+	return e3d::utf8_path(Root) / e3d::utf8_path(Relative);
 }
 
 // the folder of the pack a model goes with: the vehicle (dynamic/<country>/<vehicle>) or the models category (models/<category>)
 std::filesystem::path family_folder(std::string const &Relative)
 {
-	auto const path{std::filesystem::u8path(Relative)};
+	auto const path{e3d::utf8_path(Relative)};
 	std::vector<std::filesystem::path> parts(path.begin(), path.end());
-	std::size_t depth{parts.size() > 0 && parts[0] == "dynamic" ? 3u : 2u};
+	std::size_t depth{false == parts.empty() && parts[0] == "dynamic" ? 3u : 2u};
 	depth = std::min(depth, parts.size() - 1); // a folder, not the file itself
 	std::filesystem::path folder;
 	for (std::size_t i = 0; i < depth; ++i)
@@ -117,7 +122,7 @@ class log_session
 	explicit log_session(int const Mode)
 	{
 		Global.iWriteLogEnabled = Mode;
-		m_thread = std::thread(LogService);
+		m_thread = std::jthread(LogService);
 	}
 	~log_session()
 	{
@@ -126,7 +131,7 @@ class log_session
 	}
 
   private:
-	std::thread m_thread;
+	std::jthread m_thread;
 };
 
 void reset_renderer()
@@ -142,6 +147,70 @@ std::uint64_t size_of(std::filesystem::path const &Path)
 	return error ? 0 : size;
 }
 
+double megabytes(std::uint64_t const Bytes)
+{
+	return static_cast<double>(Bytes) / 1e6;
+}
+
+// the geometry of a sub-model kept by the renderer, empty for one without it
+template <typename Array, typename Getter>
+Array const &geometry_of(TSubModel const &Submodel, Getter const &Get)
+{
+	static Array const empty;
+	return Submodel.m_geometry.handle != null_handle ? Get(Submodel.m_geometry.handle) : empty;
+}
+
+// the sub-models as both models have them: empty if they are the same, what differs otherwise.
+// the vertices and indices compared are added to the counts
+std::string submodel_difference(TSubModel const &Left, TSubModel const &Right, int const Index, std::uint64_t &Vertices, std::uint64_t &Indices)
+{
+	auto const vertices = [](gfx::geometry_handle const &H) -> gfx::vertex_array const & { return GfxRenderer->Vertices(H); };
+	auto const indices = [](gfx::geometry_handle const &H) -> gfx::index_array const & { return GfxRenderer->Indices(H); };
+	auto const userdata = [](gfx::geometry_handle const &H) -> gfx::userdata_array const & { return GfxRenderer->UserData(H); };
+	auto const &va{geometry_of<gfx::vertex_array>(Left, vertices)};
+	auto const &vb{geometry_of<gfx::vertex_array>(Right, vertices)};
+	auto const &ia{geometry_of<gfx::index_array>(Left, indices)};
+	auto const &ib{geometry_of<gfx::index_array>(Right, indices)};
+	auto const &ua{geometry_of<gfx::userdata_array>(Left, userdata)};
+	auto const &ub{geometry_of<gfx::userdata_array>(Right, userdata)};
+	Vertices += va.size();
+	Indices += ia.size();
+	if (false == e3d::same_bits(va, vb))
+		return std::format("vertices of sub-model {} ({})", Index, Left.pName);
+	if (ia != ib)
+		return std::format("indices of sub-model {} ({})", Index, Left.pName);
+	if (false == e3d::same_bits(ua, ub))
+		return std::format("user data of sub-model {} ({})", Index, Left.pName);
+	bool const samematrix{(Left.fMatrix == nullptr) == (Right.fMatrix == nullptr) &&
+	                      (Left.fMatrix == nullptr || std::memcmp(Left.fMatrix->readArray(), Right.fMatrix->readArray(), 16 * sizeof(float)) == 0)};
+	if (Left.pName != Right.pName || Left.eType != Right.eType || Left.iFlags != Right.iFlags || Left.m_geometry.vertex_count != Right.m_geometry.vertex_count ||
+	    Left.m_geometry.index_count != Right.m_geometry.index_count || Left.f4Diffuse != Right.f4Diffuse || Left.m_materialname != Right.m_materialname || false == samematrix)
+		return std::format("properties of sub-model {} ({})", Index, Left.pName);
+	return {};
+}
+
+// the model of the list loaded from both roots: empty if they are the same, what differs otherwise
+std::string model_difference(std::string const &Roota, std::string const &Rootb, std::string const &Relative, std::size_t &Submodels, std::uint64_t &Vertices, std::uint64_t &Indices)
+{
+	auto a{std::make_unique<TModel3d>()};
+	auto b{std::make_unique<TModel3d>()};
+	bool const loadeda{a->LoadFromFile(model_name(Roota, Relative), is_dynamic(Relative))};
+	bool const loadedb{b->LoadFromFile(model_name(Rootb, Relative), is_dynamic(Relative))};
+	if (loadeda != loadedb)
+		return std::format("loaded {} vs {}", static_cast<int>(loadeda), static_cast<int>(loadedb));
+	if (a->SubModelsCount() != b->SubModelsCount())
+		return std::format("sub-model count {} vs {}", a->SubModelsCount(), b->SubModelsCount());
+	std::string problem;
+	for (int i = 0; i < a->SubModelsCount(); ++i)
+	{
+		problem = submodel_difference(a->Root[i], b->Root[i], i, Vertices, Indices);
+		if (false == problem.empty())
+			break;
+	}
+	Submodels += static_cast<std::size_t>(a->SubModelsCount());
+	return problem;
+}
+
 } // namespace
 
 int e3d1_pack_standalone(int Argc, char *Argv[])
@@ -151,20 +220,31 @@ int e3d1_pack_standalone(int Argc, char *Argv[])
 		std::printf("usage: -e3dpack <list> <input root> <output root> [-threshold <bytes>] [-nopack]\n");
 		return 2;
 	}
+	arguments const args(Argv, static_cast<std::size_t>(Argc));
 	log_session log(2);
 	auto list{read_list(Argv[2])};
 	// the order of the blocks in the packs follows the order of the files
-	std::sort(list.begin(), list.end());
+	std::ranges::sort(list);
 	std::string const inroot{Argv[3]};
 	std::string const outroot{Argv[4]};
 	e3d::writer_options options;
-	options.inline_threshold = static_cast<std::size_t>(std::stoull(option(Argc, Argv, 5, "-threshold", "4096")));
-	options.use_pack = (false == flag(Argc, Argv, 5, "-nopack"));
+	options.inline_threshold = static_cast<std::size_t>(std::stoull(option(args, 5, "-threshold", "4096")));
+	options.use_pack = (false == flag(args, 5, "-nopack"));
 
 	auto const start{clock_type::now()};
-	double readtime{0}, splittime{0}, writetime{0}, hashtime{0};
-	std::uint64_t inbytes{0}, outbytes{0}, newbytes{0};
-	std::size_t converted{0}, copied{0}, blocks{0}, inlineblocks{0}, packedblocks{0}, newblocks{0};
+	double readtime{0};
+	double splittime{0};
+	double writetime{0};
+	double hashtime{0};
+	std::uint64_t inbytes{0};
+	std::uint64_t outbytes{0};
+	std::uint64_t newbytes{0};
+	std::size_t converted{0};
+	std::size_t copied{0};
+	std::size_t blocks{0};
+	std::size_t inlineblocks{0};
+	std::size_t packedblocks{0};
+	std::size_t newblocks{0};
 	std::map<std::filesystem::path, std::filesystem::path> packs;
 	for (auto const &relative : list)
 	{
@@ -191,8 +271,8 @@ int e3d1_pack_standalone(int Argc, char *Argv[])
 		timer = clock_type::now();
 		if (split)
 		{
-			options.pack = std::filesystem::u8path(outroot) / family_folder(relative) / "geometry.e3dpack";
-			packs.emplace(options.pack.lexically_normal(), options.pack);
+			options.pack = e3d::utf8_path(outroot) / family_folder(relative) / "geometry.e3dpack";
+			packs.try_emplace(options.pack.lexically_normal(), options.pack);
 			try
 			{
 				auto const stats{e3d::write_e3d1(output, content, options)};
@@ -217,8 +297,8 @@ int e3d1_pack_standalone(int Argc, char *Argv[])
 			std::printf("COPY %s: %s\n", relative.c_str(), error.c_str());
 			std::error_code ec;
 			std::filesystem::create_directories(output.parent_path(), ec);
-			std::ofstream file(output, std::ios::binary);
-			file.write(data.data(), static_cast<std::streamsize>(data.size()));
+			std::ofstream copy(output, std::ios::binary);
+			copy.write(data.data(), static_cast<std::streamsize>(data.size()));
 			++copied;
 			outbytes += data.size();
 		}
@@ -229,15 +309,15 @@ int e3d1_pack_standalone(int Argc, char *Argv[])
 	writetime += seconds_since(timer);
 	auto const total{seconds_since(start)};
 	std::uint64_t packbytes{0};
-	for (auto const &pack : packs)
-		packbytes += size_of(pack.second);
+	for (auto const &[folder, pack] : packs)
+		packbytes += size_of(pack);
 
 	std::printf("files %zu converted %zu copied %zu packs %zu\n", list.size(), converted, copied, packs.size());
-	std::printf("input %.1f MB, output files %.1f MB, packs %.1f MB, output total %.1f MB (%.1f%%)\n", inbytes / 1e6, outbytes / 1e6, packbytes / 1e6, (outbytes + packbytes) / 1e6,
-	            inbytes > 0 ? 100.0 * (outbytes + packbytes) / inbytes : 0.0);
-	std::printf("blocks %zu inline %zu packed %zu new in pack %zu (%.1f MB)\n", blocks, inlineblocks, packedblocks, newblocks, newbytes / 1e6);
+	std::printf("input %.1f MB, output files %.1f MB, packs %.1f MB, output total %.1f MB (%.1f%%)\n", megabytes(inbytes), megabytes(outbytes), megabytes(packbytes),
+	            megabytes(outbytes + packbytes), inbytes > 0 ? 100.0 * static_cast<double>(outbytes + packbytes) / static_cast<double>(inbytes) : 0.0);
+	std::printf("blocks %zu inline %zu packed %zu new in pack %zu (%.1f MB)\n", blocks, inlineblocks, packedblocks, newblocks, megabytes(newbytes));
 	std::printf("time total %.2f s: read %.2f s, split %.2f s, write %.2f s (of which hashing %.2f s, %.0f MB/s)\n", total, readtime, splittime, writetime, hashtime,
-	            hashtime > 0 ? inbytes / 1e6 / hashtime : 0.0);
+	            hashtime > 0 ? megabytes(inbytes) / hashtime : 0.0);
 	std::fflush(stdout);
 	return 0;
 }
@@ -249,58 +329,20 @@ int e3d1_verify_standalone(int Argc, char *Argv[])
 		std::printf("usage: -e3dverify <list> <root A> <root B>\n");
 		return 2;
 	}
-	log_session log(flag(Argc, Argv, 5, "-quiet") ? 0 : 2);
+	arguments const args(Argv, static_cast<std::size_t>(Argc));
+	log_session log(flag(args, 5, "-quiet") ? 0 : 2);
 	auto const list{read_list(Argv[2])};
 	std::string const roota{Argv[3]};
 	std::string const rootb{Argv[4]};
-	std::size_t same{0}, different{0}, submodels{0};
-	std::uint64_t vertices{0}, indices{0};
+	std::size_t same{0};
+	std::size_t different{0};
+	std::size_t submodels{0};
+	std::uint64_t vertices{0};
+	std::uint64_t indices{0};
 	reset_renderer();
 	for (auto const &relative : list)
 	{
-		std::string problem;
-		{
-			auto a{std::make_unique<TModel3d>()};
-			auto b{std::make_unique<TModel3d>()};
-			bool const loadeda{a->LoadFromFile(model_name(roota, relative), is_dynamic(relative))};
-			bool const loadedb{b->LoadFromFile(model_name(rootb, relative), is_dynamic(relative))};
-			if (loadeda != loadedb)
-				problem = "loaded " + std::to_string(loadeda) + " vs " + std::to_string(loadedb);
-			else if (a->SubModelsCount() != b->SubModelsCount())
-				problem = "sub-model count " + std::to_string(a->SubModelsCount()) + " vs " + std::to_string(b->SubModelsCount());
-			else
-			{
-				for (int i = 0; i < a->SubModelsCount() && problem.empty(); ++i)
-				{
-					auto const &sa{a->Root[i]};
-					auto const &sb{b->Root[i]};
-					auto const geometry = [](TSubModel const &Submodel, auto const &Getter) -> decltype(auto) {
-						using array = std::remove_cvref_t<decltype(Getter(gfx::geometry_handle{}))>;
-						static array const empty;
-						return (Submodel.m_geometry.handle != null_handle ? Getter(Submodel.m_geometry.handle) : empty);
-					};
-					auto const &va{geometry(sa, [](gfx::geometry_handle const &H) -> gfx::vertex_array const & { return GfxRenderer->Vertices(H); })};
-					auto const &vb{geometry(sb, [](gfx::geometry_handle const &H) -> gfx::vertex_array const & { return GfxRenderer->Vertices(H); })};
-					auto const &ia{geometry(sa, [](gfx::geometry_handle const &H) -> gfx::index_array const & { return GfxRenderer->Indices(H); })};
-					auto const &ib{geometry(sb, [](gfx::geometry_handle const &H) -> gfx::index_array const & { return GfxRenderer->Indices(H); })};
-					auto const &ua{geometry(sa, [](gfx::geometry_handle const &H) -> gfx::userdata_array const & { return GfxRenderer->UserData(H); })};
-					auto const &ub{geometry(sb, [](gfx::geometry_handle const &H) -> gfx::userdata_array const & { return GfxRenderer->UserData(H); })};
-					if (false == e3d::same_bits(va, vb))
-						problem = "vertices of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
-					else if (ia != ib)
-						problem = "indices of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
-					else if (false == e3d::same_bits(ua, ub))
-						problem = "user data of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
-					else if (sa.pName != sb.pName || sa.eType != sb.eType || sa.iFlags != sb.iFlags || sa.m_geometry.vertex_count != sb.m_geometry.vertex_count ||
-					         sa.m_geometry.index_count != sb.m_geometry.index_count || sa.f4Diffuse != sb.f4Diffuse || sa.m_materialname != sb.m_materialname ||
-					         (sa.fMatrix == nullptr) != (sb.fMatrix == nullptr) || (sa.fMatrix != nullptr && std::memcmp(sa.fMatrix->readArray(), sb.fMatrix->readArray(), 16 * sizeof(float)) != 0))
-						problem = "properties of sub-model " + std::to_string(i) + " (" + sa.pName + ")";
-					vertices += va.size();
-					indices += ia.size();
-				}
-				submodels += static_cast<std::size_t>(a->SubModelsCount());
-			}
-		}
+		auto const problem{model_difference(roota, rootb, relative, submodels, vertices, indices)};
 		reset_renderer();
 		if (problem.empty())
 			++same;
@@ -323,12 +365,13 @@ int e3d1_bench_standalone(int Argc, char *Argv[])
 		std::printf("usage: -e3dbench <list> <root> <repeats> [-csv <file>] [-label <text>]\n");
 		return 2;
 	}
+	arguments const args(Argv, static_cast<std::size_t>(Argc));
 	log_session log(0);
 	auto const list{read_list(Argv[2])};
 	std::string const root{Argv[3]};
 	int const repeats{std::max(1, std::stoi(Argv[4]))};
-	auto const csvfile{option(Argc, Argv, 5, "-csv")};
-	auto const label{option(Argc, Argv, 5, "-label", "bench")};
+	auto const csvfile{option(args, 5, "-csv")};
+	auto const label{option(args, 5, "-label", "bench")};
 	std::FILE *csv{csvfile.empty() ? nullptr : std::fopen(csvfile.c_str(), "a")};
 
 	std::vector<std::uint64_t> filesizes;
@@ -363,7 +406,7 @@ int e3d1_bench_standalone(int Argc, char *Argv[])
 				std::fprintf(csv, "%s,%d,%s,%.4f,%llu,%d\n", label.c_str(), repeat, list[i].c_str(), elapsed, static_cast<unsigned long long>(read), loaded ? 1 : 0);
 		}
 		totals.push_back(total);
-		std::printf("%s pass %d: %zu models, %.1f ms, %.1f MB read, %zu failed\n", label.c_str(), repeat, list.size(), total, bytes / 1e6, failed);
+		std::printf("%s pass %d: %zu models, %.1f ms, %.1f MB read, %zu failed\n", label.c_str(), repeat, list.size(), total, megabytes(bytes), failed);
 		std::fflush(stdout);
 	}
 	if (csv != nullptr)
@@ -371,7 +414,7 @@ int e3d1_bench_standalone(int Argc, char *Argv[])
 	auto median = [](std::vector<double> Values) {
 		if (Values.empty())
 			return 0.0;
-		std::sort(Values.begin(), Values.end());
+		std::ranges::sort(Values);
 		auto const middle{Values.size() / 2};
 		return (Values.size() % 2) ? Values[middle] : 0.5 * (Values[middle - 1] + Values[middle]);
 	};
@@ -381,4 +424,15 @@ int e3d1_bench_standalone(int Argc, char *Argv[])
 	std::printf("%s summary: median pass %.1f ms, median model %.3f ms\n", label.c_str(), median(totals), median(modelmedians));
 	std::fflush(stdout);
 	return 0;
+}
+
+// the tool the first argument names: -e3dpack, -e3dverify or -e3dbench
+int e3d1_tools_standalone(int Argc, char *Argv[])
+{
+	std::string_view const mode(Argv[1]);
+	if (mode == "-e3dpack")
+		return e3d1_pack_standalone(Argc, Argv);
+	if (mode == "-e3dverify")
+		return e3d1_verify_standalone(Argc, Argv);
+	return e3d1_bench_standalone(Argc, Argv);
 }

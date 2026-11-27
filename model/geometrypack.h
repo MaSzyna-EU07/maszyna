@@ -28,11 +28,13 @@ http://mozilla.org/MPL/2.0/.
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <compare>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -40,19 +42,38 @@ http://mozilla.org/MPL/2.0/.
 
 namespace e3d {
 
+// a failure of the E3D1 writer or of a geometry pack, or a malformed E3D1 file
+class e3d1_error : public std::runtime_error
+{
+  public:
+	using std::runtime_error::runtime_error;
+};
+
+// a path from its UTF-8 text, as the names of the model files are kept
+inline std::filesystem::path utf8_path(std::string_view const Text)
+{
+	return std::filesystem::path(std::u8string(Text.begin(), Text.end()));
+}
+
 // 128-bit content hash of a geometry block (MurmurHash3 x64 128)
 struct hash128 {
 	std::uint64_t low{0};
 	std::uint64_t high{0};
 
-	bool operator==(hash128 const &Right) const { return low == Right.low && high == Right.high; }
-	bool operator<(hash128 const &Right) const { return high != Right.high ? high < Right.high : low < Right.low; }
+	bool operator==(hash128 const &Right) const = default;
+	// the high half first: the order of the index of a pack
+	std::strong_ordering operator<=>(hash128 const &Right) const
+	{
+		if (auto const order{high <=> Right.high}; order != 0)
+			return order;
+		return low <=> Right.low;
+	}
 	std::string to_string() const;
 };
 hash128 murmur3_128(void const *Data, std::size_t Size, std::uint32_t Seed = 0);
 
 struct hash128_hasher {
-	std::size_t operator()(hash128 const &Hash) const { return static_cast<std::size_t>(Hash.low ^ (Hash.high * 0x9E3779B97F4A7C15ull)); }
+	std::size_t operator()(hash128 const &Hash) const { return static_cast<std::size_t>(Hash.low ^ (Hash.high * 0x9E3779B97F4A7C15ULL)); }
 };
 
 // the size in bytes of one vertex of the VNT format (the digit of the chunk: 0 legacy, 1 packed, 2 expanded, +4 user data)
@@ -94,9 +115,8 @@ bool same_bits(std::vector<Type> const &Left, std::vector<Type> const &Right)
 // how the geometry of a sub-model is stored, one record of the GRF0 chunk
 struct geometry_record {
 	static constexpr std::size_t disk_size{40};
-	enum flag : std::uint8_t {
-		inline_data = 0x1, // the block is in the GRI0 chunk of the file, at offset
-	};
+	// flags
+	static constexpr std::uint8_t inline_data{0x1}; // the block is in the GRI0 chunk of the file, at offset
 	std::uint8_t vertex_format{0};
 	std::uint8_t index_size{0}; // 0 when the sub-model has no indices
 	std::uint8_t flags{0};
@@ -148,7 +168,7 @@ struct write_stats {
 	double hash_seconds{0}; // spent computing the hashes of the blocks
 };
 
-// writes an E3D1 model file and adds the blocks it doesn't keep to the pack; throws std::runtime_error on failure
+// writes an E3D1 model file and adds the blocks it doesn't keep to the pack; throws e3d1_error on failure
 write_stats write_e3d1(std::filesystem::path const &File, e3d1_content const &Content, writer_options const &Options);
 // cuts the content of an E3D0 file in memory into the parts of an E3D1 one, without changing a byte of the
 // vertex data. returns false with the reason given when the file can't be converted as is

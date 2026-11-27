@@ -2,8 +2,8 @@
 
 // small e3d models put together byte by byte, for the tests of the E3D1 format (test_e3d1*.cpp)
 
+#include <bit>
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -16,9 +16,7 @@ inline void put_u32(std::string &Output, std::uint32_t const Value)
 }
 inline void put_f32(std::string &Output, float const Value)
 {
-	std::uint32_t bits;
-	std::memcpy(&bits, &Value, 4);
-	put_u32(Output, bits);
+	put_u32(Output, std::bit_cast<std::uint32_t>(Value));
 }
 inline void put_at(std::string &Output, std::size_t const Offset, std::uint32_t const Value)
 {
@@ -55,8 +53,12 @@ struct part {
 // the indices are stored 4 bytes wide whatever their values, as SaveToBinFile() does for big models
 inline std::string model(std::vector<part> const &Parts)
 {
-	std::string sub, vnt, idx, nam;
-	int vertexoffset{0}, indexoffset{0};
+	std::string sub;
+	std::string vnt;
+	std::string idx;
+	std::string nam;
+	int vertexoffset{0};
+	int indexoffset{0};
 	for (std::size_t i = 0; i < Parts.size(); ++i)
 	{
 		auto const &p{Parts[i]};
@@ -73,9 +75,7 @@ inline std::string model(std::vector<part> const &Parts)
 		put_at(record, 32, static_cast<std::uint32_t>(vertexoffset));
 		put_at(record, 36, 0); // no texture: colored
 		// diffuse, so it's not divided by its multiplier to nothing
-		float const one{1.0f};
-		std::uint32_t onebits;
-		std::memcpy(&onebits, &one, 4);
+		auto const onebits{std::bit_cast<std::uint32_t>(1.0f)};
 		for (int c = 0; c < 4; ++c)
 			put_at(record, 64 + 4 * c, onebits);
 		put_at(record, 156, static_cast<std::uint32_t>(indexcount));
@@ -84,7 +84,7 @@ inline std::string model(std::vector<part> const &Parts)
 		sub += record;
 		for (int v = 0; v < p.vertices; ++v)
 		{
-			float const x{static_cast<float>(v % 17) * 0.25f + p.seed};
+			float const x{static_cast<float>(v % 17) * 0.25f + static_cast<float>(p.seed)};
 			float const y{static_cast<float>(v / 17) * 0.5f};
 			put_f32(vnt, x);
 			put_f32(vnt, y);
@@ -133,7 +133,7 @@ inline std::vector<chunk_view> chunks(std::string const &File)
 	while (position + 8 <= end)
 	{
 		auto const size{get_u32(File, position + 4)};
-		result.push_back({get_u32(File, position), File.substr(position + 8, size - 8)});
+		result.emplace_back(get_u32(File, position), File.substr(position + 8, size - 8));
 		position += size;
 	}
 	return result;
