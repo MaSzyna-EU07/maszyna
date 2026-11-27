@@ -112,3 +112,20 @@ TEST_CASE("brake releaser: an overcharged brake pipe turns the releaser off, in 
 	uncoupling.pipe_pressure = 5.3;
 	CHECK_FALSE(brake_releaser::decide(uncoupling).actuate);
 }
+
+TEST_CASE("brake releaser: a train charging its brakes standing gets an empty pipe filled up before the order to go") {
+	// a train placed cold, its pipe below the lock of the driver's brake valve, waits for its brakes to charge
+	// before the first start (#444): the pipe is unlocked as it stands, not only once the driver wants to go
+	auto state{standing_braked(-0.2)};
+	state.pipe_pressure = 1.5;
+	state.charging_standing = true;
+	auto const wanted{brake_releaser::decide(state)};
+	CHECK(wanted.actuate);
+	CHECK(wanted.fill_pipe);
+
+	// once the pipe is above the lock the locomotive stays braked: venting it is a rule for the start only
+	state.pipe_pressure = 3.5;
+	auto const charging{brake_releaser::decide(state)};
+	CHECK_FALSE(charging.actuate);
+	CHECK_FALSE(charging.fill_pipe);
+}

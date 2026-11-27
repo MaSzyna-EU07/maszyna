@@ -23,6 +23,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/brakereleaser.h"
 #include "vehicle/brakesetting.h"
 #include "vehicle/brakingcurve.h"
+#include "vehicle/fieldshunting.h"
 #include "vehicle/handover.h"
 #include "vehicle/signalpassing.h"
 #include "vehicle/timetableservice.h"
@@ -31,6 +32,7 @@ http://mozilla.org/MPL/2.0/.
 #include "vehicle/DynObj.h"
 #include "world/Event.h"
 #include "world/MemCell.h"
+#include "world/RoadOrder.h"
 #include "simulation/simulation.h"
 #include "simulation/blackboxrecorder.h"
 #include "simulation/simulationtime.h"
@@ -648,7 +650,13 @@ void TController::TableTraceRoute(double fDistance, TDynamicObject *pVehicle)
 					                            fCurrentDistance + ProjectEventOnTrack( pEvent, pTrack, fLastDir ),
 					                            OrderCurrentGet() ) ) {
 					*/
-					if (newspeedpoint.Set(pEvent, GetDistanceToEvent(pTrack, pEvent, fLastDir, fCurrentDistance), fLength, OrderCurrentGet(), mvOccupied->Vel < EU07_AI_NOMOVEMENT))
+					// an order of a road junction or a level crossing lies on the lane it's on. it's measured along that lane: the search
+					// for the events beside the track goes in steps of about a metre, and misplaces the ones on lanes shorter than a few metres
+					auto const eventdistance{
+						typeid( *pEvent ) == typeid( road_order ) ?
+							fCurrentDistance + ProjectEventOnTrack( pEvent, pTrack, fLastDir ) :
+							GetDistanceToEvent( pTrack, pEvent, fLastDir, fCurrentDistance ) };
+					if (newspeedpoint.Set(pEvent, eventdistance, fLength, OrderCurrentGet(), mvOccupied->Vel < EU07_AI_NOMOVEMENT))
 					{
 
 						fDistance = newspeedpoint.fDist; // jeśli sygnał stop, to nie ma potrzeby dalej skanować
@@ -2146,6 +2154,12 @@ TController::TableUpdateEvent( double &Velocity, TCommandType &Command, TSpeedPo
 						TableDropPassedEvent( Point );
 					}
 				}
+				else if (Point.fDist > 0.0 && typeid(*Point.evEvent) == typeid(road_order))
+				{
+					// a level crossing or a junction which holds the vehicle ahead: the road orders past it, which let the traffic
+					// through, aren't for this vehicle yet. without this the first of them would tell the standing vehicle to drive on
+					Command = TCommandType::cm_SetProximityVelocity; // taken, and not acted on
+				}
 				else if (Point.evEvent->is_command())
 				{
 					// jeśli prędkość jest zerowa, a komórka zawiera komendę
@@ -3330,6 +3344,7 @@ bool TController::PrepareEngine()
                     cue_action( driver_hint::rearmotorblowerson );
                 }
             }
+            control_field_shunting();
             // sync virtual brake state with the 'real' one
             if( mvOccupied->BrakeHandle != TBrakeHandle::NoHandle ) {
                 std::unordered_map<int, int> const brakepositions{
@@ -8778,8 +8793,23 @@ TController::control_tractive_and_braking_force() {
 #endif
 }
 
+// the switch of the field shunting of a diesel-electric that has one (AutoRelay=Optional with FieldShuntSwitch=Yes): off,
+// the field stays full. checked while running too, since a vehicle taken over with its engine running doesn't go through
+// PrepareEngine(). a diesel-electric with AutoRelay=Optional alone is left as before, shunting by hand with the switch off
+void TController::control_field_shunting() {
+
+    if( AIControllFlag
+     && mvControlling->EngineType == TEngineType::DieselElectric
+     && fieldshunting::has_switch( mvControlling->AutoRelayType, mvControlling->FieldShuntSwitch )
+     && false == mvControlling->AutoRelayFlag ) {
+        mvControlling->AutoRelaySwitch( true );
+    }
+}
+
 // ensure relays are active
 void TController::control_relays() {
+
+    control_field_shunting();
 
     if( fActionTime < 0.0 ) { return; }
 
@@ -9152,6 +9182,14 @@ void TController::control_releaser() {
     // stage 3 of uncoupling (UpdateDisconnect), from the direction change until the coupler lets go
     state.compressing_buffers =
         state.pressing && ( OrderCurrentGet() & Disconnect ) != 0 && iVehicleCount >= 0 && iDirection == iDirectionOrder;
+    // a train prepared standing charges its brakes before its first start. a pipe left below the lock of the driver's
+    // brake valve (a train placed cold, as after an emergency application) is unlocked as the train stands, not only
+    // once it is to go: else it charges only after the order to go, and starts on what the reservoirs got by then.
+    // a handle which has to be moved to unlock is left where it holds the train with the train brake
+    state.charging_standing =
+        bBrakeChargeStart
+     && ( mvOccupied->Vel < EU07_AI_NOMOVEMENT )
+     && ( ( mvOccupied->HandleUnlock == -3 ) || ( BrakeCtrlPosition <= 0.0 ) );
     auto const wanted { brake_releaser::decide( state ) };
     auto const actuate { wanted.actuate };
     auto isbrakehandleinrightposition { true };

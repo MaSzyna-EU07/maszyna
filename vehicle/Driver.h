@@ -391,6 +391,7 @@ private:
     bool is_brake_charging_done() const;
     double consist_max_crp() const;
     bool is_departure_blocked( double const Delay ) const;
+    void control_field_shunting();
     void control_relays();
     void control_motor_connectors();
     void control_tractive_force();

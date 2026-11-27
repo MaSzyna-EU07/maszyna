@@ -478,9 +478,9 @@ void editor_mode::restore_track_snapshot(EditorSnapshot const &Snapshot, std::ve
 		profile_restore();
 }
 
-std::array<editor_mode::track_mode, 15> const &editor_mode::track_modes()
+std::array<editor_mode::track_mode, 16> const &editor_mode::track_modes()
 {
-	static std::array<track_mode, 15> const modes{{
+	static std::array<track_mode, 16> const modes{{
 	    {"Select", "Esc", track_tab::path, "LMB on a path selects it: its points, control vectors and parameters", editor_icons::icon::select, 0},
 	    {"Lay track", "L", track_tab::lay, "Lays new track through the clicked points, on the ground or from a free end of a track", editor_icons::icon::lay_track, 0},
 	    {"Plan", "G", track_tab::straights, "The plan of the line laid: LMB on a straight drags its ends or the middle, on a curve its vertex and radius. C works too", editor_icons::icon::curve, 0},
@@ -492,6 +492,7 @@ std::array<editor_mode::track_mode, 15> const &editor_mode::track_modes()
 	    {"Station signals", nullptr, track_tab::station_signals, "The signals of a whole station placed at once, named after its code, and what its signalling lacks: LMB on a switch opens the station", editor_icons::icon::station_signals, 1},
 	    {"Line block", nullptr, track_tab::line_block, "The block of the lines out of a station: its block signals, warning discs and block sections", editor_icons::icon::line_block, 1},
 	    {"Kilometrage", "X", track_tab::kilometrage, "The km of the railway lines: LMB on a track puts a point of the km there, a jump of the km too", editor_icons::icon::kilometrage, 1},
+	    {"Catenary", "F6", track_tab::catenary, "Poles with cantilevers by the track, the card chosen from the catalogue by the distance of the pole; the spans checked against the catalogue", editor_icons::icon::catenary, 1},
 	    {"Posts", "B", track_tab::lineside, "Along the track: the hectometre posts every 100 m, the W17 fouling point markers, trainsets", editor_icons::icon::objects, 1},
 	    {"Profile", "P", track_tab::profile, "Vertical profile (grade line) along the line", editor_icons::icon::profile, 2},
 	    {"Speed", "V", track_tab::speed, "Speed limits of the paths against the speed their geometry allows", editor_icons::icon::speed, 2},
@@ -551,6 +552,9 @@ void editor_mode::show_track_tab(track_tab const Wanted)
 		break;
 	case track_tab::signals:
 		signal_refresh(true);
+		break;
+	case track_tab::catenary:
+		catenary_scan();
 		break;
 	default:
 		break;
@@ -650,6 +654,7 @@ std::string editor_mode::track_mode_name() const
 	case track_tab::line_block: return STR_C("Line block");
 	case track_tab::kilometrage: return STR_C("Kilometrage");
 	case track_tab::turntable: return STR_C("Turntable");
+	case track_tab::catenary: return catenary_mode_name();
 	default: return STR_C("Select");
 	}
 }
@@ -672,6 +677,7 @@ void editor_mode::render_track_inspector()
 		m_vehicle.tab().open = false;
 	}
 	ui()->set_track(m_track_window_open);
+	ui()->set_track_title(m_track_tab == track_tab::catenary ? STR("Catenary") : std::string{});
 	if (false == m_track_window_open)
 	{
 		// a closed window takes its mode with it
@@ -711,9 +717,13 @@ void editor_mode::render_track_tool_options()
 {
 	auto *track{selected_track()};
 	// the tools themselves are in the toolbar
-	render_track_search();
-	ImGui::Spacing();
-	render_track_guide();
+	if (m_track_tab != track_tab::catenary)
+	{
+		// the catenary is a field of work of its own: no search of the paths there
+		render_track_search();
+		ImGui::Spacing();
+		render_track_guide();
+	}
 	// the texts of the tools go on to the next line at the edge of the panel, none of them makes it scroll sideways
 	ImGui::PushTextWrapPos(0.0f);
 	switch (m_track_tab)
@@ -759,6 +769,7 @@ void editor_mode::render_track_tool_options()
 		m_srk.render_options();
 		break;
 	case track_tab::kilometrage: m_km.render_options(); break;
+	case track_tab::catenary: render_catenary_ui(); break;
 	case track_tab::turntable: render_turntable_ui(); break;
 	default:
 		render_track_set_ui();
@@ -1902,6 +1913,10 @@ std::vector<editor_mode::key_hint> editor_mode::track_key_hints(bool const All) 
 		hints = {{"LMB around it", "leads a track out"}, {"LMB on a free end", "fits that track to the turntable"}};
 	else if (m_track_window_open && m_track_tab == track_tab::turntable)
 		hints = {{"LMB", "places a new turntable"}};
+	else if (m_track_window_open && m_track_tab == track_tab::catenary)
+	{
+		catenary_key_hints(hints);
+	}
 	else if (m_track_window_open && m_track_tab == track_tab::station && m_srk.editing_joints())
 		hints = {{"LMB on a track", "a joint of the track circuits there"}, {"LMB on a joint", "takes it: then on a track moves it, on it again away"}};
 	else if (m_track_window_open && srk_tab() && false == m_srk.drawing())
@@ -2574,6 +2589,8 @@ void editor_mode::draw_build_overlay() const
 	auto const joints{false == Global.EditorOrtho || display.y <= 0.0f || 2.0 * static_cast<double>(Global.EditorOrthoExtent) / display.y <= 1.0};
 	for (auto const *track : simulation::Paths.sequence())
 	{
+		if (m_track_tab == track_tab::catenary)
+			break;
 		if (false == joints)
 			break;
 		if (track == nullptr || track->m_editorremoved || track->m_paths.empty())

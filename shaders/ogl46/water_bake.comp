@@ -1,0 +1,24 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the water on the windscreens (water_sim.glsl): the mask of the wipers of a glass baked into its map, once, when the glass is
+// set up. a thread per texel of the map; the glass is water_counts.z
+
+#include "common.glsl"
+#include "water_sim.glsl"
+
+layout(local_size_x = WATER_GROUP_SIZE) in;
+
+// the mask of the wipers of the material of the glass (wipermask)
+layout(binding = WATER_MASK_TEX) uniform sampler2D water_mask;
+
+void main()
+{
+	uint slot = water_counts.z;
+	uint texel = gl_GlobalInvocationID.x;
+	if ((slot >= uint(WATER_SLOTS)) || (texel >= uint(WATER_MAP * WATER_MAP)))
+		return;
+	vec2 uv = (vec2(float(texel % uint(WATER_MAP)), float(texel / uint(WATER_MAP))) + 0.5) / float(WATER_MAP);
+	// as much of the mask as a texel of the map covers
+	float lod = log2(max(float(textureSize(water_mask, 0).x) / float(WATER_MAP), 1.0));
+	water_blades[slot * uint(WATER_MAP * WATER_MAP) + texel] = textureLod(water_mask, uv, lod);
+}

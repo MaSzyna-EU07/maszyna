@@ -244,6 +244,7 @@ void network::client::handle_message(std::shared_ptr<connection> Connection, con
 
 		if (!Global.ready_to_load) {
 			Global.random_seed = cmd.seed;
+			Global.random_seed_given = true;
 			Global.random_engine.seed(Global.random_seed);
 			Global.starting_timestamp = cmd.timestamp;
             // TODO: configure simulation settings according to received cmd.config

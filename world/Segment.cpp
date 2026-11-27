@@ -181,6 +181,8 @@ bool TSegment::InitChain(std::vector<std::shared_ptr<TSegment>> Pieces)
     Point2 = last.Point2;
     fRoll1 = first.fRoll1;
     fRoll2 = last.fRoll2;
+    m_setting.designrolls[ 0 ] = first.m_setting.designrolls[ 0 ];
+    m_setting.designrolls[ 1 ] = last.m_setting.designrolls[ 1 ];
     bCurve = true;
     fDirection = -std::atan2(Point2.x - Point1.x, Point2.z - Point1.z);
     fStoop = std::atan2(Point2.y - Point1.y, fLength);
@@ -502,6 +504,7 @@ void TSegment::settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origi
 
 void TSegment::RaPositionGet(double const fDistance, glm::dvec3 &position, glm::vec3 &rotation) const {
     if( false == m_pieces.empty() ) {
+        // the pieces keep to their design, the unevenness is the one of the whole path
         auto const piece { piece_at( fDistance ) };
         m_pieces[ piece ]->RaPositionGet( fDistance - m_starts[ piece ], position, rotation );
     }
@@ -844,6 +847,16 @@ double reach_of( loft_span const &Span, gfx::basic_vertex const &Point ) {
     return static_cast<double>( static_cast<float>( Span.side ) * Point.position.x - Span.halfwidth );
 }
 
+// how high a point of the profile is with its foot raised by Rise, the web below the head (head.x) shortened by as much; the profile
+// reaches down to Bottom
+float raised( loft_span const &Span, float const Bottom, float const Height, double const Rise ) {
+
+    if( Rise <= 0.0 || Height >= Span.head.x || Span.head.x <= Bottom ) {
+        return Height;
+    }
+    return static_cast<float>( Height + Rise * ( Span.head.x - Height ) / ( Span.head.x - Bottom ) );
+}
+
 // stations at the steps of the path along a span, and at the denser ones up to Dense
 void step_stations( std::vector<double> &Stations, loft_span const &Span, double const Step, double const Dense ) {
 
@@ -862,7 +875,7 @@ void step_stations( std::vector<double> &Stations, loft_span const &Span, double
 // stations at the knots of the lines of a span, inside it
 void knot_stations( std::vector<double> &Stations, loft_span const &Span ) {
 
-    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops } ) {
+    for( auto const *line : { &Span.offsets, &Span.extents, &Span.inner, &Span.drops, &Span.rises, &Span.lows } ) {
         for( auto const &knot : *line ) {
             if( knot.x > Span.from && knot.x < Span.to ) {
                 Stations.push_back( knot.x );
@@ -945,6 +958,7 @@ struct span_station {
     double worn { 0.0 }; // from how far out from the gauge line the wear of the head ramps
     double drop { 0.0 }; // how far the head is lowered
     glm::vec3 along { 0.f }; // how far along the path a point goes for each metre out, at an end cut aslant
+    double rise { 0.0 }; // how far the foot of the profile is raised
 };
 
 // the normals of the faces the profile is cut to on its outer and its inner side, none where it isn't cut to walls
@@ -1022,6 +1036,7 @@ span_station make_station( TSegment const &Segment, loft_span const &Span, glm::
     station.worn = knots::sample( Span.ramp, Distance, -1e6 );
     station.drop = knots::sample( Span.drops, Distance, 0.0 );
     station.along = bend_along( Segment, Span, Distance );
+    station.rise = ( Span.rises.empty() ? Span.rise : knots::sample( Span.rises, Distance, 0.0 ) );
     return station;
 }
 
@@ -1030,6 +1045,7 @@ struct profile_cut {
     gfx::vertex_array const &points;
     loft_span const &span;
     span_station const &station;
+    float bottom { 0.f }; // how low the profile as drawn reaches, its foot raised from there
     // how far out from the gauge line a point of the profile reaches
     double reach( std::size_t const Index ) const {
         return reach_of( span, points[ Index ] ); }
@@ -1178,6 +1194,7 @@ void ring_point( profile_cut const &Cut, std::size_t const Index, std::vector<gf
     if( station.drop > 0.0 && shape.position.y > span.head.x && span.head.y > span.head.x ) {
         shape.position.y -= static_cast<float>( station.drop * ( shape.position.y - span.head.x ) / ( span.head.y - span.head.x ) );
     }
+    shape.position.y = raised( span, Cut.bottom, shape.position.y, station.rise );
     auto pt { station.sideways * static_cast<float>( span.side * ( span.halfwidth + outside + station.offset ) ) + station.position + station.along * static_cast<float>( outside + station.offset ) };
     pt.y += shape.position.y + span.lift;
     auto norm { shape.normal.x * station.sideways };
@@ -1199,7 +1216,7 @@ void shrunk_ring( profile_cut const &Cut, double const Nearest, double const Far
     auto const &station { Cut.station };
     auto const outside { std::clamp( 0.5 * ( std::min( station.extent, Farthest ) + std::max( station.innerextent, Nearest ) ), Nearest, Farthest ) };
     auto pt { station.sideways * static_cast<float>( span.side * ( span.halfwidth + outside + station.offset ) ) + station.position };
-    pt.y += Cut.points.front().position.y + span.lift;
+    pt.y += raised( span, Cut.bottom, Cut.points.front().position.y, station.rise ) + span.lift;
     for( auto const &point : Cut.points ) {
         Ring.emplace_back( pt, glm::vec3{ 0.f, 1.f, 0.f }, glm::vec2{ point.texture.x, 0.f } );
         Wear.push_back( 1.f );
@@ -1208,11 +1225,11 @@ void shrunk_ring( profile_cut const &Cut, double const Nearest, double const Far
 
 // the ring of points of the profile at a station of a span, cut to the limits there, and how worn each one is; false where it shrinks to
 // one point, which is left as it is, neither rolled nor settled
-bool lay_ring( gfx::vertex_array const &ShapePoints, loft_span const &Span, span_station const &Station, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+bool lay_ring( gfx::vertex_array const &ShapePoints, loft_span const &Span, span_station const &Station, float const Bottom, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
 
     Ring.clear();
     Wear.clear();
-    profile_cut const cut { ShapePoints, Span, Station };
+    profile_cut const cut { ShapePoints, Span, Station, Bottom };
     auto const count { ShapePoints.size() };
     auto nearest { 1e6 };
     auto farthest { -1e6 };
@@ -1231,6 +1248,185 @@ bool lay_ring( gfx::vertex_array const &ShapePoints, loft_span const &Span, span
     return true;
 }
 
+// the measures of a rail profile below its head as made over into the low section
+struct made_over {
+    double web { 0.0 };
+    double inward { 0.0 };
+    double outward { 0.0 };
+    double edge { 0.0 };
+    double root { 0.0 };
+    double below { 0.0 }; // how far below the head the profile reaches
+    double top { 0.0 }; // how high the root of the web is let to reach with the foot raised
+};
+
+// a rail profile below its head as drawn, about the middle of its foot, made over into the low section of a wing rail along a span: how
+// far the foot reaches inwards and outwards, how thick the web is, how wide the head, where its underside is, how high the top of the
+// edges of the foot and the root of the web are
+struct low_section {
+
+    low_section( gfx::vertex_array const &ShapePoints, loft_span const &Span );
+    // the profile at a distance along the span: made over into the low section as far as the span has it there, its foot raised by
+    // Rise with it, and kept in Points; as drawn where the span doesn't make it over. Rise is left at how far the foot is still to be
+    // raised as the ring is laid
+    gfx::vertex_array const &profile_at( gfx::vertex_array const &ShapePoints, double const Distance, double &Rise, std::vector<gfx::basic_vertex> &Points ) const;
+
+    loft_span const &span;
+    float bottom { 0.f }; // how low the profile reaches
+    bool low { false }; // whether the profile is made over along the span, which it can be only with a foot, a web and a head
+    double middle { 0.0 };
+    double inward { 0.0 };
+    double outward { 0.0 };
+    double web { 1e6 };
+    double head { 0.0 };
+    double underside { 1e6 };
+    double edge { 0.0 };
+    double root { 1e6 };
+
+private:
+    void measure_foot( gfx::vertex_array const &ShapePoints );
+    void measure_web( gfx::vertex_array const &ShapePoints );
+    void measure_heights( gfx::vertex_array const &ShapePoints );
+    double moved_across( gfx::basic_vertex const &Point, double const Off, made_over const &Made ) const;
+    double made_height( double const Height, made_over const &Made ) const;
+    gfx::vertex_array const &lowered( gfx::vertex_array const &ShapePoints, double const Rise, double const Share, std::vector<gfx::basic_vertex> &Points ) const;
+};
+
+// how low a profile reaches
+float lowest( gfx::vertex_array const &ShapePoints ) {
+
+    return std::ranges::min_element( ShapePoints, {}, []( gfx::basic_vertex const &Point ) { return Point.position.y; } )->position.y;
+}
+
+low_section::low_section( gfx::vertex_array const &ShapePoints, loft_span const &Span ) :
+    span { Span },
+    bottom { lowest( ShapePoints ) },
+    low { false == Span.lows.empty() && Span.head.x > bottom } {
+
+    if( false == low ) {
+        return;
+    }
+    measure_foot( ShapePoints );
+    measure_web( ShapePoints );
+    measure_heights( ShapePoints );
+    low = ( web < std::min( inward, outward ) && web < head && edge > 0.0 && edge < root && root < span.head.x - bottom && underside < 1e6 );
+}
+
+// the middle of the foot and how far the foot reaches inwards and outwards from there
+void low_section::measure_foot( gfx::vertex_array const &ShapePoints ) {
+
+    glm::dvec2 foot { 1e6, -1e6 };
+    for( auto const &point : ShapePoints ) {
+        if( point.position.y < bottom + 0.0005f ) {
+            foot = { std::min( foot.x, reach_of( span, point ) ), std::max( foot.y, reach_of( span, point ) ) };
+        }
+    }
+    middle = 0.5 * ( foot.x + foot.y );
+    inward = middle - foot.x;
+    outward = foot.y - middle;
+}
+
+// how wide the head is and how thick the web
+void low_section::measure_web( gfx::vertex_array const &ShapePoints ) {
+
+    for( auto const &point : ShapePoints ) {
+        auto const off { std::abs( reach_of( span, point ) - middle ) };
+        if( point.position.y >= span.head.x ) {
+            head = std::max( head, off );
+        }
+        else if( point.position.y > bottom + 0.25 * ( span.head.x - bottom ) ) {
+            web = std::min( web, off );
+        }
+    }
+}
+
+// where the underside of the head is, how high the top of the edges of the foot and the root of the web are
+void low_section::measure_heights( gfx::vertex_array const &ShapePoints ) {
+
+    for( auto const &point : ShapePoints ) {
+        auto const off { std::abs( reach_of( span, point ) - middle ) };
+        auto const height { static_cast<double>( point.position.y - bottom ) };
+        if( point.position.y >= span.head.x && off >= head - 0.001 ) {
+            underside = std::min( underside, static_cast<double>( point.position.y ) );
+        }
+        if( point.position.y < span.head.x && off <= web + 0.0005 ) {
+            root = std::min( root, height );
+        }
+        if( off >= 0.9 * std::min( inward, outward ) ) {
+            edge = std::max( edge, height );
+        }
+    }
+}
+
+// how far from the middle of the foot a point of the profile below the underside of its head is made over to, Off from there as drawn
+double low_section::moved_across( gfx::basic_vertex const &Point, double const Off, made_over const &Made ) const {
+
+    auto const distance { std::abs( Off ) };
+    if( Point.position.y >= span.head.x ) {
+        return Made.web + ( std::max( distance, web ) - web ) * ( head - Made.web ) / std::max( head - web, 1e-6 );
+    }
+    if( distance <= web ) {
+        return distance * Made.web / web;
+    }
+    auto const was { Off < 0.0 ? inward : outward };
+    auto const reach { Off < 0.0 ? Made.inward : Made.outward };
+    return Made.web + ( distance - web ) * ( reach - Made.web ) / std::max( was - web, 1e-6 );
+}
+
+// how high above the bottom a point of the foot or the web is made over to, Height above it as drawn
+double low_section::made_height( double const Height, made_over const &Made ) const {
+
+    if( Height <= edge ) {
+        return Height * Made.edge / edge;
+    }
+    if( Height <= root ) {
+        return Made.edge + ( Height - edge ) * ( Made.root - Made.edge ) / ( root - edge );
+    }
+    return Made.root + ( Height - root ) * ( Made.top - Made.root ) / ( Made.below - root );
+}
+
+// the profile with its foot raised by Rise made over into the low section by Share of it: below the head the web thickened, the foot
+// reshaped, the web shortened; with none of it, only raised
+gfx::vertex_array const &low_section::lowered( gfx::vertex_array const &ShapePoints, double const Rise, double const Share, std::vector<gfx::basic_vertex> &Points ) const {
+
+    auto const share { std::clamp( Share, 0.0, 1.0 ) };
+    made_over made;
+    made.web = web * glm::mix( 1.0, span.low.web, share );
+    made.inward = inward * glm::mix( 1.0, span.low.inward, share );
+    made.outward = outward * glm::mix( 1.0, span.low.outward, share );
+    made.edge = edge * glm::mix( 1.0, span.low.edge, share );
+    made.root = root * glm::mix( 1.0, span.low.root, share );
+    made.below = span.head.x - bottom;
+    made.top = std::max( made.below - Rise, made.root + 0.001 );
+    Points = ShapePoints;
+    for( auto &point : Points ) {
+        if( point.position.y >= underside ) {
+            continue;
+        }
+        auto const off { reach_of( span, point ) - middle };
+        auto const moved { moved_across( point, off, made ) };
+        if( point.position.y < span.head.x ) {
+            auto const height { static_cast<double>( point.position.y - bottom ) };
+            point.position.y = static_cast<float>( glm::mix( static_cast<double>( raised( span, bottom, point.position.y, Rise ) ), bottom + made.below - made.top + made_height( height, made ), share ) );
+        }
+        point.position.x = static_cast<float>( span.side * ( span.halfwidth + middle + std::copysign( moved, off ) ) );
+    }
+    return Points;
+}
+
+gfx::vertex_array const &low_section::profile_at( gfx::vertex_array const &ShapePoints, double const Distance, double &Rise, std::vector<gfx::basic_vertex> &Points ) const {
+
+    if( false == low ) {
+        return ShapePoints;
+    }
+    auto const share { knots::sample( span.lows, Distance, 0.0 ) };
+    auto const sampled { Rise };
+    Rise = 0.0;
+    if( sampled > 0.0 || share > 0.0 ) {
+        return lowered( ShapePoints, sampled, share, Points );
+    }
+    return ShapePoints;
+}
+
 } // namespace
 
 bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Origin, gfx::vertex_array const &ShapePoints, loft_span const &Span ) const {
@@ -1239,9 +1435,12 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
         return false;
 
     auto const stations { loft_stations( Span, ShapePoints, std::max( fStep, 0.2 ), m_dense ) };
+    low_section const low { ShapePoints, Span };
+    // the profile made over into the low section at a station, kept for the ring laid there
+    std::vector<gfx::basic_vertex> lowpoints;
 
     // the ring of the profile at a station, cut to the limits there, turned with the roll of the path and settled with its unevenness
-    auto const ring = [ this, &Origin, &ShapePoints, &Span ]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
+    auto const ring = [ this, &Origin, &ShapePoints, &Span, &low, &lowpoints ]( double const Distance, double const Middle, std::vector<gfx::basic_vertex> &Ring, std::vector<float> &Wear ) {
         glm::dvec3 point;
         glm::dvec3 across;
         plan_frame( Distance, point, across );
@@ -1249,8 +1448,9 @@ bool TSegment::RenderLoftSpan( gfx::vertex_array &Output, glm::dvec3 const &Orig
             point = joint->first;
             across = joint->second;
         }
-        auto const station { make_station( *this, Span, glm::vec3{ point - Origin }, across, Distance, Middle ) };
-        if( false == lay_ring( ShapePoints, Span, station, Ring, Wear ) ) {
+        auto station { make_station( *this, Span, glm::vec3{ point - Origin }, across, Distance, Middle ) };
+        auto const &points { low.profile_at( ShapePoints, Distance, station.rise, lowpoints ) };
+        if( false == lay_ring( points, Span, station, low.bottom, Ring, Wear ) ) {
             return;
         }
         for( auto &vertex : Ring ) {

@@ -4,6 +4,12 @@
 # the libraries of the system itself stay out: the C library and the loader, the GPU driver stack (libGL and its
 # kin come with the driver), X11 / Wayland, the sound servers, libstdc++ (the GPU drivers bring their own need of a
 # newer one) and a few more every distribution has. what a library left out depends on isn't bundled either
+#
+# libcurl and everything it pulls in (TLS, Kerberos, LDAP, HTTP/2, compression, name handling) stay out too: the
+# build machine's copy knows the CA bundle path of the build machine's distribution (Debian), so shipped next to
+# the game it breaks the certificate checks on Fedora or openSUSE, and the security updates of the TLS stack come
+# from the user's system, not from our package. the game isn't linked with libcurl: the editor loads the system's one
+# at run time (editor/editorHttp.cpp), and without it only the editor's downloads are off
 
 get_filename_component(game_folder "${GAME}" DIRECTORY)
 set(manifest "${game_folder}/bundled_libs.txt")
@@ -43,7 +49,15 @@ set(system_libraries
 	"^lib(asound|pulse|pulse-simple|jack|pipewire-[0-9.]+)\\.so"
 	"^lib(udev|systemd|dbus-1)\\.so"
 	"^libz\\.so"
-	"^lib(fontconfig|freetype|harfbuzz|expat|uuid)\\.so")
+	"^lib(fontconfig|freetype|harfbuzz|expat|uuid)\\.so"
+	"^libcurl"
+	"^lib(ssl|crypto)\\.so"
+	"^lib(gssapi_krb5|krb5|k5crypto|krb5support|com_err|keyutils)\\.so"
+	"^lib(ldap|lber|sasl2)"
+	"^lib(nghttp2|nghttp3|ngtcp2|rtmp|ssh2?|psl|idn2|unistring)\\.so"
+	"^libbrotli(dec|enc|common)\\.so"
+	"^libzstd\\.so"
+	"^lib(gnutls|hogweed|nettle|gmp|p11-kit|tasn1|ffi)\\.so")
 
 file(GET_RUNTIME_DEPENDENCIES
 	EXECUTABLES "${GAME}"

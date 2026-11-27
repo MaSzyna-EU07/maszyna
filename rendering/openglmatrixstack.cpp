@@ -9,4 +9,4 @@ http://mozilla.org/MPL/2.0/.
 
 #include "stdafx.h"
 
-opengl_matrices OpenGLMatrices;
+thread_local opengl_matrices OpenGLMatrices;

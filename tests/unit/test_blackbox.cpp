@@ -439,6 +439,43 @@ TEST_CASE("blackbox: the camera and the couplings are written field by field") {
 	}
 }
 
+TEST_CASE("blackbox: a vehicle off the track is written field by field") {
+	std::ostringstream file;
+	blackbox::writer out{file};
+	out.header();
+	blackbox::derailment_state state;
+	state.time = 21.5;
+	state.vehicle = 6;
+	state.phase = blackbox::derailment_phases::at_rest;
+	state.cause = blackbox::derailment_causes::overturned;
+	state.position = {100.0, 2.5, -40.0};
+	state.heading = 0.75f;
+	state.speed_kmh = 0.0f;
+	state.offset = -12.25f;
+	state.roll = -1.5f;
+	state.travelled = 87.5f;
+	state.lying = true;
+	out.derailment(state);
+	auto const all{records(file.str())};
+	REQUIRE(all.size() == 1);
+	CHECK(all[0].type == blackbox::record::derailment);
+	reader derailment{all[0].payload};
+	CHECK(derailment.get<double>() == 21.5);
+	CHECK(derailment.get<std::uint32_t>() == 6);
+	CHECK(derailment.get<std::uint8_t>() == 1);
+	CHECK(derailment.get<std::uint8_t>() == 2);
+	CHECK(derailment.get<double>() == 100.0);
+	CHECK(derailment.get<double>() == 2.5);
+	CHECK(derailment.get<double>() == -40.0);
+	CHECK(derailment.get<float>() == 0.75f);
+	CHECK(derailment.get<float>() == 0.0f);
+	CHECK(derailment.get<float>() == -12.25f);
+	CHECK(derailment.get<float>() == -1.5f);
+	CHECK(derailment.get<float>() == 87.5f);
+	CHECK(derailment.get<std::uint8_t>() == 1);
+	CHECK(derailment.done());
+}
+
 TEST_CASE("blackbox: a look at the vehicles takes 25 bytes a vehicle") {
 	std::ostringstream file;
 	blackbox::writer out{file};

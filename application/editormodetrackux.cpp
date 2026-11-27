@@ -50,6 +50,7 @@ using geometry::plan_of;
 float const kHoverPixels{12.0f};
 float const kFarHoverPixels{16.0f};
 double const kLinesFrom{0.5};
+double const kCatenaryHoverRange{1500.0}; // m from the camera: the paths the catenary looks at under the cursor
 double const kHoverLabelDelay{0.35}; // s the cursor rests on a path before its data shows up
 double const kFocusDistance{25.0};
 auto const kContextClick{std::chrono::milliseconds(350)};
@@ -152,7 +153,9 @@ track_hover editor_mode::track_under_cursor(TTrack const *Only, float const Pixe
 		for (int i = 0; i < static_cast<int>(track->m_paths.size()); ++i)
 		{
 			bezier const curve{track->m_paths[i]};
-			if (cull && false == plan_near(curve, plan_of(origin), reach))
+			// the catenary works close to the camera: the paths far away aren't looked at (in a big scenery they cost a lot)
+			if ((cull && false == plan_near(curve, plan_of(origin), reach)) ||
+			    (m_track_tab == track_tab::catenary && glm::distance(curve.point(0.5), glm::dvec3{Global.pCamera.Pos}) > curve.plan_length() * 0.5 + kCatenaryHoverRange))
 				continue;
 			auto const count{std::clamp(static_cast<int>(curve.plan_length() / 3.0), 6, 64)};
 			auto previous{curve.point(0.0)};
@@ -600,7 +603,7 @@ void editor_mode::draw_track_hover() const
 bool editor_mode::track_gesture_on() const
 {
 	return mouseHold || m_track_set_using || m_track_box.active || m_input.mouse.button(GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS || m_track_gizmo_using || m_route_dragging || m_extend.active || m_switch.placing || m_straights.dragging || m_straights.tool_mouse ||
-	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || m_switch.slide.active || ImGuizmo::IsUsing();
+	       m_point_drag.active || m_handle_drag.active || m_sweep.dragging || m_turntable.placing || m_signal.placing || m_signal.moving || m_switch.slide.active || catenary_dragging() || ImGuizmo::IsUsing();
 }
 
 editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
@@ -654,6 +657,11 @@ editor_mode::track_intent editor_mode::track_intent_at(int const Mods)
 	}
 	if (m_track_tab == track_tab::turntable)
 		return turntable_intent(ground, shift);
+	if (m_track_tab == track_tab::catenary)
+	{
+		catenary_intent(intent);
+		return intent;
+	}
 	if (m_track_tab == track_tab::line_block && m_srk.drawing())
 	{
 		bool valid{false};
@@ -1155,6 +1163,7 @@ void editor_mode::track_press(track_intent const &Intent)
 	case kind::turntable_fit: turntable_press(Intent); return;
 	case kind::signal_place:
 	case kind::signal_move: signal_press(Intent); return;
+	case kind::catenary: catenary_press(Intent); return;
 	case kind::signal_read:
 		if (Intent.track != nullptr)
 			signal_read_pick(*Intent.track, Intent.path, Intent.index == 1);
@@ -1517,6 +1526,8 @@ char const *editor_mode::typed_meaning() const
 		return "type the turn in degrees, + to the right";
 	if (m_lay.active && false == m_lay.points.empty())
 		return "type the length of the next leg, Enter adds the point";
+	if (m_track_tab == track_tab::catenary && catenary_takes_typed())
+		return "type the span from the last pole, LMB by the track places the pole there";
 	if (m_extend.active && (m_track_layout == track_layout::arc_straight || m_track_layout == track_layout::straight_arc))
 		return "type the radius of the curve";
 	return nullptr;

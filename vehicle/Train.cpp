@@ -362,6 +362,12 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::oilfuelpumptoggle, &TTrain::OnCommand_oilfuelpumptoggle},
     {user_command::oilpumpenable, &TTrain::OnCommand_oilpumpenable},
     {user_command::oilpumpdisable, &TTrain::OnCommand_oilpumpdisable},
+    {user_command::tractionmodetoggle, &TTrain::OnCommand_tractionmodetoggle},
+    {user_command::tractionmodecatenary, &TTrain::OnCommand_tractionmodecatenary},
+    {user_command::tractionmodegenset, &TTrain::OnCommand_tractionmodegenset},
+    {user_command::gensettoggle, &TTrain::OnCommand_gensettoggle},
+    {user_command::gensetenable, &TTrain::OnCommand_gensetenable},
+    {user_command::gensetdisable, &TTrain::OnCommand_gensetdisable},
     {user_command::waterheaterbreakertoggle, &TTrain::OnCommand_waterheaterbreakertoggle},
     {user_command::waterheaterbreakerclose, &TTrain::OnCommand_waterheaterbreakerclose},
     {user_command::waterheaterbreakeropen, &TTrain::OnCommand_waterheaterbreakeropen},
@@ -503,6 +509,13 @@ TTrain::commandhandler_map const TTrain::m_commandhandlers = {
     {user_command::radiovolumeincrease, &TTrain::OnCommand_radiovolumeincrease},
     {user_command::radiovolumedecrease, &TTrain::OnCommand_radiovolumedecrease},
     {user_command::radiovolumeset, &TTrain::OnCommand_radiovolumeset},
+    {user_command::fmradiotoggle, &TTrain::OnCommand_fmradiotoggle},
+    {user_command::fmradiovolumeincrease, &TTrain::OnCommand_fmradiovolumeincrease},
+    {user_command::fmradiovolumedecrease, &TTrain::OnCommand_fmradiovolumedecrease},
+    {user_command::fmradiovolumeset, &TTrain::OnCommand_fmradiovolumeset},
+    {user_command::fmradiotuneincrease, &TTrain::OnCommand_fmradiotuneincrease},
+    {user_command::fmradiotunedecrease, &TTrain::OnCommand_fmradiotunedecrease},
+    {user_command::fmradiotuneset, &TTrain::OnCommand_fmradiotuneset},
     {user_command::radiofusetoggle, &TTrain::OnCommand_radiofusetoggle},
     {user_command::radiofuseenable, &TTrain::OnCommand_radiofuseenable},
     {user_command::radiofusedisable, &TTrain::OnCommand_radiofusedisable},
@@ -1519,6 +1532,8 @@ void TTrain::OnCommand_notchingrelaytoggle(TTrain *Train, command_data const &Co
 			// turn off
 			Train->mvOccupied->AutoRelaySwitch(false);
 		}
+		// visual feedback
+		Train->ggAutoRelayButton.UpdateValue(Train->mvOccupied->AutoRelayFlag ? 1.f : 0.f, Train->dsbSwitch);
 	}
 }
 
@@ -4272,6 +4287,95 @@ void TTrain::OnCommand_oilfuelpumptoggle(TTrain *Train, command_data const &Comm
 	vehicle->FuelPumpSwitchOff(false == enable);
 	vehicle->OilPumpSwitch(enable);
 	vehicle->OilPumpSwitchOff(false == enable);
+}
+
+// the traction selector of a dual-mode vehicle (eu07/maszyna#536), a two-state switch
+void TTrain::OnCommand_tractionmodetoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (Train->mvControlled->GensetSelected())
+	{
+		OnCommand_tractionmodecatenary(Train, Command);
+	}
+	else
+	{
+		OnCommand_tractionmodegenset(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_tractionmodecatenary(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::catenary, range_t::consist);
+	if (false == Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(0.0, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_tractionmodegenset(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// refused with the line breaker closed, or without a genset: then the switch doesn't move
+	Train->mvControlled->TractionModeSwitch(TMoverParameters::traction_mode::genset, range_t::consist);
+	if (Train->mvControlled->GensetSelected())
+	{
+		Train->ggTractionModeSwitch.UpdateValue(1.0, Train->dsbSwitch);
+	}
+}
+
+// the start request of the genset of a dual-mode vehicle, a two-state switch
+void TTrain::OnCommand_gensettoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		OnCommand_gensetenable(Train, Command);
+	}
+	else
+	{
+		OnCommand_gensetdisable(Train, Command);
+	}
+}
+
+void TTrain::OnCommand_gensetenable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	// ignored by a genset which starts on its own: then the switch doesn't move
+	Train->mvControlled->GensetSwitch(true, range_t::consist);
+	if (Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(1.0, Train->dsbSwitch);
+	}
+}
+
+void TTrain::OnCommand_gensetdisable(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_PRESS)
+	{
+		return;
+	}
+	Train->mvControlled->GensetSwitch(false, range_t::consist);
+	if (false == Train->mvControlled->Genset.is_enabled)
+	{
+		Train->ggGensetButton.UpdateValue(0.0, Train->dsbSwitch);
+	}
 }
 
 void TTrain::OnCommand_waterheaterbreakertoggle(TTrain *Train, command_data const &Command)
@@ -8642,6 +8746,58 @@ void TTrain::OnCommand_radiovolumeset(TTrain *Train, command_data const &Command
 	}
 }
 
+void TTrain::OnCommand_fmradiotoggle(TTrain *Train, command_data const &Command)
+{
+	if (Command.action == GLFW_PRESS && Train->m_fmradiopresent)
+	{
+		Train->m_fmradiopower = !Train->m_fmradiopower;
+	}
+}
+
+void TTrain::OnCommand_fmradiovolumeincrease(TTrain *Train, command_data const &Command)
+{
+	// the knob keeps turning for as long as the control is held, the actual movement takes place in the update
+	Train->m_fmradiovolumechange = (Command.action != GLFW_RELEASE && Train->m_fmradiopresent ? 1 : 0);
+}
+
+void TTrain::OnCommand_fmradiovolumedecrease(TTrain *Train, command_data const &Command)
+{
+	Train->m_fmradiovolumechange = (Command.action != GLFW_RELEASE && Train->m_fmradiopresent ? -1 : 0);
+}
+
+void TTrain::OnCommand_fmradiovolumeset(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_RELEASE && Train->m_fmradiopresent)
+	{
+		Train->m_fmradiovolume = std::clamp(static_cast<float>(Command.param1), 0.f, 1.f);
+		if (false == Train->m_controlmapper.contains("fmradio_sw:"))
+		{
+			// receivers without dedicated switch are switched with the volume knob
+			Train->m_fmradiopower = Train->m_fmradiovolume > 0.f;
+		}
+	}
+}
+
+void TTrain::OnCommand_fmradiotuneincrease(TTrain *Train, command_data const &Command)
+{
+	Train->m_fmradiotunechange = (Command.action != GLFW_RELEASE && Train->m_fmradiopresent ? 1 : 0);
+}
+
+void TTrain::OnCommand_fmradiotunedecrease(TTrain *Train, command_data const &Command)
+{
+	Train->m_fmradiotunechange = (Command.action != GLFW_RELEASE && Train->m_fmradiopresent ? -1 : 0);
+}
+
+// sets the receiver to frequency specified in MHz
+void TTrain::OnCommand_fmradiotuneset(TTrain *Train, command_data const &Command)
+{
+	if (Command.action != GLFW_RELEASE && Train->m_fmradiopresent)
+	{
+		Train->m_fmradiodial = std::clamp(100.f * (static_cast<float>(Command.param1) - audio::EU07_FMRADIO_BANDSTART) / (audio::EU07_FMRADIO_BANDEND - audio::EU07_FMRADIO_BANDSTART), 0.f, 100.f);
+		Train->m_fmradiotuned = true;
+	}
+}
+
 void TTrain::OnCommand_cabchangeforward(TTrain *Train, command_data const &Command)
 {
 
@@ -9890,6 +10046,8 @@ bool TTrain::Update(double const Deltatime)
 	ggWiperSw.Update();
 	ggMaxCurrentCtrl.UpdateValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
 	ggMaxCurrentCtrl.Update();
+	ggAutoRelayButton.UpdateValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
+	ggAutoRelayButton.Update();
 	// NBMX wrzesien 2003 - drzwi
 	ggDoorLeftPermitButton.Update(lowvoltagepower);
 	ggDoorRightPermitButton.Update(lowvoltagepower);
@@ -10083,6 +10241,8 @@ bool TTrain::Update(double const Deltatime)
 	ggFuelPumpButton.Update();
 	ggOilPumpButton.Update();
 	ggOilFuelPumpButton.Update();
+	ggTractionModeSwitch.Update();
+	ggGensetButton.Update();
 	ggMotorBlowersFrontButton.Update();
 	ggMotorBlowersRearButton.Update();
 	ggMotorBlowersAllOffButton.Update();
@@ -10543,6 +10703,7 @@ void TTrain::update_sounds(double const Deltatime)
 	}
 
 	update_sounds_radio();
+	update_sounds_fmradio(Deltatime);
 }
 
 void TTrain::update_sounds_resonancenoise(sound_source &Sound) const
@@ -10633,6 +10794,52 @@ void TTrain::update_sounds_radio()
 	{
 		btLampkaRadioMessage.gain(m_radiovolume);
 	}
+}
+
+// operates the broadcast radio receiver
+void TTrain::update_sounds_fmradio(double const Deltatime)
+{
+	// NOTE: there's a single receiver in the simulation, it plays in the cab occupied by the user
+	if (simulation::Train != this || false == m_fmradiopresent || false == Global.fmradio_enabled)
+	{
+		return;
+	}
+	auto &fmradio{audio::renderer.fmradio()};
+	auto const bandwidth{audio::EU07_FMRADIO_BANDEND - audio::EU07_FMRADIO_BANDSTART};
+	if (false == m_fmradiotuned)
+	{
+		// initially the receiver is tuned to the first station on the list
+		m_fmradiodial = 100.f * (fmradio.default_frequency() - audio::EU07_FMRADIO_BANDSTART) / bandwidth;
+		m_fmradiotuned = true;
+	}
+	// knobs
+	if (m_fmradiovolumechange != 0)
+	{
+		m_fmradiovolume = std::clamp(m_fmradiovolume + m_fmradiovolumechange * 0.5f * static_cast<float>(Deltatime), 0.f, 1.f);
+		if (false == m_controlmapper.contains("fmradio_sw:"))
+		{
+			// receivers without dedicated switch are switched with the volume knob
+			m_fmradiopower = m_fmradiovolume > 0.f;
+		}
+	}
+	if (m_fmradiotunechange != 0)
+	{
+		// the knob moves slowly at first to allow fine tuning, then speeds up
+		m_fmradiotunetime += static_cast<float>(Deltatime);
+		auto const tunerate{std::lerp(0.15f, 2.5f, std::clamp(m_fmradiotunetime * 0.5f, 0.f, 1.f))}; // MHz per second
+		m_fmradiodial = std::clamp(m_fmradiodial + 100.f * m_fmradiotunechange * tunerate * static_cast<float>(Deltatime) / bandwidth, 0.f, 100.f);
+	}
+	else
+	{
+		m_fmradiotunetime = 0.f;
+	}
+
+	fmradio.type(m_fmradiotype);
+	fmradio.tune(audio::EU07_FMRADIO_BANDSTART + m_fmradiodial * 0.01f * bandwidth);
+	fmradio.volume(m_fmradiovolume);
+	fmradio.placement(m_fmradiosound.location(), m_fmradiosound.soundproofing_factor(), m_fmradiosound.range());
+	// NOTE: the receiver runs on batteries of its own, so it doesn't care about the state of the vehicle
+	fmradio.power(m_fmradiopower);
 }
 
 void TTrain::update_screens(double dt)
@@ -10835,6 +11042,7 @@ bool TTrain::LoadMMediaFile(std::string const &asFileName)
 	}
 	// NOTE: since radiosound is an incomplete template not using std::optional it gets a special treatment
 	m_radiosound.owner(DynamicObject);
+	m_fmradiosound.owner(DynamicObject);
 	CabSoundLocations.clear();
 
 	cParser parser(asFileName, cParser::buffer_FILE, DynamicObject->asBaseDir, true, std::vector<std::string>(), true);
@@ -10944,6 +11152,8 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 		}
 	}
 	m_radiosound.offset(nullvector);
+	m_fmradiosound.offset(nullvector);
+	m_fmradiopresent = false;
 	for (auto const &[soundsource, soundoffset] : CabSoundLocations)
 	{
 		if (soundsource.get() && soundsource.get()->offset() == nullvector)
@@ -11164,6 +11374,39 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 				parser.getTokens();
 				parser >> ScreenUpdateRate;
 			}
+			else if (token == "fmradio:")
+			{
+				// broadcast radio receiver, the parameter selects character of its sound
+				std::string fmradiotype;
+				parser.getTokens();
+				parser >> fmradiotype;
+				m_fmradiotype = (fmradiotype == "wooden" ? audio::fmradio_type::wooden : audio::fmradio_type::cheap);
+				m_fmradiopresent = true;
+			}
+			else if (token == "fmradiospeaker:")
+			{
+				// submodel marking location of the receiver speaker, the sound is emitted from there
+				std::string speakername;
+				parser.getTokens();
+				parser >> speakername;
+				TSubModel *speaker{nullptr};
+				for (auto const *source : {DynamicObject->mdKabina, DynamicObject->mdLowPolyInt})
+				{
+					if (source != nullptr && (speaker = source->GetFromName(speakername)) != nullptr)
+					{
+						break;
+					}
+				}
+				if (speaker != nullptr)
+				{
+					m_fmradiosound.offset(speaker->offset(1.f));
+				}
+				else
+				{
+					ErrorLog("Bad config: failed to locate fm radio speaker submodel \"" + speakername + "\"", logtype::model);
+				}
+				m_fmradiopresent = true;
+			}
 			// btLampkaUnknown`"unknown",mdKabina,false);
 		} while (token != ""
 		         // TODO: enable full per-cab deserialization when/if .mmd files get proper per-cab switch configuration
@@ -11204,6 +11447,15 @@ bool TTrain::InitializeCab(int NewCabNo, std::string const &asFileName)
 	if (m_radiosound.offset() == nullvector)
 	{
 		m_radiosound.offset(caboffset);
+	}
+	if (m_fmradiosound.offset() == nullvector)
+	{
+		m_fmradiosound.offset(caboffset);
+	}
+	if (m_fmradiopresent && false == m_fmradiopower && m_controlmapper.contains("fmradiovolume_sw:") && false == m_controlmapper.contains("fmradio_sw:"))
+	{
+		// receivers without dedicated switch are switched with the volume knob, so it has to start at the off position
+		m_fmradiovolume = 0.f;
 	}
 	std::vector<std::pair<std::reference_wrapper<std::optional<sound_source>>, glm::vec3>> soundlocations = {
 	    {dsbReverserKey, ggDirKey.model_offset()},
@@ -11552,6 +11804,7 @@ void TTrain::clear_cab_controls()
 	ggBrakeOperationModeCtrl.Clear();
 	ggWiperSw.Clear();
 	ggMaxCurrentCtrl.Clear();
+	ggAutoRelayButton.Clear();
 	ggMainOffButton.Clear();
 	ggMainOnButton.Clear();
 	for (auto &remotelinebreaker : m_remotelinebreakers)
@@ -11698,6 +11951,8 @@ void TTrain::clear_cab_controls()
 	ggFuelPumpButton.Clear();
 	ggOilPumpButton.Clear();
 	ggOilFuelPumpButton.Clear();
+	ggTractionModeSwitch.Clear();
+	ggGensetButton.Clear();
 	ggMotorBlowersFrontButton.Clear();
 	ggMotorBlowersRearButton.Clear();
 	ggMotorBlowersAllOffButton.Clear();
@@ -11924,6 +12179,8 @@ void TTrain::set_cab_controls(int const Cab)
 	ggCompressorListButton.PutValue(static_cast<float>(mvOccupied->CompressorListPos - 1));
 	// motor overload relay threshold / shunt mode
 	ggMaxCurrentCtrl.PutValue(true == mvControlled->ShuntModeAllow ? (true == mvControlled->ShuntMode ? 1.f : 0.f) : mvControlled->MotorOverloadRelayHighThreshold ? 1.f : 0.f);
+	// automatic relays (AutoRelay)
+	ggAutoRelayButton.PutValue(mvOccupied->AutoRelayFlag ? 1.f : 0.f);
 	// lights
 	ggLightsButton.PutValue(static_cast<float>(mvOccupied->LightsPos - 1));
 
@@ -12056,6 +12313,12 @@ void TTrain::set_cab_controls(int const Cab)
 	if (ggOilFuelPumpButton.type() != TGaugeType::push)
 	{
 		ggOilFuelPumpButton.PutValue(mvControlled->OilFuelPumpsEnabled() ? 1.f : 0.f);
+	}
+	// traction selector and genset of a dual-mode vehicle
+	ggTractionModeSwitch.PutValue(mvControlled->GensetSelected() ? 1.f : 0.f);
+	if (ggGensetButton.type() != TGaugeType::push)
+	{
+		ggGensetButton.PutValue(mvControlled->Genset.is_enabled ? 1.f : 0.f);
 	}
 	// traction motor fans
 	if (ggMotorBlowersFrontButton.type() != TGaugeType::push)
@@ -12329,6 +12592,7 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"brakeprofiler_sw:", ggBrakeProfileR},
 	                                                          {"brakeopmode_sw:", ggBrakeOperationModeCtrl},
 	                                                          {"maxcurrent_sw:", ggMaxCurrentCtrl},
+	                                                          {"autorelay_sw:", ggAutoRelayButton},
 	                                                          {"main_off_bt:", ggMainOffButton},
 	                                                          {"main_on_bt:", ggMainOnButton},
 	                                                          {"mainb_sw:", m_remotelinebreakers[0].main_switch},
@@ -12395,6 +12659,8 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 	                                                          {"fuelpump_sw:", ggFuelPumpButton},
 	                                                          {"oilpump_sw:", ggOilPumpButton},
 	                                                          {"oilfuelpump_sw:", ggOilFuelPumpButton},
+	                                                          {"tractionmode_sw:", ggTractionModeSwitch},
+	                                                          {"genset_sw:", ggGensetButton},
 	                                                          {"oilpressb:", ggOilPressB},
 	                                                          {"motorblowersfront_sw:", ggMotorBlowersFrontButton},
 	                                                          {"motorblowersrear_sw:", ggMotorBlowersRearButton},
@@ -12603,6 +12869,33 @@ bool TTrain::initialize_gauge(cParser &Parser, std::string const &Label, int con
 			m_controlmapper.insert(gauge, lookup->first);
 			return true;
 		}
+	}
+
+	// broadcast radio receiver
+	if (Label == "fmradio_sw:" || Label == "fmradiovolume_sw:" || Label == "fmradiotune_sw:" || Label == "fmradioscale:")
+	{
+		auto &gauge = Cabine[Cabindex].Gauge(-1); // pierwsza wolna gałka
+		gauge.Load(Parser, DynamicObject);
+		if (Label == "fmradio_sw:")
+		{
+			gauge.AssignBool(&m_fmradiopower);
+		}
+		else
+		{
+			gauge.AssignFloat(Label == "fmradiovolume_sw:" ? &m_fmradiovolume : &m_fmradiodial);
+		}
+		if (Label != "fmradioscale:")
+		{
+			// the scale pointer is an indicator, the rest are controls
+			m_controlmapper.insert(gauge, Label);
+		}
+		m_fmradiopresent = true;
+		// unless the speaker location is defined explicitly, the sound comes from the first defined element of the receiver
+		if (m_fmradiosound.offset() == glm::vec3())
+		{
+			m_fmradiosound.offset(gauge.model_offset());
+		}
+		return true;
 	}
 
 	// ABu 090305: uniwersalne przyciski lub inne rzeczy
@@ -12954,6 +13247,7 @@ void train_table::updateAsync(double dt)
 	const int threads = std::max(1, Global.trainThreads);
 	const size_t total = m_items.size();
 	const size_t chunkSize = (total + threads - 1) / threads;
+	auto const instance{TSubModel::iInstance};
 
 	std::vector<std::jthread> workers;
 	std::vector<std::future<void>> results; // przekazują wyjątki z wątków do głównego wątku
@@ -12968,7 +13262,12 @@ void train_table::updateAsync(double dt)
 		if (start >= end)
 			break; // brak więcej danych
 
-		std::packaged_task<void()> task([this, start, end, dt]() { update_trains(m_items, start, end, dt); });
+		// the instance whose animations the gauges set (TSubModel::iInstance, per thread since the walks of the vulkan renderer went on
+		// several threads) is the one the main thread set for the driven vehicle
+		std::packaged_task<void()> task([this, start, end, dt, instance]() {
+			TSubModel::iInstance = instance;
+			update_trains(m_items, start, end, dt);
+		});
 		results.emplace_back(task.get_future());
 		workers.emplace_back(std::move(task));
 	}
