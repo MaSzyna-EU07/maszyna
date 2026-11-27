@@ -616,6 +616,9 @@ drivermouse_input::default_bindings() {
         { "maxcurrent_sw:", {
             motoroverloadrelaythresholdtoggle,
             none } },
+        { "autorelay_sw:", {
+            notchingrelaytoggle,
+            none } },
         { "waterpumpbreaker_sw:", {
             waterpumpbreakertoggle,
             none } },
@@ -636,6 +639,12 @@ drivermouse_input::default_bindings() {
             none } },
         { "oilfuelpump_sw:", {
             oilfuelpumptoggle,
+            none } },
+        { "tractionmode_sw:", {
+            tractionmodetoggle,
+            none } },
+        { "genset_sw:", {
+            gensettoggle,
             none } },
         { "motorblowersfront_sw:", {
             motorblowerstogglefront,
@@ -904,6 +913,15 @@ drivermouse_input::default_bindings() {
 		{ "radiovolumenext_sw:",{
 			radiovolumeincrease,
 			none } },
+		{ "fmradio_sw:",{
+			fmradiotoggle,
+			none } },
+		{ "fmradiovolume_sw:",{
+			fmradiovolumeincrease,
+			fmradiovolumedecrease } },
+		{ "fmradiotune_sw:",{
+			fmradiotuneincrease,
+			fmradiotunedecrease } },
         { "pantfront_sw:", {
             pantographtogglefront,
             none } },

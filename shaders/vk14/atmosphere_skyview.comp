@@ -1,0 +1,42 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// light of the sky seen by the observer in every direction, for the sky-view table (atmosphere_common.glsl), which the
+// sky, the ambient light and the fog colour are read from. one invocation per texel. run every frame the sky is drawn with
+// the atmosphere, after the transmittance and multiple scattering tables
+
+#define LAYOUT_COMPUTE 1
+#include "common.glsl"
+#include "atmosphere_common.glsl"
+
+layout(set = COMPUTE_SET, binding = 0) uniform sampler2D atmo_transmittance_lut;
+layout(set = COMPUTE_SET, binding = 1) uniform sampler2D atmo_multiscattering_lut;
+#define ATMO_MULTISCATTERING_LUT
+#include "atmosphere_integrate.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = COMPUTE_SET, binding = 2, rgba16f) writeonly uniform image2D skyview_target;
+
+const int SKYVIEW_SAMPLES = 32;
+
+void main()
+{
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	if (texel.x >= int(ATMOSPHERE_SKYVIEW_WIDTH) || texel.y >= int(ATMOSPHERE_SKYVIEW_HEIGHT))
+		return;
+
+	vec2 uv = (vec2(texel) + 0.5) / vec2(ATMOSPHERE_SKYVIEW_WIDTH, ATMOSPHERE_SKYVIEW_HEIGHT);
+	float radius = atmo_observer_radius;
+	float cosviewzenith;
+	float coslightview;
+	atmo_skyview_params(uv, radius, cosviewzenith, coslightview);
+
+	float cossunzenith = clamp(atmo_sun_direction.y, -1.0, 1.0);
+	vec3 sundirection = normalize(vec3(sqrt(max(1.0 - cossunzenith * cossunzenith, 0.0)), 0.0, cossunzenith));
+	float sinviewzenith = sqrt(max(1.0 - cosviewzenith * cosviewzenith, 0.0));
+	vec3 direction = vec3(sinviewzenith * coslightview, sinviewzenith * sqrt(max(1.0 - coslightview * coslightview, 0.0)), cosviewzenith);
+	vec3 origin = vec3(0.0, 0.0, radius);
+
+	atmo_scattering_s result = atmo_integrate(origin, direction, sundirection, false, SKYVIEW_SAMPLES, true, true);
+	imageStore(skyview_target, texel, vec4(result.luminance, 1.0));
+}

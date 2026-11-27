@@ -1,0 +1,52 @@
+{
+  "description": "Switch thrown under a standing train, which then leaves trailing through it (#289 review 2b): an EU07 with three coaches stands cold across zwr02 on td.scn, the locomotive on the line, the coaches behind it over the switch and on track 2, the switch set to track 2. 5 s after the start it is thrown to track 1; then the driver gets the order to go, out to the line. The wheels coming from track 2 push the switch back over (as through any switch set against them from the frog end); every vehicle has to keep to the line of a track. Passes once the locomotive runs onto tdo_n176, with the train clear of the switch.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_switch_thrown.scn",
+  "vars": {
+    "trainsets": [
+      "trainset none tdo_n145 40.0 0.0",
+      "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c1 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c2 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 3 0 enddynamic",
+      "node -1 0 {{vehicle}}_c3 dynamic pkp\\bdhpumn_v3 bdhpumn_50512608068-6 BDHPUMN_TAPICERKA_1 0 nobody 0 0 enddynamic",
+      "endtrainset"
+    ],
+    "route": "",
+    "throw": "zwr02_1 zwr02_v40",
+    "trigger": [
+      "event autotest_throw_later multiple 5 none autotest_throw endevent",
+      "node -1 0 autotest_throw_launcher eventlauncher 0 0 0 -1 none 1034 autotest_throw_later end"
+    ],
+    "order": "Obey_train 0 0"
+  },
+  "track_events": {
+    "tdo_n145": "event0 autotest_wake_after_throw",
+    "tdo_n176": [
+      "event1 autotest_pass_running",
+      "event2 autotest_pass_running"
+    ]
+  },
+  "test_config": [
+    "test.timeout 400",
+    "test.standstill 120",
+    "test.no_movement_before_pass no"
+  ],
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "starts",
+      "min_speed": 10,
+      "within": 200
+    },
+    {
+      "type": "on_track",
+      "vehicles": "{{vehicle}}",
+      "max_offset": 0.6
+    },
+    {
+      "type": "log_lacks",
+      "pattern": "Bad driving"
+    }
+  ]
+}

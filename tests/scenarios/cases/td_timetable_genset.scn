@@ -1,0 +1,18 @@
+// td_timetable.scn (the timetable train on track 1 of Stacja1, route out at 10:34) with the train switched to its
+// genset by the scenery before it leaves (eu07/maszyna#536, a dual-mode vehicle): event0 of the start track (the
+// track_events of the case) runs while the vehicle with a driver stands there and gives it, once, PutValues
+// MainSwitch 0, TractionMode 1 and GensetSwitch 1, a second apart, as the vehicle holds one command at a time.
+// the AI knows nothing of the genset: it closes the line breaker once the genset runs and drives on its power
+trainset td/rozklad tdo_n1734 0.0 0.1
+{{consist}}
+endtrainset
+
+// the way out of track 1, see td_timetable.scn
+node -1 0 autotest_route eventlauncher 0 0 0 -1 none 1034 keyctrl04 end
+
+node -1 0 autotest_genset_done memcell 0 0 0 done 0 0 none endmemcell
+event autotest_genset multiple 0 autotest_genset_done autotest_genset_ws autotest_genset_mode autotest_genset_on autotest_genset_mark condition memcompare * 0 * endevent
+event autotest_genset_ws PutValues 0 none 0 0 0 MainSwitch 0 0 endevent
+event autotest_genset_mode PutValues 1 none 0 0 0 TractionMode 1 0 endevent
+event autotest_genset_on PutValues 2 none 0 0 0 GensetSwitch 1 0 endevent
+event autotest_genset_mark UpdateValues 0 autotest_genset_done * 1 * endevent

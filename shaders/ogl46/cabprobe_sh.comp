@@ -1,0 +1,93 @@
+#version 460 core
+#define STAGE_COMPUTE 1
+// the light the occupied cab lights itself with again, from its probe (gfx::cab_probe), in one work group: the light of its lamps the
+// cab reflects towards the middle of its box, as spherical harmonics of bands 0..2, convolved with the cosine lobe and divided by
+// pi, so their value for a direction is the light a white lambertian surface facing it gets, in the units of the ambient light
+// (light_common.glsl, cab_probe_bounce()). the light is taken from a level of the probe of at most CAB_PROBE_SH_SIZE pixels a
+// face, each pixel weighed by its solid angle. the basis is the one of the sky (gl::sky_data)
+
+#include "common.glsl"
+
+layout(local_size_x = CAB_PROBE_SH_GROUP_SIZE) in;
+
+layout(binding = 0) uniform samplerCube probe_light;
+
+layout(std430, binding = CAB_PROBE_SSBO_BINDING) writeonly buffer cab_probe_result_ssbo
+{
+	vec4 result_sh[9];
+};
+
+// x: the level of the probe read, y: its size, pixels
+layout(location = 0) uniform ivec2 level;
+
+shared vec3 partial[CAB_PROBE_SH_GROUP_SIZE][9];
+shared float partialweight[CAB_PROBE_SH_GROUP_SIZE];
+
+// the direction through the middle of the pixel (s, t) of the face, -1..1 across it, in the order of the faces of a cube map
+vec3 face_direction(int face, float s, float t)
+{
+	switch (face)
+	{
+	case 0: return vec3(1.0, -t, -s);
+	case 1: return vec3(-1.0, -t, s);
+	case 2: return vec3(s, 1.0, t);
+	case 3: return vec3(s, -1.0, -t);
+	case 4: return vec3(s, -t, 1.0);
+	default: return vec3(-s, -t, -1.0);
+	}
+}
+
+void main()
+{
+	uint invocation = gl_LocalInvocationID.x;
+	int size = max(level.y, 1);
+	int texels = 6 * size * size;
+	vec3 sum[9];
+	for (int i = 0; i < 9; ++i)
+		sum[i] = vec3(0.0);
+	float weights = 0.0;
+	for (int index = int(invocation); index < texels; index += CAB_PROBE_SH_GROUP_SIZE)
+	{
+		int face = index / (size * size);
+		int texel = index - face * size * size;
+		float s = (float(texel % size) + 0.5) / float(size) * 2.0 - 1.0;
+		float t = (float(texel / size) + 0.5) / float(size) * 2.0 - 1.0;
+		vec3 direction = face_direction(face, s, t);
+		// the solid angle of the pixel
+		float lengthsquared = dot(direction, direction);
+		float weight = 1.0 / (lengthsquared * sqrt(lengthsquared));
+		vec3 n = direction * inversesqrt(lengthsquared);
+		vec3 light = textureLod(probe_light, n, float(level.x)).rgb * weight;
+		sum[0] += light * 0.282095;
+		sum[1] += light * (0.488603 * n.y);
+		sum[2] += light * (0.488603 * n.z);
+		sum[3] += light * (0.488603 * n.x);
+		sum[4] += light * (1.092548 * n.x * n.y);
+		sum[5] += light * (1.092548 * n.y * n.z);
+		sum[6] += light * (0.315392 * (3.0 * n.z * n.z - 1.0));
+		sum[7] += light * (1.092548 * n.x * n.z);
+		sum[8] += light * (0.546274 * (n.x * n.x - n.y * n.y));
+		weights += weight;
+	}
+	for (int i = 0; i < 9; ++i)
+		partial[invocation][i] = sum[i];
+	partialweight[invocation] = weights;
+	barrier();
+	for (uint stride = CAB_PROBE_SH_GROUP_SIZE / 2; stride > 0U; stride /= 2U)
+	{
+		if (invocation < stride)
+		{
+			for (int i = 0; i < 9; ++i)
+				partial[invocation][i] += partial[invocation + stride][i];
+			partialweight[invocation] += partialweight[invocation + stride];
+		}
+		barrier();
+	}
+	if (invocation < 9U)
+	{
+		// the weights add up to the whole sphere, 4 pi; the cosine lobe over pi: 1 for band 0, 2/3 for band 1, 1/4 for band 2
+		float sphere = 12.566371 / max(partialweight[0], 1e-6);
+		float band = (invocation == 0U) ? 1.0 : (invocation < 4U) ? (2.0 / 3.0) : 0.25;
+		result_sh[invocation] = vec4(partial[0][invocation] * (sphere * band), 0.0);
+	}
+}

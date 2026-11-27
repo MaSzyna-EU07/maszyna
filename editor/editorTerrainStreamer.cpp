@@ -147,6 +147,8 @@ void terrain_streamer::close()
 	m_active = false;
 	m_name.clear();
 	m_directory.clear();
+	if (GfxRenderer)
+		GfxRenderer->Terrain_Grass({}, {});
 }
 
 void terrain_streamer::reset()
@@ -174,6 +176,8 @@ void terrain_streamer::reset()
 	m_name.clear();
 	m_directory.clear();
 	m_hascamera = false;
+	if (GfxRenderer)
+		GfxRenderer->Terrain_Grass({}, {});
 }
 
 // workers
@@ -373,7 +377,9 @@ void terrain_streamer::update_material(editor_terrain &Chunk)
 	auto const packcorner{heightmap::pack_corner(heightmap::pack_of(data.key))};
 	glm::vec3 const placement{static_cast<float>(corner.x - packcorner.x), static_cast<float>(corner.y - packcorner.y), static_cast<float>(heightmap::chunk_size)};
 	auto const painted{data.paint > 0 && count > 1};
-	auto const material{GfxRenderer->Terrain_Material(Chunk.m_material, layers, painted ? data.paint : 0, painted ? data.weights.data() : nullptr, placement)};
+	auto const holes{data.has_holes()};
+	auto const material{GfxRenderer->Terrain_Material(Chunk.m_material, layers, painted ? data.paint : 0, painted ? data.weights.data() : nullptr, placement, holes ? data.holes : 0,
+	                                                  holes ? data.hole_mask.data() : nullptr)};
 	if (Chunk.m_material != null_handle && Chunk.m_material != material)
 		GfxRenderer->Terrain_Release(Chunk.m_material);
 	Chunk.m_material = material;
@@ -388,9 +394,32 @@ void terrain_streamer::upload(editor_terrain &Chunk, heightmap::mesh &Mesh, int 
 	auto const triangles{Mesh.indices.size() / 3};
 	gfx::userdata_array nouserdata;
 
-	// the mesh goes to a geometry slot made for its grid; a slot of the same kind is refilled in place
+	// the mesh goes to a geometry slot made for its grid; a slot of the same kind is refilled in place. the indices of a chunk
+	// with holes are its own, its slot gets them anew with the vertices
+	// a slot of the same grid has the same vertices; one without holes keeps its indices, they have to be as many
 	auto fits = [&](geometry_slot const &Slot) {
-		return Slot.cells == cells && Slot.stride == Stride && GfxRenderer->Indices(Slot.geometry).size() == Mesh.indices.size() && GfxRenderer->Vertices(Slot.geometry).size() == Mesh.vertices.size();
+		return Slot.cells == cells && Slot.stride == Stride && Slot.cut == Mesh.cut && GfxRenderer->Vertices(Slot.geometry).size() == Mesh.vertices.size() &&
+		       (Slot.cut || GfxRenderer->Indices(Slot.geometry).size() == Mesh.indices.size());
+	};
+	if (m_nocut && Mesh.cut)
+	{
+		// the backend can't change the indices of a chunk: the mesh goes whole, the material cuts the holes if it can
+		heightmap::build_indices(cells, Stride, Mesh.indices);
+		Mesh.cut = false;
+	}
+	auto const refill = [&](geometry_slot const &Slot) {
+		if (Slot.cut)
+			return GfxRenderer->Replace_Indexed(Mesh.indices, Mesh.vertices, nouserdata, Slot.geometry);
+		return GfxRenderer->Replace(Mesh.vertices, nouserdata, Slot.geometry, GL_TRIANGLES);
+	};
+	auto const refilled = [&](int const Slot) {
+		if (refill(m_slots[Slot]) || false == m_slots[Slot].cut)
+			return true;
+		// the slot keeps the indices of the chunk it was made for, it's never used again
+		m_nocut = true;
+		m_slots[Slot].cells = -1;
+		Chunk.m_slot = -1;
+		return false;
 	};
 	if (Chunk.m_slot < 0 || false == fits(m_slots[Chunk.m_slot]))
 	{
@@ -409,6 +438,7 @@ void terrain_streamer::upload(editor_terrain &Chunk, heightmap::mesh &Mesh, int 
 			slot.bank = GfxRenderer->Create_Bank();
 			slot.cells = cells;
 			slot.stride = Stride;
+			slot.cut = Mesh.cut;
 			slot.geometry = GfxRenderer->Insert(Mesh.indices, Mesh.vertices, nouserdata, slot.bank, GL_TRIANGLES);
 			if (slot.geometry.chunk == 0)
 			{
@@ -424,12 +454,17 @@ void terrain_streamer::upload(editor_terrain &Chunk, heightmap::mesh &Mesh, int 
 		else
 		{
 			m_slots[Chunk.m_slot].used = true;
-			GfxRenderer->Replace(Mesh.vertices, nouserdata, m_slots[Chunk.m_slot].geometry, GL_TRIANGLES);
+			if (false == refilled(Chunk.m_slot))
+			{
+				upload(Chunk, Mesh, Stride);
+				return;
+			}
 		}
 	}
-	else
+	else if (false == refilled(Chunk.m_slot))
 	{
-		GfxRenderer->Replace(Mesh.vertices, nouserdata, m_slots[Chunk.m_slot].geometry, GL_TRIANGLES);
+		upload(Chunk, Mesh, Stride);
+		return;
 	}
 	auto const &slot{m_slots[Chunk.m_slot]};
 
@@ -581,8 +616,15 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 		ahead *= look_ahead_limit / glm::length(ahead);
 	auto const target{Camera + ahead};
 
+	// the pieces cut out near the camera: made anew as it moves on, and for the ones waiting for their ground, now and then
+	if (false == m_waterchanged && patches_due(Camera, now))
+		m_waterchanged = true;
 	if (m_waterchanged)
+	{
+		m_patchtried = now;
+		m_patchloaded = false;
 		build_water();
+	}
 
 	// finished work, within a few milliseconds
 	while (steady_seconds() - now < upload_budget)
@@ -596,6 +638,7 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 			m_results.pop_front();
 		}
 		process(done);
+		m_patchloaded = true;
 		m_settled = false;
 	}
 
@@ -752,6 +795,68 @@ void terrain_streamer::update(glm::dvec3 const &Camera)
 		request_mesh(*entry.second, wanted_stride(*entry.second, Camera), entry.first / heightmap::chunk_size);
 		++meshing;
 	}
+
+	publish_grass(Camera);
+}
+
+void terrain_streamer::publish_grass(glm::dvec3 const &Camera)
+{
+	if (GfxRenderer == nullptr)
+		return;
+	std::vector<gfx::grass_kind> kinds;
+	std::vector<gfx::grass_chunk> chunks;
+	if (Global.gfx_grass && false == m_manifest.grass.empty())
+	{
+		for (auto const &kind : m_manifest.grass)
+		{
+			gfx::grass_kind entry;
+			// the palette holds the colours as they're seen, the renderer lights them in linear rgb
+			entry.base = glm::pow(glm::clamp(kind.base, glm::vec3{0.f}, glm::vec3{1.f}), glm::vec3{2.2f});
+			entry.tip = glm::pow(glm::clamp(kind.tip, glm::vec3{0.f}, glm::vec3{1.f}), glm::vec3{2.2f});
+			entry.height = kind.height;
+			entry.variation = kind.variation;
+			entry.width = kind.width;
+			entry.density = kind.density;
+			entry.bend = kind.bend;
+			entry.dry = glm::pow(glm::clamp(kind.dry, glm::vec3{0.f}, glm::vec3{1.f}), glm::vec3{2.2f});
+			entry.seasonal = kind.seasonal;
+			kinds.push_back(entry);
+		}
+		auto const reach{static_cast<double>(std::max(Global.gfx_grass_distance, Global.gfx_grass_fadedistance)) + 2.0};
+		for (auto const &entry : m_chunks)
+		{
+			auto const &chunk{*entry.second};
+			auto const &data{chunk.data()};
+			auto const count{data.grass_count()};
+			if (count == 0 || data.grass_density.size() != static_cast<std::size_t>(data.grass + 1) * (data.grass + 1) * count || false == data.valid())
+				continue;
+			// distance from the camera to the area of the chunk
+			auto const low{data.corner()};
+			glm::dvec2 const nearest{std::clamp(Camera.x, low.x, low.x + heightmap::chunk_size), std::clamp(Camera.z, low.y, low.y + heightmap::chunk_size)};
+			if (glm::length(nearest - glm::dvec2{Camera.x, Camera.z}) > reach)
+				continue;
+			gfx::grass_chunk grass;
+			grass.id = chunk.serial();
+			grass.version = chunk.grass_version();
+			grass.corner = low;
+			grass.size = static_cast<float>(heightmap::chunk_size);
+			grass.low = static_cast<float>(chunk.m_low.y);
+			grass.high = static_cast<float>(chunk.m_high.y);
+			grass.cells = data.cells;
+			grass.heights = data.heights.data();
+			grass.samples = data.grass;
+			grass.density = data.grass_density.data();
+			for (std::size_t slot = 0; slot < count; ++slot)
+				grass.kinds[slot] = data.grass_kinds[slot];
+			if (data.has_holes())
+			{
+				grass.holes = data.holes;
+				grass.hole_mask = data.hole_mask.data();
+			}
+			chunks.push_back(grass);
+		}
+	}
+	GfxRenderer->Terrain_Grass(kinds, chunks);
 }
 
 void terrain_streamer::upload_shape_material(editor_terrain &Chunk)
@@ -801,6 +906,29 @@ void terrain_streamer::collect(std::vector<editor_terrain *> &Out) const
 {
 	for (auto const &entry : m_chunks)
 		Out.push_back(entry.second.get());
+}
+
+bool terrain_streamer::waits_for_ground(heightmap::surface_patch const &Patch) const
+{
+	glm::dvec2 low, high;
+	Patch.bounds(low, high);
+	auto const first{heightmap::chunk_at(low.x, low.y)};
+	auto const last{heightmap::chunk_at(high.x, high.y)};
+	for (auto z{std::min(first.second, last.second)}; z <= std::max(first.second, last.second); ++z)
+		for (auto x{std::min(first.first, last.first)}; x <= std::max(first.first, last.first); ++x)
+		{
+			chunk_key const key{x, z};
+			if (m_chunks.contains(key) || m_removed.contains(key))
+				continue;
+			// still coming while its pack isn't read yet (just after opening the scenery none is); not coming only when
+			// the pack is missing, or read and without that chunk
+			auto const pack{m_packs.find(heightmap::pack_of(key))};
+			if (pack == m_packs.end() || pack->second.status == pack_state::state::unknown || pack->second.status == pack_state::state::loading)
+				return true;
+			if (pack->second.status == pack_state::state::ready && pack->second.file->has(key))
+				return true;
+		}
+	return false;
 }
 
 editor_terrain *terrain_streamer::terrain_at(double X, double Z) const
@@ -889,6 +1017,9 @@ void terrain_streamer::gather_triangles(glm::dvec2 const &Min, glm::dvec2 const 
 			for (int iz = zs.first; iz <= zs.second && iz < data.cells; ++iz)
 				for (int ix = xs.first; ix <= xs.second && ix < data.cells; ++ix)
 				{
+					// the cells cut out entirely aren't ground
+					if (data.cut_cells(ix, iz, ix + 1, iz + 1))
+						continue;
 					auto const v00{point(ix, iz)}, v10{point(ix + 1, iz)}, v01{point(ix, iz + 1)}, v11{point(ix + 1, iz + 1)};
 					Out.push_back({v00, v01, v10});
 					Out.push_back({v11, v10, v01});
@@ -954,6 +1085,46 @@ bool terrain_streamer::exists(chunk_key const &Key) const
 		return false;
 	auto const pack{m_packs.find(heightmap::pack_of(Key))};
 	return pack != m_packs.end() && pack->second.status == pack_state::state::ready && pack->second.file->has(Key);
+}
+
+std::vector<std::pair<terrain_streamer::chunk_key, int>> terrain_streamer::stored_chunks()
+{
+	std::vector<std::pair<chunk_key, int>> result;
+	if (false == m_active)
+		return result;
+	std::error_code ec;
+	std::filesystem::directory_iterator const end;
+	for (std::filesystem::directory_iterator item{m_directory, ec}; false == static_cast<bool>(ec) && item != end; item.increment(ec))
+	{
+		if (item->path().extension() != ".tch")
+			continue;
+		auto const filename{item->path().filename().string()};
+		heightmap::pack_file file;
+		std::string error;
+		std::lock_guard<std::mutex> lock{m_filemutex};
+		if (false == file.open(m_directory + filename, &error))
+		{
+			ErrorLog("Bad file: " + error, logtype::file);
+			continue;
+		}
+		// the terrain reads a pack only from the file named after it
+		if (filename != heightmap::pack_file_name(file.key()))
+			continue;
+		auto const cells{file.chunk_cells()};
+		result.insert(result.end(), cells.begin(), cells.end());
+	}
+	std::sort(result.begin(), result.end());
+	return result;
+}
+
+editor_terrain *terrain_streamer::chunk(chunk_key const &Key, bool const Load)
+{
+	if (false == m_active)
+		return nullptr;
+	if (Load)
+		return load_now(Key);
+	auto const lookup{m_chunks.find(Key)};
+	return lookup != m_chunks.end() ? lookup->second.get() : nullptr;
 }
 
 // editing
@@ -1322,11 +1493,18 @@ bool terrain_streamer::paint(double X, double Z, double Radius, double Strength,
 	});
 }
 
+
 bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength)
+{
+	return fill(Outline, Feather, Layer, Strength, 0.0, 4.0);
+}
+
+bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feather, std::uint16_t Layer, double Strength, double Noise, double NoiseScale)
 {
 	if (Outline.size() < 3 || Strength <= 0.0)
 		return false;
 	Feather = std::max(0.0, Feather);
+	Noise = std::max(0.0, Noise);
 	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
 	for (auto const &point : Outline)
 	{
@@ -1335,7 +1513,8 @@ bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feath
 	}
 	// the blend runs across the outline, half of it inside
 	auto const margin{Feather * 0.5};
-	return paint_area(low - glm::dvec2{margin}, high + glm::dvec2{margin}, Layer, true, [&](double const Px, double const Pz) {
+	auto const reach{margin + Noise};
+	return paint_area(low - glm::dvec2{reach}, high + glm::dvec2{reach}, Layer, true, [&](double const Px, double const Pz) {
 		glm::dvec2 const point{Px, Pz};
 		bool inside{false};
 		auto nearest{std::numeric_limits<double>::max()};
@@ -1345,7 +1524,7 @@ bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feath
 			auto const &b{Outline[j]};
 			if ((a.y > Pz) != (b.y > Pz) && Px < (b.x - a.x) * (Pz - a.y) / (b.y - a.y) + a.x)
 				inside = !inside;
-			if (Feather > 0.0)
+			if (Feather > 0.0 || Noise > 0.0)
 			{
 				auto const run{b - a};
 				auto const length{glm::dot(run, run)};
@@ -1353,10 +1532,15 @@ bool terrain_streamer::fill(std::vector<glm::dvec2> const &Outline, double Feath
 				nearest = std::min(nearest, glm::length(point - (a + run * t)));
 			}
 		}
-		if (Feather <= 0.0)
+		if (Feather <= 0.0 && Noise <= 0.0)
 			return inside ? Strength : 0.0;
-		// signed distance from the outline, inside positive, led smoothly through the blend
-		auto const t{std::clamp(((inside ? nearest : -nearest) + margin) / Feather, 0.0, 1.0)};
+		// signed distance from the outline, inside positive, the edge shifted by the noise, led smoothly through the blend
+		auto distance{inside ? nearest : -nearest};
+		if (Noise > 0.0)
+			distance += Noise * heightmap::natural_noise(Px, Pz, NoiseScale, 0);
+		if (Feather <= 0.0)
+			return distance > 0.0 ? Strength : 0.0;
+		auto const t{std::clamp((distance + margin) / Feather, 0.0, 1.0)};
 		return Strength * t * t * (3.0 - 2.0 * t);
 	});
 }
@@ -1432,6 +1616,227 @@ bool terrain_streamer::paint_area(glm::dvec2 const &Min, glm::dvec2 const &Max, 
 		changed = true;
 	}
 	return changed;
+}
+
+namespace
+{
+// true if the point lies within the outline (x, z)
+bool inside_outline(std::vector<glm::dvec2> const &Outline, double const X, double const Z)
+{
+	bool inside{false};
+	for (std::size_t i = 0, j = Outline.size() - 1; i < Outline.size(); j = i++)
+	{
+		auto const &a{Outline[i]};
+		auto const &b{Outline[j]};
+		if ((a.y > Z) != (b.y > Z) && X < (b.x - a.x) * (Z - a.y) / (b.y - a.y) + a.x)
+			inside = !inside;
+	}
+	return inside;
+}
+
+std::pair<glm::dvec2, glm::dvec2> outline_bounds(std::vector<glm::dvec2> const &Outline)
+{
+	glm::dvec2 low{std::numeric_limits<double>::max()}, high{-std::numeric_limits<double>::max()};
+	for (auto const &point : Outline)
+	{
+		low = glm::min(low, point);
+		high = glm::max(high, point);
+	}
+	return {low, high};
+}
+} // namespace
+
+bool terrain_streamer::cut(double X, double Z, double Radius, bool Cut)
+{
+	if (Radius <= 0.0)
+		return false;
+	return cut_area(glm::dvec2{X - Radius, Z - Radius}, glm::dvec2{X + Radius, Z + Radius}, Cut, false,
+	                [&](double const Px, double const Pz) { return (Px - X) * (Px - X) + (Pz - Z) * (Pz - Z) <= Radius * Radius; });
+}
+
+bool terrain_streamer::cut(std::vector<glm::dvec2> const &Outline, bool Cut)
+{
+	if (Outline.size() < 3)
+		return false;
+	auto const [low, high]{outline_bounds(Outline)};
+	return cut_area(low, high, Cut, true, [&](double const Px, double const Pz) { return inside_outline(Outline, Px, Pz); });
+}
+
+bool terrain_streamer::cut_field(std::vector<glm::dvec2> const &Outline, bool const Cut)
+{
+	if (Outline.size() < 3)
+		return false;
+	auto const [low, high]{outline_bounds(Outline)};
+	auto const inside = [&](double const Px, double const Pz) { return inside_outline(Outline, Px, Pz); };
+	if (cut_area(low, high, Cut, true, inside, kFieldHole) || Cut)
+		return true;
+	return cut_area(low, high, false, true, inside); // cut before the holes of the fields were marked: all of it
+}
+
+bool terrain_streamer::cut_area(glm::dvec2 const &Min, glm::dvec2 const &Max, bool const Cut, bool const Load, std::function<bool(double X, double Z)> const &Inside,
+                                std::uint8_t const Mark)
+{
+	bool changed{false};
+	for (auto *chunk : chunks_in(Min, Max, Load))
+	{
+		auto const &current{chunk->data()};
+		if (false == Cut && false == current.has_holes())
+			continue; // nothing to close
+		auto data{std::make_shared<heightmap::chunk_data>(current)};
+		data->ensure_holes();
+		auto const step{heightmap::chunk_size / data->holes};
+		auto const low{data->corner()};
+		auto const xs{index_range(low.x, step, data->holes + 1, Min.x, Max.x)};
+		auto const zs{index_range(low.y, step, data->holes + 1, Min.y, Max.y)};
+		std::uint8_t const value{Cut ? Mark : std::uint8_t{0}};
+		auto const marked{Mark != 255};
+		bool touched{false};
+		for (int iz = zs.first; iz <= zs.second; ++iz)
+			for (int ix = xs.first; ix <= xs.second; ++ix)
+			{
+				auto &sample{data->hole_mask[static_cast<std::size_t>(iz) * (data->holes + 1) + ix]};
+				// a marked cut leaves the holes there are as they are, a marked close closes its own only; the holes cut by hand (the
+				// Holes tool, the Fill section) leave the holes of the fields as they are both ways: a field is closed only by giving
+				// it back, and its mesh never stands over closed ground
+				auto const kept{marked ? (Cut ? sample != 0 : sample != Mark) : sample == kFieldHole};
+				if (sample == value || kept || false == Inside(low.x + ix * step, low.y + iz * step))
+					continue;
+				sample = value;
+				touched = true;
+			}
+		if (false == touched)
+			continue;
+		data->compact_holes();
+		remember(*chunk);
+		// the mesh leaves the cells cut out entirely, the material cuts the rest
+		chunk->replace(std::move(data), true, true);
+		changed = true;
+	}
+	return changed;
+}
+
+bool terrain_streamer::grass(double X, double Z, double Radius, double Strength, std::uint16_t Kind, bool Erase)
+{
+	if (Radius <= 0.0 || Strength <= 0.0)
+		return false;
+	return grass_area(glm::dvec2{X - Radius, Z - Radius}, glm::dvec2{X + Radius, Z + Radius}, Kind, Erase, false, [&](double const Px, double const Pz) {
+		auto const distance{std::sqrt((Px - X) * (Px - X) + (Pz - Z) * (Pz - Z))};
+		return distance > Radius ? 0.0 : Strength * falloff(distance, Radius);
+	});
+}
+
+bool terrain_streamer::grass(std::vector<glm::dvec2> const &Outline, std::uint16_t Kind, bool Erase)
+{
+	if (Outline.size() < 3)
+		return false;
+	auto const [low, high]{outline_bounds(Outline)};
+	return grass_area(low, high, Kind, Erase, true, [&](double const Px, double const Pz) { return inside_outline(Outline, Px, Pz) ? 1.0 : 0.0; });
+}
+
+bool terrain_streamer::grass_area(glm::dvec2 const &Min, glm::dvec2 const &Max, std::uint16_t const Kind, bool const Erase, bool const Load, std::function<double(double X, double Z)> const &Amount)
+{
+	if (false == Erase && Kind >= m_manifest.grass.size())
+		return false;
+	bool changed{false};
+	for (auto *chunk : chunks_in(Min, Max, Load))
+	{
+		auto const &current{chunk->data()};
+		if (Erase && current.grass_count() == 0)
+			continue; // nothing to take away
+		auto data{std::make_shared<heightmap::chunk_data>(current)};
+		data->ensure_grass();
+		auto const samples{data->grass};
+		auto const plane{static_cast<std::size_t>(samples + 1) * (samples + 1)};
+		int slot{-1};
+		if (false == Erase)
+		{
+			slot = data->grass_slot_of(Kind);
+			if (slot < 0)
+			{
+				data->compact_grass();
+				data->ensure_grass();
+				auto const count{data->grass_count()};
+				if (count >= heightmap::max_chunk_grass)
+				{
+					WriteLog("Editor: chunk " + std::to_string(current.key.first) + "," + std::to_string(current.key.second) + " has " + std::to_string(count) +
+					             " kinds of grass already, no room for another",
+					         logtype::generic);
+					continue;
+				}
+				slot = static_cast<int>(count);
+				data->grass_kinds[slot] = Kind;
+				data->grass_density.resize(data->grass_density.size() + plane, 0);
+			}
+		}
+		auto const count{data->grass_count()};
+		auto const step{heightmap::chunk_size / samples};
+		auto const low{data->corner()};
+		auto const xs{index_range(low.x, step, samples + 1, Min.x, Max.x)};
+		auto const zs{index_range(low.y, step, samples + 1, Min.y, Max.y)};
+		bool grown{false};
+		for (int iz = zs.first; iz <= zs.second; ++iz)
+			for (int ix = xs.first; ix <= xs.second; ++ix)
+			{
+				auto const amount{std::clamp(Amount(low.x + ix * step, low.y + iz * step), 0.0, 1.0)};
+				if (amount <= 0.0)
+					continue;
+				auto const sample{static_cast<std::size_t>(iz) * (samples + 1) + ix};
+				if (Erase)
+				{
+					for (std::size_t other = 0; other < count; ++other)
+					{
+						auto &density{data->grass_density[other * plane + sample]};
+						auto const target{static_cast<std::uint8_t>(std::lround(density * (1.0 - amount)))};
+						grown |= (target != density);
+						density = target;
+					}
+					continue;
+				}
+				auto &own{data->grass_density[slot * plane + sample]};
+				auto const target{static_cast<int>(std::lround(own + (255 - own) * amount))};
+				if (target == own)
+					continue;
+				own = static_cast<std::uint8_t>(target);
+				// the other kinds give way, so the densities add up to the full at most
+				int others{0};
+				for (std::size_t other = 0; other < count; ++other)
+					if (static_cast<int>(other) != slot)
+						others += data->grass_density[other * plane + sample];
+				auto const room{255 - target};
+				if (others > room)
+					for (std::size_t other = 0; other < count; ++other)
+						if (static_cast<int>(other) != slot)
+						{
+							auto &density{data->grass_density[other * plane + sample]};
+							density = static_cast<std::uint8_t>(density * room / others);
+						}
+				grown = true;
+			}
+		if (false == grown)
+			continue;
+		data->compact_grass();
+		remember(*chunk);
+		chunk->replace(std::move(data), false, false, true);
+		changed = true;
+	}
+	return changed;
+}
+
+std::uint16_t terrain_streamer::add_grass_kind(heightmap::grass_def Kind)
+{
+	remember_manifest();
+	m_manifest.grass.push_back(std::move(Kind));
+	m_manifestchanged = true;
+	return static_cast<std::uint16_t>(m_manifest.grass.size() - 1);
+}
+
+void terrain_streamer::grass_kind(std::uint16_t const Index, heightmap::grass_def Kind)
+{
+	if (Index >= m_manifest.grass.size())
+		return;
+	remember_manifest();
+	m_manifest.grass[Index] = std::move(Kind);
+	m_manifestchanged = true;
 }
 
 std::uint16_t terrain_streamer::layer(std::string const &Material, float const Size, float const Rotation)
@@ -1815,8 +2220,10 @@ void terrain_streamer::remember_manifest()
 	m_change.manifest = true;
 	m_change.layers = m_manifest.layers;
 	m_change.water = m_manifest.water;
+	m_change.patches = m_manifest.patches;
 	m_change.water_material = m_manifest.water_material;
 	m_change.modifiers = m_manifest.modifiers;
+	m_change.grass = m_manifest.grass;
 }
 
 terrain_streamer::change terrain_streamer::restore(change const &Change)
@@ -1841,7 +2248,7 @@ terrain_streamer::change terrain_streamer::restore(change const &Change)
 		}
 		if (current != nullptr)
 		{
-			current->replace(data, true, true);
+			current->replace(data, true, true, true);
 		}
 		else
 		{
@@ -1862,13 +2269,17 @@ terrain_streamer::change terrain_streamer::restore(change const &Change)
 		opposite.manifest = true;
 		opposite.layers = m_manifest.layers;
 		opposite.water = m_manifest.water;
+		opposite.patches = m_manifest.patches;
 		opposite.water_material = m_manifest.water_material;
 		opposite.modifiers = m_manifest.modifiers;
+		opposite.grass = m_manifest.grass;
 		auto const samelayers{std::equal(Change.layers.begin(), Change.layers.end(), m_manifest.layers.begin(), m_manifest.layers.end(),
 		                                 [](heightmap::layer_def const &A, heightmap::layer_def const &B) { return A.material == B.material && A.size == B.size && A.rotation == B.rotation; })};
 		m_manifest.layers = Change.layers;
 		m_manifest.modifiers = Change.modifiers;
 		m_manifest.water = Change.water;
+		m_manifest.patches = Change.patches;
+		m_manifest.grass = Change.grass;
 		if (false == Change.water_material.empty())
 			m_manifest.water_material = Change.water_material;
 		m_manifestchanged = true;
@@ -1977,6 +2388,170 @@ bool terrain_streamer::save(std::string *Error)
 	return true;
 }
 
+// water and the pieces of the ground cut out
+
+namespace
+{
+
+// the grid a piece cut out of the terrain is laid on: its own, or for a piece following the terrain, one of its spacing laid from 0
+// (as the grids of the chunks are) over the box of the outline
+struct patch_grid
+{
+	glm::dvec2 origin{0.0};
+	double step{1.0};
+	int columns{0};
+	int rows{0};
+};
+
+patch_grid grid_of(heightmap::surface_patch const &Patch)
+{
+	patch_grid grid;
+	if (false == Patch.follow)
+	{
+		grid.origin = Patch.origin;
+		grid.step = Patch.spacing;
+		grid.columns = Patch.columns;
+		grid.rows = Patch.rows;
+		return grid;
+	}
+	glm::dvec2 low;
+	glm::dvec2 high;
+	Patch.bounds(low, high);
+	grid.step = std::max(0.25, Patch.spacing);
+	grid.origin = glm::floor(low / grid.step) * grid.step;
+	grid.columns = static_cast<int>(std::ceil((high.x - grid.origin.x) / grid.step)) + 1;
+	grid.rows = static_cast<int>(std::ceil((high.y - grid.origin.y) / grid.step)) + 1;
+	return grid;
+}
+
+// the triangles of a piece cut out of the terrain, in world space, facing up: the cells of its grid wholly inside the outline in two
+// triangles each, cut along the diagonal the chunks are (from x0, z1 to x1, z0), the ones the outline runs through clipped to it
+// triangle by triangle, so a piece following the terrain lies in the planes of its triangles. Height gives the heights; false where
+// one isn't known yet (a chunk not loaded), then the piece is left for later and Missing set
+template <typename Height_>
+std::vector<glm::dvec3> patch_triangles(heightmap::surface_patch const &Patch, Height_ const &Height, bool &Missing)
+{
+	std::vector<glm::dvec3> result;
+	Missing = false;
+	auto const &outline{Patch.outline};
+	auto const grid{grid_of(Patch)};
+	if (outline.size() < 3 || grid.columns < 2 || grid.rows < 2)
+		return result;
+	auto const step{grid.step};
+	auto const cellsx{grid.columns - 1};
+	auto const cellsz{grid.rows - 1};
+	auto const inside = [&](double const X, double const Z) {
+		bool in{false};
+		for (std::size_t i = 0, j = outline.size() - 1; i < outline.size(); j = i++)
+			if ((outline[i].y > Z) != (outline[j].y > Z) && X < (outline[j].x - outline[i].x) * (Z - outline[i].y) / (outline[j].y - outline[i].y) + outline[i].x)
+				in = !in;
+		return in;
+	};
+	// the cells the outline runs through
+	std::vector<char> edge(static_cast<std::size_t>(cellsx) * cellsz, 0);
+	auto const mark = [&](glm::dvec2 const &Point) {
+		auto const cx{static_cast<int>(std::floor((Point.x - grid.origin.x) / step))};
+		auto const cz{static_cast<int>(std::floor((Point.y - grid.origin.y) / step))};
+		for (int dz = -1; dz <= 1; ++dz)
+			for (int dx = -1; dx <= 1; ++dx)
+				if (cx + dx >= 0 && cx + dx < cellsx && cz + dz >= 0 && cz + dz < cellsz)
+					edge[static_cast<std::size_t>(cz + dz) * cellsx + cx + dx] = 1;
+	};
+	for (std::size_t i = 0; i < outline.size(); ++i)
+	{
+		auto const &a{outline[i]};
+		auto const &b{outline[(i + 1) % outline.size()]};
+		auto const samples{std::max(1, static_cast<int>(std::ceil(glm::distance(a, b) / (step * 0.25))))};
+		for (int k = 0; k <= samples; ++k)
+			mark(glm::mix(a, b, static_cast<double>(k) / samples));
+	}
+	// a polygon in the plan, as triangles facing up; a triangle with a corner over no ground is left out, the rest is made
+	auto const emit = [&](std::vector<glm::dvec2> const &Polygon) {
+		if (Polygon.size() < 3)
+			return;
+		auto const indices{heightmap::triangulate(Polygon)};
+		// the polygon is turned counterclockwise in the plan, the triangles go the other way round to face up
+		for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			glm::dvec3 corners[3];
+			bool grounded{true};
+			int k{0};
+			for (auto const index : {indices[i + 2], indices[i + 1], indices[i]})
+			{
+				double height{0.0};
+				auto const &point{Polygon[index]};
+				if (false == Height(point.x, point.y, height))
+				{
+					grounded = false;
+					Missing = true;
+				}
+				corners[k++] = glm::dvec3{point.x, height, point.y};
+			}
+			if (grounded)
+				result.insert(result.end(), std::begin(corners), std::end(corners));
+		}
+	};
+	// Sutherland-Hodgman: the outline clipped to a triangle of a cell (A, B, C counterclockwise)
+	auto const clip = [&](glm::dvec2 const &A, glm::dvec2 const &B, glm::dvec2 const &C) {
+		std::vector<glm::dvec2> polygon{outline};
+		glm::dvec2 const corners[]{A, B, C};
+		for (int side = 0; side < 3 && polygon.size() >= 3; ++side)
+		{
+			auto const &p{corners[side]};
+			auto const &q{corners[(side + 1) % 3]};
+			auto const keep = [&](glm::dvec2 const &P) { return (q.x - p.x) * (P.y - p.y) - (q.y - p.y) * (P.x - p.x) >= 0.0; };
+			std::vector<glm::dvec2> out;
+			for (std::size_t i = 0; i < polygon.size(); ++i)
+			{
+				auto const &a{polygon[i]};
+				auto const &b{polygon[(i + 1) % polygon.size()]};
+				auto const ina{keep(a)};
+				auto const inb{keep(b)};
+				if (ina)
+					out.push_back(a);
+				if (ina != inb)
+				{
+					auto const da{(q.x - p.x) * (a.y - p.y) - (q.y - p.y) * (a.x - p.x)};
+					auto const db{(q.x - p.x) * (b.y - p.y) - (q.y - p.y) * (b.x - p.x)};
+					out.push_back(a + (b - a) * (da / (da - db)));
+				}
+			}
+			polygon = std::move(out);
+		}
+		// points closer than a millimetre merged, the clipping leaves them along the sides of the triangle
+		std::vector<glm::dvec2> clean;
+		for (auto const &point : polygon)
+			if (clean.empty() || glm::distance(clean.back(), point) > 1e-3)
+				clean.push_back(point);
+		while (clean.size() > 1 && glm::distance(clean.front(), clean.back()) <= 1e-3)
+			clean.pop_back();
+		emit(clean);
+	};
+	for (int cz = 0; cz < cellsz; ++cz)
+		for (int cx = 0; cx < cellsx; ++cx)
+		{
+			auto const x0{grid.origin.x + cx * step};
+			auto const z0{grid.origin.y + cz * step};
+			auto const x1{x0 + step};
+			auto const z1{z0 + step};
+			glm::dvec2 const a{x0, z0}, b{x1, z0}, c{x1, z1}, d{x0, z1};
+			if (edge[static_cast<std::size_t>(cz) * cellsx + cx])
+			{
+				// the two triangles of the cell, counterclockwise, either side of the diagonal from (x0, z1) to (x1, z0)
+				clip(a, b, d);
+				clip(b, c, d);
+				continue;
+			}
+			if (false == inside(x0 + 0.5 * step, z0 + 0.5 * step))
+				continue;
+			emit({a, b, d});
+			emit({b, c, d});
+		}
+	return result;
+}
+
+} // namespace
+
 // water
 
 void terrain_streamer::clear_water(bool const Touch)
@@ -1993,6 +2568,65 @@ void terrain_streamer::clear_water(bool const Touch)
 	for (auto const &water : m_watershapes)
 		m_waterfree.push_back(water.geometry);
 	m_watershapes.clear();
+}
+
+gfx::geometry_handle terrain_streamer::water_geometry(gfx::vertex_array Vertices)
+{
+	// the geometry of water made before is filled anew, so editing the water doesn't pile up geometry
+	gfx::userdata_array nouserdata;
+	gfx::geometry_handle geometry{0, 0};
+	if (false == m_waterfree.empty())
+	{
+		geometry = m_waterfree.back();
+		m_waterfree.pop_back();
+		GfxRenderer->Replace(Vertices, nouserdata, geometry, GL_TRIANGLES);
+		return geometry;
+	}
+	if (m_waterbank.bank == 0 && m_waterbank.chunk == 0)
+		m_waterbank = GfxRenderer->Create_Bank();
+	return GfxRenderer->Insert(Vertices, nouserdata, m_waterbank, GL_TRIANGLES);
+}
+
+double terrain_streamer::reach_of_patches()
+{
+	// as far as the chunks are drawn, their holes with them: never a hole without the surface over it
+	return std::max(patch_reach, static_cast<double>(Global.BaseDrawRange) * std::max(1.0, static_cast<double>(Global.fDistanceFactor)) + heightmap::chunk_size);
+}
+
+std::vector<std::size_t> terrain_streamer::patches_in_reach(glm::dvec2 const &Centre) const
+{
+	std::vector<std::size_t> within;
+	auto const reach{reach_of_patches()};
+	for (std::size_t index = 0; index < m_manifest.patches.size(); ++index)
+	{
+		auto const &patch{m_manifest.patches[index]};
+		if (patch.paint)
+			continue; // laid into the paint of the chunks, no mesh of its own
+		glm::dvec2 boxlow;
+		glm::dvec2 boxhigh;
+		patch.bounds(boxlow, boxhigh);
+		if (m_hascamera && glm::distance(glm::clamp(Centre, boxlow, boxhigh), Centre) > reach)
+			continue;
+		within.push_back(index);
+	}
+	return within;
+}
+
+bool terrain_streamer::patches_due(glm::dvec3 const &Camera, double const Now)
+{
+	if (m_manifest.patches.empty())
+		return false;
+	if (m_patchpending && m_patchloaded && Now - m_patchtried > 1.0)
+		return true;
+	glm::dvec2 const centre{Camera.x, Camera.z};
+	if (glm::distance(centre, m_patchcentre) <= patch_move)
+		return false;
+	// the painted fields (tens of thousands of them cut along the tracks) have no mesh, and the water doesn't move: made again only
+	// when the separate pieces within the reach change
+	if (patches_in_reach(centre) != m_patchesbuilt)
+		return true;
+	m_patchcentre = centre;
+	return false;
 }
 
 void terrain_streamer::build_water()
@@ -2041,21 +2675,8 @@ void terrain_streamer::build_water()
 				vertices.push_back(vertex);
 				reach = std::max(reach, glm::length(point - centroid));
 			}
-		// the geometry of water made before is filled anew, so editing the water doesn't pile up geometry
-		gfx::userdata_array nouserdata;
 		water_shape entry;
-		if (false == m_waterfree.empty())
-		{
-			entry.geometry = m_waterfree.back();
-			m_waterfree.pop_back();
-			GfxRenderer->Replace(vertices, nouserdata, entry.geometry, GL_TRIANGLES);
-		}
-		else
-		{
-			if (m_waterbank.bank == 0 && m_waterbank.chunk == 0)
-				m_waterbank = GfxRenderer->Create_Bank();
-			entry.geometry = GfxRenderer->Insert(vertices, nouserdata, m_waterbank, GL_TRIANGLES);
-		}
+		entry.geometry = water_geometry(std::move(vertices));
 		if (entry.geometry.chunk == 0)
 			continue;
 		// two bounding vertices give the shape its area, the triangles are in the geometry
@@ -2080,4 +2701,103 @@ void terrain_streamer::build_water()
 		entry.section = &section;
 		m_watershapes.push_back(entry);
 	}
+	// the pieces of the ground cut out, with the geometry of the water: made anew together, in the same bank. Only the ones near
+	// the camera (pieces cut along the tracks of a whole network go in tens of thousands), again as it moves on; a piece over
+	// ground not loaded yet waits for it
+	m_patchcentre = glm::dvec2{m_camera.x, m_camera.z};
+	m_patchpending = false;
+	m_patchesbuilt = patches_in_reach(m_patchcentre);
+	for (auto const index : m_patchesbuilt)
+	{
+		auto const &patch{m_manifest.patches[index]};
+		auto const surface = [&](double const X, double const Z, double &Height) {
+			if (false == patch.follow)
+			{
+				if (patch.height(X, Z, Height))
+					return true;
+				// past the grid: the nearest of its edge
+				return patch.height(std::clamp(X, patch.origin.x, patch.origin.x + (patch.columns - 1) * patch.spacing),
+				                    std::clamp(Z, patch.origin.y, patch.origin.y + (patch.rows - 1) * patch.spacing), Height);
+			}
+			if (false == height_at(X, Z, Height))
+				return false;
+			Height += patch.lift;
+			return true;
+		};
+		bool missing{false};
+		auto const triangles{patch_triangles(patch, surface, missing)};
+		// made of what has the ground loaded; waited for only where the ground is still to come, not where the terrain has none
+		if (missing && patch.follow && waits_for_ground(patch))
+			m_patchpending = true;
+		if (triangles.empty())
+			continue;
+		glm::dvec2 low{std::numeric_limits<double>::max()};
+		glm::dvec2 high{-std::numeric_limits<double>::max()};
+		double bottom{std::numeric_limits<double>::max()};
+		double top{-std::numeric_limits<double>::max()};
+		for (auto const &point : triangles)
+		{
+			low = glm::min(low, glm::dvec2{point.x, point.z});
+			high = glm::max(high, glm::dvec2{point.x, point.z});
+			bottom = std::min(bottom, point.y);
+			top = std::max(top, point.y);
+		}
+		auto const middle{(low + high) * 0.5};
+		if (false == in_region(middle))
+			continue;
+		auto const name{patch.material.empty() ? (m_manifest.layers.empty() ? std::string{"grass"} : m_manifest.layers.front().material) : patch.material};
+		auto const material{GfxRenderer->Fetch_Material(name)};
+		auto const *materialdata{GfxRenderer->Material(material)};
+		auto const repeat{patch.size > 0.f ? static_cast<double>(patch.size) : (materialdata != nullptr && materialdata->GetSize().x > 0.f) ? static_cast<double>(materialdata->GetSize().x) : 8.0};
+		glm::dvec3 const centre{middle.x, 0.5 * (bottom + top), middle.y};
+		auto &section{simulation::Region->section(centre)};
+		section.create_geometry();
+		auto const origin{section.m_area.center};
+		auto const angle{glm::radians(static_cast<double>(patch.rotation))};
+		glm::dvec2 const along{std::cos(angle), std::sin(angle)};
+		glm::dvec2 const across{-along.y, along.x};
+		// the slope of the heights at the point, for the normal
+		auto const normal_at = [&](double const X, double const Z) {
+			auto const d{std::max(0.25, patch.spacing * 0.5)};
+			double hx0{0.0}, hx1{0.0}, hz0{0.0}, hz1{0.0};
+			if (false == (surface(X - d, Z, hx0) && surface(X + d, Z, hx1) && surface(X, Z - d, hz0) && surface(X, Z + d, hz1)))
+				return glm::vec3{0.f, 1.f, 0.f};
+			return glm::vec3(glm::normalize(glm::dvec3{-(hx1 - hx0) / (2.0 * d), 1.0, -(hz1 - hz0) / (2.0 * d)}));
+		};
+		gfx::vertex_array vertices;
+		vertices.reserve(triangles.size());
+		for (auto const &point : triangles)
+		{
+			glm::dvec2 const local{point.x - patch.origin.x, point.z - patch.origin.y};
+			gfx::basic_vertex vertex;
+			vertex.position = glm::vec3(point - origin);
+			vertex.normal = normal_at(point.x, point.z);
+			vertex.texture = {static_cast<float>(glm::dot(local, along) / repeat), static_cast<float>(-glm::dot(local, across) / repeat)};
+			vertex.tangent = {static_cast<float>(along.x), 0.f, static_cast<float>(along.y), 1.f};
+			vertices.push_back(vertex);
+		}
+		water_shape entry;
+		entry.geometry = water_geometry(std::move(vertices));
+		if (entry.geometry.chunk == 0)
+			continue;
+		auto const reach{glm::length(high - low) * 0.5};
+		std::vector<world_vertex> bounds(2);
+		bounds[0].position = glm::dvec3{low.x, bottom, low.y};
+		bounds[1].position = glm::dvec3{high.x, top, high.y};
+		scene::shape_node shape;
+		shape.make_terrain(material, std::move(bounds), origin);
+		shape.geometry(entry.geometry);
+		section.m_shapes.emplace_back(std::move(shape));
+		section.m_area.radius = std::max(section.m_area.radius, static_cast<float>(glm::length(section.m_area.center - centre) + reach));
+		entry.section = &section;
+		m_watershapes.push_back(entry);
+	}
+}
+
+void terrain_streamer::patches(std::vector<heightmap::surface_patch> Patches)
+{
+	remember_manifest();
+	m_manifest.patches = std::move(Patches);
+	m_manifestchanged = true;
+	m_waterchanged = true;
 }
