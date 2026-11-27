@@ -864,58 +864,107 @@ void editor_mode::render_track_guide()
 	ImGui::TextUnformatted(family_name(family));
 	ImGui::PopStyleColor();
 	ImGui::EndGroup();
+	// a click on the title row folds the card to it and opens it again; kept with the settings of the editor, for all the tools
+	auto const below{ImGui::GetCursorScreenPos()};
+	ImGui::SetCursorScreenPos(row);
+	auto folded{EditorSettings.track_card_folded()};
+	if (ImGui::InvisibleButton("##trackguidefold", ImVec2(std::max(1.0f, right - row.x), std::max(1.0f, below.y - row.y - ImGui::GetStyle().ItemSpacing.y))))
+	{
+		folded = !folded;
+		EditorSettings.track_card_folded(folded);
+		EditorSettings.save();
+	}
+	auto const hovered{ImGui::IsItemHovered()};
+	if (hovered)
+		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+	ImGui::SetCursorScreenPos(below);
+	auto marker{right - pad};
 	if (found != modes.end() && found->key != nullptr)
 	{
 		auto const height{std::round(font * 1.35f)};
 		auto const cap{std::max(std::round(ImGui::CalcTextSize(found->key).x + height * 0.6f), height)};
 		gesture_key(*list, ImVec2(right - pad - cap, row.y + std::round((iconside - height) * 0.5f)), height, found->key);
+		marker -= cap + pad;
 	}
-	ImGui::PushTextWrapPos(right - pad - ImGui::GetWindowPos().x);
-	if (found != modes.end())
+	// the marker of the fold left of the key: pointing right while folded, down while open
 	{
-		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-		ImGui::TextWrapped("%s", STR_C(found->tooltip));
-		ImGui::PopStyleColor();
+		auto const half{std::round(font * 0.3f)};
+		ImVec2 const centre{marker - half, row.y + std::round(iconside * 0.5f)};
+		auto const colour{ImGui::GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled)};
+		if (folded)
+			list->AddTriangleFilled(ImVec2(centre.x - half * 0.6f, centre.y - half), ImVec2(centre.x - half * 0.6f, centre.y + half), ImVec2(centre.x + half * 0.8f, centre.y), colour);
+		else
+			list->AddTriangleFilled(ImVec2(centre.x - half, centre.y - half * 0.6f), ImVec2(centre.x + half, centre.y - half * 0.6f), ImVec2(centre.x, centre.y + half * 0.8f), colour);
 	}
-	// the gestures, each drawn: the mouse with the button lit, the keys as caps
-	auto const hints{track_key_hints(false)};
-	auto const gesture{std::round(font * 1.25f)};
-	std::vector<std::vector<gesture_word>> drawn;
-	float column{0.0f};
-	for (auto const &hint : hints)
+	if (false == folded)
 	{
-		drawn.push_back(gesture_picture(hint.raw != nullptr ? hint.raw : hint.key));
-		column = std::max(column, gesture_width(gesture, drawn.back()));
-	}
-	column = std::min(column, font * 6.0f);
-	if (false == hints.empty())
-		ImGui::Dummy(ImVec2(0.0f, pad * 0.3f));
-	for (std::size_t i = 0; i < hints.size() && i < 7; ++i)
-	{
-		auto const at{ImGui::GetCursorScreenPos()};
-		auto const line{ImGui::GetTextLineHeight()};
-		auto const height{std::max(gesture, line)};
-		list->PushClipRect(at, ImVec2(at.x + column, at.y + height), true);
-		gesture_draw(*list, ImVec2(at.x, at.y + std::round((height - gesture) * 0.5f)), gesture, drawn[i], ImGui::GetColorU32(ImGuiCol_Text));
-		list->PopClipRect();
-		ImGui::Dummy(ImVec2(column, height));
-		ImGui::SameLine(0.0f, pad);
-		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - line) * 0.5f));
-		if (hints[i].raw == nullptr || false == gesture_keys_only(hints[i].raw))
+		auto const wrap{right - pad};
+		ImGui::PushTextWrapPos(wrap - ImGui::GetWindowPos().x);
+		if (found != modes.end())
 		{
-			ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", hints[i].key);
-			ImGui::SameLine();
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			ImGui::TextWrapped("%s", STR_C(found->tooltip));
+			ImGui::PopStyleColor();
 		}
-		ImGui::TextWrapped("%s", hints[i].action.c_str());
+		// the gestures, each drawn: the mouse with the button lit, the keys as caps
+		auto const hints{track_key_hints(false)};
+		auto const gesture{std::round(font * 1.25f)};
+		std::vector<std::vector<gesture_word>> drawn;
+		float column{0.0f};
+		for (auto const &hint : hints)
+		{
+			drawn.push_back(gesture_picture(hint.raw != nullptr ? hint.raw : hint.key));
+			column = std::max(column, gesture_width(gesture, drawn.back()));
+		}
+		column = std::min(column, font * 6.0f);
+		// the widest word of a text, which wrapping can't break
+		auto const widest_word = [](std::string const &Text) {
+			float widest{0.0f};
+			for (std::size_t from{0}; from < Text.size();)
+			{
+				auto const end{std::min(Text.find(' ', from), Text.size())};
+				widest = std::max(widest, ImGui::CalcTextSize(Text.c_str() + from, Text.c_str() + end).x);
+				from = end + 1;
+			}
+			return widest;
+		};
+		if (false == hints.empty())
+			ImGui::Dummy(ImVec2(0.0f, pad * 0.3f));
+		for (std::size_t i = 0; i < hints.size() && i < 7; ++i)
+		{
+			auto const at{ImGui::GetCursorScreenPos()};
+			auto const line{ImGui::GetTextLineHeight()};
+			auto const height{std::max(gesture, line)};
+			list->PushClipRect(at, ImVec2(at.x + column, at.y + height), true);
+			gesture_draw(*list, ImVec2(at.x, at.y + std::round((height - gesture) * 0.5f)), gesture, drawn[i], ImGui::GetColorU32(ImGuiCol_Text));
+			list->PopClipRect();
+			ImGui::Dummy(ImVec2(column, height));
+			ImGui::SameLine(0.0f, pad);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::round((height - line) * 0.5f));
+			if (hints[i].raw == nullptr || false == gesture_keys_only(hints[i].raw))
+			{
+				auto const indent{ImGui::GetCursorPosX()};
+				ImGui::TextColored(ImVec4(1.0f, 0.83f, 0.3f, 1.0f), "%s", hints[i].key);
+				ImGui::SameLine();
+				// after a long gesture the action goes under it, at its indent, rather than into a sliver of the row where it
+				// would break in the middle of its words
+				if (wrap - ImGui::GetCursorScreenPos().x < std::max(font * 8.0f, widest_word(hints[i].action)))
+				{
+					ImGui::NewLine();
+					ImGui::SetCursorPosX(indent);
+				}
+			}
+			ImGui::TextWrapped("%s", hints[i].action.c_str());
+		}
+		ImGui::PopTextWrapPos();
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		ImGui::TextUnformatted(STR_C("F1: all the shortcuts"));
+		ImGui::PopStyleColor();
+		if (ImGui::IsItemHovered())
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		if (ImGui::IsItemClicked())
+			m_shortcuts_open = true;
 	}
-	ImGui::PopTextWrapPos();
-	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-	ImGui::TextUnformatted(STR_C("F1: all the shortcuts"));
-	ImGui::PopStyleColor();
-	if (ImGui::IsItemHovered())
-		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-	if (ImGui::IsItemClicked())
-		m_shortcuts_open = true;
 	ImGui::Unindent(pad + 3.0f);
 	ImGui::Dummy(ImVec2(width, pad * 0.5f));
 	ImGui::EndGroup();
@@ -1509,14 +1558,14 @@ void editor_mode::render_path_ui()
 		ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), STR_C("Geometry locked: %s"), reason.c_str());
 	if (track->eType == tt_Switch && m_track_tab == track_tab::path)
 	{
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Edit the switch (T)"));
 		if (ImGui::SmallButton(STR_C("Edit the switch (T)")))
 			show_track_tab(track_tab::turnout);
 		item_tooltip("A switch: the turnout tool sets its geometry, side and drive");
 	}
 	if (track->eType == tt_Switch && track->SwitchExtension != nullptr)
 	{
-		ImGui::SameLine();
+		same_line_if_fits(STR_C("Throw (H)"));
 		if (ImGui::SmallButton(STR_C("Throw (H)")))
 			throw_switch(*track);
 		item_tooltip(track->SwitchExtension->CurrentIndex ? "Set to the diverging track: throws it over to the main one. In the editor only, to see the blades and the route; the simulation starts with the switches set to the main track"
