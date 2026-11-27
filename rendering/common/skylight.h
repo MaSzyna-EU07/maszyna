@@ -7,8 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the light of the sky the renderers share (the part of the stage S of claude/gl46-renderer-features-plan.md which isn't the
-// work of the gpu, taken out of opengl46_sky for the vulkan renderer, stage P1 of claude/vulkan14-renderer-plan.md):
+// the light of the sky the renderers share (the part which isn't the work of the gpu, taken out of opengl46_sky for the vulkan
+// renderer):
 // - the directional part of the ambient light, as spherical harmonics (gl::sky_data), worked out from the colours of the sky
 //   dome or from the physical atmosphere
 // - the parameters of the physical atmosphere (gl::atmosphere_ubs) and when its look-up tables are to be made again

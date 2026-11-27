@@ -7,9 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// what the automatic exposure and the bloom of the renderers share (the part of the stage S3 of
-// claude/gl46-renderer-features-plan.md which isn't the work of the gpu, taken out of opengl46_exposure for the vulkan renderer,
-// stage P1 of claude/vulkan14-renderer-plan.md): the parameters of the histogram and of the adaptation
+// what the automatic exposure and the bloom of the renderers share (the part which isn't the work of the gpu, taken out of
+// opengl46_exposure for the vulkan renderer): the parameters of the histogram and of the adaptation
 // (exposure_histogram.comp, exposure_average.comp), the sizes of the levels of the bloom chain and the parameters of its steps
 // (postfx_bloom_*.frag), the parameters of the tonemapping and the controls of the debug window
 

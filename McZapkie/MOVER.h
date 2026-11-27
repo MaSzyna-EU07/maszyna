@@ -2198,6 +2198,7 @@ class TMoverParameters
 	double ScndPipePress = 0.0; /*cisnienie w przewodzie zasilajacym*/
 	bool ScndPipeCouplersPending{false}; // the main reservoir pipe stepped, its air exchange through the hoses is yet to come (UpdatePipeCouplers())
 	double BrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych*/
+	double BrakePressRate = 0.0; // how fast BrakePress changes, averaged over about a second [bar/s], see accelerating()
 	double LocBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z pomocniczego*/
 	double PipeBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z przewodu*/
 	double PipePress = 0.0; /*!o cisnienie w przewodzie glownym*/
@@ -2675,6 +2676,9 @@ class TMoverParameters
 	// standing still, its acceleration is the pull of the slope and of the couplers, as the brakes and the resistance count only
 	// against a speed (FTotal); with Global.physics_sleepheld one held by them, the way ComputeMovement() keeps it standing, doesn't
 	bool accelerating() const;
+	// with Global.physics_sleepheld, wakes the physics of a vehicle a brake of which was set by hand: one held by its brakes sleeps
+	// with the brake force it had (accelerating())
+	void wake_for_brake();
 	// whether the brakes of a vehicle whose physics sleeps have changed since it fell asleep, see sleep_brakes
 	bool brakes_changed_asleep() const;
 	double LocalBrakeRatio(void) const;

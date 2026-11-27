@@ -29,7 +29,8 @@ class opengl46_hiz
 	opengl46_hiz(const opengl46_hiz &) = delete;
 	opengl46_hiz &operator=(const opengl46_hiz &) = delete;
 
-	// creates the program. throws gl::shader_exception
+	// creates the program. without it (a shader which doesn't compile) no pyramid is made: logged, and gfx.gpucull.occlusion is
+	// switched off
 	void init();
 	// makes the pyramid from the depth attachment of Source, a framebuffer of Width x Height pixels.
 	// leaves the framebuffer bindings alone, texture unit 0 and image unit 0 are used (the unit cache is reset).

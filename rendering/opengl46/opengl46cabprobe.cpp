@@ -17,6 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
+#include <format>
+
 namespace
 {
 
@@ -51,20 +53,6 @@ opengl46_cab_probe::~opengl46_cab_probe()
 
 void opengl46_cab_probe::init()
 {
-	gl::shader vertex("cabprobe.vert");
-	gl::shader geometry("cabprobe.geom");
-	{
-		gl::shader fragment("cabprobe.frag");
-		m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
-	}
-	{
-		gl::shader fragment("cabprobe_alpha.frag");
-		m_alpha_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
-	}
-	{
-		gl::shader compute("cabprobe_sh.comp");
-		m_sh_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{compute});
-	}
 	m_sh = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(sizeof(gl::cab_probe_data)), gl::CAB_PROBE_SSBO_BINDING);
 	m_sh->update(gl::cab_probe_data{});
 
@@ -76,6 +64,31 @@ void opengl46_cab_probe::init()
 	glTextureStorage2D(m_white, 1, GL_RGBA8, 1, 1);
 	std::uint8_t const white[4]{255, 255, 255, 255};
 	glClearTexImage(m_white, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
+
+	try
+	{
+		gl::shader vertex("cabprobe.vert");
+		gl::shader geometry("cabprobe.geom");
+		{
+			gl::shader fragment("cabprobe.frag");
+			m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
+		}
+		{
+			gl::shader fragment("cabprobe_alpha.frag");
+			m_alpha_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, geometry, fragment});
+		}
+		gl::shader compute("cabprobe_sh.comp");
+		m_sh_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{compute});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the shading reads the stand-ins; no maps are made (gpu_allocate())
+		ErrorLog(std::format("cab probe not available: {}", e.what()));
+		m_program.reset();
+		m_alpha_program.reset();
+		m_sh_program.reset();
+		Global.gfx_cabprobe = 0;
+	}
 }
 
 void opengl46_cab_probe::bind()
@@ -89,6 +102,8 @@ void opengl46_cab_probe::bind()
 
 bool opengl46_cab_probe::gpu_allocate(int const Size)
 {
+	if (m_sh_program == nullptr)
+		return false;
 	m_light = make_cube(GL_RGBA16F, Size, true);
 	m_albedo = make_cube(GL_RGBA8, Size, true);
 	m_depth = make_cube(GL_DEPTH_COMPONENT32F, Size, false);

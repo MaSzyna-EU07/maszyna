@@ -273,8 +273,7 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 	}
 	if (false == record(frame, Job.uploaded, Job.async))
 	{
-		Failure = "recording a frame";
-		return false;
+		return skip_frame(Job, false, "recording a frame", Failure);
 	}
 	if (Job.async)
 	{
@@ -300,10 +299,15 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 		compute.pCommandBufferInfos = &buffer;
 		compute.signalSemaphoreInfoCount = 1;
 		compute.pSignalSemaphoreInfos = &signal;
-		if (!VK14_VERIFY(vkQueueSubmit2(device.compute_queue(), 1, &compute, VK_NULL_HANDLE)))
+		if (auto const result{vkQueueSubmit2(device.compute_queue(), 1, &compute, VK_NULL_HANDLE)}; false == vk14::verify_result(result, "vkQueueSubmit2(compute)", __FILE__, __LINE__))
 		{
-			Failure = "submitting the async compute of a frame";
-			return false;
+			// a failed submit leaves the semaphores as they were: the frame is left out, unless the device is lost
+			if (result == VK_ERROR_DEVICE_LOST)
+			{
+				Failure = "submitting the async compute of a frame";
+				return false;
+			}
+			return skip_frame(Job, false, "submitting the async compute of a frame", Failure);
 		}
 	}
 	// the uploads first, in the same submit: their barriers make them done before the frame uses what they copied
@@ -359,14 +363,64 @@ bool vulkan14_renderer::context::submit(render_job &Job, char const *&Failure)
 	submit.pCommandBufferInfos = commands.data() + (Job.async ? first : 0);
 	submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
 	submit.pSignalSemaphoreInfos = Job.signals.data();
-	if (!VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), count, submits.data(), VK_NULL_HANDLE)))
+	if (auto const result{vkQueueSubmit2(device.graphics_queue(), count, submits.data(), VK_NULL_HANDLE)}; false == vk14::verify_result(result, "vkQueueSubmit2", __FILE__, __LINE__))
 	{
-		Failure = "submitting a frame";
-		return false;
+		if (result == VK_ERROR_DEVICE_LOST)
+		{
+			Failure = "submitting a frame";
+			return false;
+		}
+		return skip_frame(Job, Job.async, "submitting a frame", Failure);
 	}
 	if (lowlatency)
 	{
 		main->latency_marker(Job.present_id, VK_LATENCY_MARKER_RENDERSUBMIT_END_NV);
+	}
+	return true;
+}
+
+// the timeline reaches the value of the frame and the semaphores of its images are waited for and signalled as with the frame drawn;
+// the uploads go with it, as what they copy is used by the frames after it. the images of the windows stay acquired, their
+// swapchains are made anew (the main thread drops those it presents itself, Render())
+bool vulkan14_renderer::context::skip_frame(render_job &Job, bool const Compute, char const *What, char const *&Failure)
+{
+	auto waits{Job.waits};
+	if (Compute)
+	{
+		VkSemaphoreSubmitInfo compute{};
+		compute.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+		compute.semaphore = compute_timeline;
+		compute.value = Job.value;
+		compute.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		waits.push_back(compute);
+	}
+	VkCommandBufferSubmitInfo uploadbuffer{};
+	uploadbuffer.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+	uploadbuffer.commandBuffer = Job.target->uploads;
+	VkSubmitInfo2 empty{};
+	empty.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+	empty.waitSemaphoreInfoCount = static_cast<std::uint32_t>(waits.size());
+	empty.pWaitSemaphoreInfos = waits.data();
+	empty.commandBufferInfoCount = (Job.uploaded ? 1 : 0);
+	empty.pCommandBufferInfos = &uploadbuffer;
+	empty.signalSemaphoreInfoCount = static_cast<std::uint32_t>(Job.signals.size());
+	empty.pSignalSemaphoreInfos = Job.signals.data();
+	if (false == VK14_VERIFY(vkQueueSubmit2(device.graphics_queue(), 1, &empty, VK_NULL_HANDLE)))
+	{
+		Failure = What;
+		return false;
+	}
+	for (auto *window : Job.windows)
+	{
+		window->drop_images();
+	}
+	Job.windows.clear();
+	Job.skipped = true;
+	// said the first time, then now and then while it goes on
+	++skipped_frames;
+	if ((skipped_frames % 600) == 1)
+	{
+		vk14::log_error(std::string(What) + " failed, the frame is left out (" + std::to_string(skipped_frames) + " so far)");
 	}
 	return true;
 }

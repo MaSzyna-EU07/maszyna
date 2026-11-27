@@ -28,3 +28,6 @@ vcpkg.json
 tools/python314/
 __pycache__/
 *.pyc
+
+# reviews of other pull requests, kept locally
+/pr-reviews/

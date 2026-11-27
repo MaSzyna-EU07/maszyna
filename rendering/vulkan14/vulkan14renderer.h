@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the vulkan 1.4 renderer, picked with gfxrenderer vulkan (claude/vulkan14-renderer-plan.md): the gpu, the windows with their
+// the vulkan 1.4 renderer, picked with gfxrenderer vulkan: the gpu, the windows with their
 // swapchains, the frames in flight, the memory and the uploads, the shaders and the pipelines, the pushed descriptors, the passes
 // with their barriers and gpu times, the textures and the user interface (imgui) with the launcher (the track R of the plan), and
 // the scene (the track D): the geometry, the materials, the passes of the colour of the scene with the sun shadows, the

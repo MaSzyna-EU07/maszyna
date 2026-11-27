@@ -418,7 +418,8 @@ bool global_settings::ConfigParseGraphics(cParser& Parser, const std::string& to
         else if (GfxRenderer == "vulkan14")
             GfxRenderer = "vulkan";
 
-        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan"))
+        // "null" draws nothing and loads no textures, for the test runs
+        if ((GfxRenderer != "default") && (GfxRenderer != "vulkan") && (GfxRenderer != "null"))
         {
             // the legacy OpenGL 2.1 renderer ("legacy", "simple" and other values) and the NVRHI renderer ("experimental") were removed
             WriteLog("eu07.ini: gfxrenderer \"" + GfxRenderer + "\" is no longer supported, using \"default\"");

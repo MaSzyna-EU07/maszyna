@@ -34,7 +34,8 @@ class opengl46_ao
 	opengl46_ao(const opengl46_ao &) = delete;
 	opengl46_ao &operator=(const opengl46_ao &) = delete;
 
-	// creates the programs. throws gl::shader_exception
+	// creates the programs. without them (a shader which doesn't compile) there is no ambient occlusion: logged, and
+	// gfx.postfx.ao switched off
 	void init();
 	// ground truth ambient occlusion from the depth of the scene drawn with the given projection: Raw gets the result of
 	// the horizon search, Smooth the smoothed one. both half the size of Depth

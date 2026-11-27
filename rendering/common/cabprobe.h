@@ -23,7 +23,7 @@ class TModel3d;
 namespace gfx
 {
 
-// the probe of the occupied cab (Global.gfx_cabprobe, the stage A4 of claude/renderers-plan.md), the part shared by the renderers;
+// the probe of the occupied cab (Global.gfx_cabprobe), the part shared by the renderers;
 // the backend (opengl46_cab_probe, vk14::cab_probe_maps) keeps the maps and draws to them through the gpu_* methods.
 // - two cube maps drawn from the middle of the box of the cab model (mdKabina), in the space of the model, so they stay right while
 //   the vehicle moves and turns: the light of the lights of the cab (the lamp, the light points of the cab model, the brightest

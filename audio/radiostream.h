@@ -92,8 +92,6 @@ class radio_stream
 	void reap();
 	// members
 	std::string m_url;
-	worker m_worker;
-	std::vector<worker> m_retired; // workers which were told to stop but may still be busy closing their connection
 	std::atomic<state> m_state{state::idle};
 	std::atomic<unsigned int> m_rate{0};
 	mutable std::mutex m_mutex; // guards the sample buffer and the generation counter
@@ -103,6 +101,10 @@ class radio_stream
 	std::size_t m_samplescount{0};
 	std::mutex m_messagesmutex;
 	std::deque<message> m_messages;
+	// the workers last: the members go in the reverse order, so their threads, which store() and post() to the members above, are
+	// joined before those go
+	worker m_worker;
+	std::vector<worker> m_retired; // workers which were told to stop but may still be busy closing their connection
 };
 
 } // namespace audio

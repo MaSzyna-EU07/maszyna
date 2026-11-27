@@ -35,6 +35,7 @@ extern char **environ;
 #include "editor/editorIncludeInfo.hpp"
 #include "editor/editorGroundMesh.hpp"
 #include "editor/editorFormat.hpp"
+#include "editor/editorCatenaryFile.hpp"
 #include "editor/editorAlignmentStore.hpp"
 #include "editor/editorSwitchStore.hpp"
 #include "world/catenary_scene.h"
@@ -3314,33 +3315,16 @@ bool editor_mode::save()
     }
     first_step_done(first_step::save);
 
-    // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it, in a layer of its own
-    std::vector<std::string> rootstatements;
-    std::map<scene::layer_handle, std::vector<std::string>> statements;
-    if (m_streamer.active())
+    // what can refuse the save is checked before anything is written, and the catenary files go first, all of them or none:
+    // a save refused there leaves the files on the disk as they were
+    for (auto const &file : catenary_scene_new_files())
     {
-        std::string error;
-        if (false == m_streamer.save(&error))
-        {
-            ui()->set_status(format(STR_C("The terrain couldn't be saved: %s"), error.c_str()), true);
-            return false;
-        }
-        if (false == scene::Layers.terrain_directive())
-        {
-            auto const directive{"heightmap_terrain " + m_streamer.name() + " endheightmap_terrain"};
-            if (auto const layer{output_layer("teren")}; layer != null_handle)
-                statements[layer].push_back(directive);
-            else
-                rootstatements.push_back(directive);
-        }
+        if (catenary_file_name_valid(file))
+            continue;
+        ui()->set_status(format(STR_C("The catenary in \"%s\" couldn't be saved: %s"), file.c_str(), STR_C("The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it")), true);
+        return false;
     }
-
-    auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
-    if (m_profile.changed)
-        profile_store();
-    switch_store::tidy();
-    switch_store::settle();
-    infra_store();
+    bool catenarywritten{false};
     // the catenary (cantilevers on the poles) lives in files of its own; a file made in the editor needs the directive, in the file
     // of the layer it was made on (the scenario file when that layer can't take it)
     std::vector<std::string> catenarynew;
@@ -3383,8 +3367,40 @@ bool editor_mode::save()
             ui()->set_status(format(STR_C("The catenary couldn't be saved: %s"), message.c_str()), true);
             return false;
         }
+        catenarywritten = false == message.empty();
         WriteLog("Editor: catenary written: " + message, logtype::generic);
     }
+
+    // the heightmap terrain is kept in files of its own, the scenery only needs the directive which loads it, in a layer of its own
+    std::vector<std::string> rootstatements;
+    std::map<scene::layer_handle, std::vector<std::string>> statements;
+    if (m_streamer.active())
+    {
+        std::string error;
+        if (false == m_streamer.save(&error))
+        {
+            if (catenarywritten)
+                ui()->set_status(format(STR_C("The terrain couldn't be saved: %s. The catenary files are written already, the scenery files aren't: save again once it's fixed"), error.c_str()), true);
+            else
+                ui()->set_status(format(STR_C("The terrain couldn't be saved: %s"), error.c_str()), true);
+            return false;
+        }
+        if (false == scene::Layers.terrain_directive())
+        {
+            auto const directive{"heightmap_terrain " + m_streamer.name() + " endheightmap_terrain"};
+            if (auto const layer{output_layer("teren")}; layer != null_handle)
+                statements[layer].push_back(directive);
+            else
+                rootstatements.push_back(directive);
+        }
+    }
+
+    auto const terrainadded{false == rootstatements.empty() || false == statements.empty()};
+    if (m_profile.changed)
+        profile_store();
+    switch_store::tidy();
+    switch_store::settle();
+    infra_store();
     for (auto const &file : catenary_scene_new_files())
     {
         auto const layer{static_cast<scene::layer_handle>(catenary_scene_file_layer(file))};
@@ -3444,6 +3460,13 @@ bool editor_mode::save()
     if (result.success)
         for (auto const &file : catenarynew)
             catenary_scene_file_included(file);
+    if (false == result.success && (catenarywritten || m_streamer.active()))
+    {
+        // the files of the terrain and of the catenary went before the scenery files
+        ui()->set_status(format("%s %s", result.message.c_str(), STR_C("Files of the terrain or of the catenary may be written already, the scenery files aren't: save again once it's fixed")), true);
+        WriteLog("Editor: " + result.message, logtype::generic);
+        return false;
+    }
     ui()->set_status(result.message, false == result.success);
     WriteLog("Editor: " + result.message, logtype::generic);
     return result.success;

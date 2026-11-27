@@ -11,9 +11,11 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46sky.h"
 
 #include <cstring>
+#include <format>
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
 
@@ -47,11 +49,33 @@ void opengl46_sky::init()
 		gl::shader shader(Name);
 		return std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 	};
-	m_transmittance_program = make_compute("atmosphere_transmittance.comp");
-	m_multiscattering_program = make_compute("atmosphere_multiscattering.comp");
-	m_skyview_program = make_compute("atmosphere_skyview.comp");
-	m_ambient_program = make_compute("atmosphere_ambient.comp");
-	m_prefilter_program = make_compute("envmap_prefilter.comp");
+	try
+	{
+		m_transmittance_program = make_compute("atmosphere_transmittance.comp");
+		m_multiscattering_program = make_compute("atmosphere_multiscattering.comp");
+		m_skyview_program = make_compute("atmosphere_skyview.comp");
+		m_ambient_program = make_compute("atmosphere_ambient.comp");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the sky of the sky dome, as without the atmosphere
+		ErrorLog(std::format("physical atmosphere not available: {}", e.what()));
+		m_transmittance_program.reset();
+		m_multiscattering_program.reset();
+		m_skyview_program.reset();
+		m_ambient_program.reset();
+		Global.gfx_atmosphere = false;
+	}
+	try
+	{
+		m_prefilter_program = make_compute("envmap_prefilter.comp");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the rough reflections keep to the mipmaps of the environment map
+		ErrorLog(std::format("rough reflections of the environment map not available: {}", e.what()));
+		Global.gfx_envmap_ggx = false;
+	}
 
 	m_sky_ssbo = std::make_unique<gl::ssbo>(sizeof(gl::sky_data), gl::SKY_SSBO_BINDING);
 	m_sky_ssbo->update(m_sky_data);
@@ -75,6 +99,8 @@ void opengl46_sky::bind()
 
 void opengl46_sky::update_atmosphere(glm::vec3 const &Sundirection)
 {
+	if (m_ambient_program == nullptr)
+		return;
 	bool mediumchanged{false};
 	if (false == m_light.atmosphere_changed(Sundirection, mediumchanged))
 		return;
@@ -151,6 +177,8 @@ glm::vec3 opengl46_sky::sun_disc_color(glm::vec3 const &Oldcolor) const
 
 void opengl46_sky::prefilter(gl::cubemap const &Source)
 {
+	if (m_prefilter_program == nullptr)
+		return;
 	if (!m_prefiltered)
 	{
 		m_prefiltered = std::make_unique<gl::cubemap>();

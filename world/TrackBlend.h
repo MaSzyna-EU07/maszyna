@@ -25,8 +25,9 @@ class TTrack;
 // ballast, a switch the trackbed made for it
 namespace track_blend {
 
-// how far from an end the textures blend, by default
-float constexpr default_length { 3.f };
+// how far from an end the textures blend where the scenery doesn't say (blendrails, blendballast, blend): not at all, so a
+// scenery from before looks as it did. a joint blends where the tracks on both sides of it ask for it
+float constexpr default_length { 0.f };
 
 // the order of the lengths of TTrack::m_blend
 enum class kind {

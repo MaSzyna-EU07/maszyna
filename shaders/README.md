@@ -24,7 +24,8 @@ compiles every shader of `ogl46/` (with the variant `MODEL_DRAWS` of the vertex 
     glslc --target-env=opengl4.5 -DMODEL_DRAWS=1 ogl46/vertex.vert -o ogl46bin/vertex.vert.MODEL_DRAWS.spv
     glslc --target-env=vulkan1.4 vk14/imgui.frag -o vk14bin/imgui.frag.spv
 
-A binary made by hand isn't in the manifest, so it is taken without being compared with its source. After a change of a
+A binary made by hand isn't in the manifest, so it is used only where its source isn't there (otherwise the source is compiled
+and the log says so). After a change of a
 source, compile the binaries again (or delete them): a binary older than its source is not used, and the log says so.
 
 ## Writing shaders

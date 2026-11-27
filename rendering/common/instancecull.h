@@ -25,8 +25,8 @@ class TAnimModel;
 namespace gfx
 {
 
-// the cpu side of the culling of the model instances of a render pass in compute passes, shared by the renderers (stage N6c of
-// claude/vulkan14-renderer-plan.md); the backend (opengl46_instance_cull, vk14 instance_cull) keeps the buffers and runs the passes:
+// the cpu side of the culling of the model instances of a render pass in compute passes, shared by the renderers;
+// the backend (opengl46_instance_cull, vk14 instance_cull) keeps the buffers and runs the passes:
 // - the records of the instances (scene::basic_cell::instance_record) are kept in one buffer, each bucket of a scene cell
 //   in its own place, and sent again only when the bucket made them anew
 // - every bucket queued in the pass becomes a job; the buckets of one model and one set of skins make a group, whose

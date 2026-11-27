@@ -31,7 +31,7 @@ class opengl46_timbers
 	opengl46_timbers &operator=(opengl46_timbers const &) = delete;
 	~opengl46_timbers();
 
-	// throws gl::shader_exception
+	// without the program (a shader which doesn't compile) the walk turns the instances on the cpu (gpu()), logged
 	void init();
 	// the instances of the tracks on the gpu, sent again for a track laid anew since; when those to send don't fit in what's left
 	// of the buffer, it's started over for all the tracks, a bigger one when it was started over not long before. without
@@ -43,6 +43,12 @@ class opengl46_timbers
 	// the runs written to the instance buffer Output, each as the modelview of its origin times its transforms, for the draws after
 	void expand(std::vector<glm::mat4> const &Origins, std::vector<gl::timber_range> const &Ranges, GLuint const Output);
 	void next_frame();
+	// the instances are kept and turned on the gpu; false from the frame after a buffer for them couldn't be had, then the walk
+	// turns them on the cpu
+	bool gpu() const
+	{
+		return m_gpu;
+	}
 
   private:
 	struct placed
@@ -51,8 +57,8 @@ class opengl46_timbers
 		std::uint32_t first;
 	};
 
-	// a new buffer, room for Needed instances at least, the tracks to be sent again
-	void restart(std::uint32_t const Needed);
+	// a new buffer, room for Needed instances at least, the tracks to be sent again. false: no memory for it, the old one stays
+	bool restart(std::uint32_t const Needed);
 
 	std::unique_ptr<gl::program> m_program;
 	std::unique_ptr<gl::frame_stream> m_ranges;
@@ -61,6 +67,8 @@ class opengl46_timbers
 	std::uint32_t m_fill{0};
 	unsigned int m_frame{0};
 	unsigned int m_restartframe{0};
+	bool m_failed{false}; // a buffer couldn't be had
+	bool m_gpu{true};
 	std::unordered_map<TTrack const *, placed> m_tracks;
 	std::vector<std::uint8_t> m_upload; // the origins and the runs of an expand(), as they're sent
 };

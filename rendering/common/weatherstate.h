@@ -7,8 +7,8 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the weather the renderers draw (the part of the stage F of claude/gl46-renderer-features-plan.md which isn't the work of the
-// gpu, taken out of opengl46_weather for the vulkan renderer, stage P2 of claude/vulkan14-renderer-plan.md): the block of the
+// the weather the renderers draw (the part which isn't the work of the gpu, taken out of opengl46_weather for the vulkan
+// renderer): the block of the
 // weather of the shaders (gl::weather_ubs) made from the weather of the simulation (environment/weather.h) for the frame and for
 // each pass, the quality levels, the place of the map of the shadows of the clouds, the bands of the panorama of the clouds, the
 // sampling of the fog volume over the frames, and the stars of the catalogue (environment/starcatalog.h)

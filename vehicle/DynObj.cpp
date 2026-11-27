@@ -30,6 +30,7 @@ http://mozilla.org/MPL/2.0/.
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <random>
 #include <iterator>
 #include <numbers>
 #include <optional>
@@ -9720,15 +9721,23 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
     kinds.resize( m_items.size() );
     // road vehicles far from the camera with nobody inside go by one step of the physics in the frame, as long as all the steps
     // together (Global.physics_roadlod): their movement goes on, in coarser steps nobody is close enough to tell
+    // not in a network session: which vehicles go coarse depends on the camera of each machine, so their movement and the draws of
+    // Random() they make would part ways between the machines. nor with physics.fullphysics off, whose steps are long already: one
+    // step for all of them would be the time of the whole frame, with the collisions looked at once in it
     static std::vector<std::uint8_t> coarse;
     coarse.assign( m_items.size(), 0 );
+    auto const roadlod {
+        Global.physics_roadlod
+        && Global.FullPhysics
+        && Global.network_servers.empty()
+        && ( false == Global.network_client.has_value() ) };
     auto const camera { Global.pCamera.Pos };
     for( std::size_t index = 0; index < m_items.size(); ++index ) {
         auto const *vehicle { m_items[ index ] };
         auto const road { ( vehicle->MoverParameters->CategoryFlag & 2 ) != 0 };
         auto const distant { glm::length2( vehicle->GetPosition() - camera ) > Timer::subsystem.VEHICLE_NEAR * Timer::subsystem.VEHICLE_NEAR };
         kinds[ index ] = static_cast<std::uint8_t>( ( road ? 2 : 0 ) + ( distant ? 1 : 0 ) );
-        coarse[ index ] = static_cast<std::uint8_t>( Global.physics_roadlod && road && distant && ( false == vehicle->MechInside ) && ( Iterationcount > 1 ) );
+        coarse[ index ] = static_cast<std::uint8_t>( roadlod && road && distant && ( false == vehicle->MechInside ) && ( Iterationcount > 1 ) );
         if( false == vehicle->bEnabled ) { continue; }
         ++counts.kind[ kinds[ index ] ];
         auto const *mover { vehicle->MoverParameters };
@@ -9858,8 +9867,8 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
             lap( index++, Timer::subsystem.vehicles_update_kind, mark );
         }
     }
-    Timer::subsystem.vehicles_update.stop();
     update_brake_pipes( Deltatime );
+    Timer::subsystem.vehicles_update.stop();
 
     // jeśli jest coś do usunięcia z listy, to trzeba na końcu
     erase_disabled();
@@ -10191,12 +10200,19 @@ vehicle_table::update_steps_parallel( double const Deltatime, int const Iteratio
     auto const totaltime { Deltatime * Iterationcount };
     auto const coarse = [ & ]( std::uint32_t const Index ) {
         return ( Index < Coarse.size() ) && ( Coarse[ Index ] != 0 ); };
+    // the draws of Random() a group makes come from an engine of its own, seeded from the run's engine and the group: the same in
+    // every run of a seed, whichever thread takes the group (the engines of the threads are seeded at random)
+    auto const seed { static_cast<std::uint32_t>( Global.random_engine() ) };
     auto const steps = [ & ]( std::uint32_t const Group ) {
         auto const &members { m_groups[ Group ] };
+        std::seed_seq groupseed { seed, members.front() };
+        std::mt19937 engine { groupseed }; // NOSONAR: randomness of the simulation, not of anything security-relevant
+        auto *const threadengine { thread_random_engine() };
+        set_thread_random_engine( &engine );
+        // the hoses join only vehicles coupled with each other, which are in one group: the air they carry is exchanged
+        // within the group after each step, as update_brake_pipes() does for all the vehicles in one thread
+        std::vector<TMoverParameters *> pipes;
         if( Iterationcount > 1 ) {
-            // the air exchange through the hoses after each step, as update_brake_pipes() does in update(): the vehicles coupled
-            // with hoses are in the same group
-            std::vector<TMoverParameters *> brakepipes;
             // ABu: ponizsze wykonujemy tylko jesli wiecej niz jedna iteracja
             for( int iteration = 0; iteration < Iterationcount - 1; ++iteration ) {
                 for( auto const index : members ) {
@@ -10205,20 +10221,21 @@ vehicle_table::update_steps_parallel( double const Deltatime, int const Iteratio
                 for( auto const index : members ) {
                     if( false == coarse( index ) ) { m_items[ index ]->FastUpdate( Deltatime ); }
                 }
-                brakepipes.clear();
+                pipes.clear();
                 for( auto const index : members ) {
                     auto *mover { m_items[ index ]->MoverParameters };
                     if( mover->PipeCouplersPending || mover->ScndPipeCouplersPending ) {
-                        brakepipes.push_back( mover );
+                        pipes.push_back( mover );
                     }
                 }
-                TMoverParameters::UpdatePipeCouplers( brakepipes, Deltatime );
+                TMoverParameters::UpdatePipeCouplers( pipes, Deltatime );
             }
         }
         for( auto const index : members ) {
             // the vehicles going by one step take it with the time of all of them
             m_items[ index ]->UpdateForce( coarse( index ) ? totaltime : Deltatime );
-        } };
+        }
+        set_thread_random_engine( threadengine ); };
 
     Workers().run(
         m_threadgroups.size(), Threads,

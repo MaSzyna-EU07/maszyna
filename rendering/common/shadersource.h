@@ -170,8 +170,8 @@ shader_source preprocess_shader(shader_api Api, std::string const &Name, std::st
                                 std::string const &Basedir = {});
 
 // the SPIR-V binary of a shader from the directory of the binaries of its api. empty when there's none, when the manifest of the
-// binaries says the binary was compiled from other sources than those there now, or when the file isn't SPIR-V; Reason says
-// which (empty when there's simply no binary)
+// binaries says the binary was compiled from other sources than those there now, when the manifest doesn't list it while its
+// source is there, or when the file isn't SPIR-V; Reason says which (empty when there's simply no binary)
 std::vector<std::uint32_t> load_shader_binary(shader_source const &Source, std::string &Reason);
 
 // the ids of the specialization constants of a SPIR-V module (OpDecorate ... SpecId)

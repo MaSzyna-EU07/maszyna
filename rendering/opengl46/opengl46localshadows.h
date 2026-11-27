@@ -31,7 +31,8 @@ class opengl46_local_shadows : public gfx::local_shadows
 	opengl46_local_shadows() = default;
 	~opengl46_local_shadows() override;
 
-	// creates the programs and the stand-in maps. throws gl::shader_exception
+	// creates the stand-in maps and the programs. without the programs (a shader which doesn't compile) the lights have no
+	// shadows: logged, and gfx.lights.shadows is switched off
 	void init();
 	// puts the maps (or the stand-ins, which shadow nothing) on their texture units, gl::LOCAL_SHADOW_TEX and
 	// gl::LOCAL_SHADOW_LAMPS_TEX. once per context and frame
@@ -67,6 +68,8 @@ class opengl46_local_shadows : public gfx::local_shadows
 	void gpu_headlights_timer(bool const Begin) override;
 
   private:
+	// throws gl::shader_exception
+	void init_programs();
 	void set_layer(int const Layer);
 	void set_near(float const Near);
 

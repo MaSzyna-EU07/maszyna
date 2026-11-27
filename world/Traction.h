@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include "world/Segment.h"
 #include "model/material.h"
 #include "utilities/Names.h"
+#include "world/TractionTail.h"
 
 class TTractionPowerSource;
 namespace gfx
@@ -62,6 +63,8 @@ class TTraction : public scene::basic_node
     gfx::geometry_handle m_geometry;
     // stan przęsła rysowanego wg typu sieci (dopisek "type"); pusty = przęsło rysowane po staremu. szczegóły w world/catenary_span.h
     std::shared_ptr<catenary_span> m_catenaryspan;
+    // dopiski wpisu "tension" i "rope2" w postaci wczytanej, zapisywane z powrotem przez export_as_text_
+    traction_tail m_tail;
 
     explicit TTraction( scene::node_data const &Nodedata );
 

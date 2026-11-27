@@ -104,6 +104,12 @@ class swapchain
 	}
 	// the result of the presentation of the image: out of date or suboptimal makes the swapchain anew before the next image
 	void presented(VkResult const Result);
+	// the images acquired for a frame left out aren't presented: they stay acquired and their present semaphores signalled, so the
+	// swapchain is made anew before the next image
+	void drop_images()
+	{
+		m_rebuild = true;
+	}
 	// the most images of the generated frames it can acquire with an image (as made, within what the program may hold at once)
 	std::uint32_t generated_room() const
 	{
@@ -168,7 +174,11 @@ class swapchain
 	bool restore_surface(std::string &Reason);
 	// what a result of the surface, the swapchain or a present says of them: the device or the surface is lost
 	void note_failure(VkResult Result);
+	// the views of the images go, their present semaphores are kept till the presentation is done with them (destroy_retired())
 	void release_images();
+	// the present semaphores of the swapchains before this one, once an image of this one came back from the presentation: the
+	// presents queued before it are done by then. all of them with Now
+	void destroy_retired(bool Now);
 	// whether the swapchain has to be made anew before the next image
 	bool outdated() const;
 
@@ -200,6 +210,11 @@ class swapchain
 	std::vector<VkImageView> m_views;
 	// one per image: a semaphore given to the presentation can be reused only once the image comes back
 	std::vector<VkSemaphore> m_presentsemaphores;
+	// those of the swapchains before this one: a wait of the queue doesn't say the presentation is done with them (that only
+	// VK_KHR_swapchain_maintenance1 tells, which the device isn't made with), an image of this one acquired twice does. the images
+	// acquired from this one so far
+	std::vector<VkSemaphore> m_retiredsemaphores;
+	std::size_t m_acquired{0};
 	// one per frame in flight (and one more for each generated frame): free again once the frame which waited for it is done
 	std::vector<VkSemaphore> m_acquiresemaphores;
 	std::uint32_t m_image{0};

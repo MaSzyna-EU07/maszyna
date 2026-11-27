@@ -19,9 +19,14 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulation.h"
 #include "vehicle/fieldshunting.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <functional>
+#include <limits>
+#include <utility>
+#include <vector>
 //---------------------------------------------------------------------------
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.
@@ -4265,6 +4270,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 		if (SpringBrake.Activate != State)
 		{
 			SpringBrake.Activate = State;
+			wake_for_brake();
 			return true;
 		}
 	}
@@ -4295,6 +4301,7 @@ bool TMoverParameters::SpringBrakeRelease()
 	if (SpringBrake.IsReady && SpringBrake.Cylinder->P() < SpringBrake.MinForcePressure)
 	{
 		SpringBrake.IsReady = false;
+		wake_for_brake();
 		return true;
 	}
 	else
@@ -5053,6 +5060,7 @@ bool TMoverParameters::IncLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA < 1.0 /*and (BrakeCtrlPos<1)*/)
 	{
 		LocalBrakePosA = std::min(1.0, LocalBrakePosA + CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		IBL = true;
 	}
 	else
@@ -5071,6 +5079,7 @@ bool TMoverParameters::DecLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA > 0)
 	{
 		LocalBrakePosA = std::max(0.0, LocalBrakePosA - CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		DBL = true;
 	}
 	else
@@ -5165,6 +5174,7 @@ bool TMoverParameters::IncManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos++;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		IMBL = true;
 	}
 	else
@@ -5187,6 +5197,7 @@ bool TMoverParameters::DecManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos--;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		DMBL = true;
 	}
 	else
@@ -5509,7 +5520,14 @@ void TMoverParameters::UpdateBrakePressure(double dt)
 
 	Hamulec->ForceLeak(dt * AirLeakRate * 0.25); // fake air leaks from brake system reservoirs
 
+	auto const brakepress{BrakePress};
 	BrakePress = Hamulec->GetBCP();
+	if (dt > 0.0)
+	{
+		// averaged over about a second: the valves move the cylinder in pulses, quicker than that within a single step
+		auto const rate{std::abs(BrakePress - brakepress) / dt};
+		BrakePressRate += (rate - BrakePressRate) * std::min(1.0, dt / 1.0);
+	}
 	//  BrakePress:=(Hamulec as TEst4).ImplsRes.pa;
 	Volume = Hamulec->GetBRP();
 }
@@ -6016,20 +6034,6 @@ void TMoverParameters::UpdateEPBrake()
 // Q: 20160713
 // Aktualizacja ciśnienia w przewodzie zasilającym
 // *************************************************************************************************
-namespace
-{
-// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
-// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
-// Global.physics_pipewake only a flow which brings its pressure, with what has flown in while it slept, that much away from the
-// pressure of the vehicle the air comes from
-bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
-{
-	if (Flow * Flow <= 0.00000000000001)
-		return false;
-	return (Global.physics_pipewake <= 0.f) || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake);
-}
-} // namespace
-
 void TMoverParameters::UpdateScndPipePressure(double dt)
 {
 	if (ScndPipePress > 1.0)
@@ -6093,6 +6097,33 @@ void TMoverParameters::UpdateSpringBrake(double /*dt*/)
 	SpringBrake.SBP = SpringBrake.Cylinder->P();
 }
 
+namespace
+{
+// whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
+// whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
+// Global.physics_pipewake only a flow which leaves its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from, or which has changed it by that much since it fell asleep: a pressure followed in
+// small steps would never reach the valves of a vehicle asleep otherwise
+bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
+{
+	if (Flow * Flow <= 0.00000000000001)
+		return false;
+	return (Global.physics_pipewake <= 0.f)
+	    || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake)
+	    || (std::abs(Pipe.P_pending() - Pipe.P_applied()) > Global.physics_pipewake);
+}
+
+// the pressure in the pipe of a coupled vehicle the flow to it goes by. the pressure the vehicle keeps is the one of its last step:
+// with Global.physics_pipewake one asleep can take air for a long time without waking, and the flow, going by that pressure, would
+// carry on past the pressure of the vehicle it comes from. so of one asleep, the pressure with what has flown in since
+double neighbour_pipe_pressure(TMoverParameters const &Neighbour, double const Pressure, TReservoir const &Pipe)
+{
+	if ((Global.physics_pipewake <= 0.f) || Neighbour.PhysicActivation)
+		return Pressure;
+	return Pipe.P_pending();
+}
+} // namespace
+
 // *************************************************************************************************
 // Q: 20160715
 // oblicza i zwraca przepływ powietrza pomiędzy pojazdami
@@ -6110,7 +6141,7 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
-		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv1 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv1);
 		if (pipe_wakes(dv1, PipePress, *c->Pipe))
 			c->switch_physics(true, wake_cause::mainpipe);
@@ -6119,7 +6150,7 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv2 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv2);
 		if (pipe_wakes(dv2, PipePress, *c->Pipe))
 			c->switch_physics(true, wake_cause::mainpipe);
@@ -6153,7 +6184,7 @@ double TMoverParameters::GetScndDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[0].Connected; // skrot
-		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+		dv1 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv1);
 		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
 			c->switch_physics(true, wake_cause::scndpipe);
@@ -6162,7 +6193,7 @@ double TMoverParameters::GetScndDVc(double dt)
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+		dv2 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv2);
 		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
 			c->switch_physics(true, wake_cause::scndpipe);
@@ -6229,34 +6260,100 @@ int hose_substeps(TMoverParameters const &Vehicle, train_pipe const &Pipe, doubl
 	return std::min(substeps, 10);
 }
 
-// the air exchange through the hoses of the pipe, for the vehicles which stepped it since the last call, in the order
-// they stepped: in as many sub-steps of dt as the vehicle needing the most of them takes, each going through the
-// vehicles one after another, as the step of the vehicles does
-void exchange_through_hoses(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe, double const dt)
+// the vehicles of the list which stepped the pipe, each with the number of the train it is in: the ones joined by the hoses
+// of the pipe, directly, numbered in the order of their first vehicle in the list. a vehicle which didn't step the pipe
+// (its physics sleeps) takes the air sent to it without passing it on, so it ends a train
+std::vector<std::size_t> hose_trains(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe)
 {
-	auto substeps{1};
-	for (auto const *vehicle : Vehicles)
+	auto constexpr none{std::numeric_limits<std::size_t>::max()};
+	std::vector<std::size_t> trains(Vehicles.size(), none);
+	// the vehicles by their address, for finding the neighbours in the list
+	std::vector<std::pair<TMoverParameters const *, std::size_t>> byaddress;
+	byaddress.reserve(Vehicles.size());
+	for (std::size_t index = 0; index < Vehicles.size(); ++index)
 	{
-		if (vehicle->*Pipe.pending)
+		if (Vehicles[index]->*Pipe.pending)
 		{
-			substeps = std::max(substeps, hose_substeps(*vehicle, Pipe, dt));
+			byaddress.emplace_back(Vehicles[index], index);
 		}
 	}
-	auto const substep{dt / substeps};
-	for (auto i = 0; i < substeps; ++i)
+	std::ranges::sort(byaddress);
+	auto const find = [&byaddress](TMoverParameters const *Vehicle) {
+		auto const found{std::ranges::lower_bound(byaddress, Vehicle, std::less<>{}, &std::pair<TMoverParameters const *, std::size_t>::first)};
+		return (found != byaddress.end() && found->first == Vehicle) ? found->second : none;
+	};
+	std::size_t count{0};
+	std::vector<std::size_t> stack;
+	for (std::size_t first = 0; first < Vehicles.size(); ++first)
 	{
-		for (auto *vehicle : Vehicles)
+		if (false == Vehicles[first]->*Pipe.pending || trains[first] != none)
 		{
-			if (false == vehicle->*Pipe.pending)
+			continue;
+		}
+		trains[first] = count;
+		stack.assign(1, first);
+		while (false == stack.empty())
+		{
+			auto const &vehicle{*Vehicles[stack.back()]};
+			stack.pop_back();
+			for (auto const &hose : vehicle.Couplers)
 			{
-				continue;
+				if (hose.Connected == nullptr || false == TestFlag(hose.CouplingFlag, Pipe.hose))
+				{
+					continue;
+				}
+				if (auto const other{find(hose.Connected)}; other != none && trains[other] == none)
+				{
+					trains[other] = count;
+					stack.push_back(other);
+				}
 			}
-			auto &pipe{*(vehicle->*Pipe.reservoir)};
-			pipe.Act(); // what the neighbours have sent in the meantime
-			vehicle->*Pipe.pressure = pipe.P();
-			pipe.Flow((vehicle->*Pipe.exchange)(substep));
-			pipe.Act();
-			vehicle->*Pipe.pressure = pipe.P();
+		}
+		++count;
+	}
+	return trains;
+}
+
+// the air exchange through the hoses of the pipe, for the vehicles which stepped it since the last call, in the order
+// they stepped: each train in as many sub-steps of dt as its vehicle needing the most of them takes, each going through
+// its vehicles one after another, as the step of the vehicles does. the air of a train stays in it, so a train comes out
+// the same whichever other vehicles are exchanged in the same call: all of them, or the ones of a group of
+// vehicle_table::update_steps_parallel()
+void exchange_through_hoses(std::vector<TMoverParameters *> const &Vehicles, train_pipe const &Pipe, double const dt)
+{
+	auto const trains{hose_trains(Vehicles, Pipe)};
+	std::vector<int> substeps;
+	for (std::size_t index = 0; index < Vehicles.size(); ++index)
+	{
+		if (false == Vehicles[index]->*Pipe.pending)
+		{
+			continue;
+		}
+		if (substeps.size() <= trains[index])
+		{
+			substeps.resize(trains[index] + 1, 1);
+		}
+		substeps[trains[index]] = std::max(substeps[trains[index]], hose_substeps(*Vehicles[index], Pipe, dt));
+	}
+	for (std::size_t train = 0; train < substeps.size(); ++train)
+	{
+		auto const substep{dt / substeps[train]};
+		for (auto i = 0; i < substeps[train]; ++i)
+		{
+			for (std::size_t index = 0; index < Vehicles.size(); ++index)
+			{
+				if (false == Vehicles[index]->*Pipe.pending || trains[index] != train)
+				{
+					continue;
+				}
+				auto *vehicle{Vehicles[index]};
+				auto &pipe{*(vehicle->*Pipe.reservoir)};
+				pipe.Act(); // what the neighbours have sent in the meantime
+				vehicle->*Pipe.pressure = pipe.P();
+				pipe.Flow((vehicle->*Pipe.exchange)(substep));
+				pipe.Act();
+				vehicle->*Pipe.pressure = pipe.P();
+			}
 		}
 	}
 	for (auto *vehicle : Vehicles)
@@ -11330,9 +11427,20 @@ bool TMoverParameters::accelerating() const
 	if (std::abs(AccS) <= 0.0001)
 		return false;
 	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
-	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by
-	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain)};
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by. a vehicle whose
+	// brake cylinders still fill or release isn't held yet: asleep, it would keep the brake force (and the pressure the AI waits on
+	// to set off) it had when it fell asleep. 0.05 bar/s is less than a distributor moves the cylinder when it applies or releases, and
+	// more than the leaks take
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain) && BrakePressRate <= 0.05};
 	return false == held;
+}
+
+void TMoverParameters::wake_for_brake()
+{
+	if (Global.physics_sleepheld)
+	{
+		switch_physics(true, wake_cause::command);
+	}
 }
 
 // *************************************************************************************************

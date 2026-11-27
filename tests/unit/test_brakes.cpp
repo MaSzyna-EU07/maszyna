@@ -141,10 +141,23 @@ TEST_CASE("brakes: a dead EN57 hauled with the brake hose alone charges from the
 	}
 }
 
+namespace {
+
+// Global.physics_sleepheld, off by default, on for the test it's made in
+struct sleepheld_on {
+	bool const was{Global.physics_sleepheld};
+	sleepheld_on() { Global.physics_sleepheld = true; }
+	~sleepheld_on() { Global.physics_sleepheld = was; }
+	sleepheld_on(sleepheld_on const &) = delete;
+	sleepheld_on &operator=(sleepheld_on const &) = delete;
+};
+
+} // namespace
+
 TEST_CASE("brakes: a wagon standing braked on a gradient sleeps while the brakes hold, and wakes and rolls away once they release") {
 	// Global.physics_sleepheld: a vehicle standing still held by its brakes lets its physics sleep, keeping the brake force of
 	// the step it fell asleep in. the brake system of the test vehicle steps on while asleep, as in the vehicle the user is in
-	REQUIRE(Global.physics_sleepheld);
+	sleepheld_on const sleepheld;
 	test::track slope;
 	slope.gradient = 0.01; // the brakes hold it, the running resistance alone (about 2.5 per mille) doesn't
 	vehicle wagon{definition::load("wagon")};
@@ -179,7 +192,7 @@ TEST_CASE("brakes: a wagon standing braked on a gradient sleeps while the brakes
 
 TEST_CASE("brakes: a wagon held by its hand brake on a gradient wakes and rolls away once the hand brake is released") {
 	// the setting changes by hand on a sleeping vehicle, whose brake system doesn't step in the game while asleep
-	REQUIRE(Global.physics_sleepheld);
+	sleepheld_on const sleepheld;
 	test::track slope;
 	slope.gradient = 0.01;
 	vehicle wagon{definition::load("wagon")};

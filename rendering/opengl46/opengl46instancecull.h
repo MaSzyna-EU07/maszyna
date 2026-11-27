@@ -42,8 +42,14 @@ class opengl46_instance_cull : public gfx::instance_cull
 
 	opengl46_instance_cull() = default;
 
-	// creates the buffers, and the programs and the record buffer, or takes the ones of Shared. throws gl::shader_exception
+	// creates the buffers, and the programs and the record buffer, or takes the ones of Shared. without the programs (a shader
+	// which doesn't compile) nothing is made: logged, and gfx.gpucull is switched off
 	void init(opengl46_instance_cull const *Shared = nullptr);
+	// the programs are there, the culling can run
+	bool available() const
+	{
+		return m_shared != nullptr;
+	}
 	// runs the culling passes for the buckets added. View: rotation of the view of the pass. Occlusion: the depth pyramid
 	// to test the instances against, or null. Twophase: with the occlusion test, only the instances seen in the previous
 	// frame pass for now, dispatch_second() takes the others

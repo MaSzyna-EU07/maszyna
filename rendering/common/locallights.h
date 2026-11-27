@@ -19,6 +19,7 @@ namespace scene
 {
 class basic_region;
 class basic_cell;
+class basic_node;
 } // namespace scene
 namespace gfx
 {
@@ -78,6 +79,9 @@ class local_lights
 	void gather(glm::dvec3 const &Camera, scene::basic_region &Region, gfx::geometrybank_manager const &Geometry, unsigned int const Framestamp);
 	// forgets the lights and everything kept about the scene, which is about to be replaced (a scenery being loaded)
 	void reset();
+	// a node of the scene is about to go: the lists of the lit instances of the cells, which may hold it, are made anew when the
+	// cells are visited next
+	void forget(scene::basic_node const *Node);
 	// the lights of models and vehicles, the most important (closest and brightest) first
 	std::vector<light> const &lights() const
 	{

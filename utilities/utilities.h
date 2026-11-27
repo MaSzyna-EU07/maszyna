@@ -84,6 +84,8 @@ int RandomInt(int min, int max);
 // the engine Random() draws from in the calling thread, in place of Global.random_engine, or none for that one again. the threads
 // of worker_pool have engines of their own: the one of the simulation can't be shared between threads
 void set_thread_random_engine(std::mt19937 *Engine); // NOSONAR: randomness of the simulation, not of anything security-relevant
+// the engine set for the calling thread by set_thread_random_engine(), or none
+std::mt19937 *thread_random_engine(); // NOSONAR: randomness of the simulation, not of anything security-relevant
 
 /// @author lxvia
 /// @brief Returns a random seed from the system's entropy source, if available. Otherwise, falls back to a clock-based seed.
