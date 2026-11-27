@@ -10,6 +10,8 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "rendering/opengl46/opengl46particles.h"
 
+#include <cstddef>
+
 #include "rendering/particles.h"
 #include "rendering/openglcamera.h"
 #include "simulation/simulation.h"
@@ -109,9 +111,9 @@ opengl46_particles::render() {
 	if (!m_vao) {
 		m_vao.emplace();
 
-		m_vao->setup_attrib(*m_buffer, 0, 3, GL_FLOAT, sizeof(particle_vertex), 0);
-		m_vao->setup_attrib(*m_buffer, 1, 4, GL_FLOAT, sizeof(particle_vertex), 12);
-		m_vao->setup_attrib(*m_buffer, 2, 2, GL_FLOAT, sizeof(particle_vertex), 28);
+		m_vao->setup_attrib(*m_buffer, 0, 3, GL_FLOAT, sizeof(particle_vertex), static_cast<int>(offsetof(particle_vertex, position)));
+		m_vao->setup_attrib(*m_buffer, 1, 4, GL_FLOAT, sizeof(particle_vertex), static_cast<int>(offsetof(particle_vertex, color)));
+		m_vao->setup_attrib(*m_buffer, 2, 2, GL_FLOAT, sizeof(particle_vertex), static_cast<int>(offsetof(particle_vertex, texture)));
 
 		gl::buffer::unbind(gl::buffer::ARRAY_BUFFER);
 		gl::vao::unbind();
