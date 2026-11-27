@@ -881,6 +881,16 @@ endif()
 if (WITH_OPENVR)
 	target_include_directories(eu07_settings INTERFACE ${OPENVR_INCLUDE_DIR})
 	target_link_libraries(eu07_settings INTERFACE ${OPENVR_LIBRARY})
+	if(WIN32)
+		find_file(OPENVR_RUNTIME_DLL openvr_api.dll
+			HINTS "[HKEY_CURRENT_USER\\Software\\Valve\\Steam;SteamPath]/steamapps/common/SteamVR/bin/win64"
+			DOC "Path to the x64 OpenVR runtime DLL"
+			REQUIRED)
+		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${OPENVR_RUNTIME_DLL}" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+			COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/openvrconfig" "$<TARGET_FILE_DIR:${PROJECT_NAME}>/openvrconfig"
+			VERBATIM)
+	endif()
 endif()
 
 if (WITH_CRASHPAD)

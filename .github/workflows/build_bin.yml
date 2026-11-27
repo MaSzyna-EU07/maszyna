@@ -12,6 +12,11 @@ on:
       - synchronize
 
   workflow_dispatch:
+    inputs:
+      openvr:
+        description: Build Windows binaries with SteamVR support
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -128,10 +133,17 @@ jobs:
           Write-Host "Python root: $pythonRoot"
           Write-Host "Extra CMake flags: ${{ matrix.variant.cmake_flags }}"
 
+          $vrFlags = @()
+          if ('${{ inputs.openvr }}' -eq 'true') {
+            $dll = Join-Path $env:RUNNER_TEMP 'openvr_api.dll'
+            Invoke-WebRequest 'https://raw.githubusercontent.com/ValveSoftware/openvr/v1.14.15/bin/win64/openvr_api.dll' -OutFile $dll
+            $vrFlags = @('-DWITH_OPENVR=ON', "-DOPENVR_RUNTIME_DLL=$dll")
+          }
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
             "-DPython3_ROOT_DIR=$pythonRoot" `
+            @vrFlags `
             ${{ matrix.variant.cmake_flags }}
 
       - name: Build

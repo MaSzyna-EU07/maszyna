@@ -11,7 +11,7 @@ vr_openvr::vr_openvr()
     vr::EVRInitError vr_error;
     vr_system = vr::VR_Init(&vr_error, vr::VRApplication_Scene);
     if (vr_error != vr::VRInitError_None) {
-        ErrorLog("failed to init openvr!");
+        ErrorLog(std::string("failed to init openvr: ") + vr::VR_GetVRInitErrorAsEnglishDescription(vr_error));
         return;
     }
 
@@ -20,7 +20,9 @@ vr_openvr::vr_openvr()
     vr::VRInput()->GetInputSourceHandle("/user/hand/right", &inputhandle_right);
 
     std::string action_path = std::filesystem::current_path().string() + "/openvrconfig/openvr_actions.json";
-    vr::VRInput()->SetActionManifestPath(action_path.c_str());
+    const auto manifest_error = vr::VRInput()->SetActionManifestPath(action_path.c_str());
+    if (manifest_error != vr::VRInputError_None)
+        ErrorLog("OpenVR action manifest " + action_path + ": error " + std::to_string(manifest_error));
 
     vr::VRInput()->GetActionSetHandle("/actions/main", &actionset);
     vr::VRInput()->GetActionHandle("/actions/main/in/PrimaryAction", &primary_action);
@@ -385,12 +387,16 @@ void vr_openvr::finish_frame()
 
 vr_openvr::~vr_openvr()
 {
-    vr::VR_Shutdown();
+    if (vr_system)
+        vr::VR_Shutdown();
 }
 
 std::unique_ptr<vr_interface> vr_openvr::create_func()
 {
-    return std::unique_ptr<vr_interface>(new vr_openvr());
+    auto backend = std::make_unique<vr_openvr>();
+    if (!backend->vr_system)
+        return nullptr;
+    return std::unique_ptr<vr_interface>(backend.release());
 }
 
 std::unordered_map<std::string, vr_openvr::button_bindings> vr_openvr::m_buttonbindings =
