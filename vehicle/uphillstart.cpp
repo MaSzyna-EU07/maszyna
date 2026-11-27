@@ -12,6 +12,37 @@ http://mozilla.org/MPL/2.0/.
 
 namespace uphill_start {
 
+bool begins(situation const &Now) {
+
+	return Now.standing
+		// the whole train at a stand, not only its head stopped for a moment while the train rolls back
+		&& (Now.consist_velocity > rollback_velocity) && Now.speed_up && Now.speed_asked
+		// only with the train brake still applied to hold the train
+		&& Now.train_brake_applied
+		// and charged to what the pipe has, or the brake that holds the train has no air
+		&& Now.consist_charged;
+}
+
+bool rolls_back(situation const &Now) {
+
+	return Now.consist_velocity < rollback_velocity;
+}
+
+bool power_holds(situation const &Now, double const Holdtime) {
+
+	return (Now.velocity > moving_velocity) || (Now.tractive_force > holding_force * Now.grade_force) || (Holdtime > hold_time);
+}
+
+bool released(situation const &Now, double const Releasetime) {
+
+	return Now.consist_released || (Releasetime > release_time);
+}
+
+bool may_add_power(bool const Releasing, double const Tractiveforce, double const Holdingforce) {
+
+	return (false == Releasing) || (Tractiveforce < holding_force * Holdingforce);
+}
+
 top_up_action brake_top_up(
 	top_up &State, double const Brakeforce, double const Holdingforce, double const Brakeposition, double const Heldtime,
 	double const Applicationtime) {
