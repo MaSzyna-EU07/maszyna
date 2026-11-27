@@ -30,6 +30,10 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 	// the drops and the rivulets of the cells of the glasses with rain (mat_rain_windscreen, rain_cells.comp) worked out for the
 	// time of the frame (scene_ubs.time), once a frame before the passes; nothing while it doesn't rain
 	void update_rain_cells(float Time, float Rain);
+	// the next of the programs of the simulation compiled ahead of its first step (a few seconds each where the driver has none
+	// of them kept, at the first start of a new version), so the loading screen stays while they're made. false once all are
+	bool prepare_next();
+	static constexpr std::size_t program_count() { return pass::count + 1; } // the passes and the cells of the rain
 
   protected:
 	bool gpu_init() override;
@@ -61,4 +65,8 @@ class opengl46_windscreen_water : public gfx::windscreen_water
 	std::unique_ptr<gl::program> m_raincellprogram;
 	std::unique_ptr<gl::ssbo> m_raincells;
 	bool m_raincelltried{false};
+	bool m_nosnow{false}; // a pass of the snow didn't compile: the snow is left out
+
+	bool make_program(std::size_t Index);
+	void make_rain_cells_program();
 };

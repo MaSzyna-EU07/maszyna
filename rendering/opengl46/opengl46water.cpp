@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 
 #include <algorithm>
+#include <array>
+#include <iterator>
 
 namespace
 {
@@ -38,62 +40,88 @@ bool kernel_texture(ITexture &Texture)
 
 namespace
 {
-// the programs of the passes, in their order (opengl46_windscreen_water::pass)
-constexpr std::array<char const *, 9> PROGRAM_NAMES{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-                                                    "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp"};
+// the programs of the passes, in their order (opengl46_windscreen_water::pass). the passes of the snow (from pass::snow on) are
+// optional: without them the glasses of the snow stay clear and the rain works on
+constexpr std::array<char const *, 11> PROGRAM_NAMES{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
+                                                     "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp",
+                                                     "water_snowlayer.comp"};
 } // namespace
+
+// the program of a pass made; false when it doesn't compile (a pass of the snow then leaves the snow out, both of its passes)
+bool opengl46_windscreen_water::make_program(std::size_t const Index)
+{
+	try
+	{
+		gl::shader shader(PROGRAM_NAMES[Index]);
+		m_programs[Index] = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+		return true;
+	}
+	catch (gl::shader_exception const &e)
+	{
+		if (Index >= pass::snow)
+		{
+			ErrorLog("windscreen water: can't use " + std::string(PROGRAM_NAMES[Index]) + ", the glasses of the snow stay clear: " + std::string(e.what()));
+			m_nosnow = true;
+			m_programs[pass::snow].reset();
+			m_programs[pass::snowlayer].reset();
+		}
+		else
+		{
+			ErrorLog("windscreen water: " + std::string(PROGRAM_NAMES[Index]) + " not made: " + std::string(e.what()));
+		}
+		return false;
+	}
+}
+
+// the program of the cells of the rain (rain_cells.comp) made, once; its storage waits for the first rain (update_rain_cells())
+void opengl46_windscreen_water::make_rain_cells_program()
+{
+	if (m_raincelltried)
+		return;
+	m_raincelltried = true;
+	try
+	{
+		gl::shader shader("rain_cells.comp");
+		m_raincellprogram = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		ErrorLog("rain cells: can't use rain_cells.comp, the glasses with rain stay dry: " + std::string(e.what()));
+		m_raincellprogram.reset();
+	}
+}
 
 bool opengl46_windscreen_water::prepare_next()
 {
 	static_assert(PROGRAM_NAMES.size() == pass::count, "a name for every pass of the water");
-	auto const missing{std::ranges::find_if(m_programs, [](std::unique_ptr<gl::program> const &Program) { return Program == nullptr; })};
-	if (missing == m_programs.end())
-		return false;
-	auto const index{static_cast<std::size_t>(std::distance(m_programs.begin(), missing))};
-	try
+	for (std::size_t index = 0; index < PROGRAM_NAMES.size(); ++index)
 	{
-		gl::shader shader(PROGRAM_NAMES[index]);
-		*missing = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+		if (m_programs[index] || ((index >= pass::snow) && m_nosnow))
+			continue;
+		// a pass of the water which doesn't compile is left to gpu_init(), which goes without the simulation
+		return (make_program(index) || (index >= pass::snow));
 	}
-	catch (gl::shader_exception const &e)
+	// the cells of the rain made ahead as well, so the first rain doesn't compile them in the middle of a frame
+	if (false == m_raincelltried)
 	{
-		// left to gpu_init(), which tells of it and goes without the simulation
-		ErrorLog("windscreen water: " + std::string(PROGRAM_NAMES[index]) + " not made ahead: " + std::string(e.what()));
-		return false;
+		make_rain_cells_program();
+		return true;
 	}
-	return true;
+	return false;
 }
 
 bool opengl46_windscreen_water::gpu_init()
 {
-	try
+	// the ones made ahead (prepare_next()) are kept
+	for (std::size_t i = 0; i < PROGRAM_NAMES.size(); ++i)
 	{
-		std::array<char const *, pass::count> const names{"water_trail.comp", "water_spawn.comp", "water_move.comp", "water_clear.comp", "water_grid.comp",
-		                                                  "water_merge.comp", "water_gather.comp", "water_settle.comp", "water_bake.comp", "water_snow.comp",
-		                                                  "water_snowlayer.comp"};
-		for (std::size_t i = 0; i < names.size(); ++i)
+		if (m_programs[i] || ((i >= pass::snow) && m_nosnow))
+			continue;
+		if ((false == make_program(i)) && (i < pass::snow))
 		{
-			try
-			{
-				gl::shader shader(names[i]);
-				m_programs[i] = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
-			}
-			catch (gl::shader_exception const &e)
-			{
-				if (i < pass::snow)
-					throw;
-				// the passes of the snow are optional: without them the glasses of the snow stay clear, the rain works on
-				ErrorLog("windscreen water: can't use " + std::string(names[i]) + ", the glasses of the snow stay clear: " + std::string(e.what()));
-				m_programs[pass::snow].reset();
-				m_programs[pass::snowlayer].reset();
-				break;
-			}
+			ErrorLog("windscreen water: can't use the programs of the simulation");
+			return false;
 		}
-	}
-	catch (gl::shader_exception const &e)
-	{
-		ErrorLog("windscreen water: can't use the programs of the simulation: " + std::string(e.what()));
-		return false;
 	}
 	m_storage = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(gl::WATER_STORAGE_SIZE), gl::WATER_SSBO_BINDING);
 	::glClearNamedBufferData(*m_storage, GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
@@ -113,23 +141,12 @@ void opengl46_windscreen_water::update_rain_cells(float const Time, float const 
 {
 	if (Rain <= 0.f)
 		return;
-	if (false == m_raincelltried)
-	{
-		m_raincelltried = true;
-		try
-		{
-			gl::shader shader("rain_cells.comp");
-			m_raincellprogram = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
-			m_raincells = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(gl::RAIN_CELLS_COUNT * 16), gl::RAIN_CELLS_SSBO_BINDING);
-		}
-		catch (gl::shader_exception const &e)
-		{
-			ErrorLog("rain cells: can't use rain_cells.comp, the glasses with rain stay dry: " + std::string(e.what()));
-			m_raincellprogram.reset();
-		}
-	}
-	if ((!m_raincellprogram) || (!m_raincells))
+	make_rain_cells_program();
+	if (!m_raincellprogram)
 		return;
+	// the storage of the cells made at the first rain
+	if (!m_raincells)
+		m_raincells = std::make_unique<gl::ssbo>(static_cast<GLsizeiptr>(gl::RAIN_CELLS_COUNT * 16), gl::RAIN_CELLS_SSBO_BINDING);
 	// the glasses of the frame before read the cells, this one writes them
 	::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	m_raincells->bind_base();

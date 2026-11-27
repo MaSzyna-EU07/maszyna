@@ -635,7 +635,14 @@ vulkan14_renderer::indirect_counts vulkan14_renderer::draw_indirect_shadow(vk14:
 		auto &program{own != nullptr ? *own :
 		              m_cubeshadows  ? (texture != null_handle ? *scene.cube_alpha_shadow : *scene.cube_shadow) :
 		                               (texture != null_handle ? *scene.alpha_shadow : *scene.shadow)};
-		auto *multidraw{m_indirectmultidraw ? multidraw_program(program) : nullptr};
+		auto pending{false};
+		auto *multidraw{m_indirectmultidraw ? multidraw_program(program, pending) : nullptr};
+		if (pending)
+		{
+			// the shaders of its multi draws are being compiled: the draw is left out till they're there
+			++index;
+			continue;
+		}
 		auto last{index + 1};
 		if (multidraw != nullptr)
 		{
