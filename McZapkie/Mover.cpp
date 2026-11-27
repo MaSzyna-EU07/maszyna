@@ -5522,7 +5522,12 @@ void TMoverParameters::UpdateBrakePressure(double dt)
 
 	auto const brakepress{BrakePress};
 	BrakePress = Hamulec->GetBCP();
-	BrakePressStep = std::abs(BrakePress - brakepress);
+	if (dt > 0.0)
+	{
+		// averaged over about a second: the valves move the cylinder in pulses, quicker than that within a single step
+		auto const rate{std::abs(BrakePress - brakepress) / dt};
+		BrakePressRate += (rate - BrakePressRate) * std::min(1.0, dt / 1.0);
+	}
 	//  BrakePress:=(Hamulec as TEst4).ImplsRes.pa;
 	Volume = Hamulec->GetBRP();
 }
@@ -11424,8 +11429,9 @@ bool TMoverParameters::accelerating() const
 	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
 	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by. a vehicle whose
 	// brake cylinders still fill or release isn't held yet: asleep, it would keep the brake force (and the pressure the AI waits on
-	// to set off) it had when it fell asleep
-	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain) && BrakePressStep <= 0.0001};
+	// to set off) it had when it fell asleep. 0.05 bar/s is less than a distributor moves the cylinder when it applies or releases, and
+	// more than the leaks take
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain) && BrakePressRate <= 0.05};
 	return false == held;
 }
 

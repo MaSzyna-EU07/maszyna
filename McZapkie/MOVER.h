@@ -2198,7 +2198,7 @@ class TMoverParameters
 	double ScndPipePress = 0.0; /*cisnienie w przewodzie zasilajacym*/
 	bool ScndPipeCouplersPending{false}; // the main reservoir pipe stepped, its air exchange through the hoses is yet to come (UpdatePipeCouplers())
 	double BrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych*/
-	double BrakePressStep = 0.0; // how much BrakePress changed in the last step of the brakes [bar], see accelerating()
+	double BrakePressRate = 0.0; // how fast BrakePress changes, averaged over about a second [bar/s], see accelerating()
 	double LocBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z pomocniczego*/
 	double PipeBrakePress = 0.0; /*!o cisnienie w cylindrach hamulcowych z przewodu*/
 	double PipePress = 0.0; /*!o cisnienie w przewodzie glownym*/
