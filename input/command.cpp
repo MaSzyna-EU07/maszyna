@@ -423,6 +423,7 @@ commanddescription_sequence Commands_descriptions = {
     {"linebreakeropenc", command_target::vehicle, command_mode::oneoff},
     {"linebreakerclosec", command_target::vehicle, command_mode::oneoff},
     {"repaircoupler", command_target::simulation, command_mode::oneoff},
+    {"flashlighttoggle", command_target::simulation, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -825,6 +826,7 @@ std::unordered_map<std::string, user_command> const commandMap = {
     {"linebreakeropenc", user_command::linebreakeropenc},
     {"linebreakerclosec", user_command::linebreakerclosec},
     {"repaircoupler", user_command::repaircoupler},
+    {"flashlighttoggle", user_command::flashlighttoggle},
 	{"none", user_command::none}};
 
 } // namespace simulation

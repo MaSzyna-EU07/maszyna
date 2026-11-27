@@ -263,6 +263,7 @@ driverkeyboard_input::default_bindings() {
         // interiorlightenable,
         // interiorlightdisable,
         { interiorlightdimtoggle, {GLFW_KEY_APOSTROPHE | keymodifier::control, ""} },
+        { flashlighttoggle, {GLFW_KEY_L | keymodifier::control | keymodifier::shift, ""} },
         // interiorlightdimenable,
         // interiorlightdimdisable,
         // compartmentlightstoggle,
