@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 // the drives of the vehicles, one class for each kind of engine
 
 #include "stdafx.h"
-#include "physics/mover/drive.h"
+#include "physics/components/drive.h"
 
 #include <algorithm>
 #include <cmath>

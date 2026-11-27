@@ -27,7 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <utility>
 #include <vector>
-#include "physics/mover/internal.h"
+#include "physics/components/internal.h"
 
 
 // Nastawianie hamulców

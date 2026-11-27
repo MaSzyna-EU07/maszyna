@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the helpers the files of physics/mover/ share: only they include this header
+// the helpers the files of physics/components/ share: only they include this header
 
 #pragma once
 

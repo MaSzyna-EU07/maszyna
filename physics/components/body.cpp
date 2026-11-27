@@ -27,7 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <utility>
 #include <vector>
-#include "physics/mover/internal.h"
+#include "physics/components/internal.h"
 
 
 std::vector<std::string> const TMoverParameters::eimc_labels = {"dfic: ", "dfmax:", "p:    ", "scfu: ", "cim:  ", "icif: ", "Uzmax:", "Uzh:  ", "DU:   ", "I0:   ", "fcfu: ",

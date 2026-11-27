@@ -27,7 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <utility>
 #include <vector>
-#include "physics/mover/internal.h"
+#include "physics/components/internal.h"
 
 // Ra: tu należy przenosić funcje z mover.pas, które nie są z niego wywoływane.
 // Jeśli jakieś zmienne nie są używane w mover.pas, też można je przenosić.

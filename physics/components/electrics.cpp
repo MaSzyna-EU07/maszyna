@@ -27,7 +27,7 @@ http://mozilla.org/MPL/2.0/.
 #include <limits>
 #include <utility>
 #include <vector>
-#include "physics/mover/internal.h"
+#include "physics/components/internal.h"
 
 
 // KURS90 - sprężarka pantografów; Ra 2014-07: teraz jest to zbiornik rozrządu, chociaż to jeszcze nie tak

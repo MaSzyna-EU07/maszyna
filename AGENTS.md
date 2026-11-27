@@ -107,7 +107,7 @@ Code that isn't otherwise touched keeps its names; renaming a member goes togeth
 scripts and the log read stays byte for byte the same whatever the C++ names are: the keywords of the `.fiz` and the scenery, the
 keys of the dictionaries of the Python screens, the texts of the log and of `STR(...)`.
 
-The vehicle code is in `physics/` (the physics of the vehicles: `mover.h` and `physics/mover/*.cpp` by subsystem, `brakes.*`,
+The vehicle code is in `physics/` (the physics of the vehicles: `mover.h` and `physics/components/*.cpp` by subsystem, `brakes.*`,
 couplers, collisions, derailment) and `vehicle/` (the vehicle in the scenery, the cab, the AI). Keep it that way:
 
 - `physics/vehicletypes.h` holds the vocabulary the rest of the simulator passes around (vehicle ends, sides, couplings, lights,
@@ -117,7 +117,7 @@ couplers, collisions, derailment) and `vehicle/` (the vehicle in the scenery, th
   an `int`. Numbers of the formats (`.scn`, events, the network) are read into these where they come in and written where they go out.
 - The commands between the vehicles are `VehicleCommand` (`physics/vehiclecommand.h`); their text names only matter where a command
   comes as text.
-- What depends on the kind of drive (`EngineType`) goes into its class in `physics/mover/drive.*`, not into a new `switch`.
+- What depends on the kind of drive (`EngineType`) goes into its class in `physics/components/drive.*`, not into a new `switch`.
 
 ## Renderers: the move to OpenGL 4.6 and Vulkan
 

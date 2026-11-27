@@ -2248,7 +2248,7 @@ class TMoverParameters
 	void FuseOff(void); // wylaczenie nadmiarowego
 	bool UniversalResetButton(int const Button, range_t const Notify = range_t::consist);
 	bool RelayReset(int const Relays, range_t const Notify = range_t::consist); // resets specified relays
-	// the drive of the kind of engine of the vehicle (physics/mover/drive.h)
+	// the drive of the kind of engine of the vehicle (physics/components/drive.h)
 	TractionDrive const &Drive() const;
 	double ShowCurrent(int AmpN) const; // pokazuje bezwgl. wartosc pradu na wybranym amperomierzu
 	double ShowCurrentP(int AmpN) const; // pokazuje bezwgl. wartosc pradu w wybranym pojezdzie                                                             //Q 20160722
