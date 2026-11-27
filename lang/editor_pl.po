@@ -3972,6 +3972,12 @@ msgstr "Zielone, jak reszta symulatora"
 msgid "Amber, of the editor"
 msgstr "Bursztynowe, własne edytora"
 
+msgid "Light, in the colour of the work mode"
+msgstr "Jasne, w kolorze trybu pracy"
+
+msgid "Dark, in the colour of the work mode"
+msgstr "Ciemne, w kolorze trybu pracy"
+
 msgid "Surroundings"
 msgstr "Otoczenie"
 
@@ -16287,6 +16293,174 @@ msgstr "Ortofoto: %zu kafli widoku pobieranych w pierwszej kolejności (Ctrl+~)"
 msgid "Orthophoto: the view is all shown already (Ctrl+~)"
 msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
 
+# the descriptions shown after the cursor rests on an entry of the main menu for 3 s
+msgid "Turns the debug mode of the simulator on or off. It shows more in the windows and the log and allows the debug commands, such as the jump in time. In the Windows menu it adds the ImGui Demo and the Headlight config."
+msgstr "Włącza albo wyłącza tryb debugowania symulatora. Okna i log pokazują więcej, działają polecenia debugowania, np. skok w czasie. W menu Okna dochodzą ImGui Demo i Headlight config."
+
+msgid "Asks whether to quit the simulator: Y or Yes quits, N, No or F10 again leaves the question."
+msgstr "Pyta, czy zamknąć symulator: Y albo Tak zamyka, N, Nie albo ponowne F10 zamyka pytanie."
+
+msgid "Writes the messages of the simulator to log.txt in the game folder. Turned off, nothing more is written there until it's turned on again. The choice lasts until the simulator is closed."
+msgstr "Zapisuje komunikaty symulatora do log.txt w folderze gry. Po wyłączeniu nic więcej się tam nie zapisuje, dopóki znowu go nie włączysz. Wybór obowiązuje do zamknięcia symulatora."
+
+msgid "Saves the picture of the window as a PNG file in the screenshots folder, named by the date and time. The file is written in the background, a moment after the click."
+msgstr "Zapisuje obraz okna jako plik PNG w folderze zrzutów ekranu, z datą i godziną w nazwie. Plik zapisuje się w tle, chwilę po kliknięciu."
+
+msgid "The window with the messages of the simulator as they are written to log.txt, the newest at the bottom. Warnings and errors of the scenery show up here too."
+msgstr "Okno z komunikatami symulatora, tymi samymi, które idą do log.txt, najnowsze na dole. Widać tu też ostrzeżenia i błędy scenerii."
+
+msgid "The demo window of ImGui, the library these windows are made with. For those who work on the interface."
+msgstr "Okno demonstracyjne ImGui, biblioteki, z której są zrobione te okna. Dla osób pracujących nad interfejsem."
+
+msgid "A debug window of the renderer with the settings of the headlights of the vehicles, to try them out live."
+msgstr "Okno debugowania renderera z ustawieniami reflektorów pojazdów, do wypróbowania na żywo."
+
+msgid "The list of the nodes registered in the scene. A click on one takes the camera to it, and its identifier and type show when the cursor is over it."
+msgstr "Lista węzłów zarejestrowanych w scenie. Kliknięcie węzła przenosi do niego kamerę, a po najechaniu widać jego identyfikator i typ."
+
+msgid "The window of the changes made in this session, the newest at the end, which Ctrl+Z takes back one by one. In it you set how many changes are kept and how far from the camera an object may be placed."
+msgstr "Okno zmian zrobionych w tej sesji, najnowsze na końcu. Ctrl+Z cofa je po kolei. Tu ustawiasz, ile zmian jest pamiętanych i jak daleko od kamery można postawić obiekt."
+
+msgid "The settings of the editor, such as the colours of the interface, the node bank and the signals. They are kept in eu07_editor.ini in the user's profile and come back at the next start."
+msgstr "Ustawienia edytora, np. kolory interfejsu, bank obiektów i sygnalizacja. Zapisują się w eu07_editor.ini w profilu użytkownika i wracają przy następnym starcie."
+
+msgid "Closes this scenery and starts the editor again with the wizard of a new scenery, where you give its name and its place on the map. Save first with Ctrl+S what you want to keep."
+msgstr "Zamyka tę scenerię i uruchamia edytor od nowa z kreatorem nowej scenerii, w którym podajesz jej nazwę i miejsce na mapie. Najpierw zapisz Ctrl+S to, co chcesz zachować."
+
+msgid "Starts the editor again with another scenery, chosen from the scenery folder. Save first with Ctrl+S what you want to keep here."
+msgstr "Uruchamia edytor od nowa z inną scenerią, wybraną z folderu scenery. Najpierw zapisz Ctrl+S to, co chcesz tu zachować."
+
+msgid "Writes the changes into the scenery files they came from. The definitions you didn't change stay in the files byte for byte, an edited object is written anew. It works when the scenery was loaded with -edit."
+msgstr "Zapisuje zmiany do plików scenerii, z których pochodzą. Definicje, których nie zmieniałeś, zostają w plikach bajt w bajt, a edytowany obiekt zapisuje się od nowa. Działa, gdy sceneria była wczytana z -edit."
+
+msgid "Writes the whole scene as the editor holds it to files with _export in their names, next to the scenario. The scenery files aren't changed. Useful to see what the editor has loaded, or as a start for another scenery."
+msgstr "Zapisuje całą scenę, tak jak ją ma edytor, do plików z _export w nazwie, obok scenariusza. Pliki scenerii zostają bez zmian. Przydaje się, żeby zobaczyć, co edytor wczytał, albo jako początek innej scenerii."
+
+msgid "The settings of the tool in use, such as the radius and the type of a track, the profile of a road or the brush of the terrain. What it shows changes with the tool."
+msgstr "Ustawienia używanego narzędzia, np. promień i typ toru, profil drogi albo pędzel terenu. Zawartość zmienia się razem z narzędziem."
+
+msgid "The properties of what is selected: its position and turn, the model and its textures, the parameters of a track and more. A change made here goes into the scene at once and Ctrl+Z takes it back."
+msgstr "Właściwości zaznaczonego obiektu: położenie i obrót, model i tekstury, parametry toru i inne. Zmiana wprowadzona tutaj od razu trafia do sceny, a Ctrl+Z ją cofa."
+
+msgid "Sets of models put down at random, such as several kinds of trees or houses: at each click one model of the set is picked, so the place doesn't look copied."
+msgstr "Zestawy modeli stawianych losowo, np. kilka rodzajów drzew albo domów. Przy każdym kliknięciu losuje się jeden model z zestawu, więc okolica nie wygląda na skopiowaną."
+
+msgid "The descriptions of the scenery templates (includes): what parameters they take and what the parameters mean, so the editor shows them as named fields. Only the descriptions are kept, the templates aren't changed."
+msgstr "Opisy szablonów scenerii (include): jakie parametry przyjmują i co one znaczą, żeby edytor pokazywał je jako nazwane pola. Zapisują się tylko opisy, same szablony zostają bez zmian."
+
+msgid "Puts all the windows and docks of the editor back where they are at the first start."
+msgstr "Ustawia wszystkie okna i doki edytora z powrotem tam, gdzie są przy pierwszym uruchomieniu."
+
+msgid "Unpinned, the docks hide at the edges of the screen and slide out when the cursor comes to them, leaving more room for the view. Pinned, they stay open. Ctrl+Space switches between the two."
+msgstr "Odpięte doki chowają się przy krawędziach ekranu i wysuwają, gdy podjedzie do nich kursor, więc widok ma więcej miejsca. Przypięte zostają otwarte. Ctrl+Spacja przełącza między tymi stanami."
+
+msgid "Takes back the last change made in the editor, such as a move, an object added or deleted, or a change of the tracks or the terrain. Pressed again, it goes further back. Ctrl+Y makes a change taken back again."
+msgstr "Cofa ostatnią zmianę w edytorze, np. przesunięcie, dodanie lub usunięcie obiektu albo zmianę torów czy terenu. Kolejne naciśnięcia cofają dalej. Ctrl+Y przywraca cofniętą zmianę."
+
+msgid "Makes the change taken back with Ctrl+Z again, one by one, in the order they were taken back."
+msgstr "Przywraca zmiany cofnięte Ctrl+Z, po kolei, w kolejności cofania."
+
+msgid "Deletes what's selected: a model, tracks, a piece or a point of a road, a signal or an included scenery template. Ctrl+Z brings it back."
+msgstr "Usuwa zaznaczenie: model, tory, odcinek lub punkt drogi, semafor albo dołączony szablon scenerii. Ctrl+Z przywraca usunięte."
+
+msgid "Copies the selected models, with all the models of their groups, to the clipboard of the editor. Ctrl+V puts them at the cursor, Ctrl+RMB at the point clicked in the view."
+msgstr "Kopiuje zaznaczone modele razem z modelami z ich grup do schowka edytora. Ctrl+V wstawia je przy kursorze, a Ctrl+PPM w klikniętym miejscu widoku."
+
+msgid "Puts new copies of the copied models at the cursor, set around it as they were around the selected one. Ctrl+RMB in the view pastes them where you click. Each paste makes new copies."
+msgstr "Wstawia nowe kopie skopiowanych modeli przy kursorze, rozstawione wokół niego tak jak wokół zaznaczonego modelu. Ctrl+PPM w widoku wstawia je w klikniętym miejscu. Każde wklejenie tworzy nowe kopie."
+
+msgid "Ties the selected models into a group: from now on they move and turn together, and a click on one of them selects them all. First select the models with Shift+LMB."
+msgstr "Łączy zaznaczone modele w grupę: odtąd przesuwają się i obracają razem, a kliknięcie jednego zaznacza wszystkie. Najpierw zaznacz modele z Shift+LPM."
+
+msgid "Breaks the group of the selected model: each of its models is selected and moved by itself again."
+msgstr "Rozbija grupę zaznaczonego modelu: każdy z jej modeli znowu zaznacza się i przesuwa osobno."
+
+msgid "Moves each selected model, and each model of their groups, straight down or up onto the terrain or the object under it. The turn of the models stays as it was."
+msgstr "Przesuwa każdy zaznaczony model, także modele z ich grup, prosto w dół lub w górę na teren albo obiekt pod nim. Obrót modeli zostaje bez zmian."
+
+msgid "The camera flies smoothly to the selected object and stops a little way off, looking at it."
+msgstr "Kamera płynnie podlatuje do zaznaczonego obiektu i zatrzymuje się w niewielkiej odległości, patrząc na niego."
+
+msgid "Opens the track panel at the search field: type the name of a track, Polish letters too, and the editor finds it and takes the camera there."
+msgstr "Otwiera panel torów na polu wyszukiwania: wpisz nazwę toru, także z polskimi literami, a edytor go znajdzie i przeniesie tam kamerę."
+
+msgid "Bends the selected model, such as a platform edge or a fence, along the nearest track, so it follows the curve. How it bends is set in the inspector."
+msgstr "Wygina zaznaczony model, np. krawędź peronu albo płot, wzdłuż najbliższego toru, żeby szedł po łuku. Sposób wyginania ustawia się w inspektorze."
+
+msgid "A window with all the keys and mouse actions of the editor, grouped by mode of work. F1 opens and closes it at any time."
+msgstr "Okno ze wszystkimi klawiszami i akcjami myszy edytora, pogrupowanymi według trybu pracy. F1 otwiera je i zamyka w dowolnej chwili."
+
+msgid "Short lessons, each with a picture of the keys and the mouse, from the camera and the first track to a whole line, the terrain and saving. The lessons done are ticked off."
+msgstr "Krótkie lekcje, każda z rysunkiem klawiszy i myszy: od kamery i pierwszego toru po całą linię, teren i zapis. Ukończone lekcje są odhaczane."
+
+msgid "Switches between the perspective camera and the view straight down without perspective, as on a map. Pressed again, it brings the camera back as it was. In the top view the wheel zooms."
+msgstr "Przełącza między kamerą z perspektywą a widokiem prosto z góry bez perspektywy, jak na mapie. Ponowne naciśnięcie przywraca kamerę do poprzedniego położenia. W widoku z góry kółko przybliża."
+
+msgid "In the top view, zoomed in, the curves show their radius and length and the switches their name and type, as on a track plan. Where labels would overlap, some are left out."
+msgstr "W widoku z góry, po przybliżeniu, łuki pokazują promień i długość, a rozjazdy nazwę i typ, jak na planie torów. Gdzie napisy by na siebie nachodziły, część jest pomijana."
+
+msgid "Draws on the roads the lanes the road vehicles drive along, so you can check where they go at junctions and roundabouts."
+msgstr "Rysuje na drogach pasy, po których jeżdżą pojazdy drogowe, żeby sprawdzić, którędy jadą na skrzyżowaniach i rondach."
+
+msgid "A window that checks the models along the tracks against the structure gauge and over the roads against the clearance, and lists those that stick into them, so they can be moved."
+msgstr "Okno, które sprawdza modele przy torach względem skrajni budowli, a nad drogami względem skrajni drogowej, i wypisuje te, które w nie wchodzą, żeby można je było przesunąć."
+
+msgid "Sets the time of day, the day of the year, the visibility, the clouds and the air temperature, to see the scenery in the editor as it will look at that time. It doesn't change the scenery files."
+msgstr "Ustawia porę dnia, dzień roku, widoczność, zachmurzenie i temperaturę powietrza, żeby zobaczyć w edytorze, jak sceneria będzie wtedy wyglądać. Nie zmienia plików scenerii."
+
+msgid "A small map of the whole scenery in its own window: the tracks and the camera. A click on it takes the camera there, and the stations (W4) can be found by name."
+msgstr "Mała mapa całej scenerii w osobnym oknie: tory i kamera. Kliknięcie na mapie przenosi tam kamerę, a stacje (W4) można wyszukać po nazwie."
+
+msgid "Turns on the aerial imagery of geoportal.gov.pl under the scenery. It is downloaded around the camera, kept in a cache on the disk and laid out by the origin of the scenery, its place on the map."
+msgstr "Włącza ortofotomapę z geoportal.gov.pl pod scenerią. Pobiera się wokół kamery, zapisuje w pamięci podręcznej na dysku i układa według originu scenerii, czyli jej miejsca na mapie."
+
+msgid "Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."
+msgstr "Otwiera warstwy bazowe mapy w oknie Warstwy: ustawienia ortofotomapy i własne dodatkowe warstwy WMS nałożone na nią."
+
+msgid "Every model in the scenery made from the same file as the selected one is moved straight down or up to the ground under it. Useful after the terrain has changed under many copies of one model."
+msgstr "Każdy model w scenerii z tego samego pliku co zaznaczony przesuwa się prosto w dół lub w górę na grunt pod nim. Przydaje się, gdy teren zmienił się pod wieloma kopiami jednego modelu."
+
+msgid "LMB selects a model, Shift+LMB adds another one to the selection. The gizmo moves, turns and scales what is selected, and its properties are on the right."
+msgstr "LPM zaznacza model, Shift+LPM dodaje kolejny do zaznaczenia. Gizmo przesuwa, obraca i skaluje zaznaczenie, a jego właściwości są po prawej."
+
+msgid "LMB puts the model chosen in the node bank where you click. The node bank opens at the bottom."
+msgstr "LPM stawia model wybrany w banku obiektów w klikniętym miejscu. Bank obiektów otwiera się na dole."
+
+msgid "Dragged with LMB, it scatters the models chosen in the node bank over the ground, as the tool options set."
+msgstr "Przeciągany z LPM rozrzuca po gruncie modele wybrane w banku obiektów, według opcji narzędzia."
+
+msgid "LMB adds the points of the outline of an area, which is then filled with the models of the node bank, spread over it as the tool options set."
+msgstr "LPM dodaje punkty obrysu obszaru, który potem wypełnia się modelami z banku obiektów, rozłożonymi według opcji narzędzia."
+
+msgid "LMB on a model in the scene copies it into the node bank, to be put down again elsewhere."
+msgstr "LPM na modelu w scenie kopiuje go do banku obiektów, żeby można go było postawić gdzie indziej."
+
+msgid "LMB where a road crosses a track puts a level crossing there."
+msgstr "LPM w miejscu, gdzie droga przecina tor, stawia tam przejazd kolejowy."
+
+msgid "LMB on a road puts a point where the road vehicles appear and drive into the scenery."
+msgstr "LPM na drodze stawia punkt, w którym pojawiają się pojazdy drogowe i wjeżdżają w scenerię."
+
+msgid "LMB on a road puts a point where the road vehicles leave the scenery and are taken off it."
+msgstr "LPM na drodze stawia punkt, w którym pojazdy drogowe opuszczają scenerię i znikają."
+
+msgid "LMB on a road puts a pedestrian crossing across it."
+msgstr "LPM na drodze stawia na niej przejście dla pieszych."
+
+msgid "A click opens the list of the work modes; F2 to F5 switch to them at once."
+msgstr "Kliknięcie otwiera listę trybów pracy, a F2–F5 przełączają je od razu."
+
+msgid "Undo  [Ctrl+Z]"
+msgstr "Cofnij  [Ctrl+Z]"
+
+msgid "Redo  [Ctrl+Y]"
+msgstr "Ponów  [Ctrl+Y]"
+
+msgid "The editor draws the mouse pointer into the picture itself, so it is seen by those who watch a stream or a recording of the window: Discord, OBS and the capture of the system leave the pointer of the system out."
+msgstr "Edytor sam rysuje kursor myszy w obrazie, żeby widzieli go oglądający transmisję albo nagranie okna: Discord, OBS i przechwytywanie systemu pomijają kursor systemowy."
+
+msgid "The light and the dark colours lay the editor out as islands over the view: the docks are taken apart and their windows float. Back in the green or the amber colours the windows go back to the docks they had before."
+msgstr "Jasne i ciemne kolory układają edytor w wyspy nad widokiem: doki są rozbierane, a ich okna pływają. Po powrocie do zielonych albo bursztynowych kolorów okna wracają do doków, w których były wcześniej."
 msgid "Preparing the graphics (takes longer at the first start of a new version)"
 msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
 

@@ -359,6 +359,20 @@ editor_mode::selftest_result editor_mode::selftest_scene(std::string const &comm
 		WriteLog(format("SELFTEST ortho extent %.0f tracks %d", Global.EditorOrthoExtent, Global.EditorOrthoTracks));
 		return selftest_result::handled;
 	}
+	if (command == "palette")
+	{
+		// the colours of the editor, as the settings choose them, but not saved: the docks and the islands change places
+		int palette{0};
+		words >> palette;
+		EditorSettings.palette(std::clamp(palette, 0, 3));
+		WriteLog(format("SELFTEST palette %d", EditorSettings.palette()));
+		return selftest_result::handled;
+	}
+	if (command == "docks")
+	{
+		WriteLog("SELFTEST docks " + editor_ui::docks_report());
+		return selftest_result::handled;
+	}
 	if (command == "mapstate")
 	{
 		auto const marked{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$o")};

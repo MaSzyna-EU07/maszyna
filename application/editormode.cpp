@@ -67,6 +67,7 @@ extern char **environ;
 #include "imgui/imgui_internal.h"
 #include "imgui/ImGuizmo.h"
 #include "utilities/Logs.h"
+#include "application/uidescription.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
@@ -558,6 +559,8 @@ editor_mode::editor_mode() {
 	ui()->set_gizmo_options([this]() { render_gizmo_options(); });
 	ui()->set_toolbar_options([this]() { render_toolbar(); });
 	ui()->set_workspace_bar([this]() { render_workspaces(); });
+	ui()->set_capsule([this]() { render_capsule(); });
+	ui()->set_accent_source([this]() { return work_area_colour(current_work_area(), EditorSettings.palette() == 3); });
 	ui()->set_track_options([this]() { render_track_tool_options(); }, [this]() { render_track_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::roads, [this]() { render_road_tool_options(); }, [this]() { render_road_selection(); });
 	ui()->set_workspace_options(editor_ui::workspace::terrain, [this]() { render_terrain_tool_options(); });
@@ -1604,7 +1607,7 @@ bool editor_mode::update()
     steps.step("nmt");
     // what's drawn over the 3d view stays in it, the docks around it are see-through a little
     auto *background{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
-    background->PushClipRect(ImVec2(editor_ui::view_min().x, editor_ui::view_min().y), ImVec2(editor_ui::view_max().x, editor_ui::view_max().y), true);
+    background->PushClipRect(ImVec2(editor_ui::view_clip_min().x, editor_ui::view_clip_min().y), ImVec2(editor_ui::view_clip_max().x, editor_ui::view_clip_max().y), true);
     draw_orthophoto();
     draw_nmt_pending();
     area_update();
@@ -1787,13 +1790,14 @@ void editor_mode::render_settings()
 
             ImGui::Separator();
             ImGui::TextUnformatted(STR_C("Colours of the editor"));
-            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor")};
-            int palette = std::clamp(EditorSettings.palette(), 0, 1);
+            const char *palettes[] = {STR_C("Green, as the rest of the simulator"), STR_C("Amber, of the editor"), STR_C("Light, in the colour of the work mode"), STR_C("Dark, in the colour of the work mode")};
+            int palette = std::clamp(EditorSettings.palette(), 0, 3);
             if (ImGui::Combo("##palette", &palette, palettes, IM_ARRAYSIZE(palettes)))
             {
                 EditorSettings.palette(palette);
                 EditorSettings.save();
             }
+            ui::rest_description(STR_C("The light and the dark colours lay the editor out as islands over the view: the docks are taken apart and their windows float. Back in the green or the amber colours the windows go back to the docks they had before."));
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -4233,18 +4237,21 @@ void editor_mode::render_map_menu()
         return;
     if (ImGui::MenuItem(STR_C("Minimap"), "Ctrl+M", m_minimap.is_open()))
         m_minimap.toggle();
+    ui::rest_description(STR_C("A small map of the whole scenery in its own window: the tracks and the camera. A click on it takes the camera there, and the stations (W4) can be found by name."));
     ImGui::Separator();
     bool enabled = m_orthophoto.enabled();
     if (ImGui::MenuItem(STR_C("Orthophoto"), nullptr, enabled))
         choose_orthophoto(false == enabled);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Aerial imagery of geoportal.gov.pl under the scenery, laid out by the origin of the scenery"));
+    ui::rest_description(STR_C("Turns on the aerial imagery of geoportal.gov.pl under the scenery. It is downloaded around the camera, kept in a cache on the disk and laid out by the origin of the scenery, its place on the map."));
     // the settings among the base layers in the layers window
     if (ImGui::MenuItem(STR_C("Orthophoto settings..."), nullptr, orthophoto_settings_open()))
     {
         ui()->show_layers();
         m_orthophoto_window = true;
     }
+    ui::rest_description(STR_C("Opens the base layers of the map in the Layers window: the settings of the orthophoto and further WMS layers of your own, laid over it."));
     ImGui::EndMenu();
 }
 
@@ -4526,6 +4533,7 @@ void editor_mode::render_view_menu()
         toggle_ortho();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The view straight down without perspective, as on a map; again for the camera as it was"));
+    ui::rest_description(STR_C("Switches between the perspective camera and the view straight down without perspective, as on a map. Pressed again, it brings the camera back as it was. In the top view the wheel zooms."));
     if (ImGui::BeginMenu(STR_C("Tracks in the top view")))
     {
         render_top_tracks_choice(false);
@@ -4549,9 +4557,11 @@ void editor_mode::render_view_menu()
     ImGui::MenuItem(STR_C("Track labels in the top view"), nullptr, &m_track_labels);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Zoomed in from above, the curves get their radius and length and the switches their name and type, as on a plan; where they'd crowd, some are left out"));
+    ui::rest_description(STR_C("In the top view, zoomed in, the curves show their radius and length and the switches their name and type, as on a track plan. Where labels would overlap, some are left out."));
     ImGui::MenuItem(STR_C("Show lanes"), nullptr, &m_roadtool.lanes);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The lanes of the roads drawn as the paths the vehicles take"));
+    ui::rest_description(STR_C("Draws on the roads the lanes the road vehicles drive along, so you can check where they go at junctions and roundabouts."));
     if (ImGui::MenuItem(STR_C("Cursor drawn into the picture (streams)"), nullptr, m_draw_cursor))
     {
         m_draw_cursor = !m_draw_cursor;
@@ -4560,14 +4570,17 @@ void editor_mode::render_view_menu()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("The pointer drawn by the editor into the frame instead of the one of the system: seen by those watching a stream\n"
                                       "or a recording of the window (Discord, OBS, the capture of the system), which leave the system pointer out"));
+    ui::rest_description(STR_C("The editor draws the mouse pointer into the picture itself, so it is seen by those who watch a stream or a recording of the window: Discord, OBS and the capture of the system leave the pointer of the system out."));
     if (ImGui::MenuItem(STR_C("Structure gauge"), nullptr, m_gauge.is_open()))
         m_gauge.toggle();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Checks which models enter the structure gauge of the tracks and the clearance over the roads (skrajnia budowli)"));
+    ui::rest_description(STR_C("A window that checks the models along the tracks against the structure gauge and over the roads against the clearance, and lists those that stick into them, so they can be moved."));
     ImGui::Separator();
     ImGui::MenuItem(STR_C("Weather and time"), nullptr, &m_environment_open);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", STR_C("Time of day, day of the year, visibility, clouds and air temperature, as the scenery is seen in the editor"));
+    ui::rest_description(STR_C("Sets the time of day, the day of the year, the visibility, the clouds and the air temperature, to see the scenery in the editor as it will look at that time. It doesn't change the scenery files."));
     ImGui::EndMenu();
 }
 
@@ -4840,6 +4853,7 @@ void editor_mode::render_object_menu()
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", STR_C("Select a model in the scene. Every instance of the same model file is moved straight up or down\n"
                                     "to the ground under it: terrain, large models and terrain made in the editor."));
+        ui::rest_description(STR_C("Every model in the scenery made from the same file as the selected one is moved straight down or up to the ground under it. Useful after the terrain has changed under many copies of one model."));
         ImGui::EndMenu();
     }
 }
@@ -5805,6 +5819,23 @@ editor_mode::work_area editor_mode::current_work_area() const
 	return work_area::surroundings;
 }
 
+int editor_mode::work_area_colour(work_area const Area, bool const Dark)
+{
+	// a colour of its own for each work mode, brighter on the dark panels: the accents say where one is
+	switch (Area)
+	{
+	case work_area::surroundings:
+		return Dark ? 0x2bc49b : 0x12866a;
+	case work_area::tracks:
+		return Dark ? 0x5b82ff : 0x2a55e5;
+	case work_area::roads:
+		return Dark ? 0xff8a45 : 0xe0601a;
+	case work_area::terrain:
+		return Dark ? 0x86c447 : 0x4f8a1f;
+	}
+	return -1;
+}
+
 void editor_mode::choose_work_area(work_area const Area)
 {
 	switch (Area)
@@ -5905,53 +5936,64 @@ void editor_mode::render_edit_menu()
 		undo_last();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Takes the last change back"));
+	ui::rest_description(STR_C("Takes back the last change made in the editor, such as a move, an object added or deleted, or a change of the tracks or the terrain. Pressed again, it goes further back. Ctrl+Y makes a change taken back again."));
 	if (ImGui::MenuItem(STR_C("Redo"), "Ctrl+Y", false, false == g_redo.empty()))
 		redo_last();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Makes the change taken back again"));
+	ui::rest_description(STR_C("Makes the change taken back with Ctrl+Z again, one by one, in the order they were taken back."));
 	ImGui::Separator();
 	auto const selected{m_node != nullptr};
 	if (ImGui::MenuItem(STR_C("Delete"), STR_C("Del"), false, selected || m_instance != 0))
 		delete_selected();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Deletes what's selected: a model, tracks, a road piece or point, a signal, an include of a scenery template"));
+	ui::rest_description(STR_C("Deletes what's selected: a model, tracks, a piece or a point of a road, a signal or an included scenery template. Ctrl+Z brings it back."));
 	auto const models{dynamic_cast<TAnimModel *>(m_node) != nullptr && ui()->mode() != nodebank_panel::TRACK};
 	if (ImGui::MenuItem(STR_C("Copy"), "Ctrl+C", false, models))
 		copy_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Copies the selected models with their groups"));
+	ui::rest_description(STR_C("Copies the selected models, with all the models of their groups, to the clipboard of the editor. Ctrl+V puts them at the cursor, Ctrl+RMB at the point clicked in the view."));
 	if (ImGui::MenuItem(STR_C("Paste"), "Ctrl+V", false, false == m_clipboard.empty()))
 		paste_clipboard(cursor_ground());
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Puts the copied models at the cursor, around it as they were around the selected one; Ctrl+RMB in the view pastes them where it was clicked"));
+	ui::rest_description(STR_C("Puts new copies of the copied models at the cursor, set around it as they were around the selected one. Ctrl+RMB in the view pastes them where you click. Each paste makes new copies."));
 	ImGui::Separator();
 	if (ImGui::MenuItem(STR_C("Group together"), "Ctrl+G", false, models && selected_nodes().size() > 1))
 		group_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The selected models move together from now on; a click on one selects them all. Shift+LMB adds a model to the selection"));
+	ui::rest_description(STR_C("Ties the selected models into a group: from now on they move and turn together, and a click on one of them selects them all. First select the models with Shift+LMB."));
 	// Delete above may have just dropped the node, selected is from before it
 	if (ImGui::MenuItem(STR_C("Ungroup"), "Ctrl+Shift+G", false, m_node != nullptr && m_node->group() > 1))
 		ungroup_selection();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The models of the group move each by itself again"));
+	ui::rest_description(STR_C("Breaks the group of the selected model: each of its models is selected and moved by itself again."));
 	if (ImGui::MenuItem(STR_C("Drop to the ground"), "End", false, selected))
 		drop_selection_to_ground();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Puts each selected model, also each model of their groups, down onto the terrain or the object under it"));
+	ui::rest_description(STR_C("Moves each selected model, and each model of their groups, straight down or up onto the terrain or the object under it. The turn of the models stays as it was."));
 	if (ImGui::MenuItem(STR_C("Fly to the selected"), "F", false, selected))
 		start_focus(m_node, 0.6);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The camera flies to the selected model and looks at it"));
+	ui::rest_description(STR_C("The camera flies smoothly to the selected object and stops a little way off, looking at it."));
 	if (ImGui::MenuItem(STR_C("Find a track by its name"), "Ctrl+F"))
 	{
 		terrain_workspace(false);
 		show_track_tab(m_track_window_open ? m_track_tab : track_tab::path);
 		m_track_search.focus = true;
 	}
+	ui::rest_description(STR_C("Opens the track panel at the search field: type the name of a track, Polish letters too, and the editor finds it and takes the camera there."));
 	if (ImGui::MenuItem(STR_C("Bend the selected along the track"), "B", false, ui()->mode() != nodebank_panel::TRACK))
 		bend_shortcut();
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Bends the selected model, e.g. a platform edge or a fence, along the nearest track; the settings are in the inspector"));
+	ui::rest_description(STR_C("Bends the selected model, such as a platform edge or a fence, along the nearest track, so it follows the curve. How it bends is set in the inspector."));
 	ImGui::EndMenu();
 }
 
@@ -5962,9 +6004,11 @@ void editor_mode::render_help_menu()
 	ImGui::MenuItem(STR_C("Keyboard shortcuts"), "F1", &m_shortcuts_open);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("The keys of the editor, for each field of work"));
+	ui::rest_description(STR_C("A window with all the keys and mouse actions of the editor, grouped by mode of work. F1 opens and closes it at any time."));
 	ImGui::MenuItem(STR_C("Tutorial"), nullptr, &m_first_steps_open);
 	if (ImGui::IsItemHovered())
 		ImGui::SetTooltip("%s", STR_C("Short lessons: the camera, laying track, curves, the radius at the bends, correcting a curve, joining, switches, switch templates, signals and posts, a whole line step by step, fixing, the gizmo, the grade line, terrain, older sceneries, saving and driving"));
+	ui::rest_description(STR_C("Short lessons, each with a picture of the keys and the mouse, from the camera and the first track to a whole line, the terrain and saving. The lessons done are ticked off."));
 	ImGui::EndMenu();
 }
 

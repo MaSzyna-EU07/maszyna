@@ -241,6 +241,7 @@ set(SOURCES
 "editor/editorModelSets.cpp"
 "editor/editorTrackPresets.cpp"
 "editor/editorIncludeInfo.cpp"
+"editor/editorIslands.cpp"
 "editor/editorSwitchDrives.cpp"
 "editor/editorTerrain.cpp"
 "editor/editorTrack.cpp"

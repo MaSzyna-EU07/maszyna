@@ -78,8 +78,12 @@ public:
 	// methods
     static bool init( GLFWwindow *Window );
 	static void imgui_style();
-	// colours of the user interface: 0 the green ones shared with the starter, 1 the amber ones of the editor
+	// colours of the user interface: 0 the green ones shared with the starter, 1 the amber ones of the editor,
+	// 2 and 3 the light and the dark ones of the editor with rounded, padded elements and a colour of the work mode
 	static void imgui_colors(int const Palette);
+	// the palettes drawn with rounded, padded elements and an accent given by the ui, see accent()
+	static bool rounded_palette(int const Palette) { return Palette == 2 || Palette == 3; }
+	static bool rounded() { return rounded_palette(m_palette); }
 
     // assign texturing hardware unit
     static void set_unit( GLint const Textureunit ) { m_textureunit = GL_TEXTURE0 + Textureunit; }
@@ -154,7 +158,13 @@ protected:
 	{
 		return 0;
 	}
+	// accent of the rounded palettes as 0xRRGGBB, below 0 their own
+	virtual int accent() const
+	{
+		return -1;
+	}
 	static int m_palette; // colours set at the moment
+	static int m_accent; // accent set at the moment
    ui_log_panel m_logpanel { "Log", true };
 	bool m_suppress_menu = false; // if `true`, the menu at the top of the window will not be present
 	bool m_menu_always = false; // if `true`, the menu is shown all the time, not only when the mouse is at the top of the window
@@ -168,6 +178,8 @@ protected:
 // methods
 	// render() subclass details
    virtual void render_() {}
+	// called before the frame of imgui starts, once its colours are set: the settings of imgui can be loaded there
+	virtual void before_frame() {}
 	// submitted right after the start of the frame, before any window that may be docked in it
 	virtual void render_dockspace() {}
     // draws background quad with specified earlier texture

@@ -71,7 +71,7 @@ public:
 	int nodebank_card() const { return m_nodebank_card; }
 	void nodebank_card(int Size) { m_nodebank_card = Size; }
 
-	// colours of the editor: 0 green, as the rest of the simulator; 1 amber
+	// colours of the editor: 0 green, as the rest of the simulator; 1 amber; 2 light and 3 dark, rounded, in the colour of the work mode
 	int palette() const { return m_palette; }
 	void palette(int Palette) { m_palette = Palette; }
 

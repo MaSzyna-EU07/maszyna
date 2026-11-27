@@ -11,6 +11,9 @@ http://mozilla.org/MPL/2.0/.
 
 #include "application/uilayer.h"
 #include "application/editoruipanels.h"
+#include "editor/editorIslands.hpp"
+
+#include <string>
 
 namespace scene
 {
@@ -88,6 +91,16 @@ class editor_ui : public ui_layer
 		m_toolsmenu = std::move(Renderer);
 	}
 	// draws the fields of work of the editor mode in a row above the toolbar
+	// colour of the work mode as 0xRRGGBB, for the accents of the rounded palettes
+	void set_accent_source(std::function<int()> Source)
+	{
+		m_accentsource = std::move(Source);
+	}
+	// the capsule of the islands: the plate of the work mode, its tools, undo and redo
+	void set_capsule(std::function<void()> Renderer)
+	{
+		m_capsule = std::move(Renderer);
+	}
 	void set_workspace_bar(std::function<void()> Renderer)
 	{
 		m_workspacebar = std::move(Renderer);
@@ -131,6 +144,74 @@ class editor_ui : public ui_layer
 	{
 		return m_viewmax;
 	}
+	// part of the main window where the 3d view is seen, under the floating islands as well; what's drawn over the view is clipped
+	// to it. without the islands it is the part between the docked windows, as view_min() and view_max()
+	static glm::vec2 view_clip_min()
+	{
+		return m_viewclipmin;
+	}
+	static glm::vec2 view_clip_max()
+	{
+		return m_viewclipmax;
+	}
+	// in the light and the dark palettes the windows of the editor float over the 3d view at fixed places, as islands:
+	// the capsule of the work mode and its tools at the top left, the rail of the scene windows under it, the tool and the
+	// selection on the right, the scene or the layers as a drawer by the rail, the node bank as a tray at the bottom
+	enum class island
+	{
+		capsule,
+		rail,
+		tool,
+		inspector,
+		drawer,
+		bank,
+		sets
+	};
+	enum class drawer
+	{
+		none,
+		scene,
+		layers
+	};
+	// how the windows of the editor are laid out: docked around the 3d view, or floating over it as islands
+	enum class layout_mode
+	{
+		docks,
+		islands
+	};
+	// the layout that goes with the colours: the flat palettes dock, the rounded ones lay out the islands
+	static layout_mode layout_of(int const Palette)
+	{
+		return rounded_palette(Palette) ? layout_mode::islands : layout_mode::docks;
+	}
+	// the windows are islands, not docked
+	static bool islands();
+	// for the self-tests: the layout in use, the kept layout of the docks, the dock of each window of the editor and the free view
+	static std::string docks_report();
+	// places the window begun next as the island. returns: false if the windows are docked (the flat palettes)
+	static bool place_island(island const Which);
+	// flags of a window kept at its place
+	static int island_flags();
+	// a soft shadow under the window being drawn
+	static void island_shadow();
+	static drawer shown_drawer()
+	{
+		return m_drawer;
+	}
+	static void show_drawer(drawer const Which)
+	{
+		m_drawer = Which;
+	}
+	// the node bank is in the tray: for the modes which insert models, or brought there from the rail
+	static bool tray_shown()
+	{
+		return m_trayshown;
+	}
+	// the model sets window shares the tray with the node bank
+	static void sets_shown(bool const Shown)
+	{
+		m_setsshown = Shown;
+	}
 	// tools of the track mode in the tool options window, the selected path in the inspector
 	void set_track_options(std::function<void()> Tools, std::function<void()> Selection)
 	{
@@ -171,7 +252,9 @@ class editor_ui : public ui_layer
 	// when their tab in the strip is pointed at or clicked. the shortcut unpins all docks, or pins them back
 	void toggle_docks()
 	{
-		m_dockstoggle = true;
+		// the islands have no docks to unpin (Ctrl+Space would only take apart the layout of the flat palettes, kept for them)
+		if (false == islands())
+			m_dockstoggle = true;
 	}
 	// the unpinned docks are kept in imgui.ini along with the layout; the handler has to be there before the file is read
 	static void register_settings();
@@ -196,6 +279,9 @@ class editor_ui : public ui_layer
 	void render_windows_menu() override;
 	void render_tools_menu() override;
 	int palette() const override;
+	int accent() const override;
+	// the docks and the islands change places before the frame, while imgui is between frames
+	void before_frame() override;
 	void render_dockspace() override;
 	void render_() override;
 	// docks the windows of the editor in their default places
@@ -228,6 +314,7 @@ class editor_ui : public ui_layer
 	std::function<void()> m_menuoptions;
 	std::function<void()> m_toolbaroptions;
 	std::function<void()> m_workspacebar;
+	std::function<int()> m_accentsource;
 	std::function<void()> m_editmenu;
 	std::function<void()> m_toolsmenu;
 	bool m_layoutreset{false}; // the default layout is to be built again on the next frame
@@ -236,6 +323,7 @@ class editor_ui : public ui_layer
 	bool m_refusalnotice{false}; // a warning rather than a refusal
 	double m_statustime{-100.0};
 	int m_savequeued{0}; // the frame of a save asked for from a field being typed in
+	bool m_escapetaken{false}; // the Esc of this frame closed an open list or menu
 	bool m_tooloptionsopen{true};
 	bool m_inspectoropen{true};
 	bool m_sceneopen{true};
@@ -263,6 +351,28 @@ class editor_ui : public ui_layer
 	std::vector<std::size_t> m_scenematches;
 	static glm::vec2 m_viewmin;
 	static glm::vec2 m_viewmax;
+	static glm::vec2 m_viewclipmin;
+	static glm::vec2 m_viewclipmax;
+	// the islands of the light and the dark palettes, laid out once a frame by editor_islands::compute()
+	static editor_islands::rect const &island_rect(island const Which);
+	void lay_islands();
+	void render_islands_status();
+	static void island_heading(char const *Kind, char const *Name);
+	void render_islands_dockspace(unsigned int const Dockspace);
+	void render_rail();
+	void render_capsule();
+	static inline drawer m_drawer{drawer::none};
+	static inline bool m_trayforced{false}; // brought to the tray from the rail
+	static inline bool m_trayshown{false};
+	static inline bool m_setsshown{false};
+	static inline float m_toolheight{0.0f}; // of the content of the tool window in the frame before
+	static inline float m_capsulewidth{0.0f}; // of the capsule in the frame before
+	static inline editor_islands::layout m_islandlayout;
+	static inline bool m_islandsbefore{false}; // the frame before had the islands
+	static inline bool m_islandsteardown{false}; // the islands came in this frame: the docks are taken apart
+	// the layout of the docks as it was when the islands came, kept in imgui.ini until they go and it is put back
+	static inline std::string m_docksnapshot;
+	std::function<void()> m_capsule;
 	std::function<void()> m_gizmooptions;
 	std::function<void()> m_arrayoptions;
 	std::function<void()> m_bendoptions;

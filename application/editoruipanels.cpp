@@ -936,14 +936,22 @@ void nodebank_panel::render_set_cards(int const Setid)
 
 void nodebank_panel::render()
 {
-	if (false == is_open || suppressed)
+	auto const island{editor_ui::islands()};
+	// with the islands the node bank is a tray at the bottom, for the modes which insert models or brought there from the rail
+	editor_ui::sets_shown(island && m_setsopen && editor_ui::tray_shown() && false == suppressed);
+	if (island ? false == editor_ui::tray_shown() || suppressed : false == is_open || suppressed)
 	{
 		return;
 	}
 
 	auto flags = ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse | (size.x > 0 ? ImGuiWindowFlags_NoResize : 0);
 
-	if (size.x > 0)
+	if (island)
+	{
+		editor_ui::place_island(editor_ui::island::bank);
+		flags = editor_ui::island_flags() | ImGuiWindowFlags_NoFocusOnAppearing;
+	}
+	else if (size.x > 0)
 	{
 		ImGui::SetNextWindowSize(ImVec2S(size.x, size.y));
 	}
@@ -951,7 +959,7 @@ void nodebank_panel::render()
 	{
 		ImGui::SetNextWindowSize(ImVec2S(440, 400), ImGuiCond_FirstUseEver);
 	}
-	if (size_min.x > 0)
+	if (false == island && size_min.x > 0)
 	{
 		ImGui::SetNextWindowSizeConstraints(ImVec2S(size_min.x, size_min.y), ImVec2S(size_max.x, size_max.y));
 	}
@@ -959,7 +967,11 @@ void nodebank_panel::render()
 	{
 		// the same window, so it keeps its place in the dock
 		if (ImGui::Begin((m_standintitle + "###" + name()).c_str(), nullptr, flags))
+		{
+			if (island)
+				editor_ui::island_shadow();
 			m_standin();
+		}
 		ImGui::End();
 		return;
 	}
@@ -967,6 +979,10 @@ void nodebank_panel::render()
 
 	if (true == ImGui::Begin(panelname.c_str(), nullptr, flags))
 	{
+		if (island)
+		{
+			editor_ui::island_shadow();
+		}
 		if (m_largepreviews)
 		{
 			m_largepreviews->update();
@@ -1340,12 +1356,17 @@ void nodebank_panel::open_sets_window(int const Setid)
 
 void nodebank_panel::render_sets_window()
 {
-	ImGui::SetNextWindowSize(ImVec2S(600, 380), ImGuiCond_FirstUseEver);
-	if (false == ImGui::Begin((std::string(STR_C("Model sets")) + "###modelsets").c_str(), &m_setsopen, ImGuiWindowFlags_NoCollapse))
+	// with the islands the model sets share the tray with the node bank
+	auto const island{editor_ui::place_island(editor_ui::island::sets)};
+	if (false == island)
+		ImGui::SetNextWindowSize(ImVec2S(600, 380), ImGuiCond_FirstUseEver);
+	if (false == ImGui::Begin((std::string(STR_C("Model sets")) + "###modelsets").c_str(), &m_setsopen, island ? (editor_ui::island_flags() & ~ImGuiWindowFlags_NoTitleBar) : ImGuiWindowFlags_NoCollapse))
 	{
 		ImGui::End();
 		return;
 	}
+	if (island)
+		editor_ui::island_shadow();
 
 	auto const &sets{EditorModelSets.sets()};
 	if (EditorModelSets.find(m_setsselected) == nullptr)
@@ -1821,22 +1842,44 @@ void layers_panel::report(std::string const &Status, bool const Error)
 
 void layers_panel::render()
 {
-	if (false == is_open)
+	auto const island{editor_ui::islands()};
+	if (island && focus)
+	{
+		// asked for (the orthophoto of the map menu, the layer of a node): its drawer is opened
+		editor_ui::show_drawer(editor_ui::drawer::layers);
+		focus = false;
+	}
+	// with the islands the layers are a drawer by the rail, shown from it
+	if (island ? editor_ui::shown_drawer() != editor_ui::drawer::layers : false == is_open)
 	{
 		return;
 	}
 
-	// initially next to the toolset window
-	ImGui::SetNextWindowPos(ImVec2S(520, 60), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowSize(ImVec2S(440, 340), ImGuiCond_FirstUseEver);
 	auto const panelname{(title.empty() ? std::string{STR_C(m_name.c_str())} : title) + "###" + m_name};
+	if (island)
+	{
+		editor_ui::place_island(editor_ui::island::drawer);
+	}
+	else
+	{
+		// initially next to the toolset window
+		ImGui::SetNextWindowPos(ImVec2S(520, 60), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2S(440, 340), ImGuiCond_FirstUseEver);
+	}
 	if (focus)
 	{
 		ImGui::SetNextWindowFocus();
 		focus = false;
 	}
-	if (ImGui::Begin(panelname.c_str(), &is_open, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse))
+	auto const flags{island ? editor_ui::island_flags() : ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse};
+	if (ImGui::Begin(panelname.c_str(), island ? nullptr : &is_open, flags))
 	{
+		if (island)
+		{
+			editor_ui::island_shadow();
+			ImGui::TextUnformatted(STR_C("Layers"));
+			ImGui::Spacing();
+		}
 		if (scene::Layers.empty())
 		{
 			// layers are established only when the scenery is loaded for editing, regular load skips the bookkeeping
