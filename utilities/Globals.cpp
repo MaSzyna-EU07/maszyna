@@ -2277,7 +2277,11 @@ global_settings::ConfigParse_gfx_sky( cParser &Parser, std::string_view const To
     else if( Token == "deer.distance" ) { readvalue( deer_distance, 100.0f, 10000.0f ); }
     else if( Token == "deer.chance" ) { readvalue( deer_chance, 0.0f, 1.0f ); }
     else if( Token == "deer.hornrange" ) { readvalue( deer_hornrange, 0.0f, 5000.0f ); }
-    else if( Token == "deer.fleedistance" ) { readvalue( deer_fleedistance, 0.0f, 1000.0f ); }
+    else if( Token == "deer.reactiontime" ) { readvalue( deer_reactiontime, 0.0f, 60.0f ); }
+    else if( Token == "deer.reactiondistance" ) { readvalue( deer_reactiondistance, 0.0f, 1000.0f ); }
+    else if( Token == "deer.fleedistance" ) {
+        // of the test builds before deer.reactiontime, never in a release: its value is passed over
+        Parser.getTokens( 1 ); }
     else if( Token == "gfx.lights.shadows" ) {
         // no/low/medium/high, or the number of the level
         Parser.getTokens( 1 );
@@ -2859,7 +2863,8 @@ global_settings::export_as_text( std::ostream &Output ) const {
     export_as_text( Output, "deer.distance", deer_distance );
     export_as_text( Output, "deer.chance", deer_chance );
     export_as_text( Output, "deer.hornrange", deer_hornrange );
-    export_as_text( Output, "deer.fleedistance", deer_fleedistance );
+    export_as_text( Output, "deer.reactiontime", deer_reactiontime );
+    export_as_text( Output, "deer.reactiondistance", deer_reactiondistance );
     export_as_text( Output, "gfx.lights.shadows", std::string{ gfx_lights_shadows == 3 ? "high" : gfx_lights_shadows == 2 ? "medium" : gfx_lights_shadows == 1 ? "low" : "no" } );
     export_as_text( Output, "gfx.lights.shadows.cab", gfx_lights_shadows_cab );
     export_as_text( Output, "gfx.lights.shadows.lamps", gfx_lights_shadows_lamps );

@@ -659,7 +659,8 @@ struct global_settings {
     float deer_distance { 2000.0f }; // metres ahead of the train a deer is put at
     float deer_chance { 1.0f }; // of a deer at each interval, 0-1
     float deer_hornrange { 600.0f }; // the horn sends away the deer within this many metres
-    float deer_fleedistance { 150.0f }; // a deer runs away from the train come this close, metres
+    float deer_reactiontime { 3.5f }; // a deer runs away from the train this many seconds of its speed away, seconds
+    float deer_reactiondistance { 20.0f }; // and from a slow or a standing train come this close, metres
     // shadows of the lamps (cube shadow maps), 0 none, 1 low, 2 medium, 3 high; see opengl46_local_shadows. for now the lamp of the
     // occupied cab, its shadows cast by the cab
     int gfx_lights_shadows { 2 };

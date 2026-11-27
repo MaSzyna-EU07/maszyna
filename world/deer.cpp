@@ -67,17 +67,24 @@ constexpr double Flight2{3.95};
 constexpr double Flight3{4.85};
 // the frame an instance starts from at the moment of the change, a little after the frame proper: never the end of the one before
 constexpr double Startframe{0.02};
-// the ground under the way of the deer, at equal steps from its start to its end (deer_herd::Groundsamples)
-constexpr std::size_t Groundsamples{9};
-// the ground under the way of the deer is looked for up to this much above the place it starts from, metres
+// the ground under the way of the deer, at equal steps from its start to its end (deer_herd::Groundsamples, about 1.5 m apart)
+constexpr std::size_t Groundsamples{17};
+// the ground beside the track (a platform of the terrain) is looked for up to this much above the sleepers, metres
 constexpr double Groundceiling{3.0};
-// the way it runs: flat ground found all along it (no slope of an embankment or a cutting, no water). the ground beside the
-// track no farther than this below or above the sleepers, metres
-constexpr double Waybelow{1.2};
-constexpr double Wayabove{0.8};
-// rising or falling at most this much between the samples of the ground (3 m apart), and this much all along, metres
-constexpr double Waystep{0.45};
-constexpr double Wayrange{1.2};
+// the way it runs: ground found all along it, no water. down the slope of an embankment or up the one of a cutting: the ground
+// no farther than this below or above the sleepers, metres
+constexpr double Waybelow{6.0};
+constexpr double Wayabove{4.0};
+// the ground of the way is looked for up to this much above the sleepers, metres (over the highest it may be)
+constexpr double Wayceiling{Wayabove + 1.0};
+// no steeper than this between the samples of the ground (a wall, a cliff, a ditch with steep sides), rise to run
+constexpr double Wayslope{0.7};
+// the body leans up and down the slope by the ground under its hooves, this far before and behind its middle, metres
+constexpr double Halfbody{0.52};
+// at most this much, degrees
+constexpr double Maxpitch{30.0};
+// and follows the slope this fast (a share of the difference a second), not jerking at the bends of the ground
+constexpr double Pitchrate{8.0};
 // where there's no such ground at the place, the next deer is looked for this much farther, metres
 constexpr double Retrydistance{200.0};
 // the track at the place: plain (no switch) from the train to this much past the place, metres
@@ -456,7 +463,7 @@ float vat_turn(glm::dvec3 const &Heading, vat_clip const &Animation, int const C
 }
 
 // a deer put in the scenery, not a part of it. Moving: the game moves it, so it's drawn on its own
-TAnimModel *make_deer(vat_clip const &Animation, glm::dvec3 const &Position, float const Turn, bool const Moving)
+TAnimModel *make_deer(vat_clip const &Animation, glm::dvec3 const &Position, float const Turn, float const Pitch, bool const Moving)
 {
 	auto const range{static_cast<int>(std::ceil(Global.deer_distance + 500.0))};
 	auto const definition{std::format("node {} 0 none model 0 0 0 0 {}.t3d none endmodel", range, Animation.model)};
@@ -471,10 +478,11 @@ TAnimModel *make_deer(vat_clip const &Animation, glm::dvec3 const &Position, flo
 	model->m_dirty = false;
 	model->m_generated = true;
 	simulation::Region->erase(model);
-	model->Angles(glm::vec3{0.f, Turn, 0.f});
-	if (Moving)
+	// leaning about its side, which keeps the turn the shader reads the clip from (the side axis stays level)
+	model->Angles(glm::vec3{Pitch, Turn, 0.f});
+	if (Moving || (Pitch != 0.f))
 	{
-		// out of the groups of the instances of its model, which keep their places
+		// out of the groups of the instances of its model, which keep their places, level
 		model->draw_alone();
 	}
 	simulation::Region->insert(model);
@@ -483,14 +491,17 @@ TAnimModel *make_deer(vat_clip const &Animation, glm::dvec3 const &Position, flo
 }
 
 // the deer moved to another place
-void move_deer(TAnimModel &Model, glm::dvec3 const &Position)
+void move_deer(TAnimModel &Model, glm::dvec3 const &Position, float const Pitch)
 {
-	if (glm::length(Model.location() - Position) < 1e-4)
+	auto angles{Model.Angles()};
+	if ((glm::length(Model.location() - Position) < 1e-4) && (std::abs(angles.x - Pitch) < 1e-3f))
 	{
 		return;
 	}
 	simulation::Region->erase(&Model);
 	Model.location(Position);
+	angles.x = Pitch;
+	Model.Angles(angles);
 	simulation::Region->insert(&Model);
 }
 
@@ -506,7 +517,7 @@ void remove_deer(TAnimModel *Model)
 // the deer goes on with another animation, at frame Frame of clip Clip at the time Time; where the model can't be made, as it was
 void change_deer(TAnimModel *&Model, glm::dvec3 const &Heading, vat_clip const &Animation, int const Clip, double const Frame, double const Time, bool const Moving)
 {
-	auto *model{make_deer(Animation, Model->location(), vat_turn(Heading, Animation, Clip, Frame, Time), Moving)};
+	auto *model{make_deer(Animation, Model->location(), vat_turn(Heading, Animation, Clip, Frame, Time), Model->Angles().x, Moving)};
 	if (model == nullptr)
 	{
 		return;
@@ -515,18 +526,18 @@ void change_deer(TAnimModel *&Model, glm::dvec3 const &Heading, vat_clip const &
 	Model = model;
 }
 
-// the way a deer would run away from Start along Heading: true where it's all over flat ground, Ground then the heights of the ground
-// at equal steps along it (the first one Start); Reason why not otherwise
-bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<double, Groundsamples> &Ground, std::string &Reason)
+// the way a deer would run away from Start along Heading: true where it can run over all of it (no water, no wall or cliff, down an
+// embankment or up a cutting no farther than Waybelow / Wayabove), Ground then the heights of the ground at equal steps along it
+// (the first one Start); Reason why not otherwise
+bool run_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<double, Groundsamples> &Ground, std::string &Reason)
 {
 	Ground.front() = Start.y;
 	auto const length{flight_way(Flighttime)};
-	auto low{Start.y};
-	auto high{Start.y - 1e9};
+	auto const spacing{length / static_cast<double>(Groundsamples - 1)};
 	for (std::size_t sample = 1; sample < Groundsamples; ++sample)
 	{
-		auto const point{Start + Heading * (length * static_cast<double>(sample) / static_cast<double>(Groundsamples - 1))};
-		auto const here{ground_at(point, Start.y + Groundceiling)};
+		auto const point{Start + Heading * (spacing * static_cast<double>(sample))};
+		auto const here{ground_at(point, Start.y + Wayceiling)};
 		if (false == here.found)
 		{
 			Reason = std::format("no ground at {:.1f} m", glm::length(point - Start));
@@ -537,21 +548,22 @@ bool flat_way(glm::dvec3 const &Start, glm::dvec3 const &Heading, std::array<dou
 			Reason = std::format("{} at {:.1f} m, {:.2f} m from the sleepers", here.water ? "water" : "ground", glm::length(point - Start), here.height - Start.y);
 			return false;
 		}
-		if ((sample > 1) && (std::abs(here.height - Ground[sample - 1]) > Waystep))
+		if (std::abs(here.height - Ground[sample - 1]) > Wayslope * spacing)
 		{
 			Reason = std::format("a step of {:.2f} m at {:.1f} m", here.height - Ground[sample - 1], glm::length(point - Start));
 			return false;
 		}
 		Ground[sample] = here.height;
-		low = (sample == 1 ? here.height : std::min(low, here.height));
-		high = std::max(high, here.height);
-	}
-	if (high - low > Wayrange)
-	{
-		Reason = std::format("the ground rises and falls {:.2f} m", high - low);
-		return false;
 	}
 	return true;
+}
+
+// the height of the ground Way metres along the way of a deer (Ground, Length long), the ends held beyond it
+double way_height(std::array<double, Groundsamples> const &Ground, double const Way, double const Length)
+{
+	auto const step{std::clamp(Way / Length, 0.0, 1.0) * static_cast<double>(Groundsamples - 1)};
+	auto const sample{std::min(static_cast<std::size_t>(step), Groundsamples - 2)};
+	return std::lerp(Ground[sample], Ground[sample + 1], step - static_cast<double>(sample));
 }
 
 } // namespace
@@ -585,17 +597,18 @@ void simulation::deer_herd::update(double const Deltatime)
 		m_travelled = 0.0;
 		if ((LocalRandom(0.0, 1.0) < Global.deer_chance) && (false == spawn(*vehicle)))
 		{
-			// no flat ground, a switch or a platform there: soon again
+			// no ground to run over, a switch or a platform there: soon again
 			m_travelled = std::max(0.0, Global.deer_interval - Retrydistance);
 		}
 	}
 	auto const train{vehicle->GetPosition()};
+	auto const speed{std::abs(mover->V)};
 	auto const horn{(mover->WarningSignal & 7) != 0};
 	auto const now{Timer::GetTime()};
-	std::erase_if(m_deer, [this, &train, horn, now](deer &Animal) { return tend(Animal, train, horn, now); });
+	std::erase_if(m_deer, [this, &train, speed, horn, now](deer &Animal) { return tend(Animal, train, speed, horn, now); });
 }
 
-bool simulation::deer_herd::tend(deer &Animal, glm::dvec3 const &Train, bool const Horn, double const Now) const
+bool simulation::deer_herd::tend(deer &Animal, glm::dvec3 const &Train, double const Speed, bool const Horn, double const Now) const
 {
 	auto const distance{glm::length(Animal.model->location() - Train)};
 	Animal.closest = std::min(Animal.closest, distance);
@@ -608,7 +621,8 @@ bool simulation::deer_herd::tend(deer &Animal, glm::dvec3 const &Train, bool con
 	switch (Animal.state)
 	{
 	case deer_state::grazing:
-		if ((Horn && (distance < Global.deer_hornrange)) || (distance < Global.deer_fleedistance))
+		// the train the time to get away from it (deer.reactiontime) off, or the horn: the faster the train, the sooner
+		if ((Horn && (distance < Global.deer_hornrange)) || (distance < std::max(static_cast<double>(Global.deer_reactiondistance), Speed * Global.deer_reactiontime)))
 		{
 			alarm(Animal, Train, Now);
 		}
@@ -666,7 +680,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 		WriteLog(std::format("Deer not put at {:.1f} {:.1f} {:.1f}: {}", place.position.x, place.position.y, place.position.z, platform));
 		return false;
 	}
-	// across the path, a little askew, to the side with flat ground to run away over (one picked at random first)
+	// across the path, a little askew, to the side with ground it can run away over (one picked at random first)
 	deer animal;
 	animal.start = place.position;
 	auto const askew{LocalRandom(-25.0, 25.0) * std::numbers::pi / 180.0};
@@ -678,7 +692,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 		glm::dvec3 const across{place.forward.z * side, 0.0, -place.forward.x * side};
 		animal.heading = glm::normalize(across * std::cos(askew) + place.forward * std::sin(askew));
 		std::string reason;
-		if (flat_way(animal.start, animal.heading, animal.ground, reason))
+		if (run_way(animal.start, animal.heading, animal.ground, reason))
 		{
 			found = true;
 			break;
@@ -693,7 +707,7 @@ bool simulation::deer_herd::spawn(TDynamicObject const &Vehicle)
 	// grazing from a moment of its own
 	animal.frame = LocalRandom(0.0, Grazing.frames);
 	animal.time = Timer::GetTime();
-	animal.model = make_deer(Grazing, place.position, vat_turn(animal.heading, Grazing, 0, animal.frame, animal.time), false);
+	animal.model = make_deer(Grazing, place.position, vat_turn(animal.heading, Grazing, 0, animal.frame, animal.time), 0.f, false);
 	if (animal.model == nullptr)
 	{
 		return false;
@@ -724,16 +738,21 @@ void simulation::deer_herd::flee(deer &Animal) const
 	// the ground along its way was looked at when it was put there
 	Animal.state = deer_state::fleeing;
 	Animal.start = Animal.model->location();
+	Animal.moved = Animal.time;
 }
 
 bool simulation::deer_herd::run(deer &Animal, double const Now) const
 {
 	auto const elapsed{std::clamp(Now - Animal.time, 0.0, Flighttime)};
 	auto const way{flight_way(elapsed)};
-	auto const step{way / flight_way(Flighttime) * static_cast<double>(Groundsamples - 1)};
-	auto const sample{std::min(static_cast<std::size_t>(step), Groundsamples - 2)};
+	auto const length{flight_way(Flighttime)};
 	auto position{Animal.start + Animal.heading * way};
-	position.y = std::lerp(Animal.ground[sample], Animal.ground[sample + 1], step - static_cast<double>(sample));
-	move_deer(*Animal.model, position);
+	position.y = way_height(Animal.ground, way, length);
+	// leaning with the ground under its hooves, up the slope ahead (the body faces along the heading)
+	auto const rise{way_height(Animal.ground, way + Halfbody, length) - way_height(Animal.ground, way - Halfbody, length)};
+	auto const slope{std::clamp(std::atan2(rise, 2.0 * Halfbody) * 180.0 / std::numbers::pi, -Maxpitch, Maxpitch)};
+	Animal.pitch = std::lerp(Animal.pitch, slope, std::clamp((Now - Animal.moved) * Pitchrate, 0.0, 1.0));
+	Animal.moved = Now;
+	move_deer(*Animal.model, position, static_cast<float>(Animal.pitch));
 	return (Now - Animal.time >= Flighttime);
 }
