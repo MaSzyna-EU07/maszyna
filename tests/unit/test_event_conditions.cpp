@@ -26,6 +26,15 @@ struct event_kind : basic_event {
 };
 using conditions = event_kind::event_conditions;
 
+// the log capture is on while the object lives, so a failed REQUIRE doesn't leave it on for the cases after it
+class log_capture {
+public:
+	log_capture() { unit_tests_log_capture(true); }
+	~log_capture() { unit_tests_log_capture(false); }
+	log_capture(log_capture const &) = delete;
+	log_capture &operator=(log_capture const &) = delete;
+};
+
 // the conditions of an event text, read the way the events read them: the parser stands on the word 'condition'
 conditions read(std::string const &Text) {
 	cParser parser(Text, cParser::buffer_TEXT);
@@ -138,11 +147,10 @@ TEST_CASE("event conditions: an event without conditions writes none") {
 }
 
 TEST_CASE("event conditions: a word the reader doesn't know is logged with the event and skipped") {
-	unit_tests_log_capture(true);
+	log_capture const capture;
 	// a name after trackfree: the track test takes the targets of the event, the name is skipped
 	auto const result{read("condition trackfree SomeTrack endevent")};
 	auto lines{unit_tests_logged_lines()};
-	unit_tests_log_capture(false);
 
 	CHECK(result.flags == basic_event::flags::track_free);
 	REQUIRE(lines.size() == 1);
@@ -155,10 +163,9 @@ TEST_CASE("event conditions: a word the reader doesn't know is logged with the e
 }
 
 TEST_CASE("event conditions: the known words log nothing") {
-	unit_tests_log_capture(true);
+	log_capture const capture;
 	auto const result{read("condition trackoccupied probability 0.5 memcompareex any == 1 * * endevent")};
 	auto const lines{unit_tests_logged_lines()};
-	unit_tests_log_capture(false);
 
 	CHECK(result.flags == (basic_event::flags::track_busy | basic_event::flags::probability | basic_event::flags::text));
 	CHECK(lines.empty());
