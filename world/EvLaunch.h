@@ -39,6 +39,11 @@ public:
         return iKey; }
     bool IsGlobal() const;
     bool IsRadioActivated() const;
+    // what check_activation() counts the time with, kept and put back by a simulation snapshot
+    double timer() const {
+        return UpdatedTime; }
+    void timer( double const Time ) {
+        UpdatedTime = Time; }
 // members
     std::string asEvent1Name;
     std::string asEvent2Name;

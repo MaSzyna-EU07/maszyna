@@ -19,7 +19,7 @@ http://mozilla.org/MPL/2.0/.
 
 // the settings only eu07.ini sets. a scenery's config block is read by the parser of eu07.ini
 // (state_serializer::deserialize_config, global_settings::ConfigParse), and with these keys it would run a program
-// (execonexit, extcam.cmd, extcam.rec), write the screenshots elsewhere (screenshotsdir), open connections and ports
+// (execonexit, extcam.cmd, extcam.rec), write the screenshots or the snapshots elsewhere (screenshotsdir, snapshotsdir), open connections and ports
 // (network.server, network.client, zmq.address, motiontelemetry, uart, feedbackmode, feedbackport), switch back on a
 // script runtime the player switched off (python.enabled, luascreens.enabled, wasm.enabled), take its own scripts
 // out of the sandbox (lua.fulllibraries) or drop the odometer states the player keeps (odometer.expiry). they keep
@@ -37,6 +37,7 @@ class ini_only_settings
   private:
 	std::string m_exec_on_exit;
 	std::string m_screenshot_dir;
+	std::string m_snapshot_dir;
 	std::string m_extcam_cmd;
 	std::string m_extcam_rec;
 	std::vector<std::pair<std::string, std::string>> m_network_servers;

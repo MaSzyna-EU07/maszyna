@@ -18,6 +18,7 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtime.h"
 #include "simulation/simulationenvironment.h"
 #include "simulation/simulationtest.h"
+#include "simulation/simulationsnapshotworld.h"
 #include "simulation/blackboxrecorder.h"
 #include "scene/scene.h"
 #include "rendering/lightarray.h"
@@ -362,6 +363,8 @@ bool driver_mode::update()
 		{
 			simulation::test().update(deltatime);
 		}
+		// the frame is complete: the snapshots asked for at this time are taken (--snapshot-at)
+		simulation::snapshot::update();
 	}
 
 	// render time routines follow:
@@ -551,6 +554,9 @@ void driver_mode::enter()
 	}
 
 	Timer::ResetTimers();
+
+	// the scenery is loaded and nothing runs yet: the state saved in a snapshot goes over it (--load-snapshot)
+	simulation::snapshot::start();
 
 	if (Global.test.enabled)
 	{

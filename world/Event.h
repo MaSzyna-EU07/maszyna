@@ -745,6 +745,18 @@ public:
 	        std::vector<TEventLauncher *> result( input.begin(), input.end() );
 	        result.insert( result.end(), radio.begin(), radio.end() );
 	        return result; }
+	// while suspended no event gets queued nor run, whoever asks for it: a simulation snapshot puts the vehicles and
+	// the rest of a saved state back without the scenery reacting to that
+	void
+	    suspend( bool const Suspended ) {
+	        m_suspended = Suspended; }
+	// takes every event out of the queue
+	void
+	    clear_queue();
+	// puts the event in the queue to run at the given time (Timer::GetTime()), with none of its delays added:
+	// for an event taken from a saved queue. returns: false if the event is in the queue already
+	bool
+	    restore_queued( basic_event *Event, TDynamicObject const *Activator, double const Launchtime );
 
 private:
 // types
@@ -765,6 +777,7 @@ private:
     basic_table<TEventLauncher> m_radiodrivenlaunchers;
     eventlauncher_sequence m_launcherqueue;
 	command_relay m_relay;
+	bool m_suspended { false }; // see suspend()
 };
 
 

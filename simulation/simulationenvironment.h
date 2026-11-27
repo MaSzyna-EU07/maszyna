@@ -18,6 +18,8 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/precipitation.h"
 #include "audio/sound.h"
 
+#include <array>
+
 class opengl46_renderer;
 
 // wrapper for environment elements -- sky, sun, stars, clouds etc
@@ -63,6 +65,12 @@ public:
     inline auto const &
         wind_azimuth() const {
             return m_wind.azimuth; }
+    // the wind as it blows and as it is about to change, for a snapshot of the simulation, which puts it back:
+    // azimuth and its change, velocity and its change, the time to the next change, the vector
+    std::array<float, 8>
+        wind_state() const;
+    void
+        wind_state( std::array<float, 8> const &State );
     // clouds, fog and precipitation of the scenery, see environment/weather.h
     inline auto const &
         weather() const {

@@ -350,6 +350,7 @@ struct global_settings {
     std::string asVersion; // z opisem
 	motiontelemetry::conf_t motiontelemetry_conf;
 	std::string screenshot_dir;
+	std::string snapshot_dir{"snapshots"}; // where the snapshotsave command writes the simulation snapshots
 	bool loading_log = false;
 	bool dds_upper_origin = false;
     bool captureonstart = true;

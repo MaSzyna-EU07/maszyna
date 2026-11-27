@@ -192,6 +192,9 @@ class TNESt3 : public TBrake {
   public:
 	using TBrake::TBrake;
     void Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF ) override;
+    std::vector<TReservoir *> reservoirs() const override; // with the control reservoir, the intermediate volume and the relays
+    std::vector<double> latches() const override; // the closing valve, the lock of the accelerator, the rapid step, the pressures last told
+    void latches( std::vector<double> const &State ) override;
     double GetPF( double const PP, double const dt, double const Vel ) override; // przeplyw miedzy komora wstepna i PG
     void EStParams(double i_crc) const; // parametry charakterystyczne dla ESt
     double GetCRP() override;

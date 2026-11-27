@@ -292,7 +292,14 @@ public:
     int light_hint( int const End ) const { return m_lighthints[ End ]; }
     // the order the driver goes by now: a train run, shunting and the like
     TOrders order_current() const { return OrderCurrentGet(); }
+    // the driver's part of a simulation snapshot (simulation/simulationsnapshotdriver.cpp): its orders, its place in the
+    // timetable and what it has made up its mind about, written to an entry of the snapshot and set from one
+    void snapshot_save( simulation::snapshot::record &Entry ) const;
+    void snapshot_load( simulation::snapshot::record const &Entry );
 private:
+    void snapshot_save_table( simulation::snapshot::record &Entry ) const;
+    bool snapshot_load_table( simulation::snapshot::record const &Entry );
+    struct snapshot_members; // the variables the snapshot keeps one for one
     // tells the black box of the train at the station of its timetable it makes for, at the stop point given
     void record_station( TSpeedPos const &Point, std::uint8_t Kind ) const;
     void Activation(); // umieszczenie obsady w odpowiednim członie

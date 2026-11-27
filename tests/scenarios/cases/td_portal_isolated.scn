@@ -1,0 +1,38 @@
+// added by tests/scenarios/run.py to td.scn, whose own trainsets were removed. a traffic train starts on a track of
+// an isolated section and leaves the scenery through a portal next to it, before the snapshot is taken: the section
+// counts its axles in when the scenery puts it there and out as it drives off (review of MaSzyna-EU07/maszyna#420).
+// the track, the section and the portal are made here, at x 1300.4 beside the line: a track whose name starts with '*'
+// and which is joined at its point 2 only takes the vehicles running onto it off the tracks (TTrack::AddDynamicObject),
+// the way the vehicles leaving a scenery go.
+event autotest_portal_signal putvalues 0 none 1300.4 0.2 836.111 SetVelocity 20 20 endevent
+
+node -1 0 autotest_iso_start track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+1300.4 0.2 736.111  0.0  //point 1
+0.0 0.0 0.0  //control vector 1
+0.0 0.0 0.0  //control vector 2
+1300.4 0.2 836.111  0.0  //point 2
+0
+isolated autotest_iso
+endtrack
+
+node -1 0 *autotest_portal track normal 100.0 1.435 0.15 25.0 20 0 flat vis
+ rail_screw_used1 6 1435mm/tpbps-new2 0.2 0.5 1.1
+1300.4 0.2 886.111  0.0  //point 1
+0.0 0.0 0.0  //control vector 1
+0.0 0.0 0.0  //control vector 2
+1300.4 0.2 836.111  0.0  //point 2
+0
+event1 autotest_portal_signal
+event2 autotest_portal_signal
+endtrack
+
+// the train under test stands on track 2 of Stacja1, its driver has nothing to do
+trainset none tor2k 30.0 0.0
+node -1 0 {{vehicle}} dynamic pkp\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic
+endtrainset
+// the traffic: an SM42 with an AI driver on the td.scn timetable, 20 m into the track of the section and facing the
+// portal at its point 2. a trainset at 0 km/h has its driver asleep, hence the 0.1
+trainset td/rozklad autotest_iso_start 20.0 0.1
+node -1 0 traffic_{{vehicle}} dynamic pkp\sm42_v1 6D-468 6D 0 headdriver 0 0 enddynamic
+endtrainset

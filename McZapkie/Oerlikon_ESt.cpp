@@ -305,6 +305,42 @@ void TNESt3::EStParams( double const /*i_crc*/ ) const // parametry charakteryst
 	// no effect for this device type
 }
 
+std::vector<double> TNESt3::latches() const
+{
+    auto state{TBrake::latches()};
+    state.emplace_back(Zamykajacy ? 1.0 : 0.0);
+    state.emplace_back(Przys_blok ? 1.0 : 0.0);
+    state.emplace_back(RapidStatus ? 1.0 : 0.0);
+    state.emplace_back(LBP);
+    state.emplace_back(LoadC);
+    return state;
+}
+
+void TNESt3::latches(std::vector<double> const &State)
+{
+    auto const first{TBrake::latches().size()};
+    if (State.size() < first + 5)
+        return;
+    TBrake::latches(State);
+    Zamykajacy = State[first + 0] != 0.0;
+    Przys_blok = State[first + 1] != 0.0;
+    RapidStatus = State[first + 2] != 0.0;
+    LBP = State[first + 3];
+    LoadC = State[first + 4];
+}
+
+std::vector<TReservoir *> TNESt3::reservoirs() const
+{
+    auto list { TBrake::reservoirs() };
+    list.emplace_back( CntrlRes.get() );
+    list.emplace_back( Miedzypoj.get() );
+    // the relays hold air of their own; a slot without a relay keeps its place in the list
+    for( auto const &relay : Przekladniki ) {
+        list.emplace_back( relay.get() );
+    }
+    return list;
+}
+
 void TNESt3::Init( double const PP, double const HPP, double const LPP, double const BP, int const BDF )
 {
     TBrake::Init(PP, HPP, LPP, BP, BDF);

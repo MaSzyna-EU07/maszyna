@@ -459,6 +459,7 @@ commanddescription_sequence Commands_descriptions = {
     {"gensettoggle", command_target::vehicle, command_mode::oneoff},
     {"gensetenable", command_target::vehicle, command_mode::oneoff},
     {"gensetdisable", command_target::vehicle, command_mode::oneoff},
+    {"snapshotsave", command_target::simulation, command_mode::oneoff},
 };
 
 // Maps of command and coresponding strings
@@ -897,6 +898,7 @@ std::unordered_map<std::string, user_command> const commandMap = {
     {"gensettoggle", user_command::gensettoggle},
     {"gensetenable", user_command::gensetenable},
     {"gensetdisable", user_command::gensetdisable},
+    {"snapshotsave", user_command::snapshotsave},
 	{"none", user_command::none}};
 
 } // namespace simulation

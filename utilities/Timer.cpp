@@ -69,6 +69,11 @@ void set_fixed_step(double t)
 	fixed_step() = t;
 }
 
+void set_time(double t)
+{
+	fSimulationTime = t;
+}
+
 void ResetTimers()
 {
     UpdateTimers( Global.iPause != 0 );

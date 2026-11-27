@@ -459,6 +459,7 @@ enum class user_command
 	gensettoggle,
 	gensetenable,
 	gensetdisable,
+	snapshotsave, // writes a snapshot of the simulation to the snapshots folder (simulation/simulationsnapshotworld.h)
 	none = -1
 };
 

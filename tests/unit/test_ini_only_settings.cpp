@@ -83,6 +83,7 @@ TEST_CASE("ini only settings: a scenery runs no program, opens no connection and
 	settings->extcam_cmd = "evil.exe";
 	settings->extcam_rec = "evil.exe";
 	settings->screenshot_dir = "C:/Users/Public";
+	settings->snapshot_dir = "C:/Windows";
 	settings->network_servers.emplace_back("tcp", "0.0.0.0:7424");
 	settings->network_client.emplace("tcp", "example.com:7424");
 	settings->motiontelemetry_conf.enable = true;
@@ -107,6 +108,7 @@ TEST_CASE("ini only settings: a scenery runs no program, opens no connection and
 	CHECK(settings->extcam_cmd.empty());
 	CHECK(settings->extcam_rec.empty());
 	CHECK(settings->screenshot_dir.empty());
+	CHECK(settings->snapshot_dir == "snapshots");
 	CHECK(settings->network_servers.empty());
 	CHECK_FALSE(settings->network_client.has_value());
 	CHECK_FALSE(settings->motiontelemetry_conf.enable);
@@ -116,7 +118,7 @@ TEST_CASE("ini only settings: a scenery runs no program, opens no connection and
 	CHECK_FALSE(settings->luascreens_enabled);
 	CHECK_FALSE(settings->wasm_enabled);
 	CHECK_FALSE(settings->python_enabled);
-	for (auto const *key : {"execonexit", "extcam.cmd", "extcam.rec", "screenshotsdir", "network.server", "network.client", "motiontelemetry",
+	for (auto const *key : {"execonexit", "extcam.cmd", "extcam.rec", "screenshotsdir", "snapshotsdir", "network.server", "network.client", "motiontelemetry",
 	                        "feedbackmode", "feedbackport", "luascreens.enabled", "wasm.enabled", "python.enabled"}) {
 		CAPTURE(key);
 		CHECK(listed(changed, key));

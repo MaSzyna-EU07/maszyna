@@ -30,6 +30,9 @@ http://mozilla.org/MPL/2.0/.
 #include <memory>
 
 class script_screen; // scripting/scriptscreens.h
+namespace simulation::snapshot {
+class record; // simulation/simulationsnapshot.h
+}
 enum class script_language; // scripting/scriptscreens.h
 
 #define EU07_SOUND_BOGIESOUNDS
@@ -752,6 +755,14 @@ private:
     bool FastUpdate(double dt);
     void Move(double fDistance);
     void FastMove(double fDistance);
+    // the vehicle's part of a simulation snapshot (simulation/simulationsnapshotvehicle.cpp): its place, consist, physics and
+    // what else it keeps, written to an entry of the snapshot
+    void snapshot_save( simulation::snapshot::record &Entry ) const;
+    // puts the vehicle where the entry has it, or takes it out of the simulation if it was gone by then. returns: false if it can't be done
+    // (a track which isn't there, or a place more than a metre from the one in the world the entry gives); the vehicle stays where the scenery put it then
+    bool snapshot_place( simulation::snapshot::record const &Entry );
+    // sets the rest of the vehicle as the entry has it; after the vehicles are placed and coupled
+    void snapshot_load( simulation::snapshot::record const &Entry );
     // physics.derailment new, the vehicle off the track (vehicle/derailmotion.h): the offset of its body from the axis of
     // the track at the place nearest to it, to the left of its front positive [m]; 0 while it's on the track
     double off_track_offset() const;

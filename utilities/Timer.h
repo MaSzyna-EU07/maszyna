@@ -30,6 +30,9 @@ void set_fixed_step(double v);
 
 void ResetTimers();
 
+// sets the time of the simulation GetTime() goes on from: the one a loaded simulation snapshot was taken at
+void set_time(double v);
+
 void UpdateTimers(bool pause);
 
 class stopwatch {

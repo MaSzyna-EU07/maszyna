@@ -1,0 +1,15 @@
+{
+  "description": "Simulation snapshot on td.scn: a three car EN57 on the td/rozklad timetable. The snapshot is taken at 60 s, while the unit accelerates out of Stacja1, and has its three vehicles coupled; the run loaded from it is compared at 240 s with the run that went on.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vars": {
+    "consist": [
+      "node -1 0 {{vehicle}} dynamic pkp\\en57_v2 EN57-1000ra EN57RA_GSO_WKM1_KM_NS_N 0 headdriver 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_s dynamic pkp\\en57_v2 EN57-1000s EN57S_WKM1_KM_NS_S 0 nobody 255 0 enddynamic",
+      "node -1 0 {{vehicle}}_rb dynamic pkp\\en57_v2 EN57-1000rb EN57RB_GSO_WKM1_KM_NS 0 nobody 0 0 enddynamic"
+    ]
+  },
+  "snapshot": { "at": 60, "until": 240 },
+  "timeout": 600
+}
