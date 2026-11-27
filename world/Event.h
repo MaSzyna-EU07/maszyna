@@ -13,6 +13,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scene.h"
 #include "utilities/Names.h"
 #include "world/EvLaunch.h"
+#include "world/TrackBuckle.h"
 #include "utilities/Logs.h"
 #include "input/command.h"
 #include "utilities/comparison.h"
@@ -84,6 +85,8 @@ public:
     virtual TCommandType input_command() const;
     virtual double input_value( int Index ) const;
     virtual glm::dvec3 input_location() const;
+    // the memory cell the data comes from, null if the event doesn't read one
+    virtual TMemCell const *input_cell() const;
     void group( scene::group_handle Group );
     scene::group_handle group() const;
 	std::string const &name() const { return m_name; }
@@ -242,6 +245,7 @@ public:
     TCommandType input_command() const override;
     double input_value( int Index ) const override;
     glm::dvec3 input_location() const override;
+    TMemCell const *input_cell() const override;
 
 private:
 // methods
@@ -523,6 +527,31 @@ private:
     void export_as_text_( std::ostream &Output ) const override;
 // members
     float m_velocity{ 0.f };
+};
+
+
+
+// trackbuckle <amplitude mm> [<length of the main lobe m> [<centre m> [<side>]]]: the target tracks buckle in the heat as the entry
+// "buckle" of a track says (see world/TrackBuckle.h), amplitude 0 straightens them
+class buckle_event : public basic_event {
+
+public:
+// methods
+    // prepares event for use
+    void init() override;
+
+private:
+// methods
+    // event type string
+    std::string type() const override;
+    // deserialize() subclass details
+    void deserialize_( cParser &Input, scene::scratch_data &Scratchpad ) override;
+    // run() subclass details
+    void run_() override;
+    // export_as_text() subclass details
+    void export_as_text_( std::ostream &Output ) const override;
+// members
+    track_buckle::declared m_buckle;
 };
 
 

@@ -9,6 +9,7 @@ http://mozilla.org/MPL/2.0/.
 
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <iosfwd>
 #include <map>
@@ -23,6 +24,16 @@ http://mozilla.org/MPL/2.0/.
 // their own files
 namespace odometer {
 
+// a calendar day, in UTC
+using day = std::chrono::sys_days;
+day today();
+
+// a state not updated for longer than this is dropped from the store when it's saved: the vehicle wasn't run for that
+// long. it's odometer.expiry <days> in eu07.ini (global_settings::odometer_expiry), a year unless set there, 0 for never.
+// a year so the vehicles of the scenarios played once a season or once a year, and of the players who take a break of a
+// few months, keep their states; the file of the vehicles run within a year stays small all the same
+std::chrono::days expiry();
+
 // the saved odometer states of the vehicles, km by vehicle name. the name is the one the scenario gives the vehicle
 // (the name of its node, TDynamicObject::name(), e.g. EU07-424), the only identity a vehicle has between the sessions:
 // the vehicles of the same name in any scenarios share one state, whatever their type, and a vehicle the scenario
@@ -31,37 +42,65 @@ namespace odometer {
 class store {
 public:
 	// reads the states written by write(). lines "<km> <vehicle name>", "~<km> <vehicle name>" for a state counted
-	// from a made up one, '#' starts a comment line, a malformed line is skipped. returns the number of states read
-	std::size_t read(std::istream &Input);
+	// from a made up one, '#' starts a comment line, a malformed line is skipped. returns the number of states read.
+	// the day a state was last updated is in a comment line "# updated <yyyy-mm-dd>" before it, which the builds
+	// without the stamps skip as any comment. a state with no stamp before it (a file of such a build) or with a
+	// malformed one counts as updated Today. a stamp is kept as written, also one later than Today (a clock set back
+	// doesn't move the days of the states back, expire() doesn't measure from them)
+	std::size_t read(std::istream &Input, day Today = today());
+	// the states grouped by the day they were last updated, the oldest first, each group after its stamp line
 	void write(std::ostream &Output) const;
 
 	std::optional<double> find(std::string const &Vehicle) const;
 	// the state of the vehicle is counted from a made up one, which the cab's counter can still replace
 	bool guessed(std::string const &Vehicle) const;
+	// the day the state of the vehicle was last updated
+	std::optional<day> updated(std::string const &Vehicle) const;
 	// records the state of a vehicle. one not in the store yet gets in only once it has run, so the vehicles
 	// standing in the sceneries don't fill the file. a recorded state is replaced only by a newer one: a larger
-	// one, or a known one in place of a guessed one
-	void record(std::string const &Vehicle, reading const &Odometer);
+	// one, or a known one in place of a guessed one. a state recorded is updated Today, or keeps its later day: the day
+	// of a state never goes back
+	void record(std::string const &Vehicle, reading const &Odometer, day Today = today());
 	// takes the states of the other store (the file, as other simulations have saved it since) newer than these.
 	// the odometers only count up, so of two states of a vehicle the larger is the newer one. they aren't added
-	// up: two simulations on one machine (multiplayer) count the same runs of the same vehicles
+	// up: two simulations on one machine (multiplayer) count the same runs of the same vehicles. a state is updated
+	// on the later of the days the two stores have
 	void merge(store const &Other);
+	// drops the states not updated for longer than Period, 0 for none. the period is measured back from Today, or from
+	// the latest day of the states read() took when that's earlier: the last day the file was updated before this
+	// simulation read it. so a clock set forward doesn't drop the states at once (nor one set back, the days of the
+	// states are then later than Today), and a player back after a break keeps them in the session he comes back in;
+	// the states this session records, updated Today, don't count. returns the number dropped
+	std::size_t expire(day Today, std::chrono::days Period);
+	// this store holds every state of the other one, the same or a newer one
+	bool holds(store const &Other) const;
 
 	// there are states recorded since they were last saved
 	bool modified() const { return m_modified; }
-	void saved() { m_modified = false; }
+	// the states were written to the file. until a later save finds them there (confirmed()), they may have been lost to
+	// another simulation's save, which read the file before this one wrote it and put its own in place after
+	void saved() {
+		m_modified = false;
+		m_unconfirmed = true;
+	}
+	bool unconfirmed() const { return m_unconfirmed; }
+	void confirmed() { m_unconfirmed = false; }
 	std::size_t size() const { return m_states.size(); }
 
 private:
 	struct state {
 		double km{0.0};
 		bool guessed{false};
+		day updated{};
 	};
 	// the first state is newer than the second one
 	static bool newer(state const &Left, state const &Right);
 
 	std::map<std::string, state> m_states;
+	// the latest day of the states read() took
+	std::optional<day> m_read_latest;
 	bool m_modified{false};
+	bool m_unconfirmed{false};
 };
 
 // the vehicle is one the store keeps: one with a driver's cab, which can show its odometer on the cab's counter or a
@@ -113,9 +152,12 @@ bool persistent();
 store &states();
 std::filesystem::path file();
 // writes the store to the file when anything was recorded since, merged with what other simulations saved in the
-// file meanwhile. it's written to a file of this process aside first, then put in place. returns false when the
-// write failed
-bool save(store &States, std::filesystem::path const &File);
+// file meanwhile. it's written to a file of this process aside first, then put in place. with nothing recorded since,
+// the file is read once more after a write, and written again when it lacks any of the states (another simulation's
+// save put its file over this one's); otherwise left as it is. the states, those of the other simulations included,
+// not updated for longer than Period (store::expire()) are dropped first; the number dropped is logged by the save that
+// writes the file without them. returns false when the write failed
+bool save(store &States, std::filesystem::path const &File, day Today = today(), std::chrono::days Period = expiry());
 // saves the store of the simulation to its file. a test run doesn't save it
 bool save();
 

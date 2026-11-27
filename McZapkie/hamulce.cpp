@@ -855,25 +855,7 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 
 		if ((BrakeStatus & b_hld) == b_hld)
 		{
-
-			if (VVP + 0.003 + BCP / BVM < CVP)
-			{
-				// hamowanie stopniowe
-				BrakeStatus |= b_on;
-			}
-			else
-			{
-				if (VVP + BCP / BVM > CVP)
-				{
-					// zatrzymanie napelaniania
-					BrakeStatus &= ~b_on;
-				}
-				if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
-				{
-					// luzowanie
-					BrakeStatus &= ~(b_on | b_hld);
-				}
-			}
+			CheckStateHeld(BCP, VVP, CVP);
 		}
 		else
 		{
@@ -905,6 +887,29 @@ void TESt::CheckState(double const BCP, double & /*dV1*/)
 	if ((BrakeStatus & b_hld) == 0)
 	{
 		SoundFlag |= sf_CylU;
+	}
+}
+
+// the state of a valve holding: braking on in steps, the filling stopped, or released
+void TESt::CheckStateHeld(double const BCP, double const VVP, double const CVP)
+{
+	if (VVP + 0.003 + BCP / BVM < CVP)
+	{
+		// hamowanie stopniowe
+		BrakeStatus |= b_on;
+	}
+	else
+	{
+		if (VVP + BCP / BVM > CVP)
+		{
+			// zatrzymanie napelaniania
+			BrakeStatus &= ~b_on;
+		}
+		if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
+		{
+			// luzowanie
+			BrakeStatus &= ~(b_on | b_hld);
+		}
 	}
 }
 
@@ -1164,33 +1169,7 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 	// odluzniacz
 	CheckReleaser(dt);
 
-	// sprawdzanie stanu
-	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
-	{
-		if (VVP + 0.003 + BCP / BVM < CVP - 0.12)
-			BrakeStatus |= b_on; // hamowanie stopniowe;
-		else if (VVP - 0.003 + BCP / BVM > CVP - 0.12)
-			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
-		else if (VVP + BCP / BVM > CVP - 0.12)
-			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-	}
-	else if (VVP + 0.10 < CVP - 0.12 && BCP < 0.25) // poczatek hamowania
-	{
-		// if ((BrakeStatus & 1) == 0)
-		//{
-		//    //       ValveRes.CreatePress(0.5*VVP);  //110115 - konsultacje warszawa1
-		//    //       SoundFlag:=SoundFlag or sf_Acc;
-		//    //       ValveRes.Act;
-		//}
-		BrakeStatus |= b_on | b_hld;
-	}
-	else if (VVP + BCP / BVM < CVP - 0.12 && BCP > 0.25) // zatrzymanie luzowanie
-		BrakeStatus |= b_hld;
-
-	if ((BrakeStatus & b_hld) == 0)
-	{
-		SoundFlag |= sf_CylU;
-	}
+	UpdateStatusEP2(BCP, VVP, CVP);
 
 	// przeplyw ZS <-> PG
 	if (BVP < CVP - 0.2 || BrakeStatus != b_off || BCP > 0.25)
@@ -1256,6 +1235,38 @@ double TEStEP2::GetPF(double const PP, double const dt, double const Vel)
 	BrakeRes->Act();
 	CntrlRes->Act();
 	return result;
+}
+
+// the state of the valve: braking in steps, holding or releasing, the start of braking
+void TEStEP2::UpdateStatusEP2(double const BCP, double const VVP, double const CVP)
+{
+	// sprawdzanie stanu
+	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
+	{
+		if (VVP + 0.003 + BCP / BVM < CVP - 0.12)
+			BrakeStatus |= b_on; // hamowanie stopniowe;
+		else if (VVP - 0.003 + BCP / BVM > CVP - 0.12)
+			BrakeStatus &= ~(b_on | b_hld); // luzowanie;
+		else if (VVP + BCP / BVM > CVP - 0.12)
+			BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
+	}
+	else if (VVP + 0.10 < CVP - 0.12 && BCP < 0.25) // poczatek hamowania
+	{
+		// if ((BrakeStatus & 1) == 0)
+		//{
+		//    //       ValveRes.CreatePress(0.5*VVP);  //110115 - konsultacje warszawa1
+		//    //       SoundFlag:=SoundFlag or sf_Acc;
+		//    //       ValveRes.Act;
+		//}
+		BrakeStatus |= b_on | b_hld;
+	}
+	else if (VVP + BCP / BVM < CVP - 0.12 && BCP > 0.25) // zatrzymanie luzowanie
+		BrakeStatus |= b_hld;
+
+	if ((BrakeStatus & b_hld) == 0)
+	{
+		SoundFlag |= sf_CylU;
+	}
 }
 
 /// <summary>
@@ -1672,58 +1683,8 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 	double dV{0.0};
 	double dV1{0.0};
 
-	// sprawdzanie stanu
-	// NOTE: partial copypaste from checkstate() of base class
-	// TODO: clean inheritance for checkstate() and checkreleaser() and reuse these instead of manual copypaste
-	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
-	{
-		if (VVP + 0.003 + BCP / BVM < CVP)
-		{
-			// hamowanie stopniowe
-			BrakeStatus |= b_on;
-		}
-		else if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
-		{
-			// luzowanie
-			BrakeStatus &= ~(b_on | b_hld);
-		}
-		else if (VVP + BCP / BVM > CVP)
-		{
-			// zatrzymanie napelaniania
-			BrakeStatus &= ~b_on;
-		}
-	}
-	else if (VVP + 0.10 < CVP && BCP < 0.25)
-	{
-		// poczatek hamowania
-		if ((BrakeStatus & b_hld) == b_off)
-		{
-			SoundFlag |= sf_Acc;
-		}
-		BrakeStatus |= b_on | b_hld;
-	}
-	else if (VVP + (BCP - 0.1) / BVM < CVP && (CVP - VVP) * BVM > 0.25 && BCP > 0.25)
-	{
-		// zatrzymanie luzowanie
-		BrakeStatus |= b_hld;
-	}
-	if ((BrakeStatus & b_hld) == 0)
-	{
-		SoundFlag |= sf_CylU;
-	}
-	// equivalent of checkreleaser() in the base class?
-	if (bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release; is_releasing)
-	{
-		if (CVP < 0.0)
-		{
-			BrakeStatus &= ~b_rls;
-		}
-		else
-		{ // 008
-			dV = PF1(CVP, BCP, 0.024) * dt;
-			CntrlRes->Flow(dV);
-		}
-	}
+	UpdateStatusLSt(BCP, VVP, CVP);
+	ReleaserLSt(BCP, CVP, dt);
 
 	// przeplyw ZS <-> PG
 	double temp;
@@ -1770,6 +1731,87 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 	//  if Vel>55 then temp:=0.72 else
 	//    temp:=1;{R}
 	// cisnienie PP
+	CylinderFlowLSt(BCP, BVP, CVP, dt, Vel);
+
+	ImplsRes->Act();
+	ValveRes->Act();
+	BrakeCyl->Act();
+	BrakeRes->Act();
+	CntrlRes->Act();
+	//  LBP:=ValveRes->P();
+	//  ValveRes.CreatePress(ImplsRes->P());
+	return result;
+}
+
+// the state of the valve: braking in steps, holding or releasing, the start of braking
+void TLSt::UpdateStatusLSt(double const BCP, double const VVP, double const CVP)
+{
+	// sprawdzanie stanu
+	// NOTE: partial copypaste from checkstate() of base class
+	// TODO: clean inheritance for checkstate() and checkreleaser() and reuse these instead of manual copypaste
+	if ((BrakeStatus & b_hld) == b_hld && BCP > 0.25)
+	{
+		if (VVP + 0.003 + BCP / BVM < CVP)
+		{
+			// hamowanie stopniowe
+			BrakeStatus |= b_on;
+		}
+		else if (VVP - 0.003 + (BCP - 0.1) / BVM > CVP)
+		{
+			// luzowanie
+			BrakeStatus &= ~(b_on | b_hld);
+		}
+		else if (VVP + BCP / BVM > CVP)
+		{
+			// zatrzymanie napelaniania
+			BrakeStatus &= ~b_on;
+		}
+	}
+	else if (VVP + 0.10 < CVP && BCP < 0.25)
+	{
+		// poczatek hamowania
+		if ((BrakeStatus & b_hld) == b_off)
+		{
+			SoundFlag |= sf_Acc;
+		}
+		BrakeStatus |= b_on | b_hld;
+	}
+	else if (VVP + (BCP - 0.1) / BVM < CVP && (CVP - VVP) * BVM > 0.25 && BCP > 0.25)
+	{
+		// zatrzymanie luzowanie
+		BrakeStatus |= b_hld;
+	}
+	if ((BrakeStatus & b_hld) == 0)
+	{
+		SoundFlag |= sf_CylU;
+	}
+}
+
+// the releaser, or the universal button set to release, letting the control reservoir out into the impulse chamber
+void TLSt::ReleaserLSt(double const BCP, double const CVP, double const dt)
+{
+	double dV;
+	// equivalent of checkreleaser() in the base class?
+	if (bool is_releasing = BrakeStatus & b_rls || UniversalFlag & TUniversalBrake::ub_Release; is_releasing)
+	{
+		if (CVP < 0.0)
+		{
+			BrakeStatus &= ~b_rls;
+		}
+		else
+		{ // 008
+			dV = PF1(CVP, BCP, 0.024) * dt;
+			CntrlRes->Flow(dV);
+		}
+	}
+}
+
+// the cylinders filled from the auxiliary reservoir or let out to the pressure the relay is set to: by the pilot
+// pressure, the anti-slip brake and the rapid setting, at least the local brake's
+void TLSt::CylinderFlowLSt(double const BCP, double const BVP, double const CVP, double const dt, double const Vel)
+{
+	double dV;
+	double temp;
 	RapidTemp = RapidTemp + (RM * int(Vel > 55 && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
 	temp = 1 - RapidTemp;
 	if (EDFlag > 0.2)
@@ -1795,15 +1837,6 @@ double TLSt::GetPF(double const PP, double const dt, double const Vel)
 		dV = 0;
 	BrakeRes->Flow(dV);
 	BrakeCyl->Flow(-dV);
-
-	ImplsRes->Act();
-	ValveRes->Act();
-	BrakeCyl->Act();
-	BrakeRes->Act();
-	CntrlRes->Act();
-	//  LBP:=ValveRes->P();
-	//  ValveRes.CreatePress(ImplsRes->P());
-	return result;
 }
 
 /// <summary>
@@ -1916,33 +1949,7 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 
 	nastG = BrakeDelayFlag & bdelay_G;
 
-	// sprawdzanie stanu
-	if (BCP < 0.25 && VVP + 0.08 > CVP)
-		Przys_blok = false;
-
-	// sprawdzanie stanu
-	if (VVP + 0.002 + BCP / BVM < CVP - 0.05 && Przys_blok)
-		BrakeStatus |= b_on | b_hld; // hamowanie stopniowe;
-	else if (VVP - 0.002 + (BCP - 0.1) / BVM > CVP - 0.05)
-		BrakeStatus &= ~(b_on | b_hld); // luzowanie;
-	else if (VVP + BCP / BVM > CVP - 0.05)
-		BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
-	else if (VVP + (BCP - 0.1) / BVM < CVP - 0.05 && BCP > 0.25) // zatrzymanie luzowania
-		BrakeStatus |= b_hld;
-
-	// poczatek hamowania
-	if (VVP + 0.10 < CVP && BCP < 0.25 && !Przys_blok)
-	{
-		ValveRes->CreatePress(0.75 * VVP);
-		SoundFlag |= sf_Acc;
-		ValveRes->Act();
-		Przys_blok = true;
-	}
-
-	if (BCP > 0.5)
-		Zamykajacy = true;
-	else if (VVP - 0.6 < MPP)
-		Zamykajacy = false;
+	UpdateStatus(BCP, VVP, CVP, MPP);
 
 	if ((BrakeStatus & b_rls) == b_rls)
 	{
@@ -1963,60 +1970,9 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	ImplsRes->Flow(-dv);
 	BrakeRes->Flow(dv);
 
-	// przeplyw testowy miedzypojemnosci
-	if (MPP < CVP - 0.3)
-		temp = Nozzles[4];
-	else if (BCP < 0.5)
-		if (Zamykajacy)
-			temp = Nozzles[8]; // 1.25;
-		else
-			temp = Nozzles[7];
-	else
-		temp = 0;
-	dv = PF(MPP, VVP, temp);
+	Miedzypoj->Flow(IntermediateFlow(BCP, VVP, CVP, MPP, BVP, nastG) * dt * 0.15);
 
-	if (MPP < CVP - 0.17)
-		temp = 0;
-	else if (MPP > CVP - 0.08)
-		temp = Nozzles[5];
-	else
-		temp = Nozzles[6];
-	dv = dv + PF(MPP, CVP, temp);
-
-	if (MPP - 0.05 > BVP)
-		dv = dv + PF(MPP - 0.05, BVP, Nozzles[10] * nastG + (1 - nastG) * Nozzles[9]);
-	if (MPP > VVP)
-		dv = dv + PF(MPP, VVP, 0.02);
-	Miedzypoj->Flow(dv * dt * 0.15);
-
-	RapidTemp = RapidTemp + (RM * int(Vel > RV && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
-	temp = std::max(1 - RapidTemp, 0.001);
-	//  if EDFlag then temp:=1000;
-	//  temp:=temp/(1-);
-
-	// powtarzacz — podwojny zawor zwrotny
-	temp = std::max(LoadC * BCP / temp * std::clamp(1 - EDFlag, 0., 1.), LBP);
-
-	if ((UniversalFlag & TUniversalBrake::ub_AntiSlipBrake) > 0)
-		temp = std::max(temp, ASBP);
-
-	double speed = 1;
-	if (ASBP < 0.1 && (BrakeStatus & b_asb_unbrake) == b_asb_unbrake)
-	{
-		temp = 0;
-		speed = 3;
-	}
-
-	if (BrakeCyl->P() > temp)
-		dv = -PFVd(BrakeCyl->P(), 0, 0.05 * SizeBC * speed, temp) * dt;
-	else if (BrakeCyl->P() < temp && (BrakeStatus & b_asb) == 0)
-		dv = PFVa(BVP, BrakeCyl->P(), 0.05 * SizeBC, temp) * dt;
-	else
-		dv = 0;
-
-	BrakeCyl->Flow(dv);
-	if (dv > 0)
-		BrakeRes->Flow(-dv);
+	CylinderFlow(BCP, BVP, dt, Vel);
 
 	// przeplyw ZS <-> PG
 	if (MPP < CVP - 0.17)
@@ -2049,6 +2005,107 @@ double TEStED::GetPF(double const PP, double const dt, double const Vel)
 	Miedzypoj->Act();
 	ImplsRes->Act();
 	return dv - dV1;
+}
+
+// the state of the valve: braking in steps, holding or releasing, the accelerator at the start of braking, and the
+// closing valve
+void TEStED::UpdateStatus(double const BCP, double const VVP, double const CVP, double const MPP)
+{
+	// sprawdzanie stanu
+	if (BCP < 0.25 && VVP + 0.08 > CVP)
+		Przys_blok = false;
+
+	// sprawdzanie stanu
+	if (VVP + 0.002 + BCP / BVM < CVP - 0.05 && Przys_blok)
+		BrakeStatus |= b_on | b_hld; // hamowanie stopniowe;
+	else if (VVP - 0.002 + (BCP - 0.1) / BVM > CVP - 0.05)
+		BrakeStatus &= ~(b_on | b_hld); // luzowanie;
+	else if (VVP + BCP / BVM > CVP - 0.05)
+		BrakeStatus &= ~b_on; // zatrzymanie napelaniania;
+	else if (VVP + (BCP - 0.1) / BVM < CVP - 0.05 && BCP > 0.25) // zatrzymanie luzowania
+		BrakeStatus |= b_hld;
+
+	// poczatek hamowania
+	if (VVP + 0.10 < CVP && BCP < 0.25 && !Przys_blok)
+	{
+		ValveRes->CreatePress(0.75 * VVP);
+		SoundFlag |= sf_Acc;
+		ValveRes->Act();
+		Przys_blok = true;
+	}
+
+	if (BCP > 0.5)
+		Zamykajacy = true;
+	else if (VVP - 0.6 < MPP)
+		Zamykajacy = false;
+}
+
+// the flow into the intermediate reservoir from the pipe and the control reservoir, less the flow filling the auxiliary one
+double TEStED::IntermediateFlow(double const BCP, double const VVP, double const CVP, double const MPP, double const BVP, double const nastG) const
+{
+	double dv;
+	double temp;
+	// przeplyw testowy miedzypojemnosci
+	if (MPP < CVP - 0.3)
+		temp = Nozzles[4];
+	else if (BCP < 0.5)
+		if (Zamykajacy)
+			temp = Nozzles[8]; // 1.25;
+		else
+			temp = Nozzles[7];
+	else
+		temp = 0;
+	dv = PF(MPP, VVP, temp);
+
+	if (MPP < CVP - 0.17)
+		temp = 0;
+	else if (MPP > CVP - 0.08)
+		temp = Nozzles[5];
+	else
+		temp = Nozzles[6];
+	dv = dv + PF(MPP, CVP, temp);
+
+	if (MPP - 0.05 > BVP)
+		dv = dv + PF(MPP - 0.05, BVP, Nozzles[10] * nastG + (1 - nastG) * Nozzles[9]);
+	if (MPP > VVP)
+		dv = dv + PF(MPP, VVP, 0.02);
+	return dv;
+}
+
+// the cylinders filled or let out to the pressure the relay is set to: by the pilot pressure and the load, at least the
+// local brake's, the anti-slip brake's, faster at the rapid setting
+void TEStED::CylinderFlow(double const BCP, double const BVP, double const dt, double const Vel)
+{
+	double dv;
+	double temp;
+	RapidTemp = RapidTemp + (RM * int(Vel > RV && (BrakeDelayFlag & bdelay_R) == bdelay_R) - RapidTemp) * dt / 2;
+	temp = std::max(1 - RapidTemp, 0.001);
+	//  if EDFlag then temp:=1000;
+	//  temp:=temp/(1-);
+
+	// powtarzacz — podwojny zawor zwrotny
+	temp = std::max(LoadC * BCP / temp * std::clamp(1 - EDFlag, 0., 1.), LBP);
+
+	if ((UniversalFlag & TUniversalBrake::ub_AntiSlipBrake) > 0)
+		temp = std::max(temp, ASBP);
+
+	double speed = 1;
+	if (ASBP < 0.1 && (BrakeStatus & b_asb_unbrake) == b_asb_unbrake)
+	{
+		temp = 0;
+		speed = 3;
+	}
+
+	if (BrakeCyl->P() > temp)
+		dv = -PFVd(BrakeCyl->P(), 0, 0.05 * SizeBC * speed, temp) * dt;
+	else if (BrakeCyl->P() < temp && (BrakeStatus & b_asb) == 0)
+		dv = PFVa(BVP, BrakeCyl->P(), 0.05 * SizeBC, temp) * dt;
+	else
+		dv = 0;
+
+	BrakeCyl->Flow(dv);
+	if (dv > 0)
+		BrakeRes->Flow(-dv);
 }
 
 /// <summary>
@@ -2509,25 +2566,7 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 
 		if ((BrakeStatus & b_hld) == b_hld)
 		{
-
-			if (VVP + 0.003 + BCP / BVM < CVP)
-			{
-				// hamowanie stopniowe;
-				BrakeStatus |= b_on;
-			}
-			else
-			{
-				if (VVP + BCP / BVM > CVP)
-				{
-					// zatrzymanie napelaniania;
-					BrakeStatus &= ~b_on;
-				}
-				if (VVP - 0.003 + BCP / BVM > CVP)
-				{
-					// luzowanie;
-					BrakeStatus &= ~(b_on | b_hld);
-				}
-			}
+			CheckStateHeld(BCP, VVP, CVP);
 		}
 		else
 		{
@@ -2559,6 +2598,29 @@ void TKE::CheckState(double const BCP, double & /*dV1*/)
 	if ((BrakeStatus & b_hld) == 0)
 	{
 		SoundFlag |= sf_CylU;
+	}
+}
+
+// the state of a valve holding: braking on in steps, the filling stopped, or released
+void TKE::CheckStateHeld(double const BCP, double const VVP, double const CVP)
+{
+	if (VVP + 0.003 + BCP / BVM < CVP)
+	{
+		// hamowanie stopniowe;
+		BrakeStatus |= b_on;
+	}
+	else
+	{
+		if (VVP + BCP / BVM > CVP)
+		{
+			// zatrzymanie napelaniania;
+			BrakeStatus &= ~b_on;
+		}
+		if (VVP - 0.003 + BCP / BVM > CVP)
+		{
+			// luzowanie;
+			BrakeStatus &= ~(b_on | b_hld);
+		}
 	}
 }
 
@@ -2681,6 +2743,36 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 	BrakeRes->Flow(dv);
 	ImplsRes->Flow(-dv);
 
+	IMP = CylinderFlowKE(IMP, BCP, BVP, Vel, dt);
+
+	// przeplyw ZP <-> rozdzielacz
+	temp = BVs(IMP);
+	//  if(BrakeStatus and b_hld)=b_off then
+	if (IMP < 0.25 || VVP + 0.05 > BVP)
+		dv = PF(BVP, VVP, 0.02 * SizeBR * temp / 1.87) * dt;
+	else
+		dv = 0;
+	BrakeRes->Flow(dv);
+	dV1 = dV1 + dv * 0.96;
+	ValveRes->Flow(-0.04 * dv);
+	// przeplyw PG <-> rozdzielacz
+	dv = PF(PP, VVP, 0.01) * dt;
+	ValveRes->Flow(-dv);
+
+	ValveRes->Act();
+	BrakeCyl->Act();
+	BrakeRes->Act();
+	CntrlRes->Act();
+	ImplsRes->Act();
+	return dv - dV1;
+}
+
+// the cylinders filled from the auxiliary reservoir or let out to the pressure of the impulse chamber IMP, by the load
+// and the rapid setting, at least the local brake's and the anti-slip brake's; returns that pressure
+double TKE::CylinderFlowKE(double IMP, double const BCP, double const BVP, double const Vel, double const dt)
+{
+	double dv;
+	double temp;
 	// rapid
 	auto const &frictionmaterial{*FM};
 	if (auto const &frictionmaterialtype{typeid(frictionmaterial)}; !(frictionmaterialtype == typeid(TDisk1) || frictionmaterialtype == typeid(TDisk2))) // jesli zeliwo to schodz
@@ -2715,27 +2807,7 @@ double TKE::GetPF(double const PP, double const dt, double const Vel)
 		dv = 0;
 	BrakeRes->Flow(-dv);
 	BrakeCyl->Flow(+dv);
-
-	// przeplyw ZP <-> rozdzielacz
-	temp = BVs(IMP);
-	//  if(BrakeStatus and b_hld)=b_off then
-	if (IMP < 0.25 || VVP + 0.05 > BVP)
-		dv = PF(BVP, VVP, 0.02 * SizeBR * temp / 1.87) * dt;
-	else
-		dv = 0;
-	BrakeRes->Flow(dv);
-	dV1 = dV1 + dv * 0.96;
-	ValveRes->Flow(-0.04 * dv);
-	// przeplyw PG <-> rozdzielacz
-	dv = PF(PP, VVP, 0.01) * dt;
-	ValveRes->Flow(-dv);
-
-	ValveRes->Act();
-	BrakeCyl->Act();
-	BrakeRes->Act();
-	CntrlRes->Act();
-	ImplsRes->Act();
-	return dv - dV1;
+	return IMP;
 }
 
 /// <summary>
@@ -3034,32 +3106,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	// na wszelki wypadek, zeby nie wyszlo poza zakres
 	i_bcp = std::clamp(i_bcp, -1.999, 5.999);
 
-	double DP{0.0};
-	if (TP > 0.0)
-	{
-		// jesli czasowy jest niepusty
-		DP = 0.045; // 2.5 w 55 sekund (5,35->5,15 w PG)
-		TP -= DP * dt;
-		Sounds[s_fv4a_t] = DP;
-	}
-	else
-	{
-		//.08
-		TP = 0.0;
-	}
-
-	if (XP > 0)
-	{
-		// jesli komora pod niepusta jest niepusty
-		DP = 2.5;
-		Sounds[s_fv4a_x] = DP * XP;
-		XP -= dt * DP * 2.0; // od cisnienia 5 do 0 w 10 sekund ((5-0)*dt/10)
-	}
-	else
-	{
-		// jak pusty, to pusty
-		XP = 0.0;
-	}
+	DischargeChambers(dt);
 
 	double pom;
 	if (EQ(i_bcp, -1.0))
@@ -3071,21 +3118,7 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 		pom = std::min(CP, HP);
 	}
 
-	if (pom > RP + 0.25)
-	{
-		Fala = true;
-	}
-	if (Fala)
-	{
-		if (pom > RP + 0.3)
-		{
-			XP = XP - 20.0 * PR(pom, XP) * dt;
-		}
-		else
-		{
-			Fala = false;
-		}
-	}
+	UpdateWave(pom, dt);
 
 	double LimPP = std::min(LPP_RP(i_bcp) + TP * 0.08 + RedAdj,
 	                        HP); // pozycja + czasowy lub zasilanie
@@ -3127,28 +3160,12 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	}
 
 	ep = dpPipe;
-	if (EQ(i_bcp, 0) || RP > ep)
-	{
-		// powolne wzrastanie, ale szybsze na jezdzie;
-		RP += PF(RP, ep, 0.0007) * dt;
-	}
-	else
-	{
-		// powolne wzrastanie i to bardzo
-		RP += PF(RP, ep, 0.000093 / 2 * 2) * dt;
-	}
-	// jednak trzeba wydluzyc, bo obecnie zle dziala
-	if (RP < ep && RP < BPT[std::lround(i_bcpno) + 2][1])
-	{
-		// jesli jestesmy ponizej cisnienia w sterujacym (2.9 bar)
-		// przypisz cisnienie w PG - wydluzanie napelniania o czas potrzebny do napelnienia PG
-		RP += PF(RP, CP, 0.005) * dt;
-	}
+	UpdateReductor(i_bcp, ep, dt);
 
 	if (EQ(i_bcp, i_bcpno) || EQ(i_bcp, -2))
 	{
 
-		DP = PF(0.0, PP, ActFlowSpeed / LBDelay);
+		auto const DP{PF(0.0, PP, ActFlowSpeed / LBDelay)};
 		dpMainValve = DP;
 		Sounds[s_fv4a_e] = DP;
 		Sounds[s_fv4a_u] = 0.0;
@@ -3169,6 +3186,80 @@ double TFV4aM::GetPF(double i_bcp, double PP, double HP, double dt, double ep)
 	}
 
 	return dpMainValve * dt;
+}
+
+// the time reservoir and the reductor's air chamber let out, and their sounds
+void TFV4aM::DischargeChambers(double const dt)
+{
+	double DP{0.0};
+	if (TP > 0.0)
+	{
+		// jesli czasowy jest niepusty
+		DP = 0.045; // 2.5 w 55 sekund (5,35->5,15 w PG)
+		TP -= DP * dt;
+		Sounds[s_fv4a_t] = DP;
+	}
+	else
+	{
+		//.08
+		TP = 0.0;
+	}
+
+	if (XP > 0)
+	{
+		// jesli komora pod niepusta jest niepusty
+		DP = 2.5;
+		Sounds[s_fv4a_x] = DP * XP;
+		XP -= dt * DP * 2.0; // od cisnienia 5 do 0 w 10 sekund ((5-0)*dt/10)
+	}
+	else
+	{
+		// jak pusty, to pusty
+		XP = 0.0;
+	}
+}
+
+// the release pressure wave: on while the supply is well over the reductor's pressure, its chamber filled meanwhile
+void TFV4aM::UpdateWave(double const pom, double const dt)
+{
+	if (pom > RP + 0.25)
+	{
+		Fala = true;
+	}
+	if (Fala)
+	{
+		if (pom > RP + 0.3)
+		{
+			XP = XP - 20.0 * PR(pom, XP) * dt;
+		}
+		else
+		{
+			Fala = false;
+		}
+	}
+}
+
+// the reductor reservoir following the pressure ep the pipe is driven to, slowly, faster at running, and filled from
+// the control reservoir under the lowest pressure of the handle
+void TFV4aM::UpdateReductor(double const i_bcp, double const ep, double const dt)
+{
+	if (EQ(i_bcp, 0) || RP > ep)
+	{
+		// powolne wzrastanie, ale szybsze na jezdzie;
+		RP += PF(RP, ep, 0.0007) * dt;
+	}
+	else
+	{
+		// powolne wzrastanie i to bardzo
+		RP += PF(RP, ep, 0.000093 / 2 * 2) * dt;
+	}
+	// jednak trzeba wydluzyc, bo obecnie zle dziala
+	if (RP < ep && RP < BPT[std::lround(i_bcpno) + 2][1])
+	{
+		// jesli jestesmy ponizej cisnienia w sterujacym (2.9 bar)
+		// przypisz cisnienie w PG - wydluzanie napelniania o czas potrzebny do napelnienia PG
+		RP += PF(RP, CP, 0.005) * dt;
+	}
 }
 
 /// <summary>Initialises CP and RP to the supplied pressure.</summary>
@@ -3259,7 +3350,6 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 	double dpPipe;
 	double dpMainValve;
 	double ActFlowSpeed;
-	double DP;
 	double pom;
 
 	for (auto &soundvalue : Sounds)
@@ -3270,30 +3360,12 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	i_bcp = std::clamp(i_bcp, -0.999, 9.999); // na wszelki wypadek, zeby nie wyszlo poza zakres
 
-	if (TP > 0 && CP > 4.9)
-	{
-		DP = OverloadPressureDecrease;
-		if (EQ(i_bcp, 0))
-			TP = TP - DP * dt;
-		Sounds[s_fv4a_t] = DP;
-	}
-	else
-	{
-		TP = 0;
-	}
+	DischargeTimedReservoir(i_bcp, dt);
 
 	LimPP = std::min(LPP_RP(i_bcp) + TP * 0.08 + RedAdj, HP); // pozycja + czasowy lub zasilanie
 	ActFlowSpeed = 4;
 
-	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
-	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
-	if (ManualOvrld && !ManualOvrldActive) // no overpressure for not pressed button if it does not exists
-		uop = 0;
-
-	if (EQ(i_bcp, -1) && uop > 0)
-		pom = std::min(HP, 5.4 + RedAdj + uop);
-	else
-		pom = std::min(CP, HP);
+	pom = SupplyPressure(i_bcp, HP);
 
 	if (LimPP > CP) // podwyzszanie szybkie
 		CP = CP + 60 * std::min(abs(LimPP - CP), 0.05) * PR(CP, LimPP) * dt; // zbiornik sterujacy;
@@ -3313,15 +3385,12 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 
 	if ((EQ(i_bcp, -1) && AutoOvrld) || (i_bcp < 0.5 && UniversalFlag & TUniversalBrake::ub_Overload))
 	{
-		if (TP < 5)
-			TP = TP + dt; // 5/10
-		if (TP < OverloadMaxPressure)
-			TP = TP - 0.5 * dt; // 5/10
+		ChargeTimedReservoir(dt);
 	}
 
 	if (EQ(i_bcp, 10) || EQ(i_bcp, -2))
 	{
-		DP = PF(0, PP, 2 * ActFlowSpeed / LBDelay);
+		auto const DP{PF(0, PP, 2 * ActFlowSpeed / LBDelay)};
 		dpMainValve = DP;
 		Sounds[s_fv4a_e] = DP;
 		Sounds[s_fv4a_u] = 0;
@@ -3342,6 +3411,45 @@ double TMHZ_EN57::GetPF(double i_bcp, double PP, double HP, double dt, double ep
 		RP = std::min(1., 0.125 * i_bcp - 0.125);
 
 	return dpMainValve * dt;
+}
+
+// the time reservoir let out of the overload, at the running position, while the control reservoir is charged
+void TMHZ_EN57::DischargeTimedReservoir(double const i_bcp, double const dt)
+{
+	if (TP > 0 && CP > 4.9)
+	{
+		auto const DP{OverloadPressureDecrease};
+		if (EQ(i_bcp, 0))
+			TP = TP - DP * dt;
+		Sounds[s_fv4a_t] = DP;
+	}
+	else
+	{
+		TP = 0;
+	}
+}
+
+// the time reservoir charged by the overload, up to its highest pressure
+void TMHZ_EN57::ChargeTimedReservoir(double const dt)
+{
+	if (TP < 5)
+		TP = TP + dt; // 5/10
+	if (TP < OverloadMaxPressure)
+		TP = TP - 0.5 * dt; // 5/10
+}
+
+// the pressure the handle feeds the pipe from: the supply's over the running pressure at the filling stroke, where the
+// handle has the overpressure (with its button pressed, for a button worked one), the control reservoir's otherwise
+double TMHZ_EN57::SupplyPressure(double const i_bcp, double const HP)
+{
+	double uop = UnbrakeOverPressure; // unbrake over pressure in actual state
+	ManualOvrldActive = UniversalFlag & TUniversalBrake::ub_HighPressure; // button is pressed
+	if (ManualOvrld && !ManualOvrldActive) // no overpressure for not pressed button if it does not exists
+		uop = 0;
+
+	if (EQ(i_bcp, -1) && uop > 0)
+		return std::min(HP, 5.4 + RedAdj + uop);
+	return std::min(CP, HP);
 }
 
 /// <summary>Initialises CP to the supplied pressure.</summary>

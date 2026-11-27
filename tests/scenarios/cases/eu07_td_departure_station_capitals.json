@@ -1,0 +1,35 @@
+{
+  "description": "EU07 on td.scn on a timetable whose first row, the station of departure, is written in capitals (STACJA1) and gives no arrival time, while the relation says Stacja1. The train is to stop there and wait for its departure at 10:35, not take Stacja1 for a station it passes through and leave as soon as the route is set at 10:34 (linia_107_poludnie.scn, Os33733 at ZAGORZ).",
+  "base_scenery": "td.scn",
+  "time": "10:33",
+  "fragment": "td_departure_station.scn",
+  "timetable": "td_departure_station_capitals.txt",
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\4e_v1 4e-004 4e 0 headdriver 0 0 enddynamic"
+  },
+  "duration": 360,
+  "timeout": 600,
+  "checks": [
+    {
+      "type": "log_lacks",
+      "pattern": "as TEST24: at \\d+:\\d+ passed STACJA1"
+    },
+    {
+      "type": "log_contains",
+      "pattern": "as TEST24: at 10:35 next Przystanek"
+    },
+    {
+      "type": "starts",
+      "min_speed": 20,
+      "within": 240
+    },
+    {
+      "type": "stops",
+      "moving_speed": 20,
+      "stop_speed": 1.0,
+      "hold": 0,
+      "min_distance": 1380,
+      "max_distance": 1420
+    }
+  ]
+}

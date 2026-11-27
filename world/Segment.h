@@ -109,6 +109,7 @@ class TSegment
     struct setting {
         std::array<float, 2> designrolls { 0.f, 0.f }; // as entered; fRoll1 and fRoll2 can differ at a joint
         bool uneven { false }; // see TrackUneven.h
+        bool buckled { false }; // see TrackBuckle.h
         int path { 0 }; // which path of a switch
         // where the path meets the next one: the middle of their ends and their common vector across
         std::array<std::optional<std::pair<glm::dvec3, glm::dvec3>>, 2> joints;
@@ -145,8 +146,9 @@ class TSegment
 
     // moves a lofted vertex with the unevenness of the track
     void settle_vertex( gfx::basic_vertex &Vertex, glm::dvec3 const &Origin, glm::vec3 const &Position, glm::vec3 const &Parallel, double const Distance ) const;
-    // displacement of a point by the unevenness, at a distance along the path
-    glm::dvec3 stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance ) const;
+    // displacement of a point by the unevenness, at a distance along the path, and by the buckle of the track across it, along Across
+    // (none along a zero vector)
+    glm::dvec3 stray( glm::dvec3 const &Point, track_uneven::amounts const &Amount, double const Distance, glm::dvec3 const &Across ) const;
 
 public:
     bool bCurve = false;
@@ -201,6 +203,10 @@ public:
         set_uneven( bool const Uneven, int const Path = 0 ) {
             m_setting.uneven = Uneven;
             m_setting.path = Path; }
+    // call before Init too
+    void
+        set_buckled( bool const Buckled ) {
+            m_setting.buckled = Buckled; }
     // a point of the path and the unit vector across it in the plan, towards the right rail profile; zero for a path never made
     void
         plan_frame( double const Distance, glm::dvec3 &Point, glm::dvec3 &Across ) const;
@@ -214,6 +220,13 @@ public:
     // second derivative of the displacement along the path; times speed squared: acceleration of an axle
     glm::dvec3
         uneven_bend( double const Distance ) const;
+    // the curvature the buckle of the track adds to the path at the distance, 1/m, positive bending towards its right; averaged over Base
+    // around it, as a bogie or a body takes it
+    double
+        buckle_bend( double const Distance, double const Base = 0.0 ) const;
+    // the unit vector across the path at the distance, towards its right
+    glm::dvec3
+        across_at( double const Distance ) const;
 	glm::dvec3 FastGetPoint(double const t) const;
     inline
     glm::dvec3

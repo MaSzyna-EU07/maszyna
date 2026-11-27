@@ -180,6 +180,170 @@ jobs:
             -Recurse `
             -Force
 
+      # The downloads of the next step, kept between the runs: a release out of reach then doesn't fail the build. The
+      # key is this file, which pins them; a cache of an older one is taken too, as the next step checks every file by
+      # its SHA-256 and downloads only those it doesn't have.
+      - name: Restore the audio library downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/audio-dlls-downloads
+          key: audio-dlls-${{ hashFiles('.github/workflows/build_bin.yml') }}
+          restore-keys: audio-dlls-
+
+      # The game loads OpenAL32.dll and libsndfile-1.dll from its own folder, and the depot had OpenAL Soft 1.18.1 and
+      # libsndfile 1.0.28 (2017) there. OpenAL Soft 1.18 lacks ALC_SOFT_reopen_device and ALC_SOFT_system_events, so on
+      # Windows the sound didn't follow a change of the output device; libsndfile 1.0.28 reads no Opus and no MP3, which
+      # the Linux build (libsndfile 1.2) does. The official release binaries of both are taken, pinned by SHA-256. They
+      # need nothing beyond the system DLLs and msvcrt.dll (soft_oal.dll) or KERNEL32.dll (sndfile.dll). soft_oal.dll
+      # has no AVX code; sndfile.dll (its static opus and mpg123) picks its AVX/AVX2 paths at run time, so the same files
+      # go with both variants. The exe links them by name: soft_oal.dll is shipped as OpenAL32.dll (as its readme says,
+      # without the router), sndfile.dll as libsndfile-1.dll. Both are LGPL, so their license texts go with them, in
+      # licenses/, with those of what the DLLs have built in (below); the libsndfile zip has none, its COPYING is taken
+      # from the source tree of the same tag. Those texts are kept in ref/licenses (with where each comes from), so the
+      # build doesn't depend on the servers they come from.
+      - name: Add the OpenAL Soft and libsndfile DLLs
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $output = "build/bin/$env:CONFIG_WIN"
+          $licenses = Join-Path $output 'licenses'
+          $work = Join-Path $env:RUNNER_TEMP 'audio-dlls'
+          $downloads = Join-Path $env:RUNNER_TEMP 'audio-dlls-downloads'
+          New-Item -ItemType Directory -Force -Path $work, $licenses, $downloads | Out-Null
+          $pinned = [System.Collections.Generic.List[string]]::new()
+
+          # the file of the URL with the given SHA-256: the one kept by a run before, else downloaded. named by its
+          # SHA-256 and the last part of its path, without the query
+          function Get-Pinned([string] $Url, [string] $Sha256) {
+            $name = "$Sha256-$([uri]::new($Url).Segments[-1])"
+            $pinned.Add($name)
+            $file = Join-Path $downloads $name
+            if ((Test-Path -Path $file) -and (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant() -eq $Sha256) {
+              Write-Host "$Url kept by a run before"
+              return $file
+            }
+            Invoke-WebRequest -Uri $Url -OutFile $file -UserAgent 'ci-download' -MaximumRetryCount 3 -RetryIntervalSec 10 -TimeoutSec 120
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant()
+            if ($hash -ne $Sha256) {
+              Remove-Item -Path $file -Force
+              throw "${Url}: SHA-256 $hash, expected $Sha256"
+            }
+            return $file
+          }
+
+          # each package: the zip and, for each file wanted from it, where it goes in the build
+          $packages = @(
+            @{ Url = 'https://github.com/kcat/openal-soft/releases/download/1.25.2/openal-soft-1.25.2-bin.zip'
+               Sha256 = '67a0c4b800bd860c93c04f38caf8cbe4875f9c84700ac430efc451f70e265434'
+               Files = [ordered]@{
+                 'openal-soft-1.25.2-bin/bin/Win64/soft_oal.dll' = 'OpenAL32.dll'
+                 'openal-soft-1.25.2-bin/COPYING' = 'licenses/openal-soft-COPYING.txt' } },
+            @{ Url = 'https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2-win64.zip'
+               Sha256 = '2173935c0c1ed13cf627951d34483f9d405ead2eb473190461c42ba220643a3f'
+               Files = [ordered]@{
+                 'libsndfile-1.2.2-win64/bin/sndfile.dll' = 'libsndfile-1.dll' } }
+          )
+          foreach ($package in $packages) {
+            $zip = Get-Pinned $package.Url $package.Sha256
+            $unpacked = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($zip))
+            Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+            foreach ($entry in $package.Files.GetEnumerator()) {
+              Copy-Item -Path (Join-Path $unpacked $entry.Key) -Destination (Join-Path $output $entry.Value) -Force
+              Write-Host "$($entry.Value) <- $($package.Url) $($entry.Key)"
+            }
+          }
+
+          # the license texts, each from the source tree of the version built in: of libsndfile, its ALAC and GSM 06.10
+          # code, and the libraries its vcpkg build linked into sndfile.dll; of OpenAL Soft's PFFFT, Microsoft GSL and
+          # its BSD 3-Clause parts, and of the MinGW-w64 runtime and winpthreads, linked into soft_oal.dll (a MinGW GCC
+          # 15 build: the texts are the same in mingw-w64 12 and 13).
+          # The versions in sndfile.dll: those it names (libopus 1.4, libFLAC 1.4.2, libVorbis 1.3.7), mpg123 1.31.3 by
+          # the SHA-512 of its source archive in the build paths it keeps, and libogg 1.3.5 and LAME 3.100 of the vcpkg
+          # ports of the time (mid 2023). LAME's from Debian's copy of the 3.100 source, the same file as in LAME's own
+          # repository on SourceForge. The texts are in ref/licenses, whose README names the URL of each; each is
+          # checked by its SHA-256, so an edit or a line ending changed on the way doesn't go out unnoticed
+          $texts = [ordered]@{
+            'libsndfile-COPYING.txt' = 'ad01ea5cd2755f6048383c8d54c88459cd6fcb17757c5c8892f8c5ea060f6140'
+            'libsndfile-ALAC-LICENSE.txt' = '232efbd83786e157286b0b96c68ebb673541b69b33036287bf1e5ec5067a49d9'
+            'libsndfile-GSM610-COPYRIGHT.txt' = '1bbe7119b1bcd1489e0f36cb95b8902f7f0ceec9a2f3a67394bc9f4709a4e0a7'
+            'libogg-COPYING.txt' = 'd2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814'
+            'libvorbis-COPYING.txt' = 'ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a'
+            'flac-COPYING.Xiph.txt' = '6e58d3036f05e2a0d58af854c12a505ddbe75011d71a598a2170987f3b15408d'
+            'opus-COPYING.txt' = '8338ce8d922bb4416ce3dd1e5680173332435e3f0755007ac7801ccd674fe682'
+            'mpg123-COPYING.txt' = 'c22482728a634a8dfdb4ff72a96d4c1ed64cd8f3e79335c401751ac591609366'
+            'lame-COPYING.txt' = 'bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd'
+            'openal-soft-pffft-LICENSE.txt' = '64056328b3e7bc104e24ef96accc1a7abead156f0c02d1b87c97e3f3a28030de'
+            'openal-soft-gsl-LICENSE.txt' = '4c21dc82a1c7186ea754fd59d504c00947953a3401fe8e24eaa44109ef8e2555'
+            'openal-soft-BSD-3Clause.txt' = 'b5a08cf98996dd83aa906a72c163600f6cb17a65ce546a553815a1267abd43ff'
+            'openal-soft-winpthreads-COPYING.txt' = '63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177'
+            'openal-soft-mingw-w64-runtime.txt' = 'e9b2dc02451ea29092a1f25fa0f3c07207ed421f1807dffb0c4e6dce69dee7bd'
+          }
+          foreach ($text in $texts.GetEnumerator()) {
+            $file = Join-Path 'ref/licenses' $text.Key
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant()
+            if ($hash -ne $text.Value) {
+              throw "${file}: SHA-256 $hash, expected $($text.Value)"
+            }
+            Copy-Item -Path $file -Destination (Join-Path $licenses $text.Key) -Force
+          }
+
+          # OpenAL Soft's bs2b has its license only in its source files: the notice as core/bs2b.cpp of 1.25.2 has it
+          @'
+          Copyright (c) 2005 Boris Mikhaylov
+
+          Permission is hereby granted, free of charge, to any person obtaining
+          a copy of this software and associated documentation files (the
+          "Software"), to deal in the Software without restriction, including
+          without limitation the rights to use, copy, modify, merge, publish,
+          distribute, sublicense, and/or sell copies of the Software, and to
+          permit persons to whom the Software is furnished to do so, subject to
+          the following conditions:
+
+          The above copyright notice and this permission notice shall be
+          included in all copies or substantial portions of the Software.
+
+          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+          EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+          MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+          CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+          TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+          '@ | Set-Content -Path (Join-Path $licenses 'openal-soft-bs2b-LICENSE.txt') -Encoding utf8
+
+          # what the DLLs are and have built in, where their source is (the LGPL ones); the DLLs can be replaced by the user
+          @(
+            'OpenAL32.dll: OpenAL Soft 1.25.2, unmodified soft_oal.dll of the official binaries, GNU LGPL 2 or later'
+            '  (openal-soft-COPYING.txt). Source: https://github.com/kcat/openal-soft/releases/tag/1.25.2'
+            '  Built in: a modified PFFFT, BSD-style (openal-soft-pffft-LICENSE.txt); Microsoft GSL, MIT'
+            '  (openal-soft-gsl-LICENSE.txt); the ambisonic rotator, the vocal morpher and the compressor, BSD 3-Clause'
+            '  (openal-soft-BSD-3Clause.txt); bs2b, MIT (openal-soft-bs2b-LICENSE.txt); {fmt} 11.2.0, MIT, whose'
+            '  exception for the object form asks for no text. Linked into it by its MinGW-w64 build: the MinGW-w64'
+            '  runtime (openal-soft-mingw-w64-runtime.txt) and winpthreads, MIT and BSD-style'
+            '  (openal-soft-winpthreads-COPYING.txt);'
+            '  libstdc++ and libgcc under the GCC Runtime Library Exception, which asks for no text.'
+            '  Its default HRTF data set is based on the KEMAR HRTF measurements by Bill Gardner and Keith Martin,'
+            '  MIT Media Laboratory, 1994: http://sound.media.mit.edu/resources/KEMAR.html'
+            'libsndfile-1.dll: libsndfile 1.2.2, unmodified sndfile.dll of the official binaries, GNU LGPL 2.1 or later'
+            '  (libsndfile-COPYING.txt). Source: https://github.com/libsndfile/libsndfile/releases/tag/1.2.2'
+            '  Its ALAC code: Apache License 2.0 (libsndfile-ALAC-LICENSE.txt). Its GSM 06.10 code: Jutta Degener and'
+            '  Carsten Bormann, TU Berlin (libsndfile-GSM610-COPYRIGHT.txt). Its G.721/G.723 code: Sun Microsystems, public'
+            '  domain.'
+            '  Linked into it by its build, made with the vcpkg ports of the time and their patches'
+            '  (https://github.com/microsoft/vcpkg/tree/2023.08.09/ports, the ports named below):'
+            '    libogg 1.3.5, BSD (libogg-COPYING.txt), port libogg. Source: https://github.com/xiph/ogg/releases/tag/v1.3.5'
+            '    libvorbis 1.3.7, BSD (libvorbis-COPYING.txt), port libvorbis. Source: https://github.com/xiph/vorbis/releases/tag/v1.3.7'
+            '    libFLAC 1.4.2, BSD (flac-COPYING.Xiph.txt), port libflac. Source: https://github.com/xiph/flac/releases/tag/1.4.2'
+            '    libopus 1.4, BSD (opus-COPYING.txt), port opus. Source: https://github.com/xiph/opus/releases/tag/v1.4'
+            '    mpg123 1.31.3, GNU LGPL 2.1 (mpg123-COPYING.txt), port mpg123. Source: https://www.mpg123.de/download/mpg123-1.31.3.tar.bz2'
+            '    LAME 3.100, GNU LGPL 2 or later (lame-COPYING.txt), port mp3lame. Source: https://sourceforge.net/projects/lame/files/lame/3.100/'
+          ) | Set-Content -Path (Join-Path $licenses 'audio-libraries.txt') -Encoding utf8
+
+          # the files no pin names any more aren't kept for the next run
+          Get-ChildItem -Path $downloads -File | Where-Object { $pinned -notcontains $_.Name } | Remove-Item -Force
+
       - name: Upload Windows build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -236,37 +400,39 @@ jobs:
         with:
           python-version: "3.14"
 
-      # A mirror that stops answering used to hold this step for over an hour.
-      # Time out each download, retry it, and give up on the whole step early.
+      # The packages are kept in the Actions cache (.github/actions/apt-install): the mirror of the runners has been
+      # too slow to download them every time. The timeout is a safety net.
+      # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
+      # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
+      # The X11 packages are the ones GLFW (ref/glfw, 3.4) looks for; xorg-dev brought ~45 more. The game loads the
+      # X11 and Wayland libraries of the system, none of them is bundled (CMake_modules/bundle_runtime_libs.cmake).
       - name: Install Linux dependencies
         timeout-minutes: 15
-        run: |
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "60";' \
-            'Acquire::https::Timeout "60";' \
-            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
-          sudo apt-get update
-
-          # libasound2-dev, libpulse-dev and libpipewire-0.3-dev: the headers of OpenAL Soft's audio backends (built below).
-          # Without them it builds with OSS only, which modern distributions and the Steam Linux Runtime don't have: no sound.
-          sudo apt-get install -y \
-            build-essential \
-            libasound2-dev \
-            libpulse-dev \
-            libpipewire-0.3-dev \
-            libgl1-mesa-dev \
-            libglew-dev \
-            libglfw3-dev \
-            libpng-dev \
-            libopenal-dev \
-            libluajit-5.1-dev \
-            libserialport-dev \
-            libsndfile1-dev \
-            libcurl4-openssl-dev \
-            xorg-dev \
-            libxkbcommon-dev \
-            libwayland-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            build-essential
+            pkg-config
+            libasound2-dev
+            libpulse-dev
+            libpipewire-0.3-dev
+            libgl1-mesa-dev
+            libglew-dev
+            libglfw3-dev
+            libpng-dev
+            libopenal-dev
+            libluajit-5.1-dev
+            libserialport-dev
+            libsndfile1-dev
+            libcurl4-openssl-dev
+            libx11-dev
+            libxcursor-dev
+            libxext-dev
+            libxi-dev
+            libxinerama-dev
+            libxrandr-dev
+            libxkbcommon-dev
+            libwayland-dev
             wayland-protocols
 
       #
@@ -409,25 +575,25 @@ jobs:
     steps:
       # the AVX2 build keeps the old name of the download, so the links already handed out still work
       - name: Download Windows build (AVX2)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: maszyna-windows-x64-avx2-${{ env.CONFIG_WIN }}
           path: dist/maszyna-windows-x64
 
       - name: Download Windows build (no AVX2)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: maszyna-windows-x64-noavx2-${{ env.CONFIG_WIN }}
           path: dist/maszyna-windows-x64-noavx2
 
       - name: Download Linux build (AVX2)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: maszyna-linux-x64-avx2-${{ env.CONFIG_LINUX }}
           path: dist/maszyna-linux-x64
 
       - name: Download Linux build (no AVX2)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: maszyna-linux-x64-noavx2-${{ env.CONFIG_LINUX }}
           path: dist/maszyna-linux-x64-noavx2

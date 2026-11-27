@@ -1,0 +1,25 @@
+{
+  "description": "GE#536 stage 1, the twin of e6actad_genset_td_timetable without the switching events: the same E6ACTad variant stays on its catenary position and runs the td/rozklad timetable as the plain E6ACT does, on far more than the genset's 442 kW at the wheels, which shows the traction_power check tells the two apart. The same variant g6 as the genset case.",
+  "base_scenery": "td.scn",
+  "time": "10:34",
+  "fragment": "td_timetable.scn",
+  "vehicle_variants": [
+    { "name": "g6", "from": "pkp/e6act_v2/e6actad", "fiz_from": "pkp/e6act_v2/e6acta.fiz.inc", "replace": [
+      ["InactiveCabFlag=15", "InactiveCabFlag=15 GensetStart=Manual"],
+      ["PhysicalLayout=3", "PhysicalLayout=3 GensetPower=520 GensetVoltage=3000 GensetIdleRPM=700 GensetMaxRPM=1800 GensetStartTime=8 GensetSpinUpTime=3 GensetPmaxRatio=0.85"]
+    ] }
+  ],
+  "vars": {
+    "consist": "node -1 0 {{vehicle}} dynamic pkp\\e6act_v2 e6actad-017 {{variant_g6}} 0 headdriver 0 0 enddynamic"
+  },
+  "ini": ["gfxrenderer null"],
+  "duration": 240,
+  "timeout": 600,
+  "checks": [
+    { "type": "log_lacks", "pattern": "Genset of" },
+    { "type": "starts", "min_speed": 20, "within": 150 },
+    { "type": "max_speed", "limit": 90, "tolerance": 3 },
+    { "type": "traction_power", "max_kw": 6000, "min_peak_kw": 1000 },
+    { "type": "stops", "moving_speed": 20, "stop_speed": 1.0, "hold": 0, "min_distance": 1380, "max_distance": 1420 }
+  ]
+}

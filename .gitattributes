@@ -4,3 +4,5 @@ text=auto
 *.h text
 README text
 LICENSE text
+# the license texts the Windows build ships, checked by their SHA-256: byte for byte as upstream, LF on every checkout
+ref/licenses/*.txt -text

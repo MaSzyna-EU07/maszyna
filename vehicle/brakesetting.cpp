@@ -177,6 +177,10 @@ bool runs_as_train(int const Orders) {
 	return (Orders & (Obey_train | Bank)) != 0;
 }
 
+bool inspects_train(int const Orders, bool const Coupled) {
+	return (Orders & (Shunt | Loose_shunt | Obey_train | Bank)) != 0 || ((Orders & Connect) != 0 && false == Coupled);
+}
+
 bool at_standstill(double const Velocity) {
 	return std::abs(Velocity) < EU07_AI_MOVEMENT;
 }
