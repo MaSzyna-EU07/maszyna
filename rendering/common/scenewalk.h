@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the walk of the scene shared by the renderers (stage N6 of claude/vulkan14-renderer-plan.md, decision K11): the decisions of
+// the walk of the scene shared by the renderers: the decisions of
 // what is drawn in a pass (the sections, cells, tracks, shapes, models, instances, vehicles, the cab, the translucent parts),
 // in which order, with which material, transform and level of detail. a renderer derives from it and gets the draws through
 // the walk_* methods: the opengl renderer makes them at once (the same gl calls in the same order as before the walk was
@@ -297,7 +297,7 @@ class scene_walk
 	virtual void walk_instances_end() {}
 	// the geometry of the backend and whether it draws blended now, for the draws recorded for the gpu culling
 	virtual gfx::geometrybank_manager &walk_geometry() = 0;
-	// the walks of the groups of a culling split among several threads (the stage M3 of claude/vulkan14-renderer-plan.md): whether the
+	// the walks of the groups of a culling split among several threads: whether the
 	// backend does it for this many groups (by default not), and the tasks run, each by a helper given the state of this walk (its
 	// pass, its model block and blending, its recording of the draws), which Work walks a part of the groups with; returns once all of
 	// them are done

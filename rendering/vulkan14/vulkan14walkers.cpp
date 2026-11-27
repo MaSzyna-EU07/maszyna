@@ -7,7 +7,7 @@ obtain one at
 http://mozilla.org/MPL/2.0/.
 */
 
-// the passes walked by the walkers (the stage M2 of claude/vulkan14-renderer-plan.md, gfx.vulkan.parallelpasses). the main thread sets
+// the passes walked by the walkers (gfx.vulkan.parallelpasses). the main thread sets
 // a pass up as it would walk it itself (the camera, the culling, the map it draws to with its barrier, the timestamps around it), hands
 // the state of the frame over to a walker, splices the stream the walker records into the commands of the frame there and goes on with
 // the frame; the walkers walk the passes at the same time as the main thread walks the colour pass of the main view, and are joined once

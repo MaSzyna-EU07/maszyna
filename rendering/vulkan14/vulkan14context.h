@@ -674,6 +674,8 @@ struct vulkan14_renderer::context
 		std::uint64_t present_id{0};
 		// when the main thread handed it over to the render thread
 		std::chrono::steady_clock::time_point handed{};
+		// the frame couldn't be recorded or submitted, the device not lost: left out (skip_frame()), its images aren't presented
+		bool skipped{false};
 	};
 	// the render thread and the job it's given
 	std::thread render_thread;
@@ -700,8 +702,14 @@ struct vulkan14_renderer::context
 
 	// the job done; false: Failure says where it failed
 	bool execute(render_job &Job, char const *&Failure);
-	// the part of it before the presents: its command buffers recorded and submitted
+	// the part of it before the presents: its command buffers recorded and submitted. a frame which can't be (out of memory and the
+	// like) is left out, false only when the device is lost
 	bool submit(render_job &Job, char const *&Failure);
+	// the frame which failed at What left out: its uploads (with Compute after the part of the compute queue submitted) and the waits
+	// and the signals of the frame, without the rest of it; false when that can't be submitted either
+	bool skip_frame(render_job &Job, bool Compute, char const *What, char const *&Failure);
+	// the frames left out so far (skip_frame(), the render thread or the main thread without it)
+	std::uint64_t skipped_frames{0};
 	// the windows of the frame submitted last presented, the frames generated for the main window before it (spread over the time
 	// of a frame when there's the render thread to wait); Id: the id of the present of the main window (0: none); false: the device is lost
 	// (a lost surface is made anew by its swapchain)

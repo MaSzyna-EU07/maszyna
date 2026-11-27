@@ -59,6 +59,25 @@ VkPrimitiveTopology topology_class(VkPrimitiveTopology const Topology)
 	}
 }
 
+// the instances of a draw (one when it isn't instanced) within the window of the ring the pass set reads, from its first one on:
+// walk_instances() places at most a window of them, those past it aren't drawn. the instances of a culled pass aren't in the window
+std::uint32_t drawn_instances(std::size_t const Count, std::uint32_t const First, VkDeviceSize const Capacity, bool const Culled)
+{
+	if (Count == 0)
+	{
+		return 1;
+	}
+	if (Culled)
+	{
+		return static_cast<std::uint32_t>(Count);
+	}
+	if (First >= Capacity)
+	{
+		return 0;
+	}
+	return static_cast<std::uint32_t>(std::min<VkDeviceSize>(Count, Capacity - First));
+}
+
 vk14::vertex_layout layout_of(vk14::vertex_kind const Kind)
 {
 	vk14::vertex_layout layout;
@@ -2090,6 +2109,13 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
 		return;
 	}
+	auto const instances{drawn_instances(m_current_instance_count, m_current_instance_base, m_context->scene.instances.window / m_context->scene.instances.stride, draw.cull_sets != nullptr)};
+	if (instances == 0)
+	{
+		// all of them past the window of their ring (walk_instances() places at most a window of them)
+		m_prepassincomplete = (m_prepassincomplete || draw.depthpass);
+		return;
+	}
 	auto &ctx{*m_context};
 	auto &scene{ctx.scene};
 	auto const commands{draw.commands};
@@ -2140,7 +2166,6 @@ void vulkan14_renderer::draw_chunk(gfx::geometry_handle const &Geometry, bool co
 		draw.vertices = chunk.vertices;
 		draw.userdata = chunk.userdata;
 	}
-	auto const instances{m_current_instance_count > 0 ? static_cast<std::uint32_t>(m_current_instance_count) : 1u};
 	auto const firstinstance{m_current_instance_count > 0 ? m_current_instance_base : 0u};
 	if (chunk.indices != VK_NULL_HANDLE)
 	{

@@ -10,7 +10,10 @@
 # Every .vert/.frag/.geom/.comp of shaders/ogl46 is compiled as the game compiles the source (features on and off, and the
 # variant of the multi draws) and to SPIR-V for opengl from the file as it is (as glslc makes the binaries of
 # shaders/ogl46bin); the constants written in shaders/ogl46/common.glsl are compared with those of the game. The shaders of
-# shaders/vk14 are compiled to SPIR-V for vulkan.
+# shaders/vk14 are compiled to SPIR-V for vulkan1.4 (vulkan1.3, said at the start and at the end of the run, where
+# glslangValidator doesn't know 1.4; ./validateshaders --vulkan-env vulkan1.4 fails then instead), and the constants written in
+# shaders/vk14/common.glsl are compared with rendering/vulkan14/vulkan14bindings.h and those of the game. The temporary files
+# are made with unique names and removed afterwards.
 # Exit code is 0 when all shaders pass, 1 otherwise; failing shaders are listed at the end.
 #
 # The validator's own stdafx.h and utilities/{Globals,Logs}.h stand in for the game's headers: its directory comes first

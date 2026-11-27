@@ -12,7 +12,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 opengl46_shadow_fit::~opengl46_shadow_fit()
 {
@@ -25,8 +28,20 @@ void opengl46_shadow_fit::init()
 		gl::shader shader(Name);
 		return std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 	};
-	m_depthprogram = make_compute("shadow_fit_depth.comp");
-	m_boundsprogram = make_compute("shadow_fit_bounds.comp");
+	try
+	{
+		m_depthprogram = make_compute("shadow_fit_depth.comp");
+		m_boundsprogram = make_compute("shadow_fit_bounds.comp");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the cascades keep to their fixed splits
+		ErrorLog(std::format("sun shadows fitted to the depth not available: {}", e.what()));
+		m_depthprogram.reset();
+		m_boundsprogram.reset();
+		Global.gfx_shadow_sdsm = false;
+		return;
+	}
 	m_buffer = std::make_unique<gl::ssbo>(sizeof(gl::shadow_fit_data), gl::SHADOW_FIT_SSBO_BINDING);
 	m_readback = std::make_unique<gl::readback>(sizeof(gl::shadow_fit_data));
 }
@@ -60,7 +75,7 @@ void opengl46_shadow_fit::allocate(int const Width, int const Height)
 
 void opengl46_shadow_fit::measure(GLuint const Depth, GLuint const Source, int const Width, int const Height, view const &View, unsigned int const Frame)
 {
-	if ((Width <= 0) || (Height <= 0) || (View.range <= 0.f))
+	if ((Width <= 0) || (Height <= 0) || (View.range <= 0.f) || (m_boundsprogram == nullptr))
 		return;
 
 	m_timer.begin();

@@ -39,7 +39,9 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationtest.h"
 #include "utilities/physicslog.h"
 #include <chrono>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <mutex>
 #include <set>
 #include <string>
@@ -195,6 +197,56 @@ void glfw_error_callback(int const Code, char const *Description)
 			return;
 	}
 	ErrorLog(message);
+}
+
+#ifdef WITH_CRASHPAD
+// there while the renderer starts (init_gfx()): left behind by a start which crashed in it
+constexpr char const *GFX_START_MARK{"crashdumps/gfx_start.pending"};
+#endif
+
+// the mark of the start of the renderer put down (Starting) or taken away
+void mark_gfx_start(bool const Starting)
+{
+#ifdef WITH_CRASHPAD
+	std::error_code error;
+	if (Starting)
+	{
+		std::ofstream mark(GFX_START_MARK, std::ios::trunc);
+	}
+	else
+	{
+		std::filesystem::remove(GFX_START_MARK, error);
+	}
+#else
+	(void)Starting;
+#endif
+}
+
+// the question about the report of the last crash, asked before the renderer starts when that crash came while it started: the window
+// of the question is drawn by the renderer (run_crashgui()), so a crash in its start, which repeats at every start, would never let it
+// show. a box of the system asks instead, on Windows, where the reports are made
+void ask_crash_report_before_gfx()
+{
+#if defined(WITH_CRASHPAD) && defined(_WIN32)
+	std::error_code error;
+	if ((false == crashreport_is_pending()) || Global.test.enabled || (false == std::filesystem::exists(GFX_START_MARK, error)))
+	{
+		return;
+	}
+	auto const polish{Global.asLang == "pl"};
+	auto const *text{
+		polish ? L"Podczas ostatniego uruchomienia symulator uległ awarii przy uruchamianiu grafiki.\nWysłać raport o błędzie do deweloperów?" :
+		         L"The simulator crashed while starting the graphics during the last launch.\nSend the crash report to the developers?"};
+	auto const *caption{polish ? L"Raportowanie błędów" : L"Crash reporting"};
+	if (::MessageBoxW(nullptr, text, caption, MB_YESNO | MB_ICONERROR) == IDYES)
+	{
+		crashreport_upload_accept();
+	}
+	else
+	{
+		crashreport_upload_reject();
+	}
+#endif
 }
 
 } // namespace
@@ -473,17 +525,23 @@ int eu07_application::init(int Argc, char *Argv[])
 		return result;
 	}
 
+	ask_crash_report_before_gfx();
+	mark_gfx_start(true);
 	if ((result = init_gfx()) != 0)
 	{
+		// a start which failed, not one which crashed
+		mark_gfx_start(false);
 		ErrorLog("Failed to initialize GFX!");
 		return result;
 	}
 
 	if ((result = init_ui()) != 0)
 	{ // ui now depends on activated renderer
+		mark_gfx_start(false);
 		ErrorLog("Failed to init UI!");
 		return result;
 	}
+	mark_gfx_start(false);
 	if (crashreport_is_pending() && false == Global.test.enabled)
 	{ // run crashgui as early as possible: it's drawn by the renderer
 		if ((result = run_crashgui()) != 0)
@@ -1433,20 +1491,8 @@ int eu07_application::init_settings(int Argc, char *Argv[])
 		simulation::apply_test_mode_settings();
 	}
 
-	// a renderer this build doesn't have gets the full one: the starter writes the words of every build it knows
-	// ("vulkan" for the vulkan builds), and any word not known here used to start the legacy renderer.
-	// "simpleshader" and "off" of the older starters keep the legacy one they always had
-	auto const &renderer{Global.GfxRenderer};
-	auto const known{renderer == "default" || renderer == "legacy" || renderer == "simple" || renderer == "null" || renderer == "simpleshader" ||
-	                 renderer == "off" || (renderer == "experimental" && gfx_renderer_factory::get_instance()->has_backend(renderer))};
-	if (false == known)
-	{
-		WriteLog("gfxrenderer \"" + renderer + "\" isn't in this build, the full renderer is used instead");
-		Global.GfxRenderer = "default";
-		Global.NvRenderer = false;
-		Global.LegacyRenderer = false;
-		Global.BasicRenderer = false;
-	}
+	// a renderer this build doesn't have: the values of the removed renderers are taken for "default" as eu07.ini is read
+	// (global_settings::ConfigParse), and a vulkan renderer which can't run here falls back to opengl (select_gfx_backend())
 
 	return 0;
 }

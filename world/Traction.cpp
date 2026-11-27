@@ -15,6 +15,7 @@ http://mozilla.org/MPL/2.0/.
 #include "stdafx.h"
 #include "world/Traction.h"
 #include "world/catenary_span.h"
+#include "world/TractionTail.h"
 
 #include "simulation/simulation.h"
 #include "utilities/Globals.h"
@@ -138,41 +139,18 @@ TTraction::Load( cParser *parser, glm::dvec3 const &pOrigin ) {
         >> WireOffset;
     m_visible = parser->getToken<std::string>() == "vis";
 
-    std::string token { parser->getToken<std::string>() };
-    std::string catenarytype;
-    double catenarytension[ 2 ] { 0.0, 0.0 };
-    glm::dvec3 catenaryrope2[ 2 ];
-    bool catenaryrope2set[ 2 ] { false, false };
-    while( false == token.empty()
-        && token != "endtraction" ) {
-
-        if( token == "parallel" ) {
-            // jawne wskazanie innego przęsła, na które może przestawić się pantograf
-            parser->getTokens();
-            *parser >> asParallel;
-        }
-        else if( token == "type" ) {
-            // symbol typu sieci, np. YwsC120-2C; starsze wersje symulatora pomijają ten dopisek
-            catenarytype = parser->getToken<std::string>( false );
-        }
-        else if( token == "rope2" ) {
-            // koniec drugiej liny nośnej przy kotwieniu: "rope2 start|end x y z"
-            auto const which { parser->getToken<std::string>() };
-            auto const point { LoadPoint( *parser ) + pOrigin };
-            auto const end { which == "end" ? 1 : 0 };
-            catenaryrope2[ end ] = point;
-            catenaryrope2set[ end ] = true;
-        }
-        else if( token == "tension" ) {
-            // naciąg liny nośnej i przewodów jezdnych w daN inny niż w typie sieci (brakujące ciężary w kotwieniu)
-            parser->getTokens( 2 );
-            *parser >> catenarytension[ 0 ] >> catenarytension[ 1 ];
-        }
-        token = parser->getToken<std::string>();
-    }
+    // dopiski: "parallel" (jawne wskazanie innego przęsła, na które może przestawić się pantograf), "type" (symbol typu sieci,
+    // np. YwsC120-2C; starsze wersje symulatora pomijają ten dopisek), "rope2" (koniec drugiej liny nośnej przy kotwieniu),
+    // "tension" (naciąg liny nośnej i przewodów jezdnych w daN inny niż w typie sieci, brakujące ciężary w kotwieniu)
+    traction_tail tail;
+    tail.parallel = asParallel;
+    read_traction_tail( *parser, pOrigin, tail );
+    asParallel = tail.parallel;
+    // zapamiętane, żeby zapis z edytora ich nie zgubił
+    m_tail = tail;
 
     Init(); // przeliczenie parametrów
-    catenary_span_assign( *this, catenarytype, catenarytension[ 0 ], catenarytension[ 1 ], catenaryrope2, catenaryrope2set );
+    catenary_span_assign( *this, tail.type, tail.tension[ 0 ], tail.tension[ 1 ], tail.rope2.data(), tail.rope2set.data() );
 
     // calculate traction location
     location( glm::mix( pPoint2, pPoint1, 0.5 ) );
@@ -705,13 +683,11 @@ TTraction::export_as_text_( std::ostream &Output ) const {
     // visibility
     // NOTE: 'invis' would be less wrong than 'unvis', but potentially incompatible with old 3rd party tools
     Output << ( m_visible ? "vis" : "unvis" ) << ' ';
-    // optional attributes
-    if( false == asParallel.empty() ) {
-        Output << "parallel " << asParallel << ' ';
-    }
-    if( auto const catenarytype { catenary_span_symbol( *this ) }; false == catenarytype.empty() ) {
-        Output << "type " << catenarytype << ' ';
-    }
+    // optional attributes, all that Load() reads
+    auto tail { m_tail };
+    tail.parallel = asParallel;
+    tail.type = catenary_span_symbol( *this );
+    write_traction_tail( Output, tail );
     // footer
     Output
         << "endtraction"

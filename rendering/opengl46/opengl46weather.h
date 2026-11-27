@@ -43,7 +43,8 @@ class opengl46_weather
 	opengl46_weather(const opengl46_weather &) = delete;
 	opengl46_weather &operator=(const opengl46_weather &) = delete;
 
-	// creates the programs, buffers and noise textures. throws gl::shader_exception
+	// creates the programs, buffers and noise textures. without the programs (a shader which doesn't compile) there are no
+	// clouds, volumetric fog and stars: logged, and gfx.clouds and gfx.fog switched off
 	void init();
 	// binds the buffer and textures the shading reads; bindings are context state, so done in every context
 	void bind();

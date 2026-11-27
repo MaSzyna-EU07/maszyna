@@ -193,6 +193,11 @@ void set_thread_random_engine(std::mt19937 *Engine) // NOSONAR: randomness of th
 	t_random_engine = Engine;
 }
 
+std::mt19937 *thread_random_engine() // NOSONAR: randomness of the simulation, not of anything security-relevant
+{
+	return t_random_engine;
+}
+
 double Random(double min, double max)
 {
 	if (max < min) { std::swap(min, max); } // std::uniform_real_distribution requires min <= max (inverted bounds are UB)

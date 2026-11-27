@@ -4266,6 +4266,7 @@ bool TMoverParameters::SpringBrakeActivate(bool State)
 		if (SpringBrake.Activate != State)
 		{
 			SpringBrake.Activate = State;
+			wake_for_brake();
 			return true;
 		}
 	}
@@ -4296,6 +4297,7 @@ bool TMoverParameters::SpringBrakeRelease()
 	if (SpringBrake.IsReady && SpringBrake.Cylinder->P() < SpringBrake.MinForcePressure)
 	{
 		SpringBrake.IsReady = false;
+		wake_for_brake();
 		return true;
 	}
 	else
@@ -5054,6 +5056,7 @@ bool TMoverParameters::IncLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA < 1.0 /*and (BrakeCtrlPos<1)*/)
 	{
 		LocalBrakePosA = std::min(1.0, LocalBrakePosA + CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		IBL = true;
 	}
 	else
@@ -5072,6 +5075,7 @@ bool TMoverParameters::DecLocalBrakeLevel(float const CtrlSpeed)
 	if (LocalBrakePosA > 0)
 	{
 		LocalBrakePosA = std::max(0.0, LocalBrakePosA - CtrlSpeed / LocalBrakePosNo);
+		wake_for_brake();
 		DBL = true;
 	}
 	else
@@ -5166,6 +5170,7 @@ bool TMoverParameters::IncManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos++;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		IMBL = true;
 	}
 	else
@@ -5188,6 +5193,7 @@ bool TMoverParameters::DecManualBrakeLevel(int CtrlSpeed)
 			ManualBrakePos--;
 			CtrlSpeed--;
 		}
+		wake_for_brake();
 		DMBL = true;
 	}
 	else
@@ -5510,7 +5516,9 @@ void TMoverParameters::UpdateBrakePressure(double dt)
 
 	Hamulec->ForceLeak(dt * AirLeakRate * 0.25); // fake air leaks from brake system reservoirs
 
+	auto const brakepress{BrakePress};
 	BrakePress = Hamulec->GetBCP();
+	BrakePressStep = std::abs(BrakePress - brakepress);
 	//  BrakePress:=(Hamulec as TEst4).ImplsRes.pa;
 	Volume = Hamulec->GetBRP();
 }
@@ -6084,13 +6092,26 @@ namespace
 {
 // whether the air flowing to a coupled vehicle along a pipe wakes its physics: any flow did, but a vehicle standing next to one
 // whose physics is on gets a trickle of it all the time, as their pressures settle, and each wake kept it on for 5 s. with
-// Global.physics_pipewake only a flow which brings its pressure, with what has flown in while it slept, that much away from the
-// pressure of the vehicle the air comes from
+// Global.physics_pipewake only a flow which leaves its pressure, with what has flown in while it slept, that much away from the
+// pressure of the vehicle the air comes from, or which has changed it by that much since it fell asleep: a pressure followed in
+// small steps would never reach the valves of a vehicle asleep otherwise
 bool pipe_wakes(double const Flow, double const Pressure, TReservoir const &Pipe)
 {
 	if (Flow * Flow <= 0.00000000000001)
 		return false;
-	return (Global.physics_pipewake <= 0.f) || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake);
+	return (Global.physics_pipewake <= 0.f)
+	    || (std::abs(Pressure - Pipe.P_pending()) > Global.physics_pipewake)
+	    || (std::abs(Pipe.P_pending() - Pipe.P_applied()) > Global.physics_pipewake);
+}
+
+// the pressure in the pipe of a coupled vehicle the flow to it goes by. the pressure the vehicle keeps is the one of its last step:
+// with Global.physics_pipewake one asleep can take air for a long time without waking, and the flow, going by that pressure, would
+// carry on past the pressure of the vehicle it comes from. so of one asleep, the pressure with what has flown in since
+double neighbour_pipe_pressure(TMoverParameters const &Neighbour, double const Pressure, TReservoir const &Pipe)
+{
+	if ((Global.physics_pipewake <= 0.f) || Neighbour.PhysicActivation)
+		return Pressure;
+	return Pipe.P_pending();
 }
 } // namespace
 
@@ -6111,7 +6132,7 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_pneumatic))
 	{ //*0.85
 		c = Couplers[0].Connected; // skrot           //0.08           //e/D * L/D = e/D^2 * L
-		dv1 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv1 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv1);
 		if (pipe_wakes(dv1, PipePress, *c->Pipe))
 			c->switch_physics(true, wake_cause::mainpipe);
@@ -6120,7 +6141,7 @@ double TMoverParameters::GetDVc(double dt)
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_pneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(PipePress, c->PipePress, Spg / (1.0 + 0.015 / Spg * Dim.L));
+		dv2 = 0.5 * dt * PF(PipePress, neighbour_pipe_pressure(*c, c->PipePress, *c->Pipe), Spg / (1.0 + 0.015 / Spg * Dim.L));
 		c->Pipe->Flow(-dv2);
 		if (pipe_wakes(dv2, PipePress, *c->Pipe))
 			c->switch_physics(true, wake_cause::mainpipe);
@@ -6154,7 +6175,7 @@ double TMoverParameters::GetScndDVc(double dt)
 	if (Couplers[0].Connected != nullptr && TestFlag(Couplers[0].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[0].Connected; // skrot
-		dv1 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+		dv1 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv1);
 		if (pipe_wakes(dv1, ScndPipePress, *c->Pipe2))
 			c->switch_physics(true, wake_cause::scndpipe);
@@ -6163,7 +6184,7 @@ double TMoverParameters::GetScndDVc(double dt)
 	if (Couplers[1].Connected != nullptr && TestFlag(Couplers[1].CouplingFlag, ctrain_scndpneumatic))
 	{
 		c = Couplers[1].Connected; // skrot
-		dv2 = 0.5 * dt * PF(ScndPipePress, c->ScndPipePress, Spz * 0.75);
+		dv2 = 0.5 * dt * PF(ScndPipePress, neighbour_pipe_pressure(*c, c->ScndPipePress, *c->Pipe2), Spz * 0.75);
 		c->Pipe2->Flow(-dv2);
 		if (pipe_wakes(dv2, ScndPipePress, *c->Pipe2))
 			c->switch_physics(true, wake_cause::scndpipe);
@@ -11391,9 +11412,19 @@ bool TMoverParameters::accelerating() const
 	if (std::abs(AccS) <= 0.0001)
 		return false;
 	// standing still and held by the brakes and the resistance, against the slope and the couplers: the test ComputeMovement()
-	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by
-	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain)};
+	// sets the speed to zero by. the forces are of the last ComputeTotalForce(), the ones the movement went by. a vehicle whose
+	// brake cylinders still fill or release isn't held yet: asleep, it would keep the brake force (and the pressure the AI waits on
+	// to set off) it had when it fell asleep
+	auto const held{Global.physics_sleepheld && Vel <= 0.0001 && std::abs(FStand) > std::abs(FTrain) && BrakePressStep <= 0.0001};
 	return false == held;
+}
+
+void TMoverParameters::wake_for_brake()
+{
+	if (Global.physics_sleepheld)
+	{
+		switch_physics(true, wake_cause::command);
+	}
 }
 
 // *************************************************************************************************

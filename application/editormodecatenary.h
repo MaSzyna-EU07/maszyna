@@ -113,6 +113,9 @@ struct catenary_editor
 		std::map<std::size_t, catenary_spot> spots; // where the suspensions are by the track, by their numbers
 		std::vector<catenary_change> undo;
 		int group{0};
+		// the undo group a control of the panel opened: its next changes join it only while nothing else came between
+		int slider_group{0};
+		int slider{0}; // ... which control: 1 the settings of the pole, 2 of the chain, 3 the heights of a gantry, 4 its turn
 		catenary::cantilever_result probe;
 		bool probed{false};
 		bool probe_good{false};

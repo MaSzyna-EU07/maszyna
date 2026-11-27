@@ -12,7 +12,7 @@
 #   glslc --target-env=opengl4.5 shaders/ogl46/mat_default.frag -o shaders/ogl46bin/mat_default.frag.spv
 #   glslc --target-env=opengl4.5 -DMODEL_DRAWS=1 shaders/ogl46/vertex.vert -o shaders/ogl46bin/vertex.vert.MODEL_DRAWS.spv
 #   glslc --target-env=vulkan1.4 shaders/vk14/imgui.frag -o shaders/vk14bin/imgui.frag.spv
-# (a binary compiled by hand isn't in the manifest, so the game takes it without comparing it with its sources)
+# (a binary compiled by hand isn't in the manifest, so the game takes it only where its source isn't there)
 
 import argparse
 import os
@@ -115,6 +115,11 @@ def main():
                 if result.returncode != 0:
                     failed.append('%s/%s' % (binarydir, binary))
                     sys.stderr.write(result.stderr)
+                    # the binary of an earlier run would stay beside a source it no longer matches
+                    stale = os.path.join(binaries, binary)
+                    if os.path.isfile(stale):
+                        os.remove(stale)  # NOSONAR: a developer tool removing its own output beside the shaders it is given
+                        print('removed the stale %s/%s' % (binarydir, binary), file=sys.stderr)
                     continue
                 if result.stderr.strip():
                     sys.stderr.write(result.stderr)

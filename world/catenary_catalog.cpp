@@ -84,6 +84,8 @@ void structure_catalog::parse( std::vector<std::string> const &Lines, std::strin
         std::istringstream stream { head };
         std::vector<std::string> words;
         for( std::string word; stream >> word; ) { words.push_back( word ); }
+        // a line of white space other than spaces and tabs (\v, \f, \r) is as empty
+        if( words.empty() ) { continue; }
         auto const &keyword { words.front() };
         if( keyword == "text" ) {
             auto const body { trimmed( line.substr( 4 ) ) };

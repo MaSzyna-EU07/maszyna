@@ -69,18 +69,42 @@ bool file_exists(std::wstring const &Path)
 	return (attributes != INVALID_FILE_ATTRIBUTES) && ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0);
 }
 
+// a path a function of the system writes to the buffer it's given (Get(buffer, size) returns the length written, or the size needed when
+// the buffer is too small, or the size itself when it cut the path short), in a buffer grown until the path fits: a path longer than
+// MAX_PATH (a folder with long paths enabled) isn't cut off nor taken for none. empty when there's none
+template <typename Fill>
+std::wstring sized_path(Fill const &Get)
+{
+	std::wstring buffer(MAX_PATH, L'\0');
+	while (true)
+	{
+		auto const length{static_cast<std::size_t>(Get(buffer.data(), static_cast<DWORD>(buffer.size())))};
+		if (length == 0)
+		{
+			return {};
+		}
+		if (length < buffer.size())
+		{
+			buffer.resize(length);
+			return buffer;
+		}
+		if (buffer.size() >= 32768)
+		{
+			// the longest path windows has
+			return {};
+		}
+		buffer.resize(std::max(length + 1, buffer.size() * 2));
+	}
+}
+
 std::wstring system_directory()
 {
-	wchar_t path[MAX_PATH];
-	auto const length{::GetSystemDirectoryW(path, MAX_PATH)};
-	return (length > 0) && (length < MAX_PATH) ? std::wstring(path, length) : std::wstring();
+	return sized_path([](wchar_t *Buffer, DWORD const Size) { return ::GetSystemDirectoryW(Buffer, Size); });
 }
 
 std::wstring windows_directory()
 {
-	wchar_t path[MAX_PATH];
-	auto const length{::GetWindowsDirectoryW(path, MAX_PATH)};
-	return (length > 0) && (length < MAX_PATH) ? std::wstring(path, length) : std::wstring();
+	return sized_path([](wchar_t *Buffer, DWORD const Size) { return ::GetWindowsDirectoryW(Buffer, Size); });
 }
 
 int show(std::wstring const &Text, UINT const Type)
@@ -205,9 +229,7 @@ std::wstring locate(library_check const &Check, std::wstring const &Name, bool &
 			return path;
 		}
 	}
-	wchar_t found[MAX_PATH];
-	auto const length{::SearchPathW(nullptr, Name.c_str(), nullptr, MAX_PATH, found, nullptr)};
-	return (length > 0) && (length < MAX_PATH) ? std::wstring(found, length) : std::wstring();
+	return sized_path([&Name](wchar_t *Buffer, DWORD const Size) { return ::SearchPathW(nullptr, Name.c_str(), nullptr, Size, Buffer, nullptr); });
 }
 
 // the libraries of the image and of the libraries next to the simulator, which the installation brings. the system ones are taken as they are
@@ -347,16 +369,22 @@ bool check_system(std::wstring const &Simulator, std::wstring const &Directory)
 		{
 			runtime = runtime || is_runtime_library(lowercase(library));
 		}
-		std::wstring const text{L"The simulator can't start, these libraries are missing:" + join(check.missing)};
+		// the check reads the imports itself and looks for them as the loader does, which it may not match in every case: the player can
+		// start the simulator anyway, and the loader has the last word
+		std::wstring const text{L"The simulator may not start, these libraries are missing:" + join(check.missing)};
 		if (runtime)
 		{
-			offer_redistributable(text + L"\n\nThey belong to the Microsoft Visual C++ Redistributable.", false);
+			if (offer_redistributable(text + L"\n\nThey belong to the Microsoft Visual C++ Redistributable.", true))
+			{
+				return false;
+			}
 		}
-		else
+		else if (show(text + L"\n\nThe installation is incomplete: on Steam, verify the integrity of the game files, otherwise install the simulator again."
+		                     L"\n\nStart the simulator anyway?",
+		              MB_YESNO | MB_ICONERROR | MB_DEFBUTTON2) != IDYES)
 		{
-			show(text + L"\n\nThe installation is incomplete: on Steam, verify the integrity of the game files, otherwise install the simulator again.", MB_OK | MB_ICONERROR);
+			return false;
 		}
-		return false;
 	}
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1940)
@@ -443,13 +471,11 @@ wchar_t const *arguments()
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
-	wchar_t path[MAX_PATH * 2];
-	auto const length{::GetModuleFileNameW(nullptr, path, MAX_PATH * 2)};
-	if ((length == 0) || (length >= MAX_PATH * 2))
+	auto directory{sized_path([](wchar_t *Buffer, DWORD const Size) { return ::GetModuleFileNameW(nullptr, Buffer, Size); })};
+	if (directory.empty())
 	{
 		return 1;
 	}
-	std::wstring directory(path, length);
 	directory.erase(directory.find_last_of(L"\\/"));
 	auto const simulator{directory + L"\\" + widen(EU07_SIMULATOR_EXE)};
 

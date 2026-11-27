@@ -29,6 +29,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <locale>
@@ -2302,50 +2303,96 @@ catenary_scene_file_layer( std::string const &File, std::size_t const Layer ) {
     FileLayers[ File ] = Layer;
 }
 
+namespace {
+
+// treść pliku sieci w postaci zapisywanej na dysk: nagłówek, tekstura, wpisy w kolejności listy; usunięte pomijane. CRLF jak
+// w pozostałych plikach scenerii. Count: liczba podwieszeń
+std::string
+file_text( scene_file const &File, std::size_t &Count ) {
+    std::string text;
+    std::istringstream header { File.header };
+    for( std::string line; std::getline( header, line ); ) { text += line + "\r\n"; }
+    if( false == File.skin.empty() ) { text += "skin " + File.skin + "\r\n"; }
+    Count = 0;
+    for( auto const &suspension : Suspensions ) {
+        if( suspension.removed || suspension.file != File.name ) { continue; }
+        text += catenary::write_suspension( suspension.data ) + "\r\n";
+        ++Count;
+    }
+    for( auto const &chain : Chains ) {
+        if( chain.removed || chain.file != File.name ) { continue; }
+        text += catenary::write_chain( chain.data ) + "\r\n";
+    }
+    for( auto const &gantry : Gantries ) {
+        if( gantry.removed || gantry.file != File.name ) { continue; }
+        text += catenary::write_gantry( gantry.data ) + "\r\n";
+    }
+    for( auto const &anchor : Anchors ) {
+        if( anchor.removed || anchor.file != File.name ) { continue; }
+        text += catenary::write_anchor( anchor.data ) + "\r\n";
+    }
+    return text;
+}
+
+// plik zapisany obok docelowego, pod nazwą tymczasową; false, gdy się nie udało (wtedy go nie ma)
+bool
+write_aside( std::string const &Path, std::string const &Text ) {
+    {
+        std::ofstream output { Path, std::ios::binary | std::ios::trunc };
+        if( false == output.is_open() ) { return false; }
+        output << Text;
+        output.close();
+        if( false == output.fail() ) { return true; }
+    }
+    std::error_code error;
+    std::filesystem::remove( Path, error );
+    return false;
+}
+
+} // namespace
+
 bool
 catenary_scene_save( std::string &Message ) {
 
-    std::vector<std::string> written;
+    // najpierw wszystkie pliki pod nazwami tymczasowymi, dopiero gdy wszystkie się zapisały, w miejsce dotychczasowych:
+    // nieudany zapis nie zostawia na dysku części plików sieci nowych, a części starych
+    struct pending {
+        scene_file *file;
+        std::string path;
+        std::size_t count;
+    };
+    std::vector<pending> aside;
+    auto const drop_aside = [ &aside ]() {
+        std::error_code error;
+        for( auto const &item : aside ) { std::filesystem::remove( item.path + ".tmp", error ); }
+    };
     for( auto &file : Files ) {
         // wpisy w pliku scenerii zapisuje zapis scenerii
         if( false == file.changed || InlineFiles.count( file.name ) != 0 ) { continue; }
-        // wpisy w kolejności listy; usunięte pomijane. CRLF jak w pozostałych plikach scenerii
-        std::string text;
-        std::istringstream header { file.header };
-        for( std::string line; std::getline( header, line ); ) { text += line + "\r\n"; }
-        if( false == file.skin.empty() ) { text += "skin " + file.skin + "\r\n"; }
         std::size_t count { 0 };
-        for( auto const &suspension : Suspensions ) {
-            if( suspension.removed || suspension.file != file.name ) { continue; }
-            text += catenary::write_suspension( suspension.data ) + "\r\n";
-            ++count;
-        }
-        for( auto const &chain : Chains ) {
-            if( chain.removed || chain.file != file.name ) { continue; }
-            text += catenary::write_chain( chain.data ) + "\r\n";
-        }
-        for( auto const &gantry : Gantries ) {
-            if( gantry.removed || gantry.file != file.name ) { continue; }
-            text += catenary::write_gantry( gantry.data ) + "\r\n";
-        }
-        for( auto const &anchor : Anchors ) {
-            if( anchor.removed || anchor.file != file.name ) { continue; }
-            text += catenary::write_anchor( anchor.data ) + "\r\n";
-        }
+        auto const text { file_text( file, count ) };
         auto const path { Global.asCurrentSceneryPath + file.name };
-        std::ofstream output { path, std::ios::binary | std::ios::trunc };
-        if( false == output.is_open() ) {
+        if( false == write_aside( path + ".tmp", text ) ) {
+            drop_aside();
             Message = "catenary file \"" + file.name + "\" can't be written";
             return false;
         }
-        output << text;
-        output.close();
-        if( output.fail() ) {
-            Message = "catenary file \"" + file.name + "\" wasn't written completely";
+        aside.emplace_back( &file, path, count );
+    }
+    std::vector<std::string> written;
+    for( std::size_t index = 0; index < aside.size(); ++index ) {
+        auto const &item { aside[ index ] };
+        std::error_code error;
+        std::filesystem::rename( item.path + ".tmp", item.path, error );
+        if( error ) {
+            // te przed nim są już na miejscu (i zapisane), ten i dalsze zostają zmienione do następnego zapisu
+            Message = "catenary file \"" + item.file->name + "\" can't be written";
+            aside.erase( aside.begin(), aside.begin() + static_cast<std::ptrdiff_t>( index ) );
+            drop_aside();
             return false;
         }
-        file.changed = false;
-        written.push_back( file.name + " (" + std::to_string( count ) + ")" );
+        item.file->changed = false;
+        written.push_back( item.file->name + " (" + std::to_string( item.count ) + ")" );
     }
     Message.clear();
     for( auto const &name : written ) { Message += ( Message.empty() ? "" : ", " ) + name; }

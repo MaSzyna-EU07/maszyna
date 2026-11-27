@@ -15,6 +15,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/parser.h"
 #include "simulation/simulationenvironment.h"
 
+#include <algorithm>
+
 namespace
 {
 
@@ -57,9 +59,12 @@ std::string lower(std::string_view Text)
 	return result;
 }
 
+// a whole number of up to 9 digits, which std::stoi() reads without going out of the range of int: the numbers of the report are read
+// with it only after this test, and a longer one (99999999999SM) threw std::out_of_range out of the parsing. the report comes from
+// a memory cell, the weather panel or the scenery
 bool all_digits(std::string_view Text)
 {
-	return !Text.empty() && std::all_of(Text.begin(), Text.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+	return !Text.empty() && (Text.size() <= 9) && std::ranges::all_of(Text, [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
 }
 
 // a number in the C locale, the whole token

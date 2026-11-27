@@ -1836,8 +1836,9 @@ void assign_lod_ranges(TSubModel *Root, std::string const &Filename)
 		}
 		auto const nearlimit{limits[std::min(phase.index, limitcount - 1)]};
 		auto farlimit{phase.index + 1 < limitcount ? limits[phase.index + 1] : farthest};
+		// the last phase starting at 400 m or farther (_LOD5 and on) of a small part would have an empty range: it's seen 100 m on
 		if (last)
-			farlimit = vanish;
+			farlimit = std::max(vanish, nearlimit + 100.f);
 		phase.submodel->fSquareMinDist = nearlimit * nearlimit;
 		phase.submodel->fSquareMaxDist = farlimit * farlimit;
 	}

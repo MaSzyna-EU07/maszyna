@@ -14,6 +14,9 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/vulkan14/vulkan14device.h"
 #include "utilities/Globals.h"
 
+#include <algorithm>
+#include <iterator>
+
 namespace vk14
 {
 
@@ -386,6 +389,8 @@ swapchain::acquire_result swapchain::acquire(std::uint32_t const Frame, std::uin
 			m_states.resize(m_images.size());
 		}
 		m_states[m_image] = image_state{VK_IMAGE_LAYOUT_UNDEFINED, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
+		++m_acquired;
+		destroy_retired(false);
 	}
 	// the images of the generated frames, shown before the one drawn; the swapchain has one image more for each of them, so the
 	// images of a frame can all be acquired. one which can't be had leaves fewer of them
@@ -599,17 +604,33 @@ void swapchain::release_images()
 			vkDestroyImageView(device, view, nullptr);
 		}
 	}
-	for (auto semaphore : m_presentsemaphores)
-	{
-		if (semaphore != VK_NULL_HANDLE)
-		{
-			vkDestroySemaphore(device, semaphore, nullptr);
-		}
-	}
+	// the presentation may still wait for the semaphores after the queue is idle: kept till an image of the next swapchain comes back
+	std::ranges::copy_if(m_presentsemaphores, std::back_inserter(m_retiredsemaphores), [](VkSemaphore const Semaphore) { return Semaphore != VK_NULL_HANDLE; });
+	m_acquired = 0;
 	m_views.clear();
 	m_presentsemaphores.clear();
 	m_images.clear();
 	m_states.clear();
+}
+
+void swapchain::destroy_retired(bool const Now)
+{
+	// an image acquired more times than the swapchain has of them was acquired twice, and so came back from a present queued after
+	// those of the swapchains before
+	if (m_retiredsemaphores.empty() || ((false == Now) && (m_acquired <= m_images.size())))
+	{
+		return;
+	}
+	auto const device{m_device != nullptr ? m_device->handle() : VK_NULL_HANDLE};
+	if (device == VK_NULL_HANDLE)
+	{
+		return;
+	}
+	for (auto const semaphore : m_retiredsemaphores)
+	{
+		vkDestroySemaphore(device, semaphore, nullptr);
+	}
+	m_retiredsemaphores.clear();
 }
 
 void swapchain::destroy()
@@ -618,6 +639,7 @@ void swapchain::destroy()
 	if (device != VK_NULL_HANDLE)
 	{
 		release_images();
+		destroy_retired(true);
 		if (m_swapchain != VK_NULL_HANDLE)
 		{
 			vkDestroySwapchainKHR(device, m_swapchain, nullptr);

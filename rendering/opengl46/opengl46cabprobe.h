@@ -26,7 +26,8 @@ class opengl46_cab_probe : public gfx::cab_probe
 	opengl46_cab_probe() = default;
 	~opengl46_cab_probe() override;
 
-	// creates the programs, the stand-ins and the storage of the spherical harmonics. throws gl::shader_exception
+	// creates the stand-ins, the storage of the spherical harmonics and the programs. without the programs (a shader which
+	// doesn't compile) there is no probe: logged, and gfx.cabprobe switched off
 	void init();
 	// puts the maps (or the stand-ins) on their texture units, gl::CAB_PROBE_TEX, gl::CAB_PROBE_ALBEDO_TEX and the mask on
 	// gl::CAB_PROBE_MASK_TEX, and the spherical harmonics on gl::CAB_PROBE_SSBO_BINDING. once per context and frame

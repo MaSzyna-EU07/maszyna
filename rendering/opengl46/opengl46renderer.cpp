@@ -31,6 +31,11 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/editoroverlay.h"
 #include <imgui/imgui_impl_opengl3.h>
 
+#include <algorithm>
+#include <format>
+#include <string_view>
+#include <vector>
+
 //#define EU07_DEBUG_OPENGL
 
 int constexpr EU07_PICKBUFFERSIZE{ 1024 }; // size of (square) textures bound with the pick framebuffer
@@ -60,6 +65,61 @@ ErrorCallback( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei l
         + " (" + severitystring + ") "
         + message );
 }
+
+namespace
+{
+
+// a shader the scene can't be drawn without failed: logged, and on windows the player is told the way a context which can't
+// be made is (opengl46backend.cpp), as the game closes then
+void shaders_failed(std::string_view const Reason)
+{
+	ErrorLog(std::format("invalid shader: {}", Reason));
+#ifdef _WIN32
+	auto const message{std::format(
+		"MaSzyna can't draw the scene: a shader of the OpenGL 4.6 renderer could not be compiled by the graphics driver.\n\n"
+		"Details: {}\n\n"
+		"Update the graphics driver, or check the shaders folder of the game.",
+		Reason)};
+	MessageBoxA(nullptr, message.c_str(), "MaSzyna", MB_ICONERROR | MB_OK);
+#endif
+}
+
+// the most samples a renderbuffer of the format can have; the driver lists the counts from the highest
+GLint format_samples(GLenum const Format)
+{
+	GLint counts{0};
+	::glGetInternalformativ(GL_RENDERBUFFER, Format, GL_NUM_SAMPLE_COUNTS, 1, &counts);
+	if (counts <= 0)
+		return 1;
+	std::vector<GLint> samples(static_cast<std::size_t>(counts), 1);
+	::glGetInternalformativ(GL_RENDERBUFFER, Format, GL_SAMPLES, counts, samples.data());
+	return std::ranges::max(samples);
+}
+
+// multisampling above what the driver gives the targets of the colour pass (init_viewport()) falls back to the most it gives,
+// rather than the targets failing to be made
+void clamp_multisampling()
+{
+	if (Global.iMultisampling <= 0)
+		return;
+	GLint maxsamples{1};
+	::glGetIntegerv(GL_MAX_SAMPLES, &maxsamples);
+	if (false == Global.gfx_skippipeline)
+	{
+		maxsamples = std::min({maxsamples, format_samples(Global.gfx_format_color), format_samples(Global.gfx_format_depth)});
+		if (Global.gfx_motion_vectors())
+			maxsamples = std::min(maxsamples, format_samples(Global.gfx_postfx_motionblur_format));
+	}
+	auto multisampling{Global.iMultisampling};
+	while ((multisampling > 0) && ((1 << multisampling) > maxsamples))
+		--multisampling;
+	if (multisampling == Global.iMultisampling)
+		return;
+	WriteLog(std::format("multisampling x{} not supported by the graphics driver (at most x{}), using x{}", 1 << Global.iMultisampling, maxsamples, 1 << multisampling));
+	Global.iMultisampling = multisampling;
+}
+
+} // namespace
 
 bool opengl46_renderer::Init(GLFWwindow *Window)
 {
@@ -148,7 +208,8 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 	}
 	catch (gl::shader_exception const &e)
 	{
-		ErrorLog("invalid shader: " + std::string(e.what()));
+		// the scene can't be drawn without these
+		shaders_failed(e.what());
 		return false;
 	}
 
@@ -205,27 +266,21 @@ bool opengl46_renderer::Init(GLFWwindow *Window)
 		m_scenecommandstream.reset();
 	}
 
-	try
-	{
-		m_sky.init();
-		m_weather.init();
-		m_instancecull.init();
-		for (auto &shadowcull : m_shadowcull)
-			shadowcull.init(&m_instancecull);
-		m_hiz.init();
-		m_timbers.init();
-		m_shadowfit.init();
-		m_exposure.init();
-		m_ao.init();
-		m_localshadows.init();
-		m_cabprobe.init();
-		m_skyocclusion.init();
-	}
-	catch (gl::shader_exception const &e)
-	{
-		ErrorLog("invalid shader: " + std::string(e.what()));
-		return false;
-	}
+	// the effects whose shaders don't compile switch themselves off (logged, and their settings put off); the scene is drawn
+	// without them. they come before the viewports, which leave out the targets of what is off
+	m_sky.init();
+	m_weather.init();
+	m_instancecull.init();
+	for (auto &shadowcull : m_shadowcull)
+		shadowcull.init(&m_instancecull);
+	m_hiz.init();
+	m_timbers.init();
+	m_shadowfit.init();
+	m_exposure.init();
+	m_ao.init();
+	m_localshadows.init();
+	m_cabprobe.init();
+	m_skyocclusion.init();
 
 	// better initialize with 0 to not crash driver/whole system
 	// when we forget
@@ -1488,7 +1543,10 @@ void opengl46_renderer::draw_debug_ui()
     if (ImGui::Begin("Instance culling"))
     {
         char const *modes[]{"cpu", "gpu, drawn from its result", "cpu, compared with the gpu"};
-        ImGui::Combo("instance culling (gfx.gpucull)", &Global.gfx_gpucull, modes, IM_ARRAYSIZE(modes));
+        if (m_instancecull.available())
+            ImGui::Combo("instance culling (gfx.gpucull)", &Global.gfx_gpucull, modes, IM_ARRAYSIZE(modes));
+        else
+            ImGui::TextUnformatted("(instance culling on the gpu not available, see the log)");
         if (Global.gfx_gpucull == 1)
         {
             ImGui::Checkbox("leave out instances hidden behind the depth drawn before them (gfx.gpucull.occlusion)", &Global.gfx_gpucull_occlusion);
@@ -2110,7 +2168,9 @@ if (!Global.gfx_skippipeline)
 			if (Global.gfx_postfx_bloom && vp.bloom)
 			{
 				bloomtexture = m_exposure.bloom(*vp.bloom, *vp.main2_tex, *model_ubo, model_ubs);
-				bloomlevels = vp.bloom->sizes.size();
+				// none when its programs aren't there
+				if (bloomtexture != nullptr)
+					bloomlevels = vp.bloom->sizes.size();
 			}
 			model_ubs.param[0] = m_exposure.tonemap_params(bloomlevels);
 			// the dither goes to the last pass before the window: the chromatic aberration, when it follows
@@ -3912,8 +3972,11 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				++index;
 				continue;
 			}
-			if( prepassclass == 2 ) {
-				m_textures.bind( 0, texture );
+			// a texture which isn't there (yet) would leave the one bound before to the alpha test. the draw is left to the colour
+			// pass, which tests and writes its depth as usual
+			if( ( prepassclass == 2 ) && ( false == m_textures.mark_as_used( texture ).bind( 0 ) ) ) {
+				++index;
+				continue;
 			}
 			auto const &draw { m_indirectdraws[ index ] };
 			if( multidrawprogram != nullptr ) {
@@ -4016,6 +4079,11 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 	for( std::size_t index = 0; index < count; ) {
 		auto const &draw { m_indirectdraws[ index ] };
 		auto const texture { Indirect_Shadow_Texture( draw.material ) };
+		if( ( texture != null_handle ) && ( false == m_textures.mark_as_used( texture ).bind( 0 ) ) ) {
+			// a texture which isn't there (yet) would leave the one bound before to the alpha test; no shadow until it is
+			++index;
+			continue;
+		}
 		auto *multidrawprogram {
 			m_indirectmultidraw ?
 				( m_cubeshadows ?
@@ -4031,9 +4099,6 @@ opengl46_renderer::indirect_counts opengl46_renderer::Render_Instances_Indirect_
 				&& ( m_indirectcommands[ last ].indexed == m_indirectcommands[ index ].indexed )
 				&& ( Indirect_Shadow_Texture( m_indirectdraws[ last ].material ) == texture ) ) {
 				++last;
-			}
-			if( texture != null_handle ) {
-				m_textures.bind( 0, texture );
 			}
 			multidrawprogram->bind();
 			auto const drawcount { static_cast<std::uint32_t>( last - index ) };
@@ -5032,7 +5097,7 @@ std::uint32_t opengl46_renderer::walk_instances(glm::mat4 const *Modelviews, std
 
 bool opengl46_renderer::walk_timbers_gpu() const
 {
-	return true;
+	return m_timbers.gpu();
 }
 
 bool opengl46_renderer::walk_timbers_place(std::vector<TTrack *> const &Tracks, bool const Restart)
@@ -5484,6 +5549,7 @@ void opengl46_renderer::Update_Pick_Control()
 
 void opengl46_renderer::Forget_Node(scene::basic_node const *Node)
 {
+	m_locallights.forget(Node);
 	if (m_picksceneryitem == Node)
 		m_picksceneryitem = nullptr;
 	std::replace_if(m_picksceneryitems.begin(), m_picksceneryitems.end(), [Node](scene::basic_node const *Item) { return Item == Node; }, nullptr);
@@ -7163,6 +7229,7 @@ bool opengl46_renderer::Init_caps()
 		WriteLog("shadows map size capped at " + std::to_string(m_shadowbuffersize) + "p");
 	}
 
+	clamp_multisampling();
 	if (Global.iMultisampling)
 	{
 		WriteLog("using multisampling x" + std::to_string(1 << Global.iMultisampling));

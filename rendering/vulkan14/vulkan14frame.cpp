@@ -1077,6 +1077,15 @@ bool vulkan14_renderer::Render()
 			report_device_lost(failure);
 			return false;
 		}
+		if (job.skipped)
+		{
+			// the frame was left out: its images aren't presented (SwapBuffers())
+			for (auto *window : ctx.acquired)
+			{
+				window->drop_images();
+			}
+			ctx.acquired.clear();
+		}
 		frame.done = ctx.timelinevalue = value;
 	}
 
@@ -2077,7 +2086,9 @@ void vulkan14_renderer::setup_screen_reflections(std::size_t const Index, bool c
 // the ray traced reflections, of the main view only (as the screen space ones, which they fill in)
 bool vulkan14_renderer::raytracing_wanted(viewport_config const &Viewport) const
 {
-	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == Viewport.main) || Global.bWireFrame || Global.gfx_skippipeline)
+	// not while the set of the frame has no structure to trace through (ray_tracing::begin_frame() without memory for it)
+	if ((false == m_raytracingon) || (false == bool(m_context->scene.raytracing)) || (false == m_context->scene.raytracing->traceable(m_context->slot)) || (false == Viewport.main) || Global.bWireFrame ||
+	    Global.gfx_skippipeline)
 	{
 		return false;
 	}
@@ -4426,6 +4437,7 @@ scene::basic_node const *vulkan14_renderer::Pick_Node() const
 
 void vulkan14_renderer::Forget_Node(scene::basic_node const *Node)
 {
+	m_locallights.forget(Node);
 	if (m_picksceneryitem == Node)
 	{
 		m_picksceneryitem = nullptr;

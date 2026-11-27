@@ -162,7 +162,8 @@ vec4 tonemap(vec4 x)
 	// Last-line-of-defense sanitize so NaN/Inf/negative HDR values do not
 	// escape into log2()/pow() and produce black flashes or invalid output.
 	vec3 hdr = x.rgb;
-	hdr = mix(hdr, vec3(0.0), vec3(any(isnan(hdr)) || any(isinf(hdr))));
+	// the bvec3 overload selects instead of blending, so a NaN does not get through 0 * NaN
+	hdr = mix(hdr, vec3(0.0), bvec3(any(isnan(hdr)) || any(isinf(hdr))));
 	hdr = max(hdr, vec3(0.0));
 	return FBOUT(vec4(ApplyAgX(hdr), x.a));
 	//return FBOUT(vec4(ACESFilm(hdr), x.a));

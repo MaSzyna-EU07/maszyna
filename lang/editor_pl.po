@@ -16289,3 +16289,12 @@ msgstr "Ortofoto: cały widok jest już pokazany (Ctrl+~)"
 
 msgid "Preparing the graphics (takes longer at the first start of a new version)"
 msgstr "Przygotowanie grafiki (przy pierwszym uruchomieniu nowej wersji trwa dłużej)"
+
+msgid "The name of the catenary file can't have spaces, ';', quotes, ':' or \"..\" in it, nor start with a slash: the directive including it couldn't read it"
+msgstr "Nazwa pliku sieci trakcyjnej nie może zawierać spacji, ';', cudzysłowów, ':' ani \"..\" ani zaczynać się ukośnikiem: dyrektywa dołączająca plik nie odczytałaby jej"
+
+msgid "The terrain couldn't be saved: %s. The catenary files are written already, the scenery files aren't: save again once it's fixed"
+msgstr "Nie udało się zapisać terenu: %s. Pliki sieci trakcyjnej są już zapisane, pliki scenerii nie: zapisz ponownie po usunięciu przyczyny"
+
+msgid "Files of the terrain or of the catenary may be written already, the scenery files aren't: save again once it's fixed"
+msgstr "Pliki terenu lub sieci trakcyjnej mogą być już zapisane, pliki scenerii nie: zapisz ponownie po usunięciu przyczyny"

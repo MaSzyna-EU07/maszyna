@@ -16,6 +16,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/utilities.h"
 
+#include <format>
+
 namespace
 {
 
@@ -104,6 +106,38 @@ opengl46_local_shadows::~opengl46_local_shadows()
 
 void opengl46_local_shadows::init()
 {
+	// a shadow sampler with no depth texture to read from is undefined, also where the shading doesn't read it
+	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &m_empty);
+	glTextureStorage3D(m_empty, 1, GL_DEPTH_COMPONENT32F, 1, 1, 6);
+	glTextureParameteri(m_empty, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(m_empty, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTextureParameteri(m_empty, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+	glTextureParameteri(m_empty, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	float const farthest{0.f};
+	glClearTexImage(m_empty, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
+	m_emptyheadlights = make_array(1, 1);
+	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glClearTexImage(m_emptyheadlights, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
+
+	try
+	{
+		init_programs();
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the shading reads the stand-ins; no maps are made (gpu_allocate())
+		ErrorLog(std::format("shadows of the lights not available: {}", e.what()));
+		m_program.reset();
+		m_alpha_program.reset();
+		m_multidraw_program.reset();
+		m_alpha_multidraw_program.reset();
+		Global.gfx_lights_shadows = 0;
+	}
+}
+
+void opengl46_local_shadows::init_programs()
+{
 	gl::shader vertex("shadowcube.vert");
 	gl::shader geometry("shadowcube.geom");
 	{
@@ -135,20 +169,6 @@ void opengl46_local_shadows::init()
 		m_alpha_multidraw_program.reset();
 	}
 	set_layer(0);
-
-	// a shadow sampler with no depth texture to read from is undefined, also where the shading doesn't read it
-	glCreateTextures(GL_TEXTURE_CUBE_MAP_ARRAY, 1, &m_empty);
-	glTextureStorage3D(m_empty, 1, GL_DEPTH_COMPONENT32F, 1, 1, 6);
-	glTextureParameteri(m_empty, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTextureParameteri(m_empty, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTextureParameteri(m_empty, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-	glTextureParameteri(m_empty, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-	float const farthest{0.f};
-	glClearTexImage(m_empty, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
-	m_emptyheadlights = make_array(1, 1);
-	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTextureParameteri(m_emptyheadlights, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glClearTexImage(m_emptyheadlights, 0, GL_DEPTH_COMPONENT, GL_FLOAT, &farthest);
 }
 
 void opengl46_local_shadows::set_near(float const Near)
@@ -173,6 +193,9 @@ void opengl46_local_shadows::set_layer(int const Layer)
 
 bool opengl46_local_shadows::gpu_allocate(int const Count, int const Size)
 {
+	// no programs to draw the maps with
+	if (m_program == nullptr)
+		return false;
 	m_texture = make_cube_array(Size, Count);
 	m_framebuffer = make_framebuffer(m_texture);
 	return (m_framebuffer != 0);
@@ -190,6 +213,9 @@ void opengl46_local_shadows::gpu_release()
 
 bool opengl46_local_shadows::gpu_allocate_lamps(int const Count, int const Size)
 {
+	// no programs to draw the maps with
+	if (m_program == nullptr)
+		return false;
 	// the scenery parts and the working copies
 	m_lampstexture = make_cube_array(Size, 2 * Count);
 	m_lampsframebuffer = make_framebuffer(m_lampstexture);
@@ -208,6 +234,9 @@ void opengl46_local_shadows::gpu_release_lamps()
 
 bool opengl46_local_shadows::gpu_allocate_headlights(int const Count, int const Size)
 {
+	// no programs to draw the maps with
+	if (m_program == nullptr)
+		return false;
 	m_headlightstexture = make_array(Size, Count);
 	glCreateFramebuffers(1, &m_headlightsframebuffer);
 	glNamedFramebufferTextureLayer(m_headlightsframebuffer, GL_DEPTH_ATTACHMENT, m_headlightstexture, 0, 0);

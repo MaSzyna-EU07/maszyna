@@ -36,8 +36,8 @@ class basic_cell;
 namespace gfx
 {
 
-// the occlusion of the sky and of the sun by the scenery around the camera (Global.gfx_skyvisibility, the track T of
-// claude/renderers-plan.md), the part shared by the renderers; the backend (opengl46_sky_occlusion, vk14::sky_occlusion_maps) keeps
+// the occlusion of the sky and of the sun by the scenery around the camera (Global.gfx_skyvisibility),
+// the part shared by the renderers; the backend (opengl46_sky_occlusion, vk14::sky_occlusion_maps) keeps
 // two textures the shading reads and copies to them what this part works out, through the gpu_* methods.
 // tunnels, the ground under bridges and roofs, cuttings and the foot of slopes are dark because the geometry around holds back the
 // sky and the sun, not because of the environment flags of the tracks (tunnel, canyon), which the renderers leave alone now

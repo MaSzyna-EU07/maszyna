@@ -37,7 +37,7 @@ const float FALLOFF_RANGE = 0.615;
 float half_depth(ivec2 texel)
 {
 	ivec2 full_size = textureSize(depth_tex, 0);
-	return texelFetch(depth_tex, min(texel * 2, full_size - 1), 0).r;
+	return texelFetch(depth_tex, clamp(texel * 2, ivec2(0), full_size - 1), 0).r;
 }
 
 vec3 view_position(ivec2 texel, float depth)
@@ -46,6 +46,27 @@ vec3 view_position(ivec2 texel, float depth)
 	vec2 uv = (vec2(texel * 2) + 0.5) / vec2(full_size);
 	vec4 position = inv_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
 	return position.xyz / position.w;
+}
+
+// the step to the neighbour on one axis which is closer in depth. a neighbour outside the target or in the sky has no
+// position and is left out; with neither left, zero
+vec3 neighbour_delta(ivec2 texel, ivec2 offset, vec3 position, ivec2 size)
+{
+	ivec2 before = texel - offset;
+	ivec2 after = texel + offset;
+	float depthbefore = all(greaterThanEqual(before, ivec2(0))) ? half_depth(before) : 0.0;
+	float depthafter = all(lessThan(after, size)) ? half_depth(after) : 0.0;
+	bool hasbefore = depthbefore > 0.0;
+	bool hasafter = depthafter > 0.0;
+	if (!hasbefore && !hasafter)
+		return vec3(0.0);
+	if (!hasbefore)
+		return view_position(after, depthafter) - position;
+	if (!hasafter)
+		return position - view_position(before, depthbefore);
+	vec3 deltabefore = position - view_position(before, depthbefore);
+	vec3 deltaafter = view_position(after, depthafter) - position;
+	return (abs(deltaafter.z) < abs(deltabefore.z)) ? deltaafter : deltabefore;
 }
 
 // 4x4 ordered pattern, values 0..15
@@ -67,14 +88,12 @@ void main()
 	vec3 position = view_position(texel, depth);
 	vec3 view = normalize(-position);
 
-	// normal from the neighbours: on each axis the one closer in depth, so edges of objects do not bend it
-	vec3 left = view_position(texel - ivec2(1, 0), half_depth(texel - ivec2(1, 0)));
-	vec3 right = view_position(texel + ivec2(1, 0), half_depth(texel + ivec2(1, 0)));
-	vec3 down = view_position(texel - ivec2(0, 1), half_depth(texel - ivec2(0, 1)));
-	vec3 up = view_position(texel + ivec2(0, 1), half_depth(texel + ivec2(0, 1)));
-	vec3 dx = (abs(right.z - position.z) < abs(position.z - left.z)) ? right - position : position - left;
-	vec3 dy = (abs(up.z - position.z) < abs(position.z - down.z)) ? up - position : position - down;
-	vec3 normal = normalize(cross(dx, dy));
+	// normal from the neighbours: on each axis the one closer in depth, so edges of objects do not bend it. with no
+	// neighbour on an axis (a thin wire against the sky, the edge of the image) the surface faces the camera
+	vec3 dx = neighbour_delta(texel, ivec2(1, 0), position, size);
+	vec3 dy = neighbour_delta(texel, ivec2(0, 1), position, size);
+	vec3 normal = cross(dx, dy);
+	normal = (dot(normal, normal) > 1e-24) ? normalize(normal) : view;
 	if (dot(normal, view) < 0.0)
 		normal = -normal;
 

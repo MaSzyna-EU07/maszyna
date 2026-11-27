@@ -12,7 +12,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 namespace
 {
@@ -28,18 +31,31 @@ void opengl46_ao::init()
 		gl::shader shader(Name);
 		return std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 	};
-	m_main_program = make_compute("gtao_main.comp");
-	m_denoise_program = make_compute("gtao_denoise.comp");
+	try
 	{
+		m_main_program = make_compute("gtao_main.comp");
+		m_denoise_program = make_compute("gtao_denoise.comp");
 		gl::shader vertex("quad.vert");
 		gl::shader fragment("postfx_ssao_apply.frag");
 		m_apply_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{vertex, fragment});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// off before the viewports are made, which then have no targets for it
+		ErrorLog(std::format("ambient occlusion not available: {}", e.what()));
+		m_main_program.reset();
+		m_denoise_program.reset();
+		m_apply_program.reset();
+		Global.gfx_postfx_ao = 0;
+		return;
 	}
 	m_vao = std::make_unique<gl::vao>();
 }
 
 void opengl46_ao::compute(opengl_texture &Depth, opengl_texture &Raw, opengl_texture &Smooth, glm::mat4 const &Projection)
 {
+	if (m_denoise_program == nullptr)
+		return;
 	m_timer.begin();
 	m_timing = true;
 
@@ -70,6 +86,8 @@ void opengl46_ao::compute(opengl_texture &Depth, opengl_texture &Raw, opengl_tex
 
 void opengl46_ao::apply(int const Mode, opengl_texture &Depth, opengl_texture &Occlusion, gl::framebuffer &Target, glm::mat4 const &Projection)
 {
+	if (m_apply_program == nullptr)
+		return;
 	Target.bind();
 	m_apply_program->bind();
 	m_vao->bind();

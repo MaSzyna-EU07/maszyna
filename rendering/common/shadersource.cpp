@@ -589,6 +589,12 @@ std::vector<std::uint32_t> load_shader_binary(shader_source const &Source, std::
 	std::lock_guard<std::mutex> lock(manifest_mutex);
 	auto const &manifest{manifest_of(directory)};
 	auto const entry{manifest.entries.find(name)};
+	if ((entry == manifest.entries.end()) && Source.has_source)
+	{
+		// nothing vouches for the binary, and the source is there to compile from
+		Reason = name + " isn't in the manifest of " + directory;
+		return {};
+	}
 	if (entry != manifest.entries.end())
 	{
 		auto const sourcedir{shader_source_dir(Source.api)};

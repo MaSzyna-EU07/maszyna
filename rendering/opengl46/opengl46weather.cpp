@@ -15,7 +15,10 @@ http://mozilla.org/MPL/2.0/.
 #include "simulation/simulationenvironment.h"
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 namespace
 {
@@ -76,20 +79,34 @@ GLuint opengl46_weather::create_texture(GLenum const Target, GLenum const Format
 
 void opengl46_weather::init()
 {
-	m_noise_program = make_compute("clouds_noise.comp");
-	m_march_program = make_compute("clouds_march.comp");
-	m_temporal_program = make_compute("clouds_temporal.comp");
-	m_shadow_program = make_compute("clouds_shadow.comp");
-	m_horizon_program = make_compute("fog_horizon.comp");
-	m_inject_program = make_compute("fog_inject.comp");
-	m_integrate_program = make_compute("fog_integrate.comp");
-	m_sky_program = make_program("quad.vert", "sky_weather.frag");
-	m_stars_program = make_program("stars.vert", "stars.frag");
+	try
+	{
+		m_noise_program = make_compute("clouds_noise.comp");
+		m_march_program = make_compute("clouds_march.comp");
+		m_temporal_program = make_compute("clouds_temporal.comp");
+		m_shadow_program = make_compute("clouds_shadow.comp");
+		m_horizon_program = make_compute("fog_horizon.comp");
+		m_inject_program = make_compute("fog_inject.comp");
+		m_integrate_program = make_compute("fog_integrate.comp");
+		m_sky_program = make_program("quad.vert", "sky_weather.frag");
+		m_stars_program = make_program("stars.vert", "stars.frag");
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the fog along the ray, no clouds, no stars, the sky as it's drawn without them; the shading reads the block below
+		ErrorLog(std::format("clouds, volumetric fog and stars not available: {}", e.what()));
+		for (auto *program : {&m_noise_program, &m_march_program, &m_temporal_program, &m_shadow_program, &m_horizon_program, &m_inject_program, &m_integrate_program,
+		                      &m_sky_program, &m_stars_program})
+			program->reset();
+		Global.gfx_clouds = 0;
+		Global.gfx_fog = 0;
+	}
 
 	m_weather_ubo = std::make_unique<gl::ubo>(sizeof(gl::weather_ubs), gl::WEATHER_UBO_BINDING);
 	m_weather_ubo->update(m_state.block());
 
-	make_noise();
+	if (m_noise_program != nullptr)
+		make_noise();
 
 	auto const stars{gfx::weather_state::star_vertices()};
 	m_stars_count = static_cast<int>(stars.size() / 2);
@@ -172,8 +189,9 @@ void opengl46_weather::upload_header()
 
 void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight, glm::vec3 const &Keycolor, glm::vec3 const &Ambient, glm::vec3 const &Fogcolor, glm::dvec3 const &Camera)
 {
-	m_state.update(Sky.atmosphere_weight(), Sky.skyview_table() != 0, Keylight, Keycolor, Ambient, Fogcolor, Camera);
-	auto const shadows{m_state.shadows_wanted()};
+	// without the programs the colours of the horizon are worked out here, and the clouds left out
+	m_state.update(Sky.atmosphere_weight(), (Sky.skyview_table() != 0) && (m_horizon_program != nullptr), Keylight, Keycolor, Ambient, Fogcolor, Camera);
+	auto const shadows{m_state.shadows_wanted() && (m_shadow_program != nullptr)};
 	if (shadows)
 	{
 		if (m_shadow_size != Global.gfx_clouds_shadows_size)
@@ -219,7 +237,7 @@ void opengl46_weather::update(opengl46_sky const &Sky, glm::vec3 const &Keylight
 		m_state.shadows_drawn(false);
 
 	// a band of the panorama of the clouds, all of it the first time
-	if (m_state.clouds_drawn())
+	if (m_state.clouds_drawn() && (m_march_program != nullptr))
 	{
 		auto const level{gfx::weather_state::quality(Global.gfx_clouds, Global.gfx_fog_quality)};
 		if (m_panorama_size != level.panorama)
@@ -282,6 +300,8 @@ void opengl46_weather::prepare_view(glm::ivec2 const &Size, quality_level const 
 
 void opengl46_weather::render_view(glm::mat4 const &Projection, glm::mat4 const &View, glm::dvec3 const &Camera, glm::ivec2 const &Size, int const Cablamps)
 {
+	if (m_march_program == nullptr)
+		return;
 	auto const level{gfx::weather_state::quality(Global.gfx_clouds, Global.gfx_fog_quality)};
 	prepare_view(Size, level);
 	auto const rotation{glm::mat4{glm::mat3{View}}};
@@ -387,7 +407,7 @@ void opengl46_weather::setup_pass(bool const Volume, glm::ivec2 const &Size)
 
 void opengl46_weather::draw_stars(glm::mat4 const &View, float const Sunangle, double const Siderealtime, double const Latitude)
 {
-	if (!m_stars_vao || m_stars_count == 0)
+	if (!m_stars_vao || m_stars_count == 0 || !m_stars_program)
 		return;
 	glm::mat4 toworld, toview;
 	glm::vec4 params;
@@ -407,6 +427,8 @@ void opengl46_weather::draw_stars(glm::mat4 const &View, float const Sunangle, d
 
 void opengl46_weather::draw_sky(glm::mat4 const &Projection, glm::mat4 const &View, bool const Mainview)
 {
+	if (m_sky_program == nullptr)
+		return;
 	int mode{0};
 	if (m_state.clouds_drawn())
 	{

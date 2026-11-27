@@ -194,9 +194,15 @@ void gfx::local_lights::gather(glm::dvec3 const &Camera, scene::basic_region &Re
 	m_scenerycount = m_vehiclecount = m_compartmentcount = 0;
 	m_walkgeometry = &Geometry;
 
-	// the editor adds, moves and removes instances in the cells. it can also do it in the frame it is turned off in
+	// the editor adds, moves and removes instances in the cells. it can also do it in the frame it is turned off in. the cells not
+	// visited in such a frame (in the daylight, or out of range) are made anew too when they are visited next: an instance replaced in
+	// the place of another leaves the size and the address of the list of the cell as they were
 	auto const rebuild{EditorModeFlag || m_editorseen};
 	m_editorseen = EditorModeFlag;
+	if (rebuild)
+	{
+		m_cells.clear();
+	}
 
 	if (Global.gfx_lights_clustered)
 	{
@@ -274,6 +280,11 @@ void gfx::local_lights::reset()
 	m_sections.clear();
 	m_models.clear();
 	m_scenerycount = m_vehiclecount = m_compartmentcount = m_placed = m_dropped = 0;
+}
+
+void gfx::local_lights::forget(scene::basic_node const *)
+{
+	m_cells.clear();
 }
 
 void gfx::local_lights::gather_instance(TAnimModel *Instance, glm::dvec3 const &Camera, float const Brightness, unsigned int const Framestamp)

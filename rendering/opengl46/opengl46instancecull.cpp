@@ -12,7 +12,10 @@ http://mozilla.org/MPL/2.0/.
 
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 namespace
 {
@@ -32,6 +35,9 @@ void opengl46_instance_cull::init(opengl46_instance_cull const *Shared)
 {
 	if (Shared != nullptr)
 	{
+		// nothing to share when the programs of the one shared aren't there
+		if (false == Shared->available())
+			return;
 		m_shared = Shared->m_shared;
 		share_records(*Shared);
 	}
@@ -41,10 +47,21 @@ void opengl46_instance_cull::init(opengl46_instance_cull const *Shared)
 			gl::shader shader(Name);
 			return std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
 		};
-		m_shared = std::make_shared<shared_data>();
-		m_shared->cull_program = make_compute("instance_cull.comp");
-		m_shared->offsets_program = make_compute("instance_cull_offsets.comp");
-		m_shared->commands_program = make_compute("instance_cull_commands.comp");
+		auto shared{std::make_shared<shared_data>()};
+		try
+		{
+			shared->cull_program = make_compute("instance_cull.comp");
+			shared->offsets_program = make_compute("instance_cull_offsets.comp");
+			shared->commands_program = make_compute("instance_cull_commands.comp");
+		}
+		catch (gl::shader_exception const &e)
+		{
+			// the instances are culled on the cpu
+			ErrorLog(std::format("instance culling on the gpu not available: {}", e.what()));
+			Global.gfx_gpucull = 0;
+			return;
+		}
+		m_shared = std::move(shared);
 		m_shared->records = std::make_unique<gl::ssbo>(65536 * RECORD_SIZE, gl::INSTANCE_RECORD_SSBO_BINDING);
 	}
 

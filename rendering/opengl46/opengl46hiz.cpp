@@ -13,7 +13,10 @@ http://mozilla.org/MPL/2.0/.
 #include "gl/ubo.h"
 #include "model/Texture.h"
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "utilities/utilities.h"
+
+#include <format>
 
 opengl46_hiz::~opengl46_hiz()
 {
@@ -22,8 +25,18 @@ opengl46_hiz::~opengl46_hiz()
 
 void opengl46_hiz::init()
 {
-	gl::shader shader("hiz_build.comp");
-	m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	try
+	{
+		gl::shader shader("hiz_build.comp");
+		m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// no pyramid: the instances are culled without the occlusion test
+		ErrorLog(std::format("occlusion test of the instances not available: {}", e.what()));
+		m_program.reset();
+		Global.gfx_gpucull_occlusion = false;
+	}
 }
 
 void opengl46_hiz::release()
@@ -72,7 +85,7 @@ void opengl46_hiz::allocate(int const Width, int const Height)
 
 void opengl46_hiz::build(GLuint const Source, int const Width, int const Height, bool const Second)
 {
-	if ((Width <= 0) || (Height <= 0))
+	if ((Width <= 0) || (Height <= 0) || (m_program == nullptr))
 		return;
 	if (m_sourcesize != glm::ivec2{Width, Height})
 		allocate(Width, Height);

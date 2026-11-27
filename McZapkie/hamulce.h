@@ -275,6 +275,13 @@ class TReservoir
 		return std::max(0.0, Vol + dVol) / Cap;
 	}
 	/// <summary>
+	/// Pressure the reservoir has now, without the flow accumulated for the step (Vol / Cap), in bar: P() of a const reservoir.
+	/// </summary>
+	double P_applied() const
+	{
+		return Vol / Cap;
+	}
+	/// <summary>
 	/// Applies the accumulated flow (dVol) to the volume and resets dVol.
 	/// Volume is clamped to be non-negative.
 	/// </summary>

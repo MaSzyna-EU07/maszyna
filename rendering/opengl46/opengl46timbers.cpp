@@ -11,15 +11,20 @@ http://mozilla.org/MPL/2.0/.
 #include "rendering/opengl46/opengl46timbers.h"
 
 #include "utilities/Globals.h"
+#include "utilities/Logs.h"
 #include "world/Track.h"
 
+#include <algorithm>
 #include <cstring>
+#include <format>
 
 namespace {
 
 // the buffer to start with, and how soon after being started over it's too small for the tracks in sight
 std::uint32_t constexpr initial_capacity{65536};
 unsigned int constexpr restart_frames{600};
+// how much bigger than the room for the instances to place a buffer grows by being started over soon
+std::uint64_t constexpr restart_growth{8};
 
 // the instances of a track, in the order they lie in the buffer
 std::uint32_t count_of(track_sleepers::laid const &Laid)
@@ -28,6 +33,20 @@ std::uint32_t count_of(track_sleepers::laid const &Laid)
 	for (auto const &instances : Laid.instances)
 		count += instances.size();
 	return static_cast<std::uint32_t>(count);
+}
+
+// a buffer for Capacity instances, 0 when there's no memory for it
+GLuint make_buffer(std::uint64_t const Capacity)
+{
+	GLuint buffer{0};
+	glCreateBuffers(1, &buffer);
+	glNamedBufferStorage(buffer, static_cast<GLsizeiptr>(Capacity * sizeof(glm::mat4)), nullptr, GL_DYNAMIC_STORAGE_BIT);
+	if (::glGetError() == GL_OUT_OF_MEMORY)
+	{
+		glDeleteBuffers(1, &buffer);
+		return 0;
+	}
+	return buffer;
 }
 
 } // namespace
@@ -40,30 +59,58 @@ opengl46_timbers::~opengl46_timbers()
 
 void opengl46_timbers::init()
 {
-	gl::shader shader("timber_instances.comp");
-	m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	try
+	{
+		gl::shader shader("timber_instances.comp");
+		m_program = std::make_unique<gl::program>(std::vector<std::reference_wrapper<const gl::shader>>{shader});
+	}
+	catch (gl::shader_exception const &e)
+	{
+		// the walk turns the instances on the cpu
+		ErrorLog(std::format("track sleepers on the gpu not available: {}", e.what()));
+		m_gpu = false;
+		return;
+	}
 	// the modelviews of the origins and the runs, both placed at whole matrices
 	m_ranges = std::make_unique<gl::frame_stream>(
 		static_cast<GLsizeiptr>(4096 * sizeof(gl::timber_range)), static_cast<GLsizeiptr>(sizeof(glm::mat4)), Global.gfx_bufferstreaming);
 	restart(0);
+	m_gpu = (false == m_failed);
 }
 
-void opengl46_timbers::restart(std::uint32_t const Needed)
+bool opengl46_timbers::restart(std::uint32_t const Needed)
 {
-	auto capacity{std::max(m_capacity, initial_capacity)};
+	// room for twice the instances to place, and when the buffer was started over not long before, the tracks in sight change
+	// fast: twice the buffer before, but not more than restart_growth times that room. a buffer started over later goes back to it
+	std::uint64_t minimum{initial_capacity};
+	while (minimum < 2 * static_cast<std::uint64_t>(Needed))
+		minimum *= 2;
+	auto capacity{minimum};
 	if ((m_capacity > 0) && (m_frame - m_restartframe < restart_frames))
-		capacity *= 2;
-	while (capacity < 2 * Needed)
-		capacity *= 2;
+		capacity = std::clamp<std::uint64_t>(2 * static_cast<std::uint64_t>(m_capacity), minimum, restart_growth * minimum);
+	auto buffer{make_buffer(capacity)};
+	if ((buffer == 0) && (capacity > Needed))
+	{
+		// no memory for the room to spare: only the instances to place
+		capacity = std::max<std::uint64_t>(Needed, 1);
+		buffer = make_buffer(capacity);
+	}
+	if (buffer == 0)
+	{
+		// the old buffer stays, the tracks are turned on the cpu from the next frame on
+		ErrorLog("openGL error: out of memory; failed to create the buffer of the track sleepers, they're placed by the cpu");
+		m_failed = true;
+		return false;
+	}
 	// the draws and passes issued with the old buffer keep it until the gpu is done with them
 	if (m_buffer != 0)
 		glDeleteBuffers(1, &m_buffer);
-	glCreateBuffers(1, &m_buffer);
-	glNamedBufferStorage(m_buffer, static_cast<GLsizeiptr>(capacity) * static_cast<GLsizeiptr>(sizeof(glm::mat4)), nullptr, GL_DYNAMIC_STORAGE_BIT);
-	m_capacity = capacity;
+	m_buffer = buffer;
+	m_capacity = static_cast<std::uint32_t>(capacity);
 	m_fill = 0;
 	m_restartframe = m_frame;
 	m_tracks.clear();
+	return true;
 }
 
 bool opengl46_timbers::place(std::vector<TTrack *> const &Tracks, bool const Restart)
@@ -85,9 +132,8 @@ bool opengl46_timbers::place(std::vector<TTrack *> const &Tracks, bool const Res
 		return true;
 	if (m_fill + needed > m_capacity)
 	{
-		if (false == Restart)
+		if ((false == Restart) || (false == restart(all)))
 			return false;
-		restart(all);
 	}
 	for (auto const *track : Tracks)
 	{
@@ -148,5 +194,9 @@ void opengl46_timbers::expand(std::vector<glm::mat4> const &Origins, std::vector
 void opengl46_timbers::next_frame()
 {
 	++m_frame;
-	m_ranges->next_frame();
+	if (m_ranges)
+		m_ranges->next_frame();
+	// between the frames, so the walks of a frame all gather and draw the timbers the same way
+	if (m_failed)
+		m_gpu = false;
 }
