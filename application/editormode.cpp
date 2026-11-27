@@ -21,6 +21,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenodegroups.h"
 #include "application/editoruilayer.h"
 #include "physics/mover.h"
+#include "vehicle/DynObj.h"
 #ifndef _WIN32
 #include <spawn.h>
 #include <unistd.h>

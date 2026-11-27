@@ -9,6 +9,7 @@
 #include "input/command.h"
 #include "utilities/Timer.h"
 #include "vehicle/Camera.h"
+#include "vehicle/DynObj.h"
 
 // the view matrix of the camera (TCamera::SetMatrix): the pitch (Angle.x) and the yaw (Angle.y) give the line of sight,
 // the roll (Angle.z) turns the view about that line, wherever the camera looks. The roll comes from the sway of the cab

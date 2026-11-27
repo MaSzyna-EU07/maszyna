@@ -10,7 +10,7 @@ http://mozilla.org/MPL/2.0/.
 #pragma once
 
 #include "input/command.h"
-#include "vehicle/DynObj.h"
+#include "utilities/Classes.h"
 
 //---------------------------------------------------------------------------
 

@@ -17,7 +17,8 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Classes.h"
 #include "utilities/Float3d.h"
 #include "model/Model3d.h"
-#include "vehicle/DynObj.h"
+#include "model/materialdata.h"
+#include "utilities/Names.h"
 #include "scene/scenenode.h"
 
 const int iMaxNumLights = 8;

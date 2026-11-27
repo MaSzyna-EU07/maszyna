@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Logs.h"
 #include "utilities/color.h"
 #include "utilities/utilities.h"
+#include "vehicle/DynObj.h"
 
 #include <algorithm>
 #include <bit>

@@ -19,6 +19,7 @@ http://mozilla.org/MPL/2.0/.
 #include "model/Model3d.h"
 #include "utilities/Globals.h"
 #include "utilities/utilities.h"
+#include "vehicle/DynObj.h"
 
 #include <cassert>
 

@@ -20,7 +20,7 @@ http://mozilla.org/MPL/2.0/.
 #include "scene/scenenode.h"
 #include "world/Road.h"
 #include "world/Segment.h"
-#include "vehicle/DynObj.h"
+#include "model/materialdata.h"
 
 namespace scene
 {

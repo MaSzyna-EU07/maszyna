@@ -14,6 +14,7 @@ http://mozilla.org/MPL/2.0/.
 
 #include "utilities/Classes.h"
 #include "interfaces/IMaterial.h"
+#include "model/materialdata.h"
 #include "physics/vehicletypes.h"
 #include "physics/derailment.h"
 #include "vehicle/derailmotion.h"
@@ -189,16 +190,6 @@ enum class announcement_t : int {
 };
 
 // parameters for the material object, as currently used by various simulator models
-struct material_data {
-
-    int textures_alpha{ 0x30300030 }; // maska przezroczystości tekstur. default: tekstury wymienne nie mają przezroczystości
-    material_handle replacable_skins[ 5 ] = { null_handle, null_handle, null_handle, null_handle, null_handle }; // McZapkie:zmienialne nadwozie
-    int multi_textures{ 0 }; //<0 tekstury wskazane wpisem, >0 tekstury z przecinkami, =0 jedna
-
-    // assigns specified texture or a group of textures to replacable texture slots
-    void assign( std::string const &Replacableskin );
-};
-
 class TDynamicObject { // klasa pojazdu
 
     friend opengl46_renderer;

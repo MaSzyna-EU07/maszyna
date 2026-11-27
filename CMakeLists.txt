@@ -213,6 +213,7 @@ set(SOURCES
 "input/drivermouseinput.cpp"
 "utilities/translation.cpp"
 "model/material.cpp"
+"model/materialdata.cpp"
 "stdafx.cpp"
 "input/messaging.cpp"
 "scene/scene.cpp"

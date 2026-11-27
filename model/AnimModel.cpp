@@ -24,6 +24,7 @@ http://mozilla.org/MPL/2.0/.
 #include "utilities/Timer.h"
 #include "utilities/Logs.h"
 #include "rendering/renderer.h"
+#include "vehicle/DynObj.h"
 
 std::list<std::weak_ptr<TAnimContainer>> TAnimModel::acAnimList;
 
