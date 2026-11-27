@@ -129,6 +129,7 @@ void windscreen_water::release()
 	m_logged.fill(-1);
 	m_layerlogged = -1;
 	m_kinds.clear();
+	m_cabmaterials.clear();
 	m_vehicle = nullptr;
 	m_cab = nullptr;
 }
@@ -271,6 +272,8 @@ void windscreen_water::build(TModel3d &Cab)
 			}
 		}
 		auto const material{Submodel->m_material};
+		if ((material != null_handle) && (material > 0) && (Submodel->eType == GL_TRIANGLES) && (std::find(m_cabmaterials.begin(), m_cabmaterials.end(), material) == m_cabmaterials.end()))
+			m_cabmaterials.push_back(material);
 		if ((material != null_handle) && (material > 0) && (Submodel->eType == GL_TRIANGLES) && std::ranges::none_of(m_kinds, [material](auto const &Kind) { return Kind.first == material; }))
 		{
 			// every material with a mask of the wipers, what it is kept: it's a glass of another kind when the weather changes
@@ -359,6 +362,18 @@ void windscreen_water::build(TModel3d &Cab)
 		WriteLog("windscreen water: glass " + std::to_string(m_glasscount + 1) + " of the cab, material " + opengl->GetName() + ", " + std::to_string(glass.area) + " m2");
 		++m_glasscount;
 	}
+}
+
+bool windscreen_water::wants_rain_cells()
+{
+	// without the simulation the cab isn't looked at: the cells as before, whenever it rains
+	if (m_state <= 0)
+		return true;
+	// a material of the cab of the shader of the rain, as it is in this weather (with a mask of the wipers or without)
+	return std::ranges::any_of(m_cabmaterials, [this](material_handle const Material) {
+		auto const *opengl{m_host.material(Material)};
+		return (opengl != nullptr) && (opengl->shader != nullptr) && (opengl->shader->param_conf.count("water_slot") > 0);
+	});
 }
 
 void windscreen_water::update(double const Seconds)

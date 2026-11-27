@@ -51,11 +51,20 @@ bool windscreen_water::init(VkDevice const Device, pipeline_library &Pipelines, 
 	m_ring = &Ring;
 	m_alignment = std::max<VkDeviceSize>(Alignment, 16);
 	m_host = std::move(Host);
+	// the cells of the rain: the pass sets hold their buffer from the start (made later, the sets of the passes and of the cullings
+	// would have to be written anew in the middle of a frame). without it a small stand-in, which no glass reads (the glasses with
+	// rain stay dry, the rest of the simulation works on)
 	m_raincells = std::make_shared<buffer>();
-	if (false == m_raincells->create(Memory, static_cast<VkDeviceSize>(gl::RAIN_CELLS_COUNT * 16), storage_usage, memory_kind::device, "rain cells"))
+	m_raincellsfull = m_raincells->create(Memory, static_cast<VkDeviceSize>(gl::RAIN_CELLS_COUNT * 16), storage_usage, memory_kind::device, "rain cells");
+	if (false == m_raincellsfull)
 	{
-		m_raincells.reset();
-		return false;
+		ErrorLog("rain cells: no storage of " + std::to_string(gl::RAIN_CELLS_COUNT * 16 / (1024 * 1024)) + " MiB, the glasses with rain stay dry");
+		m_raincells = std::make_shared<buffer>();
+		if (false == m_raincells->create(Memory, 65536, storage_usage, memory_kind::device, "rain cells"))
+		{
+			m_raincells.reset();
+			return false;
+		}
 	}
 	m_storage = std::make_shared<buffer>();
 	m_full = m_storage->create(Memory, static_cast<VkDeviceSize>(gl::WATER_STORAGE_SIZE), storage_usage, memory_kind::device, "windscreen water");
@@ -85,6 +94,7 @@ void windscreen_water::destroy()
 	}
 	m_raincellkernel.destroy(m_device);
 	m_raincelltried = false;
+	m_raincellsfull = false;
 	m_raincells.reset();
 	m_storage.reset();
 	m_device = VK_NULL_HANDLE;
@@ -199,7 +209,7 @@ void windscreen_water::gpu_setup(std::size_t const Slot, std::vector<glm::vec4> 
 
 void windscreen_water::update_rain_cells(float const Time, float const Rain)
 {
-	if ((m_device == VK_NULL_HANDLE) || (false == bool(m_raincells)) || (Rain <= 0.f) || (false == bool(m_host.commands)))
+	if ((m_device == VK_NULL_HANDLE) || (false == bool(m_raincells)) || (false == m_raincellsfull) || (Rain <= 0.f) || (false == bool(m_host.commands)))
 	{
 		return;
 	}

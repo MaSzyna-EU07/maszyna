@@ -1753,7 +1753,8 @@ void opengl46_renderer::Render_pass(viewport_config &vp, rendermode const Mode)
 			m_windscreenwater.update(Timer::GetDeltaTime());
 			// the drops and the rivulets of the glasses with rain, for the time of the block of the scene
 			// (the drops a cell may hold: as many as the glass is wet)
-			m_windscreenwater.update_rain_cells(scene_ubs.time, (scene_ubs.rain_state.y > 0.001f) ? std::min(scene_ubs.rain_state.y + 0.01f, 1.f) : 0.f);
+			// (none for a cab without a glass of the rain)
+			m_windscreenwater.update_rain_cells(scene_ubs.time, ((scene_ubs.rain_state.y > 0.001f) && m_windscreenwater.wants_rain_cells()) ? std::min(scene_ubs.rain_state.y + 0.01f, 1.f) : 0.f);
 		}
 		m_windscreenwater.bind();
 

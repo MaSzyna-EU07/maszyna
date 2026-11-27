@@ -1133,7 +1133,8 @@ void vulkan14_renderer::render_scene()
 	scene.water.update(Timer::GetDeltaTime());
 	// the drops and the rivulets of the glasses with rain, for the time the block of the scene gets (scene_ubs.time)
 	// (the drops a cell may hold: as many as the glass is wet, a little more, since it's the wetness of the frame before)
-	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), (m_glasswet > 0.001) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
+	// (none for a cab without a glass of the rain)
+	scene.water.update_rain_cells(static_cast<float>(Timer::GetTime()), ((m_glasswet > 0.001) && scene.water.wants_rain_cells()) ? static_cast<float>(std::min(m_glasswet + 0.01, 1.0)) : 0.f);
 	if (scene.targets.size() < m_viewports.size())
 	{
 		scene.targets.resize(m_viewports.size());

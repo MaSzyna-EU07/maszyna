@@ -349,7 +349,7 @@ snow_layer_s snCompose(vec2 uv, vec2 span, float pixelUV)
 // 1 + the list (0 the flakes, 1 .. SN_GRIDS the grids of the lumps) times 16 + the cell around the texel (0 .. 8: 1 - the column
 // offset + 3 * (1 - the row offset)), 0 after the last one (a layer cleared to zeros lists nothing). the glass lays only those at
 // its pixels, sharp from the atlas as when it laid all of the cells around itself, at a fraction of the cost
-const int SN_REFS = 6;    // the top ones: those under them are covered (sixteen fit in the four uint)
+const int SN_REFS = 6;    // the top ones, the listing stops when full (sixteen fit in the four uint; 8 if thick snow shows gaps)
 // the sprites over a texel covering it on the whole (the level of the atlas the size of the texel): those under it are left out
 const float SN_LIST_COVERED = 0.97;
 
@@ -380,19 +380,23 @@ uvec4 snList(vec2 uv, vec2 span, float pixelUV)
     float reachF = half_diagonal * max(perF.x, perF.y) * 1.25;
     for (int k = 0; k < 9; ++k)
     {
-        if ((count < 2) && snFlakeCell(pF, hereF + ivec2(1 - k % 3, 1 - k / 3), perF, pixelUV, reachF, flakes))
-            snRef(uint(k), refs, count);   // two flakes at most, the rest of the list for the lumps
+        if (count >= 2)
+            break;   // two flakes at most, the rest of the list for the lumps
+        if (snFlakeCell(pF, hereF + ivec2(1 - k % 3, 1 - k / 3), perF, pixelUV, reachF, flakes))
+            snRef(uint(k), refs, count);
     }
     vec2 perL = span / snow_lump_cell;
     float reachL = half_diagonal * max(perL.x, perL.y) * 1.25 + 0.05;
     for (int g = 0; g < SN_GRIDS; ++g)
     {
-        if (layer.a >= SN_LIST_COVERED)
-            break;   // the grids over this one cover the texel
+        if ((layer.a >= SN_LIST_COVERED) || (count >= SN_REFS))
+            break;   // the grids over this one cover the texel, or the list is full
         vec2 pL = uv * perL + sn_grids[g].shift;
         ivec2 hereL = ivec2(floor(pL));
         for (int k = 0; k < 9; ++k)
         {
+            if (count >= SN_REFS)
+                break;   // the list is full: nothing more worked out, and the cover counts only the sprites the glass lays
             if (snLumpCell(pL, hereL + ivec2(1 - k % 3, 1 - k / 3), perL, sn_grids[g], pixelUV, reachL, layer))
                 snRef(uint(16 * (g + 1) + k), refs, count);
         }

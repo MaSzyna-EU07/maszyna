@@ -63,6 +63,9 @@ class windscreen_water
 	// once a frame, before the colour passes: the cab of the train followed, the step of the simulation run. Seconds: of the
 	// simulation since the frame before (0 when it's paused)
 	void update(double Seconds);
+	// whether the glasses need the cells of the rain worked out: the cab of the train has a glass of the rain (or the simulation
+	// isn't used, the cab not looked at)
+	bool wants_rain_cells();
 	// the materials let go of their slots, the glasses forgotten (the storage stays as it is, unused)
 	void release();
 	std::string info() const;
@@ -121,6 +124,7 @@ class windscreen_water
 	int m_state{0}; // 0: not set up yet, 1: ready, -1: can't be used
 	TDynamicObject const *m_vehicle{nullptr};
 	TModel3d const *m_cab{nullptr};
+	std::vector<material_handle> m_cabmaterials; // the materials of the cab (for the glasses with rain it has, wants_rain_cells())
 	std::vector<std::pair<material_handle, int>> m_kinds; // the materials of the cab with a mask of the wipers, what kind of glass they were
 	std::array<glass, gl::WATER_SLOTS> m_glasses{};
 	std::size_t m_glasscount{0};
