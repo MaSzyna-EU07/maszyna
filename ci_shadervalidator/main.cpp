@@ -8,7 +8,12 @@
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
 #include <vector>
+#ifdef _WIN32
+#include <random>
+#include <sstream>
+#endif
 
 _global Global;
 
@@ -19,6 +24,65 @@ std::string const ogl46_dir{"../shaders/ogl46/"};
 std::string const vk14_dir{"../shaders/vk14/"};
 // the vulkan environment glslang is asked for: 1.4 where it knows it
 std::string vulkan_env{"vulkan1.4"};
+// the directory of this run for the files given to glslangValidator (work_directory)
+std::filesystem::path work_dir;
+
+// the directory of the temporary files of one run: a new directory with a unique name in the temporary directory of the
+// system, created by this run (mkdtemp() makes it accessible to its owner only), so nothing put in a shared /tmp under a
+// name known in advance (a file or a link) is written through. it is removed with its files at the end of the run
+class work_directory
+{
+  public:
+	work_directory()
+	{
+		std::error_code error;
+		auto const temp{std::filesystem::temp_directory_path(error)};
+		if (error)
+			return;
+#ifdef _WIN32
+		// no mkdtemp() in the CRT; a random name, and create_directory() says whether it made the directory or found one
+		std::random_device random;
+		for (int attempt = 0; attempt < 100; ++attempt)
+		{
+			std::ostringstream name;
+			name << "maszyna-shaders-" << std::hex << random() << random();
+			auto const path{temp / name.str()};
+			if (std::filesystem::create_directory(path, error))
+			{
+				m_path = path;
+				return;
+			}
+		}
+#else
+		std::string path{(temp / "maszyna-shaders-XXXXXX").string()};
+		if (mkdtemp(path.data()) != nullptr)
+			m_path = path;
+#endif
+	}
+	~work_directory()
+	{
+		if (m_path.empty())
+			return;
+		std::error_code error;
+		std::filesystem::remove_all(m_path, error);
+	}
+	work_directory(work_directory const &) = delete;
+	work_directory &operator=(work_directory const &) = delete;
+
+	std::filesystem::path const &path() const
+	{
+		return m_path;
+	}
+
+  private:
+	std::filesystem::path m_path; // empty when it couldn't be created
+};
+
+// the path of a file of the work directory, quoted for the command line of system()
+std::string work_file(char const *Name)
+{
+	return "\"" + (work_dir / Name).string() + "\"";
+}
 
 char const *stage_name(gfx::shader_stage const Stage)
 {
@@ -44,16 +108,16 @@ bool check_text(gfx::shader_source const &Source, std::string const &Mode)
 		ErrorLogged = false;
 		return false;
 	}
-	std::ofstream file("/tmp/shader");
+	std::ofstream file(work_dir / "shader");
 	file << Source.text;
 	file.close();
 
 	// the output only when it fails (glslangValidator names the file it compiled to spir-v)
-	auto const command{"glslangValidator " + Mode + " -S " + stage_name(Source.stage) + " /tmp/shader" + (Mode.empty() ? "" : " -o /tmp/shader.spv") + " > /tmp/shader.log 2>&1"};
+	auto const command{"glslangValidator " + Mode + " -S " + stage_name(Source.stage) + " " + work_file("shader") + (Mode.empty() ? "" : " -o " + work_file("shader.spv")) + " > " + work_file("shader.log") + " 2>&1"};
 	int ret = system(command.c_str());
 	if (ret != 0)
 	{
-		std::ifstream log("/tmp/shader.log");
+		std::ifstream log(work_dir / "shader.log");
 		std::cerr << std::endl << log.rdbuf();
 		std::cerr << "(source strings:";
 		for (std::size_t i = 0; i < Source.files.size(); ++i)
@@ -155,11 +219,18 @@ int main()
 		std::cerr << "glslangValidator not found in PATH" << std::endl;
 		return 1;
 	}
+	work_directory const work;
+	if (work.path().empty())
 	{
-		std::ofstream file("/tmp/shader_env.vert");
+		std::cerr << "cannot create a directory for the temporary files" << std::endl;
+		return 1;
+	}
+	work_dir = work.path();
+	{
+		std::ofstream file(work_dir / "shader_env.vert");
 		file << "#version 460\nvoid main() { gl_Position = vec4(0.0); }\n";
 	}
-	if (system("glslangValidator -V --target-env vulkan1.4 /tmp/shader_env.vert -o /tmp/shader_env.spv > /dev/null 2>&1") != 0)
+	if (system(("glslangValidator -V --target-env vulkan1.4 " + work_file("shader_env.vert") + " -o " + work_file("shader_env.spv") + " > /dev/null 2>&1").c_str()) != 0)
 	{
 		vulkan_env = "vulkan1.3";
 		std::cout << "== glslangValidator doesn't know vulkan 1.4, the vulkan shaders are checked against vulkan 1.3" << std::endl;
