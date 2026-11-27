@@ -16,6 +16,7 @@ http://mozilla.org/MPL/2.0/.
 #include <regex>
 #include <optional>
 #include "application/editormode.h"
+#include "editor/editorRecords.hpp"
 #include "application/editormodeshared.h"
 #include "application/editorgestures.h"
 #include "scene/scenenodegroups.h"
@@ -3267,7 +3268,7 @@ bool editor_mode::save()
     if (false == m_saved_camera.has_value() || glm::distance(m_saved_camera->first, glm::dvec3{Camera.Pos}) > 0.5 || glm::distance(m_saved_camera->second, glm::vec3{Camera.Angle}) > 0.01f)
     {
         m_saved_camera = std::make_pair(glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle});
-        scene::Layers.mark(scene::layer_handle{1}, "//$c", {format("%.3f %.3f %.3f %.5f %.5f", Camera.Pos.x, Camera.Pos.y, Camera.Pos.z, Camera.Angle.x, Camera.Angle.y)});
+        scene::Layers.mark(scene::layer_handle{1}, "//$c", {editor_records::camera_line({glm::dvec3{Camera.Pos}, glm::vec3{Camera.Angle}})});
     }
     if (auto const map{editor_orthophoto::mark(m_orthophoto.settings(), m_orthophoto.enabled(), m_orthophoto.settings().north != 0.0 || m_orthophoto.settings().east != 0.0)}; false == m_orthophoto_scenery.empty() && map != m_orthophoto_mark && (m_orthophoto.enabled() || false == m_orthophoto_mark.empty()))
     {
@@ -7030,21 +7031,15 @@ void editor_mode::enter()
     {
         m_opened_at_track = true;
         auto const saved{scene::Layers.empty() ? std::vector<std::string>{} : scene::Layers.marked(scene::layer_handle{1}, "//$c")};
-        if (false == saved.empty())
+        if (auto const camera{editor_records::read_camera(saved)})
         {
-            std::istringstream values(saved.front());
-            glm::dvec3 position{0.0};
-            glm::vec3 angle{0.0f};
-            if (values >> position.x >> position.y >> position.z >> angle.x >> angle.y)
-            {
-                Camera.Pos = position;
-                Camera.Angle = angle;
-                Camera.m_owner = nullptr;
-                FreeFlyModeFlag = true;
-                Global.pCamera = Camera;
-                m_saved_camera = {position, angle};
-                WriteLog("Editor: camera where it was at the last save");
-            }
+            Camera.Pos = camera->position;
+            Camera.Angle = camera->angle;
+            Camera.m_owner = nullptr;
+            FreeFlyModeFlag = true;
+            Global.pCamera = Camera;
+            m_saved_camera = {camera->position, camera->angle};
+            WriteLog("Editor: camera where it was at the last save");
         }
         for (auto *track : simulation::Paths.sequence())
         {

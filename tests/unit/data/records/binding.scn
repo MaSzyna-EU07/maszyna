@@ -1,0 +1,4 @@
+// //$b: objects bound to the paths, as editor_records::binding_line() writes them, after binding_heading()
+//$b # objects bound to the paths in the track editor, they follow changes of the track; the simulation skips these lines
+//$b model 2 10.0000 0.5000 20.0000 models/slupy/slup.t3d 1 1 0 0.0000 0.0000 0.0000 0.0000 0.0000 100.0000
+//$b memcell 4 12.0000 0.0000 30.0000 sem_mem 0 2 0 0.0000 0.0000 0.0000 0.0000 0.0000 100.0000 1 0.0000 0.0000 0.0000 5.0000 0.0000 100.0000
