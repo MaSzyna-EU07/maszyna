@@ -899,7 +899,6 @@ void ui::map_panel::render_map_lines(
 					cache.valid = false;
 				}
 				if (model && (!cache.valid || cache.model != model ||
-				              cache.revision != model->LightRevision() ||
 				              light_cache_now - cache.refreshed_at >= std::chrono::milliseconds(100))) {
 					cache.colors.clear();
 					for (int i = 0; i < iMaxNumLights; ++i) {
@@ -920,7 +919,6 @@ void ui::map_panel::render_map_lines(
 							static_cast<int>(opacity * 255.0f)));
 					}
 					cache.model = model;
-					cache.revision = model->LightRevision();
 					cache.refreshed_at = light_cache_now;
 					cache.valid = true;
 				}

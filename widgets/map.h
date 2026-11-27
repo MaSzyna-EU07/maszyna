@@ -121,7 +121,6 @@ class map_panel : public ui_panel
 	struct cached_signal_light
 	{
 		TAnimModel *model { nullptr };
-		std::uint64_t revision { 0 };
 		std::chrono::steady_clock::time_point refreshed_at {};
 		glm::dvec2 direction {};
 		std::vector<std::uint32_t> colors;

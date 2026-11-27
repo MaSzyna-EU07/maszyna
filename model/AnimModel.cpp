@@ -798,10 +798,7 @@ void TAnimModel::LightSet(int const n, float const v)
     if( n < 0 || n >= iMaxNumLights ) {
         return; // przekroczony zakres
     }
-    if (lsLights[n] == v)
-        return;
     lsLights[ n ] = v;
-    ++m_light_revision;
 }
 
 std::optional<std::tuple<float, float, std::optional<glm::vec3>> > TAnimModel::LightGet(const int n)
