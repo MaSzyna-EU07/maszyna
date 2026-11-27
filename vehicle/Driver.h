@@ -274,10 +274,10 @@ public:
         return TestFlag( mvOccupied->CategoryFlag, 2 ); }
     inline
     bool is_emu() const {
-        return mvControlling->TrainType == dt_EZT; }
+        return mvControlling->TrainType == train_type::emu; }
     inline
     bool is_dmu() const {
-        return mvControlling->TrainType == dt_DMU; }
+        return mvControlling->TrainType == train_type::dmu; }
     inline
     bool has_diesel_engine() const {
         return mvControlling->EngineType == TEngineType::DieselElectric || mvControlling->EngineType == TEngineType::DieselEngine;

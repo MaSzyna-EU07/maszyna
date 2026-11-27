@@ -169,7 +169,7 @@ void ui::vehicleparams_panel::render_contents()
 	              mover.MainCtrlPos, mover.MainCtrlActualPos,
 	              std::string(isdieselinshuntmode ? to_string(mover.AnPos, 2) + STR(" (shunt mode)") : std::to_string(mover.ScndCtrlPos) + "(" + std::to_string(mover.ScndCtrlActualPos) + ")").c_str(),
 	              // engine
-	              mover.EnginePower, std::abs(mover.TrainType == dt_EZT ? mover.ShowCurrent(0) : mover.Im),
+	              mover.EnginePower, std::abs(mover.TrainType == train_type::emu ? mover.ShowCurrent(0) : mover.Im),
 	              // revolutions
 	              std::abs(mover.enrot) * 60, std::abs(mover.nrot) * mover.Transmision.Ratio * 60, mover.RventRot * 60, std::abs(mover.MotorBlowers[end::front].revolutions),
 	              std::abs(mover.MotorBlowers[end::rear].revolutions), mover.dizel_heat.rpmw, mover.dizel_heat.rpmw2);

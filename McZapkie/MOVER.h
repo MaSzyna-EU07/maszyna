@@ -489,31 +489,33 @@ enum activation
 	neutraldirection = 1 << 7,
 };
 
-// szczególne typy pojazdów (inna obsługa) dla zmiennej TrainType
-// zamienione na flagi bitowe, aby szybko wybierać grupę (np. EZT+SZT)
-//  TODO: convert to enums, they're used as specific checks anyway
-/// <summary>Vehicle type flag: default (no special handling).</summary>
-static int const dt_Default = 0;
-/// <summary>Vehicle type flag: EZT (electric multiple unit).</summary>
-static int const dt_EZT = 1;
-/// <summary>Vehicle type flag: ET41 locomotive.</summary>
-static int const dt_ET41 = 2;
-/// <summary>Vehicle type flag: ET42 locomotive.</summary>
-static int const dt_ET42 = 4;
-/// <summary>Vehicle type flag: pseudo-diesel (electric drivetrain with diesel input model).</summary>
-static int const dt_PseudoDiesel = 8;
-/// <summary>Vehicle type flag: ET22 locomotive (added in Megapack).</summary>
-static int const dt_ET22 = 0x10; // używane od Megapacka
-/// <summary>Vehicle type flag: SN61 (set from CHK only, not used in conditions).</summary>
-static int const dt_SN61 = 0x20; // nie używane w warunkach, ale ustawiane z CHK
-/// <summary>Vehicle type flag: EP05 locomotive.</summary>
-static int const dt_EP05 = 0x40;
-/// <summary>Vehicle type flag: ET40 locomotive.</summary>
-static int const dt_ET40 = 0x80;
-/// <summary>Vehicle type flag: ŠKODA 181 locomotive.</summary>
-static int const dt_181 = 0x100;
-/// <summary>Vehicle type flag: DMU (diesel multiple unit).</summary>
-static int const dt_DMU = 0x200;
+/// <summary>The vehicles the code handles in a way of their own, by the Type of the Param section of the .fiz
+/// (TrainType). A vehicle is of one of them; a .fiz type not listed is generic.</summary>
+enum class train_type
+{
+	/// <summary>No handling of its own.</summary>
+	generic,
+	/// <summary>Electric multiple unit (Type=EZT).</summary>
+	emu,
+	/// <summary>Diesel multiple unit (Type=DMU).</summary>
+	dmu,
+	/// <summary>ET22 locomotive (Type=ET22, since the Megapack).</summary>
+	et22,
+	/// <summary>ET40 locomotive.</summary>
+	et40,
+	/// <summary>ET41 locomotive.</summary>
+	et41,
+	/// <summary>ET42 locomotive.</summary>
+	et42,
+	/// <summary>EP05 locomotive.</summary>
+	ep05,
+	/// <summary>SN61 railcar: the type is read, but nothing handles it on its own.</summary>
+	sn61,
+	/// <summary>Pseudo-diesel (an electric drivetrain with the input model of a diesel).</summary>
+	pseudodiesel,
+	/// <summary>Škoda 181 and 182 locomotives (Type=181 or 182).</summary>
+	skoda181,
+};
 
 // stałe dla asynchronów
 /// <summary>EIM config index: dfic — frequency rise rate at start.</summary>
@@ -1706,7 +1708,12 @@ class TMoverParameters
 	int CategoryFlag = 1; /*1 - pociag, 2 - samochod, 4 - statek, 8 - samolot*/
 	/*--sekcja stalych typowych parametrow*/
 	std::string TypeName; /*nazwa serii/typu*/
-	int TrainType = 0; /*typ: EZT/elektrowoz - Winger 040304 Ra: powinno być szybciej niż string*/
+	train_type TrainType{train_type::generic}; // the vehicles of a handling of their own, from the Type of the .fiz
+	// an electric or a diesel multiple unit
+	bool is_multiple_unit() const
+	{
+		return TrainType == train_type::emu || TrainType == train_type::dmu;
+	}
 	TEngineType EngineType = TEngineType::None; /*typ napedu*/
 	TPowerParameters EnginePowerSource; /*zrodlo mocy dla silnikow*/
 	TPowerParameters SystemPowerSource; /*zrodlo mocy dla systemow sterowania/przetwornic/sprezarek*/

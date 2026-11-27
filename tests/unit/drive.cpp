@@ -108,7 +108,7 @@ void prepare_diesel(driven const &Driven) {
 // the pantographs' own air topped up by their compressor, and the pantographs raised
 void raise_pantographs(driven const &Driven) {
 	auto &pantographs{Driven.pantographs};
-	if (auto const enough{(pantographs.TrainType == dt_EZT ? 2.5 : 3.5) + 0.1}; pantographs.PantPress < enough) {
+	if (auto const enough{(pantographs.TrainType == train_type::emu ? 2.5 : 3.5) + 0.1}; pantographs.PantPress < enough) {
 		if (false == pantographs.PantAutoValve) {
 			pantographs.bPantKurek3 = false; // the pantographs on their own air
 		}

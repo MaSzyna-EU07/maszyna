@@ -2352,7 +2352,7 @@ TController::TController(bool AI, TDynamicObject *NewControll, bool InitPsyche, 
         fAccThreshold = is_emu() ? -0.55 : is_dmu() ? -0.45 : -0.2;
 /*
         // HACK: emu with induction motors need to start their braking a bit sooner than the ones with series motors
-        if( ( mvOccupied->TrainType == dt_EZT )
+        if( ( mvOccupied->TrainType == train_type::emu )
          && ( mvControlling->EngineType == TEngineType::ElectricInductionMotor ) ) {
             fAccThreshold += 0.10;
         }
@@ -3186,7 +3186,7 @@ double TController::BrakeAccFactor() const
         Factor += fBrakeReaction * (/*mvOccupied->BrakeCtrlPosR*/ BrakeCtrlPosition < 0.5 ? 1.5 : 1) * mvOccupied->Vel / ( std::max( 0.0, ActualProximityDist ) + 1 ) * ( ( AccDesired - AbsAccS ) / fAccThreshold );
     }
 /*
-	if (mvOccupied->TrainType == dt_DMU && mvOccupied->Vel > 40 && VelNext<40)
+	if (mvOccupied->TrainType == train_type::dmu && mvOccupied->Vel > 40 && VelNext<40)
 		Factor *= 1 + 0.25 * ( (1600 - VelNext * VelNext) / (mvOccupied->Vel * mvOccupied->Vel) );
 */
 	return Factor;
@@ -3623,8 +3623,8 @@ bool TController::IncBrake()
 			}
             // NOTE: can't perform just test whether connected vehicle == nullptr, due to virtual couplers formed with nearby vehicles
             auto standalone { true };
-            if( mvOccupied->TrainType == dt_ET41
-             || mvOccupied->TrainType == dt_ET42 ) {
+            if( mvOccupied->TrainType == train_type::et41
+             || mvOccupied->TrainType == train_type::et42 ) {
                 // NOTE: we're doing simplified checks full of presuptions here.
                 // they'll break if someone does strange thing like turning around the second unit
                 if( mvOccupied->Couplers[end::rear].CouplingFlag & coupling::permanent
@@ -3991,7 +3991,7 @@ bool TController::IncSpeed()
         if (!IsAnyMotorOverloadRelayOpen && !mvControlling->ControlPressureSwitch && (mvControlling->IsMainCtrlNoPowerPos() || mvControlling->StLinFlag) && (Ready || iDrivigFlags & movePress)) {
 			// youBy polecił dodać 2012-09-08 v367
 			// na pozycji 0 przejdzie, a na pozostałych będzie czekać, aż się załączą liniowe (zgaśnie DelayCtrlFlag)
-			auto const usehighoverloadrelaythreshold{mvControlling->TrainType != dt_ET42 // ET42 uses these variables for different purpose. TODO: fix this
+			auto const usehighoverloadrelaythreshold{mvControlling->TrainType != train_type::et42 // ET42 uses these variables for different purpose. TODO: fix this
 			                                         && mvControlling->ImaxHi > mvControlling->ImaxLo && mvOccupied->Vel < (mvControlling->IsMotorOverloadRelayHighThresholdOn() ? 30.0 : 20.0) &&
 			                                         iVehicles - ControlledEnginesCount > 0
 			                                         //                     && ( std::fabs( mvControlling->Im ) > 0.85 * mvControlling->Imax )
@@ -4023,7 +4023,7 @@ bool TController::IncSpeed()
 			                                               mvControlling->MainCtrlPos == mvControlling->MainCtrlPosNo);
 
 			// if needed enable high threshold for overload relay...
-			if (mvControlling->TrainType != dt_ET42)
+			if (mvControlling->TrainType != train_type::et42)
 			{ // ET42 uses these variables for different purpose. TODO: fix this
 				if (usehighoverloadrelaythreshold)
 				{
@@ -6368,7 +6368,7 @@ void TController::DirectionForward(bool forward)
             iTableDirection = 0;
         }
     }
-    if( mvOccupied->TrainType == dt_SN61 ) {
+    if( mvOccupied->TrainType == train_type::sn61 ) {
         // specjalnie dla SN61 żeby nie zgasł
         while( mvControlling->RList[mvControlling->MainCtrlPos].Mn == 0
             && mvControlling->IncMainCtrl(1) ) {
@@ -6970,7 +6970,7 @@ TController::control_pantographs() {
     auto const useregularpantographlayout {
         pVehicle->Next(coupling::control) == nullptr // standalone
      || is_emu() // special case
-     || mvControlling->TrainType == dt_ET41 }; // special case
+     || mvControlling->TrainType == train_type::et41 }; // special case
 
     if( mvOccupied->Vel > EU07_AI_NOMOVEMENT ) {
 

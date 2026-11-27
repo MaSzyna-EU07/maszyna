@@ -1013,7 +1013,7 @@ TTrain::state_t TTrain::get_state() const
 	    static_cast<float>(mvOccupied->BrakePress),
 	    static_cast<float>(mvPantographUnit->PantPress),
 	    fHVoltage,
-	    {fHCurrent[mvControlled->TrainType & dt_EZT ? 0 : 1], fHCurrent[2], fHCurrent[3]},
+	    {fHCurrent[mvControlled->TrainType == train_type::emu ? 0 : 1], fHCurrent[2], fHCurrent[3]},
 	    ggLVoltage.GetValue(),
 	    mvOccupied->DistCounter,
 	    static_cast<std::uint8_t>(RadioChannel()),
@@ -1036,7 +1036,7 @@ TTrain::state_t TTrain::get_state() const
 bool TTrain::is_eztoer() const
 {
 
-	return mvControlled->TrainType == dt_EZT && mvOccupied->BrakeSubsystem == TBrakeSubSystem::ss_ESt && mvControlled->Power24vIsAvailable == true && mvControlled->EpFuse == true &&
+	return mvControlled->TrainType == train_type::emu && mvOccupied->BrakeSubsystem == TBrakeSubSystem::ss_ESt && mvControlled->Power24vIsAvailable == true && mvControlled->EpFuse == true &&
 	       mvControlled->DirActive != 0; // od yB
 }
 
@@ -1112,7 +1112,7 @@ void TTrain::set_train_brake_speed(TDynamicObject *Vehicle, int const Speed)
 void TTrain::set_paired_open_motor_connectors_button(bool const State)
 {
 
-	if (mvControlled->TrainType == dt_ET41 || mvControlled->TrainType == dt_ET42)
+	if (mvControlled->TrainType == train_type::et41 || mvControlled->TrainType == train_type::et42)
 	{
 		// crude implementation of the button affecting entire unit for multi-unit engines
 		// TODO: rework it into part of standard command propagation system
@@ -1901,7 +1901,7 @@ void TTrain::OnCommand_independentbrakebailoff(TTrain *Train, command_data const
 	{
 		// TODO: check if this set of conditions can be simplified.
 		// it'd be more flexible to have an attribute indicating whether bail off position is supported
-		if (Train->mvControlled->TrainType != dt_EZT &&
+		if (Train->mvControlled->TrainType != train_type::emu &&
 		    (Train->mvControlled->EngineType == TEngineType::ElectricSeriesMotor || Train->mvControlled->EngineType == TEngineType::DieselElectric ||
 		     Train->mvControlled->EngineType == TEngineType::ElectricInductionMotor) &&
 		    Train->mvOccupied->BrakeCtrlPosNo > 0)
@@ -2631,7 +2631,7 @@ void TTrain::OnCommand_mubrakingindicatortoggle(TTrain *Train, command_data cons
 		}
 		return;
 	}
-	if (Train->mvControlled->TrainType != dt_EZT)
+	if (Train->mvControlled->TrainType != train_type::emu)
 	{
 		//
 		return;
@@ -2875,7 +2875,7 @@ void TTrain::OnCommand_alerteracknowledge(TTrain *Train, command_data const &Com
 		// visual feedback
 		Train->ggSecurityResetButton.UpdateValue(1.0, Train->dsbSwitch);
 
-		if (Train->mvOccupied->TrainType == dt_EZT || Train->mvOccupied->DirActive != 0)
+		if (Train->mvOccupied->TrainType == train_type::emu || Train->mvOccupied->DirActive != 0)
 			Train->mvOccupied->SecuritySystem.acknowledge_press();
 	}
 	else if (Command.action == GLFW_RELEASE)
@@ -2883,7 +2883,7 @@ void TTrain::OnCommand_alerteracknowledge(TTrain *Train, command_data const &Com
 		// visual feedback
 		Train->ggSecurityResetButton.UpdateValue(0.0);
 
-		if (Train->mvOccupied->TrainType == dt_EZT || Train->mvOccupied->DirActive != 0)
+		if (Train->mvOccupied->TrainType == train_type::emu || Train->mvOccupied->DirActive != 0)
 			Train->mvOccupied->SecuritySystem.acknowledge_release();
 	}
 }
@@ -5402,7 +5402,7 @@ void TTrain::OnCommand_motorconnectorsclose(TTrain *Train, command_data const &C
 void TTrain::OnCommand_motordisconnect(TTrain *Train, command_data const &Command)
 {
 
-	if (Train->mvControlled->TrainType == dt_EZT ? Train->mvControlled != Train->mvOccupied : Train->iCabn != 0)
+	if (Train->mvControlled->TrainType == train_type::emu ? Train->mvControlled != Train->mvOccupied : Train->iCabn != 0)
 	{
 		// tylko w maszynowym
 		return;
@@ -9053,7 +9053,7 @@ bool TTrain::Update(double const Deltatime)
 	UpdateCab();
 
 	// nie blokujemy AI
-	if (DynamicObject->Mechanik != nullptr && false == DynamicObject->Mechanik->AIControllFlag && (mvOccupied->TrainType == dt_ET40 || mvOccupied->TrainType == dt_EP05 || mvOccupied->HasCamshaft))
+	if (DynamicObject->Mechanik != nullptr && false == DynamicObject->Mechanik->AIControllFlag && (mvOccupied->TrainType == train_type::et40 || mvOccupied->TrainType == train_type::ep05 || mvOccupied->HasCamshaft))
 	{
 		// dla ET40 i EU05 automatyczne cofanie nastawnika - i tak nie będzie to działać dobrze...
 		// TODO: use deltatime to stabilize speed
@@ -9326,7 +9326,7 @@ bool TTrain::Update(double const Deltatime)
 		// Ra: sterowanie miernikiem: drugi amperomierz
 		Console::ValueSet(4, fHCurrent[2]);
 		// pierwszy amperomierz; dla EZT prąd całkowity
-		Console::ValueSet(5, fHCurrent[mvControlled->TrainType & dt_EZT ? 0 : 1]);
+		Console::ValueSet(5, fHCurrent[mvControlled->TrainType == train_type::emu ? 0 : 1]);
 		// Ra: prędkość na pin 43 - wyjście analogowe (to nie jest PWM); skakanie zapewnia mechanika napędu
 		Console::ValueSet(6, fTachoVelocity);
 	}
@@ -9337,15 +9337,15 @@ bool TTrain::Update(double const Deltatime)
 	if (mvControlled->ConverterFlag == true)
 	{
 		fConverterTimer += static_cast<float>(Deltatime);
-		if (mvControlled->CompressorFlag == true && mvControlled->CompressorPower == 1 && (mvControlled->EngineType == TEngineType::ElectricSeriesMotor || mvControlled->TrainType == dt_EZT) &&
+		if (mvControlled->CompressorFlag == true && mvControlled->CompressorPower == 1 && (mvControlled->EngineType == TEngineType::ElectricSeriesMotor || mvControlled->TrainType == train_type::emu) &&
 		    DynamicObject->Controller == Humandriver // hunter-110212: poprawka dla EZT
 		    && false == DynamicObject->Mechanik->AIControllFlag)
 		{ // hunter-091012: poprawka (zmiana warunku z CompressorPower /rozne od 0/ na /rowne 1/)
 			if (fConverterTimer < fConverterPrzekaznik)
 			{
 				mvControlled->ConvOvldFlag = true;
-				if (mvControlled->TrainType != dt_EZT)
-					mvControlled->MainSwitch(false, mvControlled->TrainType == dt_EZT ? range_t::unit : range_t::local);
+				if (mvControlled->TrainType != train_type::emu)
+					mvControlled->MainSwitch(false, mvControlled->TrainType == train_type::emu ? range_t::unit : range_t::local);
 			}
 			else if (fConverterTimer >= fConverterPrzekaznik)
 			{
@@ -9432,7 +9432,7 @@ bool TTrain::Update(double const Deltatime)
 		else
 		{
 			int x;
-			if (mvControlled->TrainType == dt_ET42 && mvControlled->Imax == mvControlled->ImaxHi)
+			if (mvControlled->TrainType == train_type::et42 && mvControlled->Imax == mvControlled->ImaxHi)
 				x = 1;
 			else
 				x = 2;
@@ -9611,12 +9611,12 @@ bool TTrain::Update(double const Deltatime)
 		switch (mvControlled->TrainType)
 		{
 		// zależnie od typu lokomotywy
-		case dt_EZT:
+		case train_type::emu:
 		{
 			btLampkaHamienie.Turn(mvControlled->BrakePress >= 0.2 && mvControlled->Signalling);
 			break;
 		}
-		case dt_ET41:
+		case train_type::et41:
 		{
 			// odhamowanie drugiego członu
 			if (mvSecond)
@@ -9941,7 +9941,7 @@ bool TTrain::Update(double const Deltatime)
 		// Ra: od byte odejmowane boolean i konwertowane potem na double?
 		if (false == ggScndCtrl.is_push())
 		{
-			ggScndCtrl.UpdateValue(static_cast<float>(double(mvControlled->ScndCtrlPos - (mvControlled->TrainType == dt_ET42 && mvControlled->DynamicBrakeFlag))), dsbNastawnikBocz);
+			ggScndCtrl.UpdateValue(static_cast<float>(double(mvControlled->ScndCtrlPos - (mvControlled->TrainType == train_type::et42 && mvControlled->DynamicBrakeFlag))), dsbNastawnikBocz);
 		}
 		ggScndCtrl.Update();
 	}
@@ -9963,7 +9963,7 @@ bool TTrain::Update(double const Deltatime)
 	}
 	if (ggDirKey.SubModel != nullptr)
 	{
-		if (mvControlled->TrainType != dt_EZT)
+		if (mvControlled->TrainType != train_type::emu)
 		{
 			ggDirKey.UpdateValue(static_cast<float>(double(mvControlled->DirActive)), dsbReverserKey);
 		}
@@ -11766,11 +11766,11 @@ void TTrain::clear_cab_controls()
 	btLampkaNadmSil.Clear(4);
 	btLampkaStyczn.Clear(5);
 	btLampkaPoslizg.Clear(6);
-	btLampkaNadmPrzetw.Clear((mvControlled->TrainType & dt_EZT) != 0 ? -1 : 7); // EN57 nie ma tej lampki
-	btLampkaPrzetwOff.Clear((mvControlled->TrainType & dt_EZT) != 0 ? 7 : -1); // za to ma tę
+	btLampkaNadmPrzetw.Clear(mvControlled->TrainType == train_type::emu ? -1 : 7); // EN57 nie ma tej lampki
+	btLampkaPrzetwOff.Clear(mvControlled->TrainType == train_type::emu ? 7 : -1); // za to ma tę
 	btLampkaNadmSpr.Clear(8);
 	btLampkaNadmWent.Clear(9);
-	btLampkaWysRozr.Clear((mvControlled->TrainType & dt_ET22) != 0 ? -1 : 10); // ET22 nie ma tej lampki
+	btLampkaWysRozr.Clear(mvControlled->TrainType == train_type::et22 ? -1 : 10); // ET22 nie ma tej lampki
 	btLampkaOgrzewanieSkladu.Clear(11);
 	// overheat indicator lamps
 	btLampkaOilOverheat.Clear(-1);

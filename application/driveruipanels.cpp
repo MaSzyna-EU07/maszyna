@@ -892,7 +892,7 @@ debug_panel::update_section_vehicle( std::vector<text_line> &Output ) {
         std::string( isdieselinshuntmode ? to_string( mover.AnPos, 2 ) + STR(" (shunt mode)") : std::to_string( mover.ScndCtrlPos ) + "(" + std::to_string( mover.ScndCtrlActualPos ) + ")" ).c_str(),
         // engine
         mover.EnginePower,
-        std::abs( mover.TrainType == dt_EZT ? mover.ShowCurrent( 0 ) : mover.Im ),
+        std::abs( mover.TrainType == train_type::emu ? mover.ShowCurrent( 0 ) : mover.Im ),
         // revolutions
         std::abs( mover.enrot ) * 60,
         std::abs( mover.nrot ) * mover.Transmision.Ratio * 60,

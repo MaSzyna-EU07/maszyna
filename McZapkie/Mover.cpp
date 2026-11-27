@@ -357,14 +357,14 @@ double TMoverParameters::Current(double n, double U)
 	ResistorsFlag = RList[MainCtrlActualPos].R > 0.01; // and (!DelayCtrlFlag)
 	ResistorsFlag = ResistorsFlag || (DynamicBrakeFlag == true && DynamicBrakeType == dbrake_automatic);
 
-	if (TrainType == dt_ET22 && DelayCtrlFlag && MainCtrlActualPos > 1)
+	if (TrainType == train_type::et22 && DelayCtrlFlag && MainCtrlActualPos > 1)
 		Bn = 1.0 - 1.0 / RList[MainCtrlActualPos].Bn;
 	else
 		Bn = 1; // to jest wykonywane dla EU07
 
 	R = RList[MainCtrlActualPos].R * Bn + CircuitRes;
 
-	if (TrainType != dt_EZT || Imin != IminLo || false == ScndS)
+	if (TrainType != train_type::emu || Imin != IminLo || false == ScndS)
 	{
 		// yBARC - boczniki na szeregu poprawnie
 		Mn = RList[MainCtrlActualPos].Mn; // to jest wykonywane dla EU07
@@ -414,7 +414,7 @@ double TMoverParameters::Current(double n, double U)
 void TMoverParameters::UpdateSeriesMotorDynamicBrakeFlag()
 {
 	// i dzialanie hamulca ED w EP09
-	if (DynamicBrakeType == dbrake_automatic && TrainType != dt_EZT)
+	if (DynamicBrakeType == dbrake_automatic && TrainType != train_type::emu)
 	{
 		if ((Hamulec->GetEDBCP() < 0.25 && Vadd < 1) || BrakePress > 2.1)
 			DynamicBrakeFlag = false;
@@ -422,7 +422,7 @@ void TMoverParameters::UpdateSeriesMotorDynamicBrakeFlag()
 			DynamicBrakeFlag = true;
 		DynamicBrakeFlag = DynamicBrakeFlag && Power110vIsAvailable;
 	}
-	if (DynamicBrakeType == dbrake_automatic && TrainType == dt_EZT)
+	if (DynamicBrakeType == dbrake_automatic && TrainType == train_type::emu)
 	{
 		DynamicBrakeFlag = Power110vIsAvailable && (TUHEX_Active || Vadd > TUHEX_MinIw) && DynamicBrakeEMUStatus;
 	}
@@ -472,7 +472,7 @@ double TMoverParameters::SeriesMotorCurrent(double const n, double const U, doub
 			MotorCurrent:=(U-Isf*Rz-Mn*fi*n+SQRT(Delta))/(2*Rz)
 			end*/
 			// only the ET42's switched brake brakes on the starting resistors, otherwise the current is cut off (0)
-			if (DynamicBrakeType == dbrake_switch && TrainType == dt_ET42)
+			if (DynamicBrakeType == dbrake_switch && TrainType == train_type::et42)
 			{ // z Megapacka
 				Rz = WindingRes + R;
 				MotorCurrent = -motor_param(SP).fi * n / Rz; //{hamowanie silnikiem na oporach rozruchowych}
@@ -812,7 +812,7 @@ bool TMoverParameters::DirectionForward()
 		SendCtrlToNext("Direction", DirActive, CabActive);
 		return true;
 	}
-	else if (DirActive == 1 && IsMainCtrlNoPowerPos() && TrainType == dt_EZT && EngineType != TEngineType::ElectricInductionMotor)
+	else if (DirActive == 1 && IsMainCtrlNoPowerPos() && TrainType == train_type::emu && EngineType != TEngineType::ElectricInductionMotor)
 		return MinCurrentSwitch(true); //"wysoki rozruch" EN57
 	return false;
 };
@@ -916,7 +916,7 @@ bool TMoverParameters::CurrentSwitch(bool const State)
 
 	if (MaxCurrentSwitch(State))
 	{
-		if (TrainType != dt_EZT)
+		if (TrainType != train_type::emu)
 		{
 			MinCurrentSwitch(State);
 		}
@@ -966,7 +966,7 @@ void TMoverParameters::UpdatePantVolume(double dt)
 				// włączona mała sprężarka
 				PantVolume += dt
 				              // Ra 2013-12: Niebugocław mówi, że w EZT nabija 1.5 raz wolniej niż jak było 0.005
-				              * (TrainType == dt_EZT ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - (0.1 / PantVolume / 10 - 0.1)) / 0.45;
+				              * (TrainType == train_type::emu ? 0.003 : 0.005) / std::max(1.0, PantPress) * (0.45 - (0.1 / PantVolume / 10 - 0.1)) / 0.45;
 			}
 			PantPress = safe_clamp(10.0 * PantVolume - 1.0, 0.0, EnginePowerSource.CollectorParameters.MaxPress); // tu by się przydała objętość zbiornika
 		}
@@ -1019,14 +1019,14 @@ void TMoverParameters::PantPressureSwitchCheck()
 void TMoverParameters::PantPressureSwitchTrip()
 {
 	// opuszczenie pantografów przy niskim ciśnieniu
-	if (TrainType != dt_EZT)
+	if (TrainType != train_type::emu)
 	{
 		// pressure switch safety measure -- open the line breaker, unless there's alternate source of traction voltage
 		// (the genset of a dual-mode vehicle, when the selector is on it, doesn't need the pantographs)
 		if (GetTrainsetHighVoltage() < EnginePowerSource.CollectorParameters.MinV && false == GensetSelected())
 		{
 			// TODO: check whether line breaker should be open EMU-wide
-			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
+			MainSwitch(false, TrainType == train_type::emu ? range_t::unit : range_t::local);
 		}
 	}
 	else
@@ -1597,7 +1597,7 @@ void TMoverParameters::damage_coupler(int const End)
 collision::vehicle_kind TMoverParameters::collision_kind() const
 {
 	auto const powered{EngineType != TEngineType::None && EngineType != TEngineType::Dumb};
-	auto const unit{(TrainType & (dt_EZT | dt_DMU)) != 0};
+	auto const unit{is_multiple_unit()};
 	auto const passengers{std::any_of(LoadAttributes.begin(), LoadAttributes.end(), [](auto const &Load) { return ToLower(Load.name).starts_with("passenger"); })};
 	// a coach heats its compartments; the crash zone is a matter of each end (crush_of())
 	return collision::kind_of(powered, unit || passengers || (false == powered && HeatingPower > 0.0), false);
@@ -2487,14 +2487,14 @@ void TMoverParameters::compute_movement_(double const Deltatime)
 	{
 		if (MotorOverloadRelayHighThreshold)
 		{ // set high threshold
-			if (TrainType != dt_ET42 ? RList[MainCtrlPos].Bn < 2 : MainCtrlPos == 0)
+			if (TrainType != train_type::et42 ? RList[MainCtrlPos].Bn < 2 : MainCtrlPos == 0)
 			{
 				Imax = ImaxHi;
 			}
 		}
 		else
 		{ // set low threshold
-			if (TrainType != dt_ET42 || MainCtrlPos == 0)
+			if (TrainType != train_type::et42 || MainCtrlPos == 0)
 			{
 				Imax = ImaxLo;
 			}
@@ -2660,7 +2660,7 @@ void TMoverParameters::MainsCheck(double const Deltatime)
 	// an emergency brake application made under power opens the line breaker, where the vehicle has such an interlock
 	if (Mains && EmergencyBrakeHoldsMainOff())
 	{
-		MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local);
+		MainSwitch(false, TrainType == train_type::emu ? range_t::unit : range_t::local);
 	}
 }
 
@@ -3374,12 +3374,12 @@ bool TMoverParameters::IncMainCtrl(int CtrlSpeed)
 		// nie ma sterowania
 		return false;
 	}
-	if (TrainType == dt_ET22 && ScndCtrlPos != 0)
+	if (TrainType == train_type::et22 && ScndCtrlPos != 0)
 	{
 		// w ET22 nie da się kręcić nastawnikiem przy włączonym boczniku
 		return false;
 	}
-	if (TrainType == dt_EZT && DirActive == 0)
+	if (TrainType == train_type::emu && DirActive == 0)
 	{
 		// w EZT nie da się załączyć pozycji bez ustawienia kierunku
 		return false;
@@ -3506,7 +3506,7 @@ bool TMoverParameters::IncMainCtrlSeriesMotor(int const CtrlSpeed)
 	if (CtrlSpeed > 1)
 	{
 		// szybkie przejœcie na bezoporow¹
-		if (TrainType == dt_ET40)
+		if (TrainType == train_type::et40)
 		{
 			return false; // this means ET40 won't react at all to fast acceleration command. should it issue just IncMainCtrl(1) instead?
 		}
@@ -3515,7 +3515,7 @@ bool TMoverParameters::IncMainCtrlSeriesMotor(int const CtrlSpeed)
 			// all work is done in the loop header
 		}
 		OK = false; // shouldn't this be part of the loop above?
-		// if (TrainType=dt_ET40)  then
+		// if (TrainType=train_type::et40)  then
 		// while Abs (Im)>IminHi do
 		//   dec(MainCtrlPos);
 		//  OK:=false ;
@@ -3532,7 +3532,7 @@ bool TMoverParameters::IncMainCtrlSeriesMotor(int const CtrlSpeed)
 			                                SetFlag( SoundFlag, sound::relay );
 			                            }
 			*/
-			if (TrainType == dt_ET42)
+			if (TrainType == train_type::et42)
 			{
 				--MainCtrlPos;
 				OK = false;
@@ -3548,7 +3548,7 @@ bool TMoverParameters::IncMainCtrlSeriesMotor(int const CtrlSpeed)
 		//}
 	}
 
-	if (TrainType == dt_ET42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
+	if (TrainType == train_type::et42 && true == DynamicBrakeFlag && MainCtrlPos > 20)
 	{
 		MainCtrlPos = 20;
 		OK = false;
@@ -3578,7 +3578,7 @@ bool TMoverParameters::DecMainCtrl(int CtrlSpeed)
 		// TBD, TODO: replace with mainctrlpowerpos() check?
 		if (MainCtrlPos > 0)
 		{
-			if (TrainType != dt_ET22 || ScndCtrlPos == 0) // Ra: ET22 blokuje nastawnik przy boczniku
+			if (TrainType != train_type::et22 || ScndCtrlPos == 0) // Ra: ET22 blokuje nastawnik przy boczniku
 			{
 				if (CoupledCtrl && ScndCtrlPos > 0)
 				{
@@ -3677,10 +3677,10 @@ bool TMoverParameters::DecMainCtrlSeriesMotor(int const CtrlSpeed)
 	{
 		MainCtrlPos--;
 		//                if (MainCtrlPos=0) and (ScndCtrlPos=0) and
-		//                (TrainType<>dt_ET40)and(TrainType<>dt_EP05) then
+		//                (TrainType<>train_type::et40)and(TrainType<>train_type::ep05) then
 		//                 StLinFlag:=false;
-		//                if (MainCtrlPos=0) and (TrainType<>dt_ET40) and
-		//                (TrainType<>dt_EP05) then
+		//                if (MainCtrlPos=0) and (TrainType<>train_type::et40) and
+		//                (TrainType<>train_type::ep05) then
 		//                 MainCtrlActualPos:=0; //yBARC: co to tutaj robi? ;)
 		OK = true;
 	}
@@ -3778,11 +3778,11 @@ bool TMoverParameters::IncScndCtrl(int CtrlSpeed)
 {
 	bool OK = false;
 
-	if (DynamicBrakeFlag && TrainType == dt_ET42 && CabActive != 0 && IsMainCtrlNoPowerPos() && ScndCtrlPos == 0)
+	if (DynamicBrakeFlag && TrainType == train_type::et42 && CabActive != 0 && IsMainCtrlNoPowerPos() && ScndCtrlPos == 0)
 	{
 		OK = DynamicBrakeSwitch(false);
 	}
-	else if (ScndCtrlPosNo > 0 && CabActive != 0 && !(TrainType == dt_ET42 && (Imax == ImaxHi || (DynamicBrakeFlag && MainCtrlPowerPos() > 0))))
+	else if (ScndCtrlPosNo > 0 && CabActive != 0 && !(TrainType == train_type::et42 && (Imax == ImaxHi || (DynamicBrakeFlag && MainCtrlPowerPos() > 0))))
 	{
 		//     if (RList[MainCtrlPos].R=0) and (MainCtrlPos>0) and (ScndCtrlPos<ScndCtrlPosNo) and
 		//     (not CoupledCtrl) then
@@ -3851,7 +3851,7 @@ bool TMoverParameters::DecScndCtrl(int CtrlSpeed)
 {
 	bool OK = false;
 
-	if (IsMainCtrlNoPowerPos() && CabActive != 0 && TrainType == dt_ET42 && ScndCtrlPos == 0 && !DynamicBrakeFlag && CtrlSpeed == 1)
+	if (IsMainCtrlNoPowerPos() && CabActive != 0 && TrainType == train_type::et42 && ScndCtrlPos == 0 && !DynamicBrakeFlag && CtrlSpeed == 1)
 	{
 		// Ra: AI wywołuje z CtrlSpeed=2 albo gdy ScndCtrlPos>0
 		OK = DynamicBrakeSwitch(true);
@@ -3926,7 +3926,7 @@ void TMoverParameters::ScndCtrlResistiveLockCheck()
 
 int TMoverParameters::GetVirtualScndPos() const
 {
-	if (TrainType == dt_ET42 && DynamicBrakeFlag && !ScndCtrlPos)
+	if (TrainType == train_type::et42 && DynamicBrakeFlag && !ScndCtrlPos)
 		return -1;
 	return ScndCtrlPos;
 }
@@ -4348,7 +4348,7 @@ bool TMoverParameters::DirectionBackward(void)
 		return false;
 	}
 
-	if (DirActive == 1 && MainCtrlPos == 0 && TrainType == dt_EZT && EngineType != TEngineType::ElectricInductionMotor && MinCurrentSwitch(false))
+	if (DirActive == 1 && MainCtrlPos == 0 && TrainType == train_type::emu && EngineType != TEngineType::ElectricInductionMotor && MinCurrentSwitch(false))
 	{
 		return true;
 	}
@@ -5222,7 +5222,7 @@ bool TMoverParameters::DynamicBrakeSwitch(bool Switch)
 			if (TestFlag(thiscoupler.CouplingFlag, coupling::control))
 				thiscoupler.Connected->DynamicBrakeFlag = Switch;
 		// end;
-		// if (DynamicBrakeType=dbrake_passive) and (TrainType=dt_ET42) then
+		// if (DynamicBrakeType=dbrake_passive) and (TrainType=train_type::et42) then
 		// begin
 		// DynamicBrakeFlag:=false;
 		// DynamicBrakeSwitch:=false;
@@ -5391,7 +5391,7 @@ bool TMoverParameters::IncBrakePress(double &brake, double PressLimit, double dp
 	bool IBP;
 	//  if (DynamicBrakeType<>dbrake_switch) and (DynamicBrakeType<>dbrake_none) and
 	//  ((BrakePress>2.0) or (PipePress<3.7{(LowPipePress+0.5)})) then
-	if (DynamicBrakeType != dbrake_switch && DynamicBrakeType != dbrake_none && BrakePress > 2.0 && TrainType != dt_EZT) // yB radzi nie sprawdzać ciśnienia w przewodzie
+	if (DynamicBrakeType != dbrake_switch && DynamicBrakeType != dbrake_none && BrakePress > 2.0 && TrainType != train_type::emu) // yB radzi nie sprawdzać ciśnienia w przewodzie
 	// hunter-301211: dla EN57 silnikow nie odlaczamy
 	{
 		DynamicBrakeFlag = true; // uruchamianie hamulca ED albo odlaczanie silnikow
@@ -5852,7 +5852,7 @@ double TMoverParameters::MainValveSupply()
 	LockPipe = PipePress < (LockPipe ? LockPipeOff : LockPipeOn);
 	bool lock_new = (LockPipe && !UnlockPipe && BrakeCtrlPosR > HandleUnlock) || (EmergencyCutsOffHandle && EmergencyValveFlow > 0); // new simple codition based on .fiz
 	bool lock_old = BrakeHandle == TBrakeHandle::FV4a // old complex condition based on assumptions
-	                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != dt_EZT && !UnlockPipe;
+	                && PipePress < 2.75 && (Hamulec->GetStatus() & b_rls) == 0 && BrakeSubsystem == TBrakeSubSystem::ss_LSt && TrainType != train_type::emu && !UnlockPipe;
 
 	if (lock_old || lock_new)
 	{
@@ -5928,10 +5928,11 @@ void TMoverParameters::UpdateDistributorSettings()
 	{
 
 		LocBrakePress = LocHandle->GetCP();
+		auto const et41or42 = [](train_type const Type) { return Type == train_type::et41 || Type == train_type::et42; };
 		for (auto const &couplerentry : Couplers)
 			// nie podoba mi się to rozwiązanie, chyba trzeba
 			// dodać jakiś wpis do fizyki na to
-			if ((TrainType & (dt_ET41 | dt_ET42)) != 0 && couplerentry.Connected != nullptr && (couplerentry.Connected->TrainType & (dt_ET41 | dt_ET42)) != 0 && (couplerentry.CouplingFlag & 36) == 36)
+			if (et41or42(TrainType) && couplerentry.Connected != nullptr && et41or42(couplerentry.Connected->TrainType) && (couplerentry.CouplingFlag & 36) == 36)
 				LocBrakePress = std::max(couplerentry.Connected->LocHandle->GetCP(), LocBrakePress);
 
 		// if ((DynamicBrakeFlag) && (EngineType == ElectricInductionMotor))
@@ -6048,7 +6049,7 @@ void TMoverParameters::UpdateScndPipePressure(double dt)
 
 	Pipe2->Flow(Hamulec->GetHPFlow(ScndPipePress, dt));
 	// NOTE: condition disabled to allow the air flow from the main hose to the main tank as well
-	if (/* ( ( Compressor > ScndPipePress ) && ( */ VeselVolume > 0.0 /* ) ) || ( TrainType == dt_EZT ) || ( TrainType == dt_DMU ) */)
+	if (/* ( ( Compressor > ScndPipePress ) && ( */ VeselVolume > 0.0 /* ) ) || ( TrainType == train_type::emu ) || ( TrainType == train_type::dmu ) */)
 	{
 		double const dV = PF(Compressor, ScndPipePress, Spz) * dt;
 		CompressedVolume += dV / 1000.0;
@@ -6507,7 +6508,7 @@ void TMoverParameters::ComputeTotalForce(double dt)
 		if (brakes_changed_asleep())
 			switch_physics(true, wake_cause::other);
 
-		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || TrainType == dt_EZT || TrainType == dt_DMU};
+		auto const vehicleisactive{CabActive != 0 || Vel > 0.0001 || accelerating() || LastSwitchingTime < 5 || is_multiple_unit()};
 
 		auto const movingvehicleahead{Neighbours[end::front].vehicle != nullptr &&
 		                              (Neighbours[end::front].vehicle->MoverParameters->Vel > 0.0001 || Neighbours[end::front].vehicle->MoverParameters->accelerating())};
@@ -6699,7 +6700,7 @@ double TMoverParameters::BrakeForceR(double ratio, double velocity) const
 				ratio = ratio + (1.5 - ratio) * std::min(1.0, Vel * 0.02);
 			if (BrakeDelayFlag & bdelay_R && BrakeMethod % 128 != bp_Cosid && BrakeMethod % 128 != bp_D1 && BrakeMethod % 128 != bp_D2 && Power < 1)
 				ratio *= Hamulec->GetRapidRatio(velocity);
-			if (TrainType == dt_DMU && velocity < 30.0)
+			if (TrainType == train_type::dmu && velocity < 30.0)
 			{
 				ratio -= 0.3;
 			}
@@ -7508,7 +7509,7 @@ void TMoverParameters::VoltageRelaysCheck()
 		// wywalanie szybkiego z powodu niewłaściwego napięcia
 		// (a line breaker closed ahead of the pantographs holds without voltage)
 		EventFlag |= true == Mains && ((false == NoVoltRelay && false == PantographsRequireMains) || false == OvervoltageRelay) &&
-		             MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
+		             MainSwitch(false, TrainType == train_type::emu ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		break;
 	}
 
@@ -7521,7 +7522,7 @@ void TMoverParameters::VoltageRelaysCheck()
 		if (Mains && ((TractionSupplyVoltage() < TractionSupplyMinVoltage() && false == PantographsRequireMains) ||
 			    TractionSupplyVoltage() > EnginePowerSource.CollectorParameters.MaxV + 200))
 		{
-			MainSwitch(false, TrainType == dt_EZT ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
+			MainSwitch(false, TrainType == train_type::emu ? range_t::unit : range_t::local); // TODO: check whether we need to send this EMU-wide
 		}
 		break;
 	}
@@ -7581,11 +7582,11 @@ void TMoverParameters::SeriesMotorTractionForce(double dt)
 {
 	//        enrot:=Transmision.Ratio*nrot;
 	// yB: szereg dwoch sekcji w ET42
-	if (TrainType == dt_ET42 && Imax == ImaxHi)
+	if (TrainType == train_type::et42 && Imax == ImaxHi)
 		EngineVoltage = EngineVoltage / 2.0;
 	Mm = Momentum(Current(enrot, EngineVoltage)); // oblicza tez prad p/slinik
 
-	if (TrainType == dt_ET42)
+	if (TrainType == train_type::et42)
 	{
 		if (Imax == ImaxHi)
 			EngineVoltage = EngineVoltage * 2;
@@ -7597,7 +7598,7 @@ void TMoverParameters::SeriesMotorTractionForce(double dt)
 		SeriesMotorDynamicBrake(dt);
 	}
 
-	if (TrainType == dt_ET22 && DelayCtrlFlag) // szarpanie przy zmianie układu w byku
+	if (TrainType == train_type::et22 && DelayCtrlFlag) // szarpanie przy zmianie układu w byku
 		Mm = Mm * RList[MainCtrlActualPos].Bn / (RList[MainCtrlActualPos].Bn + 1); // zrobione w momencie, żeby nie dawac elektryki w przeliczaniu sił
 
 	if (abs(Im) > Imax)
@@ -7609,7 +7610,7 @@ void TMoverParameters::SeriesMotorTractionForce(double dt)
 
 	if ((DynamicBrakeType == dbrake_automatic || DynamicBrakeType == dbrake_switch) && DynamicBrakeFlag)
 		Itot = Im * 2; // 2x2 silniki w EP09
-	else if (TrainType == dt_EZT && Imin == IminLo && ScndS) // yBARC - boczniki na szeregu poprawnie
+	else if (TrainType == train_type::emu && Imin == IminLo && ScndS) // yBARC - boczniki na szeregu poprawnie
 		Itot = Im;
 	else
 		Itot = Im * RList[MainCtrlActualPos].Bn; // prad silnika * ilosc galezi
@@ -8787,7 +8788,7 @@ bool TMoverParameters::MaxCurrentSwitch(bool State, range_t const Notify)
 bool TMoverParameters::MinCurrentSwitch(bool State)
 {
 	bool MCS = false;
-	if ((EngineType == TEngineType::ElectricSeriesMotor && IminHi > IminLo) || (TrainType == dt_EZT && EngineType != TEngineType::ElectricInductionMotor))
+	if ((EngineType == TEngineType::ElectricSeriesMotor && IminHi > IminLo) || (TrainType == train_type::emu && EngineType != TEngineType::ElectricInductionMotor))
 	{
 
 		if (State && Imin == IminLo)
@@ -8919,7 +8920,7 @@ bool TMoverParameters::AutoRelayShuntStep(bool const ARFASI2)
 		}
 		else if (ScndCtrlActualPos > ScndCtrlPos)
 		{
-			if (LastRelayTime > CtrlDownDelay && TrainType != dt_EZT)
+			if (LastRelayTime > CtrlDownDelay && TrainType != train_type::emu)
 			{
 				--ScndCtrlActualPos;
 				SetFlag(SoundFlag, sound::shuntfield);
@@ -8938,11 +8939,11 @@ bool TMoverParameters::AutoRelayMainStep(bool const ARFASI)
 	// running backwards, the motors don't get joined in more branches than allowed (the series connection
 	// alone, usually); the camshaft still goes back down from there (eu07/maszyna#393: it stayed where it
 	// was, the line contactors closed, whatever the driver did with the master controller)
-	auto const backwardslimit{DirActive < 0 && TrainType != dt_PseudoDiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed};
+	auto const backwardslimit{DirActive < 0 && TrainType != train_type::pseudodiesel && RList[MainCtrlActualPos + 1].Bn > BackwardsBranchesAllowed};
 	// main bez samoczynnego rozruchu
 	if (false == backwardslimit && MainCtrlActualPos < std::size(RList) - 1 // crude guard against running out of current fixed table
 	    && (RList[MainCtrlActualPos].Relay < MainCtrlPos || (RList[MainCtrlActualPos + 1].Relay == MainCtrlPos && MainCtrlActualPos < RlistSize) ||
-	        (TrainType == dt_ET22 && DelayCtrlFlag)))
+	        (TrainType == train_type::et22 && DelayCtrlFlag)))
 	{
 		OK = AutoRelayMainUp(ARFASI);
 	}
@@ -9007,7 +9008,7 @@ bool TMoverParameters::AutoRelayMainNotchUp()
 	bool OK = false;
 	// WriteLog("LRT = " + FloatToStr(LastRelayTime) + ", " +
 	// FloatToStr(CtrlDelay));
-	if (TrainType == dt_ET22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
+	if (TrainType == train_type::et22 && MainCtrlPos > 1 && (RList[MainCtrlActualPos].Bn < RList[MainCtrlActualPos + 1].Bn || DelayCtrlFlag))
 	{
 		// et22 z walem grupowym
 		if (!DelayCtrlFlag) // najpierw przejscie
@@ -9067,7 +9068,7 @@ bool TMoverParameters::AutoRelayMainDown()
 	}
 	else if (LastRelayTime > CtrlDownDelay)
 	{
-		if (TrainType != dt_EZT) // tutaj powinien być tryb sterowania wałem
+		if (TrainType != train_type::emu) // tutaj powinien być tryb sterowania wałem
 		{
 			--MainCtrlActualPos;
 			OK = true;
@@ -9087,7 +9088,7 @@ bool TMoverParameters::AutoRelayLineContactorsStep(bool const motorconnectorsoff
 {
 	bool OK = false;
 	// ybARC - zalaczenie stycznikow liniowych
-	if (false == motorconnectorsoff && MainCtrlActualPos == 0 && (TrainType == dt_EZT || HasCamshaft ? MainCtrlPowerPos() > 0 : MainCtrlPowerPos() == 1))
+	if (false == motorconnectorsoff && MainCtrlActualPos == 0 && (TrainType == train_type::emu || HasCamshaft ? MainCtrlPowerPos() > 0 : MainCtrlPowerPos() == 1))
 	{
 
 		DelayCtrlFlag = true;
@@ -9121,7 +9122,7 @@ bool TMoverParameters::CamshaftRunDown()
 	if (CoupledCtrl)
 	{
 
-		if (TrainType == dt_EZT)
+		if (TrainType == train_type::emu)
 		{
 			OK = CamshaftRunDownEMU();
 		}
@@ -11256,7 +11257,7 @@ void TMoverParameters::move_door(basic_door &door, double const Deltatime)
 	if (door.step_folding)
 	{
 		// fold left doorstep
-		if (TrainType == dt_EZT || TrainType == dt_DMU)
+		if (is_multiple_unit())
 		{
 			// multi-unit vehicles typically fold the doorstep only after closing the door
 			if (door.position <= 0.f)
@@ -12883,26 +12884,26 @@ void TMoverParameters::LoadFIZ_Param(std::string const &line)
 	}
 
 	{
-		std::map<std::string, int, std::less<>> types{
-		    {"pseudodiesel", dt_PseudoDiesel},
-		    {"ezt", dt_EZT},
-		    {"dmu", dt_DMU},
-		    {"sn61", dt_SN61},
-		    {"et22", dt_ET22},
-		    {"et40", dt_ET40},
-		    {"et41", dt_ET41},
-		    {"et42", dt_ET42},
-		    {"ep05", dt_EP05},
-		    {"181", dt_181},
-		    {"182", dt_181} // na razie tak
+		std::map<std::string, train_type, std::less<>> types{
+		    {"pseudodiesel", train_type::pseudodiesel},
+		    {"ezt", train_type::emu},
+		    {"dmu", train_type::dmu},
+		    {"sn61", train_type::sn61},
+		    {"et22", train_type::et22},
+		    {"et40", train_type::et40},
+		    {"et41", train_type::et41},
+		    {"et42", train_type::et42},
+		    {"ep05", train_type::ep05},
+		    {"181", train_type::skoda181},
+		    {"182", train_type::skoda181} // na razie tak
 		};
 		std::string type;
 		extract_value(type, "Type", line, "none");
 		auto lookup = types.find(ToLower(type));
-		TrainType = lookup != types.end() ? lookup->second : dt_Default;
+		TrainType = lookup != types.end() ? lookup->second : train_type::generic;
 	}
 
-	if (TrainType == dt_EZT)
+	if (TrainType == train_type::emu)
 	{
 
 		IminLo = 1;
@@ -13727,7 +13728,7 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 		ConverterStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	extract_value(ConverterStartDelay, "ConverterStartDelay", line, "");
-	extract_value(ConverterOverloadRelayOffWhenMainIsOff, "ConverterOverloadWhenMainIsOff", line, TrainType == dt_EZT ? "yes" : "no");
+	extract_value(ConverterOverloadRelayOffWhenMainIsOff, "ConverterOverloadWhenMainIsOff", line, TrainType == train_type::emu ? "yes" : "no");
 	// compressor
 	{
 		auto lookup = starts.find(extract_value("CompressorStart", line));
@@ -13739,7 +13740,7 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 		PantographCompressorStart = lookup != starts.end() ? lookup->second : manual;
 	}
 	// pantograph compressor valve
-	PantAutoValve = TrainType == dt_EZT; // legacy code behaviour, automatic valve was initially installed in all EMUs
+	PantAutoValve = TrainType == train_type::emu; // legacy code behaviour, automatic valve was initially installed in all EMUs
 	extract_value(PantAutoValve, "PantAutoValve", line, "");
 	// pantographs valve
 	{
@@ -13804,14 +13805,14 @@ void TMoverParameters::LoadFIZ_CntrlStarts(std::string const &line)
 	// ground relay
 	{
 		auto lookup = starts.find(extract_value("GroundRelayStart", line));
-		auto const defaultstart{TrainType == dt_EZT ? automatic : manual};
+		auto const defaultstart{TrainType == train_type::emu ? automatic : manual};
 		GroundRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 	// converter overload relay
 	{
 		auto lookup = starts.find(extract_value("ConverterOverloadRelayStart", line));
 		// the relay of a multiple unit activates when the converter is switched off
-		auto const defaultstart{TrainType == dt_EZT ? converter : manual};
+		auto const defaultstart{TrainType == train_type::emu ? converter : manual};
 		ConverterOverloadRelayStart = lookup != starts.end() ? lookup->second : defaultstart;
 	}
 }
@@ -14060,7 +14061,7 @@ void TMoverParameters::LoadFIZ_Engine(std::string const &Input)
 	extract_value(MotorBlowers[end::front].min_start_velocity, "MotorBlowersStartVelocity", Input, "");
 	MotorBlowers[end::rear] = MotorBlowers[end::front];
 	// pressure switch
-	extract_value(HasControlPressureSwitch, "PressureSwitch", Input, TrainType != dt_EZT ? "yes" : "no");
+	extract_value(HasControlPressureSwitch, "PressureSwitch", Input, TrainType != train_type::emu ? "yes" : "no");
 	// its brake cylinder half; the brake pipe one stays
 	extract_value(PressureSwitchBrakeCylinder, "PressureSwitchBrakeCylinder", Input, "");
 }
@@ -14966,7 +14967,7 @@ void TMoverParameters::CreateBrakeHandles()
 	{
 		LocHandle = std::make_shared<TFD1>();
 		LocHandle->Init(MaxBrakePress[0]);
-		if (TrainType == dt_EZT)
+		if (TrainType == train_type::emu)
 		{
 
 			dynamic_cast<TFD1 *>(LocHandle.get())->SetSpeed(3.5);
@@ -15645,7 +15646,7 @@ bool TMoverParameters::RunPowerCommand(std::string const &Command, double CValue
 		auto const inputend{(static_cast<int>(CValue1) & 0x80) != 0 ? 1 : 0};
 		auto const inputcab{(static_cast<int>(CValue1) & 0x40) != 0 ? 1 : 0};
 		auto const inputoperation{static_cast<int>(CValue1) & ~(0x80 | 0x40)};
-		auto const noswap{TrainType == dt_EZT || TrainType == dt_ET41};
+		auto const noswap{TrainType == train_type::emu || TrainType == train_type::et41};
 		auto swap{false == noswap && TestFlag(Couplers[CValue2 == -1 ? end::rear : end::front].CouplingFlag, coupling::control)};
 		if (auto const reversed{inputcab != (CabActive != -1 ? 1 : 0)}; reversed)
 		{
@@ -15857,7 +15858,7 @@ double TMoverParameters::ShowCurrentP(int AmpN) const
 	bool Grupowy;
 
 	// ClearPendingExceptions;
-	Grupowy = DelayCtrlFlag && TrainType == dt_ET22; // przerzucanie walu grupowego w ET22;
+	Grupowy = DelayCtrlFlag && TrainType == train_type::et22; // przerzucanie walu grupowego w ET22;
 	Bn = RList[MainCtrlActualPos].Bn; // ile równoległych gałęzi silników
 
 	if (DynamicBrakeType == dbrake_automatic && DynamicBrakeFlag)

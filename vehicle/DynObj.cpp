@@ -4285,7 +4285,7 @@ bool TDynamicObject::Update(double dt, double dt1)
 */
             && MoverParameters->EngineType != TEngineType::DieselEngine
             && MoverParameters->EngineType != TEngineType::WheelsDriven ) { // jeśli bateria wyłączona, a nie diesel ani drezyna reczna
-            if( MoverParameters->MainSwitch( false, MoverParameters->TrainType == dt_EZT ? range_t::unit : range_t::local ) ) {
+            if( MoverParameters->MainSwitch( false, MoverParameters->TrainType == train_type::emu ? range_t::unit : range_t::local ) ) {
                 // wyłączyć zasilanie
                 // NOTE: we turn off entire EMU, but only the affected unit for other multi-unit consists
                 MoverParameters->EventFlag = true;
@@ -4294,8 +4294,8 @@ bool TDynamicObject::Update(double dt, double dt1)
                 // TODO: have this dependant on .fiz-driven flag
                 // NOTE: moved to pantspeed calculation part a little later in the function. all remarks and todo still apply
 /*
-                MoverParameters->PantFront( false, ( MoverParameters->TrainType == dt_EZT ? range::unit : range::local ) );
-                MoverParameters->PantRear( false, ( MoverParameters->TrainType == dt_EZT ? range::unit : range::local ) );
+                MoverParameters->PantFront( false, ( MoverParameters->TrainType == train_type::emu ? range::unit : range::local ) );
+                MoverParameters->PantRear( false, ( MoverParameters->TrainType == train_type::emu ? range::unit : range::local ) );
 */
             }
         }
@@ -4421,7 +4421,7 @@ bool TDynamicObject::Update(double dt, double dt1)
     // McZapkie-260202 end
 
     // fragment z EXE Kursa
-    /* if (MoverParameters->TrainType==dt_ET42)
+    /* if (MoverParameters->TrainType==train_type::et42)
          {
          if ((MoverParameters->DynamicBrakeType=dbrake_switch) &&
        ((MoverParameters->BrakePress >
@@ -4606,7 +4606,7 @@ bool TDynamicObject::Update(double dt, double dt1)
                 break;
             } // pozostałe na razie nie obsługiwane
             if( MoverParameters->PantPress > (
-                    MoverParameters->TrainType == dt_EZT ?
+                    MoverParameters->TrainType == train_type::emu ?
                         2.45 : // Ra 2013-12: Niebugocław mówi, że w EZT podnoszą się przy 2.5
                         3.45 ) ) {
                 // z EXE Kursa
@@ -8546,7 +8546,7 @@ TDynamicObject * TDynamicObject::FindPowered()
     // problematyczna może być kwestia wybranej kabiny (w silnikowym...)
     // jeśli silnikowy będzie zapięty odwrotnie (tzn. -1), to i tak powinno jeździć dobrze
     // również hamowanie wykonuje się zaworem w członie, a nie w silnikowym...
-    auto const coupling { MoverParameters->TrainType == dt_EZT || MoverParameters->TrainType == dt_DMU ?
+    auto const coupling { MoverParameters->is_multiple_unit() ?
             coupling::permanent :
             coupling::control };
 
@@ -9754,7 +9754,7 @@ vehicle_table::update( double Deltatime, int Iterationcount ) {
                 if( mover->Vel > 0.0001 ) { ++awake.speed; }
                 if( mover->accelerating() ) { ++awake.acceleration; }
                 if( mover->LastSwitchingTime < 5 ) { ++awake.switching; }
-                if( ( mover->TrainType == dt_EZT ) || ( mover->TrainType == dt_DMU ) ) { ++awake.multipleunit; }
+                if( mover->is_multiple_unit() ) { ++awake.multipleunit; }
                 if( moving( mover->Neighbours[ end::front ] ) || moving( mover->Neighbours[ end::rear ] ) ) { ++awake.neighbour; }
             }
         }
