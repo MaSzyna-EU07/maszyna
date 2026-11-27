@@ -1443,19 +1443,26 @@ void srk_tool::render_station()
 	auto const &layout{*m_layout};
 	if (begin_fields("##srkstation"))
 	{
-		auto const text = [&](char const *Label, char const *Id, std::string const &Value, char const *Hint, auto const &Set) {
+		// Ascii: the value goes into the names the editor gives (editor_track::name_valid), so a letter outside of ASCII is dropped as it's typed
+		auto const text = [&](char const *Label, char const *Id, std::string const &Value, char const *Hint, auto const &Set, bool const Ascii = false) {
 			field_row(Label);
 			std::array<char, 128> buffer{};
 			Value.copy(buffer.data(), buffer.size() - 1);
-			if (ImGui::InputTextWithHint(Id, Hint, buffer.data(), buffer.size()))
+			bool dropped{false};
+			if (ImGui::InputTextWithHint(Id, Hint, buffer.data(), buffer.size(), Ascii ? ImGuiInputTextFlags_CallbackCharFilter : ImGuiInputTextFlags_None, ascii_only_filter, &dropped))
 			{
 				Set(std::string{buffer.data()});
 				m_changed = true;
 			}
+			if (dropped)
+			{
+				begin_status();
+				refuse(STR("The name can hold ASCII only: no Polish letters or other characters outside of it"));
+			}
 		};
 		auto const *entry{m_record >= 0 ? &m_records[m_record] : nullptr};
 		text("Name", "##srkname", entry != nullptr ? entry->name : std::string{}, example("Biała Podlaska").c_str(), [&](std::string const &Value) { record_of_open().name = Value; });
-		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, example("BPd").c_str(), [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); });
+		text("Code", "##srkcode", entry != nullptr ? entry->code : std::string{}, example("BPd").c_str(), [&](std::string const &Value) { record_of_open().code = word_of(Value) == "-" ? std::string{} : word_of(Value); }, true);
 		item_tooltip("The abbreviation of the station: the names of its switches, track circuits and signals begin with it");
 		auto const line_hint{line_of_open()};
 		text("Line", "##srkline", entry != nullptr ? entry->line : std::string{}, line_hint.empty() ? example("2").c_str() : line_hint.c_str(), [&](std::string const &Value) { record_of_open().line = word_of(Value) == "-" ? std::string{} : word_of(Value); });
